@@ -6,7 +6,7 @@ import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError } from '
 import { tournamentApi, tournamentErrorKey } from '../../../lib/tournamentApi'
 import { useAuth } from '../../../contexts/AuthContext'
 import { accessForApp } from '../../../lib/access'
-import { Button, Field, Input, RowList, Row, Chip, EmptyInset, SkeletonRows, Notice, SegmentedControl, toast } from '../../../ui'
+import { Button, DateField, Field, Input, RowList, Row, Chip, EmptyInset, SkeletonRows, Notice, SegmentedControl, toast } from '../../../ui'
 import TournamentView from './TournamentView'
 import { TournamentStatus, datesLabel } from './shared'
 
@@ -17,7 +17,8 @@ function NewTournamentModal({ open, onClose, onCreated }) {
   const [source, setSource] = useState('manual')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const set = (k) => (e) => { setForm(f => ({ ...f, [k]: e.target.value })); setError('') }
+  // Inputs hand over an event, the date fields their ISO value.
+  const set = (k) => (e) => { const v = e?.target ? e.target.value : e; setForm(f => ({ ...f, [k]: v })); setError('') }
   const valid = form.title.trim() && form.starts_on && (!form.ends_on || form.ends_on >= form.starts_on)
   const submit = async (e) => {
     e?.preventDefault()
@@ -66,10 +67,10 @@ function NewTournamentModal({ open, onClose, onCreated }) {
         </Field>
         <div className="grid grid-cols-2 gap-2">
           <Field label={t('tournaments.startsOn')}>
-            <Input type="date" value={form.starts_on} onChange={set('starts_on')} required data-testid="tournament-starts" />
+            <DateField value={form.starts_on} onChange={set('starts_on')} required data-testid="tournament-starts" />
           </Field>
           <Field label={t('tournaments.endsOn')}>
-            <Input type="date" value={form.ends_on} min={form.starts_on || undefined} onChange={set('ends_on')} />
+            <DateField value={form.ends_on} min={form.starts_on || undefined} onChange={set('ends_on')} />
           </Field>
         </div>
         <div className="grid grid-cols-2 gap-2">

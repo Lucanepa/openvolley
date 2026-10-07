@@ -113,9 +113,17 @@ export const TEST_TEAM_SEED_DATA = [
   }
 ]
 
-// Helper to get team data by external ID
+// The seed team of the test match's team external ids (the ids stay as they are:
+// test teams stored on a device are found by them)
+const SEED_KEY_OF_EXTERNAL_ID = {
+  [TEST_HOME_TEAM_EXTERNAL_ID]: 'test-team-home',
+  [TEST_AWAY_TEAM_EXTERNAL_ID]: 'test-team-away'
+}
+
+// Helper to get team data by external ID (or by its seed key)
 export function getTestTeamByExternalId(externalId) {
-  return TEST_TEAM_SEED_DATA.find(t => t.seedKey === externalId)
+  const seedKey = SEED_KEY_OF_EXTERNAL_ID[externalId] || externalId
+  return TEST_TEAM_SEED_DATA.find(t => t.seedKey === seedKey)
 }
 
 // Get home team short name

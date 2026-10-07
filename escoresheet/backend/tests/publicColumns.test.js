@@ -245,6 +245,7 @@ describe('publicColumns: the match relay bundle', () => {
       scheduledAt: '2026-10-05T18:00:00.000Z',
       dateTime: row.dateTime,
       status: 'scheduled',
+      sportType: 'indoor',
       test: false,
       refereeConnectionEnabled: false,
       homeTeamConnectionEnabled: false,
@@ -269,6 +270,9 @@ describe('publicColumns: the match relay bundle', () => {
       ['A', 'Away']
     )
     assert.equal(relayMatchListRow({ matchId: 'x', match: { test: true, status: 'live' } }).test, true)
+    // The sport of the room (handleSyncMatchData): openbeach lists only its own
+    assert.equal(relayMatchListRow({ matchId: 'x', sportType: 'beach', match: {} }).sportType, 'beach')
+    assert.equal(relayMatchListRow({ matchId: 'x', sportType: 'other', match: { sport_type: 'beach' } }).sportType, 'indoor')
   })
 
   it('isPublicIp: only routable internet addresses', () => {

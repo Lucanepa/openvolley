@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { TEST_MATCH_SEED_KEY, newTestMatchSeedKey, isTestMatchSeedKey, testMatchSeedKeyFor } from '../testSeeds'
+import { TEST_MATCH_SEED_KEY, newTestMatchSeedKey, isTestMatchSeedKey, testMatchSeedKeyFor, getTestHomeTeamShortName, getTestAwayTeamShortName, getTestTeamByExternalId, TEST_HOME_TEAM_EXTERNAL_ID, TEST_AWAY_TEAM_EXTERNAL_ID } from '../testSeeds'
 import { relayMatchKey } from '../../utils/serverDataSync'
 
 // A test (rehearsal) match publishes its live state to the venue relay and
@@ -36,5 +36,17 @@ describe('test match seed key', () => {
     expect(app).not.toMatch(/seedKey: TEST_MATCH_SEED_KEY/)
     expect(app).toMatch(/const testSeedKey = testMatchSeedKeyFor\(existingMatch\?\.seedKey\)/)
     expect(app).toMatch(/seedKey: testSeedKey,/)
+  })
+})
+
+// The server test match names its teams by these external ids: they must find
+// the seed teams, or the sheet and the PDF's file name said HOME / AWAY.
+describe('test team seeds', () => {
+  it('the external ids find the seed teams and their short names', () => {
+    expect(getTestHomeTeamShortName()).not.toBe('HOME')
+    expect(getTestAwayTeamShortName()).not.toBe('AWAY')
+    expect(getTestTeamByExternalId(TEST_HOME_TEAM_EXTERNAL_ID)?.players.length).toBeGreaterThan(6)
+    expect(getTestTeamByExternalId(TEST_AWAY_TEAM_EXTERNAL_ID)?.players.length).toBeGreaterThan(6)
+    expect(getTestTeamByExternalId('test-team-home')).toBe(getTestTeamByExternalId(TEST_HOME_TEAM_EXTERNAL_ID))
   })
 })

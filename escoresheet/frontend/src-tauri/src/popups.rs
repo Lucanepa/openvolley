@@ -18,11 +18,15 @@
 //! scoretable: when the main window goes, they are closed with it.
 //!
 //! Downloads (the scoresheet's "Save PDF" is a blob download) go to the
-//! user's Downloads folder under a free name; when one finishes, the page
-//! hears where (`ov-download-finished` DOM event with the path and file name).
+//! user's Downloads folder under a free name; when one finishes, the file on
+//! disk is checked (a PDF must be complete: `%PDF-` ... `%%EOF`) and the page
+//! hears where (`ov-download-finished` DOM event with the path, the file name
+//! and an id). With that id, and only that, the page may ask the app to open
+//! the file or show it in its folder (`download_open` / `download_reveal`,
+//! capabilities/downloads.json): never a path the page names itself.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -128,8 +132,52 @@ pub fn is_popup_label(label: &str) -> bool {
     label.starts_with("popup-")
 }
 
+/// The n of "popup-<n>" (the order the windows were opened in); 0 for anything else.
+pub fn popup_number(label: &str) -> usize {
+    label.strip_prefix("popup-").and_then(|n| n.parse().ok()).unwrap_or(0)
+}
+
+/// Window titles are page titles: at most this many characters, no control
+/// characters, before they go into a question.
+pub const MAX_WINDOW_TITLE: usize = 60;
+
+pub fn clean_window_title(title: &str) -> String {
+    let t: String = title.chars().filter(|c| !c.is_control()).collect();
+    t.trim().chars().take(MAX_WINDOW_TITLE).collect::<String>().trim().to_string()
+}
+
+/// The titles of `(label, title)` app windows, in the order they were opened.
+pub fn popup_titles(windows: Vec<(String, String)>) -> Vec<String> {
+    let mut windows: Vec<_> = windows.into_iter().filter(|(label, _)| is_popup_label(label)).collect();
+    windows.sort_by_key(|(label, _)| popup_number(label));
+    windows.into_iter().map(|(_, title)| clean_window_title(&title)).collect()
+}
+
+/// The titles of every app window opened by window.open() (the scoresheet
+/// windows), hidden ones too: what a quit closes besides the scoretable.
+pub fn open_app_windows<R: Runtime>(app: &AppHandle<R>) -> Vec<String> {
+    popup_titles(
+        app.webview_windows()
+            .into_iter()
+            .map(|(label, window)| {
+                let title = window.title().unwrap_or_default();
+                (label, title)
+            })
+            .collect(),
+    )
+}
+
+/// The scoretable's quit question: which other app windows the quit closes
+/// (appLifecycle.js names them, "Also closes: Scoresheet (2 windows)").
+#[tauri::command]
+pub fn app_windows<R: Runtime>(app: AppHandle<R>) -> Vec<String> {
+    open_app_windows(&app)
+}
+
 /// Closes every app window opened by window.open() (the scoresheet windows).
-/// Called when the main window goes: they belong to the scoretable.
+/// Called when the main window goes (they belong to the scoretable), and
+/// right before every quit (lifecycle.rs), so a quit closes all of them
+/// explicitly rather than leaving it to the event loop's end.
 pub fn close_app_windows<R: Runtime>(app: &AppHandle<R>) {
     for (label, window) in app.webview_windows() {
         if is_popup_label(&label) {
@@ -171,7 +219,7 @@ fn build_popup<R: Runtime>(
     features: NewWindowFeatures,
 ) -> tauri::Result<WebviewWindow<R>> {
     let builder = WebviewWindowBuilder::new(app, next_popup_label(), WebviewUrl::External("about:blank".parse().unwrap()))
-        .title("OpenVolley eScoresheet")
+        .title(crate::flavour::CURRENT.window_title)
         .inner_size(1200.0, 900.0)
         .min_inner_size(600.0, 400.0)
         .theme(Some(tauri::Theme::Light))
@@ -245,14 +293,165 @@ fn close_on_window_close<R: Runtime>(_window: &WebviewWindow<R>) {}
 
 /// The JS that tells a page where its download went (or that it failed).
 /// `fileName` lets a page tell its own download from another window's (the
-/// scoresheet ignores the match-end ZIP of the scoretable).
-pub fn download_finished_script(path: Option<&std::path::Path>, success: bool) -> String {
+/// scoresheet ignores the match-end ZIP of the scoretable); `id` names the
+/// recorded download for download_open / download_reveal.
+pub fn download_finished_script(path: Option<&std::path::Path>, success: bool, id: Option<u64>) -> String {
     let detail = serde_json::json!({
         "path": path.map(|p| p.to_string_lossy().into_owned()),
         "fileName": path.and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()),
         "success": success,
+        "id": id,
     });
     format!("window.dispatchEvent(new CustomEvent('ov-download-finished', {{ detail: {detail} }}))")
+}
+
+/// Whether `bytes` are a whole PDF: the header at the start, `%%EOF` at the end
+/// (trailing white space allowed). A cut-off or empty download is not.
+pub fn is_complete_pdf(bytes: &[u8]) -> bool {
+    if bytes.len() < 64 || !bytes.starts_with(b"%PDF-") {
+        return false;
+    }
+    let tail = &bytes[bytes.len().saturating_sub(64)..];
+    let trimmed = tail
+        .iter()
+        .rposition(|b| !b.is_ascii_whitespace())
+        .map(|end| &tail[..=end])
+        .unwrap_or(&[]);
+    trimmed.ends_with(b"%%EOF")
+}
+
+/// Whether the finished download really is on disk, whole. A `.pdf` must be a
+/// complete PDF; anything else must at least not be empty.
+///
+/// wry (WebKitGTK) keeps one "failed" flag for the whole web context and never
+/// resets it: after one failed or cancelled download it reports every later one
+/// as failed, without a path. So the file on disk decides, not `success`.
+pub fn verify_download(path: &Path) -> bool {
+    let Ok(meta) = std::fs::metadata(path) else { return false };
+    if !meta.is_file() || meta.len() == 0 {
+        return false;
+    }
+    let is_pdf = path
+        .extension()
+        .is_some_and(|e| e.to_string_lossy().eq_ignore_ascii_case("pdf"));
+    if !is_pdf {
+        return true;
+    }
+    match std::fs::read(path) {
+        Ok(bytes) => is_complete_pdf(&bytes),
+        Err(_) => false,
+    }
+}
+
+/// Downloads that finished and were checked, by id (the newest RECENT_DOWNLOADS):
+/// the only files download_open / download_reveal will touch.
+const RECENT_DOWNLOADS: usize = 32;
+static DOWNLOADS: Mutex<Vec<(u64, PathBuf)>> = Mutex::new(Vec::new());
+static NEXT_DOWNLOAD_ID: AtomicU64 = AtomicU64::new(1);
+/// Destinations chosen in DownloadEvent::Requested, by URL: wry reports no path
+/// for a download once its stale "failed" flag is set.
+static REQUESTED: Mutex<Vec<(String, PathBuf)>> = Mutex::new(Vec::new());
+
+/// Records a finished, checked download; returns its id.
+pub fn record_download(path: PathBuf) -> u64 {
+    let id = NEXT_DOWNLOAD_ID.fetch_add(1, Ordering::Relaxed);
+    let mut list = DOWNLOADS.lock().unwrap_or_else(|e| e.into_inner());
+    list.push((id, path));
+    let excess = list.len().saturating_sub(RECENT_DOWNLOADS);
+    list.drain(..excess);
+    id
+}
+
+/// The file of a recorded download.
+pub fn recorded_download(id: u64) -> Option<PathBuf> {
+    let list = DOWNLOADS.lock().unwrap_or_else(|e| e.into_inner());
+    list.iter().find(|(i, _)| *i == id).map(|(_, p)| p.clone())
+}
+
+fn remember_requested(url: &Url, destination: &Path) {
+    let mut list = REQUESTED.lock().unwrap_or_else(|e| e.into_inner());
+    list.push((url.as_str().to_string(), destination.to_path_buf()));
+    let excess = list.len().saturating_sub(RECENT_DOWNLOADS);
+    list.drain(..excess);
+}
+
+fn take_requested(url: &Url) -> Option<PathBuf> {
+    let mut list = REQUESTED.lock().unwrap_or_else(|e| e.into_inner());
+    let pos = list.iter().rposition(|(u, _)| u == url.as_str())?;
+    Some(list.remove(pos).1)
+}
+
+/// The command that opens a file with its default application. One argument
+/// (no shell); the path is always a recorded download.
+pub fn open_file_command(path: &Path) -> std::process::Command {
+    #[cfg(target_os = "windows")]
+    let program = "explorer";
+    #[cfg(target_os = "macos")]
+    let program = "open";
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let program = "xdg-open";
+    let mut cmd = std::process::Command::new(program);
+    cmd.arg(path);
+    cmd
+}
+
+/// The command that shows a file in the system file manager: selected in its
+/// folder on Windows (`explorer /select,<path>`, one argument), its folder
+/// elsewhere.
+pub fn reveal_file_command(path: &Path) -> std::process::Command {
+    #[cfg(target_os = "windows")]
+    {
+        let mut select = std::ffi::OsString::from("/select,");
+        select.push(path.as_os_str());
+        let mut cmd = std::process::Command::new("explorer");
+        cmd.arg(select);
+        cmd
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let mut cmd = std::process::Command::new("open");
+        cmd.arg("-R").arg(path);
+        cmd
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        let mut cmd = std::process::Command::new("xdg-open");
+        cmd.arg(path.parent().unwrap_or(path));
+        cmd
+    }
+}
+
+fn spawn_and_reap(mut cmd: std::process::Command) -> Result<(), String> {
+    // spawn, never wait: explorer.exe exits 1 even on success
+    let mut child = cmd.spawn().map_err(|e| format!("cannot start the file manager: {e}"))?;
+    std::thread::spawn(move || {
+        let _ = child.wait(); // reap it (no zombie)
+    });
+    Ok(())
+}
+
+/// The recorded download `id`, still on disk.
+fn existing_download(id: u64) -> Result<PathBuf, String> {
+    let path = recorded_download(id).ok_or_else(|| "unknown download".to_string())?;
+    if !path.is_file() {
+        return Err(format!("{} is not there any more", path.display()));
+    }
+    Ok(path)
+}
+
+/// Opens a file the app downloaded (the scoresheet's PDF) with its default
+/// application. Only an id recorded by on_download: never a page-supplied path.
+#[tauri::command]
+pub async fn download_open(id: u64) -> Result<(), String> {
+    let path = existing_download(id)?;
+    spawn_and_reap(open_file_command(&path))
+}
+
+/// Shows a file the app downloaded in the system file manager.
+#[tauri::command]
+pub async fn download_reveal(id: u64) -> Result<(), String> {
+    let path = existing_download(id)?;
+    spawn_and_reap(reveal_file_command(&path))
 }
 
 /// The folder downloads go to: the XDG / known Downloads folder, else
@@ -297,20 +496,25 @@ pub fn on_download<R: Runtime>(webview: Webview<R>, event: DownloadEvent<'_>) ->
         DownloadEvent::Requested { url, destination } => {
             let paths = webview.path();
             if let Some(dir) = downloads_dir(paths.download_dir().ok(), paths.home_dir().ok()) {
-                if destination.parent() != Some(dir.as_path()) {
-                    let name = destination
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| "download".into());
-                    *destination = free_path(&dir, &name);
-                }
+                let name = destination
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "download".into());
+                // always a free name of our own (wry numbers "a.b.pdf" as "a (1).b.pdf")
+                *destination = free_path(&dir, &name);
             }
+            remember_requested(&url, destination);
             eprintln!("[download] {} -> {}", short(&url), destination.display());
             true
         }
         DownloadEvent::Finished { url, path, success } => {
-            eprintln!("[download] {} finished: {success} {:?}", short(&url), path);
-            let script = download_finished_script(path.as_deref(), success);
+            let requested = take_requested(&url);
+            let dest = path.or(requested);
+            // the file on disk decides (see verify_download)
+            let ok = dest.as_deref().is_some_and(verify_download);
+            eprintln!("[download] {} finished: reported {success}, on disk {ok}: {:?}", short(&url), dest);
+            let id = if ok { dest.clone().map(record_download) } else { None };
+            let script = download_finished_script(if ok { dest.as_deref() } else { None }, ok, id);
             if cfg!(target_os = "linux") {
                 for window in webview.app_handle().webview_windows().values() {
                     let _ = window.eval(&script);
@@ -407,12 +611,73 @@ mod tests {
 
     #[test]
     fn download_script_escapes_the_path() {
-        let js = download_finished_script(Some(std::path::Path::new("/home/a\"b/Downloads/x'.pdf")), true);
+        let js = download_finished_script(Some(std::path::Path::new("/home/a\"b/Downloads/x'.pdf")), true, Some(7));
         assert!(js.contains(r#""path":"/home/a\"b/Downloads/x'.pdf""#), "{js}");
         assert!(js.contains(r#""success":true"#));
         assert!(js.contains(r#""fileName":"x'.pdf""#), "{js}");
-        let failed = download_finished_script(None, false);
+        assert!(js.contains(r#""id":7"#), "{js}");
+        let failed = download_finished_script(None, false, None);
         assert!(failed.contains(r#""path":null"#) && failed.contains(r#""fileName":null"#), "{failed}");
+        assert!(failed.contains(r#""id":null"#), "{failed}");
+    }
+
+    #[test]
+    fn a_pdf_counts_only_when_complete() {
+        let mut pdf = b"%PDF-1.3\n".to_vec();
+        pdf.extend(std::iter::repeat(b'x').take(200));
+        pdf.extend(b"\nstartxref\n123\n%%EOF\n");
+        assert!(is_complete_pdf(&pdf));
+        // cut off: no %%EOF
+        assert!(!is_complete_pdf(&pdf[..pdf.len() - 8]));
+        // not a PDF, empty, too short
+        assert!(!is_complete_pdf(b"<html>%%EOF</html>"));
+        assert!(!is_complete_pdf(b""));
+        assert!(!is_complete_pdf(b"%PDF-%%EOF"));
+
+        let tmp = std::env::temp_dir().join(format!("ov-dl-verify-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("ok.pdf"), &pdf).unwrap();
+        std::fs::write(tmp.join("cut.pdf"), &pdf[..100]).unwrap();
+        std::fs::write(tmp.join("match.zip"), b"PK\x03\x04 something").unwrap();
+        std::fs::write(tmp.join("empty.zip"), b"").unwrap();
+        assert!(verify_download(&tmp.join("ok.pdf")));
+        assert!(!verify_download(&tmp.join("cut.pdf")));
+        assert!(verify_download(&tmp.join("match.zip")));
+        assert!(!verify_download(&tmp.join("empty.zip")));
+        assert!(!verify_download(&tmp.join("missing.pdf")));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn only_recorded_downloads_can_be_opened() {
+        let a = record_download(PathBuf::from("/x/Downloads/a.pdf"));
+        let b = record_download(PathBuf::from("/x/Downloads/b.pdf"));
+        assert_ne!(a, b);
+        assert_eq!(recorded_download(a), Some(PathBuf::from("/x/Downloads/a.pdf")));
+        assert_eq!(recorded_download(b), Some(PathBuf::from("/x/Downloads/b.pdf")));
+        assert_eq!(recorded_download(u64::MAX), None);
+        // gone from disk: refused, nothing is started
+        assert!(existing_download(a).unwrap_err().contains("not there"));
+        assert_eq!(existing_download(u64::MAX).unwrap_err(), "unknown download");
+        // only the newest RECENT_DOWNLOADS are kept
+        for i in 0..RECENT_DOWNLOADS {
+            record_download(PathBuf::from(format!("/x/Downloads/{i}.pdf")));
+        }
+        assert_eq!(recorded_download(a), None);
+    }
+
+    #[test]
+    fn open_and_reveal_pass_the_path_as_one_argument() {
+        let p = Path::new("/home/u/Downloads/20261007_382208_KSCW-H1_vs_Spada-H1 (1).pdf");
+        let open: Vec<_> = open_file_command(p).get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+        assert_eq!(open, vec![p.to_string_lossy().into_owned()]);
+        let reveal: Vec<_> = reveal_file_command(p).get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+        assert_eq!(reveal.len(), 1, "{reveal:?}");
+        #[cfg(target_os = "linux")]
+        assert_eq!(reveal[0], "/home/u/Downloads");
+        #[cfg(target_os = "windows")]
+        assert_eq!(reveal[0], format!("/select,{}", p.display()));
     }
 
     #[test]
@@ -421,6 +686,26 @@ mod tests {
         assert!(is_popup_label("popup-12"));
         assert!(!is_popup_label("main"));
         assert!(!is_popup_label("popup"));
+    }
+
+    #[test]
+    fn app_window_titles_in_opening_order() {
+        let windows = vec![
+            ("popup-10".to_string(), "Openvolley Scoresheet".to_string()),
+            ("main".to_string(), "OpenVolley eScoresheet - 7".to_string()),
+            ("popup-2".to_string(), "  OpenVolley eScoresheet\n".to_string()),
+            ("popup-3".to_string(), "x".repeat(200)),
+        ];
+        let titles = popup_titles(windows);
+        // the scoretable itself is not listed; popup-2 before popup-10
+        assert_eq!(titles.len(), 3);
+        assert_eq!(titles[0], "OpenVolley eScoresheet");
+        assert_eq!(titles[1].chars().count(), MAX_WINDOW_TITLE);
+        assert_eq!(titles[2], "Openvolley Scoresheet");
+        assert!(popup_titles(vec![("main".into(), "x".into())]).is_empty());
+        assert_eq!(popup_number("popup-12"), 12);
+        assert_eq!(popup_number("main"), 0);
+        assert_eq!(clean_window_title("\u{7}\t "), "");
     }
 
     #[test]

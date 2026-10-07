@@ -26,14 +26,14 @@ The output is deterministic: commit the SVG change and the renders together.
 | `mark.svg` | The ball, 512 canvas, 16 px clear space | App screens (Scoresheet archive header), apple-touch, maskable PWA icon, legacy Android launcher icons, the server's status page (`backend/lib/brandMark.js`) |
 | `mark-dark.svg` | The ball for dark backgrounds: ink panels become stone-50 | Anything on stone-900 or darker |
 | `mark-mono.svg` | The ball in one colour (#000) | One-colour print, stamps, embroidery |
-| `ball.svg` | Small-size cut: heavier seams (50 of 512), on a white disc | The serve indicator (`public/ball.png`, `src/ball_fallback.png`, 20 to 100 px, also on dark), the scoresheet PDF ball, favicon.ico 48 px and up |
+| `ball.svg` | Small-size cut: heavier seams (50 of 512), on a white disc | The serve indicator and the scoresheet / PDF ball (`src/ball_fallback.png` = `BRAND.ballPng`, imported so its URL is content-hashed; 20 to 100 px, also on dark), `public/ball.png`, favicon.ico 48 px and up |
 | `favicon.svg` | Smallest cut: 4 seams instead of 6 (only the red group keeps its parallel seam), on a white disc | Browser tab icon (`public/favicon.svg`), favicon.ico 16 and 32 px |
 | `icon-tile.svg` | White rounded tile with a stone-200 hairline, the ball inside the adaptive-icon safe zone | PWA `any` icons, the store icon (fastlane, F-Droid) |
 | `adaptive-foreground.svg` | Android adaptive foreground: the ball on the 108 dp canvas (radius 120 of 512, about 70 % of the 72 dp launcher circle like the system icons; safe circle 156.4) | `mipmap-*/ic_launcher_foreground.png`, Android 12+ splash |
 | `adaptive-monochrome.svg` | The same in black, a little smaller (radius 108), as themed glyphs are | `mipmap-*/ic_launcher_monochrome.png`, the Android 13+ themed icon |
 | `icon-desktop.svg` | Inset tile, bigger ball | Windows / Linux app icon (Tauri `src-tauri/icons`, Electron), 48 px and up |
 | `icon-desktop-small.svg` | Fuller tile, 4-seam ball | The same at 16, 24 and 32 px |
-| `lockup.svg` | Ball + "OpenVolley" in one line, ink | Manager and console headers, the PDF header (`public/openvolley_logo.png`) |
+| `lockup.svg` | Ball + "OpenVolley" in one line, ink | Manager and console headers, the scoresheet / PDF header top left (`src/assets/brand/openvolley_lockup.png` = `BRAND.lockupPng`), `public/openvolley_logo.png` |
 | `lockup-dark.svg` | The same for dark backgrounds | |
 | `lockup-stacked.svg` | Ball above "OpenVolley" | Home screen, referee idle screen, Android splash |
 | `geometry.py` | The ball's geometry; writes the ball-only SVGs above | Redrawing the ball |

@@ -18,6 +18,7 @@ const confirm = vi.hoisted(() => ({ fn: vi.fn(async () => true) }))
 vi.mock('../../ui', async (orig) => ({ ...(await orig()), confirmDialog: (...a) => confirm.fn(...a) }))
 
 import SavedTeamPickerModal from '../SavedTeamPickerModal'
+import { PICKER_RESULTS } from '../pickerLayout'
 
 const competition = { id: 'c1', name: '2. Liga', season: '2026/27', vmLeagues: [], archived: false }
 const row = (id, name, over = {}) => ({
@@ -59,5 +60,23 @@ describe('SavedTeamPickerModal', () => {
     expect(onPick).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'VBC Test' }))
     await waitFor(() => expect(onPick).toHaveBeenCalled())
+  })
+
+  it('keeps one box while the teams load and after (fixed result area, offline note inside it)', async () => {
+    render(<SavedTeamPickerModal open onClose={() => {}} onPick={() => {}} userId="u1" access={{ canReadTeams: true }} roster={[]} bench={[]} />)
+    const panel = screen.getByRole('dialog')
+    const panelClass = panel.className
+    expect(panel.className).toMatch(/(^|\s)w-full(\s|$)/)
+    expect(panel.className).toMatch(/(^|\s)max-w-lg(\s|$)/)
+    const results = screen.getByTestId('saved-team-results')
+    const fixed = PICKER_RESULTS.split(' ')
+    for (const cls of fixed) expect(results.classList.contains(cls)).toBe(true)
+    expect(results.querySelector('[role="status"]')).not.toBeNull() // skeleton while loading
+
+    expect(await screen.findByText('VBC Test')).toBeInTheDocument()
+    const after = screen.getByTestId('saved-team-results')
+    for (const cls of fixed) expect(after.classList.contains(cls)).toBe(true)
+    expect(after.contains(screen.getByTestId('saved-teams-offline'))).toBe(true)
+    expect(screen.getByRole('dialog').className).toBe(panelClass)
   })
 })

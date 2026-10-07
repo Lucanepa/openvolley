@@ -5,7 +5,7 @@ import { getCloudApiUrl } from '../utils/backendConfig'
 import { openAppWindow } from '../utils/openAppWindow'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { Check, Paperclip, Send, X } from 'lucide-react'
-import { Button, cn, FOCUS_RING, IconButton } from '../ui'
+import { Button, cn, FOCUS_RING, IconButton, Select } from '../ui'
 
 const CONTACT_TYPES = ['support', 'feedback', 'request']
 
@@ -42,12 +42,14 @@ function Dropdown({ label, value, onChange, options, placeholder, t, translation
   return (
     <label className="mb-4 block">
       <span className={LABEL_CLS}>{label}</span>
-      <select
+      <Select
+        size="lg"
+        block
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-label={label}
         required={required}
-        className={cn(CONTROL_CLS, 'h-11 cursor-pointer')}
+        className="border-stone-300 focus:border-stone-300 focus:ring-red-500"
       >
         <option value="">{placeholder}</option>
         {options.map(opt => (
@@ -58,7 +60,7 @@ function Dropdown({ label, value, onChange, options, placeholder, t, translation
             }
           </option>
         ))}
-      </select>
+      </Select>
     </label>
   )
 }

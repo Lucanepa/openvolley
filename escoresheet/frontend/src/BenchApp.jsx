@@ -11,7 +11,9 @@ import { loadMatchList } from './utils/matchListSource'
 import ballFallback from './ball_fallback.png'
 
 // Primary ball image (with a bundled copy as fallback)
-const ballImage = `${import.meta.env.BASE_URL}ball.png`
+// The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
+// stay cached (old green ball) after an update
+const ballImage = ballFallback
 import { supabase } from './lib/supabaseClient'
 import { apiFrom } from './lib/apiClient'
 import { CalendarX2, ChevronRight, Loader2, RefreshCw } from 'lucide-react'
@@ -550,12 +552,12 @@ export default function BenchApp() {
     try {
       // Validate PIN server-side (no local IndexedDB), like RefereeApp: the
       // backend's Supabase check (the bench lists Supabase matches) and the LAN
-      // relay. LAN first when the user chose WebSocket mode or the match list
-      // came from the LAN relay.
+      // relay. LAN first when the user chose WebSocket mode or the match
+      // came from the LAN relay (its row in a merged list, else the list).
       const pin = pinInput.trim()
       const result = await validateBenchPin(pin, selectedTeam, {
         connectionMode,
-        preferLan: activeConnection === 'websocket'
+        preferLan: (selectedMatch?.listSource || activeConnection) === 'websocket'
       })
 
       if (result?.success && result.match) {

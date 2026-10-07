@@ -1,5 +1,26 @@
 import { describe, it, expect } from 'vitest'
-import { getFirstServeForSet, getSetResult, isDecidingSet, scoreFromPointEvents } from '../rules'
+import { getFirstServeForSet, getSetResult, isDecidingSet, scoreFromPointEvents, getSideAForSet } from '../rules'
+
+describe('getSideAForSet', () => {
+  it('odd sets A left, even sets A right', () => {
+    expect(getSideAForSet(1, {})).toBe('left')
+    expect(getSideAForSet(2, {})).toBe('right')
+    expect(getSideAForSet(5, {})).toBe('left')
+  })
+
+  it('set 5 follows the coin toss left team (A/B), before and after the 8-point switch', () => {
+    expect(getSideAForSet(5, { set5LeftTeam: 'B' })).toBe('right')
+    expect(getSideAForSet(5, { set5LeftTeam: 'A' })).toBe('left')
+    expect(getSideAForSet(5, { set5LeftTeam: 'B', set5CourtSwitched: true })).toBe('left')
+    // set5LeftTeam only matters in set 5
+    expect(getSideAForSet(3, { set5LeftTeam: 'B' })).toBe('left')
+  })
+
+  it('a manual override (left team A/B) wins', () => {
+    expect(getSideAForSet(2, { setLeftTeamOverrides: { 2: 'A' } })).toBe('left')
+    expect(getSideAForSet(5, { setLeftTeamOverrides: { 5: 'B' }, set5LeftTeam: 'A' })).toBe('right')
+  })
+})
 
 describe('getFirstServeForSet', () => {
   it('set 1 uses match.firstServe', () => {

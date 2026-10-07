@@ -322,7 +322,7 @@ export default function PhoneSignPanel({ transports, slot, matchKey = null, cont
               <figure className="flex flex-col items-center gap-1 rounded-xl border border-stone-200/70 bg-stone-50/60 p-2" data-testid="phone-sign-wifi-qr">
                 <span className="rounded-lg bg-white p-2"><QRCodeSVG value={wifiQr} size={132} level="M" marginSize={1} /></span>
                 <figcaption className="text-center text-xs text-stone-600">
-                  <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t('connectTablets.step1', 'Step 1')}</span>
+                  <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t('phoneSign.step1')}</span>
                   <span className="inline-flex items-center gap-1 font-semibold text-stone-800"><Wifi size={12} aria-hidden="true" />{t('phoneSign.joinWifiFirst')}</span>
                   <span className="block font-mono">{current.wifi.ssid}</span>
                 </figcaption>
@@ -340,7 +340,7 @@ export default function PhoneSignPanel({ transports, slot, matchKey = null, cont
                   <Smartphone size={28} aria-hidden="true" />
                 </div>
               )}
-              {wifiQr && <figcaption className="text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t('connectTablets.step2', 'Step 2')}</figcaption>}
+              {wifiQr && <figcaption className="text-[11px] font-semibold uppercase tracking-[0.14em] text-stone-400">{t('phoneSign.step2')}</figcaption>}
             </figure>
           </div>
 

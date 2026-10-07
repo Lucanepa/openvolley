@@ -10,7 +10,7 @@ import { describeScoresheetLoadError, findOwnScoresheet, parseScoresheetName, re
 // Initialize Dexie database (same as main app)
 import { db } from '../src/db/db';
 import { ClipboardIcon } from '../src/components/icons';
-import { closeAppWindow, getOpenerWindow, isInAppView } from '../src/utils/appWindowGuest';
+import { closeAppWindow, deliverPdfToOpener, getOpenerWindow, isInAppView } from '../src/utils/appWindowGuest';
 import { openAppWindow } from '../src/utils/openAppWindow';
 
 // Opened by the scorer app (a popup / app window, or the Android in-app view)?
@@ -351,8 +351,11 @@ const LiveScoresheet: React.FC<{ initialMatchData: any; action: 'preview' | 'pri
     events: events || [],
     sanctions: []
   };
+  // Every query has answered (undefined = still loading): an automatic save /
+  // getBlob waits for this, so the file name and the sheet have the teams.
+  const dataReady = [match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events].every(v => v !== undefined);
 
-  return <App matchData={liveMatchData} autoAction={action} />;
+  return <App matchData={liveMatchData} autoAction={action} dataReady={dataReady} matchMissing={isMatchDeleted} />;
 };
 
 // Static scoresheet component (fallback when no matchId available)
@@ -715,6 +718,11 @@ class ErrorBoundary extends React.Component<
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('Scoresheet Error Boundary caught:', error, errorInfo);
     sendErrorToParent(error, errorInfo.componentStack);
+    // The match-end approval waits for this window's PDF (?action=getBlob): tell it
+    // now that there will be none, instead of letting it wait for its timeout
+    if (initialAction === 'getBlob') {
+      deliverPdfToOpener(null).catch(() => { /* opener gone */ });
+    }
   }
 
   render() {

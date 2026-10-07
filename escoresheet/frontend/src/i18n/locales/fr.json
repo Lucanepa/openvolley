@@ -97,6 +97,26 @@
     "connectionChecks": "Vérification des connexions",
     "proceedAnyway": "Continuer quand même"
   },
+  "rosterLive": {
+    "pos": "Pos.",
+    "posTitle": "Position sur le terrain",
+    "sanctions": "Sanctions",
+    "team": "Équipe",
+    "teamSanctions": "Sanctions d'équipe",
+    "server": "Serveur",
+    "gameCaptain": "Capitaine de jeu",
+    "gameCaptainShort": "CJ",
+    "setScore": "Set {{set}}, {{score}}",
+    "delayShort": "R",
+    "improperRequestShort": "DI",
+    "out": {
+      "disqualified": "Disqualifié : ne peut plus jouer jusqu'à la fin du match",
+      "expelled": "Expulsé : ne peut plus jouer dans ce set",
+      "exceptional": "Remplacement exceptionnel : ne peut plus jouer jusqu'à la fin du match",
+      "unable": "Libéro dans l'incapacité de jouer"
+    },
+    "injured": "Blessé"
+  },
   "roster": {
     "title": "Effectif",
     "titleWithTeam": "{{team}} - effectif",
@@ -120,7 +140,7 @@
     "libero2": "L2",
     "liberoFull1": "Libéro 1",
     "liberoFull2": "Libéro 2",
-    "none": "aucun",
+    "none": "Aucun",
     "duplicateNumber": "Numéro de maillot déjà utilisé !",
     "signatures": "Signatures",
     "signatureTitle": "Signature {{role}} - {{team}}",
@@ -196,6 +216,7 @@
     "delete": "Supprimer"
   },
   "refereeSelector": {
+    "title": "Base de données des arbitres",
     "searchReferees": "Rechercher arbitres...",
     "connectToInternet": "Connectez-vous à internet pour voir l'historique des arbitres",
     "noRefereesFound": "Aucun arbitre trouvé",
@@ -480,7 +501,7 @@
       "dragInstruction": "Veuillez écrire le numéro, le faire glisser et le déposer, ou cliquer sur le joueur disponible pour remplir chacune des positions disponibles",
       "clickOrDragTooltip": "Cliquer ou faire glisser pour assigner une position",
       "undoLastEdit": "Annuler la dernière modification",
-      "clearLineup": "Une ligne claire",
+      "clearLineup": "Effacer la composition",
       "rotate": "Rotation",
       "rotateClockwise": "Rotation dans le sens des aiguilles d'une montre",
       "rotateCounterclockwise": "Rotation dans le sens inverse des aiguilles d'une montre",
@@ -488,7 +509,16 @@
       "confirm": "Confirmer",
       "close": "Fermer",
       "modify": "Modifier",
-      "positionInput": "Joueur en position {{pos}}"
+      "positionInput": "Joueur en position {{pos}}",
+      "errors": {
+        "required": "Obligatoire",
+        "duplicate": "En double",
+        "notOnRoster": "Pas sur la feuille",
+        "libero": "Libéro interdit",
+        "disqualified": "Disqualifié",
+        "exceptionallySubstituted": "Remplacement exceptionnel",
+        "saveFailed": "Échec de l’enregistrement"
+      }
     },
     "lastAction": "Dernière action :",
     "keybindings": {
@@ -550,10 +580,12 @@
       "confirmPoint": "Confirmer le point",
       "confirmSanction": "Confirmer la sanction",
       "confirmUndo": "Confirmer l'annulation",
-      "confirmTimeout": "Délai de confirmation",
+      "confirmReplay": "Rejouer l'échange ?",
+      "confirmReplayBody": "Aucun point n'est marqué et la même équipe sert à nouveau.",
       "decisionChange": "Changement de décision",
       "exceptionalSubstitution": "Remplacement exceptionnel",
       "exceptionalSubPlayerCantPlay": "Remplacement exceptionnel - le joueur ne peut plus participer",
+      "substitutionLimitImproperRequest": "L'équipe a utilisé ses 6 remplacements dans ce set : une nouvelle demande de remplacement est une demande irrégulière.",
       "substituteWithEligible": "Remplacer par un joueur éligible sur le banc",
       "liberoRedesignation": "Nouvelle désignation libéro",
       "courtSwitchRequired": "Changement de côté requis",
@@ -566,7 +598,6 @@
       "scoresheetAlreadyOpen": "eScoresheet déjà ouverte",
       "remarksRecording": "Enregistrement des remarques",
       "sanctionsAndResults": "Sanctions et résultats",
-      "confirmSecondTimeout": "Confirmer la demande de {{ordinal}} temps mort ?",
       "liberoOut": "Libéro SORT",
       "liberoIn": "Libéro ENTRE",
       "playerReturns": "Retour du joueur",
@@ -614,14 +645,11 @@
     "confirm": {
       "yesStartRally": "Oui, démarrer l'échange",
       "yesAwardPoint": "Oui, attribuer le point",
-      "yesTimeout": "Oui, délai d'attente",
       "apply": "Appliquer",
       "rallyStartedQuickly": "Échange démarré très rapidement",
       "areYouSureRallyStarted": "Êtes-vous sûr que l'échange a réellement commencé ?",
       "pointAwardedQuickly": "Point attribué très rapidement",
-      "areYouSureAwardPoint": "Êtes-vous sûr que le point doit être attribué à {{team}} ?",
-      "timeoutAlreadyTaken": "Cette équipe a déjà utilisé un temps mort dans ce set.",
-      "areYouSureAnotherTimeout": "Êtes-vous sûr de vouloir appeler un autre délai d'attente pour {{team}} ?"
+      "areYouSureAwardPoint": "Êtes-vous sûr que le point doit être attribué à {{team}} ?"
     },
     "menu": {
       "scoresheet": "eScoresheet",
@@ -846,6 +874,24 @@
     "toolbar": {
       "hide": "Masquer la barre d'outils",
       "show": "Afficher la barre d'outils"
+    },
+    "confirmFailed": "Cela n'a pas été enregistré. Vérifiez la feuille de match et réessayez.",
+    "timeoutRequest": {
+      "title": "Temps mort — {{team}}",
+      "first": "Temps mort 1 sur 2 de ce set pour {{team}}.",
+      "second": "Deuxième temps mort de ce set pour {{team}} (1 sur 2 déjà utilisé).",
+      "consecutive": "{{team}} a déjà pris un temps mort pendant cette interruption (aucun échange depuis). Enregistrer son deuxième temps mort ?",
+      "confirmConsecutive": "Oui, deuxième temps mort",
+      "notRecorded": "Le temps mort n'a pas été enregistré. Réessayez."
+    },
+    "teamSanctionConfirm": {
+      "thirdTimeout": "{{team}} a utilisé ses deux temps morts de ce set. Une troisième demande est une demande irrégulière.",
+      "applyImproperRequest": "Enregistrer une demande irrégulière pour {{team}} ?",
+      "applyDelayWarning": "Enregistrer un avertissement pour retard pour {{team}} ?",
+      "applyDelayPenalty": "Enregistrer une pénalité pour retard pour {{team}} ?",
+      "repeatedImproperRequest": "L'équipe a déjà une demande irrégulière : celle-ci compte comme un retard.",
+      "repeatedDelay": "L'équipe a déjà un avertissement pour retard : ce retard est une pénalité.",
+      "pointToOpponent": "Point et service pour {{opponent}}."
     }
   },
   "settings": {
@@ -1254,7 +1300,11 @@
     "reopenAdminTitle": "Rouvrir ce match clôturé ?",
     "reopenAdminBody": "Il repasse à « terminé » sur le serveur et peut être approuvé à nouveau. Ceci est consigné dans le journal.",
     "reopenReason": "Motif",
-    "reopenCheckFailed": "Impossible de vérifier le match sur le serveur – merci de réessayer."
+    "reopenCheckFailed": "Impossible de vérifier le match sur le serveur – merci de réessayer.",
+    "resign": "Signer à nouveau",
+    "clearSignature": "Effacer",
+    "signatureLocked": "Match approuvé ou clôturé : les signatures ne changent plus",
+    "signatureSaveFailed": "La signature n’a pas pu être enregistrée. Réessayez."
   },
   "scoresheetPdf": {
     "zoomOut": "Réduire",
@@ -1277,7 +1327,18 @@
     "backToScoresheet": "Retour à la eScoresheet",
     "lcs": "Feuille de contrôle des libéros",
     "lcsTooltip": "Afficher la feuille de contrôle des libéros",
-    "pdfFailed": "Le PDF n'a pas pu être créé sur cet appareil."
+    "pdfFailed": "Le PDF n'a pas pu être créé sur cet appareil.",
+    "matchNotFound": "Ce match n'est pas sur cet appareil : il n'y a pas de feuille de match à enregistrer.",
+    "pdfInvalid": "Le PDF n'a pas pu être créé correctement. Veuillez réessayer.",
+    "pdfSavedAt": "PDF enregistré :",
+    "savingFile": "Enregistrement de {{fileName}} dans le dossier Téléchargements...",
+    "pdfDownloaded": "Téléchargé dans le dossier de téléchargement du navigateur :",
+    "pdfHandedToApp": "L'app enregistre {{fileName}} : la barre en haut indique où.",
+    "openFile": "Ouvrir le fichier",
+    "showInFolder": "Afficher dans le dossier",
+    "dismiss": "Fermer",
+    "fileActionFailed": "Le fichier n'a pas pu être ouvert d'ici. Il se trouve dans : {{path}}",
+    "checkTheMatch": "Vérifier le match avant de l'approuver :"
   },
   "supportFeedback": {
     "title": "Support & avis",
@@ -1781,24 +1842,20 @@
     "account": "Compte",
     "address": "Adresse",
     "allowRole": "Autoriser {{role}}",
-    "btAlternative": "Utilisez plutôt « Créer un Wi-Fi pour les tablettes » dans l’onglet LAN : cela fonctionne avec toutes les tablettes.",
+    "btAlternative": "Choisissez plutôt « Wi-Fi de cet ordinateur » : cela fonctionne avec toutes les tablettes.",
     "btAndroid": "Android : Paramètres › Bluetooth › associer « {{name}} », toucher ⚙ à côté et activer « Accès Internet ». Si la connexion échoue, désactiver le Wi-Fi de la tablette.",
     "btChecking": "Vérification du Bluetooth…",
     "btDesktopOnly": "L’app OpenVolley pour ordinateur sous Linux peut ouvrir un réseau Bluetooth pour les tablettes. Windows ne le peut pas (il peut seulement en rejoindre un).",
-    "btFound": "Réseau Bluetooth trouvé : les tablettes associées à cet ordinateur ouvrent les liens ci-dessous.",
+    "btFound": "Réseau Bluetooth trouvé : les tablettes associées à cet ordinateur peuvent scanner les codes.",
     "btIpad": "iPad (peut ne pas fonctionner) : Réglages › Bluetooth › toucher « {{name}} ».",
-    "btLater": "Prévu : une liaison Bluetooth directe dans l’app Android (les navigateurs des tablettes n’ont pas accès au Bluetooth).",
     "btStart": "Démarrer le réseau Bluetooth",
     "btStop": "Arrêter le réseau Bluetooth",
     "btThen": "Puis scanner le code du rôle. Le Bluetooth est lent et accepte environ 6 appareils.",
     "btVisible": "Visible pour l’association pendant 3 minutes",
-    "cloudBlocked": "La synchronisation cloud est désactivée pour cette fenêtre (elle ne tourne pas sur le port 5173). Utilisez l’onglet LAN.",
-    "connection": "Connexion",
+    "cloudBlocked": "La synchronisation cloud est désactivée pour cette fenêtre (elle ne tourne pas sur le port 5173). Choisissez « Wi-Fi de la salle » ou « Wi-Fi de cet ordinateur ».",
     "copied": "Copié",
-    "copy": "Copier",
-    "createWifiFirst": "Créez d’abord le Wi-Fi",
-    "description": "Arbitre, bancs et livescore suivent ce match sur leur propre tablette. Choisissez comment les tablettes rejoignent cet ordinateur.",
-    "devices": "Connectés maintenant : {{count}}.",
+    "createWifiFirst": "Créez d’abord le Wi-Fi (étape 1)",
+    "description": "Arbitre et bancs suivent ce match sur leur propre tablette. Trois étapes : choisir la connexion, choisir une tablette, scanner et saisir son PIN.",
     "err": {
       "bluetoothFailed": "Le réseau Bluetooth n’a pas pu démarrer.",
       "bluetoothOff": "Le Bluetooth est désactivé et n’a pas pu être activé.",
@@ -1834,44 +1891,31 @@
     "joinAndroid": "Android : Paramètres › Wi-Fi › icône QR (ou l’appareil photo), scanner le code Wi-Fi.",
     "joinIpad": "iPad : ouvrir l’Appareil photo, viser le code Wi-Fi, toucher « Rejoindre ».",
     "joinNoInternet": "« Pas d’internet » ? Choisir « Rester connecté », puis scanner le code du rôle.",
-    "joinWifi": "Rejoindre le Wi-Fi",
     "kind": {
       "ethernet": "Ethernet",
       "other": "Réseau",
       "wifi": "Wi-Fi",
       "hotspot": "Point d’accès de cet ordinateur"
     },
-    "lanHall": "Wi-Fi de la salle",
-    "lanLaptop": "Créer un Wi-Fi pour les tablettes",
-    "lanNeedsServer": "Les tablettes du réseau local ont besoin de l’app OpenVolley pour ordinateur (ou d’un boîtier de salle) sur cet ordinateur : elle sert les pages arbitre, banc et livescore. Dans un navigateur, utilisez l’onglet Serveur.",
-    "lanWhich": "Quel Wi-Fi",
+    "lanNeedsServer": "Les tablettes du réseau local ont besoin de l’app OpenVolley pour ordinateur (ou d’un boîtier de salle) sur cet ordinateur : elle sert les pages arbitre, banc et livescore. Dans un navigateur, choisissez « Internet ».",
     "loading": "Lecture du serveur local…",
     "needsAdmin": "Votre système peut demander un mot de passe administrateur.",
     "needsDesktop": "Nécessite l’app pour ordinateur",
     "noAddress": "Pas de réseau de salle",
     "noHallNetwork": "Cet ordinateur n’est sur aucun réseau. Connectez-le au Wi-Fi de la salle, ou créez un Wi-Fi pour les tablettes.",
-    "noLinkYet": "Pas encore de lien",
     "notHere": "Indisponible sur cet ordinateur",
     "notSignedIn": "Non connecté",
-    "openMatchFirst": "Ouvrez un match pour obtenir ses liens et ses PIN.",
-    "pinHint": "Chaque tablette demande son PIN : lisez-le ici. Les liens et les codes QR ne contiennent jamais de PIN. Désactivez un rôle pour bloquer sa tablette.",
-    "pinTitle": "La tablette demande ce PIN. Lisez-le ; il n’est jamais dans le lien.",
-    "qr": "QR",
     "role": {
-      "bench_away": "Banc (visiteurs)",
-      "bench_home": "Banc (recevants)",
+      "bench_away": "Banc visiteurs",
+      "bench_home": "Banc recevants",
       "livescore": "Livescore",
       "main": "Feuille de match",
       "referee": "Arbitre"
     },
-    "roleOff": "Désactivé",
-    "serverHint": "Les tablettes ont besoin d’internet (Wi-Fi de la salle ou données mobiles). Chaque tablette demande ensuite son PIN.",
-    "serverNeedsSignIn": "Les tablettes n’accèdent à ce match via le cloud qu’une fois que vous êtes connecté et que le match est synchronisé.",
+    "serverHint": "Les tablettes ont besoin d’internet (Wi-Fi de la salle ou données mobiles).",
     "signIn": "Se connecter",
     "signedIn": "Connecté",
-    "startBtFirst": "Démarrez d’abord le réseau Bluetooth",
-    "step1": "Étape 1",
-    "step2": "Étape 2",
+    "startBtFirst": "Démarrez d’abord le réseau Bluetooth (étape 1)",
     "sync": {
       "authRequired": "Connexion requise",
       "connecting": "Connexion…",
@@ -1882,11 +1926,6 @@
       "syncing": "Synchronisation…"
     },
     "syncLabel": "Synchronisation du match",
-    "tab": {
-      "bluetooth": "Bluetooth",
-      "lan": "LAN",
-      "server": "Serveur"
-    },
     "takesOverWifi": "Cet ordinateur quitte son Wi-Fi actuel tant que le Wi-Fi des tablettes est actif. La synchronisation cloud est en pause, sauf s’il est relié par câble réseau.",
     "thisComputer": "cet ordinateur",
     "title": "Connecter des tablettes",
@@ -1895,7 +1934,7 @@
     "networkName": "Nom du Wi-Fi",
     "networkPassword": "Mot de passe",
     "newPassword": "Nouveau mot de passe",
-    "hotspotExternal": "Le point d’accès de cet ordinateur a été activé dans les réglages du système. Les tablettes connectées peuvent utiliser les liens ci-dessous ; désactivez-le là-bas.",
+    "hotspotExternal": "Le point d’accès de cet ordinateur a été activé dans les réglages du système. Les tablettes connectées peuvent scanner les codes ; désactivez-le là-bas.",
     "windowsFirewall": "Les tablettes rejoignent le Wi-Fi mais la page ne se charge pas ? Sécurité Windows › Pare-feu et protection du réseau › Autoriser une application via le pare-feu › OpenVolley › cochez « Public ».",
     "btExternal": "Ce réseau Bluetooth n’a pas été lancé par cette session de l’app. Arrêtez-le dans les réglages réseau du système.",
     "confirm": {
@@ -1906,7 +1945,79 @@
       "stopWifiTitle": "Arrêter le Wi-Fi des tablettes ?",
       "stopMessage": "Les tablettes connectées perdent la connexion.",
       "stopBtTitle": "Arrêter le réseau Bluetooth ?"
-    }
+    },
+    "card": {
+      "connected": "Connectée",
+      "connectedSince": "Connectée · depuis {{time}}",
+      "many": "{{count}} tablettes utilisent ce PIN",
+      "nopin": "Activé · pas encore de PIN",
+      "off": "Désactivé · activez pour afficher son PIN",
+      "public": "Public · sans PIN",
+      "remote": "Activé · statut invisible via internet",
+      "unknown": "Statut en direct indisponible",
+      "waiting": "En attente de la tablette…"
+    },
+    "copyLink": "Copier le lien",
+    "done": "Terminé",
+    "footer": {
+      "connected": "Connectées : {{roles}} · {{count}} sur {{total}} tablettes",
+      "connectedOnly": "Connectées : {{roles}}",
+      "none": "Aucune tablette connectée pour l’instant",
+      "thisNetworkOnly": "Le statut en direct ne montre que les tablettes de ce réseau"
+    },
+    "hallJoin": "Les tablettes rejoignent le Wi-Fi « {{network}} ».",
+    "howToJoin": "Comment se connecter",
+    "howToPair": "Comment associer",
+    "isolationTip": "La page ne se charge pas sur la tablette ? Certains Wi-Fi de salle isolent les appareils : choisissez plutôt « Wi-Fi de cet ordinateur » ou « Internet ».",
+    "noMatchText": "Les codes et PIN appartiennent à un match.",
+    "noMatchTitle": "Ouvrez d’abord un match",
+    "otherScorer": "Marqueur sur un autre ordinateur",
+    "otherScorerText": "Ouvre une app de marque séparée avec ses propres matchs. Elle ne suit pas ce match.",
+    "reason": {
+      "btNotHere": "Indisponible sur cet ordinateur",
+      "cannotCreateWifi": "Cet ordinateur ne peut pas créer de Wi-Fi",
+      "cloudBlocked": "Le cloud est désactivé dans cette fenêtre",
+      "needsDesktop": "Nécessite l’app pour ordinateur (Windows, Linux)",
+      "needsLinuxDesktop": "Nécessite l’app pour ordinateur sous Linux",
+      "needsServer": "Nécessite l’app pour ordinateur ou un boîtier de salle",
+      "noNetwork": "Cet ordinateur n’est sur aucun réseau",
+      "windowsBluetooth": "Windows ne peut pas héberger de réseau Bluetooth"
+    },
+    "recommended": "Recommandé",
+    "scan": {
+      "connected": "Tablette connectée à {{time}} (…{{ip}})",
+      "hideAddress": "Masquer l’adresse",
+      "instruction": "Scannez avec la caméra de la tablette, puis saisissez ce PIN :",
+      "many": "{{count}} tablettes ont saisi ce PIN",
+      "noPin": "Cette tablette n’a pas encore de PIN. Définissez-en un dans Préparer le match › Connexions.",
+      "noPinInLink": "Les liens et codes ne contiennent jamais le PIN.",
+      "off": "{{role}} est désactivé. Une tablette qui scanne maintenant reçoit « PIN incorrect ».",
+      "public": "Scannez avec n’importe quel téléphone ou écran. Pas de PIN.",
+      "remote": "Demandez-leur de confirmer qu’ils sont connectés",
+      "title": "Tablette : {{role}}",
+      "typeAddress": "Saisir l’adresse",
+      "waiting": "En attente de la tablette…"
+    },
+    "serverNotSynced": "Le match n’est pas encore dans le cloud. Les tablettes le trouvent dès que la synchronisation affiche « Synchronisé ».",
+    "serverSignIn": "Connectez-vous pour que les tablettes trouvent ce match via internet.",
+    "signInFirst": "Connectez-vous d’abord (étape 1)",
+    "step": {
+      "connect": "Comment les tablettes se connectent",
+      "scan": "Scanner, puis saisir le PIN",
+      "tablet": "Quelle tablette"
+    },
+    "thisComputerAt": "Cet ordinateur : {{ip}} ({{kind}})",
+    "transport": {
+      "bluetooth": "Bluetooth",
+      "bluetoothWhen": "Dernier recours si aucun Wi-Fi ne marche. Linux uniquement.",
+      "hall": "Wi-Fi de la salle",
+      "hallWhen": "La salle a du Wi-Fi et cet ordinateur y est connecté.",
+      "laptop": "Wi-Fi de cet ordinateur",
+      "laptopWhen": "Pas de Wi-Fi dans la salle, ou les tablettes n’y atteignent pas cet ordinateur. Sans internet.",
+      "server": "Internet",
+      "serverWhen": "Les tablettes ont des données mobiles, ou le Wi-Fi de la salle isole les appareils. Connexion requise."
+    },
+    "wifiQrCaption": "Scannez d’abord pour rejoindre ce Wi-Fi"
   },
   "startupConnectivity": {
     "cloudWaits": "Pas d’internet : la synchronisation cloud démarre dès que cet appareil est en ligne. Les matchs restent ici et sur le serveur local.",
@@ -2260,7 +2371,10 @@
     "pdfSaveFailed": "Le PDF n'a pas pu être enregistré : {{error}}",
     "savingPdf": "Enregistrement du PDF...",
     "downloadFailed": "Le téléchargement n'a pas abouti.",
-    "downloadsFolder": "Téléchargements"
+    "downloadsFolder": "Téléchargements",
+    "openPdf": "Ouvrir",
+    "sharePdf": "Partager",
+    "pdfActionFailed": "Il n'a pas pu être ouvert : {{error}}"
   },
   "access": {
     "pendingTitle": "Ton compte attend une validation",
@@ -2650,6 +2764,11 @@
     "quitWifiBluetooth": "Le Wi-Fi et le réseau Bluetooth de l'ordinateur pour les tablettes seront arrêtés.",
     "quitConfirm": "Quitter OpenVolley",
     "keepRunning": "Laisser tourner",
+    "quitAlsoCloses": "Ferme aussi : {{windows}}",
+    "quitWindowGroup_one": "{{name}} ({{count}} fenêtre)",
+    "quitWindowGroup_other": "{{name}} ({{count}} fenêtres)",
+    "windowScoresheet": "Feuille de match",
+    "quitPdfBusy": "Un PDF est encore en cours d'enregistrement dans la fenêtre de la feuille de match.",
     "closeNoticeTitle": "OpenVolley continue dans la zone de notification",
     "closeNoticeBody": "Les tablettes restent connectées. Rouvrez-le avec l'icône OpenVolley de la zone de notification ; pour quitter, choisissez « Quitter OpenVolley… » dans son menu.",
     "closeNoticeHide": "Masquer la fenêtre",
@@ -3192,6 +3311,18 @@
         "referee2": "2e arbitre",
         "scorer": "Marqueur"
       }
+    },
+    "approveWithPin": "Approuver avec le PIN",
+    "why": {
+      "signOnly": "Signature seulement : le marqueur adjoint n’approuve pas avec un PIN",
+      "locked": "Match approuvé ou clôturé : les approbations ne changent plus",
+      "beach": "L’approbation avec un PIN n’existe pas pour les matchs de beach-volley",
+      "localMatch": "Ce match n’est pas enregistré en ligne : l’approbation avec un PIN demande un match en ligne",
+      "noCloud": "Pas de connexion en ligne sur cet appareil : signer à la main",
+      "serverOff": "L’approbation avec un PIN est désactivée sur ce serveur",
+      "signedOut": "Connectez-vous sur cet appareil pour approuver avec un PIN",
+      "callerRole": "Le compte de cet appareil ne peut pas envoyer d’approbations : il lui faut le rôle de marqueur ou d’arbitre",
+      "offline": "Hors ligne : l’approbation avec un PIN revient dès que la connexion revient"
     }
   },
   "legal": {
@@ -3201,6 +3332,31 @@
     "impressum": "Mentions légales",
     "opensource": "Avis open source",
     "signUpConsent": "La création d’un compte vaut acceptation des <terms>conditions d’utilisation</terms> et de la <privacy>déclaration de protection des données</privacy>."
+  },
+  "picker": {
+    "calendar": "Calendrier",
+    "openCalendar": "Ouvrir le calendrier",
+    "prevMonth": "Mois précédent",
+    "nextMonth": "Mois suivant",
+    "month": "Mois",
+    "year": "Année",
+    "today": "Aujourd’hui",
+    "clear": "Effacer",
+    "done": "Terminé",
+    "time": "Heure",
+    "date": "Date",
+    "chooseTime": "Choisir l’heure",
+    "hours": "Heures",
+    "minutes": "Minutes",
+    "now": "Maintenant",
+    "datePlaceholder": "JJ.MM.AAAA",
+    "timePlaceholder": "HH:MM",
+    "invalidDate": "Saisir une date au format JJ.MM.AAAA.",
+    "invalidTime": "Saisir une heure au format HH:MM.",
+    "dateBeforeMin": "Au plus tôt le {{date}}.",
+    "dateAfterMax": "Au plus tard le {{date}}.",
+    "timeBeforeMin": "Au plus tôt à {{time}}.",
+    "timeAfterMax": "Au plus tard à {{time}}."
   },
   "phoneSign": {
     "signOnPhone": "Signer sur le téléphone",
@@ -3221,6 +3377,8 @@
     "expired": "Le lien a expiré. En créer un nouveau.",
     "cancelled": "La signature sur le téléphone a été annulée.",
     "joinWifiFirst": "Rejoindre d’abord ce Wi-Fi",
+    "step1": "Étape 1",
+    "step2": "Étape 2",
     "transportInternet": "Internet",
     "transportHall": "Réseau de la salle",
     "hallBlocked": "Le téléphone ne l’ouvre pas ? Certains Wi-Fi de salle isolent les appareils. Utiliser le Wi-Fi de l’ordinateur ou Internet.",

@@ -5,6 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import Dexie from 'dexie'
 import { db } from '../db/db'
 import Modal from './Modal'
+import RostersPanel from './rosters/RostersPanel'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 
 import ConnectionStatus from './ConnectionStatus'
@@ -19,10 +20,13 @@ import SignaturePad from './SignaturePad'
 import { phoneSignContext, signatureUpdate } from '../domain/phoneSignature'
 import LongPressProgressIndicator from './LongPressProgressIndicator'
 import DraggedPlayerOverlay from './DraggedPlayerOverlay'
+import { setPlayerDragImage } from '../utils/dragImage'
 import ballFallback from '../ball_fallback.png'
 
 // Primary ball image (with a bundled copy as fallback)
-const ballImage = `${import.meta.env.BASE_URL}ball.png`
+// The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
+// stay cached (old green ball) after an update
+const ballImage = ballFallback
 import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
 import { discPaint, matchDiscPaint, teamLiberoColour, markColourOn, teamBoxStyle, teamTextStyle, HEADER_SURFACE, PAGE_SURFACE } from '../utils/teamColours'
 import { useComponentLogging } from '../contexts/LoggingContext'
@@ -40,13 +44,16 @@ import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from 
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 import { defaultSetStartTime } from '../utils/setStartTime'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
-import { getSetResult, getFirstServeForSet, scoreFromPointEvents } from '../domain/rules'
+import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet } from '../domain/rules'
 import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags } from '../domain/sanctions'
+import { classifyTimeoutRequest } from '../domain/timeouts'
+import { useConfirmAction } from '../hooks/useConfirmAction'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
-import { planSubstitutionDeletion } from '../domain/substitutions'
+import { planSubstitutionDeletion, countRegularSubstitutions, classifySubstitutionRequest, MAX_SUBSTITUTIONS_PER_SET } from '../domain/substitutions'
 import { decisionChangeUndoRecord, planDecisionChangeReversal, syncJobsForEvents, syncJobsForSets } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, renumberPlayerInEvents } from '../domain/roster'
 import { appendRemark, removeRemarkLine } from '../domain/remarks'
+import { LINEUP_POSITIONS, lineupEntryErrors, lineupCandidates } from '../domain/lineupEntry'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal } from '../domain/matchEnd'
 import { swapTeamDesignation } from '../domain/coinToss'
 import { liveStateNeedsFreshSnapshot } from '../utils/livescoreModel'
@@ -56,13 +63,15 @@ import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
 import { isNativeApp } from '../utils/backendConfig'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
-import { WarningIcon, TimerIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, DownloadIcon, SettingsIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon, CardIcon } from './icons'
+import { WarningIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, DownloadIcon, SettingsIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon } from './icons'
 import { cn } from '../ui/cn.js'
 import { FOCUS_RING, Button } from '../ui/Button.jsx'
 import { ActionSheet, ActionSheetItem } from '../ui/Modal.jsx'
 import { SectionHeader } from '../ui/SectionHeader.jsx'
+import { DateField, DateTimeField } from '../ui/DateField.jsx'
 import { askConfirm } from '../utils/askConfirm.js'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
+import { ArrowUpDown, ChevronDown, Cross } from 'lucide-react'
 
 // ── volleyui chrome for the scoreboard (RESTYLE-SPEC P5) ──────────────────────
 // Only the chrome around the court takes these: the toolbar, the side-column
@@ -77,6 +86,10 @@ import { backdropDismiss } from '../ui/backdropDismiss.js'
  *  The ::before pad (12px above and below, 4px each side) grows the hit area
  *  to about 44px tall without moving the layout. */
 const SB_TOOLBAR_BTN = `relative inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-700 font-semibold tracking-normal shadow-sm hover:bg-stone-50 transition-colors cursor-pointer before:absolute before:-inset-x-1 before:-inset-y-3 before:content-[''] ${FOCUS_RING}`
+/** One size for both toolbar triggers: a fixed cqw height (the Match button's
+ *  old height) so the icon-only Scoresheet button no longer comes out shorter
+ *  than the text one; only the side padding differs. */
+const SB_TOOLBAR_BTN_SIZE = { boxSizing: 'border-box', height: '2.5cqw', fontSize: '1.28cqw', lineHeight: 1 }
 
 /** Side-column group heading (Bench, Liberos, Bench officials): the kit
  *  SectionHeader face, a name on the dark 1.5px rule. Size stays in cqw. */
@@ -127,6 +140,79 @@ const SB_ROW_DELETE = `inline-flex items-center justify-center h-11 min-w-[64px]
 /** Anchored action menu / dropdown beside a player (kit anchored menu). The
  *  scale(1.5) and the position stay inline, so targets keep their size. */
 const SB_POPOVER = 'rounded-xl border border-stone-200 bg-white shadow-card-lg text-stone-800'
+
+/**
+ * One button spec for every row of the player / libero / official popovers
+ * (court player, court libero with "Unable to play", bench player, bench
+ * libero, substitution, libero, libero-in, sanction and injury menus), so a
+ * menu never mixes heights, type sizes or icon sizes. The popovers are drawn
+ * at scale(1.5): h-8 / text-xs / size-5 are 48px / 18px / 30px on screen.
+ * Every property the legacy `button {}` rule sets is set here (box-border and
+ * py-0 too, as there is no preflight), so nothing of the scoring green leaks in.
+ */
+const SB_MENU_ITEM = `box-border flex h-8 w-full shrink-0 items-center gap-2 px-2.5 py-0 rounded-lg border text-left text-xs font-semibold leading-none tracking-normal whitespace-nowrap transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-100 disabled:border-stone-200 disabled:bg-stone-50 disabled:text-stone-500 ${FOCUS_RING}`
+/** Colour = meaning; every pair is WCAG AA (>= 4.5:1) at text-xs. */
+const SB_MENU_TONE = {
+  neutral: 'border-stone-300 bg-white text-stone-800 hover:bg-stone-50',
+  positive: 'border-emerald-700 bg-emerald-700 text-white hover:border-emerald-800 hover:bg-emerald-800',
+  'positive-soft': 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100',
+  libero: 'border-amber-300 bg-amber-50 text-stone-900 hover:bg-amber-100',
+  danger: 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100',
+  declared: 'border-orange-300 bg-orange-50 text-orange-800 hover:bg-orange-100'
+}
+/** A submenu / picker under its parent row: indented on a hairline rail, same row height. */
+const SB_MENU_SUB = 'ml-1.5 flex flex-col gap-1 border-l-2 border-stone-200 pl-2'
+const SB_MENU_CHIPS = 'ml-1.5 flex flex-wrap gap-1 border-l-2 border-stone-200 pl-2'
+
+/**
+ * A popover menu row. `icon` goes in the fixed right-hand slot; `expanded`
+ * (true/false) makes it a disclosure with a chevron there instead. `chip` is
+ * a picker button (a shirt number) sized to its label, same height and type.
+ */
+function SbMenuItem({ tone = 'neutral', icon, expanded, chip = false, className, children, ...rest }) {
+  const hasSlot = icon != null || expanded !== undefined
+  return (
+    <button
+      type="button"
+      aria-expanded={expanded}
+      className={cn(SB_MENU_ITEM, SB_MENU_TONE[tone], chip && 'w-auto min-w-10 justify-center', className)}
+      {...rest}
+    >
+      <span className={chip ? 'tabular-nums' : 'min-w-0 flex-1 truncate'}>{children}</span>
+      {hasSlot && (
+        <span aria-hidden="true" className="inline-flex size-5 shrink-0 items-center justify-center">
+          {expanded !== undefined
+            ? <ChevronDown size={16} strokeWidth={2.5} className={cn('transition-transform', expanded && 'rotate-180')} />
+            : icon}
+        </span>
+      )}
+    </button>
+  )
+}
+
+/** Official card marks sized for the menu icon slot (20px box). */
+function SbCardIcon({ kind }) {
+  const card = (colour, style) => <span className={`sanction-card ${colour}`} style={{ display: 'block', borderRadius: '2px', ...style }} />
+  if (kind === 'yellow' || kind === 'red') return card(kind, { width: '12px', height: '16px' })
+  if (kind === 'combo') {
+    return (
+      <span style={{ position: 'relative', display: 'block', width: '20px', height: '18px' }}>
+        {card('red', { position: 'absolute', right: '1px', top: '0', width: '11px', height: '15px', transform: 'rotate(8deg)' })}
+        {card('yellow', { position: 'absolute', left: '1px', top: '3px', width: '11px', height: '15px', transform: 'rotate(-8deg)' })}
+      </span>
+    )
+  }
+  // 'pair': yellow and red side by side (disqualification, the Sanction entry)
+  return (
+    <span style={{ display: 'flex', gap: '2px' }}>
+      {card('yellow', { width: '9px', height: '14px' })}
+      {card('red', { width: '9px', height: '14px' })}
+    </span>
+  )
+}
+
+/** The medical cross for injury rows. */
+const SB_INJURY_ICON = <Cross size={16} fill="currentColor" strokeWidth={1.5} />
 
 /**
  * SYNC ARCHITECTURE NOTE:
@@ -271,7 +357,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // See architecture note at top of file. All event-creating functions acquire this lock.
   const eventInProgressRef = useRef(false)
   const eventQueueRef = useRef([]) // Queue for serializing event creation
-  const confirmingTimeoutRef = useRef(false) // Prevent double-click on timeout confirmation
   const pendingRotationRef = useRef(false) // Hide serve indicator while rotation event is being written
   const [keybindingsEnabled, setKeybindingsEnabled] = useState(() => {
     const saved = localStorage.getItem('keybindingsEnabled')
@@ -314,7 +399,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [connectionModal, setConnectionModal] = useState(null) // 'referee' | 'teamA' | 'teamB' | null
   const [connectionModalPosition, setConnectionModalPosition] = useState({ x: 0, y: 0 })
   const [courtSwitchModal, setCourtSwitchModal] = useState(null) // { set, homePoints, awayPoints, teamThatScored } | null
-  const [timeoutModal, setTimeoutModal] = useState(null) // { team: 'home'|'away', countdown: number, started: boolean }
+  // { team: 'home'|'away', countdown: number, started: boolean, ordinal: 1|2, consecutive: boolean }
+  // ordinal + consecutive are taken when the request dialog opens (classifyTimeoutRequest)
+  const [timeoutModal, setTimeoutModal] = useState(null)
   // Latest values for syncLiveStateToSupabase, which is memoised on [matchId] only:
   // reading the state/prop directly froze them at mount (a stale null timeoutModal
   // made any event logged during a timeout publish timeout_active:false).
@@ -322,7 +409,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const scorerAttentionTriggerRef = useRef(scorerAttentionTrigger)
   useEffect(() => { timeoutModalRef.current = timeoutModal }, [timeoutModal])
   useEffect(() => { scorerAttentionTriggerRef.current = scorerAttentionTrigger }, [scorerAttentionTrigger])
-  const [duplicateTimeoutConfirm, setDuplicateTimeoutConfirm] = useState(null) // { team: 'home'|'away' } - confirmation for duplicate TO
   const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown: number, started: boolean, finished?: boolean } | null
   const countdownDismissedRef = useRef(false) // Track if countdown was manually dismissed
   const setEndModalDismissedRef = useRef(null) // Track setIndex where set end modal was dismissed via undo
@@ -352,7 +438,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [scoresheetErrorModal, setScoresheetErrorModal] = useState(null) // { error: string, details?: string } | null
   const [exceptionalSubstitutionModal, setExceptionalSubstitutionModal] = useState(null) // { team: 'home'|'away', position: string, playerOut: number, reason: 'expulsion'|'disqualification'|'injury' } | null
   const [substitutionDropdown, setSubstitutionDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement, isInjury?: boolean } | null
-  const [substitutionConfirm, setSubstitutionConfirm] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerOut: number, playerIn: number, isInjury?: boolean, isExceptional?: boolean, isExpelled?: boolean, isDisqualified?: boolean } | null
+  const [substitutionConfirm, setSubstitutionConfirmState] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerOut: number, playerIn: number, isInjury?: boolean, isExceptional?: boolean, isExpelled?: boolean, isDisqualified?: boolean } | null
   const [liberoDropdown, setLiberoDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'V'|'VI', playerNumber: number, element: HTMLElement } | null
   const [liberoConfirm, setLiberoConfirm] = useState(null) // { team: 'home'|'away', position: 'I'|'V'|'VI', playerOut: number, liberoIn: string } | null
   const [liberoInDropdown, setLiberoInDropdown] = useState(null) // { team: 'home'|'away', side: 'left'|'right', element: HTMLElement, x?: number, y?: number } | null
@@ -367,6 +453,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [liberoBenchActionMenu, setLiberoBenchActionMenu] = useState(null) // { team: 'home'|'away', liberoNumber: number, liberoType: string, element: HTMLElement, x: number, y: number } | null
   const [captainOnCourtModal, setCaptainOnCourtModal] = useState(null) // { team: 'home'|'away' } | null
   const [reopenSetConfirm, setReopenSetConfirm] = useState(null) // { setId: number, setIndex: number } | null
+  // Confirmation dialogs close before they write (useConfirmAction), so a write
+  // that fails must say so: the dialog is no longer there to show it
+  const onConfirmFailed = useCallback((err) => {
+    console.error('[confirm] action failed after its dialog closed', err)
+    showAlert(t('scoreboard.confirmFailed'), 'error')
+  }, [showAlert, t])
+  const runReopenSet = useConfirmAction(onConfirmFailed)
   const [setStartTimeModal, setSetStartTimeModal] = useState(null) // { setIndex: number, defaultTime: string } | null
   const [setEndTimeModal, setSetEndTimeModal] = useState(null) // { setIndex: number, winner: string, homePoints: number, awayPoints: number, defaultTime: string } | null
   const [set5SideServiceModal, setSet5SideServiceModal] = useState(null) // { setIndex: number, set4LeftTeamLabel: string, set4RightTeamLabel: string, set4ServingTeamLabel: string } | null - shown after set 4 ends
@@ -381,6 +474,26 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [sanctionSubstitutionModal, setSanctionSubstitutionModal] = useState(null) // { team, expelledPlayer, liberoOnCourt?, availableSubs, reason: 'expulsion'|'disqualification', isExceptional: boolean, position?: string } | null
   const [injuryDropdown, setInjuryDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement, x?: number, y?: number } | null
   const [playerActionMenu, setPlayerActionMenu] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement, x?: number, y?: number, canSubstitute: boolean, canEnterLibero: boolean } | null
+  // Every substitution request (court menu, bench menu, drag and drop, injury,
+  // expulsion / disqualification) opens its confirm through this setter, so the
+  // 6-per-set limit is checked in one place (FIVB 15.6): a regular request
+  // beyond it becomes an improper request (16.1.3); one for an injured /
+  // expelled / disqualified player becomes exceptional (15.7, 15.8).
+  // substitutionGuardRef is refreshed on every render with the current events.
+  const substitutionGuardRef = useRef(null)
+  const setSubstitutionConfirm = useCallback((next) => {
+    const guard = substitutionGuardRef.current
+    if (next && guard) {
+      const verdict = classifySubstitutionRequest(guard.events, next.team, guard.setIndex, next)
+      if (verdict === 'improper_request') {
+        setSubstitutionConfirmState(null)
+        guard.onImproperRequest(next.team)
+        return
+      }
+      if (verdict === 'exceptional' && !next.isExceptional) next = { ...next, isExceptional: true }
+    }
+    setSubstitutionConfirmState(next)
+  }, [])
   const [benchPlayerActionMenu, setBenchPlayerActionMenu] = useState(null) // { team: 'home'|'away', playerNumber: number, element: HTMLElement, x?: number, y?: number, canSubstitute: boolean, courtPlayerToSwapWith?: { number: number, position: string } } | null
   const [summaryTableZoom, setSummaryTableZoom] = useState(null) // { side: 'left'|'right', teamKey: 'home'|'away' } | null
 
@@ -400,6 +513,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [showHelpModal, setShowHelpModal] = useState(false)
   const [selectedHelpTopic, setSelectedHelpTopic] = useState(null)
   const [replayRallyConfirm, setReplayRallyConfirm] = useState(null) // { event: Event, description: string, selectedOption: 'swap'|'replay' } | null
+  const [replayConfirm, setReplayConfirm] = useState(false) // "Replay rally" during a rally waits for this confirmation
   const [stopMatchModal, setStopMatchModal] = useState(null) // 'select' | null - Stop the match modal selection
   const [stopMatchTeamSelect, setStopMatchTeamSelect] = useState(null) // { pendingAction: 'forfeit' } | null - Team selection for forfeit
   const [stopMatchConfirm, setStopMatchConfirm] = useState(null) // { type: 'forfeit'|'impossibility', team?: 'home'|'away' } | null - Confirmation modal
@@ -462,6 +576,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // The page's one order (shared with App's syncs, which mark it): its
   // numbers keep rising across remounts, so the tablets can order by them.
   const liveStateOrderRef = useRef(scorerLiveOrder)
+  // set_interval_started_at of the last set_end push: a set 5 setup push
+  // during the interval keeps it, so the tablets' countdown does not restart
+  const intervalStartedAtRef = useRef(null)
   // Relay refused this scoreboard (another device holds the match id, or too
   // many failed claims): shown to the scorer instead of failing silently.
   const [relayRejection, setRelayRejection] = useState(null) // { code, message, at } | null
@@ -1006,28 +1123,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const setIndex = currentSet.index
       const teamAKey = match.coinTossTeamA || 'home'
       const teamBKey = teamAKey === 'home' ? 'away' : 'home'
-      const is5thSet = setIndex === 5
       const set5CourtSwitched = match.set5CourtSwitched
       const set5LeftTeam = match.set5LeftTeam
 
-      // Determine which side Team A is on this set
-      // setLeftTeamOverrides stores 'A' or 'B' - which team is on the LEFT
-      const setLeftTeamOverrides = match.setLeftTeamOverrides || {}
-      let sideA
-      if (setLeftTeamOverrides[setIndex] !== undefined) {
-        // Override stores 'A' or 'B', not 'home'/'away'
-        sideA = setLeftTeamOverrides[setIndex] === 'A' ? 'left' : 'right'
-      } else if (is5thSet && set5LeftTeam) {
-        // Use set5LeftTeam for Set 5 (from coin toss or manual switch)
-        sideA = set5LeftTeam === 'A' ? 'left' : 'right'
-      } else {
-        sideA = setIndex % 2 === 1 ? 'left' : 'right'
-      }
-
-      // If Set 5 court switch at 8 points has happened, flip the sides
-      if (is5thSet && set5CourtSwitched) {
-        sideA = sideA === 'left' ? 'right' : 'left'
-      }
+      // Which side Team A is on this set: override / set 5 coin toss (both the
+      // LEFT team 'A'/'B'), else odd sets left; set 5 flips at the 8-point switch
+      const sideA = getSideAForSet(setIndex, match)
 
       // Team names and colors
       const teamAName = teamAKey === 'home' ? match.homeName : match.awayName
@@ -1889,6 +1990,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Determine match status from event type and current state
       const isMatchEnd = eventType === 'match_end' || match?.status === 'ended'
       const isSetInterval = !isMatchEnd && (eventType === 'set_end' || match?.status === 'interval')
+      // Set 5 coin toss changed while the interval runs: the fresh snapshot
+      // already is the set 5 state, and the tablets keep the interval
+      const keepInterval = !isMatchEnd && !isSetInterval && eventData?.duringInterval === true
       const activeTimeout = timeoutModalRef.current
       const isTimeout = eventType === 'timeout' || (eventType !== 'end_timeout' && !!activeTimeout?.started)
 
@@ -1934,7 +2038,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       let matchStatus = 'in_progress'
       if (isMatchEnd || isMatchFinished) matchStatus = 'ended'
       else if (isTimeout) matchStatus = 'timeout'
-      else if (isSetInterval) matchStatus = 'interval'
+      else if (isSetInterval || keepInterval) matchStatus = 'interval'
 
       // Calculate side for next set: a manual side override or the set 5 coin
       // toss choice (both stored as the LEFT team 'A'/'B') wins, as in
@@ -2061,8 +2165,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         last_event_ts: new Date().toISOString(),
         timeout_active: isTimeout,
         timeout_started_at: isTimeout ? (activeTimeout?.startedAt || timeoutStartedAt) : null,
-        set_interval_active: isSetInterval,
-        set_interval_started_at: isSetInterval ? (match?.intervalStartedAt || intervalStartedAt) : null,
+        set_interval_active: isSetInterval || keepInterval,
+        set_interval_started_at: isSetInterval
+          ? (match?.intervalStartedAt || intervalStartedAt)
+          : (keepInterval ? (intervalStartedAtRef.current || eventData?.intervalStartedAt || null) : null),
         match_status: matchStatus,
         scorer_attention_trigger: scorerAttentionTriggerRef.current,
         // Match metadata (from IndexedDB match record)
@@ -2072,6 +2178,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         updated_at: new Date().toISOString(),
         sport_type: 'indoor'
       }
+
+      if (eventType === 'set_end') intervalStartedAtRef.current = liveStateData.set_interval_started_at
 
       // Also push the computed live-state over the LAN relay so offline consumers
       // (referee dashboard, LedBox bridge) receive it without needing Supabase.
@@ -2706,21 +2814,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       )
   }, [data?.events, data?.set])
 
+  // Regular substitutions of the current set; exceptional ones (FIVB 15.7) are
+  // made beyond the 6 and are not counted, matching the details list.
   const substitutionsUsed = useMemo(() => {
     if (!data?.events || !data?.set) return { home: 0, away: 0 }
-    // Only count substitutions for the current set
-    return data.events
-      .filter(event => event.type === 'substitution' && event.setIndex === data.set.index)
-      .reduce(
-        (acc, event) => {
-          const team = event.payload?.team
-          if (team === 'home' || team === 'away') {
-            acc[team] = (acc[team] || 0) + 1
-          }
-          return acc
-        },
-        { home: 0, away: 0 }
-      )
+    return {
+      home: countRegularSubstitutions(data.events, 'home', data.set.index),
+      away: countRegularSubstitutions(data.events, 'away', data.set.index)
+    }
   }, [data?.events, data?.set])
 
   const rallyStatus = useMemo(() => {
@@ -2763,6 +2864,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // For lineup events after points, the rally is idle (waiting for next rally_start)
     return 'idle'
   }, [data?.events, data?.set])
+
+  substitutionGuardRef.current = {
+    events: data?.events,
+    setIndex: data?.set?.index,
+    onImproperRequest: (teamKey) => {
+      if (rallyStatus === 'idle') openTeamSanctionConfirm(mapTeamKeyToSide(teamKey), 'improper_request', 'substitution_limit')
+    }
+  }
 
   // Check if the rally is replayed (last event is a replay)
   const isRallyReplayed = useMemo(() => {
@@ -3015,6 +3124,43 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     syncLiveStateToSupabase('end_interval', null, null)
     // The set will start when user clicks "Start set" button
   }, [sendActionToReferee, syncLiveStateToSupabase])
+
+  // The set 5 coin toss (left team, first serve) lives in match fields, not in
+  // events, so no event push carries it. Push it to the referee / bench /
+  // livescore: a fresh live state (side_a, serving_team) over the relay (Node
+  // and Rust) and to the cloud, and the match bundle (set5LeftTeam,
+  // set5FirstServe). During the interval the tablets keep it; endInterval
+  // (Confirm) ends it there as on the scorer.
+  const syncSet5Setup = useCallback(async ({ endInterval = false, duringInterval = false } = {}) => {
+    if (!matchId) return
+    if (endInterval) {
+      setBetweenSetsCountdown(null)
+      countdownDismissedRef.current = true
+      sendActionToReferee('end_interval', {})
+    }
+    const match = await db.matches.get(matchId)
+    const keepInterval = duringInterval && !endInterval
+    let intervalInfo = {}
+    if (keepInterval) {
+      const previousSet = findPreviousSet(await db.sets.where({ matchId }).toArray(), 5)
+      // Fallback start (no set_end push in this session): the scorer's countdown
+      const startTs = betweenSetsStartTimestampRef.current
+        ? betweenSetsStartTimestampRef.current - (setIntervalDuration - (betweenSetsInitialCountdownRef.current || setIntervalDuration)) * 1000
+        : Date.now()
+      intervalInfo = {
+        duringInterval: true,
+        intervalStartedAt: new Date(startTs).toISOString(),
+        setIndex: previousSet?.index,
+        winner: previousSet ? (previousSet.homePoints > previousSet.awayPoints ? 'home' : 'away') : undefined
+      }
+    }
+    syncLiveStateToSupabase('manual_set5_setup', null, {
+      leftTeam: match?.set5LeftTeam || null,
+      firstServe: match?.set5FirstServe || null,
+      ...intervalInfo
+    })
+    syncToReferee()
+  }, [matchId, setIntervalDuration, sendActionToReferee, syncLiveStateToSupabase, syncToReferee])
 
   const getTeamLineupState = useCallback((teamKey) => {
     if (!data?.events || !data?.set) {
@@ -4587,8 +4733,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const pointsBefore = setEvents
       .filter(e => e.type === 'point' && (e.seq || 0) < (lastPoint.seq || 0))
       .sort((a, b) => (b.seq || 0) - (a.seq || 0))
-    const previousServer = pointsBefore.length > 0 ? pointsBefore[0].payload?.team : null
-    // If no previous point, first serve team had serve — sideout if scoring team differs
+    // No earlier point: the set's first-serving team had the serve. (Comparing
+    // with null counted every first point as a sideout, and since the serving
+    // team's point writes no rotation the serve box stayed hidden until 2:0.)
+    const previousServer = pointsBefore.length > 0
+      ? pointsBefore[0].payload?.team
+      : getFirstServeForSet(data.set.index, data.match)
     if (previousServer === lastPoint.payload?.team) return false // Not a sideout
 
     // It's a sideout — check if rotation event exists (sub-event of the point, e.g., 7.1)
@@ -4599,7 +4749,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       (e.seq || 0) !== pointBaseSeq // Has decimal part (sub-event)
     )
     return !hasRotation
-  }, [data?.events, data?.set])
+  }, [data?.events, data?.set, data?.match])
 
   // Hide serve indicator while rotation is pending (prevents wrong server flash)
   // Show serve on left as placeholder before coin toss or before set starts
@@ -5279,9 +5429,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [logEvent, isFirstRally, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration])
 
   const handleReplay = useCallback(async () => {
-    // During rally: just log replay event (no point to undo)
+    // During rally: ask first, confirmReplay logs the replay event (no point to undo)
     if (rallyStatus === 'in_play') {
-      await logEvent('replay')
+      setReplayConfirm(true)
       return
     }
     // After point: show confirmation modal to undo point
@@ -5324,25 +5474,50 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         setReplayRallyConfirm({ event: pointEvent, description, selectedOption: 'swap' }) // Default to swap
       }
     }
-  }, [logEvent, rallyStatus, canReplayRally, data?.events, data?.homeTeam?.name, data?.awayTeam?.name])
+  }, [rallyStatus, canReplayRally, data?.events, data?.homeTeam?.name, data?.awayTeam?.name])
+
+  // Confirmed "Replay rally": only while the rally is still in play
+  const confirmReplay = useCallback(async () => {
+    setReplayConfirm(false)
+    if (rallyStatus !== 'in_play') return
+    await logEvent('replay')
+  }, [logEvent, rallyStatus])
+
+  const cancelReplay = useCallback(() => {
+    setReplayConfirm(false)
+  }, [])
+
+  // Open the team-sanction confirmation. The sanction that will actually be
+  // recorded is resolved here, once, through the delay ladder and the
+  // improper-request escalation (FIVB 15.11 / 16.2; resolveSanction is pure and
+  // unit-tested), and kept in the dialog state: the dialog shows what will be
+  // recorded, and confirmSanction records exactly that.
+  const openTeamSanctionConfirm = useCallback((side, requestedType, reason = null) => {
+    const teamKey = mapSideToTeamKey(side)
+    const teamSanctions = (data?.events || []).filter(e => e.type === 'sanction' && e.payload?.team === teamKey)
+    const priorDelayCount = teamSanctions.filter(e => isDelaySanction(e.payload?.type)).length
+    const priorImproperCount = teamSanctions.filter(e => e.payload?.type === 'improper_request').length
+    const resolved = resolveSanction(requestedType, { priorDelayCount, priorImproperCount })
+    setSanctionConfirm({ side, team: teamKey, type: requestedType, resolved, reason })
+  }, [mapSideToTeamKey, data?.events])
 
   // Handle Improper Request sanction
   const handleImproperRequest = useCallback((side) => {
     if (!data?.match || rallyStatus !== 'idle') return
-    setSanctionConfirm({ side, type: 'improper_request' })
-  }, [data?.match, rallyStatus])
+    openTeamSanctionConfirm(side, 'improper_request')
+  }, [data?.match, rallyStatus, openTeamSanctionConfirm])
 
   // Handle Delay Warning sanction
   const handleDelayWarning = useCallback((side) => {
     if (!data?.match || rallyStatus !== 'idle') return
-    setSanctionConfirm({ side, type: 'delay_warning' })
-  }, [data?.match, rallyStatus])
+    openTeamSanctionConfirm(side, 'delay_warning')
+  }, [data?.match, rallyStatus, openTeamSanctionConfirm])
 
   // Handle Delay Penalty sanction
   const handleDelayPenalty = useCallback((side) => {
     if (!data?.match || !data?.set || rallyStatus !== 'idle') return
-    setSanctionConfirm({ side, type: 'delay_penalty' })
-  }, [data?.match, data?.set, rallyStatus])
+    openTeamSanctionConfirm(side, 'delay_penalty')
+  }, [data?.match, data?.set, rallyStatus, openTeamSanctionConfirm])
 
   // Handle team sanction - takes team key instead of side
   const handleTeamSanction = useCallback((teamKey, sanctionType) => {
@@ -5350,24 +5525,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!data?.match || rallyStatus !== 'idle') return
     // Convert team key to side
     const side = (teamKey === 'home' && leftIsHome) || (teamKey === 'away' && !leftIsHome) ? 'left' : 'right'
-    setSanctionConfirm({ side, type: sanctionType })
-  }, [data?.match, rallyStatus, leftIsHome])
+    openTeamSanctionConfirm(side, sanctionType)
+  }, [data?.match, rallyStatus, leftIsHome, openTeamSanctionConfirm])
 
-  // Confirm sanction
-  const confirmSanction = useCallback(async () => {
+  // Confirm sanction: snapshot, close, then write (useConfirmAction)
+  const runSanctionConfirm = useConfirmAction(onConfirmFailed)
+  const confirmSanction = useCallback(() => runSanctionConfirm(async () => {
     if (!sanctionConfirm || !data?.match || !data?.set) return
 
-    const { side, type: requestedType } = sanctionConfirm
-    const teamKey = mapSideToTeamKey(side)
+    // Everything comes from the dialog state taken when it opened: the team
+    // and the resolved sanction it showed.
+    const { side, team: teamKey, resolved: type } = sanctionConfirm
     const teamKeyCapitalized = teamKey === 'home' ? 'Home' : 'Away'
-
-    // Enforce the delay ladder + improper-request escalation (FIVB 15.11 / 16.2):
-    // the first delay is a warning and subsequent delays are penalties; a repeated
-    // improper request becomes a delay. resolveSanction is pure + unit-tested.
-    const teamSanctions = (data.events || []).filter(e => e.type === 'sanction' && e.payload?.team === teamKey)
-    const priorDelayCount = teamSanctions.filter(e => isDelaySanction(e.payload?.type)).length
-    const priorImproperCount = teamSanctions.filter(e => e.payload?.type === 'improper_request').length
-    const type = resolveSanction(requestedType, { priorDelayCount, priorImproperCount })
+    setSanctionConfirm(null)
 
     // Update match sanctions for improper request and delay warning
     // Store by team key (Home/Away) so sanctions follow the team when sides switch
@@ -5410,8 +5580,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         e.payload?.isInitial
       )
 
-      setSanctionConfirm(null)
-
       if (homeLineupSet && awayLineupSet) {
         // Both lineups are set - award point immediately
         const otherSide = side === 'left' ? 'right' : 'left'
@@ -5420,10 +5588,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Lineups not set - show message
         showAlert('Delay penalty recorded. Point will be awarded after both teams set their lineups.', 'info')
       }
-    } else {
-      setSanctionConfirm(null)
     }
-  }, [sanctionConfirm, data?.match, data?.set, data?.events, mapSideToTeamKey, matchId, logEvent, handlePoint])
+  }), [runSanctionConfirm, sanctionConfirm, data?.match, data?.set, data?.events, matchId, logEvent, handlePoint])
 
   // Confirm set start time
   const confirmSetStartTime = useCallback(async (time) => {
@@ -6047,6 +6213,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           // Reset set5CourtSwitched flag (for non-set-5 transitions)
           if (newSetIndex !== 5) {
             await db.matches.update(matchId, { set5CourtSwitched: false })
+          } else {
+            // The set_end push went out before the set 5 defaults were written
+            syncSet5Setup({ duringInterval: true })
           }
 
           // Sync new set to cloud (if not test match)
@@ -6092,15 +6261,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Don't re-throw - the match can continue from local data
     }
-  }, [setEndTimeModal, data?.match, data?.set, data?.events, matchId, logEvent, onFinishSet, getCurrentServe, teamAKey, onTriggerEventBackup, syncSetEnd, resetSyncState, setIntervalDuration, showAlert, t])
+  }, [setEndTimeModal, data?.match, data?.set, data?.events, matchId, logEvent, onFinishSet, getCurrentServe, teamAKey, onTriggerEventBackup, syncSetEnd, resetSyncState, setIntervalDuration, showAlert, t, syncSet5Setup])
 
   // Confirm set 5 side and service choices (works with both modal and inline UI)
-  const confirmSet5SideService = useCallback(async (leftTeam, firstServe, inlineMode = false) => {
+  const runSet5SideService = useConfirmAction(onConfirmFailed)
+  const confirmSet5SideService = useCallback((leftTeam, firstServe, inlineMode = false) => runSet5SideService(async () => {
     // For inline mode, we don't need the modal - just verify we have match data and it's set 5
     if (!inlineMode && !set5SideServiceModal) return
     if (!data?.match) return
 
     const setIndex = inlineMode ? 5 : set5SideServiceModal.setIndex
+
+    // Close first (or confirm the inline setup), then write (useConfirmAction)
+    if (inlineMode) {
+      setSet5SetupConfirmed(true)
+    } else {
+      setSet5SideServiceModal(null)
+    }
+
     const teamAKey = data.match.coinTossTeamA || 'home'
     const teamBKey = data.match.coinTossTeamB || 'away'
 
@@ -6178,14 +6356,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       seq: nextSeq,
       stateBefore: set5CoinTossStateBefore
     })
-
-    // Close modal or confirm inline setup
-    if (inlineMode) {
-      setSet5SetupConfirmed(true)
-    } else {
-      setSet5SideServiceModal(null)
-    }
-  }, [set5SideServiceModal, data?.match, matchId, getNextSeq, getStateSnapshot])
+  }), [runSet5SideService, set5SideServiceModal, data?.match, matchId, getNextSeq, getStateSnapshot])
 
   // Get action description for an event
   const getActionDescription = useCallback((event) => {
@@ -6388,8 +6559,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     } else if (event.type === 'court_captain_designation') {
       const playerNumber = event.payload?.playerNumber || '?'
       eventDescription = `${t('scoreboard.courtCaptainDesignation', 'Court captain designation')} — ${teamName} (#${playerNumber})`
+    } else if (event.type === 'bench_injury') {
+      const playerNumber = event.payload?.playerNumber || '?'
+      eventDescription = `Injury — ${teamName} (#${playerNumber}, bench)`
+    } else if (event.type === 'forfait') {
+      const scope = event.payload?.scope === 'match' ? 'match' : 'set'
+      const reason = event.payload?.reason ? `, ${String(event.payload.reason).replace(/_/g, ' ')}` : ''
+      eventDescription = `Team incomplete for the ${scope} — ${teamName}${reason}`
+    } else if (event.type === 'match_stopped') {
+      eventDescription = `Match stopped, cannot be resumed (${homeLabel} ${event.payload?.homePoints ?? homeScore}:${event.payload?.awayPoints ?? awayScore} ${awayLabel})`
     } else {
-      eventDescription = event.type
+      // Never show an internal type name: "some_event" reads "Some event"
+      const readable = String(event.type || '').replace(/_/g, ' ')
+      eventDescription = readable.charAt(0).toUpperCase() + readable.slice(1)
       if (teamName) {
         eventDescription += ` — ${teamName}`
       }
@@ -6698,7 +6880,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return plan
   }, [matchId, discardEvents])
 
-  const handleUndo = useCallback(async () => {
+  const runUndoConfirm = useConfirmAction(onConfirmFailed)
+  const handleUndo = useCallback(() => runUndoConfirm(async () => {
     cLogger.logHandler('handleUndo', { hasUndoConfirm: !!undoConfirm, eventType: undoConfirm?.event?.type })
     if (!undoConfirm || !data?.set) {
       setUndoConfirm(null)
@@ -6706,6 +6889,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     const lastEvent = undoConfirm.event
+    // Close first, then undo (useConfirmAction): a second tap must not undo
+    // the same event again from the stale dialog
+    setUndoConfirm(null)
     const lastEventSeq = lastEvent.seq || 0
     const baseSeq = Math.floor(lastEventSeq)
 
@@ -6866,14 +7052,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     } catch (error) {
       console.error('[handleUndo] Error:', error)
     } finally {
-      // Always close the modal
-      setUndoConfirm(null)
       // Sync to Referee and Supabase after undo
       syncToReferee()
       syncLiveStateToSupabase('undo', null, null)
       notifyScoresheetUpdate('undo')
     }
-  }, [undoConfirm, data?.set, matchId, restoreStateFromSnapshot, discardEvents, applyForfeitReversal, resyncSetScoreFromEvents, showAlert, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate])
+  }), [runUndoConfirm, undoConfirm, data?.set, matchId, restoreStateFromSnapshot, discardEvents, applyForfeitReversal, resyncSetScoreFromEvents, showAlert, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate])
 
   // OLD UNDO LOGIC REMOVED - The following complex per-event-type logic has been replaced
   // by the snapshot-based undo system above. Keeping this comment for reference.
@@ -6894,6 +7078,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     const lastEvent = replayRallyConfirm.event
+    // Close first, then write: the dialog's score preview is live and redrew
+    // from the replayed score otherwise
+    setReplayRallyConfirm(null)
     const lastEventSeq = lastEvent.seq || 0
     const baseSeq = Math.floor(lastEventSeq)
 
@@ -7009,8 +7196,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     } catch (error) {
       // Error during replay - silently handle
-    } finally {
-      setReplayRallyConfirm(null)
     }
   }, [replayRallyConfirm, data?.events, data?.set, data?.match, matchId, getNextSeq, syncLiveStateToSupabase, notifyScoresheetUpdate])
 
@@ -7019,15 +7204,22 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [])
 
   // Handle decision change - either swap point to other team or replay rally
-  const handleDecisionChange = useCallback(async () => {
+  const runDecisionChange = useConfirmAction(onConfirmFailed)
+  const handleDecisionChange = useCallback(() => runDecisionChange(async () => {
     if (!replayRallyConfirm || !data?.set) {
       setReplayRallyConfirm(null)
       return
     }
 
-    const { event: lastEvent, selectedOption } = replayRallyConfirm
+    const { event: lastEvent } = replayRallyConfirm
+    // The dialog pre-selects "Assign to other team" when nothing was chosen;
+    // record what it shows
+    const selectedOption = replayRallyConfirm.selectedOption || 'swap'
 
     if (selectedOption === 'swap') {
+      // Close first, then write (useConfirmAction): the dialog's score preview
+      // is live and showed the already-swapped score (e.g. 3:-1) otherwise
+      setReplayRallyConfirm(null)
       // Swap the point to the other team
       const oldTeam = lastEvent.payload?.team
       const newTeam = oldTeam === 'home' ? 'away' : 'home'
@@ -7254,100 +7446,90 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     } else {
       // Replay rally - use existing logic
       await handleReplayRally()
-      return // handleReplayRally already closes the modal and syncs
+      return // handleReplayRally closes the modal first and syncs
     }
-
-    setReplayRallyConfirm(null)
-  }, [replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents])
+  }), [runDecisionChange, replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents])
 
 
 
   const handleTimeout = useCallback(
     side => {
       cLogger.logHandler('handleTimeout', { side })
+      if (!data?.set) return
       const teamKey = mapSideToTeamKey(side)
-      const used = (timeoutsUsed && timeoutsUsed[teamKey]) || 0
-      if (used >= 2) {
+      // Taken once, here: the dialog shows this until it closes, whatever the
+      // live time-out count does while the time-out is being written.
+      const request = classifyTimeoutRequest(data.events, data.set.index, teamKey)
+      if (request.improper) {
         // Requesting a time-out after both are used is an improper request
         // (FIVB 15.11.1.4). Route it into the improper-request ladder — the first
         // is recorded with no consequence, a repeat becomes a delay — instead of
         // silently discarding it. The scorer can still cancel in the dialog.
-        if (rallyStatus === 'idle') setSanctionConfirm({ side, type: 'improper_request' })
+        if (rallyStatus === 'idle') openTeamSanctionConfirm(side, 'improper_request', 'third_timeout')
         return
       }
-
-      // Check for duplicate timeout (same team, no points scored since last TO)
-      if (data?.events && data?.set) {
-        const currentSetEvents = data.events.filter(e => e.setIndex === data.set.index)
-        const lastTimeoutForTeam = [...currentSetEvents]
-          .filter(e => e.type === 'timeout' && e.payload?.team === teamKey)
-          .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0]
-
-        if (lastTimeoutForTeam) {
-          // Check if any points were scored after the last timeout
-          const pointsAfterTimeout = currentSetEvents.filter(
-            e => e.type === 'point' && (e.seq || 0) > (lastTimeoutForTeam.seq || 0)
-          )
-          if (pointsAfterTimeout.length === 0) {
-            // No points since last timeout for this team - ask for confirmation
-            setDuplicateTimeoutConfirm({ team: teamKey })
-            return
-          }
-        }
-      }
-
-      setTimeoutModal({ team: teamKey, countdown: 30, started: false })
+      setTimeoutModal({
+        team: teamKey,
+        countdown: 30,
+        started: false,
+        ordinal: request.ordinal,
+        consecutive: request.consecutive
+      })
     },
-    [mapSideToTeamKey, timeoutsUsed, data?.events, data?.set, rallyStatus]
+    [mapSideToTeamKey, data?.events, data?.set, rallyStatus, openTeamSanctionConfirm]
   )
 
-  const confirmTimeout = useCallback(async () => {
-    if (!timeoutModal) return
-    // Prevent double-click: if already started, skip
-    if (timeoutModal.started) return
-    // Mutex: prevent race condition from rapid double-clicks
-    if (confirmingTimeoutRef.current) return
-    confirmingTimeoutRef.current = true
+  // Confirm time-out: snapshot, close (start the countdown), then write.
+  const runTimeoutConfirm = useConfirmAction(onConfirmFailed)
+  const confirmTimeout = useCallback(() => runTimeoutConfirm(async () => {
+    const request = timeoutModal
+    if (!request || request.started) return
 
     // Debug: Check for stale refs that would cause countdown to fail
     console.log('[TO_DEBUG] confirmTimeout called', {
-      team: timeoutModal.team,
-      alreadyStarted: timeoutModal.started,
+      team: request.team,
+      alreadyStarted: request.started,
       staleTimestampRef: timeoutStartTimestampRef.current,
       staleInitialRef: timeoutInitialCountdownRef.current
     })
     debugLogger.log('TO_CONFIRM', {
-      team: timeoutModal.team,
+      team: request.team,
       staleTimestampRef: timeoutStartTimestampRef.current
     })
 
+    // Start the countdown first: that closes the request dialog before the
+    // time-out event is written, so the dialog never redraws from the new
+    // time-out count ("Confirm 2nd time-out" flashing on the first one).
+    const startTimestamp = Date.now()
+    setTimeoutModal({ ...request, started: true, startedAt: new Date(startTimestamp).toISOString() })
+
     try {
-      // Log the timeout event
-      await logEvent('timeout', { team: timeoutModal.team })
-
-      // Debug log: timeout
-      debugLogger.log('TIMEOUT', {
-        team: timeoutModal.team
-      }, getStateSnapshot())
-
-      // Start the timeout countdown
-      const startTimestamp = Date.now()
-      setTimeoutModal({ ...timeoutModal, started: true, startedAt: new Date(startTimestamp).toISOString() })
-      console.log('[TO_DEBUG] setTimeoutModal called with started: true')
-
-      // Send timeout action to referee to show modal
-      sendActionToReferee('timeout', {
-        team: timeoutModal.team,
-        countdown: 30,
-        startTimestamp: startTimestamp
-      })
-
-      // Trigger event backup for Safari/Firefox
-      onTriggerEventBackup?.('timeout')
-    } finally {
-      confirmingTimeoutRef.current = false
+      await logEvent('timeout', { team: request.team })
+    } catch (err) {
+      // Not recorded: put the request back so the scorer can try again.
+      console.error('[TO] time-out not recorded', err)
+      timeoutStartTimestampRef.current = null
+      timeoutInitialCountdownRef.current = 30
+      setTimeoutModal(request)
+      showAlert(t('scoreboard.timeoutRequest.notRecorded'), 'error')
+      return
     }
-  }, [timeoutModal, logEvent, sendActionToReferee, onTriggerEventBackup])
+
+    // Debug log: timeout
+    debugLogger.log('TIMEOUT', {
+      team: request.team
+    }, getStateSnapshot())
+
+    // Send timeout action to referee to show modal
+    sendActionToReferee('timeout', {
+      team: request.team,
+      countdown: 30,
+      startTimestamp: startTimestamp
+    })
+
+    // Trigger event backup for Safari/Firefox
+    onTriggerEventBackup?.('timeout')
+  }), [runTimeoutConfirm, timeoutModal, logEvent, sendActionToReferee, onTriggerEventBackup, showAlert, t])
 
   const cancelTimeout = useCallback(() => {
     // Only cancel if timeout hasn't started yet
@@ -7821,17 +8003,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const isSubstitutionLegal = useCallback((teamKey, playerOutNumber) => {
     if (!data?.events || !data?.set) return true
 
-    // Check substitution limit (6 per set)
-    const substitutions = getSubstitutionHistory(teamKey)
-    if (substitutions.length >= 6) return false
+    // Check substitution limit (6 regular per set; exceptional ones do not count)
+    if (countRegularSubstitutions(data.events, teamKey, data.set.index) >= MAX_SUBSTITUTIONS_PER_SET) return false
 
     // Check if player can be substituted
     return canPlayerBeSubstituted(teamKey, playerOutNumber)
-  }, [data?.events, data?.set, getSubstitutionHistory, canPlayerBeSubstituted])
+  }, [data?.events, data?.set, canPlayerBeSubstituted])
 
   // Get available substitutes for a player being substituted out
   const getAvailableSubstitutes = useCallback((teamKey, playerOutNumber, allowExceptional = false) => {
     if (!data) return []
+    // No legal substitute once the 6 regular substitutions are used: injury and
+    // expulsion / disqualification then go to the exceptional substitution.
+    if (!allowExceptional && data.set && countRegularSubstitutions(data.events, teamKey, data.set.index) >= MAX_SUBSTITUTIONS_PER_SET) return []
 
     const benchPlayers = teamKey === 'home'
       ? (leftIsHome ? leftTeamBench.benchPlayers : rightTeamBench.benchPlayers)
@@ -8398,31 +8582,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     e.dataTransfer.setData('text/plain', JSON.stringify({ team: teamKey, playerNumber, isLibero, type: 'bench' }))
     e.dataTransfer.effectAllowed = 'move'
 
-    // Create custom drag image showing the player number
-    const dragImage = document.createElement('div')
-    dragImage.textContent = String(playerNumber)
-    dragImage.style.cssText = `
-      position: absolute;
-      top: -1000px;
-      left: -1000px;
-      width: 50px;
-      height: 50px;
-      border-radius: 50%;
-      background: ${isLibero ? '#3b82f6' : '#4ade80'};
-      color: ${isLibero ? '#fff' : '#000'};
-      font-size: 20px;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    `
-    document.body.appendChild(dragImage)
-    e.dataTransfer.setDragImage(dragImage, 25, 25)
-
-    setTimeout(() => {
-      document.body.removeChild(dragImage)
-    }, 0)
+    // Custom drag image: a round disc with the player number
+    setPlayerDragImage(e, playerNumber, isLibero ? { bg: '#3b82f6', text: '#fff' } : { bg: '#4ade80', text: '#000' })
   }, [rallyStatus])
 
   // Handle drag start from court player (for substitution out)
@@ -8433,35 +8594,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     e.dataTransfer.setData('text/plain', JSON.stringify({ team: teamKey, playerNumber, position, isLibero, type: 'court' }))
     e.dataTransfer.effectAllowed = 'move'
 
-    // Create custom drag image showing the player number
-    const dragImage = document.createElement('div')
-    dragImage.textContent = String(playerNumber)
+    // Custom drag image: the player's disc as painted on the court
     const isLeft = (leftIsHome && teamKey === 'home') || (!leftIsHome && teamKey === 'away')
     const circleColors = getPlayerCircleColors(isLeft ? 'left' : 'right', isLibero)
-    dragImage.style.cssText = `
-      position: absolute;
-      top: -1000px;
-      left: -1000px;
-      width: 50px;
-      height: 50px;
-      border-radius: 50%;
-      background: ${circleColors.bg};
-      color: ${circleColors.text};
-      font-size: 20px;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      border: 2px solid ${circleColors.ring || 'rgba(0, 0, 0, 0.2)'};
-      ${circleColors.textShadow ? `text-shadow: ${circleColors.textShadow};` : ''}
-    `
-    document.body.appendChild(dragImage)
-    e.dataTransfer.setDragImage(dragImage, 25, 25)
-
-    setTimeout(() => {
-      document.body.removeChild(dragImage)
-    }, 0)
+    setPlayerDragImage(e, playerNumber, { ...circleColors, ring: circleColors.ring || 'rgba(0, 0, 0, 0.2)' })
   }, [rallyStatus, leftIsHome, getPlayerCircleColors])
 
   const handleBenchDragEnd = useCallback(() => {
@@ -9862,8 +9998,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [exceptionalSubstitutionModal, getAvailableExceptionalSubstitutes, handleForfait, getForfaitScope])
 
   // Confirm substitution
-  const confirmSubstitution = useCallback(async () => {
+  const runSubstitutionConfirm = useConfirmAction(onConfirmFailed)
+  const confirmSubstitution = useCallback(() => runSubstitutionConfirm(async () => {
     if (!substitutionConfirm || !data?.set) return
+    // Close first, then write (useConfirmAction): the dialog's "5th/6th
+    // substitution" label is live, and redrew from the new count otherwise
+    setSubstitutionConfirm(null)
+    setLiberoDropdown(null) // Close libero dropdown when confirming substitution
 
     // MUTEX: Acquire lock before creating any events to prevent race conditions
     const maxWaitTime = 5000
@@ -9874,7 +10015,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     eventInProgressRef.current = true
 
     try {
-      const { team, position, playerOut, playerIn, isInjury, isExceptional, isExpelled, isDisqualified } = substitutionConfirm
+      const { team, position, playerOut, playerIn, isInjury, isExpelled, isDisqualified } = substitutionConfirm
+
+      // Final authority on the 6-per-set limit (FIVB 15.6), against the events
+      // as they are now: a regular request beyond it is an improper request
+      // (16.1.3), an injury / expulsion / disqualification one is exceptional.
+      const verdict = classifySubstitutionRequest(data.events, team, data.set.index, substitutionConfirm)
+      if (verdict === 'improper_request') {
+        setSubstitutionConfirmState(null)
+        substitutionGuardRef.current?.onImproperRequest(team)
+        return
+      }
+      const isExceptional = verdict === 'exceptional'
 
       // Get current lineup for this team in the current set
       // IMPORTANT: Sort by sequence number to get the most recent lineup event
@@ -9991,9 +10143,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         await db.matches.update(matchId, { remarks: appendRemark(freshMatch?.remarks || '', autoRemark) })
       }
 
-      setSubstitutionConfirm(null)
-      setLiberoDropdown(null) // Close libero dropdown when confirming substitution
-
       // Add player to recently substituted list for flashing effect
       setRecentlySubstitutedPlayers(prev => [...prev, { team, playerNumber: playerIn, timestamp: Date.now() }])
 
@@ -10074,7 +10223,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // MUTEX: Always release the lock, even if an error occurred
       eventInProgressRef.current = false
     }
-  }, [substitutionConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, data?.homeTeam, data?.awayTeam, matchId, logEvent, logManualChange, teamAKey, checkLiberoRedesignation, sendActionToReferee, isLiberoUnable, getStateSnapshot, t])
+  }), [runSubstitutionConfirm, substitutionConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, data?.homeTeam, data?.awayTeam, matchId, logEvent, logManualChange, teamAKey, checkLiberoRedesignation, sendActionToReferee, isLiberoUnable, getStateSnapshot, t])
 
   // Common modal position - all modals use the same position
   // For left side teams, menu opens to the right
@@ -10391,7 +10540,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [data?.events])
 
   // Confirm player sanction
-  const confirmPlayerSanction = useCallback(async () => {
+  const runPlayerSanctionConfirm = useConfirmAction(onConfirmFailed)
+  const confirmPlayerSanction = useCallback(() => runPlayerSanctionConfirm(async () => {
     if (!sanctionConfirmModal || !data?.set) return
 
     const { team, type, playerNumber, position, role, sanctionType } = sanctionConfirmModal
@@ -10415,6 +10565,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         return
       }
     }
+
+    // Close first, then write (useConfirmAction): the follow-up dialogs below
+    // open from this snapshot, not from the dialog
+    setSanctionConfirmModal(null)
 
     // If expulsion or disqualification for a court player, need to handle substitution
     if ((sanctionType === 'expulsion' || sanctionType === 'disqualification') && type === 'player' && playerNumber && position) {
@@ -10494,32 +10648,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }
         }
 
-        // Close modal
-        setSanctionConfirmModal(null)
-
         // Check if redesignation is needed and prompt user
         // Use isLiberoUnable to properly check events, not just database field
         const activeLiberos = teamPlayers?.filter(p =>
           p.libero && p.libero !== '' && !isLiberoUnable(team, p.number) && Number(p.number) !== Number(playerNumber)
         ) || []
         if (activeLiberos.length === 0) {
-          setTimeout(() => {
-            setLiberoUnableModal({
-              team,
-              liberoNumber: playerNumber,
-              liberoType: player.libero,
-              step: 'redesignate'
-            })
-          }, 100)
+          setLiberoUnableModal({
+            team,
+            liberoNumber: playerNumber,
+            liberoType: player.libero,
+            step: 'redesignate'
+          })
         }
 
         return // Exit early, don't do the regular substitution flow
       }
 
       // Regular player (not libero) on court - continue with normal flow
-
-      // Close the confirmation modal
-      setSanctionConfirmModal(null)
 
       // Check if the player being expelled/disqualified is the captain or court captain
       const sanctionedPlayer = teamPlayers?.find(p => String(p.number) === String(playerNumber))
@@ -10672,7 +10818,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }
         }
 
-        setSanctionConfirmModal(null)
         return
       }
 
@@ -10685,8 +10830,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         position,
         role
       })
-
-      setSanctionConfirmModal(null)
 
       // Check if this is a libero - if so, log libero_unable and prompt for re-designation
       if (type === 'libero' && playerNumber) {
@@ -10710,14 +10853,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             p.libero && p.libero !== '' && !isLiberoUnable(team, p.number) && Number(p.number) !== Number(playerNumber)
           ) || []
           if (activeLiberos.length === 0) {
-            setTimeout(() => {
-              setLiberoUnableModal({
-                team,
-                liberoNumber: playerNumber,
-                liberoType: liberoPlayer.libero,
-                step: 'redesignate'
-              })
-            }, 100)
+            setLiberoUnableModal({
+              team,
+              liberoNumber: playerNumber,
+              liberoType: liberoPlayer.libero,
+              step: 'redesignate'
+            })
           }
         }
       }
@@ -10751,8 +10892,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           e.payload?.isInitial
         )
 
-        setSanctionConfirmModal(null)
-
         if (homeLineupSet && awayLineupSet) {
           // Both lineups are set - award point immediately
           const otherTeam = team === 'home' ? 'away' : 'home'
@@ -10762,18 +10901,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           // Lineups not set - show message
           showAlert('Penalty recorded. Point will be awarded after both teams set their lineups.', 'info')
         }
-      } else {
-        setSanctionConfirmModal(null)
       }
     }
-  }, [sanctionConfirmModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, playerHasSanctionType, teamHasFormalWarning, checkLiberoRedesignation, requestAutomaticForfait, getLiberoOnCourt, teamAKey])
+  }), [runPlayerSanctionConfirm, sanctionConfirmModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, playerHasSanctionType, teamHasFormalWarning, checkLiberoRedesignation, requestAutomaticForfait, getLiberoOnCourt, teamAKey])
 
   // Handle sanction substitution when bench player (libero replacement) is expelled/disqualified
   // Per FIVB Casebook: libero stays on court, the expelled bench player is replaced by a substitute
-  const handleSanctionSubstitution = useCallback(async (substituteNumber) => {
+  const runSanctionSubstitution = useConfirmAction(onConfirmFailed)
+  const handleSanctionSubstitution = useCallback((substituteNumber) => runSanctionSubstitution(async () => {
     if (!sanctionSubstitutionModal) return
 
-    const { team, expelledPlayer, liberoOnCourt, reason, isExceptional, position } = sanctionSubstitutionModal
+    const { team, expelledPlayer, liberoOnCourt, reason, position } = sanctionSubstitutionModal
+    // Beyond the 6 regular substitutions this one is exceptional (FIVB 15.8)
+    const isExceptional = classifySubstitutionRequest(data?.events, team, data?.set?.index, {
+      isExceptional: sanctionSubstitutionModal.isExceptional, isExpelled: reason === 'expulsion', isDisqualified: reason === 'disqualification'
+    }) === 'exceptional'
+    // Close first, then write (useConfirmAction)
+    setSanctionSubstitutionModal(null)
 
     // Log substitution event - this is recorded on scoresheet
     // The position is where the libero currently is (the expelled player's original position)
@@ -10826,9 +10970,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         [remarkKey]: existingRemarks ? `${existingRemarks}; ${newRemark}` : newRemark
       })
     }
-
-    setSanctionSubstitutionModal(null)
-  }, [sanctionSubstitutionModal, data?.set, data?.events, data?.match, logEvent, matchId])
+  }), [runSanctionSubstitution, sanctionSubstitutionModal, data?.set, data?.events, data?.match, logEvent, matchId])
 
   // Execute libero substitution directly (no confirmation modal needed)
   const showLiberoConfirm = useCallback(async (liberoType) => {
@@ -11064,8 +11206,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [liberoInDropdown, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, getNextSeq, isLiberoUnable])
 
   // Confirm libero entry
-  const confirmLibero = useCallback(async () => {
+  const runLiberoConfirm = useConfirmAction(onConfirmFailed)
+  const confirmLibero = useCallback(() => runLiberoConfirm(async () => {
     if (!liberoConfirm || !data?.set) return
+    // Close first, then write (useConfirmAction); every path below works from
+    // the liberoConfirm snapshot
+    setLiberoConfirm(null)
+    setLiberoDropdown(null)
 
     // MUTEX: Acquire lock before creating any events to prevent race conditions
     const maxWaitTime = 5000
@@ -11083,7 +11230,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Check if there has been a point since last libero exchange
         if (!hasPointSinceLastLiberoExchange(team)) {
           showAlert('A point must be awarded before removing the libero', 'warning')
-          setLiberoConfirm(null)
           return
         }
 
@@ -11101,7 +11247,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           console.error('[Libero Exit] VALIDATION FAILED: libero', playerOut,
             'is not at position', position, '- found', playerAtPosition, 'instead')
           showAlert(`Libero #${playerOut} is not at position ${position}. Cannot proceed with libero exit.`, 'error')
-          setLiberoConfirm(null)
           return
         }
 
@@ -11115,7 +11260,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
         if (!originalPlayerNumber) {
           showAlert('Original player not found for this libero. Please update lineup manually.', 'error')
-          setLiberoConfirm(null)
           return
         }
 
@@ -11196,8 +11340,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }, 300)
         }
 
-        setLiberoConfirm(null)
-        setLiberoDropdown(null)
         return
       }
 
@@ -11206,8 +11348,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const isBackRow = position === 'I' || position === 'V' || position === 'VI'
       if (!isBackRow) {
         showAlert('Liberos can only enter back-row positions (I, V, VI)', 'warning')
-        setLiberoConfirm(null)
-        setLiberoDropdown(null)
         return
       }
 
@@ -11230,8 +11370,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Check if libero is unable to play
       if (isLiberoUnable(team, liberoPlayer.number)) {
         showAlert('This libero is unable to play (injured, expelled, disqualified, or declared unable)', 'warning')
-        setLiberoConfirm(null)
-        setLiberoDropdown(null)
         return
       }
 
@@ -11241,8 +11379,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         console.error('[Libero Entry] VALIDATION FAILED: playerOut', playerOut,
           'is not at position', position, '- found', playerAtPosition, 'instead')
         showAlert(`Player #${playerOut} is not at position ${position}. Cannot proceed with libero entry.`, 'error')
-        setLiberoConfirm(null)
-        setLiberoDropdown(null)
         return
       }
 
@@ -11251,8 +11387,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (playerOutInfo?.libero && playerOutInfo.libero !== '') {
         console.error('[Libero Entry] VALIDATION FAILED: playerOut', playerOut, 'is a libero')
         showAlert(`Player #${playerOut} is a libero. Liberos cannot be replaced by other liberos.`, 'warning')
-        setLiberoConfirm(null)
-        setLiberoDropdown(null)
         return
       }
 
@@ -11337,8 +11471,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         newLineup: finalLineup
       }, getStateSnapshot())
 
-      setLiberoConfirm(null)
-
       // Check if captain is on court after libero entry
       // The playerOut is leaving, check if they're captain
       // Reuse teamPlayers variable already declared above
@@ -11354,12 +11486,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }, 300)
       }
       setSubstitutionDropdown(null) // Close substitution dropdown if open
-      setLiberoDropdown(null) // Close libero dropdown if open
     } finally {
       // MUTEX: Always release the lock, even if an error occurred
       eventInProgressRef.current = false
     }
-  }, [liberoConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, logEvent, getNextSeq, isLiberoUnable, hasPointSinceLastLiberoExchange])
+  }), [runLiberoConfirm, liberoConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, logEvent, getNextSeq, isLiberoUnable, hasPointSinceLastLiberoExchange])
 
   const cancelLibero = useCallback(() => {
     setLiberoDropdown(null)
@@ -11373,8 +11504,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [])
 
   // Handle libero reentry (when opposite player is in position I and not serving)
-  const confirmLiberoReentry = useCallback(async () => {
+  const runLiberoReentryConfirm = useConfirmAction(onConfirmFailed)
+  const confirmLiberoReentry = useCallback(() => runLiberoReentryConfirm(async () => {
     if (!liberoReentryModal || !data?.set) return
+    // Close first, then write (useConfirmAction)
+    setLiberoReentryModal(null)
 
     // MUTEX: Acquire lock before creating any events to prevent race conditions
     const maxWaitTime = 5000
@@ -11394,7 +11528,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Check if libero is unable to play
       if (isLiberoUnable(team, liberoNumber)) {
         showAlert('This libero is unable to play (injured, expelled, disqualified, or declared unable)', 'warning')
-        setLiberoReentryModal(null)
         return
       }
 
@@ -11478,8 +11611,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         [team]: null
       }))
 
-      setLiberoReentryModal(null)
-
       // Check if captain is on court after libero reentry (playerOut is leaving)
       const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
       const leavingPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
@@ -11497,7 +11628,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // MUTEX: Always release the lock, even if an error occurred
       eventInProgressRef.current = false
     }
-  }, [liberoReentryModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, isLiberoUnable])
+  }), [runLiberoReentryConfirm, liberoReentryModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, isLiberoUnable])
 
   const cancelLiberoReentry = useCallback(() => {
     // Track that we dismissed the suggestion for this specific libero exit
@@ -11671,10 +11802,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, data?.match, matchId, logEvent, data?.homePlayers, data?.awayPlayers])
 
   // Handle libero re-designation
-  const confirmLiberoRedesignation = useCallback(async (newLiberoNumber) => {
+  const runLiberoRedesignation = useConfirmAction(onConfirmFailed)
+  const confirmLiberoRedesignation = useCallback((newLiberoNumber) => runLiberoRedesignation(async () => {
     if (!liberoRedesignationModal || !data?.set) return
 
     const { team, unableLiberoNumber, unableLiberoType, reason = 'declared' } = liberoRedesignationModal
+    // Close first, then write (useConfirmAction): the candidate list is live and
+    // redrew without the chosen player otherwise
+    setLiberoRedesignationModal(null)
 
     // Log the libero_unable event if not already logged (with reason='declared' if not specified)
     const hasUnableEvent = data?.events?.some(e =>
@@ -11751,8 +11886,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     logManualChange('Libero', 'Redesignation', `#${unableLiberoNumber}`, `#${newLiberoNumber}`,
       `Player #${newLiberoNumber} re-designated as Libero replacing #${unableLiberoNumber} (Team ${teamLabel}, Set ${setIndex}, ${scoreStr})`)
 
-    setLiberoRedesignationModal(null)
-  }, [liberoRedesignationModal, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, teamAKey, matchId])
+  }), [runLiberoRedesignation, liberoRedesignationModal, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, teamAKey, matchId])
 
   // Confirm marking libero as unable
   const confirmLiberoUnable = useCallback(async () => {
@@ -12025,7 +12159,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Check for modal confirmations first (Enter/Escape)
       // These modals need a decision - don't allow Escape to close them
       const hasDecisionModal = substitutionConfirm || liberoConfirm || sanctionConfirmModal ||
-        accidentalRallyConfirmModal || accidentalPointConfirmModal || undoConfirm ||
+        accidentalRallyConfirmModal || accidentalPointConfirmModal || undoConfirm || replayConfirm ||
         replayRallyConfirm || liberoRotationModal || liberoReentryModal || sanctionSubstitutionModal
 
       // Confirm key (Enter)
@@ -12060,6 +12194,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         if (undoConfirm) {
           e.preventDefault()
           handleUndo()
+          return
+        }
+        if (replayConfirm) {
+          e.preventDefault()
+          confirmReplay()
           return
         }
         if (replayRallyConfirm) {
@@ -12161,8 +12300,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     playerActionMenu, benchPlayerActionMenu, liberoDropdown, liberoInDropdown, sanctionDropdown,
     timeoutModal, lineupModal, menuModal,
     substitutionConfirm, liberoConfirm, sanctionConfirmModal, accidentalRallyConfirmModal,
-    accidentalPointConfirmModal, undoConfirm, replayRallyConfirm, liberoRotationModal, liberoReentryModal,
-    confirmSubstitution, confirmLibero, handleReplayRally, handleDecisionChange
+    accidentalPointConfirmModal, undoConfirm, replayConfirm, replayRallyConfirm, liberoRotationModal, liberoReentryModal,
+    confirmSubstitution, confirmLibero, confirmReplay, handleReplayRally, handleDecisionChange
   ])
 
   // Courtside chips: px floors on the cqw sizes so a 200 px side column still
@@ -12237,10 +12376,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const awayLabel = data?.match?.coinTossTeamA === 'away' ? 'A' : (data?.match?.coinTossTeamB === 'away' ? 'B' : 'B')
 
   // Handle captain on court selection
-  const handleSelectCaptainOnCourt = useCallback(async (playerNumber) => {
+  const runCaptainOnCourt = useConfirmAction(onConfirmFailed)
+  const handleSelectCaptainOnCourt = useCallback((playerNumber) => runCaptainOnCourt(async () => {
     if (!captainOnCourtModal || !matchId) return
 
     const { team } = captainOnCourtModal
+    // Close first, then write (useConfirmAction)
+    setCaptainOnCourtModal(null)
     const courtCaptainField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
     const rememberedField = team === 'home' ? 'homeRememberedCourtCaptain' : 'awayRememberedCourtCaptain'
 
@@ -12260,9 +12402,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       playerNumber,
       previousCourtCaptain
     })
-
-    setCaptainOnCourtModal(null)
-  }, [captainOnCourtModal, matchId, logEvent])
+  }), [runCaptainOnCourt, captainOnCourtModal, matchId, logEvent])
 
   // Handle cancel (no captain selected)
   const handleCancelCaptainOnCourt = useCallback(() => {
@@ -12457,21 +12597,27 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }, [matchId, newPin, editPinType])
 
-  const confirmCourtSwitch = useCallback(async () => {
+  const runCourtSwitchConfirm = useConfirmAction(onConfirmFailed)
+  const confirmCourtSwitch = useCallback(() => runCourtSwitchConfirm(async () => {
     if (!courtSwitchModal) return
+
+    // Close first, then write (useConfirmAction): the switch flips the court
+    // sides, which drew behind the still-open dialog otherwise
+    setCourtSwitchModal(null)
 
     // Mark that courts have been switched for set 5
     await db.matches.update(matchId, { set5CourtSwitched: true })
 
-    // Close the modal
-    setCourtSwitchModal(null)
-
     // Sync to Supabase with fresh snapshot to update side_a and serving_team after court switch
     syncLiveStateToSupabase('court_switch', null, { reason: 'set5_8points' }, null)
-  }, [courtSwitchModal, matchId, syncLiveStateToSupabase])
+  }), [runCourtSwitchConfirm, courtSwitchModal, matchId, syncLiveStateToSupabase])
 
-  const cancelCourtSwitch = useCallback(async () => {
+  const runCourtSwitchCancel = useConfirmAction(onConfirmFailed)
+  const cancelCourtSwitch = useCallback(() => runCourtSwitchCancel(async () => {
     if (!courtSwitchModal || !data?.events) return
+    // Close first, then undo the point (useConfirmAction)
+    const modal = courtSwitchModal
+    setCourtSwitchModal(null)
 
     // Undo the last point that caused the 8-point threshold
     // Find the last event by sequence number
@@ -12492,21 +12638,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       await db.events.delete(lastEvent.id)
 
       // Update set points
-      const newHomePoints = courtSwitchModal.teamThatScored === 'home'
-        ? courtSwitchModal.homePoints - 1
-        : courtSwitchModal.homePoints
-      const newAwayPoints = courtSwitchModal.teamThatScored === 'away'
-        ? courtSwitchModal.awayPoints - 1
-        : courtSwitchModal.awayPoints
+      const newHomePoints = modal.teamThatScored === 'home'
+        ? modal.homePoints - 1
+        : modal.homePoints
+      const newAwayPoints = modal.teamThatScored === 'away'
+        ? modal.awayPoints - 1
+        : modal.awayPoints
 
-      await db.sets.update(courtSwitchModal.set.id, {
+      await db.sets.update(modal.set.id, {
         homePoints: newHomePoints,
         awayPoints: newAwayPoints
       })
     }
-
-    setCourtSwitchModal(null)
-  }, [courtSwitchModal, data?.events])
+  }), [runCourtSwitchCancel, courtSwitchModal, data?.events])
 
   // Check if match is already finished (loaded a completed match)
   // If so, trigger onFinishSet to navigate to MatchEnd screen
@@ -12992,8 +13136,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             menuTitle={t('header.scoresheet')}
             buttonClassName={SB_TOOLBAR_BTN}
             buttonStyle={{
-              padding: '0.34cqw 0.6cqw',
-              fontSize: '1.28cqw'
+              ...SB_TOOLBAR_BTN_SIZE,
+              padding: '0 0.68cqw'
             }}
             showArrow={true}
             position="right"
@@ -13152,9 +13296,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             menuTitle={t('header.match', 'Match')}
             buttonClassName={SB_TOOLBAR_BTN}
             buttonStyle={{
+              ...SB_TOOLBAR_BTN_SIZE,
               width: 'auto',
-              padding: '0.43cqw 0.85cqw',
-              fontSize: '1.28cqw',
+              padding: '0 0.85cqw',
               textAlign: 'center'
             }}
             position="right"
@@ -13332,294 +13476,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           onClose={() => setShowRosters(false)}
           width={1200}
         >
-          {(() => {
-            // Separate players and liberos
-            const homePlayers = (data.homePlayers || []).filter(p => !p.libero).sort((a, b) => (a.number || 0) - (b.number || 0))
-            const homeLiberos = (data.homePlayers || [])
-              .filter(p => p.libero)
-              .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
-            const awayPlayers = (data.awayPlayers || []).filter(p => !p.libero).sort((a, b) => (a.number || 0) - (b.number || 0))
-            const awayLiberos = (data.awayPlayers || [])
-              .filter(p => p.libero)
-              .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
-
-            // Pad arrays to same length for alignment
-            const maxPlayers = Math.max(homePlayers.length, awayPlayers.length)
-            const maxLiberos = Math.max(homeLiberos.length, awayLiberos.length)
-
-            const paddedHomePlayers = [...homePlayers, ...Array(maxPlayers - homePlayers.length).fill(null)]
-            const paddedAwayPlayers = [...awayPlayers, ...Array(maxPlayers - awayPlayers.length).fill(null)]
-            const paddedHomeLiberos = [...homeLiberos, ...Array(maxLiberos - homeLiberos.length).fill(null)]
-            const paddedAwayLiberos = [...awayLiberos, ...Array(maxLiberos - awayLiberos.length).fill(null)]
-
-            // Bench officials - sorted by hierarchy: C, AC1, AC2, P, M
-            const getRoleOrder = (role) => {
-              const roleMap = {
-                'Coach': 0,
-                'Assistant Coach 1': 1,
-                'Assistant Coach 2': 2,
-                'Physiotherapist': 3,
-                'Medic': 4
-              }
-              return roleMap[role] ?? 999
-            }
-            const sortBenchByHierarchy = (bench) => {
-              return [...bench].sort((a, b) => getRoleOrder(a.role) - getRoleOrder(b.role))
-            }
-            const homeBench = sortBenchByHierarchy((data?.match?.bench_home || []).filter(b => b.firstName || b.lastName || b.dob))
-            const awayBench = sortBenchByHierarchy((data?.match?.bench_away || []).filter(b => b.firstName || b.lastName || b.dob))
-            const maxBench = Math.max(homeBench.length, awayBench.length)
-            const paddedHomeBench = [...homeBench, ...Array(maxBench - homeBench.length).fill(null)]
-            const paddedAwayBench = [...awayBench, ...Array(maxBench - awayBench.length).fill(null)]
-
-            return (
-              <div className="roster-panel">
-                {/* Players Section */}
-                <div className="roster-tables">
-                  <div className="roster-table-wrapper">
-                    <SbSection title={<>{data.homeTeam?.name || t('common.home')} {t('scoreboard.players')}</>} className="mb-2" />
-                    <table className="roster-table">
-                      <thead>
-                        <tr>
-                          <th>{t('roster.number')}</th>
-                          <th>{t('roster.name')}</th>
-                          <th>{t('roster.dob')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paddedHomePlayers.map((player, idx) => (
-                          <tr key={player?.id || `empty-${idx}`}>
-                            {player ? (
-                              <>
-                                <td className="roster-number">
-                                  <span>{player.number ?? '—'}</span>
-                                  <span className="roster-role">
-                                    {player.isCaptain && <span className="roster-badge captain">C</span>}
-                                  </span>
-                                </td>
-                                <td className="roster-name">
-                                  {player.lastName || player.name} {player.firstName}
-                                </td>
-                                <td className="roster-dob">{player.dob || '—'}</td>
-                              </>
-                            ) : (
-                              <td colSpan="3" style={{ height: '40px' }}></td>
-                            )}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="roster-table-wrapper">
-                    <SbSection title={<>{data.awayTeam?.name || t('common.away')} {t('scoreboard.players')}</>} className="mb-2" />
-                    <table className="roster-table">
-                      <thead>
-                        <tr>
-                          <th>{t('roster.number')}</th>
-                          <th>{t('roster.name')}</th>
-                          <th>{t('roster.dob')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paddedAwayPlayers.map((player, idx) => (
-                          <tr key={player?.id || `empty-${idx}`}>
-                            {player ? (
-                              <>
-                                <td className="roster-number">
-                                  <span>{player.number ?? '—'}</span>
-                                  <span className="roster-role">
-                                    {player.isCaptain && <span className="roster-badge captain">C</span>}
-                                  </span>
-                                </td>
-                                <td className="roster-name">
-                                  {player.lastName || player.name} {player.firstName}
-                                </td>
-                                <td className="roster-dob">{player.dob || '—'}</td>
-                              </>
-                            ) : (
-                              <td colSpan="3" style={{ height: '40px' }}></td>
-                            )}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Liberos Section */}
-                {(maxLiberos > 0) && (
-                  <div className="roster-tables" style={{ marginTop: '24px' }}>
-                    <div className="roster-table-wrapper">
-                      <SbSection title={<>{data.homeTeam?.name || t('common.home')} {t('scoreboard.liberos')}</>} className="mb-2" />
-                      <table className="roster-table">
-                        <thead>
-                          <tr>
-                            <th>{t('roster.number')}</th>
-                            <th>{t('roster.name')}</th>
-                            <th>{t('roster.dob')}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {paddedHomeLiberos.map((player, idx) => (
-                            <tr key={player?.id || `empty-libero-${idx}`}>
-                              {player ? (
-                                <>
-                                  <td className="roster-number">
-                                    <span>{player.number ?? '—'}</span>
-                                    <span className="roster-role">
-                                      {player.libero === 'libero1' && <span className="roster-badge libero">L1</span>}
-                                      {player.libero === 'libero2' && <span className="roster-badge libero">L2</span>}
-                                      {player.isCaptain && <span className="roster-badge captain">C</span>}
-                                    </span>
-                                  </td>
-                                  <td className="roster-name">
-                                    {player.lastName || player.name} {player.firstName}
-                                  </td>
-                                  <td className="roster-dob">{player.dob || '—'}</td>
-                                </>
-                              ) : (
-                                <td colSpan="3" style={{ height: '40px' }}></td>
-                              )}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div className="roster-table-wrapper">
-                      <SbSection title={<>{data.awayTeam?.name || t('common.away')} {t('scoreboard.liberos')}</>} className="mb-2" />
-                      <table className="roster-table">
-                        <thead>
-                          <tr>
-                            <th>{t('roster.number')}</th>
-                            <th>{t('roster.name')}</th>
-                            <th>{t('roster.dob')}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {paddedAwayLiberos.map((player, idx) => (
-                            <tr key={player?.id || `empty-libero-${idx}`}>
-                              {player ? (
-                                <>
-                                  <td className="roster-number">
-                                    <span>{player.number ?? '—'}</span>
-                                    <span className="roster-role">
-                                      {player.libero === 'libero1' && <span className="roster-badge libero">L1</span>}
-                                      {player.libero === 'libero2' && <span className="roster-badge libero">L2</span>}
-                                      {player.isCaptain && <span className="roster-badge captain">C</span>}
-                                    </span>
-                                  </td>
-                                  <td className="roster-name">
-                                    {player.lastName || player.name} {player.firstName}
-                                  </td>
-                                  <td className="roster-dob">{player.dob || '—'}</td>
-                                </>
-                              ) : (
-                                <td colSpan="3" style={{ height: '40px' }}></td>
-                              )}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-                {/* Bench Officials Section */}
-                <div className="bench-officials-section" style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid var(--border)' }}>
-                  <div className="roster-tables">
-                    <div className="roster-table-wrapper">
-                      <SbSection title={<>{data.homeTeam?.name || t('common.home')} {t('scoreboard.benchOfficials')}</>} className="mb-2" />
-                      <table className="roster-table">
-                        <thead>
-                          <tr>
-                            <th>{t('roster.role')}</th>
-                            <th>{t('roster.name')}</th>
-                            <th>{t('roster.dob')}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {paddedHomeBench.map((official, idx) => (
-                            <tr key={official ? `home-bench-${idx}` : `empty-bench-${idx}`}>
-                              {official ? (
-                                <>
-                                  <td style={{ textTransform: 'capitalize', fontWeight: 500 }}>{official.role || '—'}</td>
-                                  <td>{official.lastName || ''} {official.firstName || ''}</td>
-                                  <td>{official.dob || '—'}</td>
-                                </>
-                              ) : (
-                                <td colSpan="3" style={{ height: '40px' }}></td>
-                              )}
-                            </tr>
-                          ))}
-                          {maxBench === 0 && (
-                            <tr>
-                              <td colSpan="3" style={{ textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic' }}>{t('scoreboard.roster.noBenchOfficials')}</td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div className="roster-table-wrapper">
-                      <SbSection title={<>{data.awayTeam?.name || t('common.away')} {t('scoreboard.benchOfficials')}</>} className="mb-2" />
-                      <table className="roster-table">
-                        <thead>
-                          <tr>
-                            <th>{t('roster.role')}</th>
-                            <th>{t('roster.name')}</th>
-                            <th>{t('roster.dob')}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {paddedAwayBench.map((official, idx) => (
-                            <tr key={official ? `away-bench-${idx}` : `empty-bench-${idx}`}>
-                              {official ? (
-                                <>
-                                  <td style={{ textTransform: 'capitalize', fontWeight: 500 }}>{official.role || '—'}</td>
-                                  <td>{official.lastName || ''} {official.firstName || ''}</td>
-                                  <td>{official.dob || '—'}</td>
-                                </>
-                              ) : (
-                                <td colSpan="3" style={{ height: '40px' }}></td>
-                              )}
-                            </tr>
-                          ))}
-                          {maxBench === 0 && (
-                            <tr>
-                              <td colSpan="3" style={{ textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic' }}>{t('scoreboard.roster.noBenchOfficials')}</td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-                {(data?.match?.officials && data.match.officials.length > 0) && (
-                  <div className="officials-section" style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid var(--border)' }}>
-                    <SbSection title="Match officials" className="mb-3" />
-                    <table className="roster-table">
-                      <thead>
-                        <tr>
-                          <th>Role</th>
-                          <th>Name</th>
-                          <th>Country</th>
-                          <th>DOB</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data.match.officials.map((official, idx) => (
-                          <tr key={idx}>
-                            <td style={{ textTransform: 'capitalize', fontWeight: 500 }}>{official.role || '—'}</td>
-                            <td>{official.lastName || ''} {official.firstName || ''}</td>
-                            <td>{official.country || '—'}</td>
-                            <td>{official.dob || '—'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )
-          })()}
+          <RostersPanel
+            data={data}
+            lineups={{ home: getTeamLineupState('home').currentLineup, away: getTeamLineupState('away').currentLineup }}
+            servingTeam={currentServeTeam}
+          />
         </Modal>
       )}
 
@@ -14398,16 +14259,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                       setLeftTeamOverrides: { ...overrides, 5: sideVal },
                                       set5FirstServe: set5CoinTossDraft.serve // 'A' or 'B'
                                     })
-                                    // This syncs via the regular queue mechanism if the Scoreboard/App handles it, 
-                                    // but Scoreboard doesn't auto-sync DB changes to queue usually without a hook?
-                                    // Actually, CoinToss.jsx manually adds to sync_queue.
-                                    // The Scoreboard uses useSyncQueue but usually for 'logged events'.
-                                    // We should ideally add a sync task here or rely on the fact that match updates usually aren't synced unless triggered?
-                                    // Wait, Scoreboard.jsx line 50: `flushSyncQueue`.
-                                    // The user might be online.
-                                    // I'll stick to updating the local DB for now, which updates the UI.
-                                    // The sync logic for generic match updates might be elsewhere.
-                                    // Given existing patterns, direct DB update renders the changes.
+                                    // Dexie alone reaches no tablet: push sides / serve to them
+                                    syncSet5Setup({ duringInterval: !!betweenSetsCountdown })
                                   }}
                                   style={{
                                     marginTop: '8px',
@@ -14842,8 +14695,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <div
                 data-help-id="scoreboard-timeout-left"
                 onClick={() => {
-                  // Clicking calls timeout if available
-                  const canCallTimeout = getTimeoutsUsed('left') < 2 && rallyStatus !== 'in_play' && !isRallyReplayed
+                  // Clicking calls a time-out; with both used, handleTimeout turns
+                  // the request into an improper request (FIVB 15.11.1.4)
+                  const canCallTimeout = rallyStatus !== 'in_play' && !isRallyReplayed
                   if (canCallTimeout) {
                     handleTimeout('left')
                   }
@@ -14864,7 +14718,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     : (rallyStatus === 'in_play' || isRallyReplayed
                       ? '1px solid var(--border)'
                       : '1px solid rgba(34, 197, 94, 0.4)'),
-                  cursor: getTimeoutsUsed('left') >= 2 || rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer'
+                  cursor: rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer'
                 }}
               >
                 <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '3.75cqw' : 'max(11px, 5.1cqw)', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.to')}</div>
@@ -15062,9 +14916,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   background: '#fffbeb', // amber-50
                   border: '1px solid #fcd34d', // amber-300
                   borderRadius: '1.25cqw',
-                  color: '#92400e' // amber-800
+                  color: '#92400e', // amber-800
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5em'
                 }}>
-                  {t('scoreboard.sanctions.sanctionedFormalWarning')} <CardIcon size="1.1em" />
+                  {/* A real yellow card, in line with the text */}
+                  <span
+                    className="sanction-card yellow"
+                    aria-hidden="true"
+                    style={{ width: '0.75em', height: '1.05em', borderRadius: '0.15em', flexShrink: 0, boxShadow: '0 0 0 1px rgba(146, 64, 14, 0.25)' }}
+                  />
+                  <span>{t('scoreboard.sanctions.sanctionedFormalWarning')}</span>
                 </div>
               )}
             </div>
@@ -15718,7 +15581,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '1.9cqw' }}>
-                              <span style={{ fontWeight: 600, color: '#57534e', minWidth: '9.4cqw' }}>
+                              <span style={{ fontWeight: 600, color: '#57534e', minWidth: '2.8em', flexShrink: 0 }}>
                                 {official.role === 'Coach' ? 'C' :
                                   official.role === 'Assistant Coach 1' ? 'AC1' :
                                     official.role === 'Assistant Coach 2' ? 'AC2' :
@@ -15872,15 +15735,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 alignItems: 'center',
                 width: '100%'
               }}>
-                {/* Left Serve indicator */}
+                {/* Left Serve indicator. Both sides always render it and the
+                    non-serving one is only hidden: the SERVE block is taller than
+                    this row's minHeight, so unmounting it (while a sideout's
+                    rotation is written) let the court grow and shrink back. */}
                 <div style={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'flex-start',
                   gap: vmin(2),
-                  minWidth: vmin(10)
+                  minWidth: vmin(10),
+                  visibility: leftServing ? 'visible' : 'hidden'
                 }}>
-                  {leftServing && (() => {
+                  {(() => {
                     const servingPlayer = leftTeam.playersOnCourt.find(p => p.position === 'I')
                     // If lineup not set, show just the ball
                     if (!servingPlayer || !servingPlayer.number) {
@@ -15940,9 +15807,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   alignItems: 'center',
                   justifyContent: 'flex-end',
                   gap: vmin(2),
-                  minWidth: vmin(10)
+                  minWidth: vmin(10),
+                  visibility: rightServing ? 'visible' : 'hidden'
                 }}>
-                  {rightServing && (() => {
+                  {(() => {
                     const servingPlayer = rightTeam.playersOnCourt.find(p => p.position === 'I')
                     // If lineup not set, show just the ball
                     if (!servingPlayer || !servingPlayer.number) {
@@ -16541,11 +16409,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   alt="Volleyball"
                                   style={{
                                     position: 'absolute',
-                                    left: vmin(-8),
+                                    // 15% smaller than the old 8, set off the circle so it clears the I and C badges
+                                    left: vmin(-9.5),
                                     top: '50%',
                                     transform: 'translateY(-50%)',
-                                    width: vmin(8),
-                                    height: vmin(8),
+                                    width: vmin(6.8),
+                                    height: vmin(6.8),
                                     zIndex: 5
                                   }}
                                 />
@@ -17122,11 +16991,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   alt="Volleyball"
                                   style={{
                                     position: 'absolute',
-                                    right: vmin(-8),
+                                    // 15% smaller than the old 8, set off the circle so it clears the I and C badges
+                                    right: vmin(-9.5),
                                     top: '50%',
                                     transform: 'translateY(-50%)',
-                                    width: vmin(8),
-                                    height: vmin(8),
+                                    width: vmin(6.8),
+                                    height: vmin(6.8),
                                     zIndex: 5
                                   }}
                                 />
@@ -17626,12 +17496,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       alignItems: 'stretch',
                       gap: 'calc(10px * var(--scale-factor))',
                       width: '100%',
+                      // Not the full column width: a button row, not a banner
+                      maxWidth: 'calc(380px * var(--scale-factor))',
+                      alignSelf: 'center',
                       marginTop: vmin(10)
                     }}>
                       <button
                         onClick={async () => {
                           const newLeftTeam = data?.match?.set5LeftTeam === 'A' ? 'B' : 'A'
                           await db.matches.update(matchId, { set5LeftTeam: newLeftTeam })
+                          syncSet5Setup({ duringInterval: !!betweenSetsCountdown })
                         }}
                         style={{
                           display: 'flex',
@@ -17657,6 +17531,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         onClick={async () => {
                           const newFirstServe = data?.match?.set5FirstServe === 'A' ? 'B' : 'A'
                           await db.matches.update(matchId, { set5FirstServe: newFirstServe })
+                          syncSet5Setup({ duringInterval: !!betweenSetsCountdown })
                         }}
                         style={{
                           display: 'flex',
@@ -17679,9 +17554,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         {t('scoreboard.buttons.switchServe')}
                       </button>
                       <button
-                        onClick={() => {
-                          confirmSet5SideService(data?.match?.set5LeftTeam || 'A', data?.match?.set5FirstServe || 'A', true)
-                          setBetweenSetsCountdown(null)
+                        onClick={async () => {
+                          await confirmSet5SideService(data?.match?.set5LeftTeam || 'A', data?.match?.set5FirstServe || 'A', true)
+                          // Ends the interval here and on the tablets, with the confirmed sides / serve
+                          await syncSet5Setup({ endInterval: true })
                         }}
                         style={{
                           display: 'flex',
@@ -17790,7 +17666,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       </button>
                     ) : (
                       <>
-                        <div className="rally-controls-row" style={{ gap: '5px' }}>
+                        <div className="rally-controls-row">
                           <button data-help-id="scoreboard-point-left" className="rally-point-button" onClick={() => handlePoint('left')}>
                             {t('scoreboard.buttons.pointTeam', { team: teamALabel })}
                           </button>
@@ -17800,12 +17676,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         </div>
                       </>
                     )}
-                    <div style={{ display: 'flex', gap: '8px' }}>
+                    <div className="rally-secondary-row">
                       {rallyStatus === 'in_play' && (
                         <button
                           className="secondary"
                           onClick={handleReplay}
-                          style={{ flex: 1 }}
                         >
                           {t('scoreboard.buttons.replay')}
                         </button>
@@ -17814,13 +17689,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         <button
                           onClick={handleReplay}
                           style={{
-                            flex: 1,
                             background: '#eab308',
                             color: '#000',
                             border: 'none',
                             borderRadius: '8px',
-                            padding: '8px 12px',
-                            fontSize: '13px',
                             fontWeight: 600,
                             cursor: 'pointer'
                           }}
@@ -17828,17 +17700,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           {t('scoreboard.buttons.decisionChange')}
                         </button>
                       )}
+                      {/* Keep Undo in its half even when the left button is absent */}
+                      {rallyStatus === 'idle' && !canReplayRally && <span aria-hidden="true" />}
                       <button
                         data-help-id="scoreboard-undo"
                         className="danger"
                         onClick={showUndoConfirm}
                         disabled={!canUndo}
-                        style={{
-                          flex: (rallyStatus === 'in_play' || (rallyStatus === 'idle' && canReplayRally)) ? 1 : 'none',
-                          padding: '8px 16px',
-                          fontSize: '14px',
-                          minHeight: '44px'
-                        }}
                       >
                         {t('scoreboard.buttons.undo')}
                       </button>
@@ -17907,9 +17775,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           const description = getActionDescription(lastEvent)
 
                           return (
-                            <div style={{ fontSize: '12px', wordBreak: 'break-word', margin: '0 auto', whiteSpace: 'normal' }}>
-                              <span className="summary-label" style={{ whiteSpace: 'normal' }}>{t('scoreboard.lastAction', 'Last action:')} </span>
-                              <span className="summary-value" style={{ color: 'var(--muted)', whiteSpace: 'normal' }}>
+                            // One fixed line: a description that wrapped to two lines made the
+                            // court shrink, then grow back with the next shorter one
+                            <div title={description} style={{ fontSize: '12px', lineHeight: '16px', height: '16px', margin: '0 auto', maxWidth: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              <span className="summary-label">{t('scoreboard.lastAction', 'Last action:')} </span>
+                              <span className="summary-value" style={{ color: 'var(--muted)' }}>
                                 {description} <span style={{ opacity: 0.5, fontSize: '10px' }}>(seq: {lastEvent.seq})</span>
                               </span>
                             </div>
@@ -18219,8 +18089,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <div
                 data-help-id="scoreboard-timeout-right"
                 onClick={() => {
-                  // Clicking calls timeout if available
-                  const canCallTimeout = getTimeoutsUsed('right') < 2 && rallyStatus !== 'in_play' && !isRallyReplayed
+                  // Clicking calls a time-out; with both used, handleTimeout turns
+                  // the request into an improper request (FIVB 15.11.1.4)
+                  const canCallTimeout = rallyStatus !== 'in_play' && !isRallyReplayed
                   if (canCallTimeout) {
                     handleTimeout('right')
                   }
@@ -18241,7 +18112,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     : (rallyStatus === 'in_play' || isRallyReplayed
                       ? '1px solid var(--border)'
                       : '1px solid rgba(34, 197, 94, 0.4)'),
-                  cursor: getTimeoutsUsed('right') >= 2 || rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer'
+                  cursor: rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer'
                 }}
               >
                 <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '3.75cqw' : 'max(11px, 5.1cqw)', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.to')}</div>
@@ -18439,9 +18310,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   background: '#fffbeb', // amber-50
                   border: '1px solid #fcd34d', // amber-300
                   borderRadius: '1.25cqw',
-                  color: '#92400e' // amber-800
+                  color: '#92400e', // amber-800
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5em'
                 }}>
-                  {t('scoreboard.sanctions.sanctionedFormalWarning')} <CardIcon size="1.1em" />
+                  {/* A real yellow card, in line with the text */}
+                  <span
+                    className="sanction-card yellow"
+                    aria-hidden="true"
+                    style={{ width: '0.75em', height: '1.05em', borderRadius: '0.15em', flexShrink: 0, boxShadow: '0 0 0 1px rgba(146, 64, 14, 0.25)' }}
+                  />
+                  <span>{t('scoreboard.sanctions.sanctionedFormalWarning')}</span>
                 </div>
               )}
             </div>
@@ -19077,7 +18957,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '1.9cqw' }}>
-                              <span style={{ fontWeight: 600, color: '#57534e', minWidth: '9.4cqw' }}>
+                              <span style={{ fontWeight: 600, color: '#57534e', minWidth: '2.8em', flexShrink: 0 }}>
                                 {official.role === 'Coach' ? 'C' :
                                   official.role === 'Assistant Coach 1' ? 'AC1' :
                                     official.role === 'Assistant Coach 2' ? 'AC2' :
@@ -22020,12 +21900,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 <label style={{ fontSize: '11px', minWidth: '80px' }}>Start time:</label>
-                                <input
-                                  type="datetime-local"
+                                <DateTimeField
+                                  size="bare"
                                   defaultValue={(() => {
                                     if (!set.startTime) return ''
                                     const d = new Date(set.startTime)
-                                    // Format as local datetime for datetime-local input
+                                    // Local date + time, as the field shows and saves it
                                     const year = d.getFullYear()
                                     const month = String(d.getMonth() + 1).padStart(2, '0')
                                     const day = String(d.getDate()).padStart(2, '0')
@@ -22033,8 +21913,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     const minutes = String(d.getMinutes()).padStart(2, '0')
                                     return `${year}-${month}-${day}T${hours}:${minutes}`
                                   })()}
-                                  onBlur={async (e) => {
-                                    const newTime = e.target.value ? new Date(e.target.value).toISOString() : null
+                                  onCommit={async (value) => {
+                                    const newTime = value ? new Date(value).toISOString() : null
                                     await db.sets.update(set.id, { startTime: newTime })
                                   }}
                                   style={{
@@ -22049,12 +21929,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 <label style={{ fontSize: '11px', minWidth: '80px' }}>End time:</label>
-                                <input
-                                  type="datetime-local"
+                                <DateTimeField
+                                  size="bare"
                                   defaultValue={(() => {
                                     if (!set.endTime) return ''
                                     const d = new Date(set.endTime)
-                                    // Format as local datetime for datetime-local input
+                                    // Local date + time, as the field shows and saves it
                                     const year = d.getFullYear()
                                     const month = String(d.getMonth() + 1).padStart(2, '0')
                                     const day = String(d.getDate()).padStart(2, '0')
@@ -22062,8 +21942,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     const minutes = String(d.getMinutes()).padStart(2, '0')
                                     return `${year}-${month}-${day}T${hours}:${minutes}`
                                   })()}
-                                  onBlur={async (e) => {
-                                    const newTime = e.target.value ? new Date(e.target.value).toISOString() : null
+                                  onCommit={async (value) => {
+                                    const newTime = value ? new Date(value).toISOString() : null
                                     await db.sets.update(set.id, { endTime: newTime })
                                   }}
                                   style={{
@@ -23205,10 +23085,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         </Modal>
       )}
 
-      {/* Timeout confirmation modal - only show before timeout starts, not during countdown */}
+      {/* Timeout confirmation modal - only show before timeout starts, not during countdown.
+          Its wording comes from timeoutModal.ordinal / .consecutive, taken when it
+          opened; never from the live time-out count (it changes on confirm). */}
       {timeoutModal && !timeoutModal.started && (
         <Modal
-          title={`Time-out — ${timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))}`}
+          title={t('scoreboard.timeoutRequest.title', { team: timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')) })}
           open={true}
           onClose={cancelTimeout}
           width={400}
@@ -23224,8 +23106,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               const otherTeamLabel = timeoutModal.team === teamAKey ? 'B' : 'A'
               const requestingTeamColor = requestingTeamData?.color || (timeoutModal.team === 'home' ? '#ef4444' : '#3b82f6')
               const otherTeamColor = otherTeamData?.color || (timeoutModal.team === 'home' ? '#3b82f6' : '#ef4444')
-              const currentTimeouts = timeoutsUsed[timeoutModal.team] || 0
-              const isSecondTimeout = currentTimeouts === 1
               return (
                 <div style={{ marginBottom: '16px', fontSize: '24px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
                   <span style={{
@@ -23248,15 +23128,29 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 </div>
               )
             })()}
-            <p className="text-sm text-stone-600" style={{ marginBottom: '20px' }}>
-              Confirm {(timeoutsUsed[timeoutModal.team] || 0) === 1 && <><span className="font-bold text-red-700">2nd</span>{' '}</>}time-out request?
-            </p>
+            {(() => {
+              const teamName = timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))
+              if (timeoutModal.consecutive) {
+                return (
+                  <p className="text-sm font-semibold text-red-700" style={{ marginBottom: '20px' }} data-testid="timeout-request-text">
+                    {t('scoreboard.timeoutRequest.consecutive', { team: teamName })}
+                  </p>
+                )
+              }
+              return (
+                <p className={cn('text-sm', timeoutModal.ordinal === 2 ? 'font-semibold text-red-700' : 'text-stone-600')} style={{ marginBottom: '20px' }} data-testid="timeout-request-text">
+                  {timeoutModal.ordinal === 2
+                    ? t('scoreboard.timeoutRequest.second', { team: teamName })
+                    : t('scoreboard.timeoutRequest.first', { team: teamName })}
+                </p>
+              )
+            })()}
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
               <SbButton variant="positive" onClick={confirmTimeout}>
-                Confirm time-out
+                {timeoutModal.consecutive ? t('scoreboard.timeoutRequest.confirmConsecutive') : t('scoreboard.buttons.confirmTimeout')}
               </SbButton>
               <SbButton onClick={cancelTimeout}>
-                Cancel
+                {t('common.cancel')}
               </SbButton>
             </div>
           </div>
@@ -23413,7 +23307,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {/* Substitution - auto-fire if only 1 legal substitute, otherwise expandable */}
                 {playerActionMenu.canSubstitute && availableSubs.length > 0 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <button
+                    <SbMenuItem
+                      tone="positive"
                       onClick={() => {
                         // If only 1 legal substitute, go directly to confirmation
                         if (availableSubs.length === 1) {
@@ -23422,67 +23317,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           setCourtSubExpanded(!courtSubExpanded)
                         }
                       }}
-                      style={{
-                        padding: '8px 12px',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        background: '#047857',
-                        color: '#fff',
-                        border: '1px solid #047857',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        transition: 'all 0.2s',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '6px',
-                        width: '100%'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = '#065f46'
-                        e.currentTarget.style.transform = 'scale(1.02)'
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = '#047857'
-                        e.currentTarget.style.transform = 'scale(1)'
-                      }}
+                      // Only a disclosure (chevron) if more than 1 substitute available
+                      expanded={availableSubs.length > 1 ? courtSubExpanded : undefined}
+                      icon={availableSubs.length > 1 ? undefined : <ArrowUpDown size={16} strokeWidth={2.5} />}
                     >
-                      <span>Substitution</span>
-                      {/* Only show arrow if more than 1 substitute available */}
-                      {availableSubs.length > 1 && (
-                        <span style={{ fontSize: '14px', lineHeight: '1', transform: courtSubExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-                      )}
-                    </button>
+                      Substitution
+                    </SbMenuItem>
                     {courtSubExpanded && availableSubs.length > 1 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                      <div className={SB_MENU_CHIPS}>
                         {availableSubs.map(sub => (
-                          <button
-                            key={sub.number}
-                            onClick={() => handleSubFromMenu(sub)}
-                            style={{
-                              padding: '6px 10px',
-                              fontSize: '12px',
-                              fontWeight: 700,
-                              background: '#ecfdf5',
-                              color: '#047857',
-                              border: '1px solid #a7f3d0',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
-                              transition: 'all 0.2s',
-                              minWidth: '40px'
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = '#d1fae5'
-                              e.currentTarget.style.borderColor = '#6ee7b7'
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = '#ecfdf5'
-                              e.currentTarget.style.borderColor = '#a7f3d0'
-                            }}
-                          >
+                          <SbMenuItem key={sub.number} chip tone="positive-soft" onClick={() => handleSubFromMenu(sub)}>
                             {sub.number}
-                          </button>
+                          </SbMenuItem>
                         ))}
                       </div>
                     )}
@@ -23575,70 +23421,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <button
-                        onClick={() => setCourtLiberoExpanded(!courtLiberoExpanded)}
-                        style={{
-                          padding: '8px 12px',
-                          fontSize: '12px',
-                          fontWeight: 600,
-                          background: '#FFF8E7',
-                          color: '#000',
-                          border: '1px solid rgba(0, 0, 0, 0.2)',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          transition: 'all 0.2s',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: '6px',
-                          width: '100%'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = '#fff4d6'
-                          e.currentTarget.style.transform = 'scale(1.02)'
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = '#FFF8E7'
-                          e.currentTarget.style.transform = 'scale(1)'
-                        }}
-                      >
-                        <span>Libero</span>
-                        <span style={{ fontSize: '14px', lineHeight: '1', transform: courtLiberoExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-                      </button>
+                      <SbMenuItem tone="libero" expanded={courtLiberoExpanded} onClick={() => setCourtLiberoExpanded(!courtLiberoExpanded)}>
+                        Libero
+                      </SbMenuItem>
                       {courtLiberoExpanded && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                        <div className={SB_MENU_CHIPS}>
                           {availableLiberos.map(libero => (
-                            <button
-                              key={libero.number}
-                              onClick={() => handleLiberoSelect(libero)}
-                              style={{
-                                padding: '6px 10px',
-                                fontSize: '12px',
-                                fontWeight: 700,
-                                background: '#fff',
-                                color: '#000',
-                                border: '1px solid rgba(0, 0, 0, 0.3)',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s',
-                                minWidth: '50px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px'
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.background = '#f3f4f6'
-                                e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.5)'
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.background = '#fff'
-                                e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.3)'
-                              }}
-                            >
-                              <span>{libero.number}</span>
-                              <span style={{ fontSize: '10px', fontWeight: 600, color: '#000' }}>({libero.label})</span>
-                            </button>
+                            <SbMenuItem key={libero.number} chip tone="libero" onClick={() => handleLiberoSelect(libero)}>
+                              {libero.number} ({libero.label})
+                            </SbMenuItem>
                           ))}
                         </div>
                       )}
@@ -23669,7 +23460,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       {/* Libero Out button */}
-                      <button
+                      <SbMenuItem
+                        tone="libero"
                         onClick={() => {
                           setPlayerActionMenu(null)
                           setCourtSubExpanded(false)
@@ -23678,38 +23470,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           handleLiberoOut(side)
                         }}
                         disabled={liberoOutDisabled}
-                        style={{
-                          padding: '8px 12px',
-                          fontSize: '12px',
-                          fontWeight: 600,
-                          background: liberoOutDisabled ? '#888' : '#FFF8E7',
-                          color: '#000',
-                          border: '1px solid rgba(0, 0, 0, 0.2)',
-                          borderRadius: '6px',
-                          cursor: liberoOutDisabled ? 'not-allowed' : 'pointer',
-                          textAlign: 'center',
-                          transition: 'all 0.2s',
-                          width: '100%',
-                          opacity: liberoOutDisabled ? 0.5 : 1
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!liberoOutDisabled) {
-                            e.currentTarget.style.background = '#FFF0C0'
-                            e.currentTarget.style.transform = 'scale(1.02)'
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!liberoOutDisabled) {
-                            e.currentTarget.style.background = '#FFF8E7'
-                            e.currentTarget.style.transform = 'scale(1)'
-                          }
-                        }}
                       >
                         Libero out
-                      </button>
+                      </SbMenuItem>
                       {/* Exchange Libero button - only if 2 liberos */}
                       {liberos.length >= 2 && (
-                        <button
+                        <SbMenuItem
+                          tone="libero"
                           onClick={() => {
                             setPlayerActionMenu(null)
                             setCourtSubExpanded(false)
@@ -23718,72 +23485,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             handleExchangeLibero(side)
                           }}
                           disabled={exchangeLiberoDisabled}
-                          style={{
-                            padding: '8px 12px',
-                            fontSize: '12px',
-                            fontWeight: 600,
-                            background: exchangeLiberoDisabled ? '#888' : '#FFF8E7',
-                            color: '#000',
-                            border: '1px solid rgba(0, 0, 0, 0.2)',
-                            borderRadius: '6px',
-                            cursor: exchangeLiberoDisabled ? 'not-allowed' : 'pointer',
-                            textAlign: 'center',
-                            transition: 'all 0.2s',
-                            width: '100%',
-                            opacity: exchangeLiberoDisabled ? 0.5 : 1
-                          }}
-                          onMouseEnter={(e) => {
-                            if (!exchangeLiberoDisabled) {
-                              e.currentTarget.style.background = '#FFF0C0'
-                              e.currentTarget.style.transform = 'scale(1.02)'
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (!exchangeLiberoDisabled) {
-                              e.currentTarget.style.background = '#FFF8E7'
-                              e.currentTarget.style.transform = 'scale(1)'
-                            }
-                          }}
                         >
                           Exchange libero
-                        </button>
+                        </SbMenuItem>
                       )}
                       {/* Unable to play - expandable */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <button
-                          onClick={() => setCourtLiberoUnableExpanded(!courtLiberoUnableExpanded)}
-                          style={{
-                            padding: '8px 12px',
-                            fontSize: '12px',
-                            fontWeight: 600,
-                            background: '#fef2f2',
-                            color: '#b91c1c',
-                            border: '1px solid #fecaca',
-                            borderRadius: '6px',
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                            transition: 'all 0.2s',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            gap: '6px',
-                            width: '100%'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = '#fee2e2'
-                            e.currentTarget.style.transform = 'scale(1.02)'
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = '#fef2f2'
-                            e.currentTarget.style.transform = 'scale(1)'
-                          }}
-                        >
-                          <span>Unable to play</span>
-                          <span style={{ fontSize: '14px', lineHeight: '1', transform: courtLiberoUnableExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-                        </button>
+                        <SbMenuItem tone="danger" expanded={courtLiberoUnableExpanded} onClick={() => setCourtLiberoUnableExpanded(!courtLiberoUnableExpanded)}>
+                          Unable to play
+                        </SbMenuItem>
                         {courtLiberoUnableExpanded && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
-                            <button
+                          <div className={SB_MENU_SUB}>
+                            <SbMenuItem
+                              tone="declared"
+                              icon={<SpeechIcon size={16} />}
                               onClick={() => {
                                 setPlayerActionMenu(null)
                                 setCourtSubExpanded(false)
@@ -23798,25 +23513,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   isOnCourt: true
                                 })
                               }}
-                              style={{
-                                padding: '6px 10px',
-                                fontSize: '11px',
-                                fontWeight: 600,
-                                background: '#f97316',
-                                color: '#000',
-                                border: '1px solid rgba(0, 0, 0, 0.2)',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                gap: '8px'
-                              }}
                             >
-                              <span>Declared unable</span>
-                              <SpeechIcon size={14} />
-                            </button>
-                            <button
+                              Declared unable
+                            </SbMenuItem>
+                            <SbMenuItem
+                              tone="danger"
+                              icon={SB_INJURY_ICON}
                               onClick={() => {
                                 setPlayerActionMenu(null)
                                 setCourtSubExpanded(false)
@@ -23831,24 +23533,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   isOnCourt: true
                                 })
                               }}
-                              style={{
-                                padding: '6px 10px',
-                                fontSize: '11px',
-                                fontWeight: 600,
-                                background: '#fef2f2',
-                                color: '#b91c1c',
-                                border: '1px solid #fecaca',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                gap: '8px'
-                              }}
                             >
-                              <span>Injury / illness</span>
-                              <span style={{ fontSize: '14px' }}>✚</span>
-                            </button>
+                              Injury / illness
+                            </SbMenuItem>
                           </div>
                         )}
                       </div>
@@ -23857,164 +23544,31 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 })()}
                 {/* Sanction - expandable */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <button
-                    onClick={() => setCourtSanctionExpanded(!courtSanctionExpanded)}
-                    style={{
-                      padding: '8px 12px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      background: 'var(--panel)',
-                      color: 'var(--text)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'all 0.2s',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '6px',
-                      width: '100%'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'var(--panel-2)'
-                      e.currentTarget.style.transform = 'scale(1.02)'
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'var(--panel)'
-                      e.currentTarget.style.transform = 'scale(1)'
-                    }}
-                  >
-                    <span>Sanction</span>
-                    <span style={{ fontSize: '14px', lineHeight: '1', transform: courtSanctionExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-                  </button>
+                  <SbMenuItem expanded={courtSanctionExpanded} onClick={() => setCourtSanctionExpanded(!courtSanctionExpanded)}>
+                    Sanction
+                  </SbMenuItem>
                   {courtSanctionExpanded && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
-                      <button
-                        onClick={() => showSanctionConfirmFromMenu('warning')}
-                        disabled={!canGetWarning}
-                        style={{
-                          padding: '6px 10px',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          background: canGetWarning ? 'var(--panel-2)' : 'var(--panel-2)',
-                          color: canGetWarning ? 'var(--text)' : 'var(--muted)',
-                          border: '1px solid var(--border)',
-                          borderRadius: '4px',
-                          cursor: canGetWarning ? 'pointer' : 'not-allowed',
-                          textAlign: 'left',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          opacity: canGetWarning ? 1 : 0.5
-                        }}
-                      >
-                        <div className="sanction-card yellow" style={{ flexShrink: 0, width: '20px', height: '26px' }}></div>
-                        <span>Warning</span>
-                      </button>
-                      <button
-                        onClick={() => showSanctionConfirmFromMenu('penalty')}
-                        disabled={!canGetPenalty}
-                        style={{
-                          padding: '6px 10px',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          background: canGetPenalty ? 'var(--panel-2)' : 'var(--panel-2)',
-                          color: canGetPenalty ? 'var(--text)' : 'var(--muted)',
-                          border: '1px solid var(--border)',
-                          borderRadius: '4px',
-                          cursor: canGetPenalty ? 'pointer' : 'not-allowed',
-                          textAlign: 'left',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          opacity: canGetPenalty ? 1 : 0.5
-                        }}
-                      >
-                        <div className="sanction-card red" style={{ flexShrink: 0, width: '20px', height: '26px' }}></div>
-                        <span>Penalty</span>
-                      </button>
-                      <button
-                        onClick={() => showSanctionConfirmFromMenu('expulsion')}
-                        disabled={!canGetExpulsion}
-                        style={{
-                          padding: '6px 10px',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          background: canGetExpulsion ? 'var(--panel-2)' : 'var(--panel-2)',
-                          color: canGetExpulsion ? 'var(--text)' : 'var(--muted)',
-                          border: '1px solid var(--border)',
-                          borderRadius: '4px',
-                          cursor: canGetExpulsion ? 'pointer' : 'not-allowed',
-                          textAlign: 'left',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          opacity: canGetExpulsion ? 1 : 0.5
-                        }}
-                      >
-                        <div className="sanction-card combo" style={{ flexShrink: 0, width: '24px', height: '26px' }}></div>
-                        <span>Expulsion</span>
-                      </button>
-                      <button
-                        onClick={() => showSanctionConfirmFromMenu('disqualification')}
-                        style={{
-                          padding: '6px 10px',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          background: 'var(--panel-2)',
-                          color: 'var(--text)',
-                          border: '1px solid var(--border)',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px'
-                        }}
-                      >
-                        <div className="sanction-cards-separate" style={{ flexShrink: 0, display: 'flex', gap: '2px' }}>
-                          <div className="sanction-card yellow" style={{ width: '16px', height: '22px' }}></div>
-                          <div className="sanction-card red" style={{ width: '16px', height: '22px' }}></div>
-                        </div>
-                        <span>Disqualification</span>
-                      </button>
+                    <div className={SB_MENU_SUB}>
+                      <SbMenuItem icon={<SbCardIcon kind="yellow" />} onClick={() => showSanctionConfirmFromMenu('warning')} disabled={!canGetWarning}>
+                        Warning
+                      </SbMenuItem>
+                      <SbMenuItem icon={<SbCardIcon kind="red" />} onClick={() => showSanctionConfirmFromMenu('penalty')} disabled={!canGetPenalty}>
+                        Penalty
+                      </SbMenuItem>
+                      <SbMenuItem icon={<SbCardIcon kind="combo" />} onClick={() => showSanctionConfirmFromMenu('expulsion')} disabled={!canGetExpulsion}>
+                        Expulsion
+                      </SbMenuItem>
+                      <SbMenuItem icon={<SbCardIcon kind="pair" />} onClick={() => showSanctionConfirmFromMenu('disqualification')}>
+                        Disqualification
+                      </SbMenuItem>
                     </div>
                   )}
                 </div>
                 {/* Injury - direct button (NOT shown for liberos on court - they have "Unable to play" menu) */}
                 {!playerActionMenu.isLiberoOnCourt && (
-                  <button
-                    onClick={openInjuryFromMenu}
-                    style={{
-                      padding: '8px 12px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      background: '#fef2f2',
-                      color: '#b91c1c',
-                      border: '1px solid #fecaca',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'all 0.2s',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '6px',
-                      width: '100%'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#fee2e2'
-                      e.currentTarget.style.transform = 'scale(1.02)'
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = '#fef2f2'
-                      e.currentTarget.style.transform = 'scale(1)'
-                    }}
-                  >
-                    <span>Injury</span>
-                    <span style={{ fontSize: '14px', lineHeight: '1' }}>✚</span>
-                  </button>
+                  <SbMenuItem tone="danger" icon={SB_INJURY_ICON} onClick={openInjuryFromMenu}>
+                    Injury
+                  </SbMenuItem>
                 )}
               </div>
             </div>
@@ -24150,45 +23704,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     {availableSubstitutes.map(player => (
-                      <button
-                        key={player.id}
-                        onClick={() => showSubstitutionConfirm(player.number)}
-                        style={{
-                          padding: '4px 6px',
-                          fontSize: '13px',
-                          fontWeight: 700,
-                          background: 'var(--panel-2)',
-                          color: 'var(--accent)',
-                          border: '1px solid var(--border)',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          textAlign: 'center',
-                          transition: 'all 0.2s',
-                          width: '100%',
-                          minHeight: '28px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = 'var(--panel)'
-                          e.currentTarget.style.borderColor = 'var(--border)'
-                          e.currentTarget.style.transform = 'scale(1.05)'
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'var(--panel-2)'
-                          e.currentTarget.style.borderColor = 'var(--border)'
-                          e.currentTarget.style.transform = 'scale(1)'
-                        }}
-                      >
+                      <SbMenuItem key={player.id} tone="positive-soft" onClick={() => showSubstitutionConfirm(player.number)}>
                         # {player.number}
-                      </button>
+                      </SbMenuItem>
                     ))}
                   </div>
                 )}
                 {/* Cancel Sanction button - only shown when player must substitute due to expulsion/disqualification */}
                 {mustSubstitute && (
-                  <button
+                  <SbMenuItem
+                    tone="danger"
+                    className="mt-2"
                     onClick={async () => {
                       // Find and delete the most recent sanction event for this player
                       const sanctionEvent = data?.events?.filter(e =>
@@ -24203,31 +23729,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       }
                       setSubstitutionDropdown(null)
                     }}
-                    style={{
-                      marginTop: '8px',
-                      padding: '6px 8px',
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      background: '#fef2f2',
-                      color: '#b91c1c',
-                      border: '1px solid #fecaca',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                      transition: 'all 0.2s',
-                      width: '100%'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#fee2e2'
-                      e.currentTarget.style.borderColor = '#fca5a5'
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = '#fef2f2'
-                      e.currentTarget.style.borderColor = '#fecaca'
-                    }}
                   >
                     Cancel sanction
-                  </button>
+                  </SbMenuItem>
                 )}
               </div>
             </div>
@@ -24322,8 +23826,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   border: '2px solid rgba(0, 0, 0, 0.2)',
                   borderRadius: '8px',
                   padding: '8px',
-                  minWidth: '80px',
-                  maxWidth: '100px',
+                  minWidth: '120px',
+                  maxWidth: '220px',
                   boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
                   transform: 'scale(1.5)',
                   transformOrigin: isRightSide ? 'top right' : 'top left'
@@ -24342,40 +23846,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     {liberos.map(player => (
-                      <button
-                        key={player.id}
-                        onClick={() => showLiberoConfirm(player.libero)}
-                        style={{
-                          padding: '4px 6px',
-                          fontSize: '13px',
-                          fontWeight: 700,
-                          background: 'rgba(0, 0, 0, 0.05)',
-                          color: '#000',
-                          border: '1px solid rgba(0, 0, 0, 0.1)',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          textAlign: 'center',
-                          transition: 'all 0.2s',
-                          width: '100%',
-                          minHeight: '28px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '4px'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = 'rgba(0, 0, 0, 0.15)'
-                          e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.3)'
-                          e.currentTarget.style.transform = 'scale(1.05)'
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'rgba(0, 0, 0, 0.05)'
-                          e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.1)'
-                          e.currentTarget.style.transform = 'scale(1)'
-                        }}
-                      >
+                      <SbMenuItem key={player.id} onClick={() => showLiberoConfirm(player.libero)}>
                         {player.libero === 'libero1' ? 'L1' : player.libero === 'redesignated' ? 'LR' : 'L2'} # {player.number}{(player.firstName || player.lastName) ? ` ${[player.firstName, player.lastName].filter(Boolean).join(' ')}` : ''}
-                      </button>
+                      </SbMenuItem>
                     ))}
                   </div>
                 )}
@@ -24443,7 +23916,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   borderRadius: '8px',
                   padding: '8px',
                   minWidth: '120px',
-                  maxWidth: '150px',
+                  maxWidth: '240px',
                   boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
                   transform: 'scale(1.5)',
                   transformOrigin: isRightSide ? 'top right' : 'top left'
@@ -24459,41 +23932,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     {eligiblePlayers.map(player => (
-                      <button
-                        key={`${player.position}-${player.number}`}
-                        onClick={() => handleLiberoInPlayerSelect(player.position, player.number)}
-                        style={{
-                          padding: '6px 8px',
-                          fontSize: '12px',
-                          fontWeight: 700,
-                          background: 'rgba(0, 0, 0, 0.05)',
-                          color: '#000',
-                          border: '1px solid rgba(0, 0, 0, 0.1)',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          textAlign: 'center',
-                          transition: 'all 0.2s',
-                          width: '100%',
-                          minHeight: '32px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '4px'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = 'rgba(0, 0, 0, 0.15)'
-                          e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.3)'
-                          e.currentTarget.style.transform = 'scale(1.05)'
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'rgba(0, 0, 0, 0.05)'
-                          e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.1)'
-                          e.currentTarget.style.transform = 'scale(1)'
-                        }}
-                      >
-                        <span style={{ fontSize: '10px', opacity: 0.7 }}>Pos {player.position}:</span>
-                        <span>#{player.number}{(() => { const p = (libInTeamPlayers || []).find(tp => String(tp.number) === String(player.number)); return (p?.firstName || p?.lastName) ? ` ${[p?.firstName, p?.lastName].filter(Boolean).join(' ')}` : ''; })()}</span>
-                      </button>
+                      <SbMenuItem key={`${player.position}-${player.number}`} onClick={() => handleLiberoInPlayerSelect(player.position, player.number)}>
+                        Pos {player.position}: #{player.number}{(() => { const p = (libInTeamPlayers || []).find(tp => String(tp.number) === String(player.number)); return (p?.firstName || p?.lastName) ? ` ${[p?.firstName, p?.lastName].filter(Boolean).join(' ')}` : ''; })()}
+                      </SbMenuItem>
                     ))}
                   </div>
                 )}
@@ -24614,144 +24055,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                     return (
                       <>
-                        <button
-                          onClick={() => showSanctionConfirm('warning')}
-                          disabled={!canGetWarning}
-                          style={{
-                            padding: '4px 8px',
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            background: canGetWarning ? 'var(--panel-2)' : 'var(--panel-2)',
-                            color: canGetWarning ? 'var(--text)' : 'var(--muted)',
-                            border: '1px solid var(--border)',
-                            borderRadius: '4px',
-                            cursor: canGetWarning ? 'pointer' : 'not-allowed',
-                            textAlign: 'left',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            transition: 'all 0.2s',
-                            opacity: canGetWarning ? 1 : 0.5
-                          }}
-                          onMouseEnter={(e) => {
-                            if (canGetWarning) {
-                              e.currentTarget.style.background = 'var(--panel)'
-                              e.currentTarget.style.borderColor = 'var(--border)'
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (canGetWarning) {
-                              e.currentTarget.style.background = 'var(--panel-2)'
-                              e.currentTarget.style.borderColor = 'var(--border)'
-                            }
-                          }}
-                        >
-                          <div className="sanction-card yellow" style={{ flexShrink: 0, width: '24px', height: '32px' }}></div>
-                          <span>Warning{!canGetWarning && (teamWarning ? ' (Team has warning)' : ' (Already sanctioned)')}</span>
-                        </button>
-                        <button
-                          onClick={() => showSanctionConfirm('penalty')}
-                          disabled={!canGetPenalty}
-                          style={{
-                            padding: '4px 8px',
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            background: canGetPenalty ? 'var(--panel-2)' : 'var(--panel-2)',
-                            color: canGetPenalty ? 'var(--text)' : 'var(--muted)',
-                            border: '1px solid var(--border)',
-                            borderRadius: '4px',
-                            cursor: canGetPenalty ? 'pointer' : 'not-allowed',
-                            textAlign: 'left',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            transition: 'all 0.2s',
-                            opacity: canGetPenalty ? 1 : 0.5
-                          }}
-                          onMouseEnter={(e) => {
-                            if (canGetPenalty) {
-                              e.currentTarget.style.background = 'var(--panel)'
-                              e.currentTarget.style.borderColor = 'var(--border)'
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (canGetPenalty) {
-                              e.currentTarget.style.background = 'var(--panel-2)'
-                              e.currentTarget.style.borderColor = 'var(--border)'
-                            }
-                          }}
-                        >
-                          <div className="sanction-card red" style={{ flexShrink: 0, width: '24px', height: '32px' }}></div>
-                          <span>Penalty{!canGetPenalty && ' (Already sanctioned)'}</span>
-                        </button>
-                        <button
-                          onClick={() => showSanctionConfirm('expulsion')}
-                          disabled={!canGetExpulsion}
-                          style={{
-                            padding: '4px 8px',
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            background: canGetExpulsion ? 'var(--panel-2)' : 'var(--panel-2)',
-                            color: canGetExpulsion ? 'var(--text)' : 'var(--muted)',
-                            border: '1px solid var(--border)',
-                            borderRadius: '4px',
-                            cursor: canGetExpulsion ? 'pointer' : 'not-allowed',
-                            textAlign: 'left',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            transition: 'all 0.2s',
-                            opacity: canGetExpulsion ? 1 : 0.5
-                          }}
-                          onMouseEnter={(e) => {
-                            if (canGetExpulsion) {
-                              e.currentTarget.style.background = 'var(--panel)'
-                              e.currentTarget.style.borderColor = 'var(--border)'
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (canGetExpulsion) {
-                              e.currentTarget.style.background = 'var(--panel-2)'
-                              e.currentTarget.style.borderColor = 'var(--border)'
-                            }
-                          }}
-                        >
-                          <div className="sanction-card combo" style={{ flexShrink: 0, width: '28px', height: '32px' }}></div>
-                          <span>Expulsion{!canGetExpulsion && ' (Already sanctioned)'}</span>
-                        </button>
-                        <button
-                          onClick={() => showSanctionConfirm('disqualification')}
-                          disabled={false}
-                          style={{
-                            padding: '4px 8px',
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            background: 'var(--panel-2)',
-                            color: 'var(--text)',
-                            border: '1px solid var(--border)',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            transition: 'all 0.2s'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = 'var(--panel)'
-                            e.currentTarget.style.borderColor = 'var(--border)'
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'var(--panel-2)'
-                            e.currentTarget.style.borderColor = 'var(--border)'
-                          }}
-                        >
-                          <div className="sanction-cards-separate" style={{ flexShrink: 0 }}>
-                            <div className="sanction-card yellow" style={{ width: '20px', height: '28px' }}></div>
-                            <div className="sanction-card red" style={{ width: '20px', height: '28px' }}></div>
-                          </div>
-                          <span>Disqualification</span>
-                        </button>
+                        <SbMenuItem icon={<SbCardIcon kind="yellow" />} onClick={() => showSanctionConfirm('warning')} disabled={!canGetWarning}>
+                          Warning{!canGetWarning && (teamWarning ? ' (Team has warning)' : ' (Already sanctioned)')}
+                        </SbMenuItem>
+                        <SbMenuItem icon={<SbCardIcon kind="red" />} onClick={() => showSanctionConfirm('penalty')} disabled={!canGetPenalty}>
+                          Penalty{!canGetPenalty && ' (Already sanctioned)'}
+                        </SbMenuItem>
+                        <SbMenuItem icon={<SbCardIcon kind="combo" />} onClick={() => showSanctionConfirm('expulsion')} disabled={!canGetExpulsion}>
+                          Expulsion{!canGetExpulsion && ' (Already sanctioned)'}
+                        </SbMenuItem>
+                        <SbMenuItem icon={<SbCardIcon kind="pair" />} onClick={() => showSanctionConfirm('disqualification')}>
+                          Disqualification
+                        </SbMenuItem>
                       </>
                     )
                   })()}
@@ -24863,7 +24178,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 </div>
                 {/* Substitution Button - for returning players */}
                 {courtPlayerToSwapWith && (
-                  <button
+                  <SbMenuItem
+                    tone="positive"
+                    icon={<ArrowUpDown size={16} strokeWidth={2.5} />}
                     onClick={() => {
                       if (canSubstitute && courtPlayerToSwapWith) {
                         setBenchPlayerActionMenu(null)
@@ -24877,80 +24194,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       }
                     }}
                     disabled={!canSubstitute}
-                    style={{
-                      padding: '8px 12px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      background: canSubstitute ? '#047857' : 'var(--panel-2)',
-                      color: canSubstitute ? '#fff' : 'var(--muted)',
-                      border: canSubstitute ? '1px solid #047857' : '1px solid var(--border)',
-                      borderRadius: '6px',
-                      cursor: canSubstitute ? 'pointer' : 'not-allowed',
-                      textAlign: 'left',
-                      transition: 'all 0.2s',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '6px',
-                      width: '100%',
-                      opacity: canSubstitute ? 1 : 0.5
-                    }}
-                    onMouseEnter={(e) => {
-                      if (canSubstitute) {
-                        e.currentTarget.style.background = '#065f46'
-                        e.currentTarget.style.transform = 'scale(1.02)'
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (canSubstitute) {
-                        e.currentTarget.style.background = '#047857'
-                        e.currentTarget.style.transform = 'scale(1)'
-                      }
-                    }}
                   >
-                    <span>Substitution</span>
-                    <span style={{ fontSize: '14px', lineHeight: '1' }}>⇅</span>
-                  </button>
+                    Substitution
+                  </SbMenuItem>
                 )}
                 {/* Substitution button with expandable list - for players who never played */}
                 {neverPlayed && availableCourtPlayers.length > 0 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <button
-                      onClick={() => setBenchSubExpanded(!benchSubExpanded)}
-                      style={{
-                        padding: '8px 12px',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        background: '#047857',
-                        color: '#fff',
-                        border: '1px solid #047857',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        transition: 'all 0.2s',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '6px',
-                        width: '100%'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = '#065f46'
-                        e.currentTarget.style.transform = 'scale(1.02)'
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = '#047857'
-                        e.currentTarget.style.transform = 'scale(1)'
-                      }}
-                    >
-                      <span>Substitution</span>
-                      <span style={{ fontSize: '14px', lineHeight: '1', transform: benchSubExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-                    </button>
+                    <SbMenuItem tone="positive" expanded={benchSubExpanded} onClick={() => setBenchSubExpanded(!benchSubExpanded)}>
+                      Substitution
+                    </SbMenuItem>
                     {benchSubExpanded && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                      <div className={SB_MENU_CHIPS}>
                         {availableCourtPlayers.map(cp => (
-                          <button
+                          <SbMenuItem
                             key={cp.position}
+                            chip
+                            tone="positive-soft"
                             onClick={() => {
                               setBenchPlayerActionMenu(null)
                               setBenchSubExpanded(false)
@@ -24962,29 +24222,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 playerIn: playerNumber
                               })
                             }}
-                            style={{
-                              padding: '6px 10px',
-                              fontSize: '12px',
-                              fontWeight: 700,
-                              background: '#ecfdf5',
-                              color: '#047857',
-                              border: '1px solid #a7f3d0',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
-                              transition: 'all 0.2s',
-                              minWidth: '40px'
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = '#d1fae5'
-                              e.currentTarget.style.borderColor = '#6ee7b7'
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = '#ecfdf5'
-                              e.currentTarget.style.borderColor = '#a7f3d0'
-                            }}
                           >
                             {cp.number}
-                          </button>
+                          </SbMenuItem>
                         ))}
                       </div>
                     )}
@@ -25015,135 +24255,32 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <button
-                        onClick={() => setBenchSanctionExpanded(!benchSanctionExpanded)}
-                        style={{
-                          padding: '8px 12px',
-                          fontSize: '12px',
-                          fontWeight: 600,
-                          background: 'var(--panel)',
-                          color: 'var(--text)',
-                          border: '1px solid var(--border)',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          transition: 'all 0.2s',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: '6px',
-                          width: '100%'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = 'var(--panel-2)'
-                          e.currentTarget.style.transform = 'scale(1.02)'
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'var(--panel)'
-                          e.currentTarget.style.transform = 'scale(1)'
-                        }}
-                      >
-                        <span>Sanction</span>
-                        <span style={{ fontSize: '14px', lineHeight: '1', transform: benchSanctionExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-                      </button>
+                      <SbMenuItem expanded={benchSanctionExpanded} onClick={() => setBenchSanctionExpanded(!benchSanctionExpanded)}>
+                        Sanction
+                      </SbMenuItem>
                       {benchSanctionExpanded && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
-                          <button
-                            onClick={() => showSanctionConfirmFromBenchMenu('warning')}
-                            disabled={!canGetWarning}
-                            style={{
-                              padding: '6px 10px',
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              background: canGetWarning ? 'var(--panel-2)' : 'var(--panel-2)',
-                              color: canGetWarning ? 'var(--text)' : 'var(--muted)',
-                              border: '1px solid var(--border)',
-                              borderRadius: '4px',
-                              cursor: canGetWarning ? 'pointer' : 'not-allowed',
-                              textAlign: 'left',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '8px',
-                              opacity: canGetWarning ? 1 : 0.5
-                            }}
-                          >
-                            <div className="sanction-card yellow" style={{ flexShrink: 0, width: '20px', height: '26px' }}></div>
-                            <span>Warning</span>
-                          </button>
-                          <button
-                            onClick={() => showSanctionConfirmFromBenchMenu('penalty')}
-                            disabled={!canGetPenalty}
-                            style={{
-                              padding: '6px 10px',
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              background: canGetPenalty ? 'var(--panel-2)' : 'var(--panel-2)',
-                              color: canGetPenalty ? 'var(--text)' : 'var(--muted)',
-                              border: '1px solid var(--border)',
-                              borderRadius: '4px',
-                              cursor: canGetPenalty ? 'pointer' : 'not-allowed',
-                              textAlign: 'left',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '8px',
-                              opacity: canGetPenalty ? 1 : 0.5
-                            }}
-                          >
-                            <div className="sanction-card red" style={{ flexShrink: 0, width: '20px', height: '26px' }}></div>
-                            <span>Penalty</span>
-                          </button>
-                          <button
-                            onClick={() => showSanctionConfirmFromBenchMenu('expulsion')}
-                            disabled={!canGetExpulsion}
-                            style={{
-                              padding: '6px 10px',
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              background: canGetExpulsion ? 'var(--panel-2)' : 'var(--panel-2)',
-                              color: canGetExpulsion ? 'var(--text)' : 'var(--muted)',
-                              border: '1px solid var(--border)',
-                              borderRadius: '4px',
-                              cursor: canGetExpulsion ? 'pointer' : 'not-allowed',
-                              textAlign: 'left',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '8px',
-                              opacity: canGetExpulsion ? 1 : 0.5
-                            }}
-                          >
-                            <div className="sanction-card combo" style={{ flexShrink: 0, width: '24px', height: '26px' }}></div>
-                            <span>Expulsion</span>
-                          </button>
-                          <button
-                            onClick={() => showSanctionConfirmFromBenchMenu('disqualification')}
-                            style={{
-                              padding: '6px 10px',
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              background: 'var(--panel-2)',
-                              color: 'var(--text)',
-                              border: '1px solid var(--border)',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
-                              textAlign: 'left',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '8px'
-                            }}
-                          >
-                            <div className="sanction-cards-separate" style={{ flexShrink: 0, display: 'flex', gap: '2px' }}>
-                              <div className="sanction-card yellow" style={{ width: '16px', height: '22px' }}></div>
-                              <div className="sanction-card red" style={{ width: '16px', height: '22px' }}></div>
-                            </div>
-                            <span>Disqualification</span>
-                          </button>
+                        <div className={SB_MENU_SUB}>
+                          <SbMenuItem icon={<SbCardIcon kind="yellow" />} onClick={() => showSanctionConfirmFromBenchMenu('warning')} disabled={!canGetWarning}>
+                            Warning
+                          </SbMenuItem>
+                          <SbMenuItem icon={<SbCardIcon kind="red" />} onClick={() => showSanctionConfirmFromBenchMenu('penalty')} disabled={!canGetPenalty}>
+                            Penalty
+                          </SbMenuItem>
+                          <SbMenuItem icon={<SbCardIcon kind="combo" />} onClick={() => showSanctionConfirmFromBenchMenu('expulsion')} disabled={!canGetExpulsion}>
+                            Expulsion
+                          </SbMenuItem>
+                          <SbMenuItem icon={<SbCardIcon kind="pair" />} onClick={() => showSanctionConfirmFromBenchMenu('disqualification')}>
+                            Disqualification
+                          </SbMenuItem>
                         </div>
                       )}
                     </div>
                   )
                 })()}
                 {/* Injury Button */}
-                <button
+                <SbMenuItem
+                  tone="danger"
+                  icon={SB_INJURY_ICON}
                   onClick={async () => {
                     // For bench player injury, add a remark with time, set, score (team first), team, number
                     try {
@@ -25176,35 +24313,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       setBenchPlayerActionMenu(null)
                     }
                   }}
-                  style={{
-                    padding: '8px 12px',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    background: '#fef2f2',
-                    color: '#b91c1c',
-                    border: '1px solid #fecaca',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    transition: 'all 0.2s',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '6px',
-                    width: '100%'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#fee2e2'
-                    e.currentTarget.style.transform = 'scale(1.02)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = '#fef2f2'
-                    e.currentTarget.style.transform = 'scale(1)'
-                  }}
                 >
-                  <span>Injury</span>
-                  <span style={{ fontSize: '14px', lineHeight: '1' }}>✚</span>
-                </button>
+                  Injury
+                </SbMenuItem>
               </div>
             </div>
           </>
@@ -25288,32 +24399,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <div style={{ marginBottom: '8px', fontSize: '11px', color: 'var(--muted)', textAlign: 'center' }}>
                   # {injuryDropdown.playerNumber}{injPlayerName ? ` ${injPlayerName}` : ''}
                 </div>
-                <button
-                  onClick={handleInjury}
-                  style={{
-                    padding: '6px 12px',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    background: '#fef2f2',
-                    color: '#b91c1c',
-                    border: '1px solid #fecaca',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    textAlign: 'center',
-                    width: '100%',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#fee2e2'
-                    e.currentTarget.style.borderColor = '#fca5a5'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = '#fef2f2'
-                    e.currentTarget.style.borderColor = '#fecaca'
-                  }}
-                >
+                <SbMenuItem tone="danger" onClick={handleInjury}>
                   Substitute
-                </button>
+                </SbMenuItem>
               </div>
             </div>
           </>
@@ -25600,46 +24688,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         </Modal>
       )}
 
-      {/* Duplicate Timeout Confirmation Modal */}
-      {duplicateTimeoutConfirm && (
-        <Modal
-          title={t('scoreboard.modals.confirmTimeout', 'Confirm timeout')}
-          open={true}
-          onClose={() => setDuplicateTimeoutConfirm(null)}
-          width={320}
-          hideCloseButton={true}
-        >
-          <div style={{ padding: '4px 0', textAlign: 'center' }}>
-            <div style={{ marginBottom: '16px', color: 'var(--muted)' }}><TimerIcon size={48} /></div>
-            <p style={{ marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>
-              {t('scoreboard.confirm.timeoutAlreadyTaken', 'Timeout already taken')}
-            </p>
-            <p style={{ marginBottom: '24px', fontSize: '12px', color: 'var(--muted)' }}>
-              {t('scoreboard.confirm.areYouSureAnotherTimeout', {
-                team: duplicateTimeoutConfirm.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')),
-                defaultValue: `${duplicateTimeoutConfirm.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))} already has a timeout with no points since. Are you sure you want another timeout?`
-              })}
-            </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <SbButton variant="positive"
-                onClick={() => {
-                  const team = duplicateTimeoutConfirm.team
-                  setDuplicateTimeoutConfirm(null)
-                  setTimeoutModal({ team, countdown: 30, started: false })
-                }}
-              >
-                {t('scoreboard.confirm.yesTimeout', 'Yes, timeout')}
-              </SbButton>
-              <SbButton variant="secondary"
-                onClick={() => setDuplicateTimeoutConfirm(null)}
-              >
-                {t('common.cancel')}
-              </SbButton>
-            </div>
-          </div>
-        </Modal>
-      )}
-
       {sanctionConfirmModal && (() => {
         const teamData = sanctionConfirmModal.team === 'home' ? data?.homeTeam : data?.awayTeam
         const teamColor = teamData?.color || (sanctionConfirmModal.team === 'home' ? '#ef4444' : '#3b82f6')
@@ -25752,7 +24800,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 const requestingTeamColor = requestingTeamData?.color || (substitutionConfirm.team === 'home' ? '#ef4444' : '#3b82f6')
                 const otherTeamColor = otherTeamData?.color || (substitutionConfirm.team === 'home' ? '#3b82f6' : '#ef4444')
                 const currentSubs = substitutionsUsed[substitutionConfirm.team] || 0
-                const subLabel = currentSubs === 4 ? '5th' : currentSubs === 5 ? '6th' : ''
+                const subLabel = substitutionConfirm.isExceptional ? '' : currentSubs === 4 ? '5th' : currentSubs === 5 ? '6th' : ''
                 return (
                   <>
                     <div style={{ marginBottom: '19px', fontSize: '24px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
@@ -26292,9 +25340,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
               <SbButton variant="positive"
-                onClick={async () => {
+                onClick={() => runReopenSet(async () => {
                   let reopenIndex = reopenSetConfirm.setIndex
                   let reopenSetId = reopenSetConfirm.setId
+                  // Close first, then write (useConfirmAction)
+                  setReopenSetConfirm(null)
                   const matchRecord = await db.matches.get(matchId)
                   // A match forfeit is reversed as a whole: reopening any set it
                   // finished or created reopens the set the forfeit happened in
@@ -26367,8 +25417,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   syncToReferee()
                   syncLiveStateToSupabase('manual_reopen_set', null, { setIndex: reopenIndex })
                   notifyScoresheetUpdate('reopen_set')
-                  setReopenSetConfirm(null)
-                }}
+                })}
               >
                 Yes, reopen
               </SbButton>
@@ -26439,52 +25488,31 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {...backdropDismiss(() => { setLiberoBenchActionMenu(null); setLiberoBenchReplaceExpanded(false); setLiberoBenchUnableExpanded(false) })}
             />
             <div style={menuStyle}>
-              <div className={SB_POPOVER} style={{
+              {/* Same scale(1.5) as the other player menus, so its rows match them on screen */}
+              <div data-libero-bench-action-menu className={SB_POPOVER} style={{
                 padding: '8px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '4px',
-                minWidth: '200px'
+                gap: '6px',
+                minWidth: '140px',
+                transform: 'scale(1.5)',
+                // Grow around the anchor (the wrapper is centred on it with
+                // translateY(-50%)), so the 1.5x menu stays on screen for a
+                // libero low in the bench column.
+                transformOrigin: isRightSide ? 'center right' : 'center left'
               }}>
                 {/* Put in section - collapsible */}
                 {canPutIn && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <button
-                      onClick={() => setLiberoBenchReplaceExpanded(!liberoBenchReplaceExpanded)}
-                      style={{
-                        padding: '8px 12px',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        background: '#FFF8E7',
-                        color: '#000',
-                        border: '1px solid rgba(0, 0, 0, 0.2)',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        transition: 'all 0.2s',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '6px',
-                        width: '100%'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = '#fff3cd'
-                        e.currentTarget.style.transform = 'scale(1.02)'
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = '#FFF8E7'
-                        e.currentTarget.style.transform = 'scale(1)'
-                      }}
-                    >
-                      <span>Replace</span>
-                      <span style={{ fontSize: '14px', lineHeight: '1', transform: liberoBenchReplaceExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-                    </button>
+                    <SbMenuItem tone="libero" expanded={liberoBenchReplaceExpanded} onClick={() => setLiberoBenchReplaceExpanded(!liberoBenchReplaceExpanded)}>
+                      Replace
+                    </SbMenuItem>
                     {liberoBenchReplaceExpanded && (
-                      <div style={{ display: 'flex', justifyContent: 'space-evenly', gap: '4px', marginTop: '4px' }}>
+                      <div className={SB_MENU_CHIPS}>
                         {eligiblePlayers.map(({ position, number }) => (
-                          <button
+                          <SbMenuItem
                             key={position}
+                            chip
                             onClick={() => {
                               // Open libero confirmation with this position
                               setLiberoDropdown({
@@ -26502,30 +25530,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               setLiberoBenchActionMenu(null)
                               setLiberoBenchReplaceExpanded(false)
                             }}
-                            style={{
-                              padding: '6px 12px',
-                              fontSize: '14px',
-                              fontWeight: 700,
-                              background: '#fff',
-                              color: '#000',
-                              border: '1px solid rgba(0, 0, 0, 0.2)',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
-                              textAlign: 'center',
-                              transition: 'all 0.2s',
-                              minWidth: '45px'
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = '#f3f4f6'
-                              e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.4)'
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = '#fff'
-                              e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.2)'
-                            }}
                           >
                             {number}
-                          </button>
+                          </SbMenuItem>
                         ))}
                       </div>
                     )}
@@ -26534,40 +25541,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                 {/* Unable to play - expandable */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <button
-                    onClick={() => setLiberoBenchUnableExpanded(!liberoBenchUnableExpanded)}
-                    style={{
-                      padding: '8px 12px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      background: '#fef2f2',
-                      color: '#b91c1c',
-                      border: '1px solid #fecaca',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'all 0.2s',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '6px',
-                      width: '100%'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#fee2e2'
-                      e.currentTarget.style.transform = 'scale(1.02)'
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = '#fef2f2'
-                      e.currentTarget.style.transform = 'scale(1)'
-                    }}
-                  >
-                    <span>Unable to play</span>
-                    <span style={{ fontSize: '14px', lineHeight: '1', transform: liberoBenchUnableExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-                  </button>
+                  <SbMenuItem tone="danger" expanded={liberoBenchUnableExpanded} onClick={() => setLiberoBenchUnableExpanded(!liberoBenchUnableExpanded)}>
+                    Unable to play
+                  </SbMenuItem>
                   {liberoBenchUnableExpanded && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
-                      <button
+                    <div className={SB_MENU_SUB}>
+                      <SbMenuItem
+                        tone="declared"
+                        icon={<SpeechIcon size={16} />}
                         onClick={() => {
                           setLiberoUnableModal({
                             team: liberoBenchActionMenu.team,
@@ -26579,25 +25560,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           setLiberoBenchActionMenu(null)
                           setLiberoBenchUnableExpanded(false)
                         }}
-                        style={{
-                          padding: '6px 10px',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          background: '#f97316',
-                          color: '#000',
-                          border: '1px solid rgba(0, 0, 0, 0.2)',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: '8px'
-                        }}
                       >
-                        <span>Declared unable</span>
-                        <SpeechIcon size={14} />
-                      </button>
-                      <button
+                        Declared unable
+                      </SbMenuItem>
+                      <SbMenuItem
+                        tone="danger"
+                        icon={SB_INJURY_ICON}
                         onClick={() => {
                           setLiberoUnableModal({
                             team: liberoBenchActionMenu.team,
@@ -26609,30 +25577,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           setLiberoBenchActionMenu(null)
                           setLiberoBenchUnableExpanded(false)
                         }}
-                        style={{
-                          padding: '6px 10px',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          background: '#fef2f2',
-                          color: '#b91c1c',
-                          border: '1px solid #fecaca',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: '8px'
-                        }}
                       >
-                        <span>Injury / illness</span>
-                        <span style={{ fontSize: '14px' }}>✚</span>
-                      </button>
+                        Injury / illness
+                      </SbMenuItem>
                     </div>
                   )}
                 </div>
 
                 {/* Sanction */}
-                <button
+                <SbMenuItem
+                  icon={<SbCardIcon kind="pair" />}
                   onClick={() => {
                     setSanctionDropdown({
                       team: liberoBenchActionMenu.team,
@@ -26645,35 +25599,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     })
                     setLiberoBenchActionMenu(null)
                   }}
-                  style={{
-                    padding: '8px 12px',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    background: 'var(--panel-2)',
-                    color: 'var(--text)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    transition: 'all 0.2s',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '6px'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'var(--panel)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'var(--panel-2)'
-                  }}
                 >
-                  <span>Sanction</span>
-                  <div style={{ display: 'flex', gap: '2px' }}>
-                    <div className="sanction-card yellow" style={{ width: '12px', height: '16px' }}></div>
-                    <div className="sanction-card red" style={{ width: '12px', height: '16px' }}></div>
-                  </div>
-                </button>
+                  Sanction
+                </SbMenuItem>
               </div>
             </div>
           </>
@@ -27030,33 +25958,65 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           width={400}
           hideCloseButton={true}
         >
-          <div style={{ padding: '4px 0', textAlign: 'center' }}>
-            <p style={{ marginBottom: '24px', fontSize: '16px' }}>
-              Apply {sanctionConfirm.type === 'improper_request' ? 'improper request' :
-                sanctionConfirm.type === 'delay_warning' ? 'delay warning' :
-                  'delay penalty'} to team {(() => {
-                    const sideTeamKey = sanctionConfirm.side === 'left' ? (leftIsHome ? 'home' : 'away') : (leftIsHome ? 'away' : 'home')
-                    return sideTeamKey === teamAKey ? 'A' : 'B'
-                  })()}?
-            </p>
-            {sanctionConfirm.type === 'delay_penalty' && (
-              <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)', fontStyle: 'italic' }}>
-                This will award a point and service to the opponent team
-              </p>
-            )}
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <SbButton variant="positive"
-                onClick={confirmSanction}
-              >
-                Yes
-              </SbButton>
-              <SbButton variant="secondary"
-                onClick={() => setSanctionConfirm(null)}
-              >
-                No
-              </SbButton>
-            </div>
-          </div>
+          {(() => {
+            // Everything shown here was taken when the dialog opened: the team
+            // (not the side, which can swap) and the sanction that will be
+            // recorded once the ladder is applied (sanctionConfirm.resolved).
+            const teamKey = sanctionConfirm.team
+            const nameOf = key => key === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))
+            const team = `${teamKey === teamAKey ? 'A' : 'B'} (${nameOf(teamKey)})`
+            const opponentKey = teamKey === 'home' ? 'away' : 'home'
+            const opponent = `${opponentKey === teamAKey ? 'A' : 'B'} (${nameOf(opponentKey)})`
+            const { type: requested, resolved, reason } = sanctionConfirm
+            return (
+              <div style={{ padding: '4px 0', textAlign: 'center' }}>
+                {reason === 'substitution_limit' && (
+                  <p style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>
+                    {t('scoreboard.modals.substitutionLimitImproperRequest', 'The team has used its 6 substitutions in this set: a further substitution request is an improper request.')}
+                  </p>
+                )}
+                {reason === 'third_timeout' && (
+                  <p style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>
+                    {t('scoreboard.teamSanctionConfirm.thirdTimeout', { team })}
+                  </p>
+                )}
+                <p style={{ marginBottom: '16px', fontSize: '16px' }}>
+                  {resolved === 'improper_request'
+                    ? t('scoreboard.teamSanctionConfirm.applyImproperRequest', { team })
+                    : resolved === 'delay_warning'
+                      ? t('scoreboard.teamSanctionConfirm.applyDelayWarning', { team })
+                      : t('scoreboard.teamSanctionConfirm.applyDelayPenalty', { team })}
+                </p>
+                {requested === 'improper_request' && resolved !== 'improper_request' && (
+                  <p style={{ marginBottom: '12px', fontSize: '14px', color: 'var(--muted)' }}>
+                    {t('scoreboard.teamSanctionConfirm.repeatedImproperRequest')}
+                  </p>
+                )}
+                {requested === 'delay_warning' && resolved === 'delay_penalty' && (
+                  <p style={{ marginBottom: '12px', fontSize: '14px', color: 'var(--muted)' }}>
+                    {t('scoreboard.teamSanctionConfirm.repeatedDelay')}
+                  </p>
+                )}
+                {resolved === 'delay_penalty' && (
+                  <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)', fontStyle: 'italic' }}>
+                    {t('scoreboard.teamSanctionConfirm.pointToOpponent', { opponent })}
+                  </p>
+                )}
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '8px' }}>
+                  <SbButton variant="positive"
+                    onClick={confirmSanction}
+                  >
+                    {t('common.yes')}
+                  </SbButton>
+                  <SbButton variant="secondary"
+                    onClick={() => setSanctionConfirm(null)}
+                  >
+                    {t('common.no')}
+                  </SbButton>
+                </div>
+              </div>
+            )
+          })()}
         </Modal>
       )}
 
@@ -27888,6 +26848,33 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         </Modal>
       )}
 
+      {replayConfirm && (
+        <Modal
+          title={t('scoreboard.modals.confirmReplay')}
+          open={true}
+          onClose={cancelReplay}
+          width={400}
+        >
+          <div style={{ padding: '4px 0', textAlign: 'center' }}>
+            <p style={{ marginBottom: '24px', fontSize: '16px' }}>
+              {t('scoreboard.modals.confirmReplayBody')}
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <SbButton variant="positive"
+                onClick={confirmReplay}
+              >
+                {t('scoreboard.buttons.replay')}
+              </SbButton>
+              <SbButton variant="secondary"
+                onClick={cancelReplay}
+              >
+                {t('common.cancel')}
+              </SbButton>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {replayRallyConfirm && (() => {
         const lastEvent = replayRallyConfirm.event
         const oldTeam = lastEvent?.payload?.team
@@ -28174,21 +27161,53 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
   const { t } = useTranslation()
   const [lineup, setLineup] = useState(() => {
     if (presetLineup) {
-      const positionMapping = ['IV', 'III', 'II', 'V', 'VI', 'I']
-      return positionMapping.map(pos => (presetLineup[pos] !== undefined ? String(presetLineup[pos] ?? '') : ''))
+      return LINEUP_POSITIONS.map(pos => (presetLineup[pos] !== undefined ? String(presetLineup[pos] ?? '') : ''))
     }
     return ['', '', '', '', '', '']
   }) // [IV, III, II, V, VI, I]
-  const [errors, setErrors] = useState({}) // Use an object for specific error messages
-  const [confirmMessage, setConfirmMessage] = useState(null)
+  // 'Required' only shows once the scorer has tried to confirm (until Clear)
+  const [confirmAttempted, setConfirmAttempted] = useState(false)
+  const [saveFailed, setSaveFailed] = useState(false)
   const [editHistory, setEditHistory] = useState([]) // Track edit history: [{ index, previousValue }]
-  // Roster chips in the team's shirt colour (green outline when the team has no colour)
-  const chipPaint = discPaint(teamData?.color, '#ffffff')
+
+  // Determine if this team is A or B
+  const isTeamA = team === teamAKey
+  const teamLabel = isTeamA ? 'A' : 'B'
+  const teamColor = teamData?.color || (isTeamA ? '#ef4444' : '#3b82f6')
+  // Player discs (pool chips and filled positions) in the shirt colour with
+  // the readable number, as on the court (utils/teamColours.js); the ring
+  // keeps a light shirt apart from the pool's stone-50
+  const discStyle = useMemo(() => {
+    const paint = discPaint(teamColor, '#fafaf9') || discPaint(isTeamA ? '#ef4444' : '#3b82f6', '#fafaf9')
+    return { background: paint.background, color: paint.color, textShadow: paint.textShadow, borderColor: paint.ring || 'transparent' }
+  }, [teamColor, isTeamA])
 
   // Get all events to check for disqualifications
   const events = useLiveQuery(async () => {
     return await db.events.where('matchId').equals(matchId).toArray()
   }, [matchId])
+
+  // Every error is derived from the whole line-up on each change, so fixing
+  // either box of a duplicate clears both (domain/lineupEntry.js)
+  const errors = useMemo(() => {
+    if (saveFailed) return Object.fromEntries(LINEUP_POSITIONS.map((_, i) => [i, 'saveFailed']))
+    return lineupEntryErrors({ lineup, players, events, team, requireAll: confirmAttempted })
+  }, [saveFailed, lineup, players, events, team, confirmAttempted])
+
+  const candidates = useMemo(
+    () => lineupCandidates({ players, lineup, events, team, setIndex }),
+    [players, lineup, events, team, setIndex]
+  )
+
+  const errorText = (code) => ({
+    required: t('scoreboard.lineupModal.errors.required', 'Required'),
+    duplicate: t('scoreboard.lineupModal.errors.duplicate', 'Duplicate'),
+    notOnRoster: t('scoreboard.lineupModal.errors.notOnRoster', 'Not on roster'),
+    libero: t('scoreboard.lineupModal.errors.libero', 'Cannot be libero'),
+    disqualified: t('scoreboard.lineupModal.errors.disqualified', 'Disqualified'),
+    exceptionallySubstituted: t('scoreboard.lineupModal.errors.exceptionallySubstituted', 'Exceptionally substituted'),
+    saveFailed: t('scoreboard.lineupModal.errors.saveFailed', 'Save failed')
+  })[code] || ''
 
   const handleInputChange = (index, value, skipHistory = false) => {
     const numValue = value.replace(/[^0-9]/g, '')
@@ -28202,61 +27221,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     const newLineup = [...lineup]
     newLineup[index] = numValue
     setLineup(newLineup)
-
-    // Automatically validate the number as it's entered
-    if (numValue && numValue.trim() !== '') {
-      const num = Number(numValue)
-      const player = players?.find(p => String(p.number) === String(num))
-      const newErrors = { ...errors }
-
-      // Check if not on roster
-      if (!player) {
-        newErrors[index] = 'Not on roster'
-      }
-      // Check if it's a libero
-      else if (player.libero && player.libero !== '') {
-        newErrors[index] = 'Cannot be libero'
-      }
-      // Check if disqualified
-      else if (events) {
-        const isDisqualified = events.some(e =>
-          e.type === 'sanction' &&
-          e.payload?.team === team &&
-          e.payload?.playerNumber === num &&
-          e.payload?.type === 'disqualification'
-        )
-        if (isDisqualified) {
-          newErrors[index] = 'Disqualified'
-        }
-        // Check if exceptionally substituted
-        else {
-          const wasExceptionallySubstituted = events.some(e =>
-            e.type === 'substitution' &&
-            e.payload?.team === team &&
-            String(e.payload?.playerOut) === String(num) &&
-            e.payload?.isExceptional === true
-          )
-          if (wasExceptionallySubstituted) {
-            newErrors[index] = 'Exceptionally substituted'
-          } else {
-            // Clear error if valid
-            delete newErrors[index]
-          }
-        }
-      } else {
-        // Clear error if valid
-        delete newErrors[index]
-      }
-
-      setErrors(newErrors)
-    } else {
-      // Clear error when field is empty
-      const newErrors = { ...errors }
-      delete newErrors[index]
-      setErrors(newErrors)
-    }
-
-    setConfirmMessage(null)
+    setSaveFailed(false)
   }
 
   // Handle click on available player - SINGLE click assigns to first available position
@@ -28281,32 +27246,8 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     e.dataTransfer.setData('text/plain', String(playerNumber))
     e.dataTransfer.effectAllowed = 'move'
 
-    // Create custom drag image showing the player number
-    const dragImage = document.createElement('div')
-    dragImage.textContent = String(playerNumber)
-    dragImage.style.cssText = `
-      position: absolute;
-      top: -1000px;
-      left: -1000px;
-      width: 50px;
-      height: 50px;
-      border-radius: 50%;
-      background: #4ade80;
-      color: #000;
-      font-size: 20px;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    `
-    document.body.appendChild(dragImage)
-    e.dataTransfer.setDragImage(dragImage, 25, 25)
-
-    // Clean up drag image after a short delay
-    setTimeout(() => {
-      document.body.removeChild(dragImage)
-    }, 0)
+    // Custom drag image: a round disc in the same paint as the chip
+    setPlayerDragImage(e, playerNumber, { bg: discStyle.background, text: discStyle.color, textShadow: discStyle.textShadow, ring: discStyle.borderColor === 'transparent' ? null : discStyle.borderColor })
   }
 
   const handleDragEnd = () => {
@@ -28321,7 +27262,9 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     setDragOverPosition(positionIndex)
   }
 
-  const handleDragLeave = () => {
+  const handleDragLeave = (e) => {
+    // Moving onto the box's own label or field is not leaving it
+    if (e.currentTarget.contains(e.relatedTarget)) return
     setDragOverPosition(null)
   }
 
@@ -28345,20 +27288,20 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     handleInputChange(lastEdit.index, lastEdit.previousValue, true)
     // Remove the last entry from history
     setEditHistory(prev => prev.slice(0, -1))
-    setConfirmMessage(null)
   }
 
-  // Clear all lineup entries
+  const hasEntries = lineup.some(v => v && v.trim() !== '')
+
+  // Clear all lineup entries (a fresh start: no 'Required' until the next Confirm)
   const handleClearLineup = () => {
     // Save current state to history before clearing
-    lineup.forEach((value, index) => {
-      if (value && value.trim() !== '') {
-        setEditHistory(prev => [...prev, { index, previousValue: value }])
-      }
-    })
+    const cleared = lineup
+      .map((value, index) => ({ index, previousValue: value }))
+      .filter(({ previousValue }) => previousValue && previousValue.trim() !== '')
+    setEditHistory(prev => [...prev, ...cleared])
     setLineup(['', '', '', '', '', ''])
-    setErrors({})
-    setConfirmMessage(null)
+    setConfirmAttempted(false)
+    setSaveFailed(false)
   }
 
   // Rotate lineup clockwise (forward): I->II, II->III, III->IV, IV->V, V->VI, VI->I
@@ -28374,7 +27317,6 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     newLineup[5] = lineup[4]  // VI -> I
     newLineup[2] = lineup[5]  // I -> II
     setLineup(newLineup)
-    setConfirmMessage(null)
   }
 
   // Rotate lineup counterclockwise (backward): I->VI, VI->V, V->IV, IV->III, III->II, II->I
@@ -28388,92 +27330,15 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     newLineup[3] = lineup[4]  // VI -> V
     newLineup[4] = lineup[5]  // I -> VI
     setLineup(newLineup)
-    setConfirmMessage(null)
-  }
-
-  // Modify lineup (undo confirm and go back to editing)
-  const handleModify = () => {
-    setConfirmMessage(null)
   }
 
   const handleConfirm = async () => {
-    const newErrors = {}
+    setConfirmAttempted(true)
+    setSaveFailed(false)
     const lineupNumbers = lineup.map(n => (n ? Number(n) : null))
 
-    // Check for duplicates first, as it's a cross-field validation
-    const numberCounts = lineupNumbers.reduce((acc, num) => {
-      if (num !== null) acc[num] = (acc[num] || 0) + 1
-      return acc
-    }, {})
-
-    lineup.forEach((numStr, i) => {
-      // 1. Required
-      if (!numStr || numStr.trim() === '') {
-        newErrors[i] = 'Required'
-        return // Move to next input
-      }
-
-      const num = Number(numStr)
-
-      // 2. Duplicate
-      if (numberCounts[num] > 1) {
-        newErrors[i] = 'Duplicate'
-        // Don't return, so we can flag all duplicates
-      }
-
-      const player = players?.find(p => String(p.number) === String(num))
-
-      // 3. Not on roster
-      if (!player) {
-        newErrors[i] = 'Not on roster'
-        return
-      }
-
-      // 4. Is a libero
-      if (player.libero && player.libero !== '') {
-        newErrors[i] = 'Cannot be libero'
-        return
-      }
-
-      // 5. Is disqualified - cannot enter the game ever again
-      if (events) {
-        const isDisqualified = events.some(e =>
-          e.type === 'sanction' &&
-          e.payload?.team === team &&
-          e.payload?.playerNumber === num &&
-          e.payload?.type === 'disqualification'
-        )
-        if (isDisqualified) {
-          newErrors[i] = 'Disqualified'
-          return
-        }
-      }
-
-      // 6. Was exceptionally substituted - cannot take part in the game anymore
-      if (events) {
-        const wasExceptionallySubstituted = events.some(e =>
-          e.type === 'substitution' &&
-          e.payload?.team === team &&
-          String(e.payload?.playerOut) === String(num) &&
-          e.payload?.isExceptional === true
-        )
-        if (wasExceptionallySubstituted) {
-          newErrors[i] = 'Exceptionally substituted'
-          return
-        }
-      }
-    })
-
-    // Re-check for duplicates to mark all of them
-    lineupNumbers.forEach((num, i) => {
-      if (num !== null && numberCounts[num] > 1) {
-        newErrors[i] = 'Duplicate'
-      }
-    })
-
-    setErrors(newErrors)
-
-    if (Object.keys(newErrors).length > 0) {
+    // Same checks the boxes show, with every empty box required now
+    if (Object.keys(lineupEntryErrors({ lineup, players, events, team, requireAll: true })).length > 0) {
       return
     }
 
@@ -28493,15 +27358,10 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
       }
     }
 
-    // Check if captain is in court
-    const captain = players?.find(p => p.isCaptain)
-    const captainInCourt = captain && lineupNumbers.includes(captain.number)
-
     // Save lineup: Map positions I->I, II->II, III->III, IV->IV, V->V, VI->VI
     // Lineup array indices: [0=IV, 1=III, 2=II, 3=V, 4=VI, 5=I]
-    const positionMapping = ['IV', 'III', 'II', 'V', 'VI', 'I']
     const lineupData = {}
-    positionMapping.forEach((pos, idx) => {
+    LINEUP_POSITIONS.forEach((pos, idx) => {
       lineupData[pos] = lineupNumbers[idx]
     })
 
@@ -28596,9 +27456,9 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
 
         // Auto-close modal after successful save (skip confirmation step)
         onSave()
-      })().catch(err => {
+      })().catch(() => {
         // Don't auto-close - let user close manually with close button
-        setErrors({ 0: 'Save failed', 1: 'Save failed', 2: 'Save failed', 3: 'Save failed', 4: 'Save failed', 5: 'Save failed' })
+        setSaveFailed(true)
       })
     } else {
       // Auto-close modal after successful save
@@ -28606,10 +27466,84 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     }
   }
 
-  // Determine if this team is A or B
-  const isTeamA = team === teamAKey
-  const teamLabel = isTeamA ? 'A' : 'B'
-  const teamColor = teamData?.color || (isTeamA ? '#ef4444' : '#3b82f6')
+  const rosterPlayer = (value) => (value ? players?.find(p => String(p.number) === String(Number(value))) : null)
+
+  const renderPosition = (idx) => {
+    const pos = LINEUP_POSITIONS[idx]
+    const value = lineup[idx]
+    const player = rosterPlayer(value)
+    // A roster (non-libero) number wears the shirt disc, typed or picked
+    const showDisc = !!player && !(player.libero && player.libero !== '')
+    const error = errors[idx]
+    const msgId = `lineup-msg-${team}-${idx}`
+    return (
+      <div
+        key={pos}
+        className="lineup-pos"
+        data-error={error ? '' : undefined}
+        data-over={dragOverPosition === idx && !error ? '' : undefined}
+        onDragOver={(e) => handleDragOver(e, idx)}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => handleDrop(e, idx)}
+      >
+        <div className="lineup-pos__label" aria-hidden="true">{pos}</div>
+        <div className="lineup-pos__field">
+          {showDisc && <span className="lineup-disc" style={{ background: discStyle.background, border: `2px solid ${discStyle.borderColor}` }} />}
+          <input
+            type="text"
+            inputMode="numeric"
+            className="lineup-pos__input"
+            aria-label={t('scoreboard.lineupModal.positionInput', { pos, defaultValue: 'Player at position {{pos}}' })}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={msgId}
+            value={value}
+            onChange={e => {
+              const val = e.target.value.replace(/[^0-9]/g, '')
+              if (val === '' || (Number(val) >= 1 && Number(val) <= 99)) {
+                handleInputChange(idx, val)
+              }
+            }}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                // Counterclockwise order: I(5) → II(2) → III(1) → IV(0) → V(3) → VI(4) → I(5)
+                const counterclockwiseOrder = [5, 2, 1, 0, 3, 4]
+                const currentOrderIdx = counterclockwiseOrder.indexOf(idx)
+                const inputs = e.target.closest('.lineup-grid')?.querySelectorAll('input')
+                if (inputs) {
+                  for (let i = 1; i <= 6; i++) {
+                    const nextOrderIdx = (currentOrderIdx + i) % 6
+                    const nextIdx = counterclockwiseOrder[nextOrderIdx]
+                    if (!inputs[nextIdx]?.value) {
+                      inputs[nextIdx].focus()
+                      return
+                    }
+                  }
+                  e.target.blur()
+                }
+              }
+            }}
+            style={showDisc ? { color: discStyle.color, caretColor: discStyle.color, textShadow: discStyle.textShadow } : undefined}
+          />
+          {showDisc && player.isCaptain && (
+            <span className="lineup-disc-anchor" aria-hidden="true">
+              <span className="lineup-cap">C</span>
+            </span>
+          )}
+        </div>
+        <div className="lineup-pos__msg" id={msgId} aria-live="polite">
+          {error ? <span>{errorText(error)}</span> : null}
+        </div>
+      </div>
+    )
+  }
+
+  const lfpInLineup = lfpTrackingEnabled
+    ? lineup.filter(numStr => {
+      const player = rosterPlayer(numStr)
+      return player?.isLfp || player?.is_lfp
+    }).length
+    : 0
 
   return (
     <Modal
@@ -28631,601 +27565,113 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
       }
       open={true}
       onClose={onClose}
-      width={500}
+      width={900}
       hideCloseButton={true}
     >
-      <div style={{ padding: '16px 0 0' }}>
-        {/* Centered container for position inputs */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'center',
-          marginBottom: '24px'
-        }}>
-          <div className="lineup-grid" style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
-            gap: '8px',
-            position: 'relative'
-          }}>
-            {/* Net indicator */}
-            <div style={{
-              position: 'absolute',
-              top: '-8px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              width: '100%',
-              height: '2px',
-              background: 'var(--accent)',
-              zIndex: 1
-            }} />
-            <div style={{
-              position: 'absolute',
-              top: '-20px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              fontSize: '12px',
-              fontWeight: 600,
-              color: 'var(--accent)',
-              zIndex: 2,
-              background: 'var(--bg)',
-              padding: '0 8px'
-            }}>
+      <div className="lineup-modal">
+        <div className="lineup-modal__body">
+          {/* Court: the net, front row IV III II, back row V VI I */}
+          <div className="lineup-court">
+            <div className="lineup-net" aria-hidden="true" />
+            <div className="lineup-grid">
+              {[0, 1, 2, 3, 4, 5].map(renderPosition)}
             </div>
+          </div>
 
-            {/* Top row (closer to net) */}
-            {[
-              { idx: 0, pos: 'IV' },
-              { idx: 1, pos: 'III' },
-              { idx: 2, pos: 'II' }
-            ].map(({ idx, pos }) => (
-              <div key={`top-${idx}`} style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center'
-              }}>
-                {/* Position label rectangle */}
-                <div style={{
-                  width: '60px',
-                  height: '24px',
-                  background: 'var(--panel)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '4px 4px 0 0',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: 'var(--text)'
-                }}>
-                  {pos}
-                </div>
-                {/* Input square with captain indicator (circled number) - droppable */}
-                <div
-                  style={{ position: 'relative', width: '60px' }}
-                  onDragOver={(e) => handleDragOver(e, idx)}
-                  onDragLeave={handleDragLeave}
-                  onDrop={(e) => handleDrop(e, idx)}
-                >
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    min="1"
-                    max="99"
-                    aria-label={t('scoreboard.lineupModal.positionInput', { pos, defaultValue: 'Player at position {{pos}}' })}
-                    value={lineup[idx]}
-                    onChange={e => {
-                      const val = e.target.value.replace(/[^0-9]/g, '')
-                      if (val === '' || (Number(val) >= 1 && Number(val) <= 99)) {
-                        handleInputChange(idx, val)
-                      }
-                    }}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
+          <div className="lineup-modal__side">
+            {/* Available players (excluding liberos and players out of the game) */}
+            <div className="lineup-pool">
+              <div className="lineup-pool__title">
+                {t('scoreboard.lineupModal.availablePlayers', 'Available players:')}
+              </div>
+              <div className="lineup-pool__chips">
+                {candidates.map(p => (
+                  <div
+                    key={p.number}
+                    role="button"
+                    tabIndex={0}
+                    draggable
+                    className="lineup-chip"
+                    data-dragging={draggedPlayer === p.number ? '' : undefined}
+                    onClick={() => handlePlayerClick(p.number)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault()
-                        // Counterclockwise order: I(5) → II(2) → III(1) → IV(0) → V(3) → VI(4) → I(5)
-                        const counterclockwiseOrder = [5, 2, 1, 0, 3, 4]
-                        const currentOrderIdx = counterclockwiseOrder.indexOf(idx)
-                        const inputs = e.target.closest('.lineup-grid')?.querySelectorAll('input')
-                        if (inputs) {
-                          for (let i = 1; i <= 6; i++) {
-                            const nextOrderIdx = (currentOrderIdx + i) % 6
-                            const nextIdx = counterclockwiseOrder[nextOrderIdx]
-                            if (!inputs[nextIdx]?.value) {
-                              inputs[nextIdx].focus()
-                              return
-                            }
-                          }
-                          e.target.blur()
-                        }
+                        handlePlayerClick(p.number)
                       }
                     }}
-                    style={{
-                      width: '60px',
-                      height: '60px',
-                      padding: '0',
-                      fontSize: '18px',
-                      fontWeight: 700,
-                      textAlign: 'center',
-                      background: dragOverPosition === idx ? 'rgba(74, 222, 128, 0.2)' : 'var(--bg-secondary)',
-                      borderTop: 'none',
-                      borderLeft: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'var(--border)'}`,
-                      borderRight: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'var(--border)'}`,
-                      borderBottom: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'var(--border)'}`,
-                      borderRadius: '0 0 8px 8px',
-                      color: 'var(--text)',
-                      transition: 'background 0.15s, border-color 0.15s'
-                    }}
-                  />
-                  {lineup[idx] && players?.find(p => String(p.number) === String(lineup[idx]) && p.isCaptain) && (
-                    <div style={{
-                      position: 'absolute',
-                      top: '50%',
-                      left: '50%',
-                      transform: 'translate(-50%, -50%)',
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '50%',
-                      borderTop: '2px solid var(--accent)',
-                      borderLeft: '2px solid var(--accent)',
-                      borderRight: '2px solid var(--accent)',
-                      borderBottom: '2px solid var(--accent)',
-                      pointerEvents: 'none',
-                      zIndex: 1
-                    }} />
-                  )}
-                </div>
-                <div style={{ color: '#ef4444', fontSize: '11px', marginTop: '4px', height: '14px', textAlign: 'center' }}>
-                  {errors[idx] || ''}
-                </div>
+                    onDragStart={(e) => handleDragStart(e, p.number)}
+                    onDragEnd={handleDragEnd}
+                    style={discStyle}
+                    title={t('scoreboard.lineupModal.clickOrDragTooltip', 'Click or drag to assign to a position')}
+                  >
+                    {p.isCaptain && <span className="lineup-cap" aria-hidden="true">C</span>}
+                    {lfpTrackingEnabled && (p.isLfp || p.is_lfp) && <span className="lineup-lfp" aria-hidden="true">LFP</span>}
+                    {p.number}
+                  </div>
+                ))}
               </div>
-            ))}
-
-            {/* Bottom row (further from net) */}
-            {[
-              { idx: 3, pos: 'V' },
-              { idx: 4, pos: 'VI' },
-              { idx: 5, pos: 'I' }
-            ].map(({ idx, pos }) => (
-              <div
-                key={`bottom-${idx}`}
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  marginTop: '8px'
-                }}
-              >
-                {/* Position label rectangle */}
-                <div style={{
-                  width: '60px',
-                  height: '24px',
-                  background: 'var(--panel)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '4px 4px 0 0',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: 'var(--text)'
-                }}>
-                  {pos}
-                </div>
-                {/* Input square with captain indicator (circled number) - droppable */}
-                <div
-                  style={{ position: 'relative', width: '60px' }}
-                  onDragOver={(e) => handleDragOver(e, idx)}
-                  onDragLeave={handleDragLeave}
-                  onDrop={(e) => handleDrop(e, idx)}
-                >
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    min="1"
-                    max="99"
-                    aria-label={t('scoreboard.lineupModal.positionInput', { pos, defaultValue: 'Player at position {{pos}}' })}
-                    value={lineup[idx]}
-                    onChange={e => {
-                      const val = e.target.value.replace(/[^0-9]/g, '')
-                      if (val === '' || (Number(val) >= 1 && Number(val) <= 99)) {
-                        handleInputChange(idx, val)
-                      }
-                    }}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        // Counterclockwise order: I(5) → II(2) → III(1) → IV(0) → V(3) → VI(4) → I(5)
-                        const counterclockwiseOrder = [5, 2, 1, 0, 3, 4]
-                        const currentOrderIdx = counterclockwiseOrder.indexOf(idx)
-                        const inputs = e.target.closest('.lineup-grid')?.querySelectorAll('input')
-                        if (inputs) {
-                          for (let i = 1; i <= 6; i++) {
-                            const nextOrderIdx = (currentOrderIdx + i) % 6
-                            const nextIdx = counterclockwiseOrder[nextOrderIdx]
-                            if (!inputs[nextIdx]?.value) {
-                              inputs[nextIdx].focus()
-                              return
-                            }
-                          }
-                          e.target.blur()
-                        }
-                      }
-                    }}
-                    style={{
-                      width: '60px',
-                      height: '60px',
-                      padding: '0',
-                      fontSize: '18px',
-                      fontWeight: 700,
-                      textAlign: 'center',
-                      background: dragOverPosition === idx ? 'rgba(74, 222, 128, 0.2)' : 'var(--bg-secondary)',
-                      borderTop: 'none',
-                      borderLeft: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'var(--border)'}`,
-                      borderRight: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'var(--border)'}`,
-                      borderBottom: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'var(--border)'}`,
-                      borderRadius: '0 0 8px 8px',
-                      color: 'var(--text)',
-                      transition: 'background 0.15s, border-color 0.15s'
-                    }}
-                  />
-                  {lineup[idx] && players?.find(p => String(p.number) === String(lineup[idx]) && p.isCaptain) && (
-                    <div style={{
-                      position: 'absolute',
-                      top: '50%',
-                      left: '50%',
-                      transform: 'translate(-50%, -50%)',
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '50%',
-                      borderTop: '2px solid var(--accent)',
-                      borderLeft: '2px solid var(--accent)',
-                      borderRight: '2px solid var(--accent)',
-                      borderBottom: '2px solid var(--accent)',
-                      pointerEvents: 'none',
-                      zIndex: 1
-                    }} />
-                  )}
-                </div>
-                <div style={{ color: '#ef4444', fontSize: '11px', marginTop: '4px', height: '14px', textAlign: 'center' }}>
-                  {errors[idx] || ''}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Available players (excluding liberos and disqualified) */}
-        <div style={{
-          marginBottom: '16px',
-          padding: '12px',
-          background: 'var(--panel-2)',
-          borderRadius: '8px'
-        }}>
-          <div style={{
-            fontSize: '13px',
-            fontWeight: 600,
-            color: 'var(--muted)',
-            marginBottom: '8px'
-          }}>
-            {t('scoreboard.lineupModal.availablePlayers', 'Available players:')}
-          </div>
-          <div style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '8px'
-          }}>
-            {players?.filter(p => {
-              // Exclude liberos
-              if (p.libero && p.libero !== '') return false
-
-              // Exclude players already in the lineup
-              if (lineup.includes(String(p.number))) return false
-
-              if (events) {
-                // Exclude players substituted due to disqualification (cannot take part for rest of game)
-                const wasDisqualifiedSub = events.some(e =>
-                  e.type === 'substitution' &&
-                  e.payload?.team === team &&
-                  String(e.payload?.playerOut) === String(p.number) &&
-                  e.payload?.isDisqualified === true
-                )
-                if (wasDisqualifiedSub) {
-                  return false
-                }
-
-                // Exclude exceptionally substituted players (cannot take part for rest of game)
-                const wasExceptionallySubstituted = events.some(e =>
-                  e.type === 'substitution' &&
-                  e.payload?.team === team &&
-                  String(e.payload?.playerOut) === String(p.number) &&
-                  e.payload?.isExceptional === true
-                )
-                if (wasExceptionallySubstituted) {
-                  return false
-                }
-
-                // Exclude expelled players in the current set (cannot take part in this set)
-                if (setIndex) {
-                  // Check for substitution due to expulsion in current set
-                  const wasExpelledSub = events.some(e =>
-                    e.type === 'substitution' &&
-                    e.payload?.team === team &&
-                    String(e.payload?.playerOut) === String(p.number) &&
-                    e.payload?.isExpelled === true &&
-                    e.setIndex === setIndex
-                  )
-                  if (wasExpelledSub) {
-                    return false
-                  }
-
-                  // Also check for sanction-based expulsion in current set
-                  const isExpelledInSet = events.some(e =>
-                    e.type === 'sanction' &&
-                    e.payload?.team === team &&
-                    String(e.payload?.playerNumber) === String(p.number) &&
-                    e.payload?.type === 'expulsion' &&
-                    e.setIndex === setIndex
-                  )
-                  if (isExpelledInSet) {
-                    return false
-                  }
-                }
-
-                // Also check for sanction-based disqualification
-                const isDisqualified = events.some(e =>
-                  e.type === 'sanction' &&
-                  e.payload?.team === team &&
-                  String(e.payload?.playerNumber) === String(p.number) &&
-                  e.payload?.type === 'disqualification'
-                )
-                if (isDisqualified) {
-                  return false
-                }
-              }
-
-              return true
-            }).sort((a, b) => a.number - b.number).map(p => (
-              <div
-                key={p.number}
-                draggable
-                onClick={() => handlePlayerClick(p.number)}
-                onDragStart={(e) => handleDragStart(e, p.number)}
-                onDragEnd={handleDragEnd}
-                style={{
-                  position: 'relative',
-                  width: '40px',
-                  height: '40px',
-                  borderRadius: '50%',
-                  background: chipPaint ? chipPaint.background : draggedPlayer === p.number ? 'rgba(74, 222, 128, 0.4)' : 'rgba(74, 222, 128, 0.2)',
-                  border: chipPaint ? `2px solid ${chipPaint.ring || 'rgba(0, 0, 0, 0.15)'}` : '2px solid #4ade80',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '14px',
-                  fontWeight: 700,
-                  color: chipPaint ? chipPaint.color : '#4ade80',
-                  textShadow: chipPaint?.textShadow,
-                  cursor: 'grab',
-                  transition: 'all 0.2s',
-                  userSelect: 'none',
-                  opacity: draggedPlayer === p.number ? 0.5 : 1
-                }}
-                onMouseEnter={(e) => {
-                  if (!draggedPlayer) {
-                    if (!chipPaint) e.currentTarget.style.background = 'rgba(74, 222, 128, 0.3)'
-                    e.currentTarget.style.transform = 'scale(1.1)'
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!draggedPlayer) {
-                    if (!chipPaint) e.currentTarget.style.background = 'rgba(74, 222, 128, 0.2)'
-                    e.currentTarget.style.transform = 'scale(1)'
-                  }
-                }}
-                title={t('scoreboard.lineupModal.clickOrDragTooltip', 'Click or drag to assign to a position')}
-              >
-                {p.isCaptain && (
-                  <span style={{
-                    position: 'absolute',
-                    top: '-4px',
-                    right: '-4px',
-                    width: '16px',
-                    height: '16px',
-                    borderRadius: '50%',
-                    background: '#4ade80',
-                    color: '#000',
-                    // white halo: stays apart from a green shirt
-                    boxShadow: '0 0 0 1.5px #ffffff',
-                    textShadow: 'none',
-                    fontSize: '10px',
-                    fontWeight: 700,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    pointerEvents: 'none'
-                  }}>
-                    C
-                  </span>
-                )}
-                {lfpTrackingEnabled && (p.isLfp || p.is_lfp) && (
-                  <span style={{
-                    position: 'absolute',
-                    bottom: '-4px',
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    padding: '0 3px',
-                    height: '12px',
-                    background: 'rgba(249, 115, 22, 0.95)',
-                    borderRadius: '3px',
-                    fontSize: '7px',
-                    fontWeight: 700,
-                    color: '#fff',
-                    textShadow: 'none',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    pointerEvents: 'none',
-                    whiteSpace: 'nowrap'
-                  }}>
-                    LFP
-                  </span>
-                )}
-                {p.number}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* LFP count in lineup */}
-        {lfpTrackingEnabled && (() => {
-          const lfpInLineup = lineup.filter(numStr => {
-            if (!numStr) return false
-            const player = players?.find(p => String(p.number) === String(numStr))
-            return player?.isLfp || player?.is_lfp
-          }).length
-          return (
-            <div style={{
-              fontSize: '12px', fontWeight: 600,
-              color: lfpInLineup < lfpMinimumOnCourt ? '#ef4444' : '#4ade80',
-              background: lfpInLineup < lfpMinimumOnCourt ? 'rgba(239, 68, 68, 0.1)' : 'rgba(74, 222, 128, 0.1)',
-              padding: '6px 12px', borderRadius: '6px',
-              textAlign: 'center', marginBottom: '12px'
-            }}>
-              LFP on court: {lfpInLineup} / {lfpMinimumOnCourt} required
-            </div>
-          )
-        })()}
-
-        {/* Instruction text */}
-        <div style={{
-          textAlign: 'center',
-          fontSize: '12px',
-          color: 'var(--muted)',
-          marginBottom: '16px',
-          fontStyle: 'italic'
-        }}>
-          {t('scoreboard.lineupModal.dragInstruction', 'Please write the number, drag and drop it, or click on available player to fill each of the available positions')}
-        </div>
-
-        {/* Undo, Clear, and Rotate buttons - hidden when lineup is confirmed */}
-        {!confirmMessage && (
-          <>
-            {/* Undo and Clear buttons row */}
-            <div style={{
-              display: 'flex',
-              justifyContent: 'center',
-              gap: '12px',
-              marginBottom: '12px'
-            }}>
-              {editHistory.length > 0 && (
-                <SbButton onClick={handleUndoLastEdit}>
-                  <span style={{ fontSize: '16px' }} aria-hidden="true">↩</span>
-                  {t('scoreboard.lineupModal.undoLastEdit', 'Undo last edit')}
-                </SbButton>
-              )}
-              {lineup.some(v => v && v.trim() !== '') && (
-                <SbButton variant="danger-outline" onClick={handleClearLineup}>
-                  <span style={{ fontSize: '16px' }} aria-hidden="true">✕</span>
-                  {t('scoreboard.lineupModal.clearLineup', 'Clear lineup')}
-                </SbButton>
-              )}
             </div>
 
-            {/* Rotate buttons row */}
-            {lineup.some(v => v && v.trim() !== '') && (
+            {/* LFP count in lineup */}
+            {lfpTrackingEnabled && (
               <div style={{
-                display: 'flex',
-                justifyContent: 'center',
-                gap: '16px',
-                marginBottom: '16px'
+                fontSize: '12px', fontWeight: 600,
+                color: lfpInLineup < lfpMinimumOnCourt ? 'var(--ov-danger-text)' : 'var(--ov-success-text)',
+                background: lfpInLineup < lfpMinimumOnCourt ? 'var(--ov-danger-soft)' : 'var(--ov-success-soft)',
+                padding: '6px 12px', borderRadius: '6px',
+                textAlign: 'center'
               }}>
-                <button
-                  className="secondary"
-                  onClick={handleRotateClockwise}
-                  title={t('scoreboard.lineupModal.rotateClockwise', 'Rotate clockwise')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: '44px',
-                    height: '44px',
-                    padding: '0',
-                    fontSize: '20px',
-                    borderRadius: '50%'
-                  }}
-                >
-                  ↻
-                </button>
-                <span style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  fontSize: '12px',
-                  color: 'var(--muted)'
-                }}>
-                  {t('scoreboard.lineupModal.rotate', 'Rotate')}
-                </span>
-
-                <button
-                  className="secondary"
-                  onClick={handleRotateCounterClockwise}
-                  title={t('scoreboard.lineupModal.rotateCounterclockwise', 'Rotate counterclockwise')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: '44px',
-                    height: '44px',
-                    padding: '0',
-                    fontSize: '20px',
-                    borderRadius: '50%'
-                  }}
-                >
-                  ↺
-                </button>
+                LFP on court: {lfpInLineup} / {lfpMinimumOnCourt} required
               </div>
             )}
-          </>
-        )}
 
-        {errors.length > 0 && (
-          <div role="alert" className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700" style={{ marginBottom: '16px' }}>
-            {t('scoreboard.lineupModal.validationError', 'Please check: All numbers must exist in roster, not be liberos, and not be duplicated.')}
+            <p className="lineup-hint">
+              {t('scoreboard.lineupModal.dragInstruction', 'Please write the number, drag and drop it, or click on available player to fill each of the available positions')}
+            </p>
+
+            {/* Edit tools: always there (disabled when there is nothing to do), so the modal keeps its size */}
+            <div className="lineup-tools">
+              <SbButton className="w-full min-w-0 whitespace-normal leading-tight" onClick={handleUndoLastEdit} disabled={editHistory.length === 0}>
+                <span style={{ fontSize: '16px' }} aria-hidden="true">↩</span>
+                {t('scoreboard.lineupModal.undoLastEdit', 'Undo last edit')}
+              </SbButton>
+              <SbButton className="w-full min-w-0 whitespace-normal leading-tight" variant="danger-outline" onClick={handleClearLineup} disabled={!hasEntries}>
+                <span style={{ fontSize: '16px' }} aria-hidden="true">✕</span>
+                {t('scoreboard.lineupModal.clearLineup', 'Clear lineup')}
+              </SbButton>
+            </div>
+            <div className="lineup-rotate">
+              <SbButton
+                className="w-11 min-w-0 px-0 rounded-full text-xl"
+                onClick={handleRotateClockwise}
+                disabled={!hasEntries}
+                title={t('scoreboard.lineupModal.rotateClockwise', 'Rotate clockwise')}
+                aria-label={t('scoreboard.lineupModal.rotateClockwise', 'Rotate clockwise')}
+              >
+                ↻
+              </SbButton>
+              <span>{t('scoreboard.lineupModal.rotate', 'Rotate')}</span>
+              <SbButton
+                className="w-11 min-w-0 px-0 rounded-full text-xl"
+                onClick={handleRotateCounterClockwise}
+                disabled={!hasEntries}
+                title={t('scoreboard.lineupModal.rotateCounterclockwise', 'Rotate counterclockwise')}
+                aria-label={t('scoreboard.lineupModal.rotateCounterclockwise', 'Rotate counterclockwise')}
+              >
+                ↺
+              </SbButton>
+            </div>
           </div>
-        )}
+        </div>
 
-        {confirmMessage && (
-          <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 text-center" style={{ marginBottom: '16px' }}>
-            {confirmMessage}
-          </div>
-        )}
-
-        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-
-          {confirmMessage === null && (
-            <SbButton variant="positive" onClick={handleConfirm}>
-              {t('scoreboard.lineupModal.confirm', 'Confirm')}
-            </SbButton>
-          )}
-
-          {/* Before confirming, Close cancels (white); after, it is the "Done" (slate). */}
-          <SbButton
-            variant={confirmMessage === null ? 'secondary' : 'dark'}
-            onClick={() => {
-              // If lineup was confirmed (confirmMessage exists), refresh state before closing
-              if (confirmMessage) {
-                onSave()
-              } else {
-                onClose()
-              }
-            }}
-          >
+        <div className="lineup-modal__footer">
+          <SbButton variant="positive" onClick={handleConfirm}>
+            {t('scoreboard.lineupModal.confirm', 'Confirm')}
+          </SbButton>
+          <SbButton variant="secondary" onClick={onClose}>
             {t('scoreboard.lineupModal.close', 'Close')}
           </SbButton>
-          {confirmMessage !== null && (
-            <SbButton onClick={handleModify}>
-              {t('scoreboard.lineupModal.modify', 'Modify')}
-            </SbButton>
-          )}
         </div>
       </div>
     </Modal>
@@ -29563,10 +28009,10 @@ function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose,
                     placeholder={t('scoreboard.reopenRoster.lastName', 'Last name')}
                     style={{ ...inputStyle, padding: '6px 8px' }}
                   />
-                  <input
-                    type="date"
+                  <DateField
+                    size="bare"
                     value={toISODate(player.dob)}
-                    onChange={(e) => updatePlayer(idx, 'dob', e.target.value)}
+                    onChange={(v) => updatePlayer(idx, 'dob', v)}
                     style={{ ...inputStyle, padding: '4px', fontSize: '11px' }}
                   />
                 </div>
@@ -29651,10 +28097,10 @@ function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose,
                     placeholder={t('scoreboard.reopenRoster.lastName', 'Last name')}
                     style={{ ...inputStyle, padding: '6px 8px' }}
                   />
-                  <input
-                    type="date"
+                  <DateField
+                    size="bare"
                     value={toISODate(staff.dob)}
-                    onChange={(e) => updateBench(idx, 'dob', e.target.value)}
+                    onChange={(v) => updateBench(idx, 'dob', v)}
                     style={{ ...inputStyle, padding: '4px', fontSize: '11px' }}
                   />
                   <button

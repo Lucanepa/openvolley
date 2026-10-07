@@ -4,7 +4,7 @@ import { Copy, Plus } from 'lucide-react'
 import { admin } from '../../lib/accountApi'
 import KitModal from './KitModal'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError, useErrorText } from './common'
-import { Button, Field, Input, Select, RowList, Row, RowTool, Chip, StatusPill, EmptyInset, SkeletonRows, Notice, ModalStrip, dayLabel, confirmDialog, toast } from '../../ui'
+import { Button, DateField, Field, Input, Select, RowList, Row, RowTool, Chip, StatusPill, EmptyInset, SkeletonRows, Notice, ModalStrip, dayLabel, confirmDialog, toast } from '../../ui'
 
 const STATE_TONE = { active: 'done', expired: 'neutral', used_up: 'neutral', revoked: 'brand' }
 const INVITE_ROLES = ['scorer', 'referee', 'competition_manager']
@@ -195,7 +195,7 @@ function CreateInviteModal({ app, open, onClose, onCreated }) {
             <Input type="number" inputMode="numeric" min={1} max={10000} value={maxUses} onChange={e => setMaxUses(e.target.value)} />
           </Field>
           <Field label={t('manage.invites.expires')}>
-            <Input type="date" value={expires} onChange={e => setExpires(e.target.value)} />
+            <DateField value={expires} onChange={setExpires} />
           </Field>
         </div>
         <InlineError error={error} />

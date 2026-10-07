@@ -9,6 +9,10 @@ import { ScaleProvider } from './contexts/ScaleContext'
 import ErrorBoundary from './components/ErrorBoundary'
 import { UiHost } from './ui/UiHost.jsx'
 import { stripCacheBustParam } from './hooks/useServiceWorker'
+import { setAppEntry } from './utils/appEntry'
+
+// Not the scoretable: this page never saves a match backup (utils/appEntry)
+setAppEntry('referee')
 
 // Clean up cache_bust query parameter (added by cache clear / update flow).
 // Keep the rest of the query: ?match=&team= attach tablets to the live match.
