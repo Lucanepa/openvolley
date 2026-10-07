@@ -228,6 +228,30 @@ describe('substitutions', () => {
   })
 })
 
+describe('substitution limit (domain/substitutions)', () => {
+  const subsAt = (pairs) => pairs.map(([out, inn, exceptional], i) => ({
+    at: i + 1, type: 'substitution', payload: { team: 'home', playerOut: out, playerIn: inn, ...(exceptional ? { isExceptional: true } : {}) }
+  }))
+
+  it('refuses a 7th regular substitution; an exceptional one is still allowed', () => {
+    const { events } = buildMatch({
+      sets: [{ points: pointsFor(25, 20), finished: true, extras: subsAt([[1, 21], [2, 22], [3, 23], [4, 24], [5, 25], [6, 26]]) }]
+    })
+    const at = 12
+    expect(planAddSubstitution(events, { setIndex: 1, team: 'home', playerOut: 21, playerIn: 1, at }, review).error).toBe('corrections.error.subLimit')
+    const exc = planAddSubstitution(events, { setIndex: 1, team: 'home', playerOut: 21, playerIn: 31, at, exceptional: true, reason: 'injury' }, review)
+    expect(exc.error).toBeUndefined()
+  })
+
+  it('an exceptional substitution does not use one of the six', () => {
+    const { events } = buildMatch({
+      sets: [{ points: pointsFor(25, 20), finished: true, extras: subsAt([[1, 21], [2, 22], [3, 23], [4, 24], [5, 25], [6, 36, true]]) }]
+    })
+    const plan = planAddSubstitution(events, { setIndex: 1, team: 'home', playerOut: 21, playerIn: 1, at: 12 }, review)
+    expect(plan.error).toBeUndefined()
+  })
+})
+
 describe('sanctions', () => {
   it('a penalty marks the next opponent point (no score change)', () => {
     const { events } = fixture()
