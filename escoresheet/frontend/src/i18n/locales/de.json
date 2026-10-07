@@ -523,7 +523,7 @@
       "substitute": "Auswechseln",
       "undo": "Rückgängig",
       "replay": "Ballwechsel wiederholen",
-      "decisionChange": "Entscheidungsänderung",
+      "decisionChange": "Entscheidungs\u00adänderung",
       "switchSides": "Seiten wechseln",
       "switchCourts": "Feld wechseln",
       "switchServe": "Aufschlag wechseln",
@@ -545,7 +545,7 @@
       "confirmSanction": "Sanktion bestätigen",
       "confirmUndo": "Rückgängig bestätigen",
       "confirmTimeout": "Zeitüberschreitung bestätigen",
-      "decisionChange": "Entscheidungsänderung",
+      "decisionChange": "Entscheidungs\u00adänderung",
       "exceptionalSubstitution": "Ausserordentliche Auswechslung",
       "exceptionalSubPlayerCantPlay": "Ausserordentliche Auswechslung - Spieler kann nicht mehr teilnehmen",
       "substituteWithEligible": "Mit einem spielberechtigten Spieler von der Bank ersetzen",
@@ -1620,7 +1620,7 @@
       "rotation": "Rotation",
       "sanction": "Sanktion",
       "challenge": "Challenge",
-      "decisionChange": "Entscheidungsänderung"
+      "decisionChange": "Entscheidungs\u00adänderung"
     }
   },
   "syncBanner": {

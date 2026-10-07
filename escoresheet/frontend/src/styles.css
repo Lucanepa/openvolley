@@ -1824,6 +1824,12 @@ button:disabled {
 }
 
 .rally-controls {
+  /* One fixed box for the rally buttons, so the panel keeps its size
+     when Start rally turns into Point A / Point B and back */
+  --rally-btn-w: calc(150px * var(--scale-factor));
+  --rally-btn-h: calc(92px * var(--scale-factor));
+  --rally-gap: calc(8px * var(--scale-factor));
+  --rally-block-w: calc(2 * var(--rally-btn-w) + var(--rally-gap));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1838,8 +1844,28 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: calc(12px * var(--scale-factor));
-  width: 80%;
+  gap: var(--rally-gap);
+  width: var(--rally-block-w);
+}
+
+/* Replay rally / Decision change + Undo: two equal halves under the
+   point buttons, same height whichever buttons are shown */
+.rally-secondary-row {
+  display: flex;
+  gap: var(--rally-gap);
+  width: var(--rally-block-w);
+}
+
+.rally-secondary-row > * {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: calc(52px * var(--scale-factor));
+  padding: calc(8px * var(--scale-factor)) calc(12px * var(--scale-factor));
+  font-size: calc(14px * var(--scale-factor));
+  line-height: 1.2;
+  /* "Entscheidungsänderung" is one word wider than half the row */
+  hyphens: auto;
+  overflow-wrap: anywhere;
 }
 
 .rally-points {
@@ -1851,17 +1877,20 @@ button:disabled {
 
 /* Rally point buttons - 15% larger than original */
 .rally-point-button {
-  min-width: calc(138px * var(--scale-factor));
-  min-height: calc(92px * var(--scale-factor));
+  flex: 0 0 var(--rally-btn-w);
+  width: var(--rally-btn-w);
+  min-width: 0;
+  min-height: var(--rally-btn-h);
   font-size: calc(24px * var(--scale-factor));
   font-weight: 700;
-  padding: calc(18px * var(--scale-factor)) calc(28px * var(--scale-factor));
+  padding: calc(18px * var(--scale-factor)) calc(10px * var(--scale-factor));
+  white-space: nowrap;
 }
 
 /* Start Rally button - slightly smaller than point buttons */
 button.start-rally-button {
-  min-width: calc(138px * var(--scale-factor));
-  min-height: calc(70px * var(--scale-factor));
+  width: var(--rally-block-w);
+  min-height: var(--rally-btn-h);
   font-size: calc(20px * var(--scale-factor));
   font-weight: 700;
   padding: calc(16px * var(--scale-factor)) calc(28px * var(--scale-factor));
@@ -1872,20 +1901,17 @@ button.start-rally-button {
     gap: calc(8px * var(--scale-factor));
   }
 
-  .rally-controls-row {
-    gap: calc(16px * var(--scale-factor));
+  .rally-controls {
+    --rally-btn-w: calc(128px * var(--scale-factor));
+    --rally-btn-h: calc(75px * var(--scale-factor));
   }
 
   .rally-point-button {
-    min-width: calc(115px * var(--scale-factor));
-    min-height: calc(75px * var(--scale-factor));
     font-size: calc(22px * var(--scale-factor));
-    padding: calc(14px * var(--scale-factor)) calc(23px * var(--scale-factor));
+    padding: calc(14px * var(--scale-factor)) calc(10px * var(--scale-factor));
   }
 
   button.start-rally-button {
-    min-width: calc(115px * var(--scale-factor));
-    min-height: calc(58px * var(--scale-factor));
     font-size: calc(18px * var(--scale-factor));
     padding: calc(12px * var(--scale-factor)) calc(23px * var(--scale-factor));
   }
