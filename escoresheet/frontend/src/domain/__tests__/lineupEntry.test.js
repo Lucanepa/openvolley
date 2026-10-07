@@ -121,7 +121,7 @@ describe('game captain chosen in the line-up (FIVB 5.2)', () => {
   it('empty choice keeps today\'s behaviour (prompt later)', () => {
     for (const choice of ['', null, undefined]) {
       expect(lineupGameCaptainDecision({ lineup: withoutCaptain, players: roster, team: 'home', choice }))
-        .toEqual({ action: 'none', playerNumber: null, matchUpdate: {}, event: null })
+        .toEqual({ action: 'none', playerNumber: null, matchUpdate: {}, event: null, undo: {} })
     }
   })
 
@@ -138,26 +138,29 @@ describe('game captain chosen in the line-up (FIVB 5.2)', () => {
       action: 'designate',
       playerNumber: 7,
       matchUpdate: { homeCourtCaptain: 7, homeRememberedCourtCaptain: 7 },
-      event: { team: 'home', playerNumber: 7, previousCourtCaptain: null, fromLineup: true }
+      event: { team: 'home', playerNumber: 7, previousCourtCaptain: null, previousRememberedCourtCaptain: null, fromLineup: true },
+      undo: { previousRememberedCourtCaptain: null }
     })
   })
 
   it('designate keeps the previous game captain in the event, for undo', () => {
     const d = lineupGameCaptainDecision({ lineup: withoutCaptain, players: roster, team: 'away', choice: '10', currentCourtCaptain: 4, rememberedCourtCaptain: 4 })
     expect(d.matchUpdate).toEqual({ awayCourtCaptain: 10, awayRememberedCourtCaptain: 10 })
-    expect(d.event).toEqual({ team: 'away', playerNumber: 10, previousCourtCaptain: 4, fromLineup: true })
+    expect(d.event).toEqual({ team: 'away', playerNumber: 10, previousCourtCaptain: 4, previousRememberedCourtCaptain: 4, fromLineup: true })
+    expect(d.undo).toEqual({ previousRememberedCourtCaptain: 4 })
   })
 
   it('designate of the player already acting as game captain logs no second event', () => {
     const d = lineupGameCaptainDecision({ lineup: withoutCaptain, players: roster, team: 'home', choice: '7', currentCourtCaptain: 7, rememberedCourtCaptain: '7' })
-    expect(d).toEqual({ action: 'designate', playerNumber: 7, matchUpdate: {}, event: null })
+    expect(d).toEqual({ action: 'designate', playerNumber: 7, matchUpdate: {}, event: null, undo: {} })
   })
 
   it('captain among the six: only remembered for when the captain leaves the court', () => {
     const d = lineupGameCaptainDecision({ lineup: withCaptain, players: roster, team: 'home', choice: '3', currentCourtCaptain: 6 })
-    expect(d).toEqual({ action: 'remember', playerNumber: 3, matchUpdate: { homeRememberedCourtCaptain: 3 }, event: null })
+    expect(d).toEqual({ action: 'remember', playerNumber: 3, matchUpdate: { homeRememberedCourtCaptain: 3 }, event: null, undo: { previousRememberedCourtCaptain: null } })
     const same = lineupGameCaptainDecision({ lineup: withCaptain, players: roster, team: 'home', choice: '3', rememberedCourtCaptain: 3 })
     expect(same.matchUpdate).toEqual({})
+    expect(same.undo).toEqual({})
   })
 
   it('initial choice for an existing line-up: acting game captain, else the remembered one', () => {
@@ -169,5 +172,11 @@ describe('game captain chosen in the line-up (FIVB 5.2)', () => {
     expect(initialGameCaptainChoice({ ...base, lineup: withCaptain, rememberedCourtCaptain: 6 })).toBe('6')
     // not an option (not in the six)
     expect(initialGameCaptainChoice({ ...base, lineup: withoutCaptain, currentCourtCaptain: 5 })).toBe('')
+  })
+
+  it('undo record: the remembered game captain the choice replaced', () => {
+    const d = lineupGameCaptainDecision({ lineup: withCaptain, players: roster, team: 'away', choice: '4', rememberedCourtCaptain: 6 })
+    expect(d.matchUpdate).toEqual({ awayRememberedCourtCaptain: 4 })
+    expect(d.undo).toEqual({ previousRememberedCourtCaptain: 6 })
   })
 })

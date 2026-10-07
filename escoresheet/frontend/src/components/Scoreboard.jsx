@@ -3299,13 +3299,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [data?.events, data?.set, data?.homePlayers, data?.awayPlayers])
 
   // Check if captain is on court and show modal to select new captain if needed
-  const checkAndRequestCaptainOnCourt = useCallback(async (teamKey) => {
+  // onCourt: the six just saved by the line-up modal, which `data` may not
+  // show yet (it then read an empty court and asked for a game captain even
+  // with the captain, or a chosen game captain, on court)
+  const checkAndRequestCaptainOnCourt = useCallback(async (teamKey, onCourt = null) => {
     // Check if manage captain on court is enabled
     if (!localManageCaptainOnCourt) return
 
     const teamPlayers = teamKey === 'home' ? data?.homePlayers || [] : data?.awayPlayers || []
-    const teamLineupState = getTeamLineupState(teamKey)
-    const playersOnCourt = teamLineupState.playersOnCourt || []
+    const playersOnCourt = onCourt || getTeamLineupState(teamKey).playersOnCourt || []
 
     // Find team captain
     const teamCaptain = teamPlayers.find(p => p.isCaptain || p.captain)
@@ -6808,6 +6810,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (e.payload?.autoRemark) remarks = removeRemarkLine(remarks, e.payload.autoRemark)
     }
     if (remarks !== (match?.remarks || '')) matchUpdate.remarks = remarks
+
+    // The remembered game captain a line-up's game-captain choice replaced
+    // (domain/lineupEntry.js lineupGameCaptainDecision undo); newest first, so
+    // the oldest removed event's value is the one that stays
+    for (const e of [...removed].sort((a, b) => (b.seq || 0) - (a.seq || 0))) {
+      if ((e.type === 'lineup' || e.type === 'court_captain_designation') &&
+          (e.payload?.team === 'home' || e.payload?.team === 'away') &&
+          Object.prototype.hasOwnProperty.call(e.payload, 'previousRememberedCourtCaptain')) {
+        matchUpdate[e.payload.team === 'home' ? 'homeRememberedCourtCaptain' : 'awayRememberedCourtCaptain'] = e.payload.previousRememberedCourtCaptain ?? null
+      }
+    }
 
     for (const e of removed) {
       if (e.type === 'court_captain_designation' && (e.payload?.team === 'home' || e.payload?.team === 'away')) {
@@ -23180,7 +23193,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         courtCaptain={lineupModal.team === 'home' ? data?.match?.homeCourtCaptain : data?.match?.awayCourtCaptain}
         rememberedCourtCaptain={lineupModal.team === 'home' ? data?.match?.homeRememberedCourtCaptain : data?.match?.awayRememberedCourtCaptain}
         onClose={() => setLineupModal(null)}
-        onSave={async (gameCaptain) => {
+        onSave={async (gameCaptain, onCourt = null) => {
           const teamKey = lineupModal.team
           setLineupModal(null)
           // Optional game captain chosen in the modal (FIVB 5.2), written the
@@ -23197,7 +23210,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           // Check if captain is on court after lineup is saved
           // Use timeout to allow data to update from database (increased to 300ms for reliability)
           setTimeout(() => {
-            checkAndRequestCaptainOnCourtRef.current?.(teamKey)
+            checkAndRequestCaptainOnCourtRef.current?.(teamKey, onCourt)
           }, 300)
         }}
         onLineupSaved={() => {
@@ -27398,6 +27411,15 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
       lineupData[pos] = lineupNumbers[idx]
     })
 
+    // What the optional game-captain choice does (FIVB 5.2); its undo record
+    // goes on the line-up event
+    const gameCaptainDecision = lineupGameCaptainDecision({
+      lineup, players, events, team,
+      choice: gameCaptain,
+      currentCourtCaptain: courtCaptain,
+      rememberedCourtCaptain
+    })
+
     // Save lineup as an event (mark as initial lineup or manual override)
     if (matchId && setIndex) {
       // Save lineup with sequence number
@@ -27415,7 +27437,8 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
           payload: {
             team,
             lineup: lineupData,
-            isInitial: mode === 'initial'
+            isInitial: mode === 'initial',
+            ...gameCaptainDecision.undo
           },
           seq: manualLineupSeq
         })
@@ -27489,12 +27512,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
 
         // Auto-close modal after successful save (skip confirmation step),
         // with what to do about the optional game captain
-        onSave(lineupGameCaptainDecision({
-          lineup, players, events, team,
-          choice: gameCaptain,
-          currentCourtCaptain: courtCaptain,
-          rememberedCourtCaptain
-        }))
+        onSave(gameCaptainDecision, lineupNumbers.filter(n => n != null))
       })().catch(() => {
         // Don't auto-close - let user close manually with close button
         setSaveFailed(true)
