@@ -10,7 +10,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { render, waitFor } from '@testing-library/react'
 import Dexie from 'dexie'
 import { useActionLiveQuery } from '../useActionLiveQuery'
-import { useScorerActions, pickLiveStateSnapshot, runActionEffects } from '../useScorerActions'
+import { useScorerActions, pickLiveStateSnapshot, runActionEffects, isReportedActionError, markActionErrorReported } from '../useScorerActions'
 
 // React renders as it would in the app (no act() batching): an intermediate
 // screen must be able to show up
@@ -42,7 +42,7 @@ function rotate(lineup) {
 }
 
 // The scoreboard under test; `api` exposes the actions and what was rendered
-function Board({ api, captureFinalSnapshot }) {
+function Board({ api, captureFinalSnapshot, onError }) {
   const mutexRef = useRef(false)
   const [data, commits] = useActionLiveQuery(() => db.transaction('r', db.sets, db.events, async () => {
     const set = await db.sets.get(1)
@@ -51,7 +51,7 @@ function Board({ api, captureFinalSnapshot }) {
     return { score: `${set.home}:${set.away}`, server: lineup?.[0], events: events.length }
   }), [])
   const [dialog, setDialog] = useState(null)
-  const actions = useScorerActions({ db, commits, mutexRef, captureFinalSnapshot: captureFinalSnapshot || (async () => null) })
+  const actions = useScorerActions({ db, commits, mutexRef, captureFinalSnapshot: captureFinalSnapshot || (async () => null), onError })
   api.actions = actions
   api.mutexRef = mutexRef
   api.setDialog = setDialog
@@ -168,6 +168,40 @@ describe('useScorerActions: one transaction, one screen change', () => {
     expect(effect).not.toHaveBeenCalled()
     expect(api.renders[api.renders.length - 1]).toBe('0:0 server=1 events=1 dialog=null')
     expect(api.mutexRef.current).toBe(false)
+  })
+
+  it('a body that catches a failed write and carries on commits the writes before it (why bodies rethrow)', async () => {
+    const api = await mount()
+    await db.events.add({ id: 99, seq: 9, type: 'taken' })
+    await api.actions.runAction('undo', async () => {
+      await db.sets.update(1, { away: 5 })
+      try { await db.events.add({ id: 99, seq: 10, type: 'duplicate key' }) } catch { /* swallowed */ }
+    })
+    expect((await db.sets.get(1)).away).toBe(5)
+  })
+
+  it('a failed scorer tap is reported once through onError; a nested or unkeyed failure is not', async () => {
+    const onError = vi.fn()
+    const api = await mount({ onError })
+    const { runAction } = api.actions
+    const err = new Error('write failed')
+    await expect(runAction('point', async () => {
+      await db.sets.update(1, { away: 9 })
+      // the failure of a joined action (logEvent's) is the outer action's
+      await runAction(null, async () => { throw err })
+    })).rejects.toBe(err)
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError).toHaveBeenCalledWith(err)
+    expect(isReportedActionError(err)).toBe(true)
+    expect((await db.sets.get(1)).away).toBe(0)
+
+    // logEvent outside an action (no key): its caller reports
+    await expect(runAction(null, async () => { throw new Error('unkeyed') })).rejects.toThrow('unkeyed')
+    expect(onError).toHaveBeenCalledTimes(1)
+
+    // a failure the action has shown itself (the time-out's own message)
+    await expect(runAction('timeout', async () => { throw markActionErrorReported(new Error('shown')) })).rejects.toThrow('shown')
+    expect(onError).toHaveBeenCalledTimes(1)
   })
 
   it('a call made meanwhile from outside the action (a timer, an effect) is not part of it', async () => {

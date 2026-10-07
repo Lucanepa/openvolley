@@ -118,4 +118,33 @@ describe('Scoreboard: one transaction and one screen change per scorer action', 
     expect(handler('confirmSetStartTime')).toContain('await queueEventSync(db, setStartEventId)')
     expect(handler('handleUndo')).toContain('await queueSetScoreSync(db, { matchId, setIndex: undoneSetIndex })')
   })
+
+  // A body that catches a failed write and carries on commits the writes made
+  // before it: an undo that deleted the point but kept the score, a decision
+  // change without its rotation, a time-out recorded while the scorer is told
+  // it was not. Every catch in an action body rethrows.
+  it('no action body swallows a failure: every catch rethrows, so the action rolls back as a whole', () => {
+    const bodies = [...ACTIONS.map(([name]) => name), 'restoreStateFromSnapshot']
+    for (const name of bodies) {
+      const body = handler(name)
+      const catches = [...body.matchAll(/\} catch \((\w+)\) \{/g)]
+      for (const m of catches) {
+        // the catch block: up to the next line closing it at the same indent
+        const indent = body.slice(body.lastIndexOf('\n', m.index) + 1, m.index)
+        const blockEnd = body.indexOf(`\n${indent}}`, m.index)
+        const block = body.slice(m.index, blockEnd)
+        expect(block, `${name}: catch (${m[1]})`).toMatch(new RegExp(`throw (markActionErrorReported\\()?${m[1]}\\b`))
+      }
+    }
+  })
+
+  it('a failed scorer action is shown to the scorer once', () => {
+    expect(src).toMatch(/onError: onActionFailed\n\s*\}\)/)
+    const failed = src.slice(src.indexOf('const onActionFailed = useCallback('), src.indexOf('const onActionFailed = useCallback(') + 300)
+    expect(failed).toContain("showAlert(t('scoreboard.confirmFailed'), 'error')")
+    const confirmFailed = src.slice(src.indexOf('const onConfirmFailed = useCallback('), src.indexOf('const onActionFailed = useCallback('))
+    expect(confirmFailed).toContain('if (isReportedActionError(err)) return')
+    // the time-out keeps its own message, not a second one
+    expect(handler('confirmTimeout')).toContain("showAlert(t('scoreboard.timeoutRequest.notRecorded'), 'error')\n      throw markActionErrorReported(err)")
+  })
 })
