@@ -180,6 +180,26 @@ describe('SanctionsResultsModal', () => {
     expect(document.querySelector('[data-set-row="2"]')).toHaveTextContent('3')
   })
 
+  it('the set in play has no winner yet: W stays 0 on both sides', () => {
+    render(<SanctionsResultsModal open onClose={() => {}} data={baseData()} teamAKey="home" leftIsHome onSign={() => {}} />)
+    // Set | T S W P | Dur | P W S T
+    const cells = (i) => [...document.querySelector(`[data-set-row="${i}"]`).querySelectorAll('td')].map(td => td.textContent)
+    expect(cells(1)[3]).toBe('1') // home won set 1
+    expect(cells(1)[7]).toBe('0')
+    expect(cells(2)[3]).toBe('0') // home leads 3:1 in set 2, not won
+    expect(cells(2)[7]).toBe('0')
+  })
+
+  it('a long club name wraps inside the results table instead of widening it', () => {
+    const data = baseData()
+    data.homeTeam = { ...data.homeTeam, name: 'Volleyballclub Kantonsschule Schaffhausen Damen 1' }
+    render(<SanctionsResultsModal open onClose={() => {}} data={data} teamAKey="home" leftIsHome onSign={() => {}} />)
+    const table = document.querySelector('[data-set-row="1"]').closest('table')
+    expect(table.style.tableLayout).toBe('fixed')
+    const head = screen.getByText('Volleyballclub Kantonsschule Schaffhausen Damen 1').closest('th')
+    expect(head.style.whiteSpace).toBe('normal')
+  })
+
   it('shows the totals and the captains\' sign buttons once the match is over', () => {
     const onSign = vi.fn()
     const data = baseData({ match: { status: 'ended' } })
