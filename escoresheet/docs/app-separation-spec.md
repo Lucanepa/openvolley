@@ -2,7 +2,7 @@
 
 Plan: `~/ov-ops/openbeach-separation-tournaments-PLAN.md`, sections 1.2 and 1.3, phase S1. Owner decisions D1 (one login per email, per-app membership and roles) and D2 (only the global admin administers both apps in v1).
 
-This is the backend part only. Brand-aware mail, the second manager build and the OpenBeach app changes are phase S2.
+Sections 1 to 7 are the backend part (S1). Section 8 is phase S2: brand-aware mail, `app` on the auth calls and the OpenBeach manager. The OpenBeach app changes (in-app sign-up removed, "Create account" to manager-beach, role UI from `apps.beach`, the subdomain renames of plan 2.2) live in the openbeach repository and are not part of this repository.
 
 ## 1. The rule
 
@@ -33,7 +33,7 @@ The server checks every role against the **sport of the row** being written: the
 
 Idempotent, one transaction, safe under the running 2.2.0 backend. Run after 011 (feat/account-approval) if it is there; nothing depends on it.
 
-**Membership rules** (`lib/accounts.js`): a member of an app has a membership row of it, or a role of it, or is the global admin. An account with **no membership row at all** counts as indoor: sign-up does not record the app yet (S2 adds that), and an older backend may create accounts after 012 ran. Adding the first membership of another app to such an account writes its `indoor` row first, so joining OpenBeach never ends an indoor membership.
+**Membership rules** (`lib/accounts.js`): a member of an app has a membership row of it, or a role of it, or is the global admin. An account with **no membership row at all** counts as indoor: a sign-up without `app` (every OpenVolley client) records none, and an older backend may create accounts after 012 ran. Since S2 a sign-up with `app` records that app (`joined_via = 'signup'`). Adding the first membership of another app to such an account writes its `indoor` row first, so joining OpenBeach never ends an indoor membership.
 
 ## 4. Enforcement points
 
@@ -82,3 +82,17 @@ Audit `app`: given explicitly for invites, roles and joins; an entry about a mat
 ## 7. Tests
 
 `backend/tests/access.test.js` (flags per sport), `pgQuery.sportAccess.test.js` (row sport, children, test flag, sport lock, restore), `migration012.pg.test.js` (backfill, re-run, CHECKs, close audit, trigger, app-role grants), `appSeparation.e2e.test.js` (cross-sport denial, scoresheets, official check, `/api/me`, invites per sport, join, `?app=` lists, audit per app). `beach.e2e.test.js` and `scorerAccounts.e2e.test.js` now give their beach accounts beach roles; their indoor parts are unchanged.
+
+## 8. Phase S2: the brand (as built)
+
+| Piece | What |
+|---|---|
+| `backend/lib/mailer.js` | `MAIL_BRANDS` (OpenVolley `indoor`, OpenBeach `beach`) and `mailApp()` (allowlist: `'beach'`, anything else indoor). `renderMail(kind, lang, { link, app })`: OpenBeach's name in subject, text, signature and footer; the reset and password-changed mails add "This changes the password of your account for OpenVolley and OpenBeach" (en/de/fr/it). OpenVolley's mails are unchanged byte for byte. `send()` takes `app` and uses the brand's sender. Env `MAIL_FROM_BEACH` (default `OpenBeach <address of MAIL_FROM>`) and `MANAGER_URL_BEACH` (default `https://manager-beach.openvolley.app`); a set but unusable value turns all account mails off, as `MANAGER_URL` does. Budgets and inbox caps are shared. |
+| `backend/lib/auth.js` | `sign-up`, `reset-password`, `reset-password/confirm`, `resend-confirmation` take `app`. The link host comes from the mailer's brand table, never from the client (`redirectTo` stays ignored). A sign-up with `app` writes its membership in the same transaction (when `auth.app_memberships` exists); without `app`, nothing (indoor, as before). `confirm-email` ignores `app`. `app` is never an authorisation. |
+| `backend/lib/cors.js` | `https://manager-beach.openvolley.app` listed explicitly (the `*.openvolley.app` rule already covered it). |
+| Frontend | `src/managerBrand.js` (two brands, `ManagerBrandProvider`, `useManagerBrand`), `src/managerRoot.jsx` (`renderManager(app)`), `src/manager-beach-main.jsx`, `manager-beach.html`, `brand/beach/` (logo B2). `AuthProvider app="beach"` sends `app` on sign-up, reset and resend; the reset page sends it on confirm. `lib/access.js` `BEACH_ROLES`, `accessForApp(access, 'beach')`. The console's panels take `app` / `sport`: `?app=beach` lists, beach invite codes (`sport: 'beach'`), beach roles, `?sport=beach` saved teams without the offline cache. `ManagerApp`: OpenBeach texts (`managerBeach.*`, five locales), "Join OpenBeach" for a signed-in account that is not a member (`GET /api/me`, `POST /api/account/join`), the beach app link. Without a provider (OpenVolley's manager and the main app's console) nothing changes. |
+| Build and deploy | `scripts/build-subdomains.js` entry `manager-beach` (`dist-manager-beach`, its icons and manifest). Pages project `openbeach-manager` and the CNAME `manager-beach`: `docs/manager-site-deploy.md`, "OpenBeach's manager" (created by the owner). |
+
+Deploy order: the S2 backend image first (it only adds), then the `openbeach-manager` Pages project and its domain. The OpenBeach app's "Create account" should point at `https://manager-beach.openvolley.app/#signup` only once that site is up.
+
+Tests: `backend/tests/mailer.test.js` ("brands"), `emailAuth.e2e.test.js` (OpenBeach mails end to end, membership at sign-up, an unknown `app`), `cors.test.js`; `frontend/src/__tests__/ManagerBeach.test.jsx`, `buildSubdomains.test.js` (manager-beach), `lib/__tests__/accountApi.test.js` (per-app calls).

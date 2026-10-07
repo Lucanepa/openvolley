@@ -91,3 +91,91 @@ Without it the preview loads but sign-in fails with a CORS error. Production
 page is `http://localhost:5173/manager.html#signup`. The scorer app's "Create
 one at manager.openvolley.app" always opens the public site (a Pages preview
 of the app opens the matching manager preview).
+
+# OpenBeach's manager: manager-beach.openvolley.app
+
+The same console built a second time with the OpenBeach brand (plan
+`~/ov-ops/openbeach-separation-tournaments-PLAN.md` 1.6 and 2.1, phase S2;
+`docs/app-separation-spec.md` section 8). One code base: `src/managerBrand.js`
+holds the two brands, `src/manager-beach-main.jsx` starts the console as
+OpenBeach.
+
+What differs from `manager.openvolley.app`:
+
+| | OpenVolley (`manager`) | OpenBeach (`manager-beach`) |
+|---|---|---|
+| Page, entry | `manager.html`, `src/manager-main.jsx` | `manager-beach.html`, `src/manager-beach-main.jsx` |
+| Name, logo, icons | OpenVolley | OpenBeach, logo B2 (`brand/beach/`, copied over `favicon.*`, `apple-touch-icon.png`, `icon-192/512.png` by the build), its own `manifest.webmanifest` (no service worker) |
+| Tabs (admin) | accounts, invites, official games, closed matches, audit, saved teams | accounts, invites, audit, saved teams |
+| Lists | as before (no `?app=`) | `?app=beach`: OpenBeach members, beach codes, beach audit, beach competitions and pairs (`?sport=beach`, no offline cache) |
+| Roles | `scorer`, `referee`, `competition_manager`, `admin` | `beach:scorer`, `beach:referee`, `beach:competition_manager` (shown as Scorer, Referee, Competition manager). The global admin is managed in OpenVolley's console |
+| Auth calls | no `app` | `app: 'beach'` on sign-up, reset, reset confirm and resend: OpenBeach's mails (`OpenBeach <noreply@openvolley.app>`), links to `manager-beach`, and sign-up joins OpenBeach |
+| Signed-in account that has not joined OpenBeach | n/a | "Join OpenBeach" (`POST /api/account/join`), then the invite-code step |
+| Scorer app link | `app.openvolley.app` | `beach.openvolley.app` |
+
+Who sees what (D2: only the global admin administers both in v1): an admin
+gets the four tabs, a `beach:competition_manager` saved teams, a
+`beach:scorer` "You're all set", a `beach:referee` "No access", an OpenBeach
+member without a beach role the invite-code step, and any other signed-in
+account "Join OpenBeach" first. An indoor role gives nothing here.
+
+| Piece | Change |
+|---|---|
+| Frontend build | `node scripts/build-subdomains.js manager-beach` (also `npm run build:manager-beach`) -> `escoresheet/frontend/dist-manager-beach`. noindex as the indoor manager (`robots.txt`, meta, `_headers`). |
+| Backend | `https://manager-beach.openvolley.app` is in `lib/cors.js` `ALLOWED_ORIGINS`; the running backend already trusts it (`*.openvolley.app`). The OpenBeach mails need the S2 backend image; the env defaults are right (`MAIL_FROM_BEACH` = OpenBeach <the address of `MAIL_FROM`>, `MANAGER_URL_BEACH` = `https://manager-beach.openvolley.app`), so nothing has to be set in `.env`. |
+| Database | Nothing new (db/012 from S1). |
+
+## Cloudflare Pages project (owner: create it, nothing here creates it)
+
+| Setting | Value |
+|---|---|
+| Project name | `openbeach-manager` (gives `openbeach-manager.pages.dev`) |
+| Git repository | `openvolley` (this repository; the console lives here, not in the openbeach repo) |
+| Production branch | `main` |
+| Preview branches | Custom: `dev` only |
+| Framework preset | None |
+| Root directory (advanced) | `escoresheet/frontend` |
+| Build command | `npm ci && node scripts/build-subdomains.js manager-beach` |
+| Build output directory | `dist-manager-beach` |
+| Environment variables (Production **and** Preview) | `VITE_BACKEND_URL` = `https://backend.openvolley.app` |
+| Custom domain | `manager-beach.openvolley.app` |
+
+## DNS (owner)
+
+Custom domains -> Set up `manager-beach.openvolley.app` on the Pages project.
+Cloudflare then adds, in the `openvolley.app` zone, the proxied record:
+
+| Type | Name | Target | Proxy |
+|---|---|---|---|
+| CNAME | `manager-beach` | `openbeach-manager.pages.dev` | proxied |
+
+It follows the naming rule of plan 2.1 (`<function>-beach.openvolley.app`).
+
+## Preview (dev branch)
+
+`https://dev.openbeach-manager.pages.dev` needs that origin in the backend's
+`PUBLIC_ORIGINS`, as for the indoor manager preview above. Production needs
+no backend change.
+
+## Check after the first deploy
+
+1. `https://manager-beach.openvolley.app` shows the OpenBeach logo and
+   "Manage OpenBeach"; the tab title is "OpenBeach Manager", the tab icon the
+   B2 ball. `curl -sI https://manager-beach.openvolley.app | grep -i x-robots-tag`
+   prints `noindex, nofollow`.
+2. Sign in as the global admin: four tabs (accounts, invites, audit, saved
+   teams). Invites: a new code shows the plain role and is listed only here,
+   not in OpenVolley's console. Accounts: only OpenBeach members.
+3. `#signup` with a throwaway address: the confirmation mail comes from
+   `OpenBeach <noreply@openvolley.app>`, its link opens
+   `manager-beach.openvolley.app/#confirm?token=`; the account lands on the
+   invite-code step. Then "forgot password" on manager-beach: the OpenBeach
+   reset mail says the password is the one of OpenVolley and OpenBeach. Delete
+   the account afterwards.
+4. Sign up again with an address that has an OpenVolley account: the form says
+   to sign in with the existing password; after sign-in, "Join OpenBeach".
+
+## Local development
+
+`npm run dev`, then `http://localhost:5173/manager-beach.html` (the icons are
+OpenVolley's in dev; the build swaps them).
