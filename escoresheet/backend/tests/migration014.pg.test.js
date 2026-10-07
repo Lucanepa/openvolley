@@ -18,6 +18,7 @@ import { SKIP_PG, SCHEMA_SQL_005_ONLY, createTestDatabase } from './helpers/pgTe
 
 const here = dirname(fileURLToPath(import.meta.url))
 const sqlOf = (f) => readFileSync(join(here, '..', 'db', f), 'utf8')
+const M007 = sqlOf('007_scorer_accounts.sql')
 const M013 = sqlOf('013_beach_official_index.sql')
 const M014 = sqlOf('014_beach_tournaments.sql')
 
@@ -81,6 +82,26 @@ describe('db/013 and db/014 (beach tournaments)', { skip: SKIP_PG }, () => {
     await match('m014_indoor_next', { game_n: 1, scheduled_at: '2027-08-01T16:00:00Z' })
     await match('m014_beach_2', { game_n: 1, sport_type: 'beach', scheduled_at: '2026-08-14T09:00:00Z' })
     await match('m014_beach_3', { game_n: 1, sport_type: 'beach', scheduled_at: '2026-08-14T10:00:00Z' })
+  })
+
+  it('re-running 007 after 013 leaves beach game numbers alone (its duplicate scan follows the index)', async () => {
+    const notices = []
+    const onNotice = (n) => notices.push(n.message)
+    raw.on('notice', onNotice)
+    try {
+      await raw.query(M007)
+    } finally {
+      raw.off('notice', onNotice)
+    }
+    const { rows } = await raw.query(
+      "SELECT external_id, official_game_exempt FROM public.matches WHERE external_id LIKE 'm014_%' ORDER BY external_id")
+    assert.deepEqual(rows.filter((r) => r.official_game_exempt).map((r) => r.external_id), [], notices.join('\n'))
+    assert.equal(notices.some((n) => n.includes('duplicate official game')), false, notices.join('\n'))
+    // 007's index is still the one of 013 (beach left out)
+    const { rows: [ix] } = await raw.query(
+      `SELECT pg_get_expr(i.indpred, i.indrelid) AS pred FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+        WHERE c.relname = 'matches_official_game_uidx'`)
+    assert.match(ix.pred, /beach/)
   })
 
   it('014: tournaments, courts, draws, entries and their checks', async () => {
