@@ -54,8 +54,15 @@ describe('isStalePickerMatch', () => {
     expect(isStalePickerMatch({ status: 'setup', coin_toss: { confirmed: true }, updated_at: iso(NOW - 7 * H) }, NOW)).toBe(true)
   })
 
-  it('a live relay row (no write time) is not stale', () => {
-    expect(isStalePickerMatch({ status: 'live', scheduledAt: iso(NOW - 30 * 24 * H) }, NOW)).toBe(false)
+  it('a live relay row (no write time): stale once its scheduled time is more than 24 h ago', () => {
+    // an old scorer app still publishing the June match it never finished
+    expect(isStalePickerMatch({ status: 'live', homeTeam: 'Home', awayTeam: 'Away', scheduledAt: '2026-06-15T14:00:00.000Z' }, NOW)).toBe(true)
+    expect(isStalePickerMatch({ status: 'live', scheduledAt: iso(NOW - 25 * H) }, NOW)).toBe(true)
+    // started late, still going: shown
+    expect(isStalePickerMatch({ status: 'live', scheduledAt: iso(NOW - 10 * H) }, NOW)).toBe(false)
+    expect(isStalePickerMatch({ status: 'live', scheduledAt: iso(NOW - 23 * H) }, NOW)).toBe(false)
+    // no time at all: shown (the relay drops a match whose scorer left)
+    expect(isStalePickerMatch({ status: 'live' }, NOW)).toBe(false)
   })
 
   it('undated: stale once not written for more than 24 h; without a write time it stays', () => {
@@ -65,7 +72,7 @@ describe('isStalePickerMatch', () => {
   })
 
   it('the limits', () => {
-    expect(PICKER_STALE).toEqual({ scheduledPastMs: 12 * H, liveIdleMs: 6 * H, undatedIdleMs: 24 * H })
+    expect(PICKER_STALE).toEqual({ scheduledPastMs: 12 * H, liveIdleMs: 6 * H, undatedIdleMs: 24 * H, liveScheduledPastMs: 24 * H })
     expect(isStalePickerMatch(null, NOW)).toBe(true)
   })
 })

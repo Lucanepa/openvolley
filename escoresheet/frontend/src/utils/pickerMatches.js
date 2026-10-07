@@ -12,7 +12,9 @@
  *     for more than 6 h (no set lasts that long);
  *   - no scheduled time, and not written for more than 24 h.
  * A row whose last write is unknown (relay rows carry none) is judged by its
- * scheduled time only.
+ * scheduled time only: not started, as above; started, once its scheduled
+ * time is more than 24 h ago (an old scorer app that still publishes a match
+ * started months ago and never finished, "Home – Away 15.06 16:00").
  *
  * The cloud pickers also leave out beach rows (OpenBeach matches share the
  * table; older indoor rows have no sport_type) and test rows, and ask only
@@ -24,7 +26,9 @@ const HOUR = 60 * 60 * 1000
 export const PICKER_STALE = Object.freeze({
   scheduledPastMs: 12 * HOUR,
   liveIdleMs: 6 * HOUR,
-  undatedIdleMs: 24 * HOUR
+  undatedIdleMs: 24 * HOUR,
+  // started, last write unknown (relay rows): judged by the scheduled time
+  liveScheduledPastMs: 24 * HOUR
 })
 
 /** The cloud query asks only for rows written in the last 30 days. */
@@ -66,7 +70,10 @@ export function isStalePickerMatch(row, now = Date.now()) {
   if (!row || typeof row !== 'object') return true
   const scheduled = pickerTime(row.scheduled_at ?? row.scheduledAt)
   const updated = pickerTime(row.updated_at ?? row.updatedAt)
-  if (isStartedPickerMatch(row)) return updated != null && now - updated > PICKER_STALE.liveIdleMs
+  if (isStartedPickerMatch(row)) {
+    if (updated != null) return now - updated > PICKER_STALE.liveIdleMs
+    return scheduled != null && now - scheduled > PICKER_STALE.liveScheduledPastMs
+  }
   if (scheduled != null) return now - scheduled > PICKER_STALE.scheduledPastMs
   return updated != null && now - updated > PICKER_STALE.undatedIdleMs
 }
