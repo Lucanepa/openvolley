@@ -281,7 +281,7 @@ function getDataLayer() {
     // SMTP_HOST or SMTP_PASS: reset answers 503, sign-up confirms at once.
     const mailer = ml.mailerFromEnv(process.env)
     if (mailer.enabled) {
-      console.log(`[Mail] account emails on: SMTP ${process.env.SMTP_HOST}:${process.env.SMTP_PORT || 465} as ${process.env.SMTP_USER}, from ${mailer.from}, links to ${mailer.managerUrl}`)
+      console.log(`[Mail] account emails on: SMTP ${process.env.SMTP_HOST}:${process.env.SMTP_PORT || 465} as ${process.env.SMTP_USER}, from ${mailer.from}, links to ${mailer.managerUrl}; OpenBeach from ${mailer.fromFor('beach')}, links to ${mailer.managerUrlFor('beach')}`)
     } else {
       console.log(`[Mail] account emails off (${mailer.reason}): password reset answers 503, sign-up confirms accounts at once`)
     }

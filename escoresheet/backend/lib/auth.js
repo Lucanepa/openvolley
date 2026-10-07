@@ -53,6 +53,17 @@
  * unconfirmed, and whoever owns the mailbox can take the account over with a
  * reset link at any time.
  *
+ * Brands (OpenVolley 'indoor', OpenBeach 'beach'; plan 1.5): sign-up,
+ * reset-password, reset-password/confirm and resend-confirmation take an
+ * optional `app` (lib/mailer.js mailApp: 'beach', anything else indoor). It
+ * chooses the mail's brand and its link host (the mailer's brand table, never
+ * a URL from the client), and on sign-up the account's first membership
+ * (auth.app_memberships, db/012, joined_via 'signup'). Without `app`, sign-up
+ * writes no membership: an account without one counts as indoor (lib/accounts.js),
+ * so OpenVolley 2.1/2.2 clients get exactly what they got before. `app` is
+ * never an authorisation: it grants no role. confirm-email accepts it and
+ * ignores it (no mail, no membership).
+ *
  * Sign-up still answers 422 user_already_exists for a registered address (as
  * before): an unconfirmed account may sign in at once, so a uniform sign-up
  * answer would not hide whether an address is registered (sign up, then sign
@@ -69,7 +80,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { isIPv4, isIPv6 } from 'node:net'
 import bcryptjs from 'bcryptjs'
-import { authLink, describeMailError, disabledMailer, inboxKey, maskEmail, pickLang } from './mailer.js'
+import { authLink, describeMailError, disabledMailer, inboxKey, mailApp, maskEmail, MAIL_BRANDS, pickLang } from './mailer.js'
 
 // ---------------------------------------------------------------------------
 // Constants and small helpers
@@ -94,6 +105,9 @@ const DEFAULTS = Object.freeze({
   tokensTable: 'auth.app_tokens',
   // Best-effort audit entries (db/007) when the table exists.
   auditTable: 'public.audit_log',
+  // Per-app memberships (db/012). A sign-up with `app` adds its membership
+  // when the table exists; absent table: nothing (the account counts as indoor).
+  membershipsTable: 'auth.app_memberships',
   // lib/mailer.js mailer; null/disabled: no account emails (see header).
   mailer: null,
   resetTokenTtlSec: 60 * 60,
@@ -533,7 +547,8 @@ export function createAuth(options = {}) {
     sessions: qualify(cfg.sessionsTable),
     profiles: cfg.profilesTable ? qualify(cfg.profilesTable) : null,
     tokens: cfg.tokensTable ? qualify(cfg.tokensTable) : null,
-    audit: cfg.auditTable ? qualify(cfg.auditTable) : null
+    audit: cfg.auditTable ? qualify(cfg.auditTable) : null,
+    memberships: cfg.membershipsTable ? qualify(cfg.membershipsTable) : null
   }
 
   const limits = {
@@ -975,6 +990,17 @@ export function createAuth(options = {}) {
     return pickLang(body.lang, ctx.headers?.['accept-language'])
   }
 
+  /** The brand of a request (`app`): 'indoor' (also when absent or unknown) or 'beach'. */
+  function requestApp(body) {
+    return mailApp(body.app)
+  }
+
+  /** The link base of a brand: the mailer's table (a test stand-in without one: the brand default for beach). */
+  function managerUrlFor(app) {
+    if (typeof mailer.managerUrlFor === 'function') return mailer.managerUrlFor(app)
+    return app === 'beach' ? MAIL_BRANDS.beach.managerUrl : mailer.managerUrl
+  }
+
   // --- action handlers ---------------------------------------------------------
   // The per-address sign-up and reset buckets count delivered inboxes:
   // name+tag@domain is name@domain, and n.a.m.e@googlemail.com is
@@ -1094,6 +1120,8 @@ export function createAuth(options = {}) {
     // otherwise the account is confirmed at once (as before).
     const linkPossible = mailer.enabled && await tokensAvailable()
     let confirmToken = null
+    const app = requestApp(body)
+    const signUpApp = body.app === undefined || body.app === null ? null : app
 
     try {
       const user = await withTransaction(async (client) => {
@@ -1152,6 +1180,13 @@ export function createAuth(options = {}) {
             )
           }
         }
+        // The app it signed up in (only when the client named one: without,
+        // no row, which counts as indoor, as for every older client)
+        if (signUpApp && T.memberships && (await columnsOf(cfg.membershipsTable, client)).size) {
+          await client.query(
+            `INSERT INTO ${T.memberships} (user_id, app, joined_via) VALUES ($1, $2, 'signup') ON CONFLICT DO NOTHING`,
+            [id, signUpApp])
+        }
         if (byLink) confirmToken = await issueToken(client, id, 'confirm')
         return ins.rows[0].u
       })
@@ -1160,9 +1195,9 @@ export function createAuth(options = {}) {
       }
       if (confirmToken) {
         const lang = mailLang(body, ctx)
-        const link = authLink(mailer.managerUrl, 'confirm', confirmToken, lang)
+        const link = authLink(managerUrlFor(app), 'confirm', confirmToken, lang)
         background('sign-up confirmation mail', async () => {
-          const r = await mailer.send('confirm', { to: user.email, lang, link })
+          const r = await mailer.send('confirm', { to: user.email, lang, link, app })
           if (r?.sent) log.log?.(`[auth] confirmation link sent to ${maskEmail(user.email)}`)
         })
         // email_confirmation: 'sent' tells the app it may sign in right away.
@@ -1273,7 +1308,7 @@ export function createAuth(options = {}) {
   const RESET_REQUESTED = () => ok({ requested: true })
 
   /**
-   * POST reset-password { email, lang }. Rate-limited per client and per
+   * POST reset-password { email, lang, app }. Rate-limited per client and per
    * address, then always the same 200 answer; the lookup, the link and the
    * mail happen after the answer (background), and only for an existing,
    * not blocked account.
@@ -1297,19 +1332,20 @@ export function createAuth(options = {}) {
       return RESET_UNAVAILABLE()
     }
     const lang = mailLang(body, ctx)
+    const app = requestApp(body)
     background('reset-password mail', async () => {
       const user = await findUserByEmail(email)
       if (!user || isUserBlocked(user)) return
       const token = await withTransaction((client) => issueToken(client, user.id, 'reset'))
       await audit('account.password_reset_requested', user.id, {})
-      const r = await mailer.send('reset', { to: user.email, lang, link: authLink(mailer.managerUrl, 'reset', token, lang) })
+      const r = await mailer.send('reset', { to: user.email, lang, app, link: authLink(managerUrlFor(app), 'reset', token, lang) })
       if (r?.sent) log.log?.(`[auth] reset link sent to ${maskEmail(user.email)}`)
     })
     return RESET_REQUESTED()
   }
 
   /**
-   * POST reset-password/confirm { token, password, lang }: the new password
+   * POST reset-password/confirm { token, password, lang, app }: the new password
    * (policy enforced), the address confirmed (the link proves it), all
    * sessions revoked, the link spent; then a "password changed" notice.
    */
@@ -1338,12 +1374,13 @@ export function createAuth(options = {}) {
     await audit('account.password_reset', out.userId, { sessions_revoked: out.revokedSessions })
     if (mailer.enabled) {
       const lang = mailLang(body, ctx)
-      background('password-changed mail', () => mailer.send('password_changed', { to: out.email, lang }))
+      const app = requestApp(body)
+      background('password-changed mail', () => mailer.send('password_changed', { to: out.email, lang, app }))
     }
     return ok({ password_updated: true })
   }
 
-  /** POST confirm-email { token }: marks the address confirmed. */
+  /** POST confirm-email { token } (an `app` is ignored): marks the address confirmed. */
   async function confirmEmailLink(body, ctx) {
     const blocked = limit('tokenIp', ipKey(ctx.ip))
     if (blocked) return blocked
@@ -1375,7 +1412,7 @@ export function createAuth(options = {}) {
     return ok({ confirmed: true, already_confirmed: out.already })
   }
 
-  /** POST resend-confirmation { access_token, lang }: a fresh link for the signed-in, unconfirmed account. */
+  /** POST resend-confirmation { access_token, lang, app }: a fresh link for the signed-in, unconfirmed account. */
   async function resendConfirmation(body, ctx) {
     const blocked = limit('resendIp', ipKey(ctx.ip))
     if (blocked) return blocked
@@ -1387,8 +1424,9 @@ export function createAuth(options = {}) {
     if (blockedUser) return blockedUser
     const token = await withTransaction((client) => issueToken(client, v.user.id, 'confirm'))
     const lang = mailLang(body, ctx)
+    const app = requestApp(body)
     try {
-      const r = await mailer.send('confirm', { to: v.user.email, lang, link: authLink(mailer.managerUrl, 'confirm', token, lang) })
+      const r = await mailer.send('confirm', { to: v.user.email, lang, app, link: authLink(managerUrlFor(app), 'confirm', token, lang) })
       if (!r?.sent) return CONFIRM_UNAVAILABLE()
     } catch (err) {
       log.error(`[auth] resend-confirmation mail failed: ${describeMailError(err)}`)

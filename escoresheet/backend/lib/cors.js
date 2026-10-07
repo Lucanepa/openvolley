@@ -15,8 +15,12 @@ export const ALLOWED_ORIGINS = Object.freeze([
   'https://bench.openvolley.app',
   'https://livescore.openvolley.app',
   'https://roster.openvolley.app',
-  // The manage console as a site of its own (admins, competition managers)
+  // The manage console as a site of its own (admins, competition managers),
+  // OpenVolley's and OpenBeach's (the same console, built per brand). Listed
+  // explicitly: the *.openvolley.app rule below covers them too, but the
+  // consoles must keep working should that rule ever be narrowed.
   'https://manager.openvolley.app',
+  'https://manager-beach.openvolley.app',
   // Native shells: Capacitor (Android androidScheme https, iOS), Tauri
   // (macOS/Linux, Windows). DATABASE_URL implies strict cloud CORS, so without
   // these the apps would lose cloud sync. Auth is a bearer token, never a

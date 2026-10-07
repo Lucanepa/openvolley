@@ -9,6 +9,10 @@
  *   SMTP_USER   the mailbox, e.g. noreply@openvolley.app
  *   MAIL_FROM   "OpenVolley <noreply@openvolley.app>" (default: OpenVolley <SMTP_USER>)
  *   MANAGER_URL base of the links (default https://manager.openvolley.app)
+ *   MAIL_FROM_BEACH   sender of the OpenBeach mails (default: OpenBeach <the
+ *                     address of MAIL_FROM, else SMTP_USER>): the same mailbox
+ *   MANAGER_URL_BEACH base of the OpenBeach links (default
+ *                     https://manager-beach.openvolley.app)
  * Without SMTP_HOST or SMTP_PASS the mailer is disabled: lib/auth.js then
  * answers reset-password with 503 "temporarily unavailable" and confirms new
  * accounts at sign-up, exactly as before this module existed.
@@ -16,6 +20,14 @@
  * TLS: implicit TLS on 465; on any other port STARTTLS is mandatory
  * (requireTLS), so the password never crosses the wire in clear. Certificates
  * are always verified (TLS 1.2+). Pooled connections, bounded timeouts.
+ *
+ * Brands (MAIL_BRANDS): OpenVolley ('indoor', unchanged) and OpenBeach
+ * ('beach'). One login serves both apps, so the OpenBeach reset and
+ * password-changed mails say the password is the one of both apps. The brand
+ * of a mail comes from the `app` of the request (mailApp: an allowlist,
+ * anything else is indoor), and its link host from this brand table, never
+ * from a URL the client sends (~/ov-ops/openbeach-separation-tournaments-PLAN.md
+ * 1.5). The tokens work on either manager: both use the same backend.
  *
  * Mails: plain text plus a minimal HTML part, in en/de/fr/it. No tracking, no
  * remote images, no links other than the one action link. Recipients are
@@ -35,12 +47,14 @@
  *   mailerFromEnv(env, { logger }) -> mailer      (disabled mailer when not configured)
  *   createMailer(options)          -> mailer
  *   disabledMailer(reason)         -> mailer
- *   mailer.enabled / mailer.reason / mailer.managerUrl
- *   mailer.send(kind, { to, lang, link }) -> Promise<{ sent, skipped? }>   kind: reset | confirm | password_changed
+ *   mailer.enabled / mailer.reason / mailer.managerUrl / mailer.from (OpenVolley's)
+ *   mailer.managerUrlFor(app) / mailer.fromFor(app)   per brand ('indoor' | 'beach')
+ *   mailer.send(kind, { to, lang, link, app }) -> Promise<{ sent, skipped? }>   kind: reset | confirm | password_changed
  *                                            skipped: 'budget' | 'inbox' | 'disabled'
  *   mailer.stats()                 -> { enabled, budgets, inboxDropped, failed, lastDropAt, ... }
  *   mailer.close()
- *   renderMail(kind, lang, vars) -> { subject, text, html }
+ *   renderMail(kind, lang, vars) -> { subject, text, html }   vars: { link, app }
+ *   mailApp(raw) -> 'indoor' | 'beach'   (the allowlist of a request's `app`)
  *   pickLang(explicit, acceptLanguage) -> 'en' | 'de' | 'fr' | 'it'
  *   authLink(managerUrl, page, token, lang) -> string
  *   maskEmail(email)
@@ -54,6 +68,22 @@ export const MAIL_LANGS = Object.freeze(['en', 'de', 'fr', 'it'])
 export const MAIL_KINDS = Object.freeze(['reset', 'confirm', 'password_changed'])
 export const DEFAULT_MANAGER_URL = 'https://manager.openvolley.app'
 export const DEFAULT_FROM_NAME = 'OpenVolley'
+export const DEFAULT_MANAGER_URL_BEACH = 'https://manager-beach.openvolley.app'
+export const DEFAULT_FROM_NAME_BEACH = 'OpenBeach'
+export const MAIL_APPS = Object.freeze(['indoor', 'beach'])
+
+// The brands of the account mails: the name in the text and signature, and
+// the default link host and sender name. Fixed here: a client chooses only
+// which one (mailApp), never a host.
+export const MAIL_BRANDS = Object.freeze({
+  indoor: Object.freeze({ app: 'indoor', name: 'OpenVolley', managerUrl: DEFAULT_MANAGER_URL, fromName: DEFAULT_FROM_NAME }),
+  beach: Object.freeze({ app: 'beach', name: 'OpenBeach', managerUrl: DEFAULT_MANAGER_URL_BEACH, fromName: DEFAULT_FROM_NAME_BEACH })
+})
+
+/** The brand of a request's `app`: 'beach' for exactly that word (any case), 'indoor' for anything else. */
+export function mailApp(raw) {
+  return typeof raw === 'string' && raw.trim().toLowerCase() === 'beach' ? 'beach' : 'indoor'
+}
 
 // Outgoing account mails per hour, all recipients together, per budget:
 // protects the mailbox's sending quota and reputation from a spread-out flood
@@ -245,15 +275,45 @@ const T = {
   }
 }
 
-/** { subject, text, html } of one account mail. vars: { link } (reset, confirm). */
-export function renderMail(kind, lang, { link } = {}) {
+// OpenBeach: one login for both apps, so a password mail says the password
+// is the one of both (plan 1.5 "Reset mail text"). After the main paragraph.
+const SHARED_PASSWORD_NOTE = {
+  reset: {
+    en: 'This changes the password of your account for OpenVolley and OpenBeach.',
+    de: 'Damit ändern Sie das Passwort Ihres Kontos für OpenVolley und OpenBeach.',
+    fr: 'Cela modifie le mot de passe de votre compte pour OpenVolley et OpenBeach.',
+    it: 'Così modifica la password del suo account per OpenVolley e OpenBeach.'
+  },
+  password_changed: {
+    en: 'Your account works for OpenVolley and OpenBeach: the new password is the one of both apps.',
+    de: 'Ihr Konto gilt für OpenVolley und OpenBeach: Das neue Passwort gilt für beide Apps.',
+    fr: 'Votre compte est valable pour OpenVolley et OpenBeach : le nouveau mot de passe vaut pour les deux applications.',
+    it: 'Il suo account vale per OpenVolley e OpenBeach: la nuova password vale per entrambe le app.'
+  }
+}
+
+/** The template of `kind` in `lang` for a brand: OpenVolley's as written, OpenBeach's with its name and the shared-password note. */
+function templateFor(kind, lang, app) {
+  const m = T[kind][lang]
+  if (app !== 'beach') return m
+  const name = MAIL_BRANDS.beach.name
+  const swap = (line) => line.replace(/OpenVolley/g, name)
+  const note = SHARED_PASSWORD_NOTE[kind]?.[lang]
+  const before = m.before.map(swap)
+  if (note) before.push(note)
+  return { subject: swap(m.subject), before, button: m.button, after: m.after.map(swap) }
+}
+
+/** { subject, text, html } of one account mail. vars: { link } (reset, confirm), { app } ('indoor' default, 'beach'). */
+export function renderMail(kind, lang, { link, app } = {}) {
   const set = T[kind]
   if (!set) throw new Error(`mailer: unknown mail kind ${kind}`)
-  const m = set[langOf(lang) || 'en']
+  const brand = MAIL_BRANDS[mailApp(app)]
+  const m = templateFor(kind, langOf(lang) || 'en', brand.app)
   if (m.button && !link) throw new Error(`mailer: ${kind} needs a link`)
   const textParts = [...m.before]
   if (m.button) textParts.push(link)
-  textParts.push(...m.after, '– OpenVolley')
+  textParts.push(...m.after, `– ${brand.name}`)
   const text = textParts.join('\n\n') + '\n'
 
   const p = (s) => `<p style="margin:0 0 16px">${escapeHtml(s)}</p>`
@@ -265,7 +325,7 @@ export function renderMail(kind, lang, { link } = {}) {
     '<body style="margin:0;padding:24px;background:#fafaf9;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5;color:#1c1917">' +
     '<div style="max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e7e5e4;border-radius:12px;padding:24px">' +
     m.before.map(p).join('') + button + m.after.map(p).join('') +
-    '<p style="margin:24px 0 0;font-size:13px;color:#78716c">OpenVolley</p>' +
+    `<p style="margin:24px 0 0;font-size:13px;color:#78716c">${escapeHtml(brand.name)}</p>` +
     '</div></body></html>'
   return { subject: m.subject, text, html }
 }
@@ -325,11 +385,36 @@ function inboxCounter(max, now = Date.now) {
   }
 }
 
+/** "Name <address>" with the address of `from` ("X <a@b>" or a bare "a@b"); '' when it has none. */
+export function brandFrom(name, from) {
+  const s = String(from || '').trim()
+  const m = /<([^<>\s]+@[^<>\s]+)>\s*$/.exec(s)
+  const address = m ? m[1] : (/^[^\s<>]+@[^\s<>]+$/.test(s) ? s : '')
+  return address ? `${name} <${address}>` : ''
+}
+
+/** A link base from the environment: https (http only on localhost), origin + path without a trailing slash; null when not usable. */
+function linkBase(raw) {
+  try {
+    const u = new URL(raw)
+    if (u.protocol !== 'https:' && !(u.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(u.hostname))) return null
+    return u.origin + u.pathname.replace(/\/+$/, '')
+  } catch {
+    return null
+  }
+}
+
+function isUrl(raw) {
+  try { return Boolean(new URL(raw)) } catch { return false }
+}
+
 export function disabledMailer(reason = 'not configured') {
   return {
     enabled: false,
     reason,
     managerUrl: DEFAULT_MANAGER_URL,
+    managerUrlFor: (app) => MAIL_BRANDS[mailApp(app)].managerUrl,
+    fromFor: () => null,
     async send() { return { sent: false, skipped: 'disabled' } },
     stats() { return { enabled: false, reason } },
     close() {}
@@ -369,6 +454,8 @@ export function transportOptions({ host, port, user, pass, tls = {}, secure }) {
  * @param {string} o.host, o.user, o.pass, o.from
  * @param {number} o.port
  * @param {string} [o.managerUrl]
+ * @param {string} [o.fromBeach]        OpenBeach sender (default: OpenBeach <the address of o.from>)
+ * @param {string} [o.managerUrlBeach]  OpenBeach link base (default DEFAULT_MANAGER_URL_BEACH)
  * @param {object} [o.tls]          extra TLS options (tests: { ca }); rejectUnauthorized stays true
  * @param {boolean} [o.secure]      implicit TLS (default: port === 465)
  * @param {object} [o.transport]    a ready nodemailer-like { sendMail, close } (tests)
@@ -394,8 +481,16 @@ export function createMailer(o = {}) {
   const perInbox = inboxCounter(Number.isInteger(o.maxPerInbox) && o.maxPerInbox > 0 ? o.maxPerInbox : DEFAULT_MAX_PER_INBOX, o.now)
   const counters = { sent: 0, failed: 0, inboxDropped: 0, lastDropAt: null, lastFailureAt: null }
   const managerUrl = String(o.managerUrl || DEFAULT_MANAGER_URL).replace(/\/+$/, '')
+  const brands = {
+    indoor: { from: o.from, managerUrl },
+    beach: {
+      from: o.fromBeach || brandFrom(DEFAULT_FROM_NAME_BEACH, o.from),
+      managerUrl: String(o.managerUrlBeach || DEFAULT_MANAGER_URL_BEACH).replace(/\/+$/, '')
+    }
+  }
+  if (!brands.beach.from) throw new Error('createMailer: no OpenBeach sender (fromBeach)')
 
-  async function send(kind, { to, lang, link } = {}) {
+  async function send(kind, { to, lang, link, app } = {}) {
     if (!MAIL_KINDS.includes(kind)) throw new Error(`mailer: unknown mail kind ${kind}`)
     if (typeof to !== 'string' || !to.includes('@')) throw new Error('mailer: no recipient')
     const budgetName = MAIL_BUDGET_OF[kind]
@@ -412,10 +507,11 @@ export function createMailer(o = {}) {
       log.warn(`[mail] ${perInbox.max} mails per hour to one inbox reached; ${kind} mail to ${maskEmail(to)} dropped`)
       return { sent: false, skipped: 'inbox' }
     }
-    const { subject, text, html } = renderMail(kind, lang, { link })
+    const brand = mailApp(app)
+    const { subject, text, html } = renderMail(kind, lang, { link, app: brand })
     try {
       await transport.sendMail({
-        from: o.from,
+        from: brands[brand].from,
         to,
         subject,
         text,
@@ -454,6 +550,8 @@ export function createMailer(o = {}) {
     reason: null,
     managerUrl,
     from: o.from,
+    managerUrlFor: (app) => brands[mailApp(app)].managerUrl,
+    fromFor: (app) => brands[mailApp(app)].from,
     budgets,
     send,
     stats,
@@ -477,18 +575,19 @@ export function mailerFromEnv(env = process.env, { logger, tls, maxPerHour, budg
   if (!/^\d+$/.test(portText) || port < 1 || port > 65535) return disabledMailer(`SMTP_PORT is not a port number: ${portText.slice(0, 20)}`)
   const from = (env.MAIL_FROM || '').trim() || (user.includes('@') ? `${DEFAULT_FROM_NAME} <${user}>` : '')
   if (!from) return disabledMailer('MAIL_FROM not set (and SMTP_USER is not an address)')
-  let managerUrl = (env.MANAGER_URL || '').trim() || DEFAULT_MANAGER_URL
+  const managerRaw = (env.MANAGER_URL || '').trim() || DEFAULT_MANAGER_URL
+  const managerUrl = linkBase(managerRaw)
+  if (!managerUrl) return disabledMailer(isUrl(managerRaw) ? 'MANAGER_URL must be an https URL' : 'MANAGER_URL is not a URL')
+  // OpenBeach: the same mailbox under its own name, links to its own manager.
+  // A setting that is given but unusable turns the mailer off (as MANAGER_URL
+  // does): never a mail with a wrong sender or link host.
+  const fromBeach = (env.MAIL_FROM_BEACH || '').trim() || brandFrom(DEFAULT_FROM_NAME_BEACH, from)
+  if (!fromBeach || !fromBeach.includes('@')) return disabledMailer('MAIL_FROM_BEACH is not an address')
+  const beachRaw = (env.MANAGER_URL_BEACH || '').trim() || DEFAULT_MANAGER_URL_BEACH
+  const managerUrlBeach = linkBase(beachRaw)
+  if (!managerUrlBeach) return disabledMailer(isUrl(beachRaw) ? 'MANAGER_URL_BEACH must be an https URL' : 'MANAGER_URL_BEACH is not a URL')
   try {
-    const u = new URL(managerUrl)
-    if (u.protocol !== 'https:' && !(u.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(u.hostname))) {
-      return disabledMailer('MANAGER_URL must be an https URL')
-    }
-    managerUrl = u.origin + u.pathname.replace(/\/+$/, '')
-  } catch {
-    return disabledMailer('MANAGER_URL is not a URL')
-  }
-  try {
-    return createMailer({ host, port, user, pass, from, managerUrl, logger, tls, maxPerHour, budgets, maxPerInbox })
+    return createMailer({ host, port, user, pass, from, managerUrl, fromBeach, managerUrlBeach, logger, tls, maxPerHour, budgets, maxPerInbox })
   } catch (err) {
     return disabledMailer(err.message)
   }
