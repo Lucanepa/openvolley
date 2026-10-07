@@ -5,7 +5,9 @@
 import 'fake-indexeddb/auto'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { db } from '../../../db/db'
-import { applyCorrectionPlan } from '../applyCorrectionPlan'
+import { applyCorrectionPlan, CORRECTION_REASON } from '../applyCorrectionPlan'
+import { eventHistorySettled } from '../../../db/eventHistory'
+import { LOCAL_ONLY_EVENT_TYPES } from '../../../domain/eventRevisions'
 import {
   scoreTimeline, planAddTimeout, planAddSanction, planAdjustFinalScore, planRemoveGroup, planAddSubstitution, courtAt
 } from '../../../domain/manualCorrections'
@@ -29,6 +31,11 @@ async function seed({ signed = false, test = false } = {}) {
   // a queued insert job of an event that is going to be removed
   const all = await db.events.where('matchId').equals(matchId).toArray()
   return { matchId, events: all, sets: await db.sets.where('matchId').equals(matchId).toArray() }
+}
+
+const settle = async () => {
+  await new Promise(r => setTimeout(r, 20))
+  await eventHistorySettled()
 }
 
 const ctx = (matchId) => ({ match: MATCH, homeTeam: HOME_TEAM, awayTeam: AWAY_TEAM, matchId, mode: 'review' })
@@ -78,19 +85,64 @@ describe('applyCorrectionPlan', () => {
     expect(setJob.payload).toMatchObject({ home_points: 25, away_points: 23 })
   })
 
-  it('removes a group: delete jobs, queued inserts of the removed rows dropped', async () => {
+  it('removes a group: one void revision per removed row, no delete job, queued inserts of the removed rows dropped', async () => {
     const { matchId, events } = await seed()
     // the loser's last point of set 2 (25:20 -> 25:19 stays a possible result)
     const lastPoint = events.filter(e => e.type === 'point' && e.setIndex === 2 && e.payload.team === 'away').sort((a, b) => b.seq - a.seq)[0]
     await db.sync_queue.add({ resource: 'event', action: 'insert', status: 'queued', payload: { external_id: `${SEED}:e:${lastPoint.id}`, match_id: SEED } })
     const plan = planRemoveGroup(events, lastPoint.id, ctx(matchId))
     await applyCorrectionPlan(plan, { matchId, db, mode: 'review' })
+    await settle()
     const jobs = await db.sync_queue.toArray()
     expect(jobs.some(j => j.action === 'insert' && j.payload.external_id === `${SEED}:e:${lastPoint.id}`)).toBe(false)
-    const deletes = jobs.filter(j => j.resource === 'event' && j.action === 'delete').map(j => j.payload.external_id)
-    expect(deletes).toContain(`${SEED}:e:${lastPoint.id}`)
+    // the server keeps the row, voided: never a hard delete
+    expect(jobs.filter(j => j.resource === 'event' && j.action === 'delete')).toEqual([])
+    const voids = jobs.filter(j => j.resource === 'event' && j.action === 'void')
+    // (rally_start / replay rows never reach the server: their history stays local)
+    const sent = plan.remove.filter(id => !LOCAL_ONLY_EVENT_TYPES.includes(events.find(e => e.id === id).type))
+    expect(sent.length).toBeGreaterThan(0)
+    expect(voids.map(j => j.payload.external_id).sort()).toEqual(sent.map(id => `${SEED}:e:${id}`).sort())
+    expect(voids.every(j => j.payload.reason === CORRECTION_REASON && j.payload.op === 'void')).toBe(true)
+    // one history row per removed row, one action id for the whole correction
+    const hist = await db.event_history.where('matchId').equals(matchId).toArray()
+    const voided = hist.filter(h => h.op === 'void')
+    expect(voided.map(h => h.eventId).sort()).toEqual([...plan.remove].sort())
+    expect(new Set(hist.map(h => h.actionId)).size).toBe(1)
+    expect(hist.every(h => h.reason === 'correction')).toBe(true)
     const set2 = (await db.sets.where('matchId').equals(matchId).toArray()).find(s => s.index === 2)
     expect([set2.homePoints, set2.awayPoints]).toEqual([25, 19])
+  })
+
+  it('every edited row of a correction is an edit revision with the reason correction', async () => {
+    const { matchId, events } = await seed()
+    const tl = scoreTimeline(events, 1)
+    const at = tl.findIndex(x => x.home === 12)
+    const plan = planAddTimeout(events, { setIndex: 1, team: 'away', at }, ctx(matchId))
+    expect(plan.update.length).toBeGreaterThan(0)
+    await applyCorrectionPlan(plan, { matchId, db, mode: 'review' })
+    await settle()
+    const hist = await db.event_history.where('matchId').equals(matchId).toArray()
+    const edits = hist.filter(h => h.op === 'edit')
+    expect(edits.map(h => h.eventId).sort()).toEqual(plan.update.map(u => u.id).sort())
+    expect(edits.every(h => h.reason === 'correction')).toBe(true)
+    const jobs = (await db.sync_queue.toArray()).filter(j => j.resource === 'event' && j.action === 'edit')
+    expect(jobs).toHaveLength(edits.filter(h => !LOCAL_ONLY_EVENT_TYPES.includes(h.type)).length)
+    // the renumbered seq reaches the server with the edit
+    const first = plan.update.find(u => !LOCAL_ONLY_EVENT_TYPES.includes(events.find(e => e.id === u.id).type))
+    const job = jobs.find(j => j.payload.external_id === `${SEED}:e:${first.id}`)
+    expect(job.payload.after.seq).toBe(first.changes.seq)
+    expect(job.payload.reason).toBe('correction')
+  })
+
+  it('a correction does not drop the void jobs of earlier undos', async () => {
+    const { matchId, events } = await seed()
+    const lastPoint = events.filter(e => e.type === 'point' && e.setIndex === 2 && e.payload.team === 'away').sort((a, b) => b.seq - a.seq)[0]
+    const earlierVoid = { resource: 'event', action: 'void', status: 'queued', payload: { external_id: `${SEED}:e:${lastPoint.id}`, op: 'void', rev_uid: 'r-1', reason: 'undo' } }
+    await db.sync_queue.add(earlierVoid)
+    await applyCorrectionPlan(planRemoveGroup(events, lastPoint.id, ctx(matchId)), { matchId, db, mode: 'review' })
+    await settle()
+    const voids = (await db.sync_queue.toArray()).filter(j => j.action === 'void' && j.payload.external_id === `${SEED}:e:${lastPoint.id}`)
+    expect(voids.map(j => j.payload.reason).sort()).toEqual(['correction', 'undo'])
   })
 
   it('writes the sanction flags and the automatic remark; a test match queues nothing', async () => {

@@ -8,7 +8,7 @@
  *      the event was there; `before` is the server row as it was, never the
  *      state snapshot),
  *   3. void:    the event is marked voided (never deleted),
- *      edit:    type / set_index / payload / score_a / score_b are rewritten,
+ *      edit:    type / set_index / seq / payload / score_a / score_b are rewritten,
  *      restore: the void is lifted (and the columns rewritten when given),
  *      each counting events.rev up.
  * A revision of an event that is not on the server is kept with applied=false;
@@ -24,17 +24,19 @@
  * MAX_BODY_BYTES) and resolves matchOwner. Never throws.
  */
 
+import { createHash } from 'node:crypto'
+
 export const MAX_REVISIONS = 200
 export const MAX_BODY_BYTES = 256 * 1024
 
 export const REVISION_OPS = Object.freeze(['void', 'edit', 'restore'])
 export const REVISION_REASONS = Object.freeze([
   'undo', 'delete', 'decision_change', 'manual_adjustment',
-  'forfeit_reversal', 'reopen_set', 'roster_reopen', 'other'
+  'forfeit_reversal', 'reopen_set', 'roster_reopen', 'correction', 'other'
 ])
 const SCOPE_SEPARATORS = [':', '_']
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const EDIT_KEYS = ['type', 'set_index', 'payload', 'score_a', 'score_b']
+const EDIT_KEYS = ['type', 'set_index', 'seq', 'payload', 'score_a', 'score_b']
 
 const invalid = (details) => ({
   status: 400,
@@ -70,6 +72,11 @@ export function editColumns(after) {
     const v = optInt(after.set_index)
     if (v === undefined) return undefined
     out.set_index = v
+  }
+  if ('seq' in after) {
+    const v = optNum(after.seq)
+    if (v === undefined) return undefined
+    out.seq = v
   }
   if ('payload' in after) {
     if (after.payload !== null && typeof after.payload !== 'object') return undefined
@@ -149,6 +156,16 @@ const EVENT_COLUMNS = 'id, external_id, match_id, type, set_index, seq, payload,
 const CHANGE_COLUMNS = 'id, external_id, match_id, set_index, type, seq, score_a, score_b, voided_at, void_reason, rev'
 
 /**
+ * The rev_uid of the void an /api/db delete of one event becomes: one per
+ * event, so a retried delete is the same revision (idempotent by rev_uid).
+ */
+export function deleteRevUid(eventExt) {
+  const h = createHash('sha256').update(`ov-event-delete:${eventExt}`).digest('hex')
+  // UUID layout, version 5 / RFC 4122 variant bits
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${((parseInt(h[16], 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`
+}
+
+/**
  * @param {object} db lib/pgQuery.js instance (withTransaction, assertMatchWritable, toErrorResult)
  */
 export function createEventRevisions(db, { log = console } = {}) {
@@ -201,6 +218,7 @@ export function createEventRevisions(db, { log = console } = {}) {
             const cols = r.after || {}
             if ('type' in cols) sets.push(`type = ${p(cols.type)}`)
             if ('set_index' in cols) sets.push(`set_index = ${p(cols.set_index)}`)
+            if ('seq' in cols) sets.push(`seq = ${p(cols.seq)}`)
             if ('payload' in cols) sets.push(`payload = ${p(cols.payload == null ? null : JSON.stringify(cols.payload))}::json`)
             if ('score_a' in cols) sets.push(`score_a = ${p(cols.score_a)}`)
             if ('score_b' in cols) sets.push(`score_b = ${p(cols.score_b)}`)
@@ -244,5 +262,40 @@ export function createEventRevisions(db, { log = console } = {}) {
     }
   }
 
-  return { apply, listForMatch }
+  /**
+   * An /api/db delete of ONE event by its external_id (apps that sent a
+   * correction's removed event as a delete, before the event history): the
+   * event is voided like a revision with the reason 'correction', never
+   * deleted. Same owner / editor rule as the revision route. No event with
+   * that id: nothing to do, like a delete that matched nothing.
+   * @param {{ eventExt: string, user: {id:string}, matchOwner: object, clientTs?: string }} args
+   * @returns {Promise<null|{status:number, body:object, changes?:Array}>} null: not handled
+   */
+  async function voidByExternalId({ eventExt, user, matchOwner, clientTs = new Date().toISOString() }) {
+    if (typeof eventExt !== 'string' || !eventExt || eventExt.length > 200) return invalid('external_id')
+    let matchExt
+    try {
+      const { rows: [row] } = await db.pool.query(
+        `SELECT m.external_id FROM public.events e JOIN public.matches m ON m.id = e.match_id
+          WHERE e.external_id = $1`, [eventExt])
+      matchExt = row?.external_id
+    } catch (err) {
+      const r = db.toErrorResult(err, { action: 'select', table: 'events' })
+      return { status: r.status, body: r.body }
+    }
+    if (!matchExt) return { status: 200, body: { data: null, error: null }, changes: [] }
+    // an id not scoped to its match (never written by the app): the caller deletes as before
+    if (!isScopedToMatch(eventExt, matchExt)) return null
+    const r = await apply({
+      body: {
+        match_external_id: matchExt,
+        revisions: [{ rev_uid: deleteRevUid(eventExt), op: 'void', event_external_id: eventExt, reason: 'correction', client_ts: clientTs }]
+      },
+      user,
+      matchOwner
+    })
+    return r.status === 200 ? { status: 200, body: { data: null, error: null }, changes: r.changes } : r
+  }
+
+  return { apply, listForMatch, voidByExternalId }
 }

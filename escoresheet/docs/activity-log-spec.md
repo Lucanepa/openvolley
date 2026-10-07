@@ -37,6 +37,7 @@ The *reason* comes from `withActivityContext({reason, actionId}, fn)`:
 | roster reopen renumbering | `roster_reopen` |
 | ManualAdjustments save | `manual_adjustment` |
 | MatchEnd forfeit reversal / reopen last set | `forfeit_reversal`, `reopen_set` |
+| Corrections panel (`services/corrections/applyCorrectionPlan`, during the match and at the match end) | `correction` (one `actionId` per correction) |
 | no context | `delete` (void), `other` (edit) |
 
 Rows are written in the action's transaction when it includes
