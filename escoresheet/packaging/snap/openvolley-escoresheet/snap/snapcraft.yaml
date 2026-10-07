@@ -1,0 +1,114 @@
+# OpenVolley eScoresheet as a snap (Snap Store name: openvolley-escoresheet).
+#
+# Repackages the released .deb (built and minisign-signed by
+# .github/workflows/desktop.yml, tag desktop-vX) instead of building from
+# source: the snap runs exactly the binary every other Linux user runs.
+# The .deb is pinned by version AND sha256 (bump.sh in the folder above
+# updates both). See ../README.md for building, the interfaces and what does
+# not work inside the snap.
+name: openvolley-escoresheet
+title: OpenVolley eScoresheet
+version: '2.3.0'
+summary: Open Source Volleyball eScoresheet
+description: |
+  Fully offline volleyball e-scoresheet. Runs the scoretable and a built-in
+  LAN server so referee, bench and livescore tablets connect over the same
+  Wi-Fi — no internet, no accounts.
+
+  The laptop can create the tablets' Wi-Fi (a hotspot) or a Bluetooth
+  network itself. For that, connect the network-manager and bluez
+  interfaces once:
+
+      sudo snap connect openvolley-escoresheet:network-manager
+      sudo snap connect openvolley-escoresheet:bluez
+      sudo snap connect openvolley-escoresheet:network-observe
+
+  Updates come from the Snap Store; the app's own updater is off in the snap.
+license: GPL-3.0-only
+website: https://openvolley.app
+source-code: https://github.com/Lucanepa/openvolley
+issues: https://github.com/Lucanepa/openvolley/issues
+icon: snap/gui/icon.png
+
+base: core24
+grade: stable
+confinement: strict
+platforms:
+  amd64:
+
+apps:
+  openvolley-escoresheet:
+    command: usr/bin/openvolley-escoresheet
+    # after the gnome extension's desktop-launch: app data out of the
+    # versioned $SNAP_USER_DATA (snap/local/launch)
+    command-chain: [bin/launch]
+    desktop: usr/share/applications/openvolley-escoresheet.desktop
+    common-id: com.openvolley.escoresheet
+    # GTK 3, WebKitGTK 4.1, libsoup 3 from the gnome-46-2404 runtime;
+    # plugs desktop, desktop-legacy, gsettings, opengl, wayland, x11
+    extensions: [gnome]
+    plugs:
+      # the tablets' relay: HTTP :5173 and WebSocket :8080 on every interface
+      - network
+      - network-bind
+      # list the laptop's addresses for "Connect tablets" (netlink route, raw)
+      - network-observe
+      # the tablets' Wi-Fi hotspot and Bluetooth network (NetworkManager D-Bus)
+      - network-manager
+      # Bluetooth adapter on/discoverable for the Bluetooth network (BlueZ D-Bus)
+      - bluez
+      # PDFs and exports saved to ~/Downloads, imports from the home folder
+      - home
+      # a USB stick for exports (manual connect)
+      - removable-media
+
+slots:
+  # tauri-plugin-single-instance owns <identifier>.SingleInstance on the
+  # session bus: a second launch hands over to the running app instead of
+  # failing to bind the relay's ports
+  single-instance:
+    interface: dbus
+    bus: session
+    name: com.openvolley.escoresheet.SingleInstance
+
+parts:
+  openvolley-escoresheet:
+    plugin: dump
+    source: https://github.com/Lucanepa/openvolley/releases/download/desktop-v2.3.0/openvolley-escoresheet_2.3.0_amd64.deb
+    source-type: deb
+    source-checksum: sha256/f848743fcfdebd5fdaa890ef1038aee66a0cb25d430ab30b3d50a515a91699e1
+    # the tray: tray-icon dlopens libayatana-appindicator3 (lifecycle.rs
+    # probes for it first; without it the app runs without a tray icon)
+    stage-packages:
+      - libayatana-appindicator3-1
+    override-build: |
+      craftctl default
+      # the theme icon name means nothing inside the snap: point at the file
+      sed -i 's|^Icon=.*|Icon=${SNAP}/usr/share/icons/hicolor/128x128/apps/openvolley-escoresheet.png|' \
+        "$CRAFT_PART_INSTALL/usr/share/applications/openvolley-escoresheet.desktop"
+    prime:
+      # the .deb's APT self-update helper and its polkit action: the Snap
+      # Store updates the snap, and a snap cannot run pkexec or apt anyway
+      - -usr/libexec
+      - -usr/share/polkit-1
+
+  launcher:
+    plugin: dump
+    source: snap/local
+    organize:
+      launch: bin/launch
+    prime:
+      - bin/launch
+
+  # Drop what stage-packages pulled in that the base or the gnome runtime
+  # already ships (GTK, GLib, ...): only appindicator and its own few
+  # libraries stay in the snap.
+  cleanup:
+    after: [openvolley-escoresheet, launcher]
+    plugin: nil
+    build-snaps: [core24, gnome-46-2404]
+    override-prime: |
+      set -eu
+      for snap in core24 gnome-46-2404; do
+        cd "/snap/$snap/current" && find . -type f,l -exec rm -f "$CRAFT_PRIME/{}" \;
+      done
