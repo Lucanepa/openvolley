@@ -97,6 +97,26 @@
     "connectionChecks": "Connection checks",
     "proceedAnyway": "Proceed anyway"
   },
+  "rosterLive": {
+    "pos": "Pos.",
+    "posTitle": "Court position",
+    "sanctions": "Sanctions",
+    "team": "Team",
+    "teamSanctions": "Team sanctions",
+    "server": "Server",
+    "gameCaptain": "Game captain",
+    "gameCaptainShort": "GC",
+    "setScore": "Set {{set}}, {{score}}",
+    "delayShort": "D",
+    "improperRequestShort": "IR",
+    "out": {
+      "disqualified": "Disqualified: cannot play for the rest of the match",
+      "expelled": "Expelled: cannot play for the rest of this set",
+      "exceptional": "Exceptionally substituted: cannot play for the rest of the match",
+      "unable": "Libero unable to play"
+    },
+    "injured": "Injured"
+  },
   "roster": {
     "title": "Roster",
     "titleWithTeam": "{{team}} - roster",

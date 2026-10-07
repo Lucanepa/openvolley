@@ -94,6 +94,26 @@
     "initializing": "Spiel wird initialisiert",
     "confirmBirthdates": "Geburtsdaten bestätigen"
   },
+  "rosterLive": {
+    "pos": "Pos.",
+    "posTitle": "Position auf dem Feld",
+    "sanctions": "Sanktionen",
+    "team": "Team",
+    "teamSanctions": "Mannschaftssanktionen",
+    "server": "Aufschläger",
+    "gameCaptain": "Spielkapitän",
+    "gameCaptainShort": "SK",
+    "setScore": "Satz {{set}}, {{score}}",
+    "delayShort": "V",
+    "improperRequestShort": "UA",
+    "out": {
+      "disqualified": "Disqualifiziert: darf für den Rest des Spiels nicht mehr spielen",
+      "expelled": "Ausgeschlossen: darf in diesem Satz nicht mehr spielen",
+      "exceptional": "Ausnahmsweise ausgewechselt: darf für den Rest des Spiels nicht mehr spielen",
+      "unable": "Libero spielunfähig"
+    },
+    "injured": "Verletzt"
+  },
   "roster": {
     "title": "Kader",
     "titleWithTeam": "{{team}} - Kader",

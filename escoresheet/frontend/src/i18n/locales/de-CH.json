@@ -97,6 +97,26 @@
     "connectionChecks": "Verbindigsprüefig",
     "proceedAnyway": "Glich wiitermache"
   },
+  "rosterLive": {
+    "pos": "Pos.",
+    "posTitle": "Position uf em Fäld",
+    "sanctions": "Sanktione",
+    "team": "Team",
+    "teamSanctions": "Mannschaftssanktione",
+    "server": "Ufschläger",
+    "gameCaptain": "Spiilcaptain",
+    "gameCaptainShort": "SK",
+    "setScore": "Satz {{set}}, {{score}}",
+    "delayShort": "V",
+    "improperRequestShort": "UA",
+    "out": {
+      "disqualified": "Disqualifiziert: darf für de Rescht vom Match nümm spiele",
+      "expelled": "Usgschlosse: darf i dem Satz nümm spiele",
+      "exceptional": "Usnahmswiis usgwächslet: darf für de Rescht vom Match nümm spiele",
+      "unable": "Libero cha nöd spiele"
+    },
+    "injured": "Verletzt"
+  },
   "roster": {
     "title": "Roster",
     "titleWithTeam": "{{team}} - Roster",

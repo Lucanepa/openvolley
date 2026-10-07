@@ -97,6 +97,26 @@
     "connectionChecks": "Verifica delle connessioni",
     "proceedAnyway": "Procedi comunque"
   },
+  "rosterLive": {
+    "pos": "Pos.",
+    "posTitle": "Posizione in campo",
+    "sanctions": "Sanzioni",
+    "team": "Squadra",
+    "teamSanctions": "Sanzioni di squadra",
+    "server": "Battitore",
+    "gameCaptain": "Capitano in gioco",
+    "gameCaptainShort": "CG",
+    "setScore": "Set {{set}}, {{score}}",
+    "delayShort": "R",
+    "improperRequestShort": "RI",
+    "out": {
+      "disqualified": "Squalificato: non può più giocare per il resto della partita",
+      "expelled": "Espulso: non può più giocare in questo set",
+      "exceptional": "Sostituzione eccezionale: non può più giocare per il resto della partita",
+      "unable": "Libero non in grado di giocare"
+    },
+    "injured": "Infortunato"
+  },
   "roster": {
     "title": "Rosa",
     "titleWithTeam": "{{team}} - rosa",

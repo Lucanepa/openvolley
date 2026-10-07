@@ -97,6 +97,26 @@
     "connectionChecks": "Vérification des connexions",
     "proceedAnyway": "Continuer quand même"
   },
+  "rosterLive": {
+    "pos": "Pos.",
+    "posTitle": "Position sur le terrain",
+    "sanctions": "Sanctions",
+    "team": "Équipe",
+    "teamSanctions": "Sanctions d'équipe",
+    "server": "Serveur",
+    "gameCaptain": "Capitaine de jeu",
+    "gameCaptainShort": "CJ",
+    "setScore": "Set {{set}}, {{score}}",
+    "delayShort": "R",
+    "improperRequestShort": "DI",
+    "out": {
+      "disqualified": "Disqualifié : ne peut plus jouer jusqu'à la fin du match",
+      "expelled": "Expulsé : ne peut plus jouer dans ce set",
+      "exceptional": "Remplacement exceptionnel : ne peut plus jouer jusqu'à la fin du match",
+      "unable": "Libéro dans l'incapacité de jouer"
+    },
+    "injured": "Blessé"
+  },
   "roster": {
     "title": "Effectif",
     "titleWithTeam": "{{team}} - effectif",
