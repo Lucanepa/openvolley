@@ -680,7 +680,14 @@
       "actionLog": "Registro azioni",
       "manualChanges": "Modifiche manuali",
       "keyboardShortcuts": "Scorciatoie tastiera",
-      "searchEvents": "Cerca eventi..."
+      "searchEvents": "Cerca eventi...",
+      "sections": {
+        "matchInfo": "Info partita",
+        "corrections": "Correzioni",
+        "devicesData": "Dispositivi e dati",
+        "settings": "Impostazioni",
+        "endOfMatch": "Fine partita"
+      }
     },
     "stopMatch": {
       "title": "Interrompi partita",
@@ -846,7 +853,19 @@
       "repeatedDelay": "La squadra ha già un avvertimento per ritardo: questo ritardo è una penalità.",
       "pointToOpponent": "Punto e servizio a {{opponent}}."
     },
-    "benchInjuryRecorded": "Infortunio registrato per il n. {{number}} (panchina)"
+    "benchInjuryRecorded": "Infortunio registrato per il n. {{number}} (panchina)",
+    "sanctionsResults": {
+      "card": "Cartellino",
+      "sanction": "Sanzione",
+      "person": "Persona",
+      "team": "Squadra",
+      "score": "Punteggio",
+      "wholeTeam": "Squadra",
+      "leftTeam": "Squadra a sinistra",
+      "rightTeam": "Squadra a destra",
+      "durShort": "Durata",
+      "legend": "T timeout · S sostituzioni · W set vinti · P punti · Durata durata del set"
+    }
   },
   "settings": {
     "title": "Impostazioni",

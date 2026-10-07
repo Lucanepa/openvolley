@@ -681,7 +681,14 @@
       "actionLog": "Action log",
       "manualChanges": "Manual changes",
       "keyboardShortcuts": "Keyboard shortcuts",
-      "searchEvents": "Search events..."
+      "searchEvents": "Search events...",
+      "sections": {
+        "matchInfo": "Match info",
+        "corrections": "Corrections",
+        "devicesData": "Devices and data",
+        "settings": "Settings",
+        "endOfMatch": "End of match"
+      }
     },
     "stopMatch": {
       "title": "Stop the match",
@@ -847,7 +854,19 @@
       "repeatedDelay": "The team already has a delay warning, so this delay is a penalty.",
       "pointToOpponent": "Point and service to {{opponent}}."
     },
-    "benchInjuryRecorded": "Injury recorded for #{{number}} (bench)"
+    "benchInjuryRecorded": "Injury recorded for #{{number}} (bench)",
+    "sanctionsResults": {
+      "card": "Card",
+      "sanction": "Sanction",
+      "person": "Person",
+      "team": "Team",
+      "score": "Score",
+      "wholeTeam": "Team",
+      "leftTeam": "Left team",
+      "rightTeam": "Right team",
+      "durShort": "Dur",
+      "legend": "T timeouts · S substitutions · W sets won · P points · Dur set duration"
+    }
   },
   "settings": {
     "title": "Settings",
