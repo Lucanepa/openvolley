@@ -15717,7 +15717,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '1.9cqw' }}>
-                              <span style={{ fontWeight: 600, color: '#57534e', minWidth: '9.4cqw' }}>
+                              <span style={{ fontWeight: 600, color: '#57534e', minWidth: '2.8em', flexShrink: 0 }}>
                                 {official.role === 'Coach' ? 'C' :
                                   official.role === 'Assistant Coach 1' ? 'AC1' :
                                     official.role === 'Assistant Coach 2' ? 'AC2' :
@@ -19070,7 +19070,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '1.9cqw' }}>
-                              <span style={{ fontWeight: 600, color: '#57534e', minWidth: '9.4cqw' }}>
+                              <span style={{ fontWeight: 600, color: '#57534e', minWidth: '2.8em', flexShrink: 0 }}>
                                 {official.role === 'Coach' ? 'C' :
                                   official.role === 'Assistant Coach 1' ? 'AC1' :
                                     official.role === 'Assistant Coach 2' ? 'AC2' :
