@@ -143,7 +143,9 @@ export function AuthProvider({ children }) {
         setUser(null)
         setProfile(null)
       } else if (session.user && !session.unverified) {
-        setUser(prev => (prev?.id === session.user.id ? prev : session.user))
+        // Same account: keep the object, unless the server now says the
+        // address is confirmed (the stored copy is from before the link)
+        setUser(prev => (prev?.id === session.user.id && !!prev.email_confirmed_at === !!session.user.email_confirmed_at ? prev : session.user))
       }
     }).catch((err) => {
       clearTimeout(loadingTimeout)
@@ -266,6 +268,20 @@ export function AuthProvider({ children }) {
     const { data, error, status } = await apiAuth.resetPasswordForEmail(email, { lang: i18n.language })
 
     return { data, error, status }
+  }, [])
+
+  // Re-reads the signed-in user from the server (after the address was
+  // confirmed on another page or device). Returns the fresh user or null.
+  const refreshUser = useCallback(async () => {
+    if (!hasBackend()) return null
+    try {
+      const { data } = await apiAuth.getSession()
+      const fresh = data?.session && !data.session.unverified ? data.session.user : null
+      if (fresh) setUser(prev => (prev?.id === fresh.id ? fresh : prev))
+      return fresh ?? null
+    } catch {
+      return null
+    }
   }, [])
 
   // A fresh confirmation link for the signed-in, unconfirmed account
@@ -416,10 +432,11 @@ export function AuthProvider({ children }) {
     updateEmail,
     resetPassword,
     resendConfirmation,
+    refreshUser,
     fetchProfile,
     getCachedProfile,
     deleteAccount
-  }), [user, profile, access, redeemInvite, loading, signIn, signUp, signOut, updateProfile, updateEmail, resetPassword, resendConfirmation, fetchProfile, getCachedProfile, deleteAccount])
+  }), [user, profile, access, redeemInvite, loading, signIn, signUp, signOut, updateProfile, updateEmail, resetPassword, resendConfirmation, refreshUser, fetchProfile, getCachedProfile, deleteAccount])
 
   return (
     <AuthContext.Provider value={value}>

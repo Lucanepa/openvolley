@@ -7,11 +7,13 @@ import { Banner, Notice } from '../../ui'
 /**
  * "Email address not confirmed yet" with "Send a new link", for a signed-in
  * account whose address is unconfirmed (new accounts, when the server sends
- * confirmation emails). Nothing for confirmed or signed-out users.
+ * confirmation emails). Nothing for confirmed or signed-out users. Shown in
+ * the profile and on the manager's invite-code step (an unconfirmed account
+ * gets no role, so no code works before the confirmation).
  */
 export default function EmailConfirmBanner({ className }) {
   const { t } = useTranslation()
-  const { user, resendConfirmation } = useAuth()
+  const { user, resendConfirmation, refreshUser } = useAuth()
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null) // { tone, text }
 
@@ -24,9 +26,13 @@ export default function EmailConfirmBanner({ className }) {
     const res = await resendConfirmation()
     setBusy(false)
     if (!res?.error) {
-      setResult(res?.data?.already_confirmed
-        ? { tone: 'success', text: t('authEmail.alreadyConfirmed') }
-        : { tone: 'success', text: t('authEmail.resent', { email: user.email }) })
+      if (res?.data?.already_confirmed) {
+        setResult({ tone: 'success', text: t('authEmail.alreadyConfirmed') })
+        // Confirmed on another page or device: re-read the user, the banner goes
+        refreshUser?.()
+        return
+      }
+      setResult({ tone: 'success', text: t('authEmail.resent', { email: user.email }) })
       return
     }
     if (res.error.status === 429) return setResult({ tone: 'error', text: t('authEmail.tooManyAttempts') })
