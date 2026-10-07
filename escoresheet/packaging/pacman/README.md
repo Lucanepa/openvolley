@@ -108,7 +108,8 @@ escoresheet/packaging/pacman/publish-pacman.sh --init-key
 Keep this key: a new one means every user has to import it again
 (`publish-pacman.sh` refuses to sign with another key than the published one).
 
-First publish (OpenVolley 2.4.0 and OpenBeach 2.0.0, the PKGBUILDs' versions):
+First publish (each app at its committed PKGBUILD's version: on `main` since
+a5542a38 that is OpenVolley 2.4.1 and OpenBeach 2.0.1):
 
 ```bash
 escoresheet/packaging/pacman/publish-pacman.sh --app both
@@ -145,7 +146,7 @@ Rollback for one user: `sudo pacman -U https://get.openvolley.app/arch/x86_64/<o
 
 ## Checks run (Docker, 2026-10-08)
 
-`./test.sh` passes (8 checks, about 6 minutes), with a throwaway key:
+`./test.sh` passes (9 checks, about 6 minutes), with a throwaway key:
 
 - both packages built from the real releases (OpenVolley 2.4.0, OpenBeach
   2.0.0), signed, indexed, client-checked by `publish-pacman.sh`;
@@ -165,9 +166,18 @@ Rollback for one user: `sudo pacman -U https://get.openvolley.app/arch/x86_64/<o
 - refused: a database with one byte changed ("signature ... is invalid"), a
   database signed by another key that is in the keyring but not trusted
   ("unknown trust"), a package signed by that key ("unknown trust"), a
-  package with one byte changed (pacman's checksum from the signed database
-  catches it first). After each, with the real files back, pacman syncs and
-  installs again.
+  database or a package without its `.sig` (404: what `SigLevel = Required
+  DatabaseRequired` is for), a package with one byte changed (pacman's
+  checksum from the signed database catches it first). After each, with the
+  real files back, pacman syncs and installs again.
+
+Also checked, by hand, on the branch merged with `main` (OpenVolley 2.4.1,
+OpenBeach 2.0.1, the first releases that read the marker file): the Arch
+card of the page as `landing_page` renders it, its four command blocks run
+verbatim (no substitution) against `https://get.openvolley.app` (a TLS proxy
+in front of the production Caddyfile, its CA trusted by the client), both
+apps installed and passed `check-installed.sh`, a pkgrel 2 came with
+`sudo pacman -Syu` and the database still listed both packages.
 
 `../../deploy/tests/publish-desktop.test.sh` (155 checks, 32 of them for
 this repo) covers `--init-key`, the argument checks, `publish-pkgs.sh
