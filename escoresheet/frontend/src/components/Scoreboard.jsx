@@ -15869,15 +15869,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 alignItems: 'center',
                 width: '100%'
               }}>
-                {/* Left Serve indicator */}
+                {/* Left Serve indicator. Both sides always render it and the
+                    non-serving one is only hidden: the SERVE block is taller than
+                    this row's minHeight, so unmounting it (while a sideout's
+                    rotation is written) let the court grow and shrink back. */}
                 <div style={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'flex-start',
                   gap: vmin(2),
-                  minWidth: vmin(10)
+                  minWidth: vmin(10),
+                  visibility: leftServing ? 'visible' : 'hidden'
                 }}>
-                  {leftServing && (() => {
+                  {(() => {
                     const servingPlayer = leftTeam.playersOnCourt.find(p => p.position === 'I')
                     // If lineup not set, show just the ball
                     if (!servingPlayer || !servingPlayer.number) {
@@ -15937,9 +15941,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   alignItems: 'center',
                   justifyContent: 'flex-end',
                   gap: vmin(2),
-                  minWidth: vmin(10)
+                  minWidth: vmin(10),
+                  visibility: rightServing ? 'visible' : 'hidden'
                 }}>
-                  {rightServing && (() => {
+                  {(() => {
                     const servingPlayer = rightTeam.playersOnCourt.find(p => p.position === 'I')
                     // If lineup not set, show just the ball
                     if (!servingPlayer || !servingPlayer.number) {
