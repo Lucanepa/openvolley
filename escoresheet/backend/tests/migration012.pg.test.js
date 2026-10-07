@@ -5,7 +5,7 @@
  * indoor member and nobody becomes a beach member; existing invite codes are
  * indoor and existing audit entries keep app NULL; the 2.2.0 backend's
  * INSERTs keep working; a match's sport cannot change; a beach match's close
- * entry names its app; the app role reaches the new table.
+ * and approval-void entries name its app; the app role reaches the new table.
  */
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -117,6 +117,22 @@ describe('db/012_app_memberships.sql', { skip: SKIP_PG }, () => {
     await raw.query("UPDATE public.matches SET status = 'final' WHERE id = ANY($1::uuid[])", [[ids.indoorMatch, ids.beachMatch]])
     const { rows } = await raw.query("SELECT match_id, app FROM public.audit_log WHERE action = 'match.close' ORDER BY id")
     assert.deepEqual(rows.map((r) => [r.match_id, r.app]).sort(), [[ids.indoorMatch, null], [ids.beachMatch, 'beach']].sort())
+  })
+
+  it("db/011's void entry names the match's app too (indoor NULL as before)", async () => {
+    const voids = []
+    for (const sport of ['indoor', 'beach']) {
+      const { rows: [m] } = await raw.query(
+        "INSERT INTO public.matches (external_id, status, sport_type, test) VALUES ($1, 'ended', $2, true) RETURNING id", [`m012_void_${sport}`, sport])
+      await raw.query(`INSERT INTO public.match_approvals (match_id, slot, display_name, match_status, result_key, result_hash)
+        VALUES ($1, 'referee1', 'Muster Anna', 'ended', 'ov-result-v1|1:21:17', decode(repeat('ab', 32), 'hex'))`, [m.id])
+      await raw.query("UPDATE public.matches SET status = 'live' WHERE id = $1", [m.id])
+      voids.push(m.id)
+    }
+    const { rows } = await raw.query(
+      "SELECT match_id, app, details->>'reason' AS reason FROM public.audit_log WHERE action = 'match.approval_void' AND match_id = ANY($1::uuid[])", [voids])
+    assert.deepEqual(rows.map((r) => [r.match_id, r.app, r.reason]).sort(),
+      [[voids[0], null, 'match_reopened'], [voids[1], 'beach', 'match_reopened']].sort())
   })
 
   it('a match keeps its sport: indoor <-> beach is refused, NULL <-> indoor is not a change', async () => {
