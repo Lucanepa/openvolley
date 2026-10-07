@@ -7412,7 +7412,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           })
         }
 
-        // Sync to Supabase with fresh snapshot (data has changed)
+        // The tablets get the swapped point and its sub-events (they kept the
+        // old team's point: only the live state was pushed), the live state
+        // its fresh snapshot (data has changed)
+        syncToReferee()
         syncLiveStateToSupabase('decision_change', null, { reason: 'point_swap', fromTeam: oldTeam, toTeam: newTeam }, null)
         notifyScoresheetUpdate('decision_change')
 
@@ -7427,7 +7430,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       await handleReplayRally()
       return // handleReplayRally closes the modal and syncs
     }
-  })), [runAction, deferUi, runDecisionChange, replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents])
+  })), [runAction, deferUi, runDecisionChange, replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, syncToReferee, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents])
 
 
 

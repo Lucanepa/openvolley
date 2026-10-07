@@ -110,6 +110,12 @@ describe('Scoreboard: one transaction and one screen change per scorer action', 
     expect(handler('syncLiveStateToSupabase')).toContain('liveState: { eventType, cachedSnapshot }')
   })
 
+  it('a decision change sends the swapped point to the tablets (they kept the old team\'s point)', () => {
+    const swap = handler('handleDecisionChange').split("} else {\n      // Replay rally")[0]
+    expect(swap).toContain("syncLiveStateToSupabase('decision_change'")
+    expect(swap).toContain('syncToReferee()')
+  })
+
   it('a manual change written during an action is part of its transaction; its cloud push comes after', () => {
     const body = handler('logManualChange')
     expect(body).toContain('trackWrite(db.matches.update(matchId, { manualChanges: updatedChanges })')
