@@ -29406,9 +29406,9 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
         <div className="set-end-readout" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
           {/* Team letters in the team colour, darkened until they read on the
               white modal (a white team gets a ringed white chip): teamTextStyle */}
-          <span style={{ fontSize: '18px', fontWeight: 700, ...teamTextStyle(leftColor, HEADER_SURFACE) }}>{leftLabel}</span>
+          <span style={{ fontSize: '20px', fontWeight: 700, ...teamTextStyle(leftColor, HEADER_SURFACE) }}>{leftLabel}</span>
           <span style={{ fontSize: '36px', fontWeight: 700 }}>{leftScore} : {rightScore}</span>
-          <span style={{ fontSize: '18px', fontWeight: 700, ...teamTextStyle(rightColor, HEADER_SURFACE) }}>{rightLabel}</span>
+          <span style={{ fontSize: '20px', fontWeight: 700, ...teamTextStyle(rightColor, HEADER_SURFACE) }}>{rightLabel}</span>
         </div>
         <p className="set-end-readout" style={{
           marginBottom: '24px',
