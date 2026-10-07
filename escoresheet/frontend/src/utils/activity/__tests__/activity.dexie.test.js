@@ -56,6 +56,20 @@ describe('activity log', () => {
     expect(rows[1].eventExt).toBe(`${SEED}:e:${id}`)
   })
 
+  it('an event that waits for its snapshot keeps the time of its add (order of play)', async () => {
+    const t0 = Date.now()
+    // a sub-event without a snapshot: told after SNAPSHOT_WAIT_MS, dated at its add
+    await db.events.add({ matchId, setIndex: 1, type: 'lineup', seq: 3.1, payload: { team: 'home' } })
+    await new Promise(r => setTimeout(r, 50))
+    const id = await db.events.add({ matchId, setIndex: 1, type: 'point', seq: 4, payload: { team: 'away' } })
+    await db.events.update(id, { stateSnapshot: { pointsA: 1, pointsB: 1 } })
+    await new Promise(r => setTimeout(r, 2200))
+    await settle()
+    const rows = await db.activity_log.orderBy('ts').toArray()
+    expect(rows.map(r => r.eventSeq)).toEqual([3.1, 4])
+    expect(Date.parse(rows[0].ts) - t0).toBeLessThan(1000)
+  })
+
   it('sets, the match row and the roster of the open match', async () => {
     const setId = await db.sets.add({ matchId, index: 1, homePoints: 0, awayPoints: 0, finished: false })
     await db.sets.update(setId, { homePoints: 25, awayPoints: 20, finished: true })

@@ -61,12 +61,15 @@ export function installActivityHooks(db, writer) {
     waiting.delete(id)
     clearTimeout(w.timer)
     const e = w.event
-    record('event.add', eventActivityData(e), { matchId: e.matchId, setIndex: e.setIndex, eventSeq: e.seq })
+    record('event.add', eventActivityData(e), { matchId: e.matchId, setIndex: e.setIndex, eventSeq: e.seq, ts: w.at })
   }
   const batches = new WeakMap()
   add(db.events, 'creating', function (primKey, obj, tx) {
     if (!obj) return
     const self = this
+    // The entry keeps the time of the add, not of the snapshot that follows
+    // (up to SNAPSHOT_WAIT_MS later), so the log stays in the order of play
+    const at = new Date().toISOString()
     const onKey = (key) => {
       let batch = tx ? batches.get(tx) : null
       if (!batch) {
@@ -91,15 +94,15 @@ export function installActivityHooks(db, writer) {
             for (const b of list) {
               const e = { ...b.event, id: b.key }
               if (LOCAL_ONLY_EVENT_TYPES.includes(e.type) || e.stateSnapshot) {
-                record('event.add', eventActivityData(e), { matchId: e.matchId, setIndex: e.setIndex, eventSeq: e.seq })
+                record('event.add', eventActivityData(e), { matchId: e.matchId, setIndex: e.setIndex, eventSeq: e.seq, ts: b.at })
               } else {
-                waiting.set(b.key, { event: e, timer: setTimeout(() => emitAdd(b.key), SNAPSHOT_WAIT_MS) })
+                waiting.set(b.key, { event: e, at: b.at, timer: setTimeout(() => emitAdd(b.key), SNAPSHOT_WAIT_MS) })
               }
             }
           }
         })
       }
-      batch.push({ key, event: obj })
+      batch.push({ key, event: obj, at })
     }
     if (primKey != null) onKey(primKey)
     else self.onsuccess = onKey
