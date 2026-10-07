@@ -5,26 +5,31 @@ import ReactDOM from 'react-dom'
  * DraggedPlayerOverlay - Floating player number that follows finger/cursor during drag.
  * Renders at document.body level via portal for proper z-index stacking.
  *
- * @param {Object} player - Player info { number, isLibero }
+ * @param {Object} player - Player info { number | playerNumber, isLibero }
  * @param {Object} position - Screen coordinates { x, y }
- * @param {string} teamColor - Team primary color (e.g., '#ef4444')
+ * @param {{ bg: string, text: string, textShadow?: string, ring?: string|null }} [colors] - the disc's paint on the court (team shirt colour, libero colour; utils/teamColours.js)
+ * @param {string} teamColor - Team primary color, used when no `colors` are given
  * @param {boolean} isValid - Whether current position is over a valid drop target
  */
 export default function DraggedPlayerOverlay({
   player,
   position,
+  colors = null,
   teamColor = '#64748b',
   isValid = true
 }) {
   if (!player || !position) return null
 
-  const bgColor = player.isLibero ? '#FFF8E7' : teamColor
-  const textColor = player.isLibero ? '#000' : '#fff'
-  const borderColor = player.isLibero
-    ? '#3b82f6'
-    : isValid
-      ? 'rgba(255,255,255,0.5)'
-      : 'rgba(239, 68, 68, 0.8)'
+  const bgColor = colors?.bg || (player.isLibero ? '#FFF8E7' : teamColor)
+  const textColor = colors?.text || (player.isLibero ? '#000' : '#fff')
+  const borderColor = !isValid
+    ? 'rgba(239, 68, 68, 0.8)'
+    : colors?.ring
+      ? colors.ring
+      : player.isLibero && !colors
+        ? '#3b82f6'
+        : 'rgba(255,255,255,0.5)'
+  const number = player.number ?? player.playerNumber
 
   return ReactDOM.createPortal(
     <div
@@ -37,6 +42,7 @@ export default function DraggedPlayerOverlay({
         borderRadius: '50%',
         background: bgColor,
         color: textColor,
+        textShadow: colors?.textShadow,
         fontSize: 22,
         fontWeight: 700,
         display: 'flex',
@@ -52,7 +58,7 @@ export default function DraggedPlayerOverlay({
         transition: 'box-shadow 150ms ease, border-color 150ms ease',
       }}
     >
-      {player.number}
+      {number}
       {player.isLibero && (
         <span style={{
           position: 'absolute',

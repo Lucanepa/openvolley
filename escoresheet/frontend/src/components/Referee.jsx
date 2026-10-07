@@ -26,6 +26,7 @@ import { NarrowScreenOverlay } from './dashboards/EntryKit.jsx'
 import { lastEventFromLiveState, lastEventFromMatchData, pickNewerLastEvent } from '../utils/refereeLastEvent.js'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
 import PlayerDisc from './referee/PlayerDisc.jsx'
+import { teamDiscPaint, teamLiberoColour } from '../utils/teamColours.js'
 import { discCapPx, discMetrics } from './referee/discSizing.js'
 import { isWideLayout, screenFit, SIDE_PANEL_CSS, REFEREE_LAYOUT } from './referee/refereeLayout.js'
 import { layoutReception, pointToFormation } from './referee/receptionLayout.js'
@@ -1422,6 +1423,12 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const rightServing = getCurrentServe === rightTeam
   const leftColor = leftTeamData?.color || (leftTeam === 'home' ? '#ef4444' : '#3b82f6')
   const rightColor = rightTeamData?.color || (rightTeam === 'home' ? '#ef4444' : '#3b82f6')
+  // Player discs in the shirt colours (null when the match has no colour for
+  // a team: those discs keep the neutral grey / navy look)
+  const discPaintByTeam = {
+    home: teamDiscPaint(data?.homeTeam?.color, { opponent: data?.awayTeam?.color, libero: teamLiberoColour(data?.homeTeam) }),
+    away: teamDiscPaint(data?.awayTeam?.color, { opponent: data?.homeTeam?.color, libero: teamLiberoColour(data?.awayTeam) })
+  }
 
   // Compute team name texts for adaptive sizing
   const leftShortName = (leftTeam === 'home' ? data?.match?.homeShortName : data?.match?.awayShortName) || leftTeamData?.name || 'Team'
@@ -2422,14 +2429,23 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       ? (isCaptain ? 'LC' : isCourtCaptain ? 'LGC' : null)
       : (isCaptain ? 'C' : isCourtCaptain ? 'GC' : null)
 
+    // Shirt colours: the team's for players, the most contrasting one for
+    // the libero (utils/teamColours.js); the orange flash wins while it runs
+    const paint = discPaintByTeam[team]?.[isLibero ? 'libero' : 'player'] || null
+    const background = isRecentlySub ? '#fdba74'
+      : paint ? paint.background
+        : isLibero ? '#FFF8E7' : (team === leftTeam ? 'rgba(65, 66, 68, 0.9)' : 'rgba(12, 14, 100, 0.7)')
+
     return (
       <PlayerDisc
         number={number}
         position={position}
         capPx={discCapPx(vmin)}
         side={team === leftTeam ? 'left' : 'right'}
-        background={isRecentlySub ? '#fdba74' : isLibero ? '#FFF8E7' : (team === leftTeam ? 'rgba(65, 66, 68, 0.9)' : 'rgba(12, 14, 100, 0.7)')}
-        color={isRecentlySub || isLibero ? '#000' : '#fff'}
+        background={background}
+        color={isRecentlySub ? '#000' : paint ? paint.color : isLibero ? '#000' : '#fff'}
+        textShadow={!isRecentlySub ? paint?.textShadow : undefined}
+        ring={!isRecentlySub ? paint?.ring : null}
         flash={isRecentlySub}
         showBall={!!shouldShowBall}
         replacedNumber={topRightBadge}
