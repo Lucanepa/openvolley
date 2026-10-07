@@ -31,6 +31,7 @@ export default function AccountsPanel({ selfId }) {
   const roleError = (err) => {
     if (err?.code === 'OV_SELF_DEMOTE') return t('manage.accounts.selfDemote')
     if (err?.code === 'OV_FORBIDDEN') return t('manage.accounts.superAdminOnly')
+    if (err?.code === 'OV_EMAIL_UNCONFIRMED') return t('manage.accounts.confirmEmailFirst')
     return errorText(err)
   }
 

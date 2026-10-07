@@ -2275,7 +2275,8 @@
       "inviteExpired": "Questo codice d’invito è scaduto.",
       "inviteUsedUp": "Questo codice d’invito è esaurito.",
       "tooManyAttempts": "Troppi tentativi. Attendi qualche minuto.",
-      "offline": "Per usare un codice serve una connessione."
+      "offline": "Per usare un codice serve una connessione.",
+      "emailUnconfirmed": "Conferma prima il tuo indirizzo e-mail: apri il link della nostra e-mail o richiedine uno nuovo nel profilo."
     },
     "roles": {
       "scorer": "Segnapunti",
@@ -2350,7 +2351,8 @@
       "neverSignedIn": "Mai acceduto",
       "selfDemote": "Non puoi rimuovere il tuo ruolo di admin.",
       "superAdminOnly": "Solo un super admin può modificare questo account.",
-      "emailUnconfirmed": "E-mail non confermata"
+      "emailUnconfirmed": "E-mail non confermata",
+      "confirmEmailFirst": "Questo account non ha ancora confermato il suo indirizzo e-mail. I ruoli si possono assegnare solo dopo."
     },
     "invites": {
       "new": "Nuovo codice d’invito",

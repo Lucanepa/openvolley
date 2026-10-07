@@ -16,7 +16,8 @@ import pg from 'pg'
 import { SKIP_PG, SCHEMA_SQL, createTestDatabase } from './helpers/pgTestDb.js'
 import { createAuth, hashToken, generateToken, EMAIL_CONFIRMATION_MARK } from '../lib/auth.js'
 import { linkToken } from './helpers/fakeSmtp.js'
-import { renderMail } from '../lib/mailer.js'
+import { renderMail, createMailer } from '../lib/mailer.js'
+import { createAccounts } from '../lib/accounts.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const SESSIONS_SQL = readFileSync(join(here, '..', 'db', '002_app_sessions.sql'), 'utf8')
@@ -442,6 +443,138 @@ describe('email links (db/010) against Postgres', { skip: SKIP_PG }, () => {
       await addUser('old-unconfirmed@example.ch', { confirmed: false })
       assert.equal((await signIn(auth, 'old-confirmed@example.ch', PW)).status, 200)
       assert.equal((await signIn(auth, 'old-unconfirmed@example.ch', PW)).status, 400)
+    })
+  })
+
+  describe('review fixes: mail budgets, inboxes, role grants, log masking', () => {
+    // The real mailer (budgets, per-inbox cap) over a stub transport.
+    function stubbedMailer(opts = {}) {
+      const sent = []
+      const warnings = []
+      const mailer = createMailer({
+        transport: { async sendMail(m) { sent.push(m) }, close() {} },
+        from: 'OpenVolley <noreply@example.test>',
+        managerUrl: 'https://manager.example.test',
+        logger: { ...silent, warn: (w) => warnings.push(w) },
+        ...opts
+      })
+      return { mailer, sent, warnings }
+    }
+    // A /64 per request, like a spread-out attacker (signUpIp is per /64).
+    let net = 0
+    const nextV6 = () => `2001:db8:${(++net).toString(16)}::1`
+
+    it('Gmail dot variants of one inbox share the per-address sign-up bucket', async () => {
+      const { mailer, sent } = stubbedMailer()
+      const auth = makeAuth({ mailer })
+      const variants = ['victimname@gmail.com', 'victim.name@gmail.com', 'v.ictimname@googlemail.com', 'vi.ctim.name@gmail.com', 'Victim.Name+x@gmail.com']
+      const codes = []
+      for (const email of variants) codes.push((await auth.handleAuthRequest('sign-up', { email, password: PW }, { ip: nextV6() })).status)
+      await auth.settle()
+      assert.deepEqual(codes, [200, 200, 200, 429, 429])
+      assert.equal(sent.length, 3, 'at most 3 confirmation mails reach the inbox through sign-up')
+    })
+
+    it('Gmail dot variants share the per-address reset bucket', async () => {
+      await addUser('resetvictim@gmail.com')
+      const { mailer, sent } = stubbedMailer()
+      const auth = makeAuth({ mailer })
+      const codes = []
+      for (const email of ['resetvictim@gmail.com', 'reset.victim@gmail.com', 'r.esetvictim@googlemail.com', 'rese.tvictim@gmail.com']) {
+        codes.push((await requestReset(auth, email, { ip: nextV6() })).status)
+      }
+      assert.deepEqual(codes, [200, 200, 200, 429])
+      assert.equal(sent.length, 1, 'only the registered spelling has an account')
+    })
+
+    it('sign-ups that use up the confirmation budget leave password reset working, and /health can see it', async () => {
+      await addUser('real-user@example.ch')
+      const { mailer, sent, warnings } = stubbedMailer({ budgets: { account: 5, confirm: 3 } })
+      const auth = makeAuth({ mailer })
+      for (let i = 0; i < 6; i++) {
+        const r = await auth.handleAuthRequest('sign-up', { email: `drain${i}@example.ch`, password: PW }, { ip: nextV6() })
+        assert.equal(r.status, 200)
+      }
+      await auth.settle()
+      assert.equal(sent.filter((m) => /Confirm/.test(m.subject)).length, 3)
+      assert.deepEqual(mailer.stats().exhausted, ['confirm'])
+      assert.equal(mailer.stats().budgets.confirm.dropped, 3)
+      assert.ok(warnings.some((w) => /confirm budget/.test(w)))
+
+      const r = await requestReset(auth, 'real-user@example.ch', { ip: nextV6() })
+      assert.equal(r.status, 200)
+      const reset = sent.find((m) => m.to === 'real-user@example.ch')
+      assert.ok(reset, 'the reset mail went out')
+      assert.match(reset.subject, /Reset your OpenVolley password/)
+    })
+
+    it('an unconfirmed account (signed up with a link) cannot redeem an invite or be given a role until it confirms', async () => {
+      const { mailer, sent } = stubbedMailer()
+      const auth = makeAuth({ mailer })
+      const accounts = createAccounts({ pool, logger: silent })
+      const { rows: [adminRow] } = await pool.query("INSERT INTO auth.users (email, email_confirmed_at) VALUES ('roles-admin@example.ch', now()) RETURNING id")
+      const inv = await accounts.createInvite({ actorId: adminRow.id, body: { label: 'Club', role: 'scorer', max_uses: 1 } })
+      assert.equal(inv.status, 201, JSON.stringify(inv.body))
+
+      const up = await auth.handleAuthRequest('sign-up', { email: 'someone.else@club.example', password: PW }, { ip: nextV6() })
+      assert.equal(up.status, 200)
+      await auth.settle()
+      const userId = up.body.data.user.id
+      const s = await signIn(auth, 'someone.else@club.example', PW)
+      assert.equal(s.status, 200, 'may still sign in')
+      assert.equal(s.body.data.user.email_confirmed_at, null)
+
+      const redeem = await accounts.redeemInvite({ userId, code: inv.body.data.code })
+      assert.equal(redeem.status, 409)
+      assert.equal(redeem.body.error.code, 'OV_EMAIL_UNCONFIRMED')
+      const { rows: [code] } = await pool.query('SELECT uses FROM public.invite_codes WHERE id = $1', [inv.body.data.invite.id])
+      assert.equal(code.uses, 0, 'the code is not used up')
+      const { rows: [p] } = await pool.query('SELECT roles FROM public.profiles WHERE user_id = $1', [userId])
+      assert.deepEqual(p?.roles ?? [], [])
+
+      const adminActor = { id: adminRow.id, access: { isSuperAdmin: false } }
+      const grant = await accounts.setRoles({ actor: adminActor, userId, body: { add: ['scorer'] } })
+      assert.equal(grant.status, 409)
+      assert.equal(grant.body.error.code, 'OV_EMAIL_UNCONFIRMED')
+      assert.equal((await accounts.setRoles({ actor: adminActor, userId, body: { remove: ['scorer'] } })).status, 200, 'removing stays possible')
+
+      const { token } = linkToken(sent.find((m) => m.to === 'someone.else@club.example'))
+      assert.equal((await auth.handleAuthRequest('confirm-email', { token }, { ip: nextV6() })).status, 200)
+      const ok = await accounts.redeemInvite({ userId, code: inv.body.data.code })
+      assert.equal(ok.status, 200, JSON.stringify(ok.body))
+      assert.deepEqual(ok.body.data.roles, ['scorer'])
+    })
+
+    it('accounts confirmed at sign-up (no mailer) and legacy accounts redeem as before', async () => {
+      const auth = makeAuth()
+      const accounts = createAccounts({ pool, logger: silent })
+      const up = await auth.handleAuthRequest('sign-up', { email: 'nomail-roles@example.ch', password: PW }, { ip: nextV6() })
+      const legacy = await addUser('legacy-roles@example.ch', { confirmed: false })
+      const inv = await accounts.createInvite({ actorId: null, body: { label: 'Club 2', role: 'referee', max_uses: 5 } })
+      for (const userId of [up.body.data.user.id, legacy]) {
+        const r = await accounts.redeemInvite({ userId, code: inv.body.data.code })
+        assert.equal(r.status, 200, JSON.stringify(r.body))
+      }
+    })
+
+    it('a failed send is logged without the recipient address', async () => {
+      const errors = []
+      const smtpError = Object.assign(new Error("Can't send mail - all recipients were rejected: 550 5.1.1 <masked.victim@club.example>: Recipient address rejected"), { code: 'EENVELOPE', responseCode: 550 })
+      const mailer = { enabled: true, managerUrl: 'https://manager.example.test', async send() { throw smtpError }, close() {} }
+      const auth = makeAuth({ mailer, logger: { ...silent, error: (...a) => errors.push(a.join(' ')) } })
+      await addUser('masked.victim@club.example')
+      assert.equal((await requestReset(auth, 'masked.victim@club.example', { ip: nextV6() })).status, 200)
+      const up = await auth.handleAuthRequest('sign-up', { email: 'masked.newbie@club.example', password: PW }, { ip: nextV6() })
+      assert.equal(up.status, 200)
+      await auth.settle()
+      const s = await signIn(auth, 'masked.newbie@club.example', PW)
+      const resend = await auth.handleAuthRequest('resend-confirmation', { access_token: s.body.data.session.access_token }, { ip: nextV6() })
+      assert.equal(resend.status, 503)
+      assert.equal(errors.length, 3, errors.join('\n'))
+      for (const line of errors) {
+        assert.equal(line.includes('masked.victim@'), false, line)
+        assert.match(line, /EENVELOPE SMTP 550 .*ma\*\*\*@club\.example/)
+      }
     })
   })
 

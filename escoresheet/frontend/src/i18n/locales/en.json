@@ -2276,7 +2276,8 @@
       "inviteExpired": "This invite code has expired.",
       "inviteUsedUp": "This invite code has been used up.",
       "tooManyAttempts": "Too many attempts. Please wait a few minutes.",
-      "offline": "Redeeming a code needs a connection."
+      "offline": "Redeeming a code needs a connection.",
+      "emailUnconfirmed": "Confirm your email address first: open the link we emailed you, or send a new one from your profile."
     },
     "roles": {
       "scorer": "Scorer",
@@ -2351,7 +2352,8 @@
       "neverSignedIn": "Never signed in",
       "selfDemote": "You cannot remove your own admin role.",
       "superAdminOnly": "Only a super admin can change this account.",
-      "emailUnconfirmed": "Email not confirmed"
+      "emailUnconfirmed": "Email not confirmed",
+      "confirmEmailFirst": "This account has not confirmed its email address yet. Roles can be given once it has."
     },
     "invites": {
       "new": "New invite code",

@@ -2082,7 +2082,8 @@
       "inviteExpired": "Dieser Einladungscode ist abgelaufen.",
       "inviteUsedUp": "Dieser Einladungscode ist aufgebraucht.",
       "tooManyAttempts": "Zu viele Versuche. Bitte warte einige Minuten.",
-      "offline": "Zum Einlösen eines Codes braucht es eine Verbindung."
+      "offline": "Zum Einlösen eines Codes braucht es eine Verbindung.",
+      "emailUnconfirmed": "Bestätige zuerst deine E-Mail-Adresse: Öffne den Link aus unserer E-Mail oder schick dir im Profil einen neuen."
     },
     "roles": {
       "scorer": "Schreiber",
@@ -2157,7 +2158,8 @@
       "neverSignedIn": "Nie angemeldet",
       "selfDemote": "Du kannst dir die Admin-Rolle nicht selbst entziehen.",
       "superAdminOnly": "Nur ein Super-Admin kann dieses Konto ändern.",
-      "emailUnconfirmed": "E-Mail nicht bestätigt"
+      "emailUnconfirmed": "E-Mail nicht bestätigt",
+      "confirmEmailFirst": "Dieses Konto hat seine E-Mail-Adresse noch nicht bestätigt. Rollen gibt es erst danach."
     },
     "invites": {
       "new": "Neuer Einladungscode",
