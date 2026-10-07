@@ -203,8 +203,11 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 400)
   const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 700)
 
-  // Container width refs for adaptive text sizing
-  const section2AContainerRef = useRef(null)
+  // Container width for adaptive team-name sizing. A callback ref (state), so
+  // the observer attaches when the row mounts after the match has loaded; a
+  // mount-time effect ran during the loading screen, never observed, and left
+  // the width at 150 px: on a phone the names were cut to "V…" / "K…".
+  const [section2AContainerEl, section2AContainerRef] = useState(null)
   const [section2AWidth, setSection2AWidth] = useState(150)
 
   // Modal states (from Scoreboard actions)
@@ -1426,18 +1429,14 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   // Resize observer for adaptive text container widths
   useEffect(() => {
-    const updateWidths = () => {
-      if (section2AContainerRef.current) {
-        setSection2AWidth(section2AContainerRef.current.clientWidth)
-      }
-    }
+    if (!section2AContainerEl) return
+    const updateWidths = () => setSection2AWidth(section2AContainerEl.clientWidth)
     updateWidths()
-
+    if (typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(updateWidths)
-    if (section2AContainerRef.current) observer.observe(section2AContainerRef.current)
-
+    observer.observe(section2AContainerEl)
     return () => observer.disconnect()
-  }, [])
+  }, [section2AContainerEl])
 
   // Synced font sizes for paired team names (SECTION 2A)
   const section2AFontSize = useSyncedFontSize([leftShortName, rightShortName], section2AWidth, 28, 14, true)
@@ -2850,7 +2849,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         {/* SECTION 2B: Score & Serve - 12% */}
         <div style={{
           gridArea: 'score',
-          flex: '0 0 15%',
+          // Stacked (portrait): at least 15 %, more when the score needs it
+          // (display scale 150 % on a portrait tablet cut the digits and ran
+          // them into the Advanced button); the panel below gives the room.
+          flex: wide ? '0 0 15%' : '0 0 auto',
           padding: '4px 0',
           background: 'var(--panel-2)',
           display: 'flex',
@@ -2860,8 +2862,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           width: '100%',
           maxWidth: '100%',
           overflow: 'hidden',
-          minHeight: 0,
-          height: '100%'
+          minHeight: wide ? 0 : '15%',
+          height: wide ? '100%' : 'auto'
         }}>
           {/* Score row: SERVE indicator left | Score left | : | Score right | SERVE indicator right */}
           <div style={{

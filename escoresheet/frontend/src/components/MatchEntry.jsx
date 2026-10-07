@@ -1199,9 +1199,12 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
                           background: player.isLibero ? '#FFF8E7' : undefined,
                           color: player.isLibero ? '#000' : undefined,
                           position: 'relative',
-                          width: 'clamp(44px, 10vw, 72px)',
-                          height: 'clamp(44px, 10vw, 72px)',
-                          fontSize: 'clamp(18px, 4vw, 28px)'
+                          // capped by the court's height (cqh): sized from the
+                          // width alone, three back-row discs ran off a short
+                          // court (a phone on its side, 844x390)
+                          width: 'min(clamp(44px, 10vw, 72px), 24cqh)',
+                          height: 'min(clamp(44px, 10vw, 72px), 24cqh)',
+                          fontSize: 'min(clamp(18px, 4vw, 28px), 12cqh)'
                         }}
                       >
                         {shouldShowBall && (
