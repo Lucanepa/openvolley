@@ -10,9 +10,16 @@ import { ChevronDown } from 'lucide-react';
 import { cn } from './cn.js';
 import { INPUT_INVALID } from './Input.jsx';
 
+// `ov-select` (tokens.css) is the finish every size shares: appearance none,
+// the chevron, no vertical padding, no text-transform. It also opts the select
+// out of the legacy element rules in styles.css (`select:where(:not(.ov-select))`).
+// Each size matches the Input of the same name: height, pl-3 (the text starts
+// where an Input's does), pr-8 for the chevron, and a line height equal to the
+// inner height (h - 2 px border), so the text is centred on every engine.
+export const SELECT_BASE = 'ov-select';
 export const SELECT_SIZES = {
-  md: 'h-9 px-2.5 text-sm rounded-lg border border-stone-300 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 max-w-full',
-  lg: 'h-11 px-3 rounded-xl border border-stone-200 bg-white text-base text-stone-800 focus:outline-none focus:ring-2 focus:ring-red-700/20 focus:border-red-700/40 max-w-full',
+  md: 'h-9 py-0 pl-3 pr-8 text-sm leading-[34px] rounded-lg border border-stone-300 bg-white text-stone-800 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:bg-stone-50 disabled:text-stone-500 max-w-full',
+  lg: 'h-11 py-0 pl-3 pr-9 text-base leading-[42px] rounded-xl border border-stone-200 bg-white text-stone-800 focus:outline-none focus:ring-2 focus:ring-red-700/20 focus:border-red-700/40 disabled:bg-stone-50 disabled:text-stone-500 max-w-full',
 };
 
 export const SELECT_PANEL = 'absolute z-50 mt-1 w-64 bg-white border border-stone-300 rounded shadow-lg p-3';
@@ -31,7 +38,7 @@ export function Select({ size = 'md', options, placeholder, invalid, block, clas
   return (
     <select
       aria-invalid={bad || undefined}
-      className={cn(SELECT_SIZES[size], block && 'w-full', bad && INPUT_INVALID, className)}
+      className={cn(SELECT_BASE, SELECT_SIZES[size] ?? SELECT_SIZES.md, block && 'w-full', bad && INPUT_INVALID, className)}
       {...rest}
     >
       {placeholder !== undefined && <option value="">{placeholder}</option>}

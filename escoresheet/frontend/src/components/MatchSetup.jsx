@@ -3452,7 +3452,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </div>
             <div className="flex flex-col gap-3 p-4">
               <Field tone="compact" className={FIELD} label={t('matchSetup.matchType')}>
-                <Select aria-label={t('matchSetup.matchType')} block className="capitalize" value={type1} onChange={e => setType1(e.target.value)}>
+                <Select aria-label={t('matchSetup.matchType')} block value={type1} onChange={e => setType1(e.target.value)}>
                   <option value="championship">{t('matchSetup.championship')}</option>
                   <option value="cup">{t('matchSetup.cup')}</option>
                   <option value="friendly">{t('matchSetup.friendly')}</option>

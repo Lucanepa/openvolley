@@ -120,7 +120,7 @@
     "libero2": "L2",
     "liberoFull1": "Libero 1",
     "liberoFull2": "Libero 2",
-    "none": "nessuno",
+    "none": "Nessuno",
     "duplicateNumber": "Numero di maglia duplicato!",
     "signatures": "Firme",
     "signatureTitle": "Firma {{role}} - {{team}}",

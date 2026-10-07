@@ -8,7 +8,7 @@ import SignUpForm from './components/auth/SignUpForm'
 import InviteCodeForm from './components/auth/InviteCodeForm'
 import EmailConfirmBanner from './components/auth/EmailConfirmBanner'
 import { ConfirmEmailPage, ResetPasswordPage } from './components/auth/AuthLinkPages'
-import { AppSpinner, BUTTON_SIZES, BUTTON_VARIANTS, Button, cn, consoleHeaderBtn, FOCUS_RING, GateScreen } from './ui'
+import { AppSpinner, BUTTON_SIZES, BUTTON_VARIANTS, Button, cn, consoleHeaderBtn, FOCUS_RING, GateScreen, Select } from './ui'
 import { scorerAppUrlFor, SIGN_UP_HASH } from './utils/managerSite'
 import { parseAuthLinkHash, takeAuthLinkFromLocation } from './utils/authLinks'
 import { useManagerBrand } from './managerBrand'
@@ -155,15 +155,15 @@ function LanguageSelect({ compact = false }) {
   const label = t('managerSite.language')
   const current = LANGUAGES.some(l => l.code === i18n.language) ? i18n.language : 'en'
   return (
-    <select
+    <Select
       aria-label={label}
       title={label}
       value={current}
       onChange={e => i18n.changeLanguage(e.target.value)}
-      className={cn('h-9 rounded-lg border border-stone-200 bg-white px-2 text-xs font-medium text-stone-600 transition-colors hover:bg-stone-100', FOCUS_RING)}
+      className={cn('border-stone-200 pl-2.5 pr-7 text-xs leading-[34px] font-medium text-stone-600 transition-colors hover:bg-stone-100 focus:ring-0', FOCUS_RING)}
     >
       {LANGUAGES.map(l => <option key={l.code} value={l.code}>{compact ? l.short : l.name}</option>)}
-    </select>
+    </Select>
   )
 }
 
