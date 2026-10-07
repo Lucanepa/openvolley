@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 import { renderHook, waitFor, act } from '@testing-library/react'
+import { setAppEntry } from '../../utils/appEntry'
 
 // Dexie stand-in with the table hook API the write hook uses
 const { fakeDb, state } = vi.hoisted(() => {
@@ -49,11 +50,13 @@ const invoke = vi.fn(async (cmd, args) => {
 })
 
 beforeAll(() => {
+  setAppEntry('scorer') // the scoretable window (main.jsx)
   window.__TAURI_INTERNALS__ = { invoke }
   window.showDirectoryPicker = () => {} // WebView2 exposes it: must be ignored in the app
   localStorage.removeItem('nativeAutoBackupEnabled')
 })
 afterAll(() => {
+  setAppEntry(null)
   delete window.__TAURI_INTERNALS__
   delete window.showDirectoryPicker
 })
