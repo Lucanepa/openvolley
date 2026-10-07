@@ -1266,7 +1266,11 @@
     "reopenAdminTitle": "Rouvrir ce match clôturé ?",
     "reopenAdminBody": "Il repasse à « terminé » sur le serveur et peut être approuvé à nouveau. Ceci est consigné dans le journal.",
     "reopenReason": "Motif",
-    "reopenCheckFailed": "Impossible de vérifier le match sur le serveur – merci de réessayer."
+    "reopenCheckFailed": "Impossible de vérifier le match sur le serveur – merci de réessayer.",
+    "resign": "Signer à nouveau",
+    "clearSignature": "Effacer",
+    "signatureLocked": "Match approuvé ou clôturé : les signatures ne changent plus",
+    "signatureSaveFailed": "La signature n’a pas pu être enregistrée. Réessayez."
   },
   "scoresheetPdf": {
     "zoomOut": "Réduire",
@@ -3204,6 +3208,18 @@
         "referee2": "2e arbitre",
         "scorer": "Marqueur"
       }
+    },
+    "approveWithPin": "Approuver avec le PIN",
+    "why": {
+      "signOnly": "Signature seulement : le marqueur adjoint n’approuve pas avec un PIN",
+      "locked": "Match approuvé ou clôturé : les approbations ne changent plus",
+      "beach": "L’approbation avec un PIN n’existe pas pour les matchs de beach-volley",
+      "localMatch": "Ce match n’est pas enregistré en ligne : l’approbation avec un PIN demande un match en ligne",
+      "noCloud": "Pas de connexion en ligne sur cet appareil : signer à la main",
+      "serverOff": "L’approbation avec un PIN est désactivée sur ce serveur",
+      "signedOut": "Connectez-vous sur cet appareil pour approuver avec un PIN",
+      "callerRole": "Le compte de cet appareil ne peut pas envoyer d’approbations : il lui faut le rôle de marqueur ou d’arbitre",
+      "offline": "Hors ligne : l’approbation avec un PIN revient dès que la connexion revient"
     }
   },
   "legal": {

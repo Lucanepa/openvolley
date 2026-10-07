@@ -1267,7 +1267,11 @@
     "reopenAdminTitle": "Riaprire questa partita chiusa?",
     "reopenAdminBody": "Torna a «terminata» sul server e può essere approvata di nuovo. Viene registrato nel registro.",
     "reopenReason": "Motivo",
-    "reopenCheckFailed": "Impossibile verificare la partita sul server – riprova."
+    "reopenCheckFailed": "Impossibile verificare la partita sul server – riprova.",
+    "resign": "Firma di nuovo",
+    "clearSignature": "Cancella",
+    "signatureLocked": "Partita approvata o chiusa: le firme non cambiano più",
+    "signatureSaveFailed": "Non è stato possibile salvare la firma. Riprova."
   },
   "scoresheetPdf": {
     "zoomOut": "Riduci",
@@ -3210,6 +3214,18 @@
         "referee2": "2° arbitro",
         "scorer": "Segnapunti"
       }
+    },
+    "approveWithPin": "Approva con PIN",
+    "why": {
+      "signOnly": "Solo firma: il segnapunti assistente non approva con un PIN",
+      "locked": "Partita approvata o chiusa: le approvazioni non cambiano più",
+      "beach": "L’approvazione con PIN non è disponibile per le partite di beach volley",
+      "localMatch": "Questa partita non è salvata online: l’approvazione con PIN richiede una partita online",
+      "noCloud": "Nessuna connessione online su questo dispositivo: firma a mano",
+      "serverOff": "L’approvazione con PIN è disattivata su questo server",
+      "signedOut": "Accedi su questo dispositivo per approvare con PIN",
+      "callerRole": "L’account di questo dispositivo non può inviare approvazioni: serve il ruolo di segnapunti o di arbitro",
+      "offline": "Offline: l’approvazione con PIN torna disponibile appena sei online"
     }
   },
   "legal": {

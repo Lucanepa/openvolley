@@ -196,34 +196,35 @@ afterEach(() => {
 })
 
 describe('MatchEnd: approve with an account', () => {
-  it('offers the action on scorer, 2nd and 1st referee only, and hides it once drawn', async () => {
+  it('offers "Approve with PIN" on scorer, 2nd and 1st referee, also once signed by hand (owner fix)', async () => {
     seed({ asstScorerSignature: undefined, officials: [
       { role: '1st referee', firstName: 'Anna', lastName: 'Muster' },
       { role: '2nd referee', firstName: 'Ben', lastName: 'Beispiel' },
       { role: 'scorer', firstName: 'Sam', lastName: 'Scorer' },
       { role: 'assistant scorer', firstName: 'Ada', lastName: 'Assist' }
-    ], ref2Signature: 'data:ref2' })
+    ], asstScorerSignature: 'data:asst', scorerSignature: 'data:s', ref2Signature: 'data:ref2' })
     render(<MatchEnd matchId={1} />)
     await screen.findByTestId('account-approval-open-scorer')
-    expect(screen.getByTestId('account-approval-open-ref1')).toBeInTheDocument()
-    // drawn ref2: no account action
-    expect(screen.queryByTestId('account-approval-open-ref2')).toBeNull()
-    // assistant scorer and captains never
+    expect(screen.getByTestId('account-approval-open-ref1')).toHaveTextContent(en.approval.approveWithPin)
+    // drawn ref2: the PIN is still offered next to the signature
+    expect(screen.getByTestId('account-approval-open-ref2')).toBeEnabled()
+    // the assistant scorer signs only, and says so; the captains have no PIN line
     expect(screen.queryByTestId('account-approval-open-asst-scorer')).toBeNull()
+    expect(screen.getByTestId('account-approval-why-asst-scorer')).toHaveTextContent(en.approval.why.signOnly)
     expect(screen.queryByTestId('account-approval-open-captain-a')).toBeNull()
-    expect(within(slot('asst-scorer')).queryByRole('button', { name: en.approval.approveWithAccount })).toBeNull()
+    expect(screen.queryByTestId('account-approval-why-captain-a')).toBeNull()
   })
 
-  it('offline: disabled with the sign-by-hand label; enabled again on "online"', async () => {
+  it('offline: the reason line instead of the button; the button is back on "online"', async () => {
     render(<MatchEnd matchId={1} />)
     await refreshed()
     await screen.findByTestId('account-approval-open-scorer')
     setOnline(false)
-    await waitFor(() => expect(screen.getByTestId('account-approval-open-scorer')).toBeDisabled())
-    expect(screen.getByTestId('account-approval-open-scorer')).toHaveTextContent(en.approval.needsInternetSignByHand)
+    await waitFor(() => expect(screen.getByTestId('account-approval-why-scorer')).toHaveTextContent(en.approval.why.offline))
+    expect(screen.queryByTestId('account-approval-open-scorer')).toBeNull()
     setOnline(true)
     await waitFor(() => expect(screen.getByTestId('account-approval-open-scorer')).toBeEnabled())
-    expect(screen.getByTestId('account-approval-open-scorer')).toHaveTextContent(en.approval.approveWithAccount)
+    expect(screen.getByTestId('account-approval-open-scorer')).toHaveTextContent(en.approval.approveWithPin)
   })
 
   it('on mount, list() replaces the local approvals', async () => {
@@ -237,6 +238,10 @@ describe('MatchEnd: approve with an account', () => {
   it('mixed: a drawn scorer and ref2 plus an account ref1 complete the sheet', async () => {
     const approved = record('referee1')
     api.approve = vi.fn(async () => ({ data: { approval: approved, already: false }, error: null, status: 200 }))
+    // The sync queue: each drawn signature is queued at once, and the approval
+    // waits until the match's jobs are sent. Stand-in: sent on every wake-up.
+    const sendQueue = () => { for (const [id, j] of store.tables.sync_queue) store.tables.sync_queue.set(id, { ...j, status: 'sent' }) }
+    window.addEventListener('sync-queue-write', sendQueue)
     render(<MatchEnd matchId={1} />)
     await refreshed()
 
@@ -268,6 +273,9 @@ describe('MatchEnd: approve with an account', () => {
     await waitFor(() => expect(confirmButton()).toBeEnabled())
     // remembered on this device for the official's name
     expect(JSON.parse(localStorage.getItem('ov.approvalEmails'))).toEqual([{ k: 'muster anna', e: 'anna@example.ch' }])
+    // both drawings went to the queue as they were made
+    expect([...store.tables.sync_queue.values()].filter(j => j.payload?.signatures).length).toBe(2)
+    window.removeEventListener('sync-queue-write', sendQueue)
   })
 
   it('the PIN never reaches the logger or the console, and the field clears after an error', async () => {
@@ -451,27 +459,109 @@ describe('MatchEnd: approve with an account', () => {
     await waitFor(() => expect(confirmButton()).toBeEnabled())
   })
 
-  it('hidden for an account without the scorer or referee role (the server refuses it too)', async () => {
+  it('an account without the scorer or referee role: the reason, no button (the server refuses it too)', async () => {
     auth.value = { user: { id: 'u-new', email: 'new@club.ch' }, access: { roles: [], isAdmin: false } }
     render(<MatchEnd matchId={1} />)
     await within(await screen.findByTestId('signature-slot-scorer')).findByText(en.matchEnd.tapToSign)
     await act(() => new Promise(resolve => setTimeout(resolve, 20)))
     expect(screen.queryByTestId('account-approval-open-scorer')).toBeNull()
-    expect(screen.queryByTestId('account-approval-open-ref1')).toBeNull()
+    expect(screen.getByTestId('account-approval-why-ref1')).toHaveTextContent(en.approval.why.callerRole)
   })
 
-  it('hidden without a session, and when the server does not offer the feature', async () => {
+  it('without a session, and when the server does not offer the feature: each says why', async () => {
     auth.value = { user: null, access: { roles: [] } }
     const first = render(<MatchEnd matchId={1} />)
     await within(await screen.findByTestId('signature-slot-scorer')).findByText(en.matchEnd.tapToSign)
     expect(screen.queryByTestId('account-approval-open-scorer')).toBeNull()
+    expect(screen.getByTestId('account-approval-why-scorer')).toHaveTextContent(en.approval.why.signedOut)
     first.unmount()
 
     auth.value = { user: { id: 'u', email: 'a@b.ch' }, access: { roles: ['scorer'] } }
     api.list = vi.fn(async () => ({ data: null, error: { code: 'OV_APPROVAL_UNAVAILABLE', status: 503 }, status: 503 }))
     render(<MatchEnd matchId={1} />)
     await waitFor(() => expect(api.list).toHaveBeenCalled())
-    await waitFor(() => expect(screen.queryByTestId('account-approval-open-scorer')).toBeNull())
+    await waitFor(() => expect(screen.getByTestId('account-approval-why-scorer')).toHaveTextContent(en.approval.why.serverOff))
+    expect(screen.queryByTestId('account-approval-open-scorer')).toBeNull()
+  })
+
+  it('a match that is not in the cloud says so', async () => {
+    seed({ seed_key: undefined })
+    render(<MatchEnd matchId={1} />)
+    expect(await screen.findByTestId('account-approval-why-ref1')).toHaveTextContent(en.approval.why.localMatch)
+  })
+
+  it('signed by hand and approved: both show, with Undo', async () => {
+    const approved = { referee1: record('referee1') }
+    seed({ scorerSignature: 'data:s', ref2Signature: 'data:r2', ref1Signature: 'data:r1', accountApprovals: approved })
+    api.list = vi.fn(async () => ({ data: { match: {}, approvals: [approved.referee1] }, error: null, status: 200 }))
+    render(<MatchEnd matchId={1} />)
+    await refreshed()
+    expect(within(slot('ref1')).getByAltText(en.common.signature)).toBeInTheDocument()
+    expect(screen.getByTestId('account-approval-ref1')).toHaveTextContent('Muster Anna · 07.10.2026 21:42 · ID 6F1C2A9B')
+    expect(screen.getByTestId('account-approval-undo-ref1')).toBeEnabled()
+  })
+})
+
+describe('MatchEnd: Re-sign and Clear', () => {
+  const matchJobs = () => [...store.tables.sync_queue.values()].filter(j => j.resource === 'match' && j.payload?.signatures)
+
+  it('Re-sign replaces the signature, saves it at once and queues the whole signatures object', async () => {
+    seed({ homeCoachSignature: 'data:coach', scorerSignature: 'data:old' })
+    render(<MatchEnd matchId={1} />)
+    await refreshed()
+    fireEvent.click(await screen.findByTestId('signature-resign-scorer'))
+    fireEvent.click(await screen.findByRole('button', { name: /draw/ }))
+    await waitFor(() => expect(store.tables.matches.get(1).scorerSignature).toBe('data:image/png;base64,SIG'))
+    const job = matchJobs().at(-1)
+    expect(job.payload.id).toBe(SEED)
+    expect(job.payload.signatures).toMatchObject({ scorer: 'data:image/png;base64,SIG', home_coach: 'data:coach', home_captain_post_game: 'data:cap-a' })
+  })
+
+  it('Clear empties the slot at once (saved and synced) and opens the pad', async () => {
+    seed({ scorerSignature: 'data:old' })
+    render(<MatchEnd matchId={1} />)
+    await refreshed()
+    fireEvent.click(await screen.findByTestId('signature-clear-scorer'))
+    await waitFor(() => expect(store.tables.matches.get(1).scorerSignature).toBeNull())
+    expect(matchJobs().at(-1).payload.signatures.scorer).toBeNull()
+    // the pad is open for the new signature
+    expect(await screen.findByRole('button', { name: /draw/ })).toBeInTheDocument()
+  })
+
+  it('also on the captains; a test match is saved but not sent', async () => {
+    seed({ test: true })
+    render(<MatchEnd matchId={1} />)
+    await refreshed()
+    fireEvent.click(await screen.findByTestId('signature-clear-captain-a'))
+    await waitFor(() => expect(store.tables.matches.get(1).homePostGameCaptainSignature).toBeNull())
+    expect(matchJobs()).toHaveLength(0)
+  })
+
+  it('re-signing keeps a valid account approval (it is bound to the result, not to the image)', async () => {
+    const approved = { referee1: record('referee1') }
+    seed({ scorerSignature: 'data:s', ref2Signature: 'data:r2', ref1Signature: 'data:r1', accountApprovals: approved })
+    api.list = vi.fn(async () => ({ data: { match: {}, approvals: [approved.referee1] }, error: null, status: 200 }))
+    render(<MatchEnd matchId={1} />)
+    await refreshed()
+    fireEvent.click(screen.getByTestId('signature-resign-ref1'))
+    fireEvent.click(await screen.findByRole('button', { name: /draw/ }))
+    await waitFor(() => expect(store.tables.matches.get(1).ref1Signature).toBe('data:image/png;base64,SIG'))
+    expect(store.tables.matches.get(1).accountApprovals).toEqual(approved)
+    expect(api.undo).not.toHaveBeenCalled()
+  })
+
+  it('disabled once the match is approved or closed', async () => {
+    seed({ scorerSignature: 'data:s', approved: true })
+    const first = render(<MatchEnd matchId={1} />)
+    expect(await screen.findByTestId('signature-resign-scorer')).toBeDisabled()
+    expect(screen.getByTestId('signature-clear-scorer')).toBeDisabled()
+    expect(screen.getByTestId('signature-clear-captain-a')).toBeDisabled()
+    expect(screen.getByTestId('account-approval-why-ref1')).toHaveTextContent(en.approval.why.locked)
+    first.unmount()
+
+    seed({ scorerSignature: 'data:s', closed_at: '2026-10-07T20:00:00Z' })
+    render(<MatchEnd matchId={1} />)
+    expect(await screen.findByTestId('signature-resign-scorer')).toBeDisabled()
   })
 })
 
