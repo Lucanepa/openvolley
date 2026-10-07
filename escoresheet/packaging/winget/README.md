@@ -54,8 +54,8 @@ wingetcreate) write today.
 - WebView2: no dependency is declared; the installer downloads the WebView2
   runtime itself when Windows lacks it (Tauri's default
   `webviewInstallMode`, downloadBootstrapper). Windows 10/11 have it.
-- The installers are not Authenticode-signed (winget-pkgs accepts that;
-  SmartScreen does not come up for a winget install).
+- The installers are not Authenticode-signed. winget-pkgs accepts unsigned
+  installers; winget checks the download against `InstallerSha256` instead.
 
 ## Updates: winget and the app's own updater
 
@@ -146,4 +146,11 @@ not set up here.
 
 - Not installed on a real Windows machine from these manifests (no Windows
   here); checked with the schemas, the cross-file rules and the real hashes.
+  The Apps & features values were confirmed by running both release
+  installers with `/S` under Wine (64-bit prefix): the 64-bit HKLM keys
+  `Openvolley eScoresheet` and `OpenBeach` hold the DisplayName,
+  DisplayVersion, Publisher `openvolley` and `C:\Program Files\<productName>`
+  that the installer manifests give. A second `/S` run over the same version
+  and a silent uninstall also worked there. Wine is not Windows: UAC, the
+  firewall rule and winget itself were not tested.
 - x64 only: there is no ARM64 Windows build.
