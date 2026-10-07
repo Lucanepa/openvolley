@@ -1934,6 +1934,7 @@
     "done": "Fatto",
     "footer": {
       "connected": "Connessi: {{roles}} · {{count}} di {{total}} tablet",
+      "connectedOnly": "Connessi: {{roles}}",
       "none": "Ancora nessun tablet connesso",
       "thisNetworkOnly": "Lo stato in tempo reale mostra solo i tablet di questa rete"
     },

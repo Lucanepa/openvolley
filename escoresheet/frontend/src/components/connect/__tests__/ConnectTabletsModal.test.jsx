@@ -25,11 +25,12 @@ vi.mock('../../../hooks/useRealtimeConnection', () => ({
 vi.mock('../../../hooks/useSyncQueue', () => ({ useSyncStatus: () => 'synced' }))
 vi.mock('../../../utils/serverDataSync', () => ({
   relayMatchKey: (m) => m?.seed_key || null,
-  matchTeamNames: (m) => ({ home: m?.homeName || null, away: m?.awayName || null })
+  matchTeamNames: (m, { homeTeam, awayTeam } = {}) => ({ home: m?.homeName || homeTeam || null, away: m?.awayName || awayTeam || null })
 }))
 const dbMock = vi.hoisted(() => ({
   matches: { update: vi.fn(async () => 1), get: vi.fn() },
-  sync_queue: { add: vi.fn(async () => 1) }
+  sync_queue: { add: vi.fn(async () => 1) },
+  teams: { get: vi.fn(async (id) => ({ 11: { name: 'KSC Wiedikon' }, 12: { name: 'Volley Luzern' } })[id]) }
 }))
 vi.mock('../../../db/db', () => ({ db: dbMock }))
 vi.mock('../../auth/LoginModal', () => ({ default: () => <div data-testid="login-modal" /> }))
@@ -220,6 +221,26 @@ describe('ConnectTabletsModal', () => {
     expect(screen.getByTestId('devices-connected')).toHaveTextContent('Connected: Referee · 1 of 2 tablets')
     pick('bench_home')
     expect(screen.getByTestId('scan-status')).toHaveTextContent('Waiting for the tablet…')
+  })
+
+  it('bench cards name the team from the teams table when the match has only its id', async () => {
+    const { homeName: _h, awayName: _a, ...bare } = MATCH
+    renderModal({ match: { ...bare, homeTeamId: 11, awayTeamId: 12 }, fetchImpl: okFetch(), win: {} })
+    await waitFor(() => expect(screen.getByTestId('role-row-bench_home')).toHaveTextContent('KSC Wiedikon'))
+    expect(screen.getByTestId('role-row-bench_away')).toHaveTextContent('Volley Luzern')
+  })
+
+  it('footer: one tablet let in and connected reads without "1 of 1 tablets"', async () => {
+    relayTablets.value = {
+      reachable: true,
+      connections: { clients: [{ role: 'referee', matchId: SEED, ip: '192.168.1.23', connectedAt: '2026-10-06T12:32:00.000Z' }] },
+      referee: 1,
+      benchHome: 0,
+      benchAway: 0
+    }
+    renderModal({ match: { ...MATCH, homeTeamConnectionEnabled: false }, fetchImpl: okFetch(), win: {} })
+    expect(screen.getByTestId('devices-connected')).toHaveTextContent('Connected: Referee')
+    expect(screen.getByTestId('devices-connected')).not.toHaveTextContent('of')
   })
 
   it('live status: never "waiting" when the relay cannot be read', () => {
