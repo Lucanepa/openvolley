@@ -1666,7 +1666,9 @@
     "deleting": "Wird glöscht...",
     "deleteAccountConfirm": "Mis Konto lösche",
     "dobInvalid": "Gänd Sie s Geburtsdatum als TT.MM.JJJJ ii.",
-    "dobPlaceholder": "TT.MM.JJJJ"
+    "dobPlaceholder": "TT.MM.JJJJ",
+    "createAtManager": "Erstelled Sie eis uf {{host}}",
+    "createNeedsInternet": "Bruucht e Internetverbindig. Spiil schriibe gaht au ohni Konto."
   },
   "matchHistory": {
     "title": "Mini Spiil",

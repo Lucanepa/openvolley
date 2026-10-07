@@ -1694,7 +1694,9 @@
     "deleting": "Deleting...",
     "deleteAccountConfirm": "Delete my account",
     "dobInvalid": "Enter the date of birth as DD.MM.YYYY.",
-    "dobPlaceholder": "DD.MM.YYYY"
+    "dobPlaceholder": "DD.MM.YYYY",
+    "createAtManager": "Create one at {{host}}",
+    "createNeedsInternet": "Needs an internet connection. Scoring works without an account."
   },
   "matchHistory": {
     "title": "My matches",

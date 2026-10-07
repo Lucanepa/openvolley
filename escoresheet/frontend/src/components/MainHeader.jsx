@@ -970,7 +970,7 @@ export default function MainHeader({
 
                 {/* Unified Actions Menu */}
                 {/* Stays mounted while closed (hidden): the account dialogs opened from
-                    it (login, sign-up, profile, my matches) belong to its UserButton. */}
+                    it (login, profile, my matches) belong to its UserButton. */}
                   <div
                     onClick={(e) => e.stopPropagation()}
                     className={cn('absolute right-0 top-full mt-1.5 min-w-[240px] max-h-[calc(100vh-56px)] flex-col overflow-y-auto', actionsMenuOpen ? 'flex' : 'hidden', MENU_PANEL)}

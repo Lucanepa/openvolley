@@ -1665,7 +1665,9 @@
     "deleting": "Suppression...",
     "deleteAccountConfirm": "Supprimer mon compte",
     "dobInvalid": "Saisissez la date de naissance au format JJ.MM.AAAA.",
-    "dobPlaceholder": "JJ.MM.AAAA"
+    "dobPlaceholder": "JJ.MM.AAAA",
+    "createAtManager": "Créez-en un sur {{host}}",
+    "createNeedsInternet": "Nécessite une connexion internet. Marquer un match fonctionne aussi sans compte."
   },
   "matchHistory": {
     "title": "Mes matchs",
