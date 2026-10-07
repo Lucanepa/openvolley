@@ -48,6 +48,7 @@ import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags } from '../do
 import { classifyTimeoutRequest } from '../domain/timeouts'
 import { useConfirmAction } from '../hooks/useConfirmAction'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
+import { playerReplacedByLibero } from '../domain/liberos'
 import { planSubstitutionDeletion, countRegularSubstitutions, classifySubstitutionRequest, MAX_SUBSTITUTIONS_PER_SET } from '../domain/substitutions'
 import { decisionChangeUndoRecord, planDecisionChangeReversal, syncJobsForEvents, syncJobsForSets } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, renumberPlayerInEvents } from '../domain/roster'
@@ -10607,13 +10608,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         if (lineupEvents.length > 0) {
           const currentLineup = { ...lineupEvents[lineupEvents.length - 1].payload?.lineup }
 
-          // Get the original player who was replaced by libero
-          const liberoEntryEvents = (data.events || [])
-            .filter(e => e.type === 'libero_entry' && e.payload?.team === team && e.setIndex === data.set.index)
-            .sort((a, b) => (b.seq || 0) - (a.seq || 0))
-
-          const lastEntry = liberoEntryEvents.find(e => e.payload?.position === position)
-          const originalPlayerNumber = lastEntry?.payload?.playerNumber
+          // The player the libero replaced is the only one who may take the
+          // libero's place (FIVB 19.3.2.1). Found by libero number: libero_entry
+          // stores playerOut (not playerNumber) and the libero may have rotated
+          // away from the position it entered at, or come in by an exchange.
+          const originalPlayerNumber = playerReplacedByLibero(data.events, team, data.set.index, playerNumber)
 
           if (originalPlayerNumber) {
             // Put original player back in
