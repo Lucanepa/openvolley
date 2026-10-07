@@ -34,15 +34,26 @@ const ROLE_SHORT = {
 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V']
 const toRoman = (n) => ROMAN[n - 1] || String(n)
+// Local wall-clock time, as the match end page (formatTimeLocal) shows the
+// same start / end (it was UTC here: 2 h early in summer in Switzerland)
 const hhmmss = (d) => d
-  ? `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}:${String(d.getUTCSeconds()).padStart(2, '0')}`
+  ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
   : '—'
 
 // The kit SectionHeader face (a name on the dark 1.5px rule), sized with the dialog
 const HEAD = 'm-0 mb-[0.6em] flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 pb-[0.35em] text-[0.78em] font-bold uppercase tracking-wider text-stone-800'
 const TABLE = { width: '100%', borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums' }
+// The results table keeps its two halves the same width whatever the team
+// names: fixed layout, the names wrap (a long club name used to push the
+// table out of the dialog)
+const RESULTS_TABLE = { ...TABLE, tableLayout: 'fixed' }
+// Set | T S W P | Dur | P W S T  (live), T S W P | Dur | P W S T (totals)
+const LIVE_COLS = ['12%', '8%', '8%', '8%', '14%', '12%', '14%', '8%', '8%', '8%']
+const TOTAL_COLS = ['9%', '9%', '9%', '13%', '20%', '13%', '9%', '9%', '9%']
+const colgroup = (widths) => <colgroup>{widths.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>
 const TH = { padding: '0.35em 0.3em', textAlign: 'center', fontWeight: 600, fontSize: '0.78em', color: 'var(--ov-text-muted, #57534e)', whiteSpace: 'nowrap' }
 const TD = { padding: '0.45em 0.3em', textAlign: 'center' }
+const TEAM_TH = { ...TH, fontSize: '0.95em', whiteSpace: 'normal', verticalAlign: 'bottom', color: 'var(--text, #1c1917)', borderBottom: '1px solid var(--ov-hairline, #e7e5e4)' }
 const ROW = { borderBottom: '1px solid var(--ov-hairline, #e7e5e4)' }
 
 function TeamChip({ label, colour }) {
@@ -59,7 +70,7 @@ function TeamChip({ label, colour }) {
 function TeamHead({ name, label, colour }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.4em', flexWrap: 'wrap' }}>
-      <span style={{ fontWeight: 700, wordBreak: 'break-word' }}>{name}</span>
+      <span style={{ fontWeight: 700, overflowWrap: 'anywhere', minWidth: 0 }}>{name}</span>
       <TeamChip label={label} colour={colour} />
     </span>
   )
@@ -111,7 +122,7 @@ export default function SanctionsResultsModal({ open, onClose, data, teamAKey, l
   const improper = (key) => !!data?.match?.sanctions?.[`improperRequest${key === 'home' ? 'Home' : 'Away'}`]
 
   const sanctionsBlock = (
-    <section aria-labelledby="sr-sanctions">
+    <section aria-labelledby="sr-sanctions" style={{ minWidth: 0 }}>
       <h4 id="sr-sanctions" className={HEAD}>{t('matchEnd.sanctions')}</h4>
 
       {/* Improper request: one box per team, crossed once the team has had it */}
@@ -133,7 +144,7 @@ export default function SanctionsResultsModal({ open, onClose, data, teamAKey, l
               >
                 {letter(key)}
                 {marked && (
-                  <span aria-hidden="true" style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5em', color: '#dc2626', fontWeight: 900 }}>✕</span>
+                  <span aria-hidden="true" style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.6em', lineHeight: 1, color: 'rgba(220, 38, 38, 0.6)', fontWeight: 400 }}>✕</span>
                 )}
               </span>
             )
@@ -197,11 +208,11 @@ export default function SanctionsResultsModal({ open, onClose, data, teamAKey, l
   const teamHeads = (lead) => (
     <tr>
       {lead && <th style={TH} />}
-      <th colSpan="4" style={{ ...TH, fontSize: '0.95em', color: 'var(--text, #1c1917)', borderBottom: '1px solid var(--ov-hairline, #e7e5e4)' }}>
+      <th colSpan="4" style={TEAM_TH}>
         <TeamHead name={leftName} label={letter(leftKey)} colour={teamColour(leftKey)} />
       </th>
       <th style={TH} />
-      <th colSpan="4" style={{ ...TH, fontSize: '0.95em', color: 'var(--text, #1c1917)', borderBottom: '1px solid var(--ov-hairline, #e7e5e4)' }}>
+      <th colSpan="4" style={TEAM_TH}>
         <TeamHead name={rightName} label={letter(rightKey)} colour={teamColour(rightKey)} />
       </th>
     </tr>
@@ -255,7 +266,8 @@ export default function SanctionsResultsModal({ open, onClose, data, teamAKey, l
 
     resultsBody = (
       <>
-        <table style={TABLE}>
+        <table style={RESULTS_TABLE}>
+          {colgroup(TOTAL_COLS)}
           <thead>{teamHeads(false)}{letterHeads(false)}</thead>
           <tbody>
             <tr style={ROW}>
@@ -279,8 +291,9 @@ export default function SanctionsResultsModal({ open, onClose, data, teamAKey, l
             [t('matchEnd.end', 'End'), hhmmss(matchEndTime)],
             [t('scoreboard.matchDuration'), matchDurationMin > 0 ? `${matchDurationMin} min` : '—'],
             [t('scoreboard.winnerLabel'), `${winnerName} (${leftWins}-${rightWins})`]
-          ].map(([label, value]) => (
-            <div key={label} style={{ minWidth: 0 }}>
+          ].map(([label, value], i) => (
+            // The winner gets a whole line: a long club name stays on one or two lines
+            <div key={label} style={{ minWidth: 0, gridColumn: i === 3 ? '1 / -1' : undefined }}>
               <dt style={{ fontSize: '0.78em', fontWeight: 600, color: 'var(--ov-text-muted, #57534e)' }}>{label}</dt>
               <dd style={{ margin: 0, fontWeight: 600, overflowWrap: 'anywhere' }}>{value}</dd>
             </div>
@@ -288,7 +301,7 @@ export default function SanctionsResultsModal({ open, onClose, data, teamAKey, l
         </dl>
 
         {/* Post-match captain signatures */}
-        <div style={{ marginTop: '1em', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1em' }}>
+        <div style={{ marginTop: '1em', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1em', alignItems: 'end' }}>
           {captains.map(c => (
             <div key={c.key} style={{ minWidth: 0 }}>
               <div style={{ fontSize: '0.85em', fontWeight: 600, marginBottom: '0.3em' }}>
@@ -315,7 +328,8 @@ export default function SanctionsResultsModal({ open, onClose, data, teamAKey, l
     const playedSets = allSets.filter(s => s.homePoints > 0 || s.awayPoints > 0 || s.finished || s.startTime)
     resultsBody = (
       <>
-        <table style={TABLE}>
+        <table style={RESULTS_TABLE}>
+          {colgroup(LIVE_COLS)}
           <thead>{teamHeads(true)}{letterHeads(true)}</thead>
           <tbody>
             {playedSets.map(set => {
@@ -326,17 +340,20 @@ export default function SanctionsResultsModal({ open, onClose, data, teamAKey, l
                 duration = `${Math.floor((new Date(set.endTime) - new Date(set.startTime)) / 60000)}'`
               }
               // The set in play: its row on the sunken tint, nobody has won it yet
+              // (W stays 0 for both, the leader's points are not bolded as a win)
               const live = !set.finished
+              const leftWon = !live && lp > rp
+              const rightWon = !live && rp > lp
               return (
                 <tr key={set.id} style={{ ...ROW, background: live ? 'var(--ov-surface-sunken, #fafaf9)' : undefined }} data-set-row={set.index}>
                   <td style={{ ...TD, fontWeight: 700 }}>{toRoman(set.index)}</td>
                   <td style={TD}>{count('timeout', set.index, leftKey)}</td>
                   <td style={TD}>{count('substitution', set.index, leftKey)}</td>
-                  <td style={TD}>{lp > rp ? 1 : 0}</td>
-                  <td style={{ ...TD, fontSize: '1.15em', fontWeight: lp > rp ? 800 : 500 }}>{lp}</td>
+                  <td style={TD}>{leftWon ? 1 : 0}</td>
+                  <td style={{ ...TD, fontSize: '1.15em', fontWeight: leftWon ? 800 : 500 }}>{lp}</td>
                   <td style={{ ...TD, color: 'var(--ov-text-muted, #78716c)' }}>{duration}</td>
-                  <td style={{ ...TD, fontSize: '1.15em', fontWeight: rp > lp ? 800 : 500 }}>{rp}</td>
-                  <td style={TD}>{rp > lp ? 1 : 0}</td>
+                  <td style={{ ...TD, fontSize: '1.15em', fontWeight: rightWon ? 800 : 500 }}>{rp}</td>
+                  <td style={TD}>{rightWon ? 1 : 0}</td>
                   <td style={TD}>{count('substitution', set.index, rightKey)}</td>
                   <td style={TD}>{count('timeout', set.index, rightKey)}</td>
                 </tr>
@@ -350,7 +367,7 @@ export default function SanctionsResultsModal({ open, onClose, data, teamAKey, l
   }
 
   const resultsBlock = (
-    <section aria-labelledby="sr-results">
+    <section aria-labelledby="sr-results" style={{ minWidth: 0 }}>
       <h4 id="sr-results" className={HEAD}>{t('matchEnd.results')}</h4>
       {resultsBody}
     </section>
