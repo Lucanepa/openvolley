@@ -36,7 +36,7 @@ pub struct NetIf {
 
 /// The bridge NetworkManager creates for the Bluetooth network
 /// (netshare/linux.rs), at most 15 characters.
-pub const BT_BRIDGE_NAME: &str = "pan-openvolley";
+pub const BT_BRIDGE_NAME: &str = crate::flavour::CURRENT.bt_bridge_name;
 
 /// Interface names (Linux) and adapter names (Windows) of virtual networks a
 /// tablet in the hall can never reach: containers, VMs, VPNs.

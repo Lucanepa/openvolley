@@ -36,3 +36,8 @@ package-lock.json
 
 # Build output
 dist/
+
+# The Lucanepa/openbeach checkout the OpenBeach desktop flavour builds from
+# (src-tauri/tauri.beach.conf.json; CI checks it out here, locally a clone or
+# a symlink)
+/openbeach

@@ -175,7 +175,7 @@ fn build_popup<R: Runtime>(
     features: NewWindowFeatures,
 ) -> tauri::Result<WebviewWindow<R>> {
     let builder = WebviewWindowBuilder::new(app, next_popup_label(), WebviewUrl::External("about:blank".parse().unwrap()))
-        .title("OpenVolley eScoresheet")
+        .title(crate::flavour::CURRENT.window_title)
         .inner_size(1200.0, 900.0)
         .min_inner_size(600.0, 400.0)
         .theme(Some(tauri::Theme::Light))
