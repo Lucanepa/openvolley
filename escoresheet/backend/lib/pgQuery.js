@@ -105,7 +105,9 @@ export const DEFAULT_CONFIG = Object.freeze({
   // generic SQLSTATE answer; never with details (a 23505 DETAIL quotes values).
   errorMap: {
     sqlstate: {
-      OVC01: { status: 409, code: 'OV_MATCH_CLOSED', message: 'This match is closed. Only an admin can reopen it.' }
+      OVC01: { status: 409, code: 'OV_MATCH_CLOSED', message: 'This match is closed. Only an admin can reopen it.' },
+      // db/011: match_approvals rows are append-only (only a bug reaches it)
+      OVA01: { status: 409, code: 'OV_APPROVAL_IMMUTABLE', message: 'An approval cannot be changed.' }
     },
     constraint: {
       matches_official_game_uidx: { status: 409, code: 'OV_GAME_TAKEN', message: 'This official game is already scored by another account.' }

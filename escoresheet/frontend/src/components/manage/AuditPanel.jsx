@@ -6,10 +6,29 @@ import { RowList, Row, DateRail, EmptyInset, SkeletonRows, Notice, Button, dayLa
 
 const PAGE = 50
 
-/** A short, human line for an audit entry's details (never the whole JSON). */
-export function auditDetailsLine(entry) {
+const APPROVAL_ACTIONS = new Set(['match.approve', 'match.approval_revoke', 'match.approval_void'])
+
+/**
+ * A short, human line for an audit entry's details (never the whole JSON).
+ * t, when given, words the approval entries ("1st referee · ID 6F1C2A9B").
+ */
+export function auditDetailsLine(entry, t = null) {
   const d = entry?.details || {}
   const parts = []
+  const tr = (key, fallback, opts) => (t ? t(key, { defaultValue: fallback, ...opts }) : fallback)
+  if (APPROVAL_ACTIONS.has(entry?.action)) {
+    if (d.slot) parts.push(tr(`manage.approvals.slots.${d.slot}`, d.slot))
+    if (d.short_id) parts.push(`ID ${d.short_id}`)
+    if (d.game_n) parts.push(`#${d.game_n}`)
+    if (Number.isFinite(d.count)) parts.push(`× ${d.count}`)
+    if (d.reason) parts.push(tr(`manage.approvals.reasons.${d.reason}`, String(d.reason)))
+    return parts.join(' · ')
+  }
+  if (entry?.action === 'approval_pin.locked') {
+    if (Number.isFinite(d.failures)) parts.push(tr('manage.approvals.wrongPins', `${d.failures} wrong PINs`, { failures: d.failures }))
+    if (d.disabled) parts.push(tr('manage.approvals.blocked', 'blocked'))
+    return parts.join(' · ')
+  }
   if (Array.isArray(d.added) && d.added.length) parts.push(`+ ${d.added.join(', ')}`)
   if (Array.isArray(d.removed) && d.removed.length) parts.push(`− ${d.removed.join(', ')}`)
   if (d.game_n) parts.push(`#${d.game_n}`)
@@ -66,7 +85,7 @@ export default function AuditPanel() {
             {entries.map(e => {
               const actor = personName(e.actor_name, '', e.actor_email)
               const target = personName(e.target_name, '', e.target_email)
-              const details = auditDetailsLine(e)
+              const details = auditDetailsLine(e, t)
               return (
                 <Row
                   key={e.id}

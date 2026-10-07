@@ -34,7 +34,10 @@ export const AUDIT_ACTIONS = Object.freeze([
   'invite.create', 'invite.revoke', 'invite.redeem',
   'match.claim_game', 'match.claim_pin', 'match.game_taken',
   'match.close',
-  'match.reopen', 'match.editor_add', 'match.release_game'
+  'match.reopen', 'match.editor_add', 'match.release_game',
+  // lib/approvals.js (db/011); match.approval_void is written by the trigger
+  'approval_pin.set', 'approval_pin.remove', 'approval_pin.locked',
+  'match.approve', 'match.approval_revoke', 'match.approval_void'
 ])
 const INVITE_CODE_RE = /^[0-9A-HJKMNP-TV-Z]{12}$/
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -119,9 +122,14 @@ function trimmedText (raw, { min = 0, max }) {
  * @param {ReturnType<import('./pgQuery.js').createPgQuery>} o.db
  * @param {ReturnType<import('./matchRestore.js').createMatchRestore>} o.restore
  * @param {ReturnType<import('./access.js').createAccessResolver>} o.access
+ * @param {(ids: string[]) => Promise<Map<string, object[]>>} [o.approvalsForMatches]
+ *   lib/approvals.js approvalsForMatches: the active account approvals the
+ *   admin lists attach to each match (none without it)
  */
-export function createAccounts ({ pool, db, restore, access, logger = console } = {}) {
+export function createAccounts ({ pool, db, restore, access, approvalsForMatches = null, logger = console } = {}) {
   const log = logger
+  /** Active approvals per match id (empty without lib/approvals.js). Throws on a DB error. */
+  const approvalsOf = async (ids) => (typeof approvalsForMatches === 'function' ? approvalsForMatches(ids) : new Map())
 
   async function withTx (fn) {
     const client = await pool.connect()
@@ -455,6 +463,7 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
           if (!claims.has(key)) claims.set(key, m)
         }
       }
+      const approvals = await approvalsOf([...claims.values()].map((m) => m.id))
       return ok({
         games: games.map((g) => {
           const m = claims.get(`${Number(g.game_number)}|${seasonOf(g.datetime)}`)
@@ -478,7 +487,8 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
                   scorer_email: m.scorer_email ?? null,
                   editors: m.editors,
                   closed_at: iso(m.closed_at),
-                  updated_at: iso(m.updated_at)
+                  updated_at: iso(m.updated_at),
+                  approvals: approvals.get(m.id) || []
                 }
               : null
           }
@@ -519,6 +529,7 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
           WHERE ${where.join(' AND ')}
           ORDER BY coalesce(m.closed_at, m.updated_at) DESC NULLS LAST, m.id
           LIMIT ${lim}`, values)
+      const approvals = await approvalsOf(rows.map((r) => r.id))
       return ok({
         matches: rows.map((r) => ({
           id: r.id,
@@ -535,7 +546,8 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
           closed_at: iso(r.closed_at),
           closed_by_name: r.closed_by_name ?? null,
           official_game_exempt: r.official_game_exempt === true,
-          updated_at: iso(r.updated_at)
+          updated_at: iso(r.updated_at),
+          approvals: approvals.get(r.id) || []
         }))
       })
     })

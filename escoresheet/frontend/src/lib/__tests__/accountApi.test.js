@@ -6,7 +6,7 @@ vi.mock('../../utils/backendConfig', () => ({
 }))
 
 import { apiRequest } from '../apiClient'
-import { redeemInvite, officialCheck, admin, savedTeamsApi, errorKeyOf, formatInviteCode, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS } from '../accountApi'
+import { redeemInvite, officialCheck, admin, savedTeamsApi, errorKeyOf, formatInviteCode, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS, approvalPinApi, approvalsApi, isApprovalUnavailable } from '../accountApi'
 
 function jsonResponse(body, status = 200) {
   return { ok: status >= 200 && status < 300, status, json: async () => body }
@@ -136,6 +136,70 @@ describe('accountApi endpoints', () => {
     expect(calls[14].body).toBeUndefined()
     expect(calls[12].body).toBeUndefined()
     expect(calls[16].body).toEqual({ name: 'Tour', season: '2026', sport: 'beach', vm_leagues: [] })
+  })
+})
+
+describe('approval endpoints (account-approval spec 3)', () => {
+  beforeEach(() => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: {}, error: null }))
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it('hits the exact paths and bodies of the contract', async () => {
+    await approvalPinApi.status()
+    await approvalPinApi.set({ password: 'pw', pin: '0420' })
+    await approvalPinApi.remove({ password: 'pw' })
+    await approvalsApi.approve({ external_id: 'match_1', slot: 'referee1', email: 'a@b.ch', pin: '482917', result: { sets: [[1, 25, 20]] }, device_id: 'd-1' })
+    await approvalsApi.approve({ external_id: 'match_1', slot: 'scorer', email: 'a@b.ch', pin: '482917', result: { sets: [] }, device_id: null })
+    await approvalsApi.list('match 1/x')
+    await approvalsApi.undo('6f1c')
+    await admin.listApprovals({ q: '6F1C2A9B', include_revoked: true, limit: 20 })
+    await admin.listApprovals({ q: '4711' })
+    await approvalsApi.mine()
+    await approvalsApi.mine({ limit: 10 })
+    await approvalsApi.approve({ external_id: 'match_1', slot: 'referee2', email: 'a@b.ch', pin: '482917', result: { sets: [] }, lang: 'de-CH' })
+
+    const calls = globalThis.fetch.mock.calls.map((_, i) => call(i))
+    expect(calls.map(c => `${c.method} ${c.url.replace('http://backend.test', '')}`)).toEqual([
+      'GET /api/account/approval-pin',
+      'POST /api/account/approval-pin',
+      'POST /api/account/approval-pin/remove',
+      'POST /api/approvals',
+      'POST /api/approvals',
+      'GET /api/approvals?external_id=match%201%2Fx',
+      'DELETE /api/approvals/6f1c',
+      'GET /api/admin/approvals?q=6F1C2A9B&include_revoked=1&limit=20',
+      'GET /api/admin/approvals?q=4711',
+      'GET /api/account/approvals',
+      'GET /api/account/approvals?limit=10',
+      'POST /api/approvals'
+    ])
+    expect(calls[1].body).toEqual({ password: 'pw', pin: '0420' })
+    expect(calls[2].body).toEqual({ password: 'pw' })
+    expect(calls[3].body).toEqual({ external_id: 'match_1', slot: 'referee1', email: 'a@b.ch', pin: '482917', result: { sets: [[1, 25, 20]] }, device_id: 'd-1' })
+    expect(calls[4].body).not.toHaveProperty('device_id')
+    expect(calls[6].body).toBeUndefined()
+    expect(calls[4].body).not.toHaveProperty('lang')
+    expect(calls[11].body).toMatchObject({ slot: 'referee2', lang: 'de-CH' })
+  })
+
+  it('maps every new error code to approval.errors.*', () => {
+    const cases = {
+      OV_APPROVAL_PIN_INVALID: 'pinInvalid', OV_APPROVAL_PIN_FORMAT: 'pinFormat',
+      OV_APPROVAL_SCORER_NOT_REFEREE: 'scorerNotReferee', OV_APPROVAL_CALLER_ROLE: 'callerRole',
+      OV_APPROVAL_PIN_WEAK: 'pinWeak', OV_PASSWORD_INVALID: 'passwordInvalid', OV_APPROVAL_ROLE_REQUIRED: 'roleRequired',
+      OV_APPROVAL_NOT_MATCH_SCORER: 'notMatchScorer', OV_APPROVAL_NAME_REQUIRED: 'nameRequired', OV_APPROVAL_ONE_SLOT: 'oneSlot',
+      OV_APPROVAL_SLOT_TAKEN: 'slotTaken', OV_MATCH_CLOSED: 'matchClosed', OV_MATCH_NOT_ENDED: 'matchNotEnded',
+      OV_RESULT_NOT_SYNCED: 'resultNotSynced', OV_APPROVAL_UNSUPPORTED: 'unsupported', OV_APPROVAL_UNAVAILABLE: 'unavailable'
+    }
+    for (const [code, key] of Object.entries(cases)) {
+      // before the generic 401/403 fallback
+      expect(errorKeyOf({ code, status: 403 })).toBe(`approval.errors.${key}`)
+    }
+    expect(errorKeyOf({ code: 'OV_EMAIL_UNCONFIRMED', status: 409 }, { context: 'approval' })).toBe('approval.errors.emailUnconfirmed')
+    expect(isApprovalUnavailable({ code: 'OV_APPROVAL_UNAVAILABLE' })).toBe(true)
+    expect(isApprovalUnavailable({ code: 'OV_DB_NOT_CONFIGURED' })).toBe(true)
+    expect(isApprovalUnavailable({ code: 'OV_FORBIDDEN' })).toBe(false)
   })
 })
 
