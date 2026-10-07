@@ -162,7 +162,12 @@ def svg(body, vb='0 0 512 512', title='OpenVolley'):
 
 DISC = '<circle cx="256" cy="256" r="256" fill="#ffffff"/>\n  '
 SAFE_R = 512 * 33 / 108   # 108 dp adaptive canvas -> 66 dp safe circle: r 156.4 of 512
-TILE_R = 150              # the ball inside the app tile / adaptive foreground (< SAFE_R)
+TILE_R = 150              # the ball inside the app tile (< SAFE_R)
+# Android shows a 72 dp window of the 108 dp canvas: TILE_R would fill ~88 % of
+# the launcher circle, heavier than the system icons. Their keyline: ~70 %.
+ADAPTIVE_R = 120
+# Themed (monochrome) icons are glyphs: a little smaller again, like the system ones.
+THEMED_R = 108
 
 FILES = {
     # the mark, 16 px of clear space on 512
@@ -179,8 +184,8 @@ FILES = {
         f'<rect x="0.75" y="0.75" width="510.5" height="510.5" rx="114" fill="#ffffff" stroke="{HAIR}" stroke-width="1.5"/>\n  '
         + ball(256, 256, TILE_R, 17), title='OpenVolley eScoresheet'),
     # Android adaptive layers; the background layer is plain #ffffff
-    'adaptive-foreground.svg': svg(ball(256, 256, TILE_R, 17), title='OpenVolley adaptive foreground'),
-    'adaptive-monochrome.svg': svg(ball(256, 256, TILE_R, 17, mono=MONO), title='OpenVolley adaptive monochrome'),
+    'adaptive-foreground.svg': svg(ball(256, 256, ADAPTIVE_R, 14), title='OpenVolley adaptive foreground'),
+    'adaptive-monochrome.svg': svg(ball(256, 256, THEMED_R, 13, mono=MONO), title='OpenVolley adaptive monochrome'),
     # Windows / Linux app icon: tile inset like the platform icon grids
     'icon-desktop.svg': svg(
         f'<rect x="32" y="32" width="448" height="448" rx="100" fill="#ffffff" stroke="{HAIR}" stroke-width="2"/>\n  '
