@@ -13,8 +13,13 @@
 
 export const REVISION_REASONS = Object.freeze([
   'undo', 'delete', 'decision_change', 'manual_adjustment',
-  'forfeit_reversal', 'reopen_set', 'roster_reopen', 'other'
+  'forfeit_reversal', 'reopen_set', 'roster_reopen', 'correction', 'other'
 ])
+
+// The undo record a decision change writes into its own event once the swap
+// is done (domain/corrections decisionChangeUndoRecord): local bookkeeping,
+// not an edit of the scoresheet
+const DECISION_UNDO_KEYS = Object.freeze(['pointEventId', 'pointPayloadBefore', 'removedSubEvents', 'createdSubEventIds'])
 
 export const REVISION_OPS = Object.freeze(['void', 'edit', 'restore'])
 
@@ -90,7 +95,25 @@ export function changedKeys(mods, stored) {
 export function editOf(mods, stored) {
   let changed = changedKeys(mods, stored)
   if (isEmptySnapshot(stored?.stateSnapshot)) changed = changed.filter(k => topKey(k) !== 'stateSnapshot')
+  if (changed.length && onlyDecisionUndoRecord(changed, mods, stored)) return null
   return changed.length ? changed : null
+}
+
+const withoutUndoRecord = (payload) => {
+  const out = { ...(payload && typeof payload === 'object' ? payload : {}) }
+  for (const k of DECISION_UNDO_KEYS) delete out[k]
+  return out
+}
+
+/** A decision_change event getting its undo record (and nothing else) written in. */
+function onlyDecisionUndoRecord(changed, mods, stored) {
+  if (stored?.type !== 'decision_change') return false
+  return changed.every(k => {
+    const parts = String(k).split('.')
+    if (parts[0] !== 'payload') return false
+    if (parts.length > 1) return DECISION_UNDO_KEYS.includes(parts[1])
+    return sameValue(withoutUndoRecord(mods.payload), withoutUndoRecord(stored.payload))
+  })
 }
 
 /** The row after an update: the stored row with `mods` applied (key paths). */
@@ -131,9 +154,40 @@ function dropNestedSnapshots(value) {
   }
 }
 
+const TEAMS = ['home', 'away']
+
 /**
- * The server columns an edit writes: { type, set_index, payload, score_a?, score_b? }
- * (the event's score is the one stored in its snapshot). Never state_snapshot.
+ * The running score (Team A / Team B) after this event, as the server keeps
+ * it in score_a / score_b: the event's snapshot score, with the point moved
+ * when the edit gave a point to the other team (a decision change).
+ *
+ * A point's snapshot is taken when the point is logged and never rewritten,
+ * so it counts the point for the team it was logged for: the swap's
+ * `swappedFrom` when the point was swapped, else the team before this edit.
+ * When the edit's team differs from that one, one point moves from it to
+ * the new team (Team A = snapshot.teamAKey) — the score the points after the
+ * edit add up to. Null (no score columns) when that cannot be told.
+ */
+export function runningScoreAfterEdit(before, after) {
+  const row = after || before || {}
+  const score = snapshotScore(row.stateSnapshot)
+  if (!score) return null
+  if (row.type !== 'point' || !before || !after) return score
+  // The edit rewrote the snapshot itself: it is the score to send
+  if (!sameValue(before.stateSnapshot, after.stateSnapshot)) return score
+  const loggedFor = before.payload?.swappedFrom ?? after.payload?.swappedFrom ?? before.payload?.team
+  const now = after.payload?.team
+  if (!TEAMS.includes(loggedFor) || !TEAMS.includes(now) || loggedFor === now) return score
+  const teamA = row.stateSnapshot?.teamAKey
+  if (!TEAMS.includes(teamA)) return null
+  const delta = now === teamA ? 1 : -1
+  return { a: Math.max(0, score.a + delta), b: Math.max(0, score.b - delta) }
+}
+
+/**
+ * The server columns an edit writes: { type, set_index, seq, payload,
+ * score_a?, score_b? } — the score is the running score after the event
+ * (runningScoreAfterEdit). Never state_snapshot.
  * @param {object} before the full local row before the edit
  * @param {object} after  the full local row after the edit
  */
@@ -144,7 +198,8 @@ export function serverColumnsOfEdit(before, after) {
     set_index: Number.isFinite(Number(row.setIndex)) ? Number(row.setIndex) : null,
     payload: dropNestedSnapshots(row.payload)
   }
-  const score = snapshotScore(row.stateSnapshot)
+  if (row.seq != null && Number.isFinite(Number(row.seq))) out.seq = Number(row.seq)
+  const score = runningScoreAfterEdit(before, after)
   if (score) {
     out.score_a = score.a
     out.score_b = score.b

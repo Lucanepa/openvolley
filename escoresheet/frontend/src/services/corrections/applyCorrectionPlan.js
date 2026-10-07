@@ -11,12 +11,19 @@
  *  4. match.remarks: the plan's lines removed / appended
  *  5. match.manualChanges: the correction-log entry (a human sentence)
  *  6. sync jobs: event/insert (an upsert on external_id, so edited and
- *     renumbered rows are re-sent the same way), event/delete for removed
- *     rows, set/update, match/update — no direct API writes, corrections
- *     work offline
- *  7. queued insert jobs of removed events are dropped
+ *     renumbered rows are re-sent the same way), set/update, match/update —
+ *     no direct API writes, corrections work offline
+ *  7. queued insert jobs of removed events are dropped (only inserts:
+ *     domain/corrections syncJobsForEvents)
  *  8. at the match end, a change of the sheet clears the post-match
  *     signatures (they certified the old sheet)
+ *
+ * The event history (db/eventHistory) is the one record of what the
+ * correction removed or changed: its db.events hooks write an event_history
+ * row and a void / edit revision job for every deleted or edited row, with
+ * the reason 'correction' (withActivityContext below), inside this same
+ * transaction (EVENT_HISTORY_SCOPE). The server keeps a removed event as a
+ * voided row (POST /api/match/event-revisions); no event delete is sent.
  *
  * After the transaction the caller's hooks run (scoresheet refresh, and in
  * the match the referee / livescore push).
@@ -27,7 +34,12 @@ import { appendRemark, removeRemarkLine } from '../../domain/remarks'
 import { syncJobsForEvents } from '../../domain/corrections'
 import { clearedPostMatchSignatures, POST_MATCH_SIGNATURE_FIELDS } from '../../domain/matchEnd'
 import { buildEventInsertJob } from '../../utils/eventSync'
-import { eventExtId, setExtId } from '../../utils/syncIds'
+import { setExtId } from '../../utils/syncIds'
+import { withActivityContext, EVENT_HISTORY_SCOPE, rememberSeedKey } from '../../db/eventHistory'
+import { randomUuid } from '../../utils/deviceId'
+
+/** The event history reason of every row a correction removes or edits. */
+export const CORRECTION_REASON = 'correction'
 
 /** True when the plan changes what the officials signed (anything but the log). */
 export function planChangesSheet(plan) {
@@ -71,13 +83,21 @@ export function remarksAfter(remarks, plan) {
  * @param {{ matchId:any, db:object, mode?:'live'|'review', hooks?:object, now?:Date }} opts
  * @returns {Promise<{ addedIds:Array, signaturesCleared:boolean }>}
  */
-export async function applyCorrectionPlan(plan, { matchId, db, mode = 'live', hooks = {}, now = new Date() } = {}) {
+export async function applyCorrectionPlan(plan, opts = {}) {
   if (!plan || plan.error) throw new Error(plan?.error || 'No plan')
-  const result = { addedIds: [], signaturesCleared: false }
+  return withActivityContext({ reason: CORRECTION_REASON, actionId: randomUuid() }, () => writePlan(plan, opts))
+}
 
-  await db.transaction('rw', db.events, db.sets, db.matches, db.sync_queue, async () => {
+async function writePlan(plan, { matchId, db, mode = 'live', hooks = {}, now = new Date() } = {}) {
+  const result = { addedIds: [], signaturesCleared: false }
+  // The history tables the database has (all of them in the app)
+  const historyTables = EVENT_HISTORY_SCOPE.map(name => db[name]).filter(Boolean)
+
+  await db.transaction('rw', [db.events, db.sets, db.matches, db.sync_queue, ...historyTables], async () => {
     const match = await db.matches.get(matchId)
     if (!match) throw new Error('Match not found')
+    // the history hooks queue the revision jobs in this transaction when they know the match's key
+    rememberSeedKey(matchId, match.seed_key ?? null, match.test === true)
     const before = await db.events.where('matchId').equals(matchId).toArray()
     const byId = new Map(before.map(e => [e.id, e]))
 
@@ -149,18 +169,11 @@ export async function applyCorrectionPlan(plan, { matchId, db, mode = 'live', ho
     if (match.seed_key && !match.test) {
       const ts = now.toISOString()
       if (removeIds.length) {
+        // An insert still waiting for a removed row is dropped; the void job
+        // the deletion queued (event history) stays and voids the server copy
         const queued = await db.sync_queue.where('status').equals('queued').toArray()
         const stale = syncJobsForEvents(queued, removeIds)
         if (stale.length) await db.sync_queue.bulkDelete(stale.map(j => j.id))
-        for (const id of removeIds) {
-          await db.sync_queue.add({
-            resource: 'event',
-            action: 'delete',
-            payload: { external_id: eventExtId(match.seed_key, id), match_id: match.seed_key },
-            ts,
-            status: 'queued'
-          })
-        }
       }
       for (const id of touched) {
         const ev = events.find(e => e.id === id)

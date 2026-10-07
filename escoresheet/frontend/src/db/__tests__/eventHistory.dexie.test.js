@@ -2,7 +2,7 @@
 import 'fake-indexeddb/auto'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { db } from '../db'
-import { syncJobsForEvents } from '../../domain/corrections'
+import { syncJobsForEvents, decisionChangeUndoRecord } from '../../domain/corrections'
 import { eventExtId } from '../../utils/syncIds'
 import {
   maxVoidedSeq as maxVoidedSeqOf, wipeMatchEvents as wipeMatchEventsOf,
@@ -83,7 +83,7 @@ describe('event history hooks', () => {
     expect(hist[0].changed.sort()).toEqual(['payload.team', 'stateSnapshot.pointsA'])
     const [job] = await revisionJobs()
     expect(job.action).toBe('edit')
-    expect(job.payload.after).toEqual({ type: 'timeout', set_index: 1, payload: { team: 'away' }, score_a: 4, score_b: 2 })
+    expect(job.payload.after).toEqual({ type: 'timeout', set_index: 1, seq: 5, payload: { team: 'away' }, score_a: 4, score_b: 2 })
   })
 
   it('records a key-path edit with the full row after it', async () => {
@@ -192,6 +192,27 @@ describe('event history hooks', () => {
     const left = await db.sync_queue.toArray()
     expect(left.map(j => j.action)).toEqual(['void'])
     expect(left[0].payload.reason).toBe('undo')
+  })
+
+  it('a decision change: one edit of the point with the corrected score, none of the decision_change event', async () => {
+    // home is Team A; the point made it 14:12 and is given to away
+    const pointId = await db.events.add({ matchId, setIndex: 1, type: 'point', seq: 40, payload: { team: 'home' }, stateSnapshot: { teamAKey: 'home', pointsA: 14, pointsB: 12 } })
+    await withActivityContext({ reason: 'decision_change', actionId: 'dc-1' }, async () => {
+      // as Scoreboard handleDecisionChange: the point's team, the record event, then its undo record
+      await db.events.update(pointId, { payload: { team: 'away', swappedFrom: 'home' } })
+      const dcId = await db.events.add({ matchId, setIndex: 1, type: 'decision_change', seq: 41, payload: { reason: 'point_swap', fromTeam: 'home', toTeam: 'away' } })
+      const row = await db.events.get(dcId)
+      await db.events.update(dcId, { payload: { ...row.payload, ...decisionChangeUndoRecord({ id: pointId, payload: { team: 'home' } }, [], []) } })
+    })
+    await settle()
+    const hist = await db.event_history.toArray()
+    expect(hist).toHaveLength(1)
+    expect(hist[0]).toMatchObject({ op: 'edit', eventId: pointId, reason: 'decision_change' })
+    expect(hist[0].changed.sort()).toEqual(['payload.swappedFrom', 'payload.team'])
+    expect(hist[0].serverAfter).toMatchObject({ score_a: 13, score_b: 13, payload: { team: 'away' } })
+    const jobs = await revisionJobs()
+    expect(jobs).toHaveLength(1)
+    expect(jobs[0].payload.after).toMatchObject({ score_a: 13, score_b: 13 })
   })
 
   it('tells listeners about stored rows', async () => {

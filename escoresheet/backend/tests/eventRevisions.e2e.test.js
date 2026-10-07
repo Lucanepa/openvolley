@@ -15,7 +15,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import pg from 'pg'
 import { SKIP, bootServer, api, provisionDatabase, sleep } from './helpers/e2eServer.js'
 import { grantRoles } from './helpers/pgTestDb.js'
-import { parseRevisionsBody, isScopedToMatch } from '../lib/eventRevisions.js'
+import { parseRevisionsBody, isScopedToMatch, deleteRevUid } from '../lib/eventRevisions.js'
 
 const GAME_PIN = '774411'
 
@@ -35,6 +35,15 @@ describe('event revisions (unit)', () => {
     assert.equal(parseRevisionsBody({ match_external_id: 'm', revisions: new Array(201).fill(rev) }).error.status, 400)
     assert.equal(isScopedToMatch('m_1:e:1', 'm_1'), true)
     assert.equal(isScopedToMatch('m_1', 'm_1'), false)
+    // a correction (services/corrections) and its renumbered seq
+    assert.equal(parseRevisionsBody({ match_external_id: 'match_1_a', revisions: [{ ...rev, reason: 'correction' }] }).revisions[0].reason, 'correction')
+    const seqEdit = parseRevisionsBody({ match_external_id: 'match_1_a', revisions: [{ ...rev, op: 'edit', after: { seq: 7.5, payload: {} } }] })
+    assert.deepEqual(seqEdit.revisions[0].after, { seq: 7.5, payload: {} })
+    assert.equal(bad({ op: 'edit', after: { seq: 'x' } }), 'OV_INVALID_REQUEST')
+    // the void of an /api/db event delete: one rev_uid per event, a valid uuid
+    assert.equal(deleteRevUid('m_1:e:2'), deleteRevUid('m_1:e:2'))
+    assert.notEqual(deleteRevUid('m_1:e:2'), deleteRevUid('m_1:e:3'))
+    assert.equal(parseRevisionsBody({ match_external_id: 'match_1_a', revisions: [{ ...rev, rev_uid: deleteRevUid('x') }] }).error, undefined)
   })
 })
 
@@ -203,6 +212,54 @@ describe('event revisions end to end', { skip: SKIP }, () => {
     const { rows: [h] } = await sql.query('SELECT before, after FROM event_revisions WHERE event_external_id = $1', [e2])
     assert.deepEqual(h.before.payload, { team: 'home' })
     assert.deepEqual(h.after.payload, { team: 'away' })
+  })
+
+  it('a correction voids with its reason and moves a renumbered event', async () => {
+    const m = await newMatch(users.anna)
+    const e4 = await newEvent(users.anna, m, 4)
+    const e5 = await newEvent(users.anna, m, 5)
+    const r = await revise(users.anna, m.ext, [
+      rev(e4, { reason: 'correction', seq: 4 }),
+      rev(e5, { op: 'edit', reason: 'correction', seq: 5, after: { type: 'point', set_index: 1, seq: 4, payload: { team: 'home' } } })
+    ])
+    assert.deepEqual(r.json.data, { applied: 2, pending: 0 })
+    assert.equal((await eventRow(e4)).void_reason, 'correction')
+    const { rows: [moved] } = await sql.query('SELECT seq FROM events WHERE external_id = $1', [e5])
+    assert.equal(Number(moved.seq), 4)
+  })
+
+  it('an /api/db delete of one event (an older app\'s correction) voids it; a whole-match delete still deletes', async () => {
+    const m = await newMatch(users.anna)
+    const e1 = await newEvent(users.anna, m, 1)
+    const e2 = await newEvent(users.anna, m, 2)
+    // another account may not, as for any write of the match
+    expectCode(await dbCall(users.carl, 'events', 'delete', { filters: [eq('external_id', e2)] }), 403, 'OV_NOT_MATCH_OWNER')
+    assert.equal((await eventRow(e2)).voided_at, null)
+
+    const del = await dbCall(users.anna, 'events', 'delete', { filters: [eq('external_id', e2)] })
+    assert.equal(del.status, 200, del.text)
+    const row = await eventRow(e2)
+    assert.ok(row, 'the row is kept')
+    assert.ok(row.voided_at)
+    assert.equal(row.void_reason, 'correction')
+    assert.equal(row.voided_by, users.anna.id)
+    const { rows: hist } = await sql.query('SELECT op, reason, applied, actor_id FROM event_revisions WHERE event_external_id = $1', [e2])
+    assert.deepEqual(hist, [{ op: 'void', reason: 'correction', applied: true, actor_id: users.anna.id }])
+    // the views the server builds leave it out
+    const live = await dbCall(users.anna, 'events', 'select', { columns: 'external_id', filters: [eq('match_id', m.id)] })
+    assert.deepEqual(live.json.data.map(e => e.external_id), [e1])
+    const pin = await api(srv.base, '/api/match/restore-by-pin', { proto: null, body: { gameN: m.n, pin: GAME_PIN } })
+    assert.deepEqual(pin.json.data.events.map((e) => e.external_id), [e1])
+    // the same delete again (a retried job): nothing more
+    assert.equal((await dbCall(users.anna, 'events', 'delete', { filters: [eq('external_id', e2)] })).status, 200)
+    assert.equal((await sql.query('SELECT count(*)::int n FROM event_revisions WHERE event_external_id = $1', [e2])).rows[0].n, 1)
+    assert.equal((await eventRow(e2)).rev, 1)
+    // an event the server never had: nothing to do
+    assert.equal((await dbCall(users.anna, 'events', 'delete', { filters: [eq('external_id', `${m.ext}:e:99`)] })).status, 200)
+
+    // a whole-match delete (filter on match_id) is unchanged
+    assert.equal((await dbCall(users.anna, 'events', 'delete', { filters: [eq('match_id', m.id)] })).status, 200)
+    assert.equal((await sql.query('SELECT count(*)::int n FROM events WHERE match_id = $1', [m.id])).rows[0].n, 0)
   })
 
   it('refuses another account (403), an unknown match (404) and ids of another match (400)', async () => {

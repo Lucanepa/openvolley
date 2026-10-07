@@ -11,7 +11,8 @@
 --     db/roles.sql): what the event was before, what it became, who, when,
 --     from which device and app version, and why.
 -- Views that rebuild a match from its events (restore-by-pin, /api/db reads)
--- leave voided events out. A revision that arrives before its event (the
+-- leave voided events out. An /api/db delete of ONE event (a correction sent
+-- by an app from before this) becomes a void with the reason 'correction'. A revision that arrives before its event (the
 -- insert was retried after the undo) makes the event "born voided".
 --
 -- Idempotent. Deploy: 015 and 016, then apply-roles.sh (roles.sql), then the
@@ -32,8 +33,7 @@ CREATE TABLE IF NOT EXISTS public.event_revisions (
   match_id          uuid        NOT NULL REFERENCES public.matches(id) ON DELETE CASCADE,
   event_external_id text        NOT NULL CHECK (length(event_external_id) <= 200),
   op                text        NOT NULL CHECK (op IN ('void', 'edit', 'restore')),
-  reason            text        NOT NULL CHECK (reason IN ('undo', 'delete', 'decision_change', 'manual_adjustment',
-                                                           'forfeit_reversal', 'reopen_set', 'roster_reopen', 'other')),
+  reason            text        NOT NULL,
   event_seq         numeric,
   set_index         integer,
   event_type        text        CHECK (event_type IS NULL OR length(event_type) <= 64),
@@ -49,6 +49,12 @@ CREATE TABLE IF NOT EXISTS public.event_revisions (
   client_ts         timestamptz NOT NULL,
   at                timestamptz NOT NULL DEFAULT now()
 );
+-- Why (lib/eventRevisions.js REVISION_REASONS). Named and replaced on every
+-- run, so a database that ran an earlier draft of this file gets the list too.
+ALTER TABLE public.event_revisions DROP CONSTRAINT IF EXISTS event_revisions_reason_check;
+ALTER TABLE public.event_revisions ADD CONSTRAINT event_revisions_reason_check
+  CHECK (reason IN ('undo', 'delete', 'decision_change', 'manual_adjustment',
+                    'forfeit_reversal', 'reopen_set', 'roster_reopen', 'correction', 'other'));
 CREATE INDEX IF NOT EXISTS event_revisions_match_idx ON public.event_revisions (match_id, client_ts);
 CREATE INDEX IF NOT EXISTS event_revisions_event_idx ON public.event_revisions (event_external_id);
 
