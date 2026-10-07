@@ -157,9 +157,9 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, coinT
       </div>
 
       {/* Teams and Location */}
-      <div className="grid grid-cols-12 gap-0 border-t border-black text-xs" style={{ height: '10mm' }}>
+      <div className="grid grid-cols-12 grid-rows-1 gap-0 border-t border-black text-xs" style={{ height: '10mm' }}>
         {/* Teams: Circle | Home Name | TEAMS/VS | Away Name | Circle (home always left) */}
-        <div className="col-span-6 border-r border-black px-2 py-1 min-w-0">
+        <div className="col-span-6 border-r border-black px-2 py-0.5 min-w-0 min-h-0 overflow-hidden">
           <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)_auto] items-center gap-1 h-full">
             <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">
               {coinTossConfirmed ? (homeIsA ? 'A' : 'B') : ''}
@@ -168,7 +168,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, coinT
               {homeTeam?.name || ''}
             </FitText>
             <div className="flex flex-col items-center px-2">
-              <span className="text-[12px] uppercase font-bold text-gray-500 tracking-wide">Teams</span>
+              <span className="text-[11px] leading-tight uppercase font-bold text-gray-500 tracking-wide">Teams</span>
               <span className="text-base font-bold text-gray-500 italic leading-none">VS</span>
             </div>
             <FitText max={18} min={7} className="font-bold uppercase text-center bg-white" title={awayTeam?.name || ''} data-testid="header-away">
@@ -181,22 +181,22 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, coinT
         </div>
 
         {/* City, Hall, Date, Time */}
-        <div className="col-span-6 px-2 flex flex-col justify-center h-full min-w-0">
+        <div className="col-span-6 px-2 flex flex-col justify-center min-w-0 min-h-0 overflow-hidden">
           <div className="flex gap-1 w-full min-w-0">
             <div className="flex flex-col flex-[2] min-w-0">
-              <span className="text-[12px] text-gray-500">City/Country</span>
+              <span className="text-[11px] leading-tight text-gray-500">City/Country</span>
               <FitText max={12} min={6} className="w-full bg-white pb-0.5 font-bold">{match?.city || ''}</FitText>
             </div>
             <div className="flex flex-col flex-[4] min-w-0">
-              <span className="text-[12px] text-gray-500">Hall/Gym</span>
+              <span className="text-[11px] leading-tight text-gray-500">Hall/Gym</span>
               <FitText max={12} min={6} className="w-full bg-white pb-0.5 font-bold">{match?.hall || ''}</FitText>
             </div>
             <div className="flex flex-col flex-[1.5] min-w-0">
-              <span className="text-[12px] text-gray-500">Date</span>
+              <span className="text-[11px] leading-tight text-gray-500">Date</span>
               <div className="w-full bg-white text-[12px] pb-0.5 font-bold whitespace-nowrap" data-testid="header-date">{dateStr}</div>
             </div>
             <div className="flex flex-col flex-[1.2] min-w-0">
-              <span className="text-[12px] text-gray-500">Time</span>
+              <span className="text-[11px] leading-tight text-gray-500">Time</span>
               <div className="w-full bg-white text-[12px] pb-0.5 font-bold whitespace-nowrap">{timeStr}</div>
             </div>
           </div>
