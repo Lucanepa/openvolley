@@ -46,7 +46,8 @@ Dependencies: `webkit2gtk-4.1`, `gtk3`, `libsoup3`, `glib2`, `cairo`,
 `gdk-pixbuf2`, `dbus`, `libgcc`, `glibc`, `hicolor-icon-theme`, and
 `libayatana-appindicator` for the tray icon. The tray library is loaded at run
 time (`libloading`), so `namcap` reports it as "may not be needed": it is
-needed, without it the app has no tray icon and closing the window quits.
+needed: without it the app has no tray icon, and closing the window only
+minimises it (the app logs `[tray] no tray icon ...`).
 
 Optional: `networkmanager` (the tablet Wi-Fi hotspot and the Bluetooth
 network the app starts over D-Bus), `bluez` (Bluetooth network), `dnsmasq`
@@ -183,8 +184,10 @@ key, and keys stay on lenovoserver, so it runs there (like
 
 4. Check it: `ssh aur@aur.archlinux.org help` lists the AUR commands.
 5. Put your e-mail in the `# Maintainer:` line of both PKGBUILDs (AUR
-   convention, e.g. `Luca Canepa <name at example dot com>`), run `bump.sh`
-   again so `.SRCINFO` matches, commit.
+   convention, e.g. `Luca Canepa <name at example dot com>`) and commit. It
+   is a comment, so `.SRCINFO` does not change.
+   `publish.sh` commits in a fresh clone with your git `user.name` /
+   `user.email`; the AUR shows them in the package's git log.
 6. First publish: `./publish.sh openvolley` and `./publish.sh openbeach`. A
    push to a name nobody owns creates the package, owned by you.
 
@@ -193,8 +196,13 @@ comments on (users report problems there).
 
 ## Rules worth knowing
 
-- The AUR rejects a push whose `.SRCINFO` does not match; `publish.sh`
-  checks first.
+- The AUR rejects a push whose commits lack a valid `.SRCINFO`, but it
+  cannot run the PKGBUILD, so it accepts a stale one. The web page and the
+  AUR helpers (yay, paru) read only `.SRCINFO`: a stale one shows the old
+  version and makes helpers miss the update. `publish.sh` checks that it
+  matches the PKGBUILD before pushing.
+- Only the `master` branch counts, and the AUR keeps every pushed commit
+  (no force-push): bump `pkgrel` for a packaging fix, never rewrite history.
 - A package that is "out of date" for weeks can be orphaned on request: bump
   with every desktop release.
 - Never change a `.deb` behind a released tag: the checksum would no longer
