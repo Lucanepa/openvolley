@@ -3,6 +3,7 @@ import { SanctionRecord, Player } from '../types_scoresheet';
 import { SignatureModal } from './SignatureModal';
 import { isApprovalValid, formatApprovalStamp } from '../../src/domain/accountApproval.js';
 import { FitText } from './FitText';
+import { CIRCLED_NUMBER_PX, NumberCircle } from './Marks';
 import { findOfficial, formatDob, formatPersonName, type SheetOfficial } from '../utils/sheetFormat';
 
 /** Sanction rows in the box; further sanctions continue in REMARKS (field-spec 7.2). */
@@ -13,17 +14,14 @@ interface SanctionsProps {
     improperRequests?: { teamA: boolean; teamB: boolean };
 }
 
-/** A member code in a sanction cell; a bench player's number is circled (SC p.62). */
+/** A member code in a sanction cell; a bench player's number is circled (SC p.62),
+ *  with the sheet's one number circle (owner item 7: the same circle everywhere). */
 const SanctionCode: React.FC<{ item?: SanctionRecord; type: SanctionRecord['type'] }> = ({ item, type }) => {
     if (!item || item.type !== type) return null;
     return (
-        <span className="relative inline-flex items-center justify-center leading-none" style={{ minWidth: '14px', minHeight: '14px' }}>
+        <span className="relative inline-flex items-center justify-center leading-none" style={{ minWidth: '14px', minHeight: '14px', ...(item.onBench ? { fontSize: `${CIRCLED_NUMBER_PX}px` } : {}) }}>
             {item.playerNr || ''}
-            {item.onBench && (
-                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" data-testid="sanction-bench-circle">
-                    <circle cx="50" cy="50" r="44" fill="none" stroke="black" strokeWidth="6" />
-                </svg>
-            )}
+            {item.onBench && <NumberCircle testId="sanction-bench-circle" />}
         </span>
     );
 };

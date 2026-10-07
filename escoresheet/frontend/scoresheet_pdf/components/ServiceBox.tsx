@@ -1,6 +1,6 @@
 import React from 'react';
 import { SubRecord } from '../types_scoresheet';
-import { CrossMark, MARK_STROKE, NumberCircle } from './Marks';
+import { CIRCLED_NUMBER_PX, CrossMark, MARK_STROKE, NumberCircle } from './Marks';
 
 export interface ServiceRoundMark {
   position: number; // 0-5 for I-VI
@@ -37,7 +37,7 @@ export const ServiceBox: React.FC<{
       )}
       {showX && <CrossMark />}
       {hasPoints && !showX && (
-        <span className="absolute inset-0 flex items-center justify-center text-[10.5px] font-bold text-black pointer-events-none tabular-nums">{round!.points}</span>
+        <span className="absolute inset-0 flex items-center justify-center font-bold text-black pointer-events-none tabular-nums" style={{ fontSize: round?.circled ? `${CIRCLED_NUMBER_PX}px` : '10.5px' }}>{round!.points}</span>
       )}
       {round?.circled && <NumberCircle />}
     </div>
@@ -73,7 +73,7 @@ export const SubstitutionCells: React.FC<{ subs?: SubRecord[]; lastCol: boolean 
       <div className={`shrink-0 flex items-center justify-center relative border-b border-black ${lastCol ? '' : 'border-r'}`} style={{ height: '5mm' }}>
         {shown && (
           <>
-            <div className={`${shown.isCircled ? 'text-[12px]' : 'text-[14px]'} text-center font-bold leading-none tabular-nums`}>{shown.playerIn}</div>
+            <div className="text-center font-bold leading-none tabular-nums" style={{ fontSize: shown.isCircled ? `${CIRCLED_NUMBER_PX}px` : '14px' }}>{shown.playerIn}</div>
             {shown.isCircled && <NumberCircle testId="sub-circle" />}
           </>
         )}
