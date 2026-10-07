@@ -9,9 +9,9 @@ the .deb. The app's updater (src-tauri/src/updater.rs) reads that stamp: a
 .deb updates through APT, or tells the scorer to add the APT repo. Inside a
 Flatpak neither is right (Flatpak updates the app), so this writes "UNK"
 back: the app then never looks for updates and says "This build does not
-update itself". Versions from 2.4.0 on also detect Flatpak themselves
+update itself". Versions from 2.4.1 (OpenBeach 2.0.1) on also detect Flatpak themselves
 (updater.rs managed_by, FLATPAK_ID); the stamp is reset for every version
-so 2.3.0 and OpenBeach 2.0.0 behave the same.
+so 2.3.0, 2.4.0 and OpenBeach 2.0.0 behave the same.
 
 Only the stamped value changes. bundle_type() compares it against five
 literals stored side by side in .rodata ("..._DEB", "..._RPM", "..._APP",

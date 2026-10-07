@@ -28,7 +28,7 @@
 #      repo with that public key and reads the app's ref (signature checked).
 #
 # The in-app updater is off inside the Flatpak (unstamp-bundle-type.py, and
-# from 2.4.0 updater.rs managed_by): `flatpak update` updates the app.
+# from 2.4.1 / OpenBeach 2.0.1 updater.rs managed_by): `flatpak update` updates the app.
 #
 # Layout under ${OV_PKGS_HOME} (default ~/.config/openvolley-pkgs, mode 700):
 #   flatpak-gpg/              GNUPGHOME with the Flatpak repo key (only that

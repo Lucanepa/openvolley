@@ -67,6 +67,15 @@
   </screenshots>
 
   <releases>
+    <release version="2.0.1" date="2026-10-07">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.1</url>
+      <description>
+        <ul>
+          <li>Updates now come from Flatpak; the app no longer downloads its own.</li>
+          <li>Build fixes.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.0.0" date="2026-10-07">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.0</url>
       <description>
