@@ -50,3 +50,22 @@ describe('cancelling the set-5 change of courts (FIVB 18.2.2-18.2.3)', () => {
     expect(b).toMatch(/syncLiveStateToSupabase\('undo'/)
   })
 })
+
+describe('penalty points deferred until both line-ups are in (FIVB 16.2.3 / 21.3.1)', () => {
+  const save = () => between('// Save lineup as an event (mark as initial lineup or manual override)', '// Auto-close modal after successful save (skip confirmation step)')
+
+  it('the check sees the line-up just saved, not only the events read before it', () => {
+    const b = save()
+    expect(b).toMatch(/const savedLineupEvent = \{/)
+    expect(b).toMatch(/deferredPenaltyPoints\(\[\.\.\.allEvents, savedLineupEvent\], setIndex\)/)
+    expect(b.indexOf('const manualLineupEventId = await db.events.add(savedLineupEvent)'))
+      .toBeLessThan(b.indexOf('deferredPenaltyPoints('))
+  })
+
+  it('the awarded points and the new score are queued for the cloud', () => {
+    const b = save()
+    expect(b).toMatch(/const penaltyPointId = await db\.events\.add\(/)
+    expect(b).toMatch(/await queueEventSync\(db, penaltyPointId\)/)
+    expect(b).toMatch(/await queueSetScoreSync\(db, \{ matchId, setIndex \}\)/)
+  })
+})

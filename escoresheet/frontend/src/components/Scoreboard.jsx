@@ -44,7 +44,7 @@ import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../u
 import { defaultSetStartTime } from '../utils/setStartTime'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet } from '../domain/rules'
-import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags } from '../domain/sanctions'
+import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags, deferredPenaltyPoints } from '../domain/sanctions'
 import { classifyTimeoutRequest } from '../domain/timeouts'
 import { useConfirmAction } from '../hooks/useConfirmAction'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
@@ -27348,7 +27348,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
         const maxSeq = allEvents.reduce((max, e) => Math.max(max, e.seq || 0), 0)
 
         const manualLineupSeq = maxSeq + 1
-        const manualLineupEventId = await db.events.add({
+        const savedLineupEvent = {
           matchId,
           setIndex,
           ts: new Date().toISOString(),
@@ -27359,7 +27359,8 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
             isInitial: mode === 'initial'
           },
           seq: manualLineupSeq
-        })
+        }
+        const manualLineupEventId = await db.events.add(savedLineupEvent)
         // Cloud copy of the starting (or corrected) lineup
         queueEventSync(db, manualLineupEventId)
 
@@ -27368,65 +27369,32 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
           onLineupSaved()
         }
 
-        // Check if both lineups are now set - if so, award any pending penalty points
-        // Reuse allEvents from above to avoid redeclaration
-        const homeLineupSet = allEvents.some(e =>
-          e.type === 'lineup' &&
-          e.payload?.team === 'home' &&
-          e.setIndex === setIndex &&
-          e.payload?.isInitial
-        )
-        const awayLineupSet = allEvents.some(e =>
-          e.type === 'lineup' &&
-          e.payload?.team === 'away' &&
-          e.setIndex === setIndex &&
-          e.payload?.isInitial
-        )
+        // A penalty or delay penalty given before both starting line-ups were
+        // in still owes the opponent its point (FIVB 21.3.1 / 16.2.3;
+        // confirmSanction defers it). The check must see the line-up just
+        // saved: allEvents was read before it, so the second team's line-up
+        // never counted and the point was never awarded.
+        const owedPoints = deferredPenaltyPoints([...allEvents, savedLineupEvent], setIndex)
+        for (let i = 0; i < owedPoints.length; i++) {
+          const otherTeam = owedPoints[i]
+          const currentSet = await db.sets.where('matchId').equals(matchId).and(s => s.index === setIndex).first()
+          if (!currentSet) break
+          const homePoints = (currentSet.homePoints || 0) + (otherTeam === 'home' ? 1 : 0)
+          const awayPoints = (currentSet.awayPoints || 0) + (otherTeam === 'away' ? 1 : 0)
+          await db.sets.update(currentSet.id, { homePoints, awayPoints })
 
-        if (homeLineupSet && awayLineupSet) {
-          // Both lineups are set - check for pending penalty sanctions in this set.
-          // Both a misconduct 'penalty' AND a 'delay_penalty' award a point to the
-          // opponent (FIVB 16.2.3 / 21.3), so both must be granted here — the
-          // delay_penalty deferral (confirmSanction) promises this point.
-          const pendingPenalties = allEvents.filter(e =>
-            e.type === 'sanction' &&
-            e.setIndex === setIndex &&
-            (e.payload?.type === 'penalty' || e.payload?.type === 'delay_penalty')
-          )
-
-          // Check if points have already been awarded for these penalties
-          const pointEvents = allEvents.filter(e => e.type === 'point' && e.setIndex === setIndex)
-
-          if (pendingPenalties.length > 0 && pointEvents.length === 0) {
-            // Award points for each pending penalty
-            for (const penalty of pendingPenalties) {
-              const sanctionedTeam = penalty.payload?.team
-              const otherTeam = sanctionedTeam === 'home' ? 'away' : 'home'
-
-              // Award point to the other team
-              const currentSet = await db.sets.where('matchId').equals(matchId).and(s => s.index === setIndex).first()
-              if (currentSet) {
-                const field = otherTeam === 'home' ? 'homePoints' : 'awayPoints'
-                const currentPoints = currentSet[field] || 0
-                await db.sets.update(currentSet.id, {
-                  [field]: currentPoints + 1
-                })
-
-                // Log point event
-                const penaltyPointSeq = maxSeq + 2 + pendingPenalties.indexOf(penalty)
-                await db.events.add({
-                  matchId,
-                  setIndex,
-                  ts: new Date().toISOString(),
-                  type: 'point',
-                  payload: { team: otherTeam, fromPenalty: true },
-                  seq: penaltyPointSeq
-                })
-
-              }
-            }
-          }
+          const penaltyPointId = await db.events.add({
+            matchId,
+            setIndex,
+            ts: new Date().toISOString(),
+            type: 'point',
+            payload: { team: otherTeam, fromPenalty: true, score: { home: homePoints, away: awayPoints } },
+            seq: manualLineupSeq + 1 + i
+          })
+          // The cloud gets the point like any other
+          await queueEventSync(db, penaltyPointId)
         }
+        if (owedPoints.length > 0) await queueSetScoreSync(db, { matchId, setIndex })
 
         // Auto-close modal after successful save (skip confirmation step)
         onSave()
