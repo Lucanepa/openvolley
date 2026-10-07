@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import useServiceWorker from '../hooks/useServiceWorker'
 import { Download, RefreshCw } from 'lucide-react'
 import { Button } from '../ui/Button.jsx'
+import { backdropDismiss } from '../ui/backdropDismiss.js'
 
 // Get current version from package.json (injected by Vite at build time)
 const currentVersion = __APP_VERSION__
@@ -37,7 +38,7 @@ export default function UpdateBanner() {
   // Behaviour unchanged: a tap on the scrim still means "Later".
   return (
     <div
-      onClick={dismissUpdate}
+      {...backdropDismiss(dismissUpdate)}
       className="no-print fixed inset-0 flex items-center justify-center p-4 bg-stone-900/50 backdrop-blur-sm"
       style={{ zIndex: 10000 }}
     >

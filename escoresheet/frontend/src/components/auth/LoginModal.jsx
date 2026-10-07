@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import { Check, X } from 'lucide-react'
 import { Button, cn, Field, FOCUS_RING, IconButton, Input } from '../../ui'
+import CreateAccountLink from './CreateAccountLink'
+import { backdropDismiss } from '../../ui/backdropDismiss.js'
 
 // The contact address in the server's 503 answer ("... Contact x@y.")
 const DEFAULT_CONTACT = 'volleyball@lucanepa.com'
@@ -73,11 +75,11 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp, initialFor
     setLoading(false)
   }
 
-  // Same auth recipe as SignUpModal: labelled kit Field + lg Input, hero submit.
+  // Same auth recipe as SignUpForm: labelled kit Field + lg Input, hero submit.
   const quietLink = cn('inline-flex min-h-11 w-full items-center justify-center rounded-lg text-sm text-stone-500 transition-colors hover:text-stone-800', FOCUS_RING)
 
   return (
-    <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} onClick={onClose}>
+    <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} {...backdropDismiss(onClose)}>
       <div
         role="dialog"
         aria-modal="true"
@@ -185,16 +187,22 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp, initialFor
                 {t('auth.forgotPassword', 'Forgot password?')}
               </button>
 
-              <div className="mt-3 border-t border-stone-100 pt-4 text-center text-sm text-stone-500">
-                {t('auth.noAccount', "Don't have an account?")}{' '}
-                <button
-                  type="button"
-                  onClick={onSwitchToSignUp}
-                  className={cn('min-h-11 rounded font-medium text-red-600 underline decoration-red-300 underline-offset-2 transition-colors hover:text-red-700 hover:decoration-red-500', FOCUS_RING)}
-                >
-                  {t('auth.signUp', 'Sign up')}
-                </button>
-              </div>
+              {/* Accounts are made on manager.openvolley.app: the scorer apps
+                  link there; the manager passes onSwitchToSignUp (its own page) */}
+              {onSwitchToSignUp ? (
+                <div className="mt-3 border-t border-stone-100 pt-4 text-center text-sm text-stone-500">
+                  {t('auth.noAccount', "Don't have an account?")}{' '}
+                  <button
+                    type="button"
+                    onClick={onSwitchToSignUp}
+                    className={cn('min-h-11 rounded font-medium text-red-600 underline decoration-red-300 underline-offset-2 transition-colors hover:text-red-700 hover:decoration-red-500', FOCUS_RING)}
+                  >
+                    {t('auth.createAccount', 'Create account')}
+                  </button>
+                </div>
+              ) : (
+                <CreateAccountLink className="mt-3 border-t border-stone-100 pt-3" />
+              )}
             </>
           )}
         </div>

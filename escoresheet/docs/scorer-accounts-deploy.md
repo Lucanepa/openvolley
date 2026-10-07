@@ -157,7 +157,9 @@ online start (service worker); until then they cannot reopen a closed match.
    backfilled matches; Official games shows the coming VolleyManager games;
    Audit log opens.
 5. Create an invite code (role scorer, max uses 1, short expiry). In a private
-   window sign up a throwaway account: it shows "pending approval"; a test
+   window sign up a throwaway account on `manager.openvolley.app/#signup`
+   (accounts are made there only), then sign in with it in the scorer app: it
+   shows "pending approval"; a test
    match works; creating an official match says it stays on the device.
    Redeem the code: the account becomes scorer and the match syncs. Then
    revoke the code (and delete the throwaway account in its profile).

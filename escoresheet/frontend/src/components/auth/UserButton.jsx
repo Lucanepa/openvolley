@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import LoginModal from './LoginModal'
-import SignUpModal from './SignUpModal'
 import ProfileModal from './ProfileModal'
 import MatchHistory from './MatchHistory'
 import RedeemInviteModal from './RedeemInviteModal'
@@ -11,6 +10,7 @@ import RoleChips from './RoleChips'
 import { openManage } from '../../utils/manageNav'
 import { CalendarDays, ChevronDown, ChevronRight, KeyRound, LogOut, ShieldCheck, User, Users } from 'lucide-react'
 import { cn, FOCUS_RING } from '../../ui'
+import { backdropDismiss } from '../../ui/backdropDismiss.js'
 
 // Kit recipes. Header-small button (svrz AdminConsole header) and the
 // anchored dropdown / sheet menu row (RESTYLE-SPEC 3.4).
@@ -36,7 +36,6 @@ export default function UserButton({ style = {}, fullWidth = false, inline = fal
   const { user, profile, access, loading, signOut } = useAuth()
 
   const [showLogin, setShowLogin] = useState(false)
-  const [showSignUp, setShowSignUp] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
   const [showMatchHistory, setShowMatchHistory] = useState(false)
   const [showRedeem, setShowRedeem] = useState(false)
@@ -91,25 +90,13 @@ export default function UserButton({ style = {}, fullWidth = false, inline = fal
           <ChevronRight size={fullWidth ? 16 : 13} aria-hidden="true" className="text-stone-400" />
         </button>
 
-        {toBody(<>
-        <LoginModal
-          open={showLogin}
-          onClose={() => setShowLogin(false)}
-          onSwitchToSignUp={() => {
-            setShowLogin(false)
-            setShowSignUp(true)
-          }}
-        />
-
-        <SignUpModal
-          open={showSignUp}
-          onClose={() => setShowSignUp(false)}
-          onSwitchToLogin={() => {
-            setShowSignUp(false)
-            setShowLogin(true)
-          }}
-        />
-        </>)}
+        {/* Sign-in only: "Don't have an account?" opens manager.openvolley.app */}
+        {toBody(
+          <LoginModal
+            open={showLogin}
+            onClose={() => setShowLogin(false)}
+          />
+        )}
       </>
     )
   }
@@ -246,7 +233,7 @@ export default function UserButton({ style = {}, fullWidth = false, inline = fal
             <div
               className="fixed inset-0"
               style={{ zIndex: 999 }}
-              onClick={() => setShowDropdown(false)}
+              {...backdropDismiss(() => setShowDropdown(false))}
             />
 
             {/* Dropdown menu */}

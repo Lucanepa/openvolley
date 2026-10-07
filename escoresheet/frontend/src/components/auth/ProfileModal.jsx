@@ -7,6 +7,8 @@ import { Button, cn, Field, FOCUS_RING, IconButton, Input } from '../../ui'
 import RoleChips from './RoleChips'
 import PendingApprovalBanner from './PendingApprovalBanner'
 import EmailConfirmBanner from './EmailConfirmBanner'
+import DateOfBirthInput from './DateOfBirthInput'
+import { backdropDismiss } from '../../ui/backdropDismiss.js'
 
 export default function ProfileModal({ open, onClose }) {
   const { t } = useTranslation()
@@ -123,6 +125,11 @@ export default function ProfileModal({ open, onClose }) {
     e.preventDefault()
     setError('')
     setSuccess(false)
+    // null: the date of birth is unfinished or impossible (DateOfBirthInput)
+    if (dob === null) {
+      setError(t('auth.dobInvalid', 'Enter the date of birth as DD.MM.YYYY.'))
+      return
+    }
     setLoading(true)
 
     const { error: updateError } = await updateProfile({
@@ -146,7 +153,7 @@ export default function ProfileModal({ open, onClose }) {
   const labelCls = 'mb-1.5 block text-sm font-medium text-stone-700'
 
   return (
-    <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} onClick={onClose}>
+    <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} {...backdropDismiss(onClose)}>
       <div
         role="dialog"
         aria-modal="true"
@@ -297,11 +304,9 @@ export default function ProfileModal({ open, onClose }) {
                 />
               </Field>
               <Field label={t('auth.dob', 'Date of birth')}>
-                <Input
-                  size="lg"
-                  type="date"
+                <DateOfBirthInput
                   value={dob}
-                  onChange={e => setDob(e.target.value)}
+                  onChange={setDob}
                   aria-label={t('auth.dob', 'Date of birth')}
                 />
               </Field>
@@ -352,7 +357,7 @@ export default function ProfileModal({ open, onClose }) {
         <div
           className="fixed inset-0 flex items-center justify-center bg-stone-900/60 p-4 backdrop-blur-sm"
           style={{ zIndex: 2100 }}
-          onClick={() => setShowDeleteConfirm(false)}
+          {...backdropDismiss(() => setShowDeleteConfirm(false))}
         >
           <div
             role="alertdialog"

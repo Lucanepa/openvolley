@@ -258,7 +258,7 @@ ${comments}
 ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot be attached via mailto. Please reply to this email to receive them.` : ''}
 `.trim()
 
-        const mailto = `mailto:volleyball@lucanepa.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+        const mailto = `mailto:support@openvolley.app?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
         openAppWindow(mailto)
       }
 

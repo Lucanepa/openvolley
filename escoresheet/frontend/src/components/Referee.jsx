@@ -28,6 +28,7 @@ import { Card } from '../ui/Card.jsx'
 import { StatusPill } from '../ui/StatusPill.jsx'
 import { NarrowScreenOverlay } from './dashboards/EntryKit.jsx'
 import { lastEventFromLiveState, lastEventFromMatchData, pickNewerLastEvent } from '../utils/refereeLastEvent.js'
+import { backdropDismiss } from '../ui/backdropDismiss.js'
 
 // Get current version from package.json (injected by Vite at build time)
 const currentVersion = __APP_VERSION__
@@ -2165,7 +2166,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               {languageMenuOpen && (
                 <>
                   <div
-                    onClick={() => setLanguageMenuOpen(false)}
+                    {...backdropDismiss(() => setLanguageMenuOpen(false))}
                     style={{
                       position: 'fixed',
                       top: 0,
@@ -2740,7 +2741,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       {/* Setter Selection Modal for Advanced Mode */}
       {setterSelectionModal && (
         <div
-          onClick={() => setSetterSelectionModal(null)}
+          {...backdropDismiss(() => setSetterSelectionModal(null))}
           className="ov-kit fixed inset-0 flex cursor-pointer items-center justify-center bg-stone-900/60 p-4 backdrop-blur-sm"
           style={{ zIndex: 9999 }}
         >

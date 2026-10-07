@@ -1,7 +1,7 @@
 // manager.openvolley.app/#reset?token= and #confirm?token=: the pages behind
 // the links of the account emails (components/auth/AuthLinkPages.jsx).
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react'
 
 const i18nMock = vi.hoisted(() => ({ language: 'en', changeLanguage: vi.fn() }))
 vi.mock('react-i18next', () => ({
@@ -28,7 +28,7 @@ vi.mock('../lib/apiClient', () => ({
 }))
 vi.mock('../lib/accountApi', async (orig) => ({ ...(await orig()) }))
 
-import ManagerApp from '../ManagerApp'
+import ManagerApp, { tabFromHash } from '../ManagerApp'
 import { NO_ACCESS } from '../lib/access'
 
 const TOKEN = 'Ab3_-'.repeat(8) + 'xyz'
@@ -176,6 +176,60 @@ describe('manager email-link pages', () => {
       fireEvent.click(screen.getByRole('button', { name: 'authEmail.confirmButton' }))
       expect(await screen.findByTestId('auth-link-invalid')).toHaveTextContent('authEmail.confirmInvalid')
       expect(screen.getByRole('link', { name: 'managerSite.openAppLong' })).toBeInTheDocument()
+    })
+  })
+
+  describe('next to the #signup route', () => {
+    const openLinkInThisTab = (hash) => act(() => {
+      // An email link opened in a tab already on the site: only the hash changes
+      window.history.pushState(null, '', `/${hash}`)
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+    })
+
+    it('a link is no route and no console tab', () => {
+      window.history.replaceState(null, '', `/#reset?token=${TOKEN}`)
+      expect(tabFromHash()).toBeNull()
+      window.history.replaceState(null, '', '/#signup')
+      expect(tabFromHash()).toBe('signup')
+    })
+
+    it('a link opened in a tab on the sign-up page: taken out of the URL, its page shows', () => {
+      window.history.replaceState(null, '', '/#signup')
+      render(<ManagerApp />)
+      expect(screen.getByTestId('manager-sign-up')).toBeInTheDocument()
+      openLinkInThisTab(`#confirm?token=${TOKEN}`)
+      expect(screen.getByTestId('confirm-ask')).toBeInTheDocument()
+      expect(window.location.hash).toBe('')
+      expect(window.location.href).not.toContain(TOKEN)
+    })
+
+    it('a link opened in a tab where someone is signed in: its page shows over the account', async () => {
+      setAuth({ user: { id: 'u-1', email: 'a@b.ch' } })
+      api.confirmEmail.mockResolvedValue({ data: { confirmed: true, already_confirmed: false }, error: null, status: 200 })
+      render(<ManagerApp />)
+      expect(screen.queryByTestId('confirm-ask')).toBeNull()
+      openLinkInThisTab(`#confirm?token=${TOKEN}`)
+      expect(window.location.hash).toBe('')
+      fireEvent.click(screen.getByRole('button', { name: 'authEmail.confirmButton' }))
+      expect(await screen.findByTestId('confirm-done')).toBeInTheDocument()
+      expect(api.confirmEmail).toHaveBeenCalledWith(TOKEN)
+    })
+
+    it('after a link page, the sign-in dialog\'s "Create account" opens #signup; "back" shows the card only', async () => {
+      api.confirmPasswordReset.mockResolvedValue({ data: { password_updated: true }, error: null, status: 200 })
+      render(<ManagerApp authLink={{ page: 'reset', token: TOKEN, lang: null }} />)
+      type('authEmail.newPassword', 'new-password-1')
+      type('authEmail.repeatPassword', 'new-password-1')
+      fireEvent.click(screen.getByRole('button', { name: 'authEmail.savePassword' }))
+      await screen.findByTestId('reset-done')
+      fireEvent.click(screen.getByRole('button', { name: 'managerSite.signIn' }))
+      const dialog = await screen.findByRole('dialog')
+      fireEvent.click(within(dialog).getByRole('button', { name: 'auth.createAccount' }))
+      expect(screen.getByTestId('manager-sign-up')).toBeInTheDocument()
+      expect(window.location.hash).toBe('#signup')
+      fireEvent.click(screen.getByRole('button', { name: 'managerSite.backToSignIn' }))
+      expect(screen.getByTestId('manager-sign-in')).toBeInTheDocument()
+      expect(screen.queryByRole('dialog')).toBeNull()
     })
   })
 

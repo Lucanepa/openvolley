@@ -97,7 +97,7 @@ if (!Number.isFinite(BACKUP_MAX_AGE_HOURS) || BACKUP_MAX_AGE_HOURS < 0) {
   console.error(`[Config] BACKUP_MAX_AGE_HOURS must be a number >= 0 (got ${JSON.stringify(process.env.BACKUP_MAX_AGE_HOURS)})`)
   process.exit(1)
 }
-const CONTACT_EMAIL = process.env.CONTACT_EMAIL || 'volleyball@lucanepa.com'
+const CONTACT_EMAIL = process.env.CONTACT_EMAIL || 'support@openvolley.app'
 // Match access tokens (lib/matchAccess.js): answered by the PIN checks, accepted
 // by the relay, GET /api/match/:id and anonymous /api/db reads. A too short
 // OV_MATCH_TOKEN_SECRET stops the start (like OV_PIN_SECRET); unset, the
@@ -2075,7 +2075,7 @@ const server = createServer((req, res) => {
           typeof str === 'string' ? str.replace(/[\r\n]/g, ' ').substring(0, maxLen).trim() : String(str || '')
 
         // Build email content
-        const contactEmail = process.env.CONTACT_EMAIL || 'volleyball@lucanepa.com'
+        const contactEmail = process.env.CONTACT_EMAIL || 'support@openvolley.app'
         const typeLabels = { support: 'Support', feedback: 'Feedback', request: 'Feature Request' }
         const supportTypeLabels = { bug: 'Bug Report', help: 'Help / Question' }
         const severityLabels = {

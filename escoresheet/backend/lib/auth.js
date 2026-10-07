@@ -517,7 +517,7 @@ export function createAuth(options = {}) {
       : { ...DEFAULTS.lockout, ...(options.lockout || {}) }
   }
   if (cfg.sessionTtlSec > cfg.absoluteTtlSec) throw new Error('createAuth: sessionTtlSec exceeds absoluteTtlSec')
-  cfg.contactEmail = cfg.contactEmail || process.env.CONTACT_EMAIL || 'volleyball@lucanepa.com'
+  cfg.contactEmail = cfg.contactEmail || process.env.CONTACT_EMAIL || 'support@openvolley.app'
   const ipKey = typeof cfg.ipKey === 'function' ? cfg.ipKey : ipBucketKey
   const rawBcrypt = options.bcrypt || { compare: bcryptjs.compare, hash: bcryptjs.hash }
   const bcryptGate = createConcurrencyGate({ maxConcurrent: cfg.bcryptMaxConcurrent, maxQueue: cfg.bcryptMaxQueue })
