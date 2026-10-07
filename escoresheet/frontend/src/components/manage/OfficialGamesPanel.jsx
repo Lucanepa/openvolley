@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { admin } from '../../lib/accountApi'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, MatchStatusPill, ReasonModal, InputModal, useErrorText, useKitLang } from './common'
 import { Field, Input, SearchInput, RowList, Row, RowTool, DateRail, StatusPill, EmptyInset, SkeletonRows, Notice, Button, weekdayLabel, dayLabel, timeLabel, shiftDayKey, todayKey, toast } from '../../ui'
+import { ApprovalChips } from './ApprovalBits'
 
 /** Official games (svrz_games) and which cloud match scores each (admins). */
 export default function OfficialGamesPanel() {
@@ -64,6 +65,7 @@ export default function OfficialGamesPanel() {
                 chips={claim ? <>
                   <span className="text-xs text-stone-600">{t('manage.games.scoredBy', { name: claim.scorer_name || claim.scorer_email || t('manage.games.unknownScorer') })}</span>
                   {claim.editors > 0 && <span className="text-xs text-stone-500">{t('manage.games.editors', { count: claim.editors })}</span>}
+                  <ApprovalChips approvals={claim.approvals ?? g.approvals} />
                 </> : null}
                 tools={claim ? <>
                   <RowTool disabled={!online} onClick={() => setEditorFor({ game: g.game_number, matchId: claim.match_id })}>{t('manage.games.addEditor')}</RowTool>

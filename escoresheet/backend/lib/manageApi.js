@@ -15,10 +15,17 @@
  *   POST/PATCH/DELETE/PUT /api/saved-teams/*         canManageTeams of the competition's sport
  *   *      /api/beach/*                               beach canReadTeams (beach:scorer, beach:competition_manager,
  *                                                     admin); lib/beachTournaments.js decides the rest (T1)
+ *   GET/POST /api/account/approval-pin[/remove]      any signed-in account (lib/approvals.js)
+ *   GET    /api/account/approvals                    any signed-in account: its own approvals
+ *   POST/GET /api/approvals, DELETE /api/approvals/:id  any signed-in account; the
+ *                                                    handlers check match ownership and the
+ *                                                    official's role in the match's sport
+ *   GET    /api/admin/approvals[?app=indoor|beach]   isAdmin
  *
  * Sports (db/012, lib/access.js): every check uses the sport of the ROW (the
- * body's sport_type, the competition of a saved team), never the app the
- * client says it is. Only the global admin administers both apps (v1).
+ * body's sport_type, the competition of a saved team, the match of an
+ * approval), never the app the client says it is. Only the global admin
+ * administers both apps (v1).
  *
  * route() returns { status, body, changes? } and never throws (the handlers
  * never throw either).
@@ -26,6 +33,9 @@
 
 import { fail, notFound } from './accounts.js'
 import { SPORTS, accessForSport, sportsWith } from './access.js'
+
+// Before lib/approvals.js is wired (or on a server built without it)
+const APPROVALS_OFF = () => fail(503, 'OV_APPROVAL_UNAVAILABLE', 'Approval with an account is not available on this server')
 
 const FORBIDDEN = () => fail(403, 'OV_FORBIDDEN', 'You do not have access to this')
 const SCORER_REQUIRED = () => fail(403, 'OV_SCORER_REQUIRED', 'Your account is not approved for official matches yet')
@@ -41,10 +51,14 @@ export function manageFamilyOf (pathname) {
   if (pathname.startsWith('/api/admin/')) return 'admin'
   if (pathname === '/api/saved-teams' || pathname.startsWith('/api/saved-teams/')) return 'savedTeams'
   if (pathname.startsWith('/api/beach/')) return 'beach'
+  if (pathname === '/api/account/approval-pin' || pathname === '/api/account/approval-pin/remove') return 'approvalPin'
+  if (pathname === '/api/approvals' || pathname.startsWith('/api/approvals/') || pathname === '/api/account/approvals') return 'approvals'
   return null
 }
 
-export function createManageApi ({ accounts, savedTeams, beach = null }) {
+export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null }) {
+  // approvals?.x, or 503 when the module is not there
+  const ap = (name) => (args) => (approvals && typeof approvals[name] === 'function' ? approvals[name](args) : APPROVALS_OFF())
   const q = (query, k) => {
     const v = query?.get?.(k)
     return v == null ? undefined : v
@@ -97,6 +111,16 @@ export function createManageApi ({ accounts, savedTeams, beach = null }) {
     ['POST', new RegExp(`^/api/admin/matches/${ID}/editors$`), 'admin', (m, c) => accounts.addMatchEditor({ actorId: c.user.id, matchId: m[1], body: c.body })],
     ['POST', new RegExp(`^/api/admin/matches/${ID}/release-game$`), 'admin', (m, c) => accounts.releaseGame({ actorId: c.user.id, matchId: m[1], body: c.body })],
     ['GET', /^\/api\/admin\/audit$/, 'admin', (m, c) => accounts.listAudit({ limit: q(c.query, 'limit'), before: q(c.query, 'before'), action: q(c.query, 'action'), app: q(c.query, 'app') })],
+    ['GET', /^\/api\/admin\/approvals$/, 'admin', (m, c) => ap('adminSearch')({ q: q(c.query, 'q') ?? '', includeRevoked: q(c.query, 'include_revoked'), limit: q(c.query, 'limit') })],
+
+    // Account approvals (docs/account-approval-spec.md section 3)
+    ['GET', /^\/api\/account\/approval-pin$/, 'any', (m, c) => ap('getPinStatus')({ userId: c.user.id })],
+    ['POST', /^\/api\/account\/approval-pin$/, 'any', (m, c) => ap('setPin')({ userId: c.user.id, body: c.body })],
+    ['POST', /^\/api\/account\/approval-pin\/remove$/, 'any', (m, c) => ap('removePin')({ userId: c.user.id, body: c.body })],
+    ['POST', /^\/api\/approvals$/, 'any', (m, c) => ap('approve')({ callerId: c.user.id, access: c.access, body: c.body, ip: c.ip, lang: c.lang })],
+    ['GET', /^\/api\/account\/approvals$/, 'any', (m, c) => ap('listMine')({ callerId: c.user.id, limit: q(c.query, 'limit') })],
+    ['GET', /^\/api\/approvals$/, 'any', (m, c) => ap('listForMatch')({ callerId: c.user.id, access: c.access, externalId: q(c.query, 'external_id') })],
+    ['DELETE', new RegExp(`^/api/approvals/${ID}$`), 'any', (m, c) => ap('revoke')({ callerId: c.user.id, access: c.access, id: m[1] })],
 
     ['GET', /^\/api\/saved-teams$/, readTeams, (m, c) => savedTeams.getBundle({ sport: q(c.query, 'sport'), sports: sportsWith(c.access, 'canReadTeams') })],
     ['POST', /^\/api\/saved-teams\/competitions$/, manageTeamsOf(newCompetitionSport), (m, c) => savedTeams.createCompetition({ actorId: c.user.id, body: c.body })],
@@ -129,7 +153,7 @@ export function createManageApi ({ accounts, savedTeams, beach = null }) {
     return null
   }
 
-  async function route ({ method, pathname, query, body, user, access }) {
+  async function route ({ method, pathname, query, body, user, access, ip, lang }) {
     const family = manageFamilyOf(pathname)
     if (!family) return notFound()
     const early = familyRefusal(family, method, access)
@@ -148,7 +172,7 @@ export function createManageApi ({ accounts, savedTeams, beach = null }) {
       // path ids are compared lower-case (uuid columns answer lower-case)
       const ids = match.map((v, i) => (i > 0 && typeof v === 'string' ? v.toLowerCase() : v))
       if (ids.slice(1).some((v) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v))) return notFound()
-      const ctx = { user, access, body, query }
+      const ctx = { user, access, body, query, ip, lang }
       if (typeof need === 'function') {
         const refusal = await need(ids, ctx)
         if (refusal) return refusal

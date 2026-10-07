@@ -111,6 +111,8 @@ export const DEFAULT_CONFIG = Object.freeze({
   errorMap: {
     sqlstate: {
       OVC01: { status: 409, code: 'OV_MATCH_CLOSED', message: 'This match is closed. Only an admin can reopen it.' },
+      // db/011: match_approvals rows are append-only (only a bug reaches it)
+      OVA01: { status: 409, code: 'OV_APPROVAL_IMMUTABLE', message: 'An approval cannot be changed.' },
       // db/012: matches.sport_type is fixed after insert
       OVS01: { status: 409, code: 'OV_SPORT_LOCKED', message: 'The sport of a match cannot be changed.' }
     },

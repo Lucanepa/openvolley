@@ -2,12 +2,13 @@
 // actions (reopen, release game, editors) and the audit log.
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
 import pg from 'pg'
 import { createPgQuery } from '../lib/pgQuery.js'
 import { createMatchRestore } from '../lib/matchRestore.js'
 import { createAccessResolver, accessFromRoles } from '../lib/access.js'
-import { createAccounts, normalizeInviteCode, hashInviteCode, generateInviteCode, INVITE_ALPHABET } from '../lib/accounts.js'
+import { createAccounts, normalizeInviteCode, hashInviteCode, generateInviteCode, INVITE_ALPHABET, AUDIT_ACTIONS } from '../lib/accounts.js'
+import { createApprovals } from '../lib/approvals.js'
 import { SKIP_PG, createTestDatabase, quietLogger } from './helpers/pgTestDb.js'
 
 describe('invite code helpers (pure)', () => {
@@ -52,7 +53,8 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
     db = createPgQuery({ pool, logger })
     restore = createMatchRestore(db, { logger })
     access = createAccessResolver({ pool })
-    accounts = createAccounts({ pool, db, restore, access, logger })
+    // approvalsForMatches needs no OV_PIN_SECRET (it only reads match_approvals)
+    accounts = createAccounts({ pool, db, restore, access, logger, approvalsForMatches: createApprovals({ pool, secret: null, logger }).approvalsForMatches })
     await user('admin', ['admin'])
     await user('boss', ['super_admin'])
     await user('pending', [])
@@ -316,6 +318,44 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
       assert.equal((await accounts.listOfficialGames({})).status, 200, 'default window')
       gameSeq += 2
     })
+
+    it('the admin lists carry the active account approvals (db/011)', async () => {
+      const m = await closedMatch({ status: 'ended' })
+      await pool.query('INSERT INTO public.sets (match_id, index, home_points, away_points, finished) VALUES ($1, 1, 25, 20, true), ($1, 2, 3, 1, false)', [m.id])
+      const key = 'ov-result-v1|1:25:20'
+      const sha = (k) => createHash('sha256').update(k).digest()
+      const ins = (slot, name, k, revoked = false) => pool.query(
+        `INSERT INTO public.match_approvals (match_id, slot, display_name, match_status, result_key, result_hash, approved_at, revoked_at, revoked_reason)
+         VALUES ($1, $2, $3, 'ended', $4, $5, '2026-10-07T19:42:10Z', $6, $7) RETURNING id`,
+        [m.id, slot, name, k, sha(k), revoked ? new Date() : null, revoked ? 'undo' : null])
+      const { rows: [r1] } = await ins('referee1', 'Muster Anna', key)
+      await ins('referee2', 'Beispiel Ben', 'ov-result-v1|1:25:21')
+      await ins('scorer', 'Revoked Rita', key, true)
+      const expected = [
+        { slot: 'referee1', name: 'Muster Anna', approved_at: '2026-10-07T19:42:10.000Z', short_id: r1.id.slice(0, 8).toUpperCase(), result_matches: true },
+        { slot: 'referee2', name: 'Beispiel Ben', approved_at: '2026-10-07T19:42:10.000Z', short_id: undefined, result_matches: false }
+      ]
+      const check = (list) => {
+        assert.equal(list.length, 2, 'active approvals only')
+        expected[1].short_id = list[1].short_id
+        assert.match(list[1].short_id, /^[0-9A-F]{8}$/)
+        assert.deepEqual(list, expected)
+      }
+      const lst = await accounts.listMatches({ state: 'open', q: String(m.n) })
+      assert.equal(lst.status, 200, JSON.stringify(lst.body))
+      check(lst.body.data.matches[0].approvals)
+      // a match without approvals: an empty list
+      const other = await closedMatch({ status: 'live' })
+      assert.deepEqual((await accounts.listMatches({ state: 'open', q: String(other.n) })).body.data.matches[0].approvals, [])
+
+      await pool.query("INSERT INTO public.svrz_games (game_number, datetime, league, team_home, team_away) VALUES ($1, '2026-10-20T16:00:00', '2L', 'A', 'B')", [String(m.n)])
+      const og = await accounts.listOfficialGames({ from: '2026-10-19', to: '2026-10-21' })
+      assert.equal(og.status, 200, JSON.stringify(og.body))
+      const g = og.body.data.games.find((x) => x.game_number === String(m.n))
+      check(g.claim.approvals)
+      // no user id, email or hash in the attachment
+      assert.equal(/user_id|email|hash/.test(JSON.stringify(g.claim.approvals)), false)
+    })
   })
 
   describe('findTakenGame (the friendly official-game check)', () => {
@@ -390,6 +430,11 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
   })
 
   describe('audit log', () => {
+    it('AUDIT_ACTIONS has the account-approval actions', () => {
+      for (const a of ['approval_pin.set', 'approval_pin.remove', 'approval_pin.locked', 'match.approve', 'match.approval_revoke', 'match.approval_void']) {
+        assert.ok(AUDIT_ACTIONS.includes(a), a)
+      }
+    })
     it('pages newest first with next_before and filters by action', async () => {
       const p1 = await accounts.listAudit({ limit: 3 })
       assert.equal(p1.status, 200)

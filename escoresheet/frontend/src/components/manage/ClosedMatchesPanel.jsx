@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { admin } from '../../lib/accountApi'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, MatchStatusPill, ReasonModal, useErrorText } from './common'
 import { SegmentedControl, SearchInput, RowList, Row, RowTool, Chip, EmptyInset, SkeletonRows, Notice, dayTimeLabel, toast } from '../../ui'
+import { ApprovalChips, ApprovalLookup } from './ApprovalBits'
 
 /** Non-test matches by closed state; reopen a closed one (admins, audit-logged). */
 export default function ClosedMatchesPanel() {
@@ -24,6 +25,8 @@ export default function ClosedMatchesPanel() {
     <section>
       <PanelHead title={t('manage.tabs.matches')} />
       <OfflineBanner online={online} />
+      {/* The "ID" on a PDF approval stamp, or a game number */}
+      <ApprovalLookup online={online} />
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
         <SegmentedControl
           ariaLabel={t('manage.tabs.matches')}
@@ -67,6 +70,7 @@ export default function ClosedMatchesPanel() {
                   </span>
                 )}
                 {m.official_game_exempt && <Chip>{t('manage.games.releaseGame')}</Chip>}
+                <ApprovalChips approvals={m.approvals} />
               </>}
               tools={m.closed_at ? <RowTool disabled={!online} onClick={() => setReopenFor(m)}>{t('manage.matches.reopen')}</RowTool> : null}
             />

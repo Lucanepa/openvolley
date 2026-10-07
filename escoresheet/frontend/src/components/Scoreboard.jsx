@@ -23,6 +23,7 @@ import ballFallback from '../ball_fallback.png'
 // Primary ball image (with a bundled copy as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
+import { discPaint, matchDiscPaint, teamLiberoColour, markColourOn, teamBoxStyle, teamTextStyle, HEADER_SURFACE, PAGE_SURFACE } from '../utils/teamColours'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom } from '../lib/apiClient'
 import { relayMatchKey, relayMatchPayload } from '../utils/serverDataSync'
@@ -3615,40 +3616,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     })
   }, [])
 
-  const isBrightColor = useCallback(color => {
-    if (!color || color === 'image.png') return false
-    const hex = color.replace('#', '')
-    const r = parseInt(hex.substr(0, 2), 16)
-    const g = parseInt(hex.substr(2, 2), 16)
-    const b = parseInt(hex.substr(4, 2), 16)
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-    return luminance > 0.5
-  }, [])
+  // Player discs wear the team's shirt colour, the libero the colour that
+  // stands out most from both teams (the two liberos picked together, so
+  // they never match); the number is near-black or white, whichever reads
+  // better (utils/teamColours.js)
+  const discPaintBySide = useMemo(() => {
+    const paint = matchDiscPaint(leftIsHome ? leftTeam.color : rightTeam.color, leftIsHome ? rightTeam.color : leftTeam.color, {
+      homeLibero: teamLiberoColour(data?.homeTeam),
+      awayLibero: teamLiberoColour(data?.awayTeam)
+    })
+    return leftIsHome ? { left: paint.home, right: paint.away } : { left: paint.away, right: paint.home }
+  }, [leftIsHome, data?.homeTeam, data?.awayTeam, leftTeam.color, rightTeam.color])
 
-  const isWhiteOrGreyColor = useCallback(color => {
-    if (!color) return false
-    const hex = color.replace('#', '')
-    const r = parseInt(hex.substr(0, 2), 16)
-    const g = parseInt(hex.substr(2, 2), 16)
-    const b = parseInt(hex.substr(4, 2), 16)
-    const max = Math.max(r, g, b), min = Math.min(r, g, b)
-    const saturation = max === 0 ? 0 : (max - min) / max
-    const brightness = (r + g + b) / (3 * 255)
-    return saturation < 0.15 && brightness > 0.55
-  }, [])
-
-  const getPlayerCircleColors = useCallback((teamColor, isLibero) => {
-    if (isLibero) {
-      const useRed = isWhiteOrGreyColor(teamColor)
-      return { bg: useRed ? '#ef4444' : '#ffffff', text: useRed ? '#fff' : '#000' }
-    }
-    return { bg: teamColor || 'rgba(51, 65, 85, 0.6)', text: isBrightColor(teamColor) ? '#000' : '#fff' }
-  }, [isBrightColor, isWhiteOrGreyColor])
-
-  const getTeamColor = useCallback(teamKey => {
-    const isLeft = (leftIsHome && teamKey === 'home') || (!leftIsHome && teamKey === 'away')
-    return isLeft ? (leftTeam.color || '#ef4444') : (rightTeam.color || '#3b82f6')
-  }, [leftIsHome, leftTeam.color, rightTeam.color])
+  // side: 'left' | 'right' -> { bg, text, textShadow, ring, border }
+  const getPlayerCircleColors = useCallback((side, isLibero) => {
+    const paint = discPaintBySide[side]?.[isLibero ? 'libero' : 'player']
+    if (!paint) return isLibero ? { bg: '#ffffff', text: '#000' } : { bg: 'rgba(51, 65, 85, 0.6)', text: '#fff' }
+    return { bg: paint.background, text: paint.color, textShadow: paint.textShadow, ring: paint.ring, border: paint.ring ? `2px solid ${paint.ring}` : undefined }
+  }, [discPaintBySide])
 
   // Helper function to get next sequence number for events (returns integer only)
   // Uses [matchId+seq] compound index for O(log n) lookup instead of O(n) full scan
@@ -8450,8 +8435,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Create custom drag image showing the player number
     const dragImage = document.createElement('div')
     dragImage.textContent = String(playerNumber)
-    const teamColor = getTeamColor(teamKey)
-    const circleColors = getPlayerCircleColors(teamColor, isLibero)
+    const isLeft = (leftIsHome && teamKey === 'home') || (!leftIsHome && teamKey === 'away')
+    const circleColors = getPlayerCircleColors(isLeft ? 'left' : 'right', isLibero)
     dragImage.style.cssText = `
       position: absolute;
       top: -1000px;
@@ -8467,7 +8452,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       align-items: center;
       justify-content: center;
       box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      border: 2px solid rgba(0, 0, 0, 0.2);
+      border: 2px solid ${circleColors.ring || 'rgba(0, 0, 0, 0.2)'};
+      ${circleColors.textShadow ? `text-shadow: ${circleColors.textShadow};` : ''}
     `
     document.body.appendChild(dragImage)
     e.dataTransfer.setDragImage(dragImage, 25, 25)
@@ -8475,7 +8461,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     setTimeout(() => {
       document.body.removeChild(dragImage)
     }, 0)
-  }, [rallyStatus, getTeamColor, getPlayerCircleColors])
+  }, [rallyStatus, leftIsHome, getPlayerCircleColors])
 
   const handleBenchDragEnd = useCallback(() => {
     setDraggedPlayer(null)
@@ -12802,8 +12788,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 borderRadius: '0.26cqw',
                 fontSize: '1.02cqw',
                 fontWeight: 700,
-                background: leftTeam.color || '#ef4444',
-                color: isBrightColor(leftTeam.color || '#ef4444') ? '#000' : '#fff',
+                ...teamBoxStyle(leftTeam.color || '#ef4444'),
                 flexShrink: 0
               }}>
                 {teamALabel}
@@ -12824,8 +12809,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             borderRadius: '0.26cqw',
             fontSize: '1.45cqw',
             fontWeight: 700,
-            background: leftTeam?.color || '#ef4444',
-            color: isBrightColor(leftTeam?.color || '#ef4444') ? '#000' : '#fff'
+            ...teamBoxStyle(leftTeam?.color || '#ef4444')
           }}>
             {setsWon?.left || 0}
           </span>
@@ -12843,8 +12827,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             borderRadius: '0.26cqw',
             fontSize: '1.45cqw',
             fontWeight: 700,
-            background: rightTeam?.color || '#3b82f6',
-            color: isBrightColor(rightTeam?.color || '#3b82f6') ? '#000' : '#fff'
+            ...teamBoxStyle(rightTeam?.color || '#3b82f6')
           }}>
             {setsWon?.right || 0}
           </span>
@@ -12980,8 +12963,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 borderRadius: '0.26cqw',
                 fontSize: '1.02cqw',
                 fontWeight: 700,
-                background: rightTeam.color || '#3b82f6',
-                color: isBrightColor(rightTeam.color || '#3b82f6') ? '#000' : '#fff',
+                ...teamBoxStyle(rightTeam.color || '#3b82f6'),
                 flexShrink: 0
               }}>
                 {teamBLabel}
@@ -13837,11 +13819,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   fontSize: '16px',
                   fontWeight: 700
                 }}>
-                  <span style={{ color: leftTeam?.color || '#ef4444' }}>
+                  <span style={teamTextStyle(leftTeam?.color || '#ef4444', HEADER_SURFACE)}>
                     {setsWon.left}
                   </span>
                   <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('scoreboard.labels.sets')}</span>
-                  <span style={{ color: rightTeam?.color || '#3b82f6' }}>
+                  <span style={teamTextStyle(rightTeam?.color || '#3b82f6', HEADER_SURFACE)}>
                     {setsWon.right}
                   </span>
                 </div>
@@ -13901,8 +13883,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 overflow: 'auto'
               }}>
                 <div style={{
-                  background: leftTeam?.color || '#ef4444',
-                  color: isBrightColor(leftTeam?.color || '#ef4444') ? '#000' : '#fff',
+                  ...teamBoxStyle(leftTeam?.color || '#ef4444'),
                   padding: '8px',
                   borderRadius: '6px',
                   textAlign: 'center',
@@ -14138,7 +14119,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   <span style={{
                     fontSize: '48px',
                     fontWeight: 700,
-                    color: leftTeam?.color || '#ef4444'
+                    ...teamTextStyle(leftTeam?.color || '#ef4444', PAGE_SURFACE)
                   }}>
                     {leftIsHome ? (data?.set?.homePoints || 0) : (data?.set?.awayPoints || 0)}
                   </span>
@@ -14146,7 +14127,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   <span style={{
                     fontSize: '48px',
                     fontWeight: 700,
-                    color: rightTeam?.color || '#3b82f6'
+                    ...teamTextStyle(rightTeam?.color || '#3b82f6', PAGE_SURFACE)
                   }}>
                     {leftIsHome ? (data?.set?.awayPoints || 0) : (data?.set?.homePoints || 0)}
                   </span>
@@ -14489,8 +14470,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             padding: '16px',
                             fontSize: '14px',
                             fontWeight: 700,
-                            background: leftTeam?.color || '#ef4444',
-                            color: isBrightColor(leftTeam?.color || '#ef4444') ? '#000' : '#fff',
+                            ...teamBoxStyle(leftTeam?.color || '#ef4444'),
                             border: 'none',
                             borderRadius: '8px',
                             cursor: 'pointer'
@@ -14505,8 +14485,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             padding: '16px',
                             fontSize: '14px',
                             fontWeight: 700,
-                            background: rightTeam?.color || '#3b82f6',
-                            color: isBrightColor(rightTeam?.color || '#3b82f6') ? '#000' : '#fff',
+                            ...teamBoxStyle(rightTeam?.color || '#3b82f6'),
                             border: 'none',
                             borderRadius: '8px',
                             cursor: 'pointer'
@@ -14587,8 +14566,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 overflow: 'auto'
               }}>
                 <div style={{
-                  background: rightTeam?.color || '#3b82f6',
-                  color: isBrightColor(rightTeam?.color || '#3b82f6') ? '#000' : '#fff',
+                  ...teamBoxStyle(rightTeam?.color || '#3b82f6'),
                   padding: '8px',
                   borderRadius: '6px',
                   textAlign: 'center',
@@ -14831,8 +14809,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   justifyContent: 'center',
                   gap: '0.5vh',
                   padding: '0.5vh 0.8vh',
-                  background: leftTeam.color || '#ef4444',
-                  color: isBrightColor(leftTeam.color || '#ef4444') ? '#000' : '#fff',
+                  ...teamBoxStyle(leftTeam.color || '#ef4444'),
                   borderRadius: '6px',
                   fontWeight: 600,
                   fontSize: '1.6vh',
@@ -15827,8 +15804,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             borderRadius: '3px',
                             fontSize: '10px',
                             fontWeight: 700,
-                            background: leftTeamColor,
-                            color: isBrightColor(leftTeamColor) ? '#000' : '#fff'
+                            ...teamBoxStyle(leftTeamColor)
                           }}>{leftTeamLabel}</span>
                         </h4>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', tableLayout: 'fixed' }}>
@@ -16251,8 +16227,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   ? 'rgba(74, 222, 128, 0.5)'  // Bright green for valid touch target
                                   : isInvalidTouchDropZone
                                     ? 'rgba(239, 68, 68, 0.2)'  // Red tint for invalid
-                                    : isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#fdba74' : getPlayerCircleColors(leftTeam.color, player.isLibero).bg,
-                                color: isRecentlySub ? '#000' : getPlayerCircleColors(leftTeam.color, player.isLibero).text,
+                                    : isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#fdba74' : getPlayerCircleColors('left', player.isLibero).bg,
+                                color: isRecentlySub ? '#000' : getPlayerCircleColors('left', player.isLibero).text,
+                                textShadow: isRecentlySub ? undefined : getPlayerCircleColors('left', player.isLibero).textShadow,
                                 position: 'relative',
                                 animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                                 fontWeight: isRecentlySub ? 900 : undefined,
@@ -16260,7 +16237,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   ? '3px solid #22c55e'
                                   : isInvalidTouchDropZone
                                     ? '2px dashed rgba(239, 68, 68, 0.5)'
-                                    : isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #f97316' : undefined,
+                                    : isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #f97316' : getPlayerCircleColors('left', player.isLibero).border,
                                 boxShadow: isTouchDropTargetCourt
                                   ? '0 0 16px rgba(74, 222, 128, 0.6)'
                                   : isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined
@@ -16319,7 +16296,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <span
                                   className="court-player-captain"
                                   style={{
-                                    background: player.isLibero ? '#3b82f6' : undefined,
+                                    background: player.isLibero ? markColourOn(getPlayerCircleColors('left', true).bg, '#3b82f6', '#0f172a') : undefined,
                                     color: '#fbbf24',
                                     borderColor: '#fbbf24',
                                     fontSize: player.isLibero ? '3cqh' : undefined
@@ -16352,7 +16329,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                                 return (
                                   <span className="court-player-captain" style={{
-                                    background: '#3b82f6',
+                                    background: markColourOn(getPlayerCircleColors('left', true).bg, '#3b82f6', '#0f172a'),
                                     color: '#fff',
                                     borderColor: 'rgba(255, 255, 255, 0.4)'
                                   }}>
@@ -16526,15 +16503,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   ? 'rgba(74, 222, 128, 0.5)'
                                   : isInvalidTouchDropZone
                                     ? 'rgba(239, 68, 68, 0.2)'
-                                    : isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : getPlayerCircleColors(leftTeam.color, player.isLibero).bg,
-                                color: isRecentlySub ? '#000' : getPlayerCircleColors(leftTeam.color, player.isLibero).text,
+                                    : isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : getPlayerCircleColors('left', player.isLibero).bg,
+                                color: isRecentlySub ? '#000' : getPlayerCircleColors('left', player.isLibero).text,
+                                textShadow: isRecentlySub ? undefined : getPlayerCircleColors('left', player.isLibero).textShadow,
                                 animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                                 fontWeight: isRecentlySub ? 900 : undefined,
                                 border: isTouchDropTargetCourt
                                   ? '3px solid #22c55e'
                                   : isInvalidTouchDropZone
                                     ? '2px dashed rgba(239, 68, 68, 0.5)'
-                                    : isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #22c55e' : undefined,
+                                    : isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #22c55e' : getPlayerCircleColors('left', player.isLibero).border,
                                 boxShadow: isTouchDropTargetCourt
                                   ? '0 0 16px rgba(74, 222, 128, 0.6)'
                                   : isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined
@@ -16612,7 +16590,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <span
                                   className="court-player-captain"
                                   style={{
-                                    background: player.isLibero ? '#3b82f6' : undefined,
+                                    background: player.isLibero ? markColourOn(getPlayerCircleColors('left', true).bg, '#3b82f6', '#0f172a') : undefined,
                                     color: '#fbbf24',
                                     borderColor: '#fbbf24',
                                     fontSize: player.isLibero ? '3cqh' : undefined
@@ -16628,7 +16606,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 const liberoLabel = liberoCount === 1 ? 'L' : (player.liberoType === 'libero1' ? 'L1' : player.liberoType === 'redesignated' ? 'LR' : 'L2')
                                 return (
                                   <span className="court-player-captain" style={{
-                                    background: '#3b82f6',
+                                    background: markColourOn(getPlayerCircleColors('left', true).bg, '#3b82f6', '#0f172a'),
                                     color: '#fff',
                                     borderColor: 'rgba(255, 255, 255, 0.4)'
                                   }}>
@@ -16837,11 +16815,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 cursor: canSubstitute && !player.isLibero ? 'grab' : 'pointer',
                                 opacity: isDragging ? 0.5 : undefined,
                                 transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
-                                background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : getPlayerCircleColors(rightTeam.color, player.isLibero).bg,
-                                color: isRecentlySub ? '#000' : getPlayerCircleColors(rightTeam.color, player.isLibero).text,
+                                background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : getPlayerCircleColors('right', player.isLibero).bg,
+                                color: isRecentlySub ? '#000' : getPlayerCircleColors('right', player.isLibero).text,
+                                textShadow: isRecentlySub ? undefined : getPlayerCircleColors('right', player.isLibero).textShadow,
                                 animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                                 fontWeight: isRecentlySub ? 900 : undefined,
-                                border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #22c55e' : undefined,
+                                border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #22c55e' : getPlayerCircleColors('right', player.isLibero).border,
                                 boxShadow: isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined,
                                 position: 'relative'
                               }}
@@ -16899,7 +16878,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <span
                                   className="court-player-captain"
                                   style={{
-                                    background: player.isLibero ? '#3b82f6' : undefined,
+                                    background: player.isLibero ? markColourOn(getPlayerCircleColors('right', true).bg, '#3b82f6', '#0f172a') : undefined,
                                     color: '#fbbf24',
                                     borderColor: '#fbbf24',
                                     fontSize: player.isLibero ? '3cqh' : undefined
@@ -16932,7 +16911,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                                 return (
                                   <span className="court-player-captain" style={{
-                                    background: '#3b82f6',
+                                    background: markColourOn(getPlayerCircleColors('right', true).bg, '#3b82f6', '#0f172a'),
                                     color: '#fff',
                                     borderColor: 'rgba(255, 255, 255, 0.4)'
                                   }}>
@@ -17105,15 +17084,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   ? 'rgba(74, 222, 128, 0.5)'
                                   : isInvalidTouchDropZone
                                     ? 'rgba(239, 68, 68, 0.2)'
-                                    : isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : getPlayerCircleColors(rightTeam.color, player.isLibero).bg,
-                                color: isRecentlySub ? '#000' : getPlayerCircleColors(rightTeam.color, player.isLibero).text,
+                                    : isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : getPlayerCircleColors('right', player.isLibero).bg,
+                                color: isRecentlySub ? '#000' : getPlayerCircleColors('right', player.isLibero).text,
+                                textShadow: isRecentlySub ? undefined : getPlayerCircleColors('right', player.isLibero).textShadow,
                                 animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                                 fontWeight: isRecentlySub ? 900 : undefined,
                                 border: isTouchDropTargetCourt
                                   ? '3px solid #22c55e'
                                   : isInvalidTouchDropZone
                                     ? '2px dashed rgba(239, 68, 68, 0.5)'
-                                    : isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #22c55e' : undefined,
+                                    : isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #22c55e' : getPlayerCircleColors('right', player.isLibero).border,
                                 boxShadow: isTouchDropTargetCourt
                                   ? '0 0 16px rgba(74, 222, 128, 0.6)'
                                   : isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined
@@ -17191,7 +17171,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 <span
                                   className="court-player-captain"
                                   style={{
-                                    background: player.isLibero ? '#3b82f6' : undefined,
+                                    background: player.isLibero ? markColourOn(getPlayerCircleColors('right', true).bg, '#3b82f6', '#0f172a') : undefined,
                                     color: '#fbbf24',
                                     borderColor: '#fbbf24',
                                     fontSize: player.isLibero ? '3cqh' : undefined
@@ -17224,7 +17204,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                                 return (
                                   <span className="court-player-captain" style={{
-                                    background: '#3b82f6',
+                                    background: markColourOn(getPlayerCircleColors('right', true).bg, '#3b82f6', '#0f172a'),
                                     color: '#fff',
                                     borderColor: 'rgba(255, 255, 255, 0.4)'
                                   }}>
@@ -17530,8 +17510,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             borderRadius: `calc(4px * var(--scale-factor))`,
                             fontSize: `calc(16px * var(--scale-factor))`,
                             fontWeight: 700,
-                            background: leftTeamColor,
-                            color: isBrightColor(leftTeamColor) ? '#000' : '#fff'
+                            ...teamBoxStyle(leftTeamColor)
                           }}>{leftTeamLabel}</span>
                         </h4>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `calc(15px * var(--scale-factor))` }}>
@@ -17988,8 +17967,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             borderRadius: `calc(4px * var(--scale-factor))`,
                             fontSize: `calc(16px * var(--scale-factor))`,
                             fontWeight: 700,
-                            background: rightTeamColor,
-                            color: isBrightColor(rightTeamColor) ? '#000' : '#fff'
+                            ...teamBoxStyle(rightTeamColor)
                           }}>{rightTeamLabel}</span>
                         </h4>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `calc(15px * var(--scale-factor))` }}>
@@ -18080,8 +18058,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             borderRadius: `calc(4px * var(--scale-factor))`,
                             fontSize: `calc(12px * var(--scale-factor))`,
                             fontWeight: 700,
-                            background: leftTeamColor,
-                            color: isBrightColor(leftTeamColor) ? '#000' : '#fff'
+                            ...teamBoxStyle(leftTeamColor)
                           }}>{leftTeamLabel}</span>
                         </h4>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `calc(12px * var(--scale-factor))` }}>
@@ -18153,8 +18130,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             borderRadius: `calc(4px * var(--scale-factor))`,
                             fontSize: `calc(12px * var(--scale-factor))`,
                             fontWeight: 700,
-                            background: rightTeamColor,
-                            color: isBrightColor(rightTeamColor) ? '#000' : '#fff'
+                            ...teamBoxStyle(rightTeamColor)
                           }}>{rightTeamLabel}</span>
                         </h4>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `calc(12px * var(--scale-factor))` }}>
@@ -18210,8 +18186,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   justifyContent: 'center',
                   gap: '0.5vh',
                   padding: '0.5vh 0.8vh',
-                  background: rightTeam.color || '#3b82f6',
-                  color: isBrightColor(rightTeam.color || '#3b82f6') ? '#000' : '#fff',
+                  ...teamBoxStyle(rightTeam.color || '#3b82f6'),
                   borderRadius: '6px',
                   fontWeight: 600,
                   fontSize: '1.6vh',
@@ -19188,8 +19163,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             borderRadius: '3px',
                             fontSize: '8px',
                             fontWeight: 700,
-                            background: rightTeamColor,
-                            color: isBrightColor(rightTeamColor) ? '#000' : '#fff'
+                            ...teamBoxStyle(rightTeamColor)
                           }}>{rightTeamLabel}</span>
                         </h4>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '8px', tableLayout: 'fixed' }}>
@@ -19535,10 +19509,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         <DraggedPlayerOverlay
           player={draggedPlayer}
           position={touchDragState.dragPosition}
-          teamColor={draggedPlayer.team === 'home'
-            ? (leftIsHome ? (data?.homeTeam?.color || '#ef4444') : (data?.awayTeam?.color || '#3b82f6'))
-            : (leftIsHome ? (data?.awayTeam?.color || '#3b82f6') : (data?.homeTeam?.color || '#ef4444'))
-          }
+          colors={getPlayerCircleColors((draggedPlayer.team === 'home') === leftIsHome ? 'left' : 'right', !!draggedPlayer.isLibero)}
           isValid={validDropTargets.length > 0}
         />
       )}
@@ -20155,9 +20126,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               justifyContent: 'center',
                               gap: '8px',
                               padding: '12px',
-                              background: leftTeamColor,
-                              borderRadius: '8px',
-                              color: isBrightColor(leftTeamColor) ? '#000' : '#fff'
+                              ...teamBoxStyle(leftTeamColor),
+                              borderRadius: '8px'
                             }}>
                               {leftIsServing && <VolleyballIcon size={20} />}
                               <div style={{ textAlign: 'center' }}>
@@ -20182,9 +20152,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               justifyContent: 'center',
                               gap: '8px',
                               padding: '12px',
-                              background: rightTeamColor,
-                              borderRadius: '8px',
-                              color: isBrightColor(rightTeamColor) ? '#000' : '#fff'
+                              ...teamBoxStyle(rightTeamColor),
+                              borderRadius: '8px'
                             }}>
                               <div style={{ textAlign: 'center' }}>
                                 <div style={{ fontWeight: 700, fontSize: '14px' }}>{rightTeamName}</div>
@@ -20379,8 +20348,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 flex: 1,
                                 minWidth: '120px',
                                 padding: '12px 16px',
-                                background: leftTeamColor,
-                                color: isBrightColor(leftTeamColor) ? '#000' : '#fff',
+                                ...teamBoxStyle(leftTeamColor),
                                 borderRadius: '8px',
                                 fontWeight: 600
                               }}
@@ -20396,8 +20364,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 flex: 1,
                                 minWidth: '120px',
                                 padding: '12px 16px',
-                                background: rightTeamColor,
-                                color: isBrightColor(rightTeamColor) ? '#000' : '#fff',
+                                ...teamBoxStyle(rightTeamColor),
                                 borderRadius: '8px',
                                 fontWeight: 600
                               }}
@@ -22605,8 +22572,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               style={{
                 padding: '16px',
                 fontSize: '16px',
-                background: data?.homeTeam?.color || '#3b82f6',
-                color: '#fff',
+                ...teamBoxStyle(data?.homeTeam?.color || '#3b82f6'),
                 border: 'none',
                 borderRadius: '8px',
                 cursor: 'pointer'
@@ -22622,8 +22588,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               style={{
                 padding: '16px',
                 fontSize: '16px',
-                background: data?.awayTeam?.color || '#ef4444',
-                color: '#fff',
+                ...teamBoxStyle(data?.awayTeam?.color || '#ef4444'),
                 border: 'none',
                 borderRadius: '8px',
                 cursor: 'pointer'
@@ -22992,8 +22957,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                       borderRadius: '3px',
                                       fontSize: '9px',
                                       fontWeight: 700,
-                                      background: leftTeamColor,
-                                      color: isBrightColor(leftTeamColor) ? '#000' : '#fff'
+                                      ...teamBoxStyle(leftTeamColor)
                                     }}>{leftTeamLabel}</span>
                                   </div>
                                 </th>
@@ -23006,8 +22970,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                       borderRadius: '3px',
                                       fontSize: '9px',
                                       fontWeight: 700,
-                                      background: rightTeamColor,
-                                      color: isBrightColor(rightTeamColor) ? '#000' : '#fff'
+                                      ...teamBoxStyle(rightTeamColor)
                                     }}>{rightTeamLabel}</span>
                                   </div>
                                 </th>
@@ -23129,8 +23092,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   borderRadius: '3px',
                                   fontSize: '9px',
                                   fontWeight: 700,
-                                  background: leftTeamColor,
-                                  color: isBrightColor(leftTeamColor) ? '#000' : '#fff'
+                                  ...teamBoxStyle(leftTeamColor)
                                 }}>{leftTeamLabel}</span>
                               </div>
                             </th>
@@ -23143,8 +23105,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   borderRadius: '3px',
                                   fontSize: '9px',
                                   fontWeight: 700,
-                                  background: rightTeamColor,
-                                  color: isBrightColor(rightTeamColor) ? '#000' : '#fff'
+                                  ...teamBoxStyle(rightTeamColor)
                                 }}>{rightTeamLabel}</span>
                               </div>
                             </th>
@@ -23262,8 +23223,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               const otherTeamLabel = timeoutModal.team === teamAKey ? 'B' : 'A'
               const requestingTeamColor = requestingTeamData?.color || (timeoutModal.team === 'home' ? '#ef4444' : '#3b82f6')
               const otherTeamColor = otherTeamData?.color || (timeoutModal.team === 'home' ? '#3b82f6' : '#ef4444')
-              const isRequestingBright = isBrightColor(requestingTeamColor)
-              const isOtherBright = isBrightColor(otherTeamColor)
               const currentTimeouts = timeoutsUsed[timeoutModal.team] || 0
               const isSecondTimeout = currentTimeouts === 1
               return (
@@ -23273,8 +23232,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     fontWeight: 700,
                     padding: '4px 10px',
                     borderRadius: '6px',
-                    background: requestingTeamColor,
-                    color: isRequestingBright ? '#000' : '#fff'
+                    ...teamBoxStyle(requestingTeamColor)
                   }}>{requestingTeamLabel}</span>
                   <span>{requestingTeamScore}</span>
                   <span>:</span>
@@ -23284,8 +23242,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     fontWeight: 700,
                     padding: '4px 10px',
                     borderRadius: '6px',
-                    background: otherTeamColor,
-                    color: isOtherBright ? '#000' : '#fff'
+                    ...teamBoxStyle(otherTeamColor)
                   }}>{otherTeamLabel}</span>
                 </div>
               )
@@ -25413,8 +25370,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     borderRadius: '4px',
                     fontSize: '13px',
                     fontWeight: 700,
-                    background: teamColor,
-                    color: isBrightColor(teamColor) ? '#000' : '#fff'
+                    ...teamBoxStyle(teamColor)
                   }}>{teamLabel}</span>
                   <span style={{ marginLeft: '8px', color: 'var(--text)' }}>{teamData?.name || ''}</span>
                 </h4>
@@ -25688,7 +25644,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const teamColor = teamData?.color || (sanctionConfirmModal.team === 'home' ? '#ef4444' : '#3b82f6')
         const teamLabel = sanctionConfirmModal.team === teamAKey ? 'A' : 'B'
         const teamName = teamData?.name || (sanctionConfirmModal.team === 'home' ? 'Home' : 'Away')
-        const isBright = isBrightColor(teamColor)
 
         return (
           <Modal
@@ -25700,8 +25655,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   borderRadius: '6px',
                   fontSize: '14px',
                   fontWeight: 700,
-                  background: teamColor,
-                  color: isBright ? '#000' : '#fff'
+                  ...teamBoxStyle(teamColor)
                 }}>{teamLabel}</span>
               </div>
             }
@@ -25756,7 +25710,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const teamColor = teamData?.color || (substitutionConfirm.team === 'home' ? '#ef4444' : '#3b82f6')
         const teamLabel = substitutionConfirm.team === teamAKey ? 'A' : 'B'
         const teamName = teamData?.name || (substitutionConfirm.team === 'home' ? 'Home' : 'Away')
-        const isBright = isBrightColor(teamColor)
 
         return (
           <Modal
@@ -25769,8 +25722,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     borderRadius: '7px',
                     fontSize: '17px',
                     fontWeight: 700,
-                    background: teamColor,
-                    color: isBright ? '#000' : '#fff'
+                    ...teamBoxStyle(teamColor)
                   }}
                 >
                   {teamLabel}
@@ -25798,8 +25750,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 const otherTeamLabel = substitutionConfirm.team === teamAKey ? 'B' : 'A'
                 const requestingTeamColor = requestingTeamData?.color || (substitutionConfirm.team === 'home' ? '#ef4444' : '#3b82f6')
                 const otherTeamColor = otherTeamData?.color || (substitutionConfirm.team === 'home' ? '#3b82f6' : '#ef4444')
-                const isRequestingBright = isBrightColor(requestingTeamColor)
-                const isOtherBright = isBrightColor(otherTeamColor)
                 const currentSubs = substitutionsUsed[substitutionConfirm.team] || 0
                 const subLabel = currentSubs === 4 ? '5th' : currentSubs === 5 ? '6th' : ''
                 return (
@@ -25810,8 +25760,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         fontWeight: 700,
                         padding: '4px 10px',
                         borderRadius: '6px',
-                        background: requestingTeamColor,
-                        color: isRequestingBright ? '#000' : '#fff'
+                        ...teamBoxStyle(requestingTeamColor)
                       }}>{requestingTeamLabel}</span>
                       <span>{requestingTeamScore}</span>
                       <span>:</span>
@@ -25821,8 +25770,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         fontWeight: 700,
                         padding: '4px 10px',
                         borderRadius: '6px',
-                        background: otherTeamColor,
-                        color: isOtherBright ? '#000' : '#fff'
+                        ...teamBoxStyle(otherTeamColor)
                       }}>{otherTeamLabel}</span>
                     </div>
                     {subLabel && (
@@ -25918,8 +25866,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   borderRadius: '6px',
                   fontSize: '14px',
                   fontWeight: 700,
-                  background: teamColor,
-                  color: isBrightColor(teamColor) ? '#000' : '#fff'
+                  ...teamBoxStyle(teamColor)
                 }}>{teamLabel}</span>
               </div>
 
@@ -26136,8 +26083,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   borderRadius: '6px',
                   fontSize: '14px',
                   fontWeight: 700,
-                  background: teamColor,
-                  color: isBrightColor(teamColor) ? '#000' : '#fff'
+                  ...teamBoxStyle(teamColor)
                 }}>{teamLabel}</span>
               </div>
 
@@ -26786,8 +26732,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   borderRadius: '6px',
                   fontSize: '14px',
                   fontWeight: 700,
-                  background: teamColor,
-                  color: isBrightColor(teamColor) ? '#000' : '#fff'
+                  ...teamBoxStyle(teamColor)
                 }}>{teamLabel}</span>
               </div>
 
@@ -27020,8 +26965,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           isMatchEnd={setEndTimeModal.isMatchEnd}
           homeTeamName={data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home')}
           awayTeamName={data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away')}
-          homeColor={data?.match?.homeColor || '#ef4444'}
-          awayColor={data?.match?.awayColor || '#3b82f6'}
+          // The team record's colour first, like the header boxes and the
+          // discs: Manual Adjustments edits only the team, so match.homeColor
+          // can be stale (or missing on an imported match)
+          homeColor={data?.homeTeam?.color || data?.match?.homeColor || '#ef4444'}
+          awayColor={data?.awayTeam?.color || data?.match?.awayColor || '#3b82f6'}
           onConfirm={confirmSetEndTime}
           onDecisionChange={async () => {
             // Track that user dismissed via undo to prevent re-showing
@@ -27368,11 +27316,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {t('scoreboard.modals.teamsMustSwitchCourts')}
             </p>
             <div style={{ marginBottom: '16px', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-              <span style={{ background: data?.homeTeam?.color || '#ef4444', color: isBrightColor(data?.homeTeam?.color || '#ef4444') ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '12px', fontWeight: 700 }}>{teamAKey === 'home' ? 'A' : 'B'}</span>
+              <span style={{ ...teamBoxStyle(data?.homeTeam?.color || '#ef4444'), padding: '2px 6px', borderRadius: '4px', fontSize: '12px', fontWeight: 700 }}>{teamAKey === 'home' ? 'A' : 'B'}</span>
               <span>{data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home')}</span>
               <strong style={{ fontSize: '20px' }}>{courtSwitchModal.homePoints} : {courtSwitchModal.awayPoints}</strong>
               <span>{data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away')}</span>
-              <span style={{ background: data?.awayTeam?.color || '#3b82f6', color: isBrightColor(data?.awayTeam?.color || '#3b82f6') ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '12px', fontWeight: 700 }}>{teamAKey === 'away' ? 'A' : 'B'}</span>
+              <span style={{ ...teamBoxStyle(data?.awayTeam?.color || '#3b82f6'), padding: '2px 6px', borderRadius: '4px', fontSize: '12px', fontWeight: 700 }}>{teamAKey === 'away' ? 'A' : 'B'}</span>
             </div>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
               <SbButton variant="positive"
@@ -27524,8 +27472,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 alignItems: 'center',
                 gap: '8px',
                 padding: '8px 16px',
-                background: teamColor,
-                color: isBrightColor(teamColor) ? '#000' : '#fff',
+                ...teamBoxStyle(teamColor),
                 borderRadius: '8px',
                 fontWeight: 700,
                 fontSize: '14px',
@@ -27657,15 +27604,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     flex: 1,
                     textAlign: 'center',
                     padding: '16px',
-                    background: leftTeamColor,
+                    ...teamBoxStyle(leftTeamColor),
                     borderRadius: '8px',
                     border: '2px solid var(--border)',
                     position: 'relative'
                   }}>
-                    <div style={{ fontSize: '18px', fontWeight: 700, color: '#fff', marginBottom: '4px' }}>
+                    <div style={{ fontSize: '18px', fontWeight: 700, marginBottom: '4px' }}>
                       Team {leftTeamLabel}
                     </div>
-                    <div style={{ fontSize: '14px', color: 'rgba(255, 255, 255, 0.9)', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '14px', opacity: 0.9, marginBottom: '8px' }}>
                       {leftTeamName}
                     </div>
                     {/* Serve ball underneath if serving */}
@@ -27689,15 +27636,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     flex: 1,
                     textAlign: 'center',
                     padding: '16px',
-                    background: rightTeamColor,
+                    ...teamBoxStyle(rightTeamColor),
                     borderRadius: '8px',
                     border: '2px solid var(--border)',
                     position: 'relative'
                   }}>
-                    <div style={{ fontSize: '18px', fontWeight: 700, color: '#fff', marginBottom: '4px' }}>
+                    <div style={{ fontSize: '18px', fontWeight: 700, marginBottom: '4px' }}>
                       Team {rightTeamLabel}
                     </div>
-                    <div style={{ fontSize: '14px', color: 'rgba(255, 255, 255, 0.9)', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '14px', opacity: 0.9, marginBottom: '8px' }}>
                       {rightTeamName}
                     </div>
                     {/* Serve ball underneath if serving */}
@@ -27815,8 +27762,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   borderRadius: '6px',
                   fontSize: '14px',
                   fontWeight: 700,
-                  background: teamColor,
-                  color: isBrightColor(teamColor) ? '#000' : '#fff'
+                  ...teamBoxStyle(teamColor)
                 }}>{teamLabel}</span>
               </div>
 
@@ -28003,7 +27949,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           >
             <div style={{ padding: '4px 0' }}>
               <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)', textAlign: 'center' }}>
-                Last point was assigned to <strong><span style={{ background: oldTeamColor, color: isBrightColor(oldTeamColor) ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, marginRight: '4px' }}>{oldTeamLabel}</span>{oldTeamName}</strong>
+                Last point was assigned to <strong><span style={{ ...teamBoxStyle(oldTeamColor), padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, marginRight: '4px' }}>{oldTeamLabel}</span>{oldTeamName}</strong>
               </p>
 
               {/* Horizontal radio buttons */}
@@ -28077,25 +28023,25 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ width: '55px', textAlign: 'right' }}>Current:</span>
                     <div style={{ background: 'var(--panel)', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ background: homeColor, color: isBrightColor(homeColor) ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{homeLabel}</span>
+                      <span style={{ ...teamBoxStyle(homeColor), padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{homeLabel}</span>
                       <strong>{homeTeamName} {currentHomePoints} : {currentAwayPoints} {awayTeamName}</strong>
-                      <span style={{ background: awayColor, color: isBrightColor(awayColor) ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{awayLabel}</span>
+                      <span style={{ ...teamBoxStyle(awayColor), padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{awayLabel}</span>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ width: '55px', textAlign: 'right' }}>New:</span>
                     <div style={{ background: 'rgba(34, 197, 94, 0.15)', padding: '6px 12px', borderRadius: '6px', border: '1px solid rgba(34, 197, 94, 0.4)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ background: homeColor, color: isBrightColor(homeColor) ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{homeLabel}</span>
+                      <span style={{ ...teamBoxStyle(homeColor), padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{homeLabel}</span>
                       <strong style={{ color: '#22c55e' }}>
                         {homeTeamName} {selectedOption === 'swap' ? swapHomePoints : replayHomePoints} : {selectedOption === 'swap' ? swapAwayPoints : replayAwayPoints} {awayTeamName}
                       </strong>
-                      <span style={{ background: awayColor, color: isBrightColor(awayColor) ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{awayLabel}</span>
+                      <span style={{ ...teamBoxStyle(awayColor), padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>{awayLabel}</span>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ width: '55px', textAlign: 'right' }}>Serve:</span>
                     <VolleyballIcon size={16} />
-                    <span style={{ background: (selectedOption === 'swap' ? swapServeTeam : replayServeTeam) === 'home' ? homeColor : awayColor, color: isBrightColor((selectedOption === 'swap' ? swapServeTeam : replayServeTeam) === 'home' ? homeColor : awayColor) ? '#000' : '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>
+                    <span style={{ ...teamBoxStyle((selectedOption === 'swap' ? swapServeTeam : replayServeTeam) === 'home' ? homeColor : awayColor), padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>
                       {(selectedOption === 'swap' ? swapServeTeam : replayServeTeam) === 'home' ? homeLabel : awayLabel}
                     </span>
                     <strong>{(selectedOption === 'swap' ? swapServeTeam : replayServeTeam) === 'home' ? homeTeamName : awayTeamName}</strong>
@@ -28224,6 +28170,8 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
   const [errors, setErrors] = useState({}) // Use an object for specific error messages
   const [confirmMessage, setConfirmMessage] = useState(null)
   const [editHistory, setEditHistory] = useState([]) // Track edit history: [{ index, previousValue }]
+  // Roster chips in the team's shirt colour (green outline when the team has no colour)
+  const chipPaint = discPaint(teamData?.color, '#ffffff')
 
   // Get all events to check for disqualifications
   const events = useLiveQuery(async () => {
@@ -28651,17 +28599,6 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
   const teamLabel = isTeamA ? 'A' : 'B'
   const teamColor = teamData?.color || (isTeamA ? '#ef4444' : '#3b82f6')
 
-  // Helper function to determine if a color is bright
-  const isBrightColor = (color) => {
-    if (!color) return false
-    const hex = color.replace('#', '')
-    const r = parseInt(hex.substr(0, 2), 16)
-    const g = parseInt(hex.substr(2, 2), 16)
-    const b = parseInt(hex.substr(4, 2), 16)
-    const brightness = (r * 299 + g * 587 + b * 114) / 1000
-    return brightness > 155
-  }
-
   return (
     <Modal
       title={
@@ -28673,8 +28610,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
               borderRadius: '6px',
               fontSize: '14px',
               fontWeight: 700,
-              background: teamColor,
-              color: isBrightColor(teamColor) ? '#000' : '#fff'
+              ...teamBoxStyle(teamColor)
             }}
           >
             {teamLabel}
@@ -29048,14 +28984,15 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                   width: '40px',
                   height: '40px',
                   borderRadius: '50%',
-                  background: draggedPlayer === p.number ? 'rgba(74, 222, 128, 0.4)' : 'rgba(74, 222, 128, 0.2)',
-                  border: '2px solid #4ade80',
+                  background: chipPaint ? chipPaint.background : draggedPlayer === p.number ? 'rgba(74, 222, 128, 0.4)' : 'rgba(74, 222, 128, 0.2)',
+                  border: chipPaint ? `2px solid ${chipPaint.ring || 'rgba(0, 0, 0, 0.15)'}` : '2px solid #4ade80',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   fontSize: '14px',
                   fontWeight: 700,
-                  color: '#4ade80',
+                  color: chipPaint ? chipPaint.color : '#4ade80',
+                  textShadow: chipPaint?.textShadow,
                   cursor: 'grab',
                   transition: 'all 0.2s',
                   userSelect: 'none',
@@ -29063,13 +29000,13 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                 }}
                 onMouseEnter={(e) => {
                   if (!draggedPlayer) {
-                    e.currentTarget.style.background = 'rgba(74, 222, 128, 0.3)'
+                    if (!chipPaint) e.currentTarget.style.background = 'rgba(74, 222, 128, 0.3)'
                     e.currentTarget.style.transform = 'scale(1.1)'
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!draggedPlayer) {
-                    e.currentTarget.style.background = 'rgba(74, 222, 128, 0.2)'
+                    if (!chipPaint) e.currentTarget.style.background = 'rgba(74, 222, 128, 0.2)'
                     e.currentTarget.style.transform = 'scale(1)'
                   }
                 }}
@@ -29085,6 +29022,9 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                     borderRadius: '50%',
                     background: '#4ade80',
                     color: '#000',
+                    // white halo: stays apart from a green shirt
+                    boxShadow: '0 0 0 1.5px #ffffff',
+                    textShadow: 'none',
                     fontSize: '10px',
                     fontWeight: 700,
                     display: 'flex',
@@ -29108,6 +29048,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                     fontSize: '7px',
                     fontWeight: 700,
                     color: '#fff',
+                    textShadow: 'none',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -29443,17 +29384,6 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
   const rightLabel = leftIsTeamA ? 'B' : 'A'
   const winnerLabel = winner === teamAKey ? 'A' : 'B'
 
-  // Determine contrasting text color for winner background
-  const getContrastColor = (hex) => {
-    if (!hex) return '#fff'
-    const c = hex.replace('#', '')
-    const r = parseInt(c.substring(0, 2), 16)
-    const g = parseInt(c.substring(2, 4), 16)
-    const b = parseInt(c.substring(4, 6), 16)
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-    return luminance > 0.5 ? '#000' : '#fff'
-  }
-
   const handleConfirm = () => {
     if (isConfirming) return // Prevent double-clicks
     setIsConfirming(true)
@@ -29474,16 +29404,17 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
     >
       <div style={{ padding: '4px 0', textAlign: 'center' }}>
         <div className="set-end-readout" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '18px', fontWeight: 700, color: leftColor }}>{leftLabel}</span>
+          {/* Team letters in the team colour, darkened until they read on the
+              white modal (a white team gets a ringed white chip): teamTextStyle */}
+          <span style={{ fontSize: '20px', fontWeight: 700, ...teamTextStyle(leftColor, HEADER_SURFACE) }}>{leftLabel}</span>
           <span style={{ fontSize: '36px', fontWeight: 700 }}>{leftScore} : {rightScore}</span>
-          <span style={{ fontSize: '18px', fontWeight: 700, color: rightColor }}>{rightLabel}</span>
+          <span style={{ fontSize: '20px', fontWeight: 700, ...teamTextStyle(rightColor, HEADER_SURFACE) }}>{rightLabel}</span>
         </div>
         <p className="set-end-readout" style={{
           marginBottom: '24px',
           fontSize: '16px',
           fontWeight: 700,
-          background: winnerColor,
-          color: getContrastColor(winnerColor),
+          ...teamBoxStyle(winnerColor),
           padding: '8px 16px',
           borderRadius: '8px',
           display: 'inline-block'

@@ -32,6 +32,7 @@
     "retryAll": "Retry all",
     "screenTooSmall": "Screen too small",
     "screenTooSmallMessage": "This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.",
+    "screenTooShortMessage": "The court does not fit on this screen. Please rotate your device, leave split screen or use a larger screen.",
     "tryFullscreen": "Try fullscreen",
     "fullscreenHint": "Fullscreen may provide more space by hiding browser UI.",
     "setIndex": "Set {{index}}",
@@ -2477,8 +2478,40 @@
         "tournament_entry": "Pairs changed",
         "tournament_schedule": "Schedule changed",
         "tournament_result": "Result entered",
-        "tournament_import": "Excel/CSV imported"
+        "tournament_import": "Excel/CSV imported",
+        "approval_pin_set": "Approval PIN set",
+        "approval_pin_remove": "Approval PIN removed",
+        "approval_pin_locked": "Approval PIN locked",
+        "match_approve": "Result approved with account",
+        "match_approval_revoke": "Account approval undone",
+        "match_approval_void": "Account approvals voided"
       }
+    },
+    "approvals": {
+      "chip": "{{slot}} · {{name}}",
+      "chipTitle": "Approved {{time}} · ID {{id}}",
+      "resultChanged": "Result changed",
+      "slots": {
+        "referee1": "1st referee",
+        "referee2": "2nd referee",
+        "scorer": "Scorer"
+      },
+      "lookup": "Approvals",
+      "lookupPlaceholder": "Approval ID or game number",
+      "lookupButton": "Look up",
+      "lookupEmpty": "No approval found.",
+      "includeRevoked": "Include revoked",
+      "revoked": "Revoked",
+      "active": "Valid",
+      "reasons": {
+        "undo": "undone",
+        "match_reopened": "match reopened",
+        "result_changed": "result changed"
+      },
+      "hashes": "IP {{ip}} · device {{device}}",
+      "requestedBy": "Sent by {{name}}",
+      "wrongPins": "{{failures}} wrong PINs",
+      "blocked": "blocked"
     }
   },
   "savedTeams": {
@@ -3071,6 +3104,93 @@
         "name_twice": "{{name}} is also in row {{first_row}}.",
         "licence_other_draw": "Licence {{licence}} also plays in {{draw}}.",
         "reinstated": "This pair is {{status}} and is entered again."
+      }
+    }
+  },
+  "approval": {
+    "pin": {
+      "title": "Approval PIN",
+      "explainer": "Approve match results with your account instead of a drawn signature. Your personal PIN, not a match PIN. Never share it.",
+      "notSet": "Not set",
+      "setOn": "Set on {{date}}",
+      "lockedUntil": "Locked until {{time}}",
+      "disabled": "Blocked after too many wrong PINs. Set a new one.",
+      "ineligible": {
+        "email": "Confirm your email address first",
+        "role": "Needs the referee or scorer role"
+      },
+      "needsInternet": "Needs internet",
+      "set": "Set PIN",
+      "change": "Change PIN",
+      "remove": "Remove PIN",
+      "setTitle": "Set approval PIN",
+      "changeTitle": "Change approval PIN",
+      "removeTitle": "Remove approval PIN",
+      "currentPassword": "Current password",
+      "passwordHint": "Your account password confirms the change.",
+      "newPin": "New PIN",
+      "repeatPin": "Repeat PIN",
+      "rule": "4 to 6 digits. No date, no year and no pattern such as 1212 or 1234.",
+      "mismatch": "The PINs do not match.",
+      "removeConfirmTitle": "Remove your approval PIN?",
+      "removeConfirmBody": "You can no longer approve results with your account until you set a new PIN.",
+      "save": "Save PIN",
+      "saved": "Approval PIN saved.",
+      "removed": "Approval PIN removed."
+    },
+    "approveWithAccount": "Approve with account",
+    "dialogTitle": "Approve as {{role}}",
+    "officialEntered": "Official entered: {{name}}",
+    "email": "Email of the official's account",
+    "pinLabel": "Approval PIN",
+    "pinHint": "The official types their own approval PIN. It is set in their profile.",
+    "approve": "Approve",
+    "approved": "Approved.",
+    "done": "Approved electronically",
+    "stale": "Result changed. Approve again or sign",
+    "undo": "Undo",
+    "undoConfirm": "Undo this approval?",
+    "undoConfirmBody": "The official then approves again or signs by hand.",
+    "undone": "Approval undone.",
+    "needsInternet": "Needs internet",
+    "needsInternetSignByHand": "Needs internet: sign by hand",
+    "syncing": "Sending the result…",
+    "nameDiffers": "Account name {{account}} differs from the official entered ({{entered}})",
+    "revalidateFailed": "An account approval is no longer valid. Check the signatures and approve again.",
+    "errors": {
+      "pinInvalid": "Email or PIN not accepted. After several wrong PINs the PIN pauses: the official sees it in their profile. Or sign by hand.",
+      "pinFormat": "The PIN must have 4 to 6 digits.",
+      "pinWeak": "This PIN is too easy to guess. Avoid dates, years and patterns such as 1212, 2580 or 1234.",
+      "passwordInvalid": "Wrong password.",
+      "roleRequired": "This account does not have the role for this signature.",
+      "notMatchScorer": "Only the scorer of this match can approve as scorer.",
+      "nameRequired": "The account has no name. Add it in the profile first.",
+      "oneSlot": "This account has already approved another signature of this match.",
+      "slotTaken": "Someone else has already approved this signature.",
+      "matchClosed": "The match is closed.",
+      "matchNotEnded": "The match has not ended on the server yet. Wait for the sync, then try again.",
+      "resultNotSynced": "The result has not reached the server yet. Check the connection and try again.",
+      "unsupported": "Not available for beach matches.",
+      "unavailable": "Approval with an account is not available on this server.",
+      "emailUnconfirmed": "The official has not confirmed the email address of the account yet.",
+      "scorerNotReferee": "The account that scores this match cannot approve as a referee.",
+      "callerRole": "Approving with an account needs a scorer or referee account on this device."
+    },
+    "mine": {
+      "title": "Your approvals",
+      "hint": "Every approval made with your PIN. If one was not you, undo it while the match is open and change your PIN.",
+      "empty": "No approvals yet.",
+      "sentBy": "Sent by {{name}}",
+      "test": "Test match",
+      "valid": "Valid",
+      "resultChanged": "Result changed",
+      "closed": "Closed",
+      "revoked": "Revoked",
+      "undoBody": "The approval no longer counts. The match is then approved again or signed by hand.",
+      "slots": {
+        "referee1": "1st referee",
+        "referee2": "2nd referee",
+        "scorer": "Scorer"
       }
     }
   }
