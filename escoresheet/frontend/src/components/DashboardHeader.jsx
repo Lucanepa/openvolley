@@ -12,6 +12,7 @@ import {
 } from './chromeClasses'
 import HeaderMenuItem from './HeaderMenuItem'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
+import LegalLinks from '../legal/LegalLinks'
 
 // Flag SVG components for language selector
 const FlagGB = () => (
@@ -381,6 +382,11 @@ export default function DashboardHeader({
                 </div>
               </div>
             )}
+
+            {/* Privacy policy, terms, legal notice (openvolley.app): the referee,
+                bench and livescore menus */}
+            <div className={MENU_SEP} />
+            <LegalLinks docs={['privacy', 'terms', 'impressum']} className="px-3 py-2 text-[11px]" />
           </div>
         </>
       )}
