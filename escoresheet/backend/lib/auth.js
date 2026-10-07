@@ -135,7 +135,10 @@ const DEFAULTS = Object.freeze({
     // db/011: approvals keep the official's name snapshot (club records)
     { table: 'public.match_approvals', column: 'user_id' },
     { table: 'public.match_approvals', column: 'requested_by' },
-    { table: 'public.match_approvals', column: 'revoked_by' }
+    { table: 'public.match_approvals', column: 'revoked_by' },
+    // db/015: the history of undone / edited events stays with its match
+    { table: 'public.events', column: 'voided_by' },
+    { table: 'public.event_revisions', column: 'actor_id' }
   ],
   // async (userId) => counts: removes the account's files (server.js passes
   // lib/storage.js deleteUserData: backup/<user>/ and scoresheet owner

@@ -40,7 +40,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 // (they run on the production database through restore.sh): applied after it,
 // and after a template copy (all of them are idempotent).
 // 007 needs 006's ov_touch_updated_at().
-export const MIGRATIONS_SQL = ['005_match_ownership.sql', '006_matches_updated_at.sql', '007_scorer_accounts.sql', '008_live_state_tto.sql', '009_beach_saved_teams.sql', '010_auth_tokens.sql', '011_account_approvals.sql', '012_app_memberships.sql', '013_beach_official_index.sql', '014_beach_tournaments.sql']
+export const MIGRATIONS_SQL = ['005_match_ownership.sql', '006_matches_updated_at.sql', '007_scorer_accounts.sql', '008_live_state_tto.sql', '009_beach_saved_teams.sql', '010_auth_tokens.sql', '011_account_approvals.sql', '012_app_memberships.sql', '013_beach_official_index.sql', '014_beach_tournaments.sql', '015_event_revisions.sql']
   .map((f) => readFileSync(join(here, '..', '..', 'db', f), 'utf8'))
   .join('\n')
 const SYNTHETIC_SQL = readFileSync(join(here, '..', 'fixtures', 'synthetic_schema.sql'), 'utf8')
