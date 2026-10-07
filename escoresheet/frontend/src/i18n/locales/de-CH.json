@@ -1929,6 +1929,7 @@
     "done": "Fertig",
     "footer": {
       "connected": "Verbunde: {{roles}} · {{count}} vo {{total}} Tablets",
+      "connectedOnly": "Verbunde: {{roles}}",
       "none": "No kei Tablet verbunde",
       "thisNetworkOnly": "De Live-Status zeigt nur Tablets i däm Netz"
     },

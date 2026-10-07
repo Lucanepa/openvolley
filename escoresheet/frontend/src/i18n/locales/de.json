@@ -1803,6 +1803,7 @@
     "done": "Fertig",
     "footer": {
       "connected": "Verbunden: {{roles}} · {{count}} von {{total}} Tablets",
+      "connectedOnly": "Verbunden: {{roles}}",
       "none": "Noch kein Tablet verbunden",
       "thisNetworkOnly": "Der Live-Status zeigt nur Tablets in diesem Netz"
     },

@@ -176,7 +176,22 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
   // -- the match --
   const seedKey = match ? (relayMatchKey(match) || match.seed_key || match.externalId || null) : null
   const matchView = useMemo(() => (match ? { ...match, ...roleOverride } : null), [match, roleOverride])
-  const teamNames = match ? matchTeamNames(match) : null
+  // A match keeps its teams by id (homeTeamId / awayTeamId): read their
+  // names so a bench card says which team's tablet it is
+  const [dbTeams, setDbTeams] = useState(null)
+  useEffect(() => {
+    setDbTeams(null)
+    if (!open || !match || !db.teams) return undefined
+    let cancelled = false
+    Promise.all([
+      match.homeTeamId != null ? db.teams.get(match.homeTeamId) : null,
+      match.awayTeamId != null ? db.teams.get(match.awayTeamId) : null
+    ]).then(([home, away]) => {
+      if (!cancelled) setDbTeams({ home: home?.name || null, away: away?.name || null })
+    }).catch(() => { /* names stay as the match has them */ })
+    return () => { cancelled = true }
+  }, [open, match?.id, match?.homeTeamId, match?.awayTeamId]) // eslint-disable-line react-hooks/exhaustive-deps
+  const teamNames = match ? matchTeamNames(match, { homeTeam: dbTeams?.home, awayTeam: dbTeams?.away }) : null
   const gameNumber = match ? (match.gameNumber ?? match.gameN ?? match.game_n ?? null) : null
   useEffect(() => { setRoleOverride({}) }, [match?.id])
 
@@ -353,11 +368,13 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
     <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-2">
       <p className="w-full min-w-0 text-xs text-stone-600 sm:w-auto sm:flex-1" data-testid="devices-connected">
         {seedKey && (summary.connected.length
-          ? t('connectTablets.footer.connected', 'Connected: {{roles}} · {{count}} of {{total}} tablets', {
-            roles: summary.connected.map(r => labels[r]).join(', '),
-            count: summary.connected.length,
-            total: summary.on
-          })
+          ? summary.on > 1
+            ? t('connectTablets.footer.connected', 'Connected: {{roles}} · {{count}} of {{total}} tablets', {
+              roles: summary.connected.map(r => labels[r]).join(', '),
+              count: summary.connected.length,
+              total: summary.on
+            })
+            : t('connectTablets.footer.connectedOnly', 'Connected: {{roles}}', { roles: summary.connected.map(r => labels[r]).join(', ') })
           : transport !== 'server' && !relayTablets.reachable
             ? t('connectTablets.card.unknown', 'Live status not available')
             : t('connectTablets.footer.none', 'No tablet connected yet'))}

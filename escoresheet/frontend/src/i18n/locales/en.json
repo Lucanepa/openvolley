@@ -1935,6 +1935,7 @@
     "done": "Done",
     "footer": {
       "connected": "Connected: {{roles}} · {{count}} of {{total}} tablets",
+      "connectedOnly": "Connected: {{roles}}",
       "none": "No tablet connected yet",
       "thisNetworkOnly": "Live status shows tablets on this network only"
     },

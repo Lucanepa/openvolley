@@ -1928,6 +1928,7 @@
     "done": "Terminé",
     "footer": {
       "connected": "Connectées : {{roles}} · {{count}} sur {{total}} tablettes",
+      "connectedOnly": "Connectées : {{roles}}",
       "none": "Aucune tablette connectée pour l’instant",
       "thisNetworkOnly": "Le statut en direct ne montre que les tablettes de ce réseau"
     },
