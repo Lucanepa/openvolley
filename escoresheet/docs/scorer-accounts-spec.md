@@ -668,7 +668,7 @@ The bundle includes archived competitions (with the flag). Pickers hide them.
   - When `canScore` turns true, or `canReadTeams` changes, dispatch `window` `CustomEvent('ov-access-changed', { detail: access })`.
   - On sign-out, and when the user id changes, call `clearSavedTeams()` (6.6).
   - Remove `roles` from the `signUp` metadata (the server drops it anyway).
-- `src/components/auth/SignUpModal.jsx`: drop `roles: ['scorer']`, and show `access.signUpPendingNote` under the form.
+- `src/components/auth/SignUpForm.jsx` (the manager site's `#signup` page; the sign-up dialog of the scorer apps is gone): drop `roles: ['scorer']`, and show `access.signUpPendingNote` under the form.
 - `src/components/auth/UserButton.jsx`: replace the hard-coded "Scorer" chip with chips from `access` (pending is an amber chip). Add menu rows, in both the dropdown and `inline`:
   - "Admin" (`isAdmin`) → `openManage('accounts')`.
   - "Saved teams" (`canManageTeams`) → `openManage('teams')`.

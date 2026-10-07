@@ -143,6 +143,7 @@ describe('errorKeyOf and formatInviteCode', () => {
   it('maps codes to i18n keys', () => {
     expect(errorKeyOf({ code: 'OV_INVITE_EXPIRED', status: 410 })).toBe('access.errors.inviteExpired')
     expect(errorKeyOf({ code: 'OV_SELF_DEMOTE', status: 409 })).toBe('manage.accounts.selfDemote')
+    expect(errorKeyOf({ code: 'OV_EMAIL_UNCONFIRMED', status: 409 })).toBe('access.errors.emailUnconfirmed')
     expect(errorKeyOf({ network: true, status: 0 })).toBe('manage.errors.offline')
     expect(errorKeyOf({ status: 403 })).toBe('manage.errors.forbidden')
     expect(errorKeyOf({ status: 500 })).toBe('manage.errors.generic')

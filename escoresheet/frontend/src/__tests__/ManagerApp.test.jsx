@@ -39,7 +39,11 @@ vi.mock('../lib/apiClient', () => ({
 import ManagerApp, { ACCOUNT_LOAD_TIMEOUT_MS, tabFromHash } from '../ManagerApp'
 import { accessFromRoles, NO_ACCESS } from '../lib/access'
 
-function setAuth({ user = { id: 'u-1', email: 'admin@club.ch' }, roles = [], known = true, loading = false, profile } = {}) {
+const CONFIRMED_AT = '2026-10-01T08:00:00Z'
+
+function setAuth({ user: given = { id: 'u-1', email: 'admin@club.ch' }, roles = [], known = true, loading = false, profile } = {}) {
+  // Confirmed unless the test says otherwise (email_confirmed_at: null)
+  const user = given && !('email_confirmed_at' in given) ? { ...given, email_confirmed_at: CONFIRMED_AT } : given
   auth.value = {
     user,
     profile: profile ?? (user ? { user_id: user.id, first_name: 'Ada', last_name: 'Admin', roles } : null),
@@ -50,7 +54,9 @@ function setAuth({ user = { id: 'u-1', email: 'admin@club.ch' }, roles = [], kno
     signOut: vi.fn(async () => ({ error: null })),
     resetPassword: vi.fn(),
     fetchProfile: vi.fn(async () => null),
-    redeemInvite: vi.fn(async () => ({ data: { roles: ['competition_manager'] }, error: null }))
+    redeemInvite: vi.fn(async () => ({ data: { roles: ['competition_manager'] }, error: null })),
+    resendConfirmation: vi.fn(async () => ({ data: { sent: true }, error: null })),
+    refreshUser: vi.fn(async () => null)
   }
 }
 
@@ -175,6 +181,33 @@ describe('ManagerApp (manager.openvolley.app)', () => {
     expect(screen.queryByTestId('manage-console')).toBeNull()
     fireEvent.click(within(page).getByRole('button', { name: 'managerSite.signOut' }))
     await waitFor(() => expect(auth.value.signOut).toHaveBeenCalled())
+  })
+
+  it('pending account, address not confirmed: "confirm your email" with "Send a new link" above the code', async () => {
+    setAuth({ user: { id: 'u-2', email: 'lea@club.ch', email_confirmed_at: null }, roles: [] })
+    render(<ManagerApp />)
+    const step = screen.getByTestId('manager-invite-step')
+    const banner = within(step).getByTestId('email-confirm-banner')
+    expect(banner).toHaveTextContent('authEmail.notConfirmed')
+    expect(within(step).getByLabelText('access.inviteCodeLabel')).toBeInTheDocument()
+    fireEvent.click(within(banner).getByRole('button', { name: 'authEmail.resend' }))
+    await waitFor(() => expect(auth.value.resendConfirmation).toHaveBeenCalledTimes(1))
+    expect(await within(step).findByText('authEmail.resent')).toBeInTheDocument()
+  })
+
+  it('pending account, confirmed elsewhere: "already confirmed" re-reads the user', async () => {
+    setAuth({ user: { id: 'u-2', email: 'lea@club.ch', email_confirmed_at: null }, roles: [] })
+    auth.value.resendConfirmation = vi.fn(async () => ({ data: { sent: false, already_confirmed: true }, error: null }))
+    render(<ManagerApp />)
+    fireEvent.click(screen.getByRole('button', { name: 'authEmail.resend' }))
+    await waitFor(() => expect(auth.value.refreshUser).toHaveBeenCalledTimes(1))
+  })
+
+  it('pending account, address confirmed: no "confirm your email"', () => {
+    setAuth({ user: { id: 'u-2', email: 'lea@club.ch' }, roles: [] })
+    render(<ManagerApp />)
+    expect(screen.getByTestId('manager-invite-step')).toBeInTheDocument()
+    expect(screen.queryByTestId('email-confirm-banner')).toBeNull()
   })
 
   it('pending account: a redeemed invite code sends the code to the server', async () => {
@@ -313,6 +346,56 @@ describe('ManagerApp #signup (accounts are made here)', () => {
     expect(within(step).getByRole('heading', { name: 'managerSite.inviteStepTitle' })).toBeInTheDocument()
     expect(within(step).getByLabelText('access.inviteCodeLabel')).toBeInTheDocument()
     expect(window.location.hash).toBe('')
+  })
+
+  it('a confirmation link was mailed: signed in at once, the invite step says where the link went', async () => {
+    setAuth({ user: null })
+    // The server mails a link and lets the unconfirmed account sign in
+    auth.value.signUp = vi.fn(async () => ({
+      data: { user: { id: 'u-new', email_confirmed_at: null }, email_confirmation: 'sent' },
+      error: null
+    }))
+    auth.value.signIn = vi.fn(async () => {
+      const prev = auth.value
+      setAuth({ user: { id: 'u-new', email: 'lea@club.ch', email_confirmed_at: null }, roles: [] })
+      auth.value.signUp = prev.signUp
+      return { error: null }
+    })
+    const signIn = auth.value.signIn
+    const { rerender } = render(<ManagerApp />)
+    const page = screen.getByTestId('manager-sign-up')
+    fill(page, { ...valid, Email: ' lea@club.ch ' })
+    fireEvent.click(within(page).getByRole('button', { name: 'Create account' }))
+    await waitFor(() => expect(screen.getByTestId('manager-invite-step')).toBeInTheDocument())
+    expect(signIn).toHaveBeenCalledWith('lea@club.ch', 'secret1')
+    rerender(<ManagerApp />)
+    const step = screen.getByTestId('manager-invite-step')
+    expect(within(step).getByText('managerSite.accountCreated')).toBeInTheDocument()
+    expect(within(step).getByTestId('signup-link-sent')).toHaveTextContent('authEmail.signUpLinkSent')
+    expect(within(step).getByTestId('email-confirm-banner')).toBeInTheDocument()
+
+    // Signed out and in again: the note belonged to that sign-up only
+    setAuth({ user: null })
+    rerender(<ManagerApp />)
+    setAuth({ user: { id: 'u-new', email: 'lea@club.ch' }, roles: [] })
+    rerender(<ManagerApp />)
+    expect(screen.queryByTestId('signup-link-sent')).toBeNull()
+  })
+
+  it('no link mailed (the server confirmed at sign-up): no "we sent a link" note', async () => {
+    setAuth({ user: null })
+    auth.value.signIn = vi.fn(async () => {
+      const prev = auth.value
+      setAuth({ user: { id: 'u-new', email: 'lea@club.ch' }, roles: [] })
+      auth.value.signUp = prev.signUp
+      return { error: null }
+    })
+    render(<ManagerApp />)
+    const page = screen.getByTestId('manager-sign-up')
+    fill(page, valid)
+    fireEvent.click(within(page).getByRole('button', { name: 'Create account' }))
+    await waitFor(() => expect(screen.getByTestId('manager-invite-step')).toBeInTheDocument())
+    expect(screen.queryByTestId('signup-link-sent')).toBeNull()
   })
 
   it('sign up, then sign out: the sign-in card, and another pending account gets no "account created"', async () => {

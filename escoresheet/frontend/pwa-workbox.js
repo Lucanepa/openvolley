@@ -15,6 +15,19 @@ export const PAGE_ENTRIES = ['referee', 'scoresheet', 'bench', 'livescore', 'upl
 // workers), styles, fonts and images (the scoresheet's .jpg logo too).
 export const PRECACHE_GLOB_PATTERNS = ['**/*.{js,mjs,css,html,ico,png,jpg,jpeg,svg,webp,woff,woff2}']
 
+// Logo files the pages' heads link to (rendered from brand/ by
+// scripts/make-brand-assets.py), and the serve ball.
+export const PWA_INCLUDE_ASSETS = ['favicon.ico', 'favicon.svg', 'apple-touch-icon.png', 'ball.png', 'fonts/*.woff2']
+
+// Manifest icons: the white tile ('any'), and a full-bleed white square with
+// the ball inside the safe zone for launchers that mask ('maskable').
+export const PWA_ICONS = [
+  { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+  { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+  { src: 'icon-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+  { src: 'icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+]
+
 // Ignore every query param when looking up the precache: /scoresheet/?matchId=X,
 // /referee/?match=..&team=.. and /?cache_bust=.. must all map to the
 // precached index.html (Workbox's default only ignores utm_* and fbclid).

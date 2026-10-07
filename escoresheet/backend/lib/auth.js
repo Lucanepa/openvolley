@@ -25,12 +25,38 @@
  *     auth.findUserId(emailOrId)       -> { id, email } (throws if not exactly one)
  *     auth.revokeUserSessions(userId)  -> number
  *     auth.sweepExpiredSessions()      -> number
+ *     auth.sweepExpiredTokens()        -> number   (one-time email links, db/010)
+ *     auth.settle()                    -> resolves when the background mail jobs are done (tests)
  *     auth.sweep()                     -> clears stale in-memory counters
  *     auth.limits / auth.lockout       -> the counters (inspect, reset, replace)
  *     auth.bcryptGate                  -> { active, queued, peak } of the bcrypt limiter
  *   sendAuthResult(res, result), createRateLimiter(opts), createLockout(opts),
  *   createConcurrencyGate(opts), ipBucketKey(ip), hashToken(token),
  *   generateToken(), isWellFormedToken(token), AUTH_ACTIONS
+ *
+ * Email links (db/010_auth_tokens.sql, lib/mailer.js; README "Account emails"):
+ * with a mailer (SMTP configured) reset-password mails a one-time link
+ * (60 min) and reset-password/confirm sets the new password; sign-up leaves
+ * the address unconfirmed and mails a confirmation link (24 h) that
+ * confirm-email redeems; resend-confirmation sends a fresh one. Without a
+ * mailer reset-password answers 503 "temporarily unavailable" and sign-up
+ * confirms the account at once, as before. Tokens are stored as SHA-256 only.
+ *
+ * Unconfirmed sign-in: requireConfirmedEmail refuses accounts whose
+ * email_confirmed_at is NULL (GoTrue did too), EXCEPT accounts this server
+ * created with a confirmation link (raw_app_meta_data.ov_email_confirmation =
+ * 'link'). Those may sign in while unconfirmed, but get no role until the
+ * address is confirmed: lib/accounts.js refuses redeem-invite and an admin's
+ * role grant for them (409 OV_EMAIL_UNCONFIRMED), so a pending account cannot
+ * become a scorer, referee or competition manager under an address it never
+ * proved. The profile and the admin Accounts list show the address as
+ * unconfirmed, and whoever owns the mailbox can take the account over with a
+ * reset link at any time.
+ *
+ * Sign-up still answers 422 user_already_exists for a registered address (as
+ * before): an unconfirmed account may sign in at once, so a uniform sign-up
+ * answer would not hide whether an address is registered (sign up, then sign
+ * in). reset-password alone gives nothing away.
  *
  * CPU guard: bcryptjs is pure JS and runs on the main event loop, which also
  * serves the live-scoring relay. Every bcrypt call goes through a small
@@ -43,6 +69,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { isIPv4, isIPv6 } from 'node:net'
 import bcryptjs from 'bcryptjs'
+import { authLink, describeMailError, disabledMailer, inboxKey, maskEmail, pickLang } from './mailer.js'
 
 // ---------------------------------------------------------------------------
 // Constants and small helpers
@@ -52,12 +79,27 @@ const DAY = 24 * 60 * 60
 
 export const AUTH_ACTIONS = Object.freeze([
   'sign-in', 'sign-up', 'sign-out', 'get-user', 'update-user',
-  'delete-account', 'profile', 'reset-password'
+  'delete-account', 'profile', 'reset-password', 'reset-password/confirm',
+  'confirm-email', 'resend-confirmation'
 ])
+
+// raw_app_meta_data marker of accounts created unconfirmed with a link.
+export const EMAIL_CONFIRMATION_MARK = Object.freeze({ key: 'ov_email_confirmation', value: 'link' })
 
 const DEFAULTS = Object.freeze({
   usersTable: 'auth.users',
   sessionsTable: 'auth.app_sessions',
+  // One-time email links (db/010). Absent table: reset answers 503 and
+  // sign-up confirms at once, as without a mailer.
+  tokensTable: 'auth.app_tokens',
+  // Best-effort audit entries (db/007) when the table exists.
+  auditTable: 'public.audit_log',
+  // lib/mailer.js mailer; null/disabled: no account emails (see header).
+  mailer: null,
+  resetTokenTtlSec: 60 * 60,
+  confirmTokenTtlSec: 24 * 60 * 60,
+  // Used or expired link rows are deleted this long after (sweepExpiredTokens).
+  tokenRetentionSec: 7 * DAY,
   profilesTable: 'public.profiles',
   profileUserIdColumn: 'user_id',
   // Tables whose rows belong to a user and go with the account. Deleted
@@ -111,7 +153,8 @@ const DEFAULTS = Object.freeze({
 
   // Refuse sign-in for users whose email_confirmed_at is NULL (when the column
   // exists): GoTrue refused them too, and an unconfirmed row may belong to
-  // someone who registered another person's address.
+  // someone who registered another person's address. Accounts this server
+  // created with a confirmation link are exempt (see the header).
   requireConfirmedEmail: true,
 
   // Default: process.env.CONTACT_EMAIL, then the same fallback as server.js.
@@ -127,8 +170,8 @@ const DEFAULTS = Object.freeze({
     // ~60-150 ms of main-thread CPU; 5/s keeps bcrypt well under one core.
     signInGlobal: { max: 5, windowMs: 1000 },
     signUpIp: { max: 5, windowMs: 60 * 60 * 1000 },
-    // Sign-up is auto-confirmed (no email flow): per address (plus-tags
-    // removed, so one mailbox cannot be probed or flooded from many IPs), and
+    // Per delivered inbox (inboxKey: plus-tags removed, Gmail dots ignored,
+    // so one mailbox cannot be probed or flooded from many IPs), and
     // all sign-ups together, so a spread-out burst cannot mass-create
     // accounts. The global budget counts created accounts only: requests for
     // existing addresses (or that fail) are refunded, so nobody can use it up
@@ -136,7 +179,17 @@ const DEFAULTS = Object.freeze({
     // morning's sign-ups.
     signUpEmail: { max: 3, windowMs: 60 * 60 * 1000 },
     signUpGlobal: { max: 300, windowMs: 60 * 60 * 1000 },
-    sessionIp: { max: 300, windowMs: 60 * 1000 }
+    sessionIp: { max: 300, windowMs: 60 * 1000 },
+    // Reset links: per client and per delivered inbox (inboxKey: plus-tags
+    // removed, Gmail dots ignored), whether or not the account exists (so
+    // the answer never tells).
+    resetIp: { max: 10, windowMs: 60 * 60 * 1000 },
+    resetEmail: { max: 3, windowMs: 60 * 60 * 1000 },
+    // Redeeming links (reset-password/confirm, confirm-email), per client.
+    tokenIp: { max: 30, windowMs: 15 * 60 * 1000 },
+    // resend-confirmation: per account and per client.
+    resendUser: { max: 3, windowMs: 60 * 60 * 1000 },
+    resendIp: { max: 10, windowMs: 60 * 60 * 1000 }
   },
   lockout: { maxFailures: 10, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 }
 })
@@ -427,6 +480,7 @@ const MISSING_TOKEN = () => fail(401, 'Authentication required', 'missing_token'
 const UNAVAILABLE = () => fail(503, 'Authentication service unavailable. Please try again.', 'auth_unavailable', { 'Retry-After': '5' })
 const BUSY = () => fail(503, 'Sign-in is busy right now. Please try again in a few seconds.', 'auth_busy', { 'Retry-After': '2' })
 const INVALID_CREDENTIALS = () => fail(400, 'Invalid login credentials', 'invalid_credentials')
+const INVALID_LINK = () => fail(400, 'This link is invalid, was already used or has expired. Please request a new one.', 'invalid_link')
 
 /** Writes a result from handleAuthRequest (or any auth helper) to a node:http response. */
 export function sendAuthResult(res, r) {
@@ -472,11 +526,14 @@ export function createAuth(options = {}) {
     hash: (password, cost) => bcryptGate.run(() => rawBcrypt.hash(password, cost))
   }
   const log = options.logger || console
+  const mailer = cfg.mailer && typeof cfg.mailer.send === 'function' ? cfg.mailer : disabledMailer()
 
   const T = {
     users: qualify(cfg.usersTable),
     sessions: qualify(cfg.sessionsTable),
-    profiles: cfg.profilesTable ? qualify(cfg.profilesTable) : null
+    profiles: cfg.profilesTable ? qualify(cfg.profilesTable) : null,
+    tokens: cfg.tokensTable ? qualify(cfg.tokensTable) : null,
+    audit: cfg.auditTable ? qualify(cfg.auditTable) : null
   }
 
   const limits = {
@@ -486,7 +543,12 @@ export function createAuth(options = {}) {
     signUpIp: resolveLimiter(cfg.limits.signUpIp),
     signUpEmail: resolveLimiter(cfg.limits.signUpEmail),
     signUpGlobal: resolveLimiter(cfg.limits.signUpGlobal),
-    sessionIp: resolveLimiter(cfg.limits.sessionIp)
+    sessionIp: resolveLimiter(cfg.limits.sessionIp),
+    resetIp: resolveLimiter(cfg.limits.resetIp),
+    resetEmail: resolveLimiter(cfg.limits.resetEmail),
+    tokenIp: resolveLimiter(cfg.limits.tokenIp),
+    resendUser: resolveLimiter(cfg.limits.resendUser),
+    resendIp: resolveLimiter(cfg.limits.resendIp)
   }
   const lockout = typeof cfg.lockout.check === 'function' ? cfg.lockout : createLockout(cfg.lockout)
 
@@ -580,9 +642,19 @@ export function createAuth(options = {}) {
     return false
   }
 
-  /** True when the users table tracks confirmation and this user never confirmed. */
+  /** Created by this server unconfirmed, with a confirmation link (may sign in). */
+  function confirmsByLink(u) {
+    const m = u?.raw_app_meta_data
+    return isPlainObject(m) && m[EMAIL_CONFIRMATION_MARK.key] === EMAIL_CONFIRMATION_MARK.value
+  }
+
+  /**
+   * True when sign-in must be refused because the address was never
+   * confirmed: the users table tracks confirmation, this user never confirmed,
+   * and the account is not one this server created with a confirmation link.
+   */
   function isUnconfirmed(u, cols) {
-    return cfg.requireConfirmedEmail && cols.has('email_confirmed_at') && u?.email_confirmed_at == null
+    return cfg.requireConfirmedEmail && cols.has('email_confirmed_at') && u?.email_confirmed_at == null && !confirmsByLink(u)
   }
 
   function stripMetadata(meta) {
@@ -785,35 +857,129 @@ export function createAuth(options = {}) {
       if (problem) throw new Error(problem)
     }
     const hash = await hashPassword(newPassword)
-    return withTransaction(async (client) => {
-      const cols = await usersColumns(client)
-      const { id, email } = await findUserId(emailOrId, { client, forUpdate: true })
-      const tracksConfirm = cols.has('email_confirmed_at')
-      let set = 'encrypted_password = $2'
-      if (writable(cols, 'updated_at')) set += ', updated_at = now()'
-      if (confirmEmail && writable(cols, 'email_confirmed_at')) {
-        set += ', email_confirmed_at = coalesce(email_confirmed_at, now())'
-      }
-      const upd = await client.query(
-        `UPDATE ${T.users} SET ${set} WHERE id = $1
-         RETURNING ${tracksConfirm ? 'email_confirmed_at IS NOT NULL' : 'true'} AS confirmed`,
-        [id, hash]
+    const out = await withTransaction((client) => setPasswordIn(client, emailOrId, hash, { confirmEmail }))
+    lockout.reset(out.email)
+    return out
+  }
+
+  /**
+   * The body of setPassword inside the caller's transaction: new hash, all
+   * sessions revoked, every open reset link of the user spent (and its open
+   * confirmation links when the address is confirmed now).
+   */
+  async function setPasswordIn(client, emailOrId, hash, { confirmEmail = false } = {}) {
+    const cols = await usersColumns(client)
+    const { id, email } = await findUserId(emailOrId, { client, forUpdate: true })
+    const tracksConfirm = cols.has('email_confirmed_at')
+    let set = 'encrypted_password = $2'
+    if (writable(cols, 'updated_at')) set += ', updated_at = now()'
+    if (confirmEmail && writable(cols, 'email_confirmed_at')) {
+      set += ', email_confirmed_at = coalesce(email_confirmed_at, now())'
+    }
+    const upd = await client.query(
+      `UPDATE ${T.users} SET ${set} WHERE id = $1
+       RETURNING ${tracksConfirm ? 'email_confirmed_at IS NOT NULL' : 'true'} AS confirmed`,
+      [id, hash]
+    )
+    const revokedSessions = await revokeUserSessions(id, client)
+    const emailConfirmed = upd.rows[0].confirmed === true
+    if (await tokensAvailable(client)) {
+      await client.query(
+        `UPDATE ${T.tokens} SET used_at = now()
+          WHERE user_id = $1 AND used_at IS NULL AND (purpose = 'reset' OR ($2 AND purpose = 'confirm'))`,
+        [id, emailConfirmed]
       )
-      const revokedSessions = await revokeUserSessions(id, client)
-      lockout.reset(email)
-      return { userId: id, email, revokedSessions, emailConfirmed: upd.rows[0].confirmed === true }
-    })
+    }
+    return { userId: id, email, revokedSessions, emailConfirmed }
+  }
+
+  // --- one-time email links (db/010) -----------------------------------------
+  async function tokensAvailable(client = pool) {
+    if (!cfg.tokensTable) return false
+    return (await columnsOf(cfg.tokensTable, client)).size > 0
+  }
+
+  /** New link token for userId; older open tokens of the same purpose are spent. */
+  async function issueToken(client, userId, purpose) {
+    const ttl = purpose === 'reset' ? cfg.resetTokenTtlSec : cfg.confirmTokenTtlSec
+    const token = generateToken()
+    await client.query(
+      `UPDATE ${T.tokens} SET used_at = now() WHERE user_id = $1 AND purpose = $2 AND used_at IS NULL`,
+      [userId, purpose]
+    )
+    await client.query(
+      `INSERT INTO ${T.tokens} (hash, purpose, user_id, created_at, expires_at)
+       VALUES ($1, $2, $3, now(), now() + make_interval(secs => $4))`,
+      [hashToken(token), purpose, userId, ttl]
+    )
+    return token
+  }
+
+  /**
+   * Locks the token row and marks it used when it is valid.
+   * -> { state: 'ok' | 'used' | 'expired' | 'unknown', userId }
+   */
+  async function consumeToken(client, token, purpose) {
+    const { rows } = await client.query(
+      `SELECT user_id, used_at IS NOT NULL AS used, expires_at <= now() AS expired
+         FROM ${T.tokens} WHERE hash = $1 AND purpose = $2 FOR UPDATE`,
+      [hashToken(token), purpose]
+    )
+    const row = rows[0]
+    if (!row) return { state: 'unknown', userId: null }
+    if (row.used) return { state: 'used', userId: row.user_id }
+    if (row.expired) return { state: 'expired', userId: row.user_id }
+    await client.query(`UPDATE ${T.tokens} SET used_at = now() WHERE hash = $1`, [hashToken(token)])
+    return { state: 'ok', userId: row.user_id }
+  }
+
+  async function sweepExpiredTokens() {
+    if (!(await tokensAvailable())) return 0
+    const { rowCount } = await pool.query(
+      `DELETE FROM ${T.tokens} WHERE coalesce(used_at, expires_at) <= now() - make_interval(secs => $1)`,
+      [cfg.tokenRetentionSec]
+    )
+    return rowCount
+  }
+
+  /** Best-effort audit entry (never fails the request). */
+  async function audit(action, targetUserId, details = {}) {
+    if (!T.audit) return
+    try {
+      if (!(await columnsOf(cfg.auditTable)).size) return
+      await pool.query(
+        `INSERT INTO ${T.audit} (actor_id, action, target_user_id, details) VALUES ($1, $2, $1, $3::jsonb)`,
+        [targetUserId, action, JSON.stringify(details)]
+      )
+    } catch (err) {
+      log.warn?.(`[auth] audit ${action} failed: ${err?.code || err?.message}`)
+    }
+  }
+
+  // Mail jobs run after the answer went out (so its timing never depends on
+  // whether the account exists); settle() waits for them (tests, shutdown).
+  const pending = new Set()
+  function background(what, fn) {
+    const p = (async () => {
+      // describeMailError: an SMTP reply quotes the recipient; log it masked.
+      try { await fn() } catch (err) { log.error(`[auth] ${what} failed: ${describeMailError(err)}`) }
+    })()
+    pending.add(p)
+    p.finally(() => pending.delete(p))
+  }
+  async function settle() {
+    while (pending.size) await Promise.allSettled([...pending])
+  }
+
+  function mailLang(body, ctx) {
+    return pickLang(body.lang, ctx.headers?.['accept-language'])
   }
 
   // --- action handlers ---------------------------------------------------------
-  // The per-address sign-up bucket: name+tag@domain counts as name@domain.
-  function mailboxKey(email) {
-    const at = email.lastIndexOf('@')
-    if (at <= 0) return email
-    const local = email.slice(0, at)
-    const plus = local.indexOf('+')
-    return (plus > 0 ? local.slice(0, plus) : local) + email.slice(at)
-  }
+  // The per-address sign-up and reset buckets count delivered inboxes:
+  // name+tag@domain is name@domain, and n.a.m.e@googlemail.com is
+  // name@gmail.com (lib/mailer.js inboxKey).
+  const mailboxKey = inboxKey
 
   function limit(bucket, key) {
     const l = limits[bucket]
@@ -904,7 +1070,7 @@ export function createAuth(options = {}) {
     if (blockedGlobal) return blockedGlobal
     let created = false
     try {
-      const out = await createAccount(body, email)
+      const out = await createAccount(body, email, ctx)
       created = out.status === 200
       return out
     } finally {
@@ -912,8 +1078,7 @@ export function createAuth(options = {}) {
     }
   }
 
-  async function createAccount(body, email) {
-
+  async function createAccount(body, email, ctx) {
     const meta = stripMetadata(body.metadata ?? body.data)
     if (utf8Length(JSON.stringify(meta)) > cfg.maxMetadataBytes) {
       return fail(422, 'User metadata is too large', 'validation_failed')
@@ -925,20 +1090,28 @@ export function createAuth(options = {}) {
 
     const hash = await hashPassword(body.password)
     const id = randomUUID()
+    // With a mailer and db/010 the address stays unconfirmed and gets a link;
+    // otherwise the account is confirmed at once (as before).
+    const linkPossible = mailer.enabled && await tokensAvailable()
+    let confirmToken = null
 
     try {
       const user = await withTransaction(async (client) => {
         const ucols = await usersColumns(client)
         const exists = await client.query(`SELECT 1 FROM ${T.users} WHERE lower(email) = $1 LIMIT 1`, [email])
         if (exists.rows.length) return null
+        const byLink = linkPossible && writable(ucols, 'email_confirmed_at') && writable(ucols, 'raw_app_meta_data')
 
         // auth.users row, using only the columns this table actually has.
         const values = { id, email, encrypted_password: hash }
         if (writable(ucols, 'raw_user_meta_data')) values.raw_user_meta_data = meta
-        if (writable(ucols, 'raw_app_meta_data')) values.raw_app_meta_data = { provider: 'email', providers: ['email'] }
+        if (writable(ucols, 'raw_app_meta_data')) {
+          values.raw_app_meta_data = { provider: 'email', providers: ['email'] }
+          if (byLink) values.raw_app_meta_data[EMAIL_CONFIRMATION_MARK.key] = EMAIL_CONFIRMATION_MARK.value
+        }
         if (writable(ucols, 'aud')) values.aud = 'authenticated'
         if (writable(ucols, 'role')) values.role = 'authenticated'
-        const nowCols = ['email_confirmed_at', 'created_at', 'updated_at'].filter(c => writable(ucols, c))
+        const nowCols = [...(byLink ? [] : ['email_confirmed_at']), 'created_at', 'updated_at'].filter(c => writable(ucols, c))
         const userCols = [...Object.keys(values), ...nowCols]
         const nowJson = nowCols.length
           ? ` || jsonb_build_object(${nowCols.map(c => `'${c}', now()`).join(', ')})`
@@ -979,10 +1152,21 @@ export function createAuth(options = {}) {
             )
           }
         }
+        if (byLink) confirmToken = await issueToken(client, id, 'confirm')
         return ins.rows[0].u
       })
       if (!user) {
         return fail(422, 'A user with this email address has already been registered', 'user_already_exists')
+      }
+      if (confirmToken) {
+        const lang = mailLang(body, ctx)
+        const link = authLink(mailer.managerUrl, 'confirm', confirmToken, lang)
+        background('sign-up confirmation mail', async () => {
+          const r = await mailer.send('confirm', { to: user.email, lang, link })
+          if (r?.sent) log.log?.(`[auth] confirmation link sent to ${maskEmail(user.email)}`)
+        })
+        // email_confirmation: 'sent' tells the app it may sign in right away.
+        return ok({ user: publicUser(user), email_confirmation: 'sent' })
       }
       return ok({ user: publicUser(user) })
     } catch (err) {
@@ -1079,6 +1263,140 @@ export function createAuth(options = {}) {
     return ok(rows[0].p)
   }
 
+  const RESET_UNAVAILABLE = () => fail(503,
+    `Password reset is temporarily unavailable. Contact ${cfg.contactEmail}.`,
+    'reset_unavailable')
+  const CONFIRM_UNAVAILABLE = () => fail(503,
+    'Email confirmation is temporarily unavailable. Please try again later.',
+    'confirm_unavailable', { 'Retry-After': '60' })
+  // One answer for every valid request, whether or not the account exists.
+  const RESET_REQUESTED = () => ok({ requested: true })
+
+  /**
+   * POST reset-password { email, lang }. Rate-limited per client and per
+   * address, then always the same 200 answer; the lookup, the link and the
+   * mail happen after the answer (background), and only for an existing,
+   * not blocked account.
+   */
+  async function requestPasswordReset(body, ctx) {
+    if (!mailer.enabled) {
+      const blocked = limit('sessionIp', ipKey(ctx.ip))
+      if (blocked) return blocked
+      return RESET_UNAVAILABLE()
+    }
+    const blocked = limit('resetIp', ipKey(ctx.ip))
+    if (blocked) return blocked
+    const email = normalizeEmail(body.email)
+    if (!email || email.length > 254 || !EMAIL_RE.test(email)) {
+      return fail(422, 'Unable to validate email address: invalid format', 'email_address_invalid')
+    }
+    const blockedEmail = limit('resetEmail', mailboxKey(email))
+    if (blockedEmail) return blockedEmail
+    if (!(await tokensAvailable())) {
+      log.error('[auth] reset-password: auth.app_tokens is missing (run db/010_auth_tokens.sql)')
+      return RESET_UNAVAILABLE()
+    }
+    const lang = mailLang(body, ctx)
+    background('reset-password mail', async () => {
+      const user = await findUserByEmail(email)
+      if (!user || isUserBlocked(user)) return
+      const token = await withTransaction((client) => issueToken(client, user.id, 'reset'))
+      await audit('account.password_reset_requested', user.id, {})
+      const r = await mailer.send('reset', { to: user.email, lang, link: authLink(mailer.managerUrl, 'reset', token, lang) })
+      if (r?.sent) log.log?.(`[auth] reset link sent to ${maskEmail(user.email)}`)
+    })
+    return RESET_REQUESTED()
+  }
+
+  /**
+   * POST reset-password/confirm { token, password, lang }: the new password
+   * (policy enforced), the address confirmed (the link proves it), all
+   * sessions revoked, the link spent; then a "password changed" notice.
+   */
+  async function confirmPasswordReset(body, ctx) {
+    const blocked = limit('tokenIp', ipKey(ctx.ip))
+    if (blocked) return blocked
+    const token = body.token
+    if (!isWellFormedToken(token)) return INVALID_LINK()
+    const pwProblem = validateNewPassword(body.password)
+    if (pwProblem) return fail(422, pwProblem, 'weak_password')
+    if (!(await tokensAvailable())) return RESET_UNAVAILABLE()
+    // Cheap check first, so junk tokens cost no bcrypt.
+    const pre = await pool.query(
+      `SELECT 1 FROM ${T.tokens} WHERE hash = $1 AND purpose = 'reset' AND used_at IS NULL AND expires_at > now()`,
+      [hashToken(token)]
+    )
+    if (!pre.rows.length) return INVALID_LINK()
+    const hash = await hashPassword(body.password)
+    const out = await withTransaction(async (client) => {
+      const t = await consumeToken(client, token, 'reset')
+      if (t.state !== 'ok') return null
+      return setPasswordIn(client, t.userId, hash, { confirmEmail: true })
+    })
+    if (!out) return INVALID_LINK()
+    lockout.reset(out.email)
+    await audit('account.password_reset', out.userId, { sessions_revoked: out.revokedSessions })
+    if (mailer.enabled) {
+      const lang = mailLang(body, ctx)
+      background('password-changed mail', () => mailer.send('password_changed', { to: out.email, lang }))
+    }
+    return ok({ password_updated: true })
+  }
+
+  /** POST confirm-email { token }: marks the address confirmed. */
+  async function confirmEmailLink(body, ctx) {
+    const blocked = limit('tokenIp', ipKey(ctx.ip))
+    if (blocked) return blocked
+    const token = body.token
+    if (!isWellFormedToken(token)) return INVALID_LINK()
+    if (!(await tokensAvailable())) return CONFIRM_UNAVAILABLE()
+    const out = await withTransaction(async (client) => {
+      const cols = await usersColumns(client)
+      const t = await consumeToken(client, token, 'confirm')
+      if (t.state === 'unknown') return null
+      if (!cols.has('email_confirmed_at')) return { userId: t.userId, already: true }
+      if (t.state !== 'ok') {
+        // A spent or expired link of an address that is confirmed by now:
+        // tell its holder so, instead of "invalid".
+        const { rows } = await client.query(`SELECT email_confirmed_at IS NOT NULL AS confirmed FROM ${T.users} WHERE id = $1`, [t.userId])
+        return rows[0]?.confirmed ? { userId: t.userId, already: true } : null
+      }
+      let set = 'email_confirmed_at = coalesce(email_confirmed_at, now())'
+      if (writable(cols, 'updated_at')) set += ', updated_at = now()'
+      await client.query(`UPDATE ${T.users} SET ${set} WHERE id = $1`, [t.userId])
+      await client.query(
+        `UPDATE ${T.tokens} SET used_at = now() WHERE user_id = $1 AND purpose = 'confirm' AND used_at IS NULL`,
+        [t.userId]
+      )
+      return { userId: t.userId, already: false }
+    })
+    if (!out) return INVALID_LINK()
+    if (!out.already) await audit('account.email_confirmed', out.userId, {})
+    return ok({ confirmed: true, already_confirmed: out.already })
+  }
+
+  /** POST resend-confirmation { access_token, lang }: a fresh link for the signed-in, unconfirmed account. */
+  async function resendConfirmation(body, ctx) {
+    const blocked = limit('resendIp', ipKey(ctx.ip))
+    if (blocked) return blocked
+    const v = await sessionFromBody(body, ctx)
+    if (v.error) return v.error
+    if (v.user.email_confirmed_at) return ok({ sent: false, already_confirmed: true })
+    if (!mailer.enabled || !(await tokensAvailable())) return CONFIRM_UNAVAILABLE()
+    const blockedUser = limit('resendUser', v.user.id)
+    if (blockedUser) return blockedUser
+    const token = await withTransaction((client) => issueToken(client, v.user.id, 'confirm'))
+    const lang = mailLang(body, ctx)
+    try {
+      const r = await mailer.send('confirm', { to: v.user.email, lang, link: authLink(mailer.managerUrl, 'confirm', token, lang) })
+      if (!r?.sent) return CONFIRM_UNAVAILABLE()
+    } catch (err) {
+      log.error(`[auth] resend-confirmation mail failed: ${describeMailError(err)}`)
+      return CONFIRM_UNAVAILABLE()
+    }
+    return ok({ sent: true, already_confirmed: false })
+  }
+
   /**
    * Dispatches one /api/auth/<action> request.
    * @param {string} action  path segment after /api/auth/
@@ -1101,13 +1419,10 @@ export function createAuth(options = {}) {
         case 'profile': return await profile(b, c)
         case 'update-user':
           return fail(501, 'Email change is not available yet.', 'not_implemented')
-        case 'reset-password': {
-          const blocked = limit('sessionIp', ipKey(c.ip))
-          if (blocked) return blocked
-          return fail(503,
-            `Password reset is temporarily unavailable. Contact ${cfg.contactEmail}.`,
-            'reset_unavailable')
-        }
+        case 'reset-password': return await requestPasswordReset(b, c)
+        case 'reset-password/confirm': return await confirmPasswordReset(b, c)
+        case 'confirm-email': return await confirmEmailLink(b, c)
+        case 'resend-confirmation': return await resendConfirmation(b, c)
         default:
           return fail(404, 'Invalid request', 'not_found')
       }
@@ -1133,12 +1448,15 @@ export function createAuth(options = {}) {
     revokeSession,
     revokeUserSessions,
     sweepExpiredSessions,
+    sweepExpiredTokens,
+    settle,
+    mailer,
     sweep,
     limits,
     lockout,
     bcryptGate,
     config: Object.freeze(Object.fromEntries(Object.entries(cfg).filter(
-      ([k]) => !['pool', 'bcrypt', 'logger', 'limits', 'lockout', 'ipKey', 'onAccountDeleted'].includes(k)))),
+      ([k]) => !['pool', 'bcrypt', 'logger', 'limits', 'lockout', 'ipKey', 'onAccountDeleted', 'mailer'].includes(k)))),
     /** Drops the cached column lists (after a restore or migration). */
     refreshCatalog() { catalog.clear() },
     // exposed for tests and scripts

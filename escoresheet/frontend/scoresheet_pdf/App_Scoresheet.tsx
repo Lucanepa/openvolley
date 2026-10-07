@@ -2927,7 +2927,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
                 >
                   <img
                     src="/ball.png"
-                    alt="Openvolley"
+                    alt="OpenVolley"
                     style={{
                       width: '97px',
                       height: '97px',

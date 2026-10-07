@@ -19,6 +19,7 @@ import { AppSpinner } from './ui/AppSpinner.jsx'
 import { weekdayLabel, dayLabel, timeLabel } from './ui/format.js'
 import { scheduledInstant } from './components/dashboards/EntryKit.jsx'
 import { describeScoresheetLoadError, findOwnScoresheet, redactScoresheetPath } from '../scoresheet_pdf/utils/scoresheetStorage'
+import { BRAND } from './brand'
 
 // Fetch an approved scoresheet (_final file) from cloud storage. Only the
 // account that uploaded it may list or read it (backend README "Who can read a
@@ -475,7 +476,7 @@ const ScoresheetList = () => {
       <div className="max-w-3xl mx-auto">
         {/* Header */}
         <Card className="flex flex-wrap items-center gap-x-4 gap-y-3">
-          <img src={`${import.meta.env.BASE_URL}openvolley_no_bg.png`} alt="OpenVolley" className="h-10 w-10 shrink-0" />
+          <img src={BRAND.mark} alt="OpenVolley" className="h-10 w-10 shrink-0" />
           <div className="min-w-0 flex-1">
             <h1 className="text-xl font-bold tracking-tight text-stone-900 sm:text-2xl">Scoresheet archive</h1>
             <p className="text-sm text-stone-500">
