@@ -957,11 +957,31 @@ export function createAuth(options = {}) {
     return rowCount
   }
 
-  /** Best-effort audit entry (never fails the request). */
-  async function audit(action, targetUserId, details = {}) {
+  /**
+   * Best-effort audit entry (never fails the request). With db/012 the entry
+   * carries the app whose audit lists it (audit_log.app: 'beach', NULL =
+   * indoor), taken from the account's memberships: a member of OpenBeach only
+   * gives 'beach'; a member of both gives the request's `app` (requestApp);
+   * any other account (no membership row counts as indoor) stays indoor. The
+   * tag only sorts the entry into an admin list, it never authorises anything.
+   */
+  async function audit(action, targetUserId, details = {}, requestedApp = 'indoor') {
     if (!T.audit) return
     try {
-      if (!(await columnsOf(cfg.auditTable)).size) return
+      const cols = await columnsOf(cfg.auditTable)
+      if (!cols.size) return
+      if (cols.has('app') && T.memberships && (await columnsOf(cfg.membershipsTable)).size) {
+        await pool.query(
+          `INSERT INTO ${T.audit} (actor_id, action, target_user_id, details, app)
+           VALUES ($1, $2, $1, $3::jsonb,
+                   (SELECT CASE WHEN EXISTS (SELECT 1 FROM ${T.memberships} m WHERE m.user_id = $1::uuid AND m.app = 'beach')
+                                 AND ($4::text = 'beach'
+                                      OR NOT EXISTS (SELECT 1 FROM ${T.memberships} m WHERE m.user_id = $1::uuid AND m.app <> 'beach'))
+                                THEN 'beach' END))`,
+          [targetUserId, action, JSON.stringify(details), requestedApp === 'beach' ? 'beach' : 'indoor']
+        )
+        return
+      }
       await pool.query(
         `INSERT INTO ${T.audit} (actor_id, action, target_user_id, details) VALUES ($1, $2, $1, $3::jsonb)`,
         [targetUserId, action, JSON.stringify(details)]
@@ -1337,7 +1357,7 @@ export function createAuth(options = {}) {
       const user = await findUserByEmail(email)
       if (!user || isUserBlocked(user)) return
       const token = await withTransaction((client) => issueToken(client, user.id, 'reset'))
-      await audit('account.password_reset_requested', user.id, {})
+      await audit('account.password_reset_requested', user.id, {}, app)
       const r = await mailer.send('reset', { to: user.email, lang, app, link: authLink(managerUrlFor(app), 'reset', token, lang) })
       if (r?.sent) log.log?.(`[auth] reset link sent to ${maskEmail(user.email)}`)
     })
@@ -1371,7 +1391,7 @@ export function createAuth(options = {}) {
     })
     if (!out) return INVALID_LINK()
     lockout.reset(out.email)
-    await audit('account.password_reset', out.userId, { sessions_revoked: out.revokedSessions })
+    await audit('account.password_reset', out.userId, { sessions_revoked: out.revokedSessions }, requestApp(body))
     if (mailer.enabled) {
       const lang = mailLang(body, ctx)
       const app = requestApp(body)
