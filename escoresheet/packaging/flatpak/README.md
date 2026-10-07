@@ -10,7 +10,7 @@ same way the AUR packages do: nothing is compiled here except the tray library.
 | App id | `com.openvolley.escoresheet` | `com.openvolley.beach` |
 | Command | `openvolley-escoresheet` | `openbeach-escoresheet` |
 | Release tag / asset | `desktop-vX` / `openvolley-escoresheet_X_amd64.deb` | `beach-desktop-vX` / `openbeach-escoresheet_X_amd64.deb` |
-| Version here | 2.3.0 | 2.0.0 |
+| Version here | 2.4.0 | 2.0.0 |
 
 Install (self-hosted repo, once it is published):
 
@@ -144,10 +144,10 @@ escoresheet/deploy/publish-pkgs.sh --desktop 2.0.1 --app beach --flatpak
 sync (never with `--staging`: Flatpak users would get it at once). Without
 `--flatpak` the Flatpak repo is left alone and still synced.
 
-For a version already published (2.3.0 and OpenBeach 2.0.0 now):
+For a version already published (2.4.0 and OpenBeach 2.0.0 now):
 
 ```sh
-escoresheet/packaging/flatpak/publish-flatpak.sh 2.3.0
+escoresheet/packaging/flatpak/publish-flatpak.sh 2.4.0
 escoresheet/packaging/flatpak/publish-flatpak.sh --app beach 2.0.0
 escoresheet/deploy/publish-pkgs.sh          # rebuilds the indexes and syncs
 ```

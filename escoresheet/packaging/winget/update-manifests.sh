@@ -29,7 +29,7 @@ die() { echo "update-manifests: $*" >&2; exit 1; }
 [ $# -ge 2 ] || die "usage: $0 openvolley|openbeach VERSION [--file PATH | --sha256 HEX] [--date YYYY-MM-DD]"
 app=$1 version=$2
 shift 2
-file= sha= date=
+file='' sha='' date=''
 while [ $# -gt 0 ]; do
   case $1 in
     --file) file=${2:?}; shift 2 ;;
