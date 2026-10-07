@@ -689,3 +689,10 @@ These override the paper conventions above wherever they differ. The audit must 
    (`domain/remarks.js eventRemark`). The manual-edit and roster-change remarks use the same
    local `HH:MM`.
 
+5. **Number circles fit their cell** (how owner item 7 is met; the owner should confirm it). Owner: "circle can be a little bigger", centred, inside the
+   cell without touching its borders, one size everywhere. The 5 mm cells leave ~4.74 mm between
+   the row rules and ~4.6 mm across a service box, so a ring can be at most ~4.0 mm (plus its
+   ~0.3 mm stroke) and still show a gap. The sheet draws every number circle at 4.0 mm
+   (`components/Marks.tsx NUMBER_CIRCLE_MM`). The number inside is set at 9.5 px
+   (`CIRCLED_NUMBER_PX`), so the ring sits well clear of the digits: it is bigger relative to the
+   number, as asked, though not in absolute size, which the cell does not allow.

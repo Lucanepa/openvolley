@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest
 import { render, cleanup, act, waitFor } from '@testing-library/react'
 import App from '../App_Scoresheet'
 import { BRAND } from '../../src/brand.js'
+import { NUMBER_CIRCLE_MM, CIRCLED_NUMBER_PX, MARK_STROKE } from '../components/Marks'
 
 // The owner's request of 2026-10-07 on the printed sheet and its PDF:
 // OpenVolley instead of Swiss Volley, the new ball, "DoB" in APPROVAL, a file
@@ -357,5 +358,15 @@ describe('round 2 (owner review 2026-10-07)', () => {
     expect(getAllByTestId('roster-row')).toHaveLength(28)
     for (const r of getAllByTestId('roster-row').slice(0, 13)) expect(r.className).toContain('border-b')
     expect(getAllByTestId('remarks-rule')).toHaveLength(3)
+  })
+
+  it('a number circle fits inside the narrowest 5 mm cell with a visible gap, its number clear of the ring', () => {
+    // service-box cells are ~4.6 mm wide inside their rules, rows ~4.74 mm high;
+    // ring + stroke (CSS px at 96 dpi) must leave >= 0.1 mm on each side (owner item 7)
+    const strokeMm = MARK_STROKE * 25.4 / 96
+    expect((4.6 - (NUMBER_CIRCLE_MM + strokeMm)) / 2).toBeGreaterThanOrEqual(0.1)
+    // a two-digit circled number (~0.6 em per bold digit) stays inside the ring
+    const digitsMm = 2 * 0.6 * CIRCLED_NUMBER_PX * 25.4 / 96
+    expect(digitsMm).toBeLessThan(NUMBER_CIRCLE_MM - strokeMm - 0.6)
   })
 })

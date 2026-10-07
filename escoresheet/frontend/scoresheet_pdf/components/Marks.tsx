@@ -11,11 +11,16 @@ export const MARK_STROKE = 1.2;
  * Circle around a number in the 5 mm cells (a substitute who came back, the final
  * points in the service boxes), one size everywhere. Owner request 2026-10-07:
  * "circle can be a little bigger", centred, never touching the cell's borders.
- * The cell leaves ~4.7 mm inside its rules, so the circle is as large as fits
- * (4.4 mm, outer edge of the stroke 4.7 mm) and the circled substitute's number
- * is set smaller (12 px instead of 14 px), so the ring no longer hugs the digits.
+ * The cells leave ~4.74 mm inside their rules (rows) and ~4.6 mm (service-box
+ * width), so a ring of 4.0 mm plus its ~0.3 mm stroke keeps ~0.15 mm clear of
+ * every rule (a 4.4 mm ring touched them). "Bigger" is met against the digits:
+ * the circled number is set at CIRCLED_NUMBER_PX, so the ring sits well clear of
+ * it instead of hugging it.
  */
-export const NUMBER_CIRCLE_MM = 4.4;
+export const NUMBER_CIRCLE_MM = 4.0;
+
+/** Font size of a circled number (substitute who came back, final points). */
+export const CIRCLED_NUMBER_PX = 9.5;
 
 /** A circle centred on its (relative) parent, `mm` wide. */
 export const NumberCircle: React.FC<{ mm?: number; testId?: string }> = ({ mm = NUMBER_CIRCLE_MM, testId }) => (
