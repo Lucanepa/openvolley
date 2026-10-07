@@ -18,6 +18,7 @@ import { describe, expect, it, afterEach } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
 import { Select, SELECT_SIZES } from '../Select.jsx';
 import { INPUT_SIZES } from '../Input.jsx';
+import { sourceFiles } from './backdropScan.js';
 
 const ROOT = path.resolve(__dirname, '../../..'); // escoresheet/frontend
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -132,6 +133,46 @@ describe('select CSS', () => {
     expect(rule).toMatch(/background-image:\s*url\("data:image\/svg\+xml/);
     expect(rule).toMatch(/padding-block:\s*0/);
     expect(rule).toMatch(/text-transform:\s*none/);
+    expect(rule).toMatch(/font-family:\s*inherit/);
+  });
+
+  it('.ov-select sits in the components layer (above legacy, below utilities)', () => {
+    const css = read('src/ui/tokens.css').replace(/\/\*[\s\S]*?\*\//g, '');
+    const layer = css.indexOf('@layer components');
+    expect(layer).toBeGreaterThan(-1);
+    expect(css.indexOf('.ov-select', layer)).toBeGreaterThan(layer);
+  });
+
+  it('the legacy select draws the same chevron with appearance none', () => {
+    const css = read('src/styles.css').replace(/\/\*[\s\S]*?\*\//g, '');
+    const body = css.match(/(?:^|\})\s*select:where\(:not\(\.ov-select\)\)\s*\{([^}]*)\}/)[1];
+    expect(body).toMatch(/(^|[\s;])appearance:\s*none/);
+    expect(body).toMatch(/background-image:\s*url\("data:image\/svg\+xml/);
+    expect(body).toMatch(/padding-right:[^;]*!important/);
+  });
+});
+
+describe('select call sites', () => {
+  const files = sourceFiles(path.join(ROOT, 'src')).filter((f) => !f.includes(`${path.sep}ui${path.sep}`));
+
+  it('no raw <select> dressed as a kit control (h-9 / h-11 / rounded-lg / rounded-xl): use <Select>', () => {
+    const bad = [];
+    for (const file of files) {
+      const src = fs.readFileSync(file, 'utf8');
+      for (const m of src.matchAll(/<select\b[^>]*?className=\{?["'`]?([^"'`}]*)/g)) {
+        if (/\b(h-9|h-11|rounded-lg|rounded-xl)\b/.test(m[1])) bad.push(`${path.relative(ROOT, file)}: ${m[1].slice(0, 60)}`);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it('no kit Select capitalizes its labels', () => {
+    const bad = [];
+    for (const file of files) {
+      const src = fs.readFileSync(file, 'utf8');
+      for (const m of src.matchAll(/<Select\b[^>]*>/g)) if (/\bcapitalize\b/.test(m[0])) bad.push(path.relative(ROOT, file));
+    }
+    expect(bad).toEqual([]);
   });
 });
 
