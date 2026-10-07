@@ -22,6 +22,8 @@ export const INVITE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 export const INVITE_ROLES = Object.freeze(['scorer', 'referee', 'competition_manager'])
 export const AUDIT_ACTIONS = Object.freeze([
   'account.roles',
+  // written by lib/auth.js (email links, db/010)
+  'account.password_reset_requested', 'account.password_reset', 'account.email_confirmed',
   'invite.create', 'invite.revoke', 'invite.redeem',
   'match.claim_game', 'match.claim_pin', 'match.game_taken',
   'match.close',
@@ -315,7 +317,8 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
         where.push(`(u.email ILIKE ${pat} OR p.first_name ILIKE ${pat} OR p.last_name ILIKE ${pat})`)
       }
       const { rows } = await pool.query(
-        `SELECT u.id, u.email, p.first_name, p.last_name, p.roles, u.created_at, u.last_sign_in_at
+        `SELECT u.id, u.email, p.first_name, p.last_name, p.roles, u.created_at, u.last_sign_in_at,
+                (to_jsonb(u) ->> 'email_confirmed_at') IS NOT NULL AS email_confirmed
            FROM auth.users u
            LEFT JOIN public.profiles p ON p.user_id = u.id
           ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
@@ -332,7 +335,8 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
             roles: a.roles,
             pending: a.isPending,
             created_at: iso(r.created_at),
-            last_sign_in_at: iso(r.last_sign_in_at)
+            last_sign_in_at: iso(r.last_sign_in_at),
+            email_confirmed: r.email_confirmed === true
           }
         })
       })
