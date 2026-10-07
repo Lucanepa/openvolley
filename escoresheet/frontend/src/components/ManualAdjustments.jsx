@@ -13,6 +13,7 @@ import { apiFrom } from '../lib/apiClient'
 import { approvalsApi } from '../lib/accountApi'
 import { X } from 'lucide-react'
 import { Button } from '../ui/Button.jsx'
+import { discRing, HEADER_SURFACE } from '../utils/teamColours'
 
 // Standard volleyball team colors - keys for translation
 const TEAM_COLORS = [
@@ -856,6 +857,17 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   }
 
   // Page card: white, rounded-2xl, stone-200/70 hairline, shadow-card.
+  // The team's colour dot beside the card title, ringed when it would vanish
+  // on the white card (a white or very light team)
+  const teamDotStyle = (colour) => {
+    const fill = colour || '#888'
+    const ring = discRing(fill, HEADER_SURFACE)
+    return {
+      width: '24px', height: '24px', borderRadius: '50%', background: fill, display: 'inline-block',
+      ...(ring ? { boxShadow: `inset 0 0 0 1.5px ${ring}` } : {})
+    }
+  }
+
   const cardStyle = {
     padding: '16px',
     background: 'var(--ov-card)',
@@ -1024,7 +1036,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 {/* Team Info */}
                 <div style={cardStyle}>
                   <h2 style={{ ...cardTitleStyle, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: editedHomeTeam?.color || '#888', display: 'inline-block' }} />
+                    <span style={teamDotStyle(editedHomeTeam?.color)} />
                     {editedMatch?.coinTossTeamA === 'away'
                       ? t('manualAdjustmentsEditor.teamBHome', 'Team B (home)')
                       : t('manualAdjustmentsEditor.teamAHome', 'Team A (home)')}
@@ -1083,7 +1095,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 {/* Team Info */}
                 <div style={cardStyle}>
                   <h2 style={{ ...cardTitleStyle, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: editedAwayTeam?.color || '#888', display: 'inline-block' }} />
+                    <span style={teamDotStyle(editedAwayTeam?.color)} />
                     {editedMatch?.coinTossTeamA === 'away'
                       ? t('manualAdjustmentsEditor.teamAAway', 'Team A (away)')
                       : t('manualAdjustmentsEditor.teamBAway', 'Team B (away)')}
