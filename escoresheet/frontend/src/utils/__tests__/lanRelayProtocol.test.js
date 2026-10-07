@@ -4,6 +4,9 @@
  * exercised through every Node relay runtime that uses it — the standalone
  * server (server.js), the Electron in-process relay and the Vite dev plugin —
  * and checked against what the client (serverDataSync.readRelayBundle) reads.
+ * Each runtime (and the Tauri relay with OV_TAURI_RELAY_BIN) also runs the
+ * venue contract shared with the backend's --local relay: several beach
+ * courts on one relay (backend/tests/helpers/beachVenueContract.js).
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { spawn, spawnSync } from 'node:child_process'
@@ -15,9 +18,10 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import WebSocket from 'ws'
-import { createLanRelay, createLocalAddressCheck, createMainInstanceGate } from '../../../lanRelayCore.js'
+import { createLanRelay, createLocalAddressCheck, createMainInstanceGate, MAX_OWNED_PER_IP, OTHER_COURT_COOKIE } from '../../../lanRelayCore.js'
 import { vitePluginApiRoutes } from '../../../vite-plugin-api-routes.js'
 import { readRelayBundle } from '../serverDataSync'
+import { runBeachVenueContract } from '../../../../backend/tests/helpers/beachVenueContract.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const FRONTEND_DIR = resolve(here, '../../..')
@@ -369,13 +373,21 @@ describe('lanRelayCore protocol', () => {
   })
 
   it('limits how many match ids one LAN device can hold (loopback exempt)', () => {
+    // A venue: a court tablet keeps the matches it scored on one connection
+    expect(MAX_OWNED_PER_IP).toBe(8)
     const relay = createLanRelay()
     const squatter = connect(relay, '192.168.1.66')
-    for (let id = 1; id <= 5; id++) msg(relay, squatter, syncMessage(makeMatch({ id, gamePin: '000000' })))
+    for (let id = 1; id <= MAX_OWNED_PER_IP; id++) msg(relay, squatter, syncMessage(makeMatch({ id, gamePin: '000000' })))
+    expect(squatter.last('error')).toBeUndefined()
+    msg(relay, squatter, syncMessage(makeMatch({ id: MAX_OWNED_PER_IP + 1, gamePin: '000000' })))
     expect(squatter.last('error').code).toBe('too-many-matches')
-    expect(relay.hasMatch(5)).toBe(false)
+    expect(relay.hasMatch(MAX_OWNED_PER_IP + 1)).toBe(false)
+    // Releasing its finished matches frees the room for the next ones
+    msg(relay, squatter, { type: 'clear-all-matches', keepMatchId: 1 })
+    msg(relay, squatter, syncMessage(makeMatch({ id: MAX_OWNED_PER_IP + 1, gamePin: '000000' })))
+    expect(relay.hasMatch(MAX_OWNED_PER_IP + 1)).toBe(true)
     const desktop = connect(relay, '::ffff:127.0.0.1')
-    for (let id = 11; id <= 16; id++) msg(relay, desktop, syncMessage(makeMatch({ id, gamePin: '000000' })))
+    for (let id = 21; id <= 32; id++) msg(relay, desktop, syncMessage(makeMatch({ id, gamePin: '000000' })))
     expect(desktop.last('error')).toBeUndefined()
   })
 
@@ -705,6 +717,54 @@ describe('lanRelayCore protocol', () => {
     }
   })
 
+  it('openbeach: its players are the home / away players, its PINs never go out, its bench PINs grant the match', () => {
+    const relay = createLanRelay()
+    const scorer = connect(relay, '192.168.1.10')
+    const beachPins = { gamePin: '259730', refereePin: '360841', team1Pin: '471952', team2Pin: '582063', team1UploadPin: '693174', team2UploadPin: '704285', team1TeamPin: '471953', matchPin: '815396' }
+    msg(relay, scorer, {
+      type: 'sync-match-data',
+      matchId: 1,
+      match: { id: 1, seed_key: 'beach-2', status: 'live', refereeConnectionEnabled: true, team1TeamConnectionEnabled: true, team2TeamConnectionEnabled: false, ...beachPins },
+      team1Team: { name: 'Keller / Huber' },
+      team2Team: { name: 'Weber / Frei' },
+      team1Players: [{ number: 1, lastName: 'Keller', dob: PERSONAL.playerDob }],
+      team2Players: [{ number: 1, lastName: 'Weber' }]
+    })
+    expect(scorer.last('error')).toBeUndefined()
+    const leaks = (text) => Object.values(beachPins).some((p) => text.includes(p)) || /Pin"/.test(text) || text.includes(PERSONAL.playerDob)
+    const join = (pin) => {
+      const ws = connect(relay, '192.168.1.20')
+      msg(relay, ws, { type: 'subscribe-match', matchId: 'beach-2', pin })
+      return ws
+    }
+    const referee = join(beachPins.refereePin)
+    const full = referee.last('match-full-data')
+    expect(full.access).toBe('full')
+    expect(full.homePlayers.map((p) => p.lastName)).toEqual(['Keller'])
+    expect(full.awayPlayers.map((p) => p.lastName)).toEqual(['Weber'])
+    expect(full.sportType).toBeUndefined() // the relay's own note stays in
+    expect(leaks(referee.raw.join(''))).toBe(false)
+    expect(join(beachPins.team1Pin).last('match-full-data').access).toBe('full')
+    for (const pin of [beachPins.team2Pin, beachPins.team1UploadPin, beachPins.matchPin]) {
+      expect(join(pin).last('error').code, pin).toBe('pin-invalid')
+    }
+    // validate-pin: beach finds it (and names the sport), indoor does not
+    const ok = relay.validatePin({ pin: beachPins.refereePin, type: 'referee', sport: 'beach' })
+    expect(ok.status).toBe(200)
+    expect(ok.body.match).toMatchObject({ id: 'beach-2', sportType: 'beach' })
+    expect(leaks(JSON.stringify(ok.body))).toBe(false)
+    expect(relay.validatePin({ pin: beachPins.refereePin, type: 'referee' }).status).toBe(404)
+    expect(relay.validatePin({ pin: beachPins.refereePin, type: 'referee', sport: 'snow' }).status).toBe(400)
+    // A periodic sync without its teams keeps the sport
+    msg(relay, scorer, { type: 'sync-match-data', matchId: 1, match: { id: 1, seed_key: 'beach-2', status: 'live', refereeConnectionEnabled: true }, team1: { name: 'Keller / Huber' } })
+    expect(relay.validatePin({ pin: beachPins.refereePin, type: 'referee', sport: 'beach' }).status).toBe(200)
+    // An indoor match is never found by a beach PIN check
+    const indoor = connect(relay, '192.168.1.11')
+    msg(relay, indoor, syncMessage())
+    expect(relay.validatePin({ pin: PINS.refereePin, type: 'referee', sport: 'beach' }).status).toBe(404)
+    expect(relay.validatePin({ pin: PINS.refereePin, type: 'referee', sport: 'indoor' }).status).toBe(200)
+  })
+
   it('takes openbeach\'s team1Team / team2Team as the home / away team', () => {
     const relay = createLanRelay()
     const scorer = connect(relay, '192.168.1.10')
@@ -756,6 +816,30 @@ describe('main-instance lock (shared by every relay)', () => {
     expect(gate.register('desk-2', '127.0.0.1').status).toBe(200)
     expect(gate.unregister(undefined, '::1').status).toBe(200)
     expect(gate.mainInstanceId).toBeNull()
+  })
+
+  it('locks the "/" page only: a LAN browser opts in to score another court', () => {
+    const gate = createMainInstanceGate({ isLocal: createLocalAddressCheck(interfaces) })
+    gate.register('desk', '127.0.0.1')
+    const request = (url, headers = {}) => {
+      const req = { url, headers, socket: { remoteAddress: '192.168.1.50' } }
+      const res = { status: null, headers: null, body: '', writeHead(s, h) { this.status = s; this.headers = h }, end(b) { this.body = b || '' } }
+      return { handled: gate.handleMainPage(req, res, url.split('?')[0]), res }
+    }
+    const locked = request('/')
+    expect(locked.handled).toBe(true)
+    expect(locked.res.status).toBe(403)
+    expect(locked.res.body).toContain('/?court=other')
+    const optIn = request('/?court=other')
+    expect(optIn.res.status).toBe(302)
+    expect(optIn.res.headers.Location).toBe('/')
+    expect(optIn.res.headers['Set-Cookie']).toMatch(new RegExp(`^${OTHER_COURT_COOKIE}=1;`))
+    // With the cookie: served (reloads included); other pages were never locked
+    expect(request('/', { cookie: `theme=light; ${OTHER_COURT_COOKIE}=1` }).handled).toBe(false)
+    expect(request('/index.html', { cookie: `${OTHER_COURT_COOKIE}=1` }).handled).toBe(false)
+    expect(request('/', { cookie: `${OTHER_COURT_COOKIE}=10` }).res.status).toBe(403)
+    expect(request('/referee').handled).toBe(false)
+    expect(gate.blocksMainPage('192.168.1.50', undefined, `${OTHER_COURT_COOKIE}=1`)).toBe(false)
   })
 })
 
@@ -980,6 +1064,7 @@ describe('relay runtimes speak the shared protocol', () => {
     try {
       await waitForHttp(`http://127.0.0.1:${port}/api/server/status`)
       await relayScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
+      await runBeachVenueContract({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'server-js' })
       const unknown = await fetch(`http://127.0.0.1:${port}/api/nope`)
       expect(unknown.status).toBe(404)
       expect(unknown.headers.get('content-type')).toMatch(/json/)
@@ -1038,6 +1123,7 @@ describe('relay runtimes speak the shared protocol', () => {
     await relayServer.start({ port, wsPort })
     try {
       await relayScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
+      await runBeachVenueContract({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'electron' })
     } finally {
       await relayServer.stop()
     }
@@ -1055,6 +1141,7 @@ describe('relay runtimes speak the shared protocol', () => {
     try {
       await waitForHttp(`http://127.0.0.1:${port}/api/health`)
       await relayScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
+      await runBeachVenueContract({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'tauri' })
       const unknown = await fetch(`http://127.0.0.1:${port}/api/nope`)
       expect(unknown.status).toBe(404)
     } finally {
@@ -1099,6 +1186,7 @@ describe('relay runtimes speak the shared protocol', () => {
 
     it('serves the same protocol', async () => {
       await relayScenario({ httpBase, wsUrl: `ws://127.0.0.1:${wsPort}` })
+      await runBeachVenueContract({ httpBase, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'vite' })
     }, 20000)
   })
 })
