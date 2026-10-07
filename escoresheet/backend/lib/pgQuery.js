@@ -564,6 +564,20 @@ export function createPgQuery (options = {}) {
       selectParts.push(`CASE WHEN e.${quoteIdent(fcol.name)} IS NULL THEN NULL ELSE json_build_object(${pairs.join(', ')}) END AS ${quoteIdent(embed.as)}`)
     }
     const where = buildWhere(t, params, secrets, ctx, opts.scope)
+    // Voided events (db/015: undone / deleted on the scoring device) are not
+    // part of the match. params.include_voided shows them: to an admin
+    // (opts.includeVoided 'all') and to the owner / editors of their match
+    // ('owned', with opts.readOwner); never anonymously.
+    if (t.name === 'events' && t.columns.has('voided_at')) {
+      const wantVoided = params.include_voided === true
+      let cond = 't."voided_at" IS NULL'
+      if (wantVoided && opts.includeVoided === 'all') cond = null
+      else if (wantVoided && opts.includeVoided === 'owned' && opts.readOwner) {
+        const ownedRow = readOwnedSql(cat, t, opts.readOwner, ctx)
+        if (ownedRow) cond = `(t."voided_at" IS NULL OR ${ownedRow})`
+      }
+      if (cond) where.sql += `${where.sql ? ' AND' : ' WHERE'} ${cond}`
+    }
     // Read ownership (opts.readOwner): every row says whether the user owns
     // its match (__owned), and with restrict only owned rows match at all.
     const owned = readOwnedSql(cat, t, opts.readOwner, ctx)
@@ -1091,6 +1105,56 @@ export function createPgQuery (options = {}) {
     return result
   }
 
+  // ------------------------------------------------------------ match write check (server routes)
+  /**
+   * May matchOwner write the match `externalId` and its children? The same
+   * rule as an /api/db write of its events: the creator or an editor (admin:
+   * anyone); an account that is not an approved scorer in the match's sport
+   * writes test matches only. Locks the match row (FOR SHARE) for the rest of
+   * the caller's transaction.
+   * Throws PgQueryError 404 OV_MATCH_NOT_FOUND, 403 OV_NOT_MATCH_OWNER or
+   * 403 OV_SCORER_REQUIRED.
+   * @returns {Promise<{id:string, external_id:string, closed:boolean, test:boolean, sport:string}>}
+   */
+  async function assertMatchWritable (client, externalId, matchOwner) {
+    if (typeof externalId !== 'string' || !externalId || externalId.length > 200) fail('OV_INVALID_REQUEST', 'match external_id')
+    const cat = await ensureCatalog()
+    const own = cfg.ownership
+    const parent = cat.tables.get(own.parent)
+    if (!parent) fail('OV_OWNERSHIP_UNAVAILABLE', 'no matches table', 503)
+    const has = (c) => parent.columns.has(c)
+    const c = freshCtx()
+    const ext = c.p(externalId)
+    const cols = [
+      `m.${quoteIdent(own.key)}::text AS id`,
+      'm.external_id',
+      has('closed_at') ? 'm.closed_at IS NOT NULL AS closed' : 'false AS closed',
+      has(cfg.testColumn) ? `coalesce(m.${quoteIdent(cfg.testColumn)}, false) AS test` : 'false AS test',
+      has(cfg.sportColumn) ? `coalesce(m.${quoteIdent(cfg.sportColumn)}::text, 'indoor') AS sport` : "'indoor' AS sport"
+    ]
+    const mo = matchOwner
+    const checkOwner = mo && mo.admin !== true
+    if (checkOwner) {
+      if (typeof mo.userId !== 'string' || !UUID_RE.test(mo.userId)) notOwner('no user')
+      const editors = cat.tables.get(own.editors.table)
+      if (!has(own.ownerColumn) || !editors) {
+        scheduleCatalogRefresh()
+        fail('OV_OWNERSHIP_UNAVAILABLE', 'match ownership columns missing (run db/005_match_ownership.sql)', 503)
+      }
+      cols.push(`${ownedSql('m', c, mo.userId)} AS owned`)
+    }
+    const sql = `SELECT ${cols.join(', ')} FROM ${qTable(own.parent)} AS m WHERE m.external_id = ${ext} LIMIT 1 FOR SHARE OF m`
+    const { rows } = await client.query(sql, c.values)
+    const m = rows[0]
+    if (!m) throw new PgQueryError(404, 'OV_MATCH_NOT_FOUND', 'no such match', 'Match not found')
+    if (checkOwner) {
+      const testSports = testOnlySportsOf(mo)
+      if (!m.test && testSports.includes(sportOfValue(m.sport))) scorerRequired('not a test match')
+      if (!m.owned) notOwner('match not owned')
+    }
+    return { id: m.id, external_id: m.external_id, closed: m.closed === true, test: m.test === true, sport: sportOfValue(m.sport) }
+  }
+
   // ------------------------------------------------------------ public API
   async function withTransaction (fn, { statementTimeoutMs } = {}) {
     const client = await pool.connect()
@@ -1214,6 +1278,7 @@ export function createPgQuery (options = {}) {
   return {
     runQuery,
     execute,
+    assertMatchWritable,
     toErrorResult: errorResult,
     withTransaction,
     ensureCatalog,
