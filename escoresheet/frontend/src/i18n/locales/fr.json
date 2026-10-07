@@ -1663,7 +1663,9 @@
     "typeEmailToConfirm": "Saisissez votre email pour confirmer :",
     "emailDoesNotMatch": "L'email ne correspond pas",
     "deleting": "Suppression...",
-    "deleteAccountConfirm": "Supprimer mon compte"
+    "deleteAccountConfirm": "Supprimer mon compte",
+    "dobInvalid": "Saisissez la date de naissance au format JJ.MM.AAAA.",
+    "dobPlaceholder": "JJ.MM.AAAA"
   },
   "matchHistory": {
     "title": "Mes matchs",

@@ -1692,7 +1692,9 @@
     "typeEmailToConfirm": "Type your email to confirm:",
     "emailDoesNotMatch": "Email does not match",
     "deleting": "Deleting...",
-    "deleteAccountConfirm": "Delete my account"
+    "deleteAccountConfirm": "Delete my account",
+    "dobInvalid": "Enter the date of birth as DD.MM.YYYY.",
+    "dobPlaceholder": "DD.MM.YYYY"
   },
   "matchHistory": {
     "title": "My matches",

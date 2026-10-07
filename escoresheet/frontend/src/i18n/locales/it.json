@@ -1691,7 +1691,9 @@
     "typeEmailToConfirm": "Digita la tua email per confermare:",
     "emailDoesNotMatch": "L'email non corrisponde",
     "deleting": "Eliminazione...",
-    "deleteAccountConfirm": "Elimina il mio account"
+    "deleteAccountConfirm": "Elimina il mio account",
+    "dobInvalid": "Inserisci la data di nascita come GG.MM.AAAA.",
+    "dobPlaceholder": "GG.MM.AAAA"
   },
   "matchHistory": {
     "title": "Le mie partite",
