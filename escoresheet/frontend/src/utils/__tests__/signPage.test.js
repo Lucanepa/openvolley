@@ -218,6 +218,61 @@ describe('the phone signing page', () => {
     expect(page().pad.h).toBe(2200)
   })
 
+  it('a rotation before the first stroke gives the pad the new shape (no dead margins)', async () => {
+    await load()
+    expect(page().pad.h).toBe(2200)
+    window.__padWidth = 700
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 900 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 400 })
+    window.dispatchEvent(new Event('resize'))
+    // Landscape: 0.33 x 700 = 231 px tall, so 4000 x 1320 units fill the canvas
+    expect(page().pad.h).toBe(1320)
+    drawLine(10, 60, 100)
+    window.__padWidth = 400
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 400 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 })
+    window.dispatchEvent(new Event('resize'))
+    expect(page().pad.h).toBe(1320)
+  })
+
+  it('a Done whose answer was lost, then "already used": the signature did arrive', async () => {
+    await load()
+    drawLine(10, 60, 100)
+    answers.submit = new TypeError('Failed to fetch')
+    $('done').click()
+    await flush()
+    expect(page().state).toBe('failed')
+    answers.submit = { status: 409, json: { ok: false, code: 'OV_SIGN_USED' } }
+    $('done').click()
+    await flush()
+    expect(page().state).toBe('done')
+    expect($('endText').textContent).toBe('Signature sent. You can close this page.')
+  })
+
+  it('"already used" after a refused Done (nothing arrived) stays "used"', async () => {
+    await load()
+    drawLine(10, 60, 100)
+    answers.submit = { status: 429, json: { ok: false, code: 'OV_SIGN_RATE_LIMITED' } }
+    $('done').click()
+    await flush()
+    expect(page().state).toBe('failed')
+    answers.submit = { status: 409, json: { ok: false, code: 'OV_SIGN_USED' } }
+    $('done').click()
+    await flush()
+    expect(page().state).toBe('used')
+  })
+
+  it('an end state is announced by the live region, the card is for the eyes', async () => {
+    await load()
+    drawLine(10, 60, 100)
+    $('done').click()
+    await flush()
+    expect($('status').getAttribute('aria-live')).toBe('polite')
+    expect($('status').textContent).toBe('Signature sent. You can close this page.')
+    expect($('status').className).toBe('status sr')
+    expect($('end').getAttribute('aria-hidden')).toBe('true')
+  })
+
   it('Done sends the strokes, never an image, and ends with "sent"', async () => {
     await load()
     drawLine(10, 60, 100)

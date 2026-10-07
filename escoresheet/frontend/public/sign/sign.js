@@ -95,6 +95,7 @@
   var view = { w: 0, h: 0, s: 1, ox: 0, oy: 0, dpr: 1 }
   var state = 'loading'
   var openTries = 0
+  var lost = false // a Done without an answer: it may have arrived
 
   function fmt(text, vars) {
     return String(text).replace(/\{(\w+)\}/g, function (_, k) { return vars && vars[k] != null ? vars[k] : '' })
@@ -126,7 +127,8 @@
       $('end').hidden = false
       $('endIcon').textContent = end[next]
       $('endText').textContent = text
-      setStatus('')
+      // Said by the live region (screen readers), shown by the end card
+      setStatus(text, 'sr')
       storage(function (s) { s.removeItem(KEY) })
     } else {
       $('end').hidden = true
@@ -172,9 +174,13 @@
     var vh = window.innerHeight || 640
     var landscape = (window.innerWidth || w) > vh
     var h = landscape ? Math.min(0.33 * w, 0.6 * vh) : Math.max(180, Math.min(0.55 * w, 0.45 * vh))
+    // Landscape: the whole page fits the screen (the page around the pad measured)
+    var rest = page.getBoundingClientRect().height - canvas.getBoundingClientRect().height
+    if (landscape && rest > 0) h = Math.min(h, Math.max(120, vh - rest))
     h = Math.round(h)
-    // The pad's units are fixed once: a rotation only changes the view
-    if (!padH) padH = Math.max(1000, Math.min(4000, Math.round(W * h / w)))
+    // The pad's units follow its shape until the first stroke, then stay: a
+    // later rotation only changes the view
+    if (!padH || !strokes.length) padH = Math.max(1000, Math.min(4000, Math.round(W * h / w)))
     var dpr = window.devicePixelRatio || 1
     canvas.style.height = h + 'px'
     canvas.width = Math.round(w * dpr)
@@ -188,6 +194,12 @@
     if (!ctx) return
     ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0)
     ctx.clearRect(0, 0, view.w, view.h)
+    // Rotated after the first stroke: grey outside the pad, where nothing draws
+    if (view.ox > 1 || view.oy > 1) {
+      ctx.fillStyle = '#e7e5e4'
+      ctx.fillRect(0, 0, view.w, view.h)
+      ctx.clearRect(view.ox, view.oy, W * view.s, padH * view.s)
+    }
     // A faint baseline at 70 % of the pad
     ctx.strokeStyle = '#e7e5e4'
     ctx.lineWidth = 1
@@ -359,9 +371,11 @@
     }, retryOpen)
   }
 
+  // Keeps trying for as long as a link can live (10 min), then says so
   function retryOpen() {
     setStatus(S.openFailed, 'warn')
-    if (++openTries <= 20) setTimeout(open, 3000)
+    if (++openTries <= 60) setTimeout(open, Math.min(3000 * openTries, 10000))
+    else setState('expired', S.expired)
   }
 
   function submit() {
@@ -371,14 +385,17 @@
     setStatus(S.sending)
     post('/api/sign/submit', { k: token, pad: { w: W, h: padH }, strokes: sent }).then(function (r) {
       if (r.status === 200 && r.json.ok) return setState('done', S.sent)
+      // An earlier Done arrived and only its answer was lost
+      if (lost && r.json.code === 'OV_SIGN_USED') return setState('done', S.sent)
       var end = endFor(r)
       if (end) return setState(end[0], end[1])
-      failed()
-    }, failed)
+      failed(r.status >= 500)
+    }, function () { failed(true) })
   }
 
   // Network or server trouble: the strokes stay, Done again
-  function failed() {
+  function failed(maybeArrived) {
+    if (maybeArrived) lost = true
     setState('failed')
     setStatus(S.sendFailed, 'error')
   }
