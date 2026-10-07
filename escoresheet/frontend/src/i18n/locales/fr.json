@@ -844,7 +844,8 @@
       "repeatedImproperRequest": "L'équipe a déjà une demande irrégulière : celle-ci compte comme un retard.",
       "repeatedDelay": "L'équipe a déjà un avertissement pour retard : ce retard est une pénalité.",
       "pointToOpponent": "Point et service pour {{opponent}}."
-    }
+    },
+    "benchInjuryRecorded": "Blessure enregistrée pour le n° {{number}} (banc)"
   },
   "settings": {
     "title": "Paramètres",

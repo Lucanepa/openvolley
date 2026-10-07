@@ -838,7 +838,8 @@
       "repeatedImproperRequest": "Die Mannschaft hat bereits eine unzulässige Anfrage, diese zählt deshalb als Verzögerung.",
       "repeatedDelay": "Die Mannschaft hat bereits eine Verzögerungswarnung, diese Verzögerung ist deshalb eine Strafe.",
       "pointToOpponent": "Punkt und Aufschlag für {{opponent}}."
-    }
+    },
+    "benchInjuryRecorded": "Verletzung erfasst für #{{number}} (Bank)"
   },
   "settings": {
     "title": "Einstellungen",
