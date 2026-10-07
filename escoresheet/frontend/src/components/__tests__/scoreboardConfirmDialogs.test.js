@@ -1,7 +1,10 @@
 // Every scorer confirmation dialog follows one pattern (hooks/useConfirmAction):
-// snapshot at open, close before the first await, one run at a time.
-// Scoreboard is too large to render in a unit test, so the source is checked
-// for the wiring; the pattern itself is tested in useConfirmAction.test.jsx.
+// snapshot at open, one run at a time, and the dialog never redraws from the
+// data it writes: its close is requested before the first write and applied
+// in the same render as the written data (runAction + deferUi, see
+// hooks/useScorerActions). Scoreboard is too large to render in a unit test,
+// so the source is checked for the wiring; the patterns themselves are tested
+// in useConfirmAction.test.jsx and useScorerActions.test.jsx.
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -18,7 +21,12 @@ const between = (from, to) => {
   return sb.slice(a, sb.indexOf(to, a + from.length))
 }
 // a useCallback body, from its header to its dependency list
-const handler = header => between(header, '\n  }), [')
+const handler = header => {
+  const a = sb.indexOf(header)
+  if (a < 0) throw new Error(`not found: ${header}`)
+  const end = sb.slice(a).search(/\n  \}\)+, \[/)
+  return sb.slice(a, a + end)
+}
 
 // [handler header, the call that closes its dialog]
 const DIALOGS = [
@@ -38,23 +46,27 @@ const DIALOGS = [
   ['const handleDecisionChange = useCallback(', 'setReplayRallyConfirm(null)'],
 ]
 
-describe('Scoreboard confirmation dialogs: snapshot, close first, one run', () => {
-  it.each(DIALOGS)('%s is guarded and closes before its first await', (header, close) => {
+describe('Scoreboard confirmation dialogs: snapshot, close with the data, one run', () => {
+  it.each(DIALOGS)('%s is guarded, one transaction, and closes with its data', (header, close) => {
     const body = handler(header)
-    expect(body).toMatch(/=> run\w+\(async \(\) => \{/)
+    expect(body).toMatch(/=> run\w+\(\(\) => runAction\('\w+', async \(\) => \{/)
     const closeAt = body.indexOf(close)
     const firstAwait = body.indexOf('await ')
     expect(closeAt).toBeGreaterThan(-1)
     expect(firstAwait).toBeGreaterThan(-1)
     expect(closeAt).toBeLessThan(firstAwait)
+    // requested before the first write, applied with the written data
+    expect(body.slice(0, closeAt)).toMatch(/deferUi\(\(\) => \{?\s*$/)
     // the guard hook is declared right before the handler
-    const runner = body.match(/=> (run\w+)\(async/)[1]
+    const runner = body.match(/=> (run\w+)\(\(\) => runAction/)[1]
     expect(sb).toContain(`const ${runner} = useConfirmAction(onConfirmFailed)`)
   })
 
-  it('the replay branch of the decision change closes before its first await too', () => {
-    const body = between('const handleReplayRally = useCallback(', '\n  }, [')
-    expect(body.indexOf('setReplayRallyConfirm(null)')).toBeLessThan(body.indexOf('await '))
+  it('the replay branch of the decision change closes with its data too', () => {
+    const body = handler('const handleReplayRally = useCallback(')
+    const closeAt = body.indexOf('setReplayRallyConfirm(null)')
+    expect(closeAt).toBeLessThan(body.indexOf('await '))
+    expect(body.slice(0, closeAt)).toMatch(/deferUi\(\(\) => $/)
   })
 
   it('the decision change records what its dialog shows when nothing was chosen (swap)', () => {

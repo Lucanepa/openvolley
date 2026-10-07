@@ -29,7 +29,7 @@ describe('Start Set pushes the live state', () => {
 
   it('confirmSetStartTime lists syncLiveStateToSupabase in its deps', () => {
     const body = confirmSetStartTimeBody()
-    const deps = body.slice(body.lastIndexOf('}, ['))
+    const deps = body.slice(body.search(/\n  \}\)+, \[/))
     expect(deps).toMatch(/syncLiveStateToSupabase/)
   })
 

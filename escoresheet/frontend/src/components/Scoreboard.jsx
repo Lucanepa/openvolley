@@ -7,6 +7,8 @@ import { db } from '../db/db'
 import Modal from './Modal'
 import RostersPanel from './rosters/RostersPanel'
 import { useScaledLayout } from '../hooks/useScaledLayout'
+import { useActionLiveQuery } from '../hooks/useActionLiveQuery'
+import { useScorerActions, pickLiveStateSnapshot } from '../hooks/useScorerActions'
 
 import ConnectionStatus from './ConnectionStatus'
 import MenuList from './MenuList'
@@ -229,6 +231,12 @@ const SB_INJURY_ICON = <Cross size={16} fill="currentColor" strokeWidth={1.5} />
  *
  * The eventInProgressRef mutex serializes event creation to prevent race
  * conditions (e.g., rapid clicks causing duplicate sets).
+ *
+ * Every scorer action (point, undo, substitution, libero, sanction, time-out,
+ * decision change, replay, change of courts, set start) writes in ONE Dexie
+ * transaction (runAction, hooks/useScorerActions): the screen, the tablets and
+ * the livescore see each action once, complete (a side-out's point never
+ * without its rotation), and a failed action writes nothing.
  */
 
 export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, onTriggerEventBackup }) {
@@ -947,7 +955,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     localStorage.setItem('displayMode', 'desktop')
   }, [])
 
-  const data = useLiveQuery(async () => {
+  // One explicit read transaction: a result never mixes data from before and
+  // after an action's commit, and it tells useActionLiveQuery which actions
+  // it already shows (their dialogs are applied in the same render)
+  const [data, liveCommits] = useActionLiveQuery(() => db.transaction('r', [db.matches, db.teams, db.sets, db.players, db.events], async () => {
     const match = await db.matches.get(matchId)
     if (!match) return null
 
@@ -1025,7 +1036,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     return result
-  }, [matchId])
+  }), [matchId])
 
   // Monitor tablet connection health — notify when a device drops
   const handleDeviceDisconnected = useCallback(({ label }) => {
@@ -1458,6 +1469,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }, [matchId])
 
+  // Scorer actions: each one ONE Dexie transaction, so the screen changes once
+  // per action (score, serve, rotation, counters and the dialogs it opens or
+  // closes together), and the tablets / livescore get the final state after
+  // the commit. See useScorerActions. Inside an action body only Dexie may be
+  // awaited; screen changes go through deferUi, network through deferEffect
+  // (syncToReferee, sendActionToReferee, syncLiveStateToSupabase do it themselves).
+  const { runAction, deferUi, deferEffect, trackWrite } = useScorerActions({
+    db,
+    commits: liveCommits,
+    mutexRef: eventInProgressRef,
+    captureFinalSnapshot: async () => (await captureFullStateSnapshot())?.snapshot ?? null
+  })
+
   // Restore match state from a snapshot (used by undo)
   const restoreStateFromSnapshot = useCallback(async (snapshot) => {
     if (!snapshot || !matchId) return
@@ -1880,6 +1904,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // Sync data to referee/bench - call this after any action that changes match data
   // If WebSocket isn't ready, retry after a short delay
   const syncToReferee = useCallback(() => {
+    // During an action: once, after its commit (the tablets got a side-out
+    // point before its rotation)
+    if (deferEffect({ once: 'referee-sync', run: () => syncToReferee() })) return
     if (syncFunctionRef.current) {
       syncFunctionRef.current()
     }
@@ -1893,7 +1920,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       }, 1000)
     }
-  }, [])
+  }, [deferEffect])
 
   // Send a message the relay only accepts from the match's proven scoreboard.
   // Right after a (re)connect it waits for the socket's first sync, so e.g. a
@@ -1913,6 +1940,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Send action to referee/bench for showing modals/countdowns
   const sendActionToReferee = useCallback((actionType, actionData) => {
+    // During an action: after its commit, in order (after its data sync)
+    if (deferEffect({ run: () => sendActionToReferee(actionType, actionData) })) return
     const ws = wsRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       return
@@ -1929,12 +1958,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       timestamp: sendTimestamp,
       _timestamp: sendTimestamp // For latency tracking
     })
-  }, [matchId, sendRelayMessage])
+  }, [matchId, sendRelayMessage, deferEffect])
 
   // Sync live state to Supabase for referee.openvolley.app
   // SIMPLIFIED: Uses stateSnapshot from events instead of recomputing everything
   // cachedSnapshot: Optional snapshot passed from logEvent to avoid re-fetching/re-computing
   const syncLiveStateToSupabase = useCallback(async (eventType, eventTeam, eventData, cachedSnapshot = null) => {
+    // During an action: after its commit, in order, with the action's final
+    // snapshot (a side-out 'point' push carried the state before the rotation)
+    if (deferEffect({
+      wantsSnapshot: true,
+      run: (finalSnapshot) => syncLiveStateToSupabase(eventType, eventTeam, eventData, pickLiveStateSnapshot(cachedSnapshot, finalSnapshot))
+    })) return
     const _tl = performance.now()
     console.log(`[PERF:liveState] START: ${eventType}, cachedSnapshot: ${!!cachedSnapshot}`)
     if (!matchId) return
@@ -2280,7 +2315,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       console.error('[LiveState] Exception:', err)
       setLiveStateDirty(matchId, true)
     }
-  }, [matchId, captureFullStateSnapshot, sendRelayMessage])
+  }, [matchId, captureFullStateSnapshot, sendRelayMessage, deferEffect])
 
   // match_live_state is written directly, not queued. After an offline period
   // (or while the match waited in the queue for a sign-in) push the current
@@ -4027,12 +4062,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // Helper function to log manual changes for the summary
   // Notify scoresheet window about data changes via BroadcastChannel
   const notifyScoresheetUpdate = useCallback((reason) => {
+    // During an action: after its commit (the scoresheet re-reads the data)
+    if (deferEffect({ run: () => notifyScoresheetUpdate(reason) })) return
     try {
       const channel = new BroadcastChannel('escoresheet-updates')
       channel.postMessage({ type: 'MANUAL_ADJUSTMENT', matchId, reason })
       channel.close()
     } catch (e) { /* BroadcastChannel not supported */ }
-  }, [matchId])
+  }, [matchId, deferEffect])
 
   const logManualChange = useCallback((category, field, before, after, description) => {
     const change = {
@@ -4044,7 +4081,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       description: description || `Changed ${field} from "${before}" to "${after}"`
     }
     console.log('[ManualChange] New change:', change)
-    setManualChangesLog(prev => [...prev, change])
+    deferUi(() => setManualChangesLog(prev => [...prev, change]))
 
     // Notify scoresheet window about the change
     notifyScoresheetUpdate(`manual_change:${category}:${field}`)
@@ -4054,12 +4091,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const existingChanges = data.match.manualChanges || []
       const updatedChanges = [...existingChanges, change]
       console.log('[ManualChange] Saving to IndexedDB:', { matchId, existingCount: existingChanges.length, newCount: updatedChanges.length })
-      db.matches.update(matchId, { manualChanges: updatedChanges }).catch((err) => {
+      // Inside an action: part of its transaction (awaited before the commit)
+      trackWrite(db.matches.update(matchId, { manualChanges: updatedChanges }).catch((err) => {
         console.error('[ManualChange] IndexedDB error:', err)
-      })
+      }))
 
-      // Sync to Supabase
-      if (data.match?.seed_key) {
+      // Sync to Supabase (during an action: after its commit)
+      const pushManualChanges = () => {
         console.log('[ManualChange] Syncing to Supabase:', { seed_key: data.match.seed_key, changes: updatedChanges })
         apiFrom('matches')
           .update({ manual_changes: updatedChanges })
@@ -4075,6 +4113,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           .catch((err) => {
             console.error('[ManualChange] Supabase error:', err)
           })
+      }
+      if (data.match?.seed_key) {
+        if (!deferEffect({ run: pushManualChanges })) pushManualChanges()
       } else {
         console.log('[ManualChange] No Supabase sync:', { seed_key: data.match?.seed_key })
       }
@@ -4083,7 +4124,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     return change
-  }, [matchId, data?.match, notifyScoresheetUpdate])
+  }, [matchId, data?.match, notifyScoresheetUpdate, deferUi, deferEffect, trackWrite])
 
   const logManualChangeWithRemark = useCallback(async (category, field, before, after, description, { setIndex, scoreStr } = {}) => {
     logManualChange(category, field, before, after, description)
@@ -4289,356 +4330,343 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     setReopenRosterTeam(null)
   }, [matchId, data?.homeTeam, data?.awayTeam, data?.set, data?.match?.homeTeamId, data?.match?.awayTeamId, data?.events, logManualChange, diffRosters, showAlert, t])
 
+  // Log one event: the event, its state snapshot and its cloud sync job are
+  // written in one transaction (runAction). Called inside a scorer action it
+  // joins that action's transaction; the referee / live-state / backup side
+  // effects then run once the whole action has committed. Outside an action it
+  // is an action of its own (holding the event mutex unless skipMutex: the
+  // caller already holds it). Returns the event's seq (for N.x sub-events).
   const logEvent = useCallback(
     async (type, payload = {}, options = {}) => {
-      const _t0 = performance.now()
-      console.log(`[PERF] logEvent START: ${type}`)
-
       if (!data?.set) return null
-
-      // skipMutex: true if caller already holds the mutex (e.g., confirmSubstitution)
-      const shouldAcquireMutex = !options.skipMutex
-
-      // MUTEX: Wait for any in-progress event to complete to prevent race conditions
-      // This ensures snapshots always see all previous events
-      if (shouldAcquireMutex) {
-        const maxWaitTime = 5000 // 5 seconds max wait
-        const startWait = Date.now()
-        while (eventInProgressRef.current && (Date.now() - startWait) < maxWaitTime) {
-          await new Promise(resolve => setTimeout(resolve, 10))
-        }
-        if (eventInProgressRef.current) {
-          console.warn('[logEvent] Timeout waiting for previous event, proceeding anyway')
-        }
-        eventInProgressRef.current = true
-      }
-      console.log(`[PERF] After mutex: +${(performance.now() - _t0).toFixed(0)}ms`)
-
-      try {
-        // CRITICAL: Use setIndexOverride if provided, otherwise query fresh from IndexedDB
-        let actualSetIndex = options.setIndexOverride
-        if (actualSetIndex === undefined) {
-          // Query fresh current set to avoid stale data after set transitions
-          const allSets = await db.sets.where('matchId').equals(matchId).toArray()
-          const freshCurrentSet = allSets.find(s => !s.finished) || allSets[allSets.length - 1]
-          actualSetIndex = freshCurrentSet?.index || data.set.index
-        }
-        console.log(`[PERF] After sets query: +${(performance.now() - _t0).toFixed(0)}ms`)
-
-        // Get max sequence using compound index (O(log n) instead of O(n) full scan)
-        const lastEvent = await db.events.where('[matchId+seq]').between([matchId, Dexie.minKey], [matchId, Dexie.maxKey]).last()
-        const maxExistingSeq = lastEvent?.seq || 0
-        console.log(`[PERF] After seq query (compound idx): +${(performance.now() - _t0).toFixed(0)}ms`)
-
-        // If parentSeq is provided, create a sub-event with decimal ID (e.g., 1.1, 1.2)
-        // Otherwise, create a main event with integer ID
-        let nextSeq
-        if (options.parentSeq !== undefined) {
-          nextSeq = await getNextSubSeq(options.parentSeq)
-        } else {
-          nextSeq = await getNextSeq()
-        }
-        console.log(`[PERF] After getNextSeq: +${(performance.now() - _t0).toFixed(0)}ms`)
-
-        // CRITICAL: Validate sequence number is always increasing
-        if (nextSeq <= maxExistingSeq && Math.floor(nextSeq) !== Math.floor(maxExistingSeq)) {
-          console.error(`[SEQUENCE ERROR] New seq ${nextSeq} is not greater than existing max ${maxExistingSeq}! Type: ${type}`)
-          debugLogger.log('SEQUENCE_ERROR', {
-            error: 'Sequence number not incrementing correctly',
-            newSeq: nextSeq,
-            maxExistingSeq,
-            eventType: type,
-            payload
-          })
-        }
-
-        // Simple timestamp for reference (not used for ordering)
-        const timestamp = options.timestamp ? new Date(options.timestamp) : new Date()
-
-        // Add event first (without snapshot - we need the event to exist to capture state)
-        const eventId = await db.events.add({
-          matchId,
-          setIndex: actualSetIndex,
-          type,
-          payload,
-          ts: timestamp.toISOString(), // Store as ISO string for reference
-          seq: nextSeq // Use sequence for ordering
-        })
-        console.log(`[PERF] After db.events.add: +${(performance.now() - _t0).toFixed(0)}ms`)
-
-        // Lightweight events (rally_start, replay) skip snapshot and sync queue for speed
-        const lightweightEvents = ['rally_start', 'replay']
-        const isLightweight = lightweightEvents.includes(type)
-
-        let stateSnapshot = null
-        let snapshotEvents = []
-        let snapshotSets = []
-        let snapshotMatch = null
-
-        if (!isLightweight) {
-          // Capture FULL state snapshot AFTER the event is applied
-          // This is the key to the snapshot-based undo system
-          // Also returns raw queried data (_rawEvents, _rawSets, _rawMatch) for reuse below
-          const snapshotResult = await captureFullStateSnapshot()
-          stateSnapshot = snapshotResult?.snapshot || null
-          snapshotEvents = snapshotResult?._rawEvents || []
-          snapshotSets = snapshotResult?._rawSets || []
-          snapshotMatch = snapshotResult?._rawMatch || null
-          console.log(`[PERF] After captureFullStateSnapshot: +${(performance.now() - _t0).toFixed(0)}ms`)
-
-          // Update the event with the snapshot
-          if (stateSnapshot) {
-            await db.events.update(eventId, { stateSnapshot })
-          }
-          console.log(`[PERF] After db.events.update (snapshot): +${(performance.now() - _t0).toFixed(0)}ms`)
-        }
-
-        // Log the event with state snapshots
-        debugLogger.log('EVENT_CREATED', {
-          eventId,
-          type,
-          payload,
-          seq: nextSeq,
-          setIndex: actualSetIndex,
-          hasSnapshot: !!stateSnapshot
-        })
-
-        // Reuse match from snapshot or fetch fresh (lightweight events need it for isTest check)
-        const match = snapshotMatch || await db.matches.get(matchId)
-        const isTest = match?.test || false
-        console.log(`[PERF] After match.get: +${(performance.now() - _t0).toFixed(0)}ms`)
-
-        // Only sync official matches to Supabase, not test matches
-        // Lightweight events skip sync queue (no state change to sync)
-        if (!isTest && !isLightweight) {
-          // Reuse events from snapshot (avoids redundant db.events.where({matchId}).toArray())
-          const allEventsForSync = snapshotEvents
-          console.log(`[PERF] After allEventsForSync (reused from snapshot): +${(performance.now() - _t0).toFixed(0)}ms`)
-          const setIndex = actualSetIndex // Use the fresh set index, not stale data.set.index
-
-          // Get rich lineup for a team from fresh event data (same format as match_live_state)
-          const getRichLineupForTeamFresh = (teamKey, isServingTeam) => {
-            const lineupEvents = allEventsForSync
-              .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === setIndex)
-              .sort((a, b) => (a.seq || 0) - (b.seq || 0))
-            if (lineupEvents.length === 0) return null
-
-            const lastLineupEvent = lineupEvents[lineupEvents.length - 1]
-            const rawLineup = lastLineupEvent.payload?.lineup || {}
-            const liberoSubstitution = lastLineupEvent.payload?.liberoSubstitution
-
-            // Get initial lineup (first lineup event)
-            const initialLineup = lineupEvents[0]?.payload?.lineup || {}
-
-            // Get players for this team
-            const teamPlayers = teamKey === 'home' ? data.homePlayers : data.awayPlayers
-
-            // Get substitution events for this team in this set
-            const substitutionEvents = allEventsForSync
-              .filter(e => e.type === 'substitution' && e.payload?.team === teamKey && e.setIndex === setIndex)
-
-            // Get captain info
-            const captainNum = teamKey === 'home' ? match?.homeCaptain : match?.awayCaptain
-            const courtCaptainNum = teamKey === 'home' ? match?.homeCourtCaptain : match?.awayCourtCaptain
-
-            const backRowPositions = ['I', 'V', 'VI']
-            const richLineup = {}
-
-            for (const position of ['I', 'II', 'III', 'IV', 'V', 'VI']) {
-              const playerNum = rawLineup[position]
-              if (!playerNum && playerNum !== 0) continue
-
-              const playerNumStr = String(playerNum)
-              const player = teamPlayers?.find(p => String(p.number) === playerNumStr)
-              const isBackRow = backRowPositions.includes(position)
-
-              const positionData = {
-                number: Number(playerNum) || playerNum
-              }
-
-              // Add serving info for position I
-              if (position === 'I' && isServingTeam) {
-                positionData.isServing = true
-              }
-
-              // Add libero info
-              if (player?.libero && player.libero !== '') {
-                positionData.isLibero = true
-                positionData.liberoType = player.libero
-                // Find who the libero replaced
-                if (liberoSubstitution && String(liberoSubstitution.liberoNumber) === playerNumStr) {
-                  positionData.replacedNumber = liberoSubstitution.playerNumber
-                }
-              }
-
-              // Add substitution info
-              const subEvent = substitutionEvents.find(e => String(e.payload?.playerIn) === playerNumStr)
-              if (subEvent) {
-                positionData.isSubstituted = true
-                positionData.substitutedFor = subEvent.payload?.playerOut
-              }
-
-              // Add captain info
-              if (String(captainNum) === playerNumStr) {
-                positionData.isCaptain = true
-              }
-              if (String(courtCaptainNum) === playerNumStr) {
-                positionData.isCourtCaptain = true
-              }
-
-              richLineup[position] = positionData
-            }
-
-            return Object.keys(richLineup).length > 0 ? richLineup : null
-          }
-
-          // Simple lineup getter for server number lookup
-          const getLineupForTeamFresh = (teamKey) => {
-            const lineupEvents = allEventsForSync
-              .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === setIndex)
-              .sort((a, b) => (a.seq || 0) - (b.seq || 0))
-            if (lineupEvents.length === 0) return null
-            const lastLineup = lineupEvents[lineupEvents.length - 1]
-            return lastLineup.payload?.lineup || null
-          }
-
-          // A/B Model: Team A = coin toss winner (constant), side_a = which side they're on
-          const teamAKey = match?.coinTossTeamA || 'home'
-          const teamBKey = teamAKey === 'home' ? 'away' : 'home'
-          const setLeftTeamOverrides = match?.setLeftTeamOverrides || {}
-
-          // Determine which side Team A is on this set
-          // setLeftTeamOverrides stores 'A' or 'B', set5LeftTeam stores 'A' or 'B'
-          let sideA // 'left' or 'right'
-          if (setLeftTeamOverrides[setIndex] !== undefined) {
-            sideA = setLeftTeamOverrides[setIndex] === 'A' ? 'left' : 'right'
-          } else if (setIndex === 5 && match?.set5CourtSwitched && match?.set5LeftTeam) {
-            sideA = match.set5LeftTeam === 'A' ? 'left' : 'right'
-          } else {
-            // Default: Team A on left in odd sets (1, 3, 5), right in even sets (2, 4)
-            sideA = setIndex % 2 === 1 ? 'left' : 'right'
-          }
-
-          // Derive left/right team keys from A/B model
-          const leftTeamKey = sideA === 'left' ? teamAKey : teamBKey
-          const rightTeamKey = sideA === 'left' ? teamBKey : teamAKey
-
-          // Calculate serving team (same logic as getCurrentServe)
-          const set1FirstServe = match?.firstServe || 'home'
-          let currentSetFirstServe
-          if (setIndex === 5 && match?.set5FirstServe) {
-            currentSetFirstServe = match.set5FirstServe === 'A' ? teamAKey : teamBKey
-          } else if (setIndex === 5) {
-            currentSetFirstServe = set1FirstServe
-          } else {
-            currentSetFirstServe = setIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
-          }
-
-          // Find last point event from fresh data to determine current serve
-          const pointEventsForSync = allEventsForSync
-            .filter(e => e.type === 'point' && e.setIndex === setIndex)
-            .sort((a, b) => (b.seq || 0) - (a.seq || 0))
-          const servingTeam = pointEventsForSync.length > 0 ? (pointEventsForSync[0].payload?.team || currentSetFirstServe) : currentSetFirstServe
-
-          // Get server number from position I of serving team's lineup
-          const servingTeamLineup = getLineupForTeamFresh(servingTeam)
-          const serverNumber = servingTeamLineup?.['I'] ? Number(servingTeamLineup['I']) : null
-
-          // Reuse sets from snapshot (avoids redundant db.sets query)
-          const currentSetForScore = snapshotSets.find(s => s.index === setIndex)
-          // teamAKey already defined above at line 3265
-          const scoreA = teamAKey === 'home' ? (currentSetForScore?.homePoints || 0) : (currentSetForScore?.awayPoints || 0)
-          const scoreB = teamAKey === 'home' ? (currentSetForScore?.awayPoints || 0) : (currentSetForScore?.homePoints || 0)
-
-          await db.sync_queue.add({
-            resource: 'event',
-            action: 'insert',
-            payload: {
-              external_id: eventExtId(match?.seed_key || String(matchId), eventId),
-              match_id: match?.seed_key || String(matchId), // Use seed_key (external_id) for Supabase lookup
-              set_index: setIndex,
-              type,
-              payload: payload || {},
-              seq: nextSeq,
-              test: false,
-              created_at: new Date().toISOString(),
-              // Rich lineup format (same as match_live_state) with libero, sub, captain info
-              lineup_left: getRichLineupForTeamFresh(leftTeamKey, servingTeam === leftTeamKey),
-              lineup_right: getRichLineupForTeamFresh(rightTeamKey, servingTeam === rightTeamKey),
-              serve_team: servingTeam,
-              serve_player: serverNumber,
-              // Score AFTER this event (Team A/B model)
-              score_a: scoreA,
-              score_b: scoreB,
-              // Full state snapshot for snapshot-based undo/restore
-              state_snapshot: stateSnapshot
-            },
-            ts: Date.now(),
-            status: 'queued'
-          })
-          console.log(`[PERF] After sync_queue.add: +${(performance.now() - _t0).toFixed(0)}ms`)
-
-          // The cloud set row follows the running score (it stayed 0:0 until the
-          // set ended). Not awaited: queued score-only updates are coalesced.
-          if (type === 'point') queueSetScoreSync(db, { matchId, setIndex })
-        }
-
-        // Sync to referee after every event
-        syncToReferee()
-        console.log(`[PERF] After syncToReferee: +${(performance.now() - _t0).toFixed(0)}ms`)
-
-        // Sync live state to Supabase for key events
-        const keyEvents = ['point', 'timeout', 'substitution', 'set_start', 'set_end', 'lineup', 'sanction', 'libero_entry', 'libero_exit', 'libero_exchange', 'court_captain_designation']
-        if (keyEvents.includes(type)) {
-          const eventTeam = payload?.team || null
-          let eventData = null
-          if (type === 'substitution') {
-            eventData = { playerIn: payload?.playerIn, playerOut: payload?.playerOut }
-          } else if (type === 'timeout') {
-            eventData = { duration: 30 }
-          } else if (type === 'set_end') {
-            // Note: logEvent('set_end', { team: winner, ... }) uses 'team' for the winner
-            eventData = { setIndex: payload?.setIndex || data.set.index, winner: payload?.team }
-          } else if (type === 'libero_entry' || type === 'libero_exit') {
-            eventData = { liberoNumber: payload?.liberoNumber, playerNumber: payload?.playerNumber }
-          } else if (type === 'libero_exchange') {
-            eventData = { liberoIn: payload?.liberoIn, liberoOut: payload?.liberoOut }
-          } else if (type === 'court_captain_designation') {
-            eventData = { playerNumber: payload?.playerNumber }
-          } else if (type === 'sanction') {
-            eventData = {
-              type: payload?.type,
-              playerType: payload?.playerType || null,
-              playerNumber: payload?.playerNumber || null,
-              role: payload?.role || null
-            }
-          }
-          // For events that change the lineup, don't use cached snapshot - it was captured BEFORE the event
-          // was added to the database. Let syncLiveStateToSupabase fetch a fresh one.
-          const lineupChangingEvents = ['libero_entry', 'libero_exit', 'libero_exchange', 'substitution', 'lineup']
-          const useSnapshot = lineupChangingEvents.includes(type) ? null : stateSnapshot
-          syncLiveStateToSupabase(type, eventTeam, eventData, useSnapshot)
-          console.log(`[PERF] After syncLiveStateToSupabase: +${(performance.now() - _t0).toFixed(0)}ms`)
-        }
-
-        // Continuous cloud backup after every event (non-blocking, throttled)
-        if (!isTest) {
-          const gameNum = data?.match?.gameNumber || data?.match?.game_n || null
-          triggerContinuousBackup(matchId, () => exportMatchData(matchId), gameNum)
-        }
-
-        // Return the sequence number so it can be used for related events
-        console.log(`[PERF] logEvent END: ${type} - TOTAL: ${(performance.now() - _t0).toFixed(0)}ms`)
-        return nextSeq
-      } finally {
-        // MUTEX: Only release the lock if we acquired it
-        if (shouldAcquireMutex) {
-          eventInProgressRef.current = false
-        }
-      }
+      return runAction(null, () => logEventTx(type, payload, options), { skipMutex: !!options.skipMutex })
     },
-    [data?.set, matchId, getNextSeq, getNextSubSeq, captureFullStateSnapshot, syncToReferee, syncLiveStateToSupabase]
+    // logEventTx (below) reads the same values as these deps
+    [data?.set, runAction, matchId, getNextSeq, getNextSubSeq, captureFullStateSnapshot, syncToReferee, syncLiveStateToSupabase]
   )
+
+  // The database part of logEvent; inside a transaction only (Dexie awaits only)
+  async function logEventTx(type, payload = {}, options = {}) {
+    const _t0 = performance.now()
+    console.log(`[PERF] logEvent START: ${type}`)
+    // CRITICAL: Use setIndexOverride if provided, otherwise query fresh from IndexedDB
+    let actualSetIndex = options.setIndexOverride
+    if (actualSetIndex === undefined) {
+      // Query fresh current set to avoid stale data after set transitions
+      const allSets = await db.sets.where('matchId').equals(matchId).toArray()
+      const freshCurrentSet = allSets.find(s => !s.finished) || allSets[allSets.length - 1]
+      actualSetIndex = freshCurrentSet?.index || data.set.index
+    }
+    console.log(`[PERF] After sets query: +${(performance.now() - _t0).toFixed(0)}ms`)
+
+    // Get max sequence using compound index (O(log n) instead of O(n) full scan)
+    const lastEvent = await db.events.where('[matchId+seq]').between([matchId, Dexie.minKey], [matchId, Dexie.maxKey]).last()
+    const maxExistingSeq = lastEvent?.seq || 0
+    console.log(`[PERF] After seq query (compound idx): +${(performance.now() - _t0).toFixed(0)}ms`)
+
+    // If parentSeq is provided, create a sub-event with decimal ID (e.g., 1.1, 1.2)
+    // Otherwise, create a main event with integer ID
+    let nextSeq
+    if (options.parentSeq !== undefined) {
+      nextSeq = await getNextSubSeq(options.parentSeq)
+    } else {
+      nextSeq = await getNextSeq()
+    }
+    console.log(`[PERF] After getNextSeq: +${(performance.now() - _t0).toFixed(0)}ms`)
+
+    // CRITICAL: Validate sequence number is always increasing
+    if (nextSeq <= maxExistingSeq && Math.floor(nextSeq) !== Math.floor(maxExistingSeq)) {
+      console.error(`[SEQUENCE ERROR] New seq ${nextSeq} is not greater than existing max ${maxExistingSeq}! Type: ${type}`)
+      debugLogger.log('SEQUENCE_ERROR', {
+        error: 'Sequence number not incrementing correctly',
+        newSeq: nextSeq,
+        maxExistingSeq,
+        eventType: type,
+        payload
+      })
+    }
+
+    // Simple timestamp for reference (not used for ordering)
+    const timestamp = options.timestamp ? new Date(options.timestamp) : new Date()
+
+    // Add event first (without snapshot - we need the event to exist to capture state)
+    const eventId = await db.events.add({
+      matchId,
+      setIndex: actualSetIndex,
+      type,
+      payload,
+      ts: timestamp.toISOString(), // Store as ISO string for reference
+      seq: nextSeq // Use sequence for ordering
+    })
+    console.log(`[PERF] After db.events.add: +${(performance.now() - _t0).toFixed(0)}ms`)
+
+    // Lightweight events (rally_start, replay) skip snapshot and sync queue for speed
+    const lightweightEvents = ['rally_start', 'replay']
+    const isLightweight = lightweightEvents.includes(type)
+
+    let stateSnapshot = null
+    let snapshotEvents = []
+    let snapshotSets = []
+    let snapshotMatch = null
+
+    if (!isLightweight) {
+      // Capture FULL state snapshot AFTER the event is applied
+      // This is the key to the snapshot-based undo system
+      // Also returns raw queried data (_rawEvents, _rawSets, _rawMatch) for reuse below
+      const snapshotResult = await captureFullStateSnapshot()
+      stateSnapshot = snapshotResult?.snapshot || null
+      snapshotEvents = snapshotResult?._rawEvents || []
+      snapshotSets = snapshotResult?._rawSets || []
+      snapshotMatch = snapshotResult?._rawMatch || null
+      console.log(`[PERF] After captureFullStateSnapshot: +${(performance.now() - _t0).toFixed(0)}ms`)
+
+      // Update the event with the snapshot
+      if (stateSnapshot) {
+        await db.events.update(eventId, { stateSnapshot })
+      }
+      console.log(`[PERF] After db.events.update (snapshot): +${(performance.now() - _t0).toFixed(0)}ms`)
+    }
+
+    // Log the event with state snapshots
+    debugLogger.log('EVENT_CREATED', {
+      eventId,
+      type,
+      payload,
+      seq: nextSeq,
+      setIndex: actualSetIndex,
+      hasSnapshot: !!stateSnapshot
+    })
+
+    // Reuse match from snapshot or fetch fresh (lightweight events need it for isTest check)
+    const match = snapshotMatch || await db.matches.get(matchId)
+    const isTest = match?.test || false
+    console.log(`[PERF] After match.get: +${(performance.now() - _t0).toFixed(0)}ms`)
+
+    // Only sync official matches to Supabase, not test matches
+    // Lightweight events skip sync queue (no state change to sync)
+    if (!isTest && !isLightweight) {
+      // Reuse events from snapshot (avoids redundant db.events.where({matchId}).toArray())
+      const allEventsForSync = snapshotEvents
+      console.log(`[PERF] After allEventsForSync (reused from snapshot): +${(performance.now() - _t0).toFixed(0)}ms`)
+      const setIndex = actualSetIndex // Use the fresh set index, not stale data.set.index
+
+      // Get rich lineup for a team from fresh event data (same format as match_live_state)
+      const getRichLineupForTeamFresh = (teamKey, isServingTeam) => {
+        const lineupEvents = allEventsForSync
+          .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === setIndex)
+          .sort((a, b) => (a.seq || 0) - (b.seq || 0))
+        if (lineupEvents.length === 0) return null
+
+        const lastLineupEvent = lineupEvents[lineupEvents.length - 1]
+        const rawLineup = lastLineupEvent.payload?.lineup || {}
+        const liberoSubstitution = lastLineupEvent.payload?.liberoSubstitution
+
+        // Get initial lineup (first lineup event)
+        const initialLineup = lineupEvents[0]?.payload?.lineup || {}
+
+        // Get players for this team
+        const teamPlayers = teamKey === 'home' ? data.homePlayers : data.awayPlayers
+
+        // Get substitution events for this team in this set
+        const substitutionEvents = allEventsForSync
+          .filter(e => e.type === 'substitution' && e.payload?.team === teamKey && e.setIndex === setIndex)
+
+        // Get captain info
+        const captainNum = teamKey === 'home' ? match?.homeCaptain : match?.awayCaptain
+        const courtCaptainNum = teamKey === 'home' ? match?.homeCourtCaptain : match?.awayCourtCaptain
+
+        const backRowPositions = ['I', 'V', 'VI']
+        const richLineup = {}
+
+        for (const position of ['I', 'II', 'III', 'IV', 'V', 'VI']) {
+          const playerNum = rawLineup[position]
+          if (!playerNum && playerNum !== 0) continue
+
+          const playerNumStr = String(playerNum)
+          const player = teamPlayers?.find(p => String(p.number) === playerNumStr)
+          const isBackRow = backRowPositions.includes(position)
+
+          const positionData = {
+            number: Number(playerNum) || playerNum
+          }
+
+          // Add serving info for position I
+          if (position === 'I' && isServingTeam) {
+            positionData.isServing = true
+          }
+
+          // Add libero info
+          if (player?.libero && player.libero !== '') {
+            positionData.isLibero = true
+            positionData.liberoType = player.libero
+            // Find who the libero replaced
+            if (liberoSubstitution && String(liberoSubstitution.liberoNumber) === playerNumStr) {
+              positionData.replacedNumber = liberoSubstitution.playerNumber
+            }
+          }
+
+          // Add substitution info
+          const subEvent = substitutionEvents.find(e => String(e.payload?.playerIn) === playerNumStr)
+          if (subEvent) {
+            positionData.isSubstituted = true
+            positionData.substitutedFor = subEvent.payload?.playerOut
+          }
+
+          // Add captain info
+          if (String(captainNum) === playerNumStr) {
+            positionData.isCaptain = true
+          }
+          if (String(courtCaptainNum) === playerNumStr) {
+            positionData.isCourtCaptain = true
+          }
+
+          richLineup[position] = positionData
+        }
+
+        return Object.keys(richLineup).length > 0 ? richLineup : null
+      }
+
+      // Simple lineup getter for server number lookup
+      const getLineupForTeamFresh = (teamKey) => {
+        const lineupEvents = allEventsForSync
+          .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === setIndex)
+          .sort((a, b) => (a.seq || 0) - (b.seq || 0))
+        if (lineupEvents.length === 0) return null
+        const lastLineup = lineupEvents[lineupEvents.length - 1]
+        return lastLineup.payload?.lineup || null
+      }
+
+      // A/B Model: Team A = coin toss winner (constant), side_a = which side they're on
+      const teamAKey = match?.coinTossTeamA || 'home'
+      const teamBKey = teamAKey === 'home' ? 'away' : 'home'
+      const setLeftTeamOverrides = match?.setLeftTeamOverrides || {}
+
+      // Determine which side Team A is on this set
+      // setLeftTeamOverrides stores 'A' or 'B', set5LeftTeam stores 'A' or 'B'
+      let sideA // 'left' or 'right'
+      if (setLeftTeamOverrides[setIndex] !== undefined) {
+        sideA = setLeftTeamOverrides[setIndex] === 'A' ? 'left' : 'right'
+      } else if (setIndex === 5 && match?.set5CourtSwitched && match?.set5LeftTeam) {
+        sideA = match.set5LeftTeam === 'A' ? 'left' : 'right'
+      } else {
+        // Default: Team A on left in odd sets (1, 3, 5), right in even sets (2, 4)
+        sideA = setIndex % 2 === 1 ? 'left' : 'right'
+      }
+
+      // Derive left/right team keys from A/B model
+      const leftTeamKey = sideA === 'left' ? teamAKey : teamBKey
+      const rightTeamKey = sideA === 'left' ? teamBKey : teamAKey
+
+      // Calculate serving team (same logic as getCurrentServe)
+      const set1FirstServe = match?.firstServe || 'home'
+      let currentSetFirstServe
+      if (setIndex === 5 && match?.set5FirstServe) {
+        currentSetFirstServe = match.set5FirstServe === 'A' ? teamAKey : teamBKey
+      } else if (setIndex === 5) {
+        currentSetFirstServe = set1FirstServe
+      } else {
+        currentSetFirstServe = setIndex % 2 === 1 ? set1FirstServe : (set1FirstServe === 'home' ? 'away' : 'home')
+      }
+
+      // Find last point event from fresh data to determine current serve
+      const pointEventsForSync = allEventsForSync
+        .filter(e => e.type === 'point' && e.setIndex === setIndex)
+        .sort((a, b) => (b.seq || 0) - (a.seq || 0))
+      const servingTeam = pointEventsForSync.length > 0 ? (pointEventsForSync[0].payload?.team || currentSetFirstServe) : currentSetFirstServe
+
+      // Get server number from position I of serving team's lineup
+      const servingTeamLineup = getLineupForTeamFresh(servingTeam)
+      const serverNumber = servingTeamLineup?.['I'] ? Number(servingTeamLineup['I']) : null
+
+      // Reuse sets from snapshot (avoids redundant db.sets query)
+      const currentSetForScore = snapshotSets.find(s => s.index === setIndex)
+      // teamAKey already defined above at line 3265
+      const scoreA = teamAKey === 'home' ? (currentSetForScore?.homePoints || 0) : (currentSetForScore?.awayPoints || 0)
+      const scoreB = teamAKey === 'home' ? (currentSetForScore?.awayPoints || 0) : (currentSetForScore?.homePoints || 0)
+
+      await db.sync_queue.add({
+        resource: 'event',
+        action: 'insert',
+        payload: {
+          external_id: eventExtId(match?.seed_key || String(matchId), eventId),
+          match_id: match?.seed_key || String(matchId), // Use seed_key (external_id) for Supabase lookup
+          set_index: setIndex,
+          type,
+          payload: payload || {},
+          seq: nextSeq,
+          test: false,
+          created_at: new Date().toISOString(),
+          // Rich lineup format (same as match_live_state) with libero, sub, captain info
+          lineup_left: getRichLineupForTeamFresh(leftTeamKey, servingTeam === leftTeamKey),
+          lineup_right: getRichLineupForTeamFresh(rightTeamKey, servingTeam === rightTeamKey),
+          serve_team: servingTeam,
+          serve_player: serverNumber,
+          // Score AFTER this event (Team A/B model)
+          score_a: scoreA,
+          score_b: scoreB,
+          // Full state snapshot for snapshot-based undo/restore
+          state_snapshot: stateSnapshot
+        },
+        ts: Date.now(),
+        status: 'queued'
+      })
+      console.log(`[PERF] After sync_queue.add: +${(performance.now() - _t0).toFixed(0)}ms`)
+
+      // The cloud set row follows the running score (it stayed 0:0 until the
+      // set ended). Queued score-only updates are coalesced. Awaited: it is
+      // part of the transaction.
+      if (type === 'point') await queueSetScoreSync(db, { matchId, setIndex })
+    }
+
+    // Sync to referee after every event
+    syncToReferee()
+    console.log(`[PERF] After syncToReferee: +${(performance.now() - _t0).toFixed(0)}ms`)
+
+    // Sync live state to Supabase for key events
+    const keyEvents = ['point', 'timeout', 'substitution', 'set_start', 'set_end', 'lineup', 'sanction', 'libero_entry', 'libero_exit', 'libero_exchange', 'court_captain_designation']
+    if (keyEvents.includes(type)) {
+      const eventTeam = payload?.team || null
+      let eventData = null
+      if (type === 'substitution') {
+        eventData = { playerIn: payload?.playerIn, playerOut: payload?.playerOut }
+      } else if (type === 'timeout') {
+        eventData = { duration: 30 }
+      } else if (type === 'set_end') {
+        // Note: logEvent('set_end', { team: winner, ... }) uses 'team' for the winner
+        eventData = { setIndex: payload?.setIndex || data.set.index, winner: payload?.team }
+      } else if (type === 'libero_entry' || type === 'libero_exit') {
+        eventData = { liberoNumber: payload?.liberoNumber, playerNumber: payload?.playerNumber }
+      } else if (type === 'libero_exchange') {
+        eventData = { liberoIn: payload?.liberoIn, liberoOut: payload?.liberoOut }
+      } else if (type === 'court_captain_designation') {
+        eventData = { playerNumber: payload?.playerNumber }
+      } else if (type === 'sanction') {
+        eventData = {
+          type: payload?.type,
+          playerType: payload?.playerType || null,
+          playerNumber: payload?.playerNumber || null,
+          role: payload?.role || null
+        }
+      }
+      // For events that change the lineup, don't use cached snapshot - it was captured BEFORE the event
+      // was added to the database. Let syncLiveStateToSupabase fetch a fresh one.
+      const lineupChangingEvents = ['libero_entry', 'libero_exit', 'libero_exchange', 'substitution', 'lineup']
+      const useSnapshot = lineupChangingEvents.includes(type) ? null : stateSnapshot
+      syncLiveStateToSupabase(type, eventTeam, eventData, useSnapshot)
+      console.log(`[PERF] After syncLiveStateToSupabase: +${(performance.now() - _t0).toFixed(0)}ms`)
+    }
+
+    // Continuous cloud backup after every event (non-blocking, throttled),
+    // once the action has committed
+    if (!isTest) {
+      const gameNum = data?.match?.gameNumber || data?.match?.game_n || null
+      deferEffect({ once: 'backup', run: () => triggerContinuousBackup(matchId, () => exportMatchData(matchId), gameNum) })
+    }
+
+    // Return the sequence number so it can be used for related events
+    console.log(`[PERF] logEvent END: ${type} - TOTAL: ${(performance.now() - _t0).toFixed(0)}ms`)
+    return nextSeq
+  }
 
   // Keep logEventRef updated with latest function to avoid circular dependencies
   useEffect(() => {
@@ -4653,12 +4681,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const { winner, isSetWon } = getSetResult(homePoints, awayPoints, set.index)
     if (!isSetWon) return false
 
-    // Close all libero modals
-    setLiberoRotationModal(null)
-    setLiberoReentryModal(null)
-    setLiberoConfirm(null)
-    setLiberoDropdown(null)
-    setExchangeLiberoDropdown(null)
+    // Close all libero modals (with the winning point: deferUi)
+    deferUi(() => {
+      setLiberoRotationModal(null)
+      setLiberoReentryModal(null)
+      setLiberoConfirm(null)
+      setLiberoDropdown(null)
+      setExchangeLiberoDropdown(null)
+    })
 
     // Sets won before this set -> bestOf-aware match-end
     const allSets = await db.sets.where({ matchId }).toArray()
@@ -4673,9 +4703,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     })
 
     const defaultTime = new Date().toISOString()
-    setSetEndTimeModal({ setIndex: set.index, winner, homePoints, awayPoints, defaultTime, isMatchEnd })
+    deferUi(() => setSetEndTimeModal({ setIndex: set.index, winner, homePoints, awayPoints, defaultTime, isMatchEnd }))
     return true
-  }, [matchId, setEndTimeModal])
+  }, [matchId, setEndTimeModal, deferUi])
 
   // Determine who has serve based on events
   const getCurrentServe = useCallback(() => {
@@ -4849,8 +4879,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // Delegates to the pure, unit-tested domain/rotation implementation.
   const rotateLineup = useCallback((lineup) => rotateLineupPure(lineup), [])
 
+  // One action (runAction): the score, the point event, the side-out rotation,
+  // an automatic libero exit and the dialogs it opens appear together. A second
+  // tap while it is written is dropped ('point').
   const handlePoint = useCallback(
-    async (side, skipConfirmation = false) => {
+    (side, skipConfirmation = false) => runAction('point', async () => {
       cLogger.logHandler('handlePoint', { side, skipConfirmation })
       if (!data?.set) return
       const teamKey = mapSideToTeamKey(side)
@@ -4859,13 +4892,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (checkAccidentalPointAward && !skipConfirmation && rallyStartTimeRef.current) {
         const timeSinceRallyStart = (Date.now() - rallyStartTimeRef.current) / 1000
         if (timeSinceRallyStart < accidentalPointAwardDuration) {
-          setAccidentalPointConfirmModal({
+          deferUi(() => setAccidentalPointConfirmModal({
             team: teamKey,
             onConfirm: () => {
               setAccidentalPointConfirmModal(null)
               handlePoint(side, true) // Call with skipConfirmation = true
             }
-          })
+          }))
           return
         }
       }
@@ -4952,6 +4985,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       rallyStartTimeRef.current = null
 
       // If scoring team didn't have serve, they rotate their lineup AFTER the point
+      // (same transaction: the point never shows without its rotation)
       if (!scoringTeamHadServe) {
         // Hide serve indicator until rotation event is written to DB
         // This prevents the brief flash of wrong server number during sideout
@@ -5159,13 +5193,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                 // Show modal that libero must go out (if option enabled) AND set is not finished
                 if (liberoExitConfirmation && !isSetFinished) {
-                  setLiberoRotationModal({
+                  deferUi(() => setLiberoRotationModal({
                     team: teamKey,
                     position: position,
                     liberoNumber: Number(liberoNumber),
                     playerNumber: originalPlayerNumber,
                     liberoType: liberoPlayer?.libero
-                  })
+                  }))
                 }
 
                 // Log libero exit (after point, so use point relative time + 2ms)
@@ -5183,9 +5217,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 const captainOnCourtField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
                 const currentCourtCaptain = data?.match?.[captainOnCourtField]
                 if (String(currentCourtCaptain) === String(liberoNumber)) {
-                  setTimeout(() => {
+                  // Counted from when the rotated lineup is shown
+                  deferUi(() => setTimeout(() => {
                     checkAndRequestCaptainOnCourtRef.current?.(teamKey)
-                  }, 300)
+                  }, 300))
                 }
               } else {
                 // Fallback: if we can't find the original player, keep libero there
@@ -5317,7 +5352,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               const dismissedForThisExit = liberoSuggestionDismissedForExit[otherTeamKey] === lastLiberoExit.ts
 
               if (liberoEntrySuggestion && !willSetEnd && !dismissedForThisExit) {
-                setLiberoReentryModal({
+                deferUi(() => setLiberoReentryModal({
                   team: otherTeamKey,
                   position: 'I',
                   playerNumber: Number(playerInI),
@@ -5325,7 +5360,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   liberoType: liberoType,
                   availableLiberos: availableLiberos,
                   selectedLiberoIndex: defaultLiberoIndex >= 0 ? defaultLiberoIndex : 0
-                })
+                }))
               }
             }
           }
@@ -5344,34 +5379,36 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
         if (!hasSwitchedCourts) {
           // Show court switch modal
-          setCourtSwitchModal({
+          deferUi(() => setCourtSwitchModal({
             set: data.set,
             homePoints,
             awayPoints,
             teamThatScored: teamKey
-          })
+          }))
           return // Don't check for set end yet, wait for court switch confirmation
         }
       }
 
-      const setEnded = checkSetEnd(freshCurrentSet, homePoints, awayPoints)
+      // Awaited (Dexie reads only): the set-end dialog opens with the point
+      await checkSetEnd(freshCurrentSet, homePoints, awayPoints)
       // If set didn't end, we're done. If it did, checkSetEnd will show the confirmation modal
-    },
-    [data?.set, data?.events, logEvent, mapSideToTeamKey, checkSetEnd, getCurrentServe, rotateLineup, matchId, syncToReferee]
+    }),
+    [data?.set, data?.events, logEvent, mapSideToTeamKey, checkSetEnd, getCurrentServe, rotateLineup, matchId, syncToReferee, runAction, deferUi]
   )
 
-  const handleStartRally = useCallback(async (skipConfirmation = false) => {
+  // One action (runAction): a second tap while it is written is dropped
+  const handleStartRally = useCallback((skipConfirmation = false) => runAction('rally', async () => {
     cLogger.logHandler('handleStartRally', { skipConfirmation })
     // Check for accidental rally start (if enabled and point was just awarded)
     if (checkAccidentalRallyStart && !skipConfirmation && lastPointAwardedTimeRef.current) {
       const timeSinceLastPoint = (Date.now() - lastPointAwardedTimeRef.current) / 1000
       if (timeSinceLastPoint < accidentalRallyStartDuration) {
-        setAccidentalRallyConfirmModal({
+        deferUi(() => setAccidentalRallyConfirmModal({
           onConfirm: () => {
             setAccidentalRallyConfirmModal(null)
             handleStartRally(true) // Call with skipConfirmation = true
           }
-        })
+        }))
         return
       }
     }
@@ -5404,7 +5441,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
 
       if (teamsNeedingReminder.length > 0) {
-        setLiberoReminder({ teams: teamsNeedingReminder })
+        deferUi(() => setLiberoReminder({ teams: teamsNeedingReminder }))
         return
       }
 
@@ -5412,11 +5449,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const allSets = await db.sets.where('matchId').equals(matchId).toArray()
       const defaultTime = defaultSetStartTime({ setIndex: data?.set?.index, sets: allSets })
 
-      setSetStartTimeModal({ setIndex: data?.set?.index, defaultTime })
+      deferUi(() => setSetStartTimeModal({ setIndex: data?.set?.index, defaultTime }))
       return
     }
 
-    setLiberoReminder(null)
+    deferUi(() => setLiberoReminder(null))
     await logEvent('rally_start')
     // Track when rally started (for accidental point award check)
     rallyStartTimeRef.current = Date.now()
@@ -5425,8 +5462,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (recentSubFlashTimeoutRef.current) {
       clearTimeout(recentSubFlashTimeoutRef.current)
     }
-    setRecentlySubstitutedPlayers([])
-  }, [logEvent, isFirstRally, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration])
+    deferUi(() => setRecentlySubstitutedPlayers([]))
+  }), [logEvent, isFirstRally, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration, runAction, deferUi])
 
   const handleReplay = useCallback(async () => {
     // During rally: ask first, confirmReplay logs the replay event (no point to undo)
@@ -5477,11 +5514,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [rallyStatus, canReplayRally, data?.events, data?.homeTeam?.name, data?.awayTeam?.name])
 
   // Confirmed "Replay rally": only while the rally is still in play
-  const confirmReplay = useCallback(async () => {
-    setReplayConfirm(false)
+  const confirmReplay = useCallback(() => runAction('replay', async () => {
+    deferUi(() => setReplayConfirm(false))
     if (rallyStatus !== 'in_play') return
     await logEvent('replay')
-  }, [logEvent, rallyStatus])
+  }), [logEvent, rallyStatus, runAction, deferUi])
 
   const cancelReplay = useCallback(() => {
     setReplayConfirm(false)
@@ -5530,14 +5567,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Confirm sanction: snapshot, close, then write (useConfirmAction)
   const runSanctionConfirm = useConfirmAction(onConfirmFailed)
-  const confirmSanction = useCallback(() => runSanctionConfirm(async () => {
+  // One action: the sanction, a delay penalty's point (and its side-out
+  // rotation) and the dialog closing appear together
+  const confirmSanction = useCallback(() => runSanctionConfirm(() => runAction('sanction', async () => {
     if (!sanctionConfirm || !data?.match || !data?.set) return
 
     // Everything comes from the dialog state taken when it opened: the team
     // and the resolved sanction it showed.
     const { side, team: teamKey, resolved: type } = sanctionConfirm
     const teamKeyCapitalized = teamKey === 'home' ? 'Home' : 'Away'
-    setSanctionConfirm(null)
+    deferUi(() => setSanctionConfirm(null))
 
     // Update match sanctions for improper request and delay warning
     // Store by team key (Home/Away) so sanctions follow the team when sides switch
@@ -5581,18 +5620,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       )
 
       if (homeLineupSet && awayLineupSet) {
-        // Both lineups are set - award point immediately
+        // Both lineups are set - award point immediately (same transaction)
         const otherSide = side === 'left' ? 'right' : 'left'
         await handlePoint(otherSide)
       } else {
         // Lineups not set - show message
-        showAlert('Delay penalty recorded. Point will be awarded after both teams set their lineups.', 'info')
+        deferUi(() => showAlert('Delay penalty recorded. Point will be awarded after both teams set their lineups.', 'info'))
       }
     }
-  }), [runSanctionConfirm, sanctionConfirm, data?.match, data?.set, data?.events, matchId, logEvent, handlePoint])
+  })), [runSanctionConfirm, sanctionConfirm, data?.match, data?.set, data?.events, matchId, logEvent, handlePoint, runAction, deferUi])
 
   // Confirm set start time
-  const confirmSetStartTime = useCallback(async (time) => {
+  // One action: the start time, set_start + its first rally_start and the
+  // dialog closing appear together
+  const confirmSetStartTime = useCallback((time) => runAction('setStart', async () => {
     if (!setStartTimeModal || !data?.set) return
 
     // Check if the confirmed time differs from the expected time
@@ -5627,8 +5668,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       stateBefore: setStartStateBefore
     })
 
-    // Cloud copy of the set start (it was only ever stored locally)
-    queueEventSync(db, setStartEventId)
+    // Cloud copy of the set start (it was only ever stored locally). Awaited:
+    // part of the transaction.
+    await queueEventSync(db, setStartEventId)
     // Live state too: the livescore lists the match from Start Set, not the first rally
     syncLiveStateToSupabase('set_start', null, null)
 
@@ -5639,10 +5681,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       seq: nextSeq1
     }, setStartStateBefore)
 
-    setSetStartTimeModal(null)
+    deferUi(() => setSetStartTimeModal(null))
 
-    // Trigger event backup for Safari/Firefox
-    onTriggerEventBackup?.('set_start')
+    // Trigger event backup for Safari/Firefox (after the commit)
+    deferEffect({ run: () => onTriggerEventBackup?.('set_start') })
 
     // Now actually start the rally
     const rallyStartStateBefore = getStateSnapshot()
@@ -5661,9 +5703,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // If the start time differs from expected, automatically open remarks
     if (timeDifferent) {
-      setShowRemarks(true)
+      deferUi(() => setShowRemarks(true))
     }
-  }, [setStartTimeModal, data?.set, matchId, onTriggerEventBackup, syncToReferee, syncLiveStateToSupabase])
+  }), [setStartTimeModal, data?.set, matchId, onTriggerEventBackup, syncToReferee, syncLiveStateToSupabase, runAction, deferUi, deferEffect])
 
   // Confirm set end time
   const confirmSetEndTime = useCallback(async (time) => {
@@ -6265,18 +6307,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Confirm set 5 side and service choices (works with both modal and inline UI)
   const runSet5SideService = useConfirmAction(onConfirmFailed)
-  const confirmSet5SideService = useCallback((leftTeam, firstServe, inlineMode = false) => runSet5SideService(async () => {
+  // One action: the set 5 sides, its set row and the coin toss event appear together
+  const confirmSet5SideService = useCallback((leftTeam, firstServe, inlineMode = false) => runSet5SideService(() => runAction('set5Setup', async () => {
     // For inline mode, we don't need the modal - just verify we have match data and it's set 5
     if (!inlineMode && !set5SideServiceModal) return
     if (!data?.match) return
 
     const setIndex = inlineMode ? 5 : set5SideServiceModal.setIndex
 
-    // Close first (or confirm the inline setup), then write (useConfirmAction)
+    // Closed (or the inline setup confirmed) with the written choice (deferUi)
     if (inlineMode) {
-      setSet5SetupConfirmed(true)
+      deferUi(() => setSet5SetupConfirmed(true))
     } else {
-      setSet5SideServiceModal(null)
+      deferUi(() => setSet5SideServiceModal(null))
     }
 
     const teamAKey = data.match.coinTossTeamA || 'home'
@@ -6356,7 +6399,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       seq: nextSeq,
       stateBefore: set5CoinTossStateBefore
     })
-  }), [runSet5SideService, set5SideServiceModal, data?.match, matchId, getNextSeq, getStateSnapshot])
+  })), [runAction, deferUi, runSet5SideService, set5SideServiceModal, data?.match, matchId, getNextSeq, getStateSnapshot])
 
   // Get action description for an event
   const getActionDescription = useCallback((event) => {
@@ -6881,17 +6924,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [matchId, discardEvents])
 
   const runUndoConfirm = useConfirmAction(onConfirmFailed)
-  const handleUndo = useCallback(() => runUndoConfirm(async () => {
+  // One action: every write of the undo and the dialog closing appear together
+  const handleUndo = useCallback(() => runUndoConfirm(() => runAction('undo', async () => {
     cLogger.logHandler('handleUndo', { hasUndoConfirm: !!undoConfirm, eventType: undoConfirm?.event?.type })
     if (!undoConfirm || !data?.set) {
-      setUndoConfirm(null)
+      deferUi(() => setUndoConfirm(null))
       return
     }
 
     const lastEvent = undoConfirm.event
-    // Close first, then undo (useConfirmAction): a second tap must not undo
-    // the same event again from the stale dialog
-    setUndoConfirm(null)
+    // Closed with the undone state (deferUi); a second tap is refused by
+    // useConfirmAction and the 'undo' key, never undoing the event twice
+    deferUi(() => setUndoConfirm(null))
     const lastEventSeq = lastEvent.seq || 0
     const baseSeq = Math.floor(lastEventSeq)
 
@@ -6906,7 +6950,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const allEventsForDecision = await db.events.where('matchId').equals(matchId).toArray()
         const plan = planDecisionChangeReversal(lastEvent, allEventsForDecision)
         if (!plan) {
-          showAlert('This decision change cannot be undone automatically. Apply a second decision change to give the point back.', 'warning')
+          deferUi(() => showAlert('This decision change cannot be undone automatically. Apply a second decision change to give the point back.', 'warning'))
           return
         }
         const deleteIdSet = new Set(plan.deleteEventIds)
@@ -7045,19 +7089,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // set_results, written at the set end, go back too
         await queueSetReopenSync(db, { matchId, setIndex: endedSetIndex, wasMatchEnd: undoneSetEndWasMatchEnd })
       } else {
-        // The cloud set row follows the restored score
-        queueSetScoreSync(db, { matchId, setIndex: undoneSetIndex })
+        // The cloud set row follows the restored score (awaited: same transaction)
+        await queueSetScoreSync(db, { matchId, setIndex: undoneSetIndex })
       }
 
     } catch (error) {
       console.error('[handleUndo] Error:', error)
     } finally {
-      // Sync to Referee and Supabase after undo
+      // Sync to Referee and Supabase after undo (after the commit)
       syncToReferee()
       syncLiveStateToSupabase('undo', null, null)
       notifyScoresheetUpdate('undo')
     }
-  }), [runUndoConfirm, undoConfirm, data?.set, matchId, restoreStateFromSnapshot, discardEvents, applyForfeitReversal, resyncSetScoreFromEvents, showAlert, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate])
+  })), [runUndoConfirm, undoConfirm, data?.set, matchId, restoreStateFromSnapshot, discardEvents, applyForfeitReversal, resyncSetScoreFromEvents, showAlert, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, runAction, deferUi])
 
   // OLD UNDO LOGIC REMOVED - The following complex per-event-type logic has been replaced
   // by the snapshot-based undo system above. Keeping this comment for reference.
@@ -7071,16 +7115,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [])
 
   // Handle replay rally - undo last point (go back to state before the point, no rally restart)
-  const handleReplayRally = useCallback(async () => {
+  // One action: the point taken back, the replay event and the dialog closing
+  // appear together (the dialog's score preview never shows the new score)
+  const handleReplayRally = useCallback(() => runAction('decision', async () => {
     if (!replayRallyConfirm || !data?.set) {
-      setReplayRallyConfirm(null)
+      deferUi(() => setReplayRallyConfirm(null))
       return
     }
 
     const lastEvent = replayRallyConfirm.event
-    // Close first, then write: the dialog's score preview is live and redrew
-    // from the replayed score otherwise
-    setReplayRallyConfirm(null)
+    deferUi(() => setReplayRallyConfirm(null))
 
     try {
       // The point and every sub-event it wrote (side-out rotation, automatic
@@ -7139,7 +7183,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     } catch (error) {
       console.error('[handleReplayRally] Error:', error)
     }
-  }, [replayRallyConfirm, data?.set, matchId, getNextSeq, discardEvents, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate])
+  }), [replayRallyConfirm, data?.set, matchId, getNextSeq, discardEvents, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, runAction, deferUi])
 
   const cancelReplayRally = useCallback(() => {
     setReplayRallyConfirm(null)
@@ -7147,9 +7191,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Handle decision change - either swap point to other team or replay rally
   const runDecisionChange = useConfirmAction(onConfirmFailed)
-  const handleDecisionChange = useCallback(() => runDecisionChange(async () => {
+  // One action: the swapped point, the rotation it moves and the dialog closing
+  // appear together
+  const handleDecisionChange = useCallback(() => runDecisionChange(() => runAction('decision', async () => {
     if (!replayRallyConfirm || !data?.set) {
-      setReplayRallyConfirm(null)
+      deferUi(() => setReplayRallyConfirm(null))
       return
     }
 
@@ -7159,9 +7205,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const selectedOption = replayRallyConfirm.selectedOption || 'swap'
 
     if (selectedOption === 'swap') {
-      // Close first, then write (useConfirmAction): the dialog's score preview
-      // is live and showed the already-swapped score (e.g. 3:-1) otherwise
-      setReplayRallyConfirm(null)
+      // Closed with the swapped score (deferUi): the dialog's live score
+      // preview never shows it (it showed e.g. 3:-1)
+      deferUi(() => setReplayRallyConfirm(null))
       // Swap the point to the other team
       const oldTeam = lastEvent.payload?.team
       const newTeam = oldTeam === 'home' ? 'away' : 'home'
@@ -7386,11 +7432,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         console.error('[handleDecisionChange] Error swapping point:', error)
       }
     } else {
-      // Replay rally - use existing logic
+      // Replay rally - use existing logic (joins this action)
       await handleReplayRally()
-      return // handleReplayRally closes the modal first and syncs
+      return // handleReplayRally closes the modal and syncs
     }
-  }), [runDecisionChange, replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents])
+  })), [runAction, deferUi, runDecisionChange, replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents])
 
 
 
@@ -7423,7 +7469,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Confirm time-out: snapshot, close (start the countdown), then write.
   const runTimeoutConfirm = useConfirmAction(onConfirmFailed)
-  const confirmTimeout = useCallback(() => runTimeoutConfirm(async () => {
+  // One action: the countdown starts with the new time-out count (the request
+  // dialog never redraws from it: "Confirm 2nd time-out" on the first one)
+  const confirmTimeout = useCallback(() => runTimeoutConfirm(() => runAction('timeout', async () => {
     const request = timeoutModal
     if (!request || request.started) return
 
@@ -7439,11 +7487,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       staleTimestampRef: timeoutStartTimestampRef.current
     })
 
-    // Start the countdown first: that closes the request dialog before the
-    // time-out event is written, so the dialog never redraws from the new
-    // time-out count ("Confirm 2nd time-out" flashing on the first one).
+    // The countdown starts with the time-out count (deferUi: same render)
     const startTimestamp = Date.now()
-    setTimeoutModal({ ...request, started: true, startedAt: new Date(startTimestamp).toISOString() })
+    deferUi(() => setTimeoutModal({ ...request, started: true, startedAt: new Date(startTimestamp).toISOString() }))
 
     try {
       await logEvent('timeout', { team: request.team })
@@ -7452,8 +7498,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       console.error('[TO] time-out not recorded', err)
       timeoutStartTimestampRef.current = null
       timeoutInitialCountdownRef.current = 30
-      setTimeoutModal(request)
-      showAlert(t('scoreboard.timeoutRequest.notRecorded'), 'error')
+      deferUi(() => {
+        setTimeoutModal(request)
+        showAlert(t('scoreboard.timeoutRequest.notRecorded'), 'error')
+      })
       return
     }
 
@@ -7469,9 +7517,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       startTimestamp: startTimestamp
     })
 
-    // Trigger event backup for Safari/Firefox
-    onTriggerEventBackup?.('timeout')
-  }), [runTimeoutConfirm, timeoutModal, logEvent, sendActionToReferee, onTriggerEventBackup, showAlert, t])
+    // Trigger event backup for Safari/Firefox (after the commit)
+    deferEffect({ run: () => onTriggerEventBackup?.('timeout') })
+  })), [runTimeoutConfirm, timeoutModal, logEvent, sendActionToReferee, onTriggerEventBackup, showAlert, t, runAction, deferUi, deferEffect])
 
   const cancelTimeout = useCallback(() => {
     // Only cancel if timeout hasn't started yet
@@ -9941,151 +9989,148 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Confirm substitution
   const runSubstitutionConfirm = useConfirmAction(onConfirmFailed)
-  const confirmSubstitution = useCallback(() => runSubstitutionConfirm(async () => {
+  // One action (it holds the event mutex): the substitution, its lineup
+  // sub-event and the dialog closing appear together (the dialog's live "5th/6th
+  // substitution" label never redraws from the new count)
+  const confirmSubstitution = useCallback(() => runSubstitutionConfirm(() => runAction('substitution', async () => {
     if (!substitutionConfirm || !data?.set) return
-    // Close first, then write (useConfirmAction): the dialog's "5th/6th
-    // substitution" label is live, and redrew from the new count otherwise
-    setSubstitutionConfirm(null)
-    setLiberoDropdown(null) // Close libero dropdown when confirming substitution
+    deferUi(() => {
+      setSubstitutionConfirm(null)
+      setLiberoDropdown(null) // Close libero dropdown when confirming substitution
+    })
 
-    // MUTEX: Acquire lock before creating any events to prevent race conditions
-    const maxWaitTime = 5000
-    const startWait = Date.now()
-    while (eventInProgressRef.current && (Date.now() - startWait) < maxWaitTime) {
-      await new Promise(resolve => setTimeout(resolve, 10))
-    }
-    eventInProgressRef.current = true
+    const { team, position, playerOut, playerIn, isInjury, isExpelled, isDisqualified } = substitutionConfirm
 
-    try {
-      const { team, position, playerOut, playerIn, isInjury, isExpelled, isDisqualified } = substitutionConfirm
-
-      // Final authority on the 6-per-set limit (FIVB 15.6), against the events
-      // as they are now: a regular request beyond it is an improper request
-      // (16.1.3), an injury / expulsion / disqualification one is exceptional.
-      const verdict = classifySubstitutionRequest(data.events, team, data.set.index, substitutionConfirm)
-      if (verdict === 'improper_request') {
+    // Final authority on the 6-per-set limit (FIVB 15.6), against the events
+    // as they are now: a regular request beyond it is an improper request
+    // (16.1.3), an injury / expulsion / disqualification one is exceptional.
+    const verdict = classifySubstitutionRequest(data.events, team, data.set.index, substitutionConfirm)
+    if (verdict === 'improper_request') {
+      deferUi(() => {
         setSubstitutionConfirmState(null)
         substitutionGuardRef.current?.onImproperRequest(team)
-        return
-      }
-      const isExceptional = verdict === 'exceptional'
-
-      // Get current lineup for this team in the current set
-      // IMPORTANT: Sort by sequence number to get the most recent lineup event
-      const lineupEvents = (data.events?.filter(e =>
-        e.type === 'lineup' &&
-        e.payload?.team === team &&
-        e.setIndex === data.set.index
-      ) || []).sort((a, b) => {
-        // Sort by sequence number (same logic as getTeamLineupState)
-        const aSeq = a.seq || 0
-        const bSeq = b.seq || 0
-        if (aSeq !== 0 || bSeq !== 0) {
-          return aSeq - bSeq // Ascending
-        }
-        return new Date(a.ts) - new Date(b.ts)
       })
+      return
+    }
+    const isExceptional = verdict === 'exceptional'
 
-      const lineupEvent = lineupEvents.length > 0 ? lineupEvents[lineupEvents.length - 1] : null
-      const currentLineup = lineupEvent?.payload?.lineup || {}
-
-      // Create new lineup with substitution
-      // First, clean currentLineup to ensure only valid positions
-      const validPositions = ['I', 'II', 'III', 'IV', 'V', 'VI']
-      const cleanedCurrentLineup = {}
-      for (const pos of validPositions) {
-        if (currentLineup[pos] !== undefined) {
-          cleanedCurrentLineup[pos] = currentLineup[pos]
-        }
+    // Get current lineup for this team in the current set
+    // IMPORTANT: Sort by sequence number to get the most recent lineup event
+    const lineupEvents = (data.events?.filter(e =>
+      e.type === 'lineup' &&
+      e.payload?.team === team &&
+      e.setIndex === data.set.index
+    ) || []).sort((a, b) => {
+      // Sort by sequence number (same logic as getTeamLineupState)
+      const aSeq = a.seq || 0
+      const bSeq = b.seq || 0
+      if (aSeq !== 0 || bSeq !== 0) {
+        return aSeq - bSeq // Ascending
       }
+      return new Date(a.ts) - new Date(b.ts)
+    })
 
-      const newLineup = { ...cleanedCurrentLineup }
-      newLineup[position] = String(playerIn)
+    const lineupEvent = lineupEvents.length > 0 ? lineupEvents[lineupEvents.length - 1] : null
+    const currentLineup = lineupEvent?.payload?.lineup || {}
 
-      // Ensure we only have exactly 6 positions (defensive check)
-      const finalLineup = {}
-      for (const pos of validPositions) {
-        if (newLineup[pos] !== undefined) {
-          finalLineup[pos] = newLineup[pos]
-        }
+    // Create new lineup with substitution
+    // First, clean currentLineup to ensure only valid positions
+    const validPositions = ['I', 'II', 'III', 'IV', 'V', 'VI']
+    const cleanedCurrentLineup = {}
+    for (const pos of validPositions) {
+      if (currentLineup[pos] !== undefined) {
+        cleanedCurrentLineup[pos] = currentLineup[pos]
       }
+    }
 
-      // Preserve liberoSubstitution from the previous lineup event (if libero is on court)
-      const existingLiberoSub = lineupEvent?.payload?.liberoSubstitution || null
+    const newLineup = { ...cleanedCurrentLineup }
+    newLineup[position] = String(playerIn)
 
-      // Automatic remark for an injury / exceptional substitution. Built before
-      // logging so the event records it (autoRemark) and undo can remove it.
-      let autoRemark = ''
-      if ((isInjury || isExceptional) && data?.set) {
-        const setIndex = data.set.index
-        const teamLabel = team === teamAKey ? 'A' : 'B'
-
-        // Current time (HHhMMm format) - use UTC for consistency
-        const now = new Date()
-        const timeStr = `${String(now.getUTCHours()).padStart(2, '0')}h${String(now.getUTCMinutes()).padStart(2, '0')}m`
-
-        // Get current score - always put the interested team's score first
-        const teamScore = team === 'home' ? data.set.homePoints : data.set.awayPoints
-        const opponentScore = team === 'home' ? data.set.awayPoints : data.set.homePoints
-        const scoreStr = `${teamScore}:${opponentScore}`
-
-        if (isInjury) {
-          autoRemark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Score ${scoreStr}, Player #${playerOut} substituted due to injury`
-        } else if (isExceptional) {
-          autoRemark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Score ${scoreStr}, Player #${playerOut} exceptionally substituted by Player #${playerIn}`
-        }
+    // Ensure we only have exactly 6 positions (defensive check)
+    const finalLineup = {}
+    for (const pos of validPositions) {
+      if (newLineup[pos] !== undefined) {
+        finalLineup[pos] = newLineup[pos]
       }
+    }
 
-      // Log the substitution event FIRST to get the main sequence number
-      // (skipMutex: true because we already hold the mutex)
-      const subSeq = await logEvent('substitution', {
-        team,
-        position,
-        playerOut,
-        playerIn,
-        isExceptional: isExceptional || false,
-        isExpelled: isExpelled || false,
-        isDisqualified: isDisqualified || false,
-        ...(autoRemark ? { autoRemark } : {})
-      }, { skipMutex: true })
+    // Preserve liberoSubstitution from the previous lineup event (if libero is on court)
+    const existingLiberoSub = lineupEvent?.payload?.liberoSubstitution || null
 
-      // Save the updated lineup as a SUB-EVENT (decimal sequence)
-      // This ensures undo deletes both the substitution AND lineup together
-      const subStateBefore = getStateSnapshot()
-      const lineupPayload = { team, lineup: finalLineup, fromSubstitution: true }
-      if (existingLiberoSub) {
-        lineupPayload.liberoSubstitution = existingLiberoSub
+    // Automatic remark for an injury / exceptional substitution. Built before
+    // logging so the event records it (autoRemark) and undo can remove it.
+    let autoRemark = ''
+    if ((isInjury || isExceptional) && data?.set) {
+      const setIndex = data.set.index
+      const teamLabel = team === teamAKey ? 'A' : 'B'
+
+      // Current time (HHhMMm format) - use UTC for consistency
+      const now = new Date()
+      const timeStr = `${String(now.getUTCHours()).padStart(2, '0')}h${String(now.getUTCMinutes()).padStart(2, '0')}m`
+
+      // Get current score - always put the interested team's score first
+      const teamScore = team === 'home' ? data.set.homePoints : data.set.awayPoints
+      const opponentScore = team === 'home' ? data.set.awayPoints : data.set.homePoints
+      const scoreStr = `${teamScore}:${opponentScore}`
+
+      if (isInjury) {
+        autoRemark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Score ${scoreStr}, Player #${playerOut} substituted due to injury`
+      } else if (isExceptional) {
+        autoRemark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Score ${scoreStr}, Player #${playerOut} exceptionally substituted by Player #${playerIn}`
       }
-      const lineupSubEventSeq = subSeq + 0.1
-      await db.events.add({
-        matchId,
-        setIndex: data.set.index,
-        type: 'lineup',
-        payload: lineupPayload,
-        ts: new Date().toISOString(),
-        seq: lineupSubEventSeq,
-        stateBefore: subStateBefore
-      })
+    }
 
-      // Debug log: substitution
-      debugLogger.log('SUBSTITUTION', {
-        team,
-        position,
-        playerOut,
-        playerIn,
-        isExceptional,
-        isExpelled,
-        isDisqualified,
-        newLineup: finalLineup
-      }, getStateSnapshot())
+    // Log the substitution event FIRST to get the main sequence number
+    // (skipMutex: true because we already hold the mutex)
+    const subSeq = await logEvent('substitution', {
+      team,
+      position,
+      playerOut,
+      playerIn,
+      isExceptional: isExceptional || false,
+      isExpelled: isExpelled || false,
+      isDisqualified: isDisqualified || false,
+      ...(autoRemark ? { autoRemark } : {})
+    }, { skipMutex: true })
 
-      // If injury or exceptional substitution, add the automatic remark
-      if (autoRemark) {
-        const freshMatch = await db.matches.get(matchId)
-        await db.matches.update(matchId, { remarks: appendRemark(freshMatch?.remarks || '', autoRemark) })
-      }
+    // Save the updated lineup as a SUB-EVENT (decimal sequence)
+    // This ensures undo deletes both the substitution AND lineup together
+    const subStateBefore = getStateSnapshot()
+    const lineupPayload = { team, lineup: finalLineup, fromSubstitution: true }
+    if (existingLiberoSub) {
+      lineupPayload.liberoSubstitution = existingLiberoSub
+    }
+    const lineupSubEventSeq = subSeq + 0.1
+    await db.events.add({
+      matchId,
+      setIndex: data.set.index,
+      type: 'lineup',
+      payload: lineupPayload,
+      ts: new Date().toISOString(),
+      seq: lineupSubEventSeq,
+      stateBefore: subStateBefore
+    })
 
-      // Add player to recently substituted list for flashing effect
+    // Debug log: substitution
+    debugLogger.log('SUBSTITUTION', {
+      team,
+      position,
+      playerOut,
+      playerIn,
+      isExceptional,
+      isExpelled,
+      isDisqualified,
+      newLineup: finalLineup
+    }, getStateSnapshot())
+
+    // If injury or exceptional substitution, add the automatic remark
+    if (autoRemark) {
+      const freshMatch = await db.matches.get(matchId)
+      await db.matches.update(matchId, { remarks: appendRemark(freshMatch?.remarks || '', autoRemark) })
+    }
+
+    // Add player to recently substituted list for flashing effect (with the lineup)
+    deferUi(() => {
       setRecentlySubstitutedPlayers(prev => [...prev, { team, playerNumber: playerIn, timestamp: Date.now() }])
 
       // Clear the flash after 3 seconds (unless start rally is clicked first)
@@ -10095,77 +10140,73 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       recentSubFlashTimeoutRef.current = setTimeout(() => {
         setRecentlySubstitutedPlayers([])
       }, 3000)
+    })
 
-      // Send substitution action to referee to show modal
-      const teamName = team === 'home' ? data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home') : data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away')
-      sendActionToReferee('substitution', {
-        team,
-        teamName,
-        position,
-        playerOut,
-        playerIn,
-        isExceptional: isExceptional || false
-      })
+    // Send substitution action to referee to show modal
+    const teamName = team === 'home' ? data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home') : data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away')
+    sendActionToReferee('substitution', {
+      team,
+      teamName,
+      position,
+      playerOut,
+      playerIn,
+      isExceptional: isExceptional || false
+    })
 
-      // Check if captain is on court after substitution
-      // Check if the player leaving is the captain or court captain
+    // Check if captain is on court after substitution
+    // Check if the player leaving is the captain or court captain
+    const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
+    const leavingPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
+    const incomingPlayer = teamPlayers?.find(p => String(p.number) === String(playerIn))
+    const isLeavingCaptain = leavingPlayer && (leavingPlayer.isCaptain || leavingPlayer.captain)
+    const isIncomingCaptain = incomingPlayer && (incomingPlayer.isCaptain || incomingPlayer.captain)
+    const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+    const currentCourtCaptain = data?.match?.[captainOnCourtField]
+    const isLeavingCourtCaptain = String(currentCourtCaptain) === String(playerOut)
+
+    // Trigger captain check if:
+    // - Captain is leaving (need to designate new game captain)
+    // - Court captain is leaving (need to designate new game captain)
+    // - Team captain is coming back in (need to clear game captain badge)
+    if (isLeavingCaptain || isLeavingCourtCaptain || isIncomingCaptain) {
+      // Counted from when the new lineup is shown
+      deferUi(() => setTimeout(() => {
+        checkAndRequestCaptainOnCourtRef.current?.(team)
+      }, 300))
+    }
+
+    // Check if this is an injury substitution for a libero - if so, log libero_unable and prompt for re-designation
+    if (isInjury && playerOut) {
       const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
-      const leavingPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
-      const incomingPlayer = teamPlayers?.find(p => String(p.number) === String(playerIn))
-      const isLeavingCaptain = leavingPlayer && (leavingPlayer.isCaptain || leavingPlayer.captain)
-      const isIncomingCaptain = incomingPlayer && (incomingPlayer.isCaptain || incomingPlayer.captain)
-      const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
-      const currentCourtCaptain = data?.match?.[captainOnCourtField]
-      const isLeavingCourtCaptain = String(currentCourtCaptain) === String(playerOut)
-
-      // Trigger captain check if:
-      // - Captain is leaving (need to designate new game captain)
-      // - Court captain is leaving (need to designate new game captain)
-      // - Team captain is coming back in (need to clear game captain badge)
-      if (isLeavingCaptain || isLeavingCourtCaptain || isIncomingCaptain) {
-        setTimeout(() => {
-          checkAndRequestCaptainOnCourtRef.current?.(team)
-        }, 300)
-      }
-
-      // Check if this is an injury substitution for a libero - if so, log libero_unable and prompt for re-designation
-      if (isInjury && playerOut) {
-        const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
-        const outPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
-        if (outPlayer && outPlayer.libero) {
-          // Log libero_unable event with reason='injury' (skipMutex: we already hold it)
-          await logEvent('libero_unable', {
+      const outPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
+      if (outPlayer && outPlayer.libero) {
+        // Log libero_unable event with reason='injury' (skipMutex: we already hold it)
+        await logEvent('libero_unable', {
+          team,
+          liberoNumber: playerOut,
+          liberoType: outPlayer.libero,
+          reason: 'injury'
+        }, { skipMutex: true })
+        const libTeamLabel = team === teamAKey ? 'A' : 'B'
+        logManualChange('Libero', 'Unable', `#${playerOut} active`, `#${playerOut} unable`,
+          `Libero #${playerOut} becomes unable to play (injury) (Team ${libTeamLabel}, Set ${data.set.index})`)
+        // Check if redesignation is needed and prompt user
+        // Use isLiberoUnable to properly check events, not just database field
+        const activeLiberos = teamPlayers?.filter(p =>
+          p.libero && p.libero !== '' && !isLiberoUnable(team, p.number) && Number(p.number) !== Number(playerOut)
+        ) || []
+        if (activeLiberos.length === 0) {
+          // With the substitution's data, in the same render
+          deferUi(() => setLiberoUnableModal({
             team,
             liberoNumber: playerOut,
             liberoType: outPlayer.libero,
-            reason: 'injury'
-          }, { skipMutex: true })
-          const libTeamLabel = team === teamAKey ? 'A' : 'B'
-          logManualChange('Libero', 'Unable', `#${playerOut} active`, `#${playerOut} unable`,
-            `Libero #${playerOut} becomes unable to play (injury) (Team ${libTeamLabel}, Set ${data.set.index})`)
-          // Check if redesignation is needed and prompt user
-          // Use isLiberoUnable to properly check events, not just database field
-          const activeLiberos = teamPlayers?.filter(p =>
-            p.libero && p.libero !== '' && !isLiberoUnable(team, p.number) && Number(p.number) !== Number(playerOut)
-          ) || []
-          if (activeLiberos.length === 0) {
-            // Use setTimeout to allow state to update first
-            setTimeout(() => {
-              setLiberoUnableModal({
-                team,
-                liberoNumber: playerOut,
-                liberoType: outPlayer.libero,
-                step: 'redesignate'
-              })
-            }, 100)
-          }
+            step: 'redesignate'
+          }))
         }
       }
-    } finally {
-      // MUTEX: Always release the lock, even if an error occurred
-      eventInProgressRef.current = false
     }
-  }), [runSubstitutionConfirm, substitutionConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, data?.homeTeam, data?.awayTeam, matchId, logEvent, logManualChange, teamAKey, checkLiberoRedesignation, sendActionToReferee, isLiberoUnable, getStateSnapshot, t])
+  })), [runAction, deferUi, runSubstitutionConfirm, substitutionConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, data?.homeTeam, data?.awayTeam, matchId, logEvent, logManualChange, teamAKey, checkLiberoRedesignation, sendActionToReferee, isLiberoUnable, getStateSnapshot, t])
 
   // Common modal position - all modals use the same position
   // For left side teams, menu opens to the right
@@ -10483,7 +10524,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Confirm player sanction
   const runPlayerSanctionConfirm = useConfirmAction(onConfirmFailed)
-  const confirmPlayerSanction = useCallback(() => runPlayerSanctionConfirm(async () => {
+  const confirmPlayerSanction = useCallback(() => runPlayerSanctionConfirm(() => runAction('playerSanction', async () => {
     if (!sanctionConfirmModal || !data?.set) return
 
     const { team, type, playerNumber, position, role, sanctionType } = sanctionConfirmModal
@@ -10495,22 +10536,22 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Prevent giving the same sanction type again
       if (hasThisSanction) {
-        showAlert(`Player ${playerNumber} already has a ${sanctionType}. A player cannot receive the same sanction type twice.`, 'warning')
-        setSanctionConfirmModal(null)
+        deferUi(() => showAlert(`Player ${playerNumber} already has a ${sanctionType}. A player cannot receive the same sanction type twice.`, 'warning'))
+        deferUi(() => setSanctionConfirmModal(null))
         return
       }
 
       // Special rule for warning: can only be given if team hasn't been warned (player can have other sanctions)
       if (sanctionType === 'warning' && teamWarning) {
-        showAlert(`Warning cannot be given because the team has already been warned.`, 'warning')
-        setSanctionConfirmModal(null)
+        deferUi(() => showAlert(`Warning cannot be given because the team has already been warned.`, 'warning'))
+        deferUi(() => setSanctionConfirmModal(null))
         return
       }
     }
 
-    // Close first, then write (useConfirmAction): the follow-up dialogs below
-    // open from this snapshot, not from the dialog
-    setSanctionConfirmModal(null)
+    // Closed with the written sanction (deferUi, one render); the follow-up
+    // dialogs below open from this snapshot, not from the dialog
+    deferUi(() => setSanctionConfirmModal(null))
 
     // If expulsion or disqualification for a court player, need to handle substitution
     if ((sanctionType === 'expulsion' || sanctionType === 'disqualification') && type === 'player' && playerNumber && position) {
@@ -10594,12 +10635,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           p.libero && p.libero !== '' && !isLiberoUnable(team, p.number) && Number(p.number) !== Number(playerNumber)
         ) || []
         if (activeLiberos.length === 0) {
-          setLiberoUnableModal({
+          deferUi(() => setLiberoUnableModal({
             team,
             liberoNumber: playerNumber,
             liberoType: player.libero,
             step: 'redesignate'
-          })
+          }))
         }
 
         return // Exit early, don't do the regular substitution flow
@@ -10618,14 +10659,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const legalSubstitutes = getAvailableSubstitutes(team, playerNumber, false)
       if (legalSubstitutes.length === 1) {
         // Only one legal substitute - auto-select and show confirmation modal
-        setSubstitutionConfirm({
+        deferUi(() => setSubstitutionConfirm({
           team,
           position,
           playerOut: playerNumber,
           playerIn: legalSubstitutes[0].number,
           isExpelled: sanctionType === 'expulsion',
           isDisqualified: sanctionType === 'disqualification'
-        })
+        }))
       } else if (legalSubstitutes.length > 1) {
         // Multiple legal substitutes - show substitution dropdown
         const courtPlayers = document.querySelectorAll('.court-player')
@@ -10641,7 +10682,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
         if (playerElement) {
           const rect = playerElement.getBoundingClientRect()
-          setSubstitutionDropdown({
+          deferUi(() => setSubstitutionDropdown({
             team,
             position,
             playerNumber,
@@ -10650,9 +10691,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             y: rect.bottom + 8,
             isExpelled: sanctionType === 'expulsion',
             isDisqualified: sanctionType === 'disqualification'
-          })
+          }))
         } else {
-          setSubstitutionDropdown({
+          deferUi(() => setSubstitutionDropdown({
             team,
             position,
             playerNumber,
@@ -10661,30 +10702,30 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             y: window.innerHeight / 2,
             isExpelled: sanctionType === 'expulsion',
             isDisqualified: sanctionType === 'disqualification'
-          })
+          }))
         }
       } else {
         // No legal substitution possible - check for exceptional substitution
         const exceptionalSubstitutes = getAvailableExceptionalSubstitutes(team, playerNumber)
         if (exceptionalSubstitutes.length > 0) {
           // Show modal to choose between exceptional substitution or forfait
-          setExceptionalSubstitutionModal({
+          deferUi(() => setExceptionalSubstitutionModal({
             team,
             position,
             playerOut: playerNumber,
             reason: sanctionType === 'expulsion' ? 'expulsion' : 'disqualification'
-          })
+          }))
         } else {
           // No exceptional substitution possible - forfait, after confirmation
-          requestAutomaticForfait(team, sanctionType === 'expulsion' ? 'expulsion' : 'disqualification', playerNumber, position)
+          deferUi(() => requestAutomaticForfait(team, sanctionType === 'expulsion' ? 'expulsion' : 'disqualification', playerNumber, position))
         }
       }
 
       // Check if captain is on court after substitution (if substitution happened) or forfait
       if (isSanctionedCaptain || isSanctionedCourtCaptain) {
-        setTimeout(() => {
+        deferUi(() => setTimeout(() => {
           checkAndRequestCaptainOnCourtRef.current?.(team)
-        }, 300)
+        }, 300))
       }
     } else if (sanctionType === 'expulsion' || sanctionType === 'disqualification') {
       // Check if this bench player is currently being replaced by a libero on court
@@ -10707,7 +10748,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
         if (legalSubs.length === 1) {
           // Auto-confirm with the single legal substitute
-          setSanctionSubstitutionModal({
+          deferUi(() => setSanctionSubstitutionModal({
             team,
             expelledPlayer: playerNumber,
             liberoOnCourt,
@@ -10715,10 +10756,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             reason: sanctionType,
             isExceptional: false,
             position: liberoOnCourt.position
-          })
+          }))
         } else if (legalSubs.length > 1) {
           // Show modal to select from legal substitutes
-          setSanctionSubstitutionModal({
+          deferUi(() => setSanctionSubstitutionModal({
             team,
             expelledPlayer: playerNumber,
             liberoOnCourt,
@@ -10726,13 +10767,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             reason: sanctionType,
             isExceptional: false,
             position: liberoOnCourt.position
-          })
+          }))
         } else {
           // No legal substitutes - check for exceptional substitutes
           const exceptionalSubs = getAvailableExceptionalSubstitutes(team, playerNumber)
           if (exceptionalSubs.length === 1) {
             // Auto-confirm with single exceptional substitute
-            setSanctionSubstitutionModal({
+            deferUi(() => setSanctionSubstitutionModal({
               team,
               expelledPlayer: playerNumber,
               liberoOnCourt,
@@ -10740,10 +10781,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               reason: sanctionType,
               isExceptional: true,
               position: liberoOnCourt.position
-            })
+            }))
           } else if (exceptionalSubs.length > 1) {
             // Show modal for exceptional substitute selection
-            setSanctionSubstitutionModal({
+            deferUi(() => setSanctionSubstitutionModal({
               team,
               expelledPlayer: playerNumber,
               liberoOnCourt,
@@ -10751,10 +10792,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               reason: sanctionType,
               isExceptional: true,
               position: liberoOnCourt.position
-            })
+            }))
           } else {
             // No substitutes at all - forfait, after confirmation
-            requestAutomaticForfait(team, sanctionType === 'expulsion' ? 'expulsion' : 'disqualification', playerNumber, liberoOnCourt.position)
+            deferUi(() => requestAutomaticForfait(team, sanctionType === 'expulsion' ? 'expulsion' : 'disqualification', playerNumber, liberoOnCourt.position))
           }
         }
 
@@ -10793,12 +10834,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             p.libero && p.libero !== '' && !isLiberoUnable(team, p.number) && Number(p.number) !== Number(playerNumber)
           ) || []
           if (activeLiberos.length === 0) {
-            setLiberoUnableModal({
+            deferUi(() => setLiberoUnableModal({
               team,
               liberoNumber: playerNumber,
               liberoType: liberoPlayer.libero,
               step: 'redesignate'
-            })
+            }))
           }
         }
       }
@@ -10839,16 +10880,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           await handlePoint(otherSide)
         } else {
           // Lineups not set - show message
-          showAlert('Penalty recorded. Point will be awarded after both teams set their lineups.', 'info')
+          deferUi(() => showAlert('Penalty recorded. Point will be awarded after both teams set their lineups.', 'info'))
         }
       }
     }
-  }), [runPlayerSanctionConfirm, sanctionConfirmModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, playerHasSanctionType, teamHasFormalWarning, checkLiberoRedesignation, requestAutomaticForfait, getLiberoOnCourt, teamAKey])
+  })), [runAction, deferUi, runPlayerSanctionConfirm, sanctionConfirmModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, playerHasSanctionType, teamHasFormalWarning, checkLiberoRedesignation, requestAutomaticForfait, getLiberoOnCourt, teamAKey])
 
   // Handle sanction substitution when bench player (libero replacement) is expelled/disqualified
   // Per FIVB Casebook: libero stays on court, the expelled bench player is replaced by a substitute
   const runSanctionSubstitution = useConfirmAction(onConfirmFailed)
-  const handleSanctionSubstitution = useCallback((substituteNumber) => runSanctionSubstitution(async () => {
+  const handleSanctionSubstitution = useCallback((substituteNumber) => runSanctionSubstitution(() => runAction('sanctionSubstitution', async () => {
     if (!sanctionSubstitutionModal) return
 
     const { team, expelledPlayer, liberoOnCourt, reason, position } = sanctionSubstitutionModal
@@ -10856,8 +10897,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const isExceptional = classifySubstitutionRequest(data?.events, team, data?.set?.index, {
       isExceptional: sanctionSubstitutionModal.isExceptional, isExpelled: reason === 'expulsion', isDisqualified: reason === 'disqualification'
     }) === 'exceptional'
-    // Close first, then write (useConfirmAction)
-    setSanctionSubstitutionModal(null)
+    // Closed with the written substitution (deferUi, one render)
+    deferUi(() => setSanctionSubstitutionModal(null))
 
     // Log substitution event - this is recorded on scoresheet
     // The position is where the libero currently is (the expelled player's original position)
@@ -10910,445 +10951,270 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         [remarkKey]: existingRemarks ? `${existingRemarks}; ${newRemark}` : newRemark
       })
     }
-  }), [runSanctionSubstitution, sanctionSubstitutionModal, data?.set, data?.events, data?.match, logEvent, matchId])
+  })), [runAction, deferUi, runSanctionSubstitution, sanctionSubstitutionModal, data?.set, data?.events, data?.match, logEvent, matchId])
 
   // Execute libero substitution directly (no confirmation modal needed)
-  const showLiberoConfirm = useCallback(async (liberoType) => {
+  const showLiberoConfirm = useCallback((liberoType) => runAction('libero', async () => {
     if (!liberoDropdown || !liberoType || !data?.set) return
 
-    // MUTEX: Acquire lock before creating any events to prevent race conditions
-    const maxWaitTime = 5000
-    const startWait = Date.now()
-    while (eventInProgressRef.current && (Date.now() - startWait) < maxWaitTime) {
-      await new Promise(resolve => setTimeout(resolve, 10))
+    // (runAction holds the event mutex for the whole transaction)
+
+    const team = liberoDropdown.team
+    const position = liberoDropdown.position
+    const playerOut = liberoDropdown.playerNumber
+
+    // Validate that liberos can only enter back-row positions (I, V, VI)
+    const isBackRow = position === 'I' || position === 'V' || position === 'VI'
+    if (!isBackRow) {
+      deferUi(() => showAlert('Liberos can only enter back-row positions (I, V, VI)', 'warning'))
+      deferUi(() => setLiberoDropdown(null))
+      return
     }
-    eventInProgressRef.current = true
 
-    try {
-      const team = liberoDropdown.team
-      const position = liberoDropdown.position
-      const playerOut = liberoDropdown.playerNumber
+    // Get libero player number
+    const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
+    const liberoPlayer = teamPlayers?.find(p => p.libero === liberoType)
+    if (!liberoPlayer) {
+      deferUi(() => setLiberoDropdown(null))
+      return
+    }
 
-      // Validate that liberos can only enter back-row positions (I, V, VI)
-      const isBackRow = position === 'I' || position === 'V' || position === 'VI'
-      if (!isBackRow) {
-        showAlert('Liberos can only enter back-row positions (I, V, VI)', 'warning')
-        setLiberoDropdown(null)
-        return
+    // Check if libero is unable to play
+    if (isLiberoUnable(team, liberoPlayer.number)) {
+      deferUi(() => showAlert('This libero is unable to play (injured, expelled, disqualified, or declared unable)', 'warning'))
+      deferUi(() => setLiberoDropdown(null))
+      return
+    }
+
+    // Get current lineup for this team in the current set
+    const lineupEvents = data.events?.filter(e =>
+      e.type === 'lineup' &&
+      e.payload?.team === team &&
+      e.setIndex === data.set.index
+    ) || []
+    const lineupEvent = lineupEvents.length > 0 ? lineupEvents[lineupEvents.length - 1] : null
+    const currentLineup = lineupEvent?.payload?.lineup || {}
+
+    // Create new lineup with libero entry
+    const validPositions = ['I', 'II', 'III', 'IV', 'V', 'VI']
+    const cleanedCurrentLineup = {}
+    for (const pos of validPositions) {
+      if (currentLineup[pos] !== undefined) {
+        cleanedCurrentLineup[pos] = currentLineup[pos]
       }
+    }
 
-      // Get libero player number
-      const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
-      const liberoPlayer = teamPlayers?.find(p => p.libero === liberoType)
-      if (!liberoPlayer) {
-        setLiberoDropdown(null)
-        return
+    const newLineup = { ...cleanedCurrentLineup }
+    newLineup[position] = String(liberoPlayer.number)
+
+    const finalLineup = {}
+    for (const pos of validPositions) {
+      if (newLineup[pos] !== undefined) {
+        finalLineup[pos] = newLineup[pos]
       }
+    }
 
-      // Check if libero is unable to play
-      if (isLiberoUnable(team, liberoPlayer.number)) {
-        showAlert('This libero is unable to play (injured, expelled, disqualified, or declared unable)', 'warning')
-        setLiberoDropdown(null)
-        return
-      }
+    // Log the libero entry event FIRST (main event) - skipMutex: we already hold it
+    await logEvent('libero_entry', {
+      team,
+      position,
+      playerOut,
+      liberoIn: liberoPlayer.number,
+      liberoType: liberoType
+    }, { skipMutex: true })
 
-      // Get current lineup for this team in the current set
-      const lineupEvents = data.events?.filter(e =>
-        e.type === 'lineup' &&
-        e.payload?.team === team &&
-        e.setIndex === data.set.index
-      ) || []
-      const lineupEvent = lineupEvents.length > 0 ? lineupEvents[lineupEvents.length - 1] : null
-      const currentLineup = lineupEvent?.payload?.lineup || {}
+    // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_entry on undo
+    const allEvents = await db.events.where({ matchId }).toArray()
+    const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
+    const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_entry
 
-      // Create new lineup with libero entry
-      const validPositions = ['I', 'II', 'III', 'IV', 'V', 'VI']
-      const cleanedCurrentLineup = {}
-      for (const pos of validPositions) {
-        if (currentLineup[pos] !== undefined) {
-          cleanedCurrentLineup[pos] = currentLineup[pos]
-        }
-      }
-
-      const newLineup = { ...cleanedCurrentLineup }
-      newLineup[position] = String(liberoPlayer.number)
-
-      const finalLineup = {}
-      for (const pos of validPositions) {
-        if (newLineup[pos] !== undefined) {
-          finalLineup[pos] = newLineup[pos]
-        }
-      }
-
-      // Log the libero entry event FIRST (main event) - skipMutex: we already hold it
-      await logEvent('libero_entry', {
+    await db.events.add({
+      matchId,
+      setIndex: data.set.index,
+      type: 'lineup',
+      payload: {
         team,
-        position,
-        playerOut,
-        liberoIn: liberoPlayer.number,
-        liberoType: liberoType
-      }, { skipMutex: true })
+        lineup: finalLineup,
+        liberoSubstitution: {
+          position,
+          liberoNumber: liberoPlayer.number,
+          playerNumber: playerOut,
+          liberoType: liberoType
+        }
+      },
+      ts: new Date().toISOString(),
+      seq: subEventSeq
+    })
 
-      // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_entry on undo
-      const allEvents = await db.events.where({ matchId }).toArray()
-      const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
-      const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_entry
+    // Check if captain is on court after libero entry
+    const leavingPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
+    const isLeavingCaptain = leavingPlayer && (leavingPlayer.isCaptain || leavingPlayer.captain)
+    const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+    const currentCourtCaptain = data?.match?.[captainOnCourtField]
+    const isLeavingCourtCaptain = String(currentCourtCaptain) === String(playerOut)
 
-      await db.events.add({
-        matchId,
-        setIndex: data.set.index,
-        type: 'lineup',
-        payload: {
-          team,
-          lineup: finalLineup,
-          liberoSubstitution: {
-            position,
-            liberoNumber: liberoPlayer.number,
-            playerNumber: playerOut,
-            liberoType: liberoType
-          }
-        },
-        ts: new Date().toISOString(),
-        seq: subEventSeq
-      })
-
-      // Check if captain is on court after libero entry
-      const leavingPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
-      const isLeavingCaptain = leavingPlayer && (leavingPlayer.isCaptain || leavingPlayer.captain)
-      const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
-      const currentCourtCaptain = data?.match?.[captainOnCourtField]
-      const isLeavingCourtCaptain = String(currentCourtCaptain) === String(playerOut)
-
-      if (isLeavingCaptain || isLeavingCourtCaptain) {
-        setTimeout(() => {
-          checkAndRequestCaptainOnCourtRef.current?.(team)
-        }, 300)
-      }
-
-      setLiberoDropdown(null)
-      setSubstitutionDropdown(null)
-    } finally {
-      // MUTEX: Always release the lock, even if an error occurred
-      eventInProgressRef.current = false
+    if (isLeavingCaptain || isLeavingCourtCaptain) {
+      deferUi(() => setTimeout(() => {
+        checkAndRequestCaptainOnCourtRef.current?.(team)
+      }, 300))
     }
-  }, [liberoDropdown, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, getNextSeq, isLiberoUnable])
+
+    deferUi(() => setLiberoDropdown(null))
+    deferUi(() => setSubstitutionDropdown(null))
+  }), [runAction, deferUi, liberoDropdown, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, getNextSeq, isLiberoUnable])
 
   // Handle libero in player selection - directly execute substitution
-  const handleLiberoInPlayerSelect = useCallback(async (position, playerNumber) => {
+  const handleLiberoInPlayerSelect = useCallback((position, playerNumber) => runAction('libero', async () => {
     if (!liberoInDropdown || !data?.set) return
 
-    // MUTEX: Acquire lock before creating any events to prevent race conditions
-    const maxWaitTime = 5000
-    const startWait = Date.now()
-    while (eventInProgressRef.current && (Date.now() - startWait) < maxWaitTime) {
-      await new Promise(resolve => setTimeout(resolve, 10))
+    // (runAction holds the event mutex for the whole transaction)
+
+    const { team } = liberoInDropdown
+
+    // Get available liberos
+    const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
+    const liberos = teamPlayers?.filter(p => p.libero && p.libero !== '') || []
+    const availableLiberos = liberos.filter(libero => !isLiberoUnable(team, libero.number))
+
+    if (availableLiberos.length === 0) {
+      deferUi(() => showAlert('No available liberos', 'warning'))
+      deferUi(() => setLiberoInDropdown(null))
+      return
     }
-    eventInProgressRef.current = true
 
-    try {
-      const { team } = liberoInDropdown
+    // If only one libero, use it; otherwise use the first available
+    const liberoToUse = availableLiberos[0]
 
-      // Get available liberos
-      const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
-      const liberos = teamPlayers?.filter(p => p.libero && p.libero !== '') || []
-      const availableLiberos = liberos.filter(libero => !isLiberoUnable(team, libero.number))
+    // Liberos can only enter back row positions (I, V, VI)
+    const liberoEntryPosition = 'I'
 
-      if (availableLiberos.length === 0) {
-        showAlert('No available liberos', 'warning')
-        setLiberoInDropdown(null)
-        return
+    // Get current lineup for this team in the current set
+    const lineupEvents = data.events?.filter(e =>
+      e.type === 'lineup' &&
+      e.payload?.team === team &&
+      e.setIndex === data.set.index
+    ) || []
+    const lineupEvent = lineupEvents.length > 0 ? lineupEvents[lineupEvents.length - 1] : null
+    const currentLineup = lineupEvent?.payload?.lineup || {}
+
+    // Create new lineup with libero entry
+    const validPositions = ['I', 'II', 'III', 'IV', 'V', 'VI']
+    const cleanedCurrentLineup = {}
+    for (const pos of validPositions) {
+      if (currentLineup[pos] !== undefined) {
+        cleanedCurrentLineup[pos] = currentLineup[pos]
       }
+    }
 
-      // If only one libero, use it; otherwise use the first available
-      const liberoToUse = availableLiberos[0]
+    const newLineup = { ...cleanedCurrentLineup }
+    newLineup[liberoEntryPosition] = String(liberoToUse.number)
 
-      // Liberos can only enter back row positions (I, V, VI)
-      const liberoEntryPosition = 'I'
-
-      // Get current lineup for this team in the current set
-      const lineupEvents = data.events?.filter(e =>
-        e.type === 'lineup' &&
-        e.payload?.team === team &&
-        e.setIndex === data.set.index
-      ) || []
-      const lineupEvent = lineupEvents.length > 0 ? lineupEvents[lineupEvents.length - 1] : null
-      const currentLineup = lineupEvent?.payload?.lineup || {}
-
-      // Create new lineup with libero entry
-      const validPositions = ['I', 'II', 'III', 'IV', 'V', 'VI']
-      const cleanedCurrentLineup = {}
-      for (const pos of validPositions) {
-        if (currentLineup[pos] !== undefined) {
-          cleanedCurrentLineup[pos] = currentLineup[pos]
-        }
+    const finalLineup = {}
+    for (const pos of validPositions) {
+      if (newLineup[pos] !== undefined) {
+        finalLineup[pos] = newLineup[pos]
       }
+    }
 
-      const newLineup = { ...cleanedCurrentLineup }
-      newLineup[liberoEntryPosition] = String(liberoToUse.number)
+    // Log the libero entry event FIRST (main event) - skipMutex: we already hold it
+    await logEvent('libero_entry', {
+      team,
+      position: liberoEntryPosition,
+      playerOut: playerNumber,
+      liberoIn: liberoToUse.number,
+      liberoType: liberoToUse.libero
+    }, { skipMutex: true })
 
-      const finalLineup = {}
-      for (const pos of validPositions) {
-        if (newLineup[pos] !== undefined) {
-          finalLineup[pos] = newLineup[pos]
-        }
-      }
+    // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_entry on undo
+    const allEventsForSeq = await db.events.where({ matchId }).toArray()
+    const maxSeqForLibero = allEventsForSeq.length > 0 ? Math.max(...allEventsForSeq.map(e => e.seq || 0)) : 0
+    const subEventSeqLibero = Math.floor(maxSeqForLibero) + 0.1
 
-      // Log the libero entry event FIRST (main event) - skipMutex: we already hold it
-      await logEvent('libero_entry', {
+    await db.events.add({
+      matchId,
+      setIndex: data.set.index,
+      type: 'lineup',
+      payload: {
         team,
-        position: liberoEntryPosition,
-        playerOut: playerNumber,
-        liberoIn: liberoToUse.number,
-        liberoType: liberoToUse.libero
-      }, { skipMutex: true })
+        lineup: finalLineup,
+        liberoSubstitution: {
+          position: liberoEntryPosition,
+          liberoNumber: liberoToUse.number,
+          playerNumber,
+          liberoType: liberoToUse.libero
+        }
+      },
+      ts: new Date().toISOString(),
+      seq: subEventSeqLibero
+    })
 
-      // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_entry on undo
-      const allEventsForSeq = await db.events.where({ matchId }).toArray()
-      const maxSeqForLibero = allEventsForSeq.length > 0 ? Math.max(...allEventsForSeq.map(e => e.seq || 0)) : 0
-      const subEventSeqLibero = Math.floor(maxSeqForLibero) + 0.1
+    // Check if captain is on court after libero entry
+    const leavingPlayer = teamPlayers?.find(p => String(p.number) === String(playerNumber))
+    const isLeavingCaptain = leavingPlayer && (leavingPlayer.isCaptain || leavingPlayer.captain)
+    const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+    const currentCourtCaptain = data?.match?.[captainOnCourtField]
+    const isLeavingCourtCaptain = String(currentCourtCaptain) === String(playerNumber)
 
-      await db.events.add({
-        matchId,
-        setIndex: data.set.index,
-        type: 'lineup',
-        payload: {
-          team,
-          lineup: finalLineup,
-          liberoSubstitution: {
-            position: liberoEntryPosition,
-            liberoNumber: liberoToUse.number,
-            playerNumber,
-            liberoType: liberoToUse.libero
-          }
-        },
-        ts: new Date().toISOString(),
-        seq: subEventSeqLibero
-      })
-
-      // Check if captain is on court after libero entry
-      const leavingPlayer = teamPlayers?.find(p => String(p.number) === String(playerNumber))
-      const isLeavingCaptain = leavingPlayer && (leavingPlayer.isCaptain || leavingPlayer.captain)
-      const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
-      const currentCourtCaptain = data?.match?.[captainOnCourtField]
-      const isLeavingCourtCaptain = String(currentCourtCaptain) === String(playerNumber)
-
-      if (isLeavingCaptain || isLeavingCourtCaptain) {
-        setTimeout(() => {
-          checkAndRequestCaptainOnCourtRef.current?.(team)
-        }, 300)
-      }
-
-      setLiberoInDropdown(null)
-    } finally {
-      // MUTEX: Always release the lock, even if an error occurred
-      eventInProgressRef.current = false
+    if (isLeavingCaptain || isLeavingCourtCaptain) {
+      deferUi(() => setTimeout(() => {
+        checkAndRequestCaptainOnCourtRef.current?.(team)
+      }, 300))
     }
-  }, [liberoInDropdown, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, getNextSeq, isLiberoUnable])
+
+    deferUi(() => setLiberoInDropdown(null))
+  }), [runAction, deferUi, liberoInDropdown, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, getNextSeq, isLiberoUnable])
 
   // Confirm libero entry
   const runLiberoConfirm = useConfirmAction(onConfirmFailed)
-  const confirmLibero = useCallback(() => runLiberoConfirm(async () => {
+  const confirmLibero = useCallback(() => runLiberoConfirm(() => runAction('libero', async () => {
     if (!liberoConfirm || !data?.set) return
-    // Close first, then write (useConfirmAction); every path below works from
-    // the liberoConfirm snapshot
-    setLiberoConfirm(null)
-    setLiberoDropdown(null)
+    // Closed with the written change (deferUi, one render); every path below
+    // works from the liberoConfirm snapshot
+    deferUi(() => setLiberoConfirm(null))
+    deferUi(() => setLiberoDropdown(null))
 
-    // MUTEX: Acquire lock before creating any events to prevent race conditions
-    const maxWaitTime = 5000
-    const startWait = Date.now()
-    while (eventInProgressRef.current && (Date.now() - startWait) < maxWaitTime) {
-      await new Promise(resolve => setTimeout(resolve, 10))
-    }
-    eventInProgressRef.current = true
+    // (runAction holds the event mutex for the whole transaction)
 
-    try {
-      const { team, position, playerOut, liberoIn, isExit, replacedPlayer } = liberoConfirm
+    const { team, position, playerOut, liberoIn, isExit, replacedPlayer } = liberoConfirm
 
-      // Handle libero EXIT (libero out, original player returns)
-      if (isExit) {
-        // Check if there has been a point since last libero exchange
-        if (!hasPointSinceLastLiberoExchange(team)) {
-          showAlert('A point must be awarded before removing the libero', 'warning')
-          return
-        }
-
-        // Get current lineup
-        const lineupEvents = data.events?.filter(e =>
-          e.type === 'lineup' &&
-          e.payload?.team === team &&
-          e.setIndex === data.set.index
-        ) || []
-        const currentLineup = lineupEvents[lineupEvents.length - 1]?.payload?.lineup || {}
-
-        // Validate that libero is actually on court at the specified position
-        const playerAtPosition = currentLineup[position]
-        if (String(playerAtPosition) !== String(playerOut)) {
-          console.error('[Libero Exit] VALIDATION FAILED: libero', playerOut,
-            'is not at position', position, '- found', playerAtPosition, 'instead')
-          showAlert(`Libero #${playerOut} is not at position ${position}. Cannot proceed with libero exit.`, 'error')
-          return
-        }
-
-        // Get the libero type
-        const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
-        const liberoPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
-        const liberoType = liberoPlayer?.libero || 'libero1'
-
-        // Use the replacedPlayer from liberoConfirm
-        const originalPlayerNumber = replacedPlayer
-
-        if (!originalPlayerNumber) {
-          showAlert('Original player not found for this libero. Please update lineup manually.', 'error')
-          return
-        }
-
-        // First, clean currentLineup to ensure only valid positions
-        const validPositions = ['I', 'II', 'III', 'IV', 'V', 'VI']
-        const cleanedCurrentLineup = {}
-        for (const pos of validPositions) {
-          if (currentLineup[pos] !== undefined) {
-            cleanedCurrentLineup[pos] = currentLineup[pos]
-          }
-        }
-
-        // Restore the original player
-        const newLineup = { ...cleanedCurrentLineup }
-
-        // Check if the original player is already on court in another position
-        // If so, remove them from that position first to avoid duplicates
-        for (const [pos, playerNum] of Object.entries(newLineup)) {
-          if (String(playerNum) === String(originalPlayerNumber) && pos !== position) {
-            // The original player is already in another position - remove them from there
-            delete newLineup[pos]
-            break
-          }
-        }
-
-        // Now set the original player in the libero's position
-        newLineup[position] = String(originalPlayerNumber)
-
-        // Ensure we only have exactly 6 positions (defensive check)
-        const finalLineup = {}
-        for (const pos of validPositions) {
-          if (newLineup[pos] !== undefined) {
-            finalLineup[pos] = newLineup[pos]
-          }
-        }
-
-        // Log the libero exit event FIRST (main event) - skipMutex: we already hold it
-        await logEvent('libero_exit', {
-          team,
-          position,
-          liberoOut: playerOut,
-          playerIn: originalPlayerNumber,
-          liberoType
-        }, { skipMutex: true })
-
-        // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_exit on undo
-        const allEvents = await db.events.where({ matchId }).toArray()
-        const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
-        const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_exit
-
-        await db.events.add({
-          matchId,
-          setIndex: data.set.index,
-          type: 'lineup',
-          payload: {
-            team,
-            lineup: finalLineup,
-            fromSubstitution: true, // Mark as substitution so it's not treated as rotation lineup
-            liberoSubstitution: null // Explicitly clear libero substitution
-          },
-          ts: new Date().toISOString(),
-          seq: subEventSeq
-        })
-
-        // Check if the libero leaving is the court captain OR if the returning player is the team captain
-        const returningPlayer = teamPlayers?.find(p => String(p.number) === String(originalPlayerNumber))
-        const isReturningCaptain = returningPlayer && (returningPlayer.isCaptain || returningPlayer.captain)
-        const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
-        const currentCourtCaptain = data?.match?.[captainOnCourtField]
-        const isLiberoCourtCaptain = String(currentCourtCaptain) === String(playerOut)
-
-        // Trigger captain check if:
-        // - Libero leaving is the court captain
-        // - Team captain is returning to court (need to clear game captain badge)
-        if (isLiberoCourtCaptain || isReturningCaptain) {
-          setTimeout(() => {
-            checkAndRequestCaptainOnCourtRef.current?.(team)
-          }, 300)
-        }
-
+    // Handle libero EXIT (libero out, original player returns)
+    if (isExit) {
+      // Check if there has been a point since last libero exchange
+      if (!hasPointSinceLastLiberoExchange(team)) {
+        deferUi(() => showAlert('A point must be awarded before removing the libero', 'warning'))
         return
       }
 
-      // Handle libero ENTRY (original code below)
-      // Validate that liberos can only enter back-row positions (I, V, VI)
-      const isBackRow = position === 'I' || position === 'V' || position === 'VI'
-      if (!isBackRow) {
-        showAlert('Liberos can only enter back-row positions (I, V, VI)', 'warning')
-        return
-      }
-
-      // Get current lineup for this team in the current set
+      // Get current lineup
       const lineupEvents = data.events?.filter(e =>
         e.type === 'lineup' &&
         e.payload?.team === team &&
         e.setIndex === data.set.index
       ) || []
-      const lineupEvent = lineupEvents.length > 0 ? lineupEvents[lineupEvents.length - 1] : null
-      const currentLineup = lineupEvent?.payload?.lineup || {}
+      const currentLineup = lineupEvents[lineupEvents.length - 1]?.payload?.lineup || {}
 
-      // Get libero player number
-      const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
-      const liberoPlayer = teamPlayers?.find(p => p.libero === liberoIn)
-      if (!liberoPlayer) {
-        return
-      }
-
-      // Check if libero is unable to play
-      if (isLiberoUnable(team, liberoPlayer.number)) {
-        showAlert('This libero is unable to play (injured, expelled, disqualified, or declared unable)', 'warning')
-        return
-      }
-
-      // VALIDATION: Ensure playerOut is actually at the specified position
+      // Validate that libero is actually on court at the specified position
       const playerAtPosition = currentLineup[position]
       if (String(playerAtPosition) !== String(playerOut)) {
-        console.error('[Libero Entry] VALIDATION FAILED: playerOut', playerOut,
+        console.error('[Libero Exit] VALIDATION FAILED: libero', playerOut,
           'is not at position', position, '- found', playerAtPosition, 'instead')
-        showAlert(`Player #${playerOut} is not at position ${position}. Cannot proceed with libero entry.`, 'error')
+        deferUi(() => showAlert(`Libero #${playerOut} is not at position ${position}. Cannot proceed with libero exit.`, 'error'))
         return
       }
 
-      // VALIDATION: Ensure playerOut is not already a libero
-      const playerOutInfo = teamPlayers?.find(p => String(p.number) === String(playerOut))
-      if (playerOutInfo?.libero && playerOutInfo.libero !== '') {
-        console.error('[Libero Entry] VALIDATION FAILED: playerOut', playerOut, 'is a libero')
-        showAlert(`Player #${playerOut} is a libero. Liberos cannot be replaced by other liberos.`, 'warning')
+      // Get the libero type
+      const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
+      const liberoPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
+      const liberoType = liberoPlayer?.libero || 'libero1'
+
+      // Use the replacedPlayer from liberoConfirm
+      const originalPlayerNumber = replacedPlayer
+
+      if (!originalPlayerNumber) {
+        deferUi(() => showAlert('Original player not found for this libero. Please update lineup manually.', 'error'))
         return
       }
 
-      // VALIDATION: Check if there's already a libero substitution for this team
-      // and if so, ensure we're not creating conflicting tracking
-      const existingLiberoSub = lineupEvent?.payload?.liberoSubstitution
-      if (existingLiberoSub) {
-        // There's already a libero on court - this libero entry should be a libero exchange
-        // or the existing libero should have exited first
-        console.warn('[Libero Entry] Another libero is already on court:',
-          existingLiberoSub, '- this may cause tracking issues')
-      }
-
-      console.log('[Libero Entry] Validation passed:', {
-        position,
-        playerOut,
-        liberoIn: liberoPlayer.number,
-        currentLineup,
-        existingLiberoSub
-      })
-
-      // Create new lineup with libero entry
       // First, clean currentLineup to ensure only valid positions
       const validPositions = ['I', 'II', 'III', 'IV', 'V', 'VI']
       const cleanedCurrentLineup = {}
@@ -11358,8 +11224,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       }
 
+      // Restore the original player
       const newLineup = { ...cleanedCurrentLineup }
-      newLineup[position] = String(liberoPlayer.number)
+
+      // Check if the original player is already on court in another position
+      // If so, remove them from that position first to avoid duplicates
+      for (const [pos, playerNum] of Object.entries(newLineup)) {
+        if (String(playerNum) === String(originalPlayerNumber) && pos !== position) {
+          // The original player is already in another position - remove them from there
+          delete newLineup[pos]
+          break
+        }
+      }
+
+      // Now set the original player in the libero's position
+      newLineup[position] = String(originalPlayerNumber)
 
       // Ensure we only have exactly 6 positions (defensive check)
       const finalLineup = {}
@@ -11369,19 +11248,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       }
 
-      // Log the libero entry event FIRST (main event) - skipMutex: we already hold it
-      await logEvent('libero_entry', {
+      // Log the libero exit event FIRST (main event) - skipMutex: we already hold it
+      await logEvent('libero_exit', {
         team,
         position,
-        playerOut,
-        liberoIn: liberoPlayer.number,
-        liberoType: liberoIn
+        liberoOut: playerOut,
+        playerIn: originalPlayerNumber,
+        liberoType
       }, { skipMutex: true })
 
-      // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_entry on undo
-      const allEventsEntry = await db.events.where({ matchId }).toArray()
-      const maxSeqEntry = allEventsEntry.length > 0 ? Math.max(...allEventsEntry.map(e => e.seq || 0)) : 0
-      const subEventSeqEntry = Math.floor(maxSeqEntry) + 0.1
+      // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_exit on undo
+      const allEvents = await db.events.where({ matchId }).toArray()
+      const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
+      const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_exit
 
       await db.events.add({
         matchId,
@@ -11390,47 +11269,176 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         payload: {
           team,
           lineup: finalLineup,
-          liberoSubstitution: {
-            position,
-            liberoNumber: liberoPlayer.number,
-            playerNumber: playerOut,
-            liberoType: liberoIn
-          }
+          fromSubstitution: true, // Mark as substitution so it's not treated as rotation lineup
+          liberoSubstitution: null // Explicitly clear libero substitution
         },
         ts: new Date().toISOString(),
-        seq: subEventSeqEntry
+        seq: subEventSeq
       })
 
-      // Debug log: libero entry
-      debugLogger.log('LIBERO_ENTRY', {
-        team,
-        position,
-        playerOut,
-        liberoIn: liberoPlayer.number,
-        liberoType: liberoIn,
-        newLineup: finalLineup
-      }, getStateSnapshot())
-
-      // Check if captain is on court after libero entry
-      // The playerOut is leaving, check if they're captain
-      // Reuse teamPlayers variable already declared above
-      const leavingPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
-      const isLeavingCaptain = leavingPlayer && (leavingPlayer.isCaptain || leavingPlayer.captain)
+      // Check if the libero leaving is the court captain OR if the returning player is the team captain
+      const returningPlayer = teamPlayers?.find(p => String(p.number) === String(originalPlayerNumber))
+      const isReturningCaptain = returningPlayer && (returningPlayer.isCaptain || returningPlayer.captain)
       const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
       const currentCourtCaptain = data?.match?.[captainOnCourtField]
-      const isLeavingCourtCaptain = String(currentCourtCaptain) === String(playerOut)
+      const isLiberoCourtCaptain = String(currentCourtCaptain) === String(playerOut)
 
-      if (isLeavingCaptain || isLeavingCourtCaptain) {
-        setTimeout(() => {
+      // Trigger captain check if:
+      // - Libero leaving is the court captain
+      // - Team captain is returning to court (need to clear game captain badge)
+      if (isLiberoCourtCaptain || isReturningCaptain) {
+        deferUi(() => setTimeout(() => {
           checkAndRequestCaptainOnCourtRef.current?.(team)
-        }, 300)
+        }, 300))
       }
-      setSubstitutionDropdown(null) // Close substitution dropdown if open
-    } finally {
-      // MUTEX: Always release the lock, even if an error occurred
-      eventInProgressRef.current = false
+
+      return
     }
-  }), [runLiberoConfirm, liberoConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, logEvent, getNextSeq, isLiberoUnable, hasPointSinceLastLiberoExchange])
+
+    // Handle libero ENTRY (original code below)
+    // Validate that liberos can only enter back-row positions (I, V, VI)
+    const isBackRow = position === 'I' || position === 'V' || position === 'VI'
+    if (!isBackRow) {
+      deferUi(() => showAlert('Liberos can only enter back-row positions (I, V, VI)', 'warning'))
+      return
+    }
+
+    // Get current lineup for this team in the current set
+    const lineupEvents = data.events?.filter(e =>
+      e.type === 'lineup' &&
+      e.payload?.team === team &&
+      e.setIndex === data.set.index
+    ) || []
+    const lineupEvent = lineupEvents.length > 0 ? lineupEvents[lineupEvents.length - 1] : null
+    const currentLineup = lineupEvent?.payload?.lineup || {}
+
+    // Get libero player number
+    const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
+    const liberoPlayer = teamPlayers?.find(p => p.libero === liberoIn)
+    if (!liberoPlayer) {
+      return
+    }
+
+    // Check if libero is unable to play
+    if (isLiberoUnable(team, liberoPlayer.number)) {
+      deferUi(() => showAlert('This libero is unable to play (injured, expelled, disqualified, or declared unable)', 'warning'))
+      return
+    }
+
+    // VALIDATION: Ensure playerOut is actually at the specified position
+    const playerAtPosition = currentLineup[position]
+    if (String(playerAtPosition) !== String(playerOut)) {
+      console.error('[Libero Entry] VALIDATION FAILED: playerOut', playerOut,
+        'is not at position', position, '- found', playerAtPosition, 'instead')
+      deferUi(() => showAlert(`Player #${playerOut} is not at position ${position}. Cannot proceed with libero entry.`, 'error'))
+      return
+    }
+
+    // VALIDATION: Ensure playerOut is not already a libero
+    const playerOutInfo = teamPlayers?.find(p => String(p.number) === String(playerOut))
+    if (playerOutInfo?.libero && playerOutInfo.libero !== '') {
+      console.error('[Libero Entry] VALIDATION FAILED: playerOut', playerOut, 'is a libero')
+      deferUi(() => showAlert(`Player #${playerOut} is a libero. Liberos cannot be replaced by other liberos.`, 'warning'))
+      return
+    }
+
+    // VALIDATION: Check if there's already a libero substitution for this team
+    // and if so, ensure we're not creating conflicting tracking
+    const existingLiberoSub = lineupEvent?.payload?.liberoSubstitution
+    if (existingLiberoSub) {
+      // There's already a libero on court - this libero entry should be a libero exchange
+      // or the existing libero should have exited first
+      console.warn('[Libero Entry] Another libero is already on court:',
+        existingLiberoSub, '- this may cause tracking issues')
+    }
+
+    console.log('[Libero Entry] Validation passed:', {
+      position,
+      playerOut,
+      liberoIn: liberoPlayer.number,
+      currentLineup,
+      existingLiberoSub
+    })
+
+    // Create new lineup with libero entry
+    // First, clean currentLineup to ensure only valid positions
+    const validPositions = ['I', 'II', 'III', 'IV', 'V', 'VI']
+    const cleanedCurrentLineup = {}
+    for (const pos of validPositions) {
+      if (currentLineup[pos] !== undefined) {
+        cleanedCurrentLineup[pos] = currentLineup[pos]
+      }
+    }
+
+    const newLineup = { ...cleanedCurrentLineup }
+    newLineup[position] = String(liberoPlayer.number)
+
+    // Ensure we only have exactly 6 positions (defensive check)
+    const finalLineup = {}
+    for (const pos of validPositions) {
+      if (newLineup[pos] !== undefined) {
+        finalLineup[pos] = newLineup[pos]
+      }
+    }
+
+    // Log the libero entry event FIRST (main event) - skipMutex: we already hold it
+    await logEvent('libero_entry', {
+      team,
+      position,
+      playerOut,
+      liberoIn: liberoPlayer.number,
+      liberoType: liberoIn
+    }, { skipMutex: true })
+
+    // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_entry on undo
+    const allEventsEntry = await db.events.where({ matchId }).toArray()
+    const maxSeqEntry = allEventsEntry.length > 0 ? Math.max(...allEventsEntry.map(e => e.seq || 0)) : 0
+    const subEventSeqEntry = Math.floor(maxSeqEntry) + 0.1
+
+    await db.events.add({
+      matchId,
+      setIndex: data.set.index,
+      type: 'lineup',
+      payload: {
+        team,
+        lineup: finalLineup,
+        liberoSubstitution: {
+          position,
+          liberoNumber: liberoPlayer.number,
+          playerNumber: playerOut,
+          liberoType: liberoIn
+        }
+      },
+      ts: new Date().toISOString(),
+      seq: subEventSeqEntry
+    })
+
+    // Debug log: libero entry
+    debugLogger.log('LIBERO_ENTRY', {
+      team,
+      position,
+      playerOut,
+      liberoIn: liberoPlayer.number,
+      liberoType: liberoIn,
+      newLineup: finalLineup
+    }, getStateSnapshot())
+
+    // Check if captain is on court after libero entry
+    // The playerOut is leaving, check if they're captain
+    // Reuse teamPlayers variable already declared above
+    const leavingPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
+    const isLeavingCaptain = leavingPlayer && (leavingPlayer.isCaptain || leavingPlayer.captain)
+    const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+    const currentCourtCaptain = data?.match?.[captainOnCourtField]
+    const isLeavingCourtCaptain = String(currentCourtCaptain) === String(playerOut)
+
+    if (isLeavingCaptain || isLeavingCourtCaptain) {
+      deferUi(() => setTimeout(() => {
+        checkAndRequestCaptainOnCourtRef.current?.(team)
+      }, 300))
+    }
+    deferUi(() => setSubstitutionDropdown(null)) // Close substitution dropdown if open
+  })), [runAction, deferUi, runLiberoConfirm, liberoConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, logEvent, getNextSeq, isLiberoUnable, hasPointSinceLastLiberoExchange])
 
   const cancelLibero = useCallback(() => {
     setLiberoDropdown(null)
@@ -11445,130 +11453,119 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Handle libero reentry (when opposite player is in position I and not serving)
   const runLiberoReentryConfirm = useConfirmAction(onConfirmFailed)
-  const confirmLiberoReentry = useCallback(() => runLiberoReentryConfirm(async () => {
+  const confirmLiberoReentry = useCallback(() => runLiberoReentryConfirm(() => runAction('libero', async () => {
     if (!liberoReentryModal || !data?.set) return
-    // Close first, then write (useConfirmAction)
-    setLiberoReentryModal(null)
+    // Closed with the libero on court (deferUi, one render)
+    deferUi(() => setLiberoReentryModal(null))
 
-    // MUTEX: Acquire lock before creating any events to prevent race conditions
-    const maxWaitTime = 5000
-    const startWait = Date.now()
-    while (eventInProgressRef.current && (Date.now() - startWait) < maxWaitTime) {
-      await new Promise(resolve => setTimeout(resolve, 10))
+    // (runAction holds the event mutex for the whole transaction)
+
+    // Use the selected libero from availableLiberos if present, otherwise use the original values
+    const { team, position, playerNumber, availableLiberos, selectedLiberoIndex } = liberoReentryModal
+    const selectedLibero = availableLiberos && availableLiberos[selectedLiberoIndex]
+    const liberoNumber = selectedLibero ? selectedLibero.number : liberoReentryModal.liberoNumber
+    const liberoType = selectedLibero ? selectedLibero.type : liberoReentryModal.liberoType
+
+    // Check if libero is unable to play
+    if (isLiberoUnable(team, liberoNumber)) {
+      deferUi(() => showAlert('This libero is unable to play (injured, expelled, disqualified, or declared unable)', 'warning'))
+      return
     }
-    eventInProgressRef.current = true
 
-    try {
-      // Use the selected libero from availableLiberos if present, otherwise use the original values
-      const { team, position, playerNumber, availableLiberos, selectedLiberoIndex } = liberoReentryModal
-      const selectedLibero = availableLiberos && availableLiberos[selectedLiberoIndex]
-      const liberoNumber = selectedLibero ? selectedLibero.number : liberoReentryModal.liberoNumber
-      const liberoType = selectedLibero ? selectedLibero.type : liberoReentryModal.liberoType
+    const playerOut = playerNumber // For consistency with other libero entry logic
 
-      // Check if libero is unable to play
-      if (isLiberoUnable(team, liberoNumber)) {
-        showAlert('This libero is unable to play (injured, expelled, disqualified, or declared unable)', 'warning')
-        return
+    // Get current lineup for this team in the current set
+    const lineupEvents = data.events?.filter(e =>
+      e.type === 'lineup' &&
+      e.payload?.team === team &&
+      e.setIndex === data.set.index
+    ) || []
+    const lineupEvent = lineupEvents.length > 0 ? lineupEvents[lineupEvents.length - 1] : null
+    const currentLineup = lineupEvent?.payload?.lineup || {}
+
+    // Create new lineup with libero re-entry
+    // First, clean currentLineup to ensure only valid positions
+    const validPositions = ['I', 'II', 'III', 'IV', 'V', 'VI']
+    const cleanedCurrentLineup = {}
+    for (const pos of validPositions) {
+      if (currentLineup[pos] !== undefined) {
+        cleanedCurrentLineup[pos] = currentLineup[pos]
       }
-
-      const playerOut = playerNumber // For consistency with other libero entry logic
-
-      // Get current lineup for this team in the current set
-      const lineupEvents = data.events?.filter(e =>
-        e.type === 'lineup' &&
-        e.payload?.team === team &&
-        e.setIndex === data.set.index
-      ) || []
-      const lineupEvent = lineupEvents.length > 0 ? lineupEvents[lineupEvents.length - 1] : null
-      const currentLineup = lineupEvent?.payload?.lineup || {}
-
-      // Create new lineup with libero re-entry
-      // First, clean currentLineup to ensure only valid positions
-      const validPositions = ['I', 'II', 'III', 'IV', 'V', 'VI']
-      const cleanedCurrentLineup = {}
-      for (const pos of validPositions) {
-        if (currentLineup[pos] !== undefined) {
-          cleanedCurrentLineup[pos] = currentLineup[pos]
-        }
-      }
-
-      const newLineup = { ...cleanedCurrentLineup }
-      newLineup[position] = String(liberoNumber)
-
-      // Ensure we only have exactly 6 positions (defensive check)
-      const finalLineup = {}
-      for (const pos of validPositions) {
-        if (newLineup[pos] !== undefined) {
-          finalLineup[pos] = newLineup[pos]
-        }
-      }
-
-      // Log the libero entry event FIRST (main event) - skipMutex: we already hold it
-      await logEvent('libero_entry', {
-        team,
-        position,
-        playerOut,
-        liberoIn: liberoNumber,
-        liberoType: liberoType
-      }, { skipMutex: true })
-
-      // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_entry on undo
-      const allEvents = await db.events.where({ matchId }).toArray()
-      const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
-      const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_entry
-
-      await db.events.add({
-        matchId,
-        setIndex: data.set.index,
-        type: 'lineup',
-        payload: {
-          team,
-          lineup: finalLineup,
-          liberoSubstitution: {
-            position,
-            liberoNumber: liberoNumber,
-            playerNumber: playerOut,
-            liberoType: liberoType
-          }
-        },
-        ts: new Date().toISOString(),
-        seq: subEventSeq
-      })
-
-      // Debug log: libero reentry
-      debugLogger.log('LIBERO_REENTRY', {
-        team,
-        position,
-        playerOut,
-        liberoIn: liberoNumber,
-        liberoType,
-        newLineup: finalLineup
-      }, getStateSnapshot())
-
-      // Clear dismissed state since libero is entering - allow suggestion again if they exit
-      setLiberoSuggestionDismissedForExit(prev => ({
-        ...prev,
-        [team]: null
-      }))
-
-      // Check if captain is on court after libero reentry (playerOut is leaving)
-      const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
-      const leavingPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
-      const isLeavingCaptain = leavingPlayer && (leavingPlayer.isCaptain || leavingPlayer.captain)
-      const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
-      const currentCourtCaptain = data?.match?.[captainOnCourtField]
-      const isLeavingCourtCaptain = String(currentCourtCaptain) === String(playerOut)
-
-      if (isLeavingCaptain || isLeavingCourtCaptain) {
-        setTimeout(() => {
-          checkAndRequestCaptainOnCourtRef.current?.(team)
-        }, 300)
-      }
-    } finally {
-      // MUTEX: Always release the lock, even if an error occurred
-      eventInProgressRef.current = false
     }
-  }), [runLiberoReentryConfirm, liberoReentryModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, isLiberoUnable])
+
+    const newLineup = { ...cleanedCurrentLineup }
+    newLineup[position] = String(liberoNumber)
+
+    // Ensure we only have exactly 6 positions (defensive check)
+    const finalLineup = {}
+    for (const pos of validPositions) {
+      if (newLineup[pos] !== undefined) {
+        finalLineup[pos] = newLineup[pos]
+      }
+    }
+
+    // Log the libero entry event FIRST (main event) - skipMutex: we already hold it
+    await logEvent('libero_entry', {
+      team,
+      position,
+      playerOut,
+      liberoIn: liberoNumber,
+      liberoType: liberoType
+    }, { skipMutex: true })
+
+    // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_entry on undo
+    const allEvents = await db.events.where({ matchId }).toArray()
+    const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
+    const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_entry
+
+    await db.events.add({
+      matchId,
+      setIndex: data.set.index,
+      type: 'lineup',
+      payload: {
+        team,
+        lineup: finalLineup,
+        liberoSubstitution: {
+          position,
+          liberoNumber: liberoNumber,
+          playerNumber: playerOut,
+          liberoType: liberoType
+        }
+      },
+      ts: new Date().toISOString(),
+      seq: subEventSeq
+    })
+
+    // Debug log: libero reentry
+    debugLogger.log('LIBERO_REENTRY', {
+      team,
+      position,
+      playerOut,
+      liberoIn: liberoNumber,
+      liberoType,
+      newLineup: finalLineup
+    }, getStateSnapshot())
+
+    // Clear dismissed state since libero is entering - allow suggestion again if they exit
+    deferUi(() => setLiberoSuggestionDismissedForExit(prev => ({
+      ...prev,
+      [team]: null
+    })))
+
+    // Check if captain is on court after libero reentry (playerOut is leaving)
+    const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
+    const leavingPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
+    const isLeavingCaptain = leavingPlayer && (leavingPlayer.isCaptain || leavingPlayer.captain)
+    const captainOnCourtField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+    const currentCourtCaptain = data?.match?.[captainOnCourtField]
+    const isLeavingCourtCaptain = String(currentCourtCaptain) === String(playerOut)
+
+    if (isLeavingCaptain || isLeavingCourtCaptain) {
+      deferUi(() => setTimeout(() => {
+        checkAndRequestCaptainOnCourtRef.current?.(team)
+      }, 300))
+    }
+  })), [runAction, deferUi, runLiberoReentryConfirm, liberoReentryModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, isLiberoUnable])
 
   const cancelLiberoReentry = useCallback(() => {
     // Track that we dismissed the suggestion for this specific libero exit
@@ -11593,163 +11590,152 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [liberoReentryModal, data?.events, data?.set?.index])
 
   // Handle libero out
-  const handleLiberoOut = useCallback(async (side) => {
+  const handleLiberoOut = useCallback((side) => runAction('libero', async () => {
     if (rallyStatus !== 'idle') return
 
-    // MUTEX: Acquire lock before creating any events to prevent race conditions
-    const maxWaitTime = 5000
-    const startWait = Date.now()
-    while (eventInProgressRef.current && (Date.now() - startWait) < maxWaitTime) {
-      await new Promise(resolve => setTimeout(resolve, 10))
+    // (runAction holds the event mutex for the whole transaction)
+
+    const teamKey = mapSideToTeamKey(side)
+    const liberoOnCourt = getLiberoOnCourt(teamKey)
+
+    if (!liberoOnCourt) {
+      deferUi(() => showAlert('No libero is currently on court', 'warning'))
+      return
     }
-    eventInProgressRef.current = true
 
-    try {
-      const teamKey = mapSideToTeamKey(side)
-      const liberoOnCourt = getLiberoOnCourt(teamKey)
+    // Check if there has been a point since last libero exchange
+    if (!hasPointSinceLastLiberoExchange(teamKey)) {
+      deferUi(() => showAlert('A point must be awarded before removing the libero', 'warning'))
+      return
+    }
 
-      if (!liberoOnCourt) {
-        showAlert('No libero is currently on court', 'warning')
-        return
-      }
+    // Get current lineup
+    const lineupEvents = data.events.filter(e =>
+      e.type === 'lineup' &&
+      e.payload?.team === teamKey &&
+      e.setIndex === data.set.index
+    )
+    const currentLineup = lineupEvents[lineupEvents.length - 1]?.payload?.lineup || {}
 
-      // Check if there has been a point since last libero exchange
-      if (!hasPointSinceLastLiberoExchange(teamKey)) {
-        showAlert('A point must be awarded before removing the libero', 'warning')
-        return
-      }
-
-      // Get current lineup
-      const lineupEvents = data.events.filter(e =>
-        e.type === 'lineup' &&
-        e.payload?.team === teamKey &&
-        e.setIndex === data.set.index
-      )
-      const currentLineup = lineupEvents[lineupEvents.length - 1]?.payload?.lineup || {}
-
-      // Determine the original player that should replace the libero
-      let originalPlayerNumber = liberoOnCourt.playerNumber
-      if (!originalPlayerNumber && lineupEvents.length > 0) {
-        // Look through previous lineup events to find the most recent non-libero player at this position
-        const sortedLineupEvents = [...lineupEvents].sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
-        const teamPlayers = teamKey === 'home' ? data.homePlayers : data.awayPlayers
-        for (const event of sortedLineupEvents) {
-          const lineup = event.payload?.lineup
-          if (!lineup) continue
-          const playerNumberAtPosition = lineup[liberoOnCourt.position]
-          if (!playerNumberAtPosition) continue
-          if (String(playerNumberAtPosition) !== String(liberoOnCourt.liberoNumber)) {
-            originalPlayerNumber = Number(playerNumberAtPosition)
-            break
-          }
-          // If this event has libero substitution info, use the stored original player
-          if (event.payload?.liberoSubstitution &&
-            String(event.payload.liberoSubstitution.liberoNumber) === String(liberoOnCourt.liberoNumber) &&
-            event.payload.liberoSubstitution.position === liberoOnCourt.position) {
-            originalPlayerNumber = event.payload.liberoSubstitution.playerNumber
-            break
-          }
+    // Determine the original player that should replace the libero
+    let originalPlayerNumber = liberoOnCourt.playerNumber
+    if (!originalPlayerNumber && lineupEvents.length > 0) {
+      // Look through previous lineup events to find the most recent non-libero player at this position
+      const sortedLineupEvents = [...lineupEvents].sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
+      const teamPlayers = teamKey === 'home' ? data.homePlayers : data.awayPlayers
+      for (const event of sortedLineupEvents) {
+        const lineup = event.payload?.lineup
+        if (!lineup) continue
+        const playerNumberAtPosition = lineup[liberoOnCourt.position]
+        if (!playerNumberAtPosition) continue
+        if (String(playerNumberAtPosition) !== String(liberoOnCourt.liberoNumber)) {
+          originalPlayerNumber = Number(playerNumberAtPosition)
+          break
         }
-      }
-
-      if (!originalPlayerNumber) {
-        showAlert('Original player not found for this libero. Please update lineup manually.', 'error')
-        return
-      }
-
-      // First, clean currentLineup to ensure only valid positions
-      const validPositions = ['I', 'II', 'III', 'IV', 'V', 'VI']
-      const cleanedCurrentLineup = {}
-      for (const pos of validPositions) {
-        if (currentLineup[pos] !== undefined) {
-          cleanedCurrentLineup[pos] = currentLineup[pos]
-        }
-      }
-
-      // Restore the original player
-      const newLineup = { ...cleanedCurrentLineup }
-
-      // Check if the original player is already on court in another position
-      // If so, remove them from that position first to avoid duplicates
-      for (const [pos, playerNum] of Object.entries(newLineup)) {
-        if (String(playerNum) === String(originalPlayerNumber) && pos !== liberoOnCourt.position) {
-          // The original player is already in another position - remove them from there
-          // This can happen if the team rotated while the libero was in
-          delete newLineup[pos]
+        // If this event has libero substitution info, use the stored original player
+        if (event.payload?.liberoSubstitution &&
+          String(event.payload.liberoSubstitution.liberoNumber) === String(liberoOnCourt.liberoNumber) &&
+          event.payload.liberoSubstitution.position === liberoOnCourt.position) {
+          originalPlayerNumber = event.payload.liberoSubstitution.playerNumber
           break
         }
       }
-
-      // Now set the original player in the libero's position
-      newLineup[liberoOnCourt.position] = String(originalPlayerNumber)
-
-      // Ensure we only have exactly 6 positions (defensive check)
-      const finalLineup = {}
-      for (const pos of validPositions) {
-        if (newLineup[pos] !== undefined) {
-          finalLineup[pos] = newLineup[pos]
-        }
-      }
-
-      // Log the libero exit event FIRST (main event) - skipMutex: we already hold it
-      await logEvent('libero_exit', {
-        team: teamKey,
-        position: liberoOnCourt.position,
-        liberoOut: liberoOnCourt.liberoNumber,
-        playerIn: originalPlayerNumber,
-        liberoType: liberoOnCourt.liberoType
-      }, { skipMutex: true })
-
-      // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_exit on undo
-      const allEvents = await db.events.where({ matchId }).toArray()
-      const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
-      const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_exit
-
-      await db.events.add({
-        matchId,
-        setIndex: data.set.index,
-        type: 'lineup',
-        payload: {
-          team: teamKey,
-          lineup: finalLineup,
-          fromSubstitution: true, // Mark as substitution so it's not treated as rotation lineup
-          liberoSubstitution: null // Explicitly clear libero substitution
-        },
-        ts: new Date().toISOString(),
-        seq: subEventSeq
-      })
-
-      // Check if the libero leaving is the court captain OR if the returning player is the team captain
-      const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
-      const returningPlayer = teamPlayers?.find(p => String(p.number) === String(originalPlayerNumber))
-      const isReturningCaptain = returningPlayer && (returningPlayer.isCaptain || returningPlayer.captain)
-      const captainOnCourtField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
-      const currentCourtCaptain = data?.match?.[captainOnCourtField]
-      const isLiberoCourtCaptain = String(currentCourtCaptain) === String(liberoOnCourt.liberoNumber)
-
-      // Trigger captain check if:
-      // - Libero leaving is the court captain
-      // - Team captain is returning to court (need to clear game captain badge)
-      if (isLiberoCourtCaptain || isReturningCaptain) {
-        setTimeout(() => {
-          checkAndRequestCaptainOnCourtRef.current?.(teamKey)
-        }, 300)
-      }
-    } finally {
-      // MUTEX: Always release the lock, even if an error occurred
-      eventInProgressRef.current = false
     }
-  }, [rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, data?.match, matchId, logEvent, data?.homePlayers, data?.awayPlayers])
+
+    if (!originalPlayerNumber) {
+      deferUi(() => showAlert('Original player not found for this libero. Please update lineup manually.', 'error'))
+      return
+    }
+
+    // First, clean currentLineup to ensure only valid positions
+    const validPositions = ['I', 'II', 'III', 'IV', 'V', 'VI']
+    const cleanedCurrentLineup = {}
+    for (const pos of validPositions) {
+      if (currentLineup[pos] !== undefined) {
+        cleanedCurrentLineup[pos] = currentLineup[pos]
+      }
+    }
+
+    // Restore the original player
+    const newLineup = { ...cleanedCurrentLineup }
+
+    // Check if the original player is already on court in another position
+    // If so, remove them from that position first to avoid duplicates
+    for (const [pos, playerNum] of Object.entries(newLineup)) {
+      if (String(playerNum) === String(originalPlayerNumber) && pos !== liberoOnCourt.position) {
+        // The original player is already in another position - remove them from there
+        // This can happen if the team rotated while the libero was in
+        delete newLineup[pos]
+        break
+      }
+    }
+
+    // Now set the original player in the libero's position
+    newLineup[liberoOnCourt.position] = String(originalPlayerNumber)
+
+    // Ensure we only have exactly 6 positions (defensive check)
+    const finalLineup = {}
+    for (const pos of validPositions) {
+      if (newLineup[pos] !== undefined) {
+        finalLineup[pos] = newLineup[pos]
+      }
+    }
+
+    // Log the libero exit event FIRST (main event) - skipMutex: we already hold it
+    await logEvent('libero_exit', {
+      team: teamKey,
+      position: liberoOnCourt.position,
+      liberoOut: liberoOnCourt.liberoNumber,
+      playerIn: originalPlayerNumber,
+      liberoType: liberoOnCourt.liberoType
+    }, { skipMutex: true })
+
+    // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_exit on undo
+    const allEvents = await db.events.where({ matchId }).toArray()
+    const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
+    const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_exit
+
+    await db.events.add({
+      matchId,
+      setIndex: data.set.index,
+      type: 'lineup',
+      payload: {
+        team: teamKey,
+        lineup: finalLineup,
+        fromSubstitution: true, // Mark as substitution so it's not treated as rotation lineup
+        liberoSubstitution: null // Explicitly clear libero substitution
+      },
+      ts: new Date().toISOString(),
+      seq: subEventSeq
+    })
+
+    // Check if the libero leaving is the court captain OR if the returning player is the team captain
+    const teamPlayers = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
+    const returningPlayer = teamPlayers?.find(p => String(p.number) === String(originalPlayerNumber))
+    const isReturningCaptain = returningPlayer && (returningPlayer.isCaptain || returningPlayer.captain)
+    const captainOnCourtField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
+    const currentCourtCaptain = data?.match?.[captainOnCourtField]
+    const isLiberoCourtCaptain = String(currentCourtCaptain) === String(liberoOnCourt.liberoNumber)
+
+    // Trigger captain check if:
+    // - Libero leaving is the court captain
+    // - Team captain is returning to court (need to clear game captain badge)
+    if (isLiberoCourtCaptain || isReturningCaptain) {
+      deferUi(() => setTimeout(() => {
+        checkAndRequestCaptainOnCourtRef.current?.(teamKey)
+      }, 300))
+    }
+  }), [runAction, deferUi, rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, data?.match, matchId, logEvent, data?.homePlayers, data?.awayPlayers])
 
   // Handle libero re-designation
   const runLiberoRedesignation = useConfirmAction(onConfirmFailed)
-  const confirmLiberoRedesignation = useCallback((newLiberoNumber) => runLiberoRedesignation(async () => {
+  const confirmLiberoRedesignation = useCallback((newLiberoNumber) => runLiberoRedesignation(() => runAction('liberoRedesignation', async () => {
     if (!liberoRedesignationModal || !data?.set) return
 
     const { team, unableLiberoNumber, unableLiberoType, reason = 'declared' } = liberoRedesignationModal
-    // Close first, then write (useConfirmAction): the candidate list is live and
-    // redrew without the chosen player otherwise
-    setLiberoRedesignationModal(null)
+    // Closed with the written change (deferUi, one render): the candidate list
+    // is live and never redraws without the chosen player
+    deferUi(() => setLiberoRedesignationModal(null))
 
     // Log the libero_unable event if not already logged (with reason='declared' if not specified)
     const hasUnableEvent = data?.events?.some(e =>
@@ -11826,10 +11812,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     logManualChange('Libero', 'Redesignation', `#${unableLiberoNumber}`, `#${newLiberoNumber}`,
       `Player #${newLiberoNumber} re-designated as Libero replacing #${unableLiberoNumber} (Team ${teamLabel}, Set ${setIndex}, ${scoreStr})`)
 
-  }), [runLiberoRedesignation, liberoRedesignationModal, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, teamAKey, matchId])
+  })), [runAction, deferUi, runLiberoRedesignation, liberoRedesignationModal, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, teamAKey, matchId])
 
   // Confirm marking libero as unable
-  const confirmLiberoUnable = useCallback(async () => {
+  const confirmLiberoUnable = useCallback(() => runAction('liberoUnable', async () => {
     if (!liberoUnableModal || !data?.set) return
 
     const { team, liberoNumber, liberoType, reason = 'declared', isOnCourt } = liberoUnableModal
@@ -11926,17 +11912,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       if (activeLiberos.length === 0) {
         // Show redesignation prompt in same modal
-        setLiberoUnableModal({
+        deferUi(() => setLiberoUnableModal({
           ...liberoUnableModal,
           step: 'redesignate'
-        })
+        }))
       } else {
-        setLiberoUnableModal(null)
+        deferUi(() => setLiberoUnableModal(null))
       }
     } catch (error) {
       // Silently handle error
     }
-  }, [liberoUnableModal, data?.set, data?.events, data?.match?.remarks, logEvent, logManualChange, checkLiberoRedesignation, getLiberoOnCourt, teamAKey, teamBKey, matchId])
+  }), [runAction, deferUi, liberoUnableModal, data?.set, data?.events, data?.match?.remarks, logEvent, logManualChange, checkLiberoRedesignation, getLiberoOnCourt, teamAKey, teamBKey, matchId])
 
   // Handle libero in button click
   const handleLiberoIn = useCallback((side, event) => {
@@ -11978,109 +11964,98 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [rallyStatus, data?.homePlayers, data?.awayPlayers, getLiberoOnCourt, isLiberoUnable, mapSideToTeamKey, getCurrentServe, getTeamLineupState])
 
   // Handle exchange libero (L1 <-> L2)
-  const handleExchangeLibero = useCallback(async (side) => {
+  const handleExchangeLibero = useCallback((side) => runAction('libero', async () => {
     if (rallyStatus !== 'idle') return
 
-    // MUTEX: Acquire lock before creating any events to prevent race conditions
-    const maxWaitTime = 5000
-    const startWait = Date.now()
-    while (eventInProgressRef.current && (Date.now() - startWait) < maxWaitTime) {
-      await new Promise(resolve => setTimeout(resolve, 10))
+    // (runAction holds the event mutex for the whole transaction)
+
+    const teamKey = mapSideToTeamKey(side)
+    const liberoOnCourt = getLiberoOnCourt(teamKey)
+
+    if (!liberoOnCourt) {
+      deferUi(() => showAlert('No libero is currently on court', 'warning'))
+      return
     }
-    eventInProgressRef.current = true
 
-    try {
-      const teamKey = mapSideToTeamKey(side)
-      const liberoOnCourt = getLiberoOnCourt(teamKey)
+    // Check if there has been a point since last libero exchange
+    if (!hasPointSinceLastLiberoExchange(teamKey)) {
+      deferUi(() => showAlert('A point must be awarded before exchanging liberos', 'warning'))
+      return
+    }
 
-      if (!liberoOnCourt) {
-        showAlert('No libero is currently on court', 'warning')
-        return
-      }
+    // Get the other libero
+    const teamPlayers = teamKey === 'home' ? data.homePlayers : data.awayPlayers
+    const otherLibero = teamPlayers?.find(p =>
+      p.libero &&
+      p.libero !== '' &&
+      p.libero !== 'unable' &&
+      String(p.number) !== String(liberoOnCourt.liberoNumber) &&
+      // Find the other active libero (L1, L2, or redesignated) that's not the one currently on court
+      (p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated')
+    )
 
-      // Check if there has been a point since last libero exchange
-      if (!hasPointSinceLastLiberoExchange(teamKey)) {
-        showAlert('A point must be awarded before exchanging liberos', 'warning')
-        return
-      }
+    if (!otherLibero) {
+      deferUi(() => showAlert('Other libero not found', 'warning'))
+      return
+    }
 
-      // Get the other libero
-      const teamPlayers = teamKey === 'home' ? data.homePlayers : data.awayPlayers
-      const otherLibero = teamPlayers?.find(p =>
-        p.libero &&
-        p.libero !== '' &&
-        p.libero !== 'unable' &&
-        String(p.number) !== String(liberoOnCourt.liberoNumber) &&
-        // Find the other active libero (L1, L2, or redesignated) that's not the one currently on court
-        (p.libero === 'libero1' || p.libero === 'libero2' || p.libero === 'redesignated')
-      )
+    // Check if either libero is unable to play
+    if (isLiberoUnable(teamKey, liberoOnCourt.liberoNumber)) {
+      deferUi(() => showAlert('The libero currently on court is unable to play (injured, expelled, disqualified, or declared unable)', 'warning'))
+      return
+    }
 
-      if (!otherLibero) {
-        showAlert('Other libero not found', 'warning')
-        return
-      }
+    if (isLiberoUnable(teamKey, otherLibero.number)) {
+      deferUi(() => showAlert('The other libero is unable to play (injured, expelled, disqualified, or declared unable)', 'warning'))
+      return
+    }
 
-      // Check if either libero is unable to play
-      if (isLiberoUnable(teamKey, liberoOnCourt.liberoNumber)) {
-        showAlert('The libero currently on court is unable to play (injured, expelled, disqualified, or declared unable)', 'warning')
-        return
-      }
+    // Get current lineup
+    const lineupEvents = data.events.filter(e =>
+      e.type === 'lineup' &&
+      e.payload?.team === teamKey &&
+      e.setIndex === data.set.index
+    )
+    const currentLineup = lineupEvents[lineupEvents.length - 1].payload?.lineup
 
-      if (isLiberoUnable(teamKey, otherLibero.number)) {
-        showAlert('The other libero is unable to play (injured, expelled, disqualified, or declared unable)', 'warning')
-        return
-      }
+    // Replace current libero with other libero
+    const newLineup = { ...currentLineup }
+    newLineup[liberoOnCourt.position] = String(otherLibero.number)
 
-      // Get current lineup
-      const lineupEvents = data.events.filter(e =>
-        e.type === 'lineup' &&
-        e.payload?.team === teamKey &&
-        e.setIndex === data.set.index
-      )
-      const currentLineup = lineupEvents[lineupEvents.length - 1].payload?.lineup
+    // Log the libero exchange event FIRST (main event) - skipMutex: we already hold it
+    await logEvent('libero_exchange', {
+      team: teamKey,
+      position: liberoOnCourt.position,
+      liberoOut: liberoOnCourt.liberoNumber,
+      liberoIn: otherLibero.number,
+      liberoOutType: liberoOnCourt.liberoType,
+      liberoInType: otherLibero.libero,
+      playerNumber: liberoOnCourt.playerNumber
+    }, { skipMutex: true })
 
-      // Replace current libero with other libero
-      const newLineup = { ...currentLineup }
-      newLineup[liberoOnCourt.position] = String(otherLibero.number)
+    // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_exchange on undo
+    const allEvents = await db.events.where({ matchId }).toArray()
+    const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
+    const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_exchange
 
-      // Log the libero exchange event FIRST (main event) - skipMutex: we already hold it
-      await logEvent('libero_exchange', {
+    await db.events.add({
+      matchId,
+      setIndex: data.set.index,
+      type: 'lineup',
+      payload: {
         team: teamKey,
-        position: liberoOnCourt.position,
-        liberoOut: liberoOnCourt.liberoNumber,
-        liberoIn: otherLibero.number,
-        liberoOutType: liberoOnCourt.liberoType,
-        liberoInType: otherLibero.libero,
-        playerNumber: liberoOnCourt.playerNumber
-      }, { skipMutex: true })
-
-      // Save the updated lineup as a SUB-EVENT (seq N.1) so it's deleted together with libero_exchange on undo
-      const allEvents = await db.events.where({ matchId }).toArray()
-      const maxSeq = allEvents.length > 0 ? Math.max(...allEvents.map(e => e.seq || 0)) : 0
-      const subEventSeq = Math.floor(maxSeq) + 0.1 // Sub-event of the libero_exchange
-
-      await db.events.add({
-        matchId,
-        setIndex: data.set.index,
-        type: 'lineup',
-        payload: {
-          team: teamKey,
-          lineup: newLineup,
-          liberoSubstitution: {
-            position: liberoOnCourt.position,
-            liberoNumber: otherLibero.number,
-            playerNumber: liberoOnCourt.playerNumber,
-            liberoType: otherLibero.libero
-          }
-        },
-        ts: new Date().toISOString(),
-        seq: subEventSeq
-      })
-    } finally {
-      // MUTEX: Always release the lock, even if an error occurred
-      eventInProgressRef.current = false
-    }
-  }, [rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, data?.homePlayers, data?.awayPlayers, matchId, logEvent, isLiberoUnable])
+        lineup: newLineup,
+        liberoSubstitution: {
+          position: liberoOnCourt.position,
+          liberoNumber: otherLibero.number,
+          playerNumber: liberoOnCourt.playerNumber,
+          liberoType: otherLibero.libero
+        }
+      },
+      ts: new Date().toISOString(),
+      seq: subEventSeq
+    })
+  }), [runAction, deferUi, rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, data?.homePlayers, data?.awayPlayers, matchId, logEvent, isLiberoUnable])
 
   // Keyboard shortcuts handler
   useEffect(() => {
@@ -12317,12 +12292,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Handle captain on court selection
   const runCaptainOnCourt = useConfirmAction(onConfirmFailed)
-  const handleSelectCaptainOnCourt = useCallback((playerNumber) => runCaptainOnCourt(async () => {
+  const handleSelectCaptainOnCourt = useCallback((playerNumber) => runCaptainOnCourt(() => runAction('captain', async () => {
     if (!captainOnCourtModal || !matchId) return
 
     const { team } = captainOnCourtModal
-    // Close first, then write (useConfirmAction)
-    setCaptainOnCourtModal(null)
+    // Closed with the designation (deferUi, one render)
+    deferUi(() => setCaptainOnCourtModal(null))
     const courtCaptainField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
     const rememberedField = team === 'home' ? 'homeRememberedCourtCaptain' : 'awayRememberedCourtCaptain'
 
@@ -12342,7 +12317,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       playerNumber,
       previousCourtCaptain
     })
-  }), [runCaptainOnCourt, captainOnCourtModal, matchId, logEvent])
+  })), [runAction, deferUi, runCaptainOnCourt, captainOnCourtModal, matchId, logEvent])
 
   // Handle cancel (no captain selected)
   const handleCancelCaptainOnCourt = useCallback(() => {
@@ -12538,19 +12513,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [matchId, newPin, editPinType])
 
   const runCourtSwitchConfirm = useConfirmAction(onConfirmFailed)
-  const confirmCourtSwitch = useCallback(() => runCourtSwitchConfirm(async () => {
+  const confirmCourtSwitch = useCallback(() => runCourtSwitchConfirm(() => runAction('courtSwitch', async () => {
     if (!courtSwitchModal) return
 
-    // Close first, then write (useConfirmAction): the switch flips the court
-    // sides, which drew behind the still-open dialog otherwise
-    setCourtSwitchModal(null)
+    // Closed in the render that flips the court sides (deferUi): the dialog
+    // never shows over the switched court
+    deferUi(() => setCourtSwitchModal(null))
 
     // Mark that courts have been switched for set 5
     await db.matches.update(matchId, { set5CourtSwitched: true })
 
     // Sync to Supabase with fresh snapshot to update side_a and serving_team after court switch
     syncLiveStateToSupabase('court_switch', null, { reason: 'set5_8points' }, null)
-  }), [runCourtSwitchConfirm, courtSwitchModal, matchId, syncLiveStateToSupabase])
+  })), [runAction, deferUi, runCourtSwitchConfirm, courtSwitchModal, matchId, syncLiveStateToSupabase])
 
   const runCourtSwitchCancel = useConfirmAction(onConfirmFailed)
   // The change of courts at 8 in the deciding set is mandatory (FIVB 18.2.2;
@@ -12560,11 +12535,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // point (the point, its sub-events such as the side-out rotation and an
   // automatic libero_exit, their queued cloud jobs, and the rally_start), and
   // the set score follows the remaining point events.
-  const cancelCourtSwitch = useCallback(() => runCourtSwitchCancel(async () => {
+  const cancelCourtSwitch = useCallback(() => runCourtSwitchCancel(() => runAction('courtSwitch', async () => {
     if (!courtSwitchModal) return
-    // Close first, then undo the point (useConfirmAction)
+    // Closed with the point taken back (deferUi, one render)
     const modal = courtSwitchModal
-    setCourtSwitchModal(null)
+    deferUi(() => setCourtSwitchModal(null))
 
     try {
       const allEvents = await db.events.where('matchId').equals(matchId).toArray()
@@ -12577,7 +12552,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       syncToReferee()
       syncLiveStateToSupabase('undo', null, null)
     }
-  }), [runCourtSwitchCancel, courtSwitchModal, matchId, discardEvents, resyncSetScoreFromEvents, syncToReferee, syncLiveStateToSupabase])
+  })), [runAction, deferUi, runCourtSwitchCancel, courtSwitchModal, matchId, discardEvents, resyncSetScoreFromEvents, syncToReferee, syncLiveStateToSupabase])
 
   // Check if match is already finished (loaded a completed match)
   // If so, trigger onFinishSet to navigate to MatchEnd screen
