@@ -30,7 +30,9 @@ describe('Scoreboard substitution limit', () => {
   })
 
   it('a request beyond the limit becomes the improper-request flow', () => {
-    expect(scoreboard).toMatch(/setSanctionConfirm\(\{ side: mapTeamKeyToSide\(teamKey\), type: 'improper_request', reason: 'substitution_limit' \}\)/)
+    // through openTeamSanctionConfirm, which resolves the sanction once (improper
+    // request, or the delay sanction it escalates to) and keeps it in the dialog
+    expect(scoreboard).toMatch(/openTeamSanctionConfirm\(mapTeamKeyToSide\(teamKey\), 'improper_request', 'substitution_limit'\)/)
   })
 
   it('confirmSubstitution re-checks before writing the event', () => {
