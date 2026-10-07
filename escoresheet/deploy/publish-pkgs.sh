@@ -2,7 +2,7 @@
 # Rebuild and publish the public package repos behind https://get.openvolley.app
 #
 #   escoresheet/deploy/publish-pkgs.sh [--no-sync] [FILE.deb | FILE.apk ...]
-#   escoresheet/deploy/publish-pkgs.sh --desktop VERSION [--app beach] [--staging] [--no-sync] [FILE.apk ...]
+#   escoresheet/deploy/publish-pkgs.sh --desktop VERSION [--app beach] [--staging] [--flatpak] [--no-sync] [FILE.apk ...]
 #
 # Runs on lenovoserver (never on the VM: the signing keys live only here).
 #
@@ -56,6 +56,12 @@
 #      APT's newest, so a staging .deb, or one the kill switch withdrew from
 #      latest.json, stays in the pool but out of the index.
 #   3. Rebuilds the F-Droid index (fdroid update) and copies repo/ over.
+#   3b. --flatpak (with --desktop, never with --staging: Flatpak users would get
+#      it at once): builds the signed .deb as a Flatpak and commits it, signed,
+#      into public/flatpak/repo/ (../packaging/flatpak/publish-flatpak.sh;
+#      needs flatpak, flatpak-builder, ostree and the Flatpak repo key in
+#      flatpak-gpg/). Without --flatpak public/flatpak/ is left as it is (and
+#      still synced): run publish-flatpak.sh VERSION by hand, then this script.
 #   4. Copies the landing page and the installer (pkgs/index.html, pkgs/install.sh).
 #      The page's OpenBeach section appears once an OpenBeach .deb or APK is
 #      published; install.sh takes the package name (default openvolley-escoresheet).
@@ -72,6 +78,9 @@
 #                       index.html  install.sh  apt/{dists,pool,openvolley.gpg,openvolley.asc}  fdroid/repo/
 #                       desktop/{latest,staging,latest-<version>}.json
 #                       desktop/beach/{latest,staging,latest-<version>}.json (OpenBeach)
+#                       flatpak/{repo/,openvolley.flatpakrepo,<app id>.flatpakref,openvolley-flatpak.gpg}
+#   flatpak-gpg/      Flatpak repo signing key (GNUPGHOME), flatpak-gpg-passphrase its
+#                     passphrase. Vaultwarden: "OpenVolley Flatpak repo key"
 # Desktop updater key under ${OV_DESKTOP_KEYS} (default ~/.config/openvolley-desktop):
 #   updater.key       tauri signer private key, key-password its password (both
 #                     mode 600). Vaultwarden: "OpenVolley desktop updater key"
@@ -106,6 +115,7 @@ FILES=()
 DESKTOP_V=
 STAGING=0
 APP=
+FLATPAK=0
 while (( $# )); do
   case "$1" in
     --no-sync) SYNC=0 ;;
@@ -122,6 +132,7 @@ while (( $# )); do
       [[ "$APP" == openvolley || "$APP" == beach ]] || die "--app $APP: expected openvolley or beach"
       ;;
     --staging) STAGING=1 ;;
+    --flatpak) FLATPAK=1 ;;
     -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 0 ;;
     -*) die "unknown option $1" ;;
     *) FILES+=("$1") ;;
@@ -130,6 +141,9 @@ while (( $# )); do
 done
 (( ! STAGING )) || [[ -n "$DESKTOP_V" ]] || die "--staging needs --desktop VERSION"
 [[ -z "$APP" ]] || [[ -n "$DESKTOP_V" ]] || die "--app needs --desktop VERSION"
+(( ! FLATPAK )) || [[ -n "$DESKTOP_V" ]] || die "--flatpak needs --desktop VERSION (or run ../packaging/flatpak/publish-flatpak.sh VERSION, then this script)"
+(( ! FLATPAK || ! STAGING )) || die "--flatpak cannot go with --staging: Flatpak users would get the staging version at once"
+FLATPAK_PUBLISH="$KIT_DIR/../packaging/flatpak/publish-flatpak.sh"
 desktop_app_select "${APP:-openvolley}"
 [[ -z "$DESKTOP_RELEASE_DIR" ]] || (( ! SYNC )) || die "OV_DESKTOP_RELEASE_DIR is for tests: use it with --no-sync"
 
@@ -139,6 +153,11 @@ done
 [[ -d "$GNUPGHOME" && -f "$PKGS/gpg-passphrase" ]] || die "no signing key in $PKGS (restore it from Vaultwarden)"
 [[ -f "$FD/config.yml" && -f "$FD/keystore.p12" ]] || die "no F-Droid repo in $FD (restore it from Vaultwarden)"
 [[ -z "$DESKTOP_V" ]] || desktop_check_setup
+if (( FLATPAK )); then
+  [[ -x "$FLATPAK_PUBLISH" ]] || die "$FLATPAK_PUBLISH not found"
+  for t in flatpak flatpak-builder ostree; do command -v "$t" >/dev/null || die "--flatpak: $t not found"; done
+  [[ -d "${OV_FLATPAK_GNUPG:-$PKGS/flatpak-gpg}" ]] || die "--flatpak: no Flatpak repo key in ${OV_FLATPAK_GNUPG:-$PKGS/flatpak-gpg} (publish-flatpak.sh --init-key, or restore it from Vaultwarden)"
+fi
 
 build_tool() {
   local bt
@@ -329,6 +348,12 @@ mkdir -p "$PUB/fdroid"
 # status/ is fdroidserver's run log (host OS, tool paths); clients never read it.
 rsync -a --delete --delete-excluded --exclude=/status/ "$FD/repo/" "$PUB/fdroid/repo/"
 
+# --- 3b. Flatpak (--flatpak) --------------------------------------------------
+# The signed .deb (same bytes as the pool's, checked below) into the Flatpak repo.
+if (( FLATPAK )); then
+  OV_PKGS_HOME="$PKGS" "$FLATPAK_PUBLISH" --app "${APP:-openvolley}" --deb "$DESKTOP_DEB" "$DESKTOP_V"
+fi
+
 # --- 4. landing page and installer -----------------------------------------
 # The newest .deb and APK of each app fill the version links in the template
 # (lib/publish-lib.sh landing_page; OpenBeach's section only once published).
@@ -363,11 +388,18 @@ for f in "$PUB"/desktop/latest.json "$PUB"/desktop/staging.json "$PUB"/desktop/b
     echo "  $(dirname "${f#"$PUB"/}") $(basename "$f" .json) $(manifest_version "$f")"
   fi
 done
+if [[ -f "$PUB/flatpak/repo/config" ]] && command -v ostree >/dev/null; then
+  for r in $(ostree --repo="$PUB/flatpak/repo" refs | grep '^app/'); do
+    echo "  flatpak $r: $(ostree --repo="$PUB/flatpak/repo" log "$r" | awk '/^    [^ ]/ { sub(/^ +/, ""); print; exit }')"
+  done
+fi
 
 if (( SYNC )); then
   # --delay-updates puts every changed file in place at the end, so a client
   # never sees a new index that points at a package not uploaded yet.
-  rsync -rlt --delete-after --delay-updates --chmod=D755,F644 "$PUB/" "$DEST"
+  # The Flatpak repo's tmp/ and .lock are OSTree's own working files.
+  rsync -rlt --delete-after --delay-updates --chmod=D755,F644 \
+    --exclude=/flatpak/repo/tmp/ --exclude=/flatpak/repo/.lock "$PUB/" "$DEST"
   echo "synced to $DEST"
   # Only now: latest.json on GitHub must not point at a .deb not yet in the pool.
   [[ -z "$DESKTOP_V" ]] || desktop_upload "$DESKTOP_V" "$STAGING" "$WORK/desktop"

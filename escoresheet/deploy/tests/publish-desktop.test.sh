@@ -348,6 +348,9 @@ expect_fail "--app needs --desktop VERSION" pp --app beach --no-sync
 expect_fail "--app volley: expected openvolley or beach" pp --desktop 2.0.0 --app volley --no-sync
 expect_fail "--app given twice" pp --desktop 2.0.0 --app beach --app beach --no-sync
 expect_fail "--app needs openvolley or beach" pp --desktop 2.0.0 --no-sync --app
+expect_fail "--flatpak needs --desktop VERSION" pp --flatpak --no-sync
+expect_fail "--flatpak cannot go with --staging" pp --desktop 2.2.0 --staging --flatpak --no-sync
+pp --help | grep -q -- '--staging\] \[--flatpak\]' && ok "--help documents --flatpak"
 
 if [[ -n "${OV_TEST_KEEP:-}" ]]; then
   # For a cross-check outside this script: the signed files, latest.json and the test pubkey.
@@ -550,6 +553,19 @@ ok "page: OpenBeach's desktop part once its .deb is published; each app its own 
 page "$T/bPackages" "$T/index-both.json"
 if grep -q '@[A-Z_]*@' "$T/index.html"; then bad "page: placeholders left"; fi
 ok "page: both apps, every placeholder filled"
+if grep -qE 'flatpak install|href="/flatpak/"' "$T/index.html"; then bad "page: Flatpak parts without a published Flatpak"; fi
+mkdir -p "$T/flatpak"
+touch "$T/flatpak/com.openvolley.escoresheet.flatpakref"
+page "$T/bPackages" "$T/index-both.json"
+grep -q 'flatpak install --user https://get.openvolley.app/flatpak/com.openvolley.escoresheet.flatpakref' "$T/index.html" &&
+  grep -q 'href="/flatpak/"' "$T/index.html" || bad "page: OpenVolley's Flatpak part"
+if grep -q 'com.openvolley.beach.flatpakref' "$T/index.html"; then bad "page: OpenBeach's Flatpak part without its .flatpakref"; fi
+touch "$T/flatpak/com.openvolley.beach.flatpakref"
+page "$T/bPackages" "$T/index-both.json"
+grep -q 'flatpak install --user https://get.openvolley.app/flatpak/com.openvolley.beach.flatpakref' "$T/index.html" ||
+  bad "page: OpenBeach's Flatpak part"
+rm -rf "$T/flatpak"
+ok "page: each app's Flatpak part once its .flatpakref is published"
 noov() { fdroid_index com.openvolley.beach,2.0.0,20000000,b.apk > "$T/index-b.json"; page "$T/bPackages" "$T/index-b.json"; }
 expect_fail "need at least one openvolley-escoresheet .deb and one com.openvolley.escoresheet APK" noov
 
