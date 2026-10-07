@@ -7,9 +7,10 @@
  * every start and offered to the hall's referee tablets ("Home – Away").
  *
  * Now: the newest unfinished match by createdAt, leaving out an abandoned one
- * (created more than ABANDONED_LOCAL_MATCH_MS ago and without a single
- * event). An old match that has events was played: it stays current until it
- * is finished, as before.
+ * (created, last edited and scheduled all more than ABANDONED_LOCAL_MATCH_MS
+ * ago, and without a single event). A match set up well ahead of its date is
+ * not abandoned before that date. An old match that has events was played:
+ * it stays current until it is finished, as before.
  */
 
 export const ABANDONED_LOCAL_MATCH_MS = 7 * 24 * 60 * 60 * 1000
@@ -26,17 +27,22 @@ function timeOf(value) {
 const isFinishedLocalMatch = (m) => m?.status === 'final'
 
 /**
- * Old enough that it counts as abandoned when it has no events? (createdAt
- * more than ABANDONED_LOCAL_MATCH_MS ago; a match without createdAt is not.)
- * The caller looks up the events only for these.
+ * Old enough that it counts as abandoned when it has no events? createdAt
+ * more than ABANDONED_LOCAL_MATCH_MS ago, and so are updatedAt and
+ * scheduledAt when set (a match prepared a week or more ahead, or edited
+ * lately, is not old); a match without createdAt is not. The caller looks up
+ * the events only for these.
  */
 export function needsEventCheck(match, now = Date.now()) {
   const created = timeOf(match?.createdAt)
-  return created != null && now - created > ABANDONED_LOCAL_MATCH_MS
+  if (created == null) return false
+  const latest = Math.max(created, timeOf(match?.updatedAt) ?? -Infinity, timeOf(match?.scheduledAt) ?? -Infinity)
+  return now - latest > ABANDONED_LOCAL_MATCH_MS
 }
 
 /**
- * Abandoned: created more than 7 days ago and without events.
+ * Abandoned: old (needsEventCheck: created, edited and scheduled more than 7
+ * days ago) and without events.
  * @param {object} match
  * @param {{ now?: number, hasEvents?: (id: any) => boolean }} [opts]
  */

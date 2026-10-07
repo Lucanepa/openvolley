@@ -473,8 +473,9 @@ export default function App() {
     if (activeMatchLoaded) liveMatchKnown()
   }, [activeMatchStatus, activeMatchIsTest, activeMatchLoaded])
 
-  // Current match: the newest unfinished one by createdAt, never one created
-  // more than 7 days ago without a single event (abandoned: it was offered to
+  // Current match: the newest unfinished one by createdAt, never one created,
+  // edited and scheduled more than 7 days ago without a single event
+  // (abandoned: it was offered to
   // the hall's tablets as "Home – Away" for months). utils/currentMatch.js.
   // Only those old matches' events are read, so scoring the current match
   // does not re-run this query.

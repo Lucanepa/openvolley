@@ -48,6 +48,20 @@ describe('current match of the scorer app', () => {
     expect(pickCurrentMatch([undated, { id: 'd', status: 'setup', createdAt: at(NOW - DAY) }], { now: NOW }).id).toBe('d')
   })
 
+  it('a match set up more than 7 days ahead of its date, or edited lately, is not abandoned', () => {
+    const prepared = { id: 'prep', status: 'setup', createdAt: at(NOW - 10 * DAY), scheduledAt: at(NOW + 6 * 60 * 60 * 1000) }
+    expect(needsEventCheck(prepared, NOW)).toBe(false)
+    expect(pickCurrentMatch([prepared], { now: NOW })).toBe(prepared)
+    // local wall time without zone (MatchSetup's official-match loader)
+    expect(needsEventCheck({ createdAt: at(NOW - 10 * DAY), scheduledAt: '2026-10-07T18:00:00' }, NOW)).toBe(false)
+    const edited = { id: 'ed', status: 'setup', createdAt: at(NOW - 10 * DAY), updatedAt: at(NOW - DAY) }
+    expect(pickCurrentMatch([edited], { now: NOW })).toBe(edited)
+    // scheduled long ago, untouched since: abandoned (the June "Home – Away")
+    const june = { id: 'june', status: 'live', createdAt: '2026-02-20T10:00:00.000Z', scheduledAt: '2026-06-15T16:00:00' }
+    expect(needsEventCheck(june, NOW)).toBe(true)
+    expect(pickCurrentMatch([june, prepared], { now: NOW })).toBe(prepared)
+  })
+
   it('nothing: null', () => {
     expect(pickCurrentMatch([], { now: NOW })).toBeNull()
     expect(pickCurrentMatch(null, { now: NOW })).toBeNull()

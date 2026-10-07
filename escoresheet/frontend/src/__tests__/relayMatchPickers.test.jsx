@@ -74,7 +74,9 @@ describe('relay match list: what people can join', () => {
     const rows = [
       row({ id: 'feb', gameNumber: 201, status: 'scheduled', scheduledAt: '2026-02-20T16:00:00Z', refereeConnectionEnabled: true, homeTeamConnectionEnabled: true }),
       row({ id: 'tonight', gameNumber: 202, status: 'scheduled', scheduledAt: '2026-10-07T18:00:00Z', refereeConnectionEnabled: true, homeTeamConnectionEnabled: true }),
-      row({ id: 'playing', gameNumber: 203, status: 'live', scheduledAt: '2026-10-06T18:00:00Z', refereeConnectionEnabled: true, homeTeamConnectionEnabled: true })
+      row({ id: 'playing', gameNumber: 203, status: 'live', scheduledAt: '2026-10-06T18:00:00Z', refereeConnectionEnabled: true, homeTeamConnectionEnabled: true }),
+      // an old scorer app still publishing the live match it never finished
+      row({ id: 'june-live', gameNumber: 204, status: 'live', scheduledAt: '2026-06-15T14:00:00Z', refereeConnectionEnabled: true, homeTeamConnectionEnabled: true })
     ]
     expect(refereeJoinableMatches(rows, now).map((m) => m.id)).toEqual(['tonight', 'playing'])
     expect(benchJoinableMatches(rows, now).map((m) => m.id)).toEqual(['tonight', 'playing'])
