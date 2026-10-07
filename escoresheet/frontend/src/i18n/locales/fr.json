@@ -3192,6 +3192,7 @@
       "choosePlayers": "Choisissez le/la joueur/euse qui sort et celui/celle qui entre.",
       "playerNotOnCourt": "À {{score}}, #{{n}} n’était pas sur le terrain.",
       "liberoOnCourt": "À {{score}}, #{{n}} était remplacé/e par le libéro #{{libero}}.",
+      "liberoNotSubstituted": "#{{n}} est libéro : un libéro n'est pas remplacé par un remplacement. Pour corriger un remplacement du libéro, utilisez Annuler.",
       "playerInOnCourt": "À {{score}}, #{{n}} était déjà sur le terrain.",
       "laterConflict": "#{{out}} ou #{{in}} participe à un remplacement ou un échange de libéro ultérieur dans ce set. Supprimez-le d’abord.",
       "noLaterOpponentPoint": "{{team}} n'a pas de point ultérieur au set {{set}} à marquer comme point de pénalité. Si le point n'a jamais été saisi, utilisez « Corriger le score final ».",

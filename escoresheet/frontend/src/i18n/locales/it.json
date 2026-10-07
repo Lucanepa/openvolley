@@ -3198,6 +3198,7 @@
       "choosePlayers": "Scegli chi esce e chi entra.",
       "playerNotOnCourt": "Sul {{score}}, #{{n}} non era in campo.",
       "liberoOnCourt": "Sul {{score}}, #{{n}} era sostituito/a dal libero #{{libero}}.",
+      "liberoNotSubstituted": "#{{n}} è il libero: il libero non viene sostituito. Per correggere un cambio del libero, usa Annulla.",
       "playerInOnCourt": "Sul {{score}}, #{{n}} era già in campo.",
       "laterConflict": "#{{out}} o #{{in}} partecipa a una sostituzione o a un cambio libero successivo in questo set. Rimuovilo prima.",
       "noLaterOpponentPoint": "{{team}} non ha un punto successivo nel set {{set}} da segnare come punto di penalizzazione. Se il punto non è mai stato registrato, usa «Correggi il punteggio finale».",

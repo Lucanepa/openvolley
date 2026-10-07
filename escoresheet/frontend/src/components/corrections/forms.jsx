@@ -130,9 +130,13 @@ export function SubstitutionForm({ ctx, events, sets, players, mode, liveSetInde
   const court = useMemo(() => (setIndex && team && at != null ? courtAt(base, setIndex, team, at) : { lineup: null, libero: null }), [base, setIndex, team, at])
   const roster = rosterOf(players, team)
   const onCourt = court.lineup ? Object.values(court.lineup).map(String) : []
-  const outChoices = onCourt.map(n => asPlayer(roster, n))
+  // A libero is never substituted: the libero on court is not offered (the
+  // player he replaced is, so the planner can say why that cannot be done)
+  const isLibero = (n) => (court.libero && String(court.libero.liberoNumber) === String(n)) || roster.some(p => p.libero && String(p.number) === String(n))
+  const outChoices = onCourt.filter(n => !isLibero(n)).map(n => asPlayer(roster, n))
   if (court.libero?.playerNumber != null) outChoices.push(asPlayer(roster, court.libero.playerNumber))
-  const inChoices = roster.filter(p => !p.libero && !onCourt.includes(String(p.number)))
+  const inChoices = roster.filter(p => !p.libero && !onCourt.includes(String(p.number)) &&
+    !(court.libero && String(court.libero.playerNumber) === String(p.number)))
 
   const rawPlan = useMemo(() => {
     if (!setIndex || !team || at == null || playerOut == null || playerIn == null) return null
@@ -259,7 +263,9 @@ export function SanctionForm({ ctx, events, sets, players, mode, liveSetIndex, p
   const teamSanction = type && isTeamSanctionType(type)
   const atLive = liveIdx != null && at === liveIdx
   const pointNowAllowed = mode === 'live' && atLive && !editEvent
-  const pointGiven = pointChoice ? pointChoice === 'given' : !pointNowAllowed
+  // "No, add it now" exists only at the live score: once another score is
+  // chosen, an earlier "now" choice no longer applies
+  const pointGiven = !pointNowAllowed || pointChoice === 'given'
 
   const court = useMemo(() => (setIndex && team && at != null ? courtAt(events, setIndex, team, at) : { lineup: null }), [events, setIndex, team, at])
   const roster = rosterOf(players, team)

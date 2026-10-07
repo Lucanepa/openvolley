@@ -3193,6 +3193,7 @@
       "choosePlayers": "Wähl d Spieler/innen, wo use und ine gönd.",
       "playerNotOnCourt": "Bi {{score}} isch #{{n}} nöd uf em Feld gsi.",
       "liberoOnCourt": "Bi {{score}} isch #{{n}} dur Libero #{{libero}} ersetzt gsi.",
+      "liberoNotSubstituted": "#{{n}} isch Libero: En Libero wird nöd usgwächslet. E Libero-Uswächslig wird mit Rückgängig korrigiert.",
       "playerInOnCourt": "Bi {{score}} isch #{{n}} scho uf em Feld gsi.",
       "laterConflict": "#{{out}} oder #{{in}} isch imene spötere Wächsel oder Libero-Uustusch i dem Satz debii. Entfern dä zersch.",
       "noLaterOpponentPoint": "{{team}} het in Satz {{set}} kein spötere Punkt, wo als Strafpunkt markiert werde chan. Isch de Punkt nie erfasst worde, nimm «Endstand korrigiere».",

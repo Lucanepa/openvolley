@@ -7,6 +7,7 @@ import { X } from 'lucide-react'
 import { Button } from '../../ui/Button.jsx'
 import { Switch } from '../../ui/Switch.jsx'
 import { describeEvent, compareBySeq, humanize, tr, tsMs, formatScore, scoreBeforeEvent } from '../../domain/describe'
+import { isRemovableEntry } from '../../domain/manualCorrections'
 import { HIT } from './shared.jsx'
 
 function clock(ts) {
@@ -58,7 +59,7 @@ export default function EventLogAdvanced({ events, filterSet, ctx, readOnly, onR
                   {d?.teamText && <span className="text-stone-500"> · {d.teamText}</span>}
                 </span>
                 <span className="shrink-0 text-xs text-stone-500 tabular-nums">{d?.score || formatScore(scoreBeforeEvent(events, e), null, ctx)}</span>
-                {!readOnly && Number.isInteger(e.seq) && (
+                {!readOnly && isRemovableEntry(e) && (
                   <Button
                     variant="danger-soft"
                     size="sm"

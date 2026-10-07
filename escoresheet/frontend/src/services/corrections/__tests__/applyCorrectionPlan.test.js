@@ -80,7 +80,8 @@ describe('applyCorrectionPlan', () => {
 
   it('removes a group: delete jobs, queued inserts of the removed rows dropped', async () => {
     const { matchId, events } = await seed()
-    const lastPoint = events.filter(e => e.type === 'point' && e.setIndex === 2).sort((a, b) => b.seq - a.seq)[0]
+    // the loser's last point of set 2 (25:20 -> 25:19 stays a possible result)
+    const lastPoint = events.filter(e => e.type === 'point' && e.setIndex === 2 && e.payload.team === 'away').sort((a, b) => b.seq - a.seq)[0]
     await db.sync_queue.add({ resource: 'event', action: 'insert', status: 'queued', payload: { external_id: `${SEED}:e:${lastPoint.id}`, match_id: SEED } })
     const plan = planRemoveGroup(events, lastPoint.id, ctx(matchId))
     await applyCorrectionPlan(plan, { matchId, db, mode: 'review' })
@@ -89,7 +90,7 @@ describe('applyCorrectionPlan', () => {
     const deletes = jobs.filter(j => j.resource === 'event' && j.action === 'delete').map(j => j.payload.external_id)
     expect(deletes).toContain(`${SEED}:e:${lastPoint.id}`)
     const set2 = (await db.sets.where('matchId').equals(matchId).toArray()).find(s => s.index === 2)
-    expect([set2.homePoints, set2.awayPoints]).toEqual([24, 20])
+    expect([set2.homePoints, set2.awayPoints]).toEqual([25, 19])
   })
 
   it('writes the sanction flags and the automatic remark; a test match queues nothing', async () => {
