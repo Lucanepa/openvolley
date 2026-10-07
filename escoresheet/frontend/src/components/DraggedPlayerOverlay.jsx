@@ -1,5 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom'
+import { markColourOn } from '../utils/teamColours'
 
 /**
  * DraggedPlayerOverlay - Floating player number that follows finger/cursor during drag.
@@ -66,7 +67,8 @@ export default function DraggedPlayerOverlay({
           left: -4,
           width: 18,
           height: 14,
-          background: '#3b82f6',
+          // apart from a blue libero shirt, as on the court
+          background: markColourOn(bgColor, '#3b82f6', '#0f172a'),
           border: '2px solid rgba(255,255,255,0.6)',
           borderRadius: 3,
           display: 'flex',
@@ -75,6 +77,8 @@ export default function DraggedPlayerOverlay({
           fontSize: 8,
           fontWeight: 700,
           color: '#fff',
+          // the number's outline is not the badge's
+          textShadow: 'none',
         }}>
           L
         </span>

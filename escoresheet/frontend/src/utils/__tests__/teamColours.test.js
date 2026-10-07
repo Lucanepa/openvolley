@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   parseColour, normaliseColour, relativeLuminance, contrastRatio, colourDistance,
   readableTextOn, readableText, discRing, liberoColour, liberoScore, teamLiberoColour,
-  discPaint, teamDiscPaint, markColourOn,
-  TEXT_DARK, TEXT_LIGHT, COURT_SURFACE, LIBERO_PALETTE, MIN_TEXT_CONTRAST, MIN_EDGE_CONTRAST
+  discPaint, teamDiscPaint, markColourOn, apcaContrast,
+  TEXT_DARK, TEXT_LIGHT, COURT_SURFACE, LIBERO_PALETTE, MIN_TEXT_CONTRAST, MIN_EDGE_CONTRAST, MIN_LARGE_TEXT_CONTRAST
 } from '../teamColours'
 
 const PALETTE = LIBERO_PALETTE.map(p => p.hex)
@@ -61,10 +61,36 @@ describe('readableTextOn', () => {
   it('picks near-black or white, whichever contrasts more', () => {
     expect(readableTextOn('#ffffff')).toBe(TEXT_DARK)
     expect(readableTextOn('#facc15')).toBe(TEXT_DARK) // yellow
+    expect(readableTextOn('#38bdf8')).toBe(TEXT_DARK) // sky
     expect(readableTextOn('#000080')).toBe(TEXT_LIGHT) // navy
     expect(readableTextOn('#1c1917')).toBe(TEXT_LIGHT)
     expect(readableTextOn('#e2001a')).toBe(TEXT_LIGHT) // Swiss Volley red
-    expect(readableTextOn('#16a34a')).toBe(TEXT_DARK)
+  })
+
+  it('mid-tone shirts where both pass 3:1 keep white numbers (APCA reads them better)', () => {
+    // WCAG 2 alone would pick near-black on all of these
+    for (const bg of ['#ef4444', '#3b82f6', '#16a34a', '#ec4899', '#0d9488', '#808080']) {
+      expect(contrastRatio(bg, TEXT_DARK), bg).toBeGreaterThan(contrastRatio(bg, TEXT_LIGHT))
+      expect(contrastRatio(bg, TEXT_LIGHT), bg).toBeGreaterThanOrEqual(MIN_LARGE_TEXT_CONTRAST)
+      expect(Math.abs(apcaContrast(TEXT_LIGHT, bg)), bg).toBeGreaterThan(Math.abs(apcaContrast(TEXT_DARK, bg)))
+      expect(readableTextOn(bg), bg).toBe(TEXT_LIGHT)
+    }
+  })
+
+  it('never picks a colour under the 3:1 large-text minimum when the other one passes', () => {
+    // orange: APCA leans white, but white is only ~2.8:1
+    expect(contrastRatio('#f97316', TEXT_LIGHT)).toBeLessThan(MIN_LARGE_TEXT_CONTRAST)
+    expect(readableTextOn('#f97316')).toBe(TEXT_DARK)
+    for (const bg of [...PALETTE, '#ef4444', '#3b82f6', '#808080', '#0ea5e9', '#22c55e', '#f97316', '#7b1e2b', '#ffd700', '#84cc16', '#c0c0c0']) {
+      expect(contrastRatio(bg, readableTextOn(bg)), bg).toBeGreaterThanOrEqual(MIN_LARGE_TEXT_CONTRAST)
+    }
+  })
+
+  it('APCA contrast has the expected sign and size', () => {
+    expect(apcaContrast('#000000', '#ffffff')).toBeCloseTo(106, 0)
+    expect(apcaContrast('#ffffff', '#000000')).toBeCloseTo(-108, 0)
+    expect(apcaContrast('#777777', '#777777')).toBe(0)
+    expect(apcaContrast('nope', '#fff')).toBeNull()
   })
 
   it('every palette colour and every common shirt gets ≥ 4.5:1, or an outline', () => {
