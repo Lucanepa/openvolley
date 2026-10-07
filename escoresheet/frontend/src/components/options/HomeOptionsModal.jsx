@@ -16,6 +16,7 @@ import { isAndroidApp } from '../../utils/androidUpdate'
 import AndroidVersionRows from './AndroidVersionRows'
 import { backdropDismiss } from '../../ui/backdropDismiss.js'
 import LegalLinks from '../../legal/LegalLinks'
+import ActivityLogModal from '../ActivityLogModal'
 
 // Kit field recipes for the small inline number/select controls (h-9, svrz md).
 const SMALL_FIELD = 'h-9 rounded-lg border border-stone-300 bg-white px-2 text-center text-sm tabular-nums text-stone-800 focus:outline-none focus:ring-2 focus:ring-red-500'
@@ -236,6 +237,7 @@ export default function HomeOptionsModal({
   const androidApp = isAndroidApp()
   const [clearCacheModal, setClearCacheModal] = useState(null) // { type: 'cache' | 'all' }
   const [copyFeedback, setCopyFeedback] = useState(null)
+  const [showActivityLog, setShowActivityLog] = useState(false)
   const [supportFeedbackOpen, setSupportFeedbackOpen] = useState(false)
   const [updateCheck, setUpdateCheck] = useState({ checking: false, result: null }) // result: 'available' | 'latest' | 'error'
   const [newVersion, setNewVersion] = useState(null)
@@ -903,6 +905,18 @@ export default function HomeOptionsModal({
           </Section>
         )}
 
+        <Section title={t('options.logs')}>
+          <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
+            <div>
+              <div className="text-sm font-semibold text-stone-900">{t('options.activityLog')}</div>
+              <p className="mt-0.5 text-xs text-stone-500">{t('options.activityLogAllInfo')}</p>
+            </div>
+            <button type="button" onClick={() => setShowActivityLog(true)} className={cn(BTN_OUTLINE, 'w-full')} data-testid="home-options-activity-log">
+              {t('options.openActivityLog')}
+            </button>
+          </Row>
+        </Section>
+
         <Section title={t('options.appVersion')}>
           {/* Android: the APK bundles version.json (always "latest"); it asks
               the F-Droid index instead (AndroidVersionRows). The desktop app:
@@ -1174,6 +1188,7 @@ export default function HomeOptionsModal({
           </div>
         </div>
       )}
+      <ActivityLogModal open={showActivityLog} onClose={() => setShowActivityLog(false)} />
     </Modal>
   )
 }
