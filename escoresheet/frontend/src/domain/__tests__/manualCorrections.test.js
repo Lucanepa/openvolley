@@ -320,6 +320,23 @@ describe('final score', () => {
     expect(point.seq).toBeLessThan(setEnd.seq)
     const rot = after.find(e => e.type === 'lineup' && baseOf(e) === point.seq)
     expect(rot.payload.team).toBe('away')
+    // the set still ends on the winner's point: the missed point of the
+    // loser goes in before it (24:22 -> 24:23 -> 25:23), never after 25:22
+    const pts = after.filter(e => e.type === 'point' && e.setIndex === 1).sort(compareBySeq)
+    expect(pts[pts.length - 1].payload.team).toBe('home')
+    expect(pts[pts.length - 2].id).toBe(point.id)
+    expect(scoreBeforeEvent(after, point)).toEqual({ home: 24, away: 22 })
+    expect(point.payload.score).toEqual({ home: 24, away: 23 })
+    // the winning point is now a side-out: it rotates the winner
+    const win = pts[pts.length - 1]
+    const winRot = after.filter(e => e.type === 'lineup' && baseOf(e) === baseOf(win) && e.seq !== win.seq)
+    expect(winRot.map(e => e.payload.team)).toEqual(['home'])
+    const homeBefore = events.filter(e => e.type === 'lineup' && e.payload.team === 'home').sort(compareBySeq).pop().payload.lineup
+    expect(winRot[0].payload.lineup.I).toBe(homeBefore.II)
+    // one row per seq, none after the set end
+    const seqs = after.map(e => e.seq)
+    expect(new Set(seqs).size).toBe(seqs.length)
+    expect(after.filter(e => e.seq > setEnd.seq)).toHaveLength(0)
   })
 
   it('guards the winner and the possible final scores', () => {

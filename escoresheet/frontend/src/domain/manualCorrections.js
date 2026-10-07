@@ -680,10 +680,11 @@ function isValidFinalScore(winnerPts, loserPts, setIndex) {
 /**
  * Correct the final score of a finished set by one point, at the END of the
  * set only (the Swiss course: missed points in the middle generally cannot be
- * fixed). +1 appends a point (with the side-out rotation and the automatic
- * libero exit at the front row) before the set end; -1 removes the team's last
- * point if it is the set's last point. Refused when the set winner would
- * change or the result is not a possible final score.
+ * fixed). +1 adds a point (with the side-out rotation and the automatic
+ * libero exit at the front row): for the loser just before the winning point
+ * (which becomes a side-out), otherwise at the end, before the set end; -1
+ * removes the team's last point if it is the set's last point. Refused when
+ * the set winner would change or the result is not a possible final score.
  */
 export function planAdjustFinalScore(events, sets, { setIndex, team, delta } = {}, ctx = {}) {
   const set = setNumber(setIndex, ctx)
@@ -714,43 +715,73 @@ export function planAdjustFinalScore(events, sets, { setIndex, team, delta } = {
     return finishPlan(plan, events, ctx, 'removePoint', last)
   }
 
+  // The set's last point is the winner's set point. A missed point of the
+  // LOSER was played before it: it goes in just before the winning point
+  // (25:20 -> 24:20, 24:21, 25:21), never after the set was already won.
   const tl = scoreTimeline(events, setIndex)
-  const ins = insertionAt(events, setIndex, tl.length - 1, tl)
-  if (!ins) return fail('noSuchScore', { set })
   const last = points[points.length - 1]
-  const server = last ? last.payload?.team : getFirstServeForSet(setIndex, ctx.match || {})
-  const point = newRow(ctx, { type: 'point', setIndex, seq: ins.seq, ts: ins.ts, payload: { team, score: { home: next.home, away: next.away } } })
+  const beforeWinning = team !== w && last && last.payload?.team === w && tl.length >= 2
+  const atIdx = beforeWinning ? tl.length - 2 : tl.length - 1
+  const ins = insertionAt(events, setIndex, atIdx, tl)
+  if (!ins) return fail('noSuchScore', { set })
+  const prevPoint = beforeWinning ? points[points.length - 2] : last
+  const server = prevPoint ? prevPoint.payload?.team : getFirstServeForSet(setIndex, ctx.match || {})
+  const at = entryScore(tl[atIdx])
+  const scoreAfter = { ...at, [team]: at[team] + 1 }
+  const point = newRow(ctx, { type: 'point', setIndex, seq: ins.seq, ts: ins.ts, payload: { team, score: scoreAfter } })
   plan.add = [point]
-  if (server !== team) {
-    const lu = lineupBefore(events, setIndex, team, ins.seq)
-    const lineup = lu?.payload?.lineup
-    if (lineup) {
-      const rotated = rotateLineup(lineup)
-      const ls = lu.payload?.liberoSubstitution
-      let rotatedLs = null
-      let exit = null
-      if (ls) {
-        const map = { I: 'VI', II: 'I', III: 'II', IV: 'III', V: 'IV', VI: 'V' }
-        const pos = map[ls.position]
-        if (FRONT_ROW.includes(pos)) {
-          rotated[pos] = typedLike(rotated[pos], ls.playerNumber)
-          exit = newRow(ctx, {
-            type: 'libero_exit', setIndex, seq: Math.round((ins.seq + 0.2) * 1000) / 1000, ts: ins.ts,
-            payload: { team, position: pos, liberoOut: ls.liberoNumber, playerIn: ls.playerNumber, liberoType: ls.liberoType, reason: 'rotation_to_front_row' }
-          })
-        } else if (pos) {
-          rotatedLs = { ...ls, position: pos }
-        }
-      }
-      plan.add.push(newRow(ctx, {
-        type: 'lineup', setIndex, seq: Math.round((ins.seq + 0.1) * 1000) / 1000, ts: ins.ts,
-        payload: { team, lineup: rotated, liberoSubstitution: rotatedLs }
-      }))
-      if (exit) plan.add.push(exit)
+  if (server !== team) plan.add.push(...rotationRows(events, setIndex, team, ins.seq, ins.ts, ctx))
+  const updates = new Map(renumberUpdates(ins).map(u => [u.id, u.changes]))
+
+  if (beforeWinning) {
+    // The winning point is now won against the serve of the team that just
+    // scored: it becomes a side-out with its rotation (if it was not one).
+    const winSeq = updates.get(last.id)?.seq ?? last.seq
+    updates.set(last.id, { ...(updates.get(last.id) || {}), payload: { ...last.payload, score: { ...next } } })
+    const hadRotation = (events || []).some(e => e.type === 'lineup' && baseOf(e) === baseOf(last) && e.seq !== last.seq && e.payload?.team === w)
+    if (!hadRotation) {
+      const subs = (events || []).filter(e => baseOf(e) === baseOf(last) && e.seq !== last.seq)
+      const maxSub = subs.reduce((m, e) => Math.max(m, Math.round(((e.seq || 0) - baseOf(e)) * 10)), 0)
+      // the rotation reads the winner's line-up before the winning point,
+      // which the inserted point (of the other team) does not change
+      plan.add.push(...rotationRows(events, setIndex, w, baseOf(last), last.ts, ctx, { base: Math.floor(winSeq), sub: maxSub + 1 }))
     }
   }
-  plan.update = renumberUpdates(ins)
+  plan.update = [...updates.entries()].map(([id, changes]) => ({ id, changes }))
   return finishPlan(plan, events, ctx, 'addPoint', point)
+}
+
+/**
+ * The side-out rotation a point writes for `team` (its line-up rotated, and
+ * the automatic libero exit when the libero would reach the front row), read
+ * from the line-up in force before base seq `seq`. The rows are numbered
+ * base.sub, base.(sub+1) — by default the new point's own seq.1 / seq.2.
+ */
+function rotationRows(events, setIndex, team, seq, ts, ctx, { base = seq, sub = 1 } = {}) {
+  const lu = lineupBefore(events, setIndex, team, seq)
+  const lineup = lu?.payload?.lineup
+  if (!lineup) return []
+  const rotated = rotateLineup(lineup)
+  const ls = lu.payload?.liberoSubstitution
+  let rotatedLs = null
+  let exit = null
+  const at = (k) => Math.round((base + k / 10) * 1000) / 1000
+  if (ls) {
+    const map = { I: 'VI', II: 'I', III: 'II', IV: 'III', V: 'IV', VI: 'V' }
+    const pos = map[ls.position]
+    if (FRONT_ROW.includes(pos)) {
+      rotated[pos] = typedLike(rotated[pos], ls.playerNumber)
+      exit = newRow(ctx, {
+        type: 'libero_exit', setIndex, seq: at(sub + 1), ts,
+        payload: { team, position: pos, liberoOut: ls.liberoNumber, playerIn: ls.playerNumber, liberoType: ls.liberoType, reason: 'rotation_to_front_row' }
+      })
+    } else if (pos) {
+      rotatedLs = { ...ls, position: pos }
+    }
+  }
+  const rows = [newRow(ctx, { type: 'lineup', setIndex, seq: at(sub), ts, payload: { team, lineup: rotated, liberoSubstitution: rotatedLs } })]
+  if (exit) rows.push(exit)
+  return rows
 }
 
 // ────────────────────────────── set times ─────────────────────────────
