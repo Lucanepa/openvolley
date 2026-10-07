@@ -2394,6 +2394,7 @@
       "from": "Du",
       "to": "Au",
       "search": "Chercher une équipe ou un numéro de match",
+      "searchButton": "Rechercher",
       "notClaimed": "Non attribué",
       "scoredBy": "Tenu par {{name}}",
       "unknownScorer": "Marqueur inconnu",

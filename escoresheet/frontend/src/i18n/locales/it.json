@@ -2400,6 +2400,7 @@
       "from": "Dal",
       "to": "Al",
       "search": "Cerca squadra o numero partita",
+      "searchButton": "Cerca",
       "notClaimed": "Non assegnata",
       "scoredBy": "Refertata da {{name}}",
       "unknownScorer": "Segnapunti sconosciuto",

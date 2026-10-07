@@ -2401,6 +2401,7 @@
       "from": "From",
       "to": "To",
       "search": "Search team or game number",
+      "searchButton": "Search",
       "notClaimed": "Not claimed",
       "scoredBy": "Scored by {{name}}",
       "unknownScorer": "Unknown scorer",

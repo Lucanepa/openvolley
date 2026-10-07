@@ -62,8 +62,7 @@ describe('backdrop click guard', () => {
     expect(findBareBackdropClicks(good)).toEqual([]);
   });
 
-  // Reads every source file: more than the 5 s default on a busy machine
   it('no overlay in src/ or scoresheet_pdf/ closes on a bare backdrop onClick', () => {
     expect(scan()).toEqual([]);
-  }, 30000);
+  }, 60_000); // scans every source file: slow when the machine is busy
 });
