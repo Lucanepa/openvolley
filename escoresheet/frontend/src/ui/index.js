@@ -191,6 +191,7 @@ export {
   OptionsSheet,
   OptionsRow,
 } from './Modal.jsx';
+export { backdropDismiss } from './backdropDismiss.js';
 export {
   subscribeConfirm,
   getConfirmSnapshot,

@@ -11,6 +11,7 @@ import {
   MENU_SUBROW, MENU_ROW_ON, MENU_ROW_DANGER, MENU_NEST, MENU_SEP, MENU_ICON, toastLang
 } from './chromeClasses'
 import HeaderMenuItem from './HeaderMenuItem'
+import { backdropDismiss } from '../ui/backdropDismiss.js'
 
 // Flag SVG components for language selector
 const FlagGB = () => (
@@ -255,7 +256,7 @@ export default function DashboardHeader({
         <>
           {/* Backdrop */}
           <div
-            onClick={() => setMenuOpen(false)}
+            {...backdropDismiss(() => setMenuOpen(false))}
             className="fixed inset-0"
             style={{ zIndex: 998 }}
           />

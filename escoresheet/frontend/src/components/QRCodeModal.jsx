@@ -5,6 +5,7 @@ import { copyToClipboard } from '../utils/networkInfo'
 import { matchTeamNames } from '../utils/serverDataSync'
 import { useState } from 'react'
 import { cn, FOCUS_RING } from '../ui'
+import { backdropDismiss } from '../ui/backdropDismiss.js'
 
 const ROLE_LABELS = {
   referee: 'Referee dashboard',
@@ -132,7 +133,7 @@ export default function QRCodeModal({ role, match, matchSeedKey, onClose }) {
     <div
       className="ov-kit fixed inset-0 flex flex-col items-center justify-center bg-stone-900/60 p-6 backdrop-blur-sm"
       style={{ zIndex: 2000, pointerEvents: 'auto' }}
-      onClick={(e) => { e.stopPropagation(); onClose() }}
+      {...backdropDismiss(onClose, { stopPropagation: true })}
     >
       <div
         role="dialog"

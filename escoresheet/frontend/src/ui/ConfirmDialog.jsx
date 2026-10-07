@@ -10,6 +10,7 @@ import { getConfirmSnapshot, settleConfirm, subscribeConfirm } from './uiStore.j
 import { CONFIRM_ACCEPT } from './tones.js';
 import { FOCUS_RING } from './Button.jsx';
 import { Input } from './Input.jsx';
+import { backdropDismiss } from './backdropDismiss.js';
 
 // Everything a Tab can land on. The message is a ReactNode, so it may well
 // contain a link — trapping only the two buttons would skip it.
@@ -22,11 +23,10 @@ export function ConfirmDialog() {
   const acceptRef = useRef(null);
   const inputRef = useRef(null);
   const [text, setText] = useState('');
-  // Backdrop dismissal needs two guards: `pressedBackdrop` demands the press
-  // START on the backdrop (a text selection dragged out of the panel does not
-  // answer "no"); `openedAtRef` ignores the backdrop for 400ms after opening,
-  // so the second click of a double-click on the opener cannot cancel.
-  const pressedBackdrop = useRef(false);
+  // Backdrop dismissal needs two guards: backdropDismiss() demands the press
+  // START and END on the backdrop (a text selection dragged out of the panel
+  // does not answer "no"); `openedAtRef` ignores the backdrop for 400ms after
+  // opening, so the second click of a double-click on the opener cannot cancel.
   const openedAtRef = useRef(0);
   const baseId = useId();
   const titleId = `${baseId}-title`;
@@ -63,7 +63,7 @@ export function ConfirmDialog() {
     else acceptRef.current?.focus();
   }, [open, id, asksText]);
 
-  useEffect(() => { if (open) { openedAtRef.current = Date.now(); pressedBackdrop.current = false; } }, [open, id]);
+  useEffect(() => { if (open) { openedAtRef.current = Date.now(); } }, [open, id]);
 
   useEffect(() => {
     if (!open) return;
@@ -105,12 +105,10 @@ export function ConfirmDialog() {
   return (
     <div
       className="fixed inset-0 bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 no-print"
-      onMouseDown={(e) => { pressedBackdrop.current = e.target === e.currentTarget; }}
-      onClick={(e) => {
-        if (e.target !== e.currentTarget || !pressedBackdrop.current) return;
+      {...backdropDismiss(() => {
         if (Date.now() - openedAtRef.current < 400) return;
         settleConfirm(entry.id, false);
-      }}
+      })}
     >
       <div
         ref={panelRef}

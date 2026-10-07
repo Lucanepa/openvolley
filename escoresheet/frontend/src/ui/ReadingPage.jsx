@@ -44,11 +44,13 @@ export function FormPage({ width = 'xl', className, children }) {
  *   text-stone-400 hover:text-stone-600` (AuthGate.tsx:460-466).
  * @param {React.ReactNode} [props.footer]   line under the card (AdminConsole.tsx:1185).
  * @param {boolean} [props.brandBar=true]    the 4px brand gradient on top.
+ * @param {'sm'|'md'} [props.width='sm']     'md' for a longer public form
+ *   (sign-up): the standalone `md` cap (shell.md).
  */
-export function GateScreen({ logo, eyebrow, corner, footer, brandBar = true, className, children }) {
+export function GateScreen({ logo, eyebrow, corner, footer, brandBar = true, width = 'sm', className, children }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
+      <div className={cn('w-full', width === 'md' ? 'max-w-md' : 'max-w-sm')}>
         <div className={cn('relative overflow-hidden bg-white rounded-3xl shadow-card-lg border border-stone-200/70 p-8', className)}>
           {brandBar && <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 to-red-500" />}
           {corner && <div className="absolute right-4 top-4">{corner}</div>}
