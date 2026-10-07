@@ -3,6 +3,7 @@ import {
   parseColour, normaliseColour, relativeLuminance, contrastRatio, colourDistance,
   readableTextOn, readableText, discRing, liberoColour, liberoScore, teamLiberoColour,
   discPaint, teamDiscPaint, markColourOn, apcaContrast, liberoPair, matchDiscPaint, teamBoxStyle,
+  teamTextPaint, teamTextStyle, toOklab,
   LIBERO_CLASH_DISTANCE, HEADER_SURFACE, TEXT_DARK, TEXT_LIGHT, COURT_SURFACE, LIBERO_PALETTE, MIN_TEXT_CONTRAST, MIN_EDGE_CONTRAST, MIN_LARGE_TEXT_CONTRAST
 } from '../teamColours'
 
@@ -314,6 +315,106 @@ describe('teamBoxStyle', () => {
     expect(teamBoxStyle(null, { fallback: '#3b82f6' }).background).toBe('#3b82f6')
     expect(teamBoxStyle('var(--accent)')).toEqual({ background: 'var(--accent)', color: TEXT_LIGHT })
     expect(teamBoxStyle(null)).toEqual({})
+  })
+})
+
+// OKLab hue angle and chroma, to check a shade keeps the team's hue
+const hueOf = (c) => { const o = toOklab(c); return Math.atan2(o.b, o.a) * 180 / Math.PI }
+const chromaOf = (c) => { const o = toOklab(c); return Math.hypot(o.a, o.b) }
+const hueGap = (x, y) => { const d = Math.abs(hueOf(x) - hueOf(y)) % 360; return d > 180 ? 360 - d : d }
+
+describe('teamTextPaint / teamTextStyle', () => {
+  it('keeps a team colour that already reads on white unchanged', () => {
+    for (const c of ['#e2001a', '#ef4444', '#3b82f6', '#1d4ed8', '#16a34a', '#1c1917', '#7c3aed', '#ec4899']) {
+      const p = teamTextPaint(c)
+      expect(p.mode, c).toBe('as-is')
+      expect(p.color, c).toBe(c)
+      expect(teamTextStyle(c), c).toEqual({ color: c })
+    }
+  })
+
+  it('red vs blue on white: both unchanged', () => {
+    expect(teamTextStyle('#ef4444')).toEqual({ color: '#ef4444' })
+    expect(teamTextStyle('#3b82f6')).toEqual({ color: '#3b82f6' })
+  })
+
+  it('darkens yellow, sky, light grey and other light colours to 3:1, same hue', () => {
+    for (const c of ['#ffff00', '#facc15', '#eab308', '#38bdf8', '#87ceeb', '#00ffff', '#4ade80', '#f97316', '#ffc0cb', '#d3d3d3', '#c0c0c0']) {
+      const p = teamTextPaint(c)
+      expect(p.mode, c).toBe('shade')
+      const ratio = contrastRatio(p.color, HEADER_SURFACE)
+      expect(ratio, c).toBeGreaterThanOrEqual(MIN_LARGE_TEXT_CONTRAST)
+      // just enough, not a jump to near-black
+      expect(ratio, c).toBeLessThan(MIN_LARGE_TEXT_CONTRAST + 0.15)
+      expect(toOklab(p.color).L, c).toBeLessThan(toOklab(c).L)
+      if (chromaOf(c) > 0.05) {
+        expect(hueGap(p.color, c), c).toBeLessThan(4)
+        expect(chromaOf(p.color), c).toBeGreaterThan(0.05)
+      } else {
+        expect(chromaOf(p.color), c).toBeLessThan(0.02) // a grey stays grey
+      }
+      expect(teamTextStyle(c), c).toEqual({ color: p.color })
+    }
+  })
+
+  it('turns yellow into an ochre, sky into a deeper sky, light grey into mid grey', () => {
+    const yellow = teamTextPaint('#facc15').color
+    expect(hueGap(yellow, '#facc15')).toBeLessThan(2)
+    expect(colourDistance(yellow, '#facc15')).toBeLessThan(colourDistance(yellow, '#1c1917'))
+    const sky = teamTextPaint('#38bdf8').color
+    expect(hueGap(sky, '#38bdf8')).toBeLessThan(2)
+    expect(teamTextPaint('#d3d3d3').color).toMatch(/^#9[0-9a-f]{5}$/)
+  })
+
+  it('a white or near-white team: near-black text on a white chip with a ring', () => {
+    for (const c of ['#ffffff', '#fafaf9', '#fffdd0', 'white']) {
+      const p = teamTextPaint(c)
+      expect(p.mode, c).toBe('swatch')
+      expect(p.color, c).toBe(TEXT_DARK)
+      expect(p.swatch, c).toBe(normaliseColour(c))
+      expect(p.ring, c).toBe(discRing(c, HEADER_SURFACE))
+      expect(contrastRatio(p.ring, HEADER_SURFACE), c).toBeGreaterThanOrEqual(MIN_EDGE_CONTRAST)
+      const st = teamTextStyle(c)
+      expect(st.color, c).toBe(TEXT_DARK)
+      expect(st.background, c).toBe(normaliseColour(c))
+      expect(st.boxShadow, c).toBe(`inset 0 0 0 1.5px ${p.ring}`)
+      expect(st.padding).toBeTruthy()
+    }
+  })
+
+  it('white vs black on white: the white team gets the chip, black stays black', () => {
+    expect(teamTextStyle('#ffffff').background).toBe('#ffffff')
+    expect(teamTextStyle('#000000')).toEqual({ color: '#000000' })
+  })
+
+  it('measures against the background it is given', () => {
+    // on the stone page a light grey needs a slightly darker shade than on white
+    const onPage = teamTextPaint('#d3d3d3', '#f5f5f4').color
+    expect(contrastRatio(onPage, '#f5f5f4')).toBeGreaterThanOrEqual(MIN_LARGE_TEXT_CONTRAST)
+    // on a dark background a light colour reads as is, a dark one is lightened
+    expect(teamTextPaint('#ffffff', TEXT_DARK).mode).toBe('as-is')
+    const blue = teamTextPaint('#1d4ed8', TEXT_DARK)
+    expect(blue.mode).toBe('shade')
+    expect(toOklab(blue.color).L).toBeGreaterThan(toOklab('#1d4ed8').L)
+    expect(contrastRatio(blue.color, TEXT_DARK)).toBeGreaterThanOrEqual(MIN_LARGE_TEXT_CONTRAST)
+    expect(teamTextPaint('#000000', TEXT_DARK).mode).toBe('swatch')
+    // an unreadable background counts as white
+    expect(teamTextPaint('#ffffff', 'var(--panel)').mode).toBe('swatch')
+  })
+
+  it('honours a stricter minimum', () => {
+    const p = teamTextPaint('#3b82f6', HEADER_SURFACE, { minContrast: MIN_TEXT_CONTRAST })
+    expect(p.mode).toBe('shade')
+    expect(contrastRatio(p.color, HEADER_SURFACE)).toBeGreaterThanOrEqual(MIN_TEXT_CONTRAST)
+  })
+
+  it('falls back, passes CSS variables through, and returns no style without a colour', () => {
+    expect(teamTextPaint(null)).toBeNull()
+    expect(teamTextPaint('var(--x)')).toBeNull()
+    expect(teamTextStyle('var(--accent)')).toEqual({ color: 'var(--accent)' })
+    expect(teamTextStyle(null)).toEqual({})
+    expect(teamTextStyle('', HEADER_SURFACE, { fallback: '#ef4444' })).toEqual({ color: '#ef4444' })
+    expect(teamTextStyle(null, HEADER_SURFACE, { fallback: '#ffff00' }).color).toBe(teamTextPaint('#ffff00').color)
   })
 })
 

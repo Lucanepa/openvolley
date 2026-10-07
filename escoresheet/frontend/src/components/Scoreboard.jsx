@@ -23,7 +23,7 @@ import ballFallback from '../ball_fallback.png'
 // Primary ball image (with a bundled copy as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
-import { discPaint, matchDiscPaint, teamLiberoColour, markColourOn, teamBoxStyle } from '../utils/teamColours'
+import { discPaint, matchDiscPaint, teamLiberoColour, markColourOn, teamBoxStyle, teamTextStyle, HEADER_SURFACE, PAGE_SURFACE } from '../utils/teamColours'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom } from '../lib/apiClient'
 import { relayMatchKey, relayMatchPayload } from '../utils/serverDataSync'
@@ -13819,11 +13819,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   fontSize: '16px',
                   fontWeight: 700
                 }}>
-                  <span style={{ color: leftTeam?.color || '#ef4444' }}>
+                  <span style={teamTextStyle(leftTeam?.color || '#ef4444', HEADER_SURFACE)}>
                     {setsWon.left}
                   </span>
                   <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{t('scoreboard.labels.sets')}</span>
-                  <span style={{ color: rightTeam?.color || '#3b82f6' }}>
+                  <span style={teamTextStyle(rightTeam?.color || '#3b82f6', HEADER_SURFACE)}>
                     {setsWon.right}
                   </span>
                 </div>
@@ -14119,7 +14119,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   <span style={{
                     fontSize: '48px',
                     fontWeight: 700,
-                    color: leftTeam?.color || '#ef4444'
+                    ...teamTextStyle(leftTeam?.color || '#ef4444', PAGE_SURFACE)
                   }}>
                     {leftIsHome ? (data?.set?.homePoints || 0) : (data?.set?.awayPoints || 0)}
                   </span>
@@ -14127,7 +14127,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   <span style={{
                     fontSize: '48px',
                     fontWeight: 700,
-                    color: rightTeam?.color || '#3b82f6'
+                    ...teamTextStyle(rightTeam?.color || '#3b82f6', PAGE_SURFACE)
                   }}>
                     {leftIsHome ? (data?.set?.awayPoints || 0) : (data?.set?.homePoints || 0)}
                   </span>
@@ -26965,8 +26965,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           isMatchEnd={setEndTimeModal.isMatchEnd}
           homeTeamName={data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home')}
           awayTeamName={data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away')}
-          homeColor={data?.match?.homeColor || '#ef4444'}
-          awayColor={data?.match?.awayColor || '#3b82f6'}
+          // The team record's colour first, like the header boxes and the
+          // discs: Manual Adjustments edits only the team, so match.homeColor
+          // can be stale (or missing on an imported match)
+          homeColor={data?.homeTeam?.color || data?.match?.homeColor || '#ef4444'}
+          awayColor={data?.awayTeam?.color || data?.match?.awayColor || '#3b82f6'}
           onConfirm={confirmSetEndTime}
           onDecisionChange={async () => {
             // Track that user dismissed via undo to prevent re-showing
@@ -29401,9 +29404,11 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
     >
       <div style={{ padding: '4px 0', textAlign: 'center' }}>
         <div className="set-end-readout" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-          <span style={{ fontSize: '18px', fontWeight: 700, color: leftColor }}>{leftLabel}</span>
+          {/* Team letters in the team colour, darkened until they read on the
+              white modal (a white team gets a ringed white chip): teamTextStyle */}
+          <span style={{ fontSize: '18px', fontWeight: 700, ...teamTextStyle(leftColor, HEADER_SURFACE) }}>{leftLabel}</span>
           <span style={{ fontSize: '36px', fontWeight: 700 }}>{leftScore} : {rightScore}</span>
-          <span style={{ fontSize: '18px', fontWeight: 700, color: rightColor }}>{rightLabel}</span>
+          <span style={{ fontSize: '18px', fontWeight: 700, ...teamTextStyle(rightColor, HEADER_SURFACE) }}>{rightLabel}</span>
         </div>
         <p className="set-end-readout" style={{
           marginBottom: '24px',
