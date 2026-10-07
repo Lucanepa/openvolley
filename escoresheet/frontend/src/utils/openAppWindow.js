@@ -209,10 +209,12 @@ export function showInAppView(href, { title, win = window } = {}) {
   }, { type: 'button', 'data-testid': 'app-window-back' })
   back.textContent = `← ${t('common.back', 'Back')}`
   const heading = el(doc, 'div', { fontSize: '15px', fontWeight: '600', flex: '1 1 auto', minWidth: '0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })
-  const status = el(doc, 'div', { fontSize: '13px', color: '#57534e', flex: '0 1 auto', minWidth: '0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, { role: 'status', 'aria-live': 'polite', 'data-testid': 'app-window-status' })
+  // where the PDF went: the whole path, wrapping (never cut off), and Open / Share
+  const status = el(doc, 'div', { fontSize: '13px', color: '#57534e', flex: '0 1 auto', minWidth: '0', overflowWrap: 'anywhere', whiteSpace: 'normal', lineHeight: '1.3', padding: '4px 0' }, { role: 'status', 'aria-live': 'polite', 'data-testid': 'app-window-status' })
+  const actions = el(doc, 'div', { display: 'none', flex: '0 0 auto', gap: '8px', alignItems: 'center' }, { 'data-testid': 'app-window-actions' })
   const frame = el(doc, 'iframe', { flex: '1 1 auto', width: '100%', border: '0', background: '#ffffff' }, { [APP_VIEW_ATTR]: '', title: title || 'OpenVolley' })
   frame.src = href
-  bar.append(back, heading, status)
+  bar.append(back, heading, status, actions)
   root.append(bar, frame)
 
   const setTitle = (text) => { heading.textContent = text || '' }
@@ -227,7 +229,7 @@ export function showInAppView(href, { title, win = window } = {}) {
     if (event.source !== frame.contentWindow || event.origin !== win.location.origin) return
     const type = event.data?.type
     if (type === MSG_CLOSE) close()
-    else if (type === MSG_SAVE_PDF) savePdf(event.data, status)
+    else if (type === MSG_SAVE_PDF) savePdf(event.data, status, actions, win)
     else if (type === MSG_OPEN && typeof event.data.href === 'string') {
       // openOn checks the URL again (same origin, or http(s) / mailto only)
       openAppWindow(event.data.href, { title: typeof event.data.title === 'string' ? event.data.title : undefined, win })
@@ -284,21 +286,48 @@ const toBase64 = (arrayBuffer) => {
 
 const safeName = (name) => String(name || 'scoresheet.pdf').replace(/[\\/:*?"<>|\0]/g, '_').slice(0, 120)
 
+/** `name`, else `name (1).pdf`, `(2)` ...: an earlier PDF is never overwritten (like the desktop app). */
+export async function freePdfName(Filesystem, directory, name) {
+  const dot = name.lastIndexOf('.')
+  const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, '']
+  for (let n = 0; n < 1000; n++) {
+    const candidate = n === 0 ? name : `${stem} (${n})${ext}`
+    try {
+      if (typeof Filesystem.stat !== 'function') return candidate
+      await Filesystem.stat({ path: `${PDF_SUBDIR}/${candidate}`, directory })
+    } catch {
+      return candidate // not there: free
+    }
+  }
+  return `${stem} (${Date.now()})${ext}`
+}
+
+/** The absolute path of a file:// URI (what the user finds in a file manager), else `fallback`. */
+export function absolutePathOf(uri, fallback) {
+  if (typeof uri !== 'string' || !uri.startsWith('file://')) return fallback
+  const path = uri.slice('file://'.length)
+  try { return decodeURIComponent(path) } catch { return path }
+}
+
 /**
  * Writes a PDF with @capacitor/filesystem. Documents first (user-visible),
- * then the app's external folder. Returns the path shown to the user.
+ * then the app's external folder, under a free name. Returns the path shown to
+ * the user (`fullPath`: absolute, e.g. /storage/emulated/0/Documents/OpenVolley/
+ * scoresheets/x.pdf) and the file's URI (for Open / Share).
  * @param {{ Filesystem, Directory }} fs the plugin module
  */
 export async function writePdfNative(fs, arrayBuffer, filename) {
   const { Filesystem, Directory } = fs
-  const name = safeName(filename)
+  const wanted = safeName(filename)
   const data = toBase64(arrayBuffer)
   let lastError = null
   for (const [directory, label] of [[Directory.Documents, 'Documents'], [Directory.External, 'Android/data/com.openvolley.escoresheet/files']]) {
     if (!directory) continue
     try {
+      const name = await freePdfName(Filesystem, directory, wanted)
       const res = await Filesystem.writeFile({ path: `${PDF_SUBDIR}/${name}`, data, directory, recursive: true })
-      return { path: `${label}/${PDF_SUBDIR}/${name}`, uri: res?.uri }
+      const path = `${label}/${PDF_SUBDIR}/${name}`
+      return { path, fullPath: absolutePathOf(res?.uri, path), uri: res?.uri, name }
     } catch (e) {
       lastError = e
     }
@@ -306,12 +335,56 @@ export async function writePdfNative(fs, arrayBuffer, filename) {
   throw lastError || new Error('no writable folder')
 }
 
-async function savePdf({ arrayBuffer, filename }, status) {
+/**
+ * The app's own "open / share a saved scoresheet" plugin (android/.../
+ * ScoresheetFilesPlugin.java: Android intents through the app's FileProvider,
+ * no new dependency), or null outside the Android app.
+ */
+async function filesPlugin(win) {
+  try {
+    if (!win.Capacitor?.isNativePlatform?.()) return null
+    let register = win.Capacitor?.registerPlugin
+    if (typeof register !== 'function') register = (await import('@capacitor/core')).registerPlugin
+    return register('OpenVolleyFiles')
+  } catch {
+    return null
+  }
+}
+
+function actionButton(doc, text, onClick) {
+  const b = el(doc, 'button', {
+    height: '36px', padding: '0 12px', border: '1px solid #d6d3d1', borderRadius: '10px',
+    background: '#ffffff', color: '#1c1917', fontSize: '14px', fontWeight: '600', cursor: 'pointer'
+  }, { type: 'button' })
+  b.textContent = text
+  b.addEventListener('click', onClick)
+  return b
+}
+
+async function savePdf({ arrayBuffer, filename }, status, actions, win = window) {
   status.textContent = t('appWindow.savingPdf', 'Saving the PDF...')
+  if (actions) { actions.replaceChildren(); actions.style.display = 'none' }
   try {
     const fs = await import('@capacitor/filesystem')
-    const { path } = await writePdfNative(fs, arrayBuffer, filename)
-    status.textContent = t('appWindow.pdfSaved', `PDF saved to ${path}`, { path })
+    const { fullPath, uri } = await writePdfNative(fs, arrayBuffer, filename)
+    status.textContent = t('appWindow.pdfSaved', `PDF saved to ${fullPath}`, { path: fullPath })
+    const plugin = actions && uri ? await filesPlugin(win) : null
+    if (plugin) {
+      const run = (method) => async () => {
+        try {
+          await plugin[method]({ uri })
+        } catch (e) {
+          const error = e?.message || String(e)
+          status.textContent = `${t('appWindow.pdfSaved', `PDF saved to ${fullPath}`, { path: fullPath })} - ${t('appWindow.pdfActionFailed', `It could not be opened: ${error}`, { error })}`
+        }
+      }
+      const doc = actions.ownerDocument
+      actions.append(
+        actionButton(doc, t('appWindow.openPdf', 'Open'), run('open')),
+        actionButton(doc, t('appWindow.sharePdf', 'Share'), run('share'))
+      )
+      actions.style.display = 'flex'
+    }
   } catch (e) {
     const error = e?.message || String(e)
     status.textContent = t('appWindow.pdfSaveFailed', `The PDF could not be saved: ${error}`, { error })
