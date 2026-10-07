@@ -9,6 +9,7 @@ import OfficialGamesPanel from './OfficialGamesPanel'
 import ClosedMatchesPanel from './ClosedMatchesPanel'
 import AuditPanel from './AuditPanel'
 import SavedTeamsPanel from './SavedTeamsPanel'
+import { BRAND } from '../../brand'
 
 const TABS = [
   { id: 'accounts', icon: Users, admin: true },
@@ -65,7 +66,7 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions }) {
   return (
     <div className="ov-kit fixed inset-0 z-[900] overflow-y-auto bg-stone-100" data-testid="manage-console">
       <ConsoleShell
-        logo={<img src={`${import.meta.env.BASE_URL}openvolley_no_bg.png`} alt="OpenVolley" className="h-7 w-auto" />}
+        logo={<img src={BRAND.lockup} alt="OpenVolley" className="h-7 w-auto" />}
         eyebrow={t('manage.title')}
         actions={<>
           {headerActions}
