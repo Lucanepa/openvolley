@@ -1,6 +1,20 @@
 # Sign on phone (QR signing): implementation spec
 
-Status: proposed, waiting for the owner. Branch `feat/qr-signing`, from `main` (66b43636). This
+Status: implemented on `feat/qr-signing` (not pushed, not deployed), with D1–D8 as proposed below,
+for the owner to confirm. What differs from this spec:
+
+- No migration: sessions are in memory (D4), so `db/` is unchanged.
+- The phone page is about 23 KB, not 15 KB. Most of it is the five-language string table.
+- The 45 s hall hint shows its "Show network options" link only where a screen passes
+  `phone.onOpenConnectTablets`. No screen does yet, so today it is the hint text alone.
+- The hall address is not read from Connect tablets, which never stored it. The panel takes the
+  first hall address and offers a switch when there are several. `lanMode` (hall or laptop) is
+  read from `ov_connect_tablets_view`.
+- A page on a cloud domain whose backend override is a LAN relay (`isLanBackendUrl`) is not
+  offered the LAN way. Only a page served by the relay is.
+- The manual checks of 8.6 (a real hall, the Android emulator, a mixed PDF) are still to do.
+
+Branch `feat/qr-signing`, from `main` (66b43636). This
 document is the contract between four parts that can be built in parallel: the cloud backend
 (`escoresheet/backend/**`), the Node LAN relays (`frontend/electron/lanRelayCore.cjs` and its
 users), the Rust relay (`frontend/src-tauri/src/relay.rs`) and the app UI
