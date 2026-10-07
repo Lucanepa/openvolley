@@ -4,6 +4,7 @@ import { useAlert } from '../contexts/AlertContext'
 import { useLiveQuery } from 'dexie-react-hooks'
 import Dexie from 'dexie'
 import { db } from '../db/db'
+import { queueMatchUpdate } from '../db/matchRepository'
 import { withActivityContext, currentActivityContext, maxVoidedSeq } from '../db/eventHistory'
 import { randomUuid } from '../utils/deviceId'
 import Modal from './Modal'
@@ -3998,26 +3999,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         console.error('[ManualChange] IndexedDB error:', err)
       })
 
-      // Sync to Supabase
-      if (data.match?.seed_key) {
-        console.log('[ManualChange] Syncing to Supabase:', { seed_key: data.match.seed_key, changes: updatedChanges })
-        apiFrom('matches')
-          .update({ manual_changes: updatedChanges })
-          .eq('external_id', data.match.seed_key)
-          .then((result) => {
-            // The proxy does not return written rows; only an error is meaningful.
-            if (result.error) {
-              console.warn('[ManualChange] Supabase update failed:', result.error)
-            } else {
-              console.log('[ManualChange] Synced manual_changes to Supabase:', data.match.seed_key)
-            }
-          })
-          .catch((err) => {
-            console.error('[ManualChange] Supabase error:', err)
-          })
-      } else {
-        console.log('[ManualChange] No Supabase sync:', { seed_key: data.match?.seed_key })
-      }
+      // To the cloud through the sync queue (kept while offline, retried)
+      queueMatchUpdate(db, data.match?.seed_key, { manual_changes: updatedChanges }, { test: data.match?.test === true }).catch((err) => {
+        console.warn('[ManualChange] Could not queue the cloud update:', err?.message)
+      })
     } else {
       console.log('[ManualChange] No match data:', { matchId, hasMatch: !!data?.match })
     }
