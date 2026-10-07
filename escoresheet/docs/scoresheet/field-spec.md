@@ -681,4 +681,11 @@ These override the paper conventions above wherever they differ. The audit must 
    them from the match row on every render: the captain / coach boxes of each roster, "CAPTAIN
    SIGNATURE A/B" and the officials' column, identical in the live preview and the PDF.
    Signatures made on a phone (QR signing) land in the same fields through the same handlers.
+4. **Automatic remarks in the sheet's convention.** Owner: the bench-injury remark read "Time
+   14h28m" (and that was UTC). The remarks the scoreboard writes (bench injury, injury and
+   exceptional substitution, libero unable / re-designated) now read
+   `Set 3, 14:28, B 15:5, #4 injured (bench)`: the set as printed, the local time `HH:MM`, the
+   team and the score with the concerned team first, then what happened
+   (`domain/remarks.js eventRemark`). The manual-edit and roster-change remarks use the same
+   local `HH:MM`.
 
