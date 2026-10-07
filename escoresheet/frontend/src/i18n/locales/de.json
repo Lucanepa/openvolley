@@ -849,6 +849,7 @@
       "hide": "Werkzeugleiste ausblenden",
       "show": "Werkzeugleiste einblenden"
     },
+    "confirmFailed": "Das wurde nicht gespeichert. Bitte das Matchblatt prüfen und erneut versuchen.",
     "timeoutRequest": {
       "title": "Timeout — {{team}}",
       "first": "Timeout 1 von 2 in diesem Satz für {{team}}.",

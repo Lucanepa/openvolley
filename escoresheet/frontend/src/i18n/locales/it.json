@@ -856,6 +856,7 @@
       "hide": "Nascondi barra degli strumenti",
       "show": "Mostra barra degli strumenti"
     },
+    "confirmFailed": "Non è stato salvato. Controlla il referto e riprova.",
     "timeoutRequest": {
       "title": "Timeout — {{team}}",
       "first": "Timeout 1 di 2 in questo set per {{team}}.",

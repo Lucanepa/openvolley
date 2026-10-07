@@ -451,7 +451,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [liberoBenchActionMenu, setLiberoBenchActionMenu] = useState(null) // { team: 'home'|'away', liberoNumber: number, liberoType: string, element: HTMLElement, x: number, y: number } | null
   const [captainOnCourtModal, setCaptainOnCourtModal] = useState(null) // { team: 'home'|'away' } | null
   const [reopenSetConfirm, setReopenSetConfirm] = useState(null) // { setId: number, setIndex: number } | null
-  const runReopenSet = useConfirmAction()
+  // Confirmation dialogs close before they write (useConfirmAction), so a write
+  // that fails must say so: the dialog is no longer there to show it
+  const onConfirmFailed = useCallback((err) => {
+    console.error('[confirm] action failed after its dialog closed', err)
+    showAlert(t('scoreboard.confirmFailed'), 'error')
+  }, [showAlert, t])
+  const runReopenSet = useConfirmAction(onConfirmFailed)
   const [setStartTimeModal, setSetStartTimeModal] = useState(null) // { setIndex: number, defaultTime: string } | null
   const [setEndTimeModal, setSetEndTimeModal] = useState(null) // { setIndex: number, winner: string, homePoints: number, awayPoints: number, defaultTime: string } | null
   const [set5SideServiceModal, setSet5SideServiceModal] = useState(null) // { setIndex: number, set4LeftTeamLabel: string, set4RightTeamLabel: string, set4ServingTeamLabel: string } | null - shown after set 4 ends
@@ -5521,7 +5527,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [data?.match, rallyStatus, leftIsHome, openTeamSanctionConfirm])
 
   // Confirm sanction: snapshot, close, then write (useConfirmAction)
-  const runSanctionConfirm = useConfirmAction()
+  const runSanctionConfirm = useConfirmAction(onConfirmFailed)
   const confirmSanction = useCallback(() => runSanctionConfirm(async () => {
     if (!sanctionConfirm || !data?.match || !data?.set) return
 
@@ -6256,7 +6262,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [setEndTimeModal, data?.match, data?.set, data?.events, matchId, logEvent, onFinishSet, getCurrentServe, teamAKey, onTriggerEventBackup, syncSetEnd, resetSyncState, setIntervalDuration, showAlert, t, syncSet5Setup])
 
   // Confirm set 5 side and service choices (works with both modal and inline UI)
-  const runSet5SideService = useConfirmAction()
+  const runSet5SideService = useConfirmAction(onConfirmFailed)
   const confirmSet5SideService = useCallback((leftTeam, firstServe, inlineMode = false) => runSet5SideService(async () => {
     // For inline mode, we don't need the modal - just verify we have match data and it's set 5
     if (!inlineMode && !set5SideServiceModal) return
@@ -6872,7 +6878,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return plan
   }, [matchId, discardEvents])
 
-  const runUndoConfirm = useConfirmAction()
+  const runUndoConfirm = useConfirmAction(onConfirmFailed)
   const handleUndo = useCallback(() => runUndoConfirm(async () => {
     cLogger.logHandler('handleUndo', { hasUndoConfirm: !!undoConfirm, eventType: undoConfirm?.event?.type })
     if (!undoConfirm || !data?.set) {
@@ -7196,7 +7202,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [])
 
   // Handle decision change - either swap point to other team or replay rally
-  const runDecisionChange = useConfirmAction()
+  const runDecisionChange = useConfirmAction(onConfirmFailed)
   const handleDecisionChange = useCallback(() => runDecisionChange(async () => {
     if (!replayRallyConfirm || !data?.set) {
       setReplayRallyConfirm(null)
@@ -7472,7 +7478,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   )
 
   // Confirm time-out: snapshot, close (start the countdown), then write.
-  const runTimeoutConfirm = useConfirmAction()
+  const runTimeoutConfirm = useConfirmAction(onConfirmFailed)
   const confirmTimeout = useCallback(() => runTimeoutConfirm(async () => {
     const request = timeoutModal
     if (!request || request.started) return
@@ -9990,7 +9996,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [exceptionalSubstitutionModal, getAvailableExceptionalSubstitutes, handleForfait, getForfaitScope])
 
   // Confirm substitution
-  const runSubstitutionConfirm = useConfirmAction()
+  const runSubstitutionConfirm = useConfirmAction(onConfirmFailed)
   const confirmSubstitution = useCallback(() => runSubstitutionConfirm(async () => {
     if (!substitutionConfirm || !data?.set) return
     // Close first, then write (useConfirmAction): the dialog's "5th/6th
@@ -10532,7 +10538,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [data?.events])
 
   // Confirm player sanction
-  const runPlayerSanctionConfirm = useConfirmAction()
+  const runPlayerSanctionConfirm = useConfirmAction(onConfirmFailed)
   const confirmPlayerSanction = useCallback(() => runPlayerSanctionConfirm(async () => {
     if (!sanctionConfirmModal || !data?.set) return
 
@@ -10899,7 +10905,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Handle sanction substitution when bench player (libero replacement) is expelled/disqualified
   // Per FIVB Casebook: libero stays on court, the expelled bench player is replaced by a substitute
-  const runSanctionSubstitution = useConfirmAction()
+  const runSanctionSubstitution = useConfirmAction(onConfirmFailed)
   const handleSanctionSubstitution = useCallback((substituteNumber) => runSanctionSubstitution(async () => {
     if (!sanctionSubstitutionModal) return
 
@@ -11198,7 +11204,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [liberoInDropdown, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, getNextSeq, isLiberoUnable])
 
   // Confirm libero entry
-  const runLiberoConfirm = useConfirmAction()
+  const runLiberoConfirm = useConfirmAction(onConfirmFailed)
   const confirmLibero = useCallback(() => runLiberoConfirm(async () => {
     if (!liberoConfirm || !data?.set) return
     // Close first, then write (useConfirmAction); every path below works from
@@ -11496,7 +11502,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [])
 
   // Handle libero reentry (when opposite player is in position I and not serving)
-  const runLiberoReentryConfirm = useConfirmAction()
+  const runLiberoReentryConfirm = useConfirmAction(onConfirmFailed)
   const confirmLiberoReentry = useCallback(() => runLiberoReentryConfirm(async () => {
     if (!liberoReentryModal || !data?.set) return
     // Close first, then write (useConfirmAction)
@@ -11794,7 +11800,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, data?.match, matchId, logEvent, data?.homePlayers, data?.awayPlayers])
 
   // Handle libero re-designation
-  const runLiberoRedesignation = useConfirmAction()
+  const runLiberoRedesignation = useConfirmAction(onConfirmFailed)
   const confirmLiberoRedesignation = useCallback((newLiberoNumber) => runLiberoRedesignation(async () => {
     if (!liberoRedesignationModal || !data?.set) return
 
@@ -12368,7 +12374,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const awayLabel = data?.match?.coinTossTeamA === 'away' ? 'A' : (data?.match?.coinTossTeamB === 'away' ? 'B' : 'B')
 
   // Handle captain on court selection
-  const runCaptainOnCourt = useConfirmAction()
+  const runCaptainOnCourt = useConfirmAction(onConfirmFailed)
   const handleSelectCaptainOnCourt = useCallback((playerNumber) => runCaptainOnCourt(async () => {
     if (!captainOnCourtModal || !matchId) return
 
@@ -12589,7 +12595,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }, [matchId, newPin, editPinType])
 
-  const runCourtSwitchConfirm = useConfirmAction()
+  const runCourtSwitchConfirm = useConfirmAction(onConfirmFailed)
   const confirmCourtSwitch = useCallback(() => runCourtSwitchConfirm(async () => {
     if (!courtSwitchModal) return
 
@@ -12604,7 +12610,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     syncLiveStateToSupabase('court_switch', null, { reason: 'set5_8points' }, null)
   }), [runCourtSwitchConfirm, courtSwitchModal, matchId, syncLiveStateToSupabase])
 
-  const runCourtSwitchCancel = useConfirmAction()
+  const runCourtSwitchCancel = useConfirmAction(onConfirmFailed)
   const cancelCourtSwitch = useCallback(() => runCourtSwitchCancel(async () => {
     if (!courtSwitchModal || !data?.events) return
     // Close first, then undo the point (useConfirmAction)
