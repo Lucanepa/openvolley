@@ -24119,7 +24119,13 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
       (async () => {
         // Get next sequence number
         const allEvents = await db.events.where('matchId').equals(matchId).toArray()
-        const maxSeq = allEvents.reduce((max, e) => Math.max(max, e.seq || 0), 0)
+        // An undone or deleted event's seq is never given out again (event
+        // history), as getNextSeq: a line-up entered again after its undo
+        // must not take the voided line-up's seq
+        const maxSeq = Math.max(
+          allEvents.reduce((max, e) => Math.max(max, e.seq || 0), 0),
+          Math.floor(await maxVoidedSeq(db, matchId))
+        )
 
         const manualLineupSeq = maxSeq + 1
         const savedLineupEvent = {

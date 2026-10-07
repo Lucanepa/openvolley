@@ -172,6 +172,10 @@ describe('Scoreboard: one transaction and one screen change per scorer action', 
     expect(src).toContain('rememberSeedKey(matchId, data.match.seed_key ?? null, data.match.test === true)')
   })
 
+  it('the line-up dialog never gives out a voided seq again (as getNextSeq)', () => {
+    expect(src).toMatch(/const maxSeq = Math\.max\(\s*allEvents\.reduce\(\(max, e\) => Math\.max\(max, e\.seq \|\| 0\), 0\),\s*Math\.floor\(await maxVoidedSeq\(db, matchId\)\)\s*\)\s*const manualLineupSeq = maxSeq \+ 1/)
+  })
+
   it('the game captain chosen in the line-up dialog is one action', () => {
     expect(src).toMatch(/await runAction\('gameCaptain', async \(\) => \{\s*if \(Object\.keys\(gameCaptain\.matchUpdate\)\.length\) await db\.matches\.update\(matchId, gameCaptain\.matchUpdate\)\s*if \(gameCaptain\.event\) await logEvent\('court_captain_designation', gameCaptain\.event\)/)
   })
