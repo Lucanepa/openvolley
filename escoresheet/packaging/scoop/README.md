@@ -77,6 +77,12 @@ manifest's version among the GitHub releases and that the URL is the
   untested. First real test: `scoop install .\openvolley.json`, then
   `scoop uninstall openvolley` (Apps & features entry and firewall rule
   must be gone, `%LOCALAPPDATA%\com.openvolley.escoresheet` must stay).
+  Checked without Windows: Scoop's own `bin/checkver.ps1` (pwsh on Linux)
+  finds 2.3.0 / 2.0.0, and its `-Update -ForceUpdate` rewrites a manifest
+  with the same URL and hash. The uninstaller's `scoop-update.ps1` check
+  was tried with a stand-in call stack (update: returns at once; uninstall:
+  goes on). The installer's `/S` install, a second `/S` run over it and the
+  silent uninstall worked under Wine.
 - `scoop update` recognises an update by the `scoop-update.ps1` frame on the
   call stack (the uninstaller then does nothing): if a future Scoop renames
   that script, an update uninstalls first and installs again (still works,
