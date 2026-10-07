@@ -1,7 +1,8 @@
 import { useEffect, useCallback, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
-import { apiFrom, apiMatchRestore, apiMatchClaim, AUTH_TOKEN_CHANGE_EVENT, AUTH_TOKEN_STORAGE_KEY } from '../lib/apiClient'
+import { apiFrom, apiMatchRestore, apiMatchClaim, apiPostEventRevisions, AUTH_TOKEN_CHANGE_EVENT, AUTH_TOKEN_STORAGE_KEY } from '../lib/apiClient'
+import { REVISION_OPS, revisionOfJob } from '../domain/eventRevisions'
 import { getCloudApiUrl } from '../utils/backendConfig'
 import { filterMatchPayload, JSONB_COLUMNS } from '../db/matchRepository'
 import { parseExtId, resolveJobExternalId, jobMatchKey, USER_MATCH_RESOURCE, userMatchRoles, userMatchJob } from '../utils/syncIds'
@@ -1024,6 +1025,34 @@ async function processJobInner(job, ctx) {
         .upsert(eventPayload, { onConflict: 'external_id' })
       if (error) {
         safeLog.error('[SyncQueue] Event insert error:', error, eventPayload)
+        return failureResult(error, ctx)
+      }
+      return true
+    }
+
+    // ============ EVENT HISTORY (undo / delete / edit / restore) ============
+    // Queued by db/eventHistory's hooks. Resource 'event' on purpose: the
+    // per-entity order keeps a void behind its event's insert, and a closing
+    // update waits for it (closingMustWait).
+    if (job.resource === 'event' && REVISION_OPS.includes(job.action)) {
+      const revision = revisionOfJob({ ...job.payload, op: job.payload?.op || job.action })
+      const seedKey = jobMatchKey(job)
+      if (!revision || !seedKey) return DROP_JOB
+      const { error, status } = await apiPostEventRevisions(seedKey, [revision])
+      if (error) {
+        const st = error.status ?? status
+        if (st === 404 && error.code === 'OV_MATCH_NOT_FOUND') {
+          // The match is not in the cloud yet: retry later, like an event insert
+          ctx.error = summarizeError(error)
+          return null
+        }
+        if (st === 404) {
+          // A server without the route (older backend, LAN relay): parked as
+          // refused, retried hourly
+          ctx.error = { ...summarizeError(error), status: 404, code: error.code || 'OV_ROUTE_MISSING' }
+          return PERMANENT_FAILURE
+        }
+        safeLog.warn('[SyncQueue] Event revision refused:', error.code || st)
         return failureResult(error, ctx)
       }
       return true
