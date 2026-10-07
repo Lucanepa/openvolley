@@ -520,6 +520,16 @@
         "disqualified": "Disqualified",
         "exceptionallySubstituted": "Exceptionally substituted",
         "saveFailed": "Save failed"
+      },
+      "gameCaptain": {
+        "title": "Game captain",
+        "optional": "optional",
+        "none": "None",
+        "player": "Game captain: player {{number}}",
+        "enterFirst": "Choose once the players are entered",
+        "noCaptain": "No team captain on the roster",
+        "whenCaptainLeaves": "Takes over when captain {{captain}} leaves the court",
+        "fromFirstRally": "Captain {{captain}} is not in the line-up: game captain from the first rally"
       }
     },
     "lastAction": "Last action:",

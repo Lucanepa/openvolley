@@ -116,3 +116,138 @@ export function lineupCandidates({ players = [], lineup = [], events = [], team 
     })
     .sort((a, b) => Number(a.number) - Number(b.number))
 }
+
+// ---------------------------------------------------------------------------
+// Optional game captain, chosen while the line-up is entered.
+//
+// FIVB 5.2: the team captain is the game captain while on court. When the
+// team captain is not on court, the coach (or the team captain) names another
+// player on court as game captain until the team captain comes back, and the
+// scoresheet records it. The app keeps this in two match fields:
+//   <team>CourtCaptain            the player acting as game captain now
+//   <team>RememberedCourtCaptain  the player used again, without asking, the
+//                                 next time the team captain leaves the court
+// and logs a 'court_captain_designation' event when someone becomes game
+// captain (the same path as the "Game captain" prompt on the scoreboard).
+//
+// Liberos: a libero cannot be in the six boxes at all (lineupEntryErrors flags
+// it), so it is never offered here. The court can still show a libero as game
+// captain after a libero replacement ('LC'); that is decided on court, not in
+// the line-up.
+// ---------------------------------------------------------------------------
+
+const courtCaptainFields = (team) => (team === 'home'
+  ? { court: 'homeCourtCaptain', remembered: 'homeRememberedCourtCaptain' }
+  : { court: 'awayCourtCaptain', remembered: 'awayRememberedCourtCaptain' })
+
+/** Shirt number of the team captain (C on the roster), as a string, or null */
+export function teamCaptainNumber(players = []) {
+  const captain = (players || []).find(p => p?.isCaptain || p?.captain)
+  return captain && !isBlank(captain.number) ? String(Number(captain.number)) : null
+}
+
+/**
+ * Where the team captain stands for the line-up being entered:
+ * - 'noCaptain'   no team captain on the roster (nothing to choose)
+ * - 'onCourt'     the team captain is one of the six
+ * - 'offCourt'    the team captain is not one of the six
+ */
+export function lineupCaptainStatus({ lineup = [], players = [] }) {
+  const captain = teamCaptainNumber(players)
+  if (!captain) return 'noCaptain'
+  const values = (lineup || []).filter(v => !isBlank(v)).map(v => String(Number(v)))
+  return values.includes(captain) ? 'onCourt' : 'offCourt'
+}
+
+/**
+ * Players the scorer can name game captain: the filled boxes without an
+ * error (so never a libero, a duplicate, a disqualified player or a number
+ * missing from the roster), minus the team captain. Sorted by number.
+ * Empty when the roster has no team captain.
+ *
+ * @returns {string[]} shirt numbers
+ */
+export function gameCaptainOptions({ lineup = [], players = [], events = [], team = null }) {
+  const captain = teamCaptainNumber(players)
+  if (!captain) return []
+  const errors = lineupEntryErrors({ lineup, players, events, team })
+  const seen = new Set()
+  ;(lineup || []).forEach((v, i) => {
+    if (isBlank(v) || errors[i]) return
+    const n = String(Number(v))
+    if (n !== captain) seen.add(n)
+  })
+  return [...seen].sort((a, b) => Number(a) - Number(b))
+}
+
+/**
+ * The choice the modal starts with when it opens on an existing line-up
+ * ("Change current lineup"): the acting game captain when the team captain is
+ * not among the six, otherwise the remembered one. Only a valid option is
+ * returned; '' means nothing chosen.
+ */
+export function initialGameCaptainChoice({ lineup = [], players = [], events = [], team = null, currentCourtCaptain = null, rememberedCourtCaptain = null }) {
+  const options = gameCaptainOptions({ lineup, players, events, team })
+  const status = lineupCaptainStatus({ lineup, players })
+  const ordered = status === 'onCourt'
+    ? [rememberedCourtCaptain]
+    : [currentCourtCaptain, rememberedCourtCaptain]
+  for (const n of ordered) {
+    if (!isBlank(n) && options.includes(String(Number(n)))) return String(Number(n))
+  }
+  return ''
+}
+
+/**
+ * What confirming the line-up does with the optional game-captain choice.
+ *
+ * - nothing chosen (or the choice is no longer a valid option): 'none', so the
+ *   scoreboard behaves as before (it asks when the team captain is off court)
+ * - team captain NOT among the six: 'designate'. The player is game captain
+ *   from the first rally: both match fields are set and a
+ *   'court_captain_designation' event is logged, as the scoreboard prompt
+ *   does. When that player already is the acting game captain, no second
+ *   event is logged.
+ * - team captain among the six: 'remember'. Only the remembered field is set,
+ *   so the player takes over without a prompt when the team captain leaves
+ *   the court.
+ *
+ * @returns {{ action: 'none'|'designate'|'remember', playerNumber: number|null,
+ *   matchUpdate: object, event: object|null }}
+ *   matchUpdate: fields to write on the match ({} = nothing);
+ *   event: payload of the 'court_captain_designation' event to log, or null
+ */
+export function lineupGameCaptainDecision({ lineup = [], players = [], events = [], team, choice, currentCourtCaptain = null, rememberedCourtCaptain = null }) {
+  const none = { action: 'none', playerNumber: null, matchUpdate: {}, event: null }
+  if (isBlank(choice)) return none
+  const chosen = String(Number(choice))
+  if (!gameCaptainOptions({ lineup, players, events, team }).includes(chosen)) return none
+
+  const playerNumber = Number(chosen)
+  const fields = courtCaptainFields(team)
+  const matchUpdate = {}
+  if (isBlank(rememberedCourtCaptain) || String(Number(rememberedCourtCaptain)) !== chosen) {
+    matchUpdate[fields.remembered] = playerNumber
+  }
+
+  if (lineupCaptainStatus({ lineup, players }) === 'onCourt') {
+    return { action: 'remember', playerNumber, matchUpdate, event: null }
+  }
+
+  const alreadyActing = !isBlank(currentCourtCaptain) && String(Number(currentCourtCaptain)) === chosen
+  if (alreadyActing) {
+    return { action: 'designate', playerNumber, matchUpdate, event: null }
+  }
+  matchUpdate[fields.court] = playerNumber
+  return {
+    action: 'designate',
+    playerNumber,
+    matchUpdate,
+    event: {
+      team,
+      playerNumber,
+      previousCourtCaptain: isBlank(currentCourtCaptain) ? null : currentCourtCaptain,
+      fromLineup: true
+    }
+  }
+}
