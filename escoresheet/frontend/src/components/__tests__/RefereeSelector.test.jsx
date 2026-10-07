@@ -9,7 +9,7 @@ vi.mock('react-i18next', () => ({
 }))
 
 // apiFrom('referee_database')...order() resolves when the test says so.
-const api = vi.hoisted(() => ({ pending: [] }))
+const api = vi.hoisted(() => ({ pending: [], empties: [] }))
 vi.mock('../../lib/apiClient', () => ({
   apiFrom: () => {
     const q = {
@@ -20,6 +20,12 @@ vi.mock('../../lib/apiClient', () => ({
     return q
   }
 }))
+
+// Record each EmptyInset render (the "no referees" / offline message).
+vi.mock('../../ui', async (importOriginal) => {
+  const ui = await importOriginal()
+  return { ...ui, EmptyInset: (props) => { api.empties.push(props.children); return ui.EmptyInset(props) } }
+})
 
 import RefereeSelector from '../RefereeSelector'
 import { PICKER_RESULTS } from '../pickerLayout'
@@ -104,6 +110,23 @@ describe('RefereeSelector', () => {
     render(<RefereeSelector open onClose={onClose} onSelect={() => {}} />)
     fireEvent.keyDown(document, { key: 'Escape' })
     await waitFor(() => expect(onClose).toHaveBeenCalled())
+  })
+
+  it('a reopen starts on the skeleton, not on the last open\'s "no referees"', async () => {
+    const { rerender } = render(<RefereeSelector open onClose={() => {}} onSelect={() => {}} />)
+    await act(async () => { api.pending[0]({ data: [], error: null }) })
+    expect(screen.getByText('refereeSelector.noRefereeHistory')).toBeInTheDocument()
+    rerender(<RefereeSelector open={false} onClose={() => {}} onSelect={() => {}} />)
+    // act() flushes effects before we can look, so count the empty messages
+    // rendered by the reopen itself: its first frame must be the skeleton
+    api.empties = []
+    rerender(<RefereeSelector open onClose={() => {}} onSelect={() => {}} />)
+    expect(api.empties).toEqual([])
+    expect(screen.queryByText('refereeSelector.noRefereeHistory')).toBeNull()
+    expect(screen.getByTestId('referee-picker-list').querySelector('[role="status"]')).not.toBeNull()
+    expectFixedBox()
+    await act(async () => { api.pending[1]({ data: rows, error: null }) })
+    expect(await screen.findByRole('button', { name: /Müller, Anna/ })).toBeInTheDocument()
   })
 
   it('renders nothing while closed', () => {
