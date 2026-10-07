@@ -164,6 +164,17 @@ describe('planPointRemoval (taking back a point recorded in error)', () => {
     expect(plan.deleteEventIds.sort((a, b) => a - b)).toEqual([20, 195, 201, 202])
   })
 
+  it('the queued cloud jobs of the removed point and its libero_exit are found, not the earlier ones', () => {
+    const plan = planPointRemoval(events, pointEvent)
+    const jobs = [
+      { id: 1, resource: 'event', payload: { external_id: 'match_1_k:e:18' } },
+      { id: 2, resource: 'event', payload: { external_id: 'match_1_k:e:20' } },
+      { id: 3, resource: 'event', payload: { external_id: 'match_1_k:e:202' } },
+      { id: 4, resource: 'set', payload: { external_id: 'match_1_k:s:20' } }
+    ]
+    expect(syncJobsForEvents(jobs, plan.deleteEventIds).map(j => j.id)).toEqual([2, 3])
+  })
+
   it('finds the newest point of the set when no point is given', () => {
     expect(planPointRemoval(events, null, { setIndex: 5 }).deleteEventIds).toContain(20)
     expect(planPointRemoval(events, null, { setIndex: 3 })).toBeNull()

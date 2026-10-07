@@ -7081,106 +7081,47 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Close first, then write: the dialog's score preview is live and redrew
     // from the replayed score otherwise
     setReplayRallyConfirm(null)
-    const lastEventSeq = lastEvent.seq || 0
-    const baseSeq = Math.floor(lastEventSeq)
-
-    // Find and delete ALL events with the same base ID (point and any related rotation events)
-    const allEvents = await db.events.where('matchId').equals(matchId).toArray()
-    const eventsToDelete = allEvents.filter(e => {
-      const eSeq = e.seq || 0
-      return Math.floor(eSeq) === baseSeq
-    })
 
     try {
-      // If it's a point, undo the score change
-      if (lastEvent.type === 'point' && lastEvent.payload?.team) {
-        const team = lastEvent.payload.team
-        const field = team === 'home' ? 'homePoints' : 'awayPoints'
-        const currentPoints = data.set[field]
+      // The point and every sub-event it wrote (side-out rotation, automatic
+      // libero_exit). discardEvents also drops their queued cloud jobs: raw
+      // deletes left the point's job queued and the server got a point that
+      // was replayed.
+      const allEvents = await db.events.where('matchId').equals(matchId).toArray()
+      const plan = planPointRemoval(allEvents, lastEvent)
+      if (!plan) return
+      const deleteIds = new Set(plan.deleteEventIds)
+      await discardEvents(allEvents.filter(e => deleteIds.has(e.id)))
 
-        // Decrement the score
-        if (currentPoints > 0) {
-          await db.sets.update(data.set.id, {
-            [field]: currentPoints - 1,
-            finished: false
-          })
-        }
-
-        // Check if there was a rotation after this point (sideout)
-        // Find the lineup event that came right after this point (rotation)
-        const pointEvents = data.events.filter(e => e.type === 'point' && e.setIndex === data.set.index)
-        const sortedPoints = pointEvents.sort((a, b) => (b.seq || 0) - (a.seq || 0))
-
-        // Get the team that had the point before this one (to determine who had serve)
-        // Calculate first serve for current set based on alternation pattern
-        const replaySetIndex = data.set.index
-        const replaySet1FirstServe = data?.match?.firstServe || 'home'
-        let replayCurrentSetFirstServe
-        if (replaySetIndex === 5 && data.match?.set5FirstServe) {
-          const replayTeamAKey = data.match.coinTossTeamA || 'home'
-          const replayTeamBKey = data.match.coinTossTeamB || 'away'
-          replayCurrentSetFirstServe = data.match.set5FirstServe === 'A' ? replayTeamAKey : replayTeamBKey
-        } else if (replaySetIndex === 5) {
-          replayCurrentSetFirstServe = replaySet1FirstServe
-        } else {
-          // Sets 1-4: odd sets (1, 3) same as set 1, even sets (2, 4) opposite
-          replayCurrentSetFirstServe = replaySetIndex % 2 === 1 ? replaySet1FirstServe : (replaySet1FirstServe === 'home' ? 'away' : 'home')
-        }
-        let previousServeTeam = replayCurrentSetFirstServe
-        if (sortedPoints.length > 1) {
-          // The second point is the one before the current one
-          previousServeTeam = sortedPoints[1].payload?.team || previousServeTeam
-        }
-
-        // If the scoring team didn't have serve (sideout), a rotation was logged after the point
-        // We need to undo that rotation too
-        if (lastEvent.payload.team !== previousServeTeam) {
-          // Find the rotation lineup that was created after this point
-          const lineupEvents = data.events.filter(e =>
-            e.type === 'lineup' &&
-            e.setIndex === data.set.index &&
-            !e.payload?.isInitial &&
-            !e.payload?.fromSubstitution &&
-            (e.seq || 0) > lastEventSeq
-          ).sort((a, b) => (a.seq || 0) - (b.seq || 0)) // Ascending by seq
-
-          // The first lineup event after the point is the rotation
-          if (lineupEvents.length > 0 && lineupEvents[0].payload?.team === lastEvent.payload.team) {
-            const rotationEvent = lineupEvents[0]
-            await db.events.delete(rotationEvent.id)
-          }
-        }
-      }
-
-      // Capture the old score (before undoing the point)
+      // The set score follows the remaining point events, locally and in the cloud
       const oldHomePoints = data.set.homePoints
       const oldAwayPoints = data.set.awayPoints
-
-      // Delete all events with this base seq
-      for (const eventToDelete of eventsToDelete) {
-        await db.events.delete(eventToDelete.id)
+      const setRow = await db.sets.where({ matchId }).and(s => s.index === plan.setIndex).first()
+      if (setRow) {
+        await db.sets.update(setRow.id, {
+          homePoints: plan.score.homePoints,
+          awayPoints: plan.score.awayPoints,
+          finished: false
+        })
       }
-
-      // Calculate the new score (after undoing the point)
-      const undoneTeam = lastEvent.payload?.team
-      const newHomePoints = undoneTeam === 'home' ? oldHomePoints - 1 : oldHomePoints
-      const newAwayPoints = undoneTeam === 'away' ? oldAwayPoints - 1 : oldAwayPoints
+      await queueSetScoreSync(db, { matchId, setIndex: plan.setIndex })
 
       // Log the replay event (this is important for match records)
+      const undoneTeam = lastEvent.payload?.team
       const nextSeq = await getNextSeq()
       const replayStateBefore = getStateSnapshot()
 
       await db.events.add({
         matchId,
-        setIndex: data.set.index,
+        setIndex: plan.setIndex,
         type: 'replay',
         payload: {
           reason: 'point_replay',
           undonePointTeam: undoneTeam,
           oldHomePoints,
           oldAwayPoints,
-          newHomePoints,
-          newAwayPoints
+          newHomePoints: plan.score.homePoints,
+          newAwayPoints: plan.score.awayPoints
         },
         ts: new Date().toISOString(),
         seq: nextSeq,
@@ -7190,14 +7131,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Go back to idle state - user can then click "Start rally" or "Undo"
       // No automatic rally start
 
-      // Sync to Supabase with fresh snapshot (data has changed)
+      // Tablets, livescore (fresh snapshot: data has changed) and scoresheet
+      syncToReferee()
       syncLiveStateToSupabase('replay', null, { reason: 'point_replay', undoneTeam }, null)
       notifyScoresheetUpdate('replay')
 
     } catch (error) {
-      // Error during replay - silently handle
+      console.error('[handleReplayRally] Error:', error)
     }
-  }, [replayRallyConfirm, data?.events, data?.set, data?.match, matchId, getNextSeq, syncLiveStateToSupabase, notifyScoresheetUpdate])
+  }, [replayRallyConfirm, data?.set, matchId, getNextSeq, discardEvents, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate])
 
   const cancelReplayRally = useCallback(() => {
     setReplayRallyConfirm(null)
