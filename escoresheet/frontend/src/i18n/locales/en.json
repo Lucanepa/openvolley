@@ -568,6 +568,7 @@
       "decisionChange": "Decision change",
       "exceptionalSubstitution": "Exceptional substitution",
       "exceptionalSubPlayerCantPlay": "Exceptional substitution - player cannot take part anymore",
+      "substitutionLimitImproperRequest": "The team has used its 6 substitutions in this set: a further substitution request is an improper request.",
       "substituteWithEligible": "Substitute with any eligible player on the bench",
       "liberoRedesignation": "Libero re-designation",
       "courtSwitchRequired": "Court switch required",

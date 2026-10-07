@@ -560,6 +560,7 @@
       "decisionChange": "Entscheidungs\u00adänderung",
       "exceptionalSubstitution": "Ausserordentliche Auswechslung",
       "exceptionalSubPlayerCantPlay": "Ausserordentliche Auswechslung - Spieler kann nicht mehr teilnehmen",
+      "substitutionLimitImproperRequest": "Das Team hat seine 6 Auswechslungen in diesem Satz gebraucht: ein weiterer Wechselantrag ist eine unzulässige Anfrage.",
       "substituteWithEligible": "Mit einem spielberechtigten Spieler von der Bank ersetzen",
       "liberoRedesignation": "Libero-Neubezeichnung",
       "courtSwitchRequired": "Seitenwechsel erforderlich",

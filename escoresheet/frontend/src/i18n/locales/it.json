@@ -567,6 +567,7 @@
       "decisionChange": "Cambio decisione",
       "exceptionalSubstitution": "Sostituzione eccezionale",
       "exceptionalSubPlayerCantPlay": "Sostituzione eccezionale - il giocatore non può più partecipare",
+      "substitutionLimitImproperRequest": "La squadra ha usato le sue 6 sostituzioni in questo set: un'ulteriore richiesta di sostituzione è una richiesta impropria.",
       "substituteWithEligible": "Sostituisci con un giocatore idoneo in panchina",
       "liberoRedesignation": "Nuova designazione libero",
       "courtSwitchRequired": "Cambio campo richiesto",
