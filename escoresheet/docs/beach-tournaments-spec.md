@@ -8,7 +8,7 @@ T1 is the tournament core: the data model, the API, manual creation in OpenBeach
 
 | File | What |
 |---|---|
-| `backend/db/013_beach_official_index.sql` | Recreates `matches_official_game_uidx` with `AND sport_type IS DISTINCT FROM 'beach'`. Beach game numbers restart with every tournament, and the season splits in July, so game 1 of a summer's second tournament was refused with `OV_GAME_TAKEN`. Indoor keeps the same key. `lib/officialGame.js findClaim()` answers "free" for beach, so the friendly pre-check (`/api/db`, `/api/match/restore`, `/api/match/official-check`) never refuses what the index allows. Idempotent: a re-run sees "beach" in the index predicate and stops. |
+| `backend/db/013_beach_official_index.sql` | Recreates `matches_official_game_uidx` with `AND sport_type IS DISTINCT FROM 'beach'`. Beach game numbers restart with every tournament, and the season splits in July, so game 1 of a summer's second tournament was refused with `OV_GAME_TAKEN`. Indoor keeps the same key. `lib/officialGame.js findClaim()` answers "free" for beach, so the friendly pre-check (`/api/db`, `/api/match/restore`, `/api/match/official-check`) never refuses what the index allows. Idempotent: a re-run sees "beach" in the index predicate and stops. `007`'s duplicate scan reads the same predicate: re-run after 013, it leaves beach matches alone (it would otherwise exempt a beach game 1 of a second tournament). |
 | `backend/db/014_beach_tournaments.sql` | The tables below and `matches.tournament_match_id` (FK to `beach_tmatches`, unique when set, CHECK beach only, added `NOT VALID` so no scan). `updated_at` triggers (006's function). Grants `ov_app` DML when the role exists; `roles.sql` covers every public table anyway. |
 
 | Table | Key columns |
@@ -34,7 +34,7 @@ The beach roles of the row's sport (`lib/access.js`), never the app the client s
 | create | `beach:competition_manager` or the global admin |
 | edit (everything below) | the global admin, or a `beach:competition_manager` who created the tournament or is one of its co-managers |
 | co-manager | only an account with `beach:competition_manager` (or admin); any other email answers the same 404 |
-| ranking with licences | editors |
+| licences (ranking, entries in `GET /api/beach/tournaments/:id`) | editors; other readers get `{ first, last, country }` only |
 
 ## 3. HTTP API (`backend/lib/beachTournaments.js`, routed by `lib/manageApi.js`)
 
@@ -42,7 +42,7 @@ The beach roles of the row's sport (`lib/access.js`), never the app the client s
 |---|---|
 | `GET /api/beach/tournaments` | `{ tournaments: [{ ...tournament, draws, can_edit }] }` |
 | `POST /api/beach/tournaments` | `{ title, starts_on, ends_on, slug?, venue?, city?, plus_code?, day_start?, day_end?, public?, courts? }`; without `slug` one is made from the title and year (`zuri-open-2026`, then `-2`, ...). 201 `{ tournament }`; 409 `OV_SLUG_TAKEN` |
-| `GET /api/beach/tournaments/:id` | `{ tournament, managers (editors only), courts, draws, entries, matches }` |
+| `GET /api/beach/tournaments/:id` | `{ tournament, managers (editors only), courts, draws, entries, matches }`; player licences for editors only |
 | `PATCH /api/beach/tournaments/:id` | any field above plus `status`, `public` |
 | `DELETE /api/beach/tournaments/:id` | 409 `OV_DRAW_STARTED` once a match has begun or has a result |
 | `POST /api/beach/tournaments/:id/managers { email }`, `DELETE .../managers/:userId` | co-managers |
@@ -52,18 +52,18 @@ The beach roles of the row's sport (`lib/access.js`), never the app the client s
 | `POST /api/beach/draws/:id/entries` | `{ team_id }` (a saved beach pair: name and player snapshot from it) or `{ player1, player2, name? }`; `seed?`, `wildcard?`, `late?`. 409 `OV_ENTRY_EXISTS` for a pair entered twice |
 | `PATCH`, `DELETE /api/beach/entries/:id` | seeds, withdrawals and deletes only before the draw is made |
 | `PUT /api/beach/draws/:id/seeds { order: [entryId] }` | seeds 1..n in this order |
-| `POST /api/beach/draws/:id/generate { dryRun?, board_size? }` | the bracket of the registered entries in seed order: `{ board_size, teams, warnings, seeds, matches }`. `dryRun` writes nothing. Writing replaces the draw's matches (only before any has begun or ended: 409 `OV_DRAW_STARTED`), fixes the seeds and refreshes the player snapshots from the saved pairs. Game numbers continue after the tournament's other draws. 409 `OV_DRAW_SIZE` outside 4..32 pairs |
+| `POST /api/beach/draws/:id/generate { dryRun?, board_size? }` | the bracket of the registered entries in seed order: `{ board_size, teams, warnings, seeds, matches }`. `dryRun` writes nothing. Writing replaces the draw's matches (only before any has begun or ended: 409 `OV_DRAW_STARTED`), fixes the seeds and refreshes the player snapshots from the saved pairs. Game numbers continue after the tournament's other draws (the tournament row is locked, so two draws generated at once get distinct numbers). 409 `OV_DRAW_SIZE` outside 4..32 pairs. The board: `board_size` of the body (400 when too small), else the draw's `board_size` when it still fits, else the smallest that fits. Only a chosen size is stored on the draw, never a derived one, so a late pair after a reset gets a bigger board, and one fewer a smaller one; a stored choice that no longer fits is cleared |
 | `DELETE /api/beach/draws/:id/bracket` | back to seeded (only before any match has begun or ended) |
-| `POST /api/beach/tournaments/:id/schedule { dryRun?, day_start?, day_end? }` | `{ slots, unplaced, warnings }`; begun matches keep their slot; the hours are saved on the tournament |
-| `PATCH /api/beach/tmatches/:id { court_id, scheduled_at, duration_min, referee, scorer }` | a slot moves only before the match has begun (409 `OV_MATCH_BEGUN`) |
-| `POST /api/beach/tmatches/:id/result { winner: 1\|2, result, sets }` | `winner` 1 = entry1. `played`: 2 or 3 finished sets (21/21/15 by default, two points clear, the winner wins two); `retired`/`forfeit`: the sets so far or none; `walkover`: none. A correction that changes the winner is refused once a dependent match has begun (409 `OV_BRACKET_LOCKED`). 409 `OV_MATCH_NOT_READY`, `OV_MATCH_LINKED` |
+| `POST /api/beach/tournaments/:id/schedule { dryRun?, day_start?, day_end? }` | `{ slots, unplaced, warnings }`; begun matches keep their slot; during the tournament nothing new starts before now; every match that has not begun is placed again (a hand move of an open match is not kept); the hours are saved on the tournament |
+| `PATCH /api/beach/tmatches/:id { court_id, scheduled_at, duration_min, referee, scorer, force? }` | a slot moves only before the match has begun (409 `OV_MATCH_BEGUN`). A new slot is checked like the planner: 409 `OV_SLOT_CONFLICT` `{ conflicts: [{ reason, game_n?, code? }] }`, reason `court` (another match on that court then), `days`, `hours`, `before_source` (before a match it waits for has ended plus the rest), `after_dependent` (a match waiting for it starts before it has ended plus the rest). `force: true` keeps it anyway (audited `forced`); the manager's dialog asks first. Clearing a court or a time is never checked |
+| `POST /api/beach/tmatches/:id/result { winner: 1\|2, result, sets, expect? }` | `winner` 1 = entry1. `expect` `{ winner_entry_id, result, sets }` is the result the caller's screen showed (all null for a first entry); 409 `OV_RESULT_CHANGED` `{ match }` when the stored one differs, so a second manager never overwrites a result silently (the console always sends it). `played`: 2 or 3 finished sets (21/21/15 by default, two points clear, the winner wins two); `retired`/`forfeit`: the sets so far or none; `walkover`: none. A correction that changes the winner is refused once a dependent match has begun (409 `OV_BRACKET_LOCKED`). 409 `OV_MATCH_NOT_READY`, `OV_MATCH_LINKED` |
 | `DELETE /api/beach/tmatches/:id/result` | the match is open again (same lock) |
 | `GET /api/beach/draws/:id/ranking` | `{ tournament, draw, complete, ranking, csv }` (editors; licences included) |
 | `GET /api/public/beach/t/:slug` | anonymous, 120 per minute and IP, `Cache-Control: public, max-age=15` (and 15 s in the process). Only `public` tournaments that are not drafts. Names and countries only: no licence, no account ids or emails, no scored-match ids, no officials (D9) |
 
 Every write is audit-logged with `app = 'beach'`: `tournament.create`, `.update`, `.delete`, `.managers`, `.draw`, `.entry`, `.schedule`, `.result`.
 
-**Results are recomputed over the whole draw** in the same transaction (draw row locked): who plays each match from the sources and the results, `ready` when both pairs are known, the final ranks, the draw's status (`playing`, `done` after the final). Entering or withdrawing a result is therefore idempotent.
+**Results are recomputed over the whole draw** in the same transaction (draw row locked): who plays each match from the sources and the results, `ready` when both pairs are known, the final ranks, the draw's status (`playing`, `done` once every match has a result, the 3rd place too: `complete` in the ranking follows it). Entering or withdrawing a result is therefore idempotent.
 
 ## 4. The double-elimination draw (`backend/lib/beachBracket.js`)
 
@@ -81,7 +81,7 @@ Golden files: `backend/tests/fixtures/beach-de/de-{8,12,16,24,32}.txt`, checked 
 
 ## 5. The schedule (`backend/lib/beachSchedule.js`)
 
-Greedy list scheduling in bracket order (wave, then the draw's order, then the game number) over the active courts and the tournament's days, inside the Zurich play hours (DST safe). A match starts no earlier than the end of every match it waits for plus the draw's rest time, so a pair never plays two matches at once; it takes the court with the earliest gap where its slot fits (a later match can fill a gap). Begun matches keep their slot and block their court. What does not fit is returned as unplaced (and loses its slot). Warning: more than 18 matches on a court in a day.
+Greedy list scheduling in bracket order (wave, then the draw's order, then the game number) over the active courts and the tournament's days, inside the Zurich play hours (DST safe). A match starts no earlier than the end of every match it waits for plus the draw's rest time, so a pair never plays two matches at once; it takes the court with the earliest gap where its slot fits (a later match can fill a gap). Begun matches keep their slot and block their court. During the tournament (the clock on one of its days) no new slot starts before now, rounded up to 5 minutes; before the first day or after the last the clock changes nothing. A re-plan places every match that has not begun again, hand moves included (pin a slot by starting the match, or move it again after the re-plan). What does not fit is returned as unplaced (and loses its slot). Warning: more than 18 matches on a court in a day.
 
 ## 6. The manager (manager-beach, Tournaments tab)
 
@@ -97,6 +97,6 @@ Rollback: the previous image works on a 013/014 database. A beach match with a g
 
 ## 8. Tests
 
-Backend: `migration014.pg.test.js` (013 and 014 on a 012 database, twice; checks, cascades, FK, grants), `beachBracket.test.js` (goldens and playthroughs), `beachSchedule.test.js`, `beachTournaments.test.js` (set rules, slug, CSV, routing), `beachTournaments.e2e.test.js` (roles, drafts, co-managers, courts, entries from a saved pair, seeds, preview and bracket, game numbers per tournament, schedule, results through to the final ranking, lock, CSV, public projection without licences, `tournament_match_id` never written by `/api/db`, audit per app). `officialGame.pg.test.js` and `accounts.pg.test.js` assert the db/013 rule (no season claim for beach).
+Backend: `migration014.pg.test.js` (013 and 014 on a 012 database, twice; checks, cascades, FK, grants), `beachBracket.test.js` (goldens and playthroughs), `beachSchedule.test.js`, `beachTournaments.test.js` (set rules, slug, CSV, routing), `beachTournaments.e2e.test.js` (roles, drafts, co-managers, courts, entries from a saved pair, seeds, preview and bracket, game numbers per tournament, schedule, results through to the final ranking, lock, CSV, public projection without licences and none for scorers in the bundle, hand moves checked against the schedule (`OV_SLOT_CONFLICT`, `force`), stale results refused (`OV_RESULT_CHANGED`), the board following late pairs, a draw done only with its 3rd place, two draws generated at once, `tournament_match_id` never written by `/api/db`, audit per app). `migration014.pg.test.js` also re-runs 007 after 013 (no beach exemptions). `officialGame.pg.test.js` and `accounts.pg.test.js` assert the db/013 rule (no season claim for beach).
 
 Frontend: `src/domain/__tests__/beachTournament.test.js`, `src/__tests__/BeachTournaments.test.jsx`, `src/__tests__/ManagerBeach.test.jsx` (the beach tabs).
