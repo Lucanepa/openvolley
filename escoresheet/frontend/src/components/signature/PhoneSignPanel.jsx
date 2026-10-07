@@ -282,8 +282,12 @@ export default function PhoneSignPanel({ transports, slot, matchKey = null, cont
   const addresses = transport === 'lan' && !current?.wifiStep ? (transports?.lan?.addresses || []) : []
   const wifiQr = transport === 'lan' && current?.wifi ? wifiQrString(current.wifi) : null
 
+  // ov-kit on the whole panel, not only around the kit Buttons: the transport
+  // switch's unselected segment and the hall hint's link set no background, so
+  // the legacy `button { background: var(--accent) }` painted them green (the
+  // unselected "Hall network" looked chosen)
   return (
-    <div className="flex flex-col gap-3" data-testid="phone-sign-panel">
+    <div className="ov-kit flex flex-col gap-3" data-testid="phone-sign-panel">
       {both && phase !== 'received' && (
         <SegmentedControl options={transportOptions} value={transport} onChange={pickTransport} ariaLabel={t('phoneSign.signOnPhone')} />
       )}

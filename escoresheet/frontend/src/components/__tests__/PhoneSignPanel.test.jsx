@@ -93,6 +93,10 @@ describe('PhoneSignPanel', () => {
     expect(screen.getByText(en.phoneSign.scanHint, { selector: 'p' })).toBeInTheDocument()
     // The first wait asks with the state the device knows
     await waitFor(() => expect(api.waitPhoneSign).toHaveBeenCalledWith(expect.objectContaining({ watch: expect.stringMatching(/^W1/) }), 'pending', expect.anything()))
+    // The whole panel is in the kit's preflight: outside it the legacy
+    // `button { background: var(--accent) }` painted the transport switch's
+    // unselected segment green (seen in the browser: "Hall network" looked chosen)
+    expect(screen.getByTestId('phone-sign-panel')).toHaveClass('ov-kit')
   })
 
   it('opened, then received: Use hands over the image and closes the link', async () => {
