@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { DISC, discCssVars, discMetrics, discFitProblems, discCapPx } from '../referee/discSizing.js'
 
-// Court boxes the referee view produces (measured in Chromium, see the PR):
-// the page is at most 800 px wide, so the court is at most ~784 px wide; its
-// height is what is left under the header, scores and above the TO/SUB row.
+// Court boxes the referee view produced with the 800 px page (measured in
+// Chromium): the court at most ~784 px wide, its height what was left under
+// the header and scores and above the TO/SUB row. The wider landscape layout
+// (up to 1400 px, refereeLayout.js) is covered in refereeLayout.test.js.
 const MEASURED = [
   // [viewport w, viewport h, court w, court h]
   [800, 1280, 784, 461], [1280, 800, 784, 272], [1280, 720, 784, 241], [1024, 768, 784, 260],

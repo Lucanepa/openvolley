@@ -32,6 +32,7 @@
     "retryAll": "Retry all",
     "screenTooSmall": "Screen too small",
     "screenTooSmallMessage": "This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.",
+    "screenTooShortMessage": "The court does not fit on this screen. Please rotate your device, leave split screen or use a larger screen.",
     "tryFullscreen": "Try fullscreen",
     "fullscreenHint": "Fullscreen may provide more space by hiding browser UI.",
     "setIndex": "Set {{index}}",

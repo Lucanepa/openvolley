@@ -32,6 +32,7 @@
     "retryAll": "Riprova tutto",
     "screenTooSmall": "Schermo troppo piccolo",
     "screenTooSmallMessage": "Questa applicazione richiede una larghezza minima dello schermo di 357px. Si prega di utilizzare un dispositivo con uno schermo più ampio o di ruotare il dispositivo in modalità orizzontale.",
+    "screenTooShortMessage": "Il campo non entra in questo schermo. Ruota il dispositivo, esci dallo schermo diviso o usa uno schermo più grande.",
     "tryFullscreen": "Prova a schermo intero",
     "fullscreenHint": "Lo schermo intero può fornire più spazio nascondendo l'interfaccia utente del browser.",
     "setIndex": "Set {{index}}",

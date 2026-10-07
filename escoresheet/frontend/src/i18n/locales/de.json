@@ -32,6 +32,7 @@
     "retryAll": "Alle wiederholen",
     "screenTooSmall": "Bildschirm zu klein",
     "screenTooSmallMessage": "Diese App erfordert eine Mindestbildschirmbreite von 357 Pixel. Bitte verwenden Sie ein Gerät mit einem breiteren Bildschirm oder drehen Sie Ihr Gerät ins Querformat.",
+    "screenTooShortMessage": "Das Spielfeld passt nicht auf diesen Bildschirm. Bitte drehen Sie Ihr Gerät, beenden Sie die geteilte Ansicht oder verwenden Sie einen grösseren Bildschirm.",
     "tryFullscreen": "Versuchen Sie den Vollbildmodus",
     "fullscreenHint": "Der Vollbildmodus kann mehr Platz bieten, indem er die Benutzeroberfläche des Browsers ausblendet.",
     "setIndex": "Satz {{index}}",
