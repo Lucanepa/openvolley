@@ -50,12 +50,17 @@ export const POST_MATCH_SIGNATURE_FIELDS = Object.freeze([
 ])
 
 /**
- * An update object that nulls every post-match signature, and the local copy
- * of the account approvals (scorer, referees): they certify the result too.
- * The server voids its rows when the reopen reaches it (db/011 trigger).
+ * An update object that nulls every post-match signature, its "signed on
+ * phone" record (match.signatureSources, by Dexie key path), and the local
+ * copy of the account approvals (scorer, referees): they certify the result
+ * too. The server voids its rows when the reopen reaches it (db/011 trigger).
  */
 export function clearedPostMatchSignatures() {
-  return { ...Object.fromEntries(POST_MATCH_SIGNATURE_FIELDS.map(f => [f, null])), accountApprovals: null }
+  return {
+    ...Object.fromEntries(POST_MATCH_SIGNATURE_FIELDS.map(f => [f, null])),
+    ...Object.fromEntries(POST_MATCH_SIGNATURE_FIELDS.map(f => [`signatureSources.${f}`, null])),
+    accountApprovals: null
+  }
 }
 
 const otherTeam = (teamKey) => (teamKey === 'home' ? 'away' : 'home')

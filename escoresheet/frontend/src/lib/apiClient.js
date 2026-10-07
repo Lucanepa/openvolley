@@ -468,6 +468,15 @@ function notifyTokenChange(session) {
   } catch { /* ignore */ }
 }
 
+/**
+ * { Authorization: 'Bearer <session>' } for a cloud call made outside this
+ * client (lib/phoneSignApi.js), or {} without a valid session.
+ */
+export function authorizationHeader() {
+  const token = getStoredToken()
+  return token?.access_token ? { Authorization: `Bearer ${token.access_token}` } : {}
+}
+
 // Session token management
 function getStoredToken() {
   try {
