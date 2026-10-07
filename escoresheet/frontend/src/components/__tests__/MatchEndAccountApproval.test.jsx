@@ -119,6 +119,8 @@ vi.mock('../../db/db', () => {
 })
 
 import MatchEnd from '../MatchEnd'
+import AccountApprovalDialog from '../AccountApprovalDialog'
+import { StrictMode } from 'react'
 
 const SEED = 'match_1_acc'
 const SETS = [
@@ -290,20 +292,35 @@ describe('MatchEnd: approve with an account', () => {
     expect(JSON.stringify([...store.tables.matches.values()])).not.toContain(PIN)
   })
 
-  it('a locked PIN says how long; a blocked one says to set a new PIN', async () => {
-    api.approve = vi.fn()
-      .mockResolvedValueOnce({ data: null, error: { code: 'OV_APPROVAL_PIN_LOCKED', status: 423, details: { retry_after_sec: 610 } }, status: 423 })
-      .mockResolvedValueOnce({ data: null, error: { code: 'OV_APPROVAL_PIN_LOCKED', status: 423, details: { disabled: true } }, status: 423 })
+  it('Approve stays disabled until the PIN has 4 to 6 digits (a slip is never sent; review fix)', async () => {
     seed({ scorerSignature: 'data:s', ref2Signature: 'data:r2' })
     render(<MatchEnd matchId={1} />)
     const dialog = await openApprove('ref1')
     fireEvent.change(within(dialog).getByLabelText(en.approval.email), { target: { value: 'anna@example.ch' } })
-    fireEvent.change(within(dialog).getByLabelText(en.approval.pinLabel), { target: { value: '111111' } })
+    fireEvent.change(within(dialog).getByLabelText(en.approval.pinLabel), { target: { value: '123' } })
+    expect(within(dialog).getByTestId('account-approval-submit')).toBeDisabled()
     fireEvent.click(within(dialog).getByTestId('account-approval-submit'))
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Try again in 11 min')
-    fireEvent.change(within(dialog).getByLabelText(en.approval.pinLabel), { target: { value: '111111' } })
+    expect(api.approve).not.toHaveBeenCalled()
+    fireEvent.change(within(dialog).getByLabelText(en.approval.pinLabel), { target: { value: '4829' } })
+    expect(within(dialog).getByTestId('account-approval-submit')).toBeEnabled()
+  })
+
+  it('the server codes of the review fixes read as their own messages', async () => {
+    api.approve = vi.fn()
+      .mockResolvedValueOnce({ data: null, error: { code: 'OV_APPROVAL_SCORER_NOT_REFEREE', status: 403 }, status: 403 })
+      .mockResolvedValueOnce({ data: null, error: { code: 'OV_APPROVAL_CALLER_ROLE', status: 403 }, status: 403 })
+    seed({ scorerSignature: 'data:s', ref2Signature: 'data:r2' })
+    render(<MatchEnd matchId={1} />)
+    const dialog = await openApprove('ref1')
+    fireEvent.change(within(dialog).getByLabelText(en.approval.email), { target: { value: 'anna@example.ch' } })
+    fireEvent.change(within(dialog).getByLabelText(en.approval.pinLabel), { target: { value: '482917' } })
     fireEvent.click(within(dialog).getByTestId('account-approval-submit'))
-    await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent(en.approval.errors.pinDisabled))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(en.approval.errors.scorerNotReferee)
+    fireEvent.change(within(dialog).getByLabelText(en.approval.pinLabel), { target: { value: '482917' } })
+    fireEvent.click(within(dialog).getByTestId('account-approval-submit'))
+    await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent(en.approval.errors.callerRole))
+    // the app language travels for the official's notification mail
+    expect(api.approve.mock.calls[0][0]).toHaveProperty('lang', 'en')
   })
 
   it('OV_RESULT_NOT_SYNCED is retried once, then shown', async () => {
@@ -386,6 +403,63 @@ describe('MatchEnd: approve with an account', () => {
     expect([...store.tables.sync_queue.values()].some(j => j.payload?.status === 'approved')).toBe(false)
   })
 
+  it('a stale approval in a slot signed by hand never blocks Confirm (review fix)', async () => {
+    // the 1st referee approved, the score was corrected, then the 1st referee signed by hand
+    const stale = record('referee1', { result_key: 'ov-result-v1|1:25:20,2:23:25,3:25:18,4:26:24' })
+    seed({ scorerSignature: 'data:s', ref2Signature: 'data:r2', ref1Signature: 'data:r1', accountApprovals: { referee1: stale } })
+    // the server still lists it (its sets were not corrected yet)
+    api.list = vi.fn(async () => ({ data: { match: {}, approvals: [stale] }, error: null, status: 200 }))
+    window.open = vi.fn(() => null)
+    URL.createObjectURL = vi.fn(() => 'blob:x')
+    render(<MatchEnd matchId={1} />)
+    await refreshed()
+    await waitFor(() => expect(confirmButton()).toBeEnabled())
+    fireEvent.click(confirmButton())
+    await waitFor(() => {
+      expect([...store.tables.sync_queue.values()].some(j => j.payload?.status === 'approved')).toBe(true)
+    }, { timeout: 5000 })
+    expect(alerts.showAlert).not.toHaveBeenCalledWith(en.approval.revalidateFailed, 'warning')
+  })
+
+  it('drawing a signature over a stale approval drops the stale record', async () => {
+    const stale = record('referee1', { result_key: 'ov-result-v1|1:25:20,2:23:25,3:25:18,4:26:24' })
+    seed({ scorerSignature: 'data:s', ref2Signature: 'data:r2', accountApprovals: { referee1: stale } })
+    api.list = vi.fn(async () => ({ data: { match: {}, approvals: [stale] }, error: null, status: 200 }))
+    render(<MatchEnd matchId={1} />)
+    await refreshed()
+    fireEvent.click(await screen.findByTestId('account-approval-stale-ref1'))
+    fireEvent.click(await screen.findByRole('button', { name: /draw/ }))
+    await waitFor(() => expect(store.tables.matches.get(1).ref1Signature).toBe('data:image/png;base64,SIG'))
+    await waitFor(() => expect(store.tables.matches.get(1).accountApprovals).toBeNull())
+  })
+
+  it('"Reopen match" keeps the account approvals, as it keeps the drawn signatures (review fix)', async () => {
+    const approved = { referee1: record('referee1') }
+    seed({ scorerSignature: 'data:s', ref2Signature: 'data:r2', accountApprovals: approved })
+    api.list = vi.fn(async () => ({ data: { match: {}, approvals: [approved.referee1] }, error: null, status: 200 }))
+    window.open = vi.fn(() => null)
+    URL.createObjectURL = vi.fn(() => 'blob:x')
+    render(<MatchEnd matchId={1} />)
+    await waitFor(() => expect(confirmButton()).toBeEnabled())
+    fireEvent.click(confirmButton())
+    const reopen = await screen.findByRole('button', { name: en.matchEnd.reopenMatch }, { timeout: 5000 })
+    fireEvent.click(reopen)
+    await waitFor(() => expect(store.tables.matches.get(1).approved).toBe(false))
+    expect(api.undo).not.toHaveBeenCalled()
+    expect(store.tables.matches.get(1).accountApprovals).toEqual(approved)
+    expect(store.tables.matches.get(1).ref1Signature).toBeUndefined()
+    await waitFor(() => expect(confirmButton()).toBeEnabled())
+  })
+
+  it('hidden for an account without the scorer or referee role (the server refuses it too)', async () => {
+    auth.value = { user: { id: 'u-new', email: 'new@club.ch' }, access: { roles: [], isAdmin: false } }
+    render(<MatchEnd matchId={1} />)
+    await within(await screen.findByTestId('signature-slot-scorer')).findByText(en.matchEnd.tapToSign)
+    await act(() => new Promise(resolve => setTimeout(resolve, 20)))
+    expect(screen.queryByTestId('account-approval-open-scorer')).toBeNull()
+    expect(screen.queryByTestId('account-approval-open-ref1')).toBeNull()
+  })
+
   it('hidden without a session, and when the server does not offer the feature', async () => {
     auth.value = { user: null, access: { roles: [] } }
     const first = render(<MatchEnd matchId={1} />)
@@ -398,5 +472,25 @@ describe('MatchEnd: approve with an account', () => {
     render(<MatchEnd matchId={1} />)
     await waitFor(() => expect(api.list).toHaveBeenCalled())
     await waitFor(() => expect(screen.queryByTestId('account-approval-open-scorer')).toBeNull())
+  })
+})
+
+describe('AccountApprovalDialog under StrictMode (review fix)', () => {
+  it('the dev double mount does not leave the dialog stuck: onApproved is called', async () => {
+    const approved = record('referee1')
+    api.approve = vi.fn(async () => ({ data: { approval: approved, already: false }, error: null, status: 200 }))
+    const onApproved = vi.fn()
+    render(
+      <StrictMode>
+        <AccountApprovalDialog open onClose={() => {}} match={store.tables.matches.get(1)} role="ref1" roleLabel="1st referee" sets={SETS} userEmail="scorer@club.ch" onApproved={onApproved} />
+      </StrictMode>
+    )
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText(en.approval.email), { target: { value: 'anna@example.ch' } })
+    fireEvent.change(within(dialog).getByLabelText(en.approval.pinLabel), { target: { value: PIN } })
+    fireEvent.click(within(dialog).getByTestId('account-approval-submit'))
+    await waitFor(() => expect(onApproved).toHaveBeenCalledWith(approved, { email: 'anna@example.ch', entered: 'Muster Anna' }))
+    // not stuck busy: Cancel works again
+    expect(within(dialog).getByRole('button', { name: en.common.cancel })).toBeEnabled()
   })
 })

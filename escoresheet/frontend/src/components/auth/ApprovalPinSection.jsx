@@ -2,12 +2,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { KeyRound, WifiOff } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
-import { approvalPinApi, errorKeyOf } from '../../lib/accountApi'
+import { approvalPinApi, approvalsApi, errorKeyOf } from '../../lib/accountApi'
 import { getCloudApiUrl } from '../../utils/backendConfig'
 import { PIN_RE, isWeakPin, formatApprovalTime } from '../../domain/accountApproval'
 import { askConfirm } from '../../utils/askConfirm.js'
 import KitModal from '../manage/KitModal'
-import { Button, Field, FormError, Input, toast } from '../../ui'
+import { Button, EmptyInset, Field, FormError, Input, Notice, Row, RowList, SkeletonRows, StatusPill, toast } from '../../ui'
 
 /**
  * Attributes of every approval-PIN field: masked, numeric keypad, never
@@ -131,6 +131,7 @@ export default function ApprovalPinSection({ className = '' }) {
             </Button>
           )}
         </div>
+        {online && <MyApprovals />}
       </div>
       <PinDialog
         mode={dialog}
@@ -147,6 +148,97 @@ export default function ApprovalPinSection({ className = '' }) {
         }}
       />
     </section>
+  )
+}
+
+/** "#4711 Home – Away" (the game number when there is one). */
+export function approvalGameText(match) {
+  const teams = `${match?.home_name || '–'} – ${match?.away_name || '–'}`
+  return match?.game_n != null ? `#${match.game_n} ${teams}` : teams
+}
+
+/**
+ * "Your approvals": every approval made with this account's PIN (GET
+ * /api/account/approvals), newest first, with who sent it. An official who
+ * did not make one undoes it here while its match is open, and changes the
+ * PIN. Online only (the parent hides it offline).
+ */
+function MyApprovals() {
+  const { t } = useTranslation()
+  const [state, setState] = useState({ loading: true, error: null, rows: [] })
+  const [busyId, setBusyId] = useState(null)
+
+  const load = useCallback(async () => {
+    const res = await approvalsApi.mine({ limit: 10 })
+    setState({ loading: false, error: res.error || null, rows: res.error ? [] : (res.data?.approvals || []) })
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const undo = async (a) => {
+    const ok = await askConfirm({ title: t('approval.undoConfirm'), message: t('approval.mine.undoBody'), confirmLabel: t('approval.undo'), tone: 'danger' })
+    if (!ok) return
+    setBusyId(a.id)
+    const res = await approvalsApi.undo(a.id)
+    setBusyId(null)
+    if (res.error && res.error.status !== 404) {
+      toast.error(t(errorKeyOf(res.error, { context: 'approval' })))
+      return
+    }
+    toast.success(t('approval.undone'))
+    load()
+  }
+
+  const statusOf = (a) => {
+    if (a.revoked_at) return <StatusPill tone="neutral">{t('approval.mine.revoked')}</StatusPill>
+    if (a.result_matches === false) return <StatusPill tone="todo">{t('approval.mine.resultChanged')}</StatusPill>
+    if (a.match?.closed_at) return <StatusPill tone="done">{t('approval.mine.closed')}</StatusPill>
+    return <StatusPill tone="done">{t('approval.mine.valid')}</StatusPill>
+  }
+
+  return (
+    <div className="mt-4 border-t border-stone-200 pt-3" data-testid="my-approvals">
+      <div className="text-[11px] font-bold uppercase tracking-wider text-stone-800">{t('approval.mine.title')}</div>
+      <p className="m-0 mt-1 text-xs text-stone-600">{t('approval.mine.hint')}</p>
+      {state.loading ? (
+        <div className="mt-2"><SkeletonRows rows={2} pill={false} /></div>
+      ) : state.error ? (
+        <Notice className="mt-2">{t(errorKeyOf(state.error, { context: 'approval' }))}</Notice>
+      ) : state.rows.length === 0 ? (
+        <EmptyInset className="mt-2">{t('approval.mine.empty')}</EmptyInset>
+      ) : (
+        <RowList className="mt-2">
+          {state.rows.map(a => {
+            const undoable = !a.revoked_at && !a.match?.closed_at
+            return (
+              <Row
+                key={a.id}
+                stripe={false}
+                title={`${t(`approval.mine.slots.${a.slot}`, a.slot)} · ${approvalGameText(a.match)}`}
+                status={statusOf(a)}
+                meta={<>
+                  <span className="tabular-nums">{formatApprovalTime(a.approved_at)}</span>
+                  <span className="font-mono tabular-nums">ID {a.short_id}</span>
+                  {a.requested_by_name && <span>{t('approval.mine.sentBy', { name: a.requested_by_name })}</span>}
+                  {a.match?.test && <span>{t('approval.mine.test')}</span>}
+                </>}
+                chips={undoable ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={busyId === a.id}
+                    disabled={!!busyId}
+                    onClick={() => undo(a)}
+                    data-testid={`my-approval-undo-${a.short_id}`}
+                  >
+                    {t('approval.undo')}
+                  </Button>
+                ) : null}
+              />
+            )
+          })}
+        </RowList>
+      )}
+    </div>
   )
 }
 

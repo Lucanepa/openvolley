@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest'
 import {
   ROLE_TO_SLOT, APPROVAL_ROLES, PIN_RE, isWeakPin, resultKey, resultTriples, approvalFor, isApprovalValid,
   slotComplete, formatApprovalStamp, approvalLine, approvalsBySlot, officialFor, officialName, namesDiffer,
-  deviceId, rememberApprovalEmail, recallApprovalEmail, APPROVAL_EMAILS_MAX, pendingSyncJobsFor, approvalSummary
+  deviceId, rememberApprovalEmail, recallApprovalEmail, APPROVAL_EMAILS_MAX, pendingSyncJobsFor, approvalSummary,
+  approvalsCompletingSlots, approvalsStillValid, normalizeApprovalQuery, changedSets, approvedSheetChanged
 } from '../accountApproval'
+import { isWeakPin as serverIsWeakPin } from '../../../../backend/lib/approvalPin.js'
 
 const set = (index, homePoints, awayPoints, finished = true) => ({ index, homePoints, awayPoints, finished })
 // Spec 1.4 vector
@@ -123,7 +125,21 @@ describe('PIN rules (parity with the server table, spec 6.1)', () => {
     for (const pin of ['0000', '1234', '0123', '9876', '123456', '111111', '4321', '987654']) expect(isWeakPin(pin), pin).toBe(true)
   })
   it('fine', () => {
-    for (const pin of ['1357', '482917', '0420', '8901', '1123']) expect(isWeakPin(pin), pin).toBe(false)
+    for (const pin of ['482917', '8901', '4738', '5821', '529638']) expect(isWeakPin(pin), pin).toBe(false)
+  })
+  it('weak: common human PINs, years, dates and patterns (review fix)', () => {
+    for (const pin of ['1212', '6969', '1122', '1313', '1004', '2000', '2001', '1984', '2580', '1357', '0420', '1123', '121212', '123123', '112233', '150390', '147258']) {
+      expect(isWeakPin(pin), pin).toBe(true)
+    }
+  })
+  it('the same answer as the server for every 4 and 5 digit PIN and a spread of 6 digit ones', () => {
+    const differ = []
+    const check = (pin) => { if (isWeakPin(pin) !== serverIsWeakPin(pin)) differ.push(pin) }
+    for (let n = 0; n < 10000; n++) check(String(n).padStart(4, '0'))
+    for (let n = 0; n < 100000; n++) check(String(n).padStart(5, '0'))
+    for (let n = 0; n < 1000000; n += 7) check(String(n).padStart(6, '0'))
+    for (const pin of ['147258', '123123', '112233', '150390', '031590', '900315']) check(pin)
+    expect(differ).toEqual([])
   })
   it('PIN_RE takes 4 to 6 digits only', () => {
     for (const bad of ['123', '1234567', '12a4', ' 1234', '']) expect(PIN_RE.test(bad), bad).toBe(false)
@@ -204,5 +220,57 @@ describe('sync queue and summary', () => {
       ref2: null,
       scorer: null
     })
+  })
+})
+
+describe('review fixes: revalidation, the lookup, Manual adjustments', () => {
+  const KEY = resultKey(VECTOR_SETS)
+  const rec = (slot, over = {}) => ({ id: `${slot}-id`, short_id: 'AAAAAAAA', slot, name: 'N', approved_at: '2026-10-07T19:42:10.000Z', result_key: KEY, result_matches: true, ...over })
+
+  it('only approvals that complete a slot are re-checked: not a stale one, not one under a drawn signature', () => {
+    const stale = rec('referee1', { result_key: 'ov-result-v1|1:25:20' })
+    const match = { accountApprovals: { referee1: stale, referee2: rec('referee2'), scorer: rec('scorer') }, scorerSignature: 'data:s' }
+    expect(approvalsCompletingSlots(match, VECTOR_SETS).map(x => x.role)).toEqual(['ref2'])
+    expect(approvalsCompletingSlots(match, VECTOR_SETS, { hasRef2: false })).toEqual([])
+    // a stale ref1 record under a drawn ref1 signature: nothing to check, nothing blocks
+    const signed = { accountApprovals: { referee1: stale }, ref1Signature: 'data:r1' }
+    expect(approvalsCompletingSlots(signed, VECTOR_SETS)).toEqual([])
+    expect(approvalsStillValid([], {}, KEY)).toBe(true)
+  })
+
+  it('a completing approval stays valid only as the same active server record on the current result', () => {
+    const completing = approvalsCompletingSlots({ accountApprovals: { referee1: rec('referee1') } }, VECTOR_SETS)
+    expect(approvalsStillValid(completing, { referee1: rec('referee1') }, KEY)).toBe(true)
+    expect(approvalsStillValid(completing, {}, KEY)).toBe(false)
+    expect(approvalsStillValid(completing, { referee1: rec('referee1', { id: 'other' }) }, KEY)).toBe(false)
+    expect(approvalsStillValid(completing, { referee1: rec('referee1', { result_matches: false }) }, KEY)).toBe(false)
+    expect(approvalsStillValid(completing, { referee1: rec('referee1') }, 'ov-result-v1|1:25:20')).toBe(false)
+  })
+
+  it('normalizeApprovalQuery reads the ID as printed on the PDF', () => {
+    expect(normalizeApprovalQuery('ID 6F1C2A9B')).toBe('6F1C2A9B')
+    expect(normalizeApprovalQuery(' #6f1c2a9b ')).toBe('6f1c2a9b')
+    expect(normalizeApprovalQuery('id: 6F1C2A9B')).toBe('6F1C2A9B')
+    expect(normalizeApprovalQuery('#4711')).toBe('4711')
+    expect(normalizeApprovalQuery('match_1_abc')).toBe('match_1_abc')
+    expect(normalizeApprovalQuery('ID card')).toBe('ID card')
+    expect(normalizeApprovalQuery(null)).toBe('')
+  })
+
+  it('changedSets: score or finished flag, by id', () => {
+    const before = [{ id: 1, ...set(1, 25, 20) }, { id: 2, ...set(2, 25, 23) }, { id: 3, ...set(3, 10, 8, false) }]
+    const after = [{ id: 1, ...set(1, 25, 20) }, { id: 2, ...set(2, 25, 22) }, { id: 3, ...set(3, 10, 8, true) }]
+    expect(changedSets(before, after).map(s => s.id)).toEqual([2, 3])
+    expect(changedSets(before, before)).toEqual([])
+  })
+
+  it('approvedSheetChanged: the finished sets or a team name', () => {
+    const sets = VECTOR_SETS.map((s, i) => ({ id: i + 1, ...s }))
+    const teams = [{ name: 'Home VC' }, { name: 'Away FC' }]
+    expect(approvedSheetChanged({ originalSets: sets, editedSets: sets, originalTeams: teams, editedTeams: [{ name: ' home vc ' }, { name: 'Away FC' }] })).toBe(false)
+    expect(approvedSheetChanged({ originalSets: sets, editedSets: sets.map(s => (s.index === 2 ? { ...s, awayPoints: 26 } : s)), originalTeams: teams, editedTeams: teams })).toBe(true)
+    expect(approvedSheetChanged({ originalSets: sets, editedSets: sets, originalTeams: teams, editedTeams: [teams[1], teams[0]] })).toBe(true)
+    // an unfinished set does not count
+    expect(approvedSheetChanged({ originalSets: sets, editedSets: [...sets, { id: 9, ...set(5, 3, 1, false) }] })).toBe(false)
   })
 })

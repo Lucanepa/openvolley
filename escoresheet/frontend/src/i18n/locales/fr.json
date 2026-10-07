@@ -2716,7 +2716,7 @@
       "passwordHint": "Le mot de passe de votre compte confirme la modification.",
       "newPin": "Nouveau PIN",
       "repeatPin": "Répéter le PIN",
-      "rule": "4 à 6 chiffres. Pas de chiffre répété ni de suite comme 1234.",
+      "rule": "4 à 6 chiffres. Pas de date, pas d’année et pas de motif comme 1212 ou 1234.",
       "mismatch": "Les PIN ne correspondent pas.",
       "removeConfirmTitle": "Supprimer votre PIN d'approbation ?",
       "removeConfirmBody": "Vous ne pourrez plus approuver de résultats avec votre compte avant d'avoir défini un nouveau PIN.",
@@ -2744,11 +2744,9 @@
     "nameDiffers": "Le nom du compte {{account}} diffère de l'officiel saisi ({{entered}})",
     "revalidateFailed": "Une approbation par compte n'est plus valable. Vérifiez les signatures et approuvez à nouveau.",
     "errors": {
-      "pinInvalid": "E-mail ou PIN non accepté.",
-      "pinLocked": "Trop de PIN erronés. Réessayez dans {{minutes}} min ou signez à la main.",
-      "pinDisabled": "Bloqué après trop de PIN erronés : définissez un nouveau PIN dans le profil ou signez à la main.",
+      "pinInvalid": "E-mail ou PIN non accepté. Après plusieurs PIN faux, le PIN est mis en pause : l’officiel le voit dans son profil. Ou signez à la main.",
       "pinFormat": "Le PIN doit comporter 4 à 6 chiffres.",
-      "pinWeak": "Ce PIN est trop facile à deviner. Évitez les chiffres répétés et les suites comme 1234.",
+      "pinWeak": "Ce PIN est trop facile à deviner. Évitez les dates, les années et les motifs comme 1212, 2580 ou 1234.",
       "passwordInvalid": "Mot de passe erroné.",
       "roleRequired": "Ce compte n'a pas le rôle requis pour cette signature.",
       "notMatchScorer": "Seul le marqueur de ce match peut approuver en tant que marqueur.",
@@ -2760,7 +2758,26 @@
       "resultNotSynced": "Le résultat n'est pas encore arrivé sur le serveur. Vérifiez la connexion et réessayez.",
       "unsupported": "Non disponible pour les matchs de beach.",
       "unavailable": "L'approbation avec un compte n'est pas disponible sur ce serveur.",
-      "emailUnconfirmed": "L'officiel n'a pas encore confirmé l'adresse e-mail du compte."
+      "emailUnconfirmed": "L'officiel n'a pas encore confirmé l'adresse e-mail du compte.",
+      "scorerNotReferee": "Le compte qui tient la feuille de ce match ne peut pas approuver en tant qu’arbitre.",
+      "callerRole": "L’approbation avec un compte demande un compte de marqueur ou d’arbitre sur cet appareil."
+    },
+    "mine": {
+      "title": "Vos approbations",
+      "hint": "Chaque approbation faite avec votre PIN. Si l’une n’est pas de vous, annulez-la tant que le match est ouvert et changez votre PIN.",
+      "empty": "Aucune approbation pour l’instant.",
+      "sentBy": "Envoyée par {{name}}",
+      "test": "Match test",
+      "valid": "Valable",
+      "resultChanged": "Résultat modifié",
+      "closed": "Clôturé",
+      "revoked": "Révoquée",
+      "undoBody": "L’approbation ne compte plus. Le match est ensuite approuvé à nouveau ou signé à la main.",
+      "slots": {
+        "referee1": "1er arbitre",
+        "referee2": "2e arbitre",
+        "scorer": "Marqueur"
+      }
     }
   }
 }

@@ -24,11 +24,17 @@ const cloud = vi.hoisted(() => ({ on: true }))
 vi.mock('../../utils/backendConfig', async (orig) => ({ ...(await orig()), getCloudApiUrl: (p) => (cloud.on ? `https://api.test${p}` : null) }))
 const asked = vi.hoisted(() => ({ fn: null }))
 vi.mock('../../utils/askConfirm.js', () => ({ askConfirm: (...a) => asked.fn(...a), default: (...a) => asked.fn(...a) }))
-const api = vi.hoisted(() => ({ status: null, set: null, remove: null }))
+const api = vi.hoisted(() => ({ status: null, set: null, remove: null, mine: null, undo: null }))
 vi.mock('../../lib/accountApi', async (orig) => ({
   ...(await orig()),
-  approvalPinApi: { status: (...a) => api.status(...a), set: (...a) => api.set(...a), remove: (...a) => api.remove(...a) }
+  approvalPinApi: { status: (...a) => api.status(...a), set: (...a) => api.set(...a), remove: (...a) => api.remove(...a) },
+  approvalsApi: { mine: (...a) => api.mine(...a), undo: (...a) => api.undo(...a) }
 }))
+const toasts = vi.hoisted(() => ({ success: [], error: [] }))
+vi.mock('../../ui', async (orig) => {
+  const real = await orig()
+  return { ...real, toast: { ...real.toast, success: (m) => toasts.success.push(m), error: (m) => toasts.error.push(m) } }
+})
 
 import ApprovalPinSection from '../auth/ApprovalPinSection'
 import { accessFromRoles } from '../../lib/access'
@@ -51,6 +57,10 @@ beforeEach(() => {
   api.status = vi.fn(async () => ok(STATUS))
   api.set = vi.fn(async () => ok({ set: true, set_at: '2026-10-07T10:00:00.000Z' }))
   api.remove = vi.fn(async () => ok({ set: false }))
+  api.mine = vi.fn(async () => ok({ approvals: [] }))
+  api.undo = vi.fn(async () => ok({ approval: {}, already: false }))
+  toasts.success = []
+  toasts.error = []
   setAuth(['referee'])
   Object.defineProperty(window.navigator, 'onLine', { configurable: true, get: () => true })
 })
@@ -148,8 +158,8 @@ describe('set, change, remove', () => {
     expect(field(en.approval.pin.currentPassword)).toHaveAttribute('autocomplete', 'current-password')
 
     // no password yet
-    fireEvent.change(pin, { target: { value: '0420' } })
-    fireEvent.change(field(en.approval.pin.repeatPin), { target: { value: '0420' } })
+    fireEvent.change(pin, { target: { value: '4738' } })
+    fireEvent.change(field(en.approval.pin.repeatPin), { target: { value: '4738' } })
     expect(submit()).toBeDisabled()
 
     fireEvent.change(field(en.approval.pin.currentPassword), { target: { value: 'pw-secret' } })
@@ -231,5 +241,58 @@ describe('set, change, remove', () => {
     fireEvent.click(submit())
     await waitFor(() => expect(api.remove).toHaveBeenCalledWith({ password: 'pw' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+})
+
+describe('your approvals (review fix: the official sees every use of their PIN)', () => {
+  const approval = (over = {}) => ({
+    id: 'a-1', short_id: '6F1C2A9B', slot: 'referee1', name: 'Muster Anna', approved_at: '2026-10-07T19:42:10.000Z',
+    result_key: 'ov-result-v1|1:25:20', result_matches: true, mine: true, requested_by_name: 'Olga Owner',
+    match: { external_id: 'm1', game_n: 4711, home_name: 'Home VC', away_name: 'Away FC', status: 'ended', closed_at: null, test: false },
+    ...over
+  })
+
+  it('lists them with the sender; undo asks first and reloads; closed or revoked ones have no undo', async () => {
+    api.status = vi.fn(async () => ok({ ...STATUS, set: true, set_at: '2026-07-04T19:42:00.000Z' }))
+    api.mine = vi.fn()
+      .mockResolvedValueOnce(ok({ approvals: [
+        approval(),
+        approval({ id: 'a-2', short_id: 'A1B2C3D4', slot: 'referee2', match: { ...approval().match, game_n: 12, closed_at: '2026-10-07T20:00:00.000Z' } }),
+        approval({ id: 'a-3', short_id: 'B1B2C3D4', revoked_at: '2026-10-07T20:00:00.000Z', revoked_reason: 'undo' })
+      ] }))
+      .mockResolvedValue(ok({ approvals: [] }))
+    render(<ApprovalPinSection />)
+    const list = await screen.findByTestId('my-approvals')
+    expect(api.mine).toHaveBeenCalledWith({ limit: 10 })
+    expect(await within(list).findByText('2nd referee · #12 Home VC – Away FC')).toBeInTheDocument()
+    expect(within(list).getAllByText('1st referee · #4711 Home VC – Away FC').length).toBe(2)
+    expect(within(list).getAllByText('Sent by Olga Owner').length).toBe(3)
+    expect(within(list).getByText(en.approval.mine.closed)).toBeInTheDocument()
+    expect(within(list).getByText(en.approval.mine.revoked)).toBeInTheDocument()
+    expect(within(list).getByTestId('my-approval-undo-6F1C2A9B')).toBeInTheDocument()
+    expect(within(list).queryByTestId('my-approval-undo-A1B2C3D4')).toBeNull()
+    expect(within(list).queryByTestId('my-approval-undo-B1B2C3D4')).toBeNull()
+
+    asked.fn = vi.fn(async () => false)
+    fireEvent.click(within(list).getByTestId('my-approval-undo-6F1C2A9B'))
+    await waitFor(() => expect(asked.fn).toHaveBeenCalledTimes(1))
+    expect(asked.fn.mock.calls[0][0]).toMatchObject({ title: en.approval.undoConfirm, tone: 'danger' })
+    expect(api.undo).not.toHaveBeenCalled()
+
+    asked.fn = vi.fn(async () => true)
+    fireEvent.click(within(list).getByTestId('my-approval-undo-6F1C2A9B'))
+    await waitFor(() => expect(api.undo).toHaveBeenCalledWith('a-1'))
+    await waitFor(() => expect(api.mine).toHaveBeenCalledTimes(2))
+    expect(toasts.success).toEqual([en.approval.undone])
+    expect(await within(list).findByText(en.approval.mine.empty)).toBeInTheDocument()
+  })
+
+  it('not loaded offline', async () => {
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, get: () => false })
+    localStorage.setItem('ov.approvalPinStatus', JSON.stringify({ userId: 'u-1', status: { ...STATUS, set: true } }))
+    render(<ApprovalPinSection />)
+    await screen.findByTestId('approval-pin-section')
+    expect(screen.queryByTestId('my-approvals')).toBeNull()
+    expect(api.mine).not.toHaveBeenCalled()
   })
 })

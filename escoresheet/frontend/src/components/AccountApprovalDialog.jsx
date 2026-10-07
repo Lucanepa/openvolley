@@ -4,7 +4,7 @@ import { Loader2, ShieldCheck } from 'lucide-react'
 import { db } from '../db/db'
 import { approvalsApi, errorKeyOf } from '../lib/accountApi'
 import {
-  ROLE_TO_SLOT, resultTriples, officialFor, officialName, recallApprovalEmail, deviceId, pendingSyncJobsFor
+  ROLE_TO_SLOT, PIN_RE, resultTriples, officialFor, officialName, recallApprovalEmail, deviceId, pendingSyncJobsFor
 } from '../domain/accountApproval'
 import { PIN_INPUT_PROPS } from './auth/ApprovalPinSection'
 import KitModal from './manage/KitModal'
@@ -61,7 +61,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
  * record to Dexie and closes the dialog.
  */
 export default function AccountApprovalDialog({ open, onClose, match, role, roleLabel, sets, userEmail, onApproved }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [email, setEmail] = useState('')
   const [pin, setPin] = useState('')
   const [busy, setBusy] = useState(false)
@@ -69,7 +69,11 @@ export default function AccountApprovalDialog({ open, onClose, match, role, role
   const [error, setError] = useState('')
   const alive = useRef(true)
 
-  useEffect(() => () => { alive.current = false }, [])
+  // Set on every mount: React StrictMode mounts, unmounts and mounts again in dev
+  useEffect(() => {
+    alive.current = true
+    return () => { alive.current = false }
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -87,14 +91,8 @@ export default function AccountApprovalDialog({ open, onClose, match, role, role
   const slot = ROLE_TO_SLOT[role]
   const entered = officialName(officialFor(match, role))
   const trimmedEmail = email.trim().toLowerCase()
-  const valid = EMAIL_RE.test(trimmedEmail) && trimmedEmail.length <= 254 && pin.length > 0
-
-  const lockedText = (err) => {
-    const d = err?.details || {}
-    if (d.disabled) return t('approval.errors.pinDisabled')
-    const minutes = Math.max(1, Math.ceil(Number(d.retry_after_sec || 0) / 60))
-    return t('approval.errors.pinLocked', { minutes })
-  }
+  // A PIN of the wrong length is never sent (the server refuses it uncounted anyway)
+  const valid = EMAIL_RE.test(trimmedEmail) && trimmedEmail.length <= 254 && PIN_RE.test(pin)
 
   const submit = async (e) => {
     e?.preventDefault?.()
@@ -117,7 +115,9 @@ export default function AccountApprovalDialog({ open, onClose, match, role, role
         email: trimmedEmail,
         pin: typedPin,
         result: { sets: resultTriples(current) },
-        device_id: deviceId()
+        device_id: deviceId(),
+        // the language of the official's notification mail
+        lang: i18n?.language
       })
     }
 
@@ -129,9 +129,7 @@ export default function AccountApprovalDialog({ open, onClose, match, role, role
     setBusy(false)
     setPhase(null)
     if (res.error) {
-      setError(res.error.code === 'OV_APPROVAL_PIN_LOCKED'
-        ? lockedText(res.error)
-        : t(errorKeyOf(res.error, { context: 'approval' })))
+      setError(t(errorKeyOf(res.error, { context: 'approval' })))
       return
     }
     const record = res.data?.approval

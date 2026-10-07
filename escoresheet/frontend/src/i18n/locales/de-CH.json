@@ -2717,7 +2717,7 @@
       "passwordHint": "Ihres Kontopasswort bestätigt d Änderig.",
       "newPin": "Neui PIN",
       "repeatPin": "PIN widerhole",
-      "rule": "4 bis 6 Ziffere. Kei widerholti Ziffer und kei Folg wie 1234.",
+      "rule": "4 bis 6 Ziffere. Kei Datum, kei Jahrzahl und kei Muster wie 1212 oder 1234.",
       "mismatch": "D PINs stimmed nöd überii.",
       "removeConfirmTitle": "Genehmigungs-PIN entferne?",
       "removeConfirmBody": "Sie chönd Resultat erscht wieder mit Ihrem Konto genehmige, wänn Sie e neui PIN setzed.",
@@ -2745,11 +2745,9 @@
     "nameDiffers": "Kontoname {{account}} wiicht vom erfasste Offizielle ab ({{entered}})",
     "revalidateFailed": "E Konto-Genehmigung isch nümme gültig. Prüefed Sie d Underschrifte und genehmiged Sie neu.",
     "errors": {
-      "pinInvalid": "E-Mail oder PIN nöd akzeptiert.",
-      "pinLocked": "Z vill falschi PINs. Probiered Sie es i {{minutes}} Min. wieder oder underschriibed Sie vo Hand.",
-      "pinDisabled": "Gsperrt nach z vill falsche PINs: im Profil e neui PIN setze oder vo Hand underschriibe.",
+      "pinInvalid": "E-Mail oder PIN nöd akzeptiert. Nach mehrere falsche PINs macht d PIN e Pause: De Offizielli gseht das i sim Profil. Oder vo Hand underschriibe.",
       "pinFormat": "D PIN muess 4 bis 6 Ziffere ha.",
-      "pinWeak": "Die PIN isch z eifach z errate. Vermiided Sie widerholti Ziffere und Folge wie 1234.",
+      "pinWeak": "Die PIN isch z eifach z errate. Bitte kei Datum, kei Jahrzahl und kei Muster wie 1212, 2580 oder 1234.",
       "passwordInvalid": "Falschs Passwort.",
       "roleRequired": "Das Konto hät nöd d Rolle für die Underschrift.",
       "notMatchScorer": "Nur de Schriiber vo däm Spiil chan als Schriiber genehmige.",
@@ -2761,7 +2759,26 @@
       "resultNotSynced": "S Resultat isch no nöd bim Server aacho. Prüefed Sie d Verbindig und probiered Sie es nomal.",
       "unsupported": "Für Beachspiil nöd verfüegbar.",
       "unavailable": "D Genehmigung mit Konto isch uf däm Server nöd verfüegbar.",
-      "emailUnconfirmed": "De Offizielli hät d E-Mail-Adresse vom Konto no nöd bestätigt."
+      "emailUnconfirmed": "De Offizielli hät d E-Mail-Adresse vom Konto no nöd bestätigt.",
+      "scorerNotReferee": "S Konto, wo das Spiil schriibt, chan nöd als Schiri genehmige.",
+      "callerRole": "Für d Genehmigung mit Konto bruucht das Gerät es Schriiber- oder Schirikonto."
+    },
+    "mine": {
+      "title": "Ihri Genehmigunge",
+      "hint": "Jedi Genehmigung mit Ihrer PIN. Wänn eini nöd vo Ihne isch, mached Sie sie rückgängig, solang s Spiil offe isch, und ändered Sie Ihri PIN.",
+      "empty": "No kei Genehmigunge.",
+      "sentBy": "Gschickt vo {{name}}",
+      "test": "Testspiil",
+      "valid": "Gültig",
+      "resultChanged": "Resultat gänderet",
+      "closed": "Abgschlosse",
+      "revoked": "Widerrüeft",
+      "undoBody": "D Genehmigung zellt nümme. S Spiil wird dänn neu genehmigt oder vo Hand underschribe.",
+      "slots": {
+        "referee1": "1. Schiri",
+        "referee2": "2. Schiri",
+        "scorer": "Schriiber"
+      }
     }
   }
 }

@@ -14,7 +14,7 @@
  *   payload.createdSubEventIds  ids of the new team's sub-events the swap wrote
  */
 import { scoreFromPointEvents } from './rules'
-import { parseExtId } from '../utils/syncIds'
+import { parseExtId, setExtId } from '../utils/syncIds'
 
 /**
  * The undo record to store on a decision_change event.
@@ -118,4 +118,28 @@ export function syncJobsForSets(queuedJobs, setIds) {
     const localId = localIdOfExtId(j.payload?.external_id, 'set')
     return localId != null && ids.has(localId)
   })
+}
+
+/**
+ * sync_queue jobs that send corrected set scores to the server (Manual
+ * adjustments): one set update per changed set, keyed like the scoreboard's
+ * own set jobs (setExtId). The server binds account approvals to these rows,
+ * so a correction that stays local could never be approved with an account.
+ */
+export function setScoreSyncJobs(seedKey, changedSets, ts = new Date().toISOString()) {
+  if (!seedKey) return []
+  return (Array.isArray(changedSets) ? changedSets : [])
+    .filter(s => s && s.id != null)
+    .map(s => ({
+      resource: 'set',
+      action: 'update',
+      payload: {
+        external_id: setExtId(seedKey, s.id),
+        home_points: Number(s.homePoints) || 0,
+        away_points: Number(s.awayPoints) || 0,
+        finished: s.finished === true
+      },
+      ts,
+      status: 'queued'
+    }))
 }

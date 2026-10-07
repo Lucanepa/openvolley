@@ -103,10 +103,15 @@ export const approvalPinApi = {
 
 export const approvalsApi = {
   /** POST → { approval, already } */
-  approve({ external_id, slot, email, pin, result, device_id }) {
+  approve({ external_id, slot, email, pin, result, device_id, lang }) {
     const body = { external_id, slot, email, pin, result }
     if (device_id) body.device_id = device_id
+    if (typeof lang === 'string' && lang) body.lang = lang
     return apiRequest('POST', '/api/approvals', body)
+  },
+  /** GET → { approvals: [record + requested_by_name + match] }: the signed-in official's own */
+  mine({ limit } = {}) {
+    return apiRequest('GET', `/api/account/approvals${query({ limit })}`)
   },
   /** GET → { match: { status, closed_at, result_key }, approvals: [record] } */
   list(external_id) {
@@ -121,12 +126,13 @@ export const approvalsApi = {
 // Approval error codes -> approval.errors.<key> (spec 3.4)
 const APPROVAL_ERROR_KEYS = {
   OV_APPROVAL_PIN_INVALID: 'pinInvalid',
-  OV_APPROVAL_PIN_LOCKED: 'pinLocked',
   OV_APPROVAL_PIN_FORMAT: 'pinFormat',
   OV_APPROVAL_PIN_WEAK: 'pinWeak',
   OV_PASSWORD_INVALID: 'passwordInvalid',
   OV_APPROVAL_ROLE_REQUIRED: 'roleRequired',
   OV_APPROVAL_NOT_MATCH_SCORER: 'notMatchScorer',
+  OV_APPROVAL_SCORER_NOT_REFEREE: 'scorerNotReferee',
+  OV_APPROVAL_CALLER_ROLE: 'callerRole',
   OV_APPROVAL_NAME_REQUIRED: 'nameRequired',
   OV_APPROVAL_ONE_SLOT: 'oneSlot',
   OV_APPROVAL_SLOT_TAKEN: 'slotTaken',
