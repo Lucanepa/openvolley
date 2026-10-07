@@ -35,6 +35,18 @@ describe('interaction log', () => {
     expect(ndjson.split('\n').map(l => JSON.parse(l).id)).toEqual(['a', 'b', 'c'])
   })
 
+  it('an entry stored with a PIN in its clicked text (before 2.4.0) is exported without it', async () => {
+    const t0 = Date.parse('2026-10-07T10:00:00Z')
+    await db.interaction_logs.add(row('p', t0 + 1000, {
+      matchId: 7,
+      target: { tagName: 'div', textContent: 'Game PIN 771234', ariaLabel: null, href: 'https://openvolley.app/r?pin=482913' }
+    }))
+    const ndjson = await exportLogsAsNDJSON({ matchId: 7 })
+    expect(ndjson).not.toContain('771234')
+    expect(ndjson).not.toContain('482913')
+    expect(JSON.parse(ndjson).target.textContent).toBe('Game PIN [digits]')
+  })
+
   it('tags new entries with the open match', async () => {
     setGameContext(21, 99)
     const e = log('ui', 'click', 'Test', 'x')
