@@ -5,7 +5,9 @@
 # here, for OpenVolley and for OpenBeach (--app beach: its own tags, package,
 # manifests and GitHub fallback), plus the multi-app parts: APT package names,
 # the per-app hold-back, the Android certificate per app id, install.sh and
-# the landing page. It never reads the real keys, never calls GitHub, never syncs.
+# the landing page, and the pacman repo (publish-pacman.sh with a throwaway
+# key and fake PKGBUILDs, its build steps in Docker; publish-pkgs.sh --pacman).
+# It never reads the real keys, never calls GitHub, never syncs.
 #
 #   escoresheet/deploy/tests/publish-desktop.test.sh
 #
@@ -655,5 +657,169 @@ if grep -q '@[A-Z_]*@' "$T/index.html"; then bad "page: placeholders left (macOS
 ok "page: OpenBeach's macOS part once its release has a .dmg"
 noov() { fdroid_index com.openvolley.beach,2.0.0,20000000,b.apk > "$T/index-b.json"; page "$T/bPackages" "$T/index-b.json"; }
 expect_fail "need at least one openvolley-escoresheet .deb and one com.openvolley.escoresheet APK" noov
+
+# === pacman repo: publish-pacman.sh and publish-pkgs.sh --pacman ==============
+# A THROWAWAY repo key (--init-key into $T), fake PKGBUILDs (a shell script as
+# /usr/bin/<package> plus the updater marker; no download). The build and
+# repo steps run in Docker (skipped without it); the rest does not need it.
+PM="$KIT_DIR/../packaging/pacman/publish-pacman.sh"
+PMH="$T/pm-home"
+export OV_PACMAN_PKGBUILDS="$T/pkgbuilds" OV_PACMAN_CACHE="$T/pacman-cache"
+pm() { OV_PKGS_HOME="$PMH" "$PM" "$@"; }
+# fake_pkgbuild PACKAGE PKGVER PKGREL
+fake_pkgbuild() {
+  mkdir -p "$T/pkgbuilds/$1-bin"
+  cat > "$T/pkgbuilds/$1-bin/PKGBUILD" <<PKGBUILD
+pkgname=$1-bin
+pkgver=$2
+pkgrel=$3
+pkgdesc='test package'
+arch=('x86_64')
+license=('GPL-3.0-or-later')
+options=('!strip' '!debug')
+package() {
+  install -Dm755 /dev/stdin "\$pkgdir/usr/bin/$1" <<<'#!/bin/sh'
+  install -d "\$pkgdir/usr/lib/$1"
+  echo aur > "\$pkgdir/usr/lib/$1/package-manager"
+}
+PKGBUILD
+}
+fake_pkgbuild openvolley-escoresheet 2.4.0 1
+fake_pkgbuild openbeach-escoresheet 2.0.0 1
+
+pm --help | grep -q -- '--init-key' && ok "publish-pacman.sh --help"
+pm --init-key > "$T/pm-init.out" 2>&1
+PM_FPR=$(gpg --homedir "$PMH/pacman-gpg" --batch --with-colons --list-secret-keys | awk -F: '$1 == "fpr" { print $10; exit }')
+[[ "$PM_FPR" =~ ^[0-9A-F]{40}$ ]] || bad "pacman --init-key: no key"
+gpg --homedir "$PMH/pacman-gpg" --batch --with-colons --list-secret-keys | grep -q '^sec:[^:]*:255:22:' || bad "pacman key is not ed25519"
+[[ "$(stat -c %a "$PMH/pacman-gpg-passphrase")" == 600 && "$(stat -c %a "$PMH/pacman-gpg")" == 700 && "$(stat -c %a "$PMH")" == 700 ]] ||
+  bad "pacman --init-key: modes"
+grep -q "pacman repo key created: $PM_FPR" "$T/pm-init.out" &&
+  grep -q '| rbw add "OpenVolley pacman repo key"' "$T/pm-init.out" &&
+  grep -q -- '--armor --export-secret-keys' "$T/pm-init.out" || bad "pacman --init-key: the rbw backup command"
+if grep 'rbw add' "$T/pm-init.out" | grep -q '</dev/null'; then bad "pacman --init-key: rbw must read stdin"; fi
+if grep -qF "$(cat "$PMH/pacman-gpg-passphrase")" "$T/pm-init.out"; then bad "pacman --init-key printed the passphrase"; fi
+ok "pacman --init-key: ed25519 key, modes 700/600, prints the rbw (stdin) backup, not the passphrase"
+expect_fail "exists already; restore or remove it by hand" pm --init-key
+expect_fail "--init-key takes no VERSION" pm --init-key 2.4.0
+expect_fail "2.4: not a version like 2.4.0" pm 2.4
+expect_fail "is at 2.4.0, not 2.5.0: run ../aur/bump.sh openvolley 2.5.0 and commit it first" pm 2.5.0
+expect_fail "is at 2.0.0, not 2.4.0: run ../aur/bump.sh openbeach 2.4.0 and commit it first" pm --app beach 2.4.0
+expect_fail "--app both takes no VERSION" pm --app both 2.4.0
+expect_fail "--deb goes with one app" pm --app both --deb "$T/release/openvolley-escoresheet_${V}_amd64.deb"
+expect_fail "--app volley: expected openvolley, beach or both" pm --app volley
+expect_fail "--keep 0: expected a number from 1" pm --keep 0
+expect_fail "no pacman repo key in $T/nokey/pacman-gpg" env OV_PKGS_HOME="$T/nokey" "$PM"
+chmod 644 "$PMH/pacman-gpg-passphrase"
+expect_fail "pacman-gpg-passphrase is mode 644; chmod 600 it" pm
+chmod 600 "$PMH/pacman-gpg-passphrase"
+
+# publish-pkgs.sh --pacman: argument checks, before any key use
+expect_fail "--pacman needs --desktop VERSION" pp --pacman --no-sync
+expect_fail "--pacman cannot go with --staging" pp --desktop 2.4.0 --staging --pacman --no-sync
+expect_fail "openvolley-escoresheet-bin/PKGBUILD is at 2.4.0, not $V: run packaging/aur/bump.sh openvolley $V and commit it first" \
+  pp --desktop "$V" --pacman --no-sync
+expect_fail "openbeach-escoresheet-bin/PKGBUILD is at 2.0.0, not 2.0.1: run packaging/aur/bump.sh openbeach 2.0.1" \
+  pp --desktop 2.0.1 --app beach --pacman --no-sync
+pp --help | grep -q -- '\[--flatpak\] \[--pacman\]' && ok "--help documents --pacman"
+
+# The install page's Arch card: only once the repo is published, with the
+# published key's fingerprint, each app's line once its package is there.
+page "$T/bPackages" "$T/index-both.json"
+if grep -qE 'id="arch"|href="/arch/|pacman-key|#arch' "$T/index.html"; then bad "page: pacman parts without a published repo"; fi
+mkdir -p "$T/arch/x86_64"
+gpg --homedir "$PMH/pacman-gpg" --batch --export "$PM_FPR" > "$T/arch/openvolley.gpg"
+echo "$PM_FPR" > "$T/arch/fingerprint.txt"
+touch "$T/arch/x86_64/openvolley.db" "$T/arch/x86_64/openvolley-escoresheet-bin-2.4.0-1-x86_64.pkg.tar.zst"
+page "$T/bPackages" "$T/index-both.json"
+PM_GROUPED=$(sed 's/..../& /g; s/ $//' <<<"$PM_FPR")
+# shellcheck disable=SC2016 # $arch is pacman's, literal in the page
+grep -q "sudo pacman-key --lsign-key $PM_FPR</code>" "$T/index.html" &&
+  grep -q "<p class=\"fp\">$PM_GROUPED</p>" "$T/index.html" &&
+  grep -q '^Server = https://get.openvolley.app/arch/\$arch</code>' "$T/index.html" &&
+  grep -q '^SigLevel = Required DatabaseRequired$' "$T/index.html" &&
+  grep -q 'curl -fsSLO https://get.openvolley.app/arch/openvolley.gpg' "$T/index.html" &&
+  grep -q 'sudo pacman -Syu openvolley-escoresheet-bin' "$T/index.html" &&
+  grep -q 'href="/arch/"' "$T/index.html" && grep -q 'Until then: the <a href="#arch">pacman repository</a>' "$T/index.html" ||
+  bad "page: the Arch card"
+if grep -q 'pacman -Syu openbeach-escoresheet-bin' "$T/index.html"; then bad "page: OpenBeach's pacman line without its package"; fi
+grep -q 'yay -S openvolley-escoresheet-bin' "$T/index.html" && grep -q 'Arch Linux, Manjaro, EndeavourOS (AUR) <span class="soon">coming soon</span>' "$T/index.html" ||
+  bad "page: the AUR stays 'coming soon'"
+ok "page: the Arch card once arch/ is published (key steps, fingerprint, pacman.conf lines); AUR still coming soon"
+touch "$T/arch/x86_64/openbeach-escoresheet-bin-2.0.0-1-x86_64.pkg.tar.zst"
+page "$T/bPackages" "$T/index-both.json"
+grep -q 'sudo pacman -Syu openbeach-escoresheet-bin' "$T/index.html" || bad "page: OpenBeach's pacman line"
+if grep -q '@[A-Z_]*@' "$T/index.html"; then bad "page: placeholders left (pacman)"; fi
+ok "page: OpenBeach's pacman line once its package is in the repo"
+echo 0000000000000000000000000000000000000000 > "$T/arch/fingerprint.txt"
+expect_fail "openvolley.gpg is not the key 0000000000000000000000000000000000000000 of fingerprint.txt" page "$T/bPackages" "$T/index-both.json"
+rm "$T/arch/fingerprint.txt"
+expect_fail "has a database but no fingerprint.txt" page "$T/bPackages" "$T/index-both.json"
+rm -rf "$T/arch"
+
+# The build, sign and repo steps (Docker: makepkg, repo-add, a pacman client).
+if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
+  AR="$PMH/public/arch"
+  RX="$AR/x86_64"
+  # in_db FILE: "name version" of each package in a pacman database
+  in_db() {
+    python3 - "$1" <<'PY'
+import sys, tarfile
+with tarfile.open(sys.argv[1]) as t:
+    for m in sorted(t.getmembers(), key=lambda m: m.name):
+        if m.name.endswith("/desc"):
+            l = t.extractfile(m).read().decode().split("\n")
+            f = {l[i]: l[i + 1] for i in range(len(l) - 1) if l[i].startswith("%")}
+            print(f["%NAME%"], f["%VERSION%"])
+PY
+  }
+  pm --app both > "$T/pm1.out" 2>&1 || { cat "$T/pm1.out"; bad "publish-pacman.sh --app both"; }
+  for f in openvolley.db openvolley.files openvolley-escoresheet-bin-2.4.0-1-x86_64.pkg.tar.zst openbeach-escoresheet-bin-2.0.0-1-x86_64.pkg.tar.zst; do
+    [[ -f "$RX/$f" && -f "$RX/$f.sig" && ! -L "$RX/$f" ]] || bad "pacman: no $f / $f.sig"
+    gpgv --keyring "$AR/openvolley.gpg" "$RX/$f.sig" "$RX/$f" 2>/dev/null || bad "pacman: $f.sig does not verify with the published key"
+  done
+  [[ "$(cat "$AR/fingerprint.txt")" == "$PM_FPR" ]] || bad "pacman: fingerprint.txt"
+  [[ "$(in_db "$RX/openvolley.db" | xargs)" == "openbeach-escoresheet-bin 2.0.0-1 openvolley-escoresheet-bin 2.4.0-1" ]] || bad "pacman db: $(in_db "$RX/openvolley.db")"
+  [[ -z "$(find "$PMH" -maxdepth 1 -name '.pacman-work.*')" ]] || bad "pacman: work dir left behind"
+  refuse_key_material "$PMH/public" || bad "pacman: key material in the public tree"
+  [[ "$(find "$AR" -type f ! -perm 644)" == "" ]] || bad "pacman: a published file is not mode 644"
+  ok "pacman: both packages built, signed, in a signed database (plain files); key and fingerprint published; no key material"
+  pm > "$T/pm2.out" 2>&1
+  grep -q 'openvolley-escoresheet-bin 2.4.0-1 is in the repo already: kept as it is' "$T/pm2.out" || bad "pacman: republish"
+  ok "pacman: a published version is kept as it is (not rebuilt)"
+  fake_pkgbuild openvolley-escoresheet 2.4.0 2
+  pm 2.4.0 > "$T/pm3.out" 2>&1 || { cat "$T/pm3.out"; bad "pacman: pkgrel 2"; }
+  [[ "$(in_db "$RX/openvolley.db" | xargs)" == "openbeach-escoresheet-bin 2.0.0-1 openvolley-escoresheet-bin 2.4.0-2" ]] || bad "pacman db after pkgrel 2"
+  [[ -f "$RX/openvolley-escoresheet-bin-2.4.0-1-x86_64.pkg.tar.zst" ]] || bad "pacman: 2.4.0-1 should stay (rollback)"
+  ok "pacman: pkgrel 2 is the database's version, 2.4.0-1 stays for rollback"
+  fake_pkgbuild openvolley-escoresheet 2.4.0 3
+  pm --keep 2 > "$T/pm4.out" 2>&1 || { cat "$T/pm4.out"; bad "pacman: --keep 2"; }
+  [[ ! -e "$RX/openvolley-escoresheet-bin-2.4.0-1-x86_64.pkg.tar.zst" && ! -e "$RX/openvolley-escoresheet-bin-2.4.0-1-x86_64.pkg.tar.zst.sig" &&
+     -f "$RX/openvolley-escoresheet-bin-2.4.0-2-x86_64.pkg.tar.zst" && -f "$RX/openbeach-escoresheet-bin-2.0.0-1-x86_64.pkg.tar.zst" ]] ||
+    bad "pacman: --keep 2"
+  ok "pacman: --keep 2 removes the oldest version and its signature"
+  fake_pkgbuild openvolley-escoresheet 2.4.0 1
+  expect_fail "openvolley-escoresheet-bin 2.4.0-1 is older than the published 2.4.0-3" pm
+  fake_pkgbuild openvolley-escoresheet 2.4.1 1
+  cp -a "$AR" "$T/arch-before"
+  printf 'x' >> "$RX/openvolley-escoresheet-bin-2.4.0-2-x86_64.pkg.tar.zst"
+  expect_fail "openvolley-escoresheet-bin-2.4.0-2-x86_64.pkg.tar.zst.sig is missing or does not verify" pm
+  [[ ! -e "$RX/openvolley-escoresheet-bin-2.4.1-1-x86_64.pkg.tar.zst" ]] && cmp -s "$RX/openvolley.db" "$T/arch-before/x86_64/openvolley.db" ||
+    bad "pacman: a failed run changed the published tree"
+  ok "pacman: a failed run leaves public/arch/ as it was"
+  cp "$T/arch-before/x86_64/openvolley-escoresheet-bin-2.4.0-2-x86_64.pkg.tar.zst" "$RX/"
+  touch "$RX/evil-1.0-1-x86_64.pkg.tar.zst"
+  expect_fail "evil-1.0-1-x86_64.pkg.tar.zst: not a package this repo publishes" pm
+  rm "$RX/evil-1.0-1-x86_64.pkg.tar.zst"
+  echo 1111111111111111111111111111111111111111 > "$AR/fingerprint.txt"
+  expect_fail "every user would have to import the new key" pm
+  echo "$PM_FPR" > "$AR/fingerprint.txt"
+  pm > "$T/pm5.out" 2>&1 || { cat "$T/pm5.out"; bad "pacman: 2.4.1"; }
+  [[ "$(in_db "$RX/openvolley.db" | xargs)" == "openbeach-escoresheet-bin 2.0.0-1 openvolley-escoresheet-bin 2.4.1-1" ]] || bad "pacman db after 2.4.1"
+  ok "pacman: a new version after the refusals (foreign file, other key) publishes"
+else
+  echo "skip publish-pacman.sh build and repo steps (no docker)"
+fi
+unset OV_PACMAN_PKGBUILDS OV_PACMAN_CACHE
 
 echo "all $PASS checks passed"

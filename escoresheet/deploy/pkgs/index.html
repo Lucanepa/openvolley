@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#e2001a">
 <meta name="color-scheme" content="light">
 <title>Get OpenVolley</title>
-<meta name="description" content="Install the OpenVolley eScoresheet and OpenBeach: Android via F-Droid or APK, Linux via APT or Flatpak, Windows installer or Scoop.">
+<meta name="description" content="Install the OpenVolley eScoresheet and OpenBeach: Android via F-Droid or APK, Linux via APT, Flatpak or pacman (Arch), Windows installer or Scoop.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Ccircle cx='256' cy='256' r='256' fill='%23ffffff'/%3E%3Cpath fill='%23e2001a' d='M495.37 273.44A240 240 0 0 1 480.87 339.85A182.72 182.72 0 0 0 262.66 226.69A130.72 130.72 0 0 1 237.07 188.46A226.72 226.72 0 0 1 495.37 273.44ZM297.34 19.59A240 240 0 0 1 486.05 187.6A278.72 278.72 0 0 0 226.09 137.36A130.72 130.72 0 0 1 297.34 19.59Z'/%3E%3Cpath fill='%231c1917' d='M440.07 410.01A240 240 0 0 1 70.94 408.82A182.72 182.72 0 0 0 278.05 276.42A130.72 130.72 0 0 1 440.07 410.01Z'/%3E%3Cpath fill='%231c1917' d='M30.59 338.4A240 240 0 0 1 216.18 19.33A182.72 182.72 0 0 0 227.29 264.89A130.72 130.72 0 0 1 30.59 338.4Z'/%3E%3C/svg%3E">
 <!-- Template: publish-pkgs.sh (lib/publish-lib.sh landing_page) fills in the placeholders
      DESKTOP_VERSION, DEB_PACKAGE, WINDOWS_URL, APK_VERSION, APK_FILE and, for OpenBeach,
@@ -14,7 +14,9 @@
      @ signs) from the packages it publishes. The beach block is left out until an OpenBeach
      package is published, its beach-desktop / beach-android parts until that one is.
      The flatpak / beach-flatpak parts appear once flatpak/<app id>.flatpakref is
-     published (packaging/flatpak/publish-flatpak.sh).
+     published (packaging/flatpak/publish-flatpak.sh); the pacman parts once arch/x86_64/openvolley.db
+     is (packaging/pacman/publish-pacman.sh; PACMAN_FPR and PACMAN_FPR_GROUPED from arch/fingerprint.txt),
+     its pacman-ov / beach-pacman lines once that app's package is in it.
      Plain HTML, no external requests. -->
 <style>
   :root {
@@ -167,6 +169,33 @@ sudo apt update &amp;&amp; sudo apt install @DEB_PACKAGE@</code></pre><button cl
   </section>
   <!--/flatpak-->
 
+  <!--pacman-->
+  <section class="card" id="arch">
+    <h2>Arch Linux, Manjaro, EndeavourOS (pacman) <span>x86_64</span></h2>
+    <p>A signed pacman repository: pacman installs the app and brings every update with <code>sudo pacman -Syu</code>; this copy does not update itself. Set it up once:</p>
+    <h3>1. Trust the repository key</h3>
+    <div class="cmd"><pre><code>curl -fsSLO https://get.openvolley.app/arch/openvolley.gpg
+sudo pacman-key --add openvolley.gpg
+sudo pacman-key --lsign-key @PACMAN_FPR@</code></pre><button class="copy" type="button">Copy</button></div>
+    <p class="meta">Check the key before trusting it: <code>gpg --show-keys openvolley.gpg</code> must show the fingerprint below.</p>
+    <h3>2. Add the repository</h3>
+    <p>At the end of <code>/etc/pacman.conf</code> (for example with <code>sudo nano /etc/pacman.conf</code>):</p>
+    <div class="cmd"><pre><code>[openvolley]
+SigLevel = Required DatabaseRequired
+Server = https://get.openvolley.app/arch/$arch</code></pre><button class="copy" type="button">Copy</button></div>
+    <h3>3. Install</h3>
+    <!--pacman-ov-->
+    <div class="cmd"><pre><code>sudo pacman -Syu openvolley-escoresheet-bin</code></pre><button class="copy" type="button">Copy</button></div>
+    <!--/pacman-ov-->
+    <!--beach-pacman-->
+    <div class="cmd"><pre><code>sudo pacman -Syu openbeach-escoresheet-bin</code></pre><button class="copy" type="button">Copy</button></div>
+    <!--/beach-pacman-->
+    <p>Updates come with <code>sudo pacman -Syu</code>. Start it from the app menu or with <code>openvolley-escoresheet</code> (OpenBeach: <code>openbeach-escoresheet</code>). For the tablet Wi-Fi also install <code>networkmanager</code> and <code>dnsmasq</code>.</p>
+    <p class="meta">The same packages as the AUR's (<code>-bin</code>: the released <code>.deb</code>, repackaged), built and signed here. Signing key: OpenVolley pacman repository &lt;packages@openvolley.app&gt;, ed25519 (<a href="/arch/openvolley.gpg">openvolley.gpg</a>)</p>
+    <p class="fp">@PACMAN_FPR_GROUPED@</p>
+  </section>
+  <!--/pacman-->
+
   <section class="card" id="windows">
     <h2>Windows <span>@DESKTOP_VERSION@ · 64-bit</span></h2>
     <p>Download and run the installer from the GitHub release. Windows may show a SmartScreen notice for a new download: <kbd>More info</kbd> → <kbd>Run anyway</kbd>.</p>
@@ -244,7 +273,7 @@ sudo apt update &amp;&amp; sudo apt install @DEB_PACKAGE@</code></pre><button cl
     <h3>Arch Linux, Manjaro, EndeavourOS (AUR) <span class="soon">coming soon</span></h3>
     <div class="cmd"><pre><code>yay -S openvolley-escoresheet-bin</code></pre><button class="copy" type="button">Copy</button></div>
     <div class="cmd"><pre><code>yay -S openbeach-escoresheet-bin</code></pre><button class="copy" type="button">Copy</button></div>
-    <p class="meta">Any AUR helper works (paru too). Updates come with <code>yay -Syu</code>. For the tablet Wi-Fi also install <code>networkmanager</code> and <code>dnsmasq</code>.</p>
+    <p class="meta">Any AUR helper works (paru too). Updates come with <code>yay -Syu</code>. For the tablet Wi-Fi also install <code>networkmanager</code> and <code>dnsmasq</code>.<!--pacman--> Until then: the <a href="#arch">pacman repository</a> above, same packages.<!--/pacman--></p>
     <h3>Snap (Ubuntu and others) <span class="soon">coming soon</span></h3>
     <div class="cmd"><pre><code>sudo snap install openvolley-escoresheet
 sudo snap connect openvolley-escoresheet:network-manager
@@ -269,11 +298,11 @@ sudo snap connect openvolley-escoresheet:bluez</code></pre><button class="copy" 
     <p>Installed the APK from the browser? Open OpenVolley in F-Droid once and tap <kbd>Update</kbd>: from then on F-Droid updates it. Without F-Droid the app can tell you about a new version instead, if you say yes when it asks (about once a day it reads the version list on this site, never during a match; nothing else is sent). It never installs anything itself.</p>
     <h3>Windows, Linux and macOS</h3>
     <p>From version 2.2.0 the desktop app updates itself: it downloads the update in the background and installs it when you quit OpenVolley, never during a match. Windows asks once for an administrator per update. Linux installed with the command above updates in the background and runs the new version from the next start. macOS: the same, for the app started from Applications; it asks for an administrator only when the app's folder is not yours to write (Homebrew leaves the updates to the app). Version 2.1.x and older: install 2.2.0 once by hand (Linux: <code>sudo apt update &amp;&amp; sudo apt upgrade</code>).</p>
-    <p>A Flatpak, Snap or AUR copy never updates itself: <code>flatpak update</code>, the Snap Store or <code>yay -Syu</code> brings the new version.</p>
+    <p>A Flatpak, Snap, Arch (pacman) or AUR copy never updates itself: <code>flatpak update</code>, the Snap Store, <code>sudo pacman -Syu</code> or <code>yay -Syu</code> brings the new version.</p>
   </section>
 
   <footer>
-    Browse the repositories: <a href="/apt/">/apt/</a> · <a href="/fdroid/repo/">/fdroid/repo/</a> ·<!--flatpak--> <a href="/flatpak/">/flatpak/</a> ·<!--/flatpak-->
+    Browse the repositories: <a href="/apt/">/apt/</a> · <a href="/fdroid/repo/">/fdroid/repo/</a> ·<!--flatpak--> <a href="/flatpak/">/flatpak/</a> ·<!--/flatpak--><!--pacman--> <a href="/arch/">/arch/</a> ·<!--/pacman-->
     Source: <a href="https://github.com/Lucanepa/openvolley">github.com/Lucanepa/openvolley</a> · Web app: <a href="https://openvolley.app">openvolley.app</a><br>
     <!-- URLs: escoresheet/frontend/src/legal/legalLinks.js (its test checks these) -->
     <a href="https://openvolley.app/en/privacy">Privacy policy</a> · <a href="https://openvolley.app/en/terms">Terms of use</a> · <a href="https://openvolley.app/en/imprint">Legal notice</a> · <a href="https://openvolley.app/en/open-source">Open-source notice</a>
