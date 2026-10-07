@@ -2,6 +2,8 @@
 // the OpenBeach brand (src/managerBrand.js, plan S2). Beach roles, beach
 // lists (?app=beach), "Join OpenBeach" for accounts that have not joined.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import en from '../i18n/locales/en.json'
 import de from '../i18n/locales/de.json'
@@ -54,6 +56,7 @@ vi.mock('../lib/apiClient', () => ({
 import ManagerApp from '../ManagerApp'
 import ManageConsole, { manageTabsFor } from '../components/manage/ManageConsole'
 import AccountsPanel from '../components/manage/AccountsPanel'
+import AuditPanel, { auditDetailsLine } from '../components/manage/AuditPanel'
 import { ManagerBrandProvider, MANAGER_BRANDS, managerBrandOf } from '../managerBrand'
 import { accessFromRoles, accessForApp, NO_ACCESS } from '../lib/access'
 import { apiAuth } from '../lib/apiClient'
@@ -86,7 +89,7 @@ describe('managerBrand', () => {
     expect(managerBrandOf('beach')).toBe(MANAGER_BRANDS.beach)
     for (const v of [undefined, null, 'indoor', 'snow']) expect(managerBrandOf(v)).toBe(MANAGER_BRANDS.indoor)
     expect(MANAGER_BRANDS.beach).toMatchObject({ name: 'OpenBeach', siteUrl: 'https://manager-beach.openvolley.app', scope: 'beach' })
-    expect(MANAGER_BRANDS.indoor).toMatchObject({ name: 'OpenVolley', tabs: null, scope: null })
+    expect(MANAGER_BRANDS.indoor).toMatchObject({ name: 'OpenVolley', tabs: null, scope: 'indoor' })
   })
 
   it('tabs: OpenBeach has no official games or closed matches; roles of its own app', () => {
@@ -265,11 +268,27 @@ describe('OpenBeach\'s console panels', () => {
     api.admin.listAccounts.mockImplementation(async () => ({ data: { accounts: [] }, error: null, status: 200 }))
   })
 
-  it('the console without a brand (the main app) asks as before', async () => {
+  it('the console without a brand (the main app) is OpenVolley\'s: its lists ask ?app=indoor (S2 review)', async () => {
     setAuth({ roles: ['admin'] })
     render(<ManageConsole tab="accounts" onTab={() => {}} />)
-    await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalledWith({ filter: 'pending', q: undefined }))
+    await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalledWith({ filter: 'pending', q: undefined, app: 'indoor' }))
+    expect(api.admin.listAccounts).toHaveBeenCalledWith({ filter: 'pending', app: 'indoor' })
+    expect(api.admin.listAccounts.mock.calls.every(([o]) => o.app === 'indoor')).toBe(true)
     expect(screen.getByAltText('OpenVolley')).toBeInTheDocument()
+  })
+
+  it('audit: "Joined this app" has a label, and OpenBeach\'s console names beach roles plainly', async () => {
+    const entries = [
+      { id: 2, at: '2026-10-02T08:00:00Z', action: 'account.roles', details: { added: ['beach:scorer'], removed: ['beach:referee'] } },
+      { id: 1, at: '2026-10-01T08:00:00Z', action: 'account.join', details: { app: 'beach' } }
+    ]
+    api.admin.listAudit.mockResolvedValue({ data: { entries, next_before: null }, error: null, status: 200 })
+    render(<AuditPanel app="beach" />)
+    // (this file's t() answers the fallback: the role's plain name)
+    expect(await screen.findByText('+ scorer · − referee')).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain('beach:')
+    api.admin.listAudit.mockReset()
+    api.admin.listAudit.mockImplementation(async () => ({ data: { entries: [], next_before: null }, error: null, status: 200 }))
   })
 })
 
@@ -295,5 +314,24 @@ describe('managerBeach strings', () => {
   })
   it('Swiss German writes ss', () => {
     expect(JSON.stringify(deCH.managerBeach)).not.toContain('ß')
+  })
+  // The audit title key is built at run time (check:i18n cannot see it): every
+  // action the backend writes has a label in every language (S2 review: account.join)
+  it.each(Object.keys(locales))('%s labels every audit action of the backend', (lng) => {
+    let src
+    try { src = readFileSync(fileURLToPath(new URL('../../../backend/lib/accounts.js', import.meta.url)), 'utf8') } catch { return }
+    const block = src.match(/export const AUDIT_ACTIONS = Object\.freeze\(\[([\s\S]*?)\]\)/)?.[1] || ''
+    const actions = [...block.replace(/\/\/.*$/gm, '').matchAll(/'([a-z_.]+)'/g)].map(m => m[1])
+    expect(actions).toContain('account.join')
+    for (const a of actions) expect(locales[lng].manage.audit.actions[a.replace(/\./g, '_')], `${lng} ${a}`).toBeTruthy()
+  })
+})
+
+describe('auditDetailsLine', () => {
+  it('names roles with roleLabel, as stored without it', () => {
+    const e = { details: { added: ['beach:scorer'], removed: [] } }
+    expect(auditDetailsLine(e)).toBe('+ beach:scorer')
+    expect(auditDetailsLine(e, { roleLabel: (r) => r.replace('beach:', '').toUpperCase() })).toBe('+ SCORER')
+    expect(auditDetailsLine({ details: { label: 'Tour', role: 'scorer', sport: 'beach' } }, { roleLabel: () => 'Scorer' })).toBe('Tour · Scorer')
   })
 })
