@@ -47,6 +47,7 @@ import { planSubstitutionDeletion } from '../domain/substitutions'
 import { decisionChangeUndoRecord, planDecisionChangeReversal, syncJobsForEvents, syncJobsForSets } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, renumberPlayerInEvents } from '../domain/roster'
 import { appendRemark, removeRemarkLine } from '../domain/remarks'
+import { describeEventText } from '../domain/describe'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal } from '../domain/matchEnd'
 import { swapTeamDesignation } from '../domain/coinToss'
 import { liveStateNeedsFreshSnapshot } from '../utils/livescoreModel'
@@ -6207,227 +6208,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }, [set5SideServiceModal, data?.match, matchId, getNextSeq, getStateSnapshot])
 
-  // Get action description for an event
+  // Get action description for an event: the paper-scoresheet wording of
+  // domain/describe (localized, concerned team first, no raw event types)
   const getActionDescription = useCallback((event) => {
     if (!event || !data) return 'Unknown action'
-
-    const teamName = event.payload?.team === 'home'
-      ? (data.homeTeam?.name || t('common.home'))
-      : event.payload?.team === 'away'
-        ? (data.awayTeam?.name || t('common.away'))
-        : null
-
-    // Determine team labels (A or B)
-    const teamALabel = data?.match?.coinTossTeamA === 'home' ? 'A' : 'B'
-    const teamBLabel = data?.match?.coinTossTeamB === 'home' ? 'A' : 'B'
-    const homeLabel = data?.match?.coinTossTeamA === 'home' ? 'A' : (data?.match?.coinTossTeamB === 'home' ? 'B' : 'A')
-    const awayLabel = data?.match?.coinTossTeamA === 'away' ? 'A' : (data?.match?.coinTossTeamB === 'away' ? 'B' : 'B')
-
-    // Calculate score at time of event
-    const setIdx = event.setIndex || 1
-    const setEvents = data.events?.filter(e => (e.setIndex || 1) === setIdx) || []
-    const eventIndex = setEvents.findIndex(e => e.id === event.id)
-
-    let homeScore = 0
-    let awayScore = 0
-    for (let i = 0; i <= eventIndex; i++) {
-      const e = setEvents[i]
-      if (e.type === 'point') {
-        if (e.payload?.team === 'home') {
-          homeScore++
-        } else if (e.payload?.team === 'away') {
-          awayScore++
-        }
-      }
-    }
-
-    let eventDescription = ''
-    if (event.type === 'coin_toss') {
-      const teamAName = event.payload?.teamA === 'home'
-        ? (data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home'))
-        : (data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away'))
-      const teamBName = event.payload?.teamB === 'home'
-        ? (data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home'))
-        : (data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away'))
-      // Determine if first serve is Team A or Team B
-      const firstServeLabel = event.payload?.firstServe === event.payload?.teamA ? 'A' : 'B'
-      eventDescription = `Coin toss - A: ${teamAName}, B: ${teamBName}, First serve: ${firstServeLabel}`
-    } else if (event.type === 'point') {
-      eventDescription = `Point — ${teamName} (${homeLabel} ${homeScore}:${awayScore} ${awayLabel})`
-    } else if (event.type === 'timeout') {
-      eventDescription = `Timeout — ${teamName}`
-    } else if (event.type === 'substitution') {
-      const playerOut = event.payload?.playerOut || '?'
-      const playerIn = event.payload?.playerIn || '?'
-      const isExceptional = event.payload?.isExceptional === true
-      const substitutionType = isExceptional ? 'Exceptional substitution' : 'Substitution'
-      eventDescription = `${substitutionType} — ${teamName} (OUT: ${playerOut} IN: ${playerIn}) (${homeLabel} ${homeScore}:${awayScore} ${awayLabel})`
-    } else if (event.type === 'set_start') {
-      // Format the relative time as MM:SS
-      const relativeTime = typeof event.ts === 'number' ? event.ts : 0
-      const totalSeconds = Math.floor(relativeTime / 1000)
-      const minutes = Math.floor(totalSeconds / 60)
-      const seconds = totalSeconds % 60
-      const minutesStr = String(minutes).padStart(2, '0')
-      const secondsStr = String(seconds).padStart(2, '0')
-      eventDescription = `Set start — ${minutesStr}:${secondsStr}`
-    } else if (event.type === 'rally_start') {
-      eventDescription = 'Rally started'
-    } else if (event.type === 'replay') {
-      // Show detailed replay info with scores
-      const { oldHomePoints, oldAwayPoints, newHomePoints, newAwayPoints } = event.payload || {}
-      if (oldHomePoints !== undefined && newHomePoints !== undefined) {
-        // Get team labels (A/B) based on coin toss
-        const teamAKey = data?.match?.coinTossTeamA || 'home'
-        const oldLeftScore = teamAKey === 'home' ? oldHomePoints : oldAwayPoints
-        const oldRightScore = teamAKey === 'home' ? oldAwayPoints : oldHomePoints
-        const newLeftScore = teamAKey === 'home' ? newHomePoints : newAwayPoints
-        const newRightScore = teamAKey === 'home' ? newAwayPoints : newHomePoints
-        eventDescription = `${oldLeftScore}:${oldRightScore} Rally Replayed, new score ${newLeftScore}:${newRightScore}`
-      } else {
-        eventDescription = 'Rally replayed'
-      }
-    } else if (event.type === 'decision_change') {
-      const fromTeam = event.payload?.fromTeam === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))
-      const toTeam = event.payload?.toTeam === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))
-      eventDescription = `Decision change — Point swapped from ${fromTeam} to ${toTeam}`
-    } else if (event.type === 'lineup') {
-      // Only show initial lineups, not rotation lineups or libero substitution lineups
-      const isInitial = event.payload?.isInitial === true
-      const hasSubstitution = event.payload?.fromSubstitution === true
-      const hasLiberoSub = event.payload?.liberoSubstitution !== null && event.payload?.liberoSubstitution !== undefined
-
-      // Skip rotation lineups (they're part of the point)
-      if (!isInitial && !hasSubstitution && !hasLiberoSub) {
-        return null
-      }
-
-      // Only show initial lineups as "Line-up setup"
-      if (isInitial) {
-        eventDescription = `${t('scoreboard.lineupSetup', 'Line-up setup')} — ${teamName}`
-      } else if (hasLiberoSub) {
-        // Show libero-related lineup changes with the new lineup
-        const lineup = event.payload?.lineup || {}
-        const positions = ['I', 'II', 'III', 'IV', 'V', 'VI']
-        const lineupStr = positions.map(pos => lineup[pos] || '?').join('-')
-        eventDescription = `Lineup changed — ${teamName} (${lineupStr})`
-      } else {
-        return null // Skip rotation lineups (they're part of the point)
-      }
-    } else if (event.type === 'libero_entry') {
-      const liberoNumber = event.payload?.liberoIn || '?'
-      const playerOut = event.payload?.playerOut || '?'
-      const liberoType = event.payload?.liberoType === 'libero1' ? 'L1' : event.payload?.liberoType === 'redesignated' ? 'LR' : 'L2'
-      eventDescription = `Libero entry — ${teamName} (${liberoType} ${liberoNumber} in for ${playerOut})`
-    } else if (event.type === 'libero_exit') {
-      const liberoNumber = event.payload?.liberoOut || '?'
-      const playerIn = event.payload?.playerIn || '?'
-      const liberoType = event.payload?.liberoType === 'libero1' ? 'L1' : event.payload?.liberoType === 'redesignated' ? 'LR' : 'L2'
-      eventDescription = `Libero exit — ${teamName} (${liberoType} ${liberoNumber} out, ${playerIn} in)`
-    } else if (event.type === 'libero_exchange') {
-      const liberoOut = event.payload?.liberoOut || '?'
-      const liberoIn = event.payload?.liberoIn || '?'
-      const liberoOutType = event.payload?.liberoOutType === 'libero1' ? 'L1' : event.payload?.liberoOutType === 'redesignated' ? 'LR' : 'L2'
-      const liberoInType = event.payload?.liberoInType === 'libero1' ? 'L1' : event.payload?.liberoInType === 'redesignated' ? 'LR' : 'L2'
-      eventDescription = `Libero exchange — ${teamName} (${liberoOutType} ${liberoOut} ↔ ${liberoInType} ${liberoIn})`
-    } else if (event.type === 'libero_unable') {
-      const liberoNumber = event.payload?.liberoNumber || '?'
-      const liberoType = event.payload?.liberoType === 'libero1' ? 'L1' : event.payload?.liberoType === 'redesignated' ? 'LR' : 'L2'
-      const reason = event.payload?.reason || 'declared'
-      if (reason === 'declared') {
-        eventDescription = `Libero declared unable — ${teamName} (${liberoType} ${liberoNumber})`
-      } else if (reason === 'injury') {
-        eventDescription = `Libero became unable — ${teamName} (${liberoType} ${liberoNumber} - injury)`
-      } else if (reason === 'expulsion') {
-        eventDescription = `Libero became unable — ${teamName} (${liberoType} ${liberoNumber} - expelled)`
-      } else if (reason === 'disqualification') {
-        eventDescription = `Libero became unable — ${teamName} (${liberoType} ${liberoNumber} - disqualified)`
-      } else {
-        eventDescription = `Libero became unable — ${teamName} (${liberoType} ${liberoNumber})`
-      }
-    } else if (event.type === 'libero_redesignation') {
-      const unableLiberoNumber = event.payload?.unableLiberoNumber || '?'
-      const newLiberoNumber = event.payload?.newLiberoNumber || '?'
-      const unableType = event.payload?.unableLiberoType === 'libero1' ? 'L1' : event.payload?.unableLiberoType === 'libero2' ? 'L2' : 'L'
-      eventDescription = `Libero redesignation — ${teamName} (${unableType} ${unableLiberoNumber} → R ${newLiberoNumber})`
-    } else if (event.type === 'set_end') {
-      const winnerLabel = event.payload?.teamLabel || '?'
-      const setIndex = event.payload?.setIndex || event.setIndex || '?'
-      const startTime = event.payload?.startTime
-      const endTime = event.payload?.endTime
-
-      let timeInfo = ''
-      if (startTime && endTime) {
-        const start = new Date(startTime)
-        const end = new Date(endTime)
-        const durationMs = end - start
-        const durationMin = Math.floor(durationMs / 60000)
-        const durationSec = Math.floor((durationMs % 60000) / 1000)
-        const startTimeStr = `${String(start.getUTCHours()).padStart(2, '0')}:${String(start.getUTCMinutes()).padStart(2, '0')}`
-        const endTimeStr = `${String(end.getUTCHours()).padStart(2, '0')}:${String(end.getUTCMinutes()).padStart(2, '0')}`
-        timeInfo = ` (${startTimeStr} - ${endTimeStr}, ${durationMin} min)`
-      }
-
-      eventDescription = `Team ${winnerLabel} won Set ${setIndex}${timeInfo}`
-    } else if (event.type === 'set5_coin_toss') {
-      const leftTeam = event.payload?.leftTeam || '?'
-      const firstServe = event.payload?.firstServe || '?'
-      eventDescription = `Set 5 coin toss — Left: Team ${leftTeam}, First serve: Team ${firstServe}`
-    } else if (event.type === 'sanction') {
-      const sanctionType = event.payload?.type || 'unknown'
-      const sanctionLabel = sanctionType === 'improper_request' ? 'Improper Request' :
-        sanctionType === 'delay_warning' ? 'Delay Warning' :
-          sanctionType === 'delay_penalty' ? 'Delay Penalty' :
-            sanctionType === 'warning' ? 'Warning' :
-              sanctionType === 'penalty' ? 'Penalty' :
-                sanctionType === 'expulsion' ? 'Expulsion' :
-                  sanctionType === 'disqualification' ? 'Disqualification' :
-                    sanctionType
-
-      // Add player/official info if available
-      let target = ''
-      if (event.payload?.playerNumber) {
-        target = ` ${event.payload.playerNumber}`
-      } else if (event.payload?.role) {
-        const roleAbbr = event.payload.role === 'Coach' ? 'C' :
-          event.payload.role === 'Assistant Coach 1' ? 'AC1' :
-            event.payload.role === 'Assistant Coach 2' ? 'AC2' :
-              event.payload.role === 'Physiotherapist' ? 'P' :
-                event.payload.role === 'Medic' ? 'M' : event.payload.role
-        target = ` ${roleAbbr}`
-      } else {
-        target = ' Team'
-      }
-
-      eventDescription = `Sanction — ${teamName}${target} (${sanctionLabel}) (${homeLabel} ${homeScore}:${awayScore} ${awayLabel})`
-    } else if (event.type === 'remark') {
-      const remarkText = event.payload?.text || ''
-      // Show first line or first 50 characters
-      const preview = remarkText.split('\n')[0].substring(0, 50)
-      eventDescription = `Remark added — ${preview}${remarkText.length > 50 ? '...' : ''}`
-    } else if (event.type === 'court_captain_designation') {
-      const playerNumber = event.payload?.playerNumber || '?'
-      eventDescription = `${t('scoreboard.courtCaptainDesignation', 'Court captain designation')} — ${teamName} (#${playerNumber})`
-    } else if (event.type === 'bench_injury') {
-      const playerNumber = event.payload?.playerNumber || '?'
-      eventDescription = `Injury — ${teamName} (#${playerNumber}, bench)`
-    } else if (event.type === 'forfait') {
-      const scope = event.payload?.scope === 'match' ? 'match' : 'set'
-      const reason = event.payload?.reason ? `, ${String(event.payload.reason).replace(/_/g, ' ')}` : ''
-      eventDescription = `Team incomplete for the ${scope} — ${teamName}${reason}`
-    } else if (event.type === 'match_stopped') {
-      eventDescription = `Match stopped, cannot be resumed (${homeLabel} ${event.payload?.homePoints ?? homeScore}:${event.payload?.awayPoints ?? awayScore} ${awayLabel})`
-    } else {
-      // Never show an internal type name: "some_event" reads "Some event"
-      const readable = String(event.type || '').replace(/_/g, ' ')
-      eventDescription = readable.charAt(0).toUpperCase() + readable.slice(1)
-      if (teamName) {
-        eventDescription += ` — ${teamName}`
-      }
-    }
-
-    return eventDescription
-  }, [data])
+    const text = describeEventText(event, data.events || [], { t, match: data.match, homeTeam: data.homeTeam, awayTeam: data.awayTeam })
+    if (text) return text
+    if (event.type === 'rally_start') return t('corrections.describe.rallyStart', 'Rally started')
+    if (event.type === 'set_start') return t('corrections.describe.setStart', 'Set start')
+    return null
+  }, [data, t])
 
   // Show undo confirmation
   const showUndoConfirm = useCallback(() => {
