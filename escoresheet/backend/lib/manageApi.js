@@ -134,7 +134,7 @@ export function createManageApi ({ accounts, savedTeams, beach = null }) {
     if (!family) return notFound()
     const early = familyRefusal(family, method, access)
     if (early) return early
-    if (family === 'beach') return beach ? beach.route({ method, pathname, body, user, access }) : notFound()
+    if (family === 'beach') return beach ? beach.route({ method, pathname, query, body, user, access }) : notFound()
     let pathKnown = false
     for (const [m, re, need, handler] of routes) {
       const match = re.exec(pathname)
