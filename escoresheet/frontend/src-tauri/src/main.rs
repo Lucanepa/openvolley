@@ -318,7 +318,11 @@ fn with_app_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Bu
 }
 
 /// tauri-plugin-log: stdout and `desktop.log` in the log folder, 5 MB per
-/// file, the last 5 kept, local time; Info (Debug with OV_DEBUG=1). None of
+/// file, the last 5 kept, local time; this app's lines from Info (Debug with
+/// OV_DEBUG=1), other crates' only from Warn: their Info lines (zbus logs
+/// every D-Bus handshake, with raw bytes) are noise in the file and could
+/// carry what the app hands them (NetworkManager calls carry the tablet
+/// Wi-Fi password). None of
 /// the plugin's JS commands is granted to a window (no capability names
 /// `log:`), so the page cannot write to it. Never log a PIN, token or the
 /// tablet Wi-Fi password: URLs are logged without their query (popups.rs).
@@ -341,7 +345,8 @@ fn log_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
         .max_file_size(5_000_000)
         .rotation_strategy(RotationStrategy::KeepSome(5))
         .timezone_strategy(TimezoneStrategy::UseLocal)
-        .level(level)
+        .level(log::LevelFilter::Warn)
+        .level_for(env!("CARGO_CRATE_NAME"), level)
         .build()
 }
 
