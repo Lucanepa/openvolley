@@ -46,6 +46,19 @@ describe('phoneSignApi', () => {
     setHost('localhost')
   })
 
+  it('LAN start from a loopback page the relay does not count as itself: once more with the game PIN', async () => {
+    setHost('localhost')
+    const f = fetchImpl((url, init) => (init.headers['X-OV-Match-Pin'] ? json(201, okStart) : json(403, { ok: false, code: 'OV_SIGN_FORBIDDEN' })))
+    const r = await startPhoneSign({ transport: 'lan', apiBase: 'http://localhost:8080', phoneBase: 'http://192.168.1.10:8080', slot: 'scorer', matchKey: 'seed-1', context: {}, gamePin: '987654', fetchImpl: f })
+    expect(r.ok).toBe(true)
+    expect(calls.map((c) => c.init.headers['X-OV-Match-Pin'])).toEqual([undefined, '987654'])
+    // Without a PIN, or refused for another reason: no second request
+    calls = []
+    await startPhoneSign({ transport: 'lan', apiBase: 'http://localhost:8080', phoneBase: 'x', slot: 'scorer', context: {}, gamePin: null, fetchImpl: f })
+    await startPhoneSign({ transport: 'lan', apiBase: 'http://localhost:8080', phoneBase: 'x', slot: 'scorer', context: {}, gamePin: '987654', fetchImpl: fetchImpl(json(429, { ok: false, code: 'OV_SIGN_RATE_LIMITED' })) })
+    expect(calls).toHaveLength(2)
+  })
+
   it('errors are results: codes, an old relay (404 without JSON), the network', async () => {
     expect(await startPhoneSign({ transport: 'cloud', apiBase: 'x', slot: 's', context: {}, fetchImpl: fetchImpl(json(403, { ok: false, code: 'OV_SIGN_FORBIDDEN' })) }))
       .toEqual({ ok: false, status: 403, code: 'OV_SIGN_FORBIDDEN' })
