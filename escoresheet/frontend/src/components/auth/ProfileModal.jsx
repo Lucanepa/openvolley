@@ -8,6 +8,7 @@ import RoleChips from './RoleChips'
 import PendingApprovalBanner from './PendingApprovalBanner'
 import EmailConfirmBanner from './EmailConfirmBanner'
 import DateOfBirthInput from './DateOfBirthInput'
+import ApprovalPinSection from './ApprovalPinSection'
 import { backdropDismiss } from '../../ui/backdropDismiss.js'
 
 export default function ProfileModal({ open, onClose }) {
@@ -263,6 +264,8 @@ export default function ProfileModal({ open, onClose }) {
             {access?.known ? <RoleChips roles={access.roles} pending={access.isPending} /> : <span className="text-xs text-stone-400">–</span>}
           </div>
           <PendingApprovalBanner className="mb-4" />
+          {/* Referees and scorers: the personal PIN to approve results with the account */}
+          <ApprovalPinSection className="mb-4" />
 
           <form onSubmit={handleSubmit} className="space-y-3">
             {/* Name fields */}
