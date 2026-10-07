@@ -253,6 +253,11 @@ jobs:
           hdiutil detach "$m" >/dev/null || hdiutil detach -force "$m" >/dev/null
           [ "$ok" = 1 ] || { echo "::error::$dmg does not hold $name.app and the Applications link"; exit 1; }
           ls -la "$b/macos" "$b/dmg"
+          # the Homebrew cask for this dmg (escoresheet/deploy/homebrew) is valid Ruby
+          tap=$(mktemp -d)
+          app_arg=(); [ "${{ matrix.flavour }}" = beach ] && app_arg=(--app beach)
+          OV_CASK_DMG="$dmg" ../../deploy/homebrew/bump-cask.sh ${app_arg[@]+"${app_arg[@]}"} "$v" "$tap"
+          ruby -c "$tap"/Casks/*.rb
           { echo "exe=$PWD/$exe"; echo "port=$port"; echo "logs=$HOME/Library/Logs/$data"; } >> "$GITHUB_OUTPUT"
 
       # macOS: each slice runs the tablet relay (x86_64 under Rosetta), then
