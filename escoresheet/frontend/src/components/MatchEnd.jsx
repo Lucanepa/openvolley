@@ -18,6 +18,7 @@ import CloudBlockNotice from './CloudBlockNotice'
 import { Textarea } from '../ui/Textarea.jsx'
 import { uploadScoresheet, scoresheetUploadPath } from '../utils/scoresheetUploader'
 import { redactScoresheetPath } from '../../scoresheet_pdf/utils/scoresheetStorage'
+import { isoOf, matchTimes, setDurationMinutes } from '../../scoresheet_pdf/utils/matchTimes'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { exportLogsAsNDJSON } from '../utils/comprehensiveLogger'
 
@@ -467,23 +468,10 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         ? (teamBPoints > teamAPoints ? 1 : 0)
         : null
 
-      let duration = ''
-      if (isSetFinished && setInfo?.endTime) {
-        let start
-        // Use the confirmed set start (as the PDF does); the scheduled time is
-        // only a fallback for set 1, since matches often start late.
-        if (setInfo?.startTime) {
-          start = new Date(setInfo.startTime)
-        } else if (setNum === 1 && match?.scheduledAt) {
-          start = new Date(match.scheduledAt)
-        } else {
-          start = new Date()
-        }
-        const end = new Date(setInfo.endTime)
-        const durationMs = end.getTime() - start.getTime()
-        const minutes = Math.floor(durationMs / 60000)
-        duration = minutes > 0 ? `${minutes}'` : ''
-      }
+      // end - the set's ACTUAL start (its first rally), as on the PDF
+      // (scoresheet_pdf/utils/matchTimes): never the schedule
+      const minutes = isSetFinished ? setDurationMinutes(setInfo, setEvents) : null
+      const duration = minutes !== null && minutes > 0 ? `${minutes}'` : ''
 
       results.push({
         setNumber: setNum,
@@ -643,30 +631,13 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       ? (awayTeam?.name || t('common.away'))
       : t('matchEnd.noWinner', 'No winner (match stopped)')
 
-  // Match time info - duration is matchEnd - matchStart. Start is the confirmed
-  // set 1 start (as on the PDF), falling back to the scheduled time.
-  const set1StartTime = sets.find(s => s.index === 1)?.startTime || null
-  const matchStartIso = set1StartTime || match?.scheduledAt || null
-  const matchStartDate = matchStartIso ? new Date(matchStartIso) : null
-  const matchEndDate = finishedSets.length > 0 && finishedSets[finishedSets.length - 1].endTime
-    ? new Date(finishedSets[finishedSets.length - 1].endTime)
-    : null
-
-  // Display times in local timezone
-  const matchStart = matchStartIso ? formatTimeLocal(matchStartIso) : ''
-  const matchEndTime = finishedSets.length > 0 && finishedSets[finishedSets.length - 1].endTime
-    ? formatTimeLocal(finishedSets[finishedSets.length - 1].endTime)
-    : ''
-
-  // Calculate duration as matchEnd - matchStart
-  const matchDuration = (() => {
-    if (matchStartDate && matchEndDate) {
-      const durationMs = matchEndDate.getTime() - matchStartDate.getTime()
-      const totalMinutes = Math.floor(durationMs / 60000)
-      return totalMinutes > 0 ? `${totalMinutes}'` : ''
-    }
-    return ''
-  })()
+  // Match start = set 1's actual start (its first rally), end = the last set's
+  // end, duration = end - start: the PDF's values (scoresheet_pdf/utils/matchTimes),
+  // never the scheduled time (owner 2026-10-07)
+  const times = matchTimes(sets, events)
+  const matchStart = times.startMs !== null ? formatTimeLocal(isoOf(times.startMs)) : ''
+  const matchEndTime = times.endMs !== null ? formatTimeLocal(isoOf(times.endMs)) : ''
+  const matchDuration = times.durationMinutes !== null && times.durationMinutes > 0 ? `${times.durationMinutes}'` : ''
 
   // Split sanctions
   const sanctionsInBox = processedSanctions.slice(0, 10)

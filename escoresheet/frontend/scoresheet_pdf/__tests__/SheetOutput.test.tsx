@@ -333,6 +333,25 @@ describe('round 2 (owner review 2026-10-07)', () => {
     expect(queryAllByTestId('roster-captain-signature')).toHaveLength(0)
   })
 
+  it('Match Start is the actual start of set 1 (its first rally), not the scheduled time', () => {
+    const base = fixture()
+    const data = {
+      ...base,
+      // the start dialog kept the schedule (20:00); the first rally really started at 20:11
+      sets: [{ index: 1, homePoints: 1, awayPoints: 0, finished: false, startTime: local(2026, 10, 7, 20, 0) }],
+      events: [
+        ...base.events,
+        { type: 'rally_start', setIndex: 1, seq: 50, ts: local(2026, 10, 7, 20, 11), payload: {} },
+        { type: 'point', setIndex: 1, seq: 51, ts: local(2026, 10, 7, 20, 12), payload: { team: 'home' } }
+      ]
+    }
+    const { container } = render(<App matchData={data} autoAction="preview" />)
+    const text = sheetText(container)
+    expect(text).toContain('Start:20:11')
+    expect(text).toContain('20 h 11 min')
+    expect(text).not.toContain('20 h 00 min')
+  })
+
   it('every roster player row is ruled, the remarks box has its writing lines', () => {
     const { getAllByTestId } = render(<App matchData={fixture()} autoAction="preview" />)
     expect(getAllByTestId('roster-row')).toHaveLength(28)
