@@ -65,6 +65,7 @@ import { SectionHeader } from '../ui/SectionHeader.jsx'
 import { DateField, DateTimeField } from '../ui/DateField.jsx'
 import { askConfirm } from '../utils/askConfirm.js'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
+import { ArrowUpDown, ChevronDown, Cross } from 'lucide-react'
 
 // ── volleyui chrome for the scoreboard (RESTYLE-SPEC P5) ──────────────────────
 // Only the chrome around the court takes these: the toolbar, the side-column
@@ -133,6 +134,79 @@ const SB_ROW_DELETE = `inline-flex items-center justify-center h-11 min-w-[64px]
 /** Anchored action menu / dropdown beside a player (kit anchored menu). The
  *  scale(1.5) and the position stay inline, so targets keep their size. */
 const SB_POPOVER = 'rounded-xl border border-stone-200 bg-white shadow-card-lg text-stone-800'
+
+/**
+ * One button spec for every row of the player / libero / official popovers
+ * (court player, court libero with "Unable to play", bench player, bench
+ * libero, substitution, libero, libero-in, sanction and injury menus), so a
+ * menu never mixes heights, type sizes or icon sizes. The popovers are drawn
+ * at scale(1.5): h-8 / text-xs / size-5 are 48px / 18px / 30px on screen.
+ * Every property the legacy `button {}` rule sets is set here (box-border and
+ * py-0 too, as there is no preflight), so nothing of the scoring green leaks in.
+ */
+const SB_MENU_ITEM = `box-border flex h-8 w-full shrink-0 items-center gap-2 px-2.5 py-0 rounded-lg border text-left text-xs font-semibold leading-none tracking-normal whitespace-nowrap transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-100 disabled:border-stone-200 disabled:bg-stone-50 disabled:text-stone-500 ${FOCUS_RING}`
+/** Colour = meaning; every pair is WCAG AA (>= 4.5:1) at text-xs. */
+const SB_MENU_TONE = {
+  neutral: 'border-stone-300 bg-white text-stone-800 hover:bg-stone-50',
+  positive: 'border-emerald-700 bg-emerald-700 text-white hover:border-emerald-800 hover:bg-emerald-800',
+  'positive-soft': 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100',
+  libero: 'border-amber-300 bg-amber-50 text-stone-900 hover:bg-amber-100',
+  danger: 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100',
+  declared: 'border-orange-300 bg-orange-50 text-orange-800 hover:bg-orange-100'
+}
+/** A submenu / picker under its parent row: indented on a hairline rail, same row height. */
+const SB_MENU_SUB = 'ml-1.5 flex flex-col gap-1 border-l-2 border-stone-200 pl-2'
+const SB_MENU_CHIPS = 'ml-1.5 flex flex-wrap gap-1 border-l-2 border-stone-200 pl-2'
+
+/**
+ * A popover menu row. `icon` goes in the fixed right-hand slot; `expanded`
+ * (true/false) makes it a disclosure with a chevron there instead. `chip` is
+ * a picker button (a shirt number) sized to its label, same height and type.
+ */
+function SbMenuItem({ tone = 'neutral', icon, expanded, chip = false, className, children, ...rest }) {
+  const hasSlot = icon != null || expanded !== undefined
+  return (
+    <button
+      type="button"
+      aria-expanded={expanded}
+      className={cn(SB_MENU_ITEM, SB_MENU_TONE[tone], chip && 'w-auto min-w-10 justify-center', className)}
+      {...rest}
+    >
+      <span className={chip ? 'tabular-nums' : 'min-w-0 flex-1 truncate'}>{children}</span>
+      {hasSlot && (
+        <span aria-hidden="true" className="inline-flex size-5 shrink-0 items-center justify-center">
+          {expanded !== undefined
+            ? <ChevronDown size={16} strokeWidth={2.5} className={cn('transition-transform', expanded && 'rotate-180')} />
+            : icon}
+        </span>
+      )}
+    </button>
+  )
+}
+
+/** Official card marks sized for the menu icon slot (20px box). */
+function SbCardIcon({ kind }) {
+  const card = (colour, style) => <span className={`sanction-card ${colour}`} style={{ display: 'block', borderRadius: '2px', ...style }} />
+  if (kind === 'yellow' || kind === 'red') return card(kind, { width: '12px', height: '16px' })
+  if (kind === 'combo') {
+    return (
+      <span style={{ position: 'relative', display: 'block', width: '20px', height: '18px' }}>
+        {card('red', { position: 'absolute', right: '1px', top: '0', width: '11px', height: '15px', transform: 'rotate(8deg)' })}
+        {card('yellow', { position: 'absolute', left: '1px', top: '3px', width: '11px', height: '15px', transform: 'rotate(-8deg)' })}
+      </span>
+    )
+  }
+  // 'pair': yellow and red side by side (disqualification, the Sanction entry)
+  return (
+    <span style={{ display: 'flex', gap: '2px' }}>
+      {card('yellow', { width: '9px', height: '14px' })}
+      {card('red', { width: '9px', height: '14px' })}
+    </span>
+  )
+}
+
+/** The medical cross for injury rows. */
+const SB_INJURY_ICON = <Cross size={16} fill="currentColor" strokeWidth={1.5} />
 
 /**
  * SYNC ARCHITECTURE NOTE:
@@ -23425,7 +23499,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {/* Substitution - auto-fire if only 1 legal substitute, otherwise expandable */}
                 {playerActionMenu.canSubstitute && availableSubs.length > 0 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <button
+                    <SbMenuItem
+                      tone="positive"
                       onClick={() => {
                         // If only 1 legal substitute, go directly to confirmation
                         if (availableSubs.length === 1) {
@@ -23434,67 +23509,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           setCourtSubExpanded(!courtSubExpanded)
                         }
                       }}
-                      style={{
-                        padding: '8px 12px',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        background: '#047857',
-                        color: '#fff',
-                        border: '1px solid #047857',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        transition: 'all 0.2s',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '6px',
-                        width: '100%'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = '#065f46'
-                        e.currentTarget.style.transform = 'scale(1.02)'
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = '#047857'
-                        e.currentTarget.style.transform = 'scale(1)'
-                      }}
+                      // Only a disclosure (chevron) if more than 1 substitute available
+                      expanded={availableSubs.length > 1 ? courtSubExpanded : undefined}
+                      icon={availableSubs.length > 1 ? undefined : <ArrowUpDown size={16} strokeWidth={2.5} />}
                     >
-                      <span>Substitution</span>
-                      {/* Only show arrow if more than 1 substitute available */}
-                      {availableSubs.length > 1 && (
-                        <span style={{ fontSize: '14px', lineHeight: '1', transform: courtSubExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-                      )}
-                    </button>
+                      Substitution
+                    </SbMenuItem>
                     {courtSubExpanded && availableSubs.length > 1 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                      <div className={SB_MENU_CHIPS}>
                         {availableSubs.map(sub => (
-                          <button
-                            key={sub.number}
-                            onClick={() => handleSubFromMenu(sub)}
-                            style={{
-                              padding: '6px 10px',
-                              fontSize: '12px',
-                              fontWeight: 700,
-                              background: '#ecfdf5',
-                              color: '#047857',
-                              border: '1px solid #a7f3d0',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
-                              transition: 'all 0.2s',
-                              minWidth: '40px'
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = '#d1fae5'
-                              e.currentTarget.style.borderColor = '#6ee7b7'
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = '#ecfdf5'
-                              e.currentTarget.style.borderColor = '#a7f3d0'
-                            }}
-                          >
+                          <SbMenuItem key={sub.number} chip tone="positive-soft" onClick={() => handleSubFromMenu(sub)}>
                             {sub.number}
-                          </button>
+                          </SbMenuItem>
                         ))}
                       </div>
                     )}
@@ -23587,70 +23613,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <button
-                        onClick={() => setCourtLiberoExpanded(!courtLiberoExpanded)}
-                        style={{
-                          padding: '8px 12px',
-                          fontSize: '12px',
-                          fontWeight: 600,
-                          background: '#FFF8E7',
-                          color: '#000',
-                          border: '1px solid rgba(0, 0, 0, 0.2)',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          transition: 'all 0.2s',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: '6px',
-                          width: '100%'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = '#fff4d6'
-                          e.currentTarget.style.transform = 'scale(1.02)'
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = '#FFF8E7'
-                          e.currentTarget.style.transform = 'scale(1)'
-                        }}
-                      >
-                        <span>Libero</span>
-                        <span style={{ fontSize: '14px', lineHeight: '1', transform: courtLiberoExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-                      </button>
+                      <SbMenuItem tone="libero" expanded={courtLiberoExpanded} onClick={() => setCourtLiberoExpanded(!courtLiberoExpanded)}>
+                        Libero
+                      </SbMenuItem>
                       {courtLiberoExpanded && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                        <div className={SB_MENU_CHIPS}>
                           {availableLiberos.map(libero => (
-                            <button
-                              key={libero.number}
-                              onClick={() => handleLiberoSelect(libero)}
-                              style={{
-                                padding: '6px 10px',
-                                fontSize: '12px',
-                                fontWeight: 700,
-                                background: '#fff',
-                                color: '#000',
-                                border: '1px solid rgba(0, 0, 0, 0.3)',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s',
-                                minWidth: '50px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px'
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.background = '#f3f4f6'
-                                e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.5)'
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.background = '#fff'
-                                e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.3)'
-                              }}
-                            >
-                              <span>{libero.number}</span>
-                              <span style={{ fontSize: '10px', fontWeight: 600, color: '#000' }}>({libero.label})</span>
-                            </button>
+                            <SbMenuItem key={libero.number} chip tone="libero" onClick={() => handleLiberoSelect(libero)}>
+                              {libero.number} ({libero.label})
+                            </SbMenuItem>
                           ))}
                         </div>
                       )}
@@ -23681,7 +23652,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       {/* Libero Out button */}
-                      <button
+                      <SbMenuItem
+                        tone="libero"
                         onClick={() => {
                           setPlayerActionMenu(null)
                           setCourtSubExpanded(false)
@@ -23690,38 +23662,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           handleLiberoOut(side)
                         }}
                         disabled={liberoOutDisabled}
-                        style={{
-                          padding: '8px 12px',
-                          fontSize: '12px',
-                          fontWeight: 600,
-                          background: liberoOutDisabled ? '#888' : '#FFF8E7',
-                          color: '#000',
-                          border: '1px solid rgba(0, 0, 0, 0.2)',
-                          borderRadius: '6px',
-                          cursor: liberoOutDisabled ? 'not-allowed' : 'pointer',
-                          textAlign: 'center',
-                          transition: 'all 0.2s',
-                          width: '100%',
-                          opacity: liberoOutDisabled ? 0.5 : 1
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!liberoOutDisabled) {
-                            e.currentTarget.style.background = '#FFF0C0'
-                            e.currentTarget.style.transform = 'scale(1.02)'
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!liberoOutDisabled) {
-                            e.currentTarget.style.background = '#FFF8E7'
-                            e.currentTarget.style.transform = 'scale(1)'
-                          }
-                        }}
                       >
                         Libero out
-                      </button>
+                      </SbMenuItem>
                       {/* Exchange Libero button - only if 2 liberos */}
                       {liberos.length >= 2 && (
-                        <button
+                        <SbMenuItem
+                          tone="libero"
                           onClick={() => {
                             setPlayerActionMenu(null)
                             setCourtSubExpanded(false)
@@ -23730,72 +23677,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             handleExchangeLibero(side)
                           }}
                           disabled={exchangeLiberoDisabled}
-                          style={{
-                            padding: '8px 12px',
-                            fontSize: '12px',
-                            fontWeight: 600,
-                            background: exchangeLiberoDisabled ? '#888' : '#FFF8E7',
-                            color: '#000',
-                            border: '1px solid rgba(0, 0, 0, 0.2)',
-                            borderRadius: '6px',
-                            cursor: exchangeLiberoDisabled ? 'not-allowed' : 'pointer',
-                            textAlign: 'center',
-                            transition: 'all 0.2s',
-                            width: '100%',
-                            opacity: exchangeLiberoDisabled ? 0.5 : 1
-                          }}
-                          onMouseEnter={(e) => {
-                            if (!exchangeLiberoDisabled) {
-                              e.currentTarget.style.background = '#FFF0C0'
-                              e.currentTarget.style.transform = 'scale(1.02)'
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (!exchangeLiberoDisabled) {
-                              e.currentTarget.style.background = '#FFF8E7'
-                              e.currentTarget.style.transform = 'scale(1)'
-                            }
-                          }}
                         >
                           Exchange libero
-                        </button>
+                        </SbMenuItem>
                       )}
                       {/* Unable to play - expandable */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <button
-                          onClick={() => setCourtLiberoUnableExpanded(!courtLiberoUnableExpanded)}
-                          style={{
-                            padding: '8px 12px',
-                            fontSize: '12px',
-                            fontWeight: 600,
-                            background: '#fef2f2',
-                            color: '#b91c1c',
-                            border: '1px solid #fecaca',
-                            borderRadius: '6px',
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                            transition: 'all 0.2s',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            gap: '6px',
-                            width: '100%'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = '#fee2e2'
-                            e.currentTarget.style.transform = 'scale(1.02)'
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = '#fef2f2'
-                            e.currentTarget.style.transform = 'scale(1)'
-                          }}
-                        >
-                          <span>Unable to play</span>
-                          <span style={{ fontSize: '14px', lineHeight: '1', transform: courtLiberoUnableExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-                        </button>
+                        <SbMenuItem tone="danger" expanded={courtLiberoUnableExpanded} onClick={() => setCourtLiberoUnableExpanded(!courtLiberoUnableExpanded)}>
+                          Unable to play
+                        </SbMenuItem>
                         {courtLiberoUnableExpanded && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
-                            <button
+                          <div className={SB_MENU_SUB}>
+                            <SbMenuItem
+                              tone="declared"
+                              icon={<SpeechIcon size={16} />}
                               onClick={() => {
                                 setPlayerActionMenu(null)
                                 setCourtSubExpanded(false)
@@ -23810,25 +23705,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   isOnCourt: true
                                 })
                               }}
-                              style={{
-                                padding: '6px 10px',
-                                fontSize: '11px',
-                                fontWeight: 600,
-                                background: '#f97316',
-                                color: '#000',
-                                border: '1px solid rgba(0, 0, 0, 0.2)',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                gap: '8px'
-                              }}
                             >
-                              <span>Declared unable</span>
-                              <SpeechIcon size={14} />
-                            </button>
-                            <button
+                              Declared unable
+                            </SbMenuItem>
+                            <SbMenuItem
+                              tone="danger"
+                              icon={SB_INJURY_ICON}
                               onClick={() => {
                                 setPlayerActionMenu(null)
                                 setCourtSubExpanded(false)
@@ -23843,24 +23725,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   isOnCourt: true
                                 })
                               }}
-                              style={{
-                                padding: '6px 10px',
-                                fontSize: '11px',
-                                fontWeight: 600,
-                                background: '#fef2f2',
-                                color: '#b91c1c',
-                                border: '1px solid #fecaca',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                gap: '8px'
-                              }}
                             >
-                              <span>Injury / illness</span>
-                              <span style={{ fontSize: '14px' }}>✚</span>
-                            </button>
+                              Injury / illness
+                            </SbMenuItem>
                           </div>
                         )}
                       </div>
@@ -23869,164 +23736,31 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 })()}
                 {/* Sanction - expandable */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <button
-                    onClick={() => setCourtSanctionExpanded(!courtSanctionExpanded)}
-                    style={{
-                      padding: '8px 12px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      background: 'var(--panel)',
-                      color: 'var(--text)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'all 0.2s',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '6px',
-                      width: '100%'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'var(--panel-2)'
-                      e.currentTarget.style.transform = 'scale(1.02)'
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'var(--panel)'
-                      e.currentTarget.style.transform = 'scale(1)'
-                    }}
-                  >
-                    <span>Sanction</span>
-                    <span style={{ fontSize: '14px', lineHeight: '1', transform: courtSanctionExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-                  </button>
+                  <SbMenuItem expanded={courtSanctionExpanded} onClick={() => setCourtSanctionExpanded(!courtSanctionExpanded)}>
+                    Sanction
+                  </SbMenuItem>
                   {courtSanctionExpanded && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
-                      <button
-                        onClick={() => showSanctionConfirmFromMenu('warning')}
-                        disabled={!canGetWarning}
-                        style={{
-                          padding: '6px 10px',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          background: canGetWarning ? 'var(--panel-2)' : 'var(--panel-2)',
-                          color: canGetWarning ? 'var(--text)' : 'var(--muted)',
-                          border: '1px solid var(--border)',
-                          borderRadius: '4px',
-                          cursor: canGetWarning ? 'pointer' : 'not-allowed',
-                          textAlign: 'left',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          opacity: canGetWarning ? 1 : 0.5
-                        }}
-                      >
-                        <div className="sanction-card yellow" style={{ flexShrink: 0, width: '20px', height: '26px' }}></div>
-                        <span>Warning</span>
-                      </button>
-                      <button
-                        onClick={() => showSanctionConfirmFromMenu('penalty')}
-                        disabled={!canGetPenalty}
-                        style={{
-                          padding: '6px 10px',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          background: canGetPenalty ? 'var(--panel-2)' : 'var(--panel-2)',
-                          color: canGetPenalty ? 'var(--text)' : 'var(--muted)',
-                          border: '1px solid var(--border)',
-                          borderRadius: '4px',
-                          cursor: canGetPenalty ? 'pointer' : 'not-allowed',
-                          textAlign: 'left',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          opacity: canGetPenalty ? 1 : 0.5
-                        }}
-                      >
-                        <div className="sanction-card red" style={{ flexShrink: 0, width: '20px', height: '26px' }}></div>
-                        <span>Penalty</span>
-                      </button>
-                      <button
-                        onClick={() => showSanctionConfirmFromMenu('expulsion')}
-                        disabled={!canGetExpulsion}
-                        style={{
-                          padding: '6px 10px',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          background: canGetExpulsion ? 'var(--panel-2)' : 'var(--panel-2)',
-                          color: canGetExpulsion ? 'var(--text)' : 'var(--muted)',
-                          border: '1px solid var(--border)',
-                          borderRadius: '4px',
-                          cursor: canGetExpulsion ? 'pointer' : 'not-allowed',
-                          textAlign: 'left',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          opacity: canGetExpulsion ? 1 : 0.5
-                        }}
-                      >
-                        <div className="sanction-card combo" style={{ flexShrink: 0, width: '24px', height: '26px' }}></div>
-                        <span>Expulsion</span>
-                      </button>
-                      <button
-                        onClick={() => showSanctionConfirmFromMenu('disqualification')}
-                        style={{
-                          padding: '6px 10px',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          background: 'var(--panel-2)',
-                          color: 'var(--text)',
-                          border: '1px solid var(--border)',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px'
-                        }}
-                      >
-                        <div className="sanction-cards-separate" style={{ flexShrink: 0, display: 'flex', gap: '2px' }}>
-                          <div className="sanction-card yellow" style={{ width: '16px', height: '22px' }}></div>
-                          <div className="sanction-card red" style={{ width: '16px', height: '22px' }}></div>
-                        </div>
-                        <span>Disqualification</span>
-                      </button>
+                    <div className={SB_MENU_SUB}>
+                      <SbMenuItem icon={<SbCardIcon kind="yellow" />} onClick={() => showSanctionConfirmFromMenu('warning')} disabled={!canGetWarning}>
+                        Warning
+                      </SbMenuItem>
+                      <SbMenuItem icon={<SbCardIcon kind="red" />} onClick={() => showSanctionConfirmFromMenu('penalty')} disabled={!canGetPenalty}>
+                        Penalty
+                      </SbMenuItem>
+                      <SbMenuItem icon={<SbCardIcon kind="combo" />} onClick={() => showSanctionConfirmFromMenu('expulsion')} disabled={!canGetExpulsion}>
+                        Expulsion
+                      </SbMenuItem>
+                      <SbMenuItem icon={<SbCardIcon kind="pair" />} onClick={() => showSanctionConfirmFromMenu('disqualification')}>
+                        Disqualification
+                      </SbMenuItem>
                     </div>
                   )}
                 </div>
                 {/* Injury - direct button (NOT shown for liberos on court - they have "Unable to play" menu) */}
                 {!playerActionMenu.isLiberoOnCourt && (
-                  <button
-                    onClick={openInjuryFromMenu}
-                    style={{
-                      padding: '8px 12px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      background: '#fef2f2',
-                      color: '#b91c1c',
-                      border: '1px solid #fecaca',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'all 0.2s',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '6px',
-                      width: '100%'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#fee2e2'
-                      e.currentTarget.style.transform = 'scale(1.02)'
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = '#fef2f2'
-                      e.currentTarget.style.transform = 'scale(1)'
-                    }}
-                  >
-                    <span>Injury</span>
-                    <span style={{ fontSize: '14px', lineHeight: '1' }}>✚</span>
-                  </button>
+                  <SbMenuItem tone="danger" icon={SB_INJURY_ICON} onClick={openInjuryFromMenu}>
+                    Injury
+                  </SbMenuItem>
                 )}
               </div>
             </div>
@@ -24162,45 +23896,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     {availableSubstitutes.map(player => (
-                      <button
-                        key={player.id}
-                        onClick={() => showSubstitutionConfirm(player.number)}
-                        style={{
-                          padding: '4px 6px',
-                          fontSize: '13px',
-                          fontWeight: 700,
-                          background: 'var(--panel-2)',
-                          color: 'var(--accent)',
-                          border: '1px solid var(--border)',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          textAlign: 'center',
-                          transition: 'all 0.2s',
-                          width: '100%',
-                          minHeight: '28px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = 'var(--panel)'
-                          e.currentTarget.style.borderColor = 'var(--border)'
-                          e.currentTarget.style.transform = 'scale(1.05)'
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'var(--panel-2)'
-                          e.currentTarget.style.borderColor = 'var(--border)'
-                          e.currentTarget.style.transform = 'scale(1)'
-                        }}
-                      >
+                      <SbMenuItem key={player.id} tone="positive-soft" onClick={() => showSubstitutionConfirm(player.number)}>
                         # {player.number}
-                      </button>
+                      </SbMenuItem>
                     ))}
                   </div>
                 )}
                 {/* Cancel Sanction button - only shown when player must substitute due to expulsion/disqualification */}
                 {mustSubstitute && (
-                  <button
+                  <SbMenuItem
+                    tone="danger"
+                    className="mt-2"
                     onClick={async () => {
                       // Find and delete the most recent sanction event for this player
                       const sanctionEvent = data?.events?.filter(e =>
@@ -24215,31 +23921,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       }
                       setSubstitutionDropdown(null)
                     }}
-                    style={{
-                      marginTop: '8px',
-                      padding: '6px 8px',
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      background: '#fef2f2',
-                      color: '#b91c1c',
-                      border: '1px solid #fecaca',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                      transition: 'all 0.2s',
-                      width: '100%'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#fee2e2'
-                      e.currentTarget.style.borderColor = '#fca5a5'
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = '#fef2f2'
-                      e.currentTarget.style.borderColor = '#fecaca'
-                    }}
                   >
                     Cancel sanction
-                  </button>
+                  </SbMenuItem>
                 )}
               </div>
             </div>
@@ -24334,8 +24018,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   border: '2px solid rgba(0, 0, 0, 0.2)',
                   borderRadius: '8px',
                   padding: '8px',
-                  minWidth: '80px',
-                  maxWidth: '100px',
+                  minWidth: '120px',
+                  maxWidth: '220px',
                   boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
                   transform: 'scale(1.5)',
                   transformOrigin: isRightSide ? 'top right' : 'top left'
@@ -24354,40 +24038,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     {liberos.map(player => (
-                      <button
-                        key={player.id}
-                        onClick={() => showLiberoConfirm(player.libero)}
-                        style={{
-                          padding: '4px 6px',
-                          fontSize: '13px',
-                          fontWeight: 700,
-                          background: 'rgba(0, 0, 0, 0.05)',
-                          color: '#000',
-                          border: '1px solid rgba(0, 0, 0, 0.1)',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          textAlign: 'center',
-                          transition: 'all 0.2s',
-                          width: '100%',
-                          minHeight: '28px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '4px'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = 'rgba(0, 0, 0, 0.15)'
-                          e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.3)'
-                          e.currentTarget.style.transform = 'scale(1.05)'
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'rgba(0, 0, 0, 0.05)'
-                          e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.1)'
-                          e.currentTarget.style.transform = 'scale(1)'
-                        }}
-                      >
+                      <SbMenuItem key={player.id} onClick={() => showLiberoConfirm(player.libero)}>
                         {player.libero === 'libero1' ? 'L1' : player.libero === 'redesignated' ? 'LR' : 'L2'} # {player.number}{(player.firstName || player.lastName) ? ` ${[player.firstName, player.lastName].filter(Boolean).join(' ')}` : ''}
-                      </button>
+                      </SbMenuItem>
                     ))}
                   </div>
                 )}
@@ -24455,7 +24108,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   borderRadius: '8px',
                   padding: '8px',
                   minWidth: '120px',
-                  maxWidth: '150px',
+                  maxWidth: '240px',
                   boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
                   transform: 'scale(1.5)',
                   transformOrigin: isRightSide ? 'top right' : 'top left'
@@ -24471,41 +24124,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     {eligiblePlayers.map(player => (
-                      <button
-                        key={`${player.position}-${player.number}`}
-                        onClick={() => handleLiberoInPlayerSelect(player.position, player.number)}
-                        style={{
-                          padding: '6px 8px',
-                          fontSize: '12px',
-                          fontWeight: 700,
-                          background: 'rgba(0, 0, 0, 0.05)',
-                          color: '#000',
-                          border: '1px solid rgba(0, 0, 0, 0.1)',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          textAlign: 'center',
-                          transition: 'all 0.2s',
-                          width: '100%',
-                          minHeight: '32px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '4px'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = 'rgba(0, 0, 0, 0.15)'
-                          e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.3)'
-                          e.currentTarget.style.transform = 'scale(1.05)'
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'rgba(0, 0, 0, 0.05)'
-                          e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.1)'
-                          e.currentTarget.style.transform = 'scale(1)'
-                        }}
-                      >
-                        <span style={{ fontSize: '10px', opacity: 0.7 }}>Pos {player.position}:</span>
-                        <span>#{player.number}{(() => { const p = (libInTeamPlayers || []).find(tp => String(tp.number) === String(player.number)); return (p?.firstName || p?.lastName) ? ` ${[p?.firstName, p?.lastName].filter(Boolean).join(' ')}` : ''; })()}</span>
-                      </button>
+                      <SbMenuItem key={`${player.position}-${player.number}`} onClick={() => handleLiberoInPlayerSelect(player.position, player.number)}>
+                        Pos {player.position}: #{player.number}{(() => { const p = (libInTeamPlayers || []).find(tp => String(tp.number) === String(player.number)); return (p?.firstName || p?.lastName) ? ` ${[p?.firstName, p?.lastName].filter(Boolean).join(' ')}` : ''; })()}
+                      </SbMenuItem>
                     ))}
                   </div>
                 )}
@@ -24626,144 +24247,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                     return (
                       <>
-                        <button
-                          onClick={() => showSanctionConfirm('warning')}
-                          disabled={!canGetWarning}
-                          style={{
-                            padding: '4px 8px',
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            background: canGetWarning ? 'var(--panel-2)' : 'var(--panel-2)',
-                            color: canGetWarning ? 'var(--text)' : 'var(--muted)',
-                            border: '1px solid var(--border)',
-                            borderRadius: '4px',
-                            cursor: canGetWarning ? 'pointer' : 'not-allowed',
-                            textAlign: 'left',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            transition: 'all 0.2s',
-                            opacity: canGetWarning ? 1 : 0.5
-                          }}
-                          onMouseEnter={(e) => {
-                            if (canGetWarning) {
-                              e.currentTarget.style.background = 'var(--panel)'
-                              e.currentTarget.style.borderColor = 'var(--border)'
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (canGetWarning) {
-                              e.currentTarget.style.background = 'var(--panel-2)'
-                              e.currentTarget.style.borderColor = 'var(--border)'
-                            }
-                          }}
-                        >
-                          <div className="sanction-card yellow" style={{ flexShrink: 0, width: '24px', height: '32px' }}></div>
-                          <span>Warning{!canGetWarning && (teamWarning ? ' (Team has warning)' : ' (Already sanctioned)')}</span>
-                        </button>
-                        <button
-                          onClick={() => showSanctionConfirm('penalty')}
-                          disabled={!canGetPenalty}
-                          style={{
-                            padding: '4px 8px',
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            background: canGetPenalty ? 'var(--panel-2)' : 'var(--panel-2)',
-                            color: canGetPenalty ? 'var(--text)' : 'var(--muted)',
-                            border: '1px solid var(--border)',
-                            borderRadius: '4px',
-                            cursor: canGetPenalty ? 'pointer' : 'not-allowed',
-                            textAlign: 'left',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            transition: 'all 0.2s',
-                            opacity: canGetPenalty ? 1 : 0.5
-                          }}
-                          onMouseEnter={(e) => {
-                            if (canGetPenalty) {
-                              e.currentTarget.style.background = 'var(--panel)'
-                              e.currentTarget.style.borderColor = 'var(--border)'
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (canGetPenalty) {
-                              e.currentTarget.style.background = 'var(--panel-2)'
-                              e.currentTarget.style.borderColor = 'var(--border)'
-                            }
-                          }}
-                        >
-                          <div className="sanction-card red" style={{ flexShrink: 0, width: '24px', height: '32px' }}></div>
-                          <span>Penalty{!canGetPenalty && ' (Already sanctioned)'}</span>
-                        </button>
-                        <button
-                          onClick={() => showSanctionConfirm('expulsion')}
-                          disabled={!canGetExpulsion}
-                          style={{
-                            padding: '4px 8px',
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            background: canGetExpulsion ? 'var(--panel-2)' : 'var(--panel-2)',
-                            color: canGetExpulsion ? 'var(--text)' : 'var(--muted)',
-                            border: '1px solid var(--border)',
-                            borderRadius: '4px',
-                            cursor: canGetExpulsion ? 'pointer' : 'not-allowed',
-                            textAlign: 'left',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            transition: 'all 0.2s',
-                            opacity: canGetExpulsion ? 1 : 0.5
-                          }}
-                          onMouseEnter={(e) => {
-                            if (canGetExpulsion) {
-                              e.currentTarget.style.background = 'var(--panel)'
-                              e.currentTarget.style.borderColor = 'var(--border)'
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (canGetExpulsion) {
-                              e.currentTarget.style.background = 'var(--panel-2)'
-                              e.currentTarget.style.borderColor = 'var(--border)'
-                            }
-                          }}
-                        >
-                          <div className="sanction-card combo" style={{ flexShrink: 0, width: '28px', height: '32px' }}></div>
-                          <span>Expulsion{!canGetExpulsion && ' (Already sanctioned)'}</span>
-                        </button>
-                        <button
-                          onClick={() => showSanctionConfirm('disqualification')}
-                          disabled={false}
-                          style={{
-                            padding: '4px 8px',
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            background: 'var(--panel-2)',
-                            color: 'var(--text)',
-                            border: '1px solid var(--border)',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            transition: 'all 0.2s'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = 'var(--panel)'
-                            e.currentTarget.style.borderColor = 'var(--border)'
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'var(--panel-2)'
-                            e.currentTarget.style.borderColor = 'var(--border)'
-                          }}
-                        >
-                          <div className="sanction-cards-separate" style={{ flexShrink: 0 }}>
-                            <div className="sanction-card yellow" style={{ width: '20px', height: '28px' }}></div>
-                            <div className="sanction-card red" style={{ width: '20px', height: '28px' }}></div>
-                          </div>
-                          <span>Disqualification</span>
-                        </button>
+                        <SbMenuItem icon={<SbCardIcon kind="yellow" />} onClick={() => showSanctionConfirm('warning')} disabled={!canGetWarning}>
+                          Warning{!canGetWarning && (teamWarning ? ' (Team has warning)' : ' (Already sanctioned)')}
+                        </SbMenuItem>
+                        <SbMenuItem icon={<SbCardIcon kind="red" />} onClick={() => showSanctionConfirm('penalty')} disabled={!canGetPenalty}>
+                          Penalty{!canGetPenalty && ' (Already sanctioned)'}
+                        </SbMenuItem>
+                        <SbMenuItem icon={<SbCardIcon kind="combo" />} onClick={() => showSanctionConfirm('expulsion')} disabled={!canGetExpulsion}>
+                          Expulsion{!canGetExpulsion && ' (Already sanctioned)'}
+                        </SbMenuItem>
+                        <SbMenuItem icon={<SbCardIcon kind="pair" />} onClick={() => showSanctionConfirm('disqualification')}>
+                          Disqualification
+                        </SbMenuItem>
                       </>
                     )
                   })()}
@@ -24875,94 +24370,27 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 </div>
                 {/* Substitution Button - for returning players */}
                 {courtPlayerToSwapWith && (
-                  <button
-                    onClick={() => {
-                      if (canSubstitute && courtPlayerToSwapWith) {
-                        setBenchPlayerActionMenu(null)
-                        // Go directly to substitution confirmation modal
-                        setSubstitutionConfirm({
-                          team,
-                          position: courtPlayerToSwapWith.position,
-                          playerOut: courtPlayerToSwapWith.number,
-                          playerIn: playerNumber
-                        })
-                      }
-                    }}
+                  <SbMenuItem
+                    tone="positive"
+                    icon={<ArrowUpDown size={16} strokeWidth={2.5} />}
                     disabled={!canSubstitute}
-                    style={{
-                      padding: '8px 12px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      background: canSubstitute ? '#047857' : 'var(--panel-2)',
-                      color: canSubstitute ? '#fff' : 'var(--muted)',
-                      border: canSubstitute ? '1px solid #047857' : '1px solid var(--border)',
-                      borderRadius: '6px',
-                      cursor: canSubstitute ? 'pointer' : 'not-allowed',
-                      textAlign: 'left',
-                      transition: 'all 0.2s',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '6px',
-                      width: '100%',
-                      opacity: canSubstitute ? 1 : 0.5
-                    }}
-                    onMouseEnter={(e) => {
-                      if (canSubstitute) {
-                        e.currentTarget.style.background = '#065f46'
-                        e.currentTarget.style.transform = 'scale(1.02)'
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (canSubstitute) {
-                        e.currentTarget.style.background = '#047857'
-                        e.currentTarget.style.transform = 'scale(1)'
-                      }
-                    }}
                   >
-                    <span>Substitution</span>
-                    <span style={{ fontSize: '14px', lineHeight: '1' }}>⇅</span>
-                  </button>
+                    Substitution
+                  </SbMenuItem>
                 )}
                 {/* Substitution button with expandable list - for players who never played */}
                 {neverPlayed && availableCourtPlayers.length > 0 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <button
-                      onClick={() => setBenchSubExpanded(!benchSubExpanded)}
-                      style={{
-                        padding: '8px 12px',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        background: '#047857',
-                        color: '#fff',
-                        border: '1px solid #047857',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        transition: 'all 0.2s',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '6px',
-                        width: '100%'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = '#065f46'
-                        e.currentTarget.style.transform = 'scale(1.02)'
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = '#047857'
-                        e.currentTarget.style.transform = 'scale(1)'
-                      }}
-                    >
-                      <span>Substitution</span>
-                      <span style={{ fontSize: '14px', lineHeight: '1', transform: benchSubExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-                    </button>
+                    <SbMenuItem tone="positive" expanded={benchSubExpanded} onClick={() => setBenchSubExpanded(!benchSubExpanded)}>
+                      Substitution
+                    </SbMenuItem>
                     {benchSubExpanded && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                      <div className={SB_MENU_CHIPS}>
                         {availableCourtPlayers.map(cp => (
-                          <button
+                          <SbMenuItem
                             key={cp.position}
+                            chip
+                            tone="positive-soft"
                             onClick={() => {
                               setBenchPlayerActionMenu(null)
                               setBenchSubExpanded(false)
@@ -24974,29 +24402,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 playerIn: playerNumber
                               })
                             }}
-                            style={{
-                              padding: '6px 10px',
-                              fontSize: '12px',
-                              fontWeight: 700,
-                              background: '#ecfdf5',
-                              color: '#047857',
-                              border: '1px solid #a7f3d0',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
-                              transition: 'all 0.2s',
-                              minWidth: '40px'
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = '#d1fae5'
-                              e.currentTarget.style.borderColor = '#6ee7b7'
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = '#ecfdf5'
-                              e.currentTarget.style.borderColor = '#a7f3d0'
-                            }}
                           >
                             {cp.number}
-                          </button>
+                          </SbMenuItem>
                         ))}
                       </div>
                     )}
@@ -25027,135 +24435,32 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <button
-                        onClick={() => setBenchSanctionExpanded(!benchSanctionExpanded)}
-                        style={{
-                          padding: '8px 12px',
-                          fontSize: '12px',
-                          fontWeight: 600,
-                          background: 'var(--panel)',
-                          color: 'var(--text)',
-                          border: '1px solid var(--border)',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          transition: 'all 0.2s',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: '6px',
-                          width: '100%'
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = 'var(--panel-2)'
-                          e.currentTarget.style.transform = 'scale(1.02)'
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'var(--panel)'
-                          e.currentTarget.style.transform = 'scale(1)'
-                        }}
-                      >
-                        <span>Sanction</span>
-                        <span style={{ fontSize: '14px', lineHeight: '1', transform: benchSanctionExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-                      </button>
+                      <SbMenuItem expanded={benchSanctionExpanded} onClick={() => setBenchSanctionExpanded(!benchSanctionExpanded)}>
+                        Sanction
+                      </SbMenuItem>
                       {benchSanctionExpanded && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
-                          <button
-                            onClick={() => showSanctionConfirmFromBenchMenu('warning')}
-                            disabled={!canGetWarning}
-                            style={{
-                              padding: '6px 10px',
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              background: canGetWarning ? 'var(--panel-2)' : 'var(--panel-2)',
-                              color: canGetWarning ? 'var(--text)' : 'var(--muted)',
-                              border: '1px solid var(--border)',
-                              borderRadius: '4px',
-                              cursor: canGetWarning ? 'pointer' : 'not-allowed',
-                              textAlign: 'left',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '8px',
-                              opacity: canGetWarning ? 1 : 0.5
-                            }}
-                          >
-                            <div className="sanction-card yellow" style={{ flexShrink: 0, width: '20px', height: '26px' }}></div>
-                            <span>Warning</span>
-                          </button>
-                          <button
-                            onClick={() => showSanctionConfirmFromBenchMenu('penalty')}
-                            disabled={!canGetPenalty}
-                            style={{
-                              padding: '6px 10px',
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              background: canGetPenalty ? 'var(--panel-2)' : 'var(--panel-2)',
-                              color: canGetPenalty ? 'var(--text)' : 'var(--muted)',
-                              border: '1px solid var(--border)',
-                              borderRadius: '4px',
-                              cursor: canGetPenalty ? 'pointer' : 'not-allowed',
-                              textAlign: 'left',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '8px',
-                              opacity: canGetPenalty ? 1 : 0.5
-                            }}
-                          >
-                            <div className="sanction-card red" style={{ flexShrink: 0, width: '20px', height: '26px' }}></div>
-                            <span>Penalty</span>
-                          </button>
-                          <button
-                            onClick={() => showSanctionConfirmFromBenchMenu('expulsion')}
-                            disabled={!canGetExpulsion}
-                            style={{
-                              padding: '6px 10px',
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              background: canGetExpulsion ? 'var(--panel-2)' : 'var(--panel-2)',
-                              color: canGetExpulsion ? 'var(--text)' : 'var(--muted)',
-                              border: '1px solid var(--border)',
-                              borderRadius: '4px',
-                              cursor: canGetExpulsion ? 'pointer' : 'not-allowed',
-                              textAlign: 'left',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '8px',
-                              opacity: canGetExpulsion ? 1 : 0.5
-                            }}
-                          >
-                            <div className="sanction-card combo" style={{ flexShrink: 0, width: '24px', height: '26px' }}></div>
-                            <span>Expulsion</span>
-                          </button>
-                          <button
-                            onClick={() => showSanctionConfirmFromBenchMenu('disqualification')}
-                            style={{
-                              padding: '6px 10px',
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              background: 'var(--panel-2)',
-                              color: 'var(--text)',
-                              border: '1px solid var(--border)',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
-                              textAlign: 'left',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '8px'
-                            }}
-                          >
-                            <div className="sanction-cards-separate" style={{ flexShrink: 0, display: 'flex', gap: '2px' }}>
-                              <div className="sanction-card yellow" style={{ width: '16px', height: '22px' }}></div>
-                              <div className="sanction-card red" style={{ width: '16px', height: '22px' }}></div>
-                            </div>
-                            <span>Disqualification</span>
-                          </button>
+                        <div className={SB_MENU_SUB}>
+                          <SbMenuItem icon={<SbCardIcon kind="yellow" />} onClick={() => showSanctionConfirmFromBenchMenu('warning')} disabled={!canGetWarning}>
+                            Warning
+                          </SbMenuItem>
+                          <SbMenuItem icon={<SbCardIcon kind="red" />} onClick={() => showSanctionConfirmFromBenchMenu('penalty')} disabled={!canGetPenalty}>
+                            Penalty
+                          </SbMenuItem>
+                          <SbMenuItem icon={<SbCardIcon kind="combo" />} onClick={() => showSanctionConfirmFromBenchMenu('expulsion')} disabled={!canGetExpulsion}>
+                            Expulsion
+                          </SbMenuItem>
+                          <SbMenuItem icon={<SbCardIcon kind="pair" />} onClick={() => showSanctionConfirmFromBenchMenu('disqualification')}>
+                            Disqualification
+                          </SbMenuItem>
                         </div>
                       )}
                     </div>
                   )
                 })()}
                 {/* Injury Button */}
-                <button
+                <SbMenuItem
+                  tone="danger"
+                  icon={SB_INJURY_ICON}
                   onClick={async () => {
                     // For bench player injury, add a remark with time, set, score (team first), team, number
                     try {
@@ -25188,35 +24493,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       setBenchPlayerActionMenu(null)
                     }
                   }}
-                  style={{
-                    padding: '8px 12px',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    background: '#fef2f2',
-                    color: '#b91c1c',
-                    border: '1px solid #fecaca',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    transition: 'all 0.2s',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '6px',
-                    width: '100%'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#fee2e2'
-                    e.currentTarget.style.transform = 'scale(1.02)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = '#fef2f2'
-                    e.currentTarget.style.transform = 'scale(1)'
-                  }}
                 >
-                  <span>Injury</span>
-                  <span style={{ fontSize: '14px', lineHeight: '1' }}>✚</span>
-                </button>
+                  Injury
+                </SbMenuItem>
               </div>
             </div>
           </>
@@ -25300,32 +24579,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <div style={{ marginBottom: '8px', fontSize: '11px', color: 'var(--muted)', textAlign: 'center' }}>
                   # {injuryDropdown.playerNumber}{injPlayerName ? ` ${injPlayerName}` : ''}
                 </div>
-                <button
-                  onClick={handleInjury}
-                  style={{
-                    padding: '6px 12px',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    background: '#fef2f2',
-                    color: '#b91c1c',
-                    border: '1px solid #fecaca',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    textAlign: 'center',
-                    width: '100%',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#fee2e2'
-                    e.currentTarget.style.borderColor = '#fca5a5'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = '#fef2f2'
-                    e.currentTarget.style.borderColor = '#fecaca'
-                  }}
-                >
+                <SbMenuItem tone="danger" onClick={handleInjury}>
                   Substitute
-                </button>
+                </SbMenuItem>
               </div>
             </div>
           </>
@@ -26451,52 +25707,28 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {...backdropDismiss(() => { setLiberoBenchActionMenu(null); setLiberoBenchReplaceExpanded(false); setLiberoBenchUnableExpanded(false) })}
             />
             <div style={menuStyle}>
-              <div className={SB_POPOVER} style={{
+              {/* Same scale(1.5) as the other player menus, so its rows match them on screen */}
+              <div data-libero-bench-action-menu className={SB_POPOVER} style={{
                 padding: '8px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '4px',
-                minWidth: '200px'
+                gap: '6px',
+                minWidth: '140px',
+                transform: 'scale(1.5)',
+                transformOrigin: isRightSide ? 'top right' : 'top left'
               }}>
                 {/* Put in section - collapsible */}
                 {canPutIn && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <button
-                      onClick={() => setLiberoBenchReplaceExpanded(!liberoBenchReplaceExpanded)}
-                      style={{
-                        padding: '8px 12px',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        background: '#FFF8E7',
-                        color: '#000',
-                        border: '1px solid rgba(0, 0, 0, 0.2)',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        transition: 'all 0.2s',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '6px',
-                        width: '100%'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = '#fff3cd'
-                        e.currentTarget.style.transform = 'scale(1.02)'
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = '#FFF8E7'
-                        e.currentTarget.style.transform = 'scale(1)'
-                      }}
-                    >
-                      <span>Replace</span>
-                      <span style={{ fontSize: '14px', lineHeight: '1', transform: liberoBenchReplaceExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-                    </button>
+                    <SbMenuItem tone="libero" expanded={liberoBenchReplaceExpanded} onClick={() => setLiberoBenchReplaceExpanded(!liberoBenchReplaceExpanded)}>
+                      Replace
+                    </SbMenuItem>
                     {liberoBenchReplaceExpanded && (
-                      <div style={{ display: 'flex', justifyContent: 'space-evenly', gap: '4px', marginTop: '4px' }}>
+                      <div className={SB_MENU_CHIPS}>
                         {eligiblePlayers.map(({ position, number }) => (
-                          <button
+                          <SbMenuItem
                             key={position}
+                            chip
                             onClick={() => {
                               // Open libero confirmation with this position
                               setLiberoDropdown({
@@ -26514,30 +25746,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               setLiberoBenchActionMenu(null)
                               setLiberoBenchReplaceExpanded(false)
                             }}
-                            style={{
-                              padding: '6px 12px',
-                              fontSize: '14px',
-                              fontWeight: 700,
-                              background: '#fff',
-                              color: '#000',
-                              border: '1px solid rgba(0, 0, 0, 0.2)',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
-                              textAlign: 'center',
-                              transition: 'all 0.2s',
-                              minWidth: '45px'
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = '#f3f4f6'
-                              e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.4)'
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = '#fff'
-                              e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.2)'
-                            }}
                           >
                             {number}
-                          </button>
+                          </SbMenuItem>
                         ))}
                       </div>
                     )}
@@ -26546,40 +25757,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                 {/* Unable to play - expandable */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <button
-                    onClick={() => setLiberoBenchUnableExpanded(!liberoBenchUnableExpanded)}
-                    style={{
-                      padding: '8px 12px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      background: '#fef2f2',
-                      color: '#b91c1c',
-                      border: '1px solid #fecaca',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'all 0.2s',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '6px',
-                      width: '100%'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#fee2e2'
-                      e.currentTarget.style.transform = 'scale(1.02)'
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = '#fef2f2'
-                      e.currentTarget.style.transform = 'scale(1)'
-                    }}
-                  >
-                    <span>Unable to play</span>
-                    <span style={{ fontSize: '14px', lineHeight: '1', transform: liberoBenchUnableExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-                  </button>
+                  <SbMenuItem tone="danger" expanded={liberoBenchUnableExpanded} onClick={() => setLiberoBenchUnableExpanded(!liberoBenchUnableExpanded)}>
+                    Unable to play
+                  </SbMenuItem>
                   {liberoBenchUnableExpanded && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
-                      <button
+                    <div className={SB_MENU_SUB}>
+                      <SbMenuItem
+                        tone="declared"
+                        icon={<SpeechIcon size={16} />}
                         onClick={() => {
                           setLiberoUnableModal({
                             team: liberoBenchActionMenu.team,
@@ -26591,25 +25776,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           setLiberoBenchActionMenu(null)
                           setLiberoBenchUnableExpanded(false)
                         }}
-                        style={{
-                          padding: '6px 10px',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          background: '#f97316',
-                          color: '#000',
-                          border: '1px solid rgba(0, 0, 0, 0.2)',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: '8px'
-                        }}
                       >
-                        <span>Declared unable</span>
-                        <SpeechIcon size={14} />
-                      </button>
-                      <button
+                        Declared unable
+                      </SbMenuItem>
+                      <SbMenuItem
+                        tone="danger"
+                        icon={SB_INJURY_ICON}
                         onClick={() => {
                           setLiberoUnableModal({
                             team: liberoBenchActionMenu.team,
@@ -26621,30 +25793,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           setLiberoBenchActionMenu(null)
                           setLiberoBenchUnableExpanded(false)
                         }}
-                        style={{
-                          padding: '6px 10px',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          background: '#fef2f2',
-                          color: '#b91c1c',
-                          border: '1px solid #fecaca',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: '8px'
-                        }}
                       >
-                        <span>Injury / illness</span>
-                        <span style={{ fontSize: '14px' }}>✚</span>
-                      </button>
+                        Injury / illness
+                      </SbMenuItem>
                     </div>
                   )}
                 </div>
 
                 {/* Sanction */}
-                <button
+                <SbMenuItem
+                  icon={<SbCardIcon kind="pair" />}
                   onClick={() => {
                     setSanctionDropdown({
                       team: liberoBenchActionMenu.team,
@@ -26657,35 +25815,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     })
                     setLiberoBenchActionMenu(null)
                   }}
-                  style={{
-                    padding: '8px 12px',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    background: 'var(--panel-2)',
-                    color: 'var(--text)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    transition: 'all 0.2s',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '6px'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'var(--panel)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'var(--panel-2)'
-                  }}
                 >
-                  <span>Sanction</span>
-                  <div style={{ display: 'flex', gap: '2px' }}>
-                    <div className="sanction-card yellow" style={{ width: '12px', height: '16px' }}></div>
-                    <div className="sanction-card red" style={{ width: '12px', height: '16px' }}></div>
-                  </div>
-                </button>
+                  Sanction
+                </SbMenuItem>
               </div>
             </div>
           </>
