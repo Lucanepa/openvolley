@@ -49,9 +49,13 @@ export const POST_MATCH_SIGNATURE_FIELDS = Object.freeze([
   'ref1Signature'
 ])
 
-/** An update object that nulls every post-match signature. */
+/**
+ * An update object that nulls every post-match signature, and the local copy
+ * of the account approvals (scorer, referees): they certify the result too.
+ * The server voids its rows when the reopen reaches it (db/011 trigger).
+ */
 export function clearedPostMatchSignatures() {
-  return Object.fromEntries(POST_MATCH_SIGNATURE_FIELDS.map(f => [f, null]))
+  return { ...Object.fromEntries(POST_MATCH_SIGNATURE_FIELDS.map(f => [f, null])), accountApprovals: null }
 }
 
 const otherTeam = (teamKey) => (teamKey === 'home' ? 'away' : 'home')

@@ -76,7 +76,70 @@ export const admin = {
   },
   listAudit({ limit, before, action } = {}) {
     return apiRequest('GET', `/api/admin/audit${query({ limit, before, action })}`)
+  },
+  /** Approval lookup by short ID, game number or external_id (spec 3.3). */
+  listApprovals({ q, include_revoked, limit } = {}) {
+    return apiRequest('GET', `/api/admin/approvals${query({ q, include_revoked: include_revoked ? 1 : undefined, limit })}`)
   }
+}
+
+// ── Approval with an account (docs/account-approval-spec.md section 3) ──
+// The PIN and the password only ever travel in these request bodies: never
+// log them, never store them.
+
+export const approvalPinApi = {
+  /** GET → { available, eligible, set, set_at, locked_until, disabled } */
+  status() {
+    return apiRequest('GET', '/api/account/approval-pin')
+  },
+  /** Set or change the personal approval PIN; the password confirms it. */
+  set({ password, pin }) {
+    return apiRequest('POST', '/api/account/approval-pin', { password, pin })
+  },
+  remove({ password }) {
+    return apiRequest('POST', '/api/account/approval-pin/remove', { password })
+  }
+}
+
+export const approvalsApi = {
+  /** POST → { approval, already } */
+  approve({ external_id, slot, email, pin, result, device_id }) {
+    const body = { external_id, slot, email, pin, result }
+    if (device_id) body.device_id = device_id
+    return apiRequest('POST', '/api/approvals', body)
+  },
+  /** GET → { match: { status, closed_at, result_key }, approvals: [record] } */
+  list(external_id) {
+    return apiRequest('GET', `/api/approvals?external_id=${enc(external_id)}`)
+  },
+  /** DELETE (undo) → { approval, already } */
+  undo(id) {
+    return apiRequest('DELETE', `/api/approvals/${enc(id)}`)
+  }
+}
+
+// Approval error codes -> approval.errors.<key> (spec 3.4)
+const APPROVAL_ERROR_KEYS = {
+  OV_APPROVAL_PIN_INVALID: 'pinInvalid',
+  OV_APPROVAL_PIN_LOCKED: 'pinLocked',
+  OV_APPROVAL_PIN_FORMAT: 'pinFormat',
+  OV_APPROVAL_PIN_WEAK: 'pinWeak',
+  OV_PASSWORD_INVALID: 'passwordInvalid',
+  OV_APPROVAL_ROLE_REQUIRED: 'roleRequired',
+  OV_APPROVAL_NOT_MATCH_SCORER: 'notMatchScorer',
+  OV_APPROVAL_NAME_REQUIRED: 'nameRequired',
+  OV_APPROVAL_ONE_SLOT: 'oneSlot',
+  OV_APPROVAL_SLOT_TAKEN: 'slotTaken',
+  OV_MATCH_CLOSED: 'matchClosed',
+  OV_MATCH_NOT_ENDED: 'matchNotEnded',
+  OV_RESULT_NOT_SYNCED: 'resultNotSynced',
+  OV_APPROVAL_UNSUPPORTED: 'unsupported',
+  OV_APPROVAL_UNAVAILABLE: 'unavailable'
+}
+
+/** The approval feature is switched off on this server (no OV_PIN_SECRET, or no database). */
+export function isApprovalUnavailable(error) {
+  return error?.code === 'OV_APPROVAL_UNAVAILABLE' || error?.code === 'OV_DB_NOT_CONFIGURED'
 }
 
 // ── Saved teams ──
@@ -111,11 +174,15 @@ export const savedTeamsApi = {
 
 /**
  * The i18n key for an error from these endpoints, by error.code. Server
- * messages stay English; the UI shows the mapped text.
+ * messages stay English; the UI shows the mapped text. context 'approval'
+ * reads OV_EMAIL_UNCONFIRMED as the official's address (approve dialog).
  */
-export function errorKeyOf(error) {
+export function errorKeyOf(error, { context } = {}) {
   if (!error) return null
   if (error.network || error.status === 0) return 'manage.errors.offline'
+  if (APPROVAL_ERROR_KEYS[error.code]) return `approval.errors.${APPROVAL_ERROR_KEYS[error.code]}`
+  // An approval names the official's account, not the signed-in one
+  if (context === 'approval' && error.code === 'OV_EMAIL_UNCONFIRMED') return 'approval.errors.emailUnconfirmed'
   switch (error.code) {
     case 'OV_INVITE_INVALID': return 'access.errors.inviteInvalid'
     case 'OV_INVITE_EXPIRED': return 'access.errors.inviteExpired'

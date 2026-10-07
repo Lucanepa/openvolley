@@ -2441,8 +2441,40 @@
         "match_release_game": "Match libéré",
         "account_password_reset_requested": "Réinitialisation du mot de passe demandée",
         "account_password_reset": "Mot de passe réinitialisé par lien e-mail",
-        "account_email_confirmed": "Adresse e-mail confirmée"
+        "account_email_confirmed": "Adresse e-mail confirmée",
+        "approval_pin_set": "PIN d'approbation défini",
+        "approval_pin_remove": "PIN d'approbation supprimé",
+        "approval_pin_locked": "PIN d'approbation bloqué",
+        "match_approve": "Résultat approuvé avec un compte",
+        "match_approval_revoke": "Approbation par compte annulée",
+        "match_approval_void": "Approbations par compte invalidées"
       }
+    },
+    "approvals": {
+      "chip": "{{slot}} · {{name}}",
+      "chipTitle": "Approuvé {{time}} · ID {{id}}",
+      "resultChanged": "Résultat modifié",
+      "slots": {
+        "referee1": "1er arbitre",
+        "referee2": "2e arbitre",
+        "scorer": "Marqueur"
+      },
+      "lookup": "Approbations",
+      "lookupPlaceholder": "ID d'approbation ou numéro de match",
+      "lookupButton": "Rechercher",
+      "lookupEmpty": "Aucune approbation trouvée.",
+      "includeRevoked": "Inclure les révoquées",
+      "revoked": "Révoquée",
+      "active": "Valable",
+      "reasons": {
+        "undo": "annulée",
+        "match_reopened": "match rouvert",
+        "result_changed": "résultat modifié"
+      },
+      "hashes": "IP {{ip}} · appareil {{device}}",
+      "requestedBy": "Envoyée par {{name}}",
+      "wrongPins": "{{failures}} PIN erronés",
+      "blocked": "bloqué"
     }
   },
   "savedTeams": {
@@ -2660,5 +2692,75 @@
     "resent": "Nous avons envoyé un nouveau lien à {{email}}.",
     "resendUnavailable": "Les e-mails de confirmation ne peuvent pas être envoyés pour le moment – veuillez réessayer plus tard.",
     "signUpLinkSent": "Bienvenue ! Nous avons envoyé un lien à {{email}} : ouvrez-le pour confirmer votre adresse."
+  },
+  "approval": {
+    "pin": {
+      "title": "PIN d'approbation",
+      "explainer": "Approuvez les résultats avec votre compte au lieu d'une signature dessinée. Votre PIN personnel, pas un PIN de match. Ne le partagez jamais.",
+      "notSet": "Non défini",
+      "setOn": "Défini le {{date}}",
+      "lockedUntil": "Bloqué jusqu'à {{time}}",
+      "disabled": "Bloqué après trop de PIN erronés. Définissez-en un nouveau.",
+      "ineligible": {
+        "email": "Confirmez d'abord votre adresse e-mail",
+        "role": "Nécessite le rôle d'arbitre ou de marqueur"
+      },
+      "needsInternet": "Internet requis",
+      "set": "Définir le PIN",
+      "change": "Changer le PIN",
+      "remove": "Supprimer le PIN",
+      "setTitle": "Définir le PIN d'approbation",
+      "changeTitle": "Changer le PIN d'approbation",
+      "removeTitle": "Supprimer le PIN d'approbation",
+      "currentPassword": "Mot de passe actuel",
+      "passwordHint": "Le mot de passe de votre compte confirme la modification.",
+      "newPin": "Nouveau PIN",
+      "repeatPin": "Répéter le PIN",
+      "rule": "4 à 6 chiffres. Pas de chiffre répété ni de suite comme 1234.",
+      "mismatch": "Les PIN ne correspondent pas.",
+      "removeConfirmTitle": "Supprimer votre PIN d'approbation ?",
+      "removeConfirmBody": "Vous ne pourrez plus approuver de résultats avec votre compte avant d'avoir défini un nouveau PIN.",
+      "save": "Enregistrer le PIN",
+      "saved": "PIN d'approbation enregistré.",
+      "removed": "PIN d'approbation supprimé."
+    },
+    "approveWithAccount": "Approuver avec un compte",
+    "dialogTitle": "Approuver en tant que {{role}}",
+    "officialEntered": "Officiel saisi : {{name}}",
+    "email": "E-mail du compte de l'officiel",
+    "pinLabel": "PIN d'approbation",
+    "pinHint": "L'officiel saisit lui-même son PIN d'approbation. Il est défini dans son profil.",
+    "approve": "Approuver",
+    "approved": "Approuvé.",
+    "done": "Approuvé électroniquement",
+    "stale": "Résultat modifié. Approuver à nouveau ou signer",
+    "undo": "Annuler",
+    "undoConfirm": "Annuler cette approbation ?",
+    "undoConfirmBody": "L'officiel approuve ensuite à nouveau ou signe à la main.",
+    "undone": "Approbation annulée.",
+    "needsInternet": "Internet requis",
+    "needsInternetSignByHand": "Internet requis : signer à la main",
+    "syncing": "Envoi du résultat…",
+    "nameDiffers": "Le nom du compte {{account}} diffère de l'officiel saisi ({{entered}})",
+    "revalidateFailed": "Une approbation par compte n'est plus valable. Vérifiez les signatures et approuvez à nouveau.",
+    "errors": {
+      "pinInvalid": "E-mail ou PIN non accepté.",
+      "pinLocked": "Trop de PIN erronés. Réessayez dans {{minutes}} min ou signez à la main.",
+      "pinDisabled": "Bloqué après trop de PIN erronés : définissez un nouveau PIN dans le profil ou signez à la main.",
+      "pinFormat": "Le PIN doit comporter 4 à 6 chiffres.",
+      "pinWeak": "Ce PIN est trop facile à deviner. Évitez les chiffres répétés et les suites comme 1234.",
+      "passwordInvalid": "Mot de passe erroné.",
+      "roleRequired": "Ce compte n'a pas le rôle requis pour cette signature.",
+      "notMatchScorer": "Seul le marqueur de ce match peut approuver en tant que marqueur.",
+      "nameRequired": "Le compte n'a pas de nom. Ajoutez-le d'abord dans le profil.",
+      "oneSlot": "Ce compte a déjà approuvé une autre signature de ce match.",
+      "slotTaken": "Quelqu'un d'autre a déjà approuvé cette signature.",
+      "matchClosed": "Le match est clôturé.",
+      "matchNotEnded": "Le match n'est pas encore terminé sur le serveur. Attendez la synchronisation, puis réessayez.",
+      "resultNotSynced": "Le résultat n'est pas encore arrivé sur le serveur. Vérifiez la connexion et réessayez.",
+      "unsupported": "Non disponible pour les matchs de beach.",
+      "unavailable": "L'approbation avec un compte n'est pas disponible sur ce serveur.",
+      "emailUnconfirmed": "L'officiel n'a pas encore confirmé l'adresse e-mail du compte."
+    }
   }
 }
