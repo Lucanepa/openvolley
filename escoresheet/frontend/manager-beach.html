@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en" translate="no">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- OpenBeach icons (logo B2): the build copies brand/beach/ over the shared ones in public/ (scripts/build-subdomains.js, brandFiles) -->
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="description" content="Accounts, invite codes and saved beach teams for OpenBeach admins and competition managers" />
+    <!-- An admin console: never in a search index (the build also writes robots.txt and an X-Robots-Tag header) -->
+    <meta name="robots" content="noindex, nofollow" />
+    <title>OpenBeach Manager</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/manager-beach-main.jsx"></script>
+  </body>
+</html>

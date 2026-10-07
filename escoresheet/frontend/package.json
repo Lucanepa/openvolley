@@ -22,6 +22,8 @@
     "build:livescore": "node scripts/build-subdomains.js livescore",
     "build:roster": "node scripts/build-subdomains.js roster",
     "build:app": "node scripts/build-subdomains.js app",
+    "build:manager": "node scripts/build-subdomains.js manager",
+    "build:manager-beach": "node scripts/build-subdomains.js manager-beach",
     "preview": "vite preview",
     "start": "node server.js",
     "start:prod": "npm run build && node server.js",

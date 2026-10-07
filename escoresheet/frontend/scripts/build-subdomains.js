@@ -14,12 +14,13 @@
  *   dist-livescore/ → livescore.openvolley.app
  *   dist-roster/    → roster.openvolley.app
  *   dist-manager/   → manager.openvolley.app (admin console, no service worker)
+ *   dist-manager-beach/ → manager-beach.openvolley.app (the same console, OpenBeach brand)
  */
 
 import { build } from 'vite'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { readFileSync, writeFileSync, mkdirSync, cpSync, existsSync, rmSync, renameSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, cpSync, copyFileSync, existsSync, rmSync, renameSync } from 'fs'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -100,7 +101,58 @@ export const subdomains = {
     htmlFile: 'manager.html',
     pwa: false,
     noindex: true
+  },
+  // manager-beach.openvolley.app: the same console as OpenBeach's
+  // (src/managerBrand.js; plan 1.6). Its entry sets the brand; the build lays
+  // OpenBeach's icons (brand/beach/, logo B2) over the OpenVolley ones from
+  // public/ and writes a manifest with its name. Deploy: docs/manager-site-deploy.md
+  // ("OpenBeach's manager"), Pages project openbeach-manager.
+  'manager-beach': {
+    name: 'OpenBeach Manager',
+    shortName: 'Manager',
+    description: 'Accounts, invite codes and saved beach teams for OpenBeach admins and competition managers',
+    title: 'OpenBeach Manager',
+    mainEntry: 'manager-beach-main',
+    themeColor: '#ffffff',
+    htmlFile: 'manager-beach.html',
+    pwa: false,
+    noindex: true,
+    host: 'manager-beach.openvolley.app',
+    packageName: 'openbeach-manager',
+    brandFiles: {
+      'favicon.ico': 'brand/beach/favicon.ico',
+      'favicon.svg': 'brand/beach/favicon.svg',
+      'apple-touch-icon.png': 'brand/beach/apple-touch-icon.png',
+      'icon-192.png': 'brand/beach/icon-192.png',
+      'icon-512.png': 'brand/beach/icon-512.png'
+    },
+    manifest: true
   }
+}
+
+/** The public host of a subdomain build. */
+export function hostFor(name) {
+  return subdomains[name]?.host || `${name}.openvolley.app`
+}
+
+/**
+ * A web app manifest for a build without VitePWA (no service worker): only
+ * the name, colours and icons, so an installed shortcut shows the right brand.
+ */
+export function manifestFor(config) {
+  return JSON.stringify({
+    name: config.name,
+    short_name: config.shortName,
+    description: config.description,
+    start_url: '/',
+    display: 'standalone',
+    background_color: '#ffffff',
+    theme_color: config.themeColor,
+    icons: [
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' }
+    ]
+  }, null, 2) + '\n'
 }
 
 /** The page a subdomain is built from: its own .html file, or a generated one. */
@@ -128,7 +180,9 @@ export const NOINDEX_FILES = Object.freeze({
 })
 
 export function extraFilesFor(config) {
-  return config.noindex ? { ...NOINDEX_FILES } : {}
+  const files = config.noindex ? { ...NOINDEX_FILES } : {}
+  if (config.manifest) files['manifest.webmanifest'] = manifestFor(config)
+  return files
 }
 
 export function createIndexHtml(config) {
@@ -247,7 +301,7 @@ async function buildSubdomain(subdomain, basePath = '/') {
   // Clean output directory
   if (existsSync(outDir)) rmSync(outDir, { recursive: true })
 
-  console.log(`\n🔨 Building ${subdomain}.openvolley.app...${basePath !== '/' ? ` (base: ${basePath})` : ''}`)
+  console.log(`\n🔨 Building ${hostFor(subdomain)}...${basePath !== '/' ? ` (base: ${basePath})` : ''}`)
 
   // Create temp index.html in frontend root (custom HTML for scoresheet,
   // manager.html for the manager)
@@ -366,10 +420,14 @@ async function buildSubdomain(subdomain, basePath = '/') {
     for (const [name, content] of Object.entries(extraFilesFor(config))) {
       writeFileSync(resolve(outDir, name), content)
     }
+    // The brand's icons over the OpenVolley ones copied from public/
+    for (const [name, source] of Object.entries(config.brandFiles || {})) {
+      copyFileSync(resolve(frontendDir, source), resolve(outDir, name))
+    }
 
     // Create package.json for Render deployment
     const renderPackageJson = {
-      name: `openvolley-${subdomain}`,
+      name: config.packageName || `openvolley-${subdomain}`,
       version: appVersion,
       private: true,
       scripts: {
@@ -384,7 +442,7 @@ async function buildSubdomain(subdomain, basePath = '/') {
       JSON.stringify(renderPackageJson, null, 2)
     )
 
-    console.log(`✅ Built ${subdomain}.openvolley.app → dist-${subdomain}/`)
+    console.log(`✅ Built ${hostFor(subdomain)} → dist-${subdomain}/`)
 
   } finally {
     // Clean up temp file
@@ -425,7 +483,7 @@ async function main() {
     console.log('\n✨ All subdomain builds complete!')
     console.log('\n📁 Output directories:')
     for (const subdomain of Object.keys(subdomains)) {
-      console.log(`   dist-${subdomain}/ → ${subdomain}.openvolley.app`)
+      console.log(`   dist-${subdomain}/ → ${hostFor(subdomain)}`)
     }
   }
 }
