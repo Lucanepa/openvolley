@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { decisionChangeUndoRecord, planDecisionChangeReversal, syncJobsForEvents, syncJobsForSets, localIdOfExtId, setScoreSyncJobs } from '../corrections'
+import { decisionChangeUndoRecord, planDecisionChangeReversal, syncJobsForEvents, syncJobsForSets, localIdOfExtId, setScoreSyncJobs, scoreAfterUndo } from '../corrections'
 
 // Set 1 at 3-2 (home), then point 6 goes to AWAY by mistake: away (receiving)
 // sides out, so the point wrote away's rotation 6.1 and an auto libero_exit 6.2.
@@ -127,5 +127,19 @@ describe('setScoreSyncJobs (Manual adjustments sends corrected sets; review fix)
     ])
     expect(setScoreSyncJobs(null, [{ id: 1 }])).toEqual([])
     expect(setScoreSyncJobs('m', [{ homePoints: 1 }])).toEqual([])
+  })
+})
+
+describe('scoreAfterUndo', () => {
+  it('delete an old point, then undo a time-out: the score follows the points, not the stale snapshot', () => {
+    // 3:2, then a time-out whose predecessor (point 5) carries a 3:2 snapshot
+    const log = [
+      point(1, 1, 'home'), point(2, 2, 'home'), point(3, 3, 'away'), point(4, 4, 'home'),
+      { ...point(5, 5, 'away'), stateSnapshot: { pointsA: 3, pointsB: 2, currentSetIndex: 1 } },
+      { id: 6, seq: 6, setIndex: 1, type: 'timeout', payload: { team: 'home' } }
+    ]
+    // a correction removes point 2 (the referee's decision), then the scorer undoes the time-out
+    const remaining = log.filter(e => e.id !== 2 && e.id !== 6)
+    expect(scoreAfterUndo(remaining, 1)).toEqual({ homePoints: 2, awayPoints: 2 })
   })
 })

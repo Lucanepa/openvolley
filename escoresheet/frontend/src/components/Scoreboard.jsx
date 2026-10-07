@@ -44,7 +44,7 @@ import { getSetResult, getFirstServeForSet, scoreFromPointEvents } from '../doma
 import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags } from '../domain/sanctions'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
 import { planSubstitutionDeletion } from '../domain/substitutions'
-import { decisionChangeUndoRecord, planDecisionChangeReversal, syncJobsForEvents, syncJobsForSets } from '../domain/corrections'
+import { decisionChangeUndoRecord, planDecisionChangeReversal, syncJobsForEvents, syncJobsForSets, scoreAfterUndo } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, renumberPlayerInEvents } from '../domain/roster'
 import { appendRemark, removeRemarkLine } from '../domain/remarks'
 import { describeEventText } from '../domain/describe'
@@ -6615,6 +6615,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (previousEvent?.stateSnapshot) {
         console.log('[handleUndo] Restoring from snapshot, points:', previousEvent.stateSnapshot.pointsA, '-', previousEvent.stateSnapshot.pointsB)
         await restoreStateFromSnapshot(previousEvent.stateSnapshot)
+        // The score follows the point events, not the snapshot: a snapshot is
+        // stale once a correction added or removed events before it
+        const undoneSet = await db.sets.where({ matchId }).and(s => s.index === undoneSetIndex).first()
+        if (undoneSet) await db.sets.update(undoneSet.id, scoreAfterUndo(await db.events.where('matchId').equals(matchId).toArray(), undoneSetIndex))
       } else {
         // No previous event with snapshot - calculate state from remaining events
         console.log('[handleUndo] No previous snapshot, calculating state from remaining events')

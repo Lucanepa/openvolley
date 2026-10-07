@@ -143,3 +143,15 @@ export function setScoreSyncJobs(seedKey, changedSets, ts = new Date().toISOStri
       status: 'queued'
     }))
 }
+
+/**
+ * The set score after an Undo removed its events: always the point events
+ * that remain (seq order does not matter for a count). The stateSnapshot of
+ * the previous event is NOT used for the score — it is stale as soon as a
+ * correction added or removed events before it (e.g. an old point deleted,
+ * then a time-out undone would put the deleted point back on the scoreboard).
+ * @returns {{homePoints:number, awayPoints:number}}
+ */
+export function scoreAfterUndo(remainingEvents, setIndex) {
+  return scoreFromPointEvents(remainingEvents, setIndex)
+}
