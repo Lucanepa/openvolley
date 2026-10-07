@@ -3287,7 +3287,13 @@
       "removed": "Supprimé : {{what}}",
       "changed": "Modifié : {{what}} (avant : {{from}})",
       "afterMatchSuffix": " (saisi après le match)",
-      "setTimes": "Heures du set {{set}} corrigées"
+      "setTimes": "Heures du set {{set}} corrigées",
+      "remarkAdded": "Remarque ajoutée : « {{text}} »",
+      "remarkChanged": "Remarque modifiée : « {{text}} »",
+      "remarkRemoved": "Remarque supprimée : « {{text}} »",
+      "missedPoint": "Ajouté : point oublié pour {{team}}",
+      "firstServe": "Premier service changé pour {{team}}",
+      "sides": "Côtés changés au set {{set}}"
     },
     "error": {
       "noSuchScore": "Le set {{set}} n'a jamais eu ce score.",
@@ -3330,6 +3336,186 @@
       "expulsionReplacement": "Saisissez le remplacement avec « + Ajouter un remplacement » (exceptionnel si aucun remplacement régulier n’était possible).",
       "laterRotations": "Les rotations ultérieures de ce set ne sont pas recalculées.",
       "afterMatch": "Saisi après le match."
+    },
+    "title": "Corrections",
+    "pageTitle": "Corrections",
+    "help": "Chaque correction est enregistrée dès que vous la confirmez et figure dans le journal des corrections pour l'arbitre.",
+    "allSets": "Tous les sets",
+    "setFilter": "Afficher le set",
+    "serving": "{{team}} au service",
+    "saved": "Correction enregistrée",
+    "saveError": "La correction n'a pas pu être enregistrée : {{message}}",
+    "section": {
+      "scoreServe": "Score et service",
+      "sets": "Résultats des sets",
+      "lineup": "Formation",
+      "timeouts": "Temps morts",
+      "substitutions": "Remplacements",
+      "sanctions": "Sanctions",
+      "libero": "Libéro",
+      "log": "Journal des corrections (montré à l'arbitre)",
+      "advanced": "Avancé : journal des événements"
+    },
+    "add": {
+      "timeout": "Ajouter un temps mort",
+      "substitution": "Ajouter un remplacement",
+      "sanction": "Ajouter une sanction",
+      "remark": "Ajouter une remarque"
+    },
+    "empty": {
+      "timeouts": "Aucun temps mort enregistré.",
+      "substitutions": "Aucun remplacement enregistré.",
+      "sanctions": "Aucune sanction enregistrée.",
+      "remarks": "Aucune remarque.",
+      "libero": "Aucun remplacement de libéro enregistré.",
+      "log": "Aucune correction pour le moment.",
+      "players": "Aucun/e joueur/euse à choisir.",
+      "sets": "Aucun set terminé."
+    },
+    "field": {
+      "set": "Set",
+      "team": "Équipe",
+      "atScore": "Au score",
+      "playerOut": "Joueur/euse sortant/e (sur le terrain)",
+      "playerIn": "Joueur/euse entrant/e (banc)",
+      "sanction": "Sanction",
+      "who": "Qui",
+      "number": "Numéro",
+      "pointAlreadyGiven": "Le point a-t-il déjà été donné à {{team}} ?",
+      "reason": "Motif",
+      "template": "Type de remarque",
+      "text": "Texte",
+      "startTime": "Début",
+      "endTime": "Fin",
+      "currentFinal": "Actuellement",
+      "addDelayRemark": "Ajouter une remarque sur le début retardé"
+    },
+    "who": {
+      "player": "Joueur/euse sur le terrain",
+      "bench": "Joueur/euse sur le banc",
+      "libero": "Libéro",
+      "coach": "Entraîneur/e",
+      "ac1": "Entraîneur/e adjoint/e 1",
+      "ac2": "Entraîneur/e adjoint/e 2",
+      "physio": "Physiothérapeute",
+      "doctor": "Médecin"
+    },
+    "reasonLabel": {
+      "injury": "Blessure",
+      "illness": "Maladie",
+      "expulsion": "Expulsion",
+      "disqualification": "Disqualification"
+    },
+    "column": {
+      "warning": "Avertissement",
+      "penalty": "Pénalité",
+      "expulsion": "Expulsion",
+      "disqualification": "Disqualification"
+    },
+    "remarkTemplate": {
+      "exceptionalSub": "Remplacement exceptionnel",
+      "liberoUnable": "Libéro inapte",
+      "liberoRedesignated": "Libéro redésigné",
+      "delay": "Retard / problème horaire",
+      "protest": "Réclamation",
+      "missingSignature": "Signature manquante",
+      "other": "Autre"
+    },
+    "form": {
+      "addTimeout": "Ajouter un temps mort",
+      "editTimeout": "Modifier le temps mort",
+      "addSubstitution": "Ajouter un remplacement",
+      "editSubstitution": "Modifier le remplacement",
+      "addSanction": "Ajouter une sanction",
+      "editSanction": "Modifier la sanction",
+      "addRemark": "Ajouter une remarque",
+      "editRemark": "Modifier la remarque",
+      "finalScore": "Set {{set}} : corriger le score final",
+      "setTimes": "Set {{set}} : heure de début et de fin"
+    },
+    "action": {
+      "back": "Retour",
+      "cancel": "Annuler",
+      "confirm": "Confirmer",
+      "close": "Fermer",
+      "discard": "Abandonner",
+      "saveChanges": "Enregistrer les modifications",
+      "edit": "Modifier",
+      "editWhat": "Modifier {{what}}",
+      "editRemark": "Modifier la remarque",
+      "remove": "Supprimer",
+      "removeEntry": "Supprimer {{what}}",
+      "removeRemark": "Supprimer la remarque",
+      "removeBoth": "Supprimer aussi le point",
+      "keepPoint": "Garder le point",
+      "undoLast": "Annuler la dernière action",
+      "wrongTeam": "Le dernier point a été donné à la mauvaise équipe",
+      "addMissedPoint": "Ajouter un point oublié",
+      "addMissedPointFor": "Point oublié : {{team}}",
+      "changeServe": "Changer qui sert en premier",
+      "switchSides": "Changer de côté",
+      "reopenSet": "Rouvrir le set",
+      "fixLineup": "Corriger la formation",
+      "rotateForward": "Tourner d'une position en avant",
+      "rotateBack": "Tourner d'une position en arrière",
+      "rotateForwardShort": "En avant",
+      "rotateBackShort": "En arrière",
+      "correctFinalScore": "Corriger le score final",
+      "setTimes": "Heures du set",
+      "showAutomatic": "Afficher les entrées automatiques",
+      "reopenForCorrections": "Retour à la fin du match"
+    },
+    "preview": {
+      "title": "Ce qui change sur la feuille de match",
+      "incomplete": "Remplissez les champs ci-dessus.",
+      "remark": "Remarque ajoutée à la feuille de match",
+      "lineupBefore": "Avant",
+      "lineupAfter": "Après",
+      "paperTimeout": "« T » à {{score}} dans la case temps mort de {{team}}, set {{set}}.",
+      "liveTimeout": "Lance le temps mort avec son compte à rebours, comme le bouton TO.",
+      "paperSub": "{{in}} pour {{out}} à {{score}} dans la colonne de la position {{position}}.",
+      "subCount": "Remplacements de {{team}} au set {{set}} : {{n}}/6",
+      "paperSanction": "{{code}} dans la colonne {{column}} · équipe {{letter}} · set {{set}} · {{score}}",
+      "finalScore": "Le score final {{before}} devient {{after}}."
+    },
+    "pointGiven": {
+      "yes": "Oui",
+      "no": "Non, l’ajouter maintenant"
+    },
+    "chip": {
+      "exceptional": "Exceptionnel",
+      "incomplete": "Entrée incomplète",
+      "paperCode": "Comme sur la feuille de match",
+      "teamsNotSet": "Équipe A/B non définie : domicile affiché comme A"
+    },
+    "hint": {
+      "timeoutHere": "temps mort déjà ici",
+      "subHere": "remplacement déjà ici",
+      "sanctionHere": "sanction déjà ici",
+      "current": "score actuel",
+      "protest": "Dictée par le/la capitaine, avec la permission du 1er arbitre.",
+      "finalScore": "Seule la fin du set peut être corrigée : un point ajouté après le dernier point, ou le dernier point supprimé. Les points oubliés au milieu d'un set ne peuvent pas être corrigés (cours de marqueur Swiss Volley).",
+      "libero": "Pour corriger un remplacement de libéro pendant le match, utilisez Annuler.",
+      "lineup": "Corrigez la formation avant le premier échange du set ; faites tourner une équipe décalée d'une position.",
+      "advanced": "Toutes les entrées du journal du match. Supprimer une entrée supprime tout ce qui lui appartient. Ajoutez ou modifiez dans les cartes ci-dessus."
+    },
+    "confirm": {
+      "removeTitle": "Supprimer cette entrée ?",
+      "removes": "Supprime :",
+      "timeoutCount": "Le nombre de temps morts de {{team}} au set {{set}} passe de {{from}} à {{to}}.",
+      "subRestore": "#{{out}} revient en position {{position}} ; les formations suivantes sont mises à jour.",
+      "removePointTitle": "Supprimer aussi le point de pénalité ?",
+      "removePoint": "Le point accordé est encore le dernier point de ce set. Le supprimer aussi (comme Annuler) ?",
+      "removeRemarkTitle": "Supprimer cette remarque ?",
+      "addPoint": "Donner maintenant un point à {{team}}, avec rotation et service, comme le bouton point.",
+      "changeServe": "Premier service au set {{set}} : {{before}} → {{after}}.",
+      "switchSides": "L'équipe {{left}} passe à droite, l'équipe {{right}} à gauche.",
+      "discardTitle": "Abandonner les modifications non enregistrées ?",
+      "discard": "Les modifications dans Équipes et Info match ne sont pas encore enregistrées."
+    },
+    "banner": {
+      "signaturesCleared": "Les signatures ont été effacées car la feuille a changé. Recueillez-les à nouveau à la fin du match.",
+      "readOnly": "Le match est approuvé : les corrections sont en lecture seule."
     }
   }
 }

@@ -107,7 +107,7 @@ describe('describeEvent', () => {
     expect(d.title).toBe('Penalty — Player #8 (bench)')
     expect(d.code).toBe('(8)')
     expect(d.detail).toBe('+1 point to Volley Bern')
-    expect(d.text).toMatch(/^Penalty — Player #8 \(bench\) · \+1 point to Volley Bern · VC Smash \(A\) · Set 1 · A \d+:\d+ B$/)
+    expect(d.text).toMatch(/^Penalty — Player #8 \(bench\) · VC Smash \(A\) · Set 1 · A \d+:\d+ B · \+1 point to Volley Bern$/)
   })
 
   it('team sanctions read "Team"', () => {
@@ -178,7 +178,8 @@ describe('describeLegacyChange', () => {
     expect(describeLegacyChange({ description: 'Deleted event: improper_request (seq: 4)' })).toBe('Deleted event: improper request (seq: 4)')
     expect(describeLegacyChange({ category: 'event', field: 'sanction', description: '{"a":1}' })).toBe('Event: Sanction')
   })
-  it('tr never returns the bare key', () => {
+  it('tr never returns the bare key, and fills placeholders an uninitialised i18n leaves (0 included)', () => {
     expect(tr((k) => k, 'corrections.x', 'Default {{n}}', { n: 2 })).toBe('Default 2')
+    expect(tr((k, o) => o.defaultValue, 'corrections.score', '{{first}} {{a}}:{{b}} {{second}}', { first: 'B', a: 0, b: 0, second: 'A' })).toBe('B 0:0 A')
   })
 })
