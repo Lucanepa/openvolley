@@ -20,6 +20,9 @@ export const tournamentApi = {
   putCourts(id, courts) { return apiRequest('PUT', `/api/beach/tournaments/${enc(id)}/courts`, { courts }) },
   createDraw(id, body) { return apiRequest('POST', `/api/beach/tournaments/${enc(id)}/draws`, body) },
   schedule(id, body) { return apiRequest('POST', `/api/beach/tournaments/${enc(id)}/schedule`, body) },
+  // Excel/CSV import (T2): the preview (rows, diff, hash; nothing written), then the apply with its hash
+  importPreview(id, rows) { return apiRequest('POST', `/api/beach/tournaments/${enc(id)}/import?dryRun=1`, rows) },
+  importApply(id, rows, hash) { return apiRequest('POST', `/api/beach/tournaments/${enc(id)}/import`, { ...rows, hash }) },
   updateDraw(drawId, body) { return apiRequest('PATCH', `/api/beach/draws/${enc(drawId)}`, body) },
   removeDraw(drawId) { return apiRequest('DELETE', `/api/beach/draws/${enc(drawId)}`) },
   addEntry(drawId, body) { return apiRequest('POST', `/api/beach/draws/${enc(drawId)}/entries`, body) },
@@ -46,6 +49,9 @@ const CODES = {
   OV_NO_COURTS: 'tournaments.errors.noCourts',
   OV_SLOT_CONFLICT: 'tournaments.errors.slotConflict',
   OV_RESULT_CHANGED: 'tournaments.errors.resultChanged',
+  OV_IMPORT_CHANGED: 'tournaments.import.changed',
+  OV_IMPORT_INVALID: 'tournaments.import.hasErrors',
+  OV_CONFLICT: 'tournaments.import.conflict',
   OV_NOT_FOUND: 'tournaments.errors.notFound'
 }
 

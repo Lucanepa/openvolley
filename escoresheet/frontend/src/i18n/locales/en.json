@@ -2476,7 +2476,8 @@
         "tournament_draw": "Draw changed",
         "tournament_entry": "Pairs changed",
         "tournament_schedule": "Schedule changed",
-        "tournament_result": "Result entered"
+        "tournament_result": "Result entered",
+        "tournament_import": "Excel/CSV imported"
       }
     }
   },
@@ -2699,6 +2700,10 @@
   "tournaments": {
     "title": "Tournaments",
     "new": "New tournament",
+    "startWith": "Add the pairs",
+    "startManual": "By hand",
+    "startFile": "From Excel or CSV",
+    "startFileHint": "After creating the tournament, the import opens: download the template or choose your file.",
     "create": "Create",
     "created": "Tournament created.",
     "empty": "No tournaments yet.",
@@ -2925,6 +2930,141 @@
       "noManager": "No OpenBeach competition manager has this email.",
       "slotConflict": "This slot does not fit the schedule.",
       "resultChanged": "Someone else changed this result meanwhile. Have another look."
+    },
+    "import": {
+      "open": "Import Excel/CSV",
+      "title": "Import from Excel or CSV",
+      "intro": "Fill in the template (the sheet Entries, and Matches for your own plan) and choose the file, or one CSV file per sheet. You see a preview first; nothing changes before you apply it.",
+      "template": {
+        "download": "Download template",
+        "title": "OpenBeach import",
+        "info": "Info",
+        "example": "Example",
+        "line1": "One row per pair in the sheet Entries. Draw (the category, e.g. A1) and Gender name the draw; a draw the tournament does not have yet is created.",
+        "line2": "A pair is found by both licence numbers, else by both names. A blank cell keeps the value. A pair missing from the file is withdrawn.",
+        "line3": "Seeds: when a draw has seeds in the file, they replace the seeds of the draw.",
+        "line4": "The sheet Matches is optional, for your own plan: each row finds its game by the game number and sets the date, time, court and officials. A draw without a bracket yet is drawn. Team 1 and Team 2 (a seed or a pair) are only checked.",
+        "line5": "CSV: one file per sheet, with the same column names. Nothing changes before you apply the preview."
+      },
+      "choose": "Choose file",
+      "reading": "Reading the file …",
+      "checking": "Checking the rows on the server …",
+      "kinds": {
+        "entries": "Entries",
+        "matches": "Matches"
+      },
+      "rowsCount_one": "{{count}} row",
+      "rowsCount_other": "{{count}} rows",
+      "ignoredColumns": "Not used: {{columns}}",
+      "problems": {
+        "nothing_found": "No Entries or Matches sheet found. Use the column names of the template.",
+        "missing_columns": "{{sheet}}: the columns {{columns}} are missing.",
+        "duplicate_sheet": "{{sheet}}: a second {{kind}} sheet. Import one after the other.",
+        "too_many_rows": "{{sheet}}: more than {{max}} rows.",
+        "no_rows": "The file has no rows to import.",
+        "unreadable": "{{file}} cannot be read. Choose an Excel file (.xlsx) or a CSV file.",
+        "xls": "{{file}} is an old Excel file (.xls). Save it as .xlsx or CSV, then choose it again."
+      },
+      "summary": {
+        "draws_new_one": "{{count}} new draw",
+        "draws_new_other": "{{count}} new draws",
+        "entries_new_one": "{{count}} new pair",
+        "entries_new_other": "{{count}} new pairs",
+        "entries_changed_one": "{{count}} pair changed",
+        "entries_changed_other": "{{count}} pairs changed",
+        "entries_removed_one": "{{count}} pair withdrawn",
+        "entries_removed_other": "{{count}} pairs withdrawn",
+        "entries_unchanged_one": "{{count}} pair unchanged",
+        "entries_unchanged_other": "{{count}} pairs unchanged",
+        "brackets_one": "{{count}} bracket drawn",
+        "brackets_other": "{{count}} brackets drawn",
+        "matches_changed_one": "{{count}} game planned",
+        "matches_changed_other": "{{count}} games planned",
+        "courts_new_one": "{{count}} new court",
+        "courts_new_other": "{{count}} new courts"
+      },
+      "hasErrors": "Some rows have errors. Correct the file, then choose it again.",
+      "nothingToChange": "Nothing to change: the tournament already matches the file.",
+      "changed": "The tournament changed since the preview. This is the new preview: check it, then apply it again.",
+      "conflict": "Another change of this tournament came first. Try again.",
+      "apply": "Apply import",
+      "applied": "Import applied.",
+      "rows": "Rows to check",
+      "rowsOk_one": "{{count}} row OK.",
+      "rowsOk_other": "{{count}} rows OK.",
+      "rowN": "row {{n}}",
+      "status": {
+        "ok": "OK",
+        "warning": "Warning",
+        "error": "Error"
+      },
+      "changes": "Changes",
+      "more": "And {{count}} more.",
+      "ops": {
+        "new": "New",
+        "changed": "Changed",
+        "removed": "Withdrawn"
+      },
+      "drawNew": "New draw {{draw}}",
+      "bracket": "{{draw}}: bracket drawn, {{teams}} pairs on a board of {{size}}, games {{first}} to {{last}}",
+      "courtNew": "New court {{n}}",
+      "gameLine": "Game {{n}} · {{code}}",
+      "seedN": "Seed {{n}}",
+      "savedPair": "Saved pair {{name}}",
+      "linked": "linked",
+      "yes": "yes",
+      "no": "no",
+      "entryStatus": {
+        "registered": "registered",
+        "withdrawn": "withdrawn",
+        "replaced": "replaced",
+        "dq": "disqualified"
+      },
+      "fields": {
+        "seed": "Seed",
+        "name": "Name",
+        "player1": "Player 1",
+        "player2": "Player 2",
+        "wildcard": "Wildcard",
+        "status": "Status",
+        "team_id": "Saved pair",
+        "court": "Court",
+        "scheduled_at": "Start",
+        "referee": "1st referee",
+        "scorer": "Scorer"
+      },
+      "msg": {
+        "required": "{{field}} is missing.",
+        "too_long": "{{field}} is longer than {{max}} characters.",
+        "bad_value": "{{field}}: neither a text nor a number.",
+        "bad_gender": "Gender “{{value}}” is not men, women or mixed.",
+        "bad_seed": "Seed “{{value}}” is not a number from 1 to 128.",
+        "bad_country": "{{field}} “{{value}}”: 3 letters, e.g. SUI.",
+        "bad_yes_no": "{{field}} “{{value}}”: yes or no.",
+        "bad_game": "Game number “{{value}}” is not a number from 1 to 9999.",
+        "bad_date": "Date “{{value}}” is not a date like 11.07.2026.",
+        "bad_time": "Time “{{value}}” is not a time like 09:30.",
+        "date_time_pair": "Give both a date and a time, or neither.",
+        "bad_court": "Court “{{value}}” is not a number from 1 to 99.",
+        "no_licence": "A licence number is missing (MyBeach needs it for the ranking).",
+        "duplicate_pair": "The same pair as in row {{first_row}}.",
+        "duplicate_seed": "Seed {{seed}} is also in row {{first_row}}.",
+        "player_twice": "Licence {{licence}} is also in row {{first_row}}.",
+        "draw_drawn": "The bracket of {{draw}} is drawn: only names, players and wildcards change. Reset the bracket first.",
+        "unknown_draw": "There is no draw {{draw}}.",
+        "draw_size": "{{draw}} has {{teams}} pairs; a double elimination needs {{min}} to {{max}}.",
+        "duplicate_game": "Game {{game}} is also in row {{first_row}}.",
+        "unknown_game": "There is no game {{game}}.",
+        "game_other_draw": "Game {{game}} is {{match_code}} of {{draw}}.",
+        "match_begun": "Game {{game}} ({{match_code}}) has begun: its court and time stay.",
+        "team_mismatch": "In the bracket, team {{side}} is {{expected}}.",
+        "phase_mismatch": "In the bracket, this game is in: {{expected}}.",
+        "drawWarning": "{{draw}}: {{text}}",
+        "kept_drawn_one": "{{draw}}: {{count}} pair is missing from the file and stays, because the bracket is drawn.",
+        "kept_drawn_other": "{{draw}}: {{count}} pairs are missing from the file and stay, because the bracket is drawn.",
+        "seeds_assigned_one": "{{draw}}: {{count}} pair gets its seed from the order (every pair needs one for the bracket).",
+        "seeds_assigned_other": "{{draw}}: {{count}} pairs get their seeds from the order (every pair needs one for the bracket)."
+      }
     }
   }
 }

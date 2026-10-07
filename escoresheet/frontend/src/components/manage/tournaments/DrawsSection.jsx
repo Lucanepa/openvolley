@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowDown, ArrowLeft, ArrowUp, Plus, Shuffle, Trash2, UserMinus } from 'lucide-react'
+import { ArrowDown, ArrowLeft, ArrowUp, FileSpreadsheet, Plus, Shuffle, Trash2, UserMinus } from 'lucide-react'
 import KitModal from '../KitModal'
 import { InlineError } from '../common'
 import { tournamentApi } from '../../../lib/tournamentApi'
@@ -501,7 +501,7 @@ function DrawPanel({ draw, bundle, reload, onBack }) {
 }
 
 /** The draws of a tournament (one category and gender each), then one draw. */
-export default function DrawsSection({ bundle, reload }) {
+export default function DrawsSection({ bundle, reload, onImport }) {
   const { t } = useTranslation()
   const drawName = useDrawName()
   const [openId, setOpenId] = useState(null)
@@ -513,7 +513,12 @@ export default function DrawsSection({ bundle, reload }) {
     <Card>
       <CardHeading
         title={t('tournaments.sections.draws')}
-        actions={edit && <Button variant="ghost" size="sm" icon={Plus} onClick={() => setCreating(true)} data-testid="draw-new">{t('tournaments.newDraw')}</Button>}
+        actions={edit && (
+          <div className="flex flex-wrap gap-2">
+            {onImport && <Button variant="ghost" size="sm" icon={FileSpreadsheet} onClick={onImport} data-testid="import-open">{t('tournaments.import.open')}</Button>}
+            <Button variant="ghost" size="sm" icon={Plus} onClick={() => setCreating(true)} data-testid="draw-new">{t('tournaments.newDraw')}</Button>
+          </div>
+        )}
       />
       {bundle.draws.length === 0 ? <EmptyInset>{t('tournaments.noDraws')}</EmptyInset> : (
         <RowList>

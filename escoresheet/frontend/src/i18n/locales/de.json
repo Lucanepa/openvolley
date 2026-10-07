@@ -2454,7 +2454,8 @@
         "tournament_draw": "Tableau geändert",
         "tournament_entry": "Teams geändert",
         "tournament_schedule": "Spielplan geändert",
-        "tournament_result": "Resultat eingegeben"
+        "tournament_result": "Resultat eingegeben",
+        "tournament_import": "Excel/CSV importiert"
       }
     }
   },
@@ -2681,6 +2682,10 @@
   "tournaments": {
     "title": "Turniere",
     "new": "Neues Turnier",
+    "startWith": "Teams erfassen",
+    "startManual": "Von Hand",
+    "startFile": "Aus Excel oder CSV",
+    "startFileHint": "Nach dem Erstellen öffnet sich der Import: Lade die Vorlage herunter oder wähl deine Datei.",
     "create": "Erstellen",
     "created": "Turnier erstellt.",
     "empty": "Noch keine Turniere.",
@@ -2907,6 +2912,141 @@
       "noManager": "Keine OpenBeach-Wettbewerbsverantwortliche Person hat diese E-Mail.",
       "slotConflict": "Dieser Platz passt nicht in den Spielplan.",
       "resultChanged": "Jemand anderes hat dieses Resultat inzwischen geändert. Schau es dir nochmals an."
+    },
+    "import": {
+      "open": "Excel/CSV importieren",
+      "title": "Aus Excel oder CSV importieren",
+      "intro": "Füll die Vorlage aus (das Blatt Anmeldungen, für einen eigenen Spielplan auch Spiele) und wähl die Datei, oder je Blatt eine CSV-Datei. Du siehst zuerst eine Vorschau; geändert wird erst, wenn du sie übernimmst.",
+      "template": {
+        "download": "Vorlage herunterladen",
+        "title": "OpenBeach-Import",
+        "info": "Info",
+        "example": "Beispiel",
+        "line1": "Pro Team eine Zeile im Blatt Anmeldungen. Tableau (die Kategorie, z. B. A1) und Geschlecht bestimmen das Tableau; hat das Turnier es noch nicht, wird es erstellt.",
+        "line2": "Ein Team wird über beide Lizenznummern gefunden, sonst über beide Namen. Eine leere Zelle lässt den Wert, wie er ist. Ein Team, das in der Datei fehlt, wird abgemeldet.",
+        "line3": "Setzung: Hat ein Tableau in der Datei Setzungen, ersetzen sie die Setzung des Tableaus.",
+        "line4": "Das Blatt Spiele ist freiwillig, für deinen eigenen Spielplan: Jede Zeile findet ihr Spiel über die Spielnummer und setzt Datum, Zeit, Feld und Offizielle. Ein Tableau, das noch nicht ausgelost ist, wird ausgelost. Team 1 und Team 2 (eine Setzung oder ein Team) werden nur geprüft.",
+        "line5": "CSV: je Blatt eine Datei mit denselben Spaltennamen. Geändert wird erst, wenn du die Vorschau übernimmst."
+      },
+      "choose": "Datei wählen",
+      "reading": "Datei wird gelesen …",
+      "checking": "Zeilen werden auf dem Server geprüft …",
+      "kinds": {
+        "entries": "Anmeldungen",
+        "matches": "Spiele"
+      },
+      "rowsCount_one": "{{count}} Zeile",
+      "rowsCount_other": "{{count}} Zeilen",
+      "ignoredColumns": "Nicht verwendet: {{columns}}",
+      "problems": {
+        "nothing_found": "Kein Blatt Anmeldungen oder Spiele gefunden. Verwende die Spaltennamen der Vorlage.",
+        "missing_columns": "{{sheet}}: Es fehlen die Spalten {{columns}}.",
+        "duplicate_sheet": "{{sheet}}: ein zweites Blatt {{kind}}. Importiere eines nach dem anderen.",
+        "too_many_rows": "{{sheet}}: mehr als {{max}} Zeilen.",
+        "no_rows": "Die Datei hat keine Zeilen zum Importieren.",
+        "unreadable": "{{file}} kann nicht gelesen werden. Wähl eine Excel-Datei (.xlsx) oder eine CSV-Datei.",
+        "xls": "{{file}} ist eine alte Excel-Datei (.xls). Speichere sie als .xlsx oder CSV und wähl sie nochmals."
+      },
+      "summary": {
+        "draws_new_one": "{{count}} neues Tableau",
+        "draws_new_other": "{{count}} neue Tableaus",
+        "entries_new_one": "{{count}} neues Team",
+        "entries_new_other": "{{count}} neue Teams",
+        "entries_changed_one": "{{count}} Team geändert",
+        "entries_changed_other": "{{count}} Teams geändert",
+        "entries_removed_one": "{{count}} Team abgemeldet",
+        "entries_removed_other": "{{count}} Teams abgemeldet",
+        "entries_unchanged_one": "{{count}} Team unverändert",
+        "entries_unchanged_other": "{{count}} Teams unverändert",
+        "brackets_one": "{{count}} Tableau ausgelost",
+        "brackets_other": "{{count}} Tableaus ausgelost",
+        "matches_changed_one": "{{count}} Spiel geplant",
+        "matches_changed_other": "{{count}} Spiele geplant",
+        "courts_new_one": "{{count}} neues Feld",
+        "courts_new_other": "{{count}} neue Felder"
+      },
+      "hasErrors": "Einige Zeilen haben Fehler. Korrigiere die Datei und wähl sie nochmals.",
+      "nothingToChange": "Nichts zu ändern: Das Turnier entspricht bereits der Datei.",
+      "changed": "Das Turnier hat sich seit der Vorschau geändert. Das ist die neue Vorschau: Prüf sie und übernimm sie nochmals.",
+      "conflict": "Eine andere Änderung an diesem Turnier war schneller. Versuch es nochmals.",
+      "apply": "Import übernehmen",
+      "applied": "Import übernommen.",
+      "rows": "Zu prüfende Zeilen",
+      "rowsOk_one": "{{count}} Zeile in Ordnung.",
+      "rowsOk_other": "{{count}} Zeilen in Ordnung.",
+      "rowN": "Zeile {{n}}",
+      "status": {
+        "ok": "OK",
+        "warning": "Warnung",
+        "error": "Fehler"
+      },
+      "changes": "Änderungen",
+      "more": "Und {{count}} weitere.",
+      "ops": {
+        "new": "Neu",
+        "changed": "Geändert",
+        "removed": "Abgemeldet"
+      },
+      "drawNew": "Neues Tableau {{draw}}",
+      "bracket": "{{draw}}: Tableau ausgelost, {{teams}} Teams auf einem {{size}}er-Tableau, Spiele {{first}} bis {{last}}",
+      "courtNew": "Neues Feld {{n}}",
+      "gameLine": "Spiel {{n}} · {{code}}",
+      "seedN": "Setzung {{n}}",
+      "savedPair": "Gespeichertes Team {{name}}",
+      "linked": "verknüpft",
+      "yes": "ja",
+      "no": "nein",
+      "entryStatus": {
+        "registered": "angemeldet",
+        "withdrawn": "abgemeldet",
+        "replaced": "ersetzt",
+        "dq": "disqualifiziert"
+      },
+      "fields": {
+        "seed": "Setzung",
+        "name": "Name",
+        "player1": "Spieler 1",
+        "player2": "Spieler 2",
+        "wildcard": "Wildcard",
+        "status": "Status",
+        "team_id": "Gespeichertes Team",
+        "court": "Feld",
+        "scheduled_at": "Beginn",
+        "referee": "1. Schiedsrichter",
+        "scorer": "Schreiber"
+      },
+      "msg": {
+        "required": "{{field}} fehlt.",
+        "too_long": "{{field}} ist länger als {{max}} Zeichen.",
+        "bad_value": "{{field}}: weder ein Text noch eine Zahl.",
+        "bad_gender": "Geschlecht «{{value}}» ist nicht Herren, Damen oder Mixed.",
+        "bad_seed": "Setzung «{{value}}» ist keine Zahl von 1 bis 128.",
+        "bad_country": "{{field}} «{{value}}»: 3 Buchstaben, z. B. SUI.",
+        "bad_yes_no": "{{field}} «{{value}}»: ja oder nein.",
+        "bad_game": "Spielnummer «{{value}}» ist keine Zahl von 1 bis 9999.",
+        "bad_date": "Datum «{{value}}» ist kein Datum wie 11.07.2026.",
+        "bad_time": "Zeit «{{value}}» ist keine Zeit wie 09:30.",
+        "date_time_pair": "Gib Datum und Zeit an, oder keines von beiden.",
+        "bad_court": "Feld «{{value}}» ist keine Zahl von 1 bis 99.",
+        "no_licence": "Eine Lizenznummer fehlt (MyBeach braucht sie für die Rangliste).",
+        "duplicate_pair": "Dasselbe Team wie in Zeile {{first_row}}.",
+        "duplicate_seed": "Setzung {{seed}} steht auch in Zeile {{first_row}}.",
+        "player_twice": "Lizenz {{licence}} steht auch in Zeile {{first_row}}.",
+        "draw_drawn": "Das Tableau {{draw}} ist ausgelost: Nur Namen, Spieler und Wildcards ändern sich. Setz das Tableau zuerst zurück.",
+        "unknown_draw": "Es gibt kein Tableau {{draw}}.",
+        "draw_size": "{{draw}} hat {{teams}} Teams; eine Double Elimination braucht {{min}} bis {{max}}.",
+        "duplicate_game": "Spiel {{game}} steht auch in Zeile {{first_row}}.",
+        "unknown_game": "Es gibt kein Spiel {{game}}.",
+        "game_other_draw": "Spiel {{game}} ist {{match_code}} von {{draw}}.",
+        "match_begun": "Spiel {{game}} ({{match_code}}) hat begonnen: Feld und Zeit bleiben.",
+        "team_mismatch": "Im Tableau ist Team {{side}} {{expected}}.",
+        "phase_mismatch": "Im Tableau gehört dieses Spiel zu: {{expected}}.",
+        "drawWarning": "{{draw}}: {{text}}",
+        "kept_drawn_one": "{{draw}}: {{count}} Team fehlt in der Datei und bleibt, weil das Tableau ausgelost ist.",
+        "kept_drawn_other": "{{draw}}: {{count}} Teams fehlen in der Datei und bleiben, weil das Tableau ausgelost ist.",
+        "seeds_assigned_one": "{{draw}}: {{count}} Team erhält seine Setzung aus der Reihenfolge (zum Auslosen braucht jedes Team eine).",
+        "seeds_assigned_other": "{{draw}}: {{count}} Teams erhalten ihre Setzung aus der Reihenfolge (zum Auslosen braucht jedes Team eine)."
+      }
     }
   }
 }
