@@ -76,6 +76,29 @@ describe('referee PlayerDisc', () => {
     expect(container.querySelector('[data-disc-badge="captain"]').textContent).toBe('LC')
   })
 
+  it('writes LC at the size of the other marks (the badge widens, the text does not shrink)', () => {
+    const { container } = render(<PlayerDisc {...full} liberoLabel="L" captain="LC" />)
+    const lc = container.querySelector('[data-disc-badge="captain"]')
+    const pos = container.querySelector('[data-disc-badge="position"]')
+    expect(lc.style.fontSize).toBe(pos.style.fontSize)
+    expect(lc.style.width).toBe('')
+  })
+
+  it('fits LC (or LR) and all three sanction cards side by side on the smallest disc', () => {
+    // 36 px disc (DISC.minPx), 1 px border: 34 px inside; badges are 11 px (badgeMinPx)
+    const badge = 11
+    const share = (v) => Number(String(v).match(/\*\s*([\d.]+)\)/)[1]) * badge
+    const { container } = render(<PlayerDisc {...full} liberoLabel="L" captain="LC" sanctions={{ warning: true, penalty: true, expulsion: true }} />)
+    const lc = container.querySelector('[data-disc-badge="captain"]')
+    const cards = container.querySelector('[data-disc-badge="sanctions"]')
+    // two bold capitals at 0.6 of the badge are at most 1.4 em wide (Inter bold LC measures 1.32 em); 2 px border each side
+    const lcWidth = 1.4 * share(lc.style.fontSize) + 2 * share(lc.style.padding) + 4
+    const leaves = [...cards.querySelectorAll('span[style*="background"]')].map(c => share(c.style.width))
+    const groups = cards.children.length
+    const cardsWidth = leaves.reduce((a, b) => a + b, 0) + 1 + (groups - 1) * share(cards.style.gap) + 2 * share(cards.style.padding)
+    expect(lcWidth + cardsWidth).toBeLessThanOrEqual(34)
+  })
+
   it('the referee court draws its players with PlayerDisc', () => {
     const src = readFileSync(resolve(__dirname, '../Referee.jsx'), 'utf8')
     expect(src).toMatch(/<PlayerDisc\b/)

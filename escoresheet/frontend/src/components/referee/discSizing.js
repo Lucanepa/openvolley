@@ -35,6 +35,10 @@ export const DISC = {
   widthCqw: 15.5,
   /** the user scale (Options, 50 %) never shrinks a disc below this; only a small court does */
   minPx: 36,
+  /** with LFP tracking on, three marks share the top edge: below this the LFP mark has no room between the corner badges */
+  minPxLfp: 50,
+  /** LFP mark type size, of the badge size */
+  lfp: 0.46,
   /** player number font size, of the diameter (two digits fit inside the circle) */
   number: 0.5,
   /** corner badge size, of the diameter, held between min and max px */
@@ -61,11 +65,12 @@ export function discCapPx(vmin) {
  * of the court, which is the size container); the disc and its badges read
  * them with var().
  * @param {number} capPx largest diameter, in px
+ * @param {{ lfp?: boolean }} [opts] lfp: LFP tracking on (the mark needs a larger floor)
  */
-export function discCssVars(capPx) {
+export function discCssVars(capPx, { lfp = false } = {}) {
   const d = DISC
   return {
-    '--disc': `min(${d.heightCqh}cqh, ${d.widthCqw}cqw, ${Math.max(d.minPx, Math.round(capPx))}px)`,
+    '--disc': `min(${d.heightCqh}cqh, ${d.widthCqw}cqw, ${Math.max(lfp ? d.minPxLfp : d.minPx, Math.round(capPx))}px)`,
     '--disc-number': `calc(var(--disc) * ${d.number})`,
     '--disc-badge': `clamp(${d.badgeMinPx}px, calc(var(--disc) * ${d.badge}), ${d.badgeMaxPx}px)`,
     '--disc-ball': `max(0px, min(calc(var(--disc) * ${d.ballMax}), calc(${d.ballRoomCqw}cqw - var(--disc) * ${PCT(0.5 + d.ballGap)} - ${d.ballSafetyPx}px)))`,
@@ -77,13 +82,13 @@ const clamp = (min, v, max) => Math.min(Math.max(v, min), max)
 
 /**
  * The same formulas in px, for a court of the given size.
- * @param {{ courtWidth: number, courtHeight: number, capPx: number }} court
+ * @param {{ courtWidth: number, courtHeight: number, capPx: number, lfp?: boolean }} court
  */
-export function discMetrics({ courtWidth, courtHeight, capPx }) {
+export function discMetrics({ courtWidth, courtHeight, capPx, lfp = false }) {
   const d = DISC
   const cqw = courtWidth / 100
   const cqh = courtHeight / 100
-  const disc = Math.max(0, Math.min(d.heightCqh * cqh, d.widthCqw * cqw, Math.max(d.minPx, Math.round(capPx))))
+  const disc = Math.max(0, Math.min(d.heightCqh * cqh, d.widthCqw * cqw, Math.max(lfp ? d.minPxLfp : d.minPx, Math.round(capPx))))
   return {
     disc,
     number: disc * d.number,
@@ -97,12 +102,12 @@ export function discMetrics({ courtWidth, courtHeight, capPx }) {
  * What would overflow on a court of this size: discs that leave their column
  * or the court height, the serve ball past the court edge, numbers wider than
  * the circle. Empty when everything fits.
- * @param {{ courtWidth: number, courtHeight: number, viewportWidth: number, capPx: number, digitEm?: number, capHeightEm?: number }} court
+ * @param {{ courtWidth: number, courtHeight: number, viewportWidth: number, capPx: number, lfp?: boolean, digitEm?: number, capHeightEm?: number }} court
  * @returns {string[]}
  */
-export function discFitProblems({ courtWidth, courtHeight, viewportWidth, capPx, digitEm = 0.7, capHeightEm = 0.73 }) {
+export function discFitProblems({ courtWidth, courtHeight, viewportWidth, capPx, lfp = false, digitEm = 0.7, capHeightEm = 0.73 }) {
   const g = COURT_GRID
-  const m = discMetrics({ courtWidth, courtHeight, capPx })
+  const m = discMetrics({ courtWidth, courtHeight, capPx, lfp })
   const problems = []
   const space = clamp(g.spaceMinPx, viewportWidth * g.spaceVw / 100, g.spaceMaxPx)
   const half = courtWidth / 2

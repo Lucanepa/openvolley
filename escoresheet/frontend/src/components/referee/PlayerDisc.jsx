@@ -1,5 +1,5 @@
 import ballFallback from '../../ball_fallback.png'
-import { discCssVars } from './discSizing.js'
+import { DISC, discCssVars } from './discSizing.js'
 
 // Primary ball image (with a bundled copy as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
@@ -11,7 +11,7 @@ const badgeBase = {
   boxSizing: 'border-box',
   minWidth: 'var(--disc-badge)',
   height: 'var(--disc-badge)',
-  padding: '0 calc(var(--disc-badge) * 0.12)',
+  padding: '0 calc(var(--disc-badge) * 0.08)',
   borderRadius: 'calc(var(--disc-badge) * 0.2)',
   display: 'flex',
   alignItems: 'center',
@@ -23,7 +23,9 @@ const badgeBase = {
   fontVariantNumeric: 'tabular-nums'
 }
 
-const card = (color, widthShare = 0.42) => ({
+// Card widths leave the bottom row room for LC / LR on the left even with
+// all three sanctions on a 36 px disc (the smallest one)
+const card = (color, widthShare = 0.38) => ({
   width: `calc(var(--disc-badge) * ${widthShare})`,
   height: 'calc(var(--disc-badge) * 0.72)',
   background: color,
@@ -72,7 +74,7 @@ export default function PlayerDisc({
     <div
       data-player-disc={position}
       style={{
-        ...discCssVars(capPx),
+        ...discCssVars(capPx, { lfp: lfp !== null }),
         position: 'relative',
         boxSizing: 'border-box',
         width: 'var(--disc)',
@@ -138,7 +140,7 @@ export default function PlayerDisc({
           minWidth: 0,
           height: 'calc(var(--disc-badge) * 0.75)',
           padding: '0 calc(var(--disc-badge) * 0.06)',
-          fontSize: 'calc(var(--disc-badge) * 0.38)',
+          fontSize: `calc(var(--disc-badge) * ${DISC.lfp})`,
           letterSpacing: '-0.02em',
           background: lfp ? 'rgba(249, 115, 22, 0.95)' : 'rgba(147, 51, 234, 0.95)',
           border: '1px solid var(--border)',
@@ -198,7 +200,8 @@ export default function PlayerDisc({
           bottom: 0,
           // Next to the L badge when both show
           left: liberoLabel && !liberoCaptain ? 'calc(var(--disc-badge) + 2px)' : 0,
-          fontSize: liberoCaptain ? 'calc(var(--disc-badge) * 0.48)' : badgeBase.fontSize,
+          // LC keeps the type size of every other mark and widens its badge
+          // instead (a smaller share fell to 5 px on a 36 px disc)
           background: captain === 'LC' ? '#ffffff' : captain === 'LGC' ? '#3b82f6' : 'rgba(15, 23, 42, 0.95)',
           border: `2px solid ${captain === 'C' || captain === 'LC' ? '#22c55e' : '#fbbf24'}`,
           color: captain === 'C' || captain === 'LC' ? '#22c55e' : '#fbbf24'
@@ -216,9 +219,9 @@ export default function PlayerDisc({
           right: 0,
           display: 'flex',
           alignItems: 'center',
-          gap: 'calc(var(--disc-badge) * 0.08)',
+          gap: 'calc(var(--disc-badge) * 0.06)',
           height: 'var(--disc-badge)',
-          padding: '0 calc(var(--disc-badge) * 0.1)',
+          padding: '0 calc(var(--disc-badge) * 0.06)',
           background: 'rgba(0, 0, 0, 0.6)',
           borderRadius: 'calc(var(--disc-badge) * 0.2)'
         }}>
@@ -226,8 +229,8 @@ export default function PlayerDisc({
           {(penalty || disqualification) && <span title={disqualification ? 'Disqualification' : 'Penalty'} style={card(RED)} />}
           {expulsion && (
             <span title="Expulsion" style={{ display: 'flex', gap: 1 }}>
-              <span style={card(YELLOW, 0.34)} />
-              <span style={card(RED, 0.34)} />
+              <span style={card(YELLOW, 0.3)} />
+              <span style={card(RED, 0.3)} />
             </span>
           )}
         </span>
