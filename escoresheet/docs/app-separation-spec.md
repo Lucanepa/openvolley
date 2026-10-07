@@ -39,7 +39,7 @@ Idempotent, one transaction, safe under the running 2.2.0 backend. Run after 011
 
 | Place | Rule |
 |---|---|
-| `server.js matchOwnerFor` → `pgQuery` `matchOwner.testOnlySports` | The sports the account cannot score in are test-only. Inserts: the payload's `sport_type` (absent = the column default, indoor). Updates/deletes/upserts: the stored match. Sets, events, live state: the parent match. Making a match non-test is checked against the stored match's sport. `matchOwner.testOnly` alone still means every sport (old callers, the same SQL). |
+| `server.js matchOwnerFor` → `pgQuery` `matchOwner.testOnlySports` | The sports the account cannot score in are test-only. Inserts: the payload's `sport_type` (absent = the column default, indoor). Updates/deletes: the stored match. Upserts (also `/api/match/restore`): the merged row, the payload over the stored match, for both `sport_type` and `test`, so `{external_id, test: false}` without `sport_type` cannot make an indoor scorer's beach test match official; a payload that changes the sport hits the lock (409). Sets, events, live state: the parent match. Making a match non-test is checked against the stored match's sport. `matchOwner.testOnly` alone still means every sport (old callers, the same SQL). |
 | Official-game friendly checks (`/api/db`, `/api/match/restore`) | Only rows of the sports the caller can score in, so a beach-only scorer never sees who holds an indoor game (pgQuery's 403 comes first). |
 | `POST /api/storage/upload` bucket `scoresheets` | First path segment `beach` (NFKC, case-insensitive) needs beach scoring rights, every other path indoor. |
 | `POST /api/match/official-check` | The role of `body.sport_type` (absent = indoor). |
@@ -69,7 +69,15 @@ Audit `app`: given explicitly for invites, roles and joins; an entry about a mat
 
 1. `db/012_app_memberships.sql` as ov_owner, then `roles.sql` (both idempotent). The running 2.2.0 backend keeps working: new columns have defaults, the trigger only refuses a sport change that no client does.
 2. Then the backend image. It needs 012 (`audit_log.app`, `auth.app_memberships`).
-3. Rollback: the previous image works on a 012 database.
+3. Rollback: the previous image works on a 012 database, but it is not just the image tag once a beach invite code exists. The 2.2.0 backend ignores `invite_codes.sport`: it redeems a beach code as the plain indoor role (`scorer` / `competition_manager`), and its admin list shows beach codes as indoor codes. So BEFORE switching the image back, revoke the open beach codes (as ov_owner), and keep the output to recreate them after a fix:
+
+   ```sql
+   UPDATE public.invite_codes SET revoked_at = now()
+    WHERE sport = 'beach' AND revoked_at IS NULL
+   RETURNING id, label, role, max_uses, uses;
+   ```
+
+   On the old image an indoor scorer can write official beach matches again and a beach-only account has no scoring right (the 2.2.0 behaviour). The `beach:*` roles and memberships stay stored and count again once S1 is redeployed.
 
 ## 7. Tests
 
