@@ -60,6 +60,7 @@ import { FOCUS_RING, Button } from '../ui/Button.jsx'
 import { ActionSheet, ActionSheetItem } from '../ui/Modal.jsx'
 import { SectionHeader } from '../ui/SectionHeader.jsx'
 import { askConfirm } from '../utils/askConfirm.js'
+import { backdropDismiss } from '../ui/backdropDismiss.js'
 
 // ── volleyui chrome for the scoreboard (RESTYLE-SPEC P5) ──────────────────────
 // Only the chrome around the court takes these: the toolbar, the side-column
@@ -23431,7 +23432,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 zIndex: 999,
                 background: 'transparent'
               }}
-              onClick={() => { setPlayerActionMenu(null); setCourtSubExpanded(false); setCourtLiberoExpanded(false); setCourtSanctionExpanded(false); setCourtLiberoUnableExpanded(false) }}
+              {...backdropDismiss(() => { setPlayerActionMenu(null); setCourtSubExpanded(false); setCourtLiberoExpanded(false); setCourtSanctionExpanded(false); setCourtLiberoUnableExpanded(false) })}
             />
             {/* Action Menu */}
             <div style={menuStyle} className="modal-wrapper-roll-down">
@@ -24151,7 +24152,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 background: mustSubstitute ? 'rgba(0, 0, 0, 0.3)' : 'transparent',
                 cursor: mustSubstitute ? 'not-allowed' : 'default'
               }}
-              onClick={() => {
+              {...backdropDismiss(() => {
                 if (mustSubstitute) return // Block closing for expelled/disqualified players
                 setSubstitutionDropdown(null)
                 setLiberoDropdown(null)
@@ -24159,7 +24160,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 setSanctionDropdown(null)
                 setInjuryDropdown(null)
                 setPlayerActionMenu(null)
-              }}
+              })}
             />
             {/* Dropdown */}
             <div style={dropdownStyle} className="modal-wrapper-roll-down">
@@ -24345,14 +24346,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 zIndex: 999,
                 background: 'transparent'
               }}
-              onClick={() => {
+              {...backdropDismiss(() => {
                 setSubstitutionDropdown(null)
                 setLiberoDropdown(null)
                 setLiberoInDropdown(null)
                 setSanctionDropdown(null)
                 setInjuryDropdown(null)
                 setPlayerActionMenu(null)
-              }}
+              })}
             />
             {/* Dropdown */}
             <div style={dropdownStyle} className="modal-wrapper-roll-down">
@@ -24465,14 +24466,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 zIndex: 999,
                 background: 'transparent'
               }}
-              onClick={() => {
+              {...backdropDismiss(() => {
                 setLiberoInDropdown(null)
                 setSubstitutionDropdown(null)
                 setLiberoDropdown(null)
                 setSanctionDropdown(null)
                 setInjuryDropdown(null)
                 setPlayerActionMenu(null)
-              }}
+              })}
             />
             {/* Dropdown */}
             <div style={dropdownStyle} className="modal-wrapper-roll-down">
@@ -24596,7 +24597,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 zIndex: 999,
                 background: 'transparent'
               }}
-              onClick={cancelSanction}
+              {...backdropDismiss(cancelSanction)}
             />
             {/* Dropdown */}
             <div style={dropdownStyle} className="modal-wrapper-roll-up">
@@ -24882,7 +24883,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 zIndex: 999,
                 background: 'transparent'
               }}
-              onClick={() => { setBenchPlayerActionMenu(null); setBenchSubExpanded(false); setBenchSanctionExpanded(false) }}
+              {...backdropDismiss(() => { setBenchPlayerActionMenu(null); setBenchSubExpanded(false); setBenchSanctionExpanded(false) })}
             />
             {/* Action Menu */}
             <div style={menuStyle} className="modal-wrapper-roll-down">
@@ -25302,14 +25303,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 zIndex: 999,
                 background: 'transparent'
               }}
-              onClick={() => {
+              {...backdropDismiss(() => {
                 setSubstitutionDropdown(null)
                 setLiberoDropdown(null)
                 setLiberoInDropdown(null)
                 setSanctionDropdown(null)
                 setInjuryDropdown(null)
                 setPlayerActionMenu(null)
-              }}
+              })}
             />
             {/* Dropdown */}
             <div style={dropdownStyle} className="modal-wrapper-roll-up">
@@ -25381,7 +25382,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         return (
           <>
             <div
-              onClick={() => setSummaryTableZoom(null)}
+              {...backdropDismiss(() => setSummaryTableZoom(null))}
               style={{
                 position: 'fixed',
                 top: 0, left: 0, right: 0, bottom: 0,
@@ -25889,7 +25890,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               justifyContent: 'center',
               zIndex: 9999
             }}
-            onClick={cancelLiberoConfirm}
+            {...backdropDismiss(cancelLiberoConfirm)}
           >
             <div
               style={{
@@ -26103,7 +26104,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               background: 'rgba(0, 0, 0, 0.5)',
               zIndex: 9999
             }}
-            onClick={cancelLiberoReentry}
+            {...backdropDismiss(cancelLiberoReentry)}
           >
             <div
               style={{
@@ -26488,7 +26489,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 inset: 0,
                 zIndex: 999
               }}
-              onClick={() => { setLiberoBenchActionMenu(null); setLiberoBenchReplaceExpanded(false); setLiberoBenchUnableExpanded(false) }}
+              {...backdropDismiss(() => { setLiberoBenchActionMenu(null); setLiberoBenchReplaceExpanded(false); setLiberoBenchUnableExpanded(false) })}
             />
             <div style={menuStyle}>
               <div className={SB_POPOVER} style={{
@@ -26756,7 +26757,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               justifyContent: 'center',
               zIndex: 9999
             }}
-            onClick={() => setLiberoUnableModal(null)}
+            {...backdropDismiss(() => setLiberoUnableModal(null))}
           >
             <div
               style={{
@@ -27113,11 +27114,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       {/* Connection Status Popover */}
       {connectionModal && connectionModal !== 'teamA' && connectionModal !== 'teamB' && (
         <div
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setConnectionModal(null)
-            }
-          }}
+          {...backdropDismiss(() => setConnectionModal(null))}
           style={{
             position: 'fixed',
             top: 0,
@@ -27786,7 +27783,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               background: 'rgba(0, 0, 0, 0.5)',
               zIndex: 9999
             }}
-            onClick={() => setLiberoRotationModal(null)}
+            {...backdropDismiss(() => setLiberoRotationModal(null))}
           >
             <div
               style={{

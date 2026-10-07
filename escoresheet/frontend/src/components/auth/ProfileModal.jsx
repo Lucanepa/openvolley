@@ -6,6 +6,7 @@ import { X } from 'lucide-react'
 import { Button, cn, Field, FOCUS_RING, IconButton, Input } from '../../ui'
 import RoleChips from './RoleChips'
 import PendingApprovalBanner from './PendingApprovalBanner'
+import { backdropDismiss } from '../../ui/backdropDismiss.js'
 
 export default function ProfileModal({ open, onClose }) {
   const { t } = useTranslation()
@@ -145,7 +146,7 @@ export default function ProfileModal({ open, onClose }) {
   const labelCls = 'mb-1.5 block text-sm font-medium text-stone-700'
 
   return (
-    <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} onClick={onClose}>
+    <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} {...backdropDismiss(onClose)}>
       <div
         role="dialog"
         aria-modal="true"
@@ -350,7 +351,7 @@ export default function ProfileModal({ open, onClose }) {
         <div
           className="fixed inset-0 flex items-center justify-center bg-stone-900/60 p-4 backdrop-blur-sm"
           style={{ zIndex: 2100 }}
-          onClick={() => setShowDeleteConfirm(false)}
+          {...backdropDismiss(() => setShowDeleteConfirm(false))}
         >
           <div
             role="alertdialog"

@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { needsEmailConfirmation } from './signUpResult'
 import { Check, X } from 'lucide-react'
 import { Button, cn, Field, FOCUS_RING, IconButton, Input } from '../../ui'
+import { backdropDismiss } from '../../ui/backdropDismiss.js'
 
 export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
   const { t } = useTranslation()
@@ -68,7 +69,7 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
   }
 
   return (
-    <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} onClick={onClose}>
+    <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} {...backdropDismiss(onClose)}>
       <div
         role="dialog"
         aria-modal="true"
