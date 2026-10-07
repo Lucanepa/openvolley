@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.0 · État au 7 octobre 2026
+**OpenVolley et OpenBeach** · Version 1.1 · État au 7 octobre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version allemande fait foi.
@@ -21,6 +21,9 @@ version allemande fait foi.
   joueurs, ainsi que les noms des arbitres des matchs officiels.
   **Les dates de naissance, numéros de licence et signatures ne sont jamais
   publics.**
+- L'application OpenVolley tient un journal d'activité de chaque match, sans
+  NIP ni mots de passe. Si vous êtes connecté, il est envoyé au serveur. Ce que
+  vous cliquez ou tapez reste sur votre appareil (section 5).
 - Le serveur se trouve en Allemagne (Hetzner). Cloudflare (États-Unis) diffuse
   les sites web et transmet le trafic au serveur.
 - Vous pouvez demander à tout moment l'accès, la rectification ou
@@ -92,10 +95,9 @@ responsables de leurs traitements de données.
 
 **Sans connexion**, l'application enregistre tout uniquement sur votre
 appareil : matchs, équipes, listes d'équipe avec dates de naissance, sets,
-événements du match, listes d'officiels, réglages et un journal local de
-l'utilisation (pour le dépannage ; vous pouvez le télécharger vous-même). Les
-matchs restent enregistrés jusqu'à ce que vous les supprimiez ou effaciez les
-données de l'application.
+événements du match, listes d'officiels, réglages et les journaux de
+l'application (voir ci-dessous). Les matchs restent enregistrés jusqu'à ce que
+vous les supprimiez ou effaciez les données de l'application.
 
 **Transmission en direct, même sans connexion.** Dès qu'un match est créé,
 les applications navigateur et Android l'envoient (équipes, listes d'équipe,
@@ -115,38 +117,79 @@ sur le réseau local.
   lire. Ils sont conservés jusqu'à la suppression de votre compte ;
 - les **feuilles de match** comme fichiers (PDF et données), voir section 7.
 
-**Journal d'activité.** Pour la traçabilité de la feuille de match et pour
-le dépannage, l'application tient un journal d'activité de chaque match :
-points et autres événements, annulations et corrections (ce qui a été modifié,
-quand et pourquoi), sets, signatures et approbations (seulement le fait
-qu'elles ont eu lieu, jamais l'image de la signature ni un PIN), remarques
-(seulement leur longueur), résultats des envois et erreurs de l'application.
-Chaque entrée porte un identifiant aléatoire de l'appareil (créé par
-l'application, sans lien avec le matériel), la version de l'application, la
-plateforme et, si vous êtes connecté, votre compte. Il ne contient pas plus de
-données personnelles que la feuille de match elle-même (numéros des joueurs,
-noms des officiels lors d'une correction). Si vous êtes connecté, il est
-envoyé à mon serveur, où les marqueurs du match et les administrateurs
-peuvent le lire. Lorsqu'un point annulé avait déjà été envoyé, le serveur le
-conserve marqué comme annulé au lieu de le supprimer, afin que le déroulement
-du match reste traçable. Les applications de bureau et Android écrivent en
-plus le journal d'activité sous forme de fichiers quotidiens à côté des
-fichiers de sauvegarde (`OpenVolley/logs`, au plus 30 jours et 50 Mo). **Ce
-que vous cliquez ou tapez reste sur votre appareil :** ce journal local n'est
-jamais envoyé et n'enregistre jamais de mots de passe ni de PIN. Sur
-l'appareil, le journal d'activité est conservé jusqu'à 180 jours, le journal
-des clics 30 jours. Sur le serveur : 24 mois pour les entrées d'un match (ou
-jusqu'à la suppression du match), 90 jours pour les entrées sans match. Je le
-supprime plus tôt sur demande (section 19).
+**Journal d'activité (OpenVolley à partir de la version 2.4.0).** Pour la
+traçabilité de la feuille de match et pour le dépannage, l'application
+consigne ce qui se passe sur l'appareil : points et autres événements du
+match, annulations et corrections (ce qui a été modifié, quand et pourquoi),
+sets et statut du match, signatures et validations (seulement la fonction et
+le fait qu'elles ont eu lieu), remarques (seulement leur longueur),
+modifications des listes d'équipe (seulement le numéro de maillot), résultats
+des envois au serveur, erreurs de l'application (message et endroit dans le
+programme), démarrage, mise à jour et fermeture de l'application ainsi que
+connexion et déconnexion. Chaque entrée porte un identifiant aléatoire de
+l'appareil (créé par l'application, sans lien avec le matériel), la version
+de l'application, la plateforme et, si vous êtes connecté, votre compte.
+**Ne sont jamais enregistrés** les NIP, mots de passe, jetons de connexion,
+images de signature, dates de naissance, adresses e-mail, numéros de
+téléphone et de licence ; si quelqu'un modifie un tel champ à la main, le
+journal indique seulement qu'il a été modifié. Dans le texte libre (messages
+d'erreur, valeurs des modifications), les suites de six chiffres ou plus et
+les nombres placés à côté de mots comme « PIN », « code » ou « mot de passe »
+sont masqués. Le journal ne contient donc pas plus de données personnelles
+que la feuille de match elle-même (numéros de maillot, noms des officiels
+lors d'une correction). Vous pouvez le consulter dans l'application et
+l'enregistrer comme fichier (CSV ou JSON).
+
+**Où se trouve le journal d'activité :** sur votre appareil ; dans les
+applications de bureau et Android aussi sous forme de fichiers quotidiens
+dans le dossier `OpenVolley/logs` (bureau : dans votre dossier utilisateur à
+côté des fichiers de sauvegarde, Android : dans le dossier « Documents », voir
+ci-dessous). Si vous êtes connecté, l'application l'envoie à mon serveur, y
+compris les entrées créées sur cet appareil sans connexion. Sur le serveur,
+les entrées d'un match peuvent être lues par le compte qui a saisi le match,
+les comptes qui ont saisi le NIP du match et les administrateurs ; les entrées
+sans match ne sont visibles que pour les administrateurs. Lorsqu'un match est
+supprimé sur le serveur, ses entrées sont supprimées avec lui. La durée de
+conservation figure à la section 16 ; sur demande, je les supprime plus tôt
+(section 19).
+
+**Historique des événements (OpenVolley à partir de la version 2.4.0).**
+Lorsqu'un point ou un autre événement est annulé ou corrigé, l'application
+consigne l'ancien événement (pour une modification aussi le nouveau) avec le
+motif, l'heure, l'identifiant de l'appareil, la version de l'application et
+le compte. Si l'événement se trouvait déjà sur le serveur, celui-ci ne le
+supprime pas, mais le marque comme annulé et conserve la modification, afin
+que le déroulement du match reste traçable. L'historique des événements fait
+partie du match et est supprimé avec lui. Sur le serveur, seuls les
+administrateurs le voient.
+
+**Journal d'utilisation : ce que vous cliquez ou tapez reste sur votre
+appareil.** Pour le dépannage, l'application enregistre sur l'appareil ce que
+vous cliquez et tapez (y compris le texte des champs de saisie, par exemple
+des noms). Ce journal n'est jamais envoyé. Vous pouvez le télécharger
+vous-même (dans les réglages, ou à la fin du match dans le fichier ZIP) et
+l'envoyer par exemple au support. Dans OpenVolley à partir de la version
+2.4.0, il n'enregistre aucune saisie dans les champs de mot de passe et de
+NIP ni aucun NIP affiché à l'écran, et il est effacé après 30 jours ou
+au-delà de 50 000 entrées.
 
 **Application de bureau.** L'application de bureau enregistre en plus des
 fichiers de sauvegarde automatiques des matchs dans votre dossier utilisateur
 (Linux : `~/.local/share/OpenVolley/backups`, Windows :
 `%APPDATA%\OpenVolley\backups`). Ils contiennent les noms et les dates de
-naissance, mais aucun NIP, et sont effacés après 30 jours.
+naissance, mais aucun NIP, et sont effacés après 30 jours. À partir de la
+version 2.4.0, l'application de bureau OpenVolley écrit en outre un fichier
+journal technique (`desktop.log`) dans le dossier `OpenVolley/logs` :
+démarrage et fermeture, recherches et téléchargements de mises à jour, liens
+et téléchargements ouverts (adresse sans paramètres, emplacement
+d'enregistrement), nombre de tablettes connectées et erreurs. Il reste sur
+votre appareil, n'est jamais envoyé et ne contient ni NIP, ni jetons de
+connexion, ni mots de passe du point d'accès. Au plus cinq anciens fichiers
+de 5 Mo chacun sont conservés.
 
 **Application Android.** L'application Android dépose ses fichiers de
-sauvegarde dans le dossier public « Documents ». **Ces fichiers subsistent
+sauvegarde et les fichiers quotidiens du journal d'activité dans le dossier
+public « Documents ». **Ces fichiers subsistent
 après la désinstallation de l'application et, sous Android 10 et versions
 antérieures, d'autres applications peuvent aussi les lire.** Supprimez-les
 vous-même si nécessaire. Si vous avez activé la sauvegarde Google de
@@ -196,12 +239,14 @@ d'OpenVolley (moi et les personnes que je désigne).
 
 **Supprimer votre compte :** vous pouvez supprimer votre compte vous-même dans
 l'application à tout moment. Sont alors effacés le compte, le profil, les
-sessions, le NIP de validation, les codes d'invitation utilisés ainsi que vos
-copies de sauvegarde et journaux téléversés. **Subsistent** les documents
-officiels auxquels d'autres ont un intérêt : les feuilles de match que vous
-avez saisies, les validations que vous avez données (avec votre nom tel
-qu'il figure sur la feuille de match), les équipes et tournois enregistrés et
-les entrées du journal des modifications (section 14). Votre compte est
+sessions, le NIP de validation, les codes d'invitation utilisés, vos copies
+de sauvegarde et journaux téléversés ainsi que vos entrées du journal
+d'activité sans match. **Subsistent** les documents officiels auxquels
+d'autres ont un intérêt : les feuilles de match que vous avez saisies, les
+validations que vous avez données (avec votre nom tel qu'il figure sur la
+feuille de match), les équipes et tournois enregistrés, les entrées du
+journal des modifications (section 14) ainsi que le journal d'activité et
+l'historique des événements des matchs (section 5). Votre compte est
 dissocié de ces entrées. Vous pouvez faire effacer ce qui subsiste selon la
 section 19, dans la mesure où la feuille de match n'en a pas besoin.
 
@@ -212,7 +257,7 @@ section 19, dans la mesure où la feuille de match n'en a pas besoin.
 nom, date de naissance et indication libéro ou capitaine, encadrement
 (fonction, nom, date de naissance), officiels (arbitres, marqueur, juges de
 ligne avec nom, pays, date de naissance), **signatures** (images dessinées sur
-l'appareil), tirage au sort, déroulement du match avec tous les événements,
+l'appareil ou sur un téléphone), tirage au sort, déroulement du match avec tous les événements,
 remplacements et sanctions, résultats et corrections ultérieures.
 
 **Qui saisit les données :** le marqueur dans l'application, les responsables
@@ -253,6 +298,25 @@ l'heure, le résultat validé ainsi qu'un hachage pseudonymisé de l'adresse IP
 et de l'appareil (pour détecter les abus). Les validations font partie du
 procès-verbal du match. Vous voyez vos propres validations ; le marqueur du
 match et les administrateurs les voient aussi.
+
+**Signer sur un téléphone (OpenVolley à partir de la version 2.4.0) :** au
+lieu de signer sur l'appareil du marqueur, une personne peut signer sur son
+propre téléphone. L'appareil affiche pour cela un code QR avec un lien vers
+mon serveur (`backend.openvolley.app`) ou, en mode salle, vers l'ordinateur
+portable sur le réseau local. Le lien est valable 10 minutes et pour une
+seule signature. Le téléphone n'a besoin ni de compte ni d'application. La
+page affiche le numéro du match, les équipes, la date, la fonction et, s'il
+est connu, le nom de la personne qui signe. Le téléphone n'envoie que les
+traits de la signature (pas d'image). Le serveur ou l'ordinateur portable ne
+garde ces données qu'en mémoire vive, transmet la signature à l'appareil du
+marqueur et la supprime au plus tard 5 minutes après la signature ; rien
+n'est enregistré dans la base de données. Le téléphone n'enregistre rien : ni
+cookies ni stockage local ; le lien n'est gardé que dans l'onglet du
+navigateur pendant la session et est effacé à la fin. Seul l'appareil du
+marqueur en fait l'image de la signature. Comme une signature dessinée sur
+place, elle fait partie du match, avec la mention qu'elle a été faite sur un
+téléphone (voie et heure). Via le serveur, le marqueur doit être connecté
+avec un rôle de marqueur ou d'arbitre.
 
 **Envoi des infos du match par e-mail :** si vous envoyez les infos du match
 à une adresse e-mail depuis l'application, le numéro du match, le NIP du
@@ -412,6 +476,9 @@ longtemps que votre demande l'exige.
   co-éditeurs ou modifié des inscriptions à un tournoi, et quand. Les entrées
   peuvent contenir les adresses e-mail de co-éditeurs et les noms d'équipes de
   beach-volley. Seuls les administrateurs voient ce journal.
+- **Signer sur un téléphone :** le serveur ne journalise que les étapes
+  (démarrée, ouverte, signée, terminée) avec la fonction et un identifiant
+  court, jamais le lien, la signature, des noms ou des équipes.
 
 ## 15. Destinataires et sous-traitants
 
@@ -460,8 +527,12 @@ prestataires. Vous pouvez me demander une copie de ces garanties.
 | Copies de sauvegarde téléversées | 30 jours |
 | Journaux de l'application téléversés | Jusqu'à la suppression de votre compte |
 | Journal d'activité d'un match (serveur) | 24 mois, ou jusqu'à la suppression du match ; plus tôt sur demande |
-| Journal d'activité sans match (serveur) | 90 jours |
-| Événements annulés et corrigés d'un match | Avec le match, comme partie du procès-verbal du match |
+| Journal d'activité sans match (serveur) | 90 jours ; les entrées enregistrées sous votre compte sont effacées avec lui |
+| Historique des événements (événements annulés et corrigés) | Avec le match, comme partie du procès-verbal du match |
+| Journal d'activité sur l'appareil | Entrées envoyées 180 jours (au plus 100 000) ; entrées pas encore envoyées jusqu'à leur envoi (au plus 200 000) ; au plus 30 fichiers quotidiens et 50 Mo |
+| Journal d'utilisation (uniquement sur l'appareil) | OpenVolley à partir de 2.4.0 : 30 jours, au plus 50 000 entrées |
+| Fichier journal de l'application de bureau (uniquement sur l'appareil) | Au plus cinq anciens fichiers de 5 Mo chacun |
+| Signature sur un téléphone (serveur ou ordinateur portable) | Uniquement en mémoire vive ; lien valable 10 minutes, signature supprimée au plus tard 5 minutes après la signature |
 | Journaux du serveur | Écrasés selon leur taille (quelques jours à quelques semaines) |
 | Données en direct (serveur et mode salle) | Uniquement en mémoire vive ; sur le serveur supprimées 24 heures après la dernière activité |
 | Sauvegardes | Jusqu'à environ 6 mois (section 18) |
@@ -494,8 +565,9 @@ section 19 pour leur enfant.
   des instantanés mensuels **jusqu'à environ 6 mois**. Des données effacées
   peuvent donc subsister jusqu'à environ 6 mois dans ces sauvegardes
   chiffrées ; elles ne servent qu'à une restauration.
-- Les fichiers de sauvegarde de l'application de bureau ne sont lisibles que
-  par votre compte utilisateur et ne contiennent aucun NIP.
+- Les fichiers de sauvegarde et les fichiers journaux de l'application de
+  bureau ne sont lisibles que par votre compte utilisateur et ne contiennent
+  aucun NIP.
 
 Aucun système n'est parfaitement sûr. Si vous trouvez une faille de sécurité,
 signalez-la à support@openvolley.app.
@@ -512,7 +584,7 @@ Vous avez le droit :
   rectification ;
 - de **recevoir** vos données dans un format courant ou de les faire
   transmettre (les applications permettent aussi de télécharger les copies de
-  sauvegarde et les feuilles de match) ;
+  sauvegarde, les feuilles de match et le journal d'activité) ;
 - de **retirer un consentement** à tout moment (par exemple pour la recherche
   de mises à jour sur Android).
 
@@ -540,9 +612,9 @@ Lorsque le RGPD s'applique, je me fonde sur :
 - **l'intérêt légitime** (art. 6, par. 1, let. f RGPD) : des procès-verbaux
   de match officiels corrects et vérifiables pour les clubs, la fédération et
   les officiels (listes d'équipe, dates de naissance pour le contrôle de la
-  qualification, signatures, validations), le livescore pour le public,
-  l'organisation de tournois, la sécurité et la protection contre les abus,
-  les sauvegardes ;
+  qualification, signatures, validations, journal d'activité et historique
+  des événements), le livescore pour le public, l'organisation de tournois, le
+  dépannage, la sécurité et la protection contre les abus, les sauvegardes ;
 - **le consentement** (art. 6, par. 1, let. a RGPD) : date de naissance
   facultative dans le compte, recherche de mises à jour de l'application
   Android installée directement.
