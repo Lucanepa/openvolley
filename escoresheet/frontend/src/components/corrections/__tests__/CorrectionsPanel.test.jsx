@@ -98,6 +98,28 @@ describe('CorrectionsPanel (review mode)', () => {
     expect(screen.getByText('Time-out · Volley Bern (B) · Set 1 · B 10:12 A')).toBeTruthy()
   })
 
+  it('set times: kit time fields, nothing to save until a time changes, then the new times', async () => {
+    setup()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Set times' })[0])
+    const start = document.getElementById('ov-corr-start')
+    expect(start.type).toBe('text')
+    // the stored times have seconds: an untouched form is not a change
+    expect(screen.getByText('Fill in the fields above.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Confirm' }).disabled).toBe(true)
+    // ten minutes before the recorded end, in whatever time zone the test runs
+    const [eh, em] = document.getElementById('ov-corr-end').value.split(':').map(Number)
+    const mins = eh * 60 + em - 10
+    const want = [Math.floor(mins / 60), mins % 60]
+    fireEvent.change(start, { target: { value: want.map(n => String(n).padStart(2, '0')).join(':') } })
+    expect(screen.getByRole('button', { name: 'Confirm' }).disabled).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    await vi.waitFor(() => expect(applied.plans).toHaveLength(1))
+    const changes = applied.plans[0].setUpdates[0].changes
+    expect(Object.keys(changes)).toEqual(['startTime'])
+    const d = new Date(changes.startTime)
+    expect([d.getHours(), d.getMinutes()]).toEqual(want)
+  })
+
   it('the score of a final-score correction is never typed: +1 / -1 at the set end only', () => {
     setup()
     const firstSet = screen.getAllByRole('button', { name: 'Correct final score' })[0]

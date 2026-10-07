@@ -195,7 +195,8 @@ export function PreviewBox({ plan, ctx, children, remark, onRemarkChange }) {
         <FormError>{errorText(plan, t)}</FormError>
       ) : (
         <div className="space-y-2.5">
-          {plan.log?.after && <p className="text-sm font-medium text-stone-900">{plan.log.after}</p>}
+          {/* the sentence of the entry; a set-times plan keeps its times object there and shows its own preview */}
+          {typeof plan.log?.after === 'string' && plan.log.after && <p className="text-sm font-medium text-stone-900">{plan.log.after}</p>}
           {children}
           {remark !== undefined && remark !== null && (
             <div>
