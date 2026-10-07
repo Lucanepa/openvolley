@@ -35,6 +35,9 @@
 --                       auth.app_sessions  SELECT, INSERT, UPDATE, DELETE
 --                       auth.app_tokens    SELECT, INSERT, UPDATE, DELETE
 --                                          (db/010; skipped when absent)
+--                       auth.app_memberships SELECT, INSERT, DELETE
+--                                          (db/012, lib/accounts.js; skipped
+--                                          when absent)
 
 \set ON_ERROR_STOP on
 BEGIN;
@@ -205,5 +208,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON auth.app_sessions TO ov_app;
 -- without 010 there is no such table (lib/auth.js then answers 503).
 SELECT 'GRANT SELECT, INSERT, UPDATE, DELETE ON auth.app_tokens TO ov_app'
  WHERE to_regclass('auth.app_tokens') IS NOT NULL \gexec
+-- db/012: which app (OpenVolley / OpenBeach) an account has joined. Optional
+-- like app_tokens; account deletion removes the rows through the FK cascade.
+SELECT 'GRANT SELECT, INSERT, DELETE ON auth.app_memberships TO ov_app'
+ WHERE to_regclass('auth.app_memberships') IS NOT NULL \gexec
 
 COMMIT;
