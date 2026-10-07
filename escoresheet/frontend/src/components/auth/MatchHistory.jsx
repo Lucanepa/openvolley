@@ -7,6 +7,7 @@ import { ChevronRight, Loader2, X } from 'lucide-react'
 import { Button, cn, IconButton } from '../../ui'
 import { finalScoresheetUrl } from '../../../scoresheet_pdf/utils/scoresheetStorage'
 import { openAppWindow } from '../../utils/openAppWindow'
+import { backdropDismiss } from '../../ui/backdropDismiss.js'
 
 /**
  * Status pill of a My matches row. The database says 'live', 'final',
@@ -137,7 +138,7 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
 
 
   return (
-    <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} onClick={onClose}>
+    <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} {...backdropDismiss(onClose)}>
       <div
         role="dialog"
         aria-modal="true"

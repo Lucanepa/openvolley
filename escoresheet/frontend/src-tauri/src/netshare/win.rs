@@ -74,6 +74,13 @@ pub struct Inner {
     restore_timeout: bool,
 }
 
+impl Inner {
+    /// The tablets' Wi-Fi this app started is up.
+    pub fn running(&self) -> bool {
+        self.method.is_some()
+    }
+}
+
 fn we(code: &'static str) -> impl Fn(windows::core::Error) -> NetError {
     move |e| NetError::new(code, e.to_string())
 }

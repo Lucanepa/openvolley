@@ -83,6 +83,90 @@ is set.
   (`scripts/bump-version.js` does it when it bumps `package.json`; keep the
   root `version` in `package-lock.json` in step too).
 
+## Updates
+
+**F-Droid is the updater.** On Android 12+ an F-Droid client updates the apps
+it installed in the background, with no prompt (targetSdk 36 qualifies on
+every version); Android 7–11 shows one "Update" tap. The app itself never
+installs anything.
+
+What the app does depends on who installed it, decided at runtime
+(`UpdateSourcePlugin.java`, `src/utils/androidUpdate.js`), never at build
+time: one APK, no flavors, no new permission, so the f-droid.org reproducible
+build stays valid.
+
+| Installed by | Automatic check | Options → App version |
+|---|---|---|
+| an F-Droid client (`org.fdroid.fdroid`, `org.fdroid.basic`, `…privileged`, Droid-ify, Neo Store; on Android 14+ also the update owner) | **none**: F-Droid does it | "Updates come from F-Droid." + Open in F-Droid + Check for updates |
+| the browser / a file manager / adb (sideload), or another store | only after the user said yes to the one-time question "Get notified about new versions?" (default off, Yes and No look the same, closing it = no) | "Notify me about new versions" switch + Check for updates |
+
+- The check is a plain GET of the public index
+  `https://get.openvolley.app/fdroid/repo/index-v2.json` (about 4 kB): at
+  start, back in the foreground, at sign-in and when the device comes back
+  online, **at most once per 24 h** after a check that worked and an hour
+  after one that failed (a tablet started offline in a gym checks again soon
+  after it is back on Wi-Fi). Never offline, never during a live match, and not
+  at start before the app has read whether a match is live. Nothing else is
+  sent. A manual "Check for updates" is the user's own request and works for
+  every install. So there is no Tracking anti-feature and the F-Droid recipe
+  needs no change.
+- "Newer" compares the whole `versionCode` with the installed one (the plugin
+  reads it), so an Android-only rebuild with the build digit raised
+  (`androidBuild` in `build.gradle`) is announced too. Without the plugin's
+  answer only MAJOR.MINOR.PATCH of the version name counts.
+- An F-Droid install reads the same index, the OpenVolley repo. f-droid.org
+  builds a release some days later, so a user who installed from f-droid.org
+  only sees "available" before F-Droid offers it: the card and the options say
+  so and offer "Add the OpenVolley repo" next to "Open in F-Droid".
+- The WebView (origin `https://localhost`) needs CORS on that file:
+  `escoresheet/deploy/pkgs/Caddyfile` must send
+  `Access-Control-Allow-Origin *` for `/fdroid/repo/index-v2.json`. Without it
+  the check reports "Could not check for updates".
+- A newer version shows a card on the **home screen only** (never over the
+  scoreboard, setup or match end, never while a match is live; a version found
+  then waits): `{current} → {new}`, "Get it from F-Droid" (adds the repo via
+  `fdroidrepos://…`, or fdroid.link in the browser without a client),
+  "Download APK", Later (hidden for that version until the next start).
+- Prefs: `localStorage` `ov.update.notify` (`yes` / `no`) and
+  `ov.update.lastCheck` (the time of the last check that worked; after a
+  failure set so that the next one is due in an hour).
+- Why no self-installer: `REQUEST_INSTALL_PACKAGES` needs an explicit opt-in
+  under the F-Droid Inclusion Policy, and under Android 14+ update ownership a
+  second installer clashes with F-Droid. A browser-installed APK is bound to
+  F-Droid by one manual "Update" in F-Droid.
+
+### Scorer tablets, once each
+
+1. Install the **F-Droid client 2.0.x** (1.23 installs updates immediately,
+   even mid-match).
+2. Add the repo `https://get.openvolley.app/fdroid/repo?fingerprint=61C70F8949441E04E2E21ACC8E6E5C6CC502ADD52A157FB9A8DD8588DACE0720`
+   (keeping f-droid.org as well is fine: same signer).
+3. Install OpenVolley **from F-Droid**. Installed from the browser before?
+   Tap "Update" in F-Droid once to hand it over.
+4. Allow F-Droid to "Install unknown apps" when Android asks.
+5. F-Droid Settings → app auto-updates → **Only on Wi-Fi**. F-Droid waits for
+   the device to be idle, which never happens while the scoreboard keeps the
+   screen on.
+6. A tablet that must stay on F-Droid 1.23: turn "Automatically fetch updates"
+   off and update by hand between matches.
+
+Release timing: publish Monday to Thursday, never on match days (Fri–Sun):
+tablets pick up a release within about a day.
+
+Testing against a local index (debug build only; release builds never set it):
+
+```bash
+CAPACITOR=true VITE_UPDATE_INDEX_URL=http://10.0.2.2:8765/fdroid/repo/index-v2.json \
+  npx vite build --outDir dist-capacitor --emptyOutDir
+npx cap sync android && (cd android && ./gradlew assembleDebug)
+```
+
+Serve a copy of the real index with a higher `versionCode` on
+`127.0.0.1:8765` (with `Access-Control-Allow-Origin: *`); `adb install` gives a
+sideloaded app, `adb install -i org.fdroid.fdroid` (F-Droid installed on the
+emulator) an F-Droid one. `cap sync` rewrites `capacitor.settings.gradle`
+when `node_modules` is a symlink: do not commit that.
+
 ## F-Droid (official catalogue)
 
 The app is prepared for f-droid.org, which builds it from source itself:

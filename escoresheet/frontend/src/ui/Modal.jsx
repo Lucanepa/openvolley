@@ -21,6 +21,7 @@ import { Fragment, useEffect, useId, useRef } from 'react';
 import { X } from 'lucide-react';
 import { cn } from './cn.js';
 import { FOCUS_RING } from './Button.jsx';
+import { backdropDismiss } from './backdropDismiss.js';
 
 const FOCUSABLE =
   'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])';
@@ -50,7 +51,6 @@ const stack = [];
  * Returns props for the backdrop element.
  */
 function useOverlay({ open, onClose, panelRef, dismissible = true }) {
-  const pressedBackdrop = useRef(false);
   const openedAtRef = useRef(0);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -61,7 +61,6 @@ function useOverlay({ open, onClose, panelRef, dismissible = true }) {
     const me = token.current;
     stack.push(me);
     openedAtRef.current = Date.now();
-    pressedBackdrop.current = false;
     const previouslyFocused = document.activeElement;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -108,15 +107,13 @@ function useOverlay({ open, onClose, panelRef, dismissible = true }) {
     };
   }, [open, panelRef]);
 
-  return {
-    onMouseDown: (e) => { pressedBackdrop.current = e.target === e.currentTarget; },
-    onClick: (e) => {
-      if (!dismissible) return;
-      if (e.target !== e.currentTarget || !pressedBackdrop.current) return;
-      if (Date.now() - openedAtRef.current < 400) return;
-      onCloseRef.current?.();
-    },
-  };
+  // Press and release must both land on the backdrop (backdropDismiss.js), and
+  // the first 400ms after opening are ignored so the second click of a
+  // double-click on the opener cannot close it.
+  return backdropDismiss(() => {
+    if (Date.now() - openedAtRef.current < 400) return;
+    onCloseRef.current?.();
+  }, { enabled: dismissible });
 }
 
 /**
@@ -293,8 +290,7 @@ export function ActionSheet({ open, onClose, title, closeLabel = 'Schliessen', r
         tabIndex={-1}
         aria-hidden="true"
         className="absolute inset-0 bg-slate-900/40"
-        onMouseDown={(e) => overlay.onMouseDown(e)}
-        onClick={(e) => overlay.onClick(e)}
+        {...overlay}
       />
       <div
         ref={panelRef}

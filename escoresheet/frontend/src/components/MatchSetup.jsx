@@ -44,6 +44,7 @@ import CaptainToggle from './CaptainToggle'
 import StackLabel from './StackLabel'
 import { useFormStack } from '../hooks/useFormStack'
 import { askText } from '../utils/askText.js'
+import { backdropDismiss } from '../ui/backdropDismiss.js'
 
 // Kit field look inside the setup editors: compact label tone, and the legacy
 // `label { margin: 8px 0 }` rule neutralised so the label sits on its field.
@@ -3930,7 +3931,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 (sleeve edges differ by up to 33/255 from the before-shot). */}
             <div
               className="fixed inset-0 z-[999] bg-stone-900/50"
-              onClick={() => setColorPickerModal(null)}
+              {...backdropDismiss(() => setColorPickerModal(null))}
             />
             <div
               role="dialog"
@@ -7394,7 +7395,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           {/* No backdrop-blur: it re-rasterises the frozen swatch shirts. */}
           <div
             className="fixed inset-0 z-[999] flex items-center justify-center bg-stone-900/50"
-            onClick={() => setColorPickerModal(null)}
+            {...backdropDismiss(() => setColorPickerModal(null))}
           />
           {/* Bubble modal */}
           <div

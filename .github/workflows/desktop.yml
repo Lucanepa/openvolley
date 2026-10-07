@@ -72,6 +72,23 @@ jobs:
         with:
           projectPath: escoresheet/frontend
 
+      # The .deb updates itself through a root helper and a polkit policy
+      # (src-tauri/linux, updater.rs): lint both, and check that the helper is
+      # packaged as an executable owned by root (the bundler's tar writes the
+      # numeric owner, 0/0).
+      - name: Check the deb's update helper
+        if: matrix.os == 'ubuntu-22.04'
+        working-directory: escoresheet/frontend/src-tauri
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y shellcheck libxml2-utils
+          shellcheck linux/apt-upgrade
+          xmllint --noout linux/*.policy
+          deb=$(ls target/release/bundle/deb/*.deb | head -n1)
+          dpkg-deb -c "$deb" | grep -E '^-rwxr-xr-x (root/root|0/0) .*usr/libexec/openvolley-escoresheet/apt-upgrade$'
+          dpkg-deb -c "$deb" | grep -E '^-rw-r--r-- (root/root|0/0) .*usr/share/polkit-1/actions/com\.openvolley\.escoresheet\.update\.policy$'
+
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
@@ -93,6 +110,22 @@ jobs:
     permissions:
       contents: write
     steps:
+      # The tag is the version the updater announces (publish-pkgs.sh --desktop
+      # signs the files for it), so it must be the version the app reports.
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: escoresheet/frontend/package.json
+          sparse-checkout-cone-mode: false
+
+      - name: Check the tag matches the app version
+        run: |
+          tag=${GITHUB_REF_NAME#desktop-v}
+          app=$(jq -r .version escoresheet/frontend/package.json)
+          if [ "$tag" != "$app" ]; then
+            echo "::error::tag $GITHUB_REF_NAME is version $tag, escoresheet/frontend/package.json says $app"
+            exit 1
+          fi
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -105,6 +138,13 @@ jobs:
           name: eScoresheet Desktop ${{ github.ref_name }}
           draft: false
           prerelease: false
+          # The desktop updater's fallback endpoint is
+          # releases/latest/download/latest.json, so the newest desktop-v*
+          # release must stay "Latest" (server v* releases set make_latest
+          # "false" in release.yml and Android releases are created with
+          # --latest=false for the same reason; publish-pkgs.sh --desktop takes
+          # "Latest" back for the version latest.json announces).
+          make_latest: "true"
           body: |
             ## Offline desktop scoretable + LAN tablet server
 
@@ -123,6 +163,11 @@ jobs:
             - **Linux (Debian/Ubuntu)**: `curl -fsSL https://get.openvolley.app/install.sh | sudo sh`
               (signed APT repository, package `openvolley-escoresheet`; `sudo apt upgrade` keeps it current),
               or download the `.deb` and `sudo apt install ./openvolley-escoresheet_*_amd64.deb`.
+
+            ### Updates
+            From 2.2.0 the app updates itself: it downloads in the background and installs when
+            you quit, never during a match. On Windows each update asks once for an administrator.
+            Versions before 2.2.0: install 2.2.0 once by hand (APT users: `sudo apt update && sudo apt upgrade`).
           files: |
             artifacts/escoresheet-desktop-windows/**/*.exe
             artifacts/escoresheet-desktop-linux/**/*.AppImage

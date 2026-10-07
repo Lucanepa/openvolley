@@ -4,6 +4,7 @@ import { CircleHelp, X } from 'lucide-react'
 import FAQItem from './FAQItem'
 import { helpContent } from './helpContent'
 import { IconButton } from '../../ui/IconButton.jsx'
+import { backdropDismiss } from '../../ui/backdropDismiss.js'
 
 const pageNames = {
   home: 'contextHelp.pageNames.home',
@@ -39,7 +40,7 @@ export default function ContextualHelpPanel({ open, onClose, currentPage, onShow
       {/* Backdrop - only on narrow screens to dismiss */}
       {open && (
         <div
-          onClick={onClose}
+          {...backdropDismiss(onClose)}
           className="no-print fixed inset-0 bg-slate-900/40"
           style={{
             zIndex: 1000,

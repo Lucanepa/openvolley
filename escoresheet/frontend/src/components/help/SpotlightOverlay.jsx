@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { SearchX } from 'lucide-react'
 import { cn } from '../../ui/cn.js'
 import { modalPrimaryClass } from '../../ui/Modal.jsx'
+import { backdropDismiss } from '../../ui/backdropDismiss.js'
 
 export default function SpotlightOverlay({ targetHelpId, tooltipKey, onDismiss }) {
   const { t } = useTranslation()
@@ -90,7 +91,7 @@ export default function SpotlightOverlay({ targetHelpId, tooltipKey, onDismiss }
   if (notFound) {
     return (
       <div
-        onClick={onDismiss}
+        {...backdropDismiss(onDismiss)}
         className="no-print fixed inset-0 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-sm"
         style={{ zIndex: 1100, animation: 'fade-in 0.2s ease-out' }}
       >
@@ -142,7 +143,7 @@ export default function SpotlightOverlay({ targetHelpId, tooltipKey, onDismiss }
     <>
       {/* Dark overlay with cutout */}
       <div
-        onClick={onDismiss}
+        {...backdropDismiss(onDismiss)}
         className="no-print fixed inset-0 cursor-pointer bg-stone-900/70"
         style={{
           zIndex: 1100,

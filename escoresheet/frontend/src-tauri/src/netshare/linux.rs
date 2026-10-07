@@ -67,6 +67,13 @@ pub struct Inner {
     bluetooth: Option<Running>,
 }
 
+impl Inner {
+    /// A network this app started is up (the tablets use it).
+    pub fn running(&self) -> bool {
+        self.hotspot.is_some() || self.bluetooth.is_some()
+    }
+}
+
 fn dbus_err(code: &'static str, e: zbus::Error) -> NetError {
     NetError::new(code, e.to_string())
 }
