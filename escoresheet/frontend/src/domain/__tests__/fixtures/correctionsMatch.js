@@ -93,19 +93,20 @@ export function buildMatch({ sets = [], match = MATCH, start = Date.parse('2026-
 }
 
 /**
- * Points string for a set ending home:away: the two teams' points mixed
- * (two of one, one of the other) and the winner's last point at the end.
+ * Points string for a set ending home:away: the points spread evenly (the
+ * team further behind its final total scores next) and the winner's point
+ * last. 25:20 passes 12:10, 20:16, ...
  */
 export function pointsFor(home, away) {
   const winner = home > away ? 'H' : 'A'
-  let h = winner === 'H' ? home - 1 : home
-  let a = winner === 'A' ? away - 1 : away
+  const H = winner === 'H' ? home - 1 : home
+  const A = winner === 'A' ? away - 1 : away
+  let h = 0
+  let a = 0
   const out = []
-  let i = 0
-  while (h > 0 || a > 0) {
-    const pickH = (i % 3 !== 2 && h > 0) || a === 0
-    if (pickH) { out.push('H'); h-- } else { out.push('A'); a-- }
-    i++
+  while (h < H || a < A) {
+    const pickH = a >= A || (h < H && h * A <= a * H)
+    if (pickH) { out.push('H'); h++ } else { out.push('A'); a++ }
   }
   out.push(winner)
   return out.join('')
