@@ -540,10 +540,29 @@ export default function MainHeader({
           onToggleHelp()
         }}
         aria-pressed={helpPanelOpen}
-        className={cn(HEADER_BTN, 'w-8 px-0 text-sm font-bold', helpPanelOpen && HEADER_BTN_ON)}
+        className={cn(HEADER_BTN, 'w-9 px-0 text-sm font-bold', helpPanelOpen && HEADER_BTN_ON)}
         title={t('contextHelp.helpButton', 'Help')}
       >
         ?
+      </button>
+    </span>
+  )
+
+  // Fullscreen sits in the bar next to ? and the menu (one click, not a menu row)
+  const fullscreenButton = (
+    <span className={KIT_SCOPE}>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          toggleFullscreen()
+        }}
+        aria-pressed={!!isFullscreen}
+        className={cn(HEADER_BTN, 'w-9 px-0', isFullscreen && HEADER_BTN_ON)}
+        aria-label={isFullscreen ? t('header.exitFullscreen') : t('header.fullscreen')}
+        title={isFullscreen ? t('header.exitFullscreen') : t('header.fullscreen')}
+      >
+        {isFullscreen ? <Minimize size={16} aria-hidden="true" /> : <Maximize size={16} aria-hidden="true" />}
       </button>
     </span>
   )
@@ -950,6 +969,8 @@ export default function MainHeader({
               {/* Help Button */}
               {helpButton}
 
+              {fullscreenButton}
+
               {/* Unified Menu Button (hamburger) */}
               <div ref={actionsMenuRef} style={{ position: 'relative' }}>
                 <button
@@ -1058,22 +1079,7 @@ export default function MainHeader({
                       <span className="flex-1 tabular-nums">{t('header.versionLabel', 'Version {{version}}', { version: currentVersion })}</span>
                     </div>
 
-                    {/* Divider */}
-                    <div className={MENU_SEP} />
-
-                    {/* Fullscreen Action */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        toggleFullscreen()
-                        setActionsMenuOpen(false)
-                      }}
-                      className={MENU_ROW}
-                    >
-                      <span className={MENU_ICON}>{isFullscreen ? <Minimize size={15} /> : <Maximize size={15} />}</span>
-                      <span>{isFullscreen ? t('header.exitFullscreen') : t('header.fullscreen')}</span>
-                    </button>
+                    {quitRow && <div className={MENU_SEP} />}
 
                     {quitRow}
                   </div>
