@@ -68,6 +68,7 @@ import ManageConsole from './components/manage/ManageConsole'
 import ManagerSiteLink from './components/ManagerSiteLink'
 import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, restorePrefill } from './utils/manageNav'
 import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
+import { needsEventCheck, pickCurrentMatch } from './utils/currentMatch'
 import { isRelayErrorFor, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
 
 function parseDateTime(dateTime) {
@@ -472,17 +473,20 @@ export default function App() {
     if (activeMatchLoaded) liveMatchKnown()
   }, [activeMatchStatus, activeMatchIsTest, activeMatchLoaded])
 
-  // Get current match (most recent match that's not final)
+  // Current match: the newest unfinished one by createdAt, never one created
+  // more than 7 days ago without a single event (abandoned: it was offered to
+  // the hall's tablets as "Home – Away" for months). utils/currentMatch.js.
+  // Only those old matches' events are read, so scoring the current match
+  // does not re-run this query.
   const currentMatch = useLiveQuery(async () => {
     try {
-      // First try to get a live match
-      const liveMatch = await db.matches.where('status').equals('live').first()
-      if (liveMatch) return liveMatch
-
-      // Otherwise get the most recent match that's not final
-      const matches = await db.matches.orderBy('createdAt').reverse().toArray()
-      const nonFinalMatch = matches.find(m => m.status !== 'final')
-      return nonFinalMatch || null
+      const now = Date.now()
+      const matches = (await db.matches.toArray()).filter(m => m.status !== 'final')
+      const withEvents = new Set()
+      for (const m of matches) {
+        if (needsEventCheck(m, now) && await db.events.where('matchId').equals(m.id).count() > 0) withEvents.add(m.id)
+      }
+      return pickCurrentMatch(matches, { now, hasEvents: (id) => withEvents.has(id) })
     } catch (error) {
       console.error('Unable to load current match', error)
       return null

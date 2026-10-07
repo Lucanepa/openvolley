@@ -69,6 +69,17 @@ describe('relay match list: what people can join', () => {
     expect(benchJoinableMatches(RELAY_LIST).map((m) => m.id)).toEqual(['bench-away'])
   })
 
+  it('neither offers a match the relay still holds from long ago (stale: scheduled more than 12 h ago, not started)', () => {
+    const now = Date.parse('2026-10-07T12:00:00Z')
+    const rows = [
+      row({ id: 'feb', gameNumber: 201, status: 'scheduled', scheduledAt: '2026-02-20T16:00:00Z', refereeConnectionEnabled: true, homeTeamConnectionEnabled: true }),
+      row({ id: 'tonight', gameNumber: 202, status: 'scheduled', scheduledAt: '2026-10-07T18:00:00Z', refereeConnectionEnabled: true, homeTeamConnectionEnabled: true }),
+      row({ id: 'playing', gameNumber: 203, status: 'live', scheduledAt: '2026-10-06T18:00:00Z', refereeConnectionEnabled: true, homeTeamConnectionEnabled: true })
+    ]
+    expect(refereeJoinableMatches(rows, now).map((m) => m.id)).toEqual(['tonight', 'playing'])
+    expect(benchJoinableMatches(rows, now).map((m) => m.id)).toEqual(['tonight', 'playing'])
+  })
+
   it('takes anything without throwing', () => {
     for (const bad of [undefined, null, 'x', [null, 1, 'y']]) {
       expect(refereeJoinableMatches(bad)).toEqual([])
