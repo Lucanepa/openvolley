@@ -74,8 +74,8 @@ All under `https://openvolley.app`.
    `components_beach/DashboardHeader_beach.jsx` (used by
    `RefereeApp_beach.jsx`, and by `LivescoreApp_beach.jsx` with
    `showOptionsMenu={false}`): add the three links (privacy, terms,
-   impressum) at the end of the menu, as `DashboardOptionsMenu.jsx` does in
-   openvolley.
+   impressum) at the end of the menu, as `components/DashboardHeader.jsx` does
+   in openvolley (`DashboardOptionsMenu.jsx` there is unused: not that one).
 
 7. **Livescore** (`LivescoreApp_beach.jsx`, the list page; its header has no
    options menu): a footer line under the list,
@@ -109,3 +109,7 @@ All under `https://openvolley.app`.
 - The legal texts' section 5 (scorer apps) describes OpenVolley's local
   storage and backups; check that OpenBeach's desktop/Android backups behave
   the same (folder names, 30 days), or add the differences.
+- Privacy sections 5 and 9 now say that the browser and Android apps send a
+  created match to the cloud relay's memory even without a sign-in (F23).
+  Check that OpenBeach does the same (its scorer's `sync-match-data`), or
+  that it publishes only when signed in; the texts cover both apps.

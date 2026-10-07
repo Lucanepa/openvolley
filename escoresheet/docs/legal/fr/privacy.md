@@ -9,8 +9,11 @@ version allemande fait foi.
 
 - OpenVolley est un projet open source privé et non commercial. Il n'y a ni
   publicité, ni suivi (tracking), ni outil d'analyse, ni cookies.
-- Les applications fonctionnent hors ligne. Vos données restent sur votre
-  appareil jusqu'à ce que vous vous connectiez et synchronisiez avec le serveur.
+- Les applications fonctionnent hors ligne. Vos matchs sont enregistrés sur
+  votre appareil, et dans la base de données du serveur seulement une fois que
+  vous êtes connecté. Pour que les tablettes reçoivent un match en cours, les
+  applications navigateur et Android le font passer par mon serveur même sans
+  connexion, uniquement en mémoire vive.
 - Une feuille de match électronique contient des données sur les joueuses et
   joueurs, l'encadrement et les officiels : noms, numéros de maillot, dates de
   naissance et signatures. Seuls les noms des équipes, le score et les numéros
@@ -70,8 +73,9 @@ Cette déclaration contient les informations exigées par les deux lois.
 - **Pas de contenus de tiers.** Les polices et le code des programmes
   viennent de nos propres sites, pas de serveurs tiers. Les exceptions sont
   nommées expressément (section 12).
-- **Hors ligne d'abord.** Ce que vous saisissez sans vous connecter reste sur
-  votre appareil.
+- **Hors ligne d'abord.** Ce que vous saisissez sans vous connecter n'est
+  enregistré que sur votre appareil. Pour la transmission aux tablettes, voir
+  la section 9.
 
 ## 4. Site web et page de téléchargement
 
@@ -92,6 +96,13 @@ appareil : matchs, équipes, listes d'équipe avec dates de naissance, sets,
 l'utilisation (pour le dépannage ; vous pouvez le télécharger vous-même). Les
 matchs restent enregistrés jusqu'à ce que vous les supprimiez ou effaciez les
 données de l'application.
+
+**Transmission en direct, même sans connexion.** Dès qu'un match est créé,
+les applications navigateur et Android l'envoient (équipes, listes d'équipe,
+score, événements) au relais en direct de mon serveur, afin que les tablettes
+de l'arbitre et du banc le reçoivent (section 9). Il n'y est gardé qu'en
+mémoire vive. L'application de bureau utilise à la place son propre relais
+sur le réseau local.
 
 **Avec connexion**, l'application synchronise vos matchs avec le serveur
 (section 7). Elle téléverse en plus :
@@ -263,7 +274,7 @@ utilisent la tablette.
 
 **Via le serveur (relais cloud) :** les données en direct passent par mon
 serveur. Il ne les garde qu'en mémoire vive et les supprime 24 heures après la
-dernière activité.
+dernière activité. Cela vaut aussi sans connexion.
 
 **Mode salle (LAN) :** l'application de bureau peut servir les tablettes
 directement sur le réseau local de la salle, aussi via le propre point d'accès
@@ -332,7 +343,7 @@ support@openvolley.app.
   elle-même de mises à jour ; c'est votre application F-Droid qui le fait.
 - **Application Android installée directement :** l'application demande une
   fois si elle doit chercher des mises à jour (par défaut : non). Ce n'est que
-  si vous acceptez qu'elle interroge `get.openvolley.app`, au plus une fois
+  si vous acceptez qu'elle interroge `get.openvolley.app`, environ une fois
   par jour. Vous pouvez le désactiver dans les réglages.
 - **Page d'accueil de app.openvolley.app :** si vous l'ouvrez dans le
   navigateur d'un ordinateur, votre navigateur obtient de GitHub
@@ -366,6 +377,12 @@ longtemps que votre demande l'exige.
   quelques semaines.
 - **Cloudflare** traite l'adresse IP, l'adresse demandée et l'identifiant du
   navigateur de chaque requête et les conserve selon ses propres règles.
+- **Adresses IP uniquement en mémoire vive :** pour se protéger des abus, le
+  serveur limite les requêtes et les connexions par adresse IP, et le relais
+  en direct s'en sert pour reconnaître les appareils d'une même salle. Il ne
+  garde les adresses IP qu'en mémoire vive et ne les enregistre ni ne les
+  journalise (sauf sous forme de hachage pseudonymisé d'une validation,
+  section 7).
 - **Journal des modifications :** pour la traçabilité, le serveur consigne qui
   a modifié des rôles, validé, clôturé ou rouvert des matchs, ajouté des
   co-éditeurs ou modifié des inscriptions à un tournoi, et quand. Les entrées
@@ -402,7 +419,7 @@ effet (section 18).
 l'UE offrent une protection adéquate des données. Pour les États-Unis, je me
 fonde sur le Swiss-U.S. Data Privacy Framework lorsque le prestataire est
 certifié, et sinon sur les clauses contractuelles types des contrats des
-prestataires.
+prestataires. Vous pouvez me demander une copie de ces garanties.
 
 ## 16. Durée de conservation
 
@@ -464,6 +481,8 @@ Vous avez le droit :
 - de faire **rectifier** des données inexactes ;
 - de faire **effacer** ou anonymiser des données ;
 - de vous **opposer** au traitement ;
+- de faire **limiter** le traitement, par exemple pendant l'examen d'une
+  rectification ;
 - de **recevoir** vos données dans un format courant ou de les faire
   transmettre (les applications permettent aussi de télécharger les copies de
   sauvegarde et les feuilles de match) ;
@@ -503,6 +522,11 @@ Lorsque le RGPD s'applique, je me fonde sur :
 
 Selon la LPD suisse, je ne traite des données que pour les finalités
 indiquées et dans la mesure nécessaire.
+
+**Aucune obligation de fournir des données :** vous n'êtes tenu ni par la
+loi ni par un contrat de me fournir des données. Sans adresse e-mail et mot
+de passe, je ne peux toutefois pas ouvrir de compte, et sans listes d'équipe
+il n'y a pas de feuille de match.
 
 ## 21. Modifications
 

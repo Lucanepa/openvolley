@@ -9,8 +9,10 @@ Massgebend ist die deutsche Fassung.
 
 - OpenVolley ist ein privates, nicht kommerzielles Open-Source-Projekt. Es
   gibt keine Werbung, kein Tracking, keine Analyse-Werkzeuge und keine Cookies.
-- Die Apps funktionieren offline. Ihre Daten bleiben auf Ihrem Gerät, bis Sie
-  sich anmelden und mit dem Server synchronisieren.
+- Die Apps funktionieren offline. Ihre Spiele werden auf Ihrem Gerät
+  gespeichert, in der Datenbank des Servers erst, wenn Sie sich anmelden.
+  Damit Tablets ein laufendes Spiel erhalten, geht es in der Browser- und der
+  Android-App auch ohne Anmeldung über meinen Server, nur im Arbeitsspeicher.
 - Ein elektronischer Spielbericht enthält Daten von Spielerinnen und Spielern,
   Betreuungspersonen und Offiziellen: Namen, Rückennummern, Geburtsdaten und
   Unterschriften. Öffentlich sind nur Teamnamen, Spielstand und Rückennummern,
@@ -65,7 +67,8 @@ Beachturnier, beachte ich zusätzlich die Datenschutz-Grundverordnung der EU
 - **Keine fremden Inhalte.** Schriften und Programmcode kommen von den eigenen
   Seiten, nicht von fremden Servern. Ausnahmen nenne ich ausdrücklich
   (Abschnitt 12).
-- **Offline zuerst.** Was Sie ohne Anmeldung erfassen, bleibt auf Ihrem Gerät.
+- **Offline zuerst.** Was Sie ohne Anmeldung erfassen, wird nur auf Ihrem
+  Gerät gespeichert. Zur Übertragung an die Tablets siehe Abschnitt 9.
 
 ## 4. Website und Download-Seite
 
@@ -84,6 +87,12 @@ Teams, Kaderlisten mit Geburtsdaten, Sätze, Spielereignisse, Listen von
 Offiziellen, Einstellungen und ein lokales Protokoll der Bedienung (zur
 Fehlersuche; Sie können es selbst herunterladen). Spiele bleiben gespeichert,
 bis Sie sie löschen oder die App-Daten löschen.
+
+**Live-Übertragung, auch ohne Anmeldung.** Sobald ein Spiel angelegt ist,
+senden die Browser- und die Android-App es (Teams, Kaderlisten, Spielstand,
+Ereignisse) an das Live-Relay meines Servers, damit Schiedsrichter- und
+Bank-Tablets es erhalten (Abschnitt 9). Dort liegt es nur im Arbeitsspeicher.
+Die Desktop-App verwendet dafür ihr eigenes Relay im lokalen Netz.
 
 **Mit Anmeldung** synchronisiert die App Ihre Spiele mit dem Server
 (Abschnitt 7). Zusätzlich lädt sie hoch:
@@ -252,7 +261,7 @@ wird.
 
 **Über den Server (Cloud-Relay):** Die Live-Daten laufen über meinen Server.
 Er hält sie nur im Arbeitsspeicher und verwirft sie 24 Stunden nach der
-letzten Aktivität.
+letzten Aktivität. Das gilt auch ohne Anmeldung.
 
 **Hallen-Modus (LAN):** Die Desktop-App kann die Tablets direkt im lokalen
 Netz der Halle bedienen, auch über einen eigenen WLAN-Hotspot des Laptops.
@@ -318,7 +327,7 @@ support@openvolley.app.
   macht Ihre F-Droid-App.
 - **Android-App direkt installiert:** Die App fragt einmal, ob sie nach
   Updates suchen soll (voreingestellt: nein). Nur wenn Sie zustimmen, ruft sie
-  höchstens einmal täglich `get.openvolley.app` ab. Sie können das in den
+  etwa einmal täglich `get.openvolley.app` ab. Sie können das in den
   Einstellungen wieder abschalten.
 - **Startseite von app.openvolley.app:** Öffnen Sie sie im Browser eines
   Desktop-Systems, ruft Ihr Browser bei GitHub (`api.github.com`, USA) die
@@ -350,6 +359,11 @@ wie es für Ihr Anliegen nötig ist.
   Regel nach Tagen bis wenigen Wochen.
 - **Cloudflare** verarbeitet bei jeder Anfrage IP-Adresse, Adresse und
   Browser-Kennung und bewahrt sie nach seinen eigenen Regeln auf.
+- **IP-Adressen nur im Arbeitsspeicher:** Zum Schutz vor Missbrauch begrenzt
+  der Server Anfragen und Verbindungen pro IP-Adresse, und das Live-Relay
+  erkennt daran Geräte derselben Halle. Er hält IP-Adressen dafür nur im
+  Arbeitsspeicher und speichert oder protokolliert sie nicht (ausser als
+  pseudonymisierten Hash bei einer Freigabe, Abschnitt 7).
 - **Änderungsprotokoll:** Für die Nachvollziehbarkeit hält der Server fest,
   wer wann Rollen geändert, Spiele freigegeben, abgeschlossen oder wieder
   geöffnet, Mitbearbeitende hinzugefügt oder Turniereinträge geändert hat.
@@ -385,7 +399,8 @@ Dritte (Abschnitt 18).
 **Übermittlung ins Ausland:** Deutschland und die EU bieten nach dem Schweizer
 Bundesrat einen angemessenen Datenschutz. Für die USA stütze ich mich auf das
 Swiss-U.S. Data Privacy Framework, soweit der Anbieter zertifiziert ist, und
-sonst auf die Standardvertragsklauseln in den Verträgen der Anbieter.
+sonst auf die Standardvertragsklauseln in den Verträgen der Anbieter. Auf
+Anfrage erhalten Sie eine Kopie dieser Garantien.
 
 ## 16. Wie lange ich Daten aufbewahre
 
@@ -448,6 +463,8 @@ Sie haben das Recht:
 - unrichtige Daten **berichtigen** zu lassen;
 - Daten **löschen** oder unkenntlich machen zu lassen;
 - der Bearbeitung zu **widersprechen**;
+- die Bearbeitung **einschränken** zu lassen, zum Beispiel solange eine
+  Berichtigung geprüft wird;
 - Ihre Daten in einem gängigen Format zu **erhalten** oder übertragen zu
   lassen (die Apps bieten dafür auch den Download von Sicherungskopien und
   Spielberichten);
@@ -484,6 +501,10 @@ Soweit die DSGVO gilt, stütze ich mich auf:
 
 Nach dem Schweizer DSG bearbeite ich Daten nur für die genannten Zwecke und
 im nötigen Umfang.
+
+**Keine Pflicht zur Angabe:** Sie sind weder gesetzlich noch vertraglich
+verpflichtet, mir Daten zu geben. Ohne E-Mail-Adresse und Passwort kann ich
+aber kein Konto eröffnen, und ohne Kaderlisten entsteht kein Spielbericht.
 
 ## 21. Änderungen
 

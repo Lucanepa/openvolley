@@ -92,6 +92,14 @@ update the texts:
 - **F3, F5, F10, F21**: no fixed retention for scoresheet files, change log,
   dormant accounts, orphaned saved teams (privacy 16 says "as long as
   needed").
+- **F23**: the browser and Android apps send a created match (rosters
+  included) to the cloud relay's memory even without a sign-in. Privacy
+  (In short, 3, 5, 9) now says so; if the apps stop doing that, simplify
+  those passages again.
+- **Cookies**: the texts say "no cookies". The code sets none, but
+  Cloudflare can (for example `__cf_bm` with Bot Fight Mode or bot
+  management, or a challenge cookie). Check the zone settings; if one is set,
+  name it in privacy 3 as a strictly necessary security cookie.
 - Licence notices: Apache-2.0 and MIT require the notices to travel with
   binaries. Consider shipping a generated third-party licence file with the
   desktop and Android builds.

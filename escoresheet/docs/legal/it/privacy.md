@@ -9,8 +9,10 @@ la versione tedesca.
 
 - OpenVolley è un progetto open source privato e non commerciale. Non ci sono
   pubblicità, tracciamento, strumenti di analisi né cookie.
-- Le app funzionano offline. I suoi dati restano sul suo dispositivo finché
-  non accede e sincronizza con il server.
+- Le app funzionano offline. Le sue partite sono salvate sul suo dispositivo,
+  e nella banca dati del server solo dopo l'accesso. Affinché i tablet
+  ricevano una partita in corso, le app browser e Android la fanno passare dal
+  mio server anche senza accesso, solo nella memoria di lavoro.
 - Un referto elettronico contiene dati di giocatrici e giocatori, staff e
   ufficiali di gara: nomi, numeri di maglia, date di nascita e firme. Sono
   pubblici solo i nomi delle squadre, il punteggio e i numeri di maglia; nel
@@ -64,8 +66,8 @@ entrambe le leggi.
 - **Nessun contenuto di terzi.** Caratteri e codice dei programmi provengono
   dai nostri siti, non da server di terzi. Le eccezioni sono indicate
   espressamente (sezione 12).
-- **Prima offline.** Ciò che registra senza accedere resta sul suo
-  dispositivo.
+- **Prima offline.** Ciò che registra senza accedere è salvato solo sul suo
+  dispositivo. Per la trasmissione ai tablet, veda la sezione 9.
 
 ## 4. Sito web e pagina di download
 
@@ -85,6 +87,12 @@ squadre, liste squadra con date di nascita, set, eventi della partita, elenchi
 di ufficiali di gara, impostazioni e un registro locale dell'uso (per la
 ricerca di errori; può scaricarlo lei stesso). Le partite restano salvate
 finché non le cancella o non cancella i dati dell'app.
+
+**Trasmissione in diretta, anche senza accesso.** Appena una partita è
+creata, le app browser e Android la inviano (squadre, liste squadra,
+punteggio, eventi) al relay in diretta del mio server, affinché i tablet
+dell'arbitro e della panchina la ricevano (sezione 9). Lì è tenuta solo nella
+memoria di lavoro. L'app desktop usa invece il proprio relay nella rete locale.
 
 **Con accesso**, l'app sincronizza le sue partite con il server (sezione 7).
 Inoltre carica:
@@ -251,7 +259,7 @@ browser se il tablet è usato da più persone.
 
 **Tramite il server (relay cloud):** i dati in diretta passano dal mio server.
 Li tiene solo nella memoria di lavoro e li elimina 24 ore dopo l'ultima
-attività.
+attività. Ciò vale anche senza accesso.
 
 **Modalità palestra (LAN):** l'app desktop può servire i tablet direttamente
 nella rete locale della palestra, anche tramite un hotspot Wi-Fi proprio del
@@ -319,7 +327,7 @@ Se non desidera figurare nell'elenco, scriva a support@openvolley.app.
   sua app F-Droid.
 - **App Android installata direttamente:** l'app chiede una volta se deve
   cercare aggiornamenti (predefinito: no). Solo se acconsente interroga
-  `get.openvolley.app`, al massimo una volta al giorno. Può disattivarlo nelle
+  `get.openvolley.app`, circa una volta al giorno. Può disattivarlo nelle
   impostazioni.
 - **Pagina iniziale di app.openvolley.app:** se la apre nel browser di un
   computer, il suo browser ottiene da GitHub (`api.github.com`, USA) l'elenco
@@ -352,6 +360,11 @@ necessario alla sua richiesta.
   o poche settimane.
 - **Cloudflare** tratta indirizzo IP, indirizzo richiesto e identificativo del
   browser di ogni richiesta e li conserva secondo le proprie regole.
+- **Indirizzi IP solo nella memoria di lavoro:** per proteggersi dagli abusi
+  il server limita richieste e connessioni per indirizzo IP, e il relay in
+  diretta lo usa per riconoscere i dispositivi della stessa palestra. Tiene
+  gli indirizzi IP solo nella memoria di lavoro e non li salva né li registra
+  (salvo come hash pseudonimizzato di un'approvazione, sezione 7).
 - **Registro delle modifiche:** per la tracciabilità il server annota chi ha
   modificato ruoli, approvato, chiuso o riaperto partite, aggiunto
   co-editori o modificato iscrizioni a un torneo, e quando. Le voci possono
@@ -387,7 +400,8 @@ sui miei dispositivi in Svizzera; a tal fine nessun terzo riceve dati
 **Comunicazione all'estero:** secondo il Consiglio federale, la Germania e
 l'UE offrono una protezione adeguata dei dati. Per gli USA mi baso sullo
 Swiss-U.S. Data Privacy Framework se il fornitore è certificato, altrimenti
-sulle clausole contrattuali tipo nei contratti dei fornitori.
+sulle clausole contrattuali tipo nei contratti dei fornitori. Su richiesta
+riceve una copia di queste garanzie.
 
 ## 16. Per quanto tempo conservo i dati
 
@@ -449,6 +463,8 @@ Ha il diritto di:
 - far **rettificare** dati inesatti;
 - far **cancellare** o rendere anonimi i dati;
 - **opporsi** al trattamento;
+- far **limitare** il trattamento, per esempio mentre si verifica una
+  rettifica;
 - **ricevere** i suoi dati in un formato comune o farli trasmettere (le app
   permettono anche di scaricare copie di sicurezza e referti);
 - **revocare un consenso** in ogni momento (per esempio per la ricerca di
@@ -484,6 +500,10 @@ Se si applica il RGPD, mi baso su:
 
 Secondo la LPD svizzera tratto i dati solo per gli scopi indicati e nella
 misura necessaria.
+
+**Nessun obbligo di fornire dati:** non è obbligato né per legge né per
+contratto a fornirmi dati. Senza indirizzo e-mail e password non posso però
+aprire un account, e senza liste squadra non c'è referto.
 
 ## 21. Modifiche
 
