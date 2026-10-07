@@ -45,10 +45,18 @@
  * Unconfirmed sign-in: requireConfirmedEmail refuses accounts whose
  * email_confirmed_at is NULL (GoTrue did too), EXCEPT accounts this server
  * created with a confirmation link (raw_app_meta_data.ov_email_confirmation =
- * 'link'). Those may sign in while unconfirmed: a new account is pending
- * until an admin approves it anyway (no official scoring), the profile and
- * the admin Accounts list show the address as unconfirmed, and whoever owns
- * the mailbox can take the account over with a reset link at any time.
+ * 'link'). Those may sign in while unconfirmed, but get no role until the
+ * address is confirmed: lib/accounts.js refuses redeem-invite and an admin's
+ * role grant for them (409 OV_EMAIL_UNCONFIRMED), so a pending account cannot
+ * become a scorer, referee or competition manager under an address it never
+ * proved. The profile and the admin Accounts list show the address as
+ * unconfirmed, and whoever owns the mailbox can take the account over with a
+ * reset link at any time.
+ *
+ * Sign-up still answers 422 user_already_exists for a registered address (as
+ * before): an unconfirmed account may sign in at once, so a uniform sign-up
+ * answer would not hide whether an address is registered (sign up, then sign
+ * in). reset-password alone gives nothing away.
  *
  * CPU guard: bcryptjs is pure JS and runs on the main event loop, which also
  * serves the live-scoring relay. Every bcrypt call goes through a small
@@ -61,7 +69,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { isIPv4, isIPv6 } from 'node:net'
 import bcryptjs from 'bcryptjs'
-import { authLink, disabledMailer, maskEmail, pickLang } from './mailer.js'
+import { authLink, describeMailError, disabledMailer, inboxKey, maskEmail, pickLang } from './mailer.js'
 
 // ---------------------------------------------------------------------------
 // Constants and small helpers
@@ -162,8 +170,8 @@ const DEFAULTS = Object.freeze({
     // ~60-150 ms of main-thread CPU; 5/s keeps bcrypt well under one core.
     signInGlobal: { max: 5, windowMs: 1000 },
     signUpIp: { max: 5, windowMs: 60 * 60 * 1000 },
-    // Sign-up is auto-confirmed (no email flow): per address (plus-tags
-    // removed, so one mailbox cannot be probed or flooded from many IPs), and
+    // Per delivered inbox (inboxKey: plus-tags removed, Gmail dots ignored,
+    // so one mailbox cannot be probed or flooded from many IPs), and
     // all sign-ups together, so a spread-out burst cannot mass-create
     // accounts. The global budget counts created accounts only: requests for
     // existing addresses (or that fail) are refunded, so nobody can use it up
@@ -172,8 +180,9 @@ const DEFAULTS = Object.freeze({
     signUpEmail: { max: 3, windowMs: 60 * 60 * 1000 },
     signUpGlobal: { max: 300, windowMs: 60 * 60 * 1000 },
     sessionIp: { max: 300, windowMs: 60 * 1000 },
-    // Reset links: per client and per address (plus-tags removed), whether
-    // or not the account exists (so the answer never tells).
+    // Reset links: per client and per delivered inbox (inboxKey: plus-tags
+    // removed, Gmail dots ignored), whether or not the account exists (so
+    // the answer never tells).
     resetIp: { max: 10, windowMs: 60 * 60 * 1000 },
     resetEmail: { max: 3, windowMs: 60 * 60 * 1000 },
     // Redeeming links (reset-password/confirm, confirm-email), per client.
@@ -952,7 +961,8 @@ export function createAuth(options = {}) {
   const pending = new Set()
   function background(what, fn) {
     const p = (async () => {
-      try { await fn() } catch (err) { log.error(`[auth] ${what} failed:`, err?.message) }
+      // describeMailError: an SMTP reply quotes the recipient; log it masked.
+      try { await fn() } catch (err) { log.error(`[auth] ${what} failed: ${describeMailError(err)}`) }
     })()
     pending.add(p)
     p.finally(() => pending.delete(p))
@@ -966,14 +976,10 @@ export function createAuth(options = {}) {
   }
 
   // --- action handlers ---------------------------------------------------------
-  // The per-address sign-up bucket: name+tag@domain counts as name@domain.
-  function mailboxKey(email) {
-    const at = email.lastIndexOf('@')
-    if (at <= 0) return email
-    const local = email.slice(0, at)
-    const plus = local.indexOf('+')
-    return (plus > 0 ? local.slice(0, plus) : local) + email.slice(at)
-  }
+  // The per-address sign-up and reset buckets count delivered inboxes:
+  // name+tag@domain is name@domain, and n.a.m.e@googlemail.com is
+  // name@gmail.com (lib/mailer.js inboxKey).
+  const mailboxKey = inboxKey
 
   function limit(bucket, key) {
     const l = limits[bucket]
@@ -1156,8 +1162,8 @@ export function createAuth(options = {}) {
         const lang = mailLang(body, ctx)
         const link = authLink(mailer.managerUrl, 'confirm', confirmToken, lang)
         background('sign-up confirmation mail', async () => {
-          await mailer.send('confirm', { to: user.email, lang, link })
-          log.log?.(`[auth] confirmation link sent to ${maskEmail(user.email)}`)
+          const r = await mailer.send('confirm', { to: user.email, lang, link })
+          if (r?.sent) log.log?.(`[auth] confirmation link sent to ${maskEmail(user.email)}`)
         })
         // email_confirmation: 'sent' tells the app it may sign in right away.
         return ok({ user: publicUser(user), email_confirmation: 'sent' })
@@ -1296,8 +1302,8 @@ export function createAuth(options = {}) {
       if (!user || isUserBlocked(user)) return
       const token = await withTransaction((client) => issueToken(client, user.id, 'reset'))
       await audit('account.password_reset_requested', user.id, {})
-      await mailer.send('reset', { to: user.email, lang, link: authLink(mailer.managerUrl, 'reset', token, lang) })
-      log.log?.(`[auth] reset link sent to ${maskEmail(user.email)}`)
+      const r = await mailer.send('reset', { to: user.email, lang, link: authLink(mailer.managerUrl, 'reset', token, lang) })
+      if (r?.sent) log.log?.(`[auth] reset link sent to ${maskEmail(user.email)}`)
     })
     return RESET_REQUESTED()
   }
@@ -1385,7 +1391,7 @@ export function createAuth(options = {}) {
       const r = await mailer.send('confirm', { to: v.user.email, lang, link: authLink(mailer.managerUrl, 'confirm', token, lang) })
       if (!r?.sent) return CONFIRM_UNAVAILABLE()
     } catch (err) {
-      log.error('[auth] resend-confirmation mail failed:', err?.message)
+      log.error(`[auth] resend-confirmation mail failed: ${describeMailError(err)}`)
       return CONFIRM_UNAVAILABLE()
     }
     return ok({ sent: true, already_confirmed: false })
