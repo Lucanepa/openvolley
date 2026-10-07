@@ -104,9 +104,11 @@ describe('officialGame on Postgres', { skip: SKIP_PG }, () => {
 
     await match({ external_id: ext(), game_n: 51004, status: 'setup', sport_type: 'beach', created_by: users.noname, scheduled_at: '2026-10-10T16:00:00Z' })
     assert.equal(await findClaim(pool, { gameN: 51004, scheduledAt: '2026-10-10T16:00:00Z', sportType: 'indoor' }), null, 'beach vs indoor')
-    const beach = await findClaim(pool, { gameN: 51004, scheduledAt: '2026-10-10T16:00:00Z', sportType: 'beach' })
-    assert.equal(beach.sport, 'beach')
-    assert.equal(beach.scorer_name, null)
+    // db/013: beach game numbers restart with every tournament, no season claim
+    assert.equal(await findClaim(pool, { gameN: 51004, scheduledAt: '2026-10-10T16:00:00Z', sportType: 'beach' }), null, 'beach is not season-official')
+    await match({ external_id: ext(), game_n: 51004, status: 'setup', sport_type: 'beach', created_by: users.noname, scheduled_at: '2026-10-11T16:00:00Z' })
+    await match({ external_id: ext(), game_n: 51007, status: 'setup', created_by: users.noname, scheduled_at: '2026-10-10T16:00:00Z' })
+    assert.equal((await findClaim(pool, { gameN: 51007, scheduledAt: '2026-10-10T16:00:00Z' })).scorer_name, null, 'no profile name')
 
     await match({ external_id: ext(), game_n: 51005, status: 'live', scheduled_at: '2025-10-10T16:00:00Z' })
     assert.equal(await findClaim(pool, { gameN: 51005, scheduledAt: '2026-10-10T16:00:00Z' }), null, 'other season')

@@ -360,15 +360,20 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
 
     it('with sports, never names the holder of a game of another sport (the stored sport counts)', async () => {
       const n = gameSeq++
-      // a beach scorer holds beach game n; the indoor scorer has a beach TEST match
-      const holder = await user(`bh${n}`, ['beach:scorer'])
-      assert.equal((await insert({ external_id: `bh_${n}`, game_n: n, sport_type: 'beach', scheduled_at: '2026-10-10T16:00:00Z' }, holder)).status, 200)
-      assert.equal((await insert({ external_id: `bt_${n}`, game_n: n, sport_type: 'beach', test: true, scheduled_at: '2026-10-10T16:00:00Z' })).status, 200)
-      // what server.js enrichGameTaken passes: the payload leaves out sport_type, the stored row (beach) decides
-      const rows = [{ external_id: `bt_${n}`, test: false, game_n: n }]
-      assert.equal((await accounts.findTakenGame({ userId: ids.scorer, rows }))?.game_n, n, 'without sports: every sport')
-      assert.equal(await accounts.findTakenGame({ userId: ids.scorer, rows, sports: ['indoor'] }), null)
-      assert.equal((await accounts.findTakenGame({ userId: ids.scorer, rows, sports: ['indoor', 'beach'] }))?.game_n, n)
+      // an indoor scorer holds indoor game n; a beach-only scorer has an indoor TEST match
+      // (db/013: beach games are not season-official, so the held game is indoor)
+      const holder = await user(`ih${n}`, ['scorer'])
+      const beachOnly = await user(`bo${n}`, ['beach:scorer'])
+      assert.equal((await insert({ external_id: `ih_${n}`, game_n: n, scheduled_at: '2026-10-10T16:00:00Z' }, holder)).status, 200)
+      assert.equal((await insert({ external_id: `it_${n}`, game_n: n, test: true, scheduled_at: '2026-10-10T16:00:00Z' }, beachOnly)).status, 200)
+      // what server.js enrichGameTaken passes: the payload leaves out sport_type, the stored row (indoor) decides
+      const rows = [{ external_id: `it_${n}`, test: false, game_n: n }]
+      assert.equal((await accounts.findTakenGame({ userId: beachOnly, rows }))?.game_n, n, 'without sports: every sport')
+      assert.equal(await accounts.findTakenGame({ userId: beachOnly, rows, sports: ['beach'] }), null)
+      assert.equal((await accounts.findTakenGame({ userId: beachOnly, rows, sports: ['indoor', 'beach'] }))?.game_n, n)
+      // beach: no season claim at all (a second tournament's game n is free)
+      assert.equal((await insert({ external_id: `bh_${n}`, game_n: n, sport_type: 'beach', scheduled_at: '2026-10-10T16:00:00Z' }, beachOnly)).status, 200)
+      assert.equal(await accounts.findTakenGame({ userId: ids.scorer, rows: [{ external_id: `bx_${n}`, game_n: n, sport_type: 'beach', scheduled_at: '2026-10-11T16:00:00Z' }] }), null)
     })
 
     it('findTakenGameForUpdate checks the stored rows with the update over them', async () => {
