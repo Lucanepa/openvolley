@@ -53,6 +53,19 @@ describe('referee player disc sizing', () => {
     expect(discMetrics({ courtWidth: 784, courtHeight: 120, capPx: 200 }).disc).toBeCloseTo(0.26 * 120)
   })
 
+  it('with LFP tracking on, keeps discs large enough for the LFP mark between the corner badges, and still fits', () => {
+    // On a 36 px disc the !LFP mark overlapped the position and replaced-player badges
+    expect(discMetrics({ courtWidth: 784, courtHeight: 461, capPx: 20, lfp: true }).disc).toBe(DISC.minPxLfp)
+    expect(discCssVars(10, { lfp: true })['--disc']).toContain(`${DISC.minPxLfp}px`)
+    expect(discCssVars(10)['--disc']).toContain(`${DISC.minPx}px`)
+    for (const [vw, vh, courtWidth, courtHeight] of MEASURED) {
+      for (const scale of SCALES) {
+        const problems = discFitProblems({ courtWidth, courtHeight, viewportWidth: vw, capPx: cap(vw, vh, scale), lfp: true })
+        expect(problems, `LFP ${vw}x${vh} scale ${scale}`).toEqual([])
+      }
+    }
+  })
+
   it('reports what would overflow', () => {
     // A wide disc cap on a short court: the cqh limit keeps it in, so force a
     // narrow column with a tiny court instead.
