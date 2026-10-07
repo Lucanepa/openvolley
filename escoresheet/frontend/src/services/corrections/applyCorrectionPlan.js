@@ -33,7 +33,8 @@ import { eventExtId, setExtId } from '../../utils/syncIds'
 export function planChangesSheet(plan) {
   return !!plan && (
     (plan.add?.length || 0) + (plan.update?.length || 0) + (plan.remove?.length || 0) +
-    (plan.setUpdates?.length || 0) + (plan.remarkAdd?.length || 0) + (plan.remarkRemove?.length || 0)
+    (plan.setUpdates?.length || 0) + (plan.remarkAdd?.length || 0) + (plan.remarkRemove?.length || 0) +
+    (plan.remarksSet !== undefined ? 1 : 0)
   ) > 0
 }
 
@@ -57,7 +58,8 @@ export function logEntryFor(plan, now = new Date()) {
 
 /** The new remarks text after the plan's removals and additions. */
 export function remarksAfter(remarks, plan) {
-  let out = remarks || ''
+  // remarksSet: the whole text, when one line was edited in place
+  let out = plan?.remarksSet !== undefined ? String(plan.remarksSet) : (remarks || '')
   for (const line of plan?.remarkRemove || []) out = removeRemarkLine(out, line)
   for (const line of plan?.remarkAdd || []) out = appendRemark(out, line)
   return out

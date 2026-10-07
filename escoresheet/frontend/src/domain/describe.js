@@ -49,7 +49,7 @@ const ROLE_TARGETS = [
 
 /** Replace {{name}} placeholders. */
 function interpolate(text, params = {}) {
-  return String(text ?? '').replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => (params[k] ?? params[k] === 0 ? String(params[k]) : ''))
+  return String(text ?? '').replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => (params[k] !== undefined && params[k] !== null ? String(params[k]) : ''))
 }
 
 /**
@@ -59,7 +59,9 @@ function interpolate(text, params = {}) {
 export function tr(t, key, def, params = {}) {
   if (typeof t === 'function') {
     const out = t(key, { defaultValue: def, ...params })
-    if (typeof out === 'string' && out && out !== key) return out
+    // An i18n instance that is not initialised returns the default as is:
+    // fill its placeholders here
+    if (typeof out === 'string' && out && out !== key) return out.includes('{{') ? interpolate(out, params) : out
   }
   return interpolate(def, params)
 }
@@ -421,8 +423,13 @@ export function describeEvent(event, events, ctx = {}) {
   }
 
   const score = scoreValue ? formatScore(scoreValue, concerned, ctx) : ''
-  const text = [title, detail, teamText, setLabel, score].filter(Boolean).join(' · ')
-  return { kind: event.type, title, detail, score, scoreValue, team, teamText, setIndex, setLabel, code, exceptional, incomplete, text }
+  // "Penalty — Player #8 (bench) · VC Smash (A) · Set 1 · A 8:24 B · +1 point to Volley Bern";
+  // "Substitution · VC Smash (A) · #12 in for #7 · Set 2 · A 14:11 B"
+  const detailLast = event.type === 'sanction'
+  const parts = detailLast ? [teamText, setLabel, score, detail] : [teamText, detail, setLabel, score]
+  const meta = parts.filter(Boolean).join(' · ')
+  const text = [title, meta].filter(Boolean).join(' · ')
+  return { kind: event.type, title, detail, score, scoreValue, team, teamText, setIndex, setLabel, code, exceptional, incomplete, meta, text }
 }
 
 /** A one-line sentence for an event (Undo confirmation, logs); '' for automatic rows. */

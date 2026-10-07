@@ -3288,7 +3288,13 @@
       "removed": "Entfernt: {{what}}",
       "changed": "Gänderet: {{what}} (vorher: {{from}})",
       "afterMatchSuffix": " (nach em Match erfasst)",
-      "setTimes": "Ziite vo Satz {{set}} korrigiert"
+      "setTimes": "Ziite vo Satz {{set}} korrigiert",
+      "remarkAdded": "Bemerkig hinzuegfüegt: «{{text}}»",
+      "remarkChanged": "Bemerkig gänderet: «{{text}}»",
+      "remarkRemoved": "Bemerkig entfernt: «{{text}}»",
+      "missedPoint": "Hinzuegfüegt: vergässne Punkt für {{team}}",
+      "firstServe": "Erschte Ufschlag gänderet uf {{team}}",
+      "sides": "Siite gwächslet in Satz {{set}}"
     },
     "error": {
       "noSuchScore": "Satz {{set}} het dä Spielstand nie gha.",
@@ -3331,6 +3337,186 @@
       "expulsionReplacement": "Erfass de Ersatz mit «+ Spielerwächsel hinzuefüege» (ausserordentlich, wenn kein reguläre Wächsel möglich gsi isch).",
       "laterRotations": "Späteri Rotatione vo dem Satz werdet nöd neu berächnet.",
       "afterMatch": "Nach em Match erfasst."
+    },
+    "title": "Korrekture",
+    "pageTitle": "Korrekture",
+    "help": "Jedi Korrektur wird bim Bestätige gspeicheret und im Korrekturprotokoll für de Schiri ufgfüehrt.",
+    "allSets": "Alli Sätz",
+    "setFilter": "Satz aazeige",
+    "serving": "{{team}} het Ufschlag",
+    "saved": "Korrektur gspeicheret",
+    "saveError": "D Korrektur het nöd chöne gspeicheret werde: {{message}}",
+    "section": {
+      "scoreServe": "Spielstand und Ufschlag",
+      "sets": "Satzresultat",
+      "lineup": "Ufstellig",
+      "timeouts": "Auszeite",
+      "substitutions": "Spielerwächsel",
+      "sanctions": "Sanktione",
+      "libero": "Libero",
+      "log": "Korrekturprotokoll (für de Schiri)",
+      "advanced": "Erwiiteret: Ereignisprotokoll"
+    },
+    "add": {
+      "timeout": "Auszeit hinzuefüege",
+      "substitution": "Spielerwächsel hinzuefüege",
+      "sanction": "Sanktion hinzuefüege",
+      "remark": "Bemerkig hinzuefüege"
+    },
+    "empty": {
+      "timeouts": "Kei Auszeite erfasst.",
+      "substitutions": "Kei Spielerwächsel erfasst.",
+      "sanctions": "Kei Sanktione erfasst.",
+      "remarks": "Kei Bemerkige.",
+      "libero": "Kei Libero-Wächsel erfasst.",
+      "log": "No kei Korrekture.",
+      "players": "Kei Spieler/innen zur Uswahl.",
+      "sets": "No kei Satz fertig."
+    },
+    "field": {
+      "set": "Satz",
+      "team": "Mannschaft",
+      "atScore": "Bim Spielstand",
+      "playerOut": "Spieler/in use (uf em Feld)",
+      "playerIn": "Spieler/in ine (Bank)",
+      "sanction": "Sanktion",
+      "who": "Wer",
+      "number": "Nummere",
+      "pointAlreadyGiven": "Isch de Punkt {{team}} scho geh worde?",
+      "reason": "Grund",
+      "template": "Art vo de Bemerkig",
+      "text": "Text",
+      "startTime": "Beginn",
+      "endTime": "Endi",
+      "currentFinal": "Jetzt",
+      "addDelayRemark": "Bemerkig zum verspötete Beginn hinzuefüege"
+    },
+    "who": {
+      "player": "Spieler/in uf em Feld",
+      "bench": "Spieler/in uf de Bank",
+      "libero": "Libero",
+      "coach": "Trainer/in",
+      "ac1": "Assistenztrainer/in 1",
+      "ac2": "Assistenztrainer/in 2",
+      "physio": "Physiotherapeut/in",
+      "doctor": "Arzt/Ärztin"
+    },
+    "reasonLabel": {
+      "injury": "Verletzig",
+      "illness": "Chrankheit",
+      "expulsion": "Hinausstellung",
+      "disqualification": "Disqualifikation"
+    },
+    "column": {
+      "warning": "Verwarnung",
+      "penalty": "Bestrafung",
+      "expulsion": "Hinausstellung",
+      "disqualification": "Disqualifikation"
+    },
+    "remarkTemplate": {
+      "exceptionalSub": "Ausserordentliche Spielerwächsel",
+      "liberoUnable": "Libero spielunfähig",
+      "liberoRedesignated": "Libero neu bestimmt",
+      "delay": "Verspötig / Ziitproblem",
+      "protest": "Protest",
+      "missingSignature": "Fehlendi Underschrift",
+      "other": "Anderi"
+    },
+    "form": {
+      "addTimeout": "Auszeit hinzuefüege",
+      "editTimeout": "Auszeit bearbeite",
+      "addSubstitution": "Spielerwächsel hinzuefüege",
+      "editSubstitution": "Spielerwächsel bearbeite",
+      "addSanction": "Sanktion hinzuefüege",
+      "editSanction": "Sanktion bearbeite",
+      "addRemark": "Bemerkig hinzuefüege",
+      "editRemark": "Bemerkig bearbeite",
+      "finalScore": "Satz {{set}}: Endstand korrigiere",
+      "setTimes": "Satz {{set}}: Beginn und Endi"
+    },
+    "action": {
+      "back": "Zrugg",
+      "cancel": "Abbräche",
+      "confirm": "Bestätige",
+      "close": "Schliesse",
+      "discard": "Verwerfe",
+      "saveChanges": "Änderige speichere",
+      "edit": "Bearbeite",
+      "editWhat": "{{what}} bearbeite",
+      "editRemark": "Bemerkig bearbeite",
+      "remove": "Entferne",
+      "removeEntry": "{{what}} entferne",
+      "removeRemark": "Bemerkig entferne",
+      "removeBoth": "Punkt au entferne",
+      "keepPoint": "Punkt bhalte",
+      "undoLast": "Letschti Aktion rückgängig",
+      "wrongTeam": "Letschte Punkt isch a di falsch Mannschaft gange",
+      "addMissedPoint": "Vergässene Punkt hinzuefüege",
+      "addMissedPointFor": "Vergässne Punkt: {{team}}",
+      "changeServe": "Erschte Ufschlag ändere",
+      "switchSides": "Siite wächsle",
+      "reopenSet": "Satz wieder öffne",
+      "fixLineup": "Ufstellig korrigiere",
+      "rotateForward": "Ei Position vorwärts rotiere",
+      "rotateBack": "Ei Position zrugg rotiere",
+      "rotateForwardShort": "Vorwärts",
+      "rotateBackShort": "Zrugg",
+      "correctFinalScore": "Endstand korrigiere",
+      "setTimes": "Satzziite",
+      "showAutomatic": "Automatischi Iiträg aazeige",
+      "reopenForCorrections": "Zrugg zum Matchend"
+    },
+    "preview": {
+      "title": "Was sich ufem Matchblatt änderet",
+      "incomplete": "Füll d Fälder obe us.",
+      "remark": "Bemerkig ufem Matchblatt",
+      "lineupBefore": "Vorher",
+      "lineupAfter": "Nachher",
+      "paperTimeout": "«T» bi {{score}} im Auszeit-Fäld vo {{team}}, Satz {{set}}.",
+      "liveTimeout": "Startet d Auszeit mit Countdown, wie de TO-Chnopf.",
+      "paperSub": "{{in}} für {{out}} bi {{score}} i de Ufstelligsspalte vo de Position {{position}}.",
+      "subCount": "Spielerwächsel vo {{team}} in Satz {{set}}: {{n}}/6",
+      "paperSanction": "{{code}} i de Spalte {{column}} · Team {{letter}} · Satz {{set}} · {{score}}",
+      "finalScore": "Endstand {{before}} wird zu {{after}}."
+    },
+    "pointGiven": {
+      "yes": "Ja",
+      "no": "Nei, jetzt hinzuefüege"
+    },
+    "chip": {
+      "exceptional": "Ausserordentlich",
+      "incomplete": "Unvollständige Iitrag",
+      "paperCode": "So wie ufem Matchblatt",
+      "teamsNotSet": "Team A/B nöd festgleit: Heim wird als A zeigt"
+    },
+    "hint": {
+      "timeoutHere": "Auszeit scho da",
+      "subHere": "Wächsel scho da",
+      "sanctionHere": "Sanktion scho da",
+      "current": "aktuelle Spielstand",
+      "protest": "Vom/vo de Kapitän/in diktiert, mit Erlaubnis vom 1. Schiri.",
+      "finalScore": "Nur s Satzend chan korrigiert werde: en Punkt nach em letschte Punkt dezue oder de letscht Punkt weg. Vergässni Punkt mitts im Satz chönd nöd korrigiert werde (Schriiberkurs Swiss Volley).",
+      "libero": "En Libero-Wächsel korrigiersch während em Match mit Rückgängig.",
+      "lineup": "Korrigier d Ufstellig vor em erschte Ballwächsel vom Satz; rotier e Mannschaft, wo ei Position verschobe staht.",
+      "advanced": "Alli Iiträg vom Matchprotokoll. Bim Entferne gaht alles mit, wo zum Iitrag ghört. Hinzuefüege und Ändere i de Charte obe."
+    },
+    "confirm": {
+      "removeTitle": "Dä Iitrag entferne?",
+      "removes": "Entfernt:",
+      "timeoutCount": "D Auszeite vo {{team}} in Satz {{set}} gönd vo {{from}} uf {{to}}.",
+      "subRestore": "#{{out}} chunnt uf Position {{position}} zrugg; späteri Ufstellige werdet aapasst.",
+      "removePointTitle": "Strafpunkt au entferne?",
+      "removePoint": "De vergäbni Punkt isch no de letscht Punkt vo dem Satz. Au entferne (wie Rückgängig)?",
+      "removeRemarkTitle": "Die Bemerkig entferne?",
+      "addPoint": "Jetzt en Punkt a {{team}} geh, mit Rotation und Ufschlag, wie de Punkt-Chnopf.",
+      "changeServe": "Erschte Ufschlag in Satz {{set}}: {{before}} → {{after}}.",
+      "switchSides": "Team {{left}} wächslet nach rächts, Team {{right}} nach links.",
+      "discardTitle": "Ungspeicherti Änderige verwerfe?",
+      "discard": "D Änderige under Teams und Spielinfo sind no nöd gspeicheret."
+    },
+    "banner": {
+      "signaturesCleared": "D Underschrifte sind glöscht worde, will sich s Matchblatt gänderet het. Hol sie am Matchend neu ii.",
+      "readOnly": "De Match isch gnehmigt: Korrekture sind schriibgschützt."
     }
   }
 }

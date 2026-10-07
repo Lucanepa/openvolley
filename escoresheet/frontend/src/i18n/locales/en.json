@@ -3294,7 +3294,13 @@
       "removed": "Removed: {{what}}",
       "changed": "Changed: {{what}} (was: {{from}})",
       "afterMatchSuffix": " (entered after the match)",
-      "setTimes": "Set {{set}} times corrected"
+      "setTimes": "Set {{set}} times corrected",
+      "remarkAdded": "Remark added: \"{{text}}\"",
+      "remarkChanged": "Remark changed: \"{{text}}\"",
+      "remarkRemoved": "Remark removed: \"{{text}}\"",
+      "missedPoint": "Added: missed point for {{team}}",
+      "firstServe": "First serve changed to {{team}}",
+      "sides": "Sides switched in set {{set}}"
     },
     "error": {
       "noSuchScore": "Set {{set}} never had this score.",
@@ -3337,6 +3343,186 @@
       "expulsionReplacement": "Record the replacement with \"+ Add substitution\" (exceptional if no legal substitution was possible).",
       "laterRotations": "Later rotations of this set are not recalculated.",
       "afterMatch": "Entered after the match."
+    },
+    "title": "Corrections",
+    "pageTitle": "Corrections",
+    "help": "Each correction is saved when you confirm it and is listed in the correction log for the referee.",
+    "allSets": "All sets",
+    "setFilter": "Show set",
+    "serving": "{{team}} serving",
+    "saved": "Correction saved",
+    "saveError": "The correction could not be saved: {{message}}",
+    "section": {
+      "scoreServe": "Score and serve",
+      "sets": "Set results",
+      "lineup": "Line-up",
+      "timeouts": "Time-outs",
+      "substitutions": "Substitutions",
+      "sanctions": "Sanctions",
+      "libero": "Libero",
+      "log": "Correction log (shown to the referee)",
+      "advanced": "Advanced: event log"
+    },
+    "add": {
+      "timeout": "Add time-out",
+      "substitution": "Add substitution",
+      "sanction": "Add sanction",
+      "remark": "Add remark"
+    },
+    "empty": {
+      "timeouts": "No time-outs recorded.",
+      "substitutions": "No substitutions recorded.",
+      "sanctions": "No sanctions recorded.",
+      "remarks": "No remarks.",
+      "libero": "No libero replacements recorded.",
+      "log": "No corrections yet.",
+      "players": "No player to choose.",
+      "sets": "No finished set yet."
+    },
+    "field": {
+      "set": "Set",
+      "team": "Team",
+      "atScore": "At score",
+      "playerOut": "Player out (on court)",
+      "playerIn": "Player in (bench)",
+      "sanction": "Sanction",
+      "who": "Who",
+      "number": "Number",
+      "pointAlreadyGiven": "Was the point already given to {{team}}?",
+      "reason": "Reason",
+      "template": "Kind of remark",
+      "text": "Text",
+      "startTime": "Start",
+      "endTime": "End",
+      "currentFinal": "Now",
+      "addDelayRemark": "Add a remark about the delayed start"
+    },
+    "who": {
+      "player": "Player on court",
+      "bench": "Player on bench",
+      "libero": "Libero",
+      "coach": "Coach",
+      "ac1": "Assistant coach 1",
+      "ac2": "Assistant coach 2",
+      "physio": "Physiotherapist",
+      "doctor": "Doctor"
+    },
+    "reasonLabel": {
+      "injury": "Injury",
+      "illness": "Illness",
+      "expulsion": "Expulsion",
+      "disqualification": "Disqualification"
+    },
+    "column": {
+      "warning": "Warning",
+      "penalty": "Penalty",
+      "expulsion": "Expulsion",
+      "disqualification": "Disqualification"
+    },
+    "remarkTemplate": {
+      "exceptionalSub": "Exceptional substitution",
+      "liberoUnable": "Libero unable",
+      "liberoRedesignated": "Libero re-designated",
+      "delay": "Delay / time issue",
+      "protest": "Protest",
+      "missingSignature": "Missing signature",
+      "other": "Other"
+    },
+    "form": {
+      "addTimeout": "Add time-out",
+      "editTimeout": "Edit time-out",
+      "addSubstitution": "Add substitution",
+      "editSubstitution": "Edit substitution",
+      "addSanction": "Add sanction",
+      "editSanction": "Edit sanction",
+      "addRemark": "Add remark",
+      "editRemark": "Edit remark",
+      "finalScore": "Set {{set}}: correct final score",
+      "setTimes": "Set {{set}}: start and end time"
+    },
+    "action": {
+      "back": "Back",
+      "cancel": "Cancel",
+      "confirm": "Confirm",
+      "close": "Close",
+      "discard": "Discard",
+      "saveChanges": "Save changes",
+      "edit": "Edit",
+      "editWhat": "Edit {{what}}",
+      "editRemark": "Edit remark",
+      "remove": "Remove",
+      "removeEntry": "Remove {{what}}",
+      "removeRemark": "Remove remark",
+      "removeBoth": "Remove the point too",
+      "keepPoint": "Keep the point",
+      "undoLast": "Undo last action",
+      "wrongTeam": "Last point went to the wrong team",
+      "addMissedPoint": "Add a missed point",
+      "addMissedPointFor": "Add a missed point: {{team}}",
+      "changeServe": "Change who serves first",
+      "switchSides": "Switch sides",
+      "reopenSet": "Reopen set",
+      "fixLineup": "Fix the line-up",
+      "rotateForward": "Rotate one position forward",
+      "rotateBack": "Rotate one position back",
+      "rotateForwardShort": "Forward",
+      "rotateBackShort": "Back",
+      "correctFinalScore": "Correct final score",
+      "setTimes": "Set times",
+      "showAutomatic": "Show automatic entries",
+      "reopenForCorrections": "Back to the match end"
+    },
+    "preview": {
+      "title": "What changes on the scoresheet",
+      "incomplete": "Fill in the fields above.",
+      "remark": "Remark added to the scoresheet",
+      "lineupBefore": "Before",
+      "lineupAfter": "After",
+      "paperTimeout": "\"T\" at {{score}} in the time-out box of {{team}}, set {{set}}.",
+      "liveTimeout": "Starts the time-out with its countdown, as the TO button does.",
+      "paperSub": "{{in}} in for {{out}} at {{score}} in the line-up column of position {{position}}.",
+      "subCount": "Substitutions of {{team}} in set {{set}}: {{n}}/6",
+      "paperSanction": "{{code}} in the {{column}} column · Team {{letter}} · Set {{set}} · {{score}}",
+      "finalScore": "Final score {{before}} becomes {{after}}."
+    },
+    "pointGiven": {
+      "yes": "Yes",
+      "no": "No, add it now"
+    },
+    "chip": {
+      "exceptional": "Exceptional",
+      "incomplete": "Incomplete entry",
+      "paperCode": "As written on the scoresheet",
+      "teamsNotSet": "Team A/B not set: home is shown as A"
+    },
+    "hint": {
+      "timeoutHere": "time-out already here",
+      "subHere": "substitution already here",
+      "sanctionHere": "sanction already here",
+      "current": "current score",
+      "protest": "Dictated by the captain, with the 1st referee's permission.",
+      "finalScore": "Only the end of the set can be corrected: a point added after the last point, or the last point removed. Points missed in the middle of a set cannot be fixed (Swiss scorekeeper course).",
+      "libero": "To correct a libero replacement during the match, use Undo.",
+      "lineup": "Fix the line-up before the first rally of the set; rotate a team when it stands one position off.",
+      "advanced": "Every entry of the match log. Removing an entry removes everything that belongs to it. Use the cards above to add or change entries."
+    },
+    "confirm": {
+      "removeTitle": "Remove this entry?",
+      "removes": "Removes:",
+      "timeoutCount": "{{team}}'s time-out count in set {{set}} goes from {{from}} to {{to}}.",
+      "subRestore": "#{{out}} returns to court at position {{position}}; later line-ups are updated.",
+      "removePointTitle": "Remove the penalty point too?",
+      "removePoint": "The point it gave is still the last point of this set. Remove it as well (as Undo would)?",
+      "removeRemarkTitle": "Remove this remark?",
+      "addPoint": "Give a point to {{team}} now, with its rotation and serve, as the point button does.",
+      "changeServe": "First serve in set {{set}}: {{before}} → {{after}}.",
+      "switchSides": "Team {{left}} moves to the right, team {{right}} to the left.",
+      "discardTitle": "Discard unsaved changes?",
+      "discard": "The changes in Teams and Match info are not saved yet."
+    },
+    "banner": {
+      "signaturesCleared": "Signatures were cleared because the sheet changed. Collect them again at the match end.",
+      "readOnly": "The match is approved: corrections are read-only."
     }
   }
 }
