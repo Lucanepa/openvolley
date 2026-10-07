@@ -1294,7 +1294,18 @@
     "backToScoresheet": "Zrugg zum eMatchblatt",
     "lcs": "Libero-Kontrollblatt",
     "lcsTooltip": "Libero-Kontrollblatt aazeige",
-    "pdfFailed": "S PDF hät uf dem Grät nöd chöne erstellt werde."
+    "pdfFailed": "S PDF hät uf dem Grät nöd chöne erstellt werde.",
+    "matchNotFound": "Das Spiel isch nöd uf däm Gerät: Es git keis Matchblatt zum Speichere.",
+    "pdfInvalid": "S PDF hät nöd richtig chöne erstellt werde. Bitte nomal probiere.",
+    "pdfSavedAt": "PDF gspeicheret:",
+    "savingFile": "{{fileName}} wird im Ordner Downloads gspeicheret...",
+    "pdfDownloaded": "In Download-Ordner vom Browser abeglade:",
+    "pdfHandedToApp": "D App speicheret {{fileName}}: D Liiste obe zeigt, wo.",
+    "openFile": "Datei öffne",
+    "showInFolder": "Im Ordner zeige",
+    "dismiss": "Zuemache",
+    "fileActionFailed": "D Datei hät vo do us nöd chöne ufgmacht werde. Si isch in: {{path}}",
+    "checkTheMatch": "Spiel vor de Bestätigung prüefe:"
   },
   "supportFeedback": {
     "title": "Support & Feedback",
@@ -2277,7 +2288,10 @@
     "pdfSaveFailed": "S PDF hät nöd chöne gspeicheret werde: {{error}}",
     "savingPdf": "PDF wird gspeicheret...",
     "downloadFailed": "De Download isch nöd fertig worde.",
-    "downloadsFolder": "Downloads"
+    "downloadsFolder": "Downloads",
+    "openPdf": "Öffne",
+    "sharePdf": "Teile",
+    "pdfActionFailed": "Es hät nöd chöne ufgmacht werde: {{error}}"
   },
   "access": {
     "pendingTitle": "Dein Konto wartet auf Freigabe",

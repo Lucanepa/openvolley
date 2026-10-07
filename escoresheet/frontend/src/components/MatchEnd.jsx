@@ -1108,7 +1108,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
       const dataStr = JSON.stringify(exportData, null, 2)
       const matchDate = match.scheduledAt
-        ? new Date(match.scheduledAt).toLocaleDateString('en-GB', { timeZone: 'UTC' }).replace(/\//g, '-')
+        // the LOCAL match day (the UTC day is the day before for a match after midnight)
+        ? new Date(match.scheduledAt).toLocaleDateString('en-GB').replace(/\//g, '-')
         : new Date().toLocaleDateString('en-GB').replace(/\//g, '-')
       const jsonFilename = `MatchData_${sanitizeForFilename(homeTeam?.name || t('common.home'))}_vs_${sanitizeForFilename(awayTeam?.name || t('common.away'))}_${matchDate}.json`
 

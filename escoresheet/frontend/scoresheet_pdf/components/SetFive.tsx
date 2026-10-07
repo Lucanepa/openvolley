@@ -1,6 +1,8 @@
 import React from 'react';
 import { SubRecord } from '../types_scoresheet';
 import { PointsColumn5, PointsColumn30 } from './PointsColumn';
+import { StrikeZ } from './StrikeZ';
+import { FitText } from './FitText';
 
 interface ServiceRound {
   position: number; // 0-5 for I-VI
@@ -46,8 +48,12 @@ interface SetFiveProps {
     markedPointsA_Right?: number[];
     circledPointsA_Right?: number[];
     serviceRoundsA_Right?: ServiceRound[];
-    pointsAtChangeA?: number; // Left panel team's points at court change
-    pointsAtChangeB?: number; // Middle panel team's points at court change
+    /** The left (panel 1/3) team's points at the change of courts; null before the change. */
+    pointsAtChangeA?: number | null;
+    /** Not printed (the box holds the left team's points only, field-spec 6 step 1). */
+    pointsAtChangeB?: number | null;
+    /** A deciding set awarded by default: the grid is struck off, nothing else drawn. */
+    struckOff?: boolean;
 
     // Ref for measuring position box width
     positionBoxRef?: React.RefObject<HTMLDivElement>;
@@ -312,9 +318,9 @@ export const SetFive: React.FC<SetFiveProps> = ({
     markedPointsA_Right = [],
     circledPointsA_Right = [],
     serviceRoundsA_Right = [],
-    pointsAtChangeA = 0,
-    pointsAtChangeB = 0,
-    positionBoxRef
+    pointsAtChangeA = null,
+    positionBoxRef,
+    struckOff = false
 }) => {
   // Left (panel 1/3) team's full score: panel 1 holds 1-8, panel 3 the rest (pointsA_Right = score - 8)
   const finalScoreA = (pointsA_Left || 0) + (pointsA_Right || 0);
@@ -340,7 +346,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
                         <div className="w-6 h-6 rounded-full border border-black text-center bg-gray-200 text-black font-bold text-sm shrink-0 flex items-center justify-center">{teamALabel}</div>
                         <SRSelector initialSelection={firstServeTeamA === true ? 'S' : firstServeTeamA === false ? 'R' : null} />
                     </div>
-                    <div className="w-full text-xs uppercase text-center font-bold bg-white ml-1">{teamNameA || ''}</div>
+                    <FitText max={12} min={6} className="w-full uppercase text-center font-bold bg-white ml-1">{teamNameA || ''}</FitText>
                 </div>
            </div>
            <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '14.9mm' }}>Points</div>
@@ -348,7 +354,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
            {/* Panel 2 Header: Team RIGHT */}
            <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '40.1mm' }}>
                 <div className="flex items-center gap-1 w-full justify-end">
-                    <div className="w-full text-xs uppercase text-center font-bold bg-white mr-1">{teamNameB || ''}</div>
+                    <FitText max={12} min={6} className="w-full uppercase text-center font-bold bg-white mr-1">{teamNameB || ''}</FitText>
                     <div className="flex items-center gap-1">
                         <SRSelector initialSelection={firstServeTeamA === true ? 'R' : firstServeTeamA === false ? 'S' : null} />
                         <div className="w-6 h-6 rounded-full border border-black text-center bg-gray-200 text-black font-bold text-sm shrink-0 flex items-center justify-center">{teamBLabel}</div>
@@ -367,16 +373,14 @@ export const SetFive: React.FC<SetFiveProps> = ({
                     <div className="flex items-center gap-1">
                         <div className="w-6 h-6 rounded-full border border-black text-center bg-gray-200 text-black font-bold text-sm shrink-0 flex items-center justify-center">{teamALabel}</div>
                     </div>
-                    <div className="w-full text-xs uppercase text-center font-bold bg-white ml-1">{teamNameA || ''}</div>
+                    <FitText max={12} min={6} className="w-full uppercase text-center font-bold bg-white ml-1">{teamNameA || ''}</FitText>
                 </div>
            </div>
 
            {/* Points at Change */}
            <div className="border-r border-black flex items-center px-1 gap-2 bg-white shrink-0" style={{ width: '30.2mm' }}>
-                <div className="h-6 border border-black flex items-center justify-center bg-white font-bold text-sm relative" style={{ width: '35px' }}>
-                    <span className="w-1/2 text-center">{pointsAtChangeA || ''}</span>
-                    <span className="text-center text-[10px] font-bold leading-none">:</span>
-                    <span className="w-1/2 text-center">{pointsAtChangeB || ''}</span>
+                <div className="h-6 border border-black flex items-center justify-center bg-white font-bold text-sm relative" style={{ width: '35px' }} data-testid="set5-points-at-change">
+                    {pointsAtChangeA !== null && pointsAtChangeA !== undefined ? pointsAtChangeA : ''}
                 </div>
                 <span className="text-[8px] font-bold leading-none text-center">Points at change</span>
            </div>
@@ -395,7 +399,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
             {/* Panel 1: Team A */}
             <div className="flex shrink-0" style={{ width: '75mm' }}>
                  <TeamServiceGridSet5 lineup={lineupA} subs={subsA} startsReceiving={firstServeTeamA === false} positionBoxRef={positionBoxRef} serviceRounds={serviceRoundsA_Left} />
-                 <PointsColumn5 timeouts={timeoutsA || ["", ""]} markedPoints={markedPointsA_Left || []} circledPoints={circledPointsA_Left || []} setFinished={setFinished} finalScore={finalScoreA} />
+                 <PointsColumn5 timeouts={timeoutsA || ["", ""]} markedPoints={markedPointsA_Left || []} circledPoints={circledPointsA_Left || []} setFinished={setFinished} finalScore={finalScoreA} pointsAtChange={pointsAtChangeA} />
             </div>
 
             {/* Panel 2: Team B */}
@@ -407,9 +411,10 @@ export const SetFive: React.FC<SetFiveProps> = ({
             {/* Panel 3: Team A (Swapped) */}
             <div className="flex shrink-0" style={{ width: '76mm', marginLeft: '3.5mm' }}>
                  <TeamServiceGridSet5 lineup={lineupA} subs={subsA_Right || subsA} startsReceiving={false} serviceRounds={serviceRoundsA_Right} />
-                 <PointsColumn30 isLast={true} isPanel3={true} timeouts={timeoutsA_Right || timeoutsA || ["", ""]} markedPoints={markedPointsA_Right || []} circledPoints={circledPointsA_Right || []} preChangePoints={pointsAtChangeA} maxScore={maxScore} setFinished={setFinished} finalScore={finalScoreA} />
+                 <PointsColumn30 isLast={true} isPanel3={true} timeouts={timeoutsA_Right || timeoutsA || ["", ""]} markedPoints={markedPointsA_Right || []} circledPoints={circledPointsA_Right || []} preChangePoints={pointsAtChangeA ?? null} maxScore={maxScore} setFinished={setFinished} finalScore={finalScoreA} />
             </div>
        </div>
+       {struckOff && <StrikeZ />}
     </div>
   );
 };

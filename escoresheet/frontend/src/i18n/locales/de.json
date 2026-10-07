@@ -2238,7 +2238,18 @@
     "fullscreen": "Vollbild",
     "savePdfTooltip": "Als PDF speichern (Download mit einem Klick)",
     "generating": "Wird erstellt...",
-    "savePdf": "PDF speichern"
+    "savePdf": "PDF speichern",
+    "matchNotFound": "Dieses Spiel ist nicht auf diesem Gerät: Es gibt kein Matchblatt zum Speichern.",
+    "pdfInvalid": "Das PDF konnte nicht korrekt erstellt werden. Bitte erneut versuchen.",
+    "pdfSavedAt": "PDF gespeichert:",
+    "savingFile": "{{fileName}} wird im Ordner Downloads gespeichert...",
+    "pdfDownloaded": "In den Download-Ordner des Browsers heruntergeladen:",
+    "pdfHandedToApp": "Die App speichert {{fileName}}: Die Leiste oben zeigt, wo.",
+    "openFile": "Datei öffnen",
+    "showInFolder": "Im Ordner zeigen",
+    "dismiss": "Schliessen",
+    "fileActionFailed": "Die Datei konnte von hier aus nicht geöffnet werden. Sie liegt in: {{path}}",
+    "checkTheMatch": "Spiel vor der Bestätigung prüfen:"
   },
   "tabletStatus": {
     "title": "Tablet-Status",
@@ -2261,7 +2272,10 @@
     "pdfSaveFailed": "Das PDF konnte nicht gespeichert werden: {{error}}",
     "savingPdf": "PDF wird gespeichert...",
     "downloadFailed": "Der Download wurde nicht abgeschlossen.",
-    "downloadsFolder": "Downloads"
+    "downloadsFolder": "Downloads",
+    "openPdf": "Öffnen",
+    "sharePdf": "Teilen",
+    "pdfActionFailed": "Es konnte nicht geöffnet werden: {{error}}"
   },
   "access": {
     "pendingTitle": "Dein Konto wartet auf Freigabe",
