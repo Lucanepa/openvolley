@@ -62,11 +62,15 @@ describe('penalty points deferred until both line-ups are in (FIVB 16.2.3 / 21.3
       .toBeLessThan(b.indexOf('deferredPenaltyPoints('))
   })
 
-  it('the awarded points and the new score are queued for the cloud', () => {
+  it('the owed points are awarded by the scoreboard as any point: with the rotation of a receiving team (FIVB 7.6.1)', () => {
     const b = save()
-    expect(b).toMatch(/const penaltyPointId = await db\.events\.add\(/)
-    expect(b).toMatch(/await queueEventSync\(db, penaltyPointId\)/)
-    expect(b).toMatch(/await queueSetScoreSync\(db, \{ matchId, setIndex \}\)/)
+    // not written by hand (no rotation, no snapshot, no live push)
+    expect(b).not.toMatch(/db\.events\.add\(\{[\s\S]*type: 'point'/)
+    expect(b).toMatch(/if \(owedPoints\.length > 0 && onPenaltyPointsOwed\) await onPenaltyPointsOwed\(owedPoints\)/)
+    expect(sb).toMatch(/onPenaltyPointsOwed=\{awardOwedPenaltyPoints\}/)
+    const award = between('const awardOwedPenaltyPoints = useCallback(', 'const handleStartRally = useCallback(')
+    // one action; handlePoint joins it (a second keyed 'point' call would be dropped as a double tap)
+    expect(award).toMatch(/runAction\('penaltyPoints', async \(\) => \{\n\s*for \(const team of teams\) await handlePoint\(mapTeamKeyToSide\(team\), true\)/)
   })
 })
 

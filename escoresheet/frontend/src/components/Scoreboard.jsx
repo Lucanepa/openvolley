@@ -5369,6 +5369,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   )
 
   // One action (runAction): a second tap while it is written is dropped
+  // Penalty points owed from before both starting line-ups were in (the
+  // line-up dialog finds them, deferredPenaltyPoints): one action, each point
+  // awarded as any point is (handlePoint): score, event with its snapshot,
+  // cloud jobs and, when it gives the receiving team the service, its
+  // rotation (FIVB 7.6.1), as the immediate penalty point does.
+  const awardOwedPenaltyPoints = useCallback((teams) => runAction('penaltyPoints', async () => {
+    for (const team of teams) await handlePoint(mapTeamKeyToSide(team), true)
+  }), [runAction, handlePoint, mapTeamKeyToSide])
+
   const handleStartRally = useCallback((skipConfirmation = false) => runAction('rally', async () => {
     cLogger.logHandler('handleStartRally', { skipConfirmation })
     // Check for accidental rally start (if enabled and point was just awarded)
@@ -23081,6 +23090,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           // Notify scoresheet window about lineup change
           notifyScoresheetUpdate('lineup_change')
         }}
+        onPenaltyPointsOwed={awardOwedPenaltyPoints}
       />}
 
       {playerActionMenu && (() => {
@@ -27033,7 +27043,7 @@ function ScoreboardCourtColumn({ children }) {
   return <section className="court-wrapper">{children}</section>
 }
 
-function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, teamAKey, teamBKey, lfpTrackingEnabled, lfpMinimumOnCourt, onClose, onSave, onLineupSaved }) {
+function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, teamAKey, teamBKey, lfpTrackingEnabled, lfpMinimumOnCourt, onClose, onSave, onLineupSaved, onPenaltyPointsOwed }) {
   const { t } = useTranslation()
   const [lineup, setLineup] = useState(() => {
     if (presetLineup) {
@@ -27277,26 +27287,11 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
         // saved: allEvents was read before it, so the second team's line-up
         // never counted and the point was never awarded.
         const owedPoints = deferredPenaltyPoints([...allEvents, savedLineupEvent], setIndex)
-        for (let i = 0; i < owedPoints.length; i++) {
-          const otherTeam = owedPoints[i]
-          const currentSet = await db.sets.where('matchId').equals(matchId).and(s => s.index === setIndex).first()
-          if (!currentSet) break
-          const homePoints = (currentSet.homePoints || 0) + (otherTeam === 'home' ? 1 : 0)
-          const awayPoints = (currentSet.awayPoints || 0) + (otherTeam === 'away' ? 1 : 0)
-          await db.sets.update(currentSet.id, { homePoints, awayPoints })
-
-          const penaltyPointId = await db.events.add({
-            matchId,
-            setIndex,
-            ts: new Date().toISOString(),
-            type: 'point',
-            payload: { team: otherTeam, fromPenalty: true, score: { home: homePoints, away: awayPoints } },
-            seq: manualLineupSeq + 1 + i
-          })
-          // The cloud gets the point like any other
-          await queueEventSync(db, penaltyPointId)
-        }
-        if (owedPoints.length > 0) await queueSetScoreSync(db, { matchId, setIndex })
+        // Awarded by the scoreboard as any point (awardOwedPenaltyPoints ->
+        // handlePoint): written here by hand, the point had no rotation when
+        // it gave the receiving team the service (FIVB 7.6.1: the wrong
+        // server for the rest of the set), no state snapshot and no live push
+        if (owedPoints.length > 0 && onPenaltyPointsOwed) await onPenaltyPointsOwed(owedPoints)
 
         // Auto-close modal after successful save (skip confirmation step)
         onSave()
