@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { SanctionRecord, Player } from '../types_scoresheet';
 import { SignatureModal } from './SignatureModal';
 import { isApprovalValid, formatApprovalStamp } from '../../src/domain/accountApproval.js';
@@ -132,15 +132,33 @@ export const Remarks: React.FC<RemarksProps> = ({ overflowSanctions = [], remark
     }
     const text = parts.join('\n');
 
+    // The Matchblatt's 4 ruled writing lines. While the text fits in 4 lines at the
+    // full size, each line sits in its own band between the rules (a rule never runs
+    // through the text). Longer text shrinks to fit as before, without the rules.
+    const MAX_PX = 9;
+    const boxRef = useRef<HTMLDivElement>(null);
+    const [band, setBand] = useState(0);
+    const [ruled, setRuled] = useState(true);
+    useLayoutEffect(() => { setRuled(true); }, [text]);
+    useLayoutEffect(() => {
+        const box = boxRef.current;
+        if (!box) return;
+        const h = box.clientHeight / 4;
+        if (h > 0 && Math.abs(h - band) > 0.5) { setBand(h); return; }
+        const el = box.querySelector<HTMLElement>('[data-testid="remarks-text"]');
+        // FitText had to shrink the banded text: it does not fit in 4 lines
+        if (ruled && band > 0 && el && parseFloat(el.style.fontSize) < MAX_PX) setRuled(false);
+    });
+    const banded = ruled && band > 0;
+
     return (
         <div className="border border-r-0 border-black bg-white flex flex-col h-full">
             <div className="bg-gray-200 border-b border-r border-black text-center font-bold text-[10px] py-0.5 shrink-0">REMARKS</div>
-            <div className="border-r border-black p-1 flex-1 flex flex-col overflow-hidden min-h-0 relative">
-                {/* the 4 ruled writing lines of the Matchblatt, behind the text */}
-                {[1, 2, 3].map(k => (
+            <div ref={boxRef} className="border-r border-black px-1 flex-1 flex flex-col overflow-hidden min-h-0 relative">
+                {ruled && [1, 2, 3].map(k => (
                     <div key={k} className="absolute left-0 right-0 border-t ss-rule pointer-events-none" style={{ top: `${k * 25}%` }} data-testid="remarks-rule" aria-hidden="true" />
                 ))}
-                <FitText max={9} min={4} multiline className="w-full h-full leading-tight relative" data-testid="remarks-text">
+                <FitText max={MAX_PX} min={4} multiline className={`w-full h-full relative ${banded ? '' : 'leading-tight py-0.5'}`} style={banded ? { lineHeight: `${band}px` } : undefined} data-testid="remarks-text">
                     {text}
                 </FitText>
             </div>
@@ -180,11 +198,13 @@ interface ResultsProps {
   blankResultUntilFinished?: boolean;
 }
 
-/** A single line through an unused row (SC p.18: one line for one empty row). */
+/**
+ * A single line through an unused row (SC p.18: one line for one empty row).
+ * A plain rule, not an SVG: the PDF capture (html-to-image) dropped part of an
+ * SVG line where it crossed the Set cell.
+ */
 const RowStrike: React.FC = () => (
-    <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none" data-testid="row-strike" aria-hidden="true">
-        <line x1="0" y1="50" x2="100" y2="50" stroke="black" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-    </svg>
+    <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 border-t-[1.5px] border-black pointer-events-none z-10" data-testid="row-strike" aria-hidden="true" />
 );
 
 // Component to display set duration (removed countdown functionality - duration should only show the set length)
@@ -781,7 +801,7 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                      return (
                          <div key={roleLabel} className={`${gridClass} text-[9px] items-stretch ${rowHeight} ${roleIdx < 4 ? 'border-b ss-rule' : ''}`} data-testid="roster-official-row">
                              <div className={dobClass}>{formatDob(official?.dob)}</div>
-                             <div className="font-bold text-center border-r border-l border-black h-full flex items-center justify-center bg-white text-[9px]">{roleLabel}</div>
+                             <div className={`font-bold text-center border-r border-l border-black h-full flex items-center justify-center bg-white ${roleLabel.length > 1 ? 'text-[7px]' : 'text-[9px]'}`}>{roleLabel}</div>
                              <div className="bg-white px-1 text-left flex items-center min-w-0">
                                  <FitText max={9} min={5} className="flex-1">{fullName}</FitText>
                              </div>
