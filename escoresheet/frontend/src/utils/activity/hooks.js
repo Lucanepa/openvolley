@@ -35,7 +35,7 @@ function afterCommit(tx, fn) {
 /**
  * @param {import('dexie').Dexie} db
  * @param {{ record: Function, rememberMatch: Function }} writer
- * @returns {() => void} uninstall
+ * @returns {(() => void) & { flushWaiting: () => void }} uninstall (+ flushWaiting: tell the adds still waiting now)
  */
 export function installActivityHooks(db, writer) {
   const offs = []
@@ -211,11 +211,17 @@ export function installActivityHooks(db, writer) {
     afterCommit(tx, () => record('match.roster', { team, number: obj.number ?? null, op: 'remove' }, { matchId }))
   })
 
-  return () => {
+  const uninstall = () => {
     for (const off of offs.splice(0)) {
       try { off() } catch { /* gone */ }
     }
     for (const w of waiting.values()) clearTimeout(w.timer)
     waiting.clear()
   }
+  // The app goes (quit, page hidden for good): the adds still waiting for
+  // their snapshot are told now, or they would be lost with the page
+  uninstall.flushWaiting = () => {
+    for (const id of [...waiting.keys()]) emitAdd(id)
+  }
+  return uninstall
 }

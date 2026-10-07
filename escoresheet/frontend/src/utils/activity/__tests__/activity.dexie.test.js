@@ -70,6 +70,14 @@ describe('activity log', () => {
     expect(Date.parse(rows[0].ts) - t0).toBeLessThan(1000)
   })
 
+  it('an add still waiting for its snapshot is not lost when the app quits', async () => {
+    await db.events.add({ matchId, setIndex: 2, type: 'lineup', seq: 36, payload: { team: 'away' } })
+    await new Promise(r => setTimeout(r, 30)) // committed, now waiting (SNAPSHOT_WAIT_MS)
+    await flushActivityNow(500) // what the quit and pagehide do
+    const rows = await db.activity_log.toArray()
+    expect(rows.map(r => [r.kind, r.eventSeq])).toEqual([['event.add', 36]])
+  })
+
   it('sets, the match row and the roster of the open match', async () => {
     const setId = await db.sets.add({ matchId, index: 1, homePoints: 0, awayPoints: 0, finished: false })
     await db.sets.update(setId, { homePoints: 25, awayPoints: 20, finished: true })
