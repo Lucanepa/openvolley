@@ -1696,7 +1696,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               onClick={onManualAdjustments}
               className="px-5 font-medium"
             >
-              {t('matchEnd.manualAdjustments', 'Manual adjustments')}
+              {t('corrections.title', 'Corrections')}
             </Button>
             <div data-help-id="matchend-export-pdf">
               <MenuList
