@@ -18,8 +18,8 @@ const V18_STORES = {
   interaction_logs: 'id,ts,gameNumber,category,sessionId'
 }
 
-describe('Dexie v19 upgrade', () => {
-  it('keeps the v18 data and adds the saved-team tables', async () => {
+describe('Dexie v19 + v20 upgrade', () => {
+  it('keeps the v18 data and adds the saved-team and logging tables', async () => {
     const old = new Dexie('escoresheet')
     old.version(18).stores(V18_STORES)
     await old.open()
@@ -29,12 +29,18 @@ describe('Dexie v19 upgrade', () => {
 
     const { db } = await import('../db')
     await db.open()
-    expect(db.verno).toBe(19)
+    expect(db.verno).toBe(20)
     expect((await db.matches.get(matchId)).seed_key).toBe('match_1_a')
     expect(await db.sync_queue.count()).toBe(1)
     await db.saved_teams.put({ id: 't1', competitionId: 'c1', nameKey: 'a', svrzKey: '' })
     await db.saved_teams_meta.put({ key: 'bundle', version: '1', fetchedAt: new Date().toISOString(), userId: 'u' })
     expect(await db.saved_teams.where('competitionId').equals('c1').count()).toBe(1)
+    // v20: the logging tables, and interaction_logs gained its matchId index
+    await db.activity_log.add({ uid: 'a', ts: '2026-10-07T00:00:00.000Z', matchId: matchId, kind: 'app.start', synced: 0 })
+    await db.event_history.add({ revUid: 'r', matchId, seq: 3, eventId: 1, ts: 't' })
+    await db.interaction_logs.put({ id: 'l1', ts: 1, gameNumber: null, matchId, category: 'ui', sessionId: 's' })
+    expect(await db.interaction_logs.where('matchId').equals(matchId).count()).toBe(1)
+    expect(await db.activity_log.where('[matchId+ts]').between([matchId, ''], [matchId, '\uffff']).count()).toBe(1)
     db.close()
   })
 })
