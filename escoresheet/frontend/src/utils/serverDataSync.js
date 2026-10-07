@@ -6,6 +6,7 @@
 import { apiFrom } from '../lib/apiClient'
 import { getApiUrl, getBackendUrl, getCloudApiUrl, getRelayWebSocketUrl } from './backendConfig'
 import { formatTimeLocal } from './timeUtils'
+import { isShownCloudPickerRow, pickerQuerySince, pickerTeamNames } from './pickerMatches'
 
 /**
  * Generate a unique seed_key for a match
@@ -1347,26 +1348,74 @@ export async function listAvailableMatches() {
   }
 }
 
-/**
- * List available matches from Supabase (for Supabase-only mode)
- * Returns matches that are in 'setup' or 'live' status with referee_connection_enabled = true
- */
-export async function listAvailableMatchesSupabase() {
+// The columns the tablet pickers read: the stale rule (status, scheduled_at,
+// updated_at, coin_toss), sport_type / test (beach and test rows are left
+// out), the team names (team1_data / team2_data when home_team / away_team
+// carry none) and the connection flags.
+const PICKER_COLUMNS = 'id, external_id, game_n, status, test, sport_type, scheduled_at, updated_at, coin_toss, home_team, away_team, team1_data, team2_data, connections'
+
+/** The scheduled time of a cloud row for a picker row ('TBD' when none). */
+function pickerDateTime(scheduledAt) {
+  if (!scheduledAt) return 'TBD'
   try {
-    const { data, error } = await apiFrom('matches')
-      .select(`
-        id,
-        external_id,
-        game_n,
-        status,
-        scheduled_at,
-        home_team,
-        away_team,
-        connections,
-        connection_pins
-      `)
-      .in('status', ['setup', 'live'])
-      .order('scheduled_at', { ascending: true })
+    // Ensure timestamp is parsed as UTC (the cloud may return it without 'Z')
+    let scheduledStr = scheduledAt
+    if (!scheduledStr.endsWith('Z') && !scheduledStr.includes('+')) {
+      scheduledStr = scheduledStr + 'Z'
+    }
+    const scheduledDate = new Date(scheduledStr)
+    // Display in local timezone
+    const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    const timeStr = formatTimeLocal(scheduledStr)
+    return `${dateStr} ${timeStr}`
+  } catch (e) {
+    return 'TBD'
+  }
+}
+
+/**
+ * The cloud rows a tablet picker may offer: setup / live, written in the last
+ * PICKER_QUERY_WINDOW_MS, indoor, not test, not stale (utils/pickerMatches.js),
+ * and `joinable` (the connection flags). Soonest first.
+ * @param {(connections: object) => boolean} joinable
+ * @returns {Promise<{ data: object[]|null, error: object|null }>}
+ */
+async function listCloudPickerRows(joinable, now = Date.now()) {
+  const { data, error } = await apiFrom('matches')
+    .select(PICKER_COLUMNS)
+    .in('status', ['setup', 'live'])
+    .gte('updated_at', pickerQuerySince(now))
+    .order('scheduled_at', { ascending: true })
+  if (error) return { data: null, error }
+  return { data: (data || []).filter((m) => isShownCloudPickerRow(m, now) && joinable(m.connections || {})), error: null }
+}
+
+/** A cloud row in the shape of the relay's match list. */
+function cloudPickerRow(m) {
+  const { home, away } = pickerTeamNames(m)
+  return {
+    id: m.external_id || m.id,
+    external_id: m.external_id, // Keep original for cloud writes
+    gameNumber: m.game_n || m.external_id,
+    homeTeam: home,
+    awayTeam: away,
+    homeTeamName: home,
+    awayTeamName: away,
+    scheduledAt: m.scheduled_at,
+    updatedAt: m.updated_at,
+    dateTime: pickerDateTime(m.scheduled_at),
+    status: m.status
+  }
+}
+
+/**
+ * List available matches from the cloud (referee picker): see
+ * listCloudPickerRows, with the referee connection on. No PINs: they are
+ * checked server-side (validate-connection-pin).
+ */
+export async function listAvailableMatchesSupabase({ now = Date.now() } = {}) {
+  try {
+    const { data, error } = await listCloudPickerRows((c) => c.referee_enabled === true, now)
 
     if (error) {
       // 404 (a relay without /api/db) or no answer (venue offline, or a LAN
@@ -1376,57 +1425,8 @@ export async function listAvailableMatchesSupabase() {
       return { success: false, matches: [], error: error.message }
     }
 
-    // Filter to only show matches where referee connection is enabled
-    const filteredData = (data || []).filter(m => {
-      const connections = m.connections || {}
-      return connections.referee_enabled === true
-    })
-
-    // Format to match the WebSocket server format
-    const formattedMatches = filteredData.map(m => {
-      let dateTime = 'TBD'
-      if (m.scheduled_at) {
-        try {
-          // Ensure timestamp is parsed as UTC (Supabase may return without 'Z')
-          let scheduledStr = m.scheduled_at
-          if (!scheduledStr.endsWith('Z') && !scheduledStr.includes('+')) {
-            scheduledStr = scheduledStr + 'Z'
-          }
-          const scheduledDate = new Date(scheduledStr)
-          // Display in local timezone
-          const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-          const timeStr = formatTimeLocal(scheduledStr)
-          dateTime = `${dateStr} ${timeStr}`
-        } catch (e) {
-          dateTime = 'TBD'
-        }
-      }
-
-      // Read from JSONB columns only (clean schema)
-      const homeTeamName = m.home_team?.name || 'Home'
-      const awayTeamName = m.away_team?.name || 'Away'
-      const connections = m.connections || {}
-      const connectionPins = m.connection_pins || {}
-
-      return {
-        id: m.external_id || m.id,
-        external_id: m.external_id, // Keep original for Supabase writes
-        gameNumber: m.game_n || m.external_id,
-        homeTeam: homeTeamName,
-        awayTeam: awayTeamName,
-        homeTeamName: homeTeamName,
-        awayTeamName: awayTeamName,
-        scheduledAt: m.scheduled_at,
-        dateTime,
-        status: m.status,
-        refereeConnectionEnabled: connections.referee_enabled === true,
-        // Include upload PINs for roster upload app
-        homeTeamUploadPin: connectionPins.upload_home,
-        awayTeamUploadPin: connectionPins.upload_away
-      }
-    })
-
-    return { success: true, matches: formattedMatches }
+    const matches = data.map((m) => ({ ...cloudPickerRow(m), refereeConnectionEnabled: true }))
+    return { success: true, matches }
   } catch (error) {
     console.error('[listAvailableMatchesSupabase] Exception:', error)
     return { success: false, matches: [], error: error.message }
@@ -1434,26 +1434,13 @@ export async function listAvailableMatchesSupabase() {
 }
 
 /**
- * List available matches from Supabase for Bench apps
- * Filters by bench_connection_enabled = true
+ * List available matches from the cloud for the bench apps: see
+ * listCloudPickerRows, with the home or the away bench connection on. Bench
+ * PINs are never shipped to the client: validated server-side on connect.
  */
-export async function listAvailableMatchesForBenchSupabase() {
+export async function listAvailableMatchesForBenchSupabase({ now = Date.now() } = {}) {
   try {
-    // NOTE: connection_pins is intentionally NOT selected — bench PINs must not
-    // be shipped to the client. PIN validation happens server-side on connect.
-    const { data, error } = await apiFrom('matches')
-      .select(`
-        id,
-        external_id,
-        game_n,
-        status,
-        scheduled_at,
-        home_team,
-        away_team,
-        connections
-      `)
-      .in('status', ['setup', 'live'])
-      .order('scheduled_at', { ascending: true })
+    const { data, error } = await listCloudPickerRows((c) => c.home_bench_enabled === true || c.away_bench_enabled === true, now)
 
     if (error) {
       // No answer (venue offline, LAN tablet origin): the relay list stands in
@@ -1461,53 +1448,15 @@ export async function listAvailableMatchesForBenchSupabase() {
       return { success: false, matches: [], error: error.message }
     }
 
-    // Filter to only show matches where at least one bench connection is enabled
-    const filteredData = (data || []).filter(m => {
+    const matches = data.map((m) => {
       const connections = m.connections || {}
-      return connections.home_bench_enabled === true || connections.away_bench_enabled === true
-    })
-
-    // Format to match the WebSocket server format
-    const formattedMatches = filteredData.map(m => {
-      let dateTime = 'TBD'
-      if (m.scheduled_at) {
-        try {
-          let scheduledStr = m.scheduled_at
-          if (!scheduledStr.endsWith('Z') && !scheduledStr.includes('+')) {
-            scheduledStr = scheduledStr + 'Z'
-          }
-          const scheduledDate = new Date(scheduledStr)
-          // Display in local timezone
-          const dateStr = scheduledDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-          const timeStr = formatTimeLocal(scheduledStr)
-          dateTime = `${dateStr} ${timeStr}`
-        } catch (e) {
-          dateTime = 'TBD'
-        }
-      }
-
-      // Read from JSONB columns only (clean schema)
-      const homeTeamName = m.home_team?.name || 'Home'
-      const awayTeamName = m.away_team?.name || 'Away'
-      const connections = m.connections || {}
-
       return {
-        id: m.external_id || m.id,
-        external_id: m.external_id,
-        gameNumber: m.game_n || m.external_id,
-        homeTeam: homeTeamName,
-        awayTeam: awayTeamName,
-        homeTeamName: homeTeamName,
-        awayTeamName: awayTeamName,
-        scheduledAt: m.scheduled_at,
-        dateTime,
+        ...cloudPickerRow(m),
         homeBenchEnabled: connections.home_bench_enabled,
-        awayBenchEnabled: connections.away_bench_enabled,
-        status: m.status
+        awayBenchEnabled: connections.away_bench_enabled
       }
     })
-
-    return { success: true, matches: formattedMatches }
+    return { success: true, matches }
   } catch (error) {
     console.error('[listAvailableMatchesForBenchSupabase] Exception:', error)
     return { success: false, matches: [], error: error.message }

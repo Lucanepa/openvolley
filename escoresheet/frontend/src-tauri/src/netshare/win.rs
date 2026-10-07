@@ -91,7 +91,7 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> 
 
 fn marker() -> Option<PathBuf> {
     let base = std::env::var_os("LOCALAPPDATA").filter(|v| !v.is_empty())?;
-    Some(PathBuf::from(base).join("OpenVolley").join("tablet-wifi-on"))
+    Some(PathBuf::from(base).join(crate::flavour::CURRENT.data_folder).join("tablet-wifi-on"))
 }
 
 /// The marker's contents: what a crashed run must put back. The user's own

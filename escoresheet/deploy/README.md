@@ -48,10 +48,10 @@ network, and carries `traefik.enable=false`.
 | `cloudflared/config.yml` | VM (mounted read-only) | Tunnel ingress: `backend.openvolley.app` (and the temporary `ov-preflight` name) -> `http://ov-backend:8080`, `get.openvolley.app` -> `http://ov-pkgs:80`; everything else 404 |
 | `pkgs/Caddyfile` | VM (mounted read-only into `ov-pkgs`) | Static server for `get.openvolley.app`: GET/HEAD only, directory listings, MIME types for `.deb`/`.apk`/`.jar`/`.json`/`.gpg`, 1-year `immutable` cache for packages, 60 s for everything else (the desktop updater manifests too); `Access-Control-Allow-Origin: *` on `/fdroid/repo/index-v2.json` only (the Android app's update check) |
 | `pkgs/index.html` | template, filled by `publish-pkgs.sh` | Install page at `/` (Android via F-Droid or APK, Linux via APT, Windows `.exe`). Its `<!--per-machine-->` block (administrator prompt, firewall rule) is published only for a desktop version newer than 2.1.0, the last per-user Windows installer |
-| `pkgs/install.sh` | copied by `publish-pkgs.sh` | Linux one-line installer at `/install.sh`: checks the APT key fingerprint, adds the repo, installs `openvolley-escoresheet` |
+| `pkgs/install.sh` | copied by `publish-pkgs.sh` | Linux one-line installer at `/install.sh`: checks the APT key fingerprint, adds the repo, installs `openvolley-escoresheet` (or the package given: `sh -s openbeach-escoresheet`) |
 | `publish-pkgs.sh` | lenovoserver | Adds `.deb` (repacked to `openvolley-escoresheet` if named otherwise)/signed `.apk`, copies `pkgs/install.sh`, re-signs the APT and F-Droid indexes, rsyncs the public tree to `hetzner:/data/openvolley/pkgs/`. `--desktop VERSION [--staging]` also signs a desktop release for the in-app updater and writes its `latest.json`. See [Public downloads](#public-downloads-getopenvolleyapp) |
 | `lib/publish-lib.sh`, `lib/desktop-updater.mjs` | lenovoserver (used by `publish-pkgs.sh`) | The `--desktop` steps and the key-material guard; the `.mjs` (Node, no npm packages) checks updater signatures the way the app does and writes and validates `latest.json` |
-| `tests/publish-desktop.test.sh` | any machine with Node, `dpkg-deb` and tauri-cli >= 2.12 | Offline tests of `--desktop` with a throwaway key: signing, verification, `latest.json`, staging, rollback and leak guards, the APT hold-back, GitHub's "Latest" (stubbed `gh`) |
+| `tests/publish-desktop.test.sh` | any machine with Node, `dpkg-deb` and tauri-cli >= 2.12 | Offline tests of `--desktop` (OpenVolley and `--app beach`) with a throwaway key: signing, verification, `latest.json`, staging, rollback and leak guards, the per-app APT hold-back, GitHub's "Latest" and the OpenBeach fallback (stubbed `gh`), APT names, the Android certificate per app id, `install.sh` and the landing page |
 | `Dockerfile.backend` (+ `.dockerignore`) | build machine | Packages `escoresheet/backend`: `node:22.23.3-bookworm-slim`, `npm ci --omit=dev`, user `node`, HEALTHCHECK on `/health/live` + storage sentinel (no fallback) |
 | `build-image.sh` | lenovoserver | Builds `openvolley-backend:<git-sha>`, refusing a backend tree without the self-host contract; `--ship <host>` streams it to the VM, keeps a `.tar.gz` for rollbacks and prunes to the newest 5 (`prune-images.sh`) |
 | `apply-roles.sh` | VM, root | `roles.sql` from stdin with `OV_APP_PW` read from `.env` (never exported into a shell), then checks the `ov_app` login |
@@ -226,6 +226,27 @@ cannot push code to venue laptops. `publish-pkgs.sh` checks every signature agai
 
 This is separate from the owner's private F-Droid repo (`/srv/fdroid/desktop-calendar`), which
 stays private and is not touched by any of this.
+
+### OpenBeach
+
+OpenBeach (the beach volleyball app, Lucanepa/openbeach) is published from the same repository
+next to OpenVolley: APT package `openbeach-escoresheet` (command of the same name), Android app
+id `com.openvolley.beach` (signed with its own key, never OpenVolley's: its certificate SHA-256
+in `~/.config/openbeach-android/cert.sha256`, read by `lib/publish-lib.sh` `app_cert_sha256`),
+desktop releases tagged `beach-desktop-v<version>` (`desktop.yml` builds the Tauri shell with
+`src-tauri/tauri.beach.conf.json` and openbeach's frontend at the same tag), updater manifests in
+`/desktop/beach/` (same updater key). Its GitHub releases never become "Latest" (OpenVolley's
+updater fallback); OpenBeach's updater falls back to the `beach-desktop-latest` prerelease, whose
+only asset is the `latest.json` that `publish-pkgs.sh --desktop <version> --app beach` uploads
+(it creates that prerelease the first time). The APT hold-back is per package: each against its
+own `latest.json`. The install page shows the OpenBeach section once an OpenBeach `.deb` or APK
+is published. Linux: `curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s openbeach-escoresheet`.
+
+Release: bump openbeach's `escoresheet/frontend/package.json`, tag `beach-desktop-v<version>` in
+both repos, then as below with `--app beach` (`--desktop <version> --app beach --staging`, then
+`--desktop <version> --app beach`). The kill switch works the same in `desktop/beach/`, with
+`beach-desktop-latest` instead of GitHub's "Latest" (re-upload `latest-<previous>.json` there as
+`latest.json`).
 
 ### Release procedure
 

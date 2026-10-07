@@ -8,6 +8,9 @@ rust-version = "1.77"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+# build.rs reads the Tauri config to tell OpenVolley from OpenBeach
+# (src/flavour.rs). In the tree through tauri-build, no new crate.
+serde_json = "1"
 
 [dependencies]
 # tray-icon: the app keeps running in the tray when its window is closed
@@ -28,13 +31,20 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "signal"] }
 axum = { version = "0.7", features = ["ws"] }
-rust-embed = "8"
+# The relay's embedded frontend comes from $OV_DIST (build.rs: OpenVolley's
+# ../dist, or the openbeach build for OpenBeach).
+rust-embed = { version = "8", features = ["interpolate-folder-path"] }
 mime_guess = "2"
 local-ip-address = "0.6"
 futures-util = "0.3"
 # OS randomness for the tablet Wi-Fi password (hotspot.rs). Already in the
 # tree (0.8 through tauri), so this adds no new crate.
 rand = "0.8"
+# Sign on phone (sign.rs): SHA-256 of the session secrets (already in the
+# tree through tauri) and NFC for the context the phone page shows, the same
+# as String.prototype.normalize('NFC') in electron/signSessionCore.cjs.
+sha2 = "0.10"
+unicode-normalization = "0.1"
 
 # GtkSettings: keep the window light on a dark GTK theme (main.rs). Already
 # in the tree through tauri (wry/tao), so this adds no new crate.
@@ -74,6 +84,13 @@ windows = { version = "0.61", features = [
 [dev-dependencies]
 # mock runtime for the IPC/ACL test of the backup commands (main.rs)
 tauri = { version = "2", features = ["test"] }
+# Router tests of /api/sign/* (relay.rs): Router::oneshot and body reading,
+# both already in the tree through axum
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+# tokio::time::pause for the long-poll tests (sign.rs, relay.rs)
+tokio = { version = "1", features = ["test-util"] }
+
 
 # Release profile tuned for a small, fast single binary.
 [profile.release]

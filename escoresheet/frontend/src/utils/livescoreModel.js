@@ -514,11 +514,13 @@ export function countLiveGames(games) {
  * instead of reusing the last event's? Manual changes, and the deciding-set
  * court switch: it writes set5CourtSwitched without an event, so the last
  * event's snapshot still has the old sides (livescore showed them until the
- * next rally).
+ * next rally). The end of an interval too: the last event's snapshot is from
+ * before the set 5 coin toss sides / first serve were chosen (match fields).
  * @param {string|null|undefined} eventType
  */
 export function liveStateNeedsFreshSnapshot(eventType) {
-  return typeof eventType === 'string' && (eventType.startsWith('manual_') || eventType === 'court_switch')
+  return typeof eventType === 'string' &&
+    (eventType.startsWith('manual_') || eventType === 'court_switch' || eventType === 'end_interval')
 }
 
 /**

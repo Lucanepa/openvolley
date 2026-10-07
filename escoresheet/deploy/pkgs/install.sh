@@ -1,34 +1,42 @@
 #!/bin/sh
-# OpenVolley eScoresheet installer for Debian, Ubuntu and derivatives (amd64).
+# OpenVolley eScoresheet / OpenBeach installer for Debian, Ubuntu and
+# derivatives (amd64).
 #
 #   curl -fsSL https://get.openvolley.app/install.sh | sudo sh
+#   curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s openbeach-escoresheet
 #
-# Adds the signed OpenVolley APT repository and installs the package
-# openvolley-escoresheet; from then on `sudo apt upgrade` keeps it current.
-# Safe to run again: it rewrites the same two files and installs or upgrades
-# the package.
+# Adds the signed OpenVolley APT repository and installs one package:
+# openvolley-escoresheet (the default) or openbeach-escoresheet (OpenBeach, the
+# beach volleyball app); from then on `sudo apt upgrade` keeps it current. Both
+# apps come from the same repository and can be installed side by side. Safe to
+# run again: it rewrites the same two files and installs or upgrades the
+# package.
 #
-#   1. Checks: apt-get and dpkg, amd64, root.
+#   1. Checks: the package name is one of PACKAGES, apt-get and dpkg, amd64, root.
 #   2. Installs curl, ca-certificates and gpg first if any is missing.
 #   3. Downloads the repository key and refuses it unless it holds exactly one
 #      primary key, fingerprint FPR below, neither revoked nor expired. Only
 #      then writes it to /usr/share/keyrings/openvolley.gpg.
 #   4. Writes /etc/apt/sources.list.d/openvolley.list (signed-by that keyring,
 #      so the key is trusted for this repository only), runs apt-get update and
-#      apt-get install -y openvolley-escoresheet. An older install under the
+#      apt-get install -y <package>. An older OpenVolley install under the
 #      name openvolley-e-scoresheet (a .deb from GitHub up to 1.48.19) is
-#      replaced: the package provides, replaces and conflicts with it.
+#      replaced: openvolley-escoresheet provides, replaces and conflicts with it.
 #
 # OV_PKGS_BASE overrides https://get.openvolley.app (testing only).
 #
-# Undo: sudo apt remove openvolley-escoresheet &&
+# Undo: sudo apt remove <package> &&
 #       sudo rm /etc/apt/sources.list.d/openvolley.list /usr/share/keyrings/openvolley.gpg
+# (the last two only when no other app from this repository stays installed)
 #
 # Everything runs from main at the very end, so a download cut short
 # executes nothing.
 
 FPR=AB469DA8DC3EC90F8057320D285B18D76C16B82C
-PKG=openvolley-escoresheet
+DEFAULT_PKG=openvolley-escoresheet
+PACKAGES="openvolley-escoresheet openbeach-escoresheet"
+PKG=
+APP=
 
 set -eu
 
@@ -55,18 +63,30 @@ key_fingerprints() {
 
 main() {
   # --- 1. checks -------------------------------------------------------------
+  [ $# -le 1 ] || die "usage: install.sh [$(echo "$PACKAGES" | sed 's/ / | /g')]"
+  PKG=${1:-$DEFAULT_PKG}
+  case " $PACKAGES " in
+    *" $PKG "*) ;;
+    *) die "unknown package '$PKG'; this repository has: $PACKAGES" ;;
+  esac
+  case "$PKG" in
+    openbeach-escoresheet) APP=OpenBeach ;;
+    *) APP="OpenVolley eScoresheet" ;;
+  esac
+
   if ! command -v apt-get >/dev/null 2>&1 || ! command -v dpkg >/dev/null 2>&1; then
     die "this installer is for Debian, Ubuntu and their derivatives (needs apt-get and dpkg).
   For Windows and Android see https://get.openvolley.app"
   fi
   arch=$(dpkg --print-architecture)
   if [ "$arch" != amd64 ]; then
-    die "OpenVolley eScoresheet for Linux is built for 64-bit PCs (amd64) only; this system is $arch.
+    die "$APP for Linux is built for 64-bit PCs (amd64) only; this system is $arch.
   For Windows and Android see https://get.openvolley.app"
   fi
   if [ "$(id -u)" -ne 0 ]; then
+    if [ "$PKG" = "$DEFAULT_PKG" ]; then args=; else args=" -s $PKG"; fi
     die "needs root. Run it with sudo:
-  curl -fsSL $BASE/install.sh | sudo sh"
+  curl -fsSL $BASE/install.sh | sudo sh$args"
   fi
 
   TMP=$(mktemp -d)
@@ -113,9 +133,9 @@ main() {
   [ -n "$version" ] || die "$PKG did not install"
   cat <<EOF
 
-OpenVolley eScoresheet $version is installed.
+$APP $version is installed.
 
-  Start it:          from the app menu (OpenVolley eScoresheet), or run: $PKG
+  Start it:          from the app menu ($APP), or run: $PKG
   Tablet server only (no window, e.g. on a headless box):
                      $PKG --server-only
   Updates:           sudo apt update && sudo apt upgrade

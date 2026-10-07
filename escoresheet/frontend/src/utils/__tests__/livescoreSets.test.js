@@ -149,6 +149,9 @@ describe('liveStateNeedsFreshSnapshot', () => {
   it('the deciding-set court switch and manual changes push a fresh snapshot', () => {
     expect(liveStateNeedsFreshSnapshot('court_switch')).toBe(true)
     expect(liveStateNeedsFreshSnapshot('manual_side_change')).toBe(true)
+    // set 5 coin toss sides / first serve are match fields, not events
+    expect(liveStateNeedsFreshSnapshot('manual_set5_setup')).toBe(true)
+    expect(liveStateNeedsFreshSnapshot('end_interval')).toBe(true)
     expect(liveStateNeedsFreshSnapshot('point')).toBe(false)
     expect(liveStateNeedsFreshSnapshot(null)).toBe(false)
   })

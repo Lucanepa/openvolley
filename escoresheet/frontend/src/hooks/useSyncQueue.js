@@ -1029,6 +1029,22 @@ async function processJobInner(job, ctx) {
       return true
     }
 
+    if (job.resource === 'event' && job.action === 'delete') {
+      // A correction removed the event locally (services/corrections): its
+      // cloud row goes too. A row that never reached the cloud is no error —
+      // the delete simply matches nothing. Scoped by the namespaced
+      // external_id (`${seedKey}:e:${id}`), which the backend requires for a
+      // child-row delete (pgQuery assertChildFilterScoped).
+      const externalId = job.payload?.external_id
+      if (!externalId) return DROP_JOB
+      const { error } = await apiFrom('events').delete().eq('external_id', externalId)
+      if (error) {
+        safeLog.error('[SyncQueue] Event delete error:', error, externalId)
+        return failureResult(error, ctx)
+      }
+      return true
+    }
+
     // ==================== USER MATCH (My Matches) ====================
     if (job.resource === USER_MATCH_RESOURCE && job.action === 'upsert') {
       const { user_id: owner, match_external_id: matchKey, role, sport_type: sportType } = job.payload || {}

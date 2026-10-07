@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OpenBeach",
+  "mainBinaryName": "openbeach-escoresheet",
+  "version": "../../../openbeach/escoresheet/frontend/package.json",
+  "identifier": "com.openvolley.beach",
+  "build": {
+    "frontendDist": "../../../openbeach/escoresheet/frontend/dist",
+    "beforeBuildCommand": "npm --prefix ../../openbeach/escoresheet/frontend run build",
+    "beforeDevCommand": null,
+    "devUrl": null
+  },
+  "bundle": {
+    "shortDescription": "Open Source Beach Volleyball eScoresheet",
+    "longDescription": "Fully offline beach volleyball e-scoresheet. Runs the scoretable and a built-in LAN server so referee and livescore tablets and the court displays connect over the same Wi-Fi — no internet, no accounts.",
+    "icon": [
+      "icons/beach/32x32.png",
+      "icons/beach/128x128.png",
+      "icons/beach/128x128@2x.png",
+      "icons/beach/icon.icns",
+      "icons/beach/icon.ico"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEwRDIwRUUyRDIwOTczQzUKUldURmN3blM0ZzdTRUdBejdOSEdYSEZ4NEY2NVphSi85enFlZGpOWjY2MUtleW0yVGtoNklHcngK",
+      "endpoints": [
+        "https://get.openvolley.app/desktop/beach/latest.json",
+        "https://github.com/Lucanepa/openvolley/releases/download/beach-desktop-latest/latest.json"
+      ]
+    }
+  }
+}

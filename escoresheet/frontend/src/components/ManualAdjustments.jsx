@@ -1,19 +1,18 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { useAlert } from '../contexts/AlertContext'
-import { validateManualSubstitution, validateManualTimeout } from '../domain/substitutions'
 import { swapTeamDesignation as swapTeamDesignationPatch } from '../domain/coinToss'
 import { mergeOfficialsEdits } from '../domain/officials'
-import { changedSets, approvedSheetChanged } from '../domain/accountApproval'
-import { setScoreSyncJobs } from '../domain/corrections'
+import { approvedSheetChanged } from '../domain/accountApproval'
 import { clearedPostMatchSignatures } from '../domain/matchEnd'
 import { apiFrom } from '../lib/apiClient'
 import { approvalsApi } from '../lib/accountApi'
-import { X } from 'lucide-react'
 import { Button } from '../ui/Button.jsx'
+import { confirmDialog } from '../ui/uiStore.js'
 import { DateField, DateTimeField } from '../ui/DateField.jsx'
+import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
 import { discRing, HEADER_SURFACE } from '../utils/teamColours'
 
 // Standard volleyball team colors - keys for translation
@@ -94,10 +93,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   // Track all changes for audit log
   const [changes, setChanges] = useState([])
   const [saving, setSaving] = useState(false)
-  const [activeTab, setActiveTab] = useState('scores')
-
-  // Editable state - Sets
-  const [editedSets, setEditedSets] = useState([])
+  const [activeTab, setActiveTab] = useState('corrections')
 
   // Editable state - Match
   const [editedMatch, setEditedMatch] = useState(null)
@@ -110,30 +106,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   const [editedHomeBench, setEditedHomeBench] = useState([])
   const [editedAwayBench, setEditedAwayBench] = useState([])
 
-  // Add sanction modal state
-  const [showAddSanction, setShowAddSanction] = useState(null) // { team: 'home'|'away', playerNumber?: number, playerType: 'player'|'coach'|'bench_official' }
-  const [newSanctionData, setNewSanctionData] = useState({ type: 'warning', setIndex: 1, scoreA: 0, scoreB: 0 })
-
-  // Edit sanction modal state
-  const [editingSanction, setEditingSanction] = useState(null)
-
-  // Timeout modal state
-  const [showAddTimeout, setShowAddTimeout] = useState(false)
-  const [newTimeoutData, setNewTimeoutData] = useState({ team: 'home', setIndex: 1, scoreA: 0, scoreB: 0 })
-
-  // Substitution modal state
-  const [showAddSub, setShowAddSub] = useState(false)
-  const [editingSub, setEditingSub] = useState(null)
-  const [newSubData, setNewSubData] = useState({ team: 'home', setIndex: 1, playerOut: '', playerIn: '', scoreA: 0, scoreB: 0 })
-
   // Editable state - Players
   const [editedHomePlayers, setEditedHomePlayers] = useState([])
   const [editedAwayPlayers, setEditedAwayPlayers] = useState([])
-
-  // Editable state - Events (filtered by type)
-  const [allEvents, setAllEvents] = useState([])
-  const [deletedEventIds, setDeletedEventIds] = useState([])
-  const [newEvents, setNewEvents] = useState([])
 
   // Editable state - Officials (with DOB)
   const [editedOfficials, setEditedOfficials] = useState({
@@ -169,16 +144,18 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
     return { match, homeTeam, awayTeam, sets, homePlayers, awayPlayers, events: sortedEvents }
   }, [matchId])
 
-  // Initialize editable state from data
+  // Initialize the Teams / Match info editors ONCE: corrections are written
+  // straight away (the panel) and re-run the live query, which must not wipe
+  // the scorer's unsaved team or match-info edits.
+  const initializedRef = useRef(false)
   useEffect(() => {
-    if (data) {
-      setEditedSets(data.sets.map(s => ({ ...s })))
+    if (data && !initializedRef.current) {
+      initializedRef.current = true
       setEditedMatch({ ...data.match })
       setEditedHomeTeam(data.homeTeam ? { ...data.homeTeam } : null)
       setEditedAwayTeam(data.awayTeam ? { ...data.awayTeam } : null)
       setEditedHomePlayers(data.homePlayers.map(p => ({ ...p })))
       setEditedAwayPlayers(data.awayPlayers.map(p => ({ ...p })))
-      setAllEvents(data.events.map(e => ({ ...e })))
 
       // Initialize bench officials - check match.bench_home/bench_away first, then team.benchOfficials
       const homeBenchData = data.match?.bench_home?.length ? data.match.bench_home : data.homeTeam?.benchOfficials || []
@@ -226,35 +203,6 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
     setChanges(prev => [...prev, change])
     return change
   }, [])
-
-  // An edited "score at time of event": keep the rest of the stored snapshot (it
-  // also carries the full undo state) and update both score spellings it may use
-  // (full snapshots store pointsA/pointsB, manual entries scoreA/scoreB).
-  const mergeEditedScore = (snapshot, scoreA, scoreB) => {
-    const snap = snapshot || {}
-    return {
-      ...snap,
-      scoreA,
-      scoreB,
-      ...('pointsA' in snap ? { pointsA: scoreA } : {}),
-      ...('pointsB' in snap ? { pointsB: scoreB } : {})
-    }
-  }
-
-  // ==================== SET FUNCTIONS ====================
-  const updateSetScore = useCallback((setId, field, value) => {
-    setEditedSets(prev => prev.map(s => {
-      if (s.id === setId) {
-        const oldValue = s[field]
-        const newValue = Math.max(0, parseInt(value, 10) || 0)
-        if (oldValue !== newValue) {
-          recordChange('set', field, oldValue, newValue, `Set ${s.index} ${field}: ${oldValue} → ${newValue}`)
-        }
-        return { ...s, [field]: newValue }
-      }
-      return s
-    }))
-  }, [recordChange])
 
   // ==================== MATCH INFO FUNCTIONS ====================
   const updateMatchInfo = useCallback((field, value) => {
@@ -382,168 +330,6 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
     }
   }, [editedHomeBench, editedAwayBench, recordChange])
 
-  // ==================== EVENT FUNCTIONS ====================
-  const deleteEvent = useCallback((eventId) => {
-    const event = allEvents.find(e => e.id === eventId)
-    if (event) {
-      recordChange('event', 'delete', JSON.stringify(event), null, `Deleted event: ${event.type} (seq: ${event.seq})`)
-      setDeletedEventIds(prev => [...prev, eventId])
-      setAllEvents(prev => prev.filter(e => e.id !== eventId))
-    }
-  }, [allEvents, recordChange])
-
-  const addTimeout = useCallback((team, setIndex, scoreA, scoreB) => {
-    // Max 2 timeouts per team per set (FIVB 15.4), as the live Scoreboard enforces
-    const { legal, reason } = validateManualTimeout(allEvents, team, setIndex)
-    if (!legal) {
-      showAlert(reason, 'error')
-      return false
-    }
-    const newEvent = {
-      id: `new_${Date.now()}`,
-      matchId,
-      type: 'timeout',
-      setIndex,
-      payload: { team },
-      stateSnapshot: { scoreA, scoreB },
-      ts: new Date().toISOString(),
-      seq: Math.max(...allEvents.map(e => e.seq || 0), 0) + 1,
-      isNew: true
-    }
-    recordChange('event', 'add', null, newEvent, `Added ${team} timeout in set ${setIndex}`)
-    setNewEvents(prev => [...prev, newEvent])
-    setAllEvents(prev => [...prev, newEvent].sort((a, b) => (a.seq || 0) - (b.seq || 0)))
-    return true
-  }, [matchId, allEvents, recordChange, showAlert])
-
-  const addSubstitution = useCallback((team, setIndex, playerOut, playerIn, scoreA, scoreB) => {
-    // Enforce substitution legality (FIVB 15.5-15.6) — manual entries previously
-    // bypassed all checks. Pure + unit-tested (domain/substitutions).
-    const { legal, reason } = validateManualSubstitution(allEvents, team, setIndex, playerOut, playerIn)
-    if (!legal) {
-      showAlert(reason, 'error')
-      return false
-    }
-    const newEvent = {
-      id: `new_${Date.now()}`,
-      matchId,
-      type: 'substitution',
-      setIndex,
-      payload: { team, playerOut, playerIn },
-      stateSnapshot: { scoreA, scoreB },
-      ts: new Date().toISOString(),
-      seq: Math.max(...allEvents.map(e => e.seq || 0), 0) + 1,
-      isNew: true
-    }
-    recordChange('event', 'add', null, newEvent, `Added ${team} substitution: #${playerOut} → #${playerIn}`)
-    setNewEvents(prev => [...prev, newEvent])
-    setAllEvents(prev => [...prev, newEvent].sort((a, b) => (a.seq || 0) - (b.seq || 0)))
-    return true
-  }, [matchId, allEvents, recordChange, showAlert])
-
-  const addSanction = useCallback((team, setIndex, sanctionType, playerType, playerNumber, scoreA, scoreB, role = null) => {
-    const newEvent = {
-      id: `new_${Date.now()}`,
-      matchId,
-      type: 'sanction',
-      setIndex,
-      payload: { team, type: sanctionType, sanctionType, playerType, playerNumber, role },
-      stateSnapshot: { scoreA, scoreB },
-      ts: new Date().toISOString(),
-      seq: Math.max(...allEvents.map(e => e.seq || 0), 0) + 1,
-      isNew: true
-    }
-    const targetDesc = playerType === 'player' ? `#${playerNumber}` : (role || playerType)
-    recordChange('event', 'add', null, newEvent, `Added ${sanctionType} to ${team} ${playerType} ${targetDesc}`)
-    setNewEvents(prev => [...prev, newEvent])
-    setAllEvents(prev => [...prev, newEvent].sort((a, b) => (a.seq || 0) - (b.seq || 0)))
-  }, [matchId, allEvents, recordChange])
-
-  // Handle adding sanction from modal
-  const handleAddSanctionSubmit = useCallback(() => {
-    if (!showAddSanction) return
-    const { team, playerNumber, playerType, role } = showAddSanction
-    const { type, setIndex, scoreA, scoreB } = newSanctionData
-    addSanction(team, setIndex, type, playerType, playerNumber, scoreA, scoreB, role)
-    setShowAddSanction(null)
-    setNewSanctionData({ type: 'warning', setIndex: 1, scoreA: 0, scoreB: 0 })
-  }, [showAddSanction, newSanctionData, addSanction])
-
-  // Handle editing sanction
-  const handleEditSanctionSubmit = useCallback(() => {
-    if (!editingSanction) return
-    setAllEvents(prev => prev.map(e => {
-      if (e.id === editingSanction.id) {
-        const newPayload = { ...e.payload, type: editingSanction.type, sanctionType: editingSanction.type }
-        // Merge: the stored snapshot also carries the full undo state
-        const newSnapshot = mergeEditedScore(e.stateSnapshot, editingSanction.scoreA, editingSanction.scoreB)
-        recordChange('event', 'sanction', JSON.stringify(e), JSON.stringify({ ...e, payload: newPayload, setIndex: editingSanction.setIndex, stateSnapshot: newSnapshot }), `Modified sanction`)
-        return { ...e, payload: newPayload, setIndex: editingSanction.setIndex, stateSnapshot: newSnapshot, isModified: true }
-      }
-      return e
-    }))
-    setEditingSanction(null)
-  }, [editingSanction, recordChange])
-
-  // Handle adding timeout from modal
-  const handleAddTimeoutSubmit = useCallback(() => {
-    const { team, setIndex, scoreA, scoreB } = newTimeoutData
-    const ok = addTimeout(team, setIndex, scoreA, scoreB)
-    if (ok === false) return // limit reached — keep the modal open
-    setShowAddTimeout(false)
-    setNewTimeoutData({ team: 'home', setIndex: 1, scoreA: 0, scoreB: 0 })
-  }, [newTimeoutData, addTimeout])
-
-  // Handle adding substitution from modal
-  const handleAddSubSubmit = useCallback(() => {
-    const { team, setIndex, playerOut, playerIn, scoreA, scoreB } = newSubData
-    if (!playerOut || !playerIn) return
-    const ok = addSubstitution(team, setIndex, parseInt(playerOut, 10), parseInt(playerIn, 10), scoreA, scoreB)
-    if (ok === false) return // illegal — keep the modal open so the scorer can correct
-    setShowAddSub(false)
-    setNewSubData({ team: 'home', setIndex: 1, playerOut: '', playerIn: '', scoreA: 0, scoreB: 0 })
-  }, [newSubData, addSubstitution])
-
-  // Handle editing substitution
-  const handleEditSubSubmit = useCallback(() => {
-    if (!editingSub) return
-    // Same legality check as a new substitution, judged against the other subs
-    const original = allEvents.find(e => e.id === editingSub.id)
-    const otherEvents = allEvents.filter(e => e.id !== editingSub.id && !deletedEventIds.includes(e.id))
-    const { legal, reason } = validateManualSubstitution(
-      otherEvents, original?.payload?.team, editingSub.setIndex,
-      parseInt(editingSub.playerOut, 10), parseInt(editingSub.playerIn, 10)
-    )
-    if (!legal) {
-      showAlert(reason, 'error')
-      return
-    }
-    setAllEvents(prev => prev.map(e => {
-      if (e.id === editingSub.id) {
-        const newPayload = { ...e.payload, playerOut: parseInt(editingSub.playerOut, 10), playerIn: parseInt(editingSub.playerIn, 10) }
-        // Merge: the stored snapshot also carries the full undo state
-        const newSnapshot = mergeEditedScore(e.stateSnapshot, editingSub.scoreA, editingSub.scoreB)
-        recordChange('event', 'substitution', JSON.stringify(e), JSON.stringify({ ...e, payload: newPayload, setIndex: editingSub.setIndex, stateSnapshot: newSnapshot }), `Modified substitution`)
-        return { ...e, payload: newPayload, setIndex: editingSub.setIndex, stateSnapshot: newSnapshot, isModified: true }
-      }
-      return e
-    }))
-    setEditingSub(null)
-  }, [editingSub, allEvents, deletedEventIds, recordChange, showAlert])
-
-  const updateEventPayload = useCallback((eventId, field, value) => {
-    setAllEvents(prev => prev.map(e => {
-      if (e.id === eventId) {
-        const oldValue = e.payload?.[field]
-        if (oldValue !== value) {
-          recordChange('event', field, oldValue, value, `Event ${e.type} ${field}: ${oldValue} → ${value}`)
-        }
-        return { ...e, payload: { ...e.payload, [field]: value }, isModified: true }
-      }
-      return e
-    }))
-  }, [recordChange])
-
   // ==================== OFFICIALS FUNCTIONS ====================
   const updateOfficial = useCallback((role, field, value) => {
     setEditedOfficials(prev => {
@@ -564,26 +350,17 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
     setSaving(true)
     try {
-      // What the officials approved: the finished sets and the team names.
+      // What the officials approved: the team names (set scores are only
+      // changed through Corrections, which handles signatures itself).
       // Taken before the writes below re-run the live query.
       const originalSets = data?.sets || []
-      const setChanges = changedSets(originalSets, editedSets)
       const sheetChanged = approvedSheetChanged({
         originalSets,
-        editedSets,
+        editedSets: originalSets,
         originalTeams: [data?.homeTeam, data?.awayTeam],
         editedTeams: [editedHomeTeam, editedAwayTeam]
       })
       const priorApprovals = Object.values(data?.match?.accountApprovals || {}).filter(r => r?.id)
-
-      // Update sets in IndexedDB
-      for (const set of editedSets) {
-        await db.sets.update(set.id, {
-          homePoints: set.homePoints,
-          awayPoints: set.awayPoints,
-          finished: set.finished
-        })
-      }
 
       // Update teams in IndexedDB (including bench officials)
       if (editedHomeTeam?.id) {
@@ -605,14 +382,15 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
       // Update match in IndexedDB (including bench officials on match record)
       if (editedMatch) {
-        const existingChanges = editedMatch.manualChanges || []
+        // The log as stored now: corrections may have added entries since
+        // this page opened
+        const existingChanges = (await db.matches.get(matchId))?.manualChanges || []
         await db.matches.update(matchId, {
           hall: editedMatch.hall,
           city: editedMatch.city,
           league: editedMatch.league,
           championshipType: editedMatch.championshipType,
           gameN: editedMatch.gameN,
-          status: editedMatch.status,
           scheduledAt: editedMatch.scheduledAt,
           match_type_2: editedMatch.match_type_2,
           coinTossTeamA: editedMatch.coinTossTeamA,
@@ -665,37 +443,6 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         await db.players.delete(playerId)
       }
 
-      // Delete removed events
-      for (const eventId of deletedEventIds) {
-        if (!String(eventId).startsWith('new_')) {
-          await db.events.delete(eventId)
-        }
-      }
-
-      // Add new events
-      for (const event of newEvents) {
-        await db.events.add({
-          matchId: event.matchId,
-          type: event.type,
-          setIndex: event.setIndex,
-          payload: event.payload,
-          stateSnapshot: event.stateSnapshot,
-          ts: event.ts,
-          seq: event.seq
-        })
-      }
-
-      // Update modified events (set and score edits too, as recorded in the audit log)
-      for (const event of allEvents) {
-        if (event.isModified && !String(event.id).startsWith('new_')) {
-          await db.events.update(event.id, {
-            payload: event.payload,
-            setIndex: event.setIndex,
-            stateSnapshot: event.stateSnapshot
-          })
-        }
-      }
-
       // The result or the teams changed: the post-match signatures and the
       // account approvals certified the old sheet. They go, as with "Reopen
       // last set"; online, the server approvals are undone as well (they would
@@ -705,14 +452,6 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         if (priorApprovals.length && !data?.match?.closed_at && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
           await Promise.allSettled(priorApprovals.map(r => approvalsApi.undo(r.id)))
         }
-      }
-
-      // Corrected set scores go to the server through the sync queue (the
-      // server's sets are what an account approval binds to)
-      const seedKey = editedMatch?.seed_key || data?.match?.seed_key
-      if (seedKey && data?.match?.test !== true && setChanges.length) {
-        for (const job of setScoreSyncJobs(seedKey, setChanges)) await db.sync_queue.add(job)
-        try { window.dispatchEvent(new Event('sync-queue-write')) } catch { /* no window */ }
       }
 
       // Sync to Supabase if available
@@ -744,7 +483,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
     try {
       // Build set results for Supabase
-      const setResults = editedSets.map(s => ({
+      const setResults = (data?.sets || []).map(s => ({
         index: s.index,
         home_points: s.homePoints,
         away_points: s.awayPoints,
@@ -805,7 +544,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
               first_serve: editedMatch.firstServe || (editedMatch.coinTossServeA ? editedMatch.coinTossTeamA : editedMatch.coinTossTeamB)
             }
           } : {}),
-          manual_changes: [...(editedMatch.manualChanges || []), ...changes]
+          manual_changes: [...((await db.matches.get(matchId))?.manualChanges || [])]
         })
         .eq('external_id', editedMatch.seed_key)
 
@@ -821,20 +560,6 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   }
 
   // ==================== RENDER HELPERS ====================
-  const getEventsByType = (type) => allEvents.filter(e => e.type === type && !deletedEventIds.includes(e.id))
-  const timeoutEvents = getEventsByType('timeout')
-  const substitutionEvents = getEventsByType('substitution')
-  const sanctionEvents = getEventsByType('sanction')
-
-  // Get sanctions for a specific player
-  const getPlayerSanctions = (playerNumber, team) => {
-    return sanctionEvents.filter(e =>
-      e.payload?.playerNumber === playerNumber &&
-      e.payload?.team === team &&
-      e.payload?.playerType === 'player'
-    )
-  }
-
   if (!data) {
     return (
       <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text)' }}>
@@ -844,11 +569,46 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   }
 
   const tabs = [
-    { id: 'scores', label: t('manualAdjustmentsEditor.tabScores', 'Scores'), helpId: 'manual-scores-tab' },
+    { id: 'corrections', label: t('corrections.title', 'Corrections'), helpId: 'manual-corrections-tab' },
     { id: 'teams', label: t('manualAdjustmentsEditor.tabTeams', 'Teams'), helpId: 'manual-teams-tab' },
-    { id: 'events', label: t('manualAdjustmentsEditor.tabEvents', 'Timeouts & subs'), helpId: 'manual-events-tab' },
     { id: 'info', label: t('manualAdjustmentsEditor.tabInfo', 'Match info') }
   ]
+  // An approved / final match is read-only here: reopen it at the match end first
+  const closed = ['approved', 'final'].includes(data.match?.status)
+
+  // Teams and Match info are saved together with "Save changes"; leaving
+  // with unsaved edits asks first (corrections are saved one by one)
+  const handleClose = async () => {
+    if (changes.length > 0) {
+      const ok = await confirmDialog({
+        title: t('corrections.confirm.discardTitle', 'Discard unsaved changes?'),
+        message: t('corrections.confirm.discard', 'The changes in Teams and Match info are not saved yet.'),
+        confirmLabel: t('corrections.action.discard', 'Discard'),
+        cancelLabel: t('corrections.action.cancel', 'Cancel'),
+        tone: 'danger'
+      })
+      if (!ok) return
+    }
+    onClose?.()
+  }
+
+  // After a correction at the match end: the result changed, so the account
+  // approvals (scorer, referees) are undone on the server as well, as Reopen
+  // last set does; the local copy was cleared with the signatures.
+  const afterCorrection = async (result) => {
+    if (!result?.signaturesCleared) return
+    const prior = Object.values(data?.match?.accountApprovals || {}).filter(r => r?.id)
+    if (prior.length && !data?.match?.closed_at && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+      await Promise.allSettled(prior.map(r => approvalsApi.undo(r.id)))
+    }
+  }
+  const notifyScoresheet = () => {
+    try {
+      const channel = new BroadcastChannel('escoresheet-updates')
+      channel.postMessage({ type: 'MANUAL_ADJUSTMENT', matchId, reason: 'correction' })
+      channel.close()
+    } catch { /* BroadcastChannel not supported */ }
+  }
 
   // volleyui (RESTYLE-SPEC P3b). This editor is almost all shared inline
   // style objects, so the kit recipes are applied here, through the --ov-*
@@ -896,10 +656,6 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   // Row tools are h-8 with a 44px hit area.
   const KIT_SCOPE = 'ov-kit contents'
   const ROW_TOOL = 'relative after:absolute after:-inset-1.5'
-  // Dialog shell: stone-900/60 + blur overlay, white rounded-2xl panel.
-  const OVERLAY_CLASS = 'bg-stone-900/60 backdrop-blur-sm'
-  const PANEL_CLASS = 'bg-white rounded-2xl shadow-2xl border border-stone-200/70'
-  const DIALOG_TITLE_CLASS = 'text-lg font-bold text-stone-900'
   // Section titles inside the cards: kit card heading (text-sm semibold).
   const cardTitleStyle = { fontSize: '15px', fontWeight: 600, margin: '0 0 16px', color: 'var(--ov-text)' }
 
@@ -916,44 +672,42 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
       zIndex: 1000
     }}>
       {/* Header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '12px 24px',
-        borderBottom: '1px solid var(--ov-hairline-soft)',
-        background: 'var(--ov-card)'
-      }}>
+      <div
+        className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3"
+        style={{ borderBottom: '1px solid var(--ov-hairline-soft)', background: 'var(--ov-card)' }}
+      >
         <h1 className="text-xl font-bold tracking-tight text-stone-900" style={{ margin: 0 }}>
-          {t('manualAdjustmentsEditor.title', 'Manual adjustments')}
+          {t('corrections.pageTitle', 'Corrections')}
         </h1>
         <div className="ov-kit" style={{ display: 'flex', gap: '12px' }}>
-          <Button variant="secondary" size="xl" className="px-5 font-medium" onClick={onClose}>
-            {t('common.cancel', 'Cancel')}
+          <Button variant="secondary" size="xl" className="px-5 font-medium" onClick={handleClose}>
+            {t('corrections.action.close', 'Close')}
           </Button>
-          {/* Nothing to save yet: the kit disabled fill (stone-300), not white on white. */}
-          <Button
-            variant="positive"
-            size="xl"
-            className="px-5 disabled:cursor-not-allowed disabled:bg-stone-300 disabled:opacity-100"
-            onClick={handleSave}
-            disabled={saving || changes.length === 0}
-            data-help-id="manual-save-button"
-          >
-            {saving ? t('common.saving', 'Saving...') : t('common.save', 'Save')} {changes.length > 0 && `(${changes.length})`}
-          </Button>
+          {/* Teams and Match info only: corrections are saved one by one.
+              Nothing to save yet: the kit disabled fill (stone-300). */}
+          {activeTab !== 'corrections' && (
+            <Button
+              variant="positive"
+              size="xl"
+              className="px-5 disabled:cursor-not-allowed disabled:bg-stone-300 disabled:opacity-100"
+              onClick={handleSave}
+              disabled={saving || changes.length === 0 || closed}
+              data-help-id="manual-save-button"
+            >
+              {saving ? t('common.saving', 'Saving...') : t('corrections.action.saveChanges', 'Save changes')} {changes.length > 0 && `(${changes.length})`}
+            </Button>
+          )}
         </div>
       </div>
 
       {/* Tabs */}
       {/* Section switch: the kit track segmented control (white raised
           segment on a stone track; selection is never red or blue). */}
-      <div style={{
-        padding: '12px 24px',
-        borderBottom: '1px solid var(--ov-hairline-soft)',
-        background: 'var(--ov-card)'
-      }}>
-      <div role="group" aria-label={t('manualAdjustmentsEditor.title', 'Manual adjustments')} className="inline-flex flex-wrap gap-1 rounded-xl bg-stone-100 p-1">
+      <div
+        className="px-4 sm:px-6 py-3"
+        style={{ borderBottom: '1px solid var(--ov-hairline-soft)', background: 'var(--ov-card)' }}
+      >
+      <div role="group" aria-label={t('corrections.pageTitle', 'Corrections')} className="inline-flex flex-wrap gap-1 rounded-xl bg-stone-100 p-1">
         {tabs.map(tab => (
           <button
             key={tab.id}
@@ -970,75 +724,23 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
       </div>
 
       {/* Content */}
-      <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
-        {/* ==================== SCORES TAB ==================== */}
-        {activeTab === 'scores' && (
-          <div>
-            <h2 style={{ ...cardTitleStyle, fontSize: '17px' }}>
-              {t('manualAdjustmentsEditor.setScores', 'Set scores')}
-            </h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {editedSets.map(set => (
-                <div
-                  key={set.id}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '80px 1fr 60px 1fr 100px',
-                    gap: '12px',
-                    alignItems: 'center',
-                    ...cardStyle
-                  }}
-                >
-                  <div style={{ fontWeight: 600 }}>{t('common.setIndex', { index: set.index })}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ color: 'var(--muted)', minWidth: '80px' }}>
-                      {editedHomeTeam?.name || t('common.home')}:
-                    </span>
-                    <input
-                      type="number"
-                      value={set.homePoints}
-                      onChange={(e) => updateSetScore(set.id, 'homePoints', e.target.value)}
-                      aria-label={`${editedHomeTeam?.name || t('common.home')} ${t('manualAdjustmentsEditor.points', 'points')}`}
-                      style={{ ...inputStyle, width: '80px', textAlign: 'center', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}
-                    />
-                  </div>
-                  <div style={{ textAlign: 'center', color: 'var(--muted)' }}>vs</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ color: 'var(--muted)', minWidth: '80px' }}>
-                      {editedAwayTeam?.name || t('common.away')}:
-                    </span>
-                    <input
-                      type="number"
-                      value={set.awayPoints}
-                      onChange={(e) => updateSetScore(set.id, 'awayPoints', e.target.value)}
-                      aria-label={`${editedAwayTeam?.name || t('common.away')} ${t('manualAdjustmentsEditor.points', 'points')}`}
-                      style={{ ...inputStyle, width: '80px', textAlign: 'center', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}
-                    />
-                  </div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={set.finished}
-                      onChange={(e) => {
-                        setEditedSets(prev => prev.map(s => {
-                          if (s.id === set.id) {
-                            const oldValue = s.finished
-                            if (oldValue !== e.target.checked) {
-                              recordChange('set', 'finished', oldValue, e.target.checked, `Set ${s.index} finished: ${oldValue} → ${e.target.checked}`)
-                            }
-                            return { ...s, finished: e.target.checked }
-                          }
-                          return s
-                        }))
-                      }}
-                      style={{ width: '18px', height: '18px' }}
-                    />
-                    <span style={{ fontSize: '13px', color: 'var(--ov-text-secondary)' }}>{t('manualAdjustmentsEditor.finished', 'Finished')}</span>
-                  </label>
-                </div>
-              ))}
-            </div>
-          </div>
+      <div className="p-4 sm:p-6" style={{ maxWidth: activeTab === 'corrections' ? '960px' : '1400px', margin: '0 auto' }}>
+        {/* ==================== CORRECTIONS TAB ==================== */}
+        {activeTab === 'corrections' && (
+          <CorrectionsPanel
+            mode="review"
+            matchId={matchId}
+            events={data.events}
+            match={data.match}
+            sets={data.sets}
+            homeTeam={data.homeTeam}
+            awayTeam={data.awayTeam}
+            homePlayers={data.homePlayers}
+            awayPlayers={data.awayPlayers}
+            readOnly={closed}
+            onReopenForCorrections={closed ? handleClose : undefined}
+            hooks={{ notifyScoresheetUpdate: notifyScoresheet, afterApply: afterCorrection }}
+          />
         )}
 
         {/* ==================== TEAMS & PLAYERS TAB ==================== */}
@@ -1162,98 +864,6 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           </div>
         )}
 
-        {/* ==================== TIMEOUTS & SUBS TAB ==================== */}
-        {activeTab === 'events' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-            {/* Timeouts Section */}
-            <div style={cardStyle}>
-              <h2 style={cardTitleStyle}>
-                {t('manualAdjustmentsEditor.timeouts', 'Timeouts')} ({timeoutEvents.length})
-              </h2>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto' }}>
-                {timeoutEvents.map(event => (
-                  <div key={event.id} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px 40px', gap: '8px', alignItems: 'center', padding: '8px 10px', background: 'var(--ov-warning-soft)', border: '1px solid var(--ov-warning-border)', borderRadius: 'var(--ov-radius)' }}>
-                    <span style={{ fontSize: '13px' }}>{t('common.setIndex', { index: event.setIndex })}</span>
-                    <span style={{ fontSize: '13px', fontWeight: 500 }}>{event.payload?.team === 'home' ? editedHomeTeam?.name || t('common.home') : editedAwayTeam?.name || t('common.away')}</span>
-                    <span style={{ fontSize: '12px', color: 'var(--ov-text-muted)', fontVariantNumeric: 'tabular-nums' }}>
-                      {event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0}-{event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0}
-                    </span>
-                    <span className={KIT_SCOPE}><Button variant="danger-soft" size="sm" icon={X} className={`${ROW_TOOL} w-8 px-0`} onClick={() => deleteEvent(event.id)} aria-label={t('manualAdjustmentsEditor.deleteTimeout', 'Delete timeout')} /></span>
-                  </div>
-                ))}
-              </div>
-              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--ov-hairline)' }}>
-                <span className={KIT_SCOPE}><Button variant="dark" size="xl" onClick={() => setShowAddTimeout(true)}>
-                  {t('manualAdjustmentsEditor.addTimeout', '+ Add timeout')}
-                </Button></span>
-              </div>
-            </div>
-
-            {/* Substitutions Section */}
-            <div style={cardStyle}>
-              <h2 style={cardTitleStyle}>
-                {t('manualAdjustmentsEditor.substitutions', 'Substitutions')} ({substitutionEvents.length})
-              </h2>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto' }}>
-                {substitutionEvents.map(event => (
-                  <div
-                    key={event.id}
-                    style={{ display: 'grid', gridTemplateColumns: '80px 1fr 120px 80px 40px 40px', gap: '8px', alignItems: 'center', padding: '8px 10px', background: 'var(--ov-info-soft)', border: '1px solid var(--ov-info-border)', borderRadius: 'var(--ov-radius)', cursor: 'pointer' }}
-                    onClick={() => setEditingSub({ ...event, playerOut: event.payload?.playerOut, playerIn: event.payload?.playerIn, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 })}
-                  >
-                    <span style={{ fontSize: '13px' }}>{t('common.setIndex', { index: event.setIndex })}</span>
-                    <span style={{ fontSize: '13px', fontWeight: 500 }}>{event.payload?.team === 'home' ? editedHomeTeam?.name || t('common.home') : editedAwayTeam?.name || t('common.away')}</span>
-                    <span style={{ fontSize: '13px' }}>
-                      #{event.payload?.playerOut} → #{event.payload?.playerIn}
-                    </span>
-                    <span style={{ fontSize: '12px', color: 'var(--ov-text-muted)', fontVariantNumeric: 'tabular-nums' }}>
-                      {event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0}-{event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0}
-                    </span>
-                    <span className={KIT_SCOPE}><Button variant="secondary" size="sm" className={ROW_TOOL} onClick={(e) => { e.stopPropagation(); setEditingSub({ ...event, playerOut: event.payload?.playerOut, playerIn: event.payload?.playerIn, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 }) }}>{t('manualAdjustmentsEditor.edit', 'Edit')}</Button></span>
-                    <span className={KIT_SCOPE}><Button variant="danger-soft" size="sm" icon={X} className={`${ROW_TOOL} w-8 px-0`} onClick={(e) => { e.stopPropagation(); deleteEvent(event.id) }} aria-label={t('manualAdjustmentsEditor.deleteSubstitution', 'Delete substitution')} /></span>
-                  </div>
-                ))}
-              </div>
-              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--ov-hairline)' }}>
-                <span className={KIT_SCOPE}><Button variant="dark" size="xl" onClick={() => setShowAddSub(true)}>
-                  {t('manualAdjustmentsEditor.addSubstitution', '+ Add substitution')}
-                </Button></span>
-              </div>
-            </div>
-
-            {/* Sanctions Section */}
-            <div style={{ ...cardStyle, gridColumn: 'span 2' }}>
-              <h2 style={cardTitleStyle}>
-                {t('manualAdjustmentsEditor.allSanctions', 'All sanctions')} ({sanctionEvents.length})
-              </h2>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '300px', overflowY: 'auto' }}>
-                {sanctionEvents.map(event => (
-                  <div
-                    key={event.id}
-                    style={{ display: 'grid', gridTemplateColumns: '80px 80px 120px 100px 100px 1fr 40px 40px', gap: '8px', alignItems: 'center', padding: '8px 10px', background: 'var(--ov-danger-soft)', border: '1px solid var(--ov-danger-border)', borderRadius: 'var(--ov-radius)', cursor: 'pointer' }}
-                    onClick={() => setEditingSanction({ ...event, type: event.payload?.sanctionType || event.payload?.type, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 })}
-                  >
-                    <span style={{ fontSize: '13px' }}>{t('common.setIndex', { index: event.setIndex })}</span>
-                    <span style={{ fontSize: '13px', fontWeight: 500 }}>{event.payload?.team === 'home' ? editedHomeTeam?.name || t('common.home') : editedAwayTeam?.name || t('common.away')}</span>
-                    <span style={{ fontSize: '13px', textTransform: 'capitalize', color: 'var(--ov-danger-text)', fontWeight: 500 }}>
-                      {event.payload?.sanctionType || event.payload?.type}
-                    </span>
-                    <span style={{ fontSize: '13px' }}>
-                      {event.payload?.playerType}: #{event.payload?.playerNumber}
-                    </span>
-                    <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
-                      Score: {event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0}-{event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0}
-                    </span>
-                    <span />
-                    <span className={KIT_SCOPE}><Button variant="secondary" size="sm" className={ROW_TOOL} onClick={(e) => { e.stopPropagation(); setEditingSanction({ ...event, type: event.payload?.sanctionType || event.payload?.type, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 }) }}>{t('manualAdjustmentsEditor.edit', 'Edit')}</Button></span>
-                    <span className={KIT_SCOPE}><Button variant="danger-soft" size="sm" icon={X} className={`${ROW_TOOL} w-8 px-0`} onClick={(e) => { e.stopPropagation(); deleteEvent(event.id) }} aria-label={t('manualAdjustmentsEditor.deleteSanction', 'Delete sanction')} /></span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* ==================== MATCH INFO TAB ==================== */}
         {activeTab === 'info' && editedMatch && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
@@ -1312,21 +922,6 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     aria-label={t('manualAdjustmentsEditor.gameNumber', 'Game number')}
                     style={{ ...inputStyle, width: '100%' }}
                   />
-                </div>
-                <div>
-                  <label style={labelStyle}>{t('manualAdjustmentsEditor.status', 'Status')}</label>
-                  <select
-                    value={editedMatch.status || 'ended'}
-                    onChange={(e) => updateMatchInfo('status', e.target.value)}
-                    aria-label={t('manualAdjustmentsEditor.status', 'Status')}
-                    style={{ ...inputStyle, width: '100%' }}
-                  >
-                    <option value="setup">{t('manualAdjustmentsEditor.statusSetup', 'Setup')}</option>
-                    <option value="live">{t('manualAdjustmentsEditor.statusLive', 'Live')}</option>
-                    <option value="ended">{t('manualAdjustmentsEditor.statusEnded', 'Ended')}</option>
-                    <option value="approved">{t('manualAdjustmentsEditor.statusApproved', 'Approved')}</option>
-                    <option value="final">{t('manualAdjustmentsEditor.statusFinal', 'Final')}</option>
-                  </select>
                 </div>
                 <div>
                   <label style={labelStyle}>{t('manualAdjustmentsEditor.matchTypeGender', 'Match type (gender)')}</label>
@@ -1516,557 +1111,6 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           </div>
         )}
       </div>
-
-      {/* Add Sanction Modal */}
-      {showAddSanction && (
-        <div className={OVERLAY_CLASS} style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          padding: '16px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 2000
-        }}>
-          <div className={PANEL_CLASS} style={{
-            padding: '24px',
-            minWidth: 'min(400px, 100%)',
-            maxHeight: '85vh',
-            overflowY: 'auto'
-          }}>
-            <h3 className={DIALOG_TITLE_CLASS} style={{ margin: '0 0 20px 0' }}>
-              {t('manualAdjustmentsEditor.addSanction', 'Add sanction')}
-            </h3>
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{ fontSize: '13px', color: 'var(--ov-text-secondary)', marginBottom: '4px' }}>
-                {t('manualAdjustmentsEditor.target', 'Target')}: {showAddSanction.team === 'home' ? editedHomeTeam?.name : editedAwayTeam?.name}
-                {showAddSanction.playerType === 'player' && ` - ${t('manualAdjustmentsEditor.player', 'Player')} #${showAddSanction.playerNumber}`}
-                {showAddSanction.playerType === 'bench_official' && ` - ${showAddSanction.role}`}
-              </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.sanctionType', 'Sanction type')}</label>
-                <select
-                  value={newSanctionData.type}
-                  onChange={(e) => setNewSanctionData(prev => ({ ...prev, type: e.target.value }))}
-                  aria-label={t('manualAdjustmentsEditor.sanctionType', 'Sanction type')}
-                  style={{ ...inputStyle, width: '100%' }}
-                >
-                  <option value="warning">{t('manualAdjustmentsEditor.warningYellow', 'Warning (yellow)')}</option>
-                  <option value="penalty">{t('manualAdjustmentsEditor.penaltyRed', 'Penalty (red)')}</option>
-                  <option value="expulsion">{t('manualAdjustmentsEditor.expulsionRedYellow', 'Expulsion (red+yellow)')}</option>
-                  <option value="disqualification">{t('manualAdjustmentsEditor.disqualificationRedYellow', 'Disqualification (red+yellow)')}</option>
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.set', 'Set')}</label>
-                <select
-                  value={newSanctionData.setIndex}
-                  onChange={(e) => setNewSanctionData(prev => ({ ...prev, setIndex: parseInt(e.target.value, 10) }))}
-                  aria-label={t('manualAdjustmentsEditor.set', 'Set')}
-                  style={{ ...inputStyle, width: '100%' }}
-                >
-                  {editedSets.map(s => (
-                    <option key={s.index} value={s.index}>{t('common.setIndex', { index: s.index })}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.scoreA', 'Score A')}</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="99"
-                  value={newSanctionData.scoreA}
-                  onChange={(e) => setNewSanctionData(prev => ({ ...prev, scoreA: parseInt(e.target.value, 10) || 0 }))}
-                  aria-label={t('manualAdjustmentsEditor.scoreA', 'Score A')}
-                  style={{ ...inputStyle, width: '100%' }}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.scoreB', 'Score B')}</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="99"
-                  value={newSanctionData.scoreB}
-                  onChange={(e) => setNewSanctionData(prev => ({ ...prev, scoreB: parseInt(e.target.value, 10) || 0 }))}
-                  aria-label={t('manualAdjustmentsEditor.scoreB', 'Score B')}
-                  style={{ ...inputStyle, width: '100%' }}
-                />
-              </div>
-            </div>
-            <div className="ov-kit" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <Button
-                variant="secondary"
-                size="xl"
-                className="px-5 font-medium"
-                onClick={() => {
-                  setShowAddSanction(null)
-                  setNewSanctionData({ type: 'warning', setIndex: 1, scoreA: 0, scoreB: 0 })
-                }}
-              >
-                {t('common.cancel', 'Cancel')}
-              </Button>
-              <Button
-                variant="positive"
-                size="xl"
-                className="px-5"
-                onClick={handleAddSanctionSubmit}
-              >
-                {t('manualAdjustmentsEditor.addSanction', 'Add sanction')}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Sanction Modal */}
-      {editingSanction && (
-        <div className={OVERLAY_CLASS} style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          padding: '16px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 2000
-        }}>
-          <div className={PANEL_CLASS} style={{
-            padding: '24px',
-            minWidth: 'min(400px, 100%)',
-            maxHeight: '85vh',
-            overflowY: 'auto'
-          }}>
-            <h3 className={DIALOG_TITLE_CLASS} style={{ margin: '0 0 20px 0' }}>
-              {t('manualAdjustmentsEditor.editSanction', 'Edit sanction')}
-            </h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.sanctionType', 'Sanction type')}</label>
-                <select
-                  value={editingSanction.type || 'warning'}
-                  onChange={(e) => setEditingSanction(prev => ({ ...prev, type: e.target.value }))}
-                  aria-label={t('manualAdjustmentsEditor.sanctionType', 'Sanction type')}
-                  style={{ ...inputStyle, width: '100%' }}
-                >
-                  <option value="warning">{t('manualAdjustmentsEditor.warningYellow', 'Warning (yellow)')}</option>
-                  <option value="penalty">{t('manualAdjustmentsEditor.penaltyRed', 'Penalty (red)')}</option>
-                  <option value="expulsion">{t('manualAdjustmentsEditor.expulsionRedYellow', 'Expulsion (red+yellow)')}</option>
-                  <option value="disqualification">{t('manualAdjustmentsEditor.disqualificationRedYellow', 'Disqualification (red+yellow)')}</option>
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.set', 'Set')}</label>
-                <select
-                  value={editingSanction.setIndex}
-                  onChange={(e) => setEditingSanction(prev => ({ ...prev, setIndex: parseInt(e.target.value, 10) }))}
-                  aria-label={t('manualAdjustmentsEditor.set', 'Set')}
-                  style={{ ...inputStyle, width: '100%' }}
-                >
-                  {editedSets.map(s => (
-                    <option key={s.index} value={s.index}>{t('common.setIndex', { index: s.index })}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.scoreA', 'Score A')}</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="99"
-                  value={editingSanction.scoreA || 0}
-                  onChange={(e) => setEditingSanction(prev => ({ ...prev, scoreA: parseInt(e.target.value, 10) || 0 }))}
-                  aria-label={t('manualAdjustmentsEditor.scoreA', 'Score A')}
-                  style={{ ...inputStyle, width: '100%' }}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.scoreB', 'Score B')}</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="99"
-                  value={editingSanction.scoreB || 0}
-                  onChange={(e) => setEditingSanction(prev => ({ ...prev, scoreB: parseInt(e.target.value, 10) || 0 }))}
-                  aria-label={t('manualAdjustmentsEditor.scoreB', 'Score B')}
-                  style={{ ...inputStyle, width: '100%' }}
-                />
-              </div>
-            </div>
-            <div className="ov-kit" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <Button
-                variant="secondary"
-                size="xl"
-                className="px-5 font-medium"
-                onClick={() => setEditingSanction(null)}
-              >
-                {t('common.cancel', 'Cancel')}
-              </Button>
-              <Button
-                variant="positive"
-                size="xl"
-                className="px-5"
-                onClick={handleEditSanctionSubmit}
-              >
-                {t('manualAdjustmentsEditor.saveChanges', 'Save changes')}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Add Timeout Modal */}
-      {showAddTimeout && (
-        <div className={OVERLAY_CLASS} style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          padding: '16px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 2000
-        }}>
-          <div className={PANEL_CLASS} style={{
-            padding: '24px',
-            minWidth: 'min(400px, 100%)',
-            maxHeight: '85vh',
-            overflowY: 'auto'
-          }}>
-            <h3 className={DIALOG_TITLE_CLASS} style={{ margin: '0 0 20px 0' }}>
-              {t('manualAdjustmentsEditor.addTimeoutTitle', 'Add timeout')}
-            </h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.team', 'Team')}</label>
-                <select
-                  value={newTimeoutData.team}
-                  onChange={(e) => setNewTimeoutData(prev => ({ ...prev, team: e.target.value }))}
-                  aria-label={t('manualAdjustmentsEditor.team', 'Team')}
-                  style={{ ...inputStyle, width: '100%' }}
-                >
-                  <option value="home">{editedHomeTeam?.name || t('common.home')}</option>
-                  <option value="away">{editedAwayTeam?.name || t('common.away')}</option>
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.set', 'Set')}</label>
-                <select
-                  value={newTimeoutData.setIndex}
-                  onChange={(e) => setNewTimeoutData(prev => ({ ...prev, setIndex: parseInt(e.target.value, 10) }))}
-                  aria-label={t('manualAdjustmentsEditor.set', 'Set')}
-                  style={{ ...inputStyle, width: '100%' }}
-                >
-                  {editedSets.map(s => (
-                    <option key={s.index} value={s.index}>{t('common.setIndex', { index: s.index })}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.scoreA', 'Score A')}</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="99"
-                  value={newTimeoutData.scoreA}
-                  onChange={(e) => setNewTimeoutData(prev => ({ ...prev, scoreA: parseInt(e.target.value, 10) || 0 }))}
-                  aria-label={t('manualAdjustmentsEditor.scoreA', 'Score A')}
-                  style={{ ...inputStyle, width: '100%' }}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.scoreB', 'Score B')}</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="99"
-                  value={newTimeoutData.scoreB}
-                  onChange={(e) => setNewTimeoutData(prev => ({ ...prev, scoreB: parseInt(e.target.value, 10) || 0 }))}
-                  aria-label={t('manualAdjustmentsEditor.scoreB', 'Score B')}
-                  style={{ ...inputStyle, width: '100%' }}
-                />
-              </div>
-            </div>
-            <div className="ov-kit" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <Button
-                variant="secondary"
-                size="xl"
-                className="px-5 font-medium"
-                onClick={() => {
-                  setShowAddTimeout(false)
-                  setNewTimeoutData({ team: 'home', setIndex: 1, scoreA: 0, scoreB: 0 })
-                }}
-              >
-                {t('common.cancel', 'Cancel')}
-              </Button>
-              <Button
-                variant="positive"
-                size="xl"
-                className="px-5"
-                onClick={handleAddTimeoutSubmit}
-              >
-                {t('manualAdjustmentsEditor.addTimeoutTitle', 'Add timeout')}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Add Substitution Modal */}
-      {showAddSub && (
-        <div className={OVERLAY_CLASS} style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          padding: '16px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 2000
-        }}>
-          <div className={PANEL_CLASS} style={{
-            padding: '24px',
-            minWidth: 'min(450px, 100%)',
-            maxHeight: '85vh',
-            overflowY: 'auto'
-          }}>
-            <h3 className={DIALOG_TITLE_CLASS} style={{ margin: '0 0 20px 0' }}>
-              {t('manualAdjustmentsEditor.addSubstitutionTitle', 'Add substitution')}
-            </h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.team', 'Team')}</label>
-                <select
-                  value={newSubData.team}
-                  onChange={(e) => setNewSubData(prev => ({ ...prev, team: e.target.value, playerOut: '', playerIn: '' }))}
-                  aria-label={t('manualAdjustmentsEditor.team', 'Team')}
-                  style={{ ...inputStyle, width: '100%' }}
-                >
-                  <option value="home">{editedHomeTeam?.name || t('common.home')}</option>
-                  <option value="away">{editedAwayTeam?.name || t('common.away')}</option>
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.set', 'Set')}</label>
-                <select
-                  value={newSubData.setIndex}
-                  onChange={(e) => setNewSubData(prev => ({ ...prev, setIndex: parseInt(e.target.value, 10) }))}
-                  aria-label={t('manualAdjustmentsEditor.set', 'Set')}
-                  style={{ ...inputStyle, width: '100%' }}
-                >
-                  {editedSets.map(s => (
-                    <option key={s.index} value={s.index}>{t('common.setIndex', { index: s.index })}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.playerOut', 'Player out')}</label>
-                <select
-                  value={newSubData.playerOut}
-                  onChange={(e) => setNewSubData(prev => ({ ...prev, playerOut: e.target.value }))}
-                  aria-label={t('manualAdjustmentsEditor.playerOut', 'Player out')}
-                  style={{ ...inputStyle, width: '100%' }}
-                >
-                  <option value="">Select player...</option>
-                  {(newSubData.team === 'home' ? editedHomePlayers : editedAwayPlayers).map(p => (
-                    <option key={p.id} value={p.number}>#{p.number} - {p.firstName} {p.lastName}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.playerIn', 'Player in')}</label>
-                <select
-                  value={newSubData.playerIn}
-                  onChange={(e) => setNewSubData(prev => ({ ...prev, playerIn: e.target.value }))}
-                  aria-label={t('manualAdjustmentsEditor.playerIn', 'Player in')}
-                  style={{ ...inputStyle, width: '100%' }}
-                >
-                  <option value="">Select player...</option>
-                  {(newSubData.team === 'home' ? editedHomePlayers : editedAwayPlayers).map(p => (
-                    <option key={p.id} value={p.number}>#{p.number} - {p.firstName} {p.lastName}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.scoreA', 'Score A')}</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="99"
-                  value={newSubData.scoreA}
-                  onChange={(e) => setNewSubData(prev => ({ ...prev, scoreA: parseInt(e.target.value, 10) || 0 }))}
-                  aria-label={t('manualAdjustmentsEditor.scoreA', 'Score A')}
-                  style={{ ...inputStyle, width: '100%' }}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.scoreB', 'Score B')}</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="99"
-                  value={newSubData.scoreB}
-                  onChange={(e) => setNewSubData(prev => ({ ...prev, scoreB: parseInt(e.target.value, 10) || 0 }))}
-                  aria-label={t('manualAdjustmentsEditor.scoreB', 'Score B')}
-                  style={{ ...inputStyle, width: '100%' }}
-                />
-              </div>
-            </div>
-            <div className="ov-kit" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <Button
-                variant="secondary"
-                size="xl"
-                className="px-5 font-medium"
-                onClick={() => {
-                  setShowAddSub(false)
-                  setNewSubData({ team: 'home', setIndex: 1, playerOut: '', playerIn: '', scoreA: 0, scoreB: 0 })
-                }}
-              >
-                {t('common.cancel', 'Cancel')}
-              </Button>
-              <Button
-                variant="positive"
-                size="xl"
-                className="px-5 disabled:cursor-not-allowed"
-                onClick={handleAddSubSubmit}
-                disabled={!newSubData.playerOut || !newSubData.playerIn}
-              >
-                {t('manualAdjustmentsEditor.addSubstitutionTitle', 'Add substitution')}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Substitution Modal */}
-      {editingSub && (
-        <div className={OVERLAY_CLASS} style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          padding: '16px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 2000
-        }}>
-          <div className={PANEL_CLASS} style={{
-            padding: '24px',
-            minWidth: 'min(450px, 100%)',
-            maxHeight: '85vh',
-            overflowY: 'auto'
-          }}>
-            <h3 className={DIALOG_TITLE_CLASS} style={{ margin: '0 0 20px 0' }}>
-              {t('manualAdjustmentsEditor.editSubstitutionTitle', 'Edit substitution')}
-            </h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.team', 'Team')}</label>
-                <div style={{ ...inputStyle, padding: '8px 12px', background: 'var(--ov-sunken)', border: '1px solid var(--ov-hairline)', borderRadius: 'var(--ov-radius)', color: 'var(--ov-text-body)', display: 'flex', alignItems: 'center' }}>
-                  {editingSub.payload?.team === 'home' ? editedHomeTeam?.name : editedAwayTeam?.name}
-                </div>
-              </div>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.set', 'Set')}</label>
-                <select
-                  value={editingSub.setIndex}
-                  onChange={(e) => setEditingSub(prev => ({ ...prev, setIndex: parseInt(e.target.value, 10) }))}
-                  aria-label={t('manualAdjustmentsEditor.set', 'Set')}
-                  style={{ ...inputStyle, width: '100%' }}
-                >
-                  {editedSets.map(s => (
-                    <option key={s.index} value={s.index}>{t('common.setIndex', { index: s.index })}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.playerOut', 'Player out')}</label>
-                <select
-                  value={editingSub.playerOut || editingSub.payload?.playerOut || ''}
-                  onChange={(e) => setEditingSub(prev => ({ ...prev, playerOut: e.target.value }))}
-                  aria-label={t('manualAdjustmentsEditor.playerOut', 'Player out')}
-                  style={{ ...inputStyle, width: '100%' }}
-                >
-                  <option value="">Select player...</option>
-                  {(editingSub.payload?.team === 'home' ? editedHomePlayers : editedAwayPlayers).map(p => (
-                    <option key={p.id} value={p.number}>#{p.number} - {p.firstName} {p.lastName}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.playerIn', 'Player in')}</label>
-                <select
-                  value={editingSub.playerIn || editingSub.payload?.playerIn || ''}
-                  onChange={(e) => setEditingSub(prev => ({ ...prev, playerIn: e.target.value }))}
-                  aria-label={t('manualAdjustmentsEditor.playerIn', 'Player in')}
-                  style={{ ...inputStyle, width: '100%' }}
-                >
-                  <option value="">Select player...</option>
-                  {(editingSub.payload?.team === 'home' ? editedHomePlayers : editedAwayPlayers).map(p => (
-                    <option key={p.id} value={p.number}>#{p.number} - {p.firstName} {p.lastName}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.scoreA', 'Score A')}</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="99"
-                  value={editingSub.scoreA ?? editingSub.stateSnapshot?.pointsA ?? editingSub.stateSnapshot?.scoreA ?? 0}
-                  onChange={(e) => setEditingSub(prev => ({ ...prev, scoreA: parseInt(e.target.value, 10) || 0 }))}
-                  aria-label={t('manualAdjustmentsEditor.scoreA', 'Score A')}
-                  style={{ ...inputStyle, width: '100%' }}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>{t('manualAdjustmentsEditor.scoreB', 'Score B')}</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="99"
-                  value={editingSub.scoreB ?? editingSub.stateSnapshot?.pointsB ?? editingSub.stateSnapshot?.scoreB ?? 0}
-                  onChange={(e) => setEditingSub(prev => ({ ...prev, scoreB: parseInt(e.target.value, 10) || 0 }))}
-                  aria-label={t('manualAdjustmentsEditor.scoreB', 'Score B')}
-                  style={{ ...inputStyle, width: '100%' }}
-                />
-              </div>
-            </div>
-            <div className="ov-kit" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <Button
-                variant="secondary"
-                size="xl"
-                className="px-5 font-medium"
-                onClick={() => setEditingSub(null)}
-              >
-                {t('common.cancel', 'Cancel')}
-              </Button>
-              <Button
-                variant="positive"
-                size="xl"
-                className="px-5"
-                onClick={handleEditSubSubmit}
-              >
-                {t('manualAdjustmentsEditor.saveChanges', 'Save changes')}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
