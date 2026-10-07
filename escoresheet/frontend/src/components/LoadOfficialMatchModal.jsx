@@ -277,8 +277,8 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
       .gte('datetime', today.toISOString())
       .order('datetime', { ascending: true })
     if (error) throw error
-    if (!data || data.length === 0) return null
-    return data.map(mapSupabaseToMatchFormat)
+    // An empty answer is a real answer: this league has no upcoming games
+    return (data || []).map(mapSupabaseToMatchFormat)
   }
 
   const fetchMatchesFromIcal = async () => {
@@ -301,12 +301,12 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
     {
       try {
         const supabaseMatches = await fetchMatchesFromSupabase()
-        if (supabaseMatches && supabaseMatches.length > 0) {
-          setMatches(supabaseMatches)
-          setLoading(false)
-          return
-        }
-        console.warn(`[Schedule] Supabase returned no matches for ${gender}/${league}, falling back to ICAL`)
+        // The schedule answered (possibly with no upcoming games in this
+        // league): show that, instead of falling back to the old ICAL route,
+        // whose failure used to surface as "Failed to load matches".
+        setMatches(supabaseMatches)
+        setLoading(false)
+        return
       } catch (err) {
         console.warn(`[Schedule] Supabase match query failed for ${gender}/${league}, falling back to ICAL:`, err)
       }
