@@ -55,6 +55,11 @@ describe('activity upload', () => {
     expect(await db.sync_queue.toArray()).toEqual([expect.objectContaining({ resource: 'activity', action: 'flush', status: 'queued' })])
   })
 
+  it('the upload sanitizes again: a row stored before the redaction leaves without its PIN (leftover d)', () => {
+    const old = { ...row('x', { kind: 'app.error' }), kind: 'app.error', data: { message: 'pin 123456 failed', frames: ['a.js:1:2'] } }
+    expect(uploadEntry(old).data).toEqual({ message: 'pin [redacted] failed', frames: ['a.js:1:2'] })
+  })
+
   it('the upload body never carries the local ids', () => {
     expect(Object.keys(uploadEntry(row('x', { lid: 5, matchId: 3 }))).sort()).toEqual([
       'account_id', 'app', 'app_version', 'client_ts', 'data', 'device_id', 'event_external_id', 'event_seq',

@@ -18,7 +18,7 @@ import pg from 'pg'
 import { SKIP, bootServer, api, provisionDatabase, sleep } from './helpers/e2eServer.js'
 import { grantRoles } from './helpers/pgTestDb.js'
 import * as serverSide from '../lib/activitySanitize.js'
-import { checkEntry, csvLine, CSV_COLUMNS, createActivityLog } from '../lib/activityLog.js'
+import { checkEntry, csvLine, CSV_COLUMNS, createActivityLog, parseCursor } from '../lib/activityLog.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const APP_SANITIZER = join(here, '..', '..', 'frontend', 'src', 'domain', 'activitySummary.js')
@@ -39,13 +39,20 @@ describe('activity log (unit)', () => {
       ['sync.error', { resource: 'event', code: { gamePin: '1234', ok: 1 }, status: 409 }],
       ['app.error', { message: 'x'.repeat(400), frames: Array.from({ length: 30 }, (_, i) => `f${i}.js:${i}`) }],
       ['event.add', { type: 'point', stateSnapshot: { big: 1 }, team: 'home', image: 'data:image/png;base64,AAAA' }],
-      ['nope.kind', { a: 1 }]
+      ['nope.kind', { a: 1 }],
+      // free text: PINs and long numbers redacted (leftover d)
+      ['app.error', { message: 'pin 123456 failed', frames: ['a.js:1:123456', 'b?code=4444:1:2'], source: 'Passwort 98765432' }],
+      ['match.manual_change', { category: 'match', field: 'hall', before: 'Halle 1234567', after: 'mot de passe 4321' }]
     ]
     for (const [kind, data] of samples) assert.deepEqual(serverSide.sanitizeActivityData(kind, data), app.sanitizeActivityData(kind, data), kind)
+    assert.deepEqual(serverSide.sanitizeActivityData('app.error', { message: 'pin 123456 failed' }), { message: 'pin [redacted] failed' })
+    for (const t of ['PIN: 4711', 'game 1234567', 'code=5678 x', 'HTTP 404']) assert.equal(serverSide.redactFreeText(t), app.redactFreeText(t), t)
   })
 
   it('checkEntry: catalog, account, shapes; the data is sanitized again', () => {
     const me = randomUUID()
+    const err = checkEntry(entry({ kind: 'app.error', data: { message: 'pin 123456 failed' } }), me)
+    assert.deepEqual(err.row.data, { message: 'pin [redacted] failed' })
     const ok = checkEntry(entry({ account_id: me, data: { type: 'point', gamePin: '1234', stateSnapshot: {} } }), me)
     assert.deepEqual(ok.row.data, { type: 'point' })
     assert.equal(ok.row.account_id, me)
@@ -57,6 +64,13 @@ describe('activity log (unit)', () => {
     assert.equal(checkEntry(entry({ device_id: 'x'.repeat(65) }), me).code, 'OV_ACTIVITY_INVALID')
     assert.equal(checkEntry(entry({ data: [1] }), me).code, 'OV_ACTIVITY_INVALID')
     assert.equal(checkEntry(entry({ uid: 'nope' }), me).code, 'OV_ACTIVITY_INVALID')
+  })
+
+  it('page cursors: "<µs>_<id>", or a bare id from an older console', () => {
+    assert.deepEqual(parseCursor('1759831201000000_42'), { us: '1759831201000000', id: '42' })
+    assert.deepEqual(parseCursor('42'), { id: '42' })
+    assert.equal(parseCursor('42; drop'), null)
+    assert.equal(parseCursor(''), null)
   })
 
   it('CSV lines quote, never start a formula, and keep the columns', () => {
@@ -201,6 +215,36 @@ describe('activity log end to end', { skip: SKIP }, () => {
     assert.ok((await nd.text()).trim().split('\n').every((l) => JSON.parse(l).kind))
     const denied = await fetch(`${srv.base}/api/admin/activity/export`, { headers: { Authorization: `Bearer ${users.anna.token}` } })
     assert.equal(denied.status, 403)
+  })
+
+  it('lists in the order things happened (client_ts, then id), newest first, across pages (leftover c)', async () => {
+    const m = await newMatch(users.anna)
+    // uploaded out of order: the second batch happened first
+    const late = ['10:00:03', '10:00:04'].map((t) => entry({ match_external_id: m.ext, client_ts: `2026-10-07T${t}.000Z` }))
+    const early = ['10:00:01', '10:00:02', '10:00:02'].map((t) => entry({ match_external_id: m.ext, client_ts: `2026-10-07T${t}.000Z` }))
+    assert.equal((await upload(users.anna, late)).status, 200)
+    assert.equal((await upload(users.anna, early)).status, 200)
+    const want = (await sql.query('SELECT uid FROM activity_log WHERE match_external_id = $1 ORDER BY client_ts DESC, id DESC', [m.ext])).rows.map((r) => r.uid)
+    assert.deepEqual(want.slice(0, 2), [late[1].uid, late[0].uid])
+
+    const pages = async (path) => {
+      const out = []
+      let before = null
+      for (let i = 0; i < 10; i++) {
+        const r = await call(users.admin, 'GET', `${path}&limit=2${before ? `&before=${encodeURIComponent(before)}` : ''}`)
+        assert.equal(r.status, 200, r.text)
+        out.push(...r.json.data.entries)
+        assert.equal(r.json.data.entries.some((e) => 'cursor_us' in e), false)
+        before = r.json.data.next
+        if (!before) break
+      }
+      return out
+    }
+    assert.deepEqual((await pages(`/api/admin/activity?match=${m.ext}`)).map((e) => e.uid), want)
+    assert.deepEqual((await pages(`/api/activity?match=${m.ext}`)).map((e) => e.uid), want)
+    const nd = await fetch(`${srv.base}/api/admin/activity/export?match=${encodeURIComponent(m.ext)}`, { headers: { Authorization: `Bearer ${users.admin.token}` } })
+    assert.deepEqual((await nd.text()).trim().split('\n').map((l) => JSON.parse(l).uid), want)
+    expectCode(await call(users.admin, 'GET', `/api/admin/activity?match=${m.ext}&before=abc`), 400, 'OV_INVALID_REQUEST')
   })
 
   it('delete on request is audited; a deleted match takes its activity along', async () => {

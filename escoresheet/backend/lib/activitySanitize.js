@@ -57,6 +57,38 @@ const JWT = /^[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}$/
 // A manual change of one of these fields says "changed", never the values
 const SENSITIVE_FIELD = /dob|birth|pin|password|email|phone|licen[cs]e|signature/i
 
+// Free text (an error message, a stack frame, a manual change's before /
+// after) keeps no PIN or long number: runs of 6 or more digits, and 4 to 8
+// digits next to "pin", "code", "password", "Passwort" or "mot de passe",
+// become [redacted]. No lookbehind: older Safari / WebKit cannot parse it.
+export const FREE_TEXT_KEYS = Object.freeze(['message', 'frames', 'source', 'before', 'after'])
+export const REDACTED = '[redacted]'
+const PIN_WORD = '(?:pin|code|passwor[dt]|mot\\s+de\\s+passe)'
+const NEAR = '[\\s:=#\'"-]{0,3}'
+const PIN_THEN_DIGITS = new RegExp(`(${PIN_WORD}s?${NEAR})\\d{4,8}(?!\\d)`, 'gi')
+const DIGITS_THEN_PIN = new RegExp(`(^|\\D)\\d{4,8}(${NEAR}${PIN_WORD})`, 'gi')
+const LONG_DIGITS = /\d{6,}/g
+// in a stack frame, ":line:column" numbers stay
+const LONG_DIGITS_NOT_LINE_COL = /(^|[^:\d])\d{6,}/g
+
+/** The text with PINs and long numbers redacted (see FREE_TEXT_KEYS). */
+export function redactFreeText(text, { frame = false } = {}) {
+  if (typeof text !== 'string') return text
+  const out = text
+    .replace(PIN_THEN_DIGITS, `$1${REDACTED}`)
+    .replace(DIGITS_THEN_PIN, `$1${REDACTED}$2`)
+  return frame ? out.replace(LONG_DIGITS_NOT_LINE_COL, `$1${REDACTED}`) : out.replace(LONG_DIGITS, REDACTED)
+}
+
+function redactDeep(value, frame, depth = 0) {
+  if (typeof value === 'string') return redactFreeText(value, { frame })
+  if (depth > MAX_DEPTH || value === null || typeof value !== 'object') return value
+  if (Array.isArray(value)) return value.slice(0, MAX_ARRAY).map(v => redactDeep(v, frame, depth + 1))
+  const out = {}
+  for (const [k, v] of Object.entries(value)) out[k] = redactDeep(v, frame, depth + 1)
+  return out
+}
+
 export const isKnownKind = (kind) => Object.prototype.hasOwnProperty.call(ACTIVITY_KINDS, kind)
 
 function cleanValue(value, depth) {
@@ -93,7 +125,8 @@ const byteLength = (s) => {
 
 /**
  * The data an entry of `kind` may carry: allowlisted keys, no denied key,
- * no data URL or JWT, strings <= 200 characters, depth <= 3, <= 4 KB.
+ * no data URL or JWT, no PIN or long number in free text (redactFreeText),
+ * strings <= 200 characters, depth <= 3, <= 4 KB.
  * Unknown kinds keep nothing. Never throws.
  */
 export function sanitizeActivityData(kind, data) {
@@ -102,7 +135,8 @@ export function sanitizeActivityData(kind, data) {
   const out = {}
   for (const key of spec.keys) {
     if (!(key in data) || DENIED_KEY.test(key)) continue
-    const v = cleanValue(data[key], 1)
+    const raw = FREE_TEXT_KEYS.includes(key) ? redactDeep(data[key], key === 'frames') : data[key]
+    const v = cleanValue(raw, 1)
     if (v !== undefined) out[key] = v
   }
   if (kind === 'match.manual_change' && typeof out.field === 'string' && SENSITIVE_FIELD.test(out.field)) {

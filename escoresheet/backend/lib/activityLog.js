@@ -4,6 +4,7 @@
  *
  *   POST   /api/activity {entries:[<=500]}           signed in (server.js, 30/min per user)
  *   GET    /api/activity?match=&before=&limit<=500   owner / editor of the match (admin: any)
+ *   (lists newest first by client_ts, then id; `next` is the cursor for `before`)
  *   GET    /api/admin/activity?match=&account=&kind=&level=&from=&to=&app=&before=&limit<=500
  *   GET    /api/admin/activity/export?...&format=csv|ndjson   (streamed by server.js, <= 50,000 rows)
  *   DELETE /api/admin/activity?match=|account=&confirm=yes    delete on request (audited)
@@ -128,10 +129,40 @@ export function adminFilters(query, { values = [] } = {}) {
   }
   const before = get('before')
   if (before) {
-    if (!/^\d{1,18}$/.test(before)) return { error: invalid('before') }
-    where.push(`a.id < ${p(before)}::bigint`)
+    const c = parseCursor(before)
+    if (!c) return { error: invalid('before') }
+    where.push(cursorSql(c, p))
   }
   return { where, values }
+}
+
+/**
+ * Lists are in the order things happened on the devices: client_ts, then id
+ * (upload order) for entries of the same moment; newest first. The page
+ * cursor (`next`, sent back as `before`) is "<client_ts in µs>_<id>"; a bare
+ * id (older consoles) still pages by upload order.
+ */
+export const ACTIVITY_ORDER = 'a.client_ts DESC, a.id DESC'
+const CURSOR_SELECT = '(extract(epoch FROM a.client_ts) * 1000000)::bigint AS cursor_us'
+
+export function parseCursor(v) {
+  const s = String(v ?? '')
+  let m = /^(-?\d{1,17})_(\d{1,18})$/.exec(s)
+  if (m) return { us: m[1], id: m[2] }
+  m = /^(\d{1,18})$/.exec(s)
+  return m ? { id: m[1] } : null
+}
+
+function cursorSql(c, p) {
+  if (c.us == null) return `a.id < ${p(c.id)}::bigint`
+  return `(a.client_ts, a.id) < (timestamptz 'epoch' + ${p(c.us)}::bigint * interval '1 microsecond', ${p(c.id)}::bigint)`
+}
+
+/** The rows without the cursor column, and the cursor of the last one. */
+export function pageOf(rows, limit) {
+  const last = rows[rows.length - 1]
+  const next = rows.length === limit && last ? `${last.cursor_us}_${last.id}` : null
+  return { entries: rows.map(({ cursor_us: _c, ...r }) => r), next }
 }
 
 const clampLimit = (v, max) => {
@@ -215,7 +246,8 @@ export function createActivityLog({ pool, accounts = null, log = console }) {
     const matchExt = get('match')
     if (typeof matchExt !== 'string' || !matchExt || matchExt.length > 200) return invalid('match')
     const before = get('before')
-    if (before != null && !/^\d{1,18}$/.test(before)) return invalid('before')
+    const cursor = before != null ? parseCursor(before) : null
+    if (before != null && !cursor) return invalid('before')
     const limit = clampLimit(get('limit'), LIST_MAX)
     try {
       const { rows: [m] } = await pool.query(
@@ -229,18 +261,15 @@ export function createActivityLog({ pool, accounts = null, log = console }) {
         // Only what the match's own scorers uploaded (an entry can name a match before it exists)
         extra += ` AND (a.uploader_id IS NULL OR EXISTS (SELECT 1 FROM public.matches om WHERE om.external_id = a.match_external_id AND ${ownedBy('om', 'a.uploader_id')}))`
       }
-      if (before != null) {
-        values.push(before)
-        extra += ` AND a.id < $${values.length}::bigint`
-      }
+      if (cursor) extra += ` AND ${cursorSql(cursor, (v) => { values.push(v); return `$${values.length}` })}`
       const { rows } = await pool.query(
         `SELECT a.id, a.uid, a.at, a.client_ts, a.app, a.match_external_id, a.account_id, a.device_id, a.app_version,
-                a.platform, a.kind, a.level, a.set_index, a.event_seq, a.event_external_id, a.data
+                a.platform, a.kind, a.level, a.set_index, a.event_seq, a.event_external_id, a.data, ${CURSOR_SELECT}
            FROM public.activity_log a
           WHERE a.match_external_id = $1${extra}
-          ORDER BY a.id DESC
+          ORDER BY ${ACTIVITY_ORDER}
           LIMIT $2`, values)
-      return answer(200, { entries: rows, next: rows.length === limit ? rows[rows.length - 1].id : null })
+      return answer(200, pageOf(rows, limit))
     } catch (err) {
       return dbError('list', err)
     }
@@ -254,10 +283,10 @@ export function createActivityLog({ pool, accounts = null, log = console }) {
     f.values.push(limit)
     try {
       const { rows } = await pool.query(
-        `SELECT ${LIST_COLUMNS} FROM ${LIST_FROM}
+        `SELECT ${LIST_COLUMNS}, ${CURSOR_SELECT} FROM ${LIST_FROM}
           ${f.where.length ? `WHERE ${f.where.join(' AND ')}` : ''}
-          ORDER BY a.id DESC LIMIT $${f.values.length}`, f.values)
-      return answer(200, { entries: rows, next: rows.length === limit ? rows[rows.length - 1].id : null })
+          ORDER BY ${ACTIVITY_ORDER} LIMIT $${f.values.length}`, f.values)
+      return answer(200, pageOf(rows, limit))
     } catch (err) {
       return dbError('admin list', err)
     }
@@ -279,14 +308,15 @@ export function createActivityLog({ pool, accounts = null, log = console }) {
       if (size <= 0) return
       f.values.push(size)
       const { rows } = await pool.query(
-        `SELECT ${LIST_COLUMNS} FROM ${LIST_FROM}
+        `SELECT ${LIST_COLUMNS}, ${CURSOR_SELECT} FROM ${LIST_FROM}
           ${f.where.length ? `WHERE ${f.where.join(' AND ')}` : ''}
-          ORDER BY a.id DESC LIMIT $${f.values.length}`, f.values)
+          ORDER BY ${ACTIVITY_ORDER} LIMIT $${f.values.length}`, f.values)
       if (!rows.length) return
       total += rows.length
-      yield rows
+      const page = pageOf(rows, size)
+      yield page.entries
       if (rows.length < size) return
-      before = rows[rows.length - 1].id
+      before = page.next
     }
   }
 

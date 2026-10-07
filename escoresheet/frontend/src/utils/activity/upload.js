@@ -10,6 +10,7 @@
 import { SYNC } from './writer'
 import { currentAccountId } from '../identity'
 import { apiPostActivity } from '../../lib/apiClient'
+import { sanitizeActivityData } from '../../domain/activitySummary'
 
 export const UPLOAD_BATCH = 500
 export const FLUSH_DEBOUNCE_MS = 10000
@@ -56,7 +57,9 @@ export function uploadEntry(row) {
     set_index: row.setIndex ?? null,
     event_seq: row.eventSeq ?? null,
     event_external_id: row.eventExt || null,
-    data: row.data || {}
+    // sanitized again: rows stored by an older version may predate a rule
+    // (e.g. the free-text redaction of PINs and long numbers)
+    data: sanitizeActivityData(row.kind, row.data || {})
   }
 }
 
