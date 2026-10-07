@@ -266,7 +266,8 @@ fn apply_light_gtk_settings(settings: &gtk::Settings) {
 /// (backup.rs; ACL in capabilities/backup.json), the networks the laptop
 /// creates for the tablets (netshare/; capabilities/netshare.json) and the
 /// check of the installer's firewall rule (firewall.rs; same capability) and
-/// the close-to-tray / quit handshake (lifecycle.rs; capabilities/app.json) and
+/// the close-to-tray / quit handshake (lifecycle.rs, and the list of the
+/// scoresheet windows a quit closes, popups.rs; capabilities/app.json) and
 /// the automatic updates (updater.rs; capabilities/update.json; the updater
 /// plugin's own commands are granted to no window) and opening / showing a
 /// file the app downloaded (popups.rs; capabilities/downloads.json, also for the
@@ -296,6 +297,8 @@ fn with_app_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Bu
         lifecycle::app_hide,
         lifecycle::app_quit,
         lifecycle::app_quit_ack,
+        lifecycle::app_quit_cancel,
+        popups::app_windows,
         updater::update_status,
         updater::update_check_now,
         updater::update_install_now,
@@ -427,6 +430,7 @@ mod ipc_acl_tests {
                     "hotspot_status", "hotspot_start", "hotspot_stop", "bluetooth_status", "bluetooth_start", "bluetooth_stop",
                     "firewall_status",
                     "app_page_state", "app_page_gone", "app_hide", "app_quit", "app_quit_ack",
+                    "app_quit_cancel", "app_windows",
                     "update_status", "update_check_now", "update_install_now", "update_set_prefs"] {
             let err = get_ipc_response(&popup, request(cmd, "http://localhost:5173/scoresheet/?matchId=7", body.clone()))
                 .expect_err(&format!("{cmd} from {label} must be refused"));
@@ -501,9 +505,31 @@ mod ipc_acl_tests {
             .expect("the scoretable page acknowledges a quit request");
         get_ipc_response(&window, request("app_page_gone", "http://localhost:5173/", serde_json::json!({ "handler": "h1" })))
             .expect("the scoretable page says its handler is gone");
+        // Keep running: the scoresheet windows hidden with it come back
+        get_ipc_response(&window, request("app_quit_cancel", "http://localhost:5173/", serde_json::json!({})))
+            .expect("the scoretable page says the quit was cancelled");
+
+        // the quit question lists the other app windows (the scoresheets), hidden ones too
+        let none = get_ipc_response(&window, request("app_windows", "http://localhost:5173/", serde_json::json!({})))
+            .expect("app_windows from the scoretable page")
+            .deserialize::<Vec<String>>()
+            .unwrap();
+        assert!(none.is_empty(), "no scoresheet window yet: {none:?}");
+        for _ in 0..2 {
+            let label = crate::popups::next_popup_label();
+            let popup = WebviewWindowBuilder::new(&app, label.as_str(), WebviewUrl::External("http://localhost:5173/scoresheet/".parse().unwrap()))
+                .build()
+                .unwrap();
+            let _ = popup.hide();
+        }
+        let windows = get_ipc_response(&window, request("app_windows", "http://localhost:5173/", serde_json::json!({})))
+            .expect("app_windows from the scoretable page")
+            .deserialize::<Vec<String>>()
+            .unwrap();
+        assert_eq!(windows.len(), 2, "both scoresheet windows, not the scoretable: {windows:?}");
 
         for url in ["http://192.168.1.20:5173/", "http://10.42.0.1:5173/", "https://example.com/", "http://localhost.evil.com:5173/"] {
-            for cmd in ["app_page_state", "app_page_gone", "app_hide", "app_quit", "app_quit_ack"] {
+            for cmd in ["app_page_state", "app_page_gone", "app_hide", "app_quit", "app_quit_ack", "app_quit_cancel", "app_windows"] {
                 let err = get_ipc_response(&window, request(cmd, url, state.clone()))
                     .expect_err(&format!("{cmd} from {url} must be refused"));
                 assert!(err.to_string().contains("not allowed"), "{cmd} from {url}: refused by the ACL, got {err}");

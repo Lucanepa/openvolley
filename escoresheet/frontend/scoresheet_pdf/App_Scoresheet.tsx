@@ -27,7 +27,7 @@ import { awardsPoint as sanctionAwardsPoint } from '../src/domain/sanctions.js';
 import { generatedRemarks } from './utils/sheetRemarks';
 import { BRAND } from '../src/brand.js';
 import { PhoneIcon } from '../src/components/icons';
-import { deliverPdfToOpener, getOpenerWindow, isOwnDownload, savePdfThroughApp } from '../src/utils/appWindowGuest';
+import { deliverPdfToOpener, getOpenerWindow, isOwnDownload, savePdfThroughApp, setPdfBusy } from '../src/utils/appWindowGuest';
 import { detectAppPlatform } from '../src/utils/openAppWindow';
 import { assertCanvas, assertJpegDataUrl, assertValidPdf, assertVisibleSheet, downloadBlob, PdfCheckError, SHEET_MM, SHEET_OFFSET_MM, type SaveOutcome } from './utils/pdfOutput';
 
@@ -1377,6 +1377,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     setActionError(null);
     const savedZoomLevel = zoomLevel;
     const wasShowingLCS = showLCS;
+    // the desktop app's quit question says a PDF is still being saved here
+    setPdfBusy(true);
 
     try {
       const data = latestData.current;
@@ -1492,6 +1494,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
       if (wasShowingLCS) setShowLCS(true);
       generatingRef.current = false;
       setIsGeneratingPdf(false);
+      setPdfBusy(false);
     }
   };
   // Always the latest closure (latest data, latest state) for the automatic action
