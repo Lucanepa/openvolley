@@ -4,6 +4,7 @@
     "home": "Home",
     "away": "Gascht",
     "close": "Schliesse",
+    "dismissNotification": "Meldig schliesse",
     "save": "Speichere",
     "cancel": "Abbräche",
     "confirm": "Bestätige",
@@ -2270,6 +2271,12 @@
     "redeem": "Code einlösen",
     "redeeming": "Wird geprüft…",
     "redeemed": "Code akzeptiert. Du kannst jetzt offizielle Spiele führen.",
+    "redeemedAs": {
+      "scorer": "Code akzeptiert. Du kannst jetzt offizielle Spiele führen.",
+      "referee": "Code akzeptiert. Dein Konto hat jetzt die Rolle Schiedsrichter.",
+      "competition_manager": "Code akzeptiert. Du kannst jetzt Wettbewerbe und gespeicherte Teams verwalten.",
+      "beach_competition_manager": "Code akzeptiert. Du kannst jetzt Turniere und gespeicherte Beach-Paare verwalten."
+    },
     "errors": {
       "inviteInvalid": "Dieser Einladungscode ist nicht gültig.",
       "inviteExpired": "Dieser Einladungscode ist abgelaufen.",
@@ -2312,7 +2319,7 @@
     "backToSignIn": "Zrugg zur Aamäldig",
     "accountCreated": "Dis Konto isch erstellt.",
     "inviteStepTitle": "Gib de Iiladigscode vo dim Verein ii",
-    "inviteStepBody": "Din Verein oder de OpenVolley-Admin git dir en Code; mit däm bisch sofort freigäbne Schriiber.",
+    "inviteStepBody": "Din Verein oder de OpenVolley-Admin git dir en Code. De Code git dim Konto sofort d Rolle, für die er gmacht worde isch, zum Biispiel Schriiber oder Wettbewerbsverantwortliche.",
     "inviteStepNoCode": "Kei Code? Frag en Admin, öb er dis Konto freigit – du überchunsch de Zuegang dänn automatisch. Bis dänn chasch Testspiil schriibe.",
     "nativeAppsNote": "Bruuchsch d Desktop- oder Android-App? Mäld dich det eifach mit dere E-Mail und däm Passwort aa.",
     "allSetTitle": "Alles parat",
@@ -2325,7 +2332,7 @@
     "noAccountYet": "No kei Konto? Erstell eis da. Eis Konto gilt für OpenBeach und OpenVolley.",
     "signUpBody": "Eis Konto für OpenBeach und OpenVolley. Jedi App git dich separat frei.",
     "existingAccount": "Für die E-Mail gits scho es Konto (OpenVolley oder OpenBeach). Mäld dich mit dim bisherige Passwort aa, zum OpenBeach biiträte.",
-    "inviteStepBody": "Din Verein, d Turnierleitig oder de OpenBeach-Admin git dir en Code; mit däm bisch sofort freigäbne Beach-Schriiber.",
+    "inviteStepBody": "Din Verein, d Turnierleitig oder de OpenBeach-Admin git dir en Code. De Code git dim Konto sofort d Rolle, für die er gmacht worde isch, zum Biispiel Beach-Schriiber oder Wettbewerbsverantwortliche.",
     "nativeAppsNote": "Bruuchsch d OpenBeach-App uf Android? Mäld dich det eifach mit dere E-Mail und däm Passwort aa.",
     "allSetBody": "Dis Konto isch fürs Schriibe im Beach freigäh. Mäld dich i OpenBeach mit dere E-Mail und däm Passwort aa.",
     "openApp": "OpenBeach",

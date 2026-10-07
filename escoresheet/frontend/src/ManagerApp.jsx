@@ -171,6 +171,18 @@ function accountName(user, profile) {
   return name || user?.email || ''
 }
 
+/**
+ * The gate's footer: the product and the version of the code it runs. The
+ * version is OpenVolley's (one code base, two builds), so the OpenBeach
+ * build names it as such instead of "OpenBeach 2.x" (OpenBeach has its own
+ * version numbers).
+ */
+export function managerFooter(brand, version = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '') {
+  const v = String(version || '').trim()
+  if (brand?.app === 'beach') return v ? `${brand.name} · OpenVolley ${v}` : brand.name
+  return `${brand?.name || 'OpenVolley'} ${v}`.trim()
+}
+
 function Gate({ width, className, children }) {
   const { t } = useTranslation()
   const brand = useManagerBrand()
@@ -181,7 +193,7 @@ function Gate({ width, className, children }) {
       logo={<Logo className="h-9 w-auto" />}
       eyebrow={t('managerSite.eyebrow')}
       corner={<LanguageSelect compact />}
-      footer={`${brand.name} ${typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''}`.trim()}
+      footer={managerFooter(brand)}
     >
       {children}
     </GateScreen>
@@ -338,7 +350,7 @@ function ScorerAppLinks({ primary = false }) {
 
 /**
  * A new (pending) account: the next step is the club's invite code. A code
- * makes the account a scorer at once (AuthContext re-reads the roles and this
+ * gives the account its role at once (scorer, referee or competition manager) (AuthContext re-reads the roles and this
  * page turns into "you're all set"); without one an admin approves it, which
  * AuthContext picks up on its own (it re-reads a pending profile every minute).
  */

@@ -4,6 +4,7 @@
     "home": "Accueil",
     "away": "Visiteur",
     "close": "Fermer",
+    "dismissNotification": "Fermer la notification",
     "save": "Enregistrer",
     "cancel": "Annuler",
     "confirm": "Confirmer",
@@ -2269,6 +2270,12 @@
     "redeem": "Utiliser le code",
     "redeeming": "Vérification…",
     "redeemed": "Code accepté. Tu peux maintenant tenir des matchs officiels.",
+    "redeemedAs": {
+      "scorer": "Code accepté. Tu peux maintenant tenir des matchs officiels.",
+      "referee": "Code accepté. Ton compte a maintenant le rôle d’arbitre.",
+      "competition_manager": "Code accepté. Tu peux maintenant gérer les compétitions et les équipes enregistrées.",
+      "beach_competition_manager": "Code accepté. Tu peux maintenant gérer les tournois et les paires de beach enregistrées."
+    },
     "errors": {
       "inviteInvalid": "Ce code d’invitation n’est pas valable.",
       "inviteExpired": "Ce code d’invitation a expiré.",
@@ -2311,7 +2318,7 @@
     "backToSignIn": "Retour à la connexion",
     "accountCreated": "Votre compte a été créé.",
     "inviteStepTitle": "Saisissez le code d’invitation de votre club",
-    "inviteStepBody": "Votre club ou l’admin OpenVolley vous donne un code ; il fait de vous un marqueur validé immédiatement.",
+    "inviteStepBody": "Votre club ou l’admin OpenVolley vous donne un code. Il donne aussitôt à votre compte le rôle pour lequel il a été créé, par exemple marqueur ou responsable de compétition.",
     "inviteStepNoCode": "Pas de code ? Demandez à un admin de valider votre compte – vous aurez accès automatiquement. D’ici là, vous pouvez marquer des matchs test.",
     "nativeAppsNote": "Vous utilisez l’application de bureau ou Android ? Connectez-vous simplement dans l’application avec cet email et ce mot de passe.",
     "allSetTitle": "Tout est prêt",
@@ -2324,7 +2331,7 @@
     "noAccountYet": "Pas encore de compte ? Créez-en un ici. Un seul compte vaut pour OpenBeach et OpenVolley.",
     "signUpBody": "Un seul compte pour OpenBeach et OpenVolley. Chaque application vous valide séparément.",
     "existingAccount": "Cet email a déjà un compte (OpenVolley ou OpenBeach). Connectez-vous avec votre mot de passe actuel pour rejoindre OpenBeach.",
-    "inviteStepBody": "Votre club, l’organisateur du tournoi ou l’admin OpenBeach vous donne un code ; il fait de vous un marqueur de beach validé immédiatement.",
+    "inviteStepBody": "Votre club, l’organisateur du tournoi ou l’admin OpenBeach vous donne un code. Il donne aussitôt à votre compte le rôle pour lequel il a été créé, par exemple marqueur de beach ou responsable de compétition.",
     "nativeAppsNote": "Vous utilisez l’application OpenBeach sur Android ? Connectez-vous simplement dans l’application avec cet email et ce mot de passe.",
     "allSetBody": "Votre compte est validé pour marquer en beach. Connectez-vous dans OpenBeach avec cet email et ce mot de passe.",
     "openApp": "OpenBeach",
