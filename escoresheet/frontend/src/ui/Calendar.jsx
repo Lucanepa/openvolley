@@ -43,6 +43,10 @@ export function Calendar({ value, onPick, onClear, onDone, min, max, lang, clear
   const gridRef = useRef(null);
   const keyMoved = useRef(false);
   const firstFocus = useRef(true);
+  // The arrow keys' day gets its own ring: WebKitGTK (the Linux desktop app)
+  // does not match :focus-visible on a day focused from a key handler, so
+  // FOCUS_RING_INSET alone left the keyboard user without a visible cursor.
+  const [keyCursor, setKeyCursor] = useState(false);
 
   const p = parseIsoDate(focused) || parseIsoDate(today);
   const days = monthGrid(p.year, p.month);
@@ -68,6 +72,7 @@ export function Calendar({ value, onPick, onClear, onDone, min, max, lang, clear
     const target = clampDate(next, min, max);
     if (!target) return;
     keyMoved.current = true;
+    setKeyCursor(true);
     setFocused(target);
   };
 
@@ -100,7 +105,7 @@ export function Calendar({ value, onPick, onClear, onDone, min, max, lang, clear
   const todayOk = inRange(today, min, max);
 
   return (
-    <div className="w-[18rem] max-w-full select-none">
+    <div className="w-[20.5rem] max-w-full select-none">
       <div className="mb-2 flex items-center gap-1">
         <button type="button" className={NAV_BTN} disabled={!canPrev} onClick={() => showMonthOf(prevMonth)}
           aria-label={t('picker.prevMonth', 'Previous month')} title={t('picker.prevMonth', 'Previous month')}>
@@ -110,7 +115,7 @@ export function Calendar({ value, onPick, onClear, onDone, min, max, lang, clear
           onChange={(e) => showMonth(p.year, Number(e.target.value))}>
           {months.map((name, i) => <option key={name} value={i + 1}>{name}</option>)}
         </select>
-        <select className={cn(HEAD_SELECT, 'w-[5.5rem] tabular-nums')} value={p.year} aria-label={t('picker.year', 'Year')}
+        <select className={cn(HEAD_SELECT, 'w-24 shrink-0 tabular-nums')} value={p.year} aria-label={t('picker.year', 'Year')}
           onChange={(e) => showMonth(Number(e.target.value), p.month)}>
           {years.map((y) => <option key={y} value={y}>{y}</option>)}
         </select>
@@ -120,7 +125,8 @@ export function Calendar({ value, onPick, onClear, onDone, min, max, lang, clear
         </button>
       </div>
 
-      <div ref={gridRef} role="group" aria-label={`${months[p.month - 1]} ${p.year}`} onKeyDown={onGridKey}>
+      <div ref={gridRef} role="group" aria-label={`${months[p.month - 1]} ${p.year}`} onKeyDown={onGridKey}
+        onPointerDown={() => setKeyCursor(false)}>
         <div className="grid grid-cols-7 text-center" aria-hidden>
           {weekdays.map((w, i) => (
             <span key={i} className="pb-1 text-[11px] font-semibold uppercase tracking-wide text-stone-400">{w}</span>
@@ -143,6 +149,7 @@ export function Calendar({ value, onPick, onClear, onDone, min, max, lang, clear
                 aria-label={longDayLabel(iso, lang)}
                 aria-pressed={selected}
                 aria-current={isToday ? 'date' : undefined}
+                data-cursor={keyCursor && iso === focused ? 'true' : undefined}
                 onClick={() => onPick(iso)}
                 onFocus={() => { if (iso !== focused) setFocused(iso); }}
                 className={cn(
@@ -152,6 +159,7 @@ export function Calendar({ value, onPick, onClear, onDone, min, max, lang, clear
                     ? 'bg-slate-900 font-semibold text-white hover:bg-slate-800'
                     : cn('hover:bg-stone-100', outside ? 'text-stone-400' : 'text-stone-800'),
                   isToday && !selected && 'font-semibold ring-1 ring-inset ring-stone-300',
+                  keyCursor && iso === focused && 'ring-2 ring-inset ring-red-400',
                   disabled && 'cursor-not-allowed text-stone-300 line-through hover:bg-transparent',
                 )}
               >

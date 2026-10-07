@@ -4,7 +4,7 @@
 // How it closes, and only these ways: Escape, a tap or click outside the panel
 // (press AND release both on the layer, backdropDismiss.js, so a text selection
 // dragged out of the panel does not count), the panel's own buttons (a picked
-// day, Done, Clear). Focus goes back to the field each time.
+// day, Done, Clear). Focus goes back to what opened it (DateField.jsx usePopover).
 //
 // Rendered in place, not in a portal: the panel lives inside whatever dialog
 // holds the field, so it stacks above that dialog without z-index games, and

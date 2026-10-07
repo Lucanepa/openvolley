@@ -96,10 +96,11 @@ function useValidity(ref, message) {
   }, [ref, message]);
 }
 
-function TriggerButton({ size, disabled, open, onOpen, label, icon: Icon, controls }) {
+function TriggerButton({ size, disabled, open, onOpen, label, icon: Icon, controls, buttonRef }) {
   const bare = size === 'bare';
   return (
     <button
+      ref={buttonRef}
       type="button"
       disabled={disabled}
       onClick={onOpen}
@@ -137,13 +138,25 @@ function useLang() {
   return i18n?.resolvedLanguage || i18n?.language || 'de-CH';
 }
 
-/** Close the popover and put the focus back on the field. */
-function useReturnFocus(inputRef, setOpen) {
-  return () => {
+/**
+ * Open and close the popover; on close the focus goes back to what opened it:
+ * the field after Alt+ArrowDown, the calendar / clock button after a tap. Not
+ * the field after a tap: on a tablet a focused text field opens the on-screen
+ * keyboard, which then covered the lower half of the screen after every
+ * picked day (Android app).
+ */
+function usePopover(inputRef, buttonRef) {
+  const [open, setOpen] = useState(false);
+  const opener = useRef('button');
+  const openFrom = (from) => { opener.current = from; setOpen(true); };
+  const toggle = () => { opener.current = 'button'; setOpen((o) => !o); };
+  const close = () => {
     setOpen(false);
+    const target = opener.current === 'input' ? inputRef : buttonRef;
     // After the popover unmounts, so its focus handling cannot steal it back.
-    setTimeout(() => inputRef.current?.focus?.({ preventScroll: true }), 0);
+    setTimeout(() => (target.current || inputRef.current)?.focus?.({ preventScroll: true }), 0);
   };
+  return { open, openFrom, toggle, close };
 }
 
 /**
@@ -169,7 +182,7 @@ export function DateField({
   const inputRef = inputRefProp || ownRef;
   const wrapRef = useRef(null);
   const popId = useId();
-  const [open, setOpen] = useState(false);
+  const buttonRef = useRef(null);
   const [touched, setTouched] = useState(false);
   const range = { min: min || undefined, max: max || undefined };
 
@@ -194,7 +207,7 @@ export function DateField({
   const ariaInvalid = rest['aria-invalid'] === true || rest['aria-invalid'] === 'true';
   const bad = invalid || ariaInvalid || (touched && !!message);
 
-  const close = useReturnFocus(inputRef, setOpen);
+  const { open, openFrom, toggle, close } = usePopover(inputRef, buttonRef);
   const canPick = calendar && !disabled && !readOnly;
 
   return (
@@ -224,12 +237,12 @@ export function DateField({
           onBlur?.(e);
         }}
         onKeyDown={(e) => {
-          if (canPick && (e.key === 'ArrowDown' && e.altKey)) { e.preventDefault(); setOpen(true); return; }
+          if (canPick && (e.key === 'ArrowDown' && e.altKey)) { e.preventDefault(); openFrom('input'); return; }
           onKeyDown?.(e);
         }}
       />
       {calendar && (
-        <TriggerButton size={size} disabled={!canPick} open={open} onOpen={() => setOpen((o) => !o)}
+        <TriggerButton size={size} disabled={!canPick} open={open} onOpen={toggle} buttonRef={buttonRef}
           label={t('picker.openCalendar', 'Open calendar')} icon={CalendarDays} controls={popId} />
       )}
       {open && (
@@ -271,7 +284,7 @@ export function TimeField({
   const inputRef = inputRefProp || ownRef;
   const wrapRef = useRef(null);
   const popId = useId();
-  const [open, setOpen] = useState(false);
+  const buttonRef = useRef(null);
   const [touched, setTouched] = useState(false);
   const range = { min: normalizeTime(min) || undefined, max: normalizeTime(max) || undefined };
 
@@ -295,7 +308,7 @@ export function TimeField({
   const ariaInvalid = rest['aria-invalid'] === true || rest['aria-invalid'] === 'true';
   const bad = invalid || ariaInvalid || (touched && !!message);
 
-  const close = useReturnFocus(inputRef, setOpen);
+  const { open, openFrom, toggle, close } = usePopover(inputRef, buttonRef);
   const canPick = picker && !disabled && !readOnly;
 
   return (
@@ -325,12 +338,12 @@ export function TimeField({
           onBlur?.(e);
         }}
         onKeyDown={(e) => {
-          if (canPick && (e.key === 'ArrowDown' && e.altKey)) { e.preventDefault(); setOpen(true); return; }
+          if (canPick && (e.key === 'ArrowDown' && e.altKey)) { e.preventDefault(); openFrom('input'); return; }
           onKeyDown?.(e);
         }}
       />
       {picker && (
-        <TriggerButton size={size} disabled={!canPick} open={open} onOpen={() => setOpen((o) => !o)}
+        <TriggerButton size={size} disabled={!canPick} open={open} onOpen={toggle} buttonRef={buttonRef}
           label={t('picker.chooseTime', 'Choose time')} icon={Clock} controls={popId} />
       )}
       {open && (
