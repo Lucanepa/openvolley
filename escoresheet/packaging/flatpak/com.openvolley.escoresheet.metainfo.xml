@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2025 Luca Canepa -->
+<component type="desktop-application">
+  <id>com.openvolley.escoresheet</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <name>OpenVolley eScoresheet</name>
+  <summary>Offline volleyball scoresheet with a LAN server for the tablets</summary>
+  <developer id="app.openvolley">
+    <name>Luca Canepa</name>
+  </developer>
+
+  <description>
+    <p>
+      OpenVolley is an electronic scoresheet for indoor volleyball, made for the
+      scorer's table. It follows the FIVB rules and the Swiss Volley regulations
+      and replaces the paper scoresheet.
+    </p>
+    <p>
+      The desktop app runs fully offline and doubles as a server on the local
+      network: the referee, bench and livescore tablets connect to it over the
+      same Wi-Fi, with no internet and no accounts. It can start a Wi-Fi hotspot
+      or a Bluetooth network for the tablets through NetworkManager.
+    </p>
+    <ul>
+      <li>Match setup: teams, rosters, liberos, bench officials, referees</li>
+      <li>Coin toss, line-ups, rotations and the service order</li>
+      <li>Rally-by-rally scoring with undo and decision changes</li>
+      <li>Timeouts, substitutions, libero replacements, sanctions</li>
+      <li>Signatures and the scoresheet PDF of the finished match</li>
+      <li>Referee, bench and livescore views on other tablets</li>
+      <li>Optional cloud sync when the venue has internet</li>
+    </ul>
+    <p>Languages: English, German, Swiss German, French, Italian.</p>
+  </description>
+
+  <launchable type="desktop-id">com.openvolley.escoresheet.desktop</launchable>
+  <provides>
+    <binary>openvolley-escoresheet</binary>
+  </provides>
+
+  <url type="homepage">https://openvolley.app</url>
+  <url type="bugtracker">https://github.com/Lucanepa/openvolley/issues</url>
+  <url type="vcs-browser">https://github.com/Lucanepa/openvolley</url>
+  <url type="help">https://github.com/Lucanepa/openvolley/tree/main/escoresheet/wiki</url>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#f5f5f4</color>
+    <color type="primary" scheme_preference="dark">#44403c</color>
+  </branding>
+
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-info">mild</content_attribute>
+  </content_rating>
+
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>touch</control>
+  </supports>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>The scoretable</caption>
+      <image>https://raw.githubusercontent.com/Lucanepa/openvolley/main/escoresheet/packaging/flatpak/screenshots/openvolley-1.png</image>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="2.3.0" date="2026-10-07">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v2.3.0</url>
+      <description>
+        <ul>
+          <li>New logo and app icon.</li>
+          <li>Accounts are created on manager.openvolley.app; password reset by email.</li>
+          <li>Referee view: player circles and badges fit every tablet.</li>
+          <li>Dialogs no longer close when selecting text; date of birth typed as DD.MM.YYYY.</li>
+          <li>Many missing German, Swiss German and French texts added.</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+</component>

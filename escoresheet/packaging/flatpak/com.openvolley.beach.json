@@ -1,0 +1,66 @@
+{
+  "id": "com.openvolley.beach",
+  "runtime": "org.gnome.Platform",
+  "runtime-version": "51",
+  "sdk": "org.gnome.Sdk",
+  "command": "openbeach-escoresheet",
+  "finish-args": [
+    "--share=ipc",
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--device=dri",
+    "--share=network",
+    "--talk-name=org.kde.StatusNotifierWatcher",
+    "--system-talk-name=org.freedesktop.NetworkManager",
+    "--system-talk-name=org.bluez",
+    "--filesystem=xdg-download"
+  ],
+  "cleanup": [
+    "/include",
+    "/lib/pkgconfig",
+    "/share/man",
+    "*.la",
+    "*.a"
+  ],
+  "modules": [
+    "shared-modules/libayatana-appindicator/libayatana-appindicator-gtk3.json",
+    {
+      "name": "openbeach-escoresheet",
+      "buildsystem": "simple",
+      "sources": [
+        {
+          "type": "file",
+          "url": "https://github.com/Lucanepa/openvolley/releases/download/beach-desktop-v2.0.0/openbeach-escoresheet_2.0.0_amd64.deb",
+          "sha256": "cd4d9557c4417179733852d732568416f887cf4d86ad204728ecb11e7e0559ec",
+          "dest-filename": "openbeach-escoresheet.deb",
+          "only-arches": [
+            "x86_64"
+          ]
+        },
+        {
+          "type": "file",
+          "path": "unstamp-bundle-type.py"
+        },
+        {
+          "type": "file",
+          "path": "com.openvolley.beach.desktop"
+        },
+        {
+          "type": "file",
+          "path": "com.openvolley.beach.metainfo.xml"
+        }
+      ],
+      "build-commands": [
+        "ar x openbeach-escoresheet.deb",
+        "tar -xf data.tar.*",
+        "python3 unstamp-bundle-type.py usr/bin/openbeach-escoresheet",
+        "install -Dm755 usr/bin/openbeach-escoresheet ${FLATPAK_DEST}/bin/openbeach-escoresheet",
+        "install -Dm644 usr/share/icons/hicolor/32x32/apps/openbeach-escoresheet.png ${FLATPAK_DEST}/share/icons/hicolor/32x32/apps/${FLATPAK_ID}.png",
+        "install -Dm644 usr/share/icons/hicolor/128x128/apps/openbeach-escoresheet.png ${FLATPAK_DEST}/share/icons/hicolor/128x128/apps/${FLATPAK_ID}.png",
+        "install -Dm644 usr/share/icons/hicolor/256x256@2/apps/openbeach-escoresheet.png ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png",
+        "install -Dm644 ${FLATPAK_ID}.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop",
+        "install -Dm644 ${FLATPAK_ID}.metainfo.xml ${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml"
+      ]
+    }
+  ]
+}

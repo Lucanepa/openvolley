@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2025 Luca Canepa -->
+<component type="desktop-application">
+  <id>com.openvolley.beach</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <name>OpenBeach</name>
+  <summary>Offline beach volleyball scoresheet with a LAN server for the tablets</summary>
+  <developer id="app.openvolley">
+    <name>Luca Canepa</name>
+  </developer>
+
+  <description>
+    <p>
+      OpenBeach is an electronic scoresheet for beach volleyball, made for the
+      scorer's table, from the makers of OpenVolley eScoresheet.
+    </p>
+    <p>
+      It runs fully offline and doubles as a server on the local network: the
+      referee and livescore tablets and the court displays connect to it over
+      the same Wi-Fi, with no internet and no accounts. It runs next to
+      OpenVolley eScoresheet on the same computer (OpenBeach uses ports 5174
+      and 8081).
+    </p>
+    <ul>
+      <li>Teams of two, coin toss and the service order</li>
+      <li>Rally-by-rally scoring with undo and court switches</li>
+      <li>Timeouts, sanctions, signatures and the scoresheet PDF</li>
+      <li>Referee and livescore views and court displays on other devices</li>
+    </ul>
+    <p>Languages: English, German, Swiss German, French, Italian.</p>
+  </description>
+
+  <launchable type="desktop-id">com.openvolley.beach.desktop</launchable>
+  <provides>
+    <binary>openbeach-escoresheet</binary>
+  </provides>
+
+  <url type="homepage">https://beach.openvolley.app</url>
+  <url type="bugtracker">https://github.com/Lucanepa/openvolley/issues</url>
+  <url type="vcs-browser">https://github.com/Lucanepa/openvolley</url>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#f5f5f4</color>
+    <color type="primary" scheme_preference="dark">#44403c</color>
+  </branding>
+
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-info">mild</content_attribute>
+  </content_rating>
+
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>touch</control>
+  </supports>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>The scoretable</caption>
+      <image>https://raw.githubusercontent.com/Lucanepa/openvolley/main/escoresheet/packaging/flatpak/screenshots/openbeach-1.png</image>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="2.0.0" date="2026-10-07">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.0</url>
+      <description>
+        <p>First release of the OpenBeach desktop app: the beach volleyball scoretable and a LAN server for the referee and livescore tablets and the court displays.</p>
+      </description>
+    </release>
+  </releases>
+</component>

@@ -1,0 +1,66 @@
+{
+  "id": "com.openvolley.escoresheet",
+  "runtime": "org.gnome.Platform",
+  "runtime-version": "51",
+  "sdk": "org.gnome.Sdk",
+  "command": "openvolley-escoresheet",
+  "finish-args": [
+    "--share=ipc",
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--device=dri",
+    "--share=network",
+    "--talk-name=org.kde.StatusNotifierWatcher",
+    "--system-talk-name=org.freedesktop.NetworkManager",
+    "--system-talk-name=org.bluez",
+    "--filesystem=xdg-download"
+  ],
+  "cleanup": [
+    "/include",
+    "/lib/pkgconfig",
+    "/share/man",
+    "*.la",
+    "*.a"
+  ],
+  "modules": [
+    "shared-modules/libayatana-appindicator/libayatana-appindicator-gtk3.json",
+    {
+      "name": "openvolley-escoresheet",
+      "buildsystem": "simple",
+      "sources": [
+        {
+          "type": "file",
+          "url": "https://github.com/Lucanepa/openvolley/releases/download/desktop-v2.3.0/openvolley-escoresheet_2.3.0_amd64.deb",
+          "sha256": "f848743fcfdebd5fdaa890ef1038aee66a0cb25d430ab30b3d50a515a91699e1",
+          "dest-filename": "openvolley-escoresheet.deb",
+          "only-arches": [
+            "x86_64"
+          ]
+        },
+        {
+          "type": "file",
+          "path": "unstamp-bundle-type.py"
+        },
+        {
+          "type": "file",
+          "path": "com.openvolley.escoresheet.desktop"
+        },
+        {
+          "type": "file",
+          "path": "com.openvolley.escoresheet.metainfo.xml"
+        }
+      ],
+      "build-commands": [
+        "ar x openvolley-escoresheet.deb",
+        "tar -xf data.tar.*",
+        "python3 unstamp-bundle-type.py usr/bin/openvolley-escoresheet",
+        "install -Dm755 usr/bin/openvolley-escoresheet ${FLATPAK_DEST}/bin/openvolley-escoresheet",
+        "install -Dm644 usr/share/icons/hicolor/32x32/apps/openvolley-escoresheet.png ${FLATPAK_DEST}/share/icons/hicolor/32x32/apps/${FLATPAK_ID}.png",
+        "install -Dm644 usr/share/icons/hicolor/128x128/apps/openvolley-escoresheet.png ${FLATPAK_DEST}/share/icons/hicolor/128x128/apps/${FLATPAK_ID}.png",
+        "install -Dm644 usr/share/icons/hicolor/256x256@2/apps/openvolley-escoresheet.png ${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png",
+        "install -Dm644 ${FLATPAK_ID}.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop",
+        "install -Dm644 ${FLATPAK_ID}.metainfo.xml ${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml"
+      ]
+    }
+  ]
+}

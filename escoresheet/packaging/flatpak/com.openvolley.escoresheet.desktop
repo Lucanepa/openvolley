@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=OpenVolley eScoresheet
+GenericName=Volleyball scoresheet
+Comment=Open Source Volleyball eScoresheet
+Keywords=volleyball;scoresheet;scorer;referee;score;match;FIVB;
+Categories=Utility;Sports;
+Exec=openvolley-escoresheet
+Icon=com.openvolley.escoresheet
+StartupWMClass=openvolley-escoresheet
+Terminal=false
+SingleMainWindow=true
