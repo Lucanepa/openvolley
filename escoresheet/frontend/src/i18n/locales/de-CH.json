@@ -2370,6 +2370,7 @@
       "from": "Von",
       "to": "Bis",
       "search": "Team oder Spielnummer suchen",
+      "searchButton": "Sueche",
       "notClaimed": "Nicht übernommen",
       "scoredBy": "Geführt von {{name}}",
       "unknownScorer": "Unbekannter Schreiber",
