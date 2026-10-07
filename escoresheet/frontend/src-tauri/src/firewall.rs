@@ -21,6 +21,10 @@
 //! it): no netsh, no console window, no localised text to parse, and no
 //! input from the page at all. The scoretable window only (build.rs app
 //! manifest + capabilities/netshare.json).
+//!
+//! Elsewhere (Linux, macOS) `firewall_status` answers "unsupported-os"; the
+//! rule logic stays compiled for its tests.
+#![cfg_attr(not(windows), allow(dead_code))]
 
 use serde::Serialize;
 

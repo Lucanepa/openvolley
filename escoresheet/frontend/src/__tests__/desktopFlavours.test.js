@@ -35,6 +35,9 @@ const ovLinux = merge(base, json('tauri.linux.conf.json'))
 const ovWindows = base
 const beachWindows = merge(base, json('tauri.beach.conf.json'))
 const beachLinux = merge(merge(ovLinux, json('tauri.beach.conf.json')), json('tauri.beach.linux.conf.json'))
+// macOS: tauri.macos.conf.json is merged by the CLI before any --config
+const ovMac = merge(base, json('tauri.macos.conf.json'))
+const beachMac = merge(ovMac, json('tauri.beach.conf.json'))
 
 /** The fields of `pub const NAME: Flavour = Flavour { ... }` in flavour.rs. */
 function rustFlavour(name) {
@@ -244,5 +247,42 @@ describe('OpenBeach desktop flavour', () => {
     const ignore = readFileSync(join(TAURI, '../../../.gitignore'), 'utf8')
     expect(ignore).toMatch(/^\/openbeach$/m)
     expect(existsSync(join(TAURI, 'tauri.beach.linux.conf.json'))).toBe(true)
+  })
+})
+
+describe('macOS bundles (unsigned, ad-hoc)', () => {
+  it('OpenVolley keeps its identity; the bundle is named after the app', () => {
+    expect(ovMac.identifier).toBe('com.openvolley.escoresheet')
+    expect(ovMac.productName).toBe('OpenVolley eScoresheet')
+    expect(ovMac.mainBinaryName).toBe('openvolley-escoresheet')
+    expect(ovMac.plugins).toEqual(base.plugins)
+  })
+
+  it('OpenBeach on macOS is OpenBeach, with its own binary and updates', () => {
+    expect(beachMac.identifier).toBe('com.openvolley.beach')
+    expect(beachMac.productName).toBe('OpenBeach')
+    expect(beachMac.mainBinaryName).toBe('openbeach-escoresheet')
+    expect(beachMac.plugins.updater.endpoints[0]).toBe('https://get.openvolley.app/desktop/beach/latest.json')
+    for (const icon of beachMac.bundle.icon) expect(icon.startsWith('icons/beach/'), icon).toBe(true)
+    expect(existsSync(join(TAURI, 'icons/beach/icon.icns'))).toBe(true)
+  })
+
+  it('an .app and a .dmg, ad-hoc signed (no Apple account), macOS 11 and newer', () => {
+    for (const c of [ovMac, beachMac]) {
+      expect(c.bundle.targets).toEqual(['app', 'dmg'])
+      expect(c.bundle.macOS).toEqual({ signingIdentity: '-', hardenedRuntime: false, minimumSystemVersion: '11.0' })
+      // never updater artifacts from CI: publish-pkgs.sh signs on lenovoserver
+      expect(c.bundle.createUpdaterArtifacts).toBeUndefined()
+    }
+    // the other systems keep their own bundles
+    expect(base.bundle.targets).toEqual(['nsis', 'appimage', 'deb'])
+  })
+
+  it('Info.plist: local network and camera texts, http://localhost allowed', () => {
+    const plist = read('Info.plist')
+    for (const key of ['NSLocalNetworkUsageDescription', 'NSCameraUsageDescription', 'NSAllowsLocalNetworking']) {
+      expect(plist).toContain(`<key>${key}</key>`)
+    }
+    expect(plist).not.toMatch(/NSAllowsArbitraryLoads/)
   })
 })

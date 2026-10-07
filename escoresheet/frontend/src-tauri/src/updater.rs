@@ -17,6 +17,13 @@
 //!   binary (the web bundle is embedded); it says "Restart to finish". The
 //!   same check notices an `apt upgrade` or unattended-upgrades.
 //! - **A .deb installed by hand** (no repo): it says how to add the repo once.
+//! - **macOS (the .app in /Applications or ~/Applications)**: like the
+//!   AppImage. The `.app.tar.gz` downloads in the background and is verified,
+//!   then replaces the app bundle when the scorer quits (or at once with
+//!   "Restart and update"); a bundle the user cannot write asks for an
+//!   administrator once (the plugin's AppleScript prompt). A copy run from the
+//!   disk image or from App Translocation (a quarantined app macOS runs from a
+//!   read-only random path) cannot replace itself: no automatic updates there.
 //! - **Anything else** (a development build, `--server-only`): nothing.
 //!
 //! The gate is here, in Rust, and checked before every download, install and
@@ -79,25 +86,30 @@ pub enum Kind {
     AppImage,
     DebApt,
     DebNoRepo,
+    /// macOS: the .app bundle (the updater's `darwin-*` targets, a .app.tar.gz).
+    MacApp,
     Unsupported,
 }
 
 impl Kind {
     /// From the bundle the binary came in (the bundler patches it in) and
-    /// whether the APT repo's list file exists.
+    /// whether the APT repo's list file exists. macOS reports `App` for any
+    /// binary, a development build too: [`detect_kind`] passes it only for an
+    /// installed bundle ([`mac_app_installed`]).
     pub fn detect(bundle: Option<BundleType>, apt_list: bool) -> Self {
         match bundle {
             Some(BundleType::Nsis) => Self::Nsis,
             Some(BundleType::AppImage) => Self::AppImage,
             Some(BundleType::Deb) if apt_list => Self::DebApt,
             Some(BundleType::Deb) => Self::DebNoRepo,
+            Some(BundleType::App) => Self::MacApp,
             _ => Self::Unsupported,
         }
     }
 
     /// The app itself downloads and installs the update file.
     pub fn downloads(self) -> bool {
-        matches!(self, Self::Nsis | Self::AppImage)
+        matches!(self, Self::Nsis | Self::AppImage | Self::MacApp)
     }
 
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -112,6 +124,7 @@ impl Kind {
             "appimage" => Some(Self::AppImage),
             "deb-apt" => Some(Self::DebApt),
             "deb-norepo" => Some(Self::DebNoRepo),
+            "mac-app" => Some(Self::MacApp),
             _ => None,
         }
     }
@@ -214,6 +227,25 @@ pub fn quiet_after_match(now: Instant, live: MatchLive, live_ended: Option<Insta
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub fn exe_replaced(proc_self_exe: &str) -> bool {
     proc_self_exe.ends_with(" (deleted)")
+}
+
+/// macOS: `exe` is the binary of an app bundle the updater can replace in
+/// place (`<somewhere>/<Name>.app/Contents/MacOS/<binary>`): not a cargo
+/// build, not the read-only disk image (/Volumes/...), not an App
+/// Translocation copy (a quarantined app macOS runs from a random read-only
+/// path until it is moved with the Finder or the quarantine is removed).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn mac_app_installed(exe: &Path) -> bool {
+    let text = exe.to_string_lossy();
+    if text.starts_with("/Volumes/") || text.contains("/AppTranslocation/") {
+        return false;
+    }
+    let Some(macos) = exe.parent() else { return false };
+    let Some(contents) = macos.parent() else { return false };
+    let Some(bundle) = contents.parent() else { return false };
+    macos.file_name().is_some_and(|n| n == "MacOS")
+        && contents.file_name().is_some_and(|n| n == "Contents")
+        && bundle.extension().is_some_and(|e| e == "app")
 }
 
 /// What the scheduler does on a tick.
@@ -369,7 +401,7 @@ pub struct Status {
 /// held back), or the deb installable by the helper.
 pub fn restart_ready(kind: Kind, phase: &Phase, downloaded: bool, available: bool) -> bool {
     match kind {
-        Kind::Nsis | Kind::AppImage => {
+        Kind::Nsis | Kind::AppImage | Kind::MacApp => {
             matches!(phase, Phase::RestartPending) || (downloaded && !matches!(phase, Phase::Installing))
         }
         Kind::DebApt => matches!(phase, Phase::RestartPending) || (available && matches!(phase, Phase::Ready | Phase::Available)),
@@ -496,7 +528,21 @@ fn detect_kind() -> Kind {
     if let Some(kind) = test_env("OPENVOLLEY_UPDATE_TEST_KIND").and_then(|v| Kind::from_test_name(&v)) {
         return kind;
     }
-    Kind::detect(tauri::utils::platform::bundle_type(), Path::new(APT_LIST).is_file())
+    let bundle = tauri::utils::platform::bundle_type();
+    // macOS says App for every binary: only an installed bundle updates itself
+    #[cfg(target_os = "macos")]
+    let bundle = bundle.filter(|_| {
+        let exe = std::env::current_exe().ok();
+        let ok = exe.as_deref().is_some_and(mac_app_installed);
+        if !ok {
+            log::warn!(
+                "[update] {} is not an installed app bundle (disk image, App Translocation or a development build): no automatic updates; move the app to Applications",
+                exe.as_deref().map(|e| e.display().to_string()).unwrap_or_default()
+            );
+        }
+        ok
+    });
+    Kind::detect(bundle, Path::new(APT_LIST).is_file())
 }
 
 fn test_secs(name: &str, default: Duration) -> Duration {
@@ -1039,7 +1085,7 @@ pub async fn install_now<R: Runtime>(app: &AppHandle<R>) -> Result<(), InstallEr
         return restart_when_clear(app);
     }
     match kind {
-        Kind::Nsis | Kind::AppImage => {
+        Kind::Nsis | Kind::AppImage | Kind::MacApp => {
             let Some(pending) = updates.lock().pending.take() else { return Err(InstallError::code("nothing")) };
             updates.set_phase(Phase::Installing);
             push(app);
@@ -1058,7 +1104,8 @@ pub async fn install_now<R: Runtime>(app: &AppHandle<R>) -> Result<(), InstallEr
                 return Err(InstallError::code("installFailed"));
             };
             match result {
-                // AppImage: the file is replaced; Windows does not get here
+                // AppImage: the file is replaced, macOS: the .app bundle;
+                // Windows does not get here
                 Ok(()) => restart_when_clear(app),
                 Err(e) => {
                     log::warn!("[update] install of {version} failed: {e}");
@@ -1115,7 +1162,8 @@ pub fn install_from_tray<R: Runtime>(app: &AppHandle<R>) {
 /// and installing automatically is on. Windows: the installer runs without
 /// relaunching the app (one administrator prompt) and this process ends;
 /// a declined prompt is not asked again on quit for 3 days. AppImage: the
-/// file is replaced, the next start is the new version. Deb: nothing here
+/// file is replaced, the next start is the new version (macOS: the .app
+/// bundle, with an administrator prompt when the user cannot write it). Deb: nothing here
 /// (the helper already ran). Never on an OS shutdown / logout.
 pub fn on_confirmed_quit<R: Runtime>(app: &AppHandle<R>) {
     let Some(updates) = app.try_state::<Updates>() else { return };
@@ -1297,8 +1345,21 @@ mod tests {
         assert_eq!(Kind::detect(Some(BundleType::Msi), false), Kind::Unsupported);
         assert_eq!(Kind::detect(Some(BundleType::Rpm), false), Kind::Unsupported);
         assert_eq!(Kind::detect(None, true), Kind::Unsupported, "a development build");
-        assert!(Kind::Nsis.downloads() && Kind::AppImage.downloads());
+        assert_eq!(Kind::detect(Some(BundleType::App), false), Kind::MacApp);
+        assert!(Kind::Nsis.downloads() && Kind::AppImage.downloads() && Kind::MacApp.downloads());
         assert!(!Kind::DebApt.downloads() && !Kind::DebNoRepo.downloads());
+    }
+
+    #[test]
+    fn only_an_installed_mac_app_bundle_updates_itself() {
+        let yes = |p: &str| mac_app_installed(Path::new(p));
+        assert!(yes("/Applications/OpenVolley eScoresheet.app/Contents/MacOS/openvolley-escoresheet"));
+        assert!(yes("/Users/scorer/Applications/OpenBeach.app/Contents/MacOS/openbeach-escoresheet"));
+        assert!(!yes("/Volumes/OpenVolley eScoresheet/OpenVolley eScoresheet.app/Contents/MacOS/openvolley-escoresheet"), "the disk image");
+        assert!(!yes("/private/var/folders/x1/T/AppTranslocation/0A1B/d/OpenBeach.app/Contents/MacOS/openbeach-escoresheet"));
+        assert!(!yes("/Users/dev/openvolley/src-tauri/target/release/openvolley-escoresheet"), "a cargo build");
+        assert!(!yes("/Applications/Thing/Contents/MacOS/x"), "not a .app");
+        assert!(!yes("/x"));
     }
 
     #[test]
@@ -1402,6 +1463,8 @@ mod tests {
         assert!(restart_ready(Kind::DebApt, &Phase::Ready, false, true));
         assert!(!restart_ready(Kind::DebNoRepo, &Phase::Ready, false, true));
         assert!(!restart_ready(Kind::Unsupported, &Phase::Ready, true, true));
+        assert!(restart_ready(Kind::MacApp, &Phase::Ready, true, true));
+        assert!(restart_ready(Kind::MacApp, &Phase::RestartPending, false, false));
     }
 
     #[test]
@@ -1434,6 +1497,7 @@ mod tests {
         assert_eq!(failed, serde_json::json!({ "phase": "failed", "msg": "needsAdmin" }));
         assert_eq!(serde_json::to_value(Phase::RestartPending).unwrap()["phase"], "restartPending");
         assert_eq!(serde_json::to_value(Kind::DebNoRepo).unwrap(), "debNoRepo");
+        assert_eq!(serde_json::to_value(Kind::MacApp).unwrap(), "macApp");
         assert_eq!(serde_json::from_str::<Reason>(r#""signIn""#).unwrap(), Reason::SignIn);
         assert_eq!(
             event_script(r#"{"phase":"idle"}"#),
@@ -1441,8 +1505,9 @@ mod tests {
         );
     }
 
-    /// The manifest publish-pkgs.sh writes: every platform key the three
-    /// kinds of install look up (`{os}-{arch}-{installer}`, then `{os}-{arch}`).
+    /// The manifest publish-pkgs.sh writes: every platform key the four
+    /// kinds of install look up (`{os}-{arch}-{installer}`, then `{os}-{arch}`;
+    /// macOS: both architectures, one universal .app.tar.gz).
     #[test]
     fn manifest_fixture_has_every_platform() {
         let text = include_str!("../tests/fixtures/latest.json");
@@ -1455,6 +1520,10 @@ mod tests {
             "linux-x86_64-appimage",
             "linux-x86_64",
             "linux-x86_64-deb",
+            "darwin-aarch64-app",
+            "darwin-aarch64",
+            "darwin-x86_64-app",
+            "darwin-x86_64",
         ] {
             let url = release.download_url(key).unwrap_or_else(|e| panic!("{key}: {e}"));
             assert_eq!(url.scheme(), "https", "{key}");
@@ -1464,6 +1533,11 @@ mod tests {
         assert!(release.download_url("windows-x86_64-nsis").unwrap().as_str().ends_with("_x64-setup.exe"));
         assert!(release.download_url("linux-x86_64-deb").unwrap().as_str().ends_with("_amd64.deb"));
         assert!(release.download_url("linux-x86_64-appimage").unwrap().as_str().ends_with(".AppImage"));
+        for key in ["darwin-aarch64-app", "darwin-aarch64", "darwin-x86_64-app", "darwin-x86_64"] {
+            assert!(release.download_url(key).unwrap().as_str().ends_with("_universal.app.tar.gz"), "{key}");
+            // OpenVolley's own file, not the other app's (foreign_update)
+            assert!(!foreign_update(release.download_url(key).unwrap(), &crate::flavour::OPENVOLLEY), "{key}");
+        }
     }
 
     // -- on Tauri's mock runtime, with the app's real managed state ----------

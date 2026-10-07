@@ -265,13 +265,35 @@ pub fn let_scripts_open_windows<R: Runtime>(window: &WebviewWindow<R>) {
     });
 }
 
-#[cfg(not(target_os = "linux"))]
+/// WKWebView (macOS) blocks window.open() without a click the same way
+/// (javaScriptCanOpenWindowsAutomatically is off by default), before its UI
+/// delegate (wry's new-window handler) is asked: the same setting, the same
+/// trade-off. The read back goes through a second `configuration` call, so
+/// the log line says whether the web view really took it (`configuration`
+/// hands out a copy whose preferences are the web view's own).
+#[cfg(target_os = "macos")]
+pub fn let_scripts_open_windows<R: Runtime>(window: &WebviewWindow<R>) {
+    let label = window.label().to_string();
+    let _ = window.with_webview(move |platform| {
+        // SAFETY: on macOS inner() is wry's WKWebView, alive while this
+        // closure runs on the main thread; the calls only touch its preferences.
+        let view = unsafe { &*platform.inner().cast::<objc2_web_kit::WKWebView>() };
+        let on = unsafe {
+            view.configuration().preferences().setJavaScriptCanOpenWindowsAutomatically(true);
+            view.configuration().preferences().javaScriptCanOpenWindowsAutomatically()
+        };
+        log::info!("[popups] {label}: window.open from scripts {}", if on { "allowed" } else { "NOT allowed" });
+    });
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub fn let_scripts_open_windows<R: Runtime>(_window: &WebviewWindow<R>) {}
 
 /// window.close() in a popup (the match-end PDF window closes itself once the
 /// PDF is sent): WebKitGTK only destroys the webview, which left an empty
 /// window behind. Close the app window with it. (WebView2 already closes the
-/// window; macOS is not a target.)
+/// window. macOS: wry has no webViewDidClose, so a popup's window.close()
+/// does nothing there and the window stays until the scorer closes it.)
 #[cfg(target_os = "linux")]
 fn close_on_window_close<R: Runtime>(window: &WebviewWindow<R>) {
     use gtk::prelude::WidgetExt;

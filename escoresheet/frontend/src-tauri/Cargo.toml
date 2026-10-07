@@ -85,6 +85,17 @@ windows = { version = "0.61", features = [
   "Win32_System_Variant",
 ] }
 
+# WKWebView's preferences: window.open() from scripts (popups.rs). Already
+# in the tree through wry (same version), so only features are added.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-web-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "objc2-app-kit",
+  "WKWebView",
+  "WKWebViewConfiguration",
+  "WKPreferences",
+] }
+
 [dev-dependencies]
 # mock runtime for the IPC/ACL test of the backup commands (main.rs)
 tauri = { version = "2", features = ["test"] }

@@ -2624,6 +2624,7 @@ dependencies = [
  "local-ip-address",
  "log",
  "mime_guess",
+ "objc2-web-kit",
  "rand",
  "rust-embed",
  "serde",
