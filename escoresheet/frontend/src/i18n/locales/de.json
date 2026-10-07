@@ -190,6 +190,7 @@
     "delete": "Löschen"
   },
   "refereeSelector": {
+    "title": "Schiedsrichter-Datenbank",
     "searchReferees": "Schiedsrichter suchen...",
     "connectToInternet": "Mit Internet verbinden, um Schiedsrichter-Historie zu sehen",
     "noRefereesFound": "Keine Schiedsrichter gefunden",

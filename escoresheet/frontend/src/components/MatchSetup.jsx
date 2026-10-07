@@ -744,7 +744,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   // Referee selector state
   const [showRefereeSelector, setShowRefereeSelector] = useState(null) // 'ref1' | 'ref2' | null
-  const [refereeSelectorPosition, setRefereeSelectorPosition] = useState({})
   const rosterLoadedRef = useRef(false) // Track if roster has been loaded to prevent overwriting user edits
   const homeTeamInputRef = useRef(null)
   const awayTeamInputRef = useRef(null)
@@ -3376,8 +3375,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   }
 
   // Callback for opening database selector - MUST be before any early returns to satisfy React hooks rules
-  const handleOpenDatabase = useCallback((e, selectorKey) => {
-    setRefereeSelectorPosition({ element: e.currentTarget })
+  const handleOpenDatabase = useCallback((_e, selectorKey) => {
     setShowRefereeSelector(selectorKey)
   }, [])
 
@@ -3869,7 +3867,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               setScorerDob(referee.dob || '')
             }
           }}
-          position={refereeSelectorPosition}
         />
 
         <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">

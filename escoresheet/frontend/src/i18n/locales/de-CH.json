@@ -197,6 +197,7 @@
     "delete": "Löschen"
   },
   "refereeSelector": {
+    "title": "Schiri-Datebank",
     "searchReferees": "Schiri sueche...",
     "connectToInternet": "Mit Internet verbinde, zum Schiri-Historie gseh",
     "noRefereesFound": "Kei Schiri gfunde",

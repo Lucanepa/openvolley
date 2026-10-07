@@ -197,6 +197,7 @@
     "delete": "Cancellare"
   },
   "refereeSelector": {
+    "title": "Database arbitri",
     "searchReferees": "Cerca arbitri...",
     "connectToInternet": "Connettiti a internet per vedere lo storico degli arbitri",
     "noRefereesFound": "Nessun arbitro trovato",

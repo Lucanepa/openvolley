@@ -1,215 +1,149 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Database } from 'lucide-react'
 import { apiFrom } from '../lib/apiClient'
+import KitModal from './manage/KitModal'
+import { SearchInput, SkeletonRows, EmptyInset } from '../ui'
 import { FOCUS_RING_INSET } from '../ui/Button.jsx'
-import { backdropDismiss } from '../ui/backdropDismiss.js'
+import { cn } from '../ui/cn.js'
+import { PICKER_RESULTS } from './pickerLayout'
 
 // Sport type for indoor volleyball
 const SPORT_TYPE = 'indoor'
 
+const ROW = cn(
+  'flex w-full min-h-11 items-center rounded-lg bg-transparent px-3 text-left text-sm font-medium text-stone-800 hover:bg-stone-100 transition-colors',
+  FOCUS_RING_INSET
+)
+
 /**
- * Reusable RefereeSelector component for selecting referees from history
- * Uses Supabase referee_database table for suggestions
- * @param {boolean} open - Whether dropdown is open
- * @param {function} onClose - Function to call when closing
- * @param {function} onSelect - Function to call when a referee is selected: (referee) => void
- * @param {Object} position - Position config for dropdown placement
+ * The referee database picker of Match setup (1st / 2nd referee): a kit
+ * Modal with a search field and the referees of the cloud referee_database.
+ *
+ * Its box never changes size (pickerLayout.js): the panel width comes from
+ * the kit Modal (`size="md"`), and the result area has a fixed height that the
+ * skeleton, the empty message and the list all fill alike. No open animation.
+ *
+ * @param {boolean} open
+ * @param {function} onClose
+ * @param {function} onSelect (referee) => void
  */
-export default function RefereeSelector({ open, onClose, onSelect, position = {} }) {
+export default function RefereeSelector({ open, onClose, onSelect }) {
   const { t } = useTranslation()
   const [searchQuery, setSearchQuery] = useState('')
   const [referees, setReferees] = useState([])
   const [loading, setLoading] = useState(false)
-  const dropdownRef = useRef(null)
+  const [offline, setOffline] = useState(false)
 
-  // Load referees from Supabase history
-  useEffect(() => {
-    if (open) {
-      loadReferees()
-    }
-  }, [open])
-
-  const loadReferees = async () => {
-    setLoading(true)
-    try {
-      const { data, error } = await apiFrom('referee_database')
-        .select('first_name, last_name, country, dob, created_at')
-        .contains('sport_type', JSON.stringify([SPORT_TYPE]))
-        .order('last_name', { ascending: true })
-
-      if (error) {
-        console.error('Error loading referees from history:', error)
-        setReferees([])
-        return
-      }
-
-      // Data is already unique due to unique index, just map to expected format
-      const uniqueReferees = (data || []).map(ref => ({
-        id: `${ref.last_name}_${ref.first_name}`.toLowerCase(),
-        firstName: ref.first_name || '',
-        lastName: ref.last_name || '',
-        country: ref.country || 'CHE',
-        dob: ref.dob || ''
-      }))
-
-      console.log(`[RefereeSelector] Loaded ${uniqueReferees.length} unique referees from history`)
-      setReferees(uniqueReferees)
-    } catch (error) {
-      console.error('Error loading referees:', error)
-      setReferees([])
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Filter and sort referees
-  const filteredReferees = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return referees
-    }
-
-    const query = searchQuery.toLowerCase()
-    return referees.filter(ref => {
-      const fullName = `${ref.lastName || ''} ${ref.firstName || ''}`.toLowerCase()
-      return fullName.includes(query)
-    })
-  }, [referees, searchQuery])
-
-  // Always center the modal on screen
-  useEffect(() => {
-    if (!open || !dropdownRef.current) return
-
-    // Always center the modal
-    dropdownRef.current.style.position = 'fixed'
-    dropdownRef.current.style.left = '50%'
-    dropdownRef.current.style.top = '50%'
-    dropdownRef.current.style.transform = 'translate(-50%, -50%)'
-    dropdownRef.current.style.zIndex = '1000'
-  }, [open])
-
-  // Handle click outside
+  // Load the referees each time the picker opens; the last list stays on
+  // screen while it refreshes.
   useEffect(() => {
     if (!open) return
-
-    const handleClickOutside = (e) => {
-      if (!e.target.closest('[data-referee-selector]')) {
-        onClose()
+    let cancelled = false
+    setLoading(true)
+    ;(async () => {
+      try {
+        const { data, error } = await apiFrom('referee_database')
+          .select('first_name, last_name, country, dob, created_at')
+          .contains('sport_type', JSON.stringify([SPORT_TYPE]))
+          .order('last_name', { ascending: true })
+        if (cancelled) return
+        if (error) {
+          console.error('Error loading referees from history:', error)
+          setOffline(error.network === true || error.status === 0)
+          setReferees([])
+          return
+        }
+        setOffline(false)
+        // Unique already (unique index); map to the shape Match setup expects
+        setReferees((data || []).map(ref => ({
+          id: `${ref.last_name}_${ref.first_name}`.toLowerCase(),
+          firstName: ref.first_name || '',
+          lastName: ref.last_name || '',
+          country: ref.country || 'CHE',
+          dob: ref.dob || ''
+        })))
+      } catch (error) {
+        if (cancelled) return
+        console.error('Error loading referees:', error)
+        setReferees([])
+      } finally {
+        if (!cancelled) setLoading(false)
       }
-    }
+    })()
+    return () => { cancelled = true }
+  }, [open])
 
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [open, onClose])
+  const filteredReferees = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+    if (!query) return referees
+    return referees.filter(ref => `${ref.lastName || ''} ${ref.firstName || ''}`.toLowerCase().includes(query))
+  }, [referees, searchQuery])
 
-  if (!open) return null
+  const close = () => {
+    setSearchQuery('') // fresh search next time
+    onClose()
+  }
 
-  const isOnline = true
+  let results
+  if (loading && referees.length === 0) {
+    results = <SkeletonRows rows={5} pill={false} />
+  } else if (filteredReferees.length === 0) {
+    results = (
+      <EmptyInset className="text-center">
+        {searchQuery
+          ? t('refereeSelector.noRefereesFound')
+          : offline ? t('refereeSelector.connectToInternet') : t('refereeSelector.noRefereeHistory')}
+      </EmptyInset>
+    )
+  } else {
+    results = (
+      <div className="flex flex-col gap-1">
+        {filteredReferees.map((referee) => (
+          <button
+            key={referee.id}
+            type="button"
+            className={ROW}
+            onClick={() => {
+              onSelect(referee)
+              close()
+            }}
+          >
+            <span className="min-w-0 truncate">{referee.lastName}, {referee.firstName}</span>
+          </button>
+        ))}
+      </div>
+    )
+  }
 
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          zIndex: 999,
-          background: 'transparent'
-        }}
-        {...backdropDismiss(onClose)}
-      />
-      {/* Dropdown */}
-      <div
-        ref={dropdownRef}
-        style={{
-          position: 'fixed',
-          zIndex: 1000
-        }}
-        className="modal-wrapper-roll-down"
-      >
-        {/* volleyui (RESTYLE-SPEC P3b): a white floating picker card
-            (rounded-xl, stone-200 hairline, shadow-card-lg), large search
-            field, 44px menu rows. */}
+    <KitModal
+      open={open}
+      onClose={close}
+      layout="sections"
+      size="md"
+      title={t('refereeSelector.title')}
+      icon={Database}
+      closeLabel={t('common.close', 'Close')}
+      bodyClassName="space-y-3"
+    >
+      <div data-referee-selector data-testid="referee-picker" className="flex flex-col gap-3">
+        <SearchInput
+          size="lg"
+          aria-label={t('refereeSelector.searchReferees')}
+          placeholder={t('refereeSelector.searchReferees')}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          data-autofocus=""
+        />
         <div
-          data-referee-selector
-          className="rounded-xl border border-stone-200 bg-white shadow-card-lg"
-          style={{
-            padding: '8px',
-            minWidth: '300px',
-            maxWidth: '400px',
-            maxHeight: '400px',
-            display: 'flex',
-            flexDirection: 'column'
-          }}
+          data-testid="referee-picker-list"
+          className={cn(PICKER_RESULTS, '-mx-2 px-2')}
+          aria-busy={loading || undefined}
         >
-
-          {/* Search Input */}
-          <input
-            type="text"
-            aria-label={t('refereeSelector.searchReferees')}
-            placeholder={t('refereeSelector.searchReferees')}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              width: '100%',
-              minHeight: '44px',
-              padding: '8px 12px',
-              marginBottom: '8px',
-              fontSize: '14px',
-              boxSizing: 'border-box'
-            }}
-            autoFocus
-          />
-
-          {/* Referees List */}
-          <div style={{
-            overflowY: 'auto',
-            maxHeight: '280px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '4px'
-          }}>
-            {!isOnline ? (
-              <div className="text-sm text-stone-500" style={{ padding: '12px', textAlign: 'center' }}>
-                {t('refereeSelector.connectToInternet')}
-              </div>
-            ) : loading ? (
-              <div className="text-sm text-stone-500" style={{ padding: '12px', textAlign: 'center' }}>
-                {t('common.loading')}
-              </div>
-            ) : filteredReferees.length === 0 ? (
-              <div className="text-sm text-stone-500" style={{ padding: '12px', textAlign: 'center' }}>
-                {searchQuery ? t('refereeSelector.noRefereesFound') : t('refereeSelector.noRefereeHistory')}
-              </div>
-            ) : (
-              filteredReferees.map((referee) => (
-                <button
-                  key={referee.id}
-                  onClick={() => {
-                    onSelect(referee)
-                    setSearchQuery('') // Reset search for next use
-                    onClose()
-                  }}
-                  className={`w-full min-h-11 rounded-lg bg-transparent px-3 text-left text-sm font-medium text-stone-800 hover:bg-stone-100 transition-colors ${FOCUS_RING_INSET}`}
-                  style={{
-                    border: 'none',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between'
-                  }}
-                >
-                  <span>{referee.lastName}, {referee.firstName}</span>
-                </button>
-              ))
-            )}
-          </div>
+          {results}
         </div>
       </div>
-    </>
+    </KitModal>
   )
 }
