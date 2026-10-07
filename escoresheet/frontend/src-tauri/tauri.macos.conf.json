@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OpenVolley eScoresheet",
+  "mainBinaryName": "openvolley-escoresheet",
+  "bundle": {
+    "targets": ["app", "dmg"],
+    "macOS": {
+      "signingIdentity": "-",
+      "hardenedRuntime": false,
+      "minimumSystemVersion": "11.0"
+    }
+  }
+}

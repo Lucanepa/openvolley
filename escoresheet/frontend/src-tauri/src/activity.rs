@@ -128,27 +128,49 @@ pub fn prune(root: &Path, keep_files: usize, keep_bytes: u64) -> Vec<String> {
 }
 
 /// The log folder without an app handle (the log plugin is built before the
-/// app): the platform data folder as Tauri's `data_dir()` resolves it.
+/// app): the platform data folder as Tauri's `data_dir()` resolves it, and on
+/// macOS the user's ~/Library/Logs/<app> (OpenVolley or OpenBeach), where
+/// Console.app and support scripts look.
 pub fn default_log_root() -> Option<PathBuf> {
     if let Some(dir) = std::env::var_os("OPENVOLLEY_LOG_DIR").filter(|d| !d.is_empty()) {
         return Some(PathBuf::from(dir));
     }
     let env_dir = |k: &str| std::env::var_os(k).filter(|d| !d.is_empty()).map(PathBuf::from);
     #[cfg(target_os = "windows")]
-    let data = env_dir("APPDATA");
+    let data = env_dir("APPDATA").map(data_log_root);
     #[cfg(target_os = "macos")]
-    let data = env_dir("HOME").map(|h| h.join("Library").join("Application Support"));
+    let data = env_dir("HOME").map(mac_log_root);
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let data = env_dir("XDG_DATA_HOME").or_else(|| env_dir("HOME").map(|h| h.join(".local").join("share")));
-    data.map(|d| d.join("OpenVolley").join("logs"))
+    let data = env_dir("XDG_DATA_HOME").or_else(|| env_dir("HOME").map(|h| h.join(".local").join("share"))).map(data_log_root);
+    data
 }
 
 pub fn log_root<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     if let Some(dir) = std::env::var_os("OPENVOLLEY_LOG_DIR").filter(|d| !d.is_empty()) {
         return Ok(PathBuf::from(dir));
     }
-    let data = app.path().data_dir().map_err(|e| format!("no data folder: {e}"))?;
-    Ok(data.join("OpenVolley").join("logs"))
+    #[cfg(target_os = "macos")]
+    {
+        let home = app.path().home_dir().map_err(|e| format!("no home folder: {e}"))?;
+        Ok(mac_log_root(home))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let data = app.path().data_dir().map_err(|e| format!("no data folder: {e}"))?;
+        Ok(data_log_root(data))
+    }
+}
+
+/// Windows, Linux: <data dir>/OpenVolley/logs.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn data_log_root(data: PathBuf) -> PathBuf {
+    data.join("OpenVolley").join("logs")
+}
+
+/// macOS: ~/Library/Logs/OpenVolley (OpenBeach: ~/Library/Logs/OpenBeach).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn mac_log_root(home: PathBuf) -> PathBuf {
+    home.join("Library").join("Logs").join(crate::flavour::CURRENT.data_folder)
 }
 
 fn today() -> String {
@@ -194,6 +216,13 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ov-activity-test-{tag}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         dir
+    }
+
+    #[test]
+    fn log_folders_per_platform() {
+        assert_eq!(data_log_root(PathBuf::from("/home/s/.local/share")), PathBuf::from("/home/s/.local/share/OpenVolley/logs"));
+        let mac = mac_log_root(PathBuf::from("/Users/s"));
+        assert_eq!(mac, PathBuf::from("/Users/s/Library/Logs").join(crate::flavour::CURRENT.data_folder));
     }
 
     #[test]

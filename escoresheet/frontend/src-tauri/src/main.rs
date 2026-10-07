@@ -70,12 +70,19 @@ fn main() {
         }));
     }
 
-    with_app_commands(builder.plugin(tauri_plugin_dialog::init()))
-        // No native menu bar on Linux / Windows: it held only Help > Connect a
-        // Tablet and rendered in the GTK system theme (dark on a dark desktop).
-        // The app's own header menu has Connect tablets (LAN addresses + QR),
-        // help and the version. macOS keeps Tauri's default app menu (quit,
-        // copy / paste).
+    let builder = with_app_commands(builder.plugin(tauri_plugin_dialog::init()));
+    // No native menu bar on Linux / Windows: it held only Help > Connect a
+    // Tablet and rendered in the GTK system theme (dark on a dark desktop).
+    // The app's own header menu has Connect tablets (LAN addresses + QR),
+    // help and the version. macOS has an app menu (copy / paste, hide), with
+    // a Quit (Cmd+Q) that asks first, as the tray's does (lifecycle.rs).
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(lifecycle::app_menu).on_menu_event(|app, event| {
+        if event.id() == lifecycle::MENU_APP_QUIT {
+            lifecycle::request_quit(app);
+        }
+    });
+    builder
         .setup(move |app| {
             // `--quit` and no running app to hand it to: only undo a tablet
             // Wi-Fi a crashed run left on (Windows), then exit, before the
@@ -215,6 +222,10 @@ fn main() {
             // Quitting: the tablets' Wi-Fi / Bluetooth network goes down with
             // the app (and the user's own hotspot settings come back).
             tauri::RunEvent::Exit => netshare::shutdown(app),
+            // macOS: a click on the Dock icon brings back the window the
+            // close button hid (the app runs on in the menu bar).
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => lifecycle::show_windows(app),
             _ => {}
         });
 }

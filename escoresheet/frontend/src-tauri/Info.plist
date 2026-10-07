@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged into the macOS app's Info.plist by the Tauri bundler (both apps). -->
+<plist version="1.0">
+<dict>
+  <!-- the scoretable window and its scoresheet windows load the app's own relay over plain http://localhost -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsLocalNetworking</key>
+    <true/>
+  </dict>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>The referee, bench and livescore tablets and the court displays connect to this computer over the local network.</string>
+  <!-- WKWebView ends the app when a page asks for the camera without this text -->
+  <key>NSCameraUsageDescription</key>
+  <string>The camera scans QR codes, for example to connect a device.</string>
+</dict>
+</plist>
