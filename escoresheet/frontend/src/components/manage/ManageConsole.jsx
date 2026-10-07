@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, ClipboardList, KeyRound, ScrollText, ShieldCheck, Trophy, Users } from 'lucide-react'
+import { ArrowLeft, ClipboardList, KeyRound, Medal, ScrollText, ShieldCheck, Trophy, Users } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { ConsoleShell, ConsolePanel, consoleHeaderBtn } from '../../ui'
 import AccountsPanel from './AccountsPanel'
@@ -9,6 +9,7 @@ import OfficialGamesPanel from './OfficialGamesPanel'
 import ClosedMatchesPanel from './ClosedMatchesPanel'
 import AuditPanel from './AuditPanel'
 import SavedTeamsPanel from './SavedTeamsPanel'
+import TournamentsPanel from './tournaments/TournamentsPanel'
 import { accessForApp } from '../../lib/access'
 import { useManagerBrand } from '../../managerBrand'
 
@@ -18,20 +19,24 @@ const TABS = [
   { id: 'games', icon: Trophy, admin: true },
   { id: 'matches', icon: ShieldCheck, admin: true },
   { id: 'audit', icon: ScrollText, admin: true },
-  { id: 'teams', icon: ClipboardList, admin: false }
+  { id: 'teams', icon: ClipboardList, admin: false },
+  // OpenBeach only (plan phase T1): beach competition managers and the admin
+  { id: 'tournaments', icon: Medal, admin: false, apps: ['beach'] }
 ]
 
 /**
  * The tabs an account sees: admins all six, competition managers saved teams.
  * With a brand (src/managerBrand.js) only that brand's tabs, and the saved
  * teams by that app's role (OpenBeach: beach:competition_manager). Without
- * one (or OpenVolley's), exactly as before.
+ * one (or OpenVolley's), exactly as before. A tab with `apps` (tournaments)
+ * only in the console of those apps.
  */
 export function manageTabsFor(access, brand = null) {
   if (!access) return []
   const own = accessForApp(access, brand?.app)
   return TABS
     .filter(tab => !brand?.tabs || brand.tabs.includes(tab.id))
+    .filter(tab => !tab.apps || tab.apps.includes(brand?.app))
     .filter(tab => (tab.admin ? own.isAdmin : own.canManageTeams))
     .map(tab => tab.id)
 }
@@ -102,6 +107,7 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions }) {
         {visited.has('matches') && <ConsolePanel id="matches" current={current}><ClosedMatchesPanel /></ConsolePanel>}
         {visited.has('audit') && <ConsolePanel id="audit" current={current}><AuditPanel app={scope} /></ConsolePanel>}
         {visited.has('teams') && <ConsolePanel id="teams" current={current}><SavedTeamsPanel userId={user.id} sport={scope} /></ConsolePanel>}
+        {visited.has('tournaments') && <ConsolePanel id="tournaments" current={current}><TournamentsPanel /></ConsolePanel>}
       </ConsoleShell>
     </div>
   )
