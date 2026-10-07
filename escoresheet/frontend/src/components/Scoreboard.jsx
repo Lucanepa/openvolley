@@ -17791,7 +17791,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       </button>
                     ) : (
                       <>
-                        <div className="rally-controls-row" style={{ gap: '5px' }}>
+                        <div className="rally-controls-row">
                           <button data-help-id="scoreboard-point-left" className="rally-point-button" onClick={() => handlePoint('left')}>
                             {t('scoreboard.buttons.pointTeam', { team: teamALabel })}
                           </button>
@@ -17801,12 +17801,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         </div>
                       </>
                     )}
-                    <div style={{ display: 'flex', gap: '8px' }}>
+                    <div className="rally-secondary-row">
                       {rallyStatus === 'in_play' && (
                         <button
                           className="secondary"
                           onClick={handleReplay}
-                          style={{ flex: 1 }}
                         >
                           {t('scoreboard.buttons.replay')}
                         </button>
@@ -17815,13 +17814,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         <button
                           onClick={handleReplay}
                           style={{
-                            flex: 1,
                             background: '#eab308',
                             color: '#000',
                             border: 'none',
                             borderRadius: '8px',
-                            padding: '8px 12px',
-                            fontSize: '13px',
                             fontWeight: 600,
                             cursor: 'pointer'
                           }}
@@ -17829,17 +17825,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           {t('scoreboard.buttons.decisionChange')}
                         </button>
                       )}
+                      {/* Keep Undo in its half even when the left button is absent */}
+                      {rallyStatus === 'idle' && !canReplayRally && <span aria-hidden="true" />}
                       <button
                         data-help-id="scoreboard-undo"
                         className="danger"
                         onClick={showUndoConfirm}
                         disabled={!canUndo}
-                        style={{
-                          flex: (rallyStatus === 'in_play' || (rallyStatus === 'idle' && canReplayRally)) ? 1 : 'none',
-                          padding: '8px 16px',
-                          fontSize: '14px',
-                          minHeight: '44px'
-                        }}
                       >
                         {t('scoreboard.buttons.undo')}
                       </button>
