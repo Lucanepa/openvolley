@@ -24,7 +24,7 @@ import { readFileSync, writeFileSync, mkdirSync, cpSync, copyFileSync, existsSyn
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
-import { PRECACHE_GLOB_PATTERNS, IGNORE_URL_PARAMETERS, offlineNavigationRoute, PWA_INCLUDE_ASSETS, PWA_ICONS } from '../pwa-workbox.js'
+import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, PWA_INCLUDE_ASSETS, PWA_ICONS } from '../pwa-workbox.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const frontendDir = resolve(__dirname, '..')
@@ -335,6 +335,7 @@ async function buildSubdomain(subdomain, basePath = '/') {
           workbox: {
             // Same precache/offline rules as the main build (pwa-workbox.js)
             globPatterns: PRECACHE_GLOB_PATTERNS,
+            globIgnores: PRECACHE_GLOB_IGNORES,
             ignoreURLParametersMatching: IGNORE_URL_PARAMETERS,
             // The page is built as _build_<app>.html and renamed to index.html
             // below; precache it under its final name, or the SW install 404s
@@ -374,7 +375,7 @@ async function buildSubdomain(subdomain, basePath = '/') {
                 }
               }
             ],
-            navigateFallbackDenylist: [/^\/api\//],
+            navigateFallbackDenylist: NAVIGATE_FALLBACK_DENYLIST,
             cleanupOutdatedCaches: true
           },
           manifest: {

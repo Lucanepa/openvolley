@@ -114,3 +114,15 @@ describe('pwa-workbox offlineNavigationRoute', () => {
     expect(PRECACHE_GLOB_PATTERNS[0]).toMatch(/jpg/)
   })
 })
+
+describe('pwa-workbox and the phone signing page (/sign)', () => {
+  it('a navigation to /sign never gets the app shell, and the page is not precached', async () => {
+    const { NAVIGATE_FALLBACK_DENYLIST, PRECACHE_GLOB_IGNORES } = await import('../../pwa-workbox.js')
+    const denied = (p) => NAVIGATE_FALLBACK_DENYLIST.some((re) => re.test(p))
+    for (const p of ['/sign', '/sign/', '/sign/index.html', '/api/sign/open', '/api/db']) expect(denied(p), p).toBe(true)
+    for (const p of ['/', '/signature', '/referee/', '/scoresheet/']) expect(denied(p), p).toBe(false)
+    expect(PRECACHE_GLOB_IGNORES).toContain('sign/**')
+    // vite-plugin-pwa's defaults stay ignored too
+    expect(PRECACHE_GLOB_IGNORES).toEqual(expect.arrayContaining(['**/node_modules/**/*', 'sw.js', 'workbox-*.js']))
+  })
+})

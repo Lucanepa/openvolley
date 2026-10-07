@@ -6,7 +6,7 @@ import { readFileSync, existsSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { vitePluginApiRoutes } from './vite-plugin-api-routes.js'
-import { PRECACHE_GLOB_PATTERNS, IGNORE_URL_PARAMETERS, offlineNavigationRoute, PWA_INCLUDE_ASSETS, PWA_ICONS } from './pwa-workbox.js'
+import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, PWA_INCLUDE_ASSETS, PWA_ICONS } from './pwa-workbox.js'
 
 // Valid HTML pages for the app (folder-based structure for clean URLs)
 const validPages = [
@@ -220,6 +220,7 @@ export default defineConfig({
         // offline start shows system fonts + missing logos/backgrounds.
         // Also .mjs (pdf.js worker) and .jpg (scoresheet logo).
         globPatterns: PRECACHE_GLOB_PATTERNS,
+        globIgnores: PRECACHE_GLOB_IGNORES,
         // Match precache ignoring ALL query params: /scoresheet/?matchId=X,
         // /referee/?match=..&team=.. must load the precached index.html offline
         ignoreURLParametersMatching: IGNORE_URL_PARAMETERS,
@@ -276,7 +277,7 @@ export default defineConfig({
           }
         ],
         // Don't cache these routes
-        navigateFallbackDenylist: [/^\/api\//],
+        navigateFallbackDenylist: NAVIGATE_FALLBACK_DENYLIST,
         // Clean up old caches
         cleanupOutdatedCaches: true
       },
