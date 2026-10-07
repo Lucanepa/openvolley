@@ -17,7 +17,7 @@ vi.mock('react-i18next', async () => {
   }
 })
 
-import RostersPanel from '../rosters/RostersPanel'
+import RostersPanel, { oneLine } from '../rosters/RostersPanel'
 import en from '../../i18n/locales/en.json'
 import de from '../../i18n/locales/de.json'
 import deCH from '../../i18n/locales/de-CH.json'
@@ -106,5 +106,22 @@ describe('rosterLive locale keys', () => {
   const keys = flat(en.rosterLive)
   it.each([['de', de], ['de-CH', deCH], ['fr', fr], ['it', it_]])('%s has every rosterLive key', (_, loc) => {
     expect(flat(loc.rosterLive || {})).toEqual(keys)
+  })
+})
+
+describe('oneLine', () => {
+  it('puts the button labels with a soft break on one line for the tooltip', () => {
+    expect(oneLine(de.scoreboard.sanctions.delayWarning)).toBe('Verzögerungswarnung')
+    expect(oneLine(deCH.scoreboard.sanctions.delayWarning)).toBe('Verzögerigswarnig')
+    expect(oneLine('Delay warning')).toBe('Delay warning')
+    expect(oneLine('a\nb')).toBe('a b')
+  })
+
+  it('leaves no line break in any sanction label of any language', () => {
+    for (const loc of [en, de, deCH, fr, it_]) {
+      for (const label of Object.values(loc.scoreboard.sanctions)) {
+        if (typeof label === 'string') expect(oneLine(label)).not.toMatch(/\n/)
+      }
+    }
   })
 })
