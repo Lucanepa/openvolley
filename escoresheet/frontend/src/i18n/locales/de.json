@@ -556,7 +556,6 @@
       "confirmUndo": "Rückgängig bestätigen",
       "confirmReplay": "Ballwechsel wiederholen?",
       "confirmReplayBody": "Es wird kein Punkt vergeben, dieselbe Mannschaft schlägt erneut auf.",
-      "confirmTimeout": "Zeitüberschreitung bestätigen",
       "decisionChange": "Entscheidungs\u00adänderung",
       "exceptionalSubstitution": "Ausserordentliche Auswechslung",
       "exceptionalSubPlayerCantPlay": "Ausserordentliche Auswechslung - Spieler kann nicht mehr teilnehmen",
@@ -573,7 +572,6 @@
       "scoresheetAlreadyOpen": "eMatchblatt bereits geöffnet",
       "remarksRecording": "Bemerkungsaufzeichnung",
       "sanctionsAndResults": "Sanktionen und Ergebnisse",
-      "confirmSecondTimeout": "{{ordinal}} Timeout-Anfrage bestätigen?",
       "liberoOut": "Libero RAUS",
       "liberoIn": "Libero REIN",
       "playerReturns": "Spieler kehrt zurück",
@@ -621,14 +619,11 @@
     "confirm": {
       "yesStartRally": "Ja, Ballwechsel starten",
       "yesAwardPoint": "Ja, Punkt vergeben",
-      "yesTimeout": "Ja, Zeitüberschreitung",
       "apply": "Anwenden",
       "rallyStartedQuickly": "Ballwechsel sehr schnell gestartet",
       "areYouSureRallyStarted": "Sind Sie sicher, dass der Ballwechsel tatsächlich begonnen hat?",
       "pointAwardedQuickly": "Punkt sehr schnell vergeben",
-      "areYouSureAwardPoint": "Sind Sie sicher, dass der Punkt an {{team}} vergeben werden soll?",
-      "timeoutAlreadyTaken": "Dieses Team hat in diesem Satz bereits eine Auszeit genommen.",
-      "areYouSureAnotherTimeout": "Sind Sie sicher, dass Sie einen weiteren Timeout für {{team}} aufrufen wollen?"
+      "areYouSureAwardPoint": "Sind Sie sicher, dass der Punkt an {{team}} vergeben werden soll?"
     },
     "menu": {
       "scoresheet": "eMatchblatt",
@@ -853,6 +848,23 @@
     "toolbar": {
       "hide": "Werkzeugleiste ausblenden",
       "show": "Werkzeugleiste einblenden"
+    },
+    "timeoutRequest": {
+      "title": "Timeout — {{team}}",
+      "first": "Timeout 1 von 2 in diesem Satz für {{team}}.",
+      "second": "Zweites Timeout dieses Satzes für {{team}} (1 von 2 bereits genommen).",
+      "consecutive": "{{team}} hat in dieser Unterbrechung bereits ein Timeout genommen (seither kein Ballwechsel). Jetzt das zweite Timeout erfassen?",
+      "confirmConsecutive": "Ja, zweites Timeout",
+      "notRecorded": "Das Timeout wurde nicht erfasst. Bitte erneut versuchen."
+    },
+    "teamSanctionConfirm": {
+      "thirdTimeout": "{{team}} hat beide Timeouts dieses Satzes genommen. Ein drittes Gesuch ist eine unzulässige Anfrage.",
+      "applyImproperRequest": "Unzulässige Anfrage für {{team}} erfassen?",
+      "applyDelayWarning": "Verzögerungswarnung für {{team}} erfassen?",
+      "applyDelayPenalty": "Verzögerungsstrafe für {{team}} erfassen?",
+      "repeatedImproperRequest": "Die Mannschaft hat bereits eine unzulässige Anfrage, diese zählt deshalb als Verzögerung.",
+      "repeatedDelay": "Die Mannschaft hat bereits eine Verzögerungswarnung, diese Verzögerung ist deshalb eine Strafe.",
+      "pointToOpponent": "Punkt und Aufschlag für {{opponent}}."
     }
   },
   "settings": {

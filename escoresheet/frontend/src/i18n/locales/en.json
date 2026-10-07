@@ -564,7 +564,6 @@
       "confirmUndo": "Confirm undo",
       "confirmReplay": "Replay rally?",
       "confirmReplayBody": "No point is scored and the same team serves again.",
-      "confirmTimeout": "Confirm timeout",
       "decisionChange": "Decision change",
       "exceptionalSubstitution": "Exceptional substitution",
       "exceptionalSubPlayerCantPlay": "Exceptional substitution - player cannot take part anymore",
@@ -581,7 +580,6 @@
       "scoresheetAlreadyOpen": "Scoresheet already open",
       "remarksRecording": "Remarks recording",
       "sanctionsAndResults": "Sanctions and results",
-      "confirmSecondTimeout": "Confirm {{ordinal}} time-out request?",
       "liberoOut": "Libero OUT",
       "liberoIn": "Libero IN",
       "playerReturns": "Player returns",
@@ -629,14 +627,11 @@
     "confirm": {
       "yesStartRally": "Yes, start rally",
       "yesAwardPoint": "Yes, award point",
-      "yesTimeout": "Yes, timeout",
       "apply": "Apply",
       "rallyStartedQuickly": "Rally started very quickly",
       "areYouSureRallyStarted": "Are you sure the rally has actually started?",
       "pointAwardedQuickly": "Point awarded very quickly",
-      "areYouSureAwardPoint": "Are you sure the point should be awarded to {{team}}?",
-      "timeoutAlreadyTaken": "This team has already used a timeout this set.",
-      "areYouSureAnotherTimeout": "Are you sure you want to call another timeout for {{team}}?"
+      "areYouSureAwardPoint": "Are you sure the point should be awarded to {{team}}?"
     },
     "menu": {
       "scoresheet": "Scoresheet",
@@ -861,6 +856,23 @@
     "toolbar": {
       "hide": "Hide toolbar",
       "show": "Show toolbar"
+    },
+    "timeoutRequest": {
+      "title": "Time-out — {{team}}",
+      "first": "Time-out 1 of 2 in this set for {{team}}.",
+      "second": "Second time-out of this set for {{team}} (1 of 2 already used).",
+      "consecutive": "{{team}} already took a time-out in this interruption (no rally since). Record their second time-out now?",
+      "confirmConsecutive": "Yes, second time-out",
+      "notRecorded": "The time-out was not recorded. Try again."
+    },
+    "teamSanctionConfirm": {
+      "thirdTimeout": "{{team}} has used both time-outs of this set. A third request is an improper request.",
+      "applyImproperRequest": "Record an improper request for {{team}}?",
+      "applyDelayWarning": "Record a delay warning for {{team}}?",
+      "applyDelayPenalty": "Record a delay penalty for {{team}}?",
+      "repeatedImproperRequest": "The team already has an improper request on record, so this one counts as a delay.",
+      "repeatedDelay": "The team already has a delay warning, so this delay is a penalty.",
+      "pointToOpponent": "Point and service to {{opponent}}."
     }
   },
   "settings": {

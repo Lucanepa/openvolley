@@ -563,7 +563,6 @@
       "confirmUndo": "Rückgängig bestätige",
       "confirmReplay": "Ballwechsel wiederhole?",
       "confirmReplayBody": "Es git kei Punkt, s glich Team schlaht nomal uf.",
-      "confirmTimeout": "Zeitüberschreitung bestätigen",
       "decisionChange": "Entscheidsänderig",
       "exceptionalSubstitution": "Usserordentlichi Uswächslig",
       "exceptionalSubPlayerCantPlay": "Usserordentlichi Uswächslig - Spieler chan nüme teilnäh",
@@ -580,7 +579,6 @@
       "scoresheetAlreadyOpen": "eMatchblatt bereits offe",
       "remarksRecording": "Bemerkigserfassig",
       "sanctionsAndResults": "Sanktione und Ergebnis",
-      "confirmSecondTimeout": "{{ordinal}} Timeout-Aafraag bestätige?",
       "liberoOut": "Libero USE",
       "liberoIn": "Libero IE",
       "playerReturns": "Spieler chunt zrugg",
@@ -628,14 +626,11 @@
     "confirm": {
       "yesStartRally": "Ja, Ballwechsel starte",
       "yesAwardPoint": "Ja, Punkt vergäh",
-      "yesTimeout": "Ja, Zeitüberschreitung",
       "apply": "Aawende",
       "rallyStartedQuickly": "Ballwechsel sehr schnell gstartet",
       "areYouSureRallyStarted": "Sind Sie sicher, dass de Ballwechsel tatsächlich agfange hät?",
       "pointAwardedQuickly": "Punkt sehr schnell vergäh",
-      "areYouSureAwardPoint": "Sind Sie sicher, dass de Punkt a {{team}} vergäh werde söll?",
-      "timeoutAlreadyTaken": "Dieses Team hat in diesem Satz bereits eine Auszeit genommen.",
-      "areYouSureAnotherTimeout": "Sind Sie sicher, dass Sie einen weiteren Timeout für {{team}} aufrufen wollen?"
+      "areYouSureAwardPoint": "Sind Sie sicher, dass de Punkt a {{team}} vergäh werde söll?"
     },
     "menu": {
       "scoresheet": "eMatchblatt",
@@ -860,6 +855,23 @@
     "toolbar": {
       "hide": "Wärchzüügliischte uusblände",
       "show": "Wärchzüügliischte iiblände"
+    },
+    "timeoutRequest": {
+      "title": "Timeout — {{team}}",
+      "first": "Timeout 1 vo 2 i dem Satz für {{team}}.",
+      "second": "Zweits Timeout i dem Satz für {{team}} (1 vo 2 scho gnoh).",
+      "consecutive": "{{team}} hät i dere Unterbrechig scho es Timeout gnoh (sithär kein Ballwächsel). Jetzt s zweite Timeout erfasse?",
+      "confirmConsecutive": "Ja, zweits Timeout",
+      "notRecorded": "S Timeout isch nöd erfasst worde. Bitte nomal probiere."
+    },
+    "teamSanctionConfirm": {
+      "thirdTimeout": "{{team}} hät beidi Timeouts vo dem Satz gnoh. Es dritts Gsuech isch e unzulässigi Aafraag.",
+      "applyImproperRequest": "Unzulässigi Aafraag für {{team}} erfasse?",
+      "applyDelayWarning": "Verzögerigswarnig für {{team}} erfasse?",
+      "applyDelayPenalty": "Verzögerigsstraaf für {{team}} erfasse?",
+      "repeatedImproperRequest": "D Mannschaft hät scho e unzulässigi Aafraag, die zellt drum als Verzögerig.",
+      "repeatedDelay": "D Mannschaft hät scho e Verzögerigswarnig, die Verzögerig isch drum e Straaf.",
+      "pointToOpponent": "Punkt und Ufschlag für {{opponent}}."
     }
   },
   "settings": {

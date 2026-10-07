@@ -563,7 +563,6 @@
       "confirmUndo": "Conferma annullamento",
       "confirmReplay": "Ripetere lo scambio?",
       "confirmReplayBody": "Nessun punto viene assegnato e la stessa squadra serve di nuovo.",
-      "confirmTimeout": "Confermare il timeout",
       "decisionChange": "Cambio decisione",
       "exceptionalSubstitution": "Sostituzione eccezionale",
       "exceptionalSubPlayerCantPlay": "Sostituzione eccezionale - il giocatore non può più partecipare",
@@ -580,7 +579,6 @@
       "scoresheetAlreadyOpen": "eScoresheet già aperto",
       "remarksRecording": "Registrazione osservazioni",
       "sanctionsAndResults": "Sanzioni e risultati",
-      "confirmSecondTimeout": "Confermare richiesta di {{ordinal}} timeout?",
       "liberoOut": "Libero ESCE",
       "liberoIn": "Libero ENTRA",
       "playerReturns": "Ritorno giocatore",
@@ -628,14 +626,11 @@
     "confirm": {
       "yesStartRally": "Sì, inizia scambio",
       "yesAwardPoint": "Sì, assegna punto",
-      "yesTimeout": "Sì, timeout",
       "apply": "Applica",
       "rallyStartedQuickly": "Scambio iniziato molto rapidamente",
       "areYouSureRallyStarted": "Sei sicuro che lo scambio sia effettivamente iniziato?",
       "pointAwardedQuickly": "Punto assegnato molto rapidamente",
-      "areYouSureAwardPoint": "Sei sicuro che il punto debba essere assegnato a {{team}}?",
-      "timeoutAlreadyTaken": "La squadra ha già utilizzato un timeout in questo set.",
-      "areYouSureAnotherTimeout": "Si è sicuri di voler chiamare un altro timeout per {{team}}?"
+      "areYouSureAwardPoint": "Sei sicuro che il punto debba essere assegnato a {{team}}?"
     },
     "menu": {
       "scoresheet": "eScoresheet",
@@ -860,6 +855,23 @@
     "toolbar": {
       "hide": "Nascondi barra degli strumenti",
       "show": "Mostra barra degli strumenti"
+    },
+    "timeoutRequest": {
+      "title": "Timeout — {{team}}",
+      "first": "Timeout 1 di 2 in questo set per {{team}}.",
+      "second": "Secondo timeout di questo set per {{team}} (1 di 2 già usato).",
+      "consecutive": "{{team}} ha già chiesto un timeout in questa interruzione (nessuno scambio da allora). Registrare il secondo timeout?",
+      "confirmConsecutive": "Sì, secondo timeout",
+      "notRecorded": "Il timeout non è stato registrato. Riprova."
+    },
+    "teamSanctionConfirm": {
+      "thirdTimeout": "{{team}} ha usato entrambi i timeout di questo set. Una terza richiesta è una richiesta impropria.",
+      "applyImproperRequest": "Registrare una richiesta impropria per {{team}}?",
+      "applyDelayWarning": "Registrare un avvertimento per ritardo per {{team}}?",
+      "applyDelayPenalty": "Registrare una penalità per ritardo per {{team}}?",
+      "repeatedImproperRequest": "La squadra ha già una richiesta impropria: questa conta come ritardo.",
+      "repeatedDelay": "La squadra ha già un avvertimento per ritardo: questo ritardo è una penalità.",
+      "pointToOpponent": "Punto e servizio a {{opponent}}."
     }
   },
   "settings": {

@@ -44,6 +44,8 @@ import { defaultSetStartTime } from '../utils/setStartTime'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet } from '../domain/rules'
 import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags } from '../domain/sanctions'
+import { classifyTimeoutRequest } from '../domain/timeouts'
+import { useConfirmAction } from '../hooks/useConfirmAction'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
 import { planSubstitutionDeletion, countRegularSubstitutions, classifySubstitutionRequest, MAX_SUBSTITUTIONS_PER_SET } from '../domain/substitutions'
 import { decisionChangeUndoRecord, planDecisionChangeReversal, syncJobsForEvents, syncJobsForSets } from '../domain/corrections'
@@ -59,7 +61,7 @@ import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
 import { isNativeApp } from '../utils/backendConfig'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
-import { WarningIcon, TimerIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, DownloadIcon, SettingsIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon } from './icons'
+import { WarningIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, DownloadIcon, SettingsIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon } from './icons'
 import { cn } from '../ui/cn.js'
 import { FOCUS_RING, Button } from '../ui/Button.jsx'
 import { ActionSheet, ActionSheetItem } from '../ui/Modal.jsx'
@@ -353,7 +355,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // See architecture note at top of file. All event-creating functions acquire this lock.
   const eventInProgressRef = useRef(false)
   const eventQueueRef = useRef([]) // Queue for serializing event creation
-  const confirmingTimeoutRef = useRef(false) // Prevent double-click on timeout confirmation
   const pendingRotationRef = useRef(false) // Hide serve indicator while rotation event is being written
   const [keybindingsEnabled, setKeybindingsEnabled] = useState(() => {
     const saved = localStorage.getItem('keybindingsEnabled')
@@ -396,7 +397,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [connectionModal, setConnectionModal] = useState(null) // 'referee' | 'teamA' | 'teamB' | null
   const [connectionModalPosition, setConnectionModalPosition] = useState({ x: 0, y: 0 })
   const [courtSwitchModal, setCourtSwitchModal] = useState(null) // { set, homePoints, awayPoints, teamThatScored } | null
-  const [timeoutModal, setTimeoutModal] = useState(null) // { team: 'home'|'away', countdown: number, started: boolean }
+  // { team: 'home'|'away', countdown: number, started: boolean, ordinal: 1|2, consecutive: boolean }
+  // ordinal + consecutive are taken when the request dialog opens (classifyTimeoutRequest)
+  const [timeoutModal, setTimeoutModal] = useState(null)
   // Latest values for syncLiveStateToSupabase, which is memoised on [matchId] only:
   // reading the state/prop directly froze them at mount (a stale null timeoutModal
   // made any event logged during a timeout publish timeout_active:false).
@@ -404,7 +407,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const scorerAttentionTriggerRef = useRef(scorerAttentionTrigger)
   useEffect(() => { timeoutModalRef.current = timeoutModal }, [timeoutModal])
   useEffect(() => { scorerAttentionTriggerRef.current = scorerAttentionTrigger }, [scorerAttentionTrigger])
-  const [duplicateTimeoutConfirm, setDuplicateTimeoutConfirm] = useState(null) // { team: 'home'|'away' } - confirmation for duplicate TO
   const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown: number, started: boolean, finished?: boolean } | null
   const countdownDismissedRef = useRef(false) // Track if countdown was manually dismissed
   const setEndModalDismissedRef = useRef(null) // Track setIndex where set end modal was dismissed via undo
@@ -449,6 +451,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [liberoBenchActionMenu, setLiberoBenchActionMenu] = useState(null) // { team: 'home'|'away', liberoNumber: number, liberoType: string, element: HTMLElement, x: number, y: number } | null
   const [captainOnCourtModal, setCaptainOnCourtModal] = useState(null) // { team: 'home'|'away' } | null
   const [reopenSetConfirm, setReopenSetConfirm] = useState(null) // { setId: number, setIndex: number } | null
+  const runReopenSet = useConfirmAction()
   const [setStartTimeModal, setSetStartTimeModal] = useState(null) // { setIndex: number, defaultTime: string } | null
   const [setEndTimeModal, setSetEndTimeModal] = useState(null) // { setIndex: number, winner: string, homePoints: number, awayPoints: number, defaultTime: string } | null
   const [set5SideServiceModal, setSet5SideServiceModal] = useState(null) // { setIndex: number, set4LeftTeamLabel: string, set4RightTeamLabel: string, set4ServingTeamLabel: string } | null - shown after set 4 ends
@@ -2858,7 +2861,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     events: data?.events,
     setIndex: data?.set?.index,
     onImproperRequest: (teamKey) => {
-      if (rallyStatus === 'idle') setSanctionConfirm({ side: mapTeamKeyToSide(teamKey), type: 'improper_request', reason: 'substitution_limit' })
+      if (rallyStatus === 'idle') openTeamSanctionConfirm(mapTeamKeyToSide(teamKey), 'improper_request', 'substitution_limit')
     }
   }
 
@@ -5476,23 +5479,37 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     setReplayConfirm(false)
   }, [])
 
+  // Open the team-sanction confirmation. The sanction that will actually be
+  // recorded is resolved here, once, through the delay ladder and the
+  // improper-request escalation (FIVB 15.11 / 16.2; resolveSanction is pure and
+  // unit-tested), and kept in the dialog state: the dialog shows what will be
+  // recorded, and confirmSanction records exactly that.
+  const openTeamSanctionConfirm = useCallback((side, requestedType, reason = null) => {
+    const teamKey = mapSideToTeamKey(side)
+    const teamSanctions = (data?.events || []).filter(e => e.type === 'sanction' && e.payload?.team === teamKey)
+    const priorDelayCount = teamSanctions.filter(e => isDelaySanction(e.payload?.type)).length
+    const priorImproperCount = teamSanctions.filter(e => e.payload?.type === 'improper_request').length
+    const resolved = resolveSanction(requestedType, { priorDelayCount, priorImproperCount })
+    setSanctionConfirm({ side, team: teamKey, type: requestedType, resolved, reason })
+  }, [mapSideToTeamKey, data?.events])
+
   // Handle Improper Request sanction
   const handleImproperRequest = useCallback((side) => {
     if (!data?.match || rallyStatus !== 'idle') return
-    setSanctionConfirm({ side, type: 'improper_request' })
-  }, [data?.match, rallyStatus])
+    openTeamSanctionConfirm(side, 'improper_request')
+  }, [data?.match, rallyStatus, openTeamSanctionConfirm])
 
   // Handle Delay Warning sanction
   const handleDelayWarning = useCallback((side) => {
     if (!data?.match || rallyStatus !== 'idle') return
-    setSanctionConfirm({ side, type: 'delay_warning' })
-  }, [data?.match, rallyStatus])
+    openTeamSanctionConfirm(side, 'delay_warning')
+  }, [data?.match, rallyStatus, openTeamSanctionConfirm])
 
   // Handle Delay Penalty sanction
   const handleDelayPenalty = useCallback((side) => {
     if (!data?.match || !data?.set || rallyStatus !== 'idle') return
-    setSanctionConfirm({ side, type: 'delay_penalty' })
-  }, [data?.match, data?.set, rallyStatus])
+    openTeamSanctionConfirm(side, 'delay_penalty')
+  }, [data?.match, data?.set, rallyStatus, openTeamSanctionConfirm])
 
   // Handle team sanction - takes team key instead of side
   const handleTeamSanction = useCallback((teamKey, sanctionType) => {
@@ -5500,24 +5517,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!data?.match || rallyStatus !== 'idle') return
     // Convert team key to side
     const side = (teamKey === 'home' && leftIsHome) || (teamKey === 'away' && !leftIsHome) ? 'left' : 'right'
-    setSanctionConfirm({ side, type: sanctionType })
-  }, [data?.match, rallyStatus, leftIsHome])
+    openTeamSanctionConfirm(side, sanctionType)
+  }, [data?.match, rallyStatus, leftIsHome, openTeamSanctionConfirm])
 
-  // Confirm sanction
-  const confirmSanction = useCallback(async () => {
+  // Confirm sanction: snapshot, close, then write (useConfirmAction)
+  const runSanctionConfirm = useConfirmAction()
+  const confirmSanction = useCallback(() => runSanctionConfirm(async () => {
     if (!sanctionConfirm || !data?.match || !data?.set) return
 
-    const { side, type: requestedType } = sanctionConfirm
-    const teamKey = mapSideToTeamKey(side)
+    // Everything comes from the dialog state taken when it opened: the team
+    // and the resolved sanction it showed.
+    const { side, team: teamKey, resolved: type } = sanctionConfirm
     const teamKeyCapitalized = teamKey === 'home' ? 'Home' : 'Away'
-
-    // Enforce the delay ladder + improper-request escalation (FIVB 15.11 / 16.2):
-    // the first delay is a warning and subsequent delays are penalties; a repeated
-    // improper request becomes a delay. resolveSanction is pure + unit-tested.
-    const teamSanctions = (data.events || []).filter(e => e.type === 'sanction' && e.payload?.team === teamKey)
-    const priorDelayCount = teamSanctions.filter(e => isDelaySanction(e.payload?.type)).length
-    const priorImproperCount = teamSanctions.filter(e => e.payload?.type === 'improper_request').length
-    const type = resolveSanction(requestedType, { priorDelayCount, priorImproperCount })
+    setSanctionConfirm(null)
 
     // Update match sanctions for improper request and delay warning
     // Store by team key (Home/Away) so sanctions follow the team when sides switch
@@ -5560,8 +5572,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         e.payload?.isInitial
       )
 
-      setSanctionConfirm(null)
-
       if (homeLineupSet && awayLineupSet) {
         // Both lineups are set - award point immediately
         const otherSide = side === 'left' ? 'right' : 'left'
@@ -5570,10 +5580,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Lineups not set - show message
         showAlert('Delay penalty recorded. Point will be awarded after both teams set their lineups.', 'info')
       }
-    } else {
-      setSanctionConfirm(null)
     }
-  }, [sanctionConfirm, data?.match, data?.set, data?.events, mapSideToTeamKey, matchId, logEvent, handlePoint])
+  }), [runSanctionConfirm, sanctionConfirm, data?.match, data?.set, data?.events, matchId, logEvent, handlePoint])
 
   // Confirm set start time
   const confirmSetStartTime = useCallback(async (time) => {
@@ -6248,12 +6256,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [setEndTimeModal, data?.match, data?.set, data?.events, matchId, logEvent, onFinishSet, getCurrentServe, teamAKey, onTriggerEventBackup, syncSetEnd, resetSyncState, setIntervalDuration, showAlert, t, syncSet5Setup])
 
   // Confirm set 5 side and service choices (works with both modal and inline UI)
-  const confirmSet5SideService = useCallback(async (leftTeam, firstServe, inlineMode = false) => {
+  const runSet5SideService = useConfirmAction()
+  const confirmSet5SideService = useCallback((leftTeam, firstServe, inlineMode = false) => runSet5SideService(async () => {
     // For inline mode, we don't need the modal - just verify we have match data and it's set 5
     if (!inlineMode && !set5SideServiceModal) return
     if (!data?.match) return
 
     const setIndex = inlineMode ? 5 : set5SideServiceModal.setIndex
+
+    // Close first (or confirm the inline setup), then write (useConfirmAction)
+    if (inlineMode) {
+      setSet5SetupConfirmed(true)
+    } else {
+      setSet5SideServiceModal(null)
+    }
+
     const teamAKey = data.match.coinTossTeamA || 'home'
     const teamBKey = data.match.coinTossTeamB || 'away'
 
@@ -6331,14 +6348,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       seq: nextSeq,
       stateBefore: set5CoinTossStateBefore
     })
-
-    // Close modal or confirm inline setup
-    if (inlineMode) {
-      setSet5SetupConfirmed(true)
-    } else {
-      setSet5SideServiceModal(null)
-    }
-  }, [set5SideServiceModal, data?.match, matchId, getNextSeq, getStateSnapshot])
+  }), [runSet5SideService, set5SideServiceModal, data?.match, matchId, getNextSeq, getStateSnapshot])
 
   // Get action description for an event
   const getActionDescription = useCallback((event) => {
@@ -6862,7 +6872,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return plan
   }, [matchId, discardEvents])
 
-  const handleUndo = useCallback(async () => {
+  const runUndoConfirm = useConfirmAction()
+  const handleUndo = useCallback(() => runUndoConfirm(async () => {
     cLogger.logHandler('handleUndo', { hasUndoConfirm: !!undoConfirm, eventType: undoConfirm?.event?.type })
     if (!undoConfirm || !data?.set) {
       setUndoConfirm(null)
@@ -6870,6 +6881,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     const lastEvent = undoConfirm.event
+    // Close first, then undo (useConfirmAction): a second tap must not undo
+    // the same event again from the stale dialog
+    setUndoConfirm(null)
     const lastEventSeq = lastEvent.seq || 0
     const baseSeq = Math.floor(lastEventSeq)
 
@@ -7030,14 +7044,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     } catch (error) {
       console.error('[handleUndo] Error:', error)
     } finally {
-      // Always close the modal
-      setUndoConfirm(null)
       // Sync to Referee and Supabase after undo
       syncToReferee()
       syncLiveStateToSupabase('undo', null, null)
       notifyScoresheetUpdate('undo')
     }
-  }, [undoConfirm, data?.set, matchId, restoreStateFromSnapshot, discardEvents, applyForfeitReversal, resyncSetScoreFromEvents, showAlert, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate])
+  }), [runUndoConfirm, undoConfirm, data?.set, matchId, restoreStateFromSnapshot, discardEvents, applyForfeitReversal, resyncSetScoreFromEvents, showAlert, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate])
 
   // OLD UNDO LOGIC REMOVED - The following complex per-event-type logic has been replaced
   // by the snapshot-based undo system above. Keeping this comment for reference.
@@ -7058,6 +7070,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     const lastEvent = replayRallyConfirm.event
+    // Close first, then write: the dialog's score preview is live and redrew
+    // from the replayed score otherwise
+    setReplayRallyConfirm(null)
     const lastEventSeq = lastEvent.seq || 0
     const baseSeq = Math.floor(lastEventSeq)
 
@@ -7173,8 +7188,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     } catch (error) {
       // Error during replay - silently handle
-    } finally {
-      setReplayRallyConfirm(null)
     }
   }, [replayRallyConfirm, data?.events, data?.set, data?.match, matchId, getNextSeq, syncLiveStateToSupabase, notifyScoresheetUpdate])
 
@@ -7183,15 +7196,22 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [])
 
   // Handle decision change - either swap point to other team or replay rally
-  const handleDecisionChange = useCallback(async () => {
+  const runDecisionChange = useConfirmAction()
+  const handleDecisionChange = useCallback(() => runDecisionChange(async () => {
     if (!replayRallyConfirm || !data?.set) {
       setReplayRallyConfirm(null)
       return
     }
 
-    const { event: lastEvent, selectedOption } = replayRallyConfirm
+    const { event: lastEvent } = replayRallyConfirm
+    // The dialog pre-selects "Assign to other team" when nothing was chosen;
+    // record what it shows
+    const selectedOption = replayRallyConfirm.selectedOption || 'swap'
 
     if (selectedOption === 'swap') {
+      // Close first, then write (useConfirmAction): the dialog's score preview
+      // is live and showed the already-swapped score (e.g. 3:-1) otherwise
+      setReplayRallyConfirm(null)
       // Swap the point to the other team
       const oldTeam = lastEvent.payload?.team
       const newTeam = oldTeam === 'home' ? 'away' : 'home'
@@ -7418,100 +7438,90 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     } else {
       // Replay rally - use existing logic
       await handleReplayRally()
-      return // handleReplayRally already closes the modal and syncs
+      return // handleReplayRally closes the modal first and syncs
     }
-
-    setReplayRallyConfirm(null)
-  }, [replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents])
+  }), [runDecisionChange, replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents])
 
 
 
   const handleTimeout = useCallback(
     side => {
       cLogger.logHandler('handleTimeout', { side })
+      if (!data?.set) return
       const teamKey = mapSideToTeamKey(side)
-      const used = (timeoutsUsed && timeoutsUsed[teamKey]) || 0
-      if (used >= 2) {
+      // Taken once, here: the dialog shows this until it closes, whatever the
+      // live time-out count does while the time-out is being written.
+      const request = classifyTimeoutRequest(data.events, data.set.index, teamKey)
+      if (request.improper) {
         // Requesting a time-out after both are used is an improper request
         // (FIVB 15.11.1.4). Route it into the improper-request ladder — the first
         // is recorded with no consequence, a repeat becomes a delay — instead of
         // silently discarding it. The scorer can still cancel in the dialog.
-        if (rallyStatus === 'idle') setSanctionConfirm({ side, type: 'improper_request' })
+        if (rallyStatus === 'idle') openTeamSanctionConfirm(side, 'improper_request', 'third_timeout')
         return
       }
-
-      // Check for duplicate timeout (same team, no points scored since last TO)
-      if (data?.events && data?.set) {
-        const currentSetEvents = data.events.filter(e => e.setIndex === data.set.index)
-        const lastTimeoutForTeam = [...currentSetEvents]
-          .filter(e => e.type === 'timeout' && e.payload?.team === teamKey)
-          .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0]
-
-        if (lastTimeoutForTeam) {
-          // Check if any points were scored after the last timeout
-          const pointsAfterTimeout = currentSetEvents.filter(
-            e => e.type === 'point' && (e.seq || 0) > (lastTimeoutForTeam.seq || 0)
-          )
-          if (pointsAfterTimeout.length === 0) {
-            // No points since last timeout for this team - ask for confirmation
-            setDuplicateTimeoutConfirm({ team: teamKey })
-            return
-          }
-        }
-      }
-
-      setTimeoutModal({ team: teamKey, countdown: 30, started: false })
+      setTimeoutModal({
+        team: teamKey,
+        countdown: 30,
+        started: false,
+        ordinal: request.ordinal,
+        consecutive: request.consecutive
+      })
     },
-    [mapSideToTeamKey, timeoutsUsed, data?.events, data?.set, rallyStatus]
+    [mapSideToTeamKey, data?.events, data?.set, rallyStatus, openTeamSanctionConfirm]
   )
 
-  const confirmTimeout = useCallback(async () => {
-    if (!timeoutModal) return
-    // Prevent double-click: if already started, skip
-    if (timeoutModal.started) return
-    // Mutex: prevent race condition from rapid double-clicks
-    if (confirmingTimeoutRef.current) return
-    confirmingTimeoutRef.current = true
+  // Confirm time-out: snapshot, close (start the countdown), then write.
+  const runTimeoutConfirm = useConfirmAction()
+  const confirmTimeout = useCallback(() => runTimeoutConfirm(async () => {
+    const request = timeoutModal
+    if (!request || request.started) return
 
     // Debug: Check for stale refs that would cause countdown to fail
     console.log('[TO_DEBUG] confirmTimeout called', {
-      team: timeoutModal.team,
-      alreadyStarted: timeoutModal.started,
+      team: request.team,
+      alreadyStarted: request.started,
       staleTimestampRef: timeoutStartTimestampRef.current,
       staleInitialRef: timeoutInitialCountdownRef.current
     })
     debugLogger.log('TO_CONFIRM', {
-      team: timeoutModal.team,
+      team: request.team,
       staleTimestampRef: timeoutStartTimestampRef.current
     })
 
+    // Start the countdown first: that closes the request dialog before the
+    // time-out event is written, so the dialog never redraws from the new
+    // time-out count ("Confirm 2nd time-out" flashing on the first one).
+    const startTimestamp = Date.now()
+    setTimeoutModal({ ...request, started: true, startedAt: new Date(startTimestamp).toISOString() })
+
     try {
-      // Log the timeout event
-      await logEvent('timeout', { team: timeoutModal.team })
-
-      // Debug log: timeout
-      debugLogger.log('TIMEOUT', {
-        team: timeoutModal.team
-      }, getStateSnapshot())
-
-      // Start the timeout countdown
-      const startTimestamp = Date.now()
-      setTimeoutModal({ ...timeoutModal, started: true, startedAt: new Date(startTimestamp).toISOString() })
-      console.log('[TO_DEBUG] setTimeoutModal called with started: true')
-
-      // Send timeout action to referee to show modal
-      sendActionToReferee('timeout', {
-        team: timeoutModal.team,
-        countdown: 30,
-        startTimestamp: startTimestamp
-      })
-
-      // Trigger event backup for Safari/Firefox
-      onTriggerEventBackup?.('timeout')
-    } finally {
-      confirmingTimeoutRef.current = false
+      await logEvent('timeout', { team: request.team })
+    } catch (err) {
+      // Not recorded: put the request back so the scorer can try again.
+      console.error('[TO] time-out not recorded', err)
+      timeoutStartTimestampRef.current = null
+      timeoutInitialCountdownRef.current = 30
+      setTimeoutModal(request)
+      showAlert(t('scoreboard.timeoutRequest.notRecorded'), 'error')
+      return
     }
-  }, [timeoutModal, logEvent, sendActionToReferee, onTriggerEventBackup])
+
+    // Debug log: timeout
+    debugLogger.log('TIMEOUT', {
+      team: request.team
+    }, getStateSnapshot())
+
+    // Send timeout action to referee to show modal
+    sendActionToReferee('timeout', {
+      team: request.team,
+      countdown: 30,
+      startTimestamp: startTimestamp
+    })
+
+    // Trigger event backup for Safari/Firefox
+    onTriggerEventBackup?.('timeout')
+  }), [runTimeoutConfirm, timeoutModal, logEvent, sendActionToReferee, onTriggerEventBackup, showAlert, t])
 
   const cancelTimeout = useCallback(() => {
     // Only cancel if timeout hasn't started yet
@@ -9980,8 +9990,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [exceptionalSubstitutionModal, getAvailableExceptionalSubstitutes, handleForfait, getForfaitScope])
 
   // Confirm substitution
-  const confirmSubstitution = useCallback(async () => {
+  const runSubstitutionConfirm = useConfirmAction()
+  const confirmSubstitution = useCallback(() => runSubstitutionConfirm(async () => {
     if (!substitutionConfirm || !data?.set) return
+    // Close first, then write (useConfirmAction): the dialog's "5th/6th
+    // substitution" label is live, and redrew from the new count otherwise
+    setSubstitutionConfirm(null)
+    setLiberoDropdown(null) // Close libero dropdown when confirming substitution
 
     // MUTEX: Acquire lock before creating any events to prevent race conditions
     const maxWaitTime = 5000
@@ -10120,9 +10135,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         await db.matches.update(matchId, { remarks: appendRemark(freshMatch?.remarks || '', autoRemark) })
       }
 
-      setSubstitutionConfirm(null)
-      setLiberoDropdown(null) // Close libero dropdown when confirming substitution
-
       // Add player to recently substituted list for flashing effect
       setRecentlySubstitutedPlayers(prev => [...prev, { team, playerNumber: playerIn, timestamp: Date.now() }])
 
@@ -10203,7 +10215,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // MUTEX: Always release the lock, even if an error occurred
       eventInProgressRef.current = false
     }
-  }, [substitutionConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, data?.homeTeam, data?.awayTeam, matchId, logEvent, logManualChange, teamAKey, checkLiberoRedesignation, sendActionToReferee, isLiberoUnable, getStateSnapshot, t])
+  }), [runSubstitutionConfirm, substitutionConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, data?.homeTeam, data?.awayTeam, matchId, logEvent, logManualChange, teamAKey, checkLiberoRedesignation, sendActionToReferee, isLiberoUnable, getStateSnapshot, t])
 
   // Common modal position - all modals use the same position
   // For left side teams, menu opens to the right
@@ -10520,7 +10532,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [data?.events])
 
   // Confirm player sanction
-  const confirmPlayerSanction = useCallback(async () => {
+  const runPlayerSanctionConfirm = useConfirmAction()
+  const confirmPlayerSanction = useCallback(() => runPlayerSanctionConfirm(async () => {
     if (!sanctionConfirmModal || !data?.set) return
 
     const { team, type, playerNumber, position, role, sanctionType } = sanctionConfirmModal
@@ -10544,6 +10557,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         return
       }
     }
+
+    // Close first, then write (useConfirmAction): the follow-up dialogs below
+    // open from this snapshot, not from the dialog
+    setSanctionConfirmModal(null)
 
     // If expulsion or disqualification for a court player, need to handle substitution
     if ((sanctionType === 'expulsion' || sanctionType === 'disqualification') && type === 'player' && playerNumber && position) {
@@ -10623,32 +10640,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }
         }
 
-        // Close modal
-        setSanctionConfirmModal(null)
-
         // Check if redesignation is needed and prompt user
         // Use isLiberoUnable to properly check events, not just database field
         const activeLiberos = teamPlayers?.filter(p =>
           p.libero && p.libero !== '' && !isLiberoUnable(team, p.number) && Number(p.number) !== Number(playerNumber)
         ) || []
         if (activeLiberos.length === 0) {
-          setTimeout(() => {
-            setLiberoUnableModal({
-              team,
-              liberoNumber: playerNumber,
-              liberoType: player.libero,
-              step: 'redesignate'
-            })
-          }, 100)
+          setLiberoUnableModal({
+            team,
+            liberoNumber: playerNumber,
+            liberoType: player.libero,
+            step: 'redesignate'
+          })
         }
 
         return // Exit early, don't do the regular substitution flow
       }
 
       // Regular player (not libero) on court - continue with normal flow
-
-      // Close the confirmation modal
-      setSanctionConfirmModal(null)
 
       // Check if the player being expelled/disqualified is the captain or court captain
       const sanctionedPlayer = teamPlayers?.find(p => String(p.number) === String(playerNumber))
@@ -10801,7 +10810,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }
         }
 
-        setSanctionConfirmModal(null)
         return
       }
 
@@ -10814,8 +10822,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         position,
         role
       })
-
-      setSanctionConfirmModal(null)
 
       // Check if this is a libero - if so, log libero_unable and prompt for re-designation
       if (type === 'libero' && playerNumber) {
@@ -10839,14 +10845,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             p.libero && p.libero !== '' && !isLiberoUnable(team, p.number) && Number(p.number) !== Number(playerNumber)
           ) || []
           if (activeLiberos.length === 0) {
-            setTimeout(() => {
-              setLiberoUnableModal({
-                team,
-                liberoNumber: playerNumber,
-                liberoType: liberoPlayer.libero,
-                step: 'redesignate'
-              })
-            }, 100)
+            setLiberoUnableModal({
+              team,
+              liberoNumber: playerNumber,
+              liberoType: liberoPlayer.libero,
+              step: 'redesignate'
+            })
           }
         }
       }
@@ -10880,8 +10884,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           e.payload?.isInitial
         )
 
-        setSanctionConfirmModal(null)
-
         if (homeLineupSet && awayLineupSet) {
           // Both lineups are set - award point immediately
           const otherTeam = team === 'home' ? 'away' : 'home'
@@ -10891,15 +10893,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           // Lineups not set - show message
           showAlert('Penalty recorded. Point will be awarded after both teams set their lineups.', 'info')
         }
-      } else {
-        setSanctionConfirmModal(null)
       }
     }
-  }, [sanctionConfirmModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, playerHasSanctionType, teamHasFormalWarning, checkLiberoRedesignation, requestAutomaticForfait, getLiberoOnCourt, teamAKey])
+  }), [runPlayerSanctionConfirm, sanctionConfirmModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, playerHasSanctionType, teamHasFormalWarning, checkLiberoRedesignation, requestAutomaticForfait, getLiberoOnCourt, teamAKey])
 
   // Handle sanction substitution when bench player (libero replacement) is expelled/disqualified
   // Per FIVB Casebook: libero stays on court, the expelled bench player is replaced by a substitute
-  const handleSanctionSubstitution = useCallback(async (substituteNumber) => {
+  const runSanctionSubstitution = useConfirmAction()
+  const handleSanctionSubstitution = useCallback((substituteNumber) => runSanctionSubstitution(async () => {
     if (!sanctionSubstitutionModal) return
 
     const { team, expelledPlayer, liberoOnCourt, reason, position } = sanctionSubstitutionModal
@@ -10907,6 +10908,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const isExceptional = classifySubstitutionRequest(data?.events, team, data?.set?.index, {
       isExceptional: sanctionSubstitutionModal.isExceptional, isExpelled: reason === 'expulsion', isDisqualified: reason === 'disqualification'
     }) === 'exceptional'
+    // Close first, then write (useConfirmAction)
+    setSanctionSubstitutionModal(null)
 
     // Log substitution event - this is recorded on scoresheet
     // The position is where the libero currently is (the expelled player's original position)
@@ -10959,9 +10962,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         [remarkKey]: existingRemarks ? `${existingRemarks}; ${newRemark}` : newRemark
       })
     }
-
-    setSanctionSubstitutionModal(null)
-  }, [sanctionSubstitutionModal, data?.set, data?.events, data?.match, logEvent, matchId])
+  }), [runSanctionSubstitution, sanctionSubstitutionModal, data?.set, data?.events, data?.match, logEvent, matchId])
 
   // Execute libero substitution directly (no confirmation modal needed)
   const showLiberoConfirm = useCallback(async (liberoType) => {
@@ -11197,8 +11198,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [liberoInDropdown, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, getNextSeq, isLiberoUnable])
 
   // Confirm libero entry
-  const confirmLibero = useCallback(async () => {
+  const runLiberoConfirm = useConfirmAction()
+  const confirmLibero = useCallback(() => runLiberoConfirm(async () => {
     if (!liberoConfirm || !data?.set) return
+    // Close first, then write (useConfirmAction); every path below works from
+    // the liberoConfirm snapshot
+    setLiberoConfirm(null)
+    setLiberoDropdown(null)
 
     // MUTEX: Acquire lock before creating any events to prevent race conditions
     const maxWaitTime = 5000
@@ -11216,7 +11222,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Check if there has been a point since last libero exchange
         if (!hasPointSinceLastLiberoExchange(team)) {
           showAlert('A point must be awarded before removing the libero', 'warning')
-          setLiberoConfirm(null)
           return
         }
 
@@ -11234,7 +11239,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           console.error('[Libero Exit] VALIDATION FAILED: libero', playerOut,
             'is not at position', position, '- found', playerAtPosition, 'instead')
           showAlert(`Libero #${playerOut} is not at position ${position}. Cannot proceed with libero exit.`, 'error')
-          setLiberoConfirm(null)
           return
         }
 
@@ -11248,7 +11252,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
         if (!originalPlayerNumber) {
           showAlert('Original player not found for this libero. Please update lineup manually.', 'error')
-          setLiberoConfirm(null)
           return
         }
 
@@ -11329,8 +11332,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }, 300)
         }
 
-        setLiberoConfirm(null)
-        setLiberoDropdown(null)
         return
       }
 
@@ -11339,8 +11340,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const isBackRow = position === 'I' || position === 'V' || position === 'VI'
       if (!isBackRow) {
         showAlert('Liberos can only enter back-row positions (I, V, VI)', 'warning')
-        setLiberoConfirm(null)
-        setLiberoDropdown(null)
         return
       }
 
@@ -11363,8 +11362,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Check if libero is unable to play
       if (isLiberoUnable(team, liberoPlayer.number)) {
         showAlert('This libero is unable to play (injured, expelled, disqualified, or declared unable)', 'warning')
-        setLiberoConfirm(null)
-        setLiberoDropdown(null)
         return
       }
 
@@ -11374,8 +11371,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         console.error('[Libero Entry] VALIDATION FAILED: playerOut', playerOut,
           'is not at position', position, '- found', playerAtPosition, 'instead')
         showAlert(`Player #${playerOut} is not at position ${position}. Cannot proceed with libero entry.`, 'error')
-        setLiberoConfirm(null)
-        setLiberoDropdown(null)
         return
       }
 
@@ -11384,8 +11379,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (playerOutInfo?.libero && playerOutInfo.libero !== '') {
         console.error('[Libero Entry] VALIDATION FAILED: playerOut', playerOut, 'is a libero')
         showAlert(`Player #${playerOut} is a libero. Liberos cannot be replaced by other liberos.`, 'warning')
-        setLiberoConfirm(null)
-        setLiberoDropdown(null)
         return
       }
 
@@ -11470,8 +11463,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         newLineup: finalLineup
       }, getStateSnapshot())
 
-      setLiberoConfirm(null)
-
       // Check if captain is on court after libero entry
       // The playerOut is leaving, check if they're captain
       // Reuse teamPlayers variable already declared above
@@ -11487,12 +11478,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }, 300)
       }
       setSubstitutionDropdown(null) // Close substitution dropdown if open
-      setLiberoDropdown(null) // Close libero dropdown if open
     } finally {
       // MUTEX: Always release the lock, even if an error occurred
       eventInProgressRef.current = false
     }
-  }, [liberoConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, logEvent, getNextSeq, isLiberoUnable, hasPointSinceLastLiberoExchange])
+  }), [runLiberoConfirm, liberoConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, logEvent, getNextSeq, isLiberoUnable, hasPointSinceLastLiberoExchange])
 
   const cancelLibero = useCallback(() => {
     setLiberoDropdown(null)
@@ -11506,8 +11496,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [])
 
   // Handle libero reentry (when opposite player is in position I and not serving)
-  const confirmLiberoReentry = useCallback(async () => {
+  const runLiberoReentryConfirm = useConfirmAction()
+  const confirmLiberoReentry = useCallback(() => runLiberoReentryConfirm(async () => {
     if (!liberoReentryModal || !data?.set) return
+    // Close first, then write (useConfirmAction)
+    setLiberoReentryModal(null)
 
     // MUTEX: Acquire lock before creating any events to prevent race conditions
     const maxWaitTime = 5000
@@ -11527,7 +11520,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Check if libero is unable to play
       if (isLiberoUnable(team, liberoNumber)) {
         showAlert('This libero is unable to play (injured, expelled, disqualified, or declared unable)', 'warning')
-        setLiberoReentryModal(null)
         return
       }
 
@@ -11611,8 +11603,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         [team]: null
       }))
 
-      setLiberoReentryModal(null)
-
       // Check if captain is on court after libero reentry (playerOut is leaving)
       const teamPlayers = team === 'home' ? data?.homePlayers : data?.awayPlayers
       const leavingPlayer = teamPlayers?.find(p => String(p.number) === String(playerOut))
@@ -11630,7 +11620,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // MUTEX: Always release the lock, even if an error occurred
       eventInProgressRef.current = false
     }
-  }, [liberoReentryModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, isLiberoUnable])
+  }), [runLiberoReentryConfirm, liberoReentryModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, data?.match, matchId, logEvent, isLiberoUnable])
 
   const cancelLiberoReentry = useCallback(() => {
     // Track that we dismissed the suggestion for this specific libero exit
@@ -11804,10 +11794,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [rallyStatus, mapSideToTeamKey, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.events, data?.set, data?.match, matchId, logEvent, data?.homePlayers, data?.awayPlayers])
 
   // Handle libero re-designation
-  const confirmLiberoRedesignation = useCallback(async (newLiberoNumber) => {
+  const runLiberoRedesignation = useConfirmAction()
+  const confirmLiberoRedesignation = useCallback((newLiberoNumber) => runLiberoRedesignation(async () => {
     if (!liberoRedesignationModal || !data?.set) return
 
     const { team, unableLiberoNumber, unableLiberoType, reason = 'declared' } = liberoRedesignationModal
+    // Close first, then write (useConfirmAction): the candidate list is live and
+    // redrew without the chosen player otherwise
+    setLiberoRedesignationModal(null)
 
     // Log the libero_unable event if not already logged (with reason='declared' if not specified)
     const hasUnableEvent = data?.events?.some(e =>
@@ -11884,8 +11878,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     logManualChange('Libero', 'Redesignation', `#${unableLiberoNumber}`, `#${newLiberoNumber}`,
       `Player #${newLiberoNumber} re-designated as Libero replacing #${unableLiberoNumber} (Team ${teamLabel}, Set ${setIndex}, ${scoreStr})`)
 
-    setLiberoRedesignationModal(null)
-  }, [liberoRedesignationModal, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, teamAKey, matchId])
+  }), [runLiberoRedesignation, liberoRedesignationModal, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, teamAKey, matchId])
 
   // Confirm marking libero as unable
   const confirmLiberoUnable = useCallback(async () => {
@@ -12375,10 +12368,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const awayLabel = data?.match?.coinTossTeamA === 'away' ? 'A' : (data?.match?.coinTossTeamB === 'away' ? 'B' : 'B')
 
   // Handle captain on court selection
-  const handleSelectCaptainOnCourt = useCallback(async (playerNumber) => {
+  const runCaptainOnCourt = useConfirmAction()
+  const handleSelectCaptainOnCourt = useCallback((playerNumber) => runCaptainOnCourt(async () => {
     if (!captainOnCourtModal || !matchId) return
 
     const { team } = captainOnCourtModal
+    // Close first, then write (useConfirmAction)
+    setCaptainOnCourtModal(null)
     const courtCaptainField = team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
     const rememberedField = team === 'home' ? 'homeRememberedCourtCaptain' : 'awayRememberedCourtCaptain'
 
@@ -12398,9 +12394,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       playerNumber,
       previousCourtCaptain
     })
-
-    setCaptainOnCourtModal(null)
-  }, [captainOnCourtModal, matchId, logEvent])
+  }), [runCaptainOnCourt, captainOnCourtModal, matchId, logEvent])
 
   // Handle cancel (no captain selected)
   const handleCancelCaptainOnCourt = useCallback(() => {
@@ -12595,21 +12589,27 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }, [matchId, newPin, editPinType])
 
-  const confirmCourtSwitch = useCallback(async () => {
+  const runCourtSwitchConfirm = useConfirmAction()
+  const confirmCourtSwitch = useCallback(() => runCourtSwitchConfirm(async () => {
     if (!courtSwitchModal) return
+
+    // Close first, then write (useConfirmAction): the switch flips the court
+    // sides, which drew behind the still-open dialog otherwise
+    setCourtSwitchModal(null)
 
     // Mark that courts have been switched for set 5
     await db.matches.update(matchId, { set5CourtSwitched: true })
 
-    // Close the modal
-    setCourtSwitchModal(null)
-
     // Sync to Supabase with fresh snapshot to update side_a and serving_team after court switch
     syncLiveStateToSupabase('court_switch', null, { reason: 'set5_8points' }, null)
-  }, [courtSwitchModal, matchId, syncLiveStateToSupabase])
+  }), [runCourtSwitchConfirm, courtSwitchModal, matchId, syncLiveStateToSupabase])
 
-  const cancelCourtSwitch = useCallback(async () => {
+  const runCourtSwitchCancel = useConfirmAction()
+  const cancelCourtSwitch = useCallback(() => runCourtSwitchCancel(async () => {
     if (!courtSwitchModal || !data?.events) return
+    // Close first, then undo the point (useConfirmAction)
+    const modal = courtSwitchModal
+    setCourtSwitchModal(null)
 
     // Undo the last point that caused the 8-point threshold
     // Find the last event by sequence number
@@ -12630,21 +12630,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       await db.events.delete(lastEvent.id)
 
       // Update set points
-      const newHomePoints = courtSwitchModal.teamThatScored === 'home'
-        ? courtSwitchModal.homePoints - 1
-        : courtSwitchModal.homePoints
-      const newAwayPoints = courtSwitchModal.teamThatScored === 'away'
-        ? courtSwitchModal.awayPoints - 1
-        : courtSwitchModal.awayPoints
+      const newHomePoints = modal.teamThatScored === 'home'
+        ? modal.homePoints - 1
+        : modal.homePoints
+      const newAwayPoints = modal.teamThatScored === 'away'
+        ? modal.awayPoints - 1
+        : modal.awayPoints
 
-      await db.sets.update(courtSwitchModal.set.id, {
+      await db.sets.update(modal.set.id, {
         homePoints: newHomePoints,
         awayPoints: newAwayPoints
       })
     }
-
-    setCourtSwitchModal(null)
-  }, [courtSwitchModal, data?.events])
+  }), [runCourtSwitchCancel, courtSwitchModal, data?.events])
 
   // Check if match is already finished (loaded a completed match)
   // If so, trigger onFinishSet to navigate to MatchEnd screen
@@ -14972,8 +14970,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <div
                 data-help-id="scoreboard-timeout-left"
                 onClick={() => {
-                  // Clicking calls timeout if available
-                  const canCallTimeout = getTimeoutsUsed('left') < 2 && rallyStatus !== 'in_play' && !isRallyReplayed
+                  // Clicking calls a time-out; with both used, handleTimeout turns
+                  // the request into an improper request (FIVB 15.11.1.4)
+                  const canCallTimeout = rallyStatus !== 'in_play' && !isRallyReplayed
                   if (canCallTimeout) {
                     handleTimeout('left')
                   }
@@ -14994,7 +14993,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     : (rallyStatus === 'in_play' || isRallyReplayed
                       ? '1px solid var(--border)'
                       : '1px solid rgba(34, 197, 94, 0.4)'),
-                  cursor: getTimeoutsUsed('left') >= 2 || rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer'
+                  cursor: rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer'
                 }}
               >
                 <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '3.75cqw' : 'max(11px, 5.1cqw)', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.to')}</div>
@@ -18365,8 +18364,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <div
                 data-help-id="scoreboard-timeout-right"
                 onClick={() => {
-                  // Clicking calls timeout if available
-                  const canCallTimeout = getTimeoutsUsed('right') < 2 && rallyStatus !== 'in_play' && !isRallyReplayed
+                  // Clicking calls a time-out; with both used, handleTimeout turns
+                  // the request into an improper request (FIVB 15.11.1.4)
+                  const canCallTimeout = rallyStatus !== 'in_play' && !isRallyReplayed
                   if (canCallTimeout) {
                     handleTimeout('right')
                   }
@@ -18387,7 +18387,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     : (rallyStatus === 'in_play' || isRallyReplayed
                       ? '1px solid var(--border)'
                       : '1px solid rgba(34, 197, 94, 0.4)'),
-                  cursor: getTimeoutsUsed('right') >= 2 || rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer'
+                  cursor: rallyStatus === 'in_play' || isRallyReplayed ? 'not-allowed' : 'pointer'
                 }}
               >
                 <div className="to-sub-label" style={{ fontSize: (isCompactMode || isShortHeight) ? '3.75cqw' : 'max(11px, 5.1cqw)', color: 'var(--muted)', marginBottom: (isCompactMode || isShortHeight) ? '0.3cqw' : '1.25cqw' }}>{t('scoreboard.labels.to')}</div>
@@ -23360,10 +23360,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         </Modal>
       )}
 
-      {/* Timeout confirmation modal - only show before timeout starts, not during countdown */}
+      {/* Timeout confirmation modal - only show before timeout starts, not during countdown.
+          Its wording comes from timeoutModal.ordinal / .consecutive, taken when it
+          opened; never from the live time-out count (it changes on confirm). */}
       {timeoutModal && !timeoutModal.started && (
         <Modal
-          title={`Time-out — ${timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))}`}
+          title={t('scoreboard.timeoutRequest.title', { team: timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')) })}
           open={true}
           onClose={cancelTimeout}
           width={400}
@@ -23379,8 +23381,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               const otherTeamLabel = timeoutModal.team === teamAKey ? 'B' : 'A'
               const requestingTeamColor = requestingTeamData?.color || (timeoutModal.team === 'home' ? '#ef4444' : '#3b82f6')
               const otherTeamColor = otherTeamData?.color || (timeoutModal.team === 'home' ? '#3b82f6' : '#ef4444')
-              const currentTimeouts = timeoutsUsed[timeoutModal.team] || 0
-              const isSecondTimeout = currentTimeouts === 1
               return (
                 <div style={{ marginBottom: '16px', fontSize: '24px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
                   <span style={{
@@ -23403,15 +23403,29 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 </div>
               )
             })()}
-            <p className="text-sm text-stone-600" style={{ marginBottom: '20px' }}>
-              Confirm {(timeoutsUsed[timeoutModal.team] || 0) === 1 && <><span className="font-bold text-red-700">2nd</span>{' '}</>}time-out request?
-            </p>
+            {(() => {
+              const teamName = timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))
+              if (timeoutModal.consecutive) {
+                return (
+                  <p className="text-sm font-semibold text-red-700" style={{ marginBottom: '20px' }} data-testid="timeout-request-text">
+                    {t('scoreboard.timeoutRequest.consecutive', { team: teamName })}
+                  </p>
+                )
+              }
+              return (
+                <p className={cn('text-sm', timeoutModal.ordinal === 2 ? 'font-semibold text-red-700' : 'text-stone-600')} style={{ marginBottom: '20px' }} data-testid="timeout-request-text">
+                  {timeoutModal.ordinal === 2
+                    ? t('scoreboard.timeoutRequest.second', { team: teamName })
+                    : t('scoreboard.timeoutRequest.first', { team: teamName })}
+                </p>
+              )
+            })()}
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
               <SbButton variant="positive" onClick={confirmTimeout}>
-                Confirm time-out
+                {timeoutModal.consecutive ? t('scoreboard.timeoutRequest.confirmConsecutive') : t('scoreboard.buttons.confirmTimeout')}
               </SbButton>
               <SbButton onClick={cancelTimeout}>
-                Cancel
+                {t('common.cancel')}
               </SbButton>
             </div>
           </div>
@@ -24949,46 +24963,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         </Modal>
       )}
 
-      {/* Duplicate Timeout Confirmation Modal */}
-      {duplicateTimeoutConfirm && (
-        <Modal
-          title={t('scoreboard.modals.confirmTimeout', 'Confirm timeout')}
-          open={true}
-          onClose={() => setDuplicateTimeoutConfirm(null)}
-          width={320}
-          hideCloseButton={true}
-        >
-          <div style={{ padding: '4px 0', textAlign: 'center' }}>
-            <div style={{ marginBottom: '16px', color: 'var(--muted)' }}><TimerIcon size={48} /></div>
-            <p style={{ marginBottom: '8px', fontSize: '14px', fontWeight: 600 }}>
-              {t('scoreboard.confirm.timeoutAlreadyTaken', 'Timeout already taken')}
-            </p>
-            <p style={{ marginBottom: '24px', fontSize: '12px', color: 'var(--muted)' }}>
-              {t('scoreboard.confirm.areYouSureAnotherTimeout', {
-                team: duplicateTimeoutConfirm.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')),
-                defaultValue: `${duplicateTimeoutConfirm.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))} already has a timeout with no points since. Are you sure you want another timeout?`
-              })}
-            </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <SbButton variant="positive"
-                onClick={() => {
-                  const team = duplicateTimeoutConfirm.team
-                  setDuplicateTimeoutConfirm(null)
-                  setTimeoutModal({ team, countdown: 30, started: false })
-                }}
-              >
-                {t('scoreboard.confirm.yesTimeout', 'Yes, timeout')}
-              </SbButton>
-              <SbButton variant="secondary"
-                onClick={() => setDuplicateTimeoutConfirm(null)}
-              >
-                {t('common.cancel')}
-              </SbButton>
-            </div>
-          </div>
-        </Modal>
-      )}
-
       {sanctionConfirmModal && (() => {
         const teamData = sanctionConfirmModal.team === 'home' ? data?.homeTeam : data?.awayTeam
         const teamColor = teamData?.color || (sanctionConfirmModal.team === 'home' ? '#ef4444' : '#3b82f6')
@@ -25641,9 +25615,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             </p>
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
               <SbButton variant="positive"
-                onClick={async () => {
+                onClick={() => runReopenSet(async () => {
                   let reopenIndex = reopenSetConfirm.setIndex
                   let reopenSetId = reopenSetConfirm.setId
+                  // Close first, then write (useConfirmAction)
+                  setReopenSetConfirm(null)
                   const matchRecord = await db.matches.get(matchId)
                   // A match forfeit is reversed as a whole: reopening any set it
                   // finished or created reopens the set the forfeit happened in
@@ -25716,8 +25692,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   syncToReferee()
                   syncLiveStateToSupabase('manual_reopen_set', null, { setIndex: reopenIndex })
                   notifyScoresheetUpdate('reopen_set')
-                  setReopenSetConfirm(null)
-                }}
+                })}
               >
                 Yes, reopen
               </SbButton>
@@ -26258,38 +26233,65 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           width={400}
           hideCloseButton={true}
         >
-          <div style={{ padding: '4px 0', textAlign: 'center' }}>
-            <p style={{ marginBottom: '24px', fontSize: '16px' }}>
-              Apply {sanctionConfirm.type === 'improper_request' ? 'improper request' :
-                sanctionConfirm.type === 'delay_warning' ? 'delay warning' :
-                  'delay penalty'} to team {(() => {
-                    const sideTeamKey = sanctionConfirm.side === 'left' ? (leftIsHome ? 'home' : 'away') : (leftIsHome ? 'away' : 'home')
-                    return sideTeamKey === teamAKey ? 'A' : 'B'
-                  })()}?
-            </p>
-            {sanctionConfirm.reason === 'substitution_limit' && (
-              <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)' }}>
-                {t('scoreboard.modals.substitutionLimitImproperRequest', 'The team has used its 6 substitutions in this set: a further substitution request is an improper request.')}
-              </p>
-            )}
-            {sanctionConfirm.type === 'delay_penalty' && (
-              <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)', fontStyle: 'italic' }}>
-                This will award a point and service to the opponent team
-              </p>
-            )}
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-              <SbButton variant="positive"
-                onClick={confirmSanction}
-              >
-                Yes
-              </SbButton>
-              <SbButton variant="secondary"
-                onClick={() => setSanctionConfirm(null)}
-              >
-                No
-              </SbButton>
-            </div>
-          </div>
+          {(() => {
+            // Everything shown here was taken when the dialog opened: the team
+            // (not the side, which can swap) and the sanction that will be
+            // recorded once the ladder is applied (sanctionConfirm.resolved).
+            const teamKey = sanctionConfirm.team
+            const nameOf = key => key === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))
+            const team = `${teamKey === teamAKey ? 'A' : 'B'} (${nameOf(teamKey)})`
+            const opponentKey = teamKey === 'home' ? 'away' : 'home'
+            const opponent = `${opponentKey === teamAKey ? 'A' : 'B'} (${nameOf(opponentKey)})`
+            const { type: requested, resolved, reason } = sanctionConfirm
+            return (
+              <div style={{ padding: '4px 0', textAlign: 'center' }}>
+                {reason === 'substitution_limit' && (
+                  <p style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>
+                    {t('scoreboard.modals.substitutionLimitImproperRequest', 'The team has used its 6 substitutions in this set: a further substitution request is an improper request.')}
+                  </p>
+                )}
+                {reason === 'third_timeout' && (
+                  <p style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 600 }}>
+                    {t('scoreboard.teamSanctionConfirm.thirdTimeout', { team })}
+                  </p>
+                )}
+                <p style={{ marginBottom: '16px', fontSize: '16px' }}>
+                  {resolved === 'improper_request'
+                    ? t('scoreboard.teamSanctionConfirm.applyImproperRequest', { team })
+                    : resolved === 'delay_warning'
+                      ? t('scoreboard.teamSanctionConfirm.applyDelayWarning', { team })
+                      : t('scoreboard.teamSanctionConfirm.applyDelayPenalty', { team })}
+                </p>
+                {requested === 'improper_request' && resolved !== 'improper_request' && (
+                  <p style={{ marginBottom: '12px', fontSize: '14px', color: 'var(--muted)' }}>
+                    {t('scoreboard.teamSanctionConfirm.repeatedImproperRequest')}
+                  </p>
+                )}
+                {requested === 'delay_warning' && resolved === 'delay_penalty' && (
+                  <p style={{ marginBottom: '12px', fontSize: '14px', color: 'var(--muted)' }}>
+                    {t('scoreboard.teamSanctionConfirm.repeatedDelay')}
+                  </p>
+                )}
+                {resolved === 'delay_penalty' && (
+                  <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)', fontStyle: 'italic' }}>
+                    {t('scoreboard.teamSanctionConfirm.pointToOpponent', { opponent })}
+                  </p>
+                )}
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '8px' }}>
+                  <SbButton variant="positive"
+                    onClick={confirmSanction}
+                  >
+                    {t('common.yes')}
+                  </SbButton>
+                  <SbButton variant="secondary"
+                    onClick={() => setSanctionConfirm(null)}
+                  >
+                    {t('common.no')}
+                  </SbButton>
+                </div>
+              </div>
+            )
+          })()}
         </Modal>
       )}
 
