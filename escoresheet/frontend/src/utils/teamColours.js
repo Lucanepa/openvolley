@@ -4,7 +4,8 @@
 // white, whichever reads better on the fill.
 //
 // Pure functions, no DOM: WCAG 2.x relative luminance + contrast ratio for
-// readability, OKLab distance for "looks like a different shirt".
+// readability (APCA breaks the tie on mid-tone fills), OKLab distance for
+// "looks like a different shirt".
 
 export const TEXT_DARK = '#1c1917' // stone-900
 export const TEXT_LIGHT = '#ffffff'
@@ -141,17 +142,54 @@ export function colourDistance(a, b) {
   return 100 * Math.hypot(x.L - y.L, x.a - y.a, x.b - y.b)
 }
 
-/** Near-black or white, whichever has the higher contrast on `bg` */
+// APCA screen luminance (0.0.98G-4g constants, with its soft clamp near black)
+function apcaY(input) {
+  const c = solid(input)
+  if (!c) return null
+  const y = 0.2126729 * (c.r / 255) ** 2.4 + 0.7151522 * (c.g / 255) ** 2.4 + 0.0721750 * (c.b / 255) ** 2.4
+  return y < 0.022 ? y + (0.022 - y) ** 1.414 : y
+}
+
+/**
+ * APCA lightness contrast Lc of `text` on `bg` (APCA 0.0.98G-4g): about 0
+ * to 106 for dark text on a light fill, 0 to -108 for light text on a dark
+ * one. It tracks how people see mid-tone fills (red, blue, green) better than
+ * the WCAG 2 ratio, which favours black text there. null if unparseable.
+ */
+export function apcaContrast(text, bg) {
+  const yt = apcaY(text)
+  const yb = apcaY(bg)
+  if (yt == null || yb == null) return null
+  if (yb > yt) {
+    const s = (yb ** 0.56 - yt ** 0.57) * 1.14
+    return s < 0.1 ? 0 : (s - 0.027) * 100
+  }
+  const s = (yb ** 0.65 - yt ** 0.62) * 1.14
+  return s > -0.1 ? 0 : (s + 0.027) * 100
+}
+
+// WCAG large-text minimum: the shirt number is big and bold
+export const MIN_LARGE_TEXT_CONTRAST = 3
+
+/**
+ * Near-black or white for the number on `bg`. When both reach the WCAG
+ * large-text 3:1 (mid-tone shirts: red, blue, green, grey), the one people
+ * read better (higher APCA |Lc|) wins, so a red or blue shirt keeps white
+ * numbers; otherwise the one with the higher WCAG ratio.
+ */
 export function readableTextOn(bg) {
   const dark = contrastRatio(bg, TEXT_DARK)
   const light = contrastRatio(bg, TEXT_LIGHT)
   if (dark == null) return TEXT_DARK
+  if (dark >= MIN_LARGE_TEXT_CONTRAST && light >= MIN_LARGE_TEXT_CONTRAST) {
+    return Math.abs(apcaContrast(TEXT_LIGHT, bg)) > Math.abs(apcaContrast(TEXT_DARK, bg)) ? TEXT_LIGHT : TEXT_DARK
+  }
   return dark >= light ? TEXT_DARK : TEXT_LIGHT
 }
 
 /**
- * Text colour for `bg` plus, when even the better of near-black and white
- * stays under 4.5:1 (mid-tone fills), a 1px outline in the other one.
+ * Text colour for `bg` (readableTextOn) plus, when it stays under 4.5:1
+ * (mid-tone fills), a 1px outline in the other one.
  * @returns {{ color: string, textShadow?: string, contrast: number }}
  */
 export function readableText(bg) {

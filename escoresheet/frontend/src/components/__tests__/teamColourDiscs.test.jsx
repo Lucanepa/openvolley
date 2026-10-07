@@ -53,6 +53,20 @@ describe('drag overlay', () => {
     expect(el.style.color).toBe(rgb(TEXT_DARK))
     expect(el.style.border).toBe(`3px solid ${rgb('#82817f')}`)
   })
+
+  it('outlines the number only, and turns the L mark dark on a blue libero shirt', () => {
+    const outline = '-1px 0 rgba(28, 25, 23, 0.85)'
+    const { unmount } = render(<DraggedPlayerOverlay player={{ playerNumber: 5, isLibero: true }} position={{ x: 100, y: 100 }} colors={{ bg: '#1d4ed8', text: TEXT_LIGHT, textShadow: outline }} />)
+    const el = [...document.body.querySelectorAll('div')].find(d => d.textContent === '5L')
+    expect(el.style.textShadow).toContain('rgba(28, 25, 23, 0.85)')
+    const mark = el.querySelector('span')
+    expect(mark.style.background).toBe(rgb('#0f172a'))
+    expect(mark.style.textShadow).toBe('none')
+    unmount()
+    render(<DraggedPlayerOverlay player={{ playerNumber: 6, isLibero: true }} position={{ x: 100, y: 100 }} colors={{ bg: '#1c1917', text: TEXT_LIGHT }} />)
+    const onBlack = [...document.body.querySelectorAll('div')].find(d => d.textContent === '6L')
+    expect(onBlack.querySelector('span').style.background).toBe(rgb('#3b82f6'))
+  })
 })
 
 function benchBundle(homeColor, awayColor) {

@@ -29085,6 +29085,9 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                     borderRadius: '50%',
                     background: '#4ade80',
                     color: '#000',
+                    // white halo: stays apart from a green shirt
+                    boxShadow: '0 0 0 1.5px #ffffff',
+                    textShadow: 'none',
                     fontSize: '10px',
                     fontWeight: 700,
                     display: 'flex',
@@ -29108,6 +29111,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                     fontSize: '7px',
                     fontWeight: 700,
                     color: '#fff',
+                    textShadow: 'none',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
