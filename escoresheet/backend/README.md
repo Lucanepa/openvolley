@@ -152,7 +152,7 @@ Deploy to Render for cloud backup, also run locally when available. The frontend
 | `IS_CLOUD` | Strict cloud CORS/HSTS/CSP without a database (relay-only cloud). Implied by `DATABASE_URL`. | - |
 | `PG_POOL_MAX` | Max Postgres connections of the one shared pool (pgQuery + auth). | `5` |
 | `CONTACT_EMAIL` | Contact form recipient; also named in the "password reset unavailable" message | `support@openvolley.app` |
-| `OV_PIN_SECRET` | Secret (at least 32 characters) for the PINs at rest: `game_pin` and every `connection_pins` value are stored as an HMAC with it (`lib/pinHash.js`). Unset: stored in plaintext as before (the server warns at startup). **Never change or lose it** while matches stored with it are in use (see "Security model"). | - |
+| `OV_PIN_SECRET` | Secret (at least 32 characters) for the PINs at rest: `game_pin` and every `connection_pins` value are stored as an HMAC with it (`lib/pinHash.js`). Unset: stored in plaintext as before (the server warns at startup). Also keys the approval PINs: unset turns approval with an account off ("Approval PINs"). **Never change or lose it** while matches stored with it are in use (see "Security model"). | - |
 | `OV_MATCH_TOKEN_SECRET` | Secret (at least 32 characters; a shorter one stops the start) for the match access tokens the PIN checks answer with (`lib/matchAccess.js`). Unset: derived from `OV_PIN_SECRET`; both unset: a random one per process (tokens end with a restart; the apps re-check their stored PIN on reload). | derived / random |
 | `STORAGE_BACKUP_MIN_FREE_MB`, `STORAGE_SCORESHEETS_MIN_FREE_MB`, `STORAGE_MAX_FILE_MB`, `STORAGE_OWNER_SCOPE`, `STORAGE_OWNER_SCOPE_BUCKETS` | See "Self-hosted storage" below | |
 | `RENDER` | Auto-set by Render (legacy) | - |
@@ -419,6 +419,39 @@ for a known key it is an identifier, not a capability.
   checks answer the match, never a PIN; the server logs no PIN (asserted by the
   e2e suites).
 
+### Approval PINs (`lib/approvals.js`, `db/011`)
+
+The 1st referee, the 2nd referee and the scorer may approve a match result
+with their account instead of a drawn signature (the signature pads stay, as
+the offline fallback). They confirm with a personal approval PIN of 4 to 6
+digits, set once in the profile with the account password
+(`../docs/account-approval-spec.md`).
+
+- **`OV_PIN_SECRET` is required.** The PIN is stored in
+  `auth.approval_pins` as HMAC-SHA256 with a key derived (HKDF,
+  `ov-approval-pin-v1`) from `OV_PIN_SECRET`, plus a random salt per row and
+  the user id in the input. A dump alone reveals nothing; bcrypt would only
+  slow a dump-plus-secret attack over 10^6 values from seconds to hours and
+  cost main-thread CPU on every attempt. Without the secret the feature is off:
+  every endpoint answers 503 `OV_APPROVAL_UNAVAILABLE` (the status answers
+  `available: false`), never a plaintext fallback.
+- **Rotating the secret** (or `key_id` bumped in a later release) makes every
+  approval PIN read as "not set". Officials set a new one with their password.
+  Approvals already given stay valid: the PIN only gates new approvals.
+- **Wrong PINs** are counted per approver in the database, under the row lock
+  of the approve transaction: 5 lock the PIN for 15 minutes, 10 disable it
+  until its owner sets a new one. A caller may send 10 wrong PINs per 10
+  minutes (per account and per IP /64), 5 wrong passwords per 15 minutes on
+  set/remove PIN, and the password check counts in the sign-in lockout.
+- **An admin cannot read or reset a PIN.** The admin console shows the
+  approvals (`GET /api/admin/approvals`, the ID printed on the PDF), with the
+  approver's address and the first 8 hex characters of the IP and device
+  hashes. A blocked official signs by hand or sets a new PIN with their
+  password.
+- `match_approvals` is not on the `/api/db` allowlist and never goes to live
+  sockets; a closed match freezes its approvals, a reopen voids them (trigger,
+  audit `match.approval_void`), deleting an account keeps them with the name.
+
 ### Backups (`backup/` bucket)
 
 Each account sees only its own backup objects: `STORAGE_OWNER_SCOPE=prefix`
@@ -448,6 +481,7 @@ belong to the clubs and the federation, not to the scorer's account.
 | the profile (name, date of birth, licence, roles) | `public.profiles` |
 | My Matches links | `public.user_matches` |
 | editor rights on other accounts' matches | `public.match_editors` |
+| the approval PIN | `auth.approval_pins` (FK cascade) |
 | match backups and interaction logs | storage `backup/{user id}/` (whole folder; the same for any other owner-scoped bucket, except the uploader-only `scoresheets`, whose files stay even with `STORAGE_OWNER_SCOPE_BUCKETS=all`) |
 | the right to read the scoresheets it uploaded | the account's entry in every `.owners/scoresheets/*.json` record (a record left without owners is deleted) |
 
@@ -457,6 +491,7 @@ belong to the clubs and the federation, not to the scorer's account.
 | the officials list of those matches, including the scorer's own name and date of birth | it is part of the match record, exactly as on the paper scoresheet |
 | the scoresheet files it uploaded (`scoresheets/…`) | the approved scoresheet is the match's official record. With no owner left nobody can read it through the API; an operator can grant it to the club or federation account (`scripts/storage-owner.mjs grant`). |
 | beach competition matches it created or claimed, with `created_by`/`claimed_by` NULL | competition records, same reasoning |
+| the account approvals it gave or sent (`match_approvals`), with `user_id`/`requested_by`/`revoked_by` NULL and the name snapshot kept | the approval of a result is part of the match record, like a drawn signature; also on closed matches |
 | anything on the user's devices (IndexedDB matches, cached profile) | not the server's to delete; the app clears the stored session and cached profile |
 | copies in the host backups, until they expire (see below) | they exist to restore the service after a loss; they are GPG-encrypted to a key that is not on the server and cannot be edited row by row |
 
@@ -740,6 +775,9 @@ Errors: 401 no session, 403 `OV_FORBIDDEN` (role), 400 `OV_INVALID_REQUEST`
 | `POST /api/admin/matches/:id/editors {email}` | admin | `{ role: 'editor'\|'creator' }` |
 | `POST /api/admin/matches/:id/release-game {reason}` | admin | `{ match: { id, official_game_exempt: true } }` (closed matches too) |
 | `GET /api/admin/audit?limit=&before=&action=` | admin | `{ entries, next_before }`, newest first |
+| `GET /api/admin/approvals?q=&include_revoked=0\|1&limit=` | admin | account approvals by short id, game number or `external_id`, with email, hash prefixes and the match. `GET /api/admin/matches` and `official-games` (`claim`) carry the active `approvals` |
+| `GET /api/account/approval-pin`, `POST /api/account/approval-pin {password, pin}`, `POST /api/account/approval-pin/remove {password}` | any account (set: referee or scorer, confirmed address) | approval PIN status / set / remove ("Approval PINs"); 403 `OV_PASSWORD_INVALID`, 400 `OV_APPROVAL_PIN_FORMAT`/`_WEAK` |
+| `POST /api/approvals {external_id, slot, email, pin, result, device_id?}`, `GET /api/approvals?external_id=`, `DELETE /api/approvals/:id` | owner, editors, admins (GET and undo: also the approver) | approve, list, undo; error codes in `../docs/account-approval-spec.md` 3.4 |
 | `GET /api/saved-teams?sport=indoor\|beach\|all` | scorer, competition manager, admin | `{ version, fetched_at, sport, competitions, teams: [{ …, sport, players, staff }] }` (archived competitions included). No `sport` (or `''`) = **indoor only**, so a 2.1.0 client never sees a beach row; any other value is 400. `version` is the newest `updated_at` of the filtered rows (`'0'` when none). Every competition and team carries `sport`, every player `country` (`null` for indoor). |
 | `POST /api/saved-teams/competitions`, `PATCH`/`DELETE …/competitions/:id` | competition manager, admin | `{ competition }` (201 on create) / `{ deleted: true }` (cascades). Create takes `sport: 'indoor'\|'beach'` (absent/`null` = indoor); it is fixed: any `sport` in a PATCH is 400 `sport: cannot be changed`. Season: indoor `'2026/27'` (consecutive years), beach `'2026'` (2000-2100). `vm_leagues` (VolleyManager) is indoor only: a non-empty list on beach is 400. |
 | `POST /api/saved-teams/teams`, `PATCH`/`DELETE …/teams/:id` | competition manager, admin | `{ team }` (201; 409 `OV_DUPLICATE` for a name already in the competition) / `{ deleted: true }` |
@@ -848,7 +886,8 @@ Files in `db/`, all run as `ov_owner` (the cluster superuser, `docker exec` only
 | `008_live_state_tto.sql` | after 007 | `match_live_state.tto_active` / `tto_started_at` (openbeach's technical timeout, missing on Supabase; without them every beach live-state write fails). Idempotent. |
 | `009_beach_saved_teams.sql` | after 008 | `competitions.sport`, season per sport, `competition_players.country`. Idempotent, no grants. Deploy order: 009, `roles.sql`, then the new backend, then the frontends (`../docs/beach-saved-teams-deploy.md`). |
 | `010_auth_tokens.sql` | after 009 | `auth.app_tokens`: the one-time reset / confirmation links ("Account emails"), SHA-256 only, FK cascade to `auth.users`. Idempotent, new table only; grants itself to `ov_app` when the role exists, and `roles.sql` grants it too. Without it reset answers 503 even with SMTP configured. |
-| `roles.sql` | after **every** restore or migration | `ov_app` (backend login): DML on every public table (incl. `svrz_games`/`svrz_sync_log`, written by the in-backend vm-sync), sequences USAGE/SELECT, `auth.users` SELECT/INSERT/DELETE + UPDATE of 4 columns, `auth.app_sessions` DML, `auth.app_tokens` DML (when 010 ran), no DDL/TEMP/function EXECUTE, `statement_timeout=10s`; default privileges for future tables; ownership back to `ov_owner`. Password from psql variable `ov_app_pw` (unchanged when not set). |
+| `011_account_approvals.sql` | after 010 | `auth.approval_pins` and `public.match_approvals` ("Approval PINs"), the closed-match lock, the append-only rule (SQLSTATE `OVA01`) and the void-on-reopen trigger on `matches`. Idempotent, new objects only; grants itself to `ov_app` when the role exists, and `roles.sql` grants `auth.approval_pins` too. Safe under the running backend. |
+| `roles.sql` | after **every** restore or migration | `ov_app` (backend login): DML on every public table (incl. `svrz_games`/`svrz_sync_log`, written by the in-backend vm-sync), sequences USAGE/SELECT, `auth.users` SELECT/INSERT/DELETE + UPDATE of 4 columns, `auth.app_sessions` DML, `auth.app_tokens` DML (when 010 ran), `auth.approval_pins` DML (when 011 ran), no DDL/TEMP/function EXECUTE, `statement_timeout=10s`; default privileges for future tables; ownership back to `ov_owner`. Password from psql variable `ov_app_pw` (unchanged when not set). |
 
 **A database already running** gets a new `db/NNN_*.sql` file by hand, in number order, as `ov_owner`, then `roles.sql` (RUNBOOK-hetzner.md, "Apply a new db migration"). `restore.sh` only picks the files up on a restore. For `006`:
 
