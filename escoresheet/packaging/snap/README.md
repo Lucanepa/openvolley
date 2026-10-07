@@ -23,13 +23,37 @@ AppImage and the .deb on GitHub. The .deb is pinned by URL and sha256, so the
 build fails if a release asset ever changes.
 
 - base `core24`, `confinement: strict`, amd64 only (there is no arm64 .deb);
-- the `gnome` extension provides GTK 3, WebKitGTK 4.1 and libsoup 3 (the
-  `gnome-46-2404` runtime), plus the desktop plugs (desktop, desktop-legacy,
-  gsettings, opengl, wayland, x11);
-- `libayatana-appindicator3-1` is staged for the tray icon; a `cleanup` part
-  removes whatever it dragged in that core24 or the gnome runtime already has;
+- the `gnome` extension's `gnome-46-2404` runtime provides every library the
+  binary needs: GTK 3, WebKitGTK 4.1, libsoup 3 and libayatana-appindicator3
+  (the tray). Nothing is staged; the snap is the .deb's files plus
+  `bin/launch` (about 9 MB). The extension also adds the desktop plugs
+  (desktop, desktop-legacy, gsettings, opengl, wayland, x11);
 - the .deb's APT update helper (`/usr/libexec/...`) and its polkit action are
-  left out.
+  left out;
+- snapcraft writes the store icon into the desktop file
+  (`Icon=${SNAP}/meta/gui/icon.png`).
+
+## Tested (2026-10-07, on this branch)
+
+Built both snaps (`snapcraft 9.1.3`, `--destructive-mode` in an Ubuntu 24.04
+container, see "Building"): `openvolley-escoresheet_2.3.0_amd64.snap` (9.1 MB)
+and `openbeach-escoresheet_2.0.0_amd64.snap` (9.0 MB), with no lint warnings
+(the library linter finds every library the binary links in the snap or the
+runtime). Installed the OpenVolley snap (`--dangerous`) and ran it under Xvfb:
+
+- the plugs auto-connected as the table below says (network-manager, bluez,
+  network-observe, removable-media left unconnected);
+- the scoretable window rendered, the relay answered on :5173
+  (`/api/server/status`), the process ran from `/snap/openvolley-escoresheet/x1`;
+- the app's environment had `SNAP_NAME=openvolley-escoresheet` (what the
+  updater looks for) and `XDG_DATA_HOME=~/snap/openvolley-escoresheet/common/.local/share`;
+  the WebKit storage was created there;
+- the 2.3.0 binary logged `[update] 2.3.0 DebNoRepo: checking ...`: it predates
+  the switch and would check for updates in a snap (see below).
+
+Not tested: a real Ubuntu desktop with full AppArmor enforcement (snapd in a
+container only has partial AppArmor support), the hotspot and Bluetooth
+through the `network-manager` / `bluez` plugs, the tray, the store review.
 
 ## The in-app updater is off
 
@@ -59,7 +83,7 @@ refreshes: `sudo snap refresh --hold=72h openvolley-escoresheet`.
 | `network-bind` | yes | the tablets' relay: HTTP :5173 / WS :8080 (OpenBeach :5174 / :8081) | no tablets |
 | `home` | yes (classic) | PDFs and exports to `~/Downloads`, imports | saving outside the snap fails |
 | desktop, wayland, x11, opengl, gsettings | yes (gnome extension) | the window, the tray (StatusNotifier) | - |
-| `network-observe` | **no** | listing the laptop's addresses (`local-ip-address`: a raw netlink route socket) for "Connect tablets" | the address list and QR code for the tablets are empty |
+| `network-observe` | **no** | listing the laptop's addresses (`local-ip-address`: a raw netlink route socket) for "Connect tablets" | the address list and QR code for the tablets are likely empty (snapd's policy allows `network netlink raw` only through network-observe; the container test could not show it) |
 | `network-manager` | **no** | the tablets' Wi-Fi hotspot and Bluetooth network (NetworkManager over D-Bus) | "NetworkManager not available"; use the hall Wi-Fi |
 | `bluez` | **no** | switching the Bluetooth adapter on and discoverable (BlueZ D-Bus) | no Bluetooth network |
 | `removable-media` | **no** | exports to a USB stick (`/media`, `/mnt`) | the stick is not visible in file dialogs |
@@ -142,6 +166,7 @@ docker run -d --name ov-snap --privileged --cgroupns=host \
 docker exec ov-snap bash -c '
   mount -t securityfs securityfs /sys/kernel/security; systemctl restart snapd
   snap wait system seed.loaded && snap install snapcraft --classic
+  snap install gnome-46-2404 gnome-46-2404-sdk gtk-common-themes mesa-2404
   cp -r /src/openvolley-escoresheet /build && cd /build && apt-get update
   /snap/bin/snapcraft pack --destructive-mode'
 docker cp ov-snap:/build/openvolley-escoresheet_2.3.0_amd64.snap .
@@ -149,7 +174,8 @@ docker rm -f ov-snap
 ```
 
 (securityfs: snapd's hooks need AppArmor visible; ForceIPv4: a container
-without an IPv6 route otherwise hangs on archive.ubuntu.com.)
+without an IPv6 route otherwise hangs on archive.ubuntu.com; the build snaps
+by hand: inside Docker, snapcraft does not install them itself.)
 
 Try it on an Ubuntu desktop:
 
