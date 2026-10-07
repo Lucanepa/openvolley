@@ -11,8 +11,9 @@
  *   MANAGER_URL base of the links (default https://manager.openvolley.app)
  *   MAIL_FROM_BEACH   sender of the OpenBeach mails (default: OpenBeach <the
  *                     address of MAIL_FROM, else SMTP_USER>): the same mailbox
- *   MANAGER_URL_BEACH base of the OpenBeach links (default
- *                     https://manager-beach.openvolley.app)
+ *   MANAGER_URL_BEACH base of the OpenBeach links (default: follows
+ *                     MANAGER_URL, see beachManagerBase; for the default
+ *                     MANAGER_URL https://manager-beach.openvolley.app)
  * Without SMTP_HOST or SMTP_PASS the mailer is disabled: lib/auth.js then
  * answers reset-password with 503 "temporarily unavailable" and confirms new
  * accounts at sign-up, exactly as before this module existed.
@@ -404,6 +405,34 @@ function linkBase(raw) {
   }
 }
 
+/**
+ * The OpenBeach link base when MANAGER_URL_BEACH is unset, from OpenVolley's
+ * (`managerUrl`, already a linkBase):
+ *   the default manager.openvolley.app  -> manager-beach.openvolley.app
+ *   <origin>/<path>/manager.html        -> <origin>/<path>/manager-beach.html (one site serving both pages)
+ *   http://localhost:<port> (dev)       -> http://localhost:<port>/manager-beach.html
+ *   anything else                       -> OpenVolley's own manager, with a note to log: the
+ *                                          tokens work there too (one backend), only the brand
+ *                                          of the page is OpenVolley's. Set MANAGER_URL_BEACH.
+ * Returns { url, note } (note: null, or a line for the startup log).
+ */
+export function beachManagerBase(managerUrl) {
+  const base = String(managerUrl || DEFAULT_MANAGER_URL).replace(/\/+$/, '')
+  if (base === DEFAULT_MANAGER_URL) return { url: DEFAULT_MANAGER_URL_BEACH, note: null }
+  let u
+  try { u = new URL(base) } catch { return { url: DEFAULT_MANAGER_URL_BEACH, note: null } }
+  if (/\/manager\.html$/.test(u.pathname)) {
+    return { url: u.origin + u.pathname.replace(/manager\.html$/, 'manager-beach.html'), note: null }
+  }
+  if (['localhost', '127.0.0.1'].includes(u.hostname) && (u.pathname === '/' || u.pathname === '')) {
+    return { url: `${u.origin}/manager-beach.html`, note: null }
+  }
+  return {
+    url: base,
+    note: `MANAGER_URL_BEACH is not set and MANAGER_URL (${base}) is not the default: OpenBeach links go to ${base} (OpenVolley's manager; set MANAGER_URL_BEACH to OpenBeach's manager of this backend)`
+  }
+}
+
 function isUrl(raw) {
   try { return Boolean(new URL(raw)) } catch { return false }
 }
@@ -583,11 +612,24 @@ export function mailerFromEnv(env = process.env, { logger, tls, maxPerHour, budg
   // does): never a mail with a wrong sender or link host.
   const fromBeach = (env.MAIL_FROM_BEACH || '').trim() || brandFrom(DEFAULT_FROM_NAME_BEACH, from)
   if (!fromBeach || !fromBeach.includes('@')) return disabledMailer('MAIL_FROM_BEACH is not an address')
-  const beachRaw = (env.MANAGER_URL_BEACH || '').trim() || DEFAULT_MANAGER_URL_BEACH
-  const managerUrlBeach = linkBase(beachRaw)
-  if (!managerUrlBeach) return disabledMailer(isUrl(beachRaw) ? 'MANAGER_URL_BEACH must be an https URL' : 'MANAGER_URL_BEACH is not a URL')
+  const beachSet = (env.MANAGER_URL_BEACH || '').trim()
+  let managerUrlBeach
+  let beachNote = null
+  if (beachSet) {
+    managerUrlBeach = linkBase(beachSet)
+    if (!managerUrlBeach) return disabledMailer(isUrl(beachSet) ? 'MANAGER_URL_BEACH must be an https URL' : 'MANAGER_URL_BEACH is not a URL')
+  } else {
+    // Unset: follow MANAGER_URL, so a dev / test / staging backend never
+    // mails OpenBeach links to the production manager (which does not know
+    // its tokens).
+    const derived = beachManagerBase(managerUrl)
+    managerUrlBeach = derived.url
+    beachNote = derived.note
+  }
   try {
-    return createMailer({ host, port, user, pass, from, managerUrl, fromBeach, managerUrlBeach, logger, tls, maxPerHour, budgets, maxPerInbox })
+    const mailer = createMailer({ host, port, user, pass, from, managerUrl, fromBeach, managerUrlBeach, logger, tls, maxPerHour, budgets, maxPerInbox })
+    if (beachNote) mailer.warnings = [beachNote]
+    return mailer
   } catch (err) {
     return disabledMailer(err.message)
   }
