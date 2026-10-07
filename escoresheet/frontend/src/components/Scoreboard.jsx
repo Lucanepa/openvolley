@@ -47,6 +47,7 @@ import { planSubstitutionDeletion } from '../domain/substitutions'
 import { decisionChangeUndoRecord, planDecisionChangeReversal, syncJobsForEvents, syncJobsForSets } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, renumberPlayerInEvents } from '../domain/roster'
 import { appendRemark, removeRemarkLine } from '../domain/remarks'
+import { LINEUP_POSITIONS, lineupEntryErrors, lineupCandidates } from '../domain/lineupEntry'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal } from '../domain/matchEnd'
 import { swapTeamDesignation } from '../domain/coinToss'
 import { liveStateNeedsFreshSnapshot } from '../utils/livescoreModel'
@@ -28200,21 +28201,53 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
   const { t } = useTranslation()
   const [lineup, setLineup] = useState(() => {
     if (presetLineup) {
-      const positionMapping = ['IV', 'III', 'II', 'V', 'VI', 'I']
-      return positionMapping.map(pos => (presetLineup[pos] !== undefined ? String(presetLineup[pos] ?? '') : ''))
+      return LINEUP_POSITIONS.map(pos => (presetLineup[pos] !== undefined ? String(presetLineup[pos] ?? '') : ''))
     }
     return ['', '', '', '', '', '']
   }) // [IV, III, II, V, VI, I]
-  const [errors, setErrors] = useState({}) // Use an object for specific error messages
-  const [confirmMessage, setConfirmMessage] = useState(null)
+  // 'Required' only shows once the scorer has tried to confirm (until Clear)
+  const [confirmAttempted, setConfirmAttempted] = useState(false)
+  const [saveFailed, setSaveFailed] = useState(false)
   const [editHistory, setEditHistory] = useState([]) // Track edit history: [{ index, previousValue }]
-  // Roster chips in the team's shirt colour (green outline when the team has no colour)
-  const chipPaint = discPaint(teamData?.color, '#ffffff')
+
+  // Determine if this team is A or B
+  const isTeamA = team === teamAKey
+  const teamLabel = isTeamA ? 'A' : 'B'
+  const teamColor = teamData?.color || (isTeamA ? '#ef4444' : '#3b82f6')
+  // Player discs (pool chips and filled positions) in the shirt colour with
+  // the readable number, as on the court (utils/teamColours.js); the ring
+  // keeps a light shirt apart from the pool's stone-50
+  const discStyle = useMemo(() => {
+    const paint = discPaint(teamColor, '#fafaf9') || discPaint(isTeamA ? '#ef4444' : '#3b82f6', '#fafaf9')
+    return { background: paint.background, color: paint.color, textShadow: paint.textShadow, borderColor: paint.ring || 'transparent' }
+  }, [teamColor, isTeamA])
 
   // Get all events to check for disqualifications
   const events = useLiveQuery(async () => {
     return await db.events.where('matchId').equals(matchId).toArray()
   }, [matchId])
+
+  // Every error is derived from the whole line-up on each change, so fixing
+  // either box of a duplicate clears both (domain/lineupEntry.js)
+  const errors = useMemo(() => {
+    if (saveFailed) return Object.fromEntries(LINEUP_POSITIONS.map((_, i) => [i, 'saveFailed']))
+    return lineupEntryErrors({ lineup, players, events, team, requireAll: confirmAttempted })
+  }, [saveFailed, lineup, players, events, team, confirmAttempted])
+
+  const candidates = useMemo(
+    () => lineupCandidates({ players, lineup, events, team, setIndex }),
+    [players, lineup, events, team, setIndex]
+  )
+
+  const errorText = (code) => ({
+    required: t('scoreboard.lineupModal.errors.required', 'Required'),
+    duplicate: t('scoreboard.lineupModal.errors.duplicate', 'Duplicate'),
+    notOnRoster: t('scoreboard.lineupModal.errors.notOnRoster', 'Not on roster'),
+    libero: t('scoreboard.lineupModal.errors.libero', 'Cannot be libero'),
+    disqualified: t('scoreboard.lineupModal.errors.disqualified', 'Disqualified'),
+    exceptionallySubstituted: t('scoreboard.lineupModal.errors.exceptionallySubstituted', 'Exceptionally substituted'),
+    saveFailed: t('scoreboard.lineupModal.errors.saveFailed', 'Save failed')
+  })[code] || ''
 
   const handleInputChange = (index, value, skipHistory = false) => {
     const numValue = value.replace(/[^0-9]/g, '')
@@ -28228,61 +28261,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     const newLineup = [...lineup]
     newLineup[index] = numValue
     setLineup(newLineup)
-
-    // Automatically validate the number as it's entered
-    if (numValue && numValue.trim() !== '') {
-      const num = Number(numValue)
-      const player = players?.find(p => String(p.number) === String(num))
-      const newErrors = { ...errors }
-
-      // Check if not on roster
-      if (!player) {
-        newErrors[index] = 'Not on roster'
-      }
-      // Check if it's a libero
-      else if (player.libero && player.libero !== '') {
-        newErrors[index] = 'Cannot be libero'
-      }
-      // Check if disqualified
-      else if (events) {
-        const isDisqualified = events.some(e =>
-          e.type === 'sanction' &&
-          e.payload?.team === team &&
-          e.payload?.playerNumber === num &&
-          e.payload?.type === 'disqualification'
-        )
-        if (isDisqualified) {
-          newErrors[index] = 'Disqualified'
-        }
-        // Check if exceptionally substituted
-        else {
-          const wasExceptionallySubstituted = events.some(e =>
-            e.type === 'substitution' &&
-            e.payload?.team === team &&
-            String(e.payload?.playerOut) === String(num) &&
-            e.payload?.isExceptional === true
-          )
-          if (wasExceptionallySubstituted) {
-            newErrors[index] = 'Exceptionally substituted'
-          } else {
-            // Clear error if valid
-            delete newErrors[index]
-          }
-        }
-      } else {
-        // Clear error if valid
-        delete newErrors[index]
-      }
-
-      setErrors(newErrors)
-    } else {
-      // Clear error when field is empty
-      const newErrors = { ...errors }
-      delete newErrors[index]
-      setErrors(newErrors)
-    }
-
-    setConfirmMessage(null)
+    setSaveFailed(false)
   }
 
   // Handle click on available player - SINGLE click assigns to first available position
@@ -28307,8 +28286,8 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     e.dataTransfer.setData('text/plain', String(playerNumber))
     e.dataTransfer.effectAllowed = 'move'
 
-    // Custom drag image: a round disc with the player number
-    setPlayerDragImage(e, playerNumber, { bg: '#4ade80', text: '#000' })
+    // Custom drag image: a round disc in the same paint as the chip
+    setPlayerDragImage(e, playerNumber, { bg: discStyle.background, text: discStyle.color, textShadow: discStyle.textShadow, ring: discStyle.borderColor === 'transparent' ? null : discStyle.borderColor })
   }
 
   const handleDragEnd = () => {
@@ -28323,7 +28302,9 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     setDragOverPosition(positionIndex)
   }
 
-  const handleDragLeave = () => {
+  const handleDragLeave = (e) => {
+    // Moving onto the box's own label or field is not leaving it
+    if (e.currentTarget.contains(e.relatedTarget)) return
     setDragOverPosition(null)
   }
 
@@ -28347,20 +28328,20 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     handleInputChange(lastEdit.index, lastEdit.previousValue, true)
     // Remove the last entry from history
     setEditHistory(prev => prev.slice(0, -1))
-    setConfirmMessage(null)
   }
 
-  // Clear all lineup entries
+  const hasEntries = lineup.some(v => v && v.trim() !== '')
+
+  // Clear all lineup entries (a fresh start: no 'Required' until the next Confirm)
   const handleClearLineup = () => {
     // Save current state to history before clearing
-    lineup.forEach((value, index) => {
-      if (value && value.trim() !== '') {
-        setEditHistory(prev => [...prev, { index, previousValue: value }])
-      }
-    })
+    const cleared = lineup
+      .map((value, index) => ({ index, previousValue: value }))
+      .filter(({ previousValue }) => previousValue && previousValue.trim() !== '')
+    setEditHistory(prev => [...prev, ...cleared])
     setLineup(['', '', '', '', '', ''])
-    setErrors({})
-    setConfirmMessage(null)
+    setConfirmAttempted(false)
+    setSaveFailed(false)
   }
 
   // Rotate lineup clockwise (forward): I->II, II->III, III->IV, IV->V, V->VI, VI->I
@@ -28376,7 +28357,6 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     newLineup[5] = lineup[4]  // VI -> I
     newLineup[2] = lineup[5]  // I -> II
     setLineup(newLineup)
-    setConfirmMessage(null)
   }
 
   // Rotate lineup counterclockwise (backward): I->VI, VI->V, V->IV, IV->III, III->II, II->I
@@ -28390,92 +28370,15 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     newLineup[3] = lineup[4]  // VI -> V
     newLineup[4] = lineup[5]  // I -> VI
     setLineup(newLineup)
-    setConfirmMessage(null)
-  }
-
-  // Modify lineup (undo confirm and go back to editing)
-  const handleModify = () => {
-    setConfirmMessage(null)
   }
 
   const handleConfirm = async () => {
-    const newErrors = {}
+    setConfirmAttempted(true)
+    setSaveFailed(false)
     const lineupNumbers = lineup.map(n => (n ? Number(n) : null))
 
-    // Check for duplicates first, as it's a cross-field validation
-    const numberCounts = lineupNumbers.reduce((acc, num) => {
-      if (num !== null) acc[num] = (acc[num] || 0) + 1
-      return acc
-    }, {})
-
-    lineup.forEach((numStr, i) => {
-      // 1. Required
-      if (!numStr || numStr.trim() === '') {
-        newErrors[i] = 'Required'
-        return // Move to next input
-      }
-
-      const num = Number(numStr)
-
-      // 2. Duplicate
-      if (numberCounts[num] > 1) {
-        newErrors[i] = 'Duplicate'
-        // Don't return, so we can flag all duplicates
-      }
-
-      const player = players?.find(p => String(p.number) === String(num))
-
-      // 3. Not on roster
-      if (!player) {
-        newErrors[i] = 'Not on roster'
-        return
-      }
-
-      // 4. Is a libero
-      if (player.libero && player.libero !== '') {
-        newErrors[i] = 'Cannot be libero'
-        return
-      }
-
-      // 5. Is disqualified - cannot enter the game ever again
-      if (events) {
-        const isDisqualified = events.some(e =>
-          e.type === 'sanction' &&
-          e.payload?.team === team &&
-          e.payload?.playerNumber === num &&
-          e.payload?.type === 'disqualification'
-        )
-        if (isDisqualified) {
-          newErrors[i] = 'Disqualified'
-          return
-        }
-      }
-
-      // 6. Was exceptionally substituted - cannot take part in the game anymore
-      if (events) {
-        const wasExceptionallySubstituted = events.some(e =>
-          e.type === 'substitution' &&
-          e.payload?.team === team &&
-          String(e.payload?.playerOut) === String(num) &&
-          e.payload?.isExceptional === true
-        )
-        if (wasExceptionallySubstituted) {
-          newErrors[i] = 'Exceptionally substituted'
-          return
-        }
-      }
-    })
-
-    // Re-check for duplicates to mark all of them
-    lineupNumbers.forEach((num, i) => {
-      if (num !== null && numberCounts[num] > 1) {
-        newErrors[i] = 'Duplicate'
-      }
-    })
-
-    setErrors(newErrors)
-
-    if (Object.keys(newErrors).length > 0) {
+    // Same checks the boxes show, with every empty box required now
+    if (Object.keys(lineupEntryErrors({ lineup, players, events, team, requireAll: true })).length > 0) {
       return
     }
 
@@ -28495,15 +28398,10 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
       }
     }
 
-    // Check if captain is in court
-    const captain = players?.find(p => p.isCaptain)
-    const captainInCourt = captain && lineupNumbers.includes(captain.number)
-
     // Save lineup: Map positions I->I, II->II, III->III, IV->IV, V->V, VI->VI
     // Lineup array indices: [0=IV, 1=III, 2=II, 3=V, 4=VI, 5=I]
-    const positionMapping = ['IV', 'III', 'II', 'V', 'VI', 'I']
     const lineupData = {}
-    positionMapping.forEach((pos, idx) => {
+    LINEUP_POSITIONS.forEach((pos, idx) => {
       lineupData[pos] = lineupNumbers[idx]
     })
 
@@ -28598,9 +28496,9 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
 
         // Auto-close modal after successful save (skip confirmation step)
         onSave()
-      })().catch(err => {
+      })().catch(() => {
         // Don't auto-close - let user close manually with close button
-        setErrors({ 0: 'Save failed', 1: 'Save failed', 2: 'Save failed', 3: 'Save failed', 4: 'Save failed', 5: 'Save failed' })
+        setSaveFailed(true)
       })
     } else {
       // Auto-close modal after successful save
@@ -28608,10 +28506,84 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     }
   }
 
-  // Determine if this team is A or B
-  const isTeamA = team === teamAKey
-  const teamLabel = isTeamA ? 'A' : 'B'
-  const teamColor = teamData?.color || (isTeamA ? '#ef4444' : '#3b82f6')
+  const rosterPlayer = (value) => (value ? players?.find(p => String(p.number) === String(Number(value))) : null)
+
+  const renderPosition = (idx) => {
+    const pos = LINEUP_POSITIONS[idx]
+    const value = lineup[idx]
+    const player = rosterPlayer(value)
+    // A roster (non-libero) number wears the shirt disc, typed or picked
+    const showDisc = !!player && !(player.libero && player.libero !== '')
+    const error = errors[idx]
+    const msgId = `lineup-msg-${team}-${idx}`
+    return (
+      <div
+        key={pos}
+        className="lineup-pos"
+        data-error={error ? '' : undefined}
+        data-over={dragOverPosition === idx && !error ? '' : undefined}
+        onDragOver={(e) => handleDragOver(e, idx)}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => handleDrop(e, idx)}
+      >
+        <div className="lineup-pos__label" aria-hidden="true">{pos}</div>
+        <div className="lineup-pos__field">
+          {showDisc && <span className="lineup-disc" style={{ background: discStyle.background, border: `2px solid ${discStyle.borderColor}` }} />}
+          <input
+            type="text"
+            inputMode="numeric"
+            className="lineup-pos__input"
+            aria-label={t('scoreboard.lineupModal.positionInput', { pos, defaultValue: 'Player at position {{pos}}' })}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={msgId}
+            value={value}
+            onChange={e => {
+              const val = e.target.value.replace(/[^0-9]/g, '')
+              if (val === '' || (Number(val) >= 1 && Number(val) <= 99)) {
+                handleInputChange(idx, val)
+              }
+            }}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                // Counterclockwise order: I(5) → II(2) → III(1) → IV(0) → V(3) → VI(4) → I(5)
+                const counterclockwiseOrder = [5, 2, 1, 0, 3, 4]
+                const currentOrderIdx = counterclockwiseOrder.indexOf(idx)
+                const inputs = e.target.closest('.lineup-grid')?.querySelectorAll('input')
+                if (inputs) {
+                  for (let i = 1; i <= 6; i++) {
+                    const nextOrderIdx = (currentOrderIdx + i) % 6
+                    const nextIdx = counterclockwiseOrder[nextOrderIdx]
+                    if (!inputs[nextIdx]?.value) {
+                      inputs[nextIdx].focus()
+                      return
+                    }
+                  }
+                  e.target.blur()
+                }
+              }
+            }}
+            style={showDisc ? { color: discStyle.color, caretColor: discStyle.color, textShadow: discStyle.textShadow } : undefined}
+          />
+          {showDisc && player.isCaptain && (
+            <span className="lineup-disc-anchor" aria-hidden="true">
+              <span className="lineup-cap">C</span>
+            </span>
+          )}
+        </div>
+        <div className="lineup-pos__msg" id={msgId} aria-live="polite">
+          {error ? <span>{errorText(error)}</span> : null}
+        </div>
+      </div>
+    )
+  }
+
+  const lfpInLineup = lfpTrackingEnabled
+    ? lineup.filter(numStr => {
+      const player = rosterPlayer(numStr)
+      return player?.isLfp || player?.is_lfp
+    }).length
+    : 0
 
   return (
     <Modal
@@ -28633,601 +28605,113 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
       }
       open={true}
       onClose={onClose}
-      width={500}
+      width={900}
       hideCloseButton={true}
     >
-      <div style={{ padding: '16px 0 0' }}>
-        {/* Centered container for position inputs */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'center',
-          marginBottom: '24px'
-        }}>
-          <div className="lineup-grid" style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
-            gap: '8px',
-            position: 'relative'
-          }}>
-            {/* Net indicator */}
-            <div style={{
-              position: 'absolute',
-              top: '-8px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              width: '100%',
-              height: '2px',
-              background: 'var(--accent)',
-              zIndex: 1
-            }} />
-            <div style={{
-              position: 'absolute',
-              top: '-20px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              fontSize: '12px',
-              fontWeight: 600,
-              color: 'var(--accent)',
-              zIndex: 2,
-              background: 'var(--bg)',
-              padding: '0 8px'
-            }}>
+      <div className="lineup-modal">
+        <div className="lineup-modal__body">
+          {/* Court: the net, front row IV III II, back row V VI I */}
+          <div className="lineup-court">
+            <div className="lineup-net" aria-hidden="true" />
+            <div className="lineup-grid">
+              {[0, 1, 2, 3, 4, 5].map(renderPosition)}
             </div>
+          </div>
 
-            {/* Top row (closer to net) */}
-            {[
-              { idx: 0, pos: 'IV' },
-              { idx: 1, pos: 'III' },
-              { idx: 2, pos: 'II' }
-            ].map(({ idx, pos }) => (
-              <div key={`top-${idx}`} style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center'
-              }}>
-                {/* Position label rectangle */}
-                <div style={{
-                  width: '60px',
-                  height: '24px',
-                  background: 'var(--panel)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '4px 4px 0 0',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: 'var(--text)'
-                }}>
-                  {pos}
-                </div>
-                {/* Input square with captain indicator (circled number) - droppable */}
-                <div
-                  style={{ position: 'relative', width: '60px' }}
-                  onDragOver={(e) => handleDragOver(e, idx)}
-                  onDragLeave={handleDragLeave}
-                  onDrop={(e) => handleDrop(e, idx)}
-                >
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    min="1"
-                    max="99"
-                    aria-label={t('scoreboard.lineupModal.positionInput', { pos, defaultValue: 'Player at position {{pos}}' })}
-                    value={lineup[idx]}
-                    onChange={e => {
-                      const val = e.target.value.replace(/[^0-9]/g, '')
-                      if (val === '' || (Number(val) >= 1 && Number(val) <= 99)) {
-                        handleInputChange(idx, val)
-                      }
-                    }}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
+          <div className="lineup-modal__side">
+            {/* Available players (excluding liberos and players out of the game) */}
+            <div className="lineup-pool">
+              <div className="lineup-pool__title">
+                {t('scoreboard.lineupModal.availablePlayers', 'Available players:')}
+              </div>
+              <div className="lineup-pool__chips">
+                {candidates.map(p => (
+                  <div
+                    key={p.number}
+                    role="button"
+                    tabIndex={0}
+                    draggable
+                    className="lineup-chip"
+                    data-dragging={draggedPlayer === p.number ? '' : undefined}
+                    onClick={() => handlePlayerClick(p.number)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault()
-                        // Counterclockwise order: I(5) → II(2) → III(1) → IV(0) → V(3) → VI(4) → I(5)
-                        const counterclockwiseOrder = [5, 2, 1, 0, 3, 4]
-                        const currentOrderIdx = counterclockwiseOrder.indexOf(idx)
-                        const inputs = e.target.closest('.lineup-grid')?.querySelectorAll('input')
-                        if (inputs) {
-                          for (let i = 1; i <= 6; i++) {
-                            const nextOrderIdx = (currentOrderIdx + i) % 6
-                            const nextIdx = counterclockwiseOrder[nextOrderIdx]
-                            if (!inputs[nextIdx]?.value) {
-                              inputs[nextIdx].focus()
-                              return
-                            }
-                          }
-                          e.target.blur()
-                        }
+                        handlePlayerClick(p.number)
                       }
                     }}
-                    style={{
-                      width: '60px',
-                      height: '60px',
-                      padding: '0',
-                      fontSize: '18px',
-                      fontWeight: 700,
-                      textAlign: 'center',
-                      background: dragOverPosition === idx ? 'rgba(74, 222, 128, 0.2)' : 'var(--bg-secondary)',
-                      borderTop: 'none',
-                      borderLeft: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'var(--border)'}`,
-                      borderRight: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'var(--border)'}`,
-                      borderBottom: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'var(--border)'}`,
-                      borderRadius: '0 0 8px 8px',
-                      color: 'var(--text)',
-                      transition: 'background 0.15s, border-color 0.15s'
-                    }}
-                  />
-                  {lineup[idx] && players?.find(p => String(p.number) === String(lineup[idx]) && p.isCaptain) && (
-                    <div style={{
-                      position: 'absolute',
-                      top: '50%',
-                      left: '50%',
-                      transform: 'translate(-50%, -50%)',
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '50%',
-                      borderTop: '2px solid var(--accent)',
-                      borderLeft: '2px solid var(--accent)',
-                      borderRight: '2px solid var(--accent)',
-                      borderBottom: '2px solid var(--accent)',
-                      pointerEvents: 'none',
-                      zIndex: 1
-                    }} />
-                  )}
-                </div>
-                <div style={{ color: '#ef4444', fontSize: '11px', marginTop: '4px', height: '14px', textAlign: 'center' }}>
-                  {errors[idx] || ''}
-                </div>
+                    onDragStart={(e) => handleDragStart(e, p.number)}
+                    onDragEnd={handleDragEnd}
+                    style={discStyle}
+                    title={t('scoreboard.lineupModal.clickOrDragTooltip', 'Click or drag to assign to a position')}
+                  >
+                    {p.isCaptain && <span className="lineup-cap" aria-hidden="true">C</span>}
+                    {lfpTrackingEnabled && (p.isLfp || p.is_lfp) && <span className="lineup-lfp" aria-hidden="true">LFP</span>}
+                    {p.number}
+                  </div>
+                ))}
               </div>
-            ))}
-
-            {/* Bottom row (further from net) */}
-            {[
-              { idx: 3, pos: 'V' },
-              { idx: 4, pos: 'VI' },
-              { idx: 5, pos: 'I' }
-            ].map(({ idx, pos }) => (
-              <div
-                key={`bottom-${idx}`}
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  marginTop: '8px'
-                }}
-              >
-                {/* Position label rectangle */}
-                <div style={{
-                  width: '60px',
-                  height: '24px',
-                  background: 'var(--panel)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '4px 4px 0 0',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: 'var(--text)'
-                }}>
-                  {pos}
-                </div>
-                {/* Input square with captain indicator (circled number) - droppable */}
-                <div
-                  style={{ position: 'relative', width: '60px' }}
-                  onDragOver={(e) => handleDragOver(e, idx)}
-                  onDragLeave={handleDragLeave}
-                  onDrop={(e) => handleDrop(e, idx)}
-                >
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    min="1"
-                    max="99"
-                    aria-label={t('scoreboard.lineupModal.positionInput', { pos, defaultValue: 'Player at position {{pos}}' })}
-                    value={lineup[idx]}
-                    onChange={e => {
-                      const val = e.target.value.replace(/[^0-9]/g, '')
-                      if (val === '' || (Number(val) >= 1 && Number(val) <= 99)) {
-                        handleInputChange(idx, val)
-                      }
-                    }}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        // Counterclockwise order: I(5) → II(2) → III(1) → IV(0) → V(3) → VI(4) → I(5)
-                        const counterclockwiseOrder = [5, 2, 1, 0, 3, 4]
-                        const currentOrderIdx = counterclockwiseOrder.indexOf(idx)
-                        const inputs = e.target.closest('.lineup-grid')?.querySelectorAll('input')
-                        if (inputs) {
-                          for (let i = 1; i <= 6; i++) {
-                            const nextOrderIdx = (currentOrderIdx + i) % 6
-                            const nextIdx = counterclockwiseOrder[nextOrderIdx]
-                            if (!inputs[nextIdx]?.value) {
-                              inputs[nextIdx].focus()
-                              return
-                            }
-                          }
-                          e.target.blur()
-                        }
-                      }
-                    }}
-                    style={{
-                      width: '60px',
-                      height: '60px',
-                      padding: '0',
-                      fontSize: '18px',
-                      fontWeight: 700,
-                      textAlign: 'center',
-                      background: dragOverPosition === idx ? 'rgba(74, 222, 128, 0.2)' : 'var(--bg-secondary)',
-                      borderTop: 'none',
-                      borderLeft: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'var(--border)'}`,
-                      borderRight: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'var(--border)'}`,
-                      borderBottom: `2px solid ${errors[idx] ? '#ef4444' : dragOverPosition === idx ? '#4ade80' : 'var(--border)'}`,
-                      borderRadius: '0 0 8px 8px',
-                      color: 'var(--text)',
-                      transition: 'background 0.15s, border-color 0.15s'
-                    }}
-                  />
-                  {lineup[idx] && players?.find(p => String(p.number) === String(lineup[idx]) && p.isCaptain) && (
-                    <div style={{
-                      position: 'absolute',
-                      top: '50%',
-                      left: '50%',
-                      transform: 'translate(-50%, -50%)',
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '50%',
-                      borderTop: '2px solid var(--accent)',
-                      borderLeft: '2px solid var(--accent)',
-                      borderRight: '2px solid var(--accent)',
-                      borderBottom: '2px solid var(--accent)',
-                      pointerEvents: 'none',
-                      zIndex: 1
-                    }} />
-                  )}
-                </div>
-                <div style={{ color: '#ef4444', fontSize: '11px', marginTop: '4px', height: '14px', textAlign: 'center' }}>
-                  {errors[idx] || ''}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Available players (excluding liberos and disqualified) */}
-        <div style={{
-          marginBottom: '16px',
-          padding: '12px',
-          background: 'var(--panel-2)',
-          borderRadius: '8px'
-        }}>
-          <div style={{
-            fontSize: '13px',
-            fontWeight: 600,
-            color: 'var(--muted)',
-            marginBottom: '8px'
-          }}>
-            {t('scoreboard.lineupModal.availablePlayers', 'Available players:')}
-          </div>
-          <div style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '8px'
-          }}>
-            {players?.filter(p => {
-              // Exclude liberos
-              if (p.libero && p.libero !== '') return false
-
-              // Exclude players already in the lineup
-              if (lineup.includes(String(p.number))) return false
-
-              if (events) {
-                // Exclude players substituted due to disqualification (cannot take part for rest of game)
-                const wasDisqualifiedSub = events.some(e =>
-                  e.type === 'substitution' &&
-                  e.payload?.team === team &&
-                  String(e.payload?.playerOut) === String(p.number) &&
-                  e.payload?.isDisqualified === true
-                )
-                if (wasDisqualifiedSub) {
-                  return false
-                }
-
-                // Exclude exceptionally substituted players (cannot take part for rest of game)
-                const wasExceptionallySubstituted = events.some(e =>
-                  e.type === 'substitution' &&
-                  e.payload?.team === team &&
-                  String(e.payload?.playerOut) === String(p.number) &&
-                  e.payload?.isExceptional === true
-                )
-                if (wasExceptionallySubstituted) {
-                  return false
-                }
-
-                // Exclude expelled players in the current set (cannot take part in this set)
-                if (setIndex) {
-                  // Check for substitution due to expulsion in current set
-                  const wasExpelledSub = events.some(e =>
-                    e.type === 'substitution' &&
-                    e.payload?.team === team &&
-                    String(e.payload?.playerOut) === String(p.number) &&
-                    e.payload?.isExpelled === true &&
-                    e.setIndex === setIndex
-                  )
-                  if (wasExpelledSub) {
-                    return false
-                  }
-
-                  // Also check for sanction-based expulsion in current set
-                  const isExpelledInSet = events.some(e =>
-                    e.type === 'sanction' &&
-                    e.payload?.team === team &&
-                    String(e.payload?.playerNumber) === String(p.number) &&
-                    e.payload?.type === 'expulsion' &&
-                    e.setIndex === setIndex
-                  )
-                  if (isExpelledInSet) {
-                    return false
-                  }
-                }
-
-                // Also check for sanction-based disqualification
-                const isDisqualified = events.some(e =>
-                  e.type === 'sanction' &&
-                  e.payload?.team === team &&
-                  String(e.payload?.playerNumber) === String(p.number) &&
-                  e.payload?.type === 'disqualification'
-                )
-                if (isDisqualified) {
-                  return false
-                }
-              }
-
-              return true
-            }).sort((a, b) => a.number - b.number).map(p => (
-              <div
-                key={p.number}
-                draggable
-                onClick={() => handlePlayerClick(p.number)}
-                onDragStart={(e) => handleDragStart(e, p.number)}
-                onDragEnd={handleDragEnd}
-                style={{
-                  position: 'relative',
-                  width: '40px',
-                  height: '40px',
-                  borderRadius: '50%',
-                  background: chipPaint ? chipPaint.background : draggedPlayer === p.number ? 'rgba(74, 222, 128, 0.4)' : 'rgba(74, 222, 128, 0.2)',
-                  border: chipPaint ? `2px solid ${chipPaint.ring || 'rgba(0, 0, 0, 0.15)'}` : '2px solid #4ade80',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '14px',
-                  fontWeight: 700,
-                  color: chipPaint ? chipPaint.color : '#4ade80',
-                  textShadow: chipPaint?.textShadow,
-                  cursor: 'grab',
-                  transition: 'all 0.2s',
-                  userSelect: 'none',
-                  opacity: draggedPlayer === p.number ? 0.5 : 1
-                }}
-                onMouseEnter={(e) => {
-                  if (!draggedPlayer) {
-                    if (!chipPaint) e.currentTarget.style.background = 'rgba(74, 222, 128, 0.3)'
-                    e.currentTarget.style.transform = 'scale(1.1)'
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!draggedPlayer) {
-                    if (!chipPaint) e.currentTarget.style.background = 'rgba(74, 222, 128, 0.2)'
-                    e.currentTarget.style.transform = 'scale(1)'
-                  }
-                }}
-                title={t('scoreboard.lineupModal.clickOrDragTooltip', 'Click or drag to assign to a position')}
-              >
-                {p.isCaptain && (
-                  <span style={{
-                    position: 'absolute',
-                    top: '-4px',
-                    right: '-4px',
-                    width: '16px',
-                    height: '16px',
-                    borderRadius: '50%',
-                    background: '#4ade80',
-                    color: '#000',
-                    // white halo: stays apart from a green shirt
-                    boxShadow: '0 0 0 1.5px #ffffff',
-                    textShadow: 'none',
-                    fontSize: '10px',
-                    fontWeight: 700,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    pointerEvents: 'none'
-                  }}>
-                    C
-                  </span>
-                )}
-                {lfpTrackingEnabled && (p.isLfp || p.is_lfp) && (
-                  <span style={{
-                    position: 'absolute',
-                    bottom: '-4px',
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    padding: '0 3px',
-                    height: '12px',
-                    background: 'rgba(249, 115, 22, 0.95)',
-                    borderRadius: '3px',
-                    fontSize: '7px',
-                    fontWeight: 700,
-                    color: '#fff',
-                    textShadow: 'none',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    pointerEvents: 'none',
-                    whiteSpace: 'nowrap'
-                  }}>
-                    LFP
-                  </span>
-                )}
-                {p.number}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* LFP count in lineup */}
-        {lfpTrackingEnabled && (() => {
-          const lfpInLineup = lineup.filter(numStr => {
-            if (!numStr) return false
-            const player = players?.find(p => String(p.number) === String(numStr))
-            return player?.isLfp || player?.is_lfp
-          }).length
-          return (
-            <div style={{
-              fontSize: '12px', fontWeight: 600,
-              color: lfpInLineup < lfpMinimumOnCourt ? '#ef4444' : '#4ade80',
-              background: lfpInLineup < lfpMinimumOnCourt ? 'rgba(239, 68, 68, 0.1)' : 'rgba(74, 222, 128, 0.1)',
-              padding: '6px 12px', borderRadius: '6px',
-              textAlign: 'center', marginBottom: '12px'
-            }}>
-              LFP on court: {lfpInLineup} / {lfpMinimumOnCourt} required
-            </div>
-          )
-        })()}
-
-        {/* Instruction text */}
-        <div style={{
-          textAlign: 'center',
-          fontSize: '12px',
-          color: 'var(--muted)',
-          marginBottom: '16px',
-          fontStyle: 'italic'
-        }}>
-          {t('scoreboard.lineupModal.dragInstruction', 'Please write the number, drag and drop it, or click on available player to fill each of the available positions')}
-        </div>
-
-        {/* Undo, Clear, and Rotate buttons - hidden when lineup is confirmed */}
-        {!confirmMessage && (
-          <>
-            {/* Undo and Clear buttons row */}
-            <div style={{
-              display: 'flex',
-              justifyContent: 'center',
-              gap: '12px',
-              marginBottom: '12px'
-            }}>
-              {editHistory.length > 0 && (
-                <SbButton onClick={handleUndoLastEdit}>
-                  <span style={{ fontSize: '16px' }} aria-hidden="true">↩</span>
-                  {t('scoreboard.lineupModal.undoLastEdit', 'Undo last edit')}
-                </SbButton>
-              )}
-              {lineup.some(v => v && v.trim() !== '') && (
-                <SbButton variant="danger-outline" onClick={handleClearLineup}>
-                  <span style={{ fontSize: '16px' }} aria-hidden="true">✕</span>
-                  {t('scoreboard.lineupModal.clearLineup', 'Clear lineup')}
-                </SbButton>
-              )}
             </div>
 
-            {/* Rotate buttons row */}
-            {lineup.some(v => v && v.trim() !== '') && (
+            {/* LFP count in lineup */}
+            {lfpTrackingEnabled && (
               <div style={{
-                display: 'flex',
-                justifyContent: 'center',
-                gap: '16px',
-                marginBottom: '16px'
+                fontSize: '12px', fontWeight: 600,
+                color: lfpInLineup < lfpMinimumOnCourt ? 'var(--ov-danger-text)' : 'var(--ov-success-text)',
+                background: lfpInLineup < lfpMinimumOnCourt ? 'var(--ov-danger-soft)' : 'var(--ov-success-soft)',
+                padding: '6px 12px', borderRadius: '6px',
+                textAlign: 'center'
               }}>
-                <button
-                  className="secondary"
-                  onClick={handleRotateClockwise}
-                  title={t('scoreboard.lineupModal.rotateClockwise', 'Rotate clockwise')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: '44px',
-                    height: '44px',
-                    padding: '0',
-                    fontSize: '20px',
-                    borderRadius: '50%'
-                  }}
-                >
-                  ↻
-                </button>
-                <span style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  fontSize: '12px',
-                  color: 'var(--muted)'
-                }}>
-                  {t('scoreboard.lineupModal.rotate', 'Rotate')}
-                </span>
-
-                <button
-                  className="secondary"
-                  onClick={handleRotateCounterClockwise}
-                  title={t('scoreboard.lineupModal.rotateCounterclockwise', 'Rotate counterclockwise')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: '44px',
-                    height: '44px',
-                    padding: '0',
-                    fontSize: '20px',
-                    borderRadius: '50%'
-                  }}
-                >
-                  ↺
-                </button>
+                LFP on court: {lfpInLineup} / {lfpMinimumOnCourt} required
               </div>
             )}
-          </>
-        )}
 
-        {errors.length > 0 && (
-          <div role="alert" className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700" style={{ marginBottom: '16px' }}>
-            {t('scoreboard.lineupModal.validationError', 'Please check: All numbers must exist in roster, not be liberos, and not be duplicated.')}
+            <p className="lineup-hint">
+              {t('scoreboard.lineupModal.dragInstruction', 'Please write the number, drag and drop it, or click on available player to fill each of the available positions')}
+            </p>
+
+            {/* Edit tools: always there (disabled when there is nothing to do), so the modal keeps its size */}
+            <div className="lineup-tools">
+              <SbButton className="w-full min-w-0 whitespace-normal leading-tight" onClick={handleUndoLastEdit} disabled={editHistory.length === 0}>
+                <span style={{ fontSize: '16px' }} aria-hidden="true">↩</span>
+                {t('scoreboard.lineupModal.undoLastEdit', 'Undo last edit')}
+              </SbButton>
+              <SbButton className="w-full min-w-0 whitespace-normal leading-tight" variant="danger-outline" onClick={handleClearLineup} disabled={!hasEntries}>
+                <span style={{ fontSize: '16px' }} aria-hidden="true">✕</span>
+                {t('scoreboard.lineupModal.clearLineup', 'Clear lineup')}
+              </SbButton>
+            </div>
+            <div className="lineup-rotate">
+              <SbButton
+                className="w-11 min-w-0 px-0 rounded-full text-xl"
+                onClick={handleRotateClockwise}
+                disabled={!hasEntries}
+                title={t('scoreboard.lineupModal.rotateClockwise', 'Rotate clockwise')}
+                aria-label={t('scoreboard.lineupModal.rotateClockwise', 'Rotate clockwise')}
+              >
+                ↻
+              </SbButton>
+              <span>{t('scoreboard.lineupModal.rotate', 'Rotate')}</span>
+              <SbButton
+                className="w-11 min-w-0 px-0 rounded-full text-xl"
+                onClick={handleRotateCounterClockwise}
+                disabled={!hasEntries}
+                title={t('scoreboard.lineupModal.rotateCounterclockwise', 'Rotate counterclockwise')}
+                aria-label={t('scoreboard.lineupModal.rotateCounterclockwise', 'Rotate counterclockwise')}
+              >
+                ↺
+              </SbButton>
+            </div>
           </div>
-        )}
+        </div>
 
-        {confirmMessage && (
-          <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 text-center" style={{ marginBottom: '16px' }}>
-            {confirmMessage}
-          </div>
-        )}
-
-        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-
-          {confirmMessage === null && (
-            <SbButton variant="positive" onClick={handleConfirm}>
-              {t('scoreboard.lineupModal.confirm', 'Confirm')}
-            </SbButton>
-          )}
-
-          {/* Before confirming, Close cancels (white); after, it is the "Done" (slate). */}
-          <SbButton
-            variant={confirmMessage === null ? 'secondary' : 'dark'}
-            onClick={() => {
-              // If lineup was confirmed (confirmMessage exists), refresh state before closing
-              if (confirmMessage) {
-                onSave()
-              } else {
-                onClose()
-              }
-            }}
-          >
+        <div className="lineup-modal__footer">
+          <SbButton variant="positive" onClick={handleConfirm}>
+            {t('scoreboard.lineupModal.confirm', 'Confirm')}
+          </SbButton>
+          <SbButton variant="secondary" onClick={onClose}>
             {t('scoreboard.lineupModal.close', 'Close')}
           </SbButton>
-          {confirmMessage !== null && (
-            <SbButton onClick={handleModify}>
-              {t('scoreboard.lineupModal.modify', 'Modify')}
-            </SbButton>
-          )}
         </div>
       </div>
     </Modal>

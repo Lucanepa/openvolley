@@ -481,8 +481,8 @@
       "availablePlayers": "Giocatori disponibili:",
       "dragInstruction": "Scrivete il numero, trascinatelo o cliccate sul giocatore disponibile per occupare ciascuna delle posizioni disponibili",
       "clickOrDragTooltip": "Fare clic o trascinare per assegnare una posizione",
-      "undoLastEdit": "Annullamento dell'ultima modifica",
-      "clearLineup": "Una formazione chiara",
+      "undoLastEdit": "Annulla ultima modifica",
+      "clearLineup": "Cancella formazione",
       "rotate": "Ruotare",
       "rotateClockwise": "Ruotare in senso orario",
       "rotateCounterclockwise": "Ruotare in senso antiorario",
@@ -490,7 +490,16 @@
       "confirm": "Confermare",
       "close": "Chiudere",
       "modify": "Modificare",
-      "positionInput": "Giocatore in posizione {{pos}}"
+      "positionInput": "Giocatore in posizione {{pos}}",
+      "errors": {
+        "required": "Obbligatorio",
+        "duplicate": "Doppione",
+        "notOnRoster": "Non a referto",
+        "libero": "Libero non ammesso",
+        "disqualified": "Squalificato",
+        "exceptionallySubstituted": "Sostituito eccezionalmente",
+        "saveFailed": "Salvataggio non riuscito"
+      }
     },
     "lastAction": "Ultima azione:",
     "keybindings": {
