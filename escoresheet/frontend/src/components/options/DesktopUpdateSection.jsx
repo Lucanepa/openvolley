@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Copy, RefreshCw } from 'lucide-react'
 import { Button, Switch, toast } from '../../ui'
-import { APT_COMMAND, REPO_COMMAND, blockerText, failureText, mainBlocker, statusLine } from '../../utils/desktopUpdate'
+import { APT_COMMAND, REPO_COMMAND, blockerText, failureText, isDownloadingKind, mainBlocker, statusLine } from '../../utils/desktopUpdate'
 import { copyToClipboard } from '../../utils/networkInfo'
 
 const currentVersion = __APP_VERSION__
@@ -51,7 +51,7 @@ export default function DesktopUpdateSection({ update }) {
   const version = status?.available?.version
   const offersRestart = supported && (
     status?.phase === 'restartPending'
-    || (status?.phase === 'ready' && (kind === 'nsis' || kind === 'appImage' || kind === 'debApt'))
+    || (status?.phase === 'ready' && (isDownloadingKind(kind) || kind === 'debApt'))
   )
   const blocker = mainBlocker(status?.blockers)
 

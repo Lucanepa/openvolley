@@ -75,11 +75,11 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 
 ## Desktop Downloads
 
-Download the latest desktop app from [GitHub Releases](https://github.com/lucacanepa/openvolley/releases):
+Install page: [get.openvolley.app](https://get.openvolley.app). Downloads are on [GitHub Releases](https://github.com/Lucanepa/openvolley/releases):
 
-- **Windows** -- Installer (.exe) or Portable (.exe)
-- **macOS** -- DMG (.dmg) or ZIP (.zip) for Intel and Apple Silicon
-- **Linux** -- AppImage, DEB, or RPM
+- **Windows** -- installer (`…_x64-setup.exe`)
+- **macOS** -- universal disk image (`…_universal.dmg`, Apple silicon and Intel, macOS 11+; not notarized, see the release notes for the first start) or `brew install --cask lucanepa/tap/openvolley`
+- **Linux** -- AppImage, or the signed APT repository (`curl -fsSL https://get.openvolley.app/install.sh | sudo sh`)
 
 ## Contributing
 

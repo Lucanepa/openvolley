@@ -60,7 +60,7 @@ export function failureText(msg, t) {
   }
 }
 
-export const isDownloadingKind = (kind) => kind === 'nsis' || kind === 'appImage'
+export const isDownloadingKind = (kind) => kind === 'nsis' || kind === 'appImage' || kind === 'macApp'
 
 /**
  * The home screen's notice, or null for none. Quiet by default: a check,

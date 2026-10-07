@@ -1,4 +1,5 @@
-// COPY of escoresheet/frontend/src/legal/legalLinks.js (the backend's Docker
+// COPY of escoresheet/frontend/src/legal/legalUrls.js (the backend's Docker
+// (named legalUrls.js there: next to LegalLinks.jsx, a legalLinks.js clashed on case-insensitive Windows/macOS file systems)
 // build sees only escoresheet/backend). Change both; the frontend test
 // src/legal/__tests__/legalLinks.test.js fails when they differ.
 

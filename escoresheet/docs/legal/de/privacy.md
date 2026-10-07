@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.0 · Stand: 7. Oktober 2026
+**OpenVolley und OpenBeach** · Version 1.1 · Stand: 7. Oktober 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die deutsche Fassung.
@@ -19,6 +19,9 @@ Massgebend ist die deutsche Fassung.
   bei Beachvolleyball auch die Namen der Spielerinnen und Spieler, sowie die
   Namen der Schiedsrichterinnen und Schiedsrichter offizieller Spiele.
   **Geburtsdaten, Lizenznummern und Unterschriften sind nie öffentlich.**
+- Die OpenVolley-App führt ein Aktivitätsprotokoll jedes Spiels, ohne PINs
+  und Passwörter. Mit Anmeldung geht es auf den Server. Was Sie anklicken oder
+  tippen, bleibt auf Ihrem Gerät (Abschnitt 5).
 - Der Server steht in Deutschland (Hetzner). Cloudflare (USA) liefert die
   Websites aus und leitet den Verkehr zum Server weiter.
 - Sie können jederzeit Auskunft, Berichtigung oder Löschung verlangen:
@@ -84,9 +87,8 @@ Datenbearbeitung verantwortlich sind.
 
 **Ohne Anmeldung** speichert die App alles nur auf Ihrem Gerät: Spiele,
 Teams, Kaderlisten mit Geburtsdaten, Sätze, Spielereignisse, Listen von
-Offiziellen, Einstellungen und ein lokales Protokoll der Bedienung (zur
-Fehlersuche; Sie können es selbst herunterladen). Spiele bleiben gespeichert,
-bis Sie sie löschen oder die App-Daten löschen.
+Offiziellen, Einstellungen und die Protokolle der App (siehe unten). Spiele
+bleiben gespeichert, bis Sie sie löschen oder die App-Daten löschen.
 
 **Live-Übertragung, auch ohne Anmeldung.** Sobald ein Spiel angelegt ist,
 senden die Browser- und die Android-App es (Teams, Kaderlisten, Spielstand,
@@ -105,38 +107,71 @@ Die Desktop-App verwendet dafür ihr eigenes Relay im lokalen Netz.
   Löschung Ihres Kontos gespeichert.
 - **Spielberichte** als Datei (PDF und Daten), siehe Abschnitt 7.
 
-**Aktivitätsprotokoll.** Für die Nachvollziehbarkeit des Spielberichts und
-zur Fehlersuche führt die App ein Aktivitätsprotokoll jedes Spiels: Punkte und
-andere Ereignisse, Rückgängig und Korrekturen (was wann und warum geändert
-wurde), Sätze, Unterschriften und Genehmigungen (nur dass sie erfolgt sind,
-nie das Unterschriftsbild oder eine PIN), Bemerkungen (nur ihre Länge),
-Ergebnisse der Übertragung und App-Fehler. Jeder Eintrag enthält eine
-zufällige Kennung des Geräts (von der App erzeugt, nicht mit der Hardware
-verknüpft), die App-Version, die Plattform und, wenn Sie angemeldet sind, Ihr
-Konto. Es enthält nicht mehr Personendaten als der Spielbericht selbst
-(Spielernummern, Namen von Offiziellen bei einer Korrektur). Wenn Sie
-angemeldet sind, wird es auf meinen Server übertragen; dort können es die
-Schreiberinnen und Schreiber des Spiels und die Administratoren lesen. Wurde
-ein rückgängig gemachter Punkt bereits übertragen, behält der Server ihn als
-rückgängig gemacht markiert, statt ihn zu löschen, damit der Spielverlauf
-nachvollziehbar bleibt. Die Desktop- und die Android-App schreiben das
-Aktivitätsprotokoll zusätzlich als Tagesdateien neben die Sicherungsdateien
-(`OpenVolley/logs`, höchstens 30 Tage und 50 MB). **Was Sie anklicken oder
-tippen, bleibt auf Ihrem Gerät:** dieses lokale Protokoll wird nie
-übertragen und zeichnet nie Passwörter oder PINs auf. Auf dem Gerät wird das
-Aktivitätsprotokoll bis 180 Tage aufbewahrt, das Klickprotokoll 30 Tage. Auf
-dem Server: 24 Monate für Einträge eines Spiels (oder bis das Spiel gelöscht
-wird), 90 Tage für Einträge ohne Spiel. Auf Anfrage lösche ich es früher
-(Abschnitt 19).
+**Aktivitätsprotokoll (OpenVolley ab Version 2.4.0).** Für die
+Nachvollziehbarkeit des Spielberichts und zur Fehlersuche hält die App fest,
+was auf dem Gerät geschieht: Punkte und andere Spielereignisse, Rückgängig und
+Korrekturen (was wann und warum geändert wurde), Sätze und Spielstatus,
+Unterschriften und Freigaben (nur die Funktion und dass sie erfolgt sind),
+Bemerkungen (nur ihre Länge), Änderungen an Kaderlisten (nur die
+Rückennummer), Ergebnisse der Übertragung zum Server, App-Fehler (Meldung und
+Programmstelle), Start, Update und Beenden der App sowie An- und Abmeldung.
+Jeder Eintrag enthält eine zufällige Kennung des Geräts (von der App erzeugt,
+nicht mit der Hardware verknüpft), die App-Version, die Plattform und, wenn
+Sie angemeldet sind, Ihr Konto. **Nie aufgezeichnet werden** PINs,
+Passwörter, Anmelde-Token, Unterschriftsbilder, Geburtsdaten,
+E-Mail-Adressen, Telefon- und Lizenznummern; ändert jemand ein solches Feld
+von Hand, steht im Protokoll nur, dass es geändert wurde. In freiem Text
+(Fehlermeldungen, Werte von Änderungen) werden Ziffernfolgen ab sechs Stellen
+und Zahlen neben Wörtern wie «PIN», «Code» oder «Passwort» unkenntlich
+gemacht. Das Protokoll enthält damit nicht mehr Personendaten als der
+Spielbericht selbst (Rückennummern, Namen von Offiziellen bei einer
+Korrektur). Sie können es in der App ansehen und als Datei (CSV oder JSON)
+speichern.
+
+**Wo das Aktivitätsprotokoll liegt:** auf Ihrem Gerät; in der Desktop- und
+der Android-App zusätzlich als Tagesdateien im Ordner `OpenVolley/logs`
+(Desktop: in Ihrem Benutzerordner neben den Sicherungsdateien, Android: im
+Ordner «Dokumente», siehe unten). Wenn Sie angemeldet sind, überträgt die App
+es auf meinen Server, auch die Einträge, die auf diesem Gerät ohne Anmeldung
+entstanden sind. Dort können die Einträge eines Spiels das Konto, das das
+Spiel erfasst hat, die Konten, die den Spiel-PIN eingegeben haben, und die
+Administration lesen; Einträge ohne Spiel sieht nur die Administration. Wird
+ein Spiel auf dem Server gelöscht, werden seine Einträge mitgelöscht. Wie
+lange die Einträge bleiben, steht in Abschnitt 16; auf Anfrage lösche ich sie
+früher (Abschnitt 19).
+
+**Ereignisgeschichte (OpenVolley ab Version 2.4.0).** Wird ein Punkt oder ein
+anderes Ereignis rückgängig gemacht oder korrigiert, hält die App das alte
+Ereignis (bei einer Änderung auch das neue) mit Grund, Zeitpunkt,
+Gerätekennung, App-Version und Konto fest. War das Ereignis schon auf dem
+Server, löscht der Server es nicht, sondern markiert es als ungültig und
+bewahrt die Änderung auf, damit der Spielverlauf nachvollziehbar bleibt. Die
+Ereignisgeschichte gehört zum Spiel und wird mit ihm gelöscht. Auf dem Server
+sieht sie nur die Administration.
+
+**Bedienprotokoll: Was Sie anklicken oder tippen, bleibt auf Ihrem Gerät.**
+Zur Fehlersuche zeichnet die App auf dem Gerät auf, was Sie anklicken und
+eintippen (auch Text in Eingabefeldern, zum Beispiel Namen). Dieses Protokoll
+wird nie übertragen. Sie können es selbst herunterladen (in den Einstellungen
+oder am Spielende in der ZIP-Datei) und zum Beispiel dem Support schicken. In
+OpenVolley ab Version 2.4.0 zeichnet es keine Eingaben in Passwort- und
+PIN-Feldern und keine auf dem Bildschirm angezeigten PINs auf und wird nach
+30 Tagen oder ab 50 000 Einträgen gelöscht.
 
 **Desktop-App.** Die Desktop-App speichert zusätzlich automatische
 Sicherungsdateien der Spiele in Ihrem Benutzerordner (Linux:
 `~/.local/share/OpenVolley/backups`, Windows: `%APPDATA%\OpenVolley\backups`).
 Sie enthalten Namen und Geburtsdaten, aber keine PINs, und werden nach
-30 Tagen gelöscht.
+30 Tagen gelöscht. Ab Version 2.4.0 schreibt die Desktop-App von OpenVolley
+ausserdem eine technische Protokolldatei (`desktop.log`) in den Ordner
+`OpenVolley/logs`: Start und Beenden, Update-Prüfungen und -Downloads,
+geöffnete Links und Downloads (Adresse ohne Parameter, Speicherort), die
+Anzahl verbundener Tablets und Fehler. Sie bleibt auf Ihrem Gerät, wird nie
+übertragen und enthält keine PINs, Anmelde-Token oder Hotspot-Passwörter. Es
+bleiben höchstens fünf ältere Dateien zu je 5 MB.
 
-**Android-App.** Die Android-App legt ihre Sicherungsdateien im öffentlichen
-Ordner «Dokumente» ab. **Diese Dateien bleiben nach dem Deinstallieren der App
+**Android-App.** Die Android-App legt ihre Sicherungsdateien und die
+Tagesdateien des Aktivitätsprotokolls im öffentlichen Ordner «Dokumente» ab. **Diese Dateien bleiben nach dem Deinstallieren der App
 erhalten und können auf Android 10 und älter auch von anderen Apps gelesen
 werden.** Löschen Sie sie bei Bedarf selbst. Wenn Sie die Gerätesicherung von
 Google aktiviert haben, kann Android auch die App-Daten (mit Kaderlisten) in
@@ -185,12 +220,14 @@ Administratoren von OpenVolley (ich und von mir bestimmte Personen).
 
 **Konto löschen:** Sie können Ihr Konto jederzeit selbst in der App löschen.
 Dabei werden Konto, Profil, Sitzungen, Freigabe-PIN, eingelöste
-Einladungscodes und Ihre hochgeladenen Sicherungskopien und App-Protokolle
-gelöscht. **Bestehen bleiben** offizielle Unterlagen, an denen andere ein
-Interesse haben: Spielberichte, die Sie erfasst haben, Freigaben, die Sie
-erteilt haben (mit Ihrem Namen, wie er im Spielbericht steht), gespeicherte
-Teams und Turniere sowie Einträge im Änderungsprotokoll (Abschnitt 14). Ihr
-Konto wird von diesen Einträgen getrennt. Was bestehen bleibt, können Sie
+Einladungscodes, Ihre hochgeladenen Sicherungskopien und App-Protokolle und
+Ihre Einträge im Aktivitätsprotokoll ohne Spiel gelöscht. **Bestehen
+bleiben** offizielle Unterlagen, an denen andere ein Interesse haben:
+Spielberichte, die Sie erfasst haben, Freigaben, die Sie erteilt haben (mit
+Ihrem Namen, wie er im Spielbericht steht), gespeicherte Teams und Turniere,
+Einträge im Änderungsprotokoll (Abschnitt 14) sowie das Aktivitätsprotokoll
+und die Ereignisgeschichte von Spielen (Abschnitt 5). Ihr Konto wird von
+diesen Einträgen getrennt. Was bestehen bleibt, können Sie
 nach Abschnitt 19 löschen lassen, soweit es für den Spielbericht nicht nötig ist.
 
 ## 7. Spieldaten und Spielberichte
@@ -200,7 +237,7 @@ Kurzname, Farbe), Kaderlisten mit Rückennummer, Vor- und Nachname,
 Geburtsdatum und Kennzeichnung als Libero oder Captain, Betreuungspersonen
 (Funktion, Name, Geburtsdatum), Offizielle (Schiedsrichter, Schreiber,
 Linienrichter mit Name, Land, Geburtsdatum), **Unterschriften** (als Bild,
-auf dem Gerät gezeichnet), Platzwahl, Spielverlauf mit allen Ereignissen,
+auf dem Gerät oder auf einem Telefon gezeichnet), Platzwahl, Spielverlauf mit allen Ereignissen,
 Wechseln und Sanktionen, Resultate und nachträgliche Korrekturen.
 
 **Wer die Daten eingibt:** die Schreiberin oder der Schreiber in der App,
@@ -241,6 +278,26 @@ freigegebene Resultat sowie ein pseudonymisierter Hash der IP-Adresse und des
 Geräts (um Missbrauch zu erkennen). Freigaben sind Teil der Spielaufzeichnung.
 Sie sehen Ihre eigenen Freigaben; die Schreiberin oder der Schreiber des
 Spiels und die Administration sehen sie auch.
+
+**Unterschreiben auf dem Telefon (OpenVolley ab Version 2.4.0):** Statt auf
+dem Gerät der Schreiberin oder des Schreibers kann eine Person auf ihrem
+eigenen Telefon unterschreiben. Das Gerät zeigt dazu einen QR-Code mit einem
+Link auf meinen Server (`backend.openvolley.app`) oder, im Hallen-Modus, auf
+den Laptop im lokalen Netz. Der Link gilt 10 Minuten und nur für eine
+Unterschrift. Auf dem Telefon braucht es kein Konto und keine App. Die Seite
+zeigt Spielnummer, Teams, Datum, die Funktion und, wenn bekannt, den Namen der
+Person, die unterschreibt. Das Telefon sendet nur die Linien der Unterschrift
+(kein Bild). Der Server oder der Laptop hält diese Angaben nur im
+Arbeitsspeicher, gibt die Unterschrift an das Gerät der Schreiberin oder des
+Schreibers weiter und verwirft sie spätestens 5 Minuten nach dem
+Unterschreiben; in der Datenbank wird dabei nichts gespeichert. Das Telefon
+speichert nichts: keine Cookies und keinen lokalen Speicher; der Link liegt
+nur während der Sitzung im Browser-Tab und wird am Ende gelöscht. Erst das
+Gerät der Schreiberin oder des Schreibers macht daraus das Unterschriftsbild.
+Es gehört wie eine dort gezeichnete Unterschrift zum Spiel, mit dem Vermerk,
+dass auf einem Telefon unterschrieben wurde (Weg und Zeitpunkt). Über den
+Server setzt das voraus, dass die Schreiberin oder der Schreiber mit einer
+Schreiber- oder Schiedsrichterrolle angemeldet ist.
 
 **Spielinfo per E-Mail:** Wenn Sie in der App die Spielinfo an eine
 E-Mail-Adresse senden, gehen Spielnummer, Spiel-PIN, Teams, Datum und Ort an
@@ -393,6 +450,9 @@ wie es für Ihr Anliegen nötig ist.
   geöffnet, Mitbearbeitende hinzugefügt oder Turniereinträge geändert hat.
   Die Einträge können E-Mail-Adressen von Mitbearbeitenden und Namen von
   Beach-Teams enthalten. Nur die Administration sieht dieses Protokoll.
+- **Unterschreiben auf dem Telefon:** Der Server protokolliert nur den Ablauf
+  (gestartet, geöffnet, unterschrieben, beendet) mit der Funktion und einer
+  kurzen Kennung, nie den Link, die Unterschrift, Namen oder Teams.
 
 ## 15. Empfänger und Auftragsbearbeiter
 
@@ -441,8 +501,12 @@ Anfrage erhalten Sie eine Kopie dieser Garantien.
 | Hochgeladene Sicherungskopien | 30 Tage |
 | Hochgeladene App-Protokolle | Bis Sie Ihr Konto löschen |
 | Aktivitätsprotokoll eines Spiels (Server) | 24 Monate oder bis das Spiel gelöscht wird; auf Anfrage früher |
-| Aktivitätsprotokoll ohne Spiel (Server) | 90 Tage |
-| Rückgängig gemachte und korrigierte Ereignisse eines Spiels | Mit dem Spiel, als Teil des Spielberichts |
+| Aktivitätsprotokoll ohne Spiel (Server) | 90 Tage; die unter Ihrem Konto aufgezeichneten Einträge werden mit dem Konto gelöscht |
+| Ereignisgeschichte (rückgängig gemachte und korrigierte Ereignisse) | Mit dem Spiel, als Teil des Spielberichts |
+| Aktivitätsprotokoll auf dem Gerät | Übertragene Einträge 180 Tage (höchstens 100 000); noch nicht übertragene bis zur Übertragung (höchstens 200 000); höchstens 30 Tagesdateien und 50 MB |
+| Bedienprotokoll (nur auf dem Gerät) | OpenVolley ab 2.4.0: 30 Tage, höchstens 50 000 Einträge |
+| Protokolldatei der Desktop-App (nur auf dem Gerät) | Höchstens fünf ältere Dateien zu je 5 MB |
+| Unterschrift auf dem Telefon (Server oder Laptop) | Nur im Arbeitsspeicher; Link 10 Minuten gültig, Unterschrift spätestens 5 Minuten nach dem Unterschreiben verworfen |
 | Serverprotokolle | Überschrieben nach Grösse (Tage bis wenige Wochen) |
 | Live-Daten (Server und Hallen-Modus) | Nur im Arbeitsspeicher; auf dem Server 24 Stunden nach der letzten Aktivität verworfen |
 | Datensicherungen | Bis etwa 6 Monate (Abschnitt 18) |
@@ -476,8 +540,8 @@ für ihr Kind ausüben.
   können deshalb noch bis zu etwa 6 Monate in diesen verschlüsselten
   Sicherungen enthalten sein; sie werden nur für eine Wiederherstellung
   verwendet.
-- Sicherungsdateien der Desktop-App sind nur für Ihr Benutzerkonto lesbar und
-  enthalten keine PINs.
+- Sicherungs- und Protokolldateien der Desktop-App sind nur für Ihr
+  Benutzerkonto lesbar und enthalten keine PINs.
 
 Kein System ist vollkommen sicher. Wenn Sie eine Sicherheitslücke finden,
 melden Sie sie bitte an support@openvolley.app.
@@ -493,8 +557,8 @@ Sie haben das Recht:
 - die Bearbeitung **einschränken** zu lassen, zum Beispiel solange eine
   Berichtigung geprüft wird;
 - Ihre Daten in einem gängigen Format zu **erhalten** oder übertragen zu
-  lassen (die Apps bieten dafür auch den Download von Sicherungskopien und
-  Spielberichten);
+  lassen (die Apps bieten dafür auch den Download von Sicherungskopien,
+  Spielberichten und dem Aktivitätsprotokoll);
 - eine **Einwilligung** (zum Beispiel für die Update-Prüfung auf Android)
   jederzeit zu widerrufen.
 
@@ -521,8 +585,9 @@ Soweit die DSGVO gilt, stütze ich mich auf:
 - **Berechtigtes Interesse** (Art. 6 Abs. 1 lit. f DSGVO): korrekte und
   überprüfbare offizielle Spielaufzeichnungen für Vereine, Verband und
   Offizielle (Kaderlisten, Geburtsdaten zur Kontrolle der Spielberechtigung,
-  Unterschriften, Freigaben), Livescore für das Publikum, Organisation von
-  Turnieren, Sicherheit und Missbrauchsschutz, Datensicherungen.
+  Unterschriften, Freigaben, Aktivitätsprotokoll und Ereignisgeschichte),
+  Livescore für das Publikum, Organisation von Turnieren, Fehlersuche,
+  Sicherheit und Missbrauchsschutz, Datensicherungen.
 - **Einwilligung** (Art. 6 Abs. 1 lit. a DSGVO): freiwilliges Geburtsdatum im
   Konto, Update-Prüfung der direkt installierten Android-App.
 

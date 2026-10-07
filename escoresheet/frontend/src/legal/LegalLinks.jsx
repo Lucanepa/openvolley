@@ -1,7 +1,7 @@
 import { Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '../ui/cn.js'
-import { LEGAL_DOCS, legalUrl } from './legalLinks'
+import { LEGAL_DOCS, legalUrl } from './legalUrls'
 
 /**
  * Links to the legal pages on openvolley.app in the reader's language
