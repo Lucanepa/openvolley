@@ -4,7 +4,8 @@
 #   - namcap on the PKGBUILD and on the built package
 #   - no missing shared libraries (ldd) and the tray library is there
 #   - the desktop file validates, the icons are in place
-#   - the bundle-type stamp is "unknown" (the in-app updater is off)
+#   - the in-app updater is off: the bundle-type stamp is "unknown" and the
+#     package-manager marker file is there
 #   - the app starts under Xvfb, stays up, serves its LAN page, and its log
 #     says it does not update itself
 #
@@ -66,6 +67,8 @@ echo icons ok
 step "bundle-type stamp"
 LC_ALL=C grep -ao '__TAURI_BUNDLE_TYPE_VAR_[A-Z]*' "/usr/bin/$PKG" | tr '\n' ' '; echo
 LC_ALL=C grep -aq '__TAURI_BUNDLE_TYPE_VAR_UNK' "/usr/bin/$PKG"
+echo "marker: $(cat "/usr/lib/$PKG/package-manager")"
+[[ $(cat "/usr/lib/$PKG/package-manager") == aur ]]
 
 step "run under Xvfb"
 runuser -u builder -- bash -c '
@@ -86,7 +89,13 @@ echo "LAN page http://127.0.0.1:$PORT/ -> $code"
 echo "app output (update lines, panics, errors):"
 grep -E '\[update\]|panic|ERROR' /home/builder/run.log | head -n 20 || true
 if grep -q panicked /home/builder/run.log; then exit 1; fi
-grep -q 'no automatic updates' /home/builder/run.log
+# An updater that runs logs "<version> <Kind>: checking after the page
+# loaded". 2.3.0 / OpenBeach 2.0.0 (unstamped bundle type, Kind::Unsupported)
+# say "no automatic updates" instead; releases with Kind::Managed (the marker
+# file) may say "installed by aur" or nothing.
+if grep -q 'checking after the page loaded' /home/builder/run.log; then
+  echo "the in-app updater is running"; exit 1
+fi
 echo "updater off: ok"
 echo "PASS $PKG-bin"
 EOF

@@ -41,14 +41,17 @@ noextract=("$_pkgname-$pkgver-amd64.deb")
 sha256sums=('4916eae672b6d1d5ec8d97c2bb9838815fdd4e313473d2c16ff759c51d9b7aec')
 sha256sums_x86_64=('f848743fcfdebd5fdaa890ef1038aee66a0cb25d430ab30b3d50a515a91699e1')
 
-# The Tauri bundler stamps the bundle type into the binary
-# ("__TAURI_BUNDLE_TYPE_VAR_DEB"). The app's updater (src-tauri/src/updater.rs)
-# reads it: a deb updates through APT or tells the scorer to add the APT repo.
-# Under pacman neither is right, so this sets it back to "unknown" (UNK, what
-# the compiler wrote before the bundler): the app then does not look for
-# updates and says "This build does not update itself"; pacman updates it.
-# Only the stamped value changes, not the "...DEB" string bundle_type()
-# compares with (that one is directly followed by "...RPM").
+# pacman updates this package, never the app itself (src-tauri/src/updater.rs):
+# - the marker file /usr/lib/$_pkgname/package-manager (package()): a release
+#   that knows it (Kind::Managed) never checks for updates and says the
+#   package manager updates it;
+# - for releases before that, the bundle type: the Tauri bundler stamps
+#   "__TAURI_BUNDLE_TYPE_VAR_DEB" into the binary, and a deb updates through
+#   APT or tells the scorer to add the APT repo. This sets it back to
+#   "unknown" (UNK, what the compiler wrote before the bundler): the app then
+#   never checks ("This build does not update itself"). Only the stamped value
+#   changes, not the "...DEB" string bundle_type() compares with (that one is
+#   directly followed by "...RPM").
 _unstamp_bundle_type() {
   local bin=$1 marker=__TAURI_BUNDLE_TYPE_VAR_ off next
   local -a hits=()
@@ -83,6 +86,9 @@ package() {
   install -Dm644 "deb/usr/share/icons/hicolor/256x256@2/apps/$_pkgname.png" \
     "$pkgdir/usr/share/icons/hicolor/256x256/apps/$_pkgname.png"
   install -Dm644 "LICENSE-$pkgver" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -d "$pkgdir/usr/lib/$_pkgname"
+  echo aur > "$pkgdir/usr/lib/$_pkgname/package-manager"
+  chmod 644 "$pkgdir/usr/lib/$_pkgname/package-manager"
   # Not taken from the .deb: /usr/libexec/$_pkgname/apt-upgrade and its polkit
   # action (the APT updater's root helper; pacman updates this package).
 }
