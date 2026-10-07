@@ -667,7 +667,9 @@ These override the paper conventions above wherever they differ. The audit must 
    - set start = the real start of the set's first rally (`rally_start`, the device clock). The
      "Set n start time" dialog value is used only for records without `rally_start`, then the
      set's first point. A scorer who kept the scheduled 14:30 in that dialog for a match that
-     started at 16:05 no longer gets "Match Start 14:30" and a 104' first set;
+     started at 16:05 no longer gets "Match Start 14:30" and a 104' first set. A start time
+     corrected afterwards in the Scoreboard's edit modal (set.startTime no longer equals the
+     time the `set_start` event recorded) is the scorer's deliberate word and wins;
    - set end = the recorded set end, else the last point;
    - set duration = end − start of that set; match start = set 1's actual start (empty until the
      match has started); match end = the last set's end; match duration = end − start;

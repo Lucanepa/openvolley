@@ -9,6 +9,9 @@
  *    time typed or kept by the scorer (a match planned 14:30 that started 16:05
  *    printed "Match Start 14:30" and a 104' first set); it is used only when a
  *    set has no rally_start (older records), then the set's first point.
+ *    Exception: a start corrected AFTER the dialog (Scoreboard's edit modal
+ *    writes set.startTime only, so it no longer matches the time the set_start
+ *    event recorded) is the scorer's deliberate word and wins.
  *  - Set end: the recorded set end (set.endTime), else the set's last point.
  *  - Times are taken to the minute (rounded down), so a duration is always the
  *    difference of the two printed times.
@@ -28,6 +31,7 @@ export interface TimedEvent {
   setIndex?: number
   seq?: number
   ts?: string | number | null
+  payload?: { startTime?: string | null } | null
 }
 
 const ms = (v: unknown): number | null => {
@@ -46,9 +50,15 @@ const timesOf = (events: TimedEvent[] | undefined, setIndex: number, type: strin
 /** The set's actual start (ms, to the minute), or null when nothing tells it. */
 export function setStartMs(set: TimedSet | null | undefined, events?: TimedEvent[]): number | null {
   if (!set) return null
+  const confirmed = ms(set.startTime)
+  // the time the "Set n start time" dialog confirmed, as its set_start event recorded it
+  const dialog = (Array.isArray(events) ? events : [])
+    .filter(e => e && e.setIndex === set.index && e.type === 'set_start')
+    .map(e => ms(e.payload?.startTime ?? e.ts))
+    .find((n): n is number => n !== null) ?? null
+  if (confirmed !== null && dialog !== null && toMinute(confirmed) !== toMinute(dialog)) return toMinute(confirmed)
   const rallies = timesOf(events, set.index, 'rally_start')
   if (rallies.length > 0) return toMinute(Math.min(...rallies))
-  const confirmed = ms(set.startTime)
   if (confirmed !== null) return toMinute(confirmed)
   const points = timesOf(events, set.index, 'point')
   return points.length > 0 ? toMinute(Math.min(...points)) : null
