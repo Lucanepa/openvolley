@@ -36,19 +36,28 @@ const CARD = { width: 10, height: 14, borderRadius: 2, flex: 'none', boxShadow: 
 const Card = ({ colour, style }) => <span className={`sanction-card ${colour}`} style={{ ...CARD, display: 'inline-block', ...style }} />
 const MARK = { fontWeight: 700, lineHeight: 1, fontSize: 13, color: '#dc2626' }
 const CELL = { whiteSpace: 'nowrap', verticalAlign: 'middle', paddingLeft: 6, paddingRight: 6 }
-// The name column takes the room the others leave and ends in an ellipsis
-// (auto table layout: width 100% + max-width 0), so a long name never wraps.
-// Header cells take the same side padding, so labels sit over their values.
-const TH = { paddingLeft: 6, paddingRight: 6, whiteSpace: 'nowrap' }
-const NAME_CELL = { ...CELL, width: '100%', maxWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }
+// Fixed table layout: every column but the name has a set width, so both
+// teams' tables (and players / liberos / bench) line up column by column
+// whatever a row holds; the name takes the room left and ends in an
+// ellipsis, so a long name never wraps. Header cells take the same side
+// padding, so labels sit over their values.
+const TABLE = { tableLayout: 'fixed' }
+const TH = { paddingLeft: 6, paddingRight: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+const NAME_CELL = { ...CELL, overflow: 'hidden', textOverflow: 'ellipsis' }
 // One row height for every row of both teams' tables, so they stay aligned
 // side by side whatever a row holds (position pill, cards, badges).
 const ROW_H = 42
 
+/**
+ * Some sanction labels carry a soft line break for the scoreboard buttons
+ * ("Verzögerungs-\nwarnung"); a tooltip wants them on one line.
+ */
+export const oneLine = label => String(label).replace(/-\n/g, '').replace(/\s*\n\s*/g, ' ')
+
 /** One sanction as the cards the referee shows (FIVB 21.3). */
 export function SanctionChip({ entry }) {
   const { t } = useTranslation()
-  const label = t(SANCTION_LABEL_KEYS[entry.type] || entry.type, entry.type)
+  const label = oneLine(t(SANCTION_LABEL_KEYS[entry.type] || entry.type, entry.type))
   const title = `${label} · ${t('rosterLive.setScore', { set: entry.setIndex, score: `${entry.own}:${entry.opp}` })}`
   let body
   switch (entry.type) {
@@ -107,7 +116,9 @@ function PositionCell({ position, isServer }) {
   const { t } = useTranslation()
   if (!position) return <td style={CELL} />
   return (
-    <td style={{ ...CELL, textAlign: 'center' }}>
+    // Left-aligned, so every pill sits in the same place and the server's
+    // ball goes after it instead of pushing it off-centre.
+    <td style={CELL}>
       <span
         title={isServer ? `${t('rosterLive.posTitle')} ${position} · ${t('rosterLive.server')}` : `${t('rosterLive.posTitle')} ${position}`}
         style={{ display: 'inline-flex', alignItems: 'center', gap: 4, verticalAlign: 'middle' }}
@@ -128,12 +139,11 @@ function PositionCell({ position, isServer }) {
   )
 }
 
-// Minimum widths: the two teams' tables line up column by column unless a
-// cell needs more room (then that column grows instead of clipping).
+// Column widths (fixed layout): # with its badges, the rest for the name.
 function Colgroup({ showPos }) {
   return (
     <colgroup>
-      <col style={{ width: 84 }} />
+      <col style={{ width: 92 }} />
       <col />
       <col style={{ width: 96 }} />
       {showPos && <col style={{ width: 64 }} />}
@@ -146,14 +156,14 @@ function PlayerTable({ team, rows, showPos, kind }) {
   const { t } = useTranslation()
   const cols = showPos ? 5 : 4
   return (
-    <table className="roster-table">
+    <table className="roster-table" style={TABLE}>
       <Colgroup showPos={showPos} />
       <thead>
         <tr>
           <th style={TH}>{t('roster.number')}</th>
           <th style={TH}>{t('roster.name')}</th>
           <th style={TH}>{t('roster.dob')}</th>
-          {showPos && <th style={{ ...TH, textAlign: 'center' }} title={t('rosterLive.posTitle')}>{t('rosterLive.pos')}</th>}
+          {showPos && <th style={TH} title={t('rosterLive.posTitle')}>{t('rosterLive.pos')}</th>}
           <th style={TH}>{t('rosterLive.sanctions')}</th>
         </tr>
       </thead>
@@ -204,7 +214,7 @@ function PlayerTable({ team, rows, showPos, kind }) {
 function BenchTable({ team, rows, emptyAll }) {
   const { t } = useTranslation()
   return (
-    <table className="roster-table">
+    <table className="roster-table" style={TABLE}>
       <colgroup>
         <col style={{ width: 140 }} />
         <col />
@@ -258,7 +268,9 @@ function TeamSanctionsLine({ entries }) {
   const { t } = useTranslation()
   if (!entries?.length) return null
   return (
-    <span className="flex items-center gap-1.5 text-[11px] font-semibold text-stone-500" data-team-sanctions="">
+    // h-4: the chips must not make this header taller than the other
+    // team's, or the two tables drift apart row by row.
+    <span className="flex h-4 items-center gap-1.5 text-[11px] font-semibold text-stone-500" data-team-sanctions="">
       <span>{t('rosterLive.teamSanctions')}</span>
       <SanctionList entries={entries} />
     </span>
