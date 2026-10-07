@@ -77,6 +77,10 @@ import { backdropDismiss } from '../ui/backdropDismiss.js'
  *  The ::before pad (12px above and below, 4px each side) grows the hit area
  *  to about 44px tall without moving the layout. */
 const SB_TOOLBAR_BTN = `relative inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-700 font-semibold tracking-normal shadow-sm hover:bg-stone-50 transition-colors cursor-pointer before:absolute before:-inset-x-1 before:-inset-y-3 before:content-[''] ${FOCUS_RING}`
+/** One size for both toolbar triggers: a fixed cqw height (the Match button's
+ *  old height) so the icon-only Scoresheet button no longer comes out shorter
+ *  than the text one; only the side padding differs. */
+const SB_TOOLBAR_BTN_SIZE = { boxSizing: 'border-box', height: '2.5cqw', fontSize: '1.28cqw', lineHeight: 1 }
 
 /** Side-column group heading (Bench, Liberos, Bench officials): the kit
  *  SectionHeader face, a name on the dark 1.5px rule. Size stays in cqw. */
@@ -12976,8 +12980,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             menuTitle={t('header.scoresheet')}
             buttonClassName={SB_TOOLBAR_BTN}
             buttonStyle={{
-              padding: '0.34cqw 0.6cqw',
-              fontSize: '1.28cqw'
+              ...SB_TOOLBAR_BTN_SIZE,
+              padding: '0 0.68cqw'
             }}
             showArrow={true}
             position="right"
@@ -13136,9 +13140,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             menuTitle={t('header.match', 'Match')}
             buttonClassName={SB_TOOLBAR_BTN}
             buttonStyle={{
+              ...SB_TOOLBAR_BTN_SIZE,
               width: 'auto',
-              padding: '0.43cqw 0.85cqw',
-              fontSize: '1.28cqw',
+              padding: '0 0.85cqw',
               textAlign: 'center'
             }}
             position="right"
