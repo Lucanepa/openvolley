@@ -15,7 +15,7 @@ or a raised `OV_MIN_MATCHES`, would be ignored. The one place that needs a value
 any `docker compose up`, this must print nothing:
 
 ```bash
-hetzner# env | grep -E '^(OV_|TUNNEL_TOKEN|PUBLIC_ORIGINS|RESEND_|SMTP_|CONTACT_EMAIL)='
+hetzner# env | grep -E '^(OV_|TUNNEL_TOKEN|PUBLIC_ORIGINS|RESEND_|SMTP_|MAIL_FROM|MANAGER_URL|CONTACT_EMAIL)='
 ```
 
 **Preconditions**
@@ -133,8 +133,9 @@ hetzner# cd /opt/openvolley && install -m 600 env.example .env && editor .env
 - `OV_BACKEND_IMAGE` = the tag from step 3.
 - `OV_OWNER_PW`, `OV_APP_PW` = `openssl rand -hex 32` each (into Vaultwarden).
 - `TUNNEL_TOKEN` from step 2.
-- `RESEND_*`, `SMTP_*`, `CONTACT_EMAIL` from the old backend's settings. (No `REOPEN_PASSWORD_HASH`:
-  it was replaced by the admin reopen of db/007.)
+- `RESEND_*`, `CONTACT_EMAIL` from the old backend's settings. (No `REOPEN_PASSWORD_HASH`:
+  it was replaced by the admin reopen of db/007.) `SMTP_*`, `MAIL_FROM`, `MANAGER_URL`: leave
+  empty here and set them later with "Account emails (SMTP)" below.
 - `OV_MIN_MATCHES=0` until the data load (step 8).
 
 ```bash
@@ -365,6 +366,49 @@ lenovo$  ssh hetzner /opt/openvolley/apply-roles.sh < escoresheet/backend/db/rol
 ```
 
 Do the same on the dev database.
+
+## Account emails (SMTP)
+
+Password-reset links, confirmation links for new accounts and "your password was changed"
+notices go out through the Migadu mailbox `noreply@openvolley.app` (backend README "Account
+emails"). Without `SMTP_HOST`/`SMTP_PASS` the backend sends nothing: reset answers 503
+("temporarily unavailable, contact ...") and sign-up confirms accounts at once.
+
+1. **Database**: `db/010_auth_tokens.sql`, then `roles.sql` ("Apply a new db migration" above).
+   Without 010 a configured backend still answers reset with 503 and logs
+   `auth.app_tokens is missing`.
+2. **Deliverability** (once): Migadu admin, domain `openvolley.app`, "DNS Configuration" shows
+   every record green (MX, SPF `include:spf.migadu.com`, the three DKIM CNAMEs, DMARC).
+   Otherwise the mails land in spam or bounce.
+3. **Egress** (once): Hetzner blocks outgoing port 465 on new cloud servers. From the backend
+   container:
+
+   ```bash
+   hetzner# cd /opt/openvolley && for p in 465 587; do docker compose exec -T ov-backend node -e "const s=require('net').connect($p,'smtp.migadu.com');s.setTimeout(5000);s.on('connect',()=>{console.log($p,'open');process.exit(0)}).on('timeout',()=>{console.log($p,'blocked');process.exit(1)}).on('error',e=>{console.log($p,e.code);process.exit(1)})"; done
+   ```
+
+   465 open: keep `SMTP_PORT=465`. Only 587 open: use `SMTP_PORT=587` (STARTTLS, enforced).
+4. **Settings** (lenovoserver; the password never touches the shell history, a command line or
+   the repo): `~/ov-ops/set-smtp-password.sh` (or `SMTP_PORT=587 ~/ov-ops/set-smtp-password.sh`).
+   It asks for the mailbox password (hidden), stores it in Vaultwarden (folder OpenVolley,
+   entry "OpenVolley noreply@openvolley.app SMTP"), and writes `SMTP_HOST`, `SMTP_PORT`,
+   `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`, `MANAGER_URL` into `/opt/openvolley/.env` over ssh
+   stdin, with a timestamped backup `.env.bak-<UTC>` (mode 600). It restarts nothing.
+5. **Activate** (a backend recreate; weekday, not during a match):
+
+   ```bash
+   hetzner# cd /opt/openvolley && docker compose config -q && docker compose up -d ov-backend
+   hetzner# docker compose logs ov-backend 2>&1 | grep '\[Mail\]'   # "[Mail] account emails on: SMTP smtp.migadu.com:465 ..."
+   ```
+
+   "account emails off (...)" names what is missing.
+6. **Check**: manager.openvolley.app, "Sign in", "Forgot password?" with your own address. The
+   mail arrives within a minute; the link opens "Set a new password"; afterwards every device is
+   signed out and a "password was changed" notice arrives. A failed send is in
+   `docker compose logs ov-backend | grep 'reset-password mail failed'`.
+
+To switch the mails off again: empty `SMTP_PASS=` in `.env`, `docker compose up -d ov-backend`.
+To rotate the password: set it in Migadu, then run the script again (it replaces the lines).
 
 ## Rollback
 
