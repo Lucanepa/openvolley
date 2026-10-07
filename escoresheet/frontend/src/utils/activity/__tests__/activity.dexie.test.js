@@ -56,6 +56,31 @@ describe('activity log', () => {
     expect(rows[1].eventExt).toBe(`${SEED}:e:${id}`)
   })
 
+  it('a scorer action (event + its snapshot in one transaction) is told at once, with the score', async () => {
+    const t0 = Date.now()
+    await db.transaction('rw', db.tables, async () => {
+      const id = await db.events.add({ matchId, setIndex: 1, type: 'point', seq: 5, payload: { team: 'away' } })
+      await db.events.add({ matchId, setIndex: 1, type: 'lineup', seq: 5.1, payload: { team: 'away' } })
+      await db.events.update(id, { stateSnapshot: { pointsA: 2, pointsB: 3 } })
+    })
+    await settle() // far less than SNAPSHOT_WAIT_MS
+    expect(Date.now() - t0).toBeLessThan(1500)
+    const rows = await db.activity_log.orderBy('lid').toArray()
+    expect(rows.find(r => r.eventSeq === 5)?.data).toEqual({ type: 'point', seq: 5, set: 1, team: 'away', scoreA: 2, scoreB: 3 })
+
+    // A rolled-back action tells nothing, and a later add under the same id is not mixed up with it
+    await db.transaction('rw', db.tables, async () => {
+      const id = await db.events.add({ matchId, setIndex: 1, type: 'point', seq: 6, payload: { team: 'home' } })
+      await db.events.update(id, { stateSnapshot: { pointsA: 9, pointsB: 9 } })
+      throw new Error('forced')
+    }).catch(() => {})
+    const id = await db.events.add({ matchId, setIndex: 1, type: 'point', seq: 6, payload: { team: 'home' } })
+    await db.events.update(id, { stateSnapshot: { pointsA: 3, pointsB: 3 } })
+    await settle()
+    const after = await db.activity_log.orderBy('lid').toArray()
+    expect(after.filter(r => r.eventSeq === 6).map(r => r.data)).toEqual([{ type: 'point', seq: 6, set: 1, team: 'home', scoreA: 3, scoreB: 3 }])
+  })
+
   it('an event that waits for its snapshot keeps the time of its add (order of play)', async () => {
     const t0 = Date.now()
     // a sub-event without a snapshot: told after SNAPSHOT_WAIT_MS, dated at its add

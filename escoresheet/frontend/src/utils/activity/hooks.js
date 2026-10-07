@@ -64,6 +64,13 @@ export function installActivityHooks(db, writer) {
     record('event.add', eventActivityData(e), { matchId: e.matchId, setIndex: e.setIndex, eventSeq: e.seq, ts: w.at })
   }
   const batches = new WeakMap()
+  // Adds not committed yet, by event id: a scorer action (useScorerActions)
+  // writes the event AND its snapshot in one transaction, so the snapshot
+  // update comes before the commit, while the add is not waiting yet
+  const uncommitted = new Map() // event id -> batch entry
+  const forget = (list) => {
+    for (const b of list) if (uncommitted.get(b.key) === b) uncommitted.delete(b.key)
+  }
   add(db.events, 'creating', function (primKey, obj, tx) {
     if (!obj) return
     const self = this
@@ -75,8 +82,11 @@ export function installActivityHooks(db, writer) {
       if (!batch) {
         batch = []
         if (tx) batches.set(tx, batch)
+        // Rolled back: none of its adds happened (and their ids can be given out again)
+        try { if (tx && typeof tx.on === 'function') tx.on('abort', () => forget(batch)) } catch { /* no abort event */ }
         afterCommit(tx, () => {
           if (tx) batches.delete(tx)
+          forget(batch)
           const byMatch = new Map()
           for (const b of batch) {
             if (!byMatch.has(b.event.matchId)) byMatch.set(b.event.matchId, [])
@@ -102,15 +112,24 @@ export function installActivityHooks(db, writer) {
           }
         })
       }
-      batch.push({ key, event: obj, at })
+      const entry = { key, event: obj, at }
+      batch.push(entry)
+      if (key != null) uncommitted.set(key, entry)
     }
     if (primKey != null) onKey(primKey)
     else self.onsuccess = onKey
   })
   add(db.events, 'updating', function (mods, primKey, obj) {
-    if (!waiting.has(primKey) || !mods) return
+    if (!mods) return
     const snap = 'stateSnapshot' in mods ? mods.stateSnapshot : null
     if (!snap) return
+    // Added in the same transaction: told with its score right after the commit
+    const pending = uncommitted.get(primKey)
+    if (pending) {
+      pending.event = { ...pending.event, stateSnapshot: snap }
+      return
+    }
+    if (!waiting.has(primKey)) return
     waiting.get(primKey).event = { ...waiting.get(primKey).event, stateSnapshot: snap }
     setTimeout(() => emitAdd(primKey), 0)
     void obj
