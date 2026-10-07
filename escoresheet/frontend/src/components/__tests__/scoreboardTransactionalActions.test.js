@@ -79,6 +79,11 @@ describe('Scoreboard: one transaction and one screen change per scorer action', 
     expect(body).toContain('deferUi(() => setCourtSwitchModal({')
   })
 
+  it('the serve ball is no longer hidden while a rotation is pending (no render shows one)', () => {
+    expect(src).not.toContain('isRotationPending')
+    expect(src).not.toContain('pendingRotationRef')
+  })
+
   it('the set-end dialog opens with the winning point', () => {
     const body = handler('checkSetEnd')
     expect(body).toContain('deferUi(() => setSetEndTimeModal({')

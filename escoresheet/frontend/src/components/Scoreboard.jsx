@@ -365,7 +365,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // See architecture note at top of file. All event-creating functions acquire this lock.
   const eventInProgressRef = useRef(false)
   const eventQueueRef = useRef([]) // Queue for serializing event creation
-  const pendingRotationRef = useRef(false) // Hide serve indicator while rotation event is being written
   const [keybindingsEnabled, setKeybindingsEnabled] = useState(() => {
     const saved = localStorage.getItem('keybindingsEnabled')
     return saved === 'true' // default false
@@ -4748,46 +4747,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   const currentServeTeam = data?.set ? getCurrentServe() : null
 
-  // Detect if a sideout rotation is pending (point written but rotation not yet in data.events)
-  // This prevents showing the wrong server number for a split second during sideout
-  const isRotationPending = useMemo(() => {
-    if (!data?.events || !data?.set) return false
-    const setEvents = data.events.filter(e => e.setIndex === data.set.index)
-    // Find the last point event
-    const lastPoint = setEvents
-      .filter(e => e.type === 'point')
-      .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0]
-    if (!lastPoint) return false
-
-    // Check if this was a sideout: the scoring team is different from the previous server
-    const pointsBefore = setEvents
-      .filter(e => e.type === 'point' && (e.seq || 0) < (lastPoint.seq || 0))
-      .sort((a, b) => (b.seq || 0) - (a.seq || 0))
-    // No earlier point: the set's first-serving team had the serve. (Comparing
-    // with null counted every first point as a sideout, and since the serving
-    // team's point writes no rotation the serve box stayed hidden until 2:0.)
-    const previousServer = pointsBefore.length > 0
-      ? pointsBefore[0].payload?.team
-      : getFirstServeForSet(data.set.index, data.match)
-    if (previousServer === lastPoint.payload?.team) return false // Not a sideout
-
-    // It's a sideout — check if rotation event exists (sub-event of the point, e.g., 7.1)
-    const pointBaseSeq = Math.floor(lastPoint.seq || 0)
-    const hasRotation = setEvents.some(e =>
-      e.type === 'lineup' &&
-      Math.floor(e.seq || 0) === pointBaseSeq &&
-      (e.seq || 0) !== pointBaseSeq // Has decimal part (sub-event)
-    )
-    return !hasRotation
-  }, [data?.events, data?.set, data?.match])
-
-  // Hide serve indicator while rotation is pending (prevents wrong server flash)
-  // Show serve on left as placeholder before coin toss or before set starts
-  const leftServing = (isRotationPending || pendingRotationRef.current) ? false
-    : (isBeforeCoinToss || hasNoSet) ? true
+  // Show serve on left as placeholder before coin toss or before set starts.
+  // (A side-out's point and its rotation are one transaction, so no render
+  // shows the new server before the rotation: no need to hide the ball.)
+  const leftServing = (isBeforeCoinToss || hasNoSet) ? true
     : (data?.set ? currentServeTeam === leftServeTeamKey : false)
-  const rightServing = (isRotationPending || pendingRotationRef.current) ? false
-    : (isBeforeCoinToss || hasNoSet) ? false
+  const rightServing = (isBeforeCoinToss || hasNoSet) ? false
     : (data?.set ? currentServeTeam === rightServeTeamKey : false)
 
   const serveBallBaseStyle = useMemo(
@@ -4987,9 +4952,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // If scoring team didn't have serve, they rotate their lineup AFTER the point
       // (same transaction: the point never shows without its rotation)
       if (!scoringTeamHadServe) {
-        // Hide serve indicator until rotation event is written to DB
-        // This prevents the brief flash of wrong server number during sideout
-        pendingRotationRef.current = true
         // Query database directly for the most recent lineup (data.events might be stale)
         const allLineupEvents = await db.events
           .where('matchId')
@@ -5288,8 +5250,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             syncLiveStateToSupabase('rotation', teamKey, { lineup: cleanedRotatedLineup })
           }
         }
-        // Rotation event written — allow serve indicator to update on next render
-        pendingRotationRef.current = false
       }
 
       // After point is logged, the scoring team (teamKey) now has serve
