@@ -4,6 +4,7 @@ import { supabase } from './lib/supabaseClient'
 import { apiFrom } from './lib/apiClient'
 import UpdateBanner from './components/UpdateBanner'
 import DashboardHeader from './components/DashboardHeader'
+import LegalLinks from './legal/LegalLinks'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
 import { applyServerParam, getApiUrl, getBackendOverride, isServedFromLocalServer, isStaticDeployment } from './utils/backendConfig'
 import { createRelayLivescoreFeed, fetchRelayLivescoreList, relayLivescoreMode, relayLivescoreWsUrl } from './utils/relayLivescore'
@@ -599,6 +600,8 @@ export default function LivescoreApp() {
             </RowList>
           </Card>
         )}
+        {/* Public page with team names: the privacy policy says what is shown */}
+        <LegalLinks docs={['privacy', 'terms', 'impressum']} className="mt-8 text-center text-[11px] text-stone-400" />
       </div>
     </div>
   )

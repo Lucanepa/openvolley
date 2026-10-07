@@ -7,7 +7,7 @@ import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   pickLang, authLink, renderMail, maskEmail, mailerFromEnv, createMailer, transportOptions,
-  inboxKey, describeMailError, disabledMailer, mailApp, mailBrandOf, brandFrom, beachManagerBase,
+  inboxKey, describeMailError, disabledMailer, mailApp, mailBrandOf, brandFrom, beachManagerBase, privacyLine,
   MAIL_LANGS, MAIL_KINDS, MAIL_APPS, MAIL_BRANDS, DEFAULT_MANAGER_URL, DEFAULT_MANAGER_URL_BEACH, DEFAULT_BUDGETS, DEFAULT_MAX_PER_INBOX
 } from '../lib/mailer.js'
 import { startFakeSmtp, makeTestCert, linkToken, SMTP_USER, SMTP_PASS } from './helpers/fakeSmtp.js'
@@ -344,6 +344,28 @@ describe('mailer: brands (OpenVolley / OpenBeach)', () => {
     assert.equal(MAIL_BRANDS.indoor.managerUrl, DEFAULT_MANAGER_URL)
   })
 
+  it('ends every mail with the privacy policy in its language, as text (no extra link)', () => {
+    const link = authLink(DEFAULT_MANAGER_URL, 'reset', TOKEN, 'en')
+    const expected = {
+      en: 'Privacy policy: openvolley.app/en/privacy',
+      de: 'Datenschutzerklärung: openvolley.app/datenschutz',
+      fr: 'Protection des données : openvolley.app/fr/confidentialite',
+      it: 'Protezione dei dati: openvolley.app/it/privacy'
+    }
+    for (const lang of MAIL_LANGS) assert.equal(privacyLine(lang), expected[lang])
+    assert.equal(privacyLine('de-CH'), expected.de)
+    assert.equal(privacyLine('xx'), expected.en)
+    for (const kind of MAIL_KINDS) {
+      for (const lang of MAIL_LANGS) {
+        for (const app of ['indoor', 'beach']) {
+          const m = renderMail(kind, lang, { link, app })
+          assert.ok(m.text.endsWith(`\n\n${expected[lang]}\n`), `${kind}/${lang}/${app} text`)
+          assert.ok(m.html.includes(`>${expected[lang]}</p></div>`), `${kind}/${lang}/${app} html`)
+        }
+      }
+    }
+  })
+
   it('OpenVolley mails are unchanged when the app is indoor, unknown or absent', () => {
     for (const kind of MAIL_KINDS) {
       for (const lang of MAIL_LANGS) {
@@ -363,7 +385,7 @@ describe('mailer: brands (OpenVolley / OpenBeach)', () => {
         assert.ok(m.subject.includes('OpenBeach') && !subjects.has(m.subject), `${kind}/${lang} subject`)
         subjects.add(m.subject)
         assert.notEqual(m.subject, indoor.subject)
-        assert.ok(m.text.trimEnd().endsWith('– OpenBeach'), `${kind}/${lang} signature`)
+        assert.ok(m.text.includes('\n\n– OpenBeach\n\n'), `${kind}/${lang} signature`)
         assert.ok(m.html.includes('>OpenBeach</p>'), `${kind}/${lang} html footer`)
         assert.doesNotMatch(m.html, /<img|<script|<link|url\(|@import/i)
         assert.doesNotMatch(m.text + m.subject, /ß/, 'Swiss spelling')

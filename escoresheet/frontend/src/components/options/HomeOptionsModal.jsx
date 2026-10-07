@@ -15,6 +15,7 @@ import { Button, cn, IconButton, SegmentedControl, Switch } from '../../ui'
 import { isAndroidApp } from '../../utils/androidUpdate'
 import AndroidVersionRows from './AndroidVersionRows'
 import { backdropDismiss } from '../../ui/backdropDismiss.js'
+import LegalLinks from '../../legal/LegalLinks'
 
 // Kit field recipes for the small inline number/select controls (h-9, svrz md).
 const SMALL_FIELD = 'h-9 rounded-lg border border-stone-300 bg-white px-2 text-center text-sm tabular-nums text-stone-800 focus:outline-none focus:ring-2 focus:ring-red-500'
@@ -980,6 +981,11 @@ export default function HomeOptionsModal({
               {', '}<a href="https://github.com/phosphor-icons/react/blob/master/LICENSE" target="_blank" rel="noopener noreferrer" className="underline decoration-stone-300 hover:text-stone-700">Phosphor</a> (MIT)
               {' · '}{t('options.fonts', 'Fonts')} Inter, IBM Plex Mono, JetBrains Mono, Orbitron, Roboto Mono, Space Mono (SIL OFL 1.1)
             </p>
+          </Row>
+          {/* Privacy policy, terms, legal notice and the full open-source
+              notice on openvolley.app, in the app's language. */}
+          <Row>
+            <LegalLinks />
           </Row>
         </Section>
 

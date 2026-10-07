@@ -3182,5 +3182,13 @@
         "scorer": "Schreiber"
       }
     }
+  },
+  "legal": {
+    "nav": "Rechtliches",
+    "privacy": "Datenschutzerklärung",
+    "terms": "Nutzungsbedingungen",
+    "impressum": "Impressum",
+    "opensource": "Open-Source-Hinweis",
+    "signUpConsent": "Wer ein Konto erstellt, akzeptiert die <terms>Nutzungsbedingungen</terms> und die <privacy>Datenschutzerklärung</privacy>."
   }
 }

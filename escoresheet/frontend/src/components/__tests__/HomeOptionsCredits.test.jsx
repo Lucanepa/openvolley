@@ -59,4 +59,13 @@ describe('HomeOptionsModal licence and credits', () => {
     expect(hrefs).not.toContain('https://game-icons.net/')
     expect(hrefs).toContain('https://github.com/Lucanepa/openvolley')
   })
+
+  it('links the privacy policy, terms, legal notice and open-source notice', () => {
+    renderOptions()
+    const hrefs = [...screen.getByTestId('legal-links').querySelectorAll('a')].map((a) => a.getAttribute('href'))
+    expect(hrefs).toEqual([
+      'https://openvolley.app/en/privacy', 'https://openvolley.app/en/terms',
+      'https://openvolley.app/en/imprint', 'https://openvolley.app/en/open-source'
+    ])
+  })
 })

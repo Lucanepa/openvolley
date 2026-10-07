@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import { renderLandingPage, escapeHtml, INDOOR_ROLES, BEACH_ROLES } from '../lib/landingPage.js'
 import { ICONS, icon } from '../lib/icons.js'
 import { BRAND_MARK, brandMark } from '../lib/brandMark.js'
+import { legalUrl } from '../lib/legalLinks.js'
 
 const BASE = 'http://192.168.1.20:8080'
 const withQr = (roles) => roles.map((r) => ({ ...r, url: `${BASE}${r.path}`, svg: '<svg data-qr="1"></svg>' }))
@@ -74,7 +75,16 @@ describe('landing page', () => {
   it('loads nothing from anywhere: no scripts, stylesheets, images or fonts', () => {
     const html = render({ matches: [{ home: 'A', away: 'B', updatedAt: 1 }] })
     assert.deepEqual(remoteResources(html), [])
-    assert.doesNotMatch(html, /https?:\/\/(?!192\.168\.1\.20:8080|www\.w3\.org\/2000\/svg)/)
+    // the only other addresses are the legal pages, as plain links
+    assert.doesNotMatch(html, /https?:\/\/(?!192\.168\.1\.20:8080|www\.w3\.org\/2000\/svg|openvolley\.app\/en\/(privacy|terms|imprint)")/)
+  })
+
+  it('links the privacy policy, terms of use and legal notice in the footer', () => {
+    const footer = render().split('<footer')[1]
+    for (const doc of ['privacy', 'terms', 'impressum']) {
+      assert.ok(footer.includes(`<a href="${legalUrl(doc, 'en')}">`), doc)
+    }
+    assert.match(footer, />Privacy policy<\/a> · <a [^>]+>Terms of use<\/a> · <a [^>]+>Legal notice<\/a>/)
   })
 
   it('draws its icons from the packs (no emoji, no hand-drawn whistle)', () => {

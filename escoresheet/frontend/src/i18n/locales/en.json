@@ -3200,5 +3200,13 @@
         "scorer": "Scorer"
       }
     }
+  },
+  "legal": {
+    "nav": "Legal",
+    "privacy": "Privacy policy",
+    "terms": "Terms of use",
+    "impressum": "Legal notice",
+    "opensource": "Open-source notice",
+    "signUpConsent": "By creating an account you accept the <terms>terms of use</terms> and the <privacy>privacy policy</privacy>."
   }
 }

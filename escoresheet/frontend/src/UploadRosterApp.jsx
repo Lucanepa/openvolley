@@ -21,6 +21,7 @@ import { RowList } from './ui/Row.jsx'
 import { SectionHeader } from './ui/SectionHeader.jsx'
 import { SkeletonRows } from './ui/Skeleton.jsx'
 import { PinInput, ListLabel, GameRow } from './components/dashboards/EntryKit.jsx'
+import LegalLinks from './legal/LegalLinks'
 
 // Roster editor grid (a dense desktop form: h-9 fields are allowed here).
 const FIELD = 'h-9 w-full px-2.5 text-sm rounded-lg border border-stone-300 bg-white text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-500'
@@ -1479,6 +1480,8 @@ export default function UploadRosterApp() {
             ? t('rosterSetup.coachSignature', 'Coach signature')
             : t('rosterSetup.captainSignature', 'Captain signature')}
         />
+        {/* Rosters carry names and dates of birth: link the privacy policy */}
+        <LegalLinks docs={['privacy', 'terms', 'impressum']} className="mt-6 text-center text-[11px] text-stone-400" />
       </div>
     </div>
   )

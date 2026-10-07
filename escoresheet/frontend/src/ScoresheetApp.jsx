@@ -20,6 +20,7 @@ import { weekdayLabel, dayLabel, timeLabel } from './ui/format.js'
 import { scheduledInstant } from './components/dashboards/EntryKit.jsx'
 import { describeScoresheetLoadError, findOwnScoresheet, redactScoresheetPath } from '../scoresheet_pdf/utils/scoresheetStorage'
 import { BRAND } from './brand'
+import LegalLinks from './legal/LegalLinks'
 
 // Fetch an approved scoresheet (_final file) from cloud storage. Only the
 // account that uploaded it may list or read it (backend README "Who can read a
@@ -555,6 +556,7 @@ const ScoresheetList = () => {
             </CollapsibleSection>
           ))
         )}
+        <LegalLinks docs={['privacy', 'terms', 'impressum']} className="mt-8 text-center text-[11px] text-stone-400" />
       </div>
     </div>
   )

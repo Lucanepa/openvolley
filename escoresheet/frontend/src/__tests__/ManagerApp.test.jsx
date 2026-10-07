@@ -97,6 +97,24 @@ describe('ManagerApp (manager.openvolley.app)', () => {
     expect(window.location.hash).toBe('#signup')
   })
 
+  it('links the legal pages under the card and on the sign-up page, with the terms sentence', () => {
+    setAuth({ user: null })
+    render(<ManagerApp />)
+    const hrefs = () => [...screen.getAllByTestId('legal-links')[0].querySelectorAll('a')].map((a) => a.getAttribute('href'))
+    expect(hrefs()).toEqual([
+      'https://openvolley.app/en/privacy', 'https://openvolley.app/en/terms',
+      'https://openvolley.app/en/imprint', 'https://openvolley.app/en/open-source'
+    ])
+    fireEvent.click(screen.getByRole('button', { name: 'managerSite.createAccount' }))
+    // the sentence's links: src/legal/__tests__ (t() here returns the key)
+    const sentence = within(screen.getByTestId('manager-sign-up')).getByTestId('signup-legal')
+    expect(sentence).toHaveTextContent('legal.signUpConsent')
+    // above the submit button
+    expect(sentence.compareDocumentPosition(within(screen.getByTestId('signup-form')).getByRole('button', { name: 'Create account' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // no tick box: a free service, the sentence is enough
+    expect(within(screen.getByTestId('signup-form')).queryByRole('checkbox')).toBeNull()
+  })
+
   it('signed out: the card\'s own "Create account" button opens the sign-up page, "back" returns', () => {
     setAuth({ user: null })
     render(<ManagerApp />)

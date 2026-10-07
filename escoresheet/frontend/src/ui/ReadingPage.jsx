@@ -43,11 +43,13 @@ export function FormPage({ width = 'xl', className, children }) {
  *   language toggle: `inline-flex items-center gap-1 text-[11px] font-semibold
  *   text-stone-400 hover:text-stone-600` (AuthGate.tsx:460-466).
  * @param {React.ReactNode} [props.footer]   line under the card (AdminConsole.tsx:1185).
+ * @param {React.ReactNode} [props.below]    under the footer, not uppercased,
+ *   e.g. the legal links.
  * @param {boolean} [props.brandBar=true]    the 4px brand gradient on top.
  * @param {'sm'|'md'} [props.width='sm']     'md' for a longer public form
  *   (sign-up): the standalone `md` cap (shell.md).
  */
-export function GateScreen({ logo, eyebrow, corner, footer, brandBar = true, width = 'sm', className, children }) {
+export function GateScreen({ logo, eyebrow, corner, footer, below, brandBar = true, width = 'sm', className, children }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100 flex items-center justify-center p-4">
       <div className={cn('w-full', width === 'md' ? 'max-w-md' : 'max-w-sm')}>
@@ -63,6 +65,7 @@ export function GateScreen({ logo, eyebrow, corner, footer, brandBar = true, wid
           {children}
         </div>
         {footer && <p className="text-center text-[11px] font-medium uppercase tracking-[0.12em] text-stone-400 mt-5">{footer}</p>}
+        {below && <div className="mt-2 text-center">{below}</div>}
       </div>
     </div>
   );

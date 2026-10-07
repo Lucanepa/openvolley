@@ -8,6 +8,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { db } from '../db/db'
 import { askConfirm } from '../utils/askConfirm.js'
+import LegalLinks from '../legal/LegalLinks'
 import { CONNECTION_TYPES, CONNECTION_STATUS } from '../hooks/useRealtimeConnection'
 
 // Available languages with flag image URLs (using flagcdn.com)
@@ -452,6 +453,11 @@ export function DashboardOptionsMenu({
                 {t('options.alerts.someItemsFailedToClear', { errors: clearResult.errors?.join(', ') })}
               </div>
             )}
+          </div>
+
+          {/* Privacy policy, terms, legal notice (openvolley.app) */}
+          <div style={{ padding: '10px 16px 12px', borderTop: '1px solid var(--border)' }}>
+            <LegalLinks docs={['privacy', 'terms', 'impressum']} className="text-[11px]" />
           </div>
         </div>
       )}
