@@ -1,0 +1,64 @@
+# double elimination, 32 teams, board 32 (62 matches)
+# game code phase round wave source1 source2 [W=winner rank] [L=loser rank]
+1 W1 winners 1 1 seed:1 seed:32
+2 W2 winners 1 1 seed:16 seed:17
+3 W3 winners 1 1 seed:8 seed:25
+4 W4 winners 1 1 seed:9 seed:24
+5 W5 winners 1 1 seed:4 seed:29
+6 W6 winners 1 1 seed:13 seed:20
+7 W7 winners 1 1 seed:5 seed:28
+8 W8 winners 1 1 seed:12 seed:21
+9 W9 winners 1 1 seed:2 seed:31
+10 W10 winners 1 1 seed:15 seed:18
+11 W11 winners 1 1 seed:7 seed:26
+12 W12 winners 1 1 seed:10 seed:23
+13 W13 winners 1 1 seed:3 seed:30
+14 W14 winners 1 1 seed:14 seed:19
+15 W15 winners 1 1 seed:6 seed:27
+16 W16 winners 1 1 seed:11 seed:22
+17 W17 winners 2 2 winner:W1 winner:W2
+18 W18 winners 2 2 winner:W3 winner:W4
+19 W19 winners 2 2 winner:W5 winner:W6
+20 W20 winners 2 2 winner:W7 winner:W8
+21 W21 winners 2 2 winner:W9 winner:W10
+22 W22 winners 2 2 winner:W11 winner:W12
+23 W23 winners 2 2 winner:W13 winner:W14
+24 W24 winners 2 2 winner:W15 winner:W16
+25 L1 losers 1 2 loser:W1 loser:W2 L=25
+26 L2 losers 1 2 loser:W3 loser:W4 L=25
+27 L3 losers 1 2 loser:W5 loser:W6 L=25
+28 L4 losers 1 2 loser:W7 loser:W8 L=25
+29 L5 losers 1 2 loser:W9 loser:W10 L=25
+30 L6 losers 1 2 loser:W11 loser:W12 L=25
+31 L7 losers 1 2 loser:W13 loser:W14 L=25
+32 L8 losers 1 2 loser:W15 loser:W16 L=25
+33 W25 winners 3 3 winner:W17 winner:W18
+34 W26 winners 3 3 winner:W19 winner:W20
+35 W27 winners 3 3 winner:W21 winner:W22
+36 W28 winners 3 3 winner:W23 winner:W24
+37 L9 losers 2 3 winner:L1 loser:W24 L=17
+38 L10 losers 2 3 winner:L2 loser:W23 L=17
+39 L11 losers 2 3 winner:L3 loser:W22 L=17
+40 L12 losers 2 3 winner:L4 loser:W21 L=17
+41 L13 losers 2 3 winner:L5 loser:W20 L=17
+42 L14 losers 2 3 winner:L6 loser:W19 L=17
+43 L15 losers 2 3 winner:L7 loser:W18 L=17
+44 L16 losers 2 3 winner:L8 loser:W17 L=17
+45 W29 winners 4 4 winner:W25 winner:W26
+46 W30 winners 4 4 winner:W27 winner:W28
+47 L17 losers 3 4 winner:L9 winner:L10 L=13
+48 L18 losers 3 4 winner:L11 winner:L12 L=13
+49 L19 losers 3 4 winner:L13 winner:L14 L=13
+50 L20 losers 3 4 winner:L15 winner:L16 L=13
+51 L21 losers 4 5 winner:L17 loser:W25 L=9
+52 L22 losers 4 5 winner:L18 loser:W26 L=9
+53 L23 losers 4 5 winner:L19 loser:W27 L=9
+54 L24 losers 4 5 winner:L20 loser:W28 L=9
+55 L25 losers 5 6 winner:L21 winner:L22 L=7
+56 L26 losers 5 6 winner:L23 winner:L24 L=7
+57 L27 losers 6 7 winner:L25 loser:W30 L=5
+58 L28 losers 6 7 winner:L26 loser:W29 L=5
+59 SF1 final 1 8 winner:W29 winner:L27
+60 SF2 final 1 8 winner:W30 winner:L28
+61 P3 placement 2 9 loser:SF1 loser:SF2 W=3 L=4
+62 F final 2 9 winner:SF1 winner:SF2 W=1 L=2
