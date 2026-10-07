@@ -33,6 +33,7 @@ import { FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, ChartIcon } from './ic
 import { X } from 'lucide-react'
 import { Button } from '../ui/Button.jsx'
 import { NOTICE } from '../ui/tones.js'
+import { backdropDismiss } from '../ui/backdropDismiss.js'
 
 // volleyui recipes for this page (RESTYLE-SPEC P3b). The paper-sheet blocks
 // (ResultsTable, SanctionsTable, RemarksBox and their black frames), the
@@ -1611,7 +1612,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             zIndex: 9999,
             padding: '20px'
           }}
-          onClick={() => setZoomedSection(null)}
+          {...backdropDismiss(() => setZoomedSection(null))}
         >
           <div
             className="ov-legacy-results"

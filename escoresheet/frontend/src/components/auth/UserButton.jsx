@@ -10,6 +10,7 @@ import RoleChips from './RoleChips'
 import { openManage } from '../../utils/manageNav'
 import { CalendarDays, ChevronDown, ChevronRight, KeyRound, LogOut, ShieldCheck, User, Users } from 'lucide-react'
 import { cn, FOCUS_RING } from '../../ui'
+import { backdropDismiss } from '../../ui/backdropDismiss.js'
 
 // Kit recipes. Header-small button (svrz AdminConsole header) and the
 // anchored dropdown / sheet menu row (RESTYLE-SPEC 3.4).
@@ -232,7 +233,7 @@ export default function UserButton({ style = {}, fullWidth = false, inline = fal
             <div
               className="fixed inset-0"
               style={{ zIndex: 999 }}
-              onClick={() => setShowDropdown(false)}
+              {...backdropDismiss(() => setShowDropdown(false))}
             />
 
             {/* Dropdown menu */}

@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "update",
+  "description": "App updates: the scoretable window (loaded from the built-in server on http://localhost) may read the update status, ask for a check, change the two update settings and ask to restart into a downloaded update. Whether it may install is decided in Rust (updater.rs: no live match, no tablets, no tablet network). The updater plugin's own commands are NOT granted to any window. LAN tablets and the scoresheet windows never get these commands.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://localhost:*"]
+  },
+  "permissions": [
+    "allow-update-status",
+    "allow-update-check-now",
+    "allow-update-install-now",
+    "allow-update-set-prefs"
+  ]
+}

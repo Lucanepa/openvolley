@@ -337,6 +337,10 @@ jobs:
           name: OpenVolley Server ${{ needs.check-version.outputs.version }}
           draft: false
           prerelease: false
+          # Never "Latest": the desktop updater's fallback endpoint is
+          # releases/latest/download/latest.json, so that must stay the newest
+          # desktop-v* release (escoresheet/deploy/README.md, Public downloads).
+          make_latest: "false"
           body: |
             ## Standalone Server (Indoor + Beach Volleyball)
 

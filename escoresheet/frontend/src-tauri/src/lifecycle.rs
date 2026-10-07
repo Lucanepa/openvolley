@@ -27,6 +27,11 @@
 //!   on WM_ENDSESSION (tao), which is RunEvent::Exit, not ExitRequested.
 //!   Linux: SIGTERM / SIGINT / SIGHUP quit at once (`os_exit`), with a
 //!   watchdog in case the event loop no longer answers.
+//! - **An update is ready** (updater.rs): the tray menu gets "Restart to
+//!   update to {v}" while the update gate is open (no live match, no tablets,
+//!   no tablet network), and the status line says "Update ready". A confirmed
+//!   quit installs a downloaded update first (`app_quit`); the OS ending the
+//!   app never does (`os_exit`).
 //! - **Second launch**: tauri-plugin-single-instance hands it to this one,
 //!   which shows its window (main.rs). `--quit` (the Windows installer and
 //!   uninstaller, windows/installer-hooks.nsh, after they asked) quits it cleanly.
@@ -47,6 +52,7 @@ pub const TRAY_ID: &str = "openvolley";
 const MENU_SHOW: &str = "ov-show";
 const MENU_STATUS: &str = "ov-status";
 const MENU_QUIT: &str = "ov-quit";
+const MENU_UPDATE: &str = "ov-update";
 
 /// The command-line argument that quits the running app (main.rs).
 pub const QUIT_ARG: &str = "--quit";
@@ -135,7 +141,7 @@ impl ExitGate {
         self.tray = tray;
     }
 
-    fn page_ready(&self) -> bool {
+    pub fn page_ready(&self) -> bool {
         self.page.is_some()
     }
 
@@ -288,6 +294,10 @@ pub struct TrayLabels {
     pub quit_test_match_body: String,
     pub quit_confirm: String,
     pub keep_running: String,
+    /// "Restart to update to {{version}}" (the tray item, updater.rs)
+    pub update_ready: String,
+    /// "Update ready" (appended to the status line)
+    pub update_status: String,
 }
 
 impl Default for TrayLabels {
@@ -309,6 +319,8 @@ impl Default for TrayLabels {
             quit_test_match_body: "A test match is in progress. It is saved on this computer: start OpenVolley again and continue it from the home screen.".into(),
             quit_confirm: "Quit OpenVolley".into(),
             keep_running: "Keep running".into(),
+            update_ready: "Restart to update to {{version}}".into(),
+            update_status: "Update ready".into(),
         }
     }
 }
@@ -354,7 +366,19 @@ impl TrayLabels {
             quit_test_match_body: clean_text(&self.quit_test_match_body, &d.quit_test_match_body, MAX_TEXT),
             quit_confirm: clean_label(&self.quit_confirm, &d.quit_confirm),
             keep_running: clean_label(&self.keep_running, &d.keep_running),
+            update_ready: if self.update_ready.contains("{{version}}") {
+                clean_label(&self.update_ready, &d.update_ready)
+            } else {
+                d.update_ready
+            },
+            update_status: clean_label(&self.update_status, &d.update_status),
         }
+    }
+
+    /// The tray item for a downloaded update: "Restart to update to 2.2.1".
+    pub fn update_item(&self, version: &str) -> String {
+        let version: String = version.chars().filter(|c| !c.is_control()).take(32).collect();
+        self.update_ready.replace("{{version}}", &version)
     }
 
     /// The native "Quit OpenVolley?": title, message, confirm and cancel.
@@ -367,22 +391,28 @@ impl TrayLabels {
         (title, message, self.quit_confirm.clone(), self.keep_running.clone())
     }
 
-    /// The tray's status line: "2 tablets connected · Match in progress".
-    pub fn status_line(&self, tablets: usize, live: MatchLive) -> String {
+    /// The tray's status line: "2 tablets connected · Match in progress",
+    /// "No tablets connected · Update ready".
+    pub fn status_line(&self, tablets: usize, live: MatchLive, update_ready: bool) -> String {
         let tablets = match tablets {
             0 => self.no_tablets.clone(),
             1 => self.one_tablet.clone(),
             n => self.tablets.replace("{{count}}", &n.to_string()),
         };
-        match live {
+        let line = match live {
             MatchLive::None => tablets,
             MatchLive::Official => format!("{tablets} · {}", self.match_live),
             MatchLive::Test => format!("{tablets} · {}", self.test_match_live),
+        };
+        if update_ready {
+            format!("{line} · {}", self.update_status)
+        } else {
+            line
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum MatchLive {
     #[default]
@@ -399,6 +429,9 @@ pub struct Lifecycle {
     live: Mutex<MatchLive>,
     tablets: Mutex<usize>,
     hidden_popups: Mutex<Vec<String>>,
+    /// The version of a downloaded update the tray offers to restart into
+    /// (updater.rs sets it while the update gate is open).
+    update_offer: Mutex<Option<String>>,
 }
 
 impl Lifecycle {
@@ -409,7 +442,23 @@ impl Lifecycle {
             live: Mutex::new(MatchLive::None),
             tablets: Mutex::new(0),
             hidden_popups: Mutex::new(Vec::new()),
+            update_offer: Mutex::new(None),
         }
+    }
+
+    /// The live match the page last reported.
+    pub fn live(&self) -> MatchLive {
+        *self.live.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Tablets connected to the relay (main.rs polls it every 3 s).
+    pub fn tablets(&self) -> usize {
+        *self.tablets.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The scoretable page is loaded and its lifecycle handler answers.
+    pub fn page_ready(&self) -> bool {
+        self.gate().page_ready()
     }
 
     pub fn gate(&self) -> std::sync::MutexGuard<'_, ExitGate> {
@@ -420,10 +469,12 @@ impl Lifecycle {
         self.labels.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
+    fn update_offer(&self) -> Option<String> {
+        self.update_offer.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
     fn status_line(&self) -> String {
-        let tablets = *self.tablets.lock().unwrap_or_else(|e| e.into_inner());
-        let live = *self.live.lock().unwrap_or_else(|e| e.into_inner());
-        self.labels().status_line(tablets, live)
+        self.labels().status_line(self.tablets(), self.live(), self.update_offer().is_some())
     }
 }
 
@@ -433,11 +484,17 @@ impl Default for Lifecycle {
     }
 }
 
-/// The tray menu items whose text changes (language, status).
+/// The tray menu items whose text changes (language, status), and the
+/// update item, in the menu only while an update can be installed.
 struct TrayItems<R: Runtime> {
+    menu: Menu<R>,
     show: MenuItem<R>,
     status: MenuItem<R>,
     quit: MenuItem<R>,
+    update: MenuItem<R>,
+    /// No lock is held across a menu call: those run on the main thread,
+    /// which may itself be waiting to refresh the tray.
+    update_shown: std::sync::atomic::AtomicBool,
 }
 
 /// The page's lifecycle event (src/utils/desktopLifecycle.js listens).
@@ -698,6 +755,7 @@ fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, MENU_SHOW, &labels.show, true, None::<&str>)?;
     let status = MenuItem::with_id(app, MENU_STATUS, lifecycle.status_line(), false, None::<&str>)?;
     let quit = MenuItem::with_id(app, MENU_QUIT, &labels.quit, true, None::<&str>)?;
+    let update = MenuItem::with_id(app, MENU_UPDATE, labels.update_item(""), true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &status, &PredefinedMenuItem::separator(app)?, &quit])?;
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .tooltip(&labels.tooltip)
@@ -707,6 +765,7 @@ fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .on_menu_event(|app: &AppHandle<R>, event: MenuEvent| match event.id().as_ref() {
             MENU_SHOW => show_windows(app),
             MENU_QUIT => request_quit(app),
+            MENU_UPDATE => crate::updater::install_from_tray(app),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| match event {
@@ -718,20 +777,56 @@ fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         builder = builder.icon(icon.clone());
     }
     builder.build(app)?;
-    app.manage(TrayItems { show, status, quit });
+    app.manage(TrayItems { menu, show, status, quit, update, update_shown: std::sync::atomic::AtomicBool::new(false) });
     Ok(())
 }
 
 /// The tray's texts after a language or status change.
-fn refresh_tray<R: Runtime>(app: &AppHandle<R>) {
+pub fn refresh_tray<R: Runtime>(app: &AppHandle<R>) {
     let Some(items) = app.try_state::<TrayItems<R>>() else { return };
     let lifecycle = app.state::<Lifecycle>();
     let labels = lifecycle.labels();
     let _ = items.show.set_text(&labels.show);
     let _ = items.quit.set_text(&labels.quit);
     let _ = items.status.set_text(lifecycle.status_line());
+    // "Restart to update to 2.2.1": first in the menu, only while it can run
+    use std::sync::atomic::Ordering;
+    match lifecycle.update_offer() {
+        Some(version) => {
+            let _ = items.update.set_text(labels.update_item(&version));
+            if !items.update_shown.swap(true, Ordering::AcqRel) && items.menu.insert(&items.update, 0).is_err() {
+                items.update_shown.store(false, Ordering::Release);
+            }
+        }
+        None => {
+            if items.update_shown.swap(false, Ordering::AcqRel) && items.menu.remove(&items.update).is_err() {
+                items.update_shown.store(true, Ordering::Release);
+            }
+        }
+    }
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         let _ = tray.set_tooltip(Some(&labels.tooltip));
+    }
+}
+
+/// The tray icon out of the notification area and back (updater.rs: around
+/// the Windows installer's start, which the scorer can cancel). The icon
+/// itself, its menu and the gate's `has_tray` stay.
+pub fn set_tray_visible<R: Runtime>(app: &AppHandle<R>, visible: bool) {
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        let _ = tray.set_visible(visible);
+    }
+}
+
+/// The downloaded update the tray offers ("Restart to update to {v}"), or
+/// None while it cannot be installed (updater.rs).
+pub fn set_update_offer<R: Runtime>(app: &AppHandle<R>, version: Option<String>) {
+    let lifecycle = app.state::<Lifecycle>();
+    let mut current = lifecycle.update_offer.lock().unwrap_or_else(|e| e.into_inner());
+    if *current != version {
+        *current = version;
+        drop(current);
+        refresh_tray(app);
     }
 }
 
@@ -782,6 +877,8 @@ pub fn app_page_state<R: Runtime>(
         gate.has_tray()
     };
     refresh_tray(&app);
+    // a match started or ended: the update gate changes (updater.rs)
+    crate::updater::on_page_state(&app);
     PageInfo { tray }
 }
 
@@ -806,11 +903,18 @@ pub fn app_hide<R: Runtime>(app: AppHandle<R>) {
 }
 
 /// The scorer confirmed "Quit OpenVolley?": exit (the tablets' network stops
-/// on RunEvent::Exit).
+/// on RunEvent::Exit). A downloaded update installs first when no match is
+/// live (updater.rs; Windows: the installer takes over and the app is gone).
 #[tauri::command]
 pub fn app_quit<R: Runtime>(app: AppHandle<R>, state: State<'_, Lifecycle>) {
     state.gate().confirm_quit();
+    crate::updater::on_confirmed_quit(&app);
     app.exit(0);
+}
+
+/// An exit that is a restart (an update, updater.rs): never asked, never blocked.
+pub fn confirm_restart<R: Runtime>(app: &AppHandle<R>) {
+    app.state::<Lifecycle>().gate().confirm_quit();
 }
 
 #[cfg(test)]
@@ -1006,9 +1110,25 @@ mod tests {
     #[test]
     fn status_line() {
         let l = TrayLabels::default();
-        assert_eq!(l.status_line(0, MatchLive::None), "No tablets connected");
-        assert_eq!(l.status_line(1, MatchLive::Official), "1 tablet connected · Match in progress");
-        assert_eq!(l.status_line(3, MatchLive::Test), "3 tablets connected · Test match in progress");
+        assert_eq!(l.status_line(0, MatchLive::None, false), "No tablets connected");
+        assert_eq!(l.status_line(1, MatchLive::Official, false), "1 tablet connected · Match in progress");
+        assert_eq!(l.status_line(3, MatchLive::Test, false), "3 tablets connected · Test match in progress");
+        assert_eq!(l.status_line(0, MatchLive::None, true), "No tablets connected · Update ready");
+    }
+
+    #[test]
+    fn update_tray_item() {
+        let l = TrayLabels::default();
+        assert_eq!(l.update_item("2.2.1"), "Restart to update to 2.2.1");
+        assert_eq!(l.update_item("2.2.1\n\u{7}"), "Restart to update to 2.2.1", "no control characters");
+        let page: TrayLabels =
+            serde_json::from_str(r#"{"updateReady":"Neu starten für Update auf {{version}}","updateStatus":"Update bereit"}"#).unwrap();
+        let c = page.cleaned();
+        assert_eq!(c.update_item("2.2.1"), "Neu starten für Update auf 2.2.1");
+        assert_eq!(c.status_line(2, MatchLive::None, true), "2 tablets connected · Update bereit");
+        // a translation that lost the placeholder keeps the English one
+        let lost: TrayLabels = serde_json::from_str(r#"{"updateReady":"Neu starten"}"#).unwrap();
+        assert_eq!(lost.cleaned().update_item("2.2.1"), "Restart to update to 2.2.1");
     }
 
     #[test]

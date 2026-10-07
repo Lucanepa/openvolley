@@ -116,7 +116,15 @@ describe('relayLiveRow', () => {
     const view = liveScoreboard(row)
     expect(view).toMatchObject({ leftName: 'Away VC', rightName: 'Home VC', leftScore: 5, rightScore: 7, leftSets: 0, rightSets: 1, servingTeam: 'right' })
     expect(view.setResults).toEqual([{ set: 1, left: 21, right: 25 }])
-    expect(listedGames([row])).toHaveLength(1)
+    // listedGames drops rows that went stale: read it at the fixture's time,
+    // not the wall clock (the fixture's updated_at is a fixed date)
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-10-06T18:01:00.000Z'))
+      expect(listedGames([row])).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('keeps nothing else even when a message carries more', () => {

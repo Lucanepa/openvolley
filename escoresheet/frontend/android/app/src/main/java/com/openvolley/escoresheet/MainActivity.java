@@ -31,6 +31,9 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         // window.Capacitor plugin "OpenVolleyApp": exitApp() after the page asked
         registerPlugin(AppExitPlugin.class);
+        // window.Capacitor plugin "UpdateSource": who installed the app, open
+        // it in F-Droid (src/utils/androidUpdate.js)
+        registerPlugin(UpdateSourcePlugin.class);
         super.onCreate(savedInstanceState);
         keepWebViewInsideSystemBars();
         handleBackButton();

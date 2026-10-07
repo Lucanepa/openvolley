@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
+import { backdropDismiss } from '../../src/ui/backdropDismiss.js';
 
 interface SignatureModalProps {
   open: boolean;
@@ -126,7 +127,7 @@ export const SignatureModal: React.FC<SignatureModalProps> = ({ open, onClose, o
         justifyContent: 'center', 
         zIndex: 10000 
       }}
-      onClick={onClose}
+      {...backdropDismiss(onClose)}
     >
       <div 
         style={{ 

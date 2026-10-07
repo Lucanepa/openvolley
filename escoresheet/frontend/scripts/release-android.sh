@@ -75,6 +75,9 @@ PY
   }
   echo "reproducible: signature of $SIGNED copies onto the unsigned build"
   name=$(sed -nE 's/^ +versionName "(.*)"$/\1/p' android/app/build.gradle)
+  # --latest=false must stay: the desktop updater's fallback endpoint is
+  # releases/latest/download/latest.json, so "Latest" must always be the
+  # newest desktop-v* release (desktop.yml sets make_latest on those).
   echo "attach it to the GitHub release (F-Droid downloads it from there, Binaries in the recipe):"
   echo "  gh release create android-v$name $SIGNED --repo Lucanepa/openvolley --verify-tag --latest=false \\"
   echo "    --title \"OpenVolley Android $name\" --notes-file $(git rev-parse --show-toplevel)/fastlane/metadata/android/en-US/changelogs/$code.txt"
