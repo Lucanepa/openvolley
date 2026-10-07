@@ -87,10 +87,12 @@ export function localIdOfExtId(externalId, kind) {
 }
 
 /**
- * Queued (not yet sent) sync jobs that carry one of the given events — to be
- * dropped when the events are deleted locally, so the cloud never receives a
- * phantom row. Event ids are local Dexie ids; the jobs carry them namespaced
+ * Queued (not yet sent) INSERT jobs of the given events — to be dropped when
+ * the events are deleted locally, so the cloud never receives a phantom row.
+ * Event ids are local Dexie ids; the jobs carry them namespaced
  * (`${seedKey}:e:${id}`) or, when queued before that, bare.
+ * Only inserts: the void / edit / restore jobs the deletion itself queued
+ * (db/eventHistory) carry the event's history to the server and must stay.
  * @param {Array} queuedJobs sync_queue rows with status 'queued'
  * @param {Iterable} eventIds
  * @returns {Array} the jobs to delete
@@ -98,7 +100,7 @@ export function localIdOfExtId(externalId, kind) {
 export function syncJobsForEvents(queuedJobs, eventIds) {
   const ids = new Set([...(eventIds || [])].map(String))
   return (queuedJobs || []).filter(j => {
-    if (!j || j.resource !== 'event') return false
+    if (!j || j.resource !== 'event' || j.action !== 'insert') return false
     const localId = localIdOfExtId(j.payload?.external_id, 'event')
     return localId != null && ids.has(localId)
   })

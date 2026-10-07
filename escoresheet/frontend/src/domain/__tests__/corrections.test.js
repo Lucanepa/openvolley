@@ -82,9 +82,9 @@ describe('planDecisionChangeReversal', () => {
 describe('syncJobsForEvents', () => {
   it('matches queued event jobs by external_id, never a set job with the same id', () => {
     const jobs = [
-      { id: 1, resource: 'event', payload: { external_id: '61' } },
+      { id: 1, resource: 'event', action: 'insert', payload: { external_id: '61' } },
       { id: 2, resource: 'set', payload: { external_id: '61' } },
-      { id: 3, resource: 'event', payload: { external_id: '99' } },
+      { id: 3, resource: 'event', action: 'insert', payload: { external_id: '99' } },
       { id: 4, resource: 'match', payload: { id: 'abc' } }
     ]
     expect(syncJobsForEvents(jobs, [61, 62]).map(j => j.id)).toEqual([1])
@@ -93,14 +93,24 @@ describe('syncJobsForEvents', () => {
 
   it('matches the namespaced ids every job carries now (<seed>:e:<id>)', () => {
     const jobs = [
-      { id: 1, resource: 'event', payload: { external_id: 'match_100_aaa:e:61' } },
-      { id: 2, resource: 'event', payload: { external_id: 'match_100_aaa:e:610' } },
-      { id: 3, resource: 'set', payload: { external_id: 'match_100_aaa:s:62' } },
-      { id: 4, resource: 'event', payload: { external_id: 'match_100_aaa:s:62' } },
-      { id: 5, resource: 'event', payload: { external_id: 'match_100_aaa:e:62' } },
-      { id: 6, resource: 'event', payload: { external_id: 'coin_toss_match_100_aaa' } }
+      { id: 1, resource: 'event', action: 'insert', payload: { external_id: 'match_100_aaa:e:61' } },
+      { id: 2, resource: 'event', action: 'insert', payload: { external_id: 'match_100_aaa:e:610' } },
+      { id: 3, resource: 'set', action: 'insert', payload: { external_id: 'match_100_aaa:s:62' } },
+      { id: 4, resource: 'event', action: 'insert', payload: { external_id: 'match_100_aaa:s:62' } },
+      { id: 5, resource: 'event', action: 'insert', payload: { external_id: 'match_100_aaa:e:62' } },
+      { id: 6, resource: 'event', action: 'insert', payload: { external_id: 'coin_toss_match_100_aaa' } }
     ]
     expect(syncJobsForEvents(jobs, [61, 62]).map(j => j.id)).toEqual([1, 5])
+  })
+
+  it('never the void / edit / restore jobs the deletion itself queued (event history)', () => {
+    const jobs = [
+      { id: 1, resource: 'event', action: 'insert', payload: { external_id: 'match_100_aaa:e:61' } },
+      { id: 2, resource: 'event', action: 'void', payload: { external_id: 'match_100_aaa:e:61', rev_uid: 'u1' } },
+      { id: 3, resource: 'event', action: 'edit', payload: { external_id: 'match_100_aaa:e:61', rev_uid: 'u2' } },
+      { id: 4, resource: 'event', action: 'restore', payload: { external_id: 'match_100_aaa:e:61', rev_uid: 'u3' } }
+    ]
+    expect(syncJobsForEvents(jobs, [61]).map(j => j.id)).toEqual([1])
   })
 })
 
