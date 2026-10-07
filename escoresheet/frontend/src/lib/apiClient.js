@@ -35,7 +35,12 @@ async function safeJsonResponse(response, fallbackError = 'Request failed') {
     try {
       body = await response.json()
     } catch { /* non-JSON error body */ }
-    return { data: null, error: normalizeError(body?.error, status, fallbackError), status }
+    const error = normalizeError(body?.error, status, fallbackError)
+    // The backend's X-Request-Id (its log line of the refusal): the activity log keeps it
+    let requestId = null
+    try { requestId = response.headers?.get?.('X-Request-Id') || null } catch { /* no headers */ }
+    if (requestId && error && typeof error === 'object') error.requestId = String(requestId).slice(0, 64)
+    return { data: null, error, status }
   }
   const result = await response.json()
   if (result && typeof result === 'object' && !Array.isArray(result)) {

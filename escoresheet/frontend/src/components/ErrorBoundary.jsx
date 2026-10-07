@@ -1,5 +1,6 @@
 import React from 'react'
 import { buildReloadUrl } from '../hooks/useServiceWorker'
+import { reportAppError } from '../utils/activity/appError'
 
 /**
  * Top-level error boundary for every app entry (scorer, referee, bench,
@@ -22,6 +23,7 @@ export default class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
+    reportAppError(error?.message || String(error), error?.stack, `render${this.props.name ? `:${this.props.name}` : ''}`)
     console.error(`[ErrorBoundary${this.props.name ? `:${this.props.name}` : ''}] Render error:`, error, errorInfo?.componentStack)
   }
 

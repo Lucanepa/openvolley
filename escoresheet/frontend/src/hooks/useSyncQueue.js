@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
 import { apiFrom, apiMatchRestore, apiMatchClaim, apiPostEventRevisions, AUTH_TOKEN_CHANGE_EVENT, AUTH_TOKEN_STORAGE_KEY } from '../lib/apiClient'
 import { REVISION_OPS, revisionOfJob } from '../domain/eventRevisions'
+import { emitActivity, noteSyncPass } from '../utils/activity/bus'
 import { getCloudApiUrl } from '../utils/backendConfig'
 import { filterMatchPayload, JSONB_COLUMNS } from '../db/matchRepository'
 import { parseExtId, resolveJobExternalId, jobMatchKey, USER_MATCH_RESOURCE, userMatchRoles, userMatchJob } from '../utils/syncIds'
@@ -228,6 +229,7 @@ function summarizeError(error) {
     code: typeof error.code === 'string' ? error.code : null,
     message: String(error.message || '').slice(0, 200)
   }
+  if (typeof error.requestId === 'string') out.requestId = error.requestId
   if (error.code === 'OV_GAME_TAKEN') out.claim = summarizeClaim(error.claim)
   return out
 }
@@ -1160,6 +1162,25 @@ export async function claimMatchWithLocalPin(seedKey, { findLocal = findLocalMat
 }
 
 /**
+ * Refused, failed and dropped jobs go into the activity log (sync.error /
+ * sync.dropped, utils/activity). Never the activity uploads themselves (no
+ * feedback loop), never a payload.
+ */
+function reportJobOutcome(job, result, jobError) {
+  if (!job || job.resource === 'activity') return
+  const failed = result === PERMANENT_FAILURE || result === false || result === STOP_ERROR
+  if (!failed && result !== DROP_JOB) return
+  emitActivity(result === DROP_JOB ? 'sync.dropped' : 'sync.error', {
+    resource: job.resource,
+    action: job.action,
+    status: jobError?.status ?? null,
+    code: jobError?.code ?? null,
+    requestId: jobError?.requestId ?? null,
+    attempt: (job.attempts || 0) + 1
+  }, { level: 'warn', matchExt: jobMatchKey(job) })
+}
+
+/**
  * One pass over the queued jobs, in dependency order.
  * @returns {Promise<{ processed: number, sent: number, hasError: boolean, hasFailed: boolean, hasRetry: boolean, stopped: boolean, authRequired: boolean }>}
  */
@@ -1208,6 +1229,7 @@ export async function runQueuePass() {
       // processJob takes the match over when the write is refused for ownership
       const result = await processJob(job)
       const jobError = takeJobError(job.id)
+      reportJobOutcome(job, result, jobError)
 
       if (result === true) {
         await db.sync_queue.update(job.id, { status: 'sent', retry_count: 0, network_stops: 0, last_error: null })
@@ -1342,7 +1364,14 @@ export function resetQueueHousekeeping() {
 // App instance did the work.
 let currentSyncStatus = 'offline'
 const syncStatusListeners = new Set()
+// Activity log: only changes between these groups are an entry (a pass flips
+// syncing <-> synced all the time)
+const SYNC_STATE_GROUP = { synced: 'ok', syncing: 'ok', connecting: 'ok' }
+const syncGroup = (s) => SYNC_STATE_GROUP[s] || s
 function publishSyncStatus(status) {
+  if (syncGroup(status) !== syncGroup(currentSyncStatus)) {
+    emitActivity('sync.state', { from: currentSyncStatus, to: status }, { level: status === 'error' ? 'warn' : 'info' })
+  }
   currentSyncStatus = status
   for (const listener of syncStatusListeners) listener(status)
 }
@@ -1480,6 +1509,7 @@ export function useSyncQueue() {
       }
 
       const outcome = await runQueuePass()
+      noteSyncPass({ sent: outcome.sent, failed: outcome.hasFailed || outcome.hasError ? 1 : 0, pending: outcome.hasRetry ? 1 : 0 })
 
       if (outcome.authRequired) {
         authBlockedAt = Date.now()

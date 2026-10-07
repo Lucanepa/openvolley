@@ -4,6 +4,7 @@
  */
 
 import { logUI, throttle, debounce } from './comprehensiveLogger'
+import { reportAppError } from './activity/appError'
 
 // Event configuration with throttle settings
 const EVENT_CONFIG = {
@@ -397,6 +398,7 @@ export function uninstallGlobalEventCapture() {
  * Handle global errors
  */
 function handleGlobalError(event) {
+  reportAppError(event.error?.message || event.message, event.error?.stack, 'window.error')
   logUI('error', 'global', 'error', {
     message: event.message,
     filename: event.filename,
@@ -410,6 +412,7 @@ function handleGlobalError(event) {
  * Handle unhandled promise rejections
  */
 function handleUnhandledRejection(event) {
+  reportAppError(event.reason?.message || String(event.reason), event.reason?.stack, 'unhandledrejection')
   logUI('error', 'global', 'unhandledrejection', {
     reason: event.reason?.message || String(event.reason),
     stack: event.reason?.stack

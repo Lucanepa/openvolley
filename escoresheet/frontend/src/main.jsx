@@ -12,6 +12,8 @@ import ErrorBoundary from './components/ErrorBoundary'
 import { UiHost } from './ui/UiHost.jsx'
 import { stripCacheBustParam } from './hooks/useServiceWorker'
 import { watchFormStack } from './utils/formLayout'
+import { db } from './db/db'
+import { startActivityLog } from './utils/activity'
 
 // Clean up cache_bust query parameter (added by cache clear / update flow).
 // Keep the rest of the query: ?match=&team= attach tablets to the live match.
@@ -19,6 +21,10 @@ stripCacheBustParam()
 
 // Initialize logger to capture console output
 initLogger()
+
+// The match activity log (scoring, corrections, sync, app start/quit, errors):
+// local, synced, and a daily file in the apps (utils/activity)
+startActivityLog({ db })
 
 // Portrait data entry: <body> carries ov-form-stack while a tablet is held
 // upright, which switches on the one-field-per-row rules in tailwind.css for
