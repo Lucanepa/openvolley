@@ -193,6 +193,11 @@ landing_page() {
     fi
     [[ -n "$b_apk_file" ]] || sed_args+=(-e '/<!--beach-android-->/,/<!--\/beach-android-->/d')
   fi
+  # Flatpak parts once publish-flatpak.sh published that app next to this page.
+  local flat
+  flat="$(dirname "$out")/flatpak"
+  [[ -f "$flat/com.openvolley.escoresheet.flatpakref" ]] || sed_args+=(-e 's|<!--flatpak-->.*<!--/flatpak-->||' -e '/<!--flatpak-->/,/<!--\/flatpak-->/d')
+  [[ -f "$flat/com.openvolley.beach.flatpakref" ]] || sed_args+=(-e '/<!--beach-flatpak-->/,/<!--\/beach-flatpak-->/d')
   sed "${sed_args[@]}" \
     -e "s|@DESKTOP_VERSION@|$ver|g" -e "s|@DEB_PACKAGE@|openvolley-escoresheet|g" -e "s|@WINDOWS_URL@|$win_url|g" \
     -e "s|@APK_VERSION@|$apk_ver|g" -e "s|@APK_FILE@|$apk_file|g" \

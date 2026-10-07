@@ -8,6 +8,8 @@
 #   /fdroid/repo/   signed F-Droid repository
 #   /desktop/       desktop updater manifests: latest.json, staging.json,
 #                   latest-<version>.json (publish-pkgs.sh --desktop)
+#   /flatpak/       signed Flatpak (OSTree) repository repo/, openvolley.flatpakrepo,
+#                   <app id>.flatpakref (packaging/flatpak/publish-flatpak.sh)
 #
 # TLS ends at Cloudflare; ov-tunnel reaches this on http://ov-pkgs:80 over the
 # compose network ov-edge. No admin API, no ACME, no state on disk.
@@ -34,6 +36,8 @@
 	@release path */InRelease */Release
 	@detached path */Release.gpg
 	@script path /install.sh
+	@flatpakref path *.flatpakref
+	@flatpakrepo path *.flatpakrepo
 	header @deb Content-Type application/vnd.debian.binary-package
 	header @apk Content-Type application/vnd.android.package-archive
 	header @jar Content-Type application/java-archive
@@ -44,12 +48,17 @@
 	header @detached Content-Type application/pgp-signature
 	# Shown as text in a browser (read it before piping it to sh).
 	header @script Content-Type "text/plain; charset=utf-8"
+	# Opened by the software centre (GNOME Software, Discover) from a browser.
+	header @flatpakref Content-Type application/vnd.flatpak.ref
+	header @flatpakrepo Content-Type application/vnd.flatpak.repo
 
 	# Caching: packages are named by version and never rewritten, so they are
 	# immutable. Everything else (APT dists/, F-Droid index and entry files,
 	# keys, this page, listings) changes on every publish: 60 s, revalidate.
-	@immutable path *.deb *.apk
-	@mutable not path *.deb *.apk
+	# OSTree objects are named by the hash of their content, so
+	# immutable too; the Flatpak summary, refs and deltas are not.
+	@immutable path *.deb *.apk /flatpak/repo/objects/*
+	@mutable not path *.deb *.apk /flatpak/repo/objects/*
 	header @immutable Cache-Control "public, max-age=31536000, immutable"
 	header @mutable Cache-Control "public, max-age=60, must-revalidate"
 
