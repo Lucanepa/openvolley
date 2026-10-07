@@ -34,18 +34,31 @@
  * With a mailer (lib/mailer.js) the official gets an email for every approval
  * made with their PIN and when it is locked or disabled. The mails go out
  * after COMMIT, in the background; settle() waits for them (tests).
+ *
+ * Sports (db/012, lib/access.js, ~/ov-ops/openbeach-separation-tournaments-PLAN.md
+ * 1.3): every role check uses the sport of the MATCH. A referee slot needs
+ * `referee` on an indoor match and `beach:referee` on a beach match, the
+ * scorer slot `scorer` / `beach:scorer`, and the scoring table sending the
+ * approval one of the two of that sport (or admin). The audit entries of
+ * approvals, undos, PIN lockouts on a match and voids (db/012's trigger)
+ * carry the match's app. Beach matches still answer 409
+ * OV_APPROVAL_UNSUPPORTED (account-approval-spec D3) unless the module is
+ * created with `beachApprovals: true`; then the beach roles above apply and
+ * also make an account eligible for an approval PIN.
  */
 
 import { randomBytes } from 'node:crypto'
 import { AUDIT_ACTIONS, fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
 import { ipBucketKey } from './auth.js'
 import { describeMailError, maskEmail, pickLang } from './mailer.js'
+import { roleFor, sportOf } from './access.js'
 import {
   KEY_ID, PIN_RE, RESULT_KEY_PREFIX, deriveKeys, deviceHash, ipHash, isCurrentPinRow, isWeakPin, macPin, resultHash,
   resultKey, shortId, triplesOf, verifyPin
 } from './approvalPin.js'
 
 export const SLOTS = Object.freeze(['referee1', 'referee2', 'scorer'])
+// The plain role of each slot; approvalRoleFor() names it in the match's sport
 const SLOT_ROLE = Object.freeze({ referee1: 'referee', referee2: 'referee', scorer: 'scorer' })
 const APPROVAL_ROLES = Object.freeze(['referee', 'scorer'])
 export const PIN_LOCK_EVERY = 5
@@ -56,6 +69,17 @@ export const PIN_FAILURE_WINDOW_DAYS = 30
 // or an admin. A pending self-registered account may not, even on its own
 // test match: it could otherwise lock any official's PIN by address.
 const CALLER_ROLES = Object.freeze(['scorer', 'referee'])
+
+/** The role an official needs for `slot` on a match of `sport` ('referee' / 'beach:referee', 'scorer' / 'beach:scorer'). */
+export function approvalRoleFor (slot, sport) {
+  return SLOT_ROLE[slot] ? roleFor(sportOf(sport), SLOT_ROLE[slot]) : null
+}
+/** The roles of `sport` that may send an approval from the scoring table (admin aside). */
+export function callerRolesFor (sport) {
+  return CALLER_ROLES.map((r) => roleFor(sportOf(sport), r))
+}
+/** The match's app for audit_log.app: 'beach', or null (indoor, as every older entry). */
+const auditAppOf = (m) => (sportOf(m?.sport_type) === 'beach' ? 'beach' : null)
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const DUMMY_UUID = '00000000-0000-0000-0000-000000000000'
 
@@ -123,9 +147,12 @@ const safeMessage = (err) => String(err?.message || err).replace(/"[^"]*"/g, '"â
  * @param {object} [o.mailer]  lib/mailer.js mailer; none or disabled: no notification mails
  * @param {object} [o.logger]
  */
-export function createApprovals ({ pool, auth = null, secret = null, mailer = null, logger = console } = {}) {
+export function createApprovals ({ pool, auth = null, secret = null, mailer = null, logger = console, beachApprovals = false } = {}) {
   if (!pool || typeof pool.query !== 'function') throw new Error('createApprovals: pool is required')
   const log = logger
+  // Who may hold an approval PIN: a referee or scorer of a sport that is approved with an account
+  const pinRoles = beachApprovals ? [...APPROVAL_ROLES, ...APPROVAL_ROLES.map((r) => roleFor('beach', r))] : [...APPROVAL_ROLES]
+  const beachRefused = (m) => !beachApprovals && sportOf(m.sport_type) === 'beach'
   const keys = secret ? deriveKeys(secret) : null
   const mails = mailer && mailer.enabled && typeof mailer.send === 'function' ? mailer : null
 
@@ -177,11 +204,13 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
     }
   }
 
-  async function audit (client, { actorId = null, action, targetUserId = null, matchId = null, details = {} }) {
+  /** One audit entry; `app` 'beach' for a beach match's entry, else NULL (indoor; db/012). */
+  async function audit (client, { actorId = null, action, targetUserId = null, matchId = null, details = {}, app = null }) {
     if (!AUDIT_ACTIONS.includes(action)) throw new Error(`unknown audit action ${action}`)
     await (client || pool).query(
-      'INSERT INTO public.audit_log (actor_id, action, target_user_id, match_id, details) VALUES ($1, $2, $3, $4, $5::jsonb)',
-      [isUuid(actorId) ? actorId : null, action, isUuid(targetUserId) ? targetUserId : null, isUuid(matchId) ? matchId : null, JSON.stringify(details || {})])
+      'INSERT INTO public.audit_log (actor_id, action, target_user_id, match_id, details, app) VALUES ($1, $2, $3, $4, $5::jsonb, $6)',
+      [isUuid(actorId) ? actorId : null, action, isUuid(targetUserId) ? targetUserId : null, isUuid(matchId) ? matchId : null, JSON.stringify(details || {}),
+        app === 'beach' ? 'beach' : null])
   }
 
   // ------------------------------------------------------------------ shared reads
@@ -276,7 +305,7 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
       const current = isCurrentPinRow(p)
       return ok({
         available: true,
-        eligible: !me.unconfirmed && APPROVAL_ROLES.some((r) => me.roles.includes(r)),
+        eligible: !me.unconfirmed && pinRoles.some((r) => me.roles.includes(r)),
         set: current,
         set_at: current ? iso(p.set_at) : null,
         locked_until: current ? iso(p.locked_until) : null,
@@ -296,8 +325,8 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
       const me = await accountOf(pool, userId)
       if (!me) return NOT_SIGNED_IN()
       if (me.unconfirmed) return EMAIL_UNCONFIRMED()
-      if (!APPROVAL_ROLES.some((r) => me.roles.includes(r))) {
-        return fail(403, 'OV_APPROVAL_ROLE_REQUIRED', 'An approval PIN needs the referee or scorer role', { roles: [...APPROVAL_ROLES] })
+      if (!pinRoles.some((r) => me.roles.includes(r))) {
+        return fail(403, 'OV_APPROVAL_ROLE_REQUIRED', 'An approval PIN needs the referee or scorer role', { roles: [...pinRoles] })
       }
       const refusal = await passwordRefusal(userId, body.password)
       if (refusal) return refusal
@@ -399,7 +428,8 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
       action: 'approval_pin.locked',
       targetUserId: approver.id,
       matchId: match.id,
-      details: { failures, locked_until: iso(l?.locked_until), disabled: disable }
+      details: { failures, locked_until: iso(l?.locked_until), disabled: disable },
+      app: auditAppOf(match)
     })
     return { lockedUntil: l?.locked_until ?? null, disabled: disable }
   }
@@ -426,12 +456,13 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
     const out = await guarded('approve', () => withTx(async (client) => {
       const m = await lockMatch(client, { externalId: v.externalId })
       if (!m) return notFound()
-      if (m.sport_type === 'beach') return fail(409, 'OV_APPROVAL_UNSUPPORTED', 'Approval with an account is not available for beach matches')
+      if (beachRefused(m)) return fail(409, 'OV_APPROVAL_UNSUPPORTED', 'Approval with an account is not available for beach matches')
       if (!(await mayWrite(client, m, callerId, access))) return fail(403, 'OV_NOT_MATCH_OWNER', 'You may not change this match')
-      // 5b. The scoring table: a scorer or referee account, or an admin (not a
-      // pending account on its own test match)
-      if (!(access?.isAdmin === true || CALLER_ROLES.some((r) => rolesOf(access?.roles).includes(r)))) {
-        return fail(403, 'OV_APPROVAL_CALLER_ROLE', 'Approval with an account needs a scorer or referee account on this device', { roles: [...CALLER_ROLES] })
+      // 5b. The scoring table: a scorer or referee account of the match's
+      // sport, or an admin (not a pending account on its own test match)
+      const callerRoles = callerRolesFor(m.sport_type)
+      if (!(access?.isAdmin === true || callerRoles.some((r) => rolesOf(access?.roles).includes(r)))) {
+        return fail(403, 'OV_APPROVAL_CALLER_ROLE', 'Approval with an account needs a scorer or referee account on this device', { roles: callerRoles })
       }
       if (m.closed_at) return MATCH_CLOSED()
       if (m.status !== 'ended') return fail(409, 'OV_MATCH_NOT_ENDED', 'The match has not ended on the server', { status: m.status ?? null })
@@ -469,7 +500,8 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
 
       // 10. Eligibility, only after a correct PIN
       if (approver.unconfirmed) return EMAIL_UNCONFIRMED()
-      const role = SLOT_ROLE[v.slot]
+      // the role of the slot in the match's sport (beach:referee on a beach match)
+      const role = approvalRoleFor(v.slot, m.sport_type)
       if (!approver.roles.includes(role)) {
         return fail(403, 'OV_APPROVAL_ROLE_REQUIRED', `This account does not have the ${role} role`, { role })
       }
@@ -532,7 +564,8 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
         action: 'match.approve',
         targetUserId: approver.id,
         matchId: m.id,
-        details: { slot: v.slot, short_id: record.short_id, external_id: m.external_id, game_n: m.game_n ?? null, result_key: currentKey }
+        details: { slot: v.slot, short_id: record.short_id, external_id: m.external_id, game_n: m.game_n ?? null, result_key: currentKey },
+        app: auditAppOf(m)
       })
       // The official hears of every approval made with their PIN
       const { rows: [sender] } = await client.query(
@@ -568,7 +601,7 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
       const currentKey = await serverResultKey(pool, m.id)
       return ok({
         match: { status: m.status ?? null, closed_at: iso(m.closed_at), result_key: currentKey },
-        approvals: m.sport_type === 'beach' ? [] : visible.sort(bySlot).map((r) => recordOf(r, currentKey, callerId))
+        approvals: beachRefused(m) ? [] : visible.sort(bySlot).map((r) => recordOf(r, currentKey, callerId))
       })
     })
   }
@@ -639,15 +672,17 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
         action: 'match.approval_revoke',
         targetUserId: a.user_id,
         matchId: m.id,
-        details: { slot: a.slot, short_id: shortId(a.id), external_id: m.external_id, reason: 'undo' }
+        details: { slot: a.slot, short_id: shortId(a.id), external_id: m.external_id, reason: 'undo' },
+        app: auditAppOf(m)
       })
       return ok({ approval: recordOf(r, currentKey, callerId), already: false })
     }))
   }
 
   // ------------------------------------------------------------------ admin
-  async function adminSearch ({ q = '', includeRevoked, limit } = {}) {
+  async function adminSearch ({ q = '', includeRevoked, limit, app } = {}) {
     if (typeof q !== 'string' || q.length > 200) return invalid('q: at most 200 characters')
+    if (app != null && app !== '' && app !== 'indoor' && app !== 'beach') return invalid('app: indoor or beach')
     const inc = includeRevoked == null || includeRevoked === '' ? '0' : String(includeRevoked)
     if (!['0', '1'].includes(inc)) return invalid('include_revoked: 0 or 1')
     let lim = 50
@@ -660,6 +695,9 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
       const p = (val) => { values.push(val); return '$' + values.length }
       const where = []
       if (inc === '0') where.push('a.revoked_at IS NULL')
+      // ?app=: the approvals of one app's matches (none: both, as before)
+      if (app === 'beach') where.push("m.sport_type IS NOT DISTINCT FROM 'beach'")
+      if (app === 'indoor') where.push("m.sport_type IS DISTINCT FROM 'beach'")
       const term = normalizeApprovalQuery(q)
       if (term) {
         const any = [`m.external_id = ${p(term)}`]

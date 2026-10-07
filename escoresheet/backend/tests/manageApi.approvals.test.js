@@ -59,7 +59,10 @@ describe('manageApi: account approvals', () => {
     assert.equal((await route('GET', '/api/admin/approvals')).status, 403)
     const admin = await route('GET', '/api/admin/approvals', { access: { isAdmin: true }, query: 'q=3F9A2C1B&include_revoked=1&limit=5' })
     assert.equal(admin.body.data, 'adminSearch')
-    assert.deepEqual(calls.at(-1)[1], { q: '3F9A2C1B', includeRevoked: '1', limit: '5' })
+    assert.deepEqual(calls.at(-1)[1], { q: '3F9A2C1B', includeRevoked: '1', limit: '5', app: undefined })
+    // ?app=: one app's approvals (OpenBeach's console)
+    await route('GET', '/api/admin/approvals', { access: { isAdmin: true }, query: 'q=12&app=beach' })
+    assert.deepEqual(calls.at(-1)[1], { q: '12', includeRevoked: undefined, limit: undefined, app: 'beach' })
   })
 
   it('answers 503 OV_APPROVAL_UNAVAILABLE without lib/approvals.js', async () => {

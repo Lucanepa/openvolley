@@ -16,7 +16,8 @@
 -- 2. invite_codes.sport: a code grants its role in one sport ('beach' codes
 --    grant beach:<role>). `role` keeps its CHECK: the role stays plain.
 -- 3. audit_log.app: NULL = indoor (every existing row), 'beach' for beach
---    entries. The close entry of db/007's trigger names the match's sport.
+--    entries. The close entry of db/007's trigger and the void entry of
+--    db/011's trigger name the match's sport.
 -- 4. matches.sport_type cannot change after insert (indoor <-> beach). NULL
 --    and 'indoor' both count as indoor, as in db/007's official-game index.
 --    SQLSTATE OVS01 -> lib/pgQuery.js answers 409 OV_SPORT_LOCKED.
@@ -75,6 +76,35 @@ BEGIN
     INSERT INTO public.audit_log (actor_id, action, match_id, details, app)
     VALUES (NEW.closed_by, 'match.close', NEW.id,
             jsonb_build_object('external_id', NEW.external_id, 'game_n', NEW.game_n, 'status', NEW.status),
+            CASE WHEN NEW.sport_type IS NOT DISTINCT FROM 'beach' THEN 'beach' END);
+  END IF;
+  RETURN NULL;
+END
+$$;
+
+-- db/011's void entry (match.approval_void), now with the match's app too.
+-- The same function as in 011 but for the app column; 011 runs first (and
+-- is in production), so its trigger already points at this function.
+CREATE OR REPLACE FUNCTION public.ov_matches_void_approvals()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  actor_text text := coalesce(current_setting('ov.user_id', true), '');
+  actor uuid := CASE WHEN actor_text ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN actor_text::uuid END;
+  reopened boolean := (OLD.closed_at IS NOT NULL AND NEW.closed_at IS NULL)
+                      OR (NEW.status IS DISTINCT FROM OLD.status AND NEW.status NOT IN ('ended', 'approved', 'final'));
+  why text := CASE WHEN reopened THEN 'match_reopened' ELSE 'result_changed' END;
+  n integer;
+BEGIN
+  UPDATE public.match_approvals
+     SET revoked_at = now(), revoked_reason = why, revoked_by = actor
+   WHERE match_id = NEW.id AND revoked_at IS NULL;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n > 0 THEN
+    INSERT INTO public.audit_log (actor_id, action, match_id, details, app)
+    VALUES (actor, 'match.approval_void', NEW.id,
+            jsonb_build_object('count', n, 'reason', why, 'external_id', NEW.external_id, 'game_n', NEW.game_n),
             CASE WHEN NEW.sport_type IS NOT DISTINCT FROM 'beach' THEN 'beach' END);
   END IF;
   RETURN NULL;

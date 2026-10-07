@@ -31,6 +31,12 @@ Other design decisions made in this spec. Each one is flagged so the owner can o
 - **D1** PIN storage uses HMAC-SHA256 with a key derived from `OV_PIN_SECRET`, plus a per-row salt. bcrypt is not used (justified in 1.1). Without `OV_PIN_SECRET` the feature is off (503) and never falls back to plaintext.
 - **D2** The scorer slot needs the literal `scorer` role in `profiles.roles`. `admin` alone does not qualify, so an admin who scores adds the scorer role to their own account. The approver must also be the match's creator or an editor of it.
 - **D3** Approvals are indoor only for now. A beach match answers 409 `OV_APPROVAL_UNSUPPORTED`.
+  - Every role check already uses the **sport of the match** (OpenBeach separation, db/012, plan 1.3):
+    - a referee slot needs `referee` on an indoor match and `beach:referee` on a beach match;
+    - the scorer slot needs `scorer` or `beach:scorer`;
+    - the scoring table that sends the approval needs a scorer or referee role of that sport, or `admin`.
+  - The audit entries of approvals, undos, PIN lockouts on a match and voids carry the match's app (`audit_log.app`).
+  - Lifting D3 means creating `lib/approvals.js` with `beachApprovals: true` in `server.js`. Then the beach roles also make an account eligible for an approval PIN. The tests already run that mode.
 - **D4** An approval is bound to the result it approved. A reopen voids it, and so does any change of the finished sets. The official approves again.
 - **D5** The official is identified by **email** typed on the scoring device. There is no server-side list of referee accounts to pick from, because that list would expose every referee's address to every scorer.
 - **D6** Test matches may be approved too, so officials can practise. A test match never closes, so its approvals stay undoable.

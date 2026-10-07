@@ -27,11 +27,11 @@ The server checks every role against the **sport of the row** being written: the
 | `auth.app_memberships(user_id, app, joined_at, joined_via)` | PK `(user_id, app)`, `app IN ('indoor','beach')`, `joined_via IN ('backfill','signup','join','invite','admin')`, cascades with the account. Not on the `/api/db` allowlist. |
 | Backfill | Every account without any membership gets `indoor` (`joined_via = 'backfill'`, `joined_at` = account creation). Nobody gets `beach`. A re-run never adds `indoor` to an account that has only `beach`. |
 | `invite_codes.sport` | `NOT NULL DEFAULT 'indoor'`, CHECK `indoor|beach`. `role` keeps its plain CHECK. |
-| `audit_log.app` | Nullable, CHECK `NULL|indoor|beach`. `NULL` = indoor (every existing row). Index `(app, id DESC)`. The close entry of db/007's trigger now names a beach match's app. |
+| `audit_log.app` | Nullable, CHECK `NULL|indoor|beach`. `NULL` = indoor (every existing row). Index `(app, id DESC)`. The close entry of db/007's trigger and the void entry of db/011's trigger (`match.approval_void`) now name a beach match's app. |
 | `matches_sport_lock` trigger | `BEFORE UPDATE OF sport_type`: beach ↔ not-beach is refused with SQLSTATE `OVS01` (pgQuery answers 409 `OV_SPORT_LOCKED`). `NULL` ↔ `indoor` is not a change. No bypass, also not for the admin. |
 | Grants | `ov_app`: `SELECT, INSERT, DELETE` on `auth.app_memberships` (in 012 and in `roles.sql`). |
 
-Idempotent, one transaction, safe under the running 2.2.0 backend. Run after 011 (feat/account-approval) if it is there; nothing depends on it.
+Idempotent, one transaction, safe under the running backend. Run after 011 (in production since 2.3.0): 012 replaces 011's void function to add the app column.
 
 **Membership rules** (`lib/accounts.js`): a member of an app has a membership row of it, or a role of it, or is the global admin. An account with **no membership row at all** counts as indoor: a sign-up without `app` (every OpenVolley client) records none, and an older backend may create accounts after 012 ran. Since S2 a sign-up with `app` records that app (`joined_via = 'signup'`). Adding the first membership of another app to such an account writes its `indoor` row first, so joining OpenBeach never ends an indoor membership.
 
@@ -43,6 +43,7 @@ Idempotent, one transaction, safe under the running 2.2.0 backend. Run after 011
 | Official-game friendly checks (`/api/db`, `/api/match/restore`) | Only rows of the sports the caller can score in, so a beach-only scorer never sees who holds an indoor game (pgQuery's 403 comes first). |
 | `POST /api/storage/upload` bucket `scoresheets` | First path segment `beach` (NFKC, case-insensitive) needs beach scoring rights, every other path indoor. |
 | `POST /api/match/official-check` | The role of `body.sport_type` (absent = indoor). |
+| Account approvals (`lib/approvals.js`, db/011) | The role of the match's sport: a referee slot needs `referee` (indoor) or `beach:referee` (beach), the scorer slot `scorer` or `beach:scorer`, the scoring table a scorer or referee role of that sport (or admin). Audit entries carry the match's app; `GET /api/admin/approvals?app=` filters. Beach matches stay 409 `OV_APPROVAL_UNSUPPORTED` (approval spec D3) until `beachApprovals: true`. |
 | `/api/saved-teams*` | Family check: the right in **some** sport. Writes: `canManageTeams` of the competition's sport (body `sport` for a new competition, the competition of `competition_id` for a new team, the stored row otherwise). An unknown id stays 404. `GET ?sport=beach` needs beach read; `?sport=all` returns the sports the caller may read (the indoor console asks for `all`). |
 | Invites | A beach code grants `beach:<role>` and the beach membership. |
 | `/api/admin/*` | Global admin only (D2). |

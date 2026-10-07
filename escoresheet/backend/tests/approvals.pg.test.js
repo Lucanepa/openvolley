@@ -11,7 +11,7 @@ import { createMatchRestore } from '../lib/matchRestore.js'
 import { createAccessResolver } from '../lib/access.js'
 import { createAccounts } from '../lib/accounts.js'
 import { createAuth } from '../lib/auth.js'
-import { createApprovals } from '../lib/approvals.js'
+import { createApprovals, approvalRoleFor, callerRolesFor, PIN_LOCK_EVERY } from '../lib/approvals.js'
 import { macPin, deriveKeys } from '../lib/approvalPin.js'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -765,6 +765,153 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       }
       const byGame = await approvals.adminSearch({ q: `#${m.gameN}` })
       assert.deepEqual(byGame.body.data.approvals.map((x) => x.id), [a.id])
+    })
+  })
+
+  // ~/ov-ops/openbeach-separation-tournaments-PLAN.md 1.3: the role of the
+  // MATCH's sport. Beach approvals stay off by default (spec D3); a module
+  // created with beachApprovals: true takes the beach roles.
+  describe('the role of the match\'s sport (db/012)', () => {
+    let beachApp
+    const B = {}
+    const PIN = { bOwner: '640281', bRef1: '307519', bRef2: '851046', bRef3: '492730', both: '186405' }
+    const beachUser = async (name, roles, opts = {}) => {
+      const u = await user(name, roles, opts)
+      const r = await beachApp.setPin({ userId: u.id, body: { password: PW, pin: PIN[name] } })
+      assert.equal(r.status, 200, `${name}: ${JSON.stringify(r.body)}`)
+      u.pin = PIN[name]
+      allPins.add(PIN[name])
+      B[name] = u
+      return u
+    }
+    const beachApprove = async (caller, m, slot, official, { pin } = {}) => beachApp.approve({
+      callerId: U[caller].id,
+      access: await access.get(U[caller].id),
+      body: { external_id: m.ext, slot, email: U[official].email, pin: pin ?? U[official].pin, result: { sets: SETS } },
+      ip: '203.0.113.21'
+    })
+    const appsOf = async (action, matchId) => (await auditOf(action, matchId)).map((r) => r.app)
+
+    before(async () => {
+      beachApp = createApprovals({ pool, auth, secret: SECRET, logger, beachApprovals: true })
+      await beachUser('bOwner', ['beach:scorer'], { first: 'Bea', last: 'Strand' })
+      await beachUser('bRef1', ['beach:referee'], { first: 'Rita', last: 'Sand' })
+      await beachUser('bRef2', ['beach:referee'], { first: 'Rolf', last: 'Sand' })
+      await beachUser('bRef3', ['beach:referee'], { first: 'Rosa', last: 'Sand' })
+      await beachUser('both', ['referee', 'beach:referee'], { first: 'Bo', last: 'Beide' })
+    })
+
+    it('helpers: the slot role and the scoring-table roles of each sport', () => {
+      assert.equal(approvalRoleFor('referee1', 'indoor'), 'referee')
+      assert.equal(approvalRoleFor('referee2', null), 'referee')
+      assert.equal(approvalRoleFor('referee1', 'beach'), 'beach:referee')
+      assert.equal(approvalRoleFor('referee2', 'beach'), 'beach:referee')
+      assert.equal(approvalRoleFor('scorer', 'indoor'), 'scorer')
+      assert.equal(approvalRoleFor('scorer', 'beach'), 'beach:scorer')
+      assert.equal(approvalRoleFor('assistant', 'beach'), null)
+      assert.deepEqual(callerRolesFor('indoor'), ['scorer', 'referee'])
+      assert.deepEqual(callerRolesFor('beach'), ['beach:scorer', 'beach:referee'])
+    })
+
+    it('by default (D3) beach roles hold no approval PIN and beach matches stay refused', async () => {
+      const s = await approvals.getPinStatus({ userId: B.bRef1.id })
+      assert.equal(s.body.data.eligible, false)
+      const r = await approvals.setPin({ userId: B.bRef1.id, body: { password: PW, pin: '529163' } })
+      expectErr(r, 403, 'OV_APPROVAL_ROLE_REQUIRED')
+      assert.deepEqual(r.body.error.details, { roles: ['referee', 'scorer'] })
+      assert.equal((await beachApp.getPinStatus({ userId: B.bRef1.id })).body.data.eligible, true)
+      const m = await newMatch('bOwner', { sport: 'beach' })
+      expectErr(await approveAs('bOwner', m, 'referee1', 'bRef1'), 409, 'OV_APPROVAL_UNSUPPORTED')
+      assert.equal((await beachApprove('bOwner', m, 'referee1', 'bRef1')).status, 200)
+      assert.deepEqual((await listAs('bOwner', m)).body.data.approvals, [], 'the default module lists none')
+      const l = await beachApp.listForMatch({ callerId: B.bOwner.id, access: await access.get(B.bOwner.id), externalId: m.ext })
+      assert.deepEqual(l.body.data.approvals.map((a) => a.slot), ['referee1'])
+    })
+
+    it('an indoor match: referee slots need referee, beach:referee is not enough', async () => {
+      const m = await newMatch('owner')
+      for (const app of [approvals, beachApp]) {
+        const r = await app.approve({ callerId: U.owner.id, access: await access.get(U.owner.id), body: { external_id: m.ext, slot: 'referee1', email: B.bRef1.email, pin: B.bRef1.pin, result: { sets: SETS } }, ip: '203.0.113.22' })
+        expectErr(r, 403, 'OV_APPROVAL_ROLE_REQUIRED')
+        assert.deepEqual(r.body.error.details, { role: 'referee' })
+      }
+      // an account with both roles approves either sport
+      assert.equal((await beachApprove('owner', m, 'referee1', 'both')).status, 200)
+    })
+
+    it('an indoor match: the scoring table needs an indoor scorer or referee, beach:scorer is not enough', async () => {
+      const m = await newMatch('bOwner')
+      const r = await beachApprove('bOwner', m, 'referee1', 'ref1')
+      expectErr(r, 403, 'OV_APPROVAL_CALLER_ROLE')
+      assert.deepEqual(r.body.error.details, { roles: ['scorer', 'referee'] })
+    })
+
+    it('a beach match: referee slots need beach:referee, the scorer slot beach:scorer, the scoring table a beach role', async () => {
+      const m = await newMatch('bOwner', { sport: 'beach' })
+      // the indoor referee role is not enough on a beach match
+      const indoorRef = await beachApprove('bOwner', m, 'referee1', 'ref1')
+      expectErr(indoorRef, 403, 'OV_APPROVAL_ROLE_REQUIRED')
+      assert.deepEqual(indoorRef.body.error.details, { role: 'beach:referee' })
+      // an indoor-only scorer as the scoring table of a beach match
+      await pool.query('INSERT INTO public.match_editors (match_id, user_id) VALUES ($1, $2)', [m.id, U.owner.id])
+      const indoorTable = await beachApprove('owner', m, 'referee1', 'bRef1')
+      expectErr(indoorTable, 403, 'OV_APPROVAL_CALLER_ROLE')
+      assert.deepEqual(indoorTable.body.error.details, { roles: ['beach:scorer', 'beach:referee'] })
+      // the scorer slot: the indoor scorer (an editor) lacks beach:scorer
+      const indoorScorer = await beachApprove('bOwner', m, 'scorer', 'owner')
+      expectErr(indoorScorer, 403, 'OV_APPROVAL_ROLE_REQUIRED')
+      assert.deepEqual(indoorScorer.body.error.details, { role: 'beach:scorer' })
+      // the beach officials
+      assert.equal((await beachApprove('bOwner', m, 'referee1', 'bRef1')).status, 200)
+      assert.equal((await beachApprove('bOwner', m, 'referee2', 'bRef2')).status, 200)
+      const sc = await beachApprove('bOwner', m, 'scorer', 'bOwner')
+      assert.equal(sc.status, 200, JSON.stringify(sc.body))
+    })
+
+    it('audit entries carry the match\'s app: approve, undo, PIN lockout and void', async () => {
+      const indoor = await newMatch('owner')
+      assert.equal((await approveAs('owner', indoor, 'referee1', 'ref2')).status, 200)
+      const beach = await newMatch('bOwner', { sport: 'beach' })
+      const a = await beachApprove('bOwner', beach, 'referee1', 'bRef1')
+      assert.equal(a.status, 200)
+      assert.equal((await beachApprove('bOwner', beach, 'referee2', 'bRef2')).status, 200)
+      assert.deepEqual(await appsOf('match.approve', indoor.id), [null])
+      assert.deepEqual(await appsOf('match.approve', beach.id), ['beach', 'beach'])
+      // undo
+      const u = await beachApp.revoke({ callerId: B.bOwner.id, access: await access.get(B.bOwner.id), id: a.body.data.approval.id })
+      assert.equal(u.status, 200, JSON.stringify(u.body))
+      assert.deepEqual(await appsOf('match.approval_revoke', beach.id), ['beach'])
+      // the PIN lockout on a beach match
+      for (let i = 0; i < PIN_LOCK_EVERY; i++) expectErr(await beachApprove('bOwner', beach, 'referee1', 'bRef3', { pin: '100000' }), 403, 'OV_APPROVAL_PIN_INVALID')
+      assert.deepEqual(await appsOf('approval_pin.locked', beach.id), ['beach'])
+      // the void of db/011's trigger (db/012 names the app): admin close and reopen
+      await closeMatch(beach)
+      const re = await accounts.reopenMatch({ actorId: U.admin.id, matchId: beach.id, body: { reason: 'Wrong pair' } })
+      assert.equal(re.status, 200, JSON.stringify(re.body))
+      const [v] = await auditOf('match.approval_void', beach.id)
+      assert.equal(v.app, 'beach')
+      assert.deepEqual(v.details, { count: 1, reason: 'match_reopened', external_id: beach.ext, game_n: beach.gameN })
+      await closeMatch(indoor)
+      assert.equal((await accounts.reopenMatch({ actorId: U.admin.id, matchId: indoor.id, body: { reason: 'Wrong score' } })).status, 200)
+      assert.deepEqual(await appsOf('match.approval_void', indoor.id), [null])
+      // the account's own PIN entries stay app NULL (one PIN for the account)
+      const pinSet = (await auditOf('approval_pin.set')).filter((r) => r.target_user_id === B.bRef1.id)
+      assert.deepEqual(pinSet.map((r) => r.app), [null])
+    })
+
+    it('the admin search takes ?app=', async () => {
+      const indoor = await newMatch('owner')
+      const ai = (await approveAs('owner', indoor, 'referee1', 'ref3')).body.data.approval
+      const beach = await newMatch('bOwner', { sport: 'beach' })
+      const ab = (await beachApprove('bOwner', beach, 'referee1', 'bRef2')).body.data.approval
+      const ids = async (app) => (await approvals.adminSearch({ app, limit: 200 })).body.data.approvals.map((x) => x.id)
+      assert.ok((await ids('beach')).includes(ab.id))
+      assert.ok(!(await ids('beach')).includes(ai.id))
+      assert.ok((await ids('indoor')).includes(ai.id))
+      assert.ok(!(await ids('indoor')).includes(ab.id))
+      const all = await ids(undefined)
+      assert.ok(all.includes(ai.id) && all.includes(ab.id))
+      expectErr(await approvals.adminSearch({ app: 'snow' }), 400, 'OV_INVALID_REQUEST')
     })
   })
 })
