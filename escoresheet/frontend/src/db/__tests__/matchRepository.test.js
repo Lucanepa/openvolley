@@ -53,3 +53,29 @@ describe('matchRepository', () => {
     })
   })
 })
+
+describe('queueMatchUpdate', () => {
+  const fakeDb = () => {
+    const rows = []
+    return { rows, sync_queue: { add: async (row) => { rows.push(row); return rows.length } } }
+  }
+
+  it('queues a match update with the seed key as id, cloud columns only', async () => {
+    const { queueMatchUpdate } = await import('../matchRepository')
+    const database = fakeDb()
+    const id = await queueMatchUpdate(database, 'match_1_a', { manual_changes: [{ field: 'x' }], manualChanges: [], bogus: 1 })
+    expect(id).toBe(1)
+    expect(database.rows[0]).toMatchObject({ resource: 'match', action: 'update', status: 'queued', payload: { id: 'match_1_a', manual_changes: [{ field: 'x' }] } })
+    expect(database.rows[0].payload).not.toHaveProperty('bogus')
+    expect(database.rows[0].payload).not.toHaveProperty('manualChanges')
+  })
+
+  it('queues nothing for a test match, without a seed key or without cloud columns', async () => {
+    const { queueMatchUpdate } = await import('../matchRepository')
+    const database = fakeDb()
+    expect(await queueMatchUpdate(database, 'match_1_a', { manual_changes: [] }, { test: true })).toBeNull()
+    expect(await queueMatchUpdate(database, null, { manual_changes: [] })).toBeNull()
+    expect(await queueMatchUpdate(database, 'match_1_a', { nope: 1 })).toBeNull()
+    expect(database.rows).toHaveLength(0)
+  })
+})

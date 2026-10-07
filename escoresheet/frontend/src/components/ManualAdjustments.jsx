@@ -11,7 +11,7 @@ import { mergeOfficialsEdits } from '../domain/officials'
 import { changedSets, approvedSheetChanged } from '../domain/accountApproval'
 import { setScoreSyncJobs } from '../domain/corrections'
 import { clearedPostMatchSignatures } from '../domain/matchEnd'
-import { apiFrom } from '../lib/apiClient'
+import { queueMatchUpdate } from '../db/matchRepository'
 import { approvalsApi } from '../lib/accountApi'
 import { X } from 'lucide-react'
 import { Button } from '../ui/Button.jsx'
@@ -785,40 +785,34 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         color: editedAwayTeam.color
       } : null
 
-      // Update match in Supabase
-      const { error: matchError } = await apiFrom('matches')
-        .update({
-          match_info: {
-            hall: editedMatch.hall || '',
-            city: editedMatch.city || '',
-            league: editedMatch.league || '',
-            championship_type: editedMatch.championshipType || ''
-          },
-          set_results: setResults,
-          players_home: playersHome,
-          players_away: playersAway,
-          home_team: homeTeamData,
-          away_team: awayTeamData,
-          officials: mergeOfficialsEdits(data?.match?.officials, editedOfficials, { snakeCase: true }),
-          ...(editedMatch._designationSwapped ? {
-            coin_toss: {
-              team_a: editedMatch.coinTossTeamA,
-              team_b: editedMatch.coinTossTeamB,
-              serve_a: editedMatch.coinTossServeA,
-              confirmed: true,
-              first_serve: editedMatch.firstServe || (editedMatch.coinTossServeA ? editedMatch.coinTossTeamA : editedMatch.coinTossTeamB)
-            }
-          } : {}),
-          manual_changes: [...(editedMatch.manualChanges || []), ...changes]
-        })
-        .eq('external_id', editedMatch.seed_key)
+      // Update the cloud match through the sync queue: kept while offline and
+      // retried (a direct write was lost when the device was offline)
+      await queueMatchUpdate(db, editedMatch.seed_key, {
+        match_info: {
+          hall: editedMatch.hall || '',
+          city: editedMatch.city || '',
+          league: editedMatch.league || '',
+          championship_type: editedMatch.championshipType || ''
+        },
+        set_results: setResults,
+        players_home: playersHome,
+        players_away: playersAway,
+        home_team: homeTeamData,
+        away_team: awayTeamData,
+        officials: mergeOfficialsEdits(data?.match?.officials, editedOfficials, { snakeCase: true }),
+        ...(editedMatch._designationSwapped ? {
+          coin_toss: {
+            team_a: editedMatch.coinTossTeamA,
+            team_b: editedMatch.coinTossTeamB,
+            serve_a: editedMatch.coinTossServeA,
+            confirmed: true,
+            first_serve: editedMatch.firstServe || (editedMatch.coinTossServeA ? editedMatch.coinTossTeamA : editedMatch.coinTossTeamB)
+          }
+        } : {}),
+        manual_changes: [...(editedMatch.manualChanges || []), ...changes]
+      }, { test: data?.match?.test === true || editedMatch.test === true })
 
-      if (matchError) {
-        console.error('Supabase match update error:', matchError)
-        throw matchError
-      }
-
-      console.log('[ManualAdjustments] Supabase sync completed')
+      console.log('[ManualAdjustments] Cloud update queued')
     } catch (error) {
       console.error('Supabase sync error:', error)
     }
