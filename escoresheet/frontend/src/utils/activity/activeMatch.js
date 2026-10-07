@@ -18,9 +18,16 @@ export const gameNumberOf = (m) => {
 /** @param {object|null} match local match row (or null: no match open) */
 export function setActiveMatch(match) {
   const next = match && match.id != null
-    ? { id: match.id, gameN: gameNumberOf(match), seedKey: match.seed_key || null, test: match.test === true }
+    ? {
+        id: match.id,
+        gameN: gameNumberOf(match),
+        seedKey: match.seed_key || null,
+        test: match.test === true,
+        homeTeamId: match.homeTeamId ?? null,
+        awayTeamId: match.awayTeamId ?? null
+      }
     : null
-  const same = next && active && next.id === active.id && next.gameN === active.gameN && next.seedKey === active.seedKey && next.test === active.test
+  const same = next && active && ['id', 'gameN', 'seedKey', 'test', 'homeTeamId', 'awayTeamId'].every(k => next[k] === active[k])
   if (same || (!next && !active)) return
   active = next
   try {

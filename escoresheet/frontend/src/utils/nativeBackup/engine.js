@@ -33,6 +33,7 @@ import {
   planMatchRotation
 } from './rotation'
 import { redactMatch, stableMatch, SECRETS_REMOVED } from './redact'
+import { emitActivity } from '../activity/bus'
 
 const REMOVE_CHUNK = 20
 
@@ -229,6 +230,7 @@ export function createNativeBackupEngine({
         }
       } catch (e) {
         log.error?.('[NativeBackup] backup failed:', e)
+        emitActivity('backup.error', { message: e?.message || String(e) }, { level: 'error', matchId })
         setStatus({ error: e?.message || String(e) })
       }
     }
