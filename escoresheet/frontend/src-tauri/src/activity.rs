@@ -127,6 +127,22 @@ pub fn prune(root: &Path, keep_files: usize, keep_bytes: u64) -> Vec<String> {
     removed
 }
 
+/// The log folder without an app handle (the log plugin is built before the
+/// app): the platform data folder as Tauri's `data_dir()` resolves it.
+pub fn default_log_root() -> Option<PathBuf> {
+    if let Some(dir) = std::env::var_os("OPENVOLLEY_LOG_DIR").filter(|d| !d.is_empty()) {
+        return Some(PathBuf::from(dir));
+    }
+    let env_dir = |k: &str| std::env::var_os(k).filter(|d| !d.is_empty()).map(PathBuf::from);
+    #[cfg(target_os = "windows")]
+    let data = env_dir("APPDATA");
+    #[cfg(target_os = "macos")]
+    let data = env_dir("HOME").map(|h| h.join("Library").join("Application Support"));
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let data = env_dir("XDG_DATA_HOME").or_else(|| env_dir("HOME").map(|h| h.join(".local").join("share")));
+    data.map(|d| d.join("OpenVolley").join("logs"))
+}
+
 pub fn log_root<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     if let Some(dir) = std::env::var_os("OPENVOLLEY_LOG_DIR").filter(|d| !d.is_empty()) {
         return Ok(PathBuf::from(dir));
@@ -148,7 +164,7 @@ pub async fn activity_append<R: Runtime>(app: AppHandle<R>, lines: Vec<String>) 
         let n = append_lines(&root, &lines, &today())?;
         let removed = prune(&root, KEEP_FILES, KEEP_BYTES);
         if !removed.is_empty() {
-            eprintln!("[activity] removed {} old log file(s)", removed.len());
+            log::info!("[activity] removed {} old log file(s)", removed.len());
         }
         Ok(n)
     })

@@ -595,7 +595,7 @@ pub fn request_quit<R: Runtime>(app: &AppHandle<R>) {
             std::thread::spawn(move || {
                 std::thread::sleep(ACK_TIMEOUT);
                 if app.state::<Lifecycle>().gate().quit_not_taken(n) {
-                    eprintln!("[app] the page did not take the quit request: asking natively");
+                    log::warn!("[app] the page did not take the quit request: asking natively");
                     ask_native(&app);
                 }
             });
@@ -634,7 +634,7 @@ pub fn on_exit_requested<R: Runtime>(app: &AppHandle<R>) -> bool {
     let open = main_window(app).is_some();
     let decision = app.state::<Lifecycle>().gate().exit_requested(open);
     if decision == ExitDecision::Prevent {
-        eprintln!("[app] exit without confirmation: asking the scorer");
+        log::info!("[app] exit without confirmation: asking the scorer");
         let app = app.clone();
         // not from inside the event loop's own callback
         let _ = std::thread::spawn(move || request_quit(&app));
@@ -645,7 +645,7 @@ pub fn on_exit_requested<R: Runtime>(app: &AppHandle<R>) -> bool {
 
 /// The OS ends the app (or the installer, after it asked): never blocked.
 pub fn os_exit<R: Runtime>(app: &AppHandle<R>, why: &str) {
-    eprintln!("[app] {why}: quitting");
+    log::info!("[app] {why}: quitting");
     app.state::<Lifecycle>().gate().os_exit();
     app.exit(0);
 }
@@ -662,7 +662,7 @@ pub fn quit_on_signals<R: Runtime>(app: &AppHandle<R>) {
         let (Ok(mut term), Ok(mut int), Ok(mut hup)) =
             (signal(SignalKind::terminate()), signal(SignalKind::interrupt()), signal(SignalKind::hangup()))
         else {
-            eprintln!("[app] cannot listen for termination signals");
+            log::warn!("[app] cannot listen for termination signals");
             return;
         };
         let name = tokio::select! {
@@ -672,7 +672,7 @@ pub fn quit_on_signals<R: Runtime>(app: &AppHandle<R>) {
         };
         std::thread::spawn(|| {
             std::thread::sleep(std::time::Duration::from_secs(10));
-            eprintln!("[app] did not exit within 10 s: ending now");
+            log::warn!("[app] did not exit within 10 s: ending now");
             std::process::exit(0);
         });
         os_exit(&app, name);
@@ -734,7 +734,7 @@ pub fn tray_supported() -> Result<(), String> {
 /// minimises.
 pub fn create_tray<R: Runtime>(app: &AppHandle<R>) -> bool {
     if let Err(why) = tray_supported() {
-        eprintln!("[tray] no tray icon: {why}. Closing the window minimises it instead.");
+        log::warn!("[tray] no tray icon: {why}. Closing the window minimises it instead.");
         return false;
     }
     match build_tray(app) {
@@ -743,7 +743,7 @@ pub fn create_tray<R: Runtime>(app: &AppHandle<R>) -> bool {
             true
         }
         Err(e) => {
-            eprintln!("[tray] cannot create the tray icon: {e}. Closing the window minimises it instead.");
+            log::warn!("[tray] cannot create the tray icon: {e}. Closing the window minimises it instead.");
             false
         }
     }
