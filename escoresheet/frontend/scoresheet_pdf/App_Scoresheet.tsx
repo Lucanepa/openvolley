@@ -1911,9 +1911,14 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                 </div>
                 {/* Side banner: the product name as plain text (the logo is only at the top left) */}
                 <div
-                  className="flex items-center justify-center text-xl border border-black bg-gray-300"
+                  className="flex items-center justify-center border border-black bg-gray-300 shrink-0"
                   style={{
-                    width: '97px',
+                    // as tall as the set boxes: a taller banner stretched the SET columns
+                    // below the grids (audit 2026-10); 93px keeps the row inside the sheet
+                    // now that the set boxes are 150 mm inside their borders
+                    width: '93px',
+                    height: 'calc(5.3cm + 2px)',
+                    fontSize: '17px',
                     writingMode: 'vertical-lr',
                     transform: 'rotate(180deg)',
                     textAlign: 'center',
@@ -1977,9 +1982,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                   </div>
                 </div>
                 <div
-                  className="flex items-center justify-center text-xl"
+                  className="flex items-center justify-center text-xl shrink-0"
                   style={{
-                    width: '97px',
+                    width: '93px',
                     writingMode: 'vertical-lr',
                     textAlign: 'center',
                     whiteSpace: 'nowrap'
@@ -1992,8 +1997,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                     alt=""
                     data-testid="sheet-ball"
                     style={{
-                      width: '97px',
-                      height: '97px',
+                      width: '93px',
+                      height: '93px',
                       objectFit: 'contain',
                       margin: '0 auto',
                       display: 'block'
