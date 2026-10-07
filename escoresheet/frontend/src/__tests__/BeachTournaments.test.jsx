@@ -23,6 +23,7 @@ const api = vi.hoisted(() => ({
   generate: vi.fn(),
   putSeeds: vi.fn(),
   enterResult: vi.fn(),
+  updateMatch: vi.fn(),
   schedule: vi.fn(),
   ranking: vi.fn(),
   addEntry: vi.fn()
@@ -140,7 +141,31 @@ describe('Tournaments tab', () => {
     fireEvent.change(screen.getByTestId('result-sets'), { target: { value: '15:21 21:19 12:15' } })
     expect(save).toBeEnabled()
     fireEvent.click(save)
-    await waitFor(() => expect(api.enterResult).toHaveBeenCalledWith('m1', { winner: 2, result: 'played', sets: [[15, 21], [21, 19], [12, 15]] }))
+    // with the result this screen showed (none), so a result entered elsewhere meanwhile is not overwritten
+    await waitFor(() => expect(api.enterResult).toHaveBeenCalledWith('m1', {
+      winner: 2, result: 'played', sets: [[15, 21], [21, 19], [12, 15]], expect: { winner_entry_id: null, result: null, sets: null }
+    }))
+  })
+
+  it('a result changed elsewhere meanwhile: no overwrite, the dialog closes and the draw reloads', async () => {
+    api.get.mockResolvedValue(ok(bundle({
+      draws: [{ ...DRAW, status: 'playing' }],
+      matches: [{
+        id: 'm1', draw_id: 'd1', game_n: 1, code: 'W1', phase: 'winners', round: 1, position: 1, wave: 1, source1: 'seed:1', source2: 'seed:4',
+        entry1_id: 'e1', entry2_id: 'e4', status: 'finished', match_id: null, sets: [[21, 10], [21, 12]], result: 'played', winner_entry_id: 'e1'
+      }]
+    })))
+    api.enterResult.mockResolvedValue({ data: null, error: { code: 'OV_RESULT_CHANGED', message: 'changed', status: 409 }, status: 409 })
+    await openDraw()
+    fireEvent.click(await screen.findByTestId('result-W1'))
+    fireEvent.change(screen.getByTestId('result-sets'), { target: { value: '10:21 12:21' } })
+    const loads = api.get.mock.calls.length
+    fireEvent.click(screen.getByTestId('result-save'))
+    await waitFor(() => expect(api.enterResult).toHaveBeenCalledWith('m1', {
+      winner: 2, result: 'played', sets: [[10, 21], [12, 21]], expect: { winner_entry_id: 'e1', result: 'played', sets: [[21, 10], [21, 12]] }
+    }))
+    await waitFor(() => expect(screen.queryByTestId('result-save')).toBeNull())
+    await waitFor(() => expect(api.get.mock.calls.length).toBeGreaterThan(loads))
   })
 
   it('the schedule: planned after a dry run, shown per day, time and court', async () => {
@@ -158,6 +183,44 @@ describe('Tournaments tab', () => {
     await waitFor(() => expect(api.schedule).toHaveBeenCalledTimes(2))
     expect(api.schedule).toHaveBeenNthCalledWith(1, 't1', { dryRun: true, day_start: '09:00', day_end: '19:00' })
     expect(api.schedule).toHaveBeenNthCalledWith(2, 't1', { day_start: '09:00', day_end: '19:00' })
+  })
+
+  it('a hand move that clashes with the schedule is saved only after the manager confirms it', async () => {
+    api.get.mockResolvedValue(ok(bundle({
+      draws: [{ ...DRAW, status: 'drawn' }],
+      matches: [{ id: 'm1', draw_id: 'd1', game_n: 1, code: 'W1', phase: 'winners', round: 1, source1: 'seed:1', source2: 'seed:4', entry1_id: 'e1', entry2_id: 'e4', status: 'ready', court_id: 'c2', scheduled_at: '2026-07-11T07:00:00Z' }]
+    })))
+    const clash = { data: null, error: { code: 'OV_SLOT_CONFLICT', status: 409, details: { conflicts: [{ reason: 'court', game_n: 2, code: 'W2' }, { reason: 'hours' }] } }, status: 409 }
+    api.updateMatch.mockResolvedValueOnce(clash).mockResolvedValueOnce(ok({ match: {} }))
+    await openTournament()
+    fireEvent.click(screen.getByRole('radio', { name: 'tournaments.sections.schedule' }))
+    fireEvent.click(await screen.findByTestId('slot-1'))
+    fireEvent.click(screen.getByRole('button', { name: 'tournaments.save' }))
+    await waitFor(() => expect(api.updateMatch).toHaveBeenCalledTimes(2))
+    const body = { referee: null, scorer: null, court_id: 'c2', scheduled_at: '2026-07-11T07:00:00.000Z' }
+    expect(api.updateMatch).toHaveBeenNthCalledWith(1, 'm1', body)
+    expect(api.updateMatch).toHaveBeenNthCalledWith(2, 'm1', { ...body, force: true })
+    expect(ask.askConfirm).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'tournaments.slotConflictTitle',
+      message: 'tournaments.slotConflicts.court\ntournaments.slotConflicts.hours',
+      confirmLabel: 'tournaments.saveAnyway'
+    }))
+  })
+
+  it('a clashing hand move the manager does not confirm is not saved', async () => {
+    api.get.mockResolvedValue(ok(bundle({
+      draws: [{ ...DRAW, status: 'drawn' }],
+      matches: [{ id: 'm1', draw_id: 'd1', game_n: 1, code: 'W1', phase: 'winners', round: 1, source1: 'seed:1', source2: 'seed:4', entry1_id: 'e1', entry2_id: 'e4', status: 'ready', court_id: 'c2', scheduled_at: '2026-07-11T07:00:00Z' }]
+    })))
+    api.updateMatch.mockResolvedValue({ data: null, error: { code: 'OV_SLOT_CONFLICT', status: 409, details: { conflicts: [{ reason: 'days' }] } }, status: 409 })
+    ask.askConfirm.mockResolvedValueOnce(false)
+    await openTournament()
+    fireEvent.click(screen.getByRole('radio', { name: 'tournaments.sections.schedule' }))
+    fireEvent.click(await screen.findByTestId('slot-1'))
+    fireEvent.click(screen.getByRole('button', { name: 'tournaments.save' }))
+    await waitFor(() => expect(ask.askConfirm).toHaveBeenCalled())
+    expect(api.updateMatch).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'tournaments.save' })).toBeInTheDocument()
   })
 
   it('the ranking: a table and the CSV for MyBeach', async () => {

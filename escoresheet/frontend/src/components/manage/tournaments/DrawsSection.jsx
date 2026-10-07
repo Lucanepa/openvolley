@@ -206,8 +206,18 @@ function ResultModal({ match, entriesById, scoring, onClose, onSaved }) {
     e?.preventDefault()
     if (!valid || busy) return
     setBusy(true)
-    const res = await tournamentApi.enterResult(match.id, { winner: Number(chosen), result: kind, sets: kind === 'walkover' ? null : (sets.length ? sets : null) })
+    const res = await tournamentApi.enterResult(match.id, {
+      winner: Number(chosen),
+      result: kind,
+      sets: kind === 'walkover' ? null : (sets.length ? sets : null),
+      // the result this screen showed: the server refuses when someone else changed it meanwhile
+      expect: { winner_entry_id: match.winner_entry_id ?? null, result: match.result ?? null, sets: match.sets ?? null }
+    })
     setBusy(false)
+    if (res.error?.code === 'OV_RESULT_CHANGED') {
+      toast.error(errorText(res.error))
+      return onSaved() // closes and reloads, so the other result shows
+    }
     if (res.error) return setError(errorText(res.error) + (res.error.details && typeof res.error.details === 'string' ? ` (${res.error.details})` : ''))
     toast.success(t('tournaments.resultSaved'))
     onSaved()

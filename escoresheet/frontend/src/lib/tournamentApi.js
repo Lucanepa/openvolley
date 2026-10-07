@@ -44,6 +44,8 @@ const CODES = {
   OV_MATCH_NOT_READY: 'tournaments.errors.notReady',
   OV_MATCH_BEGUN: 'tournaments.errors.matchBegun',
   OV_NO_COURTS: 'tournaments.errors.noCourts',
+  OV_SLOT_CONFLICT: 'tournaments.errors.slotConflict',
+  OV_RESULT_CHANGED: 'tournaments.errors.resultChanged',
   OV_NOT_FOUND: 'tournaments.errors.notFound'
 }
 

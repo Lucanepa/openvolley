@@ -25,9 +25,24 @@ function MoveModal({ match, courts, onClose, onSaved }) {
     e?.preventDefault()
     if (busy) return
     setBusy(true)
+    setError('')
     const body = { referee: referee.trim() || null, scorer: scorer.trim() || null }
     if (movable) Object.assign(body, { court_id: courtId || null, scheduled_at: fromZurichInput(at) })
-    const res = await tournamentApi.updateMatch(match.id, body)
+    let res = await tournamentApi.updateMatch(match.id, body)
+    // the server checks the slot (court taken, play hours, rest after the
+    // matches it waits for); the manager may still keep it on purpose
+    if (res.error?.code === 'OV_SLOT_CONFLICT') {
+      const conflicts = Array.isArray(res.error.details?.conflicts) ? res.error.details.conflicts : []
+      setBusy(false)
+      const keep = await askConfirm({
+        title: t('tournaments.slotConflictTitle'),
+        message: conflicts.map(c => t(`tournaments.slotConflicts.${c.reason}`, { n: c.game_n, code: c.code })).join('\n'),
+        confirmLabel: t('tournaments.saveAnyway')
+      })
+      if (!keep) return
+      setBusy(true)
+      res = await tournamentApi.updateMatch(match.id, { ...body, force: true })
+    }
     setBusy(false)
     if (res.error) return setError(errorText(res.error))
     toast.success(t('tournaments.saved'))
