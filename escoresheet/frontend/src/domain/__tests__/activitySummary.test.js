@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   sanitizeActivityData, matchUpdateEntries, setUpdateEntry, stackFrames, eventActivityData, historyKind,
-  activityCategory, ACTIVITY_KINDS, ACTIVITY_KIND_RE, activityLine
+  activityCategory, ACTIVITY_KINDS, ACTIVITY_KIND_RE, activityLine, redactFreeText, REDACTED
 } from '../activitySummary'
 
 describe('sanitizeActivityData', () => {
@@ -32,6 +32,36 @@ describe('sanitizeActivityData', () => {
     expect(out.message).toHaveLength(200)
     expect(out.frames).toHaveLength(20)
     expect(new TextEncoder().encode(JSON.stringify(out)).length).toBeLessThanOrEqual(4096)
+  })
+
+  it('free text keeps no PIN and no long number (leftover d)', () => {
+    expect(redactFreeText('pin 123456 failed')).toBe(`pin ${REDACTED} failed`)
+    expect(redactFreeText('PIN: 1234 wrong')).toBe(`PIN: ${REDACTED} wrong`)
+    expect(redactFreeText('gamePin=4711')).toBe(`gamePin=${REDACTED}`)
+    expect(redactFreeText('Passwort 98765432 falsch')).toBe(`Passwort ${REDACTED} falsch`)
+    expect(redactFreeText('mot de passe 4321 refusé')).toBe(`mot de passe ${REDACTED} refusé`)
+    expect(redactFreeText('code "5678"')).toBe(`code "${REDACTED}"`)
+    expect(redactFreeText('enter 4321 pin')).toBe(`enter ${REDACTED} pin`)
+    expect(redactFreeText('game 1234567 not found')).toBe(`game ${REDACTED} not found`)
+    // short numbers away from those words stay: statuses, sets, scores, small game numbers
+    expect(redactFreeText('HTTP 404 in set 2 at 24:22, game 12345')).toBe('HTTP 404 in set 2 at 24:22, game 12345')
+    expect(redactFreeText('pin 123 is too short')).toBe('pin 123 is too short')
+    // a stack frame keeps its :line:column
+    expect(redactFreeText('at index-abc.js:1:234567', { frame: true })).toBe('at index-abc.js:1:234567')
+    expect(redactFreeText('https://x/sign?pin=123456:1:2', { frame: true })).toBe(`https://x/sign?pin=${REDACTED}:1:2`)
+
+    const out = sanitizeActivityData('app.error', { message: 'pin 123456 failed', frames: ['a.js:1:123456', 'b.js?code=4444:2:3'], source: 'x 9876543' })
+    expect(out).toEqual({ message: `pin ${REDACTED} failed`, frames: ['a.js:1:123456', `b.js?code=${REDACTED}:2:3`], source: `x ${REDACTED}` })
+    expect(sanitizeActivityData('backup.error', { message: 'PIN 4711 rejected' })).toEqual({ message: `PIN ${REDACTED} rejected` })
+    expect(sanitizeActivityData('match.manual_change', { category: 'match', field: 'hall', before: 'Halle 1234567', after: 'Halle B' }))
+      .toEqual({ category: 'match', field: 'hall', before: `Halle ${REDACTED}`, after: 'Halle B' })
+    // a long string is redacted before it is cut: no digits survive the cut
+    const long = sanitizeActivityData('app.error', { message: `${'x'.repeat(195)} 1234567890` })
+    expect(/\d/.test(long.message)).toBe(false)
+    // structured keys are not free text
+    expect(sanitizeActivityData('sync.error', { resource: 'event', status: 409, requestId: 'req-1234567' })).toEqual({ resource: 'event', status: 409, requestId: 'req-1234567' })
+    // idempotent (the upload sanitizes again)
+    expect(sanitizeActivityData('app.error', out)).toEqual(out)
   })
 
   it('every kind is a dotted lower-case name', () => {

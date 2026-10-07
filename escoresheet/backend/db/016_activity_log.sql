@@ -41,6 +41,8 @@ CREATE INDEX IF NOT EXISTS activity_log_match_idx   ON public.activity_log (matc
 CREATE INDEX IF NOT EXISTS activity_log_account_idx ON public.activity_log (account_id, at DESC);
 CREATE INDEX IF NOT EXISTS activity_log_kind_idx    ON public.activity_log (kind, at DESC);
 CREATE INDEX IF NOT EXISTS activity_log_at_idx      ON public.activity_log (at);
+-- the lists' order (lib/activityLog.js: client_ts, then id)
+CREATE INDEX IF NOT EXISTS activity_log_client_ts_idx ON public.activity_log (client_ts, id);
 
 -- Deleted with its match
 CREATE OR REPLACE FUNCTION public.ov_matches_delete_activity()
