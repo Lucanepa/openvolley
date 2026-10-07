@@ -264,13 +264,15 @@ describe('every Node relay runtime and the Rust relay speak Sign on phone', () =
   }, 30000)
 
   it('Vite dev plugin', async () => {
-    const wsPort = await freePort()
-    const plugin = vitePluginApiRoutes({ wsPort })
+    // Port 0: bound at once on a port the system picks (a freePort() port can
+    // be taken by another worker before the plugin binds it)
+    const plugin = vitePluginApiRoutes({ wsPort: 0 })
     let middleware = null
     plugin.configureServer({
       config: { server: { https: false, port: 5173 } },
       middlewares: { use: (prefix, fn) => { if (prefix === '/api') middleware = fn } },
     })
+    expect(plugin.boundWsPort()).toBeGreaterThan(0)
     const httpServer = createHttpServer((req, res) => {
       if (!req.url.startsWith('/api/')) {
         res.writeHead(404)

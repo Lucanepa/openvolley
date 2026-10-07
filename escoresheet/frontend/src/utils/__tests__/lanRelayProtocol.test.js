@@ -1160,13 +1160,17 @@ describe('relay runtimes speak the shared protocol', () => {
     let wsPort
 
     beforeAll(async () => {
-      wsPort = await freePort()
-      plugin = vitePluginApiRoutes({ wsPort })
+      // Port 0: the system picks a free port as the server binds it. A port
+      // from freePort() was free when looked up, but another worker could bind
+      // it before the plugin did (EADDRINUSE, then ECONNREFUSED here).
+      plugin = vitePluginApiRoutes({ wsPort: 0 })
       let middleware = null
       plugin.configureServer({
         config: { server: { https: false, port: 5173 } },
         middlewares: { use: (_prefix, fn) => { middleware = fn } }
       })
+      wsPort = plugin.boundWsPort()
+      expect(wsPort).toBeGreaterThan(0)
       // Mimic connect's `.use('/api', fn)` prefix stripping
       httpServer = createHttpServer((req, res) => {
         if (!req.url.startsWith('/api/')) {
