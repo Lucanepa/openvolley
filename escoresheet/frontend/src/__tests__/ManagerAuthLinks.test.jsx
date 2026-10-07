@@ -43,7 +43,8 @@ function setAuth({ user = null } = {}) {
     signOut: vi.fn(async () => ({ error: null })),
     resetPassword: vi.fn(async () => ({ data: { requested: true }, error: null })),
     fetchProfile: vi.fn(async () => null),
-    redeemInvite: vi.fn()
+    redeemInvite: vi.fn(),
+    refreshUser: vi.fn(async () => null)
   }
 }
 
@@ -213,6 +214,10 @@ describe('manager email-link pages', () => {
       fireEvent.click(screen.getByRole('button', { name: 'authEmail.confirmButton' }))
       expect(await screen.findByTestId('confirm-done')).toBeInTheDocument()
       expect(api.confirmEmail).toHaveBeenCalledWith(TOKEN)
+      // Back to the account: the session's user is re-read (now confirmed)
+      fireEvent.click(screen.getByRole('button', { name: 'managerSite.signIn' }))
+      await waitFor(() => expect(auth.value.refreshUser).toHaveBeenCalledTimes(1))
+      expect(auth.value.signOut).not.toHaveBeenCalled()
     })
 
     it('after a link page, the sign-in dialog\'s "Create account" opens #signup; "back" shows the card only', async () => {

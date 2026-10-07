@@ -6,6 +6,7 @@ import ManageConsole, { manageTabsFor } from './components/manage/ManageConsole'
 import LoginModal from './components/auth/LoginModal'
 import SignUpForm from './components/auth/SignUpForm'
 import InviteCodeForm from './components/auth/InviteCodeForm'
+import EmailConfirmBanner from './components/auth/EmailConfirmBanner'
 import { ConfirmEmailPage, ResetPasswordPage } from './components/auth/AuthLinkPages'
 import { AppSpinner, BUTTON_SIZES, BUTTON_VARIANTS, Button, cn, consoleHeaderBtn, FOCUS_RING, GateScreen } from './ui'
 import { mainAppUrl, SIGN_UP_HASH } from './utils/managerSite'
@@ -26,7 +27,8 @@ import { parseAuthLinkHash, takeAuthLinkFromLocation } from './utils/authLinks'
  *                                  scorer apps link here: accounts are made
  *                                  on this site only
  *   signed in, profile unknown  -> loading, then "try again"
- *   pending (no role yet)       -> next step: the club's invite code
+ *   pending (no role yet)       -> next step: the club's invite code ("confirm
+ *                                  your email" first while the address is not)
  *   scorer, no manage role      -> "you're all set, sign in in the scorer app"
  *   other roles (referee only)  -> "no access, ask an admin" + invite code
  *   admin / competition manager -> ManageConsole, full screen
@@ -320,6 +322,9 @@ function InviteStepScreen({ justSignedUp, linkSentTo = null }) {
             {t('authEmail.signUpLinkSent', { email: linkSentTo })}
           </p>
         )}
+        {/* Any unconfirmed account, not only a new one: no code works before
+            the confirmation (the server answers OV_EMAIL_UNCONFIRMED) */}
+        <EmailConfirmBanner className="mb-4" />
         <div className="text-center">
           <KeyRound className="mx-auto h-8 w-8 text-stone-400" aria-hidden />
           <h1 className="mt-3 text-base font-semibold text-stone-900">{t('managerSite.inviteStepTitle')}</h1>
@@ -422,7 +427,7 @@ function AuthLinkScreen({ link, onDone }) {
 
 export default function ManagerApp({ authLink = null }) {
   const { t, i18n } = useTranslation()
-  const { user, access, loading, signOut } = useAuth()
+  const { user, access, loading, signOut, refreshUser } = useAuth()
   const [tab, setTab] = useState(tabFromHash)
   const [link, setLink] = useState(authLink)
   const [signInMode, setSignInMode] = useState(null)
@@ -448,9 +453,11 @@ export default function ManagerApp({ authLink = null }) {
     if (link?.page === 'reset' && user) {
       try { await signOut() } catch { /* the server already revoked it */ }
     }
+    // Confirmed while signed in: the session still holds the unconfirmed user
+    if (link?.page === 'confirm' && user) refreshUser?.()
     setLink(null)
     setSignInMode(mode)
-  }, [link, user, signOut])
+  }, [link, user, signOut, refreshUser])
 
   // Signed in: #signup has done its job (and is no console tab). The route is
   // cleared too, so signing out later shows the sign-in card, not the sign-up page
