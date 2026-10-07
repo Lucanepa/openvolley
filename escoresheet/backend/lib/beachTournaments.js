@@ -32,7 +32,7 @@
 import { fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
 import { accessForSport } from './access.js'
 import { DE_MAX_TEAMS, DE_MIN_TEAMS, boardSizeFor, doubleElimination, drawWarnings, entryOfSource } from './beachBracket.js'
-import { daysBetween, minutesOf, scheduleMatches } from './beachSchedule.js'
+import { daysBetween, minutesOf, scheduleMatches, zurichDayMinutes } from './beachSchedule.js'
 
 export const TOURNAMENT_STATUSES = Object.freeze(['draft', 'published', 'live', 'finished', 'archived'])
 export const DRAW_GENDERS = Object.freeze(['men', 'women', 'mixed'])
@@ -201,6 +201,10 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
         return fail(409, 'OV_SLUG_TAKEN', 'This web address is already taken')
       }
       if (err?.code === '23505' && /beach_courts_tournament_id_number_key/.test(err.constraint || '')) return invalid('courts: one number per court')
+      // generate locks the tournament row, so this is a safety net: a retry gets the next free numbers
+      if (err?.code === '23505' && /beach_tmatches_tournament_id_game_n_key/.test(err.constraint || '')) {
+        return fail(409, 'OV_CONFLICT', 'Another change of this tournament came first; try again')
+      }
       if (err?.code === '23514' || err?.code === '22P02' || err?.code === '22007' || err?.code === '22008') return invalid(String(err.message || '').slice(0, 200))
       log.error?.(`[beach] ${where} failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)
       return unavailable()
@@ -297,6 +301,8 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     status: e.status,
     final_rank: e.final_rank ?? null
   })
+  const withoutLicence = (p) => ({ first: p?.first || '', last: p?.last || '', country: p?.country ?? null })
+  const withoutLicences = (e) => ({ ...e, player1: withoutLicence(e.player1), player2: withoutLicence(e.player2) })
   const tmatchOut = (m) => ({
     id: m.id,
     draw_id: m.draw_id,
@@ -430,7 +436,8 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
         managers: managers.rows.map((m) => ({ id: m.id, email: m.email, name: m.name ?? null, creator: m.creator === true })),
         courts: courts.rows.map((c) => ({ id: c.id, number: c.number, name: c.name ?? null, active: c.active, flex: c.flex })),
         draws: draws.rows.map(drawOut),
-        entries: entries.rows.map(entryOut),
+        // licences only for editors (section 2: "ranking with licences: editors")
+        entries: entries.rows.map((e) => (t.can_edit ? entryOut(e) : withoutLicences(entryOut(e)))),
         matches: tmatches.rows.map(tmatchOut)
       })
     })
@@ -755,15 +762,21 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
       boardSize = body.board_size
     }
     return guarded('generate', () => withTx(async (client) => {
-      const t = await requireVia(client, 'draw', id, user, access, { edit: true })
+      // the tournament row first: game numbers continue after its other draws,
+      // so two draws of one tournament are generated one after the other
+      const t = await requireVia(client, 'draw', id, user, access, { edit: true, forUpdate: true })
       const d = await lockDraw(client, id)
       if (await drawStarted(client, id)) throw abort(STARTED())
       const { rows: entries } = await client.query(
         "SELECT * FROM public.beach_entries WHERE draw_id = $1 AND status = 'registered' ORDER BY seed NULLS LAST, created_at, id", [id])
       const n = entries.length
       if (n < DE_MIN_TEAMS || n > DE_MAX_TEAMS) throw abort(fail(409, 'OV_DRAW_SIZE', `A double elimination needs ${DE_MIN_TEAMS} to ${DE_MAX_TEAMS} pairs`, { teams: n }))
-      const size = boardSize ?? d.board_size ?? boardSizeFor(n)
-      if (size < n) throw abort(invalid(`board_size: too small for ${n} pairs`))
+      if (boardSize != null && boardSize < n) throw abort(invalid(`board_size: too small for ${n} pairs`))
+      // board_size on the draw is the manager's choice (PATCH or this body),
+      // never the size a previous generate derived; a stored choice that no
+      // longer fits (late pairs) gives way to the smallest board that does
+      const chosen = boardSize ?? (d.board_size != null && d.board_size >= n ? d.board_size : null)
+      const size = chosen ?? boardSizeFor(n)
       const bracket = doubleElimination(n, { boardSize: size })
       const { rows: [{ courts }] } = await client.query('SELECT count(*)::int AS courts FROM public.beach_courts WHERE tournament_id = $1 AND active', [t.id])
       const warnings = drawWarnings({ teams: n, category: d.category, courts, boardSize: size })
@@ -800,7 +813,7 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
           [t.id, id, m.game_n, m.code, m.phase, m.round, m.position, m.wave, m.source1, m.source2, m.winner_rank, m.loser_rank, d.slot_minutes])
       }
-      await client.query("UPDATE public.beach_draws SET status = 'drawn', board_size = $2 WHERE id = $1", [id, size])
+      await client.query("UPDATE public.beach_draws SET status = 'drawn', board_size = $2 WHERE id = $1", [id, chosen])
       await recompute(client, id)
       await audit(client, user.id, 'tournament.draw', { tournament_id: t.id, draw_id: id, op: 'generate', teams: n, board_size: size })
       return ok(preview)
@@ -859,8 +872,9 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
       if (m.winner_rank) await client.query('UPDATE public.beach_entries SET final_rank = $2 WHERE id = $1', [r.winner, m.winner_rank])
       if (m.loser_rank) await client.query('UPDATE public.beach_entries SET final_rank = $2 WHERE id = $1', [r.loser, m.loser_rank])
     }
-    const final = list.find((m) => m.code === 'F')
-    const status = list.length === 0 ? null : (final && results.has('F')) ? 'done' : results.size > 0 ? 'playing' : 'drawn'
+    // done only when every match has a result (the 3rd place too, not just the
+    // final): the ranking is complete only then
+    const status = list.length === 0 ? null : list.every((m) => results.has(m.code)) ? 'done' : results.size > 0 ? 'playing' : 'drawn'
     if (status) await client.query('UPDATE public.beach_draws SET status = $2 WHERE id = $1 AND status <> $2', [drawId, status])
     return conflicts
   }
@@ -872,10 +886,21 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
       .map((m) => m.code)
   }
 
+  /** Whether the stored result differs from `expect` (only the keys given are compared). */
+  function changedSince (m, expect) {
+    const cur = { winner_entry_id: m.winner_entry_id ?? null, result: m.result ?? null, sets: m.sets ?? null }
+    if (has(expect, 'winner_entry_id') && (expect.winner_entry_id?.toLowerCase() ?? null) !== cur.winner_entry_id) return true
+    if (has(expect, 'result') && expect.result !== cur.result) return true
+    if (has(expect, 'sets') && JSON.stringify(expect.sets ?? null) !== JSON.stringify(cur.sets)) return true
+    return false
+  }
+
   /**
-   * POST result { winner: 1|2, result: played|retired|forfeit|walkover, sets? }
+   * POST result { winner: 1|2, result: played|retired|forfeit|walkover, sets?, expect? }
    * (1 = entry1). A new result or a correction; refused when a match that
-   * uses this one's winner or loser has begun.
+   * uses this one's winner or loser has begun. `expect` { winner_entry_id,
+   * result, sets } is the result the caller's screen showed (all null for a
+   * first entry): 409 OV_RESULT_CHANGED when the stored one differs.
    */
   async function enterResult ({ user, access, id, body }) {
     if (!isPlainObject(body)) return invalid('body: must be an object')
@@ -883,6 +908,13 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     if (winner !== 1 && winner !== 2) return invalid('winner: 1 or 2')
     const kind = body.result ?? 'played'
     if (!RESULT_KINDS.includes(kind)) return invalid(`result: ${RESULT_KINDS.join(', ')}`)
+    const expect = body.expect
+    if (expect !== undefined) {
+      if (!isPlainObject(expect)) return invalid('expect: an object { winner_entry_id, result, sets }')
+      if (has(expect, 'winner_entry_id') && expect.winner_entry_id !== null && !isUuid(expect.winner_entry_id)) return invalid('expect.winner_entry_id: an entry id or null')
+      if (has(expect, 'result') && expect.result !== null && !RESULT_KINDS.includes(expect.result)) return invalid(`expect.result: ${RESULT_KINDS.join(', ')} or null`)
+      if (has(expect, 'sets') && expect.sets !== null && !Array.isArray(expect.sets)) return invalid('expect.sets: a list or null')
+    }
     return guarded('result', () => withTx(async (client) => {
       const t = await requireVia(client, 'tmatch', id, user, access, { edit: true })
       const { rows: [m0] } = await client.query('SELECT draw_id FROM public.beach_tmatches WHERE id = $1', [id])
@@ -893,6 +925,11 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
       const m = list.find((x) => x.id === id)
       if (!m.entry1_id || !m.entry2_id) throw abort(fail(409, 'OV_MATCH_NOT_READY', 'Both teams of this match are not known yet'))
       if (m.match_id) throw abort(fail(409, 'OV_MATCH_LINKED', 'This match is scored on a court tablet'))
+      // the result the caller last saw (optional): someone else's result
+      // entered meanwhile is never overwritten silently
+      if (expect !== undefined && changedSince(m, expect)) {
+        throw abort(fail(409, 'OV_RESULT_CHANGED', 'The result of this match was changed meanwhile', { match: tmatchOut(m) }))
+      }
       const winnerId = winner === 1 ? m.entry1_id : m.entry2_id
       const wasEnded = m.status === 'finished' || m.status === 'walkover'
       if (wasEnded && m.winner_entry_id !== winnerId) {
@@ -946,10 +983,13 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     f.set('duration_min', intIn(body.duration_min, 10, 240))
     f.set('referee', text(body.referee, 120))
     f.set('scorer', text(body.scorer, 120))
+    if (body.force !== undefined && typeof body.force !== 'boolean') return invalid('force: true or false')
     if (f.error) return f.error
     const keys = Object.keys(f.out)
+    const force = body.force === true
     return guarded('update-tmatch', () => withTx(async (client) => {
-      const t = await requireVia(client, 'tmatch', id, user, access, { edit: true })
+      // the tournament row is locked so two moves cannot both take the same free slot
+      const t = await requireVia(client, 'tmatch', id, user, access, { edit: true, forUpdate: true })
       const { rows: [m] } = await client.query('SELECT * FROM public.beach_tmatches WHERE id = $1 FOR UPDATE', [id])
       if (!keys.length) return ok({ match: tmatchOut(m) })
       const slotKeys = keys.filter((k) => ['court_id', 'scheduled_at', 'duration_min'].includes(k))
@@ -958,12 +998,74 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
         const c = await client.query('SELECT 1 FROM public.beach_courts WHERE id = $1 AND tournament_id = $2', [f.out.court_id, t.id])
         if (!c.rows.length) throw abort(invalid('court_id: a court of this tournament'))
       }
+      // only a slot being set is checked (clearing a court or a time never is)
+      const placing = !!f.out.court_id || !!f.out.scheduled_at || f.out.duration_min !== undefined
+      if (placing && !force) {
+        const conflicts = await slotConflicts(client, t, { ...m, ...f.out })
+        if (conflicts.length) {
+          throw abort(fail(409, 'OV_SLOT_CONFLICT', 'This slot clashes with the schedule; send force: true to keep it anyway', { conflicts }))
+        }
+      }
       const { rows: [u] } = await client.query(
         `UPDATE public.beach_tmatches SET ${keys.map((k, i) => `${k} = $${i + 2}`).join(', ')} WHERE id = $1 RETURNING *`,
         [id, ...keys.map((k) => f.out[k])])
-      await audit(client, user.id, 'tournament.schedule', { tournament_id: t.id, tmatch_id: id, game_n: m.game_n, fields: keys })
+      await audit(client, user.id, 'tournament.schedule', { tournament_id: t.id, tmatch_id: id, game_n: m.game_n, fields: keys, ...(force && slotKeys.length ? { forced: true } : {}) })
       return ok({ match: tmatchOut(u) })
     }))
+  }
+
+  /**
+   * What a slot (court, start, duration) of tournament match `m` clashes
+   * with: [{ reason, game_n?, code? }], reason one of
+   *   court            another match on the same court at the same time
+   *   days             not on a day of the tournament
+   *   hours            outside the play hours (day_start .. day_end, Zurich)
+   *   before_source    before a match it waits for has ended plus the rest
+   *   after_dependent  a match that waits for this one starts before it has ended plus the rest
+   * Only matches that have a start time count. The same rules as
+   * lib/beachSchedule.js, so a hand move cannot put a pair on two courts at once.
+   */
+  async function slotConflicts (client, t, m) {
+    if (!m.scheduled_at) return []
+    const { rows: [d] } = await client.query('SELECT slot_minutes, rest_minutes FROM public.beach_draws WHERE id = $1', [m.draw_id])
+    const rest = d?.rest_minutes || 0
+    const minute = 60000
+    const start = new Date(m.scheduled_at).getTime()
+    const end = start + (m.duration_min || d?.slot_minutes || 50) * minute
+    const { rows: others } = await client.query(
+      `SELECT x.id, x.draw_id, x.code, x.game_n, x.court_id, x.scheduled_at, x.source1, x.source2,
+              coalesce(x.duration_min, dd.slot_minutes) AS dur
+         FROM public.beach_tmatches x JOIN public.beach_draws dd ON dd.id = x.draw_id
+        WHERE x.tournament_id = $1 AND x.id <> $2 AND x.scheduled_at IS NOT NULL AND x.status <> 'cancelled'
+        ORDER BY x.game_n`, [t.id, m.id])
+    const out = []
+    const at = (x) => new Date(x.scheduled_at).getTime()
+    const until = (x) => at(x) + (x.dur || 50) * minute
+    const z = zurichDayMinutes(new Date(start).toISOString())
+    const days = daysBetween(day(t.starts_on), day(t.ends_on))
+    if (!z || !days.includes(z.day)) out.push({ reason: 'days' })
+    else {
+      const from = minutesOf(hhmm(t.day_start)) ?? 0
+      const to = minutesOf(hhmm(t.day_end)) ?? 24 * 60
+      if (z.minutes < from || z.minutes + (end - start) / minute > to) out.push({ reason: 'hours' })
+    }
+    if (m.court_id) {
+      for (const x of others) {
+        if (x.court_id === m.court_id && at(x) < end && until(x) > start) out.push({ reason: 'court', game_n: x.game_n, code: x.code })
+      }
+    }
+    const sameDraw = others.filter((x) => x.draw_id === m.draw_id)
+    const ref = (s) => /^(?:winner|loser):(.+)$/.exec(s || '')?.[1] ?? null
+    for (const code of new Set([ref(m.source1), ref(m.source2)].filter(Boolean))) {
+      const src = sameDraw.find((x) => x.code === code)
+      if (src && start < until(src) + rest * minute) out.push({ reason: 'before_source', game_n: src.game_n, code: src.code })
+    }
+    for (const x of sameDraw) {
+      if ((ref(x.source1) === m.code || ref(x.source2) === m.code) && at(x) < end + rest * minute) {
+        out.push({ reason: 'after_dependent', game_n: x.game_n, code: x.code })
+      }
+    }
+    return out
   }
 
   // ------------------------------------------------------------------ schedule
@@ -971,6 +1073,9 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
    * POST schedule { dryRun?, day_start?, day_end? }: schedules every match of
    * the drawn draws that has not begun over the active courts and the
    * tournament's days (lib/beachSchedule.js). Begun matches keep their slot.
+   * During the tournament (now on one of its days) no match is put before
+   * now. A re-plan places every match that has not begun again: a slot moved
+   * by hand (PATCH tmatches/:id) is not kept unless the match has begun.
    */
   async function schedule ({ user, access, id, body }) {
     const b = isPlainObject(body) ? body : {}
@@ -997,7 +1102,10 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
         source2: m.source2,
         fixed: OPEN_STATUSES.includes(m.status) && m.match_id == null ? null : { court_id: m.court_id, scheduled_at: iso(m.scheduled_at), duration_min: m.duration_min }
       }))
-      const r = scheduleMatches({ matches, draws, courts, days: daysBetween(day(t.starts_on), day(t.ends_on)), dayStart, dayEnd })
+      // during the tournament nothing that has not begun goes before now
+      const r = scheduleMatches({
+        matches, draws, courts, days: daysBetween(day(t.starts_on), day(t.ends_on)), dayStart, dayEnd, notBefore: new Date(now()).toISOString()
+      })
       if (!dryRun) {
         for (const s of r.slots) {
           await client.query('UPDATE public.beach_tmatches SET court_id = $2, scheduled_at = $3, duration_min = $4 WHERE id = $1', [s.id, s.court_id, s.scheduled_at, s.duration_min])

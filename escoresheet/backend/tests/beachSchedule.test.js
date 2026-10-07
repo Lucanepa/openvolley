@@ -106,6 +106,36 @@ describe('beachSchedule', () => {
     assert.ok(new Date(by.get('d-W5').scheduled_at) >= new Date('2026-07-11T08:30:00Z'))
   })
 
+  it('a re-plan during the tournament puts nothing before now; before or after the tournament now changes nothing', () => {
+    const matches = matchesOf('d', 8)
+    // W1 and W2 have ended in the morning; W3 and W4 are late and have not begun
+    matches[0].fixed = { court_id: 'c1', scheduled_at: '2026-07-04T07:00:00Z', duration_min: 50 }
+    matches[1].fixed = { court_id: 'c2', scheduled_at: '2026-07-04T07:00:00Z', duration_min: 50 }
+    const draws = [{ id: 'd', slot_minutes: 50, rest_minutes: 10 }]
+    const days = ['2026-07-04', '2026-07-05']
+    const base = { matches, draws, courts: courts(2), days }
+    // 13:02:10 in Zurich: nothing new before 13:05
+    const r = scheduleMatches({ ...base, notBefore: '2026-07-04T11:02:10Z' })
+    assert.equal(r.unplaced.length, 0)
+    assert.equal(r.slots.length, matches.length - 2)
+    for (const s of r.slots) assert.ok(s.scheduled_at >= '2026-07-04T11:05:00.000Z', `${s.id} at ${s.scheduled_at}`)
+    const by = new Map(r.slots.map((s) => [s.id, s]))
+    assert.equal(by.get('d-W3').scheduled_at, '2026-07-04T11:05:00.000Z')
+    const fixedSlots = matches.filter((m) => m.fixed).map((m) => ({ id: m.id, ...m.fixed }))
+    check({ matches, draws, slots: [...fixedSlots, ...r.slots] })
+    // on the hour: that very minute is still free
+    assert.equal(new Map(scheduleMatches({ ...base, notBefore: '2026-07-04T11:00:00Z' }).slots.map((s) => [s.id, s])).get('d-W3').scheduled_at,
+      '2026-07-04T11:00:00.000Z')
+    // after the last match of the first day: the second day from its start
+    const late = scheduleMatches({ ...base, notBefore: '2026-07-04T18:30:00Z' })
+    assert.ok(late.slots.every((s) => s.scheduled_at >= '2026-07-05T07:00:00.000Z'))
+    // before the tournament, or after it: as without a clock
+    const plain = scheduleMatches(base)
+    assert.deepEqual(scheduleMatches({ ...base, notBefore: '2026-06-01T10:00:00Z' }), plain)
+    assert.deepEqual(scheduleMatches({ ...base, notBefore: '2026-10-07T10:00:00Z' }), plain)
+    assert.equal(new Map(plain.slots.map((s) => [s.id, s])).get('d-W3').scheduled_at, '2026-07-04T07:50:00.000Z', 'without a clock, the late W3 goes back to 09:50')
+  })
+
   it('more than 18 matches on a court in a day is a warning', () => {
     const matches = matchesOf('d', 16)
     const r = scheduleMatches({ matches, draws: [{ id: 'd', slot_minutes: 20, rest_minutes: 0 }], courts: courts(1), days: ['2026-07-11'], dayStart: '08:00', dayEnd: '20:00' })

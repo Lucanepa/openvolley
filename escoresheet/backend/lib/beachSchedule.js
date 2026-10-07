@@ -13,7 +13,11 @@
  *     (Europe/Zurich), else the next day of the tournament;
  *   - matches that have already been called, started or ended keep their
  *     court and time and block them;
- *   - what does not fit into the tournament's days is returned as unplaced.
+ *   - what does not fit into the tournament's days is returned as unplaced;
+ *   - `notBefore` (the handler's clock): when it falls on a tournament day,
+ *     no match is placed before it (rounded up to 5 minutes), so a re-plan
+ *     during the tournament never puts an open match into the past. Before
+ *     the first day or after the last it changes nothing.
  *
  * Warnings: 'court_day_limit' when a court has more than 18 matches on a day
  * (the junior limit of the Swiss Volley regulations).
@@ -85,9 +89,10 @@ export function daysBetween (from, to) {
  * @param {string[]} o.days  the tournament days, 'YYYY-MM-DD'
  * @param {string} o.dayStart  'HH:MM' (Europe/Zurich)
  * @param {string} o.dayEnd    'HH:MM'
+ * @param {string} [o.notBefore]  an ISO instant: on a tournament day, no new slot starts before it
  * @returns {{ slots: Array<{id, court_id, scheduled_at, duration_min}>, unplaced: string[], warnings: object[] }}
  */
-export function scheduleMatches ({ matches, draws, courts, days, dayStart = '09:00', dayEnd = '19:00' }) {
+export function scheduleMatches ({ matches, draws, courts, days, dayStart = '09:00', dayEnd = '19:00', notBefore = null }) {
   const startMin = minutesOf(dayStart)
   const endMin = minutesOf(dayEnd)
   if (startMin == null || endMin == null || endMin <= startMin) throw new RangeError('day hours: HH:MM, end after start')
@@ -104,6 +109,16 @@ export function scheduleMatches ({ matches, draws, courts, days, dayStart = '09:
     return z.day < days[0] ? -DAY_MIN : days.length * DAY_MIN
   }
   const toIso = (t) => zurichToIso(days[Math.floor(t / DAY_MIN)], t % DAY_MIN)
+  // the earliest start of a new slot: now, when now is on a tournament day
+  let floor = 0
+  if (notBefore) {
+    const z = zurichDayMinutes(notBefore)
+    if (z && dayIndex.has(z.day)) {
+      const ms = new Date(notBefore).getTime()
+      const partial = ms % 60000 !== 0 ? 1 : 0 // a started minute counts as gone (Zurich offsets are whole hours)
+      floor = dayIndex.get(z.day) * DAY_MIN + Math.ceil((z.minutes + partial) / 5) * 5
+    }
+  }
 
   const busy = new Map(courtList.map((c) => [c.id, []])) // court -> [[from, to]] sorted
   const occupy = (courtId, from, to) => {
@@ -150,7 +165,7 @@ export function scheduleMatches ({ matches, draws, courts, days, dayStart = '09:
 
   for (const m of todo) {
     const info = drawInfo.get(m.draw_id)
-    let ready = Math.max(0, startMin)
+    let ready = Math.max(startMin, floor)
     let waiting = false
     for (const s of [m.source1, m.source2]) {
       const code = ref(s)

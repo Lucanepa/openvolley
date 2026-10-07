@@ -62,9 +62,17 @@ UPDATE public.matches
 -- Pre-existing duplicates do not fail the migration: the first created match
 -- of each key keeps the claim, the others get official_game_exempt = true and
 -- are reported.
+-- On a re-run after db/013 (whose index leaves beach out: beach game numbers
+-- restart with every tournament) beach matches are not scanned either, so a
+-- re-run never exempts a beach game 1 of a second tournament. The scan follows
+-- the live index's predicate, read the way 013 reads it.
 DO $$
-DECLARE r record; n int := 0;
+DECLARE r record; n int := 0; pred text; skip_beach boolean;
 BEGIN
+  SELECT pg_get_expr(i.indpred, i.indrelid) INTO pred
+    FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+   WHERE c.relname = 'matches_official_game_uidx' AND i.indrelid = 'public.matches'::regclass;
+  skip_beach := coalesce(pred LIKE '%beach%', false);
   FOR r IN
     WITH k AS (
       SELECT id, external_id, game_n, status, created_at,
@@ -78,6 +86,7 @@ BEGIN
                ORDER BY created_at NULLS LAST, id) AS rn
         FROM public.matches
        WHERE test IS NOT TRUE AND game_n IS NOT NULL AND game_n > 0 AND NOT official_game_exempt
+         AND NOT (skip_beach AND sport_type IS NOT DISTINCT FROM 'beach')
     )
     SELECT * FROM k WHERE rn > 1
   LOOP
