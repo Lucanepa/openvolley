@@ -2,7 +2,7 @@
 // per-process resolver cache.
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizeRoles, accessFromRoles, createAccessResolver, ADMIN_ROLES, KNOWN_ROLES, API_GRANTABLE_ROLES } from '../lib/access.js'
+import { normalizeRoles, accessFromRoles, accessForSport, sportsWith, sportOf, sportOfRole, roleFor, createAccessResolver, ADMIN_ROLES, KNOWN_ROLES, API_GRANTABLE_ROLES, BEACH_ROLES, SPORTS } from '../lib/access.js'
 
 describe('normalizeRoles', () => {
   it('reads text[], JSON strings, {a,b} literals and nothing', () => {
@@ -38,7 +38,67 @@ describe('accessFromRoles', () => {
     assert.deepEqual([...ADMIN_ROLES], ['admin', 'super_admin'])
     assert.ok(KNOWN_ROLES.includes('super_admin'))
     assert.equal(API_GRANTABLE_ROLES.includes('super_admin'), false)
-    assert.deepEqual([...API_GRANTABLE_ROLES], ['scorer', 'referee', 'competition_manager', 'admin'])
+    // db/012: the beach roles are grantable too (super_admin stays SQL only)
+    assert.deepEqual([...API_GRANTABLE_ROLES], ['scorer', 'referee', 'competition_manager', 'admin', 'beach:scorer', 'beach:referee', 'beach:competition_manager'])
+  })
+})
+
+describe('access per sport (indoor / beach, db/012)', () => {
+  const sport = (roles, s) => {
+    const a = accessForSport(accessFromRoles(roles), s)
+    return [a.canScore, a.canManageTeams, a.canReadTeams, a.isPending]
+  }
+  it('beach roles grant beach only; the top-level flags stay indoor', () => {
+    //                                                  score  manage read   pending
+    assert.deepEqual(sport(['beach:scorer'], 'beach'), [true, false, true, false])
+    assert.deepEqual(sport(['beach:scorer'], 'indoor'), [false, false, false, true])
+    assert.deepEqual(sport(['beach:competition_manager'], 'beach'), [false, true, true, false])
+    assert.deepEqual(sport(['beach:referee'], 'beach'), [false, false, false, false])
+    assert.deepEqual(sport(['beach:referee'], 'indoor'), [false, false, false, true])
+    const a = accessFromRoles(['beach:scorer', 'beach:competition_manager'])
+    // an OpenVolley 2.1/2.2 client reads these: a beach-only account is pending there
+    assert.deepEqual([a.canScore, a.canManageTeams, a.canReadTeams, a.isPending], [false, false, false, true])
+    assert.deepEqual(a.apps.beach.roles, ['beach:scorer', 'beach:competition_manager'])
+    assert.deepEqual(a.apps.indoor.roles, [])
+  })
+  it('indoor roles grant indoor only', () => {
+    assert.deepEqual(sport(['scorer'], 'indoor'), [true, false, true, false])
+    assert.deepEqual(sport(['scorer'], 'beach'), [false, false, false, true])
+    assert.deepEqual(sport(['competition_manager'], 'beach'), [false, false, false, true])
+  })
+  it('the global admin counts for both sports', () => {
+    for (const s of SPORTS) {
+      assert.deepEqual(sport(['admin'], s), [true, true, true, false])
+      assert.deepEqual(sport(['super_admin'], s), [true, true, true, false])
+    }
+  })
+  it('forSport is the same object, not enumerable; anything but beach is indoor', () => {
+    const a = accessFromRoles(['scorer', 'beach:referee'])
+    assert.equal(a.forSport('beach'), a.apps.beach)
+    assert.equal(a.forSport('indoor'), a.apps.indoor)
+    assert.equal(a.forSport('snow'), a.apps.indoor)
+    assert.equal(Object.keys(a).includes('forSport'), false)
+    assert.equal(JSON.stringify(a).includes('forSport'), false)
+    assert.equal(sportOf('beach'), 'beach')
+    assert.equal(sportOf(null), 'indoor')
+    assert.equal(sportOf('Beach'), 'indoor')
+  })
+  it('hand-made access objects without apps: indoor flags, beach for admins only', () => {
+    assert.equal(accessForSport({ canScore: true }, 'indoor').canScore, true)
+    assert.equal(accessForSport({ canScore: true }, 'beach').canScore, false)
+    assert.equal(accessForSport({ isAdmin: true }, 'beach').canManageTeams, true)
+    assert.deepEqual(sportsWith(accessFromRoles(['scorer', 'beach:competition_manager']), 'canReadTeams'), ['indoor', 'beach'])
+    assert.deepEqual(sportsWith(accessFromRoles(['beach:scorer']), 'canScore'), ['beach'])
+  })
+  it('role names per sport', () => {
+    assert.equal(roleFor('beach', 'scorer'), 'beach:scorer')
+    assert.equal(roleFor('indoor', 'competition_manager'), 'competition_manager')
+    assert.equal(roleFor('beach', 'admin'), null)
+    assert.equal(sportOfRole('beach:referee'), 'beach')
+    assert.equal(sportOfRole('referee'), 'indoor')
+    assert.equal(sportOfRole('admin'), null)
+    assert.ok(KNOWN_ROLES.includes('beach:competition_manager'))
+    assert.deepEqual([...BEACH_ROLES], ['beach:scorer', 'beach:referee', 'beach:competition_manager'])
   })
 })
 
