@@ -17651,6 +17651,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       alignItems: 'stretch',
                       gap: 'calc(10px * var(--scale-factor))',
                       width: '100%',
+                      // Not the full column width: a button row, not a banner
+                      maxWidth: 'calc(380px * var(--scale-factor))',
+                      alignSelf: 'center',
                       marginTop: vmin(10)
                     }}>
                       <button
