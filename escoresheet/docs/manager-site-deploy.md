@@ -106,7 +106,7 @@ What differs from `manager.openvolley.app`:
 |---|---|---|
 | Page, entry | `manager.html`, `src/manager-main.jsx` | `manager-beach.html`, `src/manager-beach-main.jsx` |
 | Name, logo, icons | OpenVolley | OpenBeach, logo B2 (`brand/beach/`, copied over `favicon.*`, `apple-touch-icon.png`, `icon-192/512.png` by the build), its own `manifest.webmanifest` (no service worker) |
-| Tabs (admin) | accounts, invites, official games, closed matches, audit, saved teams | accounts, invites, audit, saved teams |
+| Tabs (admin) | accounts, invites, official games, closed matches, audit, saved teams | accounts, invites, audit, saved teams, tournaments (T1) |
 | Lists | `?app=indoor`: OpenVolley members, indoor codes (new codes `sport: 'indoor'`), indoor audit; saved teams as before | `?app=beach`: OpenBeach members, beach codes, beach audit, beach competitions and pairs (`?sport=beach`, no offline cache) |
 | Roles | `scorer`, `referee`, `competition_manager`, `admin` | `beach:scorer`, `beach:referee`, `beach:competition_manager` (shown as Scorer, Referee, Competition manager). The global admin is managed in OpenVolley's console |
 | Auth calls | no `app` | `app: 'beach'` on sign-up, reset, reset confirm and resend: OpenBeach's mails (`OpenBeach <noreply@openvolley.app>`), links to `manager-beach`, and sign-up joins OpenBeach |
@@ -114,7 +114,7 @@ What differs from `manager.openvolley.app`:
 | Scorer app link | `app.openvolley.app` | `beach.openvolley.app` |
 
 Who sees what (D2: only the global admin administers both in v1): an admin
-gets the four tabs, a `beach:competition_manager` saved teams, a
+gets the five tabs, a `beach:competition_manager` saved teams and tournaments, a
 `beach:scorer` "You're all set", a `beach:referee` "No access", an OpenBeach
 member without a beach role the invite-code step, and any other signed-in
 account "Join OpenBeach" first. An indoor role gives nothing here.
@@ -163,8 +163,8 @@ no backend change.
    "Manage OpenBeach"; the tab title is "OpenBeach Manager", the tab icon the
    B2 ball. `curl -sI https://manager-beach.openvolley.app | grep -i x-robots-tag`
    prints `noindex, nofollow`.
-2. Sign in as the global admin: four tabs (accounts, invites, audit, saved
-   teams). Invites: a new code shows the plain role and is listed only here,
+2. Sign in as the global admin: five tabs (accounts, invites, audit, saved
+   teams, tournaments). Invites: a new code shows the plain role and is listed only here,
    not in OpenVolley's console (`manager.openvolley.app` and the main app's
    console ask `?app=indoor`). Accounts: only OpenBeach members; a throwaway
    OpenBeach sign-up is pending here and absent from OpenVolley's accounts.
