@@ -2216,7 +2216,11 @@
     "reopenSetWarning": "Achtung: Alle gesammelten Unterschriften werden gelöscht und müssen nach der Genehmigung neu eingeholt werden.",
     "cancel": "Abbrechen",
     "yesReopen": "Ja, Satz wieder öffnen",
-    "remarksPlaceholder": "Bemerkungen zum Spiel erfassen..."
+    "remarksPlaceholder": "Bemerkungen zum Spiel erfassen...",
+    "resign": "Neu unterschreiben",
+    "clearSignature": "Löschen",
+    "signatureLocked": "Spiel genehmigt oder abgeschlossen: die Unterschriften sind fix",
+    "signatureSaveFailed": "Die Unterschrift konnte nicht gespeichert werden. Versuche es noch einmal."
   },
   "scoresheetPdf": {
     "backToScoresheet": "Zurück zum eMatchblatt",
@@ -3193,6 +3197,18 @@
         "referee2": "2. Schiedsrichter",
         "scorer": "Schreiber"
       }
+    },
+    "approveWithPin": "Mit PIN genehmigen",
+    "why": {
+      "signOnly": "Nur Unterschrift: der Assistenz-Schreiber genehmigt nicht mit PIN",
+      "locked": "Spiel genehmigt oder abgeschlossen: die Genehmigungen sind fix",
+      "beach": "Die Genehmigung mit PIN gibt es bei Beachvolleyball-Spielen nicht",
+      "localMatch": "Dieses Spiel ist nicht online gespeichert: die Genehmigung mit PIN braucht ein Online-Spiel",
+      "noCloud": "Keine Online-Verbindung auf diesem Gerät: von Hand unterschreiben",
+      "serverOff": "Die Genehmigung mit PIN ist auf diesem Server ausgeschaltet",
+      "signedOut": "Melde dich auf diesem Gerät an, um mit PIN zu genehmigen",
+      "callerRole": "Das Konto auf diesem Gerät kann keine Genehmigungen senden: es braucht die Rolle Schreiber oder Schiedsrichter",
+      "offline": "Offline: die Genehmigung mit PIN erscheint wieder, sobald du online bist"
     }
   },
   "legal": {

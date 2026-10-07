@@ -1267,7 +1267,11 @@
     "reopenAdminTitle": "Dieses abgeschlossene Spiel wieder öffnen?",
     "reopenAdminBody": "Es geht auf dem Server zurück auf «beendet» und kann nochmals genehmigt werden. Dies wird im Protokoll festgehalten.",
     "reopenReason": "Grund",
-    "reopenCheckFailed": "Das Spiel konnte auf dem Server nicht geprüft werden – bitte versuche es nochmals."
+    "reopenCheckFailed": "Das Spiel konnte auf dem Server nicht geprüft werden – bitte versuche es nochmals.",
+    "resign": "Neu underschriibe",
+    "clearSignature": "Lösche",
+    "signatureLocked": "Spiil genehmigt oder abgschlosse: d Underschrifte sind fix",
+    "signatureSaveFailed": "D Underschrift het nöd chöne gspeicheret werde. Probiered Sie s nomal."
   },
   "scoresheetPdf": {
     "zoomOut": "Verchliinere",
@@ -3205,6 +3209,18 @@
         "referee2": "2. Schiri",
         "scorer": "Schriiber"
       }
+    },
+    "approveWithPin": "Mit PIN genehmige",
+    "why": {
+      "signOnly": "Nur Underschrift: de Assistant scorer genehmiget nöd mit PIN",
+      "locked": "Spiil genehmigt oder abgschlosse: d Genehmigunge sind fix",
+      "beach": "D Genehmigung mit PIN gits bi Beachvolleyball-Spiil nöd",
+      "localMatch": "Das Spiil isch nöd online gspeicheret: d Genehmigung mit PIN bruucht es Online-Spiil",
+      "noCloud": "Kei Online-Verbindig uf dem Gerät: vo Hand underschriibe",
+      "serverOff": "D Genehmigung mit PIN isch uf dem Server abgschaltet",
+      "signedOut": "Mälded Sie sich uf dem Gerät aa, zum mit PIN genehmige",
+      "callerRole": "S Konto uf dem Gerät cha kei Genehmigunge schicke: es bruucht d Rolle Schriiber oder Schiri",
+      "offline": "Offline: d Genehmigung mit PIN chunnt wieder, sobald Sie online sind"
     }
   },
   "legal": {

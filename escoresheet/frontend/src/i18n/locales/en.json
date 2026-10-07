@@ -1268,7 +1268,11 @@
     "reopenAdminTitle": "Reopen this closed match?",
     "reopenAdminBody": "It goes back to “ended” on the server and can be approved again. This is recorded in the audit log.",
     "reopenReason": "Reason",
-    "reopenCheckFailed": "Could not check the match on the server – please try again."
+    "reopenCheckFailed": "Could not check the match on the server – please try again.",
+    "resign": "Re-sign",
+    "clearSignature": "Clear",
+    "signatureLocked": "Match approved or closed: signatures can no longer change",
+    "signatureSaveFailed": "The signature could not be saved. Try again."
   },
   "scoresheetPdf": {
     "zoomOut": "Zoom out",
@@ -3211,6 +3215,18 @@
         "referee2": "2nd referee",
         "scorer": "Scorer"
       }
+    },
+    "approveWithPin": "Approve with PIN",
+    "why": {
+      "signOnly": "Signature only: the assistant scorer does not approve with a PIN",
+      "locked": "Match approved or closed: approvals can no longer change",
+      "beach": "Approval with a PIN is not available for beach matches",
+      "localMatch": "This match is not saved online: approval with a PIN needs an online match",
+      "noCloud": "No online connection on this device: sign by hand",
+      "serverOff": "Approval with a PIN is turned off on this server",
+      "signedOut": "Sign in on this device to approve with a PIN",
+      "callerRole": "The account on this device cannot send approvals: it needs the scorer or referee role",
+      "offline": "Offline: approval with a PIN is offered again when back online"
     }
   },
   "legal": {
