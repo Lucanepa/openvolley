@@ -8,6 +8,10 @@ phases of `~/ov-ops/openbeach-separation-tournaments-PLAN.md`:
 - T1: the tournament core (db/013, db/014)
 - T2: the Excel/CSV import
 
+The branch is merged with `main` at 2.3.0, so it carries account approval
+(db/011) and the email reset/confirm work (db/010). **Both are already live
+in production**: this deploy adds only 012, 013 and 014 on top.
+
 Owner decisions D1 to D9 (2026-10-07) apply. Background:
 `docs/app-separation-spec.md`, `docs/beach-tournaments-spec.md` and
 `docs/manager-site-deploy.md` ("OpenBeach's manager").
@@ -20,9 +24,9 @@ runbook: `lenovo$` is lenovoserver and `hetzner#` is the VM.
 
 | Piece | Change |
 |---|---|
-| Database | `db/012_app_memberships.sql`, `db/013_beach_official_index.sql`, `db/014_beach_tournaments.sql`, then `roles.sql`. All of them are idempotent, run in one transaction each, and are safe while the 2.2.0 backend runs. `db/007` changed too, but only its duplicate scan on a re-run. **Do not re-run 007.** |
-| Backend image | A new build. It needs 012 (`audit_log.app`, `auth.app_memberships`). Without 014, `/api/beach/*` answers 503. |
-| Env vars | **None required.** `MAIL_FROM_BEACH` and `MANAGER_URL_BEACH` are optional (see step 4). |
+| Database | `db/012_app_memberships.sql`, `db/013_beach_official_index.sql`, `db/014_beach_tournaments.sql`, then `roles.sql`. 010 and 011 are already in production: **do not run them again** (they are idempotent, so a re-run would do no harm, but it is not needed). 012 to 014 are idempotent, run in one transaction each, and are safe while the running 2.3.0 backend serves. `db/007` changed too, but only its duplicate scan on a re-run. **Do not re-run 007.** |
+| Backend image | A new build. It needs 012 (`audit_log.app`, `auth.app_memberships`). Without 014, `/api/beach/*` answers 503. Account approvals (011) work as in 2.3.0. They now check the role of the match's sport, and their audit entries carry the match's app. Beach matches still answer 409 `OV_APPROVAL_UNSUPPORTED` (approval spec D3). |
+| Env vars | **Nothing new is required.** `OV_PIN_SECRET` (set for 011) and the SMTP settings stay as they are. `MAIL_FROM_BEACH` and `MANAGER_URL_BEACH` are optional (see step 4). |
 | Kit | `deploy/compose.yaml` passes the two optional variables. Rsync the kit. |
 | Frontend | A new Cloudflare Pages project, `openbeach-manager`, with the CNAME `manager-beach`. The existing `openvolley-manager` and `openvolley-app` rebuild from `main` as usual. |
 | OpenBeach app | Lives in the openbeach repo and is **not part of this branch**. That work: in-app sign-up removed, "Create account" sends people to `https://manager-beach.openvolley.app/#signup`, `app: 'beach'` sent on reset and resend, the role UI reads `apps.beach`, and the subdomain renames of plan 2.2. |
@@ -44,8 +48,19 @@ hetzner# systemctl start openvolley-backup.service && journalctl -u openvolley-b
 hetzner# grep ^OV_BACKEND_IMAGE= .env | tee -a DEPLOYED.log                                           # the tag to roll back to
 ```
 
-If `feat/account-approval` is merged first, its `db/011` runs before 012.
-Nothing in 012 to 014 depends on it, and 012 also runs without it.
+Production must already be at 011. Check this before step 3. Expect
+`t | t | 1`:
+
+```bash
+hetzner# docker compose exec -T ov-postgres psql -U ov_owner -d openvolley -c "
+  SELECT to_regclass('auth.app_tokens') IS NOT NULL AS m010,
+         to_regclass('public.match_approvals') IS NOT NULL AS m011,
+         (SELECT count(*) FROM pg_trigger WHERE tgname = 'matches_void_approvals') AS void_trigger"
+```
+
+If either is missing, stop and deploy `docs/account-approval-deploy.md`
+first. 012 replaces 011's void function, so the order is always 010, 011,
+then 012 to 014.
 
 ## 2. Build and ship the image, then rsync the kit
 
@@ -76,6 +91,9 @@ What they do:
 - **012** also adds `invite_codes.sport` and `audit_log.app`.
 - **012** adds a trigger that refuses any change of a match's `sport_type`
   between beach and indoor (409 `OV_SPORT_LOCKED`).
+- **012** replaces two trigger functions so that their audit entries name a
+  beach match's app: the close entry from 007 and the `match.approval_void`
+  entry from 011. Indoor entries keep `app` NULL, as before.
 - **013** takes beach matches out of the per-season official-game index.
   Beach game numbers restart with every tournament.
 - **014** adds the tournament tables and the nullable column
@@ -90,10 +108,11 @@ hetzner# docker compose exec -T ov-postgres psql -U ov_owner -d openvolley -c "
   SELECT (SELECT count(*) FROM auth.app_memberships WHERE app = 'indoor') AS indoor_members,
          (SELECT count(*) FROM auth.users) AS accounts,
          (SELECT pg_get_expr(indpred, indrelid) LIKE '%beach%' FROM pg_index WHERE indexrelid = 'public.matches_official_game_uidx'::regclass) AS index_without_beach,
-         to_regclass('public.beach_tmatches') AS tournament_tables"
+         to_regclass('public.beach_tmatches') AS tournament_tables,
+         (SELECT pg_get_functiondef('public.ov_matches_void_approvals()'::regprocedure) LIKE '%details, app)%') AS void_with_app"
 ```
 
-Expect `indoor_members` = `accounts`, `t`, and `beach_tmatches`.
+Expect `indoor_members` = `accounts`, `t`, `beach_tmatches`, and `t`.
 
 ## 4. Switch the backend
 
@@ -103,6 +122,7 @@ hetzner# sed -i 's|^OV_BACKEND_IMAGE=.*|OV_BACKEND_IMAGE=openvolley-backend:<NEW
 hetzner# env | grep -E '^(OV_|TUNNEL_TOKEN)=' ; docker compose config --images | grep backend   # nothing exported; shows <NEW>
 hetzner# docker compose up -d && docker compose ps
 hetzner# docker compose exec ov-backend node -e 'fetch("http://127.0.0.1:8080/health").then(async r=>console.log(r.status, await r.text()))'
+hetzner# docker compose logs ov-backend --since 2m | grep -E 'OV_PIN_SECRET|\[Mail\]'   # no "approval with an account is off"; "[Mail] account emails on"
 hetzner# echo "$(date -u +%FT%TZ) deployed openvolley-backend:<NEW> (db/012-014, OpenBeach separation + tournaments)" >> DEPLOYED.log
 ```
 
@@ -222,7 +242,7 @@ roles.
 
 1. `curl -s https://backend.openvolley.app/health | jq .db` prints `"ok"`.
 2. **OpenVolley is unchanged.** An indoor scorer scores and syncs an official
-   indoor match from the 2.2 app. `manager.openvolley.app`:
+   indoor match from the current 2.3 app. `manager.openvolley.app`:
    - shows the same tabs as before
    - lists no beach codes under Invite codes
    - shows its usual entries in the audit log
@@ -238,7 +258,10 @@ roles.
    with a throwaway address at `manager-beach.openvolley.app/#signup`.
    - The confirmation mail comes from `OpenBeach <noreply@openvolley.app>`.
    - Its link opens `manager-beach.openvolley.app/#confirm?token=…`.
-   - Redeem the code: the account gets the Saved teams and Tournaments tabs.
+   - Redeem the code. The toast says you can now manage tournaments and
+     saved beach pairs, not "score official matches". The account gets the
+     Saved teams and Tournaments tabs.
+   - The footer of the sign-in card reads `OpenBeach · OpenVolley <version>`.
    - The account is not listed in OpenVolley's Accounts.
 5. **A small tournament with that account.**
    - Create the tournament, add a draw with 4 typed pairs, then use "Draw the
@@ -247,13 +270,21 @@ roles.
    - The beach audit log shows the `tournament.*` entries.
 6. **An indoor-only account is shut out.** On manager-beach it gets "Join
    OpenBeach", and `GET /api/beach/tournaments` answers 403.
-7. **Clean up.** Revoke the code and delete the throwaway account.
+7. **Account approvals still work (indoor).** At the end of an indoor test
+   match, approve the 1st referee with an account that has the `referee`
+   role and an approval PIN.
+   - It is accepted.
+   - OpenVolley's audit log shows `match.approve`, and the beach audit log
+     does not.
+   - An account with only `beach:referee` is refused for that slot ("This
+     account does not have the role for this signature").
+8. **Clean up.** Revoke the code and delete the throwaway account.
 
 ## Rollback
 
-- **Backend.** First revoke the open beach invite codes. The 2.2.0 backend
-  ignores `invite_codes.sport` and would redeem a beach code as the plain
-  indoor role. As `ov_owner`, run the query below and keep its output, so you
+- **Backend.** First revoke the open beach invite codes. The previous
+  (2.3.0) backend ignores `invite_codes.sport` and would redeem a beach code
+  as the plain indoor role. As `ov_owner`, run the query below and keep its output, so you
   can recreate the codes later:
 
   ```sql
@@ -272,6 +303,9 @@ roles.
     new image returns.
   - Its friendly pre-check may name a same-season beach game claim. The
     database itself still accepts the match.
+  - Approvals work as before. 012's void function keeps writing the app of
+    voided approvals, and the old backend's own approval entries are NULL
+    (indoor).
 - **manager-beach.** Pause or delete the `openbeach-manager` Pages project.
   Nothing else depends on it.
 - **Full undo.** Restore the dump from step 1. Anything created after the
