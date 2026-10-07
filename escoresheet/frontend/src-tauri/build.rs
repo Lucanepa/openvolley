@@ -26,13 +26,17 @@ const APP_COMMANDS: &[&str] = &[
     "update_check_now",
     "update_install_now",
     "update_set_prefs",
+    // open / show a file the app downloaded, by its id (popups.rs)
+    "download_open",
+    "download_reveal",
 ];
 
 fn main() {
     // An app ACL manifest: these commands are denied unless a capability
     // grants them (capabilities/backup.json, capabilities/netshare.json,
     // capabilities/app.json, capabilities/update.json: only the main window,
-    // only from http://localhost).
+    // only from http://localhost; capabilities/downloads.json: the main window
+    // and the scoresheet windows, only from http://localhost).
     tauri_build::try_build(
         tauri_build::Attributes::new()
             .app_manifest(tauri_build::AppManifest::new().commands(APP_COMMANDS)),
