@@ -21,6 +21,7 @@ import { uploadScoresheet, scoresheetUploadPath } from '../utils/scoresheetUploa
 import { redactScoresheetPath } from '../../scoresheet_pdf/utils/scoresheetStorage'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { exportLogsAsNDJSON } from '../utils/comprehensiveLogger'
+import { diagnosticLogQuery } from '../utils/activity/logQuery'
 
 // Primary ball image (with a bundled copy as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
@@ -1050,9 +1051,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   const handleDownloadLogs = async () => {
     cLogger.logHandler('handleDownloadLogs', { matchId })
     try {
-      const gameN = match?.gameNumber || match?.game_n || null
       const { downloadLogs } = await import('../utils/comprehensiveLogger')
-      await downloadLogs(gameN, 'ndjson')
+      await downloadLogs(diagnosticLogQuery(matchId, match), 'ndjson')
       showAlert(t('matchEnd.logsDownloaded', 'Interaction logs downloaded successfully'), 'success')
     } catch (err) {
       console.error('[MatchEnd] Failed to download logs:', err)
@@ -1151,8 +1151,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
       // Add comprehensive interaction logs to the ZIP
       try {
-        const gameN = match.gameNumber || match.game_n || null
-        const logsContent = await exportLogsAsNDJSON(gameN)
+        const logsContent = await exportLogsAsNDJSON(diagnosticLogQuery(matchId, match))
         if (logsContent && logsContent.length > 0) {
           const logsFilename = `interaction_logs_${matchDate}.ndjson`
           zip.file(logsFilename, logsContent)

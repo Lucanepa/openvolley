@@ -1,58 +1,41 @@
-// Debug Logger - Comprehensive logging for all scoreboard actions
-// Stores logs in memory and localStorage for persistence
+// Debug Logger - the scoreboard's debug lines (EVENT_CREATED, POINT_AWARDED,
+// ROTATION, UNDO_*, ...).
+//
+// Since 2.4.0 they go into the interaction log (utils/comprehensiveLogger,
+// IndexedDB interaction_logs, category 'debug'): the same retention (30 days,
+// 50,000 rows) and they are part of the diagnostic export. Before, the whole
+// array was rewritten to localStorage at every entry (last 5000, quota
+// failures silent) and never exported. The old localStorage copy is moved
+// once at start (comprehensiveLogger.migrateDebugLogs).
+// Local only, never synced. A state snapshot larger than 20 KB is dropped.
 
-const MAX_LOGS = 5000 // Keep last 5000 entries
-const STORAGE_KEY = 'escoresheet_debug_logs'
+import { log as interactionLog, trimDebugData } from './comprehensiveLogger'
+
+const RECENT_MAX = 200 // in-memory copy for the console (getLogs)
 
 class DebugLogger {
   constructor() {
-    this.logs = []
+    this.recent = []
     this.enabled = true
-    this.loadFromStorage()
-  }
-
-  loadFromStorage() {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY)
-      if (stored) {
-        this.logs = JSON.parse(stored)
-      }
-    } catch (e) {
-      console.warn('Failed to load debug logs from storage:', e)
-      this.logs = []
-    }
-  }
-
-  saveToStorage() {
-    try {
-      // Keep only last MAX_LOGS entries
-      if (this.logs.length > MAX_LOGS) {
-        this.logs = this.logs.slice(-MAX_LOGS)
-      }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.logs))
-    } catch (e) {
-      console.warn('Failed to save debug logs to storage:', e)
-    }
   }
 
   log(action, data = {}, stateSnapshot = null) {
     if (!this.enabled) return
-
-    const entry = {
-      id: Date.now() + '-' + Math.random().toString(36).substr(2, 9),
-      timestamp: new Date().toISOString(),
-      action,
-      data,
-      stateSnapshot
+    const type = String(action || 'debug')
+    const payload = trimDebugData(stateSnapshot ? { ...(data || {}), stateSnapshot } : data)
+    const entry = { timestamp: new Date().toISOString(), action: type, data: payload }
+    this.recent.push(entry)
+    if (this.recent.length > RECENT_MAX) this.recent.splice(0, this.recent.length - RECENT_MAX)
+    try {
+      interactionLog('debug', type, 'DebugLogger', type, payload)
+    } catch (e) {
+      // logging must never break scoring
     }
-
-    this.logs.push(entry)
-    this.saveToStorage()
-
-    // Also log to console in dev mode
-    if (process.env.NODE_ENV === 'development' || localStorage.getItem('debugLogConsole') === 'true') {
-      console.log(`[DEBUG] ${action}`, data, stateSnapshot ? '(state snapshot included)' : '')
-    }
+    let toConsole = false
+    try {
+      toConsole = (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') || localStorage.getItem('debugLogConsole') === 'true'
+    } catch { /* storage blocked */ }
+    if (toConsole) console.log(`[DEBUG] ${type}`, payload)
   }
 
   // Log with full state snapshot
@@ -61,59 +44,34 @@ class DebugLogger {
     this.log(action, data, stateSnapshot)
   }
 
-  // Get all logs
+  // The last entries of this page load (the full log is in the diagnostic export)
   getLogs() {
-    return [...this.logs]
+    return [...this.recent]
   }
 
-  // Get logs filtered by action type
   getLogsByAction(actionType) {
-    return this.logs.filter(log => log.action.includes(actionType))
+    return this.recent.filter(l => l.action.includes(actionType))
   }
 
-  // Get logs from last N minutes
   getRecentLogs(minutes = 30) {
     const cutoff = Date.now() - (minutes * 60 * 1000)
-    return this.logs.filter(log => new Date(log.timestamp).getTime() > cutoff)
+    return this.recent.filter(l => new Date(l.timestamp).getTime() > cutoff)
   }
 
-  // Clear all logs
   clear() {
-    this.logs = []
-    localStorage.removeItem(STORAGE_KEY)
+    this.recent = []
   }
 
-  // Export logs as JSON string
   exportAsJSON() {
-    return JSON.stringify({
-      exportDate: new Date().toISOString(),
-      totalLogs: this.logs.length,
-      logs: this.logs
-    }, null, 2)
+    return JSON.stringify({ exportDate: new Date().toISOString(), totalLogs: this.recent.length, logs: this.recent }, null, 2)
   }
 
-  // Download logs as file
-  downloadLogs(filename = null) {
-    const json = this.exportAsJSON()
-    const blob = new Blob([json], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = filename || `debug_logs_${new Date().toISOString().replace(/[:.]/g, '-')}.json`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
-  }
-
-  // Enable/disable logging
   setEnabled(enabled) {
     this.enabled = enabled
   }
 
-  // Get log count
   getCount() {
-    return this.logs.length
+    return this.recent.length
   }
 }
 

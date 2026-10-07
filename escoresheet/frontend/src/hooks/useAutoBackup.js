@@ -28,6 +28,7 @@ import {
   useNativeBackupStatus,
   openNativeBackupFolder
 } from '../utils/nativeBackup'
+import { setActiveMatch } from '../utils/activity/activeMatch'
 
 export default function useAutoBackup(activeMatchId = null) {
   // Apps write native backups; browsers keep the folder / download behaviour
@@ -56,6 +57,20 @@ export default function useAutoBackup(activeMatchId = null) {
   // Check if File System Access API is available (never used in the apps:
   // WebView2 exposes it, but the native backup replaces it there)
   const hasFileSystemAccess = !nativeMode && isFileSystemAccessSupported()
+
+  // The open match tags the interaction and activity logs (utils/activity)
+  useEffect(() => {
+    let cancelled = false
+    if (activeMatchId == null) {
+      setActiveMatch(null)
+      return undefined
+    }
+    Promise.resolve()
+      .then(() => db.matches?.get?.(activeMatchId))
+      .then((m) => { if (!cancelled) setActiveMatch(m || null) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [activeMatchId])
 
   // Apps: back up the open match after every committed write of it (events,
   // sets, match row). Runs in the background; never blocks scoring.
