@@ -21,7 +21,6 @@ description: |
 
       sudo snap connect openvolley-escoresheet:network-manager
       sudo snap connect openvolley-escoresheet:bluez
-      sudo snap connect openvolley-escoresheet:network-observe
 
   Updates come from the Snap Store; the app's own updater is off in the snap.
 license: GPL-3.0-only
@@ -50,10 +49,10 @@ apps:
     extensions: [gnome]
     plugs:
       # the tablets' relay: HTTP :5173 and WebSocket :8080 on every interface
+      # (`network` also lets it list the laptop's addresses for "Connect
+      # tablets": a raw netlink route socket; network-observe is not needed)
       - network
       - network-bind
-      # list the laptop's addresses for "Connect tablets" (netlink route, raw)
-      - network-observe
       # the tablets' Wi-Fi hotspot and Bluetooth network (NetworkManager D-Bus)
       - network-manager
       # Bluetooth adapter on/discoverable for the Bluetooth network (BlueZ D-Bus)

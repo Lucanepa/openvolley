@@ -42,7 +42,7 @@ and `openbeach-escoresheet_2.0.0_amd64.snap` (9.0 MB), with no lint warnings
 runtime). Installed the OpenVolley snap (`--dangerous`) and ran it under Xvfb:
 
 - the plugs auto-connected as the table below says (network-manager, bluez,
-  network-observe, removable-media left unconnected);
+  removable-media left unconnected);
 - the scoretable window rendered, the relay answered on :5173
   (`/api/server/status`), the process ran from `/snap/openvolley-escoresheet/x1`;
 - the app's environment had `SNAP_NAME=openvolley-escoresheet` (what the
@@ -51,9 +51,28 @@ runtime). Installed the OpenVolley snap (`--dangerous`) and ran it under Xvfb:
 - the 2.3.0 binary logged `[update] 2.3.0 DebNoRepo: checking ...`: it predates
   the switch and would check for updates in a snap (see below).
 
-Not tested: a real Ubuntu desktop with full AppArmor enforcement (snapd in a
-container only has partial AppArmor support), the hotspot and Bluetooth
-through the `network-manager` / `bluez` plugs, the tray, the store review.
+Re-checked by an independent rebuild (2026-10-08, fresh container, same
+recipe): both snaps built again from the pinned .debs (the sha256 values match
+the GitHub release assets); both installed and ran with the snap's AppArmor
+profile in **enforce** mode and its seccomp filter loaded (host kernel AppArmor,
+`snap debug confinement`: partial):
+
+- OpenVolley's relay on :5173 / :8080 and OpenBeach's on :5174 / :8081 bound on
+  all interfaces and answered `/api/server/status` **with the laptop's address
+  listed and network-observe not connected** (the `network` interface's
+  nameservice abstraction allows the raw netlink route socket, seccomp allows
+  `NETLINK_ROUTE`), so the snaps do not plug network-observe;
+- each app owned its `…SingleInstance` name on the session bus, and a second
+  `snap run` logged `[app] started again: showing the running app` and exited 0;
+- the updater switch, with a binary built from this branch put into the snap
+  (`snap try`): no update check with snapd's `SNAP_NAME`; the same binary with
+  `SNAP_NAME` removed fell back to the normal detection. The released 2.3.0
+  logged `[update] 2.4.0 is available (running 2.3.0)` in the snap.
+
+Not tested: a real Ubuntu desktop. In the container, D-Bus mediation was not
+active (the snap reached NetworkManager even with `network-manager`
+disconnected), so the network-manager / bluez policy itself, the hotspot, the
+Bluetooth network, the tray, xdg-open and the store review are untested.
 
 ## The in-app updater is off
 
@@ -64,11 +83,15 @@ never updates itself"; the same switch serves Flatpak and the AUR). Options >
 App version then says "Updates come from your package manager" and has no
 check button.
 
-**The first versions that have this switch are the first to publish:**
-OpenVolley 2.4.0 and the OpenBeach release after 2.0.0. The yaml files point at
-2.3.0 / 2.0.0 today only because those are released and build; a snap of them
-would treat itself as a .deb installed by hand (it would offer "add the APT
-repository" and check get.openvolley.app). Run `bump.sh` first.
+**Only a release that has this switch may be published.** It is commit
+e323002f on `feat/packaging`, not yet on `main`: the released OpenVolley 2.4.0
+(tag `desktop-v2.4.0` = `main` d471d80d) and OpenBeach 2.0.0 do **not** have
+it (their binaries have no `SNAP_NAME` string). The first OpenVolley and
+OpenBeach releases built after `feat/packaging` is merged are the first to
+publish. The yaml files point at 2.3.0 / 2.0.0 only because those build; a snap
+of any release without the switch treats itself as a .deb installed by hand
+(it checks get.openvolley.app, offers updates it cannot install and "add the
+APT repository"). `bump.sh` refuses such a release.
 
 snapd refreshes a snap only while it is not running (refresh-app-awareness), so
 no update lands during a match. It postpones a refresh for at most 14 days
@@ -79,11 +102,10 @@ refreshes: `sudo snap refresh --hold=72h openvolley-escoresheet`.
 
 | Plug | Auto-connected | What for | Without it |
 |---|---|---|---|
-| `network` | yes | the cloud sync and the live score upload | offline only |
+| `network` | yes | the cloud sync and the live score upload; also listing the laptop's addresses (raw netlink route socket) for "Connect tablets" | offline only |
 | `network-bind` | yes | the tablets' relay: HTTP :5173 / WS :8080 (OpenBeach :5174 / :8081) | no tablets |
 | `home` | yes (classic) | PDFs and exports to `~/Downloads`, imports | saving outside the snap fails |
 | desktop, wayland, x11, opengl, gsettings | yes (gnome extension) | the window, the tray (StatusNotifier) | - |
-| `network-observe` | **no** | listing the laptop's addresses (`local-ip-address`: a raw netlink route socket) for "Connect tablets" | the address list and QR code for the tablets are likely empty (snapd's policy allows `network netlink raw` only through network-observe; the container test could not show it) |
 | `network-manager` | **no** | the tablets' Wi-Fi hotspot and Bluetooth network (NetworkManager over D-Bus) | "NetworkManager not available"; use the hall Wi-Fi |
 | `bluez` | **no** | switching the Bluetooth adapter on and discoverable (BlueZ D-Bus) | no Bluetooth network |
 | `removable-media` | **no** | exports to a USB stick (`/media`, `/mnt`) | the stick is not visible in file dialogs |
@@ -96,7 +118,6 @@ to bind the relay's ports.
 Until the store grants auto-connection, a user connects them once:
 
 ```bash
-sudo snap connect openvolley-escoresheet:network-observe
 sudo snap connect openvolley-escoresheet:network-manager
 sudo snap connect openvolley-escoresheet:bluez
 sudo snap connect openvolley-escoresheet:removable-media   # optional
@@ -110,7 +131,7 @@ local session).
 
 ## What does not work, or works differently, in the snap
 
-- **Hotspot / Bluetooth / tablet addresses** need the manual connections above
+- **Hotspot / Bluetooth** need the manual connections above
   until the store grants auto-connect.
 - **Data location.** All app data (the matches and teams in WebKit storage,
   the automatic backups, the activity log) lives in
@@ -181,7 +202,7 @@ Try it on an Ubuntu desktop:
 
 ```bash
 sudo snap install --dangerous ./openvolley-escoresheet_2.3.0_amd64.snap
-sudo snap connect openvolley-escoresheet:network-observe   # and the others above
+sudo snap connect openvolley-escoresheet:network-manager   # and bluez
 snap run openvolley-escoresheet
 ```
 
@@ -189,13 +210,15 @@ snap run openvolley-escoresheet
 
 ```bash
 cd escoresheet/packaging/snap
-./bump.sh openvolley 2.4.0       # or: ./bump.sh openbeach 2.0.1
+./bump.sh openvolley 2.4.1       # or: ./bump.sh openbeach 2.0.1
 ```
 
 It downloads the .deb and its `.sig` from the GitHub release, checks the
 minisign signature against the updater key in `tauri.conf.json` /
-`tauri.beach.conf.json` (when `minisign` is installed; it warns otherwise) and
-the version in the package, then writes `version`, the URL and the sha256 into
+`tauri.beach.conf.json` (when `minisign` is installed; it warns otherwise),
+the version in the package and that the binary has the updater switch (it
+refuses 2.4.0 and earlier; `ALLOW_SELF_UPDATING=1` for a local test only;
+needs `curl`, `jq`, `dpkg-deb`), then writes `version`, the URL and the sha256 into
 the snapcraft.yaml. Commit, build, upload.
 
 ## Owner steps (store; nothing of this is done)
@@ -204,25 +227,26 @@ the snapcraft.yaml. Commit, build, upload.
    first login at snapcraft.io).
 2. Register the names: `snapcraft register openvolley-escoresheet` and
    `snapcraft register openbeach-escoresheet`.
-3. Bump to the first versions with the updater switch (OpenVolley 2.4.0, the
-   next OpenBeach), build both, then upload, first to a test channel:
-   `snapcraft upload --release=edge openvolley-escoresheet_2.4.0_amd64.snap`.
+3. Merge `feat/packaging` (the updater switch, e323002f) and release
+   OpenVolley and OpenBeach from it; 2.4.0 does not have the switch. Bump to
+   those releases (`bump.sh`, with `minisign` installed), build both, then
+   upload, first to a test channel:
+   `snapcraft upload --release=edge openvolley-escoresheet_<X>_amd64.snap`.
    Install from edge on a real Ubuntu laptop, connect the plugs, test a hotspot
    and a tablet, then `snapcraft release openvolley-escoresheet <rev> stable`.
 4. Expect a manual review on the first upload: the `dbus` slot
    (`single-instance`) and the super-privileged plugs. If the slot holds up
    the review, it can be dropped (a second launch then shows "port in use"
    instead of raising the window).
-5. Ask for auto-connection of `network-manager`, `bluez` and `network-observe`
-   for both snaps: a post in the **store-requests** category of
+5. Ask for auto-connection of `network-manager` and `bluez` for both snaps: a post in the **store-requests** category of
    forum.snapcraft.io, explaining that the app creates a temporary Wi-Fi
    hotspot / Bluetooth PAN for the scoring tablets (volatile NetworkManager
-   profiles bound to the app's D-Bus connection) and lists the interfaces'
-   addresses for the tablets. Until granted, users run the `snap connect`
+   profiles bound to the app's D-Bus connection). Until granted, users run the `snap connect`
    lines (the store description says so).
 6. Store listing: the icon from `snap/gui/icon.png`, screenshots, category
-   (Utilities / Sports), license. The yaml says `GPL-3.0-only`; change it if
-   the project is "GPL-3.0-or-later".
+   (Utilities / Sports), license. The yaml says `GPL-3.0-only`, like the
+   winget and Scoop manifests, while the AUR and Flatpak packages say
+   `GPL-3.0-or-later`: decide which one is right and make them all match.
 7. Optional: build in CI later (`snapcore/action-build` +
    `snapcore/action-publish` with a `SNAPCRAFT_STORE_CREDENTIALS` secret from
    `snapcraft export-login`). That puts a store credential in GitHub, which
