@@ -9,8 +9,10 @@ version is binding.
 
 - OpenVolley is a private, non-commercial open-source project. There are no
   ads, no tracking, no analytics tools and no cookies.
-- The apps work offline. Your data stays on your device until you sign in and
-  sync with the server.
+- The apps work offline. Your matches are stored on your device, and in the
+  server's database only once you sign in. So that tablets receive a running
+  match, the browser and Android apps send it through my server even without
+  signing in, held in memory only.
 - An electronic scoresheet contains data about players, team staff and
   officials: names, shirt numbers, dates of birth and signatures. Only team
   names, the score and shirt numbers are public, for beach volleyball also the
@@ -61,7 +63,8 @@ information both laws require.
   automated individual decisions. I do not sell data.
 - **No third-party content.** Fonts and program code come from our own sites,
   not from other servers. I name the exceptions explicitly (section 12).
-- **Offline first.** What you record without signing in stays on your device.
+- **Offline first.** What you record without signing in is stored only on
+  your device. For the transfer to the tablets, see section 9.
 
 ## 4. Website and download page
 
@@ -80,6 +83,12 @@ matches, teams, rosters with dates of birth, sets, match events, lists of
 officials, settings and a local log of how the app was used (for
 troubleshooting; you can download it yourself). Matches stay stored until you
 delete them or clear the app data.
+
+**Live transfer, also without signing in.** As soon as a match is created,
+the browser and Android apps send it (teams, rosters, score, events) to my
+server's live relay, so that referee and bench tablets receive it (section 9).
+It is held there in memory only. The desktop app uses its own relay on the
+local network instead.
 
 **When signed in**, the app syncs your matches with the server (section 7).
 It also uploads:
@@ -235,6 +244,7 @@ the tablet.
 
 **Through the server (cloud relay):** the live data passes through my server.
 It holds it in memory only and discards it 24 hours after the last activity.
+This also applies without signing in.
 
 **Venue mode (LAN):** the desktop app can serve the tablets directly on the
 hall's local network, also through the laptop's own Wi-Fi hotspot. The data
@@ -297,7 +307,7 @@ If you do not want to be in the directory, write to support@openvolley.app.
   your F-Droid app does that.
 - **Android app installed directly:** the app asks once whether it should
   look for updates (default: no). Only if you agree does it query
-  `get.openvolley.app`, at most once a day. You can turn this off again in the
+  `get.openvolley.app`, about once a day. You can turn this off again in the
   settings.
 - **Home page of app.openvolley.app:** if you open it in a desktop browser,
   your browser fetches the list of the newest versions from GitHub
@@ -328,6 +338,11 @@ request needs it.
   The logs are overwritten by size, usually after days to a few weeks.
 - **Cloudflare** processes the IP address, address and browser identifier of
   every request and keeps them under its own rules.
+- **IP addresses in memory only:** to protect against misuse the server
+  limits requests and connections per IP address, and the live relay uses it
+  to recognise devices at the same venue. It keeps IP addresses in memory
+  only and neither stores nor logs them (except as a pseudonymised hash of an
+  approval, section 7).
 - **Change log:** for accountability the server records who changed roles,
   approved, closed or reopened matches, added co-editors or changed
   tournament entries, and when. The entries can contain co-editors' email
@@ -360,7 +375,8 @@ in Switzerland; no third party receives data for this (section 18).
 **Transfers abroad:** according to the Swiss Federal Council, Germany and the
 EU provide adequate data protection. For the USA I rely on the Swiss-U.S. Data
 Privacy Framework where the provider is certified, and otherwise on the
-standard contractual clauses in the providers' contracts.
+standard contractual clauses in the providers' contracts. You can ask me for a
+copy of these safeguards.
 
 ## 16. How long I keep data
 
@@ -418,6 +434,7 @@ You have the right to:
 - **correction** of inaccurate data;
 - **deletion** or anonymisation of data;
 - **object** to the processing;
+- **restrict** the processing, for example while a correction is checked;
 - **receive** your data in a common format or have it transferred (the apps
   also let you download backup copies and scoresheets);
 - **withdraw consent** at any time (for example for the update check on
@@ -452,6 +469,10 @@ Where the GDPR applies, I rely on:
 
 Under the Swiss FADP I process data only for the purposes stated and to the
 extent needed.
+
+**No obligation to provide data:** you are not required by law or contract
+to give me any data. Without an email address and a password I cannot open an
+account, though, and without rosters there is no scoresheet.
 
 ## 21. Changes
 
