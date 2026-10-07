@@ -88,3 +88,25 @@ export function deriveTeamSanctionFlags(events) {
     delayWarningAway: has('away', isDelaySanction)
   }
 }
+
+/**
+ * Penalty points still owed at the start of a set. A misconduct penalty or a
+ * delay penalty gives the opponent a point and the service (FIVB 21.3.1,
+ * 16.2.3); one given before both starting line-ups of the set are in is
+ * recorded first and its point awarded once the second line-up is saved.
+ * Due only when both teams have a starting (isInitial) line-up in the set and
+ * the set has no point yet (otherwise the points were already given).
+ * @param {Array} events all events, INCLUDING the line-up just saved
+ * @param {number} setIndex
+ * @returns {Array<'home'|'away'>} the team to receive each point, in sanction order
+ */
+export function deferredPenaltyPoints(events, setIndex) {
+  const inSet = (events || []).filter(e => e && e.setIndex === setIndex)
+  const hasStartingLineup = (team) => inSet.some(e => e.type === 'lineup' && e.payload?.team === team && e.payload?.isInitial)
+  if (!hasStartingLineup('home') || !hasStartingLineup('away')) return []
+  if (inSet.some(e => e.type === 'point')) return []
+  return inSet
+    .filter(e => e.type === 'sanction' && awardsPoint(e.payload?.type) && (e.payload?.team === 'home' || e.payload?.team === 'away'))
+    .sort((a, b) => (a.seq || 0) - (b.seq || 0))
+    .map(e => (e.payload.team === 'home' ? 'away' : 'home'))
+}
