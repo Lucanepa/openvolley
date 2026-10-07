@@ -121,6 +121,18 @@ describe('SignaturePad with Sign on phone', () => {
     expect(document.querySelector('canvas')).toBeTruthy()
   })
 
+  it('the phone prop going away while the panel is shown falls back to the pad, no crash', async () => {
+    cfg.cloud = 'https://backend.test'
+    auth.value = { user: { id: 'u' }, access: { roles: ['scorer'] } }
+    const { rerender } = render(<SignaturePad open onClose={() => {}} onSave={() => {}} phone={PHONE} />)
+    fireEvent.click(screen.getByTestId('sign-on-phone'))
+    await waitFor(() => expect(screen.getByTestId('phone-sign-link')).toBeInTheDocument())
+    rerender(<SignaturePad open onClose={() => {}} onSave={() => {}} phone={null} />)
+    expect(screen.queryByTestId('phone-sign-panel')).toBeNull()
+    expect(document.querySelector('canvas')).toBeTruthy()
+    expect(api.close).toHaveBeenCalledTimes(1)
+  })
+
   it('a drawn signature is saved with { source: "device" }', async () => {
     vi.useFakeTimers()
     const onSave = vi.fn()

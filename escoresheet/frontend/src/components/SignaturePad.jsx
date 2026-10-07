@@ -218,7 +218,9 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign', ex
 
   return (
     <Modal title={title} open={open} onClose={onClose} width={mode === 'phone' ? 640 : 600} zIndex={zIndex}>
-      {mode === 'phone' ? (
+      {/* `phone` can go away while the modal is open (the caller's data
+          reloading): back on the pad rather than reading a null */}
+      {mode === 'phone' && phoneOffered ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <PhoneSignPanel
             transports={transports}

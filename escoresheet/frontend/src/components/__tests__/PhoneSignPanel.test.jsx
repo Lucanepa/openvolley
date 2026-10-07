@@ -161,10 +161,22 @@ describe('PhoneSignPanel', () => {
   })
 
   it('a refused start with no other way says so', async () => {
-    const api = fakeApi({ startFails: { cloud: { ok: false, status: 403, code: 'OV_SIGN_FORBIDDEN' } } })
+    const api = fakeApi({ startFails: { cloud: { ok: false, status: 429, code: 'OV_SIGN_RATE_LIMITED' } } })
     render(<PhoneSignPanel {...props(api, { transports: { cloud: CLOUD, lan: { ok: false, reason: 'noRelay' }, default: 'cloud' } })} />)
     expect(await screen.findByTestId('phone-sign-status')).toHaveTextContent(en.phoneSign.startFailed)
     expect(api.startPhoneSign).toHaveBeenCalledTimes(1)
+  })
+
+  it('a start refused for the account says why: signed out (401) or no role (403)', async () => {
+    const onlyCloud = { cloud: CLOUD, lan: { ok: false, reason: 'noRelay' }, default: 'cloud' }
+    let api = fakeApi({ startFails: { cloud: { ok: false, status: 401, code: 'OV_AUTH_REQUIRED' } } })
+    render(<PhoneSignPanel {...props(api, { transports: onlyCloud })} />)
+    expect(await screen.findByTestId('phone-sign-status')).toHaveTextContent(en.phoneSign.reasonSignIn)
+    cleanup()
+    api = fakeApi({ startFails: { cloud: { ok: false, status: 403, code: 'OV_SIGN_FORBIDDEN' } } })
+    render(<PhoneSignPanel {...props(api, { transports: onlyCloud })} />)
+    expect(await screen.findByTestId('phone-sign-status')).toHaveTextContent(en.phoneSign.reasonRole)
+    expect(screen.getByTestId('phone-sign-new-link')).toBeInTheDocument()
   })
 
   it('both ways: the switch makes a new link on the other one and is remembered', async () => {
