@@ -358,6 +358,19 @@ describe('accounts on Postgres', { skip: SKIP_PG }, () => {
       assert.ok(await accounts.findTakenGame({ userId: ids.scorer, rows: [{ external_id: `old_${n}`, scheduled_at: '2026-11-10T16:00:00Z' }] }))
     })
 
+    it('with sports, never names the holder of a game of another sport (the stored sport counts)', async () => {
+      const n = gameSeq++
+      // a beach scorer holds beach game n; the indoor scorer has a beach TEST match
+      const holder = await user(`bh${n}`, ['beach:scorer'])
+      assert.equal((await insert({ external_id: `bh_${n}`, game_n: n, sport_type: 'beach', scheduled_at: '2026-10-10T16:00:00Z' }, holder)).status, 200)
+      assert.equal((await insert({ external_id: `bt_${n}`, game_n: n, sport_type: 'beach', test: true, scheduled_at: '2026-10-10T16:00:00Z' })).status, 200)
+      // what server.js enrichGameTaken passes: the payload leaves out sport_type, the stored row (beach) decides
+      const rows = [{ external_id: `bt_${n}`, test: false, game_n: n }]
+      assert.equal((await accounts.findTakenGame({ userId: ids.scorer, rows }))?.game_n, n, 'without sports: every sport')
+      assert.equal(await accounts.findTakenGame({ userId: ids.scorer, rows, sports: ['indoor'] }), null)
+      assert.equal((await accounts.findTakenGame({ userId: ids.scorer, rows, sports: ['indoor', 'beach'] }))?.game_n, n)
+    })
+
     it('findTakenGameForUpdate checks the stored rows with the update over them', async () => {
       const a = gameSeq++
       const b = gameSeq++

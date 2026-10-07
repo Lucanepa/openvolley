@@ -171,6 +171,50 @@ describe('pgQuery and matchRestore: scoring rights per sport', { skip: SKIP_PG }
       assert.deepEqual((await raw.query('SELECT sport_type::text AS s, test FROM matches WHERE id = $1', [t.id])).rows[0], { s: 'beach', test: true })
     })
 
+    it('an upsert that leaves out sport_type is judged by the STORED sport (S1 review)', async () => {
+      const row = async (id) => (await raw.query('SELECT sport_type::text AS s, test, closed_at FROM matches WHERE id = $1', [id])).rows[0]
+      // an indoor-only scorer's beach test match: the payload looks indoor, the row is beach
+      const t = await matchOf(asIndoor(indoor), { sport_type: 'beach', test: true })
+      scorerRequired(await q('matches', 'upsert', { data: { external_id: t.external_id, test: false, status: 'final' }, onConflict: 'external_id' }, asIndoor(indoor)))
+      scorerRequired(await q('matches', 'upsert', { data: { external_id: t.external_id, test: null }, onConflict: 'external_id' }, asIndoor(indoor)))
+      // another row names a sport: this one writes NULL (indoor) over beach, the lock refuses it
+      sportLocked(await q('matches', 'upsert', { data: [{ external_id: uniq(), sport_type: 'indoor' }, { external_id: t.external_id, test: false }], onConflict: 'external_id' }, asIndoor(indoor)))
+      const after = await row(t.id)
+      assert.equal(after.s, 'beach')
+      assert.equal(after.test, true)
+      assert.equal(after.closed_at, null)
+      // it stays writable as a test match (test kept, or set to true)
+      okay(await q('matches', 'upsert', { data: { external_id: t.external_id, status: 'ended' }, onConflict: 'external_id' }, asIndoor(indoor)))
+      okay(await q('matches', 'upsert', { data: { external_id: t.external_id, status: 'ended', test: true }, onConflict: 'external_id' }, asIndoor(indoor)))
+      assert.equal((await row(t.id)).test, true)
+      // the beach game number is still free for a beach scorer
+      okay(await q('matches', 'insert', { data: { external_id: uniq(), sport_type: 'beach', game_n: (await raw.query('SELECT game_n FROM matches WHERE id = $1', [t.id])).rows[0].game_n } }, asBeach(beach)))
+
+      // the reverse: a beach-only scorer's indoor test match (a payload sport of 'beach' hits the lock)
+      const ti = await matchOf(asBeach(beach), { sport_type: 'indoor', test: true })
+      sportLocked(await q('matches', 'upsert', { data: { external_id: ti.external_id, sport_type: 'beach', test: false }, onConflict: 'external_id' }, asBeach(beach)))
+      scorerRequired(await q('matches', 'upsert', { data: { external_id: ti.external_id, test: false }, onConflict: 'external_id' }, asBeach(beach)))
+      assert.deepEqual(await row(ti.id), { s: 'indoor', test: true, closed_at: null })
+      okay(await q('matches', 'upsert', { data: { external_id: ti.external_id, status: 'ended' }, onConflict: 'external_id' }, asBeach(beach)))
+      // and its own beach match needs no sport_type in an upsert (the stored sport counts)
+      const bm = await matchOf(asBeach(beach), { sport_type: 'beach' })
+      okay(await q('matches', 'upsert', { data: { external_id: bm.external_id, status: 'ended' }, onConflict: 'external_id' }, asBeach(beach)))
+      // a NEW row without sport_type is still indoor
+      scorerRequired(await q('matches', 'upsert', { data: { external_id: uniq(), game_n: gameSeq++, status: 'live' }, onConflict: 'external_id' }, asBeach(beach)))
+
+      // an official match of the test-only sport is not taken over by test: true either
+      const official = await matchOf(asBeach(beach), { sport_type: 'beach' })
+      await editor(official, indoor)
+      scorerRequired(await q('matches', 'upsert', { data: { external_id: official.external_id, test: true }, onConflict: 'external_id' }, asIndoor(indoor)))
+      assert.equal((await row(official.id)).test, false)
+
+      // unchanged: the sports the account scores in
+      const own = await matchOf(asIndoor(indoor), { sport_type: 'indoor', test: true })
+      okay(await q('matches', 'upsert', { data: { external_id: own.external_id, test: false }, onConflict: 'external_id' }, asIndoor(indoor)))
+      const bt = await matchOf(asBeach(beach), { sport_type: 'beach', test: true })
+      okay(await q('matches', 'upsert', { data: { external_id: bt.external_id, test: false }, onConflict: 'external_id' }, asBeach(beach)))
+    })
+
     it('NULL and indoor are the same sport; rewriting the same sport is fine', async () => {
       const m = await matchOf(asIndoor(indoor))
       await raw.query('UPDATE matches SET sport_type = NULL WHERE id = $1', [m.id]) // a legacy row
@@ -195,6 +239,27 @@ describe('pgQuery and matchRestore: scoring rights per sport', { skip: SKIP_PG }
       okay(await restore.restoreMatch(backup(uniq('R'), { sport_type: 'indoor', test: true }), asBeach(beach)))
       scorerRequired(await restore.restoreMatch(backup(uniq('R'), { sport_type: 'beach' }), asIndoor(indoor)))
       okay(await restore.restoreMatch(backup(uniq('R'), { sport_type: 'indoor' }), asIndoor(indoor)))
+    })
+
+    it('a backup without sport_type is judged by the STORED sport (S1 review)', async () => {
+      // an indoor-only scorer: its beach test match cannot become official
+      const ext = uniq('R')
+      okay(await restore.restoreMatch(backup(ext, { sport_type: 'beach', test: true }), asIndoor(indoor)))
+      scorerRequired(await restore.restoreMatch(backup(ext, { test: false }), asIndoor(indoor)))
+      scorerRequired(await restore.restoreMatch(backup(ext, { test: false, status: 'final' }), asIndoor(indoor)))
+      const stored = (await raw.query('SELECT sport_type::text AS s, test, closed_at FROM matches WHERE external_id = $1', [ext])).rows[0]
+      assert.deepEqual(stored, { s: 'beach', test: true, closed_at: null })
+      okay(await restore.restoreMatch(backup(ext, { test: true }), asIndoor(indoor)))
+      // the reverse: a beach-only scorer's indoor test match
+      const exti = uniq('R')
+      okay(await restore.restoreMatch(backup(exti, { sport_type: 'indoor', test: true }), asBeach(beach)))
+      assert.equal((await restore.restoreMatch(backup(exti, { sport_type: 'beach', test: false }), asBeach(beach))).status, 409, 'the sport lock')
+      scorerRequired(await restore.restoreMatch(backup(exti, { test: false }), asBeach(beach)))
+      assert.equal((await raw.query('SELECT test FROM matches WHERE external_id = $1', [exti])).rows[0].test, true)
+      // its own sport: unchanged
+      const extb = uniq('R')
+      okay(await restore.restoreMatch(backup(extb, { sport_type: 'beach', test: true }), asBeach(beach)))
+      okay(await restore.restoreMatch(backup(extb, { test: false }), asBeach(beach)))
     })
 
     it('a backup cannot change the sport of a stored match', async () => {

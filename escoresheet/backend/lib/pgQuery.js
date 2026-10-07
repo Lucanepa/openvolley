@@ -830,15 +830,37 @@ export function createPgQuery (options = {}) {
     if (res.rows[0].bad > 0) scorerRequired(`${res.rows[0].bad} ${t.name} row(s) of a non-test match`)
   }
 
-  /** An upsert of matches would not update an existing non-test match (conflict target `target`). */
-  async function assertUpsertTargetsTest (client, t, rows, target, guard) {
+  /**
+   * An upsert of matches (conflict target `target`, payload columns `cols`)
+   * would not update an existing non-test match of a test-only sport.
+   * One sport only (testOnlySports): nor write a non-test match of that
+   * sport, judged on the MERGED row, payload over the stored one: the
+   * payload's sport and test value when it sets the column, else the stored
+   * match's (a new row: missing is indoor, non-test). A payload judged alone
+   * would read a missing sport_type as indoor, so {external_id, test: false}
+   * would un-test a stored beach test match of an indoor-only scorer; and a
+   * beach scorer's {external_id, status} onto its own beach match would be
+   * refused. A row that changes the sport is left to db/012's lock.
+   * Every sport (testOnly): the payload is checked before (every row
+   * test: true), here only the stored matches.
+   */
+  async function assertUpsertTargetsTest (client, t, rows, cols, target, guard) {
     const c = freshCtx()
     const on = target.map(col => `t.${quoteIdent(col)} = r.${quoteIdent(col)}`).join(' AND ')
-    const sql = `SELECT count(*)::int AS bad FROM ${qTable(t.name)} AS t
-      JOIN json_populate_recordset(NULL::${qTable(t.name)}, ${c.p(JSON.stringify(rows))}::json) AS r ON ${on}
-     WHERE ${nonTestSql(guard, 't')}`
+    let cond = `(t.ctid IS NOT NULL AND ${nonTestSql(guard, 't')})`
+    if (!guard.allSports) {
+      const tc = cfg.testColumn
+      const sc = cfg.sportColumn
+      const notTest = tc && guard.parent.columns.has(tc) ? `${cols.includes(tc) ? 'r' : 't'}.${quoteIdent(tc)} IS NOT TRUE` : 'true'
+      const sport = sportIsSql(guard, sc && cols.includes(sc) ? 'r' : 't', guard.testSports[0])
+      cond += ` OR (${notTest} AND ${sport})`
+    }
+    const sql = `SELECT count(*)::int AS bad
+      FROM json_populate_recordset(NULL::${qTable(t.name)}, ${c.p(JSON.stringify(rows))}::json) AS r
+      LEFT JOIN ${qTable(t.name)} AS t ON ${on}
+     WHERE ${cond}`
     const res = await client.query(sql, c.values)
-    if (res.rows[0].bad > 0) scorerRequired(`${res.rows[0].bad} existing match(es) are not test matches`)
+    if (res.rows[0].bad > 0) scorerRequired(`${res.rows[0].bad} match row(s) are not test matches`)
   }
 
   async function runWrite (cat, t, action, params, opts, ctx) {
@@ -882,10 +904,11 @@ export function createPgQuery (options = {}) {
         const ids = rows.map(r => r[enforce.fk])
         ownPre = (client) => assertMatchIdsOwned(client, enforce, ids)
       }
-      if (testOnly && testOnly.isParent) {
+      // one sport only, an upsert: judged on the merged rows (assertUpsertTargetsTest)
+      if (testOnly && testOnly.isParent && (action === 'insert' || testOnly.allSports)) {
         const notTest = nonTestRowsOf(testOnly, rows).length
         if (notTest > 0) scorerRequired(`${notTest} match row(s) are not test matches`)
-      } else if (testOnly) {
+      } else if (testOnly && !testOnly.isParent) {
         const ids = rows.map(r => r[testOnly.fk])
         testPre = (client) => assertTestMatchIds(client, testOnly, ids)
       }
@@ -910,7 +933,7 @@ export function createPgQuery (options = {}) {
         }
         if (testOnly && testOnly.isParent) {
           const conflictTarget = target
-          testPre = (client) => assertUpsertTargetsTest(client, t, rows, conflictTarget, testOnly)
+          testPre = (client) => assertUpsertTargetsTest(client, t, rows, cols, conflictTarget, testOnly)
         }
         // The creator of an existing match never changes through an upsert.
         const updatable = cols.filter(c => !target.includes(c) && !(guard?.isParent && c === ownerCol))

@@ -142,6 +142,28 @@ describe('indoor / beach separation end to end', { skip: SKIP }, () => {
     assert.equal(r.text.includes('ivan'), false)
   })
 
+  it('an indoor scorer cannot make its beach test match official by leaving out sport_type (upsert, restore)', async () => {
+    // a beach game held by the beach scorer, and the indoor scorer's beach test match
+    const n = gameSeq++
+    assert.equal((await insert(users.bea, match('beach', { game_n: n }))).status, 200)
+    const t = match('beach', { test: true })
+    assert.equal((await insert(users.ivan, t)).status, 200)
+    const stored = async () => (await sql.query('SELECT sport_type::text AS s, test, closed_at FROM matches WHERE external_id = $1', [t.external_id])).rows[0]
+    // /api/db upsert, onto its own test match and onto the held game
+    for (const data of [{ external_id: t.external_id, test: false, status: 'final' }, { external_id: t.external_id, test: false, game_n: n }]) {
+      const r = await dbCall(users.ivan, 'matches', 'upsert', { data, onConflict: 'external_id' })
+      expectCode(r, 403, 'OV_SCORER_REQUIRED')
+      assert.equal(r.json.error.claim ?? null, null, 'never the holder of a beach game')
+    }
+    // /api/match/restore without sport_type
+    const rr = await api(srv.base, '/api/match/restore', { token: users.ivan.token, body: { match: { external_id: t.external_id, test: false, status: 'ended', game_n: n }, sets: [], events: [] } })
+    expectCode(rr, 403, 'OV_SCORER_REQUIRED')
+    assert.equal(rr.json.error.claim ?? null, null)
+    assert.deepEqual(await stored(), { s: 'beach', test: true, closed_at: null })
+    // still writable as a test match
+    assert.equal((await dbCall(users.ivan, 'matches', 'upsert', { data: { external_id: t.external_id, status: 'ended' }, onConflict: 'external_id' })).status, 200)
+  })
+
   it('the sport of a match cannot change (409 OV_SPORT_LOCKED)', async () => {
     const i = await insert(users.both, match('indoor'))
     expectCode(await dbCall(users.both, 'matches', 'update', { data: { sport_type: 'beach' }, filters: [eq('id', i.json.data.id)] }), 409, 'OV_SPORT_LOCKED')
