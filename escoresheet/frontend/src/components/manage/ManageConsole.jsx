@@ -48,7 +48,7 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions }) {
   const { user, access } = useAuth()
   const brand = useManagerBrand()
   // the account lists, invites, audit and saved teams of this brand's app
-  // (OpenBeach: ?app=beach); OpenVolley's console asks as before
+  // (OpenVolley: ?app=indoor, OpenBeach: ?app=beach; saved teams only narrow for beach)
   const scope = brand.scope || undefined
   const allowed = useMemo(() => manageTabsFor(access, brand), [access, brand])
   const current = allowed.includes(tab) ? tab : allowed[0]

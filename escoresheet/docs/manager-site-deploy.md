@@ -107,7 +107,7 @@ What differs from `manager.openvolley.app`:
 | Page, entry | `manager.html`, `src/manager-main.jsx` | `manager-beach.html`, `src/manager-beach-main.jsx` |
 | Name, logo, icons | OpenVolley | OpenBeach, logo B2 (`brand/beach/`, copied over `favicon.*`, `apple-touch-icon.png`, `icon-192/512.png` by the build), its own `manifest.webmanifest` (no service worker) |
 | Tabs (admin) | accounts, invites, official games, closed matches, audit, saved teams | accounts, invites, audit, saved teams |
-| Lists | as before (no `?app=`) | `?app=beach`: OpenBeach members, beach codes, beach audit, beach competitions and pairs (`?sport=beach`, no offline cache) |
+| Lists | `?app=indoor`: OpenVolley members, indoor codes (new codes `sport: 'indoor'`), indoor audit; saved teams as before | `?app=beach`: OpenBeach members, beach codes, beach audit, beach competitions and pairs (`?sport=beach`, no offline cache) |
 | Roles | `scorer`, `referee`, `competition_manager`, `admin` | `beach:scorer`, `beach:referee`, `beach:competition_manager` (shown as Scorer, Referee, Competition manager). The global admin is managed in OpenVolley's console |
 | Auth calls | no `app` | `app: 'beach'` on sign-up, reset, reset confirm and resend: OpenBeach's mails (`OpenBeach <noreply@openvolley.app>`), links to `manager-beach`, and sign-up joins OpenBeach |
 | Signed-in account that has not joined OpenBeach | n/a | "Join OpenBeach" (`POST /api/account/join`), then the invite-code step |
@@ -122,7 +122,7 @@ account "Join OpenBeach" first. An indoor role gives nothing here.
 | Piece | Change |
 |---|---|
 | Frontend build | `node scripts/build-subdomains.js manager-beach` (also `npm run build:manager-beach`) -> `escoresheet/frontend/dist-manager-beach`. noindex as the indoor manager (`robots.txt`, meta, `_headers`). |
-| Backend | `https://manager-beach.openvolley.app` is in `lib/cors.js` `ALLOWED_ORIGINS`; the running backend already trusts it (`*.openvolley.app`). The OpenBeach mails need the S2 backend image; the env defaults are right (`MAIL_FROM_BEACH` = OpenBeach <the address of `MAIL_FROM`>, `MANAGER_URL_BEACH` = `https://manager-beach.openvolley.app`), so nothing has to be set in `.env`. |
+| Backend | `https://manager-beach.openvolley.app` is in `lib/cors.js` `ALLOWED_ORIGINS`; the running backend already trusts it (`*.openvolley.app`). The OpenBeach mails need the S2 backend image; the env defaults are right (`MAIL_FROM_BEACH` = OpenBeach <the address of `MAIL_FROM`>, `MANAGER_URL_BEACH` = `https://manager-beach.openvolley.app` while `MANAGER_URL` is the default), so nothing has to be set in production's `.env`. A backend with another `MANAGER_URL` (dev, test, staging) derives the OpenBeach base from it (`.../manager-beach.html`, or `MANAGER_URL` itself with a startup warning, `deploy/env.example`) and never links to production's manager-beach. |
 | Database | Nothing new (db/012 from S1). |
 
 ## Cloudflare Pages project (owner: create it, nothing here creates it)
@@ -165,7 +165,11 @@ no backend change.
    prints `noindex, nofollow`.
 2. Sign in as the global admin: four tabs (accounts, invites, audit, saved
    teams). Invites: a new code shows the plain role and is listed only here,
-   not in OpenVolley's console. Accounts: only OpenBeach members.
+   not in OpenVolley's console (`manager.openvolley.app` and the main app's
+   console ask `?app=indoor`). Accounts: only OpenBeach members; a throwaway
+   OpenBeach sign-up is pending here and absent from OpenVolley's accounts.
+   An OpenBeach-only member appears in OpenVolley's console only once they
+   join OpenVolley or get an indoor role (the global admin role included).
 3. `#signup` with a throwaway address: the confirmation mail comes from
    `OpenBeach <noreply@openvolley.app>`, its link opens
    `manager-beach.openvolley.app/#confirm?token=`; the account lands on the
