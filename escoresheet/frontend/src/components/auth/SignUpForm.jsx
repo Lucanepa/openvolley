@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { confirmationLinkSent, needsEmailConfirmation } from './signUpResult'
 import DateOfBirthInput from './DateOfBirthInput'
 import { Button, cn, Field, FOCUS_RING, Input } from '../../ui'
+import { LegalSentence } from '../../legal/LegalLinks'
 
 export const MIN_PASSWORD_LENGTH = 6
 
@@ -175,7 +176,9 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccoun
           <Input size="lg" type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} autoComplete="new-password" required />
         </Field>
 
-        <Button variant="hero" block type="submit" disabled={loading} loading={loading} className="!mt-5">
+        {/* Free service: no tick box, but the sentence and the links (owner's decision) */}
+        <LegalSentence i18nKey="legal.signUpConsent" data-testid="signup-legal" className="!mt-4 text-xs leading-relaxed text-stone-500" />
+        <Button variant="hero" block type="submit" disabled={loading} loading={loading} className="!mt-3">
           {loading ? t('auth.creatingAccount', 'Creating account...') : t('auth.createAccount', 'Create account')}
         </Button>
       </form>

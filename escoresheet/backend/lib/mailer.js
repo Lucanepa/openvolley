@@ -68,6 +68,7 @@
  */
 
 import nodemailer from 'nodemailer'
+import { legalUrl } from './legalLinks.js'
 
 export const MAIL_LANGS = Object.freeze(['en', 'de', 'fr', 'it'])
 export const MAIL_KINDS = Object.freeze(['reset', 'confirm', 'password_changed', 'approval', 'approval_pin_locked'])
@@ -403,6 +404,22 @@ function templateFor(kind, lang, app, vars) {
   return { subject: swap(m.subject), before, button: m.button, after: m.after.map(swap) }
 }
 
+// The footer line under the signature: where the privacy policy is, in the
+// mail's language. Written as text (host and path, no scheme, no <a>): every
+// mail links only its action, and the password-changed notice nothing at all,
+// so a reader can tell a genuine mail by that.
+const PRIVACY_LABEL = {
+  en: 'Privacy policy:',
+  de: 'Datenschutzerklärung:',
+  fr: 'Protection des données :',
+  it: 'Protezione dei dati:'
+}
+
+export function privacyLine(lang) {
+  const l = langOf(lang) || 'en'
+  return `${PRIVACY_LABEL[l]} ${legalUrl('privacy', l).replace(/^https?:\/\//, '')}`
+}
+
 /**
  * { subject, text, html } of one mail. link: the action link (every kind but
  * password_changed); app: the brand ('indoor' default, 'beach'); vars: the
@@ -416,7 +433,7 @@ export function renderMail(kind, lang, { link, app, vars } = {}) {
   if (m.button && !link) throw new Error(`mailer: ${kind} needs a link`)
   const textParts = [...m.before]
   if (m.button) textParts.push(link)
-  textParts.push(...m.after, `– ${brand.name}`)
+  textParts.push(...m.after, `– ${brand.name}`, privacyLine(lang))
   const text = textParts.join('\n\n') + '\n'
 
   const p = (s) => `<p style="margin:0 0 16px">${escapeHtml(s)}</p>`
@@ -429,6 +446,7 @@ export function renderMail(kind, lang, { link, app, vars } = {}) {
     '<div style="max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e7e5e4;border-radius:12px;padding:24px">' +
     m.before.map(p).join('') + button + m.after.map(p).join('') +
     `<p style="margin:24px 0 0;font-size:13px;color:#78716c">${escapeHtml(brand.name)}</p>` +
+    `<p style="margin:8px 0 0;font-size:12px;color:#78716c">${escapeHtml(privacyLine(lang))}</p>` +
     '</div></body></html>'
   return { subject: m.subject, text, html }
 }

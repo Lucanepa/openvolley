@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { Check, X } from 'lucide-react'
 import { Button, cn, Field, FOCUS_RING, IconButton, Input } from '../../ui'
 import CreateAccountLink from './CreateAccountLink'
+import LegalLinks from '../../legal/LegalLinks'
 import { backdropDismiss } from '../../ui/backdropDismiss.js'
 
 // The contact address in the server's 503 answer ("... Contact x@y.")
@@ -205,6 +206,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp, initialFor
               )}
             </>
           )}
+          <LegalLinks docs={['privacy', 'terms', 'impressum']} className="mt-4 text-center text-[11px] text-stone-400" />
         </div>
       </div>
     </div>

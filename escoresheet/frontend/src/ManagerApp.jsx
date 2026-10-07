@@ -12,6 +12,7 @@ import { AppSpinner, BUTTON_SIZES, BUTTON_VARIANTS, Button, cn, consoleHeaderBtn
 import { scorerAppUrlFor, SIGN_UP_HASH } from './utils/managerSite'
 import { parseAuthLinkHash, takeAuthLinkFromLocation } from './utils/authLinks'
 import { useManagerBrand } from './managerBrand'
+import LegalLinks from './legal/LegalLinks'
 import { accessForApp } from './lib/access'
 import { fetchMe, joinApp } from './lib/accountApi'
 
@@ -194,6 +195,7 @@ function Gate({ width, className, children }) {
       eyebrow={t('managerSite.eyebrow')}
       corner={<LanguageSelect compact />}
       footer={managerFooter(brand)}
+      below={<LegalLinks className="text-[11px] text-stone-400" />}
     >
       {children}
     </GateScreen>

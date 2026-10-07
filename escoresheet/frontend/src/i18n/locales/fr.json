@@ -3193,5 +3193,13 @@
         "scorer": "Marqueur"
       }
     }
+  },
+  "legal": {
+    "nav": "Informations légales",
+    "privacy": "Protection des données",
+    "terms": "Conditions d’utilisation",
+    "impressum": "Mentions légales",
+    "opensource": "Avis open source",
+    "signUpConsent": "La création d’un compte vaut acceptation des <terms>conditions d’utilisation</terms> et de la <privacy>déclaration de protection des données</privacy>."
   }
 }

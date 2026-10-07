@@ -12,6 +12,7 @@ import SavedTeamsPanel from './SavedTeamsPanel'
 import TournamentsPanel from './tournaments/TournamentsPanel'
 import { accessForApp } from '../../lib/access'
 import { useManagerBrand } from '../../managerBrand'
+import LegalLinks from '../../legal/LegalLinks'
 
 const TABS = [
   { id: 'accounts', icon: Users, admin: true },
@@ -100,6 +101,7 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions }) {
         current={current}
         onSelect={onTab}
         navLabel={t('manage.nav')}
+        footer={<LegalLinks className="text-[11px] text-stone-400" />}
       >
         {visited.has('accounts') && <ConsolePanel id="accounts" current={current}><AccountsPanel selfId={user.id} app={scope} /></ConsolePanel>}
         {visited.has('invites') && <ConsolePanel id="invites" current={current}><InvitesPanel app={scope} /></ConsolePanel>}

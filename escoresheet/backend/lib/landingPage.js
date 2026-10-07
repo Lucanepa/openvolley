@@ -11,6 +11,7 @@
 
 import { icon } from './icons.js'
 import { brandMark } from './brandMark.js'
+import { legalUrl } from './legalLinks.js'
 
 export const INDOOR_ROLES = [
   { key: 'referee', label: 'Referee', path: '/referee', icon: 'whistle' },
@@ -33,6 +34,15 @@ export function escapeHtml(value) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
 }
+
+// The legal pages on openvolley.app (English, like the page). Opened on a
+// venue LAN without internet they simply do not load; nothing else here
+// depends on them.
+const LEGAL_FOOTER = [
+  ['privacy', 'Privacy policy'],
+  ['terms', 'Terms of use'],
+  ['impressum', 'Legal notice']
+].map(([doc, label]) => `<a href="${escapeHtml(legalUrl(doc, 'en'))}">${label}</a>`).join(' · ')
 
 const plural = (n, one, many) => `${n} ${n !== 1 ? many : one}`
 
@@ -119,6 +129,9 @@ const STYLE = `
     .match-time { font-size: 12px; color: var(--stone-500); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
     .footer { margin-top: 8px; font-size: 12px; color: var(--stone-400); text-align: center; }
+    .footer p { margin: 0; }
+    .footer p + p { margin-top: 4px; }
+    .footer a { text-decoration: underline; text-decoration-color: var(--stone-300); text-underline-offset: 2px; }
     a { color: inherit; text-decoration: none; }
     a:hover { text-decoration: underline; }
     a:focus-visible { outline: 2px solid rgb(248 113 113 / 0.6); outline-offset: 2px; border-radius: 4px; }
@@ -210,7 +223,10 @@ ${matches.length > 0 ? `
     </div>
   </section>` : ''}
 
-  <footer class="footer">OpenVolley – open-source volleyball scoring</footer>
+  <footer class="footer">
+    <p>OpenVolley – open-source volleyball scoring</p>
+    <p>${LEGAL_FOOTER}</p>
+  </footer>
 </main>
 </body>
 </html>`

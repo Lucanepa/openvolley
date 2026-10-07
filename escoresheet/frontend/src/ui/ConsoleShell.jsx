@@ -66,7 +66,7 @@ export function ConsoleShell({ logo, eyebrow, badge, actions, tabs, current, onS
 
         <main className="flex-1 min-w-0 pt-5">
           {children}
-          {footer && <p className="mt-6 pb-3 text-center text-[10px] text-stone-400">{footer}</p>}
+          {footer && <div className="mt-6 pb-3 text-center text-[10px] text-stone-400">{footer}</div>}
         </main>
       </div>
 

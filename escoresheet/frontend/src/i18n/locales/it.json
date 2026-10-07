@@ -3199,5 +3199,13 @@
         "scorer": "Segnapunti"
       }
     }
+  },
+  "legal": {
+    "nav": "Note legali",
+    "privacy": "Protezione dei dati",
+    "terms": "Condizioni d’uso",
+    "impressum": "Note legali",
+    "opensource": "Avviso open source",
+    "signUpConsent": "Creando un account si accettano le <terms>condizioni d’uso</terms> e l’<privacy>informativa sulla protezione dei dati</privacy>."
   }
 }
