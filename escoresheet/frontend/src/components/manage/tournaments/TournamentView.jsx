@@ -13,6 +13,7 @@ import { TournamentStatus, datesLabel, useTournamentError } from './shared'
 import DrawsSection from './DrawsSection'
 import ScheduleSection from './ScheduleSection'
 import RankingSection from './RankingSection'
+import ImportModal from './ImportModal'
 
 const STATUSES = ['draft', 'published', 'live', 'finished', 'archived']
 
@@ -203,14 +204,16 @@ function CourtsSection({ bundle, reload }) {
 
 /**
  * One tournament: details and co-managers, courts, draws (entries, seeds,
- * bracket, results), the schedule, the final ranking. Read-only for a
- * tournament this account does not edit.
+ * bracket, results), the schedule, the final ranking, and the Excel/CSV
+ * import (T2). Read-only for a tournament this account does not edit.
  */
-export default function TournamentView({ id, onBack }) {
+export default function TournamentView({ id, onBack, initialImport = false }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useTournamentError()
   const [section, setSection] = useState('draws')
+  // the Excel/CSV import (T2): from the Draws section, or right after "New tournament" from a file
+  const [importing, setImporting] = useState(initialImport)
   const { data, error, loading, reload } = usePanelData(() => tournamentApi.get(id), [id], { enabled: online })
 
   const sections = ['details', 'courts', 'draws', 'schedule', ...(data?.tournament?.can_edit ? ['ranking'] : [])]
@@ -245,9 +248,17 @@ export default function TournamentView({ id, onBack }) {
           </div>
           {section === 'details' && <DetailsSection bundle={data} reload={reload} onDeleted={onBack} />}
           {section === 'courts' && <CourtsSection bundle={data} reload={reload} />}
-          {section === 'draws' && <DrawsSection bundle={data} reload={reload} />}
+          {section === 'draws' && <DrawsSection bundle={data} reload={reload} onImport={online ? () => setImporting(true) : null} />}
           {section === 'schedule' && <ScheduleSection bundle={data} reload={reload} />}
           {section === 'ranking' && <RankingSection bundle={data} />}
+          {data.tournament.can_edit && (
+            <ImportModal
+              open={importing}
+              bundle={data}
+              onClose={() => setImporting(false)}
+              onApplied={() => { setImporting(false); setSection('draws'); reload() }}
+            />
+          )}
         </>
       )}
     </section>

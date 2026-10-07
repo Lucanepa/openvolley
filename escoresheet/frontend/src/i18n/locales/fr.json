@@ -2469,7 +2469,8 @@
         "tournament_draw": "Tableau modifié",
         "tournament_entry": "Équipes modifiées",
         "tournament_schedule": "Programme modifié",
-        "tournament_result": "Résultat saisi"
+        "tournament_result": "Résultat saisi",
+        "tournament_import": "Excel/CSV importé"
       }
     }
   },
@@ -2692,6 +2693,10 @@
   "tournaments": {
     "title": "Tournois",
     "new": "Nouveau tournoi",
+    "startWith": "Ajouter les équipes",
+    "startManual": "À la main",
+    "startFile": "Depuis Excel ou CSV",
+    "startFileHint": "Une fois le tournoi créé, l’import s’ouvre : télécharge le modèle ou choisis ton fichier.",
     "create": "Créer",
     "created": "Tournoi créé.",
     "empty": "Aucun tournoi pour l’instant.",
@@ -2918,6 +2923,141 @@
       "noManager": "Aucun responsable de compétition OpenBeach n’a cet e-mail.",
       "slotConflict": "Ce créneau ne convient pas au programme.",
       "resultChanged": "Quelqu’un d’autre a modifié ce résultat entre-temps. Regarde-le à nouveau."
+    },
+    "import": {
+      "open": "Importer Excel/CSV",
+      "title": "Importer depuis Excel ou CSV",
+      "intro": "Remplis le modèle (la feuille Inscriptions, et Matchs pour ton propre programme) et choisis le fichier, ou un fichier CSV par feuille. Tu vois d’abord un aperçu ; rien ne change avant que tu l’appliques.",
+      "template": {
+        "download": "Télécharger le modèle",
+        "title": "Import OpenBeach",
+        "info": "Info",
+        "example": "Exemple",
+        "line1": "Une ligne par équipe dans la feuille Inscriptions. Tableau (la catégorie, p. ex. A1) et Genre désignent le tableau ; si le tournoi ne l’a pas encore, il est créé.",
+        "line2": "Une équipe est trouvée par les deux numéros de licence, sinon par les deux noms. Une cellule vide garde la valeur. Une équipe absente du fichier est retirée.",
+        "line3": "Têtes de série : si un tableau a des têtes de série dans le fichier, elles remplacent celles du tableau.",
+        "line4": "La feuille Matchs est facultative, pour ton propre programme : chaque ligne trouve son match par son numéro et fixe la date, l’heure, le terrain et les officiels. Un tableau pas encore tiré est tiré. Équipe 1 et Équipe 2 (une tête de série ou une équipe) sont seulement vérifiées.",
+        "line5": "CSV : un fichier par feuille, avec les mêmes noms de colonnes. Rien ne change avant que tu appliques l’aperçu."
+      },
+      "choose": "Choisir le fichier",
+      "reading": "Lecture du fichier …",
+      "checking": "Vérification des lignes sur le serveur …",
+      "kinds": {
+        "entries": "Inscriptions",
+        "matches": "Matchs"
+      },
+      "rowsCount_one": "{{count}} ligne",
+      "rowsCount_other": "{{count}} lignes",
+      "ignoredColumns": "Non utilisées : {{columns}}",
+      "problems": {
+        "nothing_found": "Aucune feuille Inscriptions ou Matchs trouvée. Utilise les noms de colonnes du modèle.",
+        "missing_columns": "{{sheet}} : il manque les colonnes {{columns}}.",
+        "duplicate_sheet": "{{sheet}} : une deuxième feuille {{kind}}. Importe-les l’une après l’autre.",
+        "too_many_rows": "{{sheet}} : plus de {{max}} lignes.",
+        "no_rows": "Le fichier n’a aucune ligne à importer.",
+        "unreadable": "{{file}} ne peut pas être lu. Choisis un fichier Excel (.xlsx) ou CSV.",
+        "xls": "{{file}} est un ancien fichier Excel (.xls). Enregistre-le en .xlsx ou CSV, puis choisis-le à nouveau."
+      },
+      "summary": {
+        "draws_new_one": "{{count}} nouveau tableau",
+        "draws_new_other": "{{count}} nouveaux tableaux",
+        "entries_new_one": "{{count}} nouvelle équipe",
+        "entries_new_other": "{{count}} nouvelles équipes",
+        "entries_changed_one": "{{count}} équipe modifiée",
+        "entries_changed_other": "{{count}} équipes modifiées",
+        "entries_removed_one": "{{count}} équipe retirée",
+        "entries_removed_other": "{{count}} équipes retirées",
+        "entries_unchanged_one": "{{count}} équipe inchangée",
+        "entries_unchanged_other": "{{count}} équipes inchangées",
+        "brackets_one": "{{count}} tableau tiré",
+        "brackets_other": "{{count}} tableaux tirés",
+        "matches_changed_one": "{{count}} match planifié",
+        "matches_changed_other": "{{count}} matchs planifiés",
+        "courts_new_one": "{{count}} nouveau terrain",
+        "courts_new_other": "{{count}} nouveaux terrains"
+      },
+      "hasErrors": "Certaines lignes ont des erreurs. Corrige le fichier, puis choisis-le à nouveau.",
+      "nothingToChange": "Rien à changer : le tournoi correspond déjà au fichier.",
+      "changed": "Le tournoi a changé depuis l’aperçu. Voici le nouvel aperçu : vérifie-le, puis applique-le à nouveau.",
+      "conflict": "Une autre modification de ce tournoi est arrivée avant. Réessaie.",
+      "apply": "Appliquer l’import",
+      "applied": "Import appliqué.",
+      "rows": "Lignes à vérifier",
+      "rowsOk_one": "{{count}} ligne OK.",
+      "rowsOk_other": "{{count}} lignes OK.",
+      "rowN": "ligne {{n}}",
+      "status": {
+        "ok": "OK",
+        "warning": "Avertissement",
+        "error": "Erreur"
+      },
+      "changes": "Modifications",
+      "more": "Et {{count}} de plus.",
+      "ops": {
+        "new": "Nouveau",
+        "changed": "Modifié",
+        "removed": "Retiré"
+      },
+      "drawNew": "Nouveau tableau {{draw}}",
+      "bracket": "{{draw}} : tableau tiré, {{teams}} équipes sur un tableau de {{size}}, matchs {{first}} à {{last}}",
+      "courtNew": "Nouveau terrain {{n}}",
+      "gameLine": "Match {{n}} · {{code}}",
+      "seedN": "Tête de série {{n}}",
+      "savedPair": "Équipe enregistrée {{name}}",
+      "linked": "liée",
+      "yes": "oui",
+      "no": "non",
+      "entryStatus": {
+        "registered": "inscrite",
+        "withdrawn": "retirée",
+        "replaced": "remplacée",
+        "dq": "disqualifiée"
+      },
+      "fields": {
+        "seed": "Tête de série",
+        "name": "Nom",
+        "player1": "Joueur 1",
+        "player2": "Joueur 2",
+        "wildcard": "Wildcard",
+        "status": "Statut",
+        "team_id": "Équipe enregistrée",
+        "court": "Terrain",
+        "scheduled_at": "Début",
+        "referee": "1er arbitre",
+        "scorer": "Marqueur"
+      },
+      "msg": {
+        "required": "{{field}} manque.",
+        "too_long": "{{field}} dépasse {{max}} caractères.",
+        "bad_value": "{{field}} : ni un texte ni un nombre.",
+        "bad_gender": "Genre « {{value}} » n’est pas hommes, femmes ou mixte.",
+        "bad_seed": "Tête de série « {{value}} » n’est pas un nombre de 1 à 128.",
+        "bad_country": "{{field}} « {{value}} » : 3 lettres, p. ex. SUI.",
+        "bad_yes_no": "{{field}} « {{value}} » : oui ou non.",
+        "bad_game": "Numéro de match « {{value}} » n’est pas un nombre de 1 à 9999.",
+        "bad_date": "Date « {{value}} » n’est pas une date comme 11.07.2026.",
+        "bad_time": "Heure « {{value}} » n’est pas une heure comme 09:30.",
+        "date_time_pair": "Indique la date et l’heure, ou aucune des deux.",
+        "bad_court": "Terrain « {{value}} » n’est pas un nombre de 1 à 99.",
+        "no_licence": "Un numéro de licence manque (MyBeach en a besoin pour le classement).",
+        "duplicate_pair": "La même équipe qu’à la ligne {{first_row}}.",
+        "duplicate_seed": "La tête de série {{seed}} figure aussi à la ligne {{first_row}}.",
+        "player_twice": "La licence {{licence}} figure aussi à la ligne {{first_row}}.",
+        "draw_drawn": "Le tableau {{draw}} est tiré : seuls les noms, les joueurs et les wildcards changent. Réinitialise d’abord le tableau.",
+        "unknown_draw": "Il n’y a pas de tableau {{draw}}.",
+        "draw_size": "{{draw}} a {{teams}} équipes ; une double élimination en demande {{min}} à {{max}}.",
+        "duplicate_game": "Le match {{game}} figure aussi à la ligne {{first_row}}.",
+        "unknown_game": "Il n’y a pas de match {{game}}.",
+        "game_other_draw": "Le match {{game}} est {{match_code}} de {{draw}}.",
+        "match_begun": "Le match {{game}} ({{match_code}}) a commencé : son terrain et son heure restent.",
+        "team_mismatch": "Dans le tableau, l’équipe {{side}} est {{expected}}.",
+        "phase_mismatch": "Dans le tableau, ce match fait partie de : {{expected}}.",
+        "drawWarning": "{{draw}} : {{text}}",
+        "kept_drawn_one": "{{draw}} : {{count}} équipe manque dans le fichier et reste, car le tableau est tiré.",
+        "kept_drawn_other": "{{draw}} : {{count}} équipes manquent dans le fichier et restent, car le tableau est tiré.",
+        "seeds_assigned_one": "{{draw}} : {{count}} équipe reçoit sa tête de série selon l’ordre (pour le tirage, chaque équipe en a besoin d’une).",
+        "seeds_assigned_other": "{{draw}} : {{count}} équipes reçoivent leur tête de série selon l’ordre (pour le tirage, chaque équipe en a besoin d’une)."
+      }
     }
   }
 }

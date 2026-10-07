@@ -6,13 +6,15 @@ import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError } from '
 import { tournamentApi, tournamentErrorKey } from '../../../lib/tournamentApi'
 import { useAuth } from '../../../contexts/AuthContext'
 import { accessForApp } from '../../../lib/access'
-import { Button, Field, Input, RowList, Row, Chip, EmptyInset, SkeletonRows, Notice, toast } from '../../../ui'
+import { Button, Field, Input, RowList, Row, Chip, EmptyInset, SkeletonRows, Notice, SegmentedControl, toast } from '../../../ui'
 import TournamentView from './TournamentView'
 import { TournamentStatus, datesLabel } from './shared'
 
 function NewTournamentModal({ open, onClose, onCreated }) {
   const { t } = useTranslation()
   const [form, setForm] = useState({ title: '', starts_on: '', ends_on: '', venue: '', city: '', courts: '2' })
+  // plan 3.3: typed into the manager, or from an Excel/CSV file (the import opens next); Swiss Volley: T5
+  const [source, setSource] = useState('manual')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const set = (k) => (e) => { setForm(f => ({ ...f, [k]: e.target.value })); setError('') }
@@ -27,12 +29,13 @@ function NewTournamentModal({ open, onClose, onCreated }) {
       ends_on: form.ends_on || form.starts_on,
       venue: form.venue.trim() || null,
       city: form.city.trim() || null,
-      courts: Math.max(0, Math.min(40, Number(form.courts) || 0))
+      courts: Math.max(0, Math.min(40, Number(form.courts) || 0)),
+      ...(source === 'xlsx' ? { source } : {})
     })
     setBusy(false)
     if (res.error) return setError(t(tournamentErrorKey(res.error)))
     toast.success(t('tournaments.created'))
-    onCreated(res.data.tournament)
+    onCreated(res.data.tournament, { importNext: source === 'xlsx' })
   }
   return (
     <KitModal
@@ -48,6 +51,16 @@ function NewTournamentModal({ open, onClose, onCreated }) {
       </>}
     >
       <form onSubmit={submit} className="space-y-3">
+        <fieldset>
+          <legend className="mb-1.5 block text-sm font-medium text-stone-700">{t('tournaments.startWith')}</legend>
+          <SegmentedControl
+            ariaLabel={t('tournaments.startWith')}
+            value={source}
+            onChange={setSource}
+            options={[{ value: 'manual', label: t('tournaments.startManual') }, { value: 'xlsx', label: t('tournaments.startFile') }]}
+          />
+          {source === 'xlsx' && <p className="mt-1.5 text-xs text-stone-500">{t('tournaments.startFileHint')}</p>}
+        </fieldset>
         <Field label={t('tournaments.name')}>
           <Input value={form.title} onChange={set('title')} maxLength={160} required autoFocus data-testid="tournament-title" />
         </Field>
@@ -77,8 +90,9 @@ function NewTournamentModal({ open, onClose, onCreated }) {
 }
 
 /**
- * OpenBeach tournaments (manager-beach, plan phase T1): the list, a new
- * tournament, and the tournament itself (TournamentView). Beach competition
+ * OpenBeach tournaments (manager-beach, plan phases T1 and T2): the list, a
+ * new tournament (typed in, or from an Excel/CSV file), and the tournament
+ * itself (TournamentView). Beach competition
  * managers and the global admin; the server enforces it.
  */
 export default function TournamentsPanel() {
@@ -87,12 +101,13 @@ export default function TournamentsPanel() {
   const { access } = useAuth()
   const canCreate = accessForApp(access, 'beach').canManageTeams
   const [openId, setOpenId] = useState(null)
+  const [importNext, setImportNext] = useState(false)
   const [creating, setCreating] = useState(false)
   const { data, error, loading, reload } = usePanelData(() => tournamentApi.list(), [], { enabled: online })
   const list = data?.tournaments || []
 
   if (openId) {
-    return <TournamentView id={openId} onBack={() => { setOpenId(null); reload() }} />
+    return <TournamentView id={openId} initialImport={importNext} onBack={() => { setOpenId(null); setImportNext(false); reload() }} />
   }
 
   return (
@@ -134,7 +149,7 @@ export default function TournamentsPanel() {
       <NewTournamentModal
         open={creating}
         onClose={() => setCreating(false)}
-        onCreated={(tour) => { setCreating(false); reload(); setOpenId(tour.id) }}
+        onCreated={(tour, { importNext: next = false } = {}) => { setCreating(false); reload(); setImportNext(next); setOpenId(tour.id) }}
       />
     </section>
   )
