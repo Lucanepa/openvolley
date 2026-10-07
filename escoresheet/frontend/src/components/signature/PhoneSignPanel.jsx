@@ -126,6 +126,7 @@ export default function PhoneSignPanel({ transports, slot, matchKey = null, cont
   const [now, setNow] = useState(() => Date.now())
   const [lanHint, setLanHint] = useState(false)
   const [copyState, setCopyState] = useState(null) // 'copied' | 'failed' | null
+  const [startError, setStartError] = useState(null) // why start failed: { status, code }
   const handleRef = useRef(null)
   const fellBackRef = useRef(false)
 
@@ -146,6 +147,7 @@ export default function PhoneSignPanel({ transports, slot, matchKey = null, cont
     setHandle(null)
     setSignature(null)
     setLanHint(false)
+    setStartError(null)
     const run = async () => {
       if (!current?.ok) {
         setPhase('error')
@@ -164,6 +166,7 @@ export default function PhoneSignPanel({ transports, slot, matchKey = null, cont
           setTransport(other)
           return
         }
+        setStartError({ status: r.status, code: r.code })
         setPhase('error')
         return
       }
@@ -334,7 +337,7 @@ export default function PhoneSignPanel({ transports, slot, matchKey = null, cont
           </div>
 
           <div className="flex min-w-0 flex-col gap-2 text-sm">
-            <StatusLine phase={phase} t={t} />
+            <StatusLine phase={phase} t={t} failure={startFailureKey(startError, transport)} />
             {live && (
               <>
                 <p className="text-stone-600">{t('phoneSign.scanHint')}</p>
@@ -375,7 +378,18 @@ export default function PhoneSignPanel({ transports, slot, matchKey = null, cont
   )
 }
 
-function StatusLine({ phase, t }) {
+/**
+ * What to say when a link could not be made: the account's session ran out
+ * (401), the account may not start one (403 on the internet), else the
+ * generic "try again".
+ */
+export function startFailureKey(err, transport) {
+  if (err?.status === 401 || err?.code === 'OV_AUTH_REQUIRED') return 'phoneSign.reasonSignIn'
+  if (transport === 'cloud' && err?.code === 'OV_SIGN_FORBIDDEN') return 'phoneSign.reasonRole'
+  return 'phoneSign.startFailed'
+}
+
+function StatusLine({ phase, t, failure = 'phoneSign.startFailed' }) {
   if (phase === 'starting') {
     return <p className="flex items-center gap-1.5 text-stone-500" role="status" aria-live="polite"><Loader2 size={14} className="animate-spin" aria-hidden="true" />{t('phoneSign.waiting')}</p>
   }
@@ -385,6 +399,6 @@ function StatusLine({ phase, t }) {
   if (phase === 'opened') {
     return <p className="flex items-center gap-1.5 font-medium text-amber-700" role="status" aria-live="polite" data-testid="phone-sign-status"><Smartphone size={14} aria-hidden="true" />{t('phoneSign.opened')}</p>
   }
-  const text = phase === 'expired' ? t('phoneSign.expired') : phase === 'cancelled' ? t('phoneSign.cancelled') : t('phoneSign.startFailed')
+  const text = phase === 'expired' ? t('phoneSign.expired') : phase === 'cancelled' ? t('phoneSign.cancelled') : t(failure)
   return <p className="font-medium text-stone-700" role="status" aria-live="polite" data-testid="phone-sign-status">{text}</p>
 }
