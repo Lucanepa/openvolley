@@ -434,11 +434,14 @@ gh() {
 }
 bupload_case() { : > "$GH_LOG"; GH_LATEST=$1; GH_FALLBACK_EXISTS=$2; desktop_upload "$BV" "$3" "$T/bwork" > "$T/upload.out" 2>&1; }
 bupload_case "desktop-v$V" 0 0
-grep -q "^gh release upload beach-desktop-v$BV .*latest.json" "$GH_LOG" || bad "beach upload: latest.json not on beach-desktop-v$BV"
+grep -q "^gh release upload beach-desktop-v$BV --repo Lucanepa/openvolley --clobber .*\.exe\.sig .*\.AppImage\.sig .*\.deb\.sig$" "$GH_LOG" || bad "beach upload: .sig files not on beach-desktop-v$BV"
+# Never a latest.json on the beach-desktop-vV release itself: both apps trust
+# one updater key, and OpenVolley's fallback reads whatever release is "Latest".
+if grep -q "^gh release upload beach-desktop-v$BV .*latest.json" "$GH_LOG"; then bad "beach upload: latest.json on beach-desktop-v$BV"; fi
 grep -q "^gh release create beach-desktop-latest --repo Lucanepa/openvolley --prerelease --latest=false " "$GH_LOG" || bad "beach upload: fallback prerelease not created"
 grep -q "^gh release upload beach-desktop-latest --repo Lucanepa/openvolley --clobber .*/latest.json$" "$GH_LOG" || bad "beach upload: latest.json not on the fallback"
 if grep -q -e '--latest$' -e 'release edit' "$GH_LOG"; then bad "beach upload: moved GitHub's Latest"; fi
-ok "beach upload: .sig + latest.json to beach-desktop-v$BV, latest.json to the beach-desktop-latest prerelease, Latest untouched"
+ok "beach upload: .sig files to beach-desktop-v$BV, latest.json only to the beach-desktop-latest prerelease, Latest untouched"
 bupload_case "desktop-v$V" 1 0
 if grep -q '^gh release create' "$GH_LOG"; then bad "beach upload: re-created an existing fallback"; fi
 grep -q "^gh release upload beach-desktop-latest " "$GH_LOG" || bad "beach upload: existing fallback not updated"

@@ -24,6 +24,7 @@
 #   desktop_manifest V DIR OUT  latest.json for the files desktop_fetch found
 #   desktop_publish_tree V STAGING MANIFEST PUBDIR
 #   desktop_upload V STAGING DIR   .sig files (+ latest.json) to the GitHub release
+#                                  (OpenBeach: latest.json to beach-desktop-latest only)
 # the APT hold-back (the index never runs ahead of desktop/latest.json):
 #   apt_hold_init PUBDIR [V STAGING]   which desktop versions APT must not list yet
 #   apt_held VER                       true if VER is held back
@@ -384,12 +385,16 @@ desktop_publish_tree() {
 #               becomes GitHub's "Latest"
 #   OpenBeach   releases/download/beach-desktop-latest/latest.json: a
 #               prerelease holding only latest.json (made on first use); its
-#               beach-desktop-vV release never becomes "Latest"
+#               beach-desktop-vV release never becomes "Latest" and never
+#               carries a latest.json: both apps trust one updater key, so if
+#               GitHub's "Latest" ever landed on it (the newest desktop-v*
+#               release deleted, a manual "Set as latest"), OpenVolley's
+#               fallback would read OpenBeach's manifest and install OpenBeach
 desktop_upload() {
   local v=$1 staging=$2 dir=$3 files latest tag
   tag=$(desktop_tag "$v")
   files=("$DESKTOP_EXE.sig" "$DESKTOP_APPIMAGE.sig" "$DESKTOP_DEB.sig")
-  [[ "$staging" == 1 ]] || files+=("$dir/latest.json")
+  [[ "$staging" == 1 || "$DESKTOP_MAKE_LATEST" != 1 ]] || files+=("$dir/latest.json")
   gh release upload "$tag" --repo "$OV_GH_REPO" --clobber "${files[@]}" || die "upload to $tag failed"
   echo "uploaded to $tag: ${files[*]##*/}"
   [[ "$staging" != 1 ]] || return 0
