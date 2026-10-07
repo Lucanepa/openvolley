@@ -324,6 +324,15 @@ export function apiMatchClaim(externalId, pin) {
 }
 
 /**
+ * Upload activity log entries (utils/activity/upload): at most 500 per call.
+ * Needs a session.
+ * @returns {Promise<{data: {accepted: string[], rejected: {uid: string, code: string}[]}|null, error: object|null, status: number}>}
+ */
+export function apiPostActivity(entries) {
+  return postJson('/api/activity', { entries }, { timeoutMs: 30000, fallbackError: 'Activity upload failed' })
+}
+
+/**
  * Send event revisions (undo / delete / edit / restore of logged events, see
  * db/eventHistory.js) of one match. The server voids or edits its copy of the
  * events and keeps the revision (POST /api/match/event-revisions). Needs a

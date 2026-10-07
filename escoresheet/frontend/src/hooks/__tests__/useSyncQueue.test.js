@@ -107,6 +107,11 @@ vi.mock('../../lib/apiClient', () => {
       api.calls.push(call)
       return api.respond(call)
     },
+    apiPostActivity: async (entries) => {
+      const call = { table: '__activity', action: 'post', data: entries, filters: [] }
+      api.calls.push(call)
+      return api.respond(call)
+    },
     apiPostEventRevisions: async (matchExternalId, revisions) => {
       const call = { table: '__revisions', action: 'post', data: { matchExternalId, revisions }, filters: [] }
       api.calls.push(call)
@@ -532,6 +537,19 @@ describe('event history jobs (void / edit / restore)', () => {
     fakeDb.sync_queue.map.get(1).next_attempt_at = Date.now() + 60000
     await runQueuePass()
     expect(api.calls.filter(c => c.table === 'matches' && c.action === 'update')).toHaveLength(0)
+  })
+})
+
+describe('activity log upload job', () => {
+  it('runs after the match jobs; a server without the route parks it as failed', async () => {
+    fakeDb.activity_log = undefined
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'activity', action: 'flush', status: 'queued', payload: {} },
+      { id: 2, resource: 'match', action: 'update', status: 'queued', payload: { id: 'match_100_aaa', status: 'live' } }
+    ])
+    const outcome = await runQueuePass()
+    expect(outcome.sent).toBe(2)
+    expect(api.calls.map(c => c.table)).toEqual(['matches']) // no rows: no upload request
   })
 })
 

@@ -4,6 +4,7 @@ import { db } from '../db/db'
 import { apiFrom, apiMatchRestore, apiMatchClaim, apiPostEventRevisions, AUTH_TOKEN_CHANGE_EVENT, AUTH_TOKEN_STORAGE_KEY } from '../lib/apiClient'
 import { REVISION_OPS, revisionOfJob } from '../domain/eventRevisions'
 import { emitActivity, noteSyncPass } from '../utils/activity/bus'
+import { uploadActivityBatch, activityFlushJob } from '../utils/activity/upload'
 import { getCloudApiUrl } from '../utils/backendConfig'
 import { filterMatchPayload, JSONB_COLUMNS } from '../db/matchRepository'
 import { parseExtId, resolveJobExternalId, jobMatchKey, USER_MATCH_RESOURCE, userMatchRoles, userMatchJob } from '../utils/syncIds'
@@ -74,7 +75,8 @@ import { ACCESS_CHANGED_EVENT } from '../lib/access'
 
 // Resource processing order - matches must be synced before sets/events (FK
 // dependency); the account links ("My Matches") come last
-const RESOURCE_ORDER = ['match', 'set', 'event', USER_MATCH_RESOURCE]
+// 'activity': the activity log upload (utils/activity/upload), needs no match row
+const RESOURCE_ORDER = ['match', 'set', 'event', USER_MATCH_RESOURCE, 'activity']
 
 // Max retries for jobs waiting on dependencies (e.g., event waiting for match to sync)
 const MAX_DEPENDENCY_RETRIES = 10
@@ -110,6 +112,7 @@ const REQUEUE_INTERVAL_MS = 30000
 // Sent, superseded and dropped rows are kept this long (for debugging), then
 // pruned; the per-rally set score adds one row per point.
 const SENT_RETENTION_MS = 7 * 24 * 3600 * 1000
+const ACTIVITY_JOB_RETENTION_MS = 3600 * 1000
 const PRUNE_INTERVAL_MS = 60 * 60 * 1000
 
 // processJob result: stop this pass, leave the job queued untouched (rate limited)
@@ -490,9 +493,11 @@ export async function pruneSyncQueue({ retentionMs = SENT_RETENTION_MS, now = Da
     const done = await db.sync_queue.where('status').anyOf(['sent', 'superseded', 'dropped']).toArray()
     const ids = done
       .filter(j => {
-        if (j.id >= oldestPendingId) return false
         // ts is a number (Date.now()) or an ISO string, depending on the writer
         const ts = typeof j.ts === 'number' ? j.ts : Date.parse(j.ts)
+        // the activity uploads (one every 10 s in a match) carry nothing to keep
+        if (j.resource === 'activity') return Number.isFinite(ts) && now - ts > ACTIVITY_JOB_RETENTION_MS
+        if (j.id >= oldestPendingId) return false
         return Number.isFinite(ts) && now - ts > retentionMs
       })
       .map(j => j.id)
@@ -1057,6 +1062,23 @@ async function processJobInner(job, ctx) {
         safeLog.warn('[SyncQueue] Event revision refused:', error.code || st)
         return failureResult(error, ctx)
       }
+      return true
+    }
+
+    // ==================== ACTIVITY LOG UPLOAD ====================
+    if (job.resource === 'activity' && job.action === 'flush') {
+      const r = await uploadActivityBatch(db)
+      if (r.error) {
+        const st = r.error.status ?? r.status
+        if (st === 404) {
+          // A server without /api/activity: parked as refused, retried hourly
+          ctx.error = { ...summarizeError(r.error), status: 404, code: r.error.code || 'OV_ROUTE_MISSING' }
+          return PERMANENT_FAILURE
+        }
+        return failureResult(r.error, ctx)
+      }
+      // More rows than one batch: the next flush right after this one
+      if (r.more) await db.sync_queue.add(activityFlushJob())
       return true
     }
 
