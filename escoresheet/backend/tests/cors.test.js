@@ -26,6 +26,16 @@ describe('CORS origin policy (lib/cors.js)', () => {
     ]) assert.equal(cloud.isTrustedOrigin(o), true, o)
   })
 
+  it('cloud: both desktop apps\' windows are trusted on their own ports only', () => {
+    // OpenVolley eScoresheet on 5173, OpenBeach on 5174 (src-tauri flavour.rs)
+    for (const o of ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:5174', 'http://127.0.0.1:5174']) {
+      assert.deepEqual(cloud.getCorsOrigin(req(o)), { origin: o, credentials: true }, o)
+    }
+    for (const o of ['http://localhost:5175', 'http://localhost:8081', 'https://localhost:5174', 'http://192.168.1.20:5174']) {
+      assert.equal(cloud.isTrustedOrigin(o), false, o)
+    }
+  })
+
   it('cloud: Pages previews are trusted only through PUBLIC_ORIGINS', () => {
     assert.equal(cloud.isTrustedOrigin('https://dev.openvolley-manager.pages.dev'), false)
     const withPreview = createOriginPolicy({ isCloud: true, publicOrigins: parsePublicOrigins('https://dev.openvolley-manager.pages.dev/') })
