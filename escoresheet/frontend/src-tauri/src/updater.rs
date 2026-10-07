@@ -17,6 +17,8 @@
 //!   binary (the web bundle is embedded); it says "Restart to finish". The
 //!   same check notices an `apt upgrade` or unattended-upgrades.
 //! - **A .deb installed by hand** (no repo): it says how to add the repo once.
+//! - **Flatpak, Snap, a distro package** ([`managed_by`]): never checks; the
+//!   package manager updates the app (escoresheet/packaging/).
 //! - **Anything else** (a development build, `--server-only`): nothing.
 //!
 //! The gate is here, in Rust, and checked before every download, install and
@@ -79,7 +81,44 @@ pub enum Kind {
     AppImage,
     DebApt,
     DebNoRepo,
+    /// Installed and updated by a package manager (Flatpak, Snap, a distro
+    /// package such as the AUR's; [`managed_by`]): the app never checks.
+    Managed,
     Unsupported,
+}
+
+/// The file a distro package ships to say its package manager updates the
+/// app: `<prefix>/lib/<command>/package-manager` next to `<prefix>/bin/<command>`
+/// (e.g. /usr/lib/openvolley-escoresheet/package-manager), one line naming it.
+pub const MANAGED_MARKER: &str = "package-manager";
+
+/// Which package manager installed this copy, if one did: Flatpak (`FLATPAK_ID`
+/// or /.flatpak-info, both set by flatpak itself), Snap (`SNAP_NAME`), the
+/// marker file of a distro package ([`MANAGED_MARKER`], read through
+/// `marker`), or `OPENVOLLEY_PACKAGED=<name>` (a wrapper script). Such a copy
+/// gets its updates from that package manager, never from the app, whatever
+/// bundle its binary came from (a Flatpak, Snap or AUR package repacks the .deb).
+pub fn managed_by(
+    var: impl Fn(&str) -> Option<String>,
+    is_file: impl Fn(&Path) -> bool,
+    marker: impl Fn(&Path) -> Option<String>,
+    exe: Option<&Path>,
+) -> Option<String> {
+    let set = |name: &str| var(name).filter(|v| !v.trim().is_empty());
+    if set("FLATPAK_ID").is_some() || is_file(Path::new("/.flatpak-info")) {
+        return Some("flatpak".into());
+    }
+    if set("SNAP_NAME").is_some() {
+        return Some("snap".into());
+    }
+    if let Some(name) = set("OPENVOLLEY_PACKAGED") {
+        return Some(name.trim().to_string());
+    }
+    let exe = exe?;
+    let file = exe.parent()?.parent()?.join("lib").join(exe.file_name()?).join(MANAGED_MARKER);
+    let text = marker(&file)?;
+    let name = text.lines().next().unwrap_or("").trim();
+    Some(if name.is_empty() { "package".into() } else { name.to_string() })
 }
 
 impl Kind {
@@ -93,6 +132,12 @@ impl Kind {
             Some(BundleType::Deb) => Self::DebNoRepo,
             _ => Self::Unsupported,
         }
+    }
+
+    /// The app checks for updates at all (not a development build, not a
+    /// copy a package manager updates).
+    pub fn checks(self) -> bool {
+        !matches!(self, Self::Managed | Self::Unsupported)
     }
 
     /// The app itself downloads and installs the update file.
@@ -244,7 +289,7 @@ pub struct TickInput {
 }
 
 pub fn next_step(t: &TickInput) -> Step {
-    if t.kind == Kind::Unsupported || !quiet_after_match(t.now, t.live, t.live_ended) {
+    if !t.kind.checks() || !quiet_after_match(t.now, t.live, t.live_ended) {
         return Step::Nothing;
     }
     if matches!(t.phase, Phase::Checking | Phase::Downloading { .. } | Phase::Installing | Phase::RestartPending) {
@@ -373,7 +418,7 @@ pub fn restart_ready(kind: Kind, phase: &Phase, downloaded: bool, available: boo
             matches!(phase, Phase::RestartPending) || (downloaded && !matches!(phase, Phase::Installing))
         }
         Kind::DebApt => matches!(phase, Phase::RestartPending) || (available && matches!(phase, Phase::Ready | Phase::Available)),
-        Kind::DebNoRepo | Kind::Unsupported => false,
+        Kind::DebNoRepo | Kind::Managed | Kind::Unsupported => false,
     }
 }
 
@@ -495,6 +540,16 @@ fn detect_kind() -> Kind {
     #[cfg(debug_assertions)]
     if let Some(kind) = test_env("OPENVOLLEY_UPDATE_TEST_KIND").and_then(|v| Kind::from_test_name(&v)) {
         return kind;
+    }
+    let exe = std::env::current_exe().ok();
+    if let Some(by) = managed_by(
+        |name| std::env::var(name).ok(),
+        |p| p.is_file(),
+        |p| std::fs::read_to_string(p).ok(),
+        exe.as_deref(),
+    ) {
+        log::info!("[update] installed by {by}: it updates the app");
+        return Kind::Managed;
     }
     Kind::detect(tauri::utils::platform::bundle_type(), Path::new(APT_LIST).is_file())
 }
@@ -648,6 +703,9 @@ pub fn start<R: Runtime>(app: AppHandle<R>) {
         i.prefs_path = path;
         i.kind
     };
+    if kind == Kind::Managed {
+        return;
+    }
     if kind == Kind::Unsupported {
         log::warn!("[update] not an installed copy (no bundle type): no automatic updates");
         return;
@@ -777,7 +835,7 @@ fn updater<R: Runtime>(app: &AppHandle<R>) -> Result<tauri_plugin_updater::Updat
 /// (deb) when the gate allows.
 pub async fn check<R: Runtime>(app: &AppHandle<R>, reason: Reason) {
     let updates = app.state::<Updates>();
-    if updates.lock().kind == Kind::Unsupported {
+    if !updates.lock().kind.checks() {
         return;
     }
     let Some(_busy) = updates.try_begin() else { return };
@@ -1084,7 +1142,7 @@ pub async fn install_now<R: Runtime>(app: &AppHandle<R>) -> Result<(), InstallEr
             deb_upgrade(app).await;
             after_deb_upgrade(app)
         }
-        Kind::DebNoRepo | Kind::Unsupported => Err(InstallError::code("nothing")),
+        Kind::DebNoRepo | Kind::Managed | Kind::Unsupported => Err(InstallError::code("nothing")),
     }
 }
 
@@ -1299,6 +1357,37 @@ mod tests {
         assert_eq!(Kind::detect(None, true), Kind::Unsupported, "a development build");
         assert!(Kind::Nsis.downloads() && Kind::AppImage.downloads());
         assert!(!Kind::DebApt.downloads() && !Kind::DebNoRepo.downloads());
+        assert!(Kind::DebNoRepo.checks() && !Kind::Managed.checks() && !Kind::Unsupported.checks());
+        assert!(!Kind::Managed.downloads());
+        assert_eq!(serde_json::to_value(Kind::Managed).unwrap(), "managed");
+    }
+
+    #[test]
+    fn a_package_manager_copy_is_managed() {
+        use std::collections::HashMap;
+        let by = |vars: &[(&str, &str)], files: &[&str], markers: &[(&str, &str)], exe: Option<&str>| {
+            let vars: HashMap<String, String> = vars.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+            let files: Vec<PathBuf> = files.iter().map(PathBuf::from).collect();
+            let markers: HashMap<PathBuf, String> = markers.iter().map(|(p, t)| (PathBuf::from(p), t.to_string())).collect();
+            managed_by(
+                |n| vars.get(n).cloned(),
+                |p| files.iter().any(|f| f == p),
+                |p| markers.get(p).cloned(),
+                exe.map(Path::new),
+            )
+        };
+        let exe = Some("/usr/bin/openvolley-escoresheet");
+        assert_eq!(by(&[], &[], &[], exe), None, "the .deb from the APT repo");
+        assert_eq!(by(&[], &[], &[], None), None);
+        assert_eq!(by(&[("FLATPAK_ID", "com.openvolley.escoresheet")], &[], &[], exe).as_deref(), Some("flatpak"));
+        assert_eq!(by(&[], &["/.flatpak-info"], &[], Some("/app/bin/openvolley-escoresheet")).as_deref(), Some("flatpak"));
+        assert_eq!(by(&[("SNAP_NAME", "openvolley-escoresheet")], &[], &[], exe).as_deref(), Some("snap"));
+        assert_eq!(by(&[("SNAP_NAME", " ")], &[], &[], exe), None, "blank is unset");
+        assert_eq!(by(&[("OPENVOLLEY_PACKAGED", "nix\n")], &[], &[], exe).as_deref(), Some("nix"));
+        let marker = "/usr/lib/openvolley-escoresheet/package-manager";
+        assert_eq!(by(&[], &[], &[(marker, "pacman (AUR)\nignored")], exe).as_deref(), Some("pacman (AUR)"));
+        assert_eq!(by(&[], &[], &[(marker, "\n")], exe).as_deref(), Some("package"));
+        assert_eq!(by(&[], &[], &[(marker, "pacman")], Some("/usr/bin/openbeach-escoresheet")), None, "another app's marker");
     }
 
     #[test]
@@ -1359,6 +1448,7 @@ mod tests {
         assert_eq!(next_step(&TickInput { live_ended: Some(ended), ..t.clone() }), Step::Check, "5 min after");
         assert_eq!(next_step(&TickInput { auto_check: false, ..t.clone() }), Step::Nothing);
         assert_eq!(next_step(&tick(Kind::Unsupported)), Step::Nothing);
+        assert_eq!(next_step(&tick(Kind::Managed)), Step::Nothing);
     }
 
     #[test]
@@ -1402,6 +1492,7 @@ mod tests {
         assert!(restart_ready(Kind::DebApt, &Phase::Ready, false, true));
         assert!(!restart_ready(Kind::DebNoRepo, &Phase::Ready, false, true));
         assert!(!restart_ready(Kind::Unsupported, &Phase::Ready, true, true));
+        assert!(!restart_ready(Kind::Managed, &Phase::Ready, true, true));
     }
 
     #[test]

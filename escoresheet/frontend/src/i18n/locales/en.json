@@ -2811,6 +2811,7 @@
     "noRepo": "This copy does not update itself. Run once in a terminal:",
     "installManually": "Install it in a terminal:",
     "notSupported": "This build does not update itself.",
+    "managed": "Updates come from your package manager (Flatpak, Snap, AUR…).",
     "autoCheck": "Check for updates automatically",
     "autoCheckHint": "Asks get.openvolley.app every 6 hours.",
     "autoInstall": "Install updates automatically",

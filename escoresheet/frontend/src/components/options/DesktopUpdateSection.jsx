@@ -43,7 +43,8 @@ export default function DesktopUpdateSection({ update }) {
   const { status, checkNow, installNow, setPrefs } = update
   const [restarting, setRestarting] = useState(false)
   const kind = status?.kind
-  const supported = !!kind && kind !== 'unsupported'
+  // managed: Flatpak, Snap or a distro package; its package manager updates it.
+  const supported = !!kind && kind !== 'unsupported' && kind !== 'managed'
   const busy = ['checking', 'downloading', 'installing'].includes(status?.phase)
   const line = statusLine(status, t)
   const failed = status?.phase === 'failed'
@@ -80,7 +81,11 @@ export default function DesktopUpdateSection({ update }) {
             </div>
           )}
           {!supported && status && (
-            <div className="mt-1 text-xs text-stone-500">{t('update.notSupported', 'This build does not update itself.')}</div>
+            <div className="mt-1 text-xs text-stone-500">
+              {kind === 'managed'
+                ? t('update.managed', 'Updates come from your package manager (Flatpak, Snap, AUR…).')
+                : t('update.notSupported', 'This build does not update itself.')}
+            </div>
           )}
         </div>
         {supported && (

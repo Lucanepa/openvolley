@@ -2805,6 +2805,7 @@
     "noRepo": "Die Kopie aktualisiert sich nöd sälber. Eimal im Terminal usfüehre:",
     "installManually": "Im Terminal installiere:",
     "notSupported": "Dä Build aktualisiert sich nöd sälber.",
+    "managed": "Updates chömed über de Paketmanager (Flatpak, Snap, AUR…).",
     "autoCheck": "Automatisch nach Updates sueche",
     "autoCheckHint": "Fröget alli 6 Stund bi get.openvolley.app noche.",
     "autoInstall": "Updates automatisch installiere",

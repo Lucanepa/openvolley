@@ -98,6 +98,15 @@ describe('Options > App version in the desktop app', () => {
     await waitFor(() => expect(invoke).toHaveBeenCalledWith('update_install_now', undefined))
   })
 
+  it('a Flatpak / Snap / AUR copy: its package manager updates it, no check button', async () => {
+    const invoke = vi.fn(async () => ({ ...STATUS, kind: 'managed', phase: 'idle', available: null, blockers: [] }))
+    window.__TAURI_INTERNALS__ = { invoke, metadata: { currentWindow: { label: 'main' } } }
+    renderOptions()
+    await screen.findByText(/Updates come from your package manager/)
+    expect(screen.queryByRole('button', { name: 'options.checkForUpdates' })).toBeNull()
+    expect(screen.queryByRole('switch', { name: 'Check for updates automatically' })).toBeNull()
+  })
+
   it('a browser keeps the web check', () => {
     renderOptions()
     expect(screen.getByRole('button', { name: 'options.checkForUpdates' })).toBeInTheDocument()
