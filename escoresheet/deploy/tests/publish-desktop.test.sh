@@ -84,9 +84,25 @@ make_deb() {
   chmod 755 "$root/usr/bin/$pkg"
   dpkg-deb --root-owner-group -b "$root" "$out" >/dev/null
 }
+# make_mac OUT TOP ID VERSION EXEC: an updater archive like the macOS job's
+# (TOP.app/Contents/{Info.plist,MacOS/EXEC}); EXTRA_ENTRY=path adds a file
+# beside it.
+make_mac() {
+  local out=$1 top=$2 id=$3 ver=$4 exe=$5 root="$T/macroot"
+  rm -rf "$root"
+  mkdir -p "$root/$top/Contents/MacOS"
+  python3 -c 'import plistlib, sys
+plistlib.dump({"CFBundleIdentifier": sys.argv[2], "CFBundleShortVersionString": sys.argv[3], "CFBundleExecutable": sys.argv[4]}, open(sys.argv[1], "wb"))' \
+    "$root/$top/Contents/Info.plist" "$id" "$ver" "$exe"
+  head -c 200000 /dev/urandom > "$root/$top/Contents/MacOS/$exe"
+  if [[ -n "${EXTRA_ENTRY:-}" ]]; then mkdir -p "$root/$(dirname "$EXTRA_ENTRY")"; echo x > "$root/$EXTRA_ENTRY"; fi
+  tar -czf "$out" -C "$root" "$top" ${EXTRA_ENTRY:+"$EXTRA_ENTRY"}
+}
 { printf 'MZ'; head -c 300000 /dev/urandom; } > "$T/release/Openvolley.eScoresheet_${V}_x64-setup.exe"
 { printf '\177ELF'; head -c 500000 /dev/urandom; } > "$T/release/openvolley-escoresheet_${V}_amd64.AppImage"
 make_deb "$T/release/openvolley-escoresheet_${V}_amd64.deb" "$V"
+MAC_NAME=openvolley-escoresheet_${V}_universal.app.tar.gz
+make_mac "$T/release/$MAC_NAME" "OpenVolley eScoresheet.app" com.openvolley.escoresheet "$V" openvolley-escoresheet
 printf 'OpenVolley 2.2.0\n- The app updates itself.\n- Second line.\n' > "$T/changelogs/20020000.txt"
 
 # --- setup checks -----------------------------------------------------------
@@ -103,8 +119,9 @@ cp "$T/conf.bak" "$OV_DESKTOP_TAURI_CONF"
 desktop_fetch "$V" "$T/work"
 [[ "$DESKTOP_EXE" == "$T/work/Openvolley.eScoresheet_${V}_x64-setup.exe" &&
    "$DESKTOP_APPIMAGE" == "$T/work/openvolley-escoresheet_${V}_amd64.AppImage" &&
-   "$DESKTOP_DEB" == "$T/work/openvolley-escoresheet_${V}_amd64.deb" ]] || bad "fetch picked the wrong files"
-ok "fetch: one installer of each kind, version $V"
+   "$DESKTOP_DEB" == "$T/work/openvolley-escoresheet_${V}_amd64.deb" &&
+   "$DESKTOP_MAC" == "$T/work/$MAC_NAME" ]] || bad "fetch picked the wrong files"
+ok "fetch: one installer of each kind and the macOS archive, version $V"
 
 # fetch_variant NAME: a copy of the release dir to break in one way.
 fetch_variant() { rm -rf "$T/rel-$1" "$T/w-$1"; cp -r "$T/release" "$T/rel-$1"; }
@@ -119,13 +136,37 @@ fetch_variant debpkg; make_deb "$T/rel-debpkg/openvolley-escoresheet_${V}_amd64.
 expect_fail "package openvolley-e-scoresheet, expected openvolley-escoresheet" fetch_from debpkg
 fetch_variant exe; printf 'not an exe' > "$T/rel-exe/Openvolley.eScoresheet_${V}_x64-setup.exe"
 expect_fail "not a Windows executable" fetch_from exe
+# macOS: optional (releases before it, a failed macOS job), but checked when there
+fetch_variant nomac; rm "$T/rel-nomac/$MAC_NAME"
+fetch_from nomac > "$T/nomac.out"
+[[ -z "$DESKTOP_MAC" ]] && grep -q "desktop-v$V has no macOS build" "$T/nomac.out" || bad "fetch without a macOS build"
+ok "fetch: a release without a macOS build has no DESKTOP_MAC (and says so)"
+fetch_variant mactwo; cp "$T/release/$MAC_NAME" "$T/rel-mactwo/openvolley-escoresheet_${V}_arm64.app.tar.gz"
+expect_fail "expected at most one *.app.tar.gz, found 2" fetch_from mactwo
+fetch_variant macname; mv "$T/rel-macname/$MAC_NAME" "$T/rel-macname/OpenVolley.eScoresheet_${V}_universal.app.tar.gz"
+expect_fail "expected $MAC_NAME" fetch_from macname
+fetch_variant macgz; printf 'PK not gzip' > "$T/rel-macgz/$MAC_NAME"
+expect_fail "not a gzip archive" fetch_from macgz
+fetch_variant macver; make_mac "$T/rel-macver/$MAC_NAME" "OpenVolley eScoresheet.app" com.openvolley.escoresheet 2.1.9 openvolley-escoresheet
+expect_fail "Info.plist says 'com.openvolley.escoresheet 2.1.9 openvolley-escoresheet'" fetch_from macver
+fetch_variant macid; make_mac "$T/rel-macid/$MAC_NAME" "OpenBeach.app" com.openvolley.beach "$V" openvolley-escoresheet
+expect_fail "Info.plist says 'com.openvolley.beach $V openvolley-escoresheet'" fetch_from macid
+fetch_variant macexe; make_mac "$T/rel-macexe/$MAC_NAME" "OpenVolley eScoresheet.app" com.openvolley.escoresheet "$V" openbeach-escoresheet
+expect_fail "no OpenVolley eScoresheet.app/Contents/MacOS/openvolley-escoresheet" fetch_from macexe
+fetch_variant macout
+EXTRA_ENTRY=Applications/evil.sh make_mac "$T/rel-macout/$MAC_NAME" "OpenVolley eScoresheet.app" com.openvolley.escoresheet "$V" openvolley-escoresheet
+expect_fail "entries outside OpenVolley eScoresheet.app/" fetch_from macout
+fetch_variant macflat; rm -rf "$T/flat"; mkdir -p "$T/flat/Contents"; tar -czf "$T/rel-macflat/$MAC_NAME" -C "$T/flat" Contents
+expect_fail "the first entry is not a <Name>.app folder" fetch_from macflat
+OV_DESKTOP_RELEASE_DIR="$T/release"; DESKTOP_RELEASE_DIR="$T/release"
+desktop_fetch "$V" "$T/work" >/dev/null
 
 # --- sign and verify ---------------------------------------------------------
-out=$(desktop_sign "$V" "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB" 2>&1)
+out=$(desktop_sign "$V" "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB" "$DESKTOP_MAC" 2>&1)
 [[ "$out" != *"$PASSWORD"* ]] || bad "signing printed the password"
-for f in "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB"; do [[ -s "$f.sig" ]] || bad "no $f.sig"; done
-ok "sign: three .sig files, password not printed"
-desktop_verify "$V" "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB" >/dev/null && ok "verify: against the pubkey in tauri.conf.json"
+for f in "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB" "$DESKTOP_MAC"; do [[ -s "$f.sig" ]] || bad "no $f.sig"; done
+ok "sign: four .sig files (with the macOS archive), password not printed"
+desktop_verify "$V" "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB" "$DESKTOP_MAC" >/dev/null && ok "verify: against the pubkey in tauri.conf.json"
 base64 -d "$DESKTOP_EXE.sig" | grep -q $'^trusted comment: timestamp:[0-9]*\tfile:Openvolley.eScoresheet_2.2.0_x64-setup.exe\tversion:2.2.0$' ||
   bad "the signature's trusted comment does not carry version:$V"
 ok "sign: version bound into the trusted comment"
@@ -172,15 +213,19 @@ assert.strictEqual(m.version, v)
 assert.strictEqual(m.notes, '- The app updates itself.\n- Second line.')
 assert.match(m.pub_date, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/)
 const p = m.platforms
-assert.deepStrictEqual(Object.keys(p).sort(), ['linux-x86_64', 'linux-x86_64-appimage', 'linux-x86_64-deb', 'windows-x86_64', 'windows-x86_64-nsis'])
+assert.deepStrictEqual(Object.keys(p).sort(), ['darwin-aarch64', 'darwin-aarch64-app', 'darwin-x86_64', 'darwin-x86_64-app',
+  'linux-x86_64', 'linux-x86_64-appimage', 'linux-x86_64-deb', 'windows-x86_64', 'windows-x86_64-nsis'])
 assert.strictEqual(p['windows-x86_64-nsis'].url, `${gh}/Openvolley.eScoresheet_${v}_x64-setup.exe`)
+// macOS: one universal archive, for both architectures
+assert.strictEqual(p['darwin-aarch64-app'].url, `${gh}/openvolley-escoresheet_${v}_universal.app.tar.gz`)
+for (const k of ['darwin-aarch64', 'darwin-x86_64-app', 'darwin-x86_64']) assert.deepStrictEqual(p[k], p['darwin-aarch64-app'])
 assert.strictEqual(p['linux-x86_64-appimage'].url, `${gh}/openvolley-escoresheet_${v}_amd64.AppImage`)
 assert.strictEqual(p['linux-x86_64-deb'].url, `https://get.openvolley.app/apt/pool/main/openvolley-escoresheet_${v}_amd64.deb`)
 assert.deepStrictEqual(p['windows-x86_64'], p['windows-x86_64-nsis'])
 assert.deepStrictEqual(p['linux-x86_64'], p['linux-x86_64-appimage'])
 for (const e of Object.values(p)) assert.deepStrictEqual(Object.keys(e), ['url', 'signature'])
 EOF
-ok "latest.json: version, notes, pub_date, the five platform keys, URLs"
+ok "latest.json: version, notes, pub_date, the five platform keys + four macOS ones, URLs"
 [[ "$(node -p "require('$L').platforms['windows-x86_64-nsis'].signature")" == "$(cat "$DESKTOP_EXE.sig")" ]] ||
   bad "signature field is not the .sig text"
 ok "latest.json: signature = the .sig file text"
@@ -193,7 +238,23 @@ mutate nodeb "delete m.platforms['linux-x86_64-deb']";                 expect_fa
 mutate http "m.platforms['linux-x86_64-deb'].url = m.platforms['linux-x86_64-deb'].url.replace('https:', 'http:')"
 expect_fail "url is not https" check_m http
 mutate bump "m.version = '2.2.1'";                                     expect_fail "signed for version 2.2.0, announced 2.2.1" check_m bump
-mutate extra "m.platforms['darwin-aarch64'] = m.platforms['linux-x86_64']"; expect_fail "unexpected platform darwin-aarch64" check_m extra
+mutate extra "m.platforms['darwin-arm64'] = m.platforms['linux-x86_64']"; expect_fail "unexpected platform darwin-arm64" check_m extra
+mutate halfmac "delete m.platforms['darwin-x86_64']"; expect_fail "macOS platforms darwin-aarch64-app, darwin-aarch64, darwin-x86_64-app without darwin-x86_64" check_m halfmac
+mutate macsplit "m.platforms['darwin-x86_64'] = m.platforms['linux-x86_64']"; expect_fail "darwin-x86_64 differs from darwin-aarch64-app" check_m macsplit
+mutate nomac "for (const k of Object.keys(m.platforms)) if (k.startsWith('darwin-')) delete m.platforms[k]"
+check_m nomac >/dev/null || bad "a manifest without macOS (a release without its build) must pass"
+ok "check: a manifest without any macOS target passes"
+# a release without a macOS build: latest.json without darwin targets
+nomac_manifest() {
+  local m=$DESKTOP_MAC
+  DESKTOP_MAC=''
+  desktop_manifest "$V" "$T/work" "$T/work/latest-nomac.json" >/dev/null
+  DESKTOP_MAC=$m
+}
+nomac_manifest
+[[ "$(node -p "String(Object.keys(require('$T/work/latest-nomac.json').platforms).filter(k => k.startsWith('darwin')).length)")" == 0 ]] ||
+  bad "manifest without a macOS build announces darwin targets"
+ok "latest.json: no darwin targets when the release has no macOS build"
 mutate split "m.platforms['windows-x86_64'] = m.platforms['linux-x86_64-deb']"; expect_fail "windows-x86_64 differs from windows-x86_64-nsis" check_m split
 mutate date "m.pub_date = '6 Oct 2026'";                               expect_fail "pub_date is not RFC 3339" check_m date
 mutate swap "m.platforms['linux-x86_64-deb'].signature = m.platforms['linux-x86_64-appimage'].signature"
@@ -325,6 +386,7 @@ gh() {
 upload_case() { : > "$GH_LOG"; GH_LATEST=$1; desktop_upload "$V" "$2" "$T/work" > "$T/upload.out" 2>&1; }
 upload_case v1.3.0 0
 grep -q "^gh release upload desktop-v$V .*latest.json" "$GH_LOG" || bad "upload: latest.json not uploaded"
+grep -q "^gh release upload desktop-v$V .*_universal\.app\.tar\.gz\.sig " "$GH_LOG" || bad "upload: the macOS .sig not uploaded"
 grep -q "^gh release edit desktop-v$V --repo Lucanepa/openvolley --latest$" "$GH_LOG" || bad "upload: did not make desktop-v$V latest"
 ok "upload: a server release that took \"Latest\" gives it back to desktop-v$V"
 upload_case "desktop-v$V" 0
@@ -374,6 +436,7 @@ mkdir -p "$T/beach-release" "$OV_BEACH_CHANGELOGS"
 { printf 'MZ'; head -c 300000 /dev/urandom; } > "$T/beach-release/OpenBeach_${BV}_x64-setup.exe"
 { printf '\177ELF'; head -c 500000 /dev/urandom; } > "$T/beach-release/openbeach-escoresheet_${BV}_amd64.AppImage"
 make_deb "$T/beach-release/openbeach-escoresheet_${BV}_amd64.deb" "$BV" openbeach-escoresheet
+make_mac "$T/beach-release/openbeach-escoresheet_${BV}_universal.app.tar.gz" OpenBeach.app com.openvolley.beach "$BV" openbeach-escoresheet
 printf 'OpenBeach 2.0.0\n- Beach courts on one relay.\n' > "$OV_BEACH_CHANGELOGS/20000000.txt"
 desktop_check_setup && ok "beach: setup reads the updater key from tauri.beach.conf.json"
 
@@ -381,15 +444,21 @@ OV_DESKTOP_RELEASE_DIR="$T/beach-release"; DESKTOP_RELEASE_DIR="$T/beach-release
 desktop_fetch "$BV" "$T/bwork"
 [[ "$DESKTOP_EXE" == "$T/bwork/OpenBeach_${BV}_x64-setup.exe" &&
    "$DESKTOP_APPIMAGE" == "$T/bwork/openbeach-escoresheet_${BV}_amd64.AppImage" &&
-   "$DESKTOP_DEB" == "$T/bwork/openbeach-escoresheet_${BV}_amd64.deb" ]] || bad "beach: fetch picked the wrong files"
+   "$DESKTOP_DEB" == "$T/bwork/openbeach-escoresheet_${BV}_amd64.deb" &&
+   "$DESKTOP_MAC" == "$T/bwork/openbeach-escoresheet_${BV}_universal.app.tar.gz" ]] || bad "beach: fetch picked the wrong files"
 ok "beach: fetch, one installer of each kind, version $BV"
 rm -rf "$T/rel-bpkg"; cp -r "$T/beach-release" "$T/rel-bpkg"
 make_deb "$T/rel-bpkg/openbeach-escoresheet_${BV}_amd64.deb" "$BV" openvolley-escoresheet
 bfetch_wrong() { OV_DESKTOP_RELEASE_DIR="$T/rel-bpkg"; DESKTOP_RELEASE_DIR="$T/rel-bpkg"; desktop_fetch "$BV" "$T/w-bpkg"; }
 expect_fail "package openvolley-escoresheet, expected openbeach-escoresheet" bfetch_wrong
+# OpenVolley's macOS archive in an OpenBeach release
+rm -rf "$T/rel-bmac"; cp -r "$T/beach-release" "$T/rel-bmac"
+make_mac "$T/rel-bmac/openbeach-escoresheet_${BV}_universal.app.tar.gz" OpenBeach.app com.openvolley.escoresheet "$BV" openbeach-escoresheet
+bfetch_mac() { OV_DESKTOP_RELEASE_DIR="$T/rel-bmac"; DESKTOP_RELEASE_DIR="$T/rel-bmac"; desktop_fetch "$BV" "$T/w-bmac"; }
+expect_fail "expected 'com.openvolley.beach $BV openbeach-escoresheet'" bfetch_mac
 
-desktop_sign "$BV" "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB" >/dev/null
-desktop_verify "$BV" "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB" >/dev/null && ok "beach: sign and verify"
+desktop_sign "$BV" "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB" "$DESKTOP_MAC" >/dev/null
+desktop_verify "$BV" "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB" "$DESKTOP_MAC" >/dev/null && ok "beach: sign and verify"
 desktop_notes "$BV" "$T/bnotes.txt"
 [[ "$(cat "$T/bnotes.txt")" == '- Beach courts on one relay.' ]] || bad "beach notes: $(cat "$T/bnotes.txt")"
 ok "beach: notes from openbeach's changelog, OpenBeach title dropped"
@@ -405,6 +474,8 @@ const p = m.platforms
 assert.strictEqual(p['windows-x86_64-nsis'].url, `${gh}/OpenBeach_${v}_x64-setup.exe`)
 assert.strictEqual(p['linux-x86_64-appimage'].url, `${gh}/openbeach-escoresheet_${v}_amd64.AppImage`)
 assert.strictEqual(p['linux-x86_64-deb'].url, `https://get.openvolley.app/apt/pool/main/openbeach-escoresheet_${v}_amd64.deb`)
+assert.strictEqual(p['darwin-x86_64'].url, `${gh}/openbeach-escoresheet_${v}_universal.app.tar.gz`)
+assert.deepStrictEqual(p['darwin-aarch64-app'], p['darwin-x86_64'])
 JS
 ok "beach latest.json: beach-desktop-v$BV assets, the openbeach-escoresheet pool .deb"
 
@@ -437,7 +508,7 @@ gh() {
 }
 bupload_case() { : > "$GH_LOG"; GH_LATEST=$1; GH_FALLBACK_EXISTS=$2; desktop_upload "$BV" "$3" "$T/bwork" > "$T/upload.out" 2>&1; }
 bupload_case "desktop-v$V" 0 0
-grep -q "^gh release upload beach-desktop-v$BV --repo Lucanepa/openvolley --clobber .*\.exe\.sig .*\.AppImage\.sig .*\.deb\.sig$" "$GH_LOG" || bad "beach upload: .sig files not on beach-desktop-v$BV"
+grep -q "^gh release upload beach-desktop-v$BV --repo Lucanepa/openvolley --clobber .*\.exe\.sig .*\.AppImage\.sig .*\.deb\.sig .*_universal\.app\.tar\.gz\.sig$" "$GH_LOG" || bad "beach upload: .sig files not on beach-desktop-v$BV"
 # Never a latest.json on the beach-desktop-vV release itself: both apps trust
 # one updater key, and OpenVolley's fallback reads whatever release is "Latest".
 if grep -q "^gh release upload beach-desktop-v$BV .*latest.json" "$GH_LOG"; then bad "beach upload: latest.json on beach-desktop-v$BV"; fi
@@ -518,6 +589,9 @@ fi
 
 # The landing page: OpenVolley's sections always, OpenBeach's once published.
 github_setup_exe_url() { echo "https://github.com/Lucanepa/openvolley/releases/download/$1/Setup_x64-setup.exe"; }
+# the releases listed in $MAC_TAGS have a .dmg
+MAC_TAGS=''
+github_dmg_url() { if [[ " $MAC_TAGS " == *" $1 "* ]]; then echo "https://github.com/Lucanepa/openvolley/releases/download/$1/App_universal.dmg"; fi; }
 fdroid_index() {
   node -e '
     const packages = {}
@@ -536,7 +610,13 @@ if grep -q 'id="openbeach"' "$T/index.html"; then bad "page: OpenBeach section w
 grep -q 'releases/download/desktop-v2.2.1/Setup_x64-setup.exe' "$T/index.html" || bad "page: OpenVolley Windows link"
 grep -q 'href="/fdroid/repo/com.openvolley.escoresheet_22020010.apk"' "$T/index.html" || bad "page: OpenVolley APK"
 grep -q 'It installs for all users and asks once' "$T/index.html" || bad "page: per-machine block missing for 2.2.1"
-ok "page: OpenVolley only until OpenBeach is published"
+if grep -q 'id="macos"\|brew install' "$T/index.html"; then bad "page: macOS section for a release without a .dmg"; fi
+ok "page: OpenVolley only until OpenBeach is published, no macOS without a .dmg"
+MAC_TAGS="desktop-v2.2.1"
+page "$T/ovPackages" "$T/index-ov.json"
+grep -q 'id="macos"' "$T/index.html" && grep -q 'href="https://github.com/Lucanepa/openvolley/releases/download/desktop-v2.2.1/App_universal.dmg"' "$T/index.html" &&
+  grep -q 'brew install --cask lucanepa/tap/openvolley' "$T/index.html" || bad "page: OpenVolley macOS section"
+ok "page: the macOS section once the release has a .dmg (brew tap + direct download)"
 fdroid_index com.openvolley.escoresheet,2.2.1,22020010,ov.apk com.openvolley.beach,2.0.0,20000000,com.openvolley.beach_20000000.apk > "$T/index-both.json"
 page "$T/ovPackages" "$T/index-both.json"
 grep -q 'id="openbeach"' "$T/index.html" && grep -q 'href="/fdroid/repo/com.openvolley.beach_20000000.apk"' "$T/index.html" ||
@@ -552,6 +632,7 @@ grep -q 'releases/download/desktop-v2.2.1/' "$T/index.html" || bad "page: OpenVo
 ok "page: OpenBeach's desktop part once its .deb is published; each app its own newest version"
 page "$T/bPackages" "$T/index-both.json"
 if grep -q '@[A-Z_]*@' "$T/index.html"; then bad "page: placeholders left"; fi
+if grep -q 'lucanepa/tap/openbeach' "$T/index.html"; then bad "page: OpenBeach macOS part without its .dmg"; fi
 ok "page: both apps, every placeholder filled"
 if grep -qE 'flatpak install|href="/flatpak/"' "$T/index.html"; then bad "page: Flatpak parts without a published Flatpak"; fi
 mkdir -p "$T/flatpak"
@@ -566,6 +647,12 @@ grep -q 'flatpak install --user https://get.openvolley.app/flatpak/com.openvolle
   bad "page: OpenBeach's Flatpak part"
 rm -rf "$T/flatpak"
 ok "page: each app's Flatpak part once its .flatpakref is published"
+MAC_TAGS="desktop-v2.2.1 beach-desktop-v2.0.1"
+page "$T/bPackages" "$T/index-both.json"
+grep -q 'brew install --cask lucanepa/tap/openbeach' "$T/index.html" &&
+  grep -q 'releases/download/beach-desktop-v2.0.1/App_universal.dmg' "$T/index.html" || bad "page: OpenBeach macOS part"
+if grep -q '@[A-Z_]*@' "$T/index.html"; then bad "page: placeholders left (macOS)"; fi
+ok "page: OpenBeach's macOS part once its release has a .dmg"
 noov() { fdroid_index com.openvolley.beach,2.0.0,20000000,b.apk > "$T/index-b.json"; page "$T/bPackages" "$T/index-b.json"; }
 expect_fail "need at least one openvolley-escoresheet .deb and one com.openvolley.escoresheet APK" noov
 

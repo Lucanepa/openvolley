@@ -179,6 +179,23 @@ sudo apt update &amp;&amp; sudo apt install @DEB_PACKAGE@</code></pre><button cl
     </div>
   </section>
 
+  <!--mac: left out by publish-pkgs.sh while the published version's GitHub release has no macOS disk image-->
+  <section class="card" id="macos">
+    <h2>macOS <span>@DESKTOP_VERSION@ · Apple silicon and Intel</span></h2>
+    <p>macOS 11 Big Sur or newer. With <a href="https://brew.sh/">Homebrew</a>:</p>
+    <div class="cmd"><pre><code>brew install --cask lucanepa/tap/openvolley</code></pre><button class="copy" type="button">Copy</button></div>
+    <p>Or download the disk image, open it and drag <b>OpenVolley eScoresheet</b> to <b>Applications</b>.</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="@MAC_URL@">Download for macOS</a>
+      <a class="btn btn-ghost" href="https://github.com/Lucanepa/openvolley/releases/tag/desktop-v@DESKTOP_VERSION@">All downloads</a>
+    </div>
+    <h3>The first start</h3>
+    <p>The app is not notarized by Apple (that needs a paid Apple developer account), so macOS blocks it the first time. Open it once and close the message, then <kbd>System Settings</kbd> → <kbd>Privacy &amp; Security</kbd> → <kbd>Open Anyway</kbd>. On macOS 14 and older: right-click the app → <kbd>Open</kbd>. Or in Terminal:</p>
+    <div class="cmd"><pre><code>xattr -dr com.apple.quarantine "/Applications/OpenVolley eScoresheet.app"</code></pre><button class="copy" type="button">Copy</button></div>
+    <p class="meta">Start it from Applications: from there it updates itself. The tablet Wi-Fi of the Windows and Linux app is not available on macOS: connect the tablets through the venue's Wi-Fi, a travel router or macOS Internet Sharing.</p>
+  </section>
+  <!--/mac-->
+
   <!--beach-->
   <section class="card" id="openbeach">
     <h2>OpenBeach <span>beach volleyball</span></h2>
@@ -206,6 +223,14 @@ sudo apt update &amp;&amp; sudo apt install @DEB_PACKAGE@</code></pre><button cl
       <a class="btn btn-primary" href="@BEACH_WINDOWS_URL@">Download OpenBeach for Windows</a>
       <a class="btn btn-ghost" href="https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v@BEACH_DESKTOP_VERSION@">All downloads</a>
     </div>
+    <!--beach-mac-->
+    <h3>macOS <span class="meta">@BEACH_DESKTOP_VERSION@ · Apple silicon and Intel</span></h3>
+    <div class="cmd"><pre><code>brew install --cask lucanepa/tap/openbeach</code></pre><button class="copy" type="button">Copy</button></div>
+    <p>Or the disk image: drag <b>OpenBeach</b> to Applications. Not notarized by Apple: the first time, open it once, then <kbd>System Settings</kbd> → <kbd>Privacy &amp; Security</kbd> → <kbd>Open Anyway</kbd> (macOS 14 and older: right-click → <kbd>Open</kbd>), or run <code>xattr -dr com.apple.quarantine /Applications/OpenBeach.app</code>.</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="@BEACH_MAC_URL@">Download OpenBeach for macOS</a>
+    </div>
+    <!--/beach-mac-->
     <p class="meta">The desktop app updates itself like OpenVolley's: in the background, installed when you quit it, never during a match.</p>
     <!--/beach-desktop-->
   </section>
@@ -242,8 +267,8 @@ sudo snap connect openvolley-escoresheet:bluez</code></pre><button class="copy" 
     <h3>Android</h3>
     <p>F-Droid keeps the app up to date: on Android 12 and newer it installs updates by itself, with no tap, while the tablet is idle (never while the scoreboard keeps the screen on). Android 7 to 11 shows one <kbd>Update</kbd> tap. On a scorer tablet use the F-Droid client 2.0 or newer, and in F-Droid set <kbd>Settings</kbd> → app auto-updates → <kbd>Only on Wi-Fi</kbd>. Installed from f-droid.org? It builds each version some days after it appears here; add this repository in F-Droid to get it right away.</p>
     <p>Installed the APK from the browser? Open OpenVolley in F-Droid once and tap <kbd>Update</kbd>: from then on F-Droid updates it. Without F-Droid the app can tell you about a new version instead, if you say yes when it asks (about once a day it reads the version list on this site, never during a match; nothing else is sent). It never installs anything itself.</p>
-    <h3>Windows and Linux</h3>
-    <p>From version 2.2.0 the desktop app updates itself: it downloads the update in the background and installs it when you quit OpenVolley, never during a match. Windows asks once for an administrator per update. Linux installed with the command above updates in the background and runs the new version from the next start. Version 2.1.x and older: install 2.2.0 once by hand (Linux: <code>sudo apt update &amp;&amp; sudo apt upgrade</code>).</p>
+    <h3>Windows, Linux and macOS</h3>
+    <p>From version 2.2.0 the desktop app updates itself: it downloads the update in the background and installs it when you quit OpenVolley, never during a match. Windows asks once for an administrator per update. Linux installed with the command above updates in the background and runs the new version from the next start. macOS: the same, for the app started from Applications; it asks for an administrator only when the app's folder is not yours to write (Homebrew leaves the updates to the app). Version 2.1.x and older: install 2.2.0 once by hand (Linux: <code>sudo apt update &amp;&amp; sudo apt upgrade</code>).</p>
     <p>A Flatpak, Snap or AUR copy never updates itself: <code>flatpak update</code>, the Snap Store or <code>yay -Syu</code> brings the new version.</p>
   </section>
 

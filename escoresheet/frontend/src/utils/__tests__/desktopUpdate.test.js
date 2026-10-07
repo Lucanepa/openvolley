@@ -62,6 +62,8 @@ describe('the home screen notice', () => {
   it('ready with the gate open: offer the restart', () => {
     expect(noticeFor(status())).toEqual({ type: 'ready', version: '2.2.1' })
     expect(noticeFor(status({ kind: 'appImage' }))).toEqual({ type: 'ready', version: '2.2.1' })
+    // macOS: the downloaded .app.tar.gz, like the AppImage
+    expect(noticeFor(status({ kind: 'macApp' }))).toEqual({ type: 'ready', version: '2.2.1' })
   })
 
   it('ready while a match, a tablet or the tablet Wi-Fi is there: only the reason', () => {

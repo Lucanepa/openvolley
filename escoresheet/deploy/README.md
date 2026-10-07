@@ -51,6 +51,8 @@ network, and carries `traefik.enable=false`.
 | `pkgs/install.sh` | copied by `publish-pkgs.sh` | Linux one-line installer at `/install.sh`: checks the APT key fingerprint, adds the repo, installs `openvolley-escoresheet` (or the package given: `sh -s openbeach-escoresheet`) |
 | `publish-pkgs.sh` | lenovoserver | Adds `.deb` (repacked to `openvolley-escoresheet` if named otherwise)/signed `.apk`, copies `pkgs/install.sh`, re-signs the APT and F-Droid indexes, rsyncs the public tree to `hetzner:/data/openvolley/pkgs/`. `--desktop VERSION [--staging]` also signs a desktop release for the in-app updater and writes its `latest.json`. See [Public downloads](#public-downloads-getopenvolleyapp) |
 | `lib/publish-lib.sh`, `lib/desktop-updater.mjs` | lenovoserver (used by `publish-pkgs.sh`) | The `--desktop` steps and the key-material guard; the `.mjs` (Node, no npm packages) checks updater signatures the way the app does and writes and validates `latest.json` |
+| `homebrew/bump-cask.sh`, `homebrew/Casks/*.rb` | lenovoserver (or any machine), after `publish-pkgs.sh --desktop` | Writes the macOS casks `openvolley` / `openbeach` (version + SHA-256 of the release's `.dmg`) into a checkout of the tap `Lucanepa/homebrew-tap`; you review, commit and push there. See [macOS](#macos-unsigned-homebrew-tap) |
+| `tests/bump-cask.test.sh` | any machine | Offline tests of `bump-cask.sh` |
 | `tests/publish-desktop.test.sh` | any machine with Node, `dpkg-deb` and tauri-cli >= 2.12 | Offline tests of `--desktop` (OpenVolley and `--app beach`) with a throwaway key: signing, verification, `latest.json`, staging, rollback and leak guards, the per-app APT hold-back, GitHub's "Latest" and the OpenBeach fallback (stubbed `gh`), APT names, the Android certificate per app id, `install.sh` and the landing page |
 | `Dockerfile.backend` (+ `.dockerignore`) | build machine | Packages `escoresheet/backend`: `node:22.23.3-bookworm-slim`, `npm ci --omit=dev`, user `node`, HEALTHCHECK on `/health/live` + storage sentinel (no fallback) |
 | `build-image.sh` | lenovoserver | Builds `openvolley-backend:<git-sha>`, refusing a backend tree without the self-host contract; `--ship <host>` streams it to the VM, keeps a `.tar.gz` for rollbacks and prunes to the newest 5 (`prune-images.sh`) |
@@ -248,6 +250,25 @@ both repos, then as below with `--app beach` (`--desktop <version> --app beach -
 `beach-desktop-latest` instead of GitHub's "Latest" (re-upload `latest-<previous>.json` there as
 `latest.json`).
 
+### macOS (unsigned), Homebrew tap
+
+The macOS app is ad-hoc signed, not notarized (no paid Apple developer account). macOS blocks
+its first start; the user opens it once, then System Settings › Privacy & Security › Open
+Anyway (macOS 14 and older: right-click › Open), or runs
+`xattr -dr com.apple.quarantine "/Applications/OpenVolley eScoresheet.app"`. The release notes,
+the install page and the cask's caveats say so. Homebrew's own cask repository does not take
+such apps (Homebrew 5.0: casks failing Gatekeeper are disabled there from September 2026, and
+`--no-quarantine` is deprecated), so the casks live in our tap `Lucanepa/homebrew-tap`
+(`brew install --cask lucanepa/tap/openvolley`, `lucanepa/tap/openbeach`). They declare
+`auto_updates`: the app updates itself, `brew upgrade` only follows.
+
+After `publish-pkgs.sh --desktop <version>` (OpenBeach: `--app beach`):
+```bash
+git clone git@github.com:Lucanepa/homebrew-tap.git ~/src/homebrew-tap   # once
+escoresheet/deploy/homebrew/bump-cask.sh <version> ~/src/homebrew-tap   # OpenBeach: --app beach
+cd ~/src/homebrew-tap && git diff && git commit -am "openvolley <version>" && git push
+```
+
 ### Release procedure
 
 Not on match days (Friday 17:00 to Sunday): an update downloads in the background and installs
@@ -294,6 +315,13 @@ when the scorer quits the app, and it should not be the first thing a venue sees
    points at a `.deb` not yet served), then makes that release GitHub's "Latest" if another one
    took it (it warns if that fails). A channel never moves back to an older version this way;
    see the kill switch below.
+
+   macOS: when the release has `<package>_<version>_universal.app.tar.gz` (the macOS job of
+   `desktop.yml`), `--desktop` checks, signs and announces it too (`darwin-aarch64`,
+   `darwin-x86_64`, one universal file). Without it (a release from before macOS, or a failed
+   macOS job: it does not hold back the Windows / Linux release) `latest.json` has no darwin
+   targets and Macs stay on their version. After the final `--desktop` run, bump the Homebrew
+   cask (below).
 
    `publish-pkgs.sh` refuses an APK not signed by the OpenVolley app key, a `.deb` that is not the desktop app,
    and a package that would overwrite a different file under the same version. It also copies

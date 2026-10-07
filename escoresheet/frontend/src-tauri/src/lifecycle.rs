@@ -38,6 +38,15 @@
 //!   no tablet network), and the status line says "Update ready". A confirmed
 //!   quit installs a downloaded update first (`app_quit`); the OS ending the
 //!   app never does (`os_exit`).
+//! - **macOS**: the menu bar icon is the tray; the window's red button and
+//!   Cmd+W hide like the close button; a click on the Dock icon brings the
+//!   window back (RunEvent::Reopen, main.rs). The app menu's Quit (Cmd+Q) is
+//!   this app's own item ([`app_menu`]): it asks like "Quit OpenVolley…"
+//!   (AppKit's standard Quit would end the app at once, unasked). The Dock
+//!   menu's Quit, a logout and a shutdown end it like the OS ending the
+//!   session on the other systems: never blocked (tao has no
+//!   applicationShouldTerminate to answer), RunEvent::Exit still stops the
+//!   tablets' network.
 //! - **Second launch**: tauri-plugin-single-instance hands it to this one,
 //!   which shows its window (main.rs). `--quit` (the Windows installer and
 //!   uninstaller, windows/installer-hooks.nsh, after they asked) quits it cleanly.
@@ -59,6 +68,9 @@ const MENU_SHOW: &str = "ov-show";
 const MENU_STATUS: &str = "ov-status";
 const MENU_QUIT: &str = "ov-quit";
 const MENU_UPDATE: &str = "ov-update";
+/// The macOS app menu's Quit (Cmd+Q), see [`app_menu`].
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub const MENU_APP_QUIT: &str = "ov-app-quit";
 
 /// The command-line argument that quits the running app (main.rs).
 pub const QUIT_ARG: &str = "--quit";
@@ -895,8 +907,86 @@ fn build_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     Ok(())
 }
 
-/// The tray's texts after a language or status change.
+/// The macOS app menu: Tauri's default one (About, Services, Hide, Edit for
+/// copy / paste in the page, View, Window) with this app's own Quit item in
+/// place of AppKit's: Cmd+Q asks like the tray's "Quit OpenVolley…"
+/// (request_quit), where the standard item would end the app at once,
+/// tablets and live match included. Its text follows the page's language
+/// (refresh_tray).
+#[cfg(target_os = "macos")]
+pub fn app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    use tauri::menu::{AboutMetadata, Submenu};
+    let pkg = app.package_info();
+    let about = AboutMetadata {
+        name: Some(pkg.name.clone()),
+        version: Some(pkg.version.to_string()),
+        copyright: app.config().bundle.copyright.clone(),
+        ..Default::default()
+    };
+    let quit = MenuItem::with_id(app, MENU_APP_QUIT, TrayLabels::default().quit, true, Some("CmdOrCtrl+Q"))?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &Submenu::with_items(
+                app,
+                pkg.name.clone(),
+                true,
+                &[
+                    &PredefinedMenuItem::about(app, None, Some(about))?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::services(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::hide(app, None)?,
+                    &PredefinedMenuItem::hide_others(app, None)?,
+                    &PredefinedMenuItem::show_all(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &quit,
+                ],
+            )?,
+            &Submenu::with_items(
+                app,
+                "Edit",
+                true,
+                &[
+                    &PredefinedMenuItem::undo(app, None)?,
+                    &PredefinedMenuItem::redo(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::cut(app, None)?,
+                    &PredefinedMenuItem::copy(app, None)?,
+                    &PredefinedMenuItem::paste(app, None)?,
+                    &PredefinedMenuItem::select_all(app, None)?,
+                ],
+            )?,
+            &Submenu::with_items(app, "View", true, &[&PredefinedMenuItem::fullscreen(app, None)?])?,
+            &Submenu::with_items(
+                app,
+                "Window",
+                true,
+                &[
+                    &PredefinedMenuItem::minimize(app, None)?,
+                    &PredefinedMenuItem::maximize(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    // performClose: the close button's path (on_close_requested)
+                    &PredefinedMenuItem::close_window(app, None)?,
+                ],
+            )?,
+        ],
+    )?;
+    app.manage(AppMenuQuit(quit));
+    Ok(menu)
+}
+
+/// The macOS app menu's Quit item, renamed with the page's language.
+#[cfg(target_os = "macos")]
+struct AppMenuQuit<R: Runtime>(MenuItem<R>);
+
+/// The tray's texts after a language or status change (and the macOS app
+/// menu's Quit).
 pub fn refresh_tray<R: Runtime>(app: &AppHandle<R>) {
+    #[cfg(target_os = "macos")]
+    if let Some(item) = app.try_state::<AppMenuQuit<R>>() {
+        let _ = item.0.set_text(&app.state::<Lifecycle>().labels().quit);
+    }
     let Some(items) = app.try_state::<TrayItems<R>>() else { return };
     let lifecycle = app.state::<Lifecycle>();
     let labels = lifecycle.labels();
