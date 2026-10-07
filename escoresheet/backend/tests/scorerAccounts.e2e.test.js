@@ -355,25 +355,49 @@ describe('scorer accounts end to end', { skip: SKIP }, () => {
     assert.equal(team.players[0].dob, '2004-05-06')
     assert.equal(team.short_name, 'VBC')
 
-    // beach (docs/beach-saved-teams-spec.md): same permissions, filtered by ?sport=
+    // beach (docs/beach-saved-teams-spec.md), filtered by ?sport=; since db/012
+    // the roles are per sport: beach pairs need the beach roles
+    const beachCm = await account('beach-cm', { first: 'Bea', last: 'Manager', roles: ['beach:competition_manager'] })
+    const beachScorer = await account('beach-sc', { first: 'Bo', last: 'Scorer', roles: ['beach:scorer'] })
     assert.equal((await call(null, 'GET', '/api/saved-teams?sport=beach')).status, 401)
     expectCode(await call(pending, 'GET', '/api/saved-teams?sport=beach'), 403, 'OV_FORBIDDEN')
     expectCode(await call(users.anna, 'GET', '/api/saved-teams?sport=nope'), 400, 'OV_INVALID_REQUEST')
     expectCode(await call(users.anna, 'POST', '/api/saved-teams/competitions', { name: 'Tour', season: '2026', sport: 'beach' }), 403, 'OV_FORBIDDEN')
-    const bc = await call(users.cm, 'POST', '/api/saved-teams/competitions', { name: 'Coop Beachtour', season: '2026', gender: 'women', sport: 'beach' })
+    expectCode(await call(users.cm, 'POST', '/api/saved-teams/competitions', { name: 'Tour', season: '2026', sport: 'beach' }), 403, 'OV_FORBIDDEN')
+    expectCode(await call(beachCm, 'POST', '/api/saved-teams/competitions', { name: 'Liga', season: '2026/27' }), 403, 'OV_FORBIDDEN')
+    const bc = await call(beachCm, 'POST', '/api/saved-teams/competitions', { name: 'Coop Beachtour', season: '2026', gender: 'women', sport: 'beach' })
     assert.equal(bc.status, 201, bc.text)
     assert.equal(bc.json.data.competition.sport, 'beach')
-    const bt = await call(users.cm, 'POST', '/api/saved-teams/teams', { competition_id: bc.json.data.competition.id, name: 'Müller / Weber' })
+    expectCode(await call(users.cm, 'POST', '/api/saved-teams/teams', { competition_id: bc.json.data.competition.id, name: 'Müller / Weber' }), 403, 'OV_FORBIDDEN')
+    const bt = await call(beachCm, 'POST', '/api/saved-teams/teams', { competition_id: bc.json.data.competition.id, name: 'Müller / Weber' })
     assert.equal(bt.status, 201, bt.text)
-    const bput = await call(users.cm, 'PUT', `/api/saved-teams/teams/${bt.json.data.team.id}/roster`, {
+    const bput = await call(beachCm, 'PUT', `/api/saved-teams/teams/${bt.json.data.team.id}/roster`, {
       players: [{ number: 1, first_name: 'Anna', last_name: 'Müller', dob: '1998-01-05', country: 'che' }, { number: 2, first_name: 'Sara', last_name: 'Weber' }],
       staff: [{ role: 'Coach', last_name: 'Kunz' }]
     })
     assert.equal(bput.status, 200, bput.text)
     assert.equal(bput.json.data.team.players[0].country, 'CHE')
-    expectCode(await call(users.cm, 'PUT', `/api/saved-teams/teams/${bt.json.data.team.id}/roster`, { players: [{ number: 1, last_name: 'A', is_libero: true }], staff: [] }), 400, 'OV_INVALID_REQUEST')
-    expectCode(await call(users.cm, 'PATCH', `/api/saved-teams/competitions/${bc.json.data.competition.id}`, { sport: 'indoor' }), 400, 'OV_INVALID_REQUEST')
-    const beachBundle = await call(users.anna, 'GET', '/api/saved-teams?sport=beach')
+    expectCode(await call(beachCm, 'PUT', `/api/saved-teams/teams/${bt.json.data.team.id}/roster`, { players: [{ number: 1, last_name: 'A', is_libero: true }], staff: [] }), 400, 'OV_INVALID_REQUEST')
+    expectCode(await call(beachCm, 'PATCH', `/api/saved-teams/competitions/${bc.json.data.competition.id}`, { sport: 'indoor' }), 400, 'OV_INVALID_REQUEST')
+    // each competition manager writes its own sport only, by the row's sport
+    for (const [method, path, body] of [
+      ['PATCH', `/api/saved-teams/competitions/${bc.json.data.competition.id}`, { name: 'X' }],
+      ['DELETE', `/api/saved-teams/competitions/${bc.json.data.competition.id}`],
+      ['PATCH', `/api/saved-teams/teams/${bt.json.data.team.id}`, { short_name: 'MW' }],
+      ['DELETE', `/api/saved-teams/teams/${bt.json.data.team.id}`],
+      ['PUT', `/api/saved-teams/teams/${bt.json.data.team.id}/roster`, { players: [], staff: [] }]
+    ]) expectCode(await call(users.cm, method, path, body), 403, 'OV_FORBIDDEN')
+    for (const [method, path, body] of [
+      ['PATCH', `/api/saved-teams/teams/${teamId}`, { short_name: 'X' }],
+      ['DELETE', `/api/saved-teams/teams/${teamId}`],
+      ['POST', '/api/saved-teams/teams', { competition_id: c.json.data.competition.id, name: 'Beach intruder' }],
+      ['DELETE', `/api/saved-teams/competitions/${c.json.data.competition.id}`]
+    ]) expectCode(await call(beachCm, method, path, body), 403, 'OV_FORBIDDEN')
+    expectCode(await call(beachCm, 'GET', '/api/saved-teams'), 403, 'OV_FORBIDDEN')
+    expectCode(await call(users.anna, 'GET', '/api/saved-teams?sport=beach'), 403, 'OV_FORBIDDEN')
+    // an unknown team is still 404 (not 403) for a competition manager of either sport
+    expectCode(await call(beachCm, 'DELETE', `/api/saved-teams/teams/${randomUUID()}`), 404, 'OV_NOT_FOUND')
+    const beachBundle = await call(beachScorer, 'GET', '/api/saved-teams?sport=beach')
     assert.equal(beachBundle.status, 200, beachBundle.text)
     assert.equal(beachBundle.json.data.sport, 'beach')
     assert.ok(beachBundle.json.data.competitions.every((x) => x.sport === 'beach'))
@@ -382,8 +406,15 @@ describe('scorer accounts end to end', { skip: SKIP }, () => {
     const plain = await call(users.anna, 'GET', '/api/saved-teams')
     assert.equal(plain.json.data.competitions.some((x) => x.sport === 'beach' || x.id === bc.json.data.competition.id), false)
     assert.equal(plain.json.data.teams.some((x) => x.id === bt.json.data.team.id), false)
-    const all = await call(users.cm, 'GET', '/api/saved-teams?sport=all')
+    // ?sport=all: the sports the account may read (the indoor manager console asks for all)
+    const all = await call(users.admin, 'GET', '/api/saved-teams?sport=all')
     assert.deepEqual([...new Set(all.json.data.competitions.map((x) => x.sport))].sort(), ['beach', 'indoor'])
+    const allIndoor = await call(users.cm, 'GET', '/api/saved-teams?sport=all')
+    assert.equal(allIndoor.status, 200, allIndoor.text)
+    assert.deepEqual([...new Set(allIndoor.json.data.competitions.map((x) => x.sport))], ['indoor'])
+    assert.equal(allIndoor.json.data.teams.some((x) => x.id === bt.json.data.team.id), false)
+    const allBeach = await call(beachCm, 'GET', '/api/saved-teams?sport=all')
+    assert.deepEqual([...new Set(allBeach.json.data.competitions.map((x) => x.sport))], ['beach'])
 
     // never through /api/db (not on the allowlist), anonymous or signed in
     for (const table of ['competitions', 'competition_teams', 'competition_players', 'competition_staff', 'invite_codes', 'invite_redemptions', 'audit_log']) {

@@ -92,8 +92,9 @@ describe('beach on the shared backend', { skip: SKIP }, () => {
     })
     users.alice = await account('alice') // beach scorer
     users.ivan = await account('ivan') // indoor scorer
-    // new accounts are pending (db/007): approve both as scorers
-    await grantRoles(sql, users.alice.id)
+    // new accounts are pending (db/007): approve both as scorers, each in
+    // its own sport (db/012: beach and indoor roles are separate)
+    await grantRoles(sql, users.alice.id, ['beach:scorer'])
     await grantRoles(sql, users.ivan.id)
   })
 
