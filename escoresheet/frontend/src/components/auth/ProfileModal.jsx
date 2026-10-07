@@ -6,6 +6,7 @@ import { X } from 'lucide-react'
 import { Button, cn, Field, FOCUS_RING, IconButton, Input } from '../../ui'
 import RoleChips from './RoleChips'
 import PendingApprovalBanner from './PendingApprovalBanner'
+import DateOfBirthInput from './DateOfBirthInput'
 
 export default function ProfileModal({ open, onClose }) {
   const { t } = useTranslation()
@@ -122,6 +123,11 @@ export default function ProfileModal({ open, onClose }) {
     e.preventDefault()
     setError('')
     setSuccess(false)
+    // null: the date of birth is unfinished or impossible (DateOfBirthInput)
+    if (dob === null) {
+      setError(t('auth.dobInvalid', 'Enter the date of birth as DD.MM.YYYY.'))
+      return
+    }
     setLoading(true)
 
     const { error: updateError } = await updateProfile({
@@ -295,11 +301,9 @@ export default function ProfileModal({ open, onClose }) {
                 />
               </Field>
               <Field label={t('auth.dob', 'Date of birth')}>
-                <Input
-                  size="lg"
-                  type="date"
+                <DateOfBirthInput
                   value={dob}
-                  onChange={e => setDob(e.target.value)}
+                  onChange={setDob}
                   aria-label={t('auth.dob', 'Date of birth')}
                 />
               </Field>

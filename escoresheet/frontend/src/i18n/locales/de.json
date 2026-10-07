@@ -1479,7 +1479,9 @@
     "typeEmailToConfirm": "Geben Sie Ihre E-Mail zur Bestätigung ein:",
     "emailDoesNotMatch": "E-Mail stimmt nicht überein",
     "deleting": "Wird gelöscht...",
-    "deleteAccountConfirm": "Mein Konto löschen"
+    "deleteAccountConfirm": "Mein Konto löschen",
+    "dobInvalid": "Geben Sie das Geburtsdatum als TT.MM.JJJJ ein.",
+    "dobPlaceholder": "TT.MM.JJJJ"
   },
   "matchHistory": {
     "title": "Meine Spiele",

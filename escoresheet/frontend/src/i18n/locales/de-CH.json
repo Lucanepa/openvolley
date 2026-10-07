@@ -1664,7 +1664,9 @@
     "typeEmailToConfirm": "Gänd Sie Ihri E-Mail zur Bestätigung ii:",
     "emailDoesNotMatch": "E-Mail stimmt nöd überii",
     "deleting": "Wird glöscht...",
-    "deleteAccountConfirm": "Mis Konto lösche"
+    "deleteAccountConfirm": "Mis Konto lösche",
+    "dobInvalid": "Gänd Sie s Geburtsdatum als TT.MM.JJJJ ii.",
+    "dobPlaceholder": "TT.MM.JJJJ"
   },
   "matchHistory": {
     "title": "Mini Spiil",
