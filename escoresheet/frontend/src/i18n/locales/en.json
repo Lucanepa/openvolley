@@ -2929,7 +2929,8 @@
       "notFound": "Not found, or not yours to see.",
       "noManager": "No OpenBeach competition manager has this email.",
       "slotConflict": "This slot does not fit the schedule.",
-      "resultChanged": "Someone else changed this result meanwhile. Have another look."
+      "resultChanged": "Someone else changed this result meanwhile. Have another look.",
+      "drawExists": "The tournament already has a draw of this category and gender."
     },
     "import": {
       "open": "Import Excel/CSV",
@@ -3063,7 +3064,13 @@
         "kept_drawn_one": "{{draw}}: {{count}} pair is missing from the file and stays, because the bracket is drawn.",
         "kept_drawn_other": "{{draw}}: {{count}} pairs are missing from the file and stay, because the bracket is drawn.",
         "seeds_assigned_one": "{{draw}}: {{count}} pair gets its seed from the order (every pair needs one for the bracket).",
-        "seeds_assigned_other": "{{draw}}: {{count}} pairs get their seeds from the order (every pair needs one for the bracket)."
+        "seeds_assigned_other": "{{draw}}: {{count}} pairs get their seeds from the order (every pair needs one for the bracket).",
+        "bad_char": "{{field}} holds a control character. Is the file UTF-16? Save it as UTF-8 or as an Excel file.",
+        "ambiguous_draw": "The tournament has {{count}} draws {{draw}}: rename one first.",
+        "date_outside": "{{date}} is not a day of the tournament ({{starts_on}} to {{ends_on}}).",
+        "name_twice": "{{name}} is also in row {{first_row}}.",
+        "licence_other_draw": "Licence {{licence}} also plays in {{draw}}.",
+        "reinstated": "This pair is {{status}} and is entered again."
       }
     }
   }

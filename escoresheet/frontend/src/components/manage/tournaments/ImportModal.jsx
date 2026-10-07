@@ -52,6 +52,8 @@ function useImportText() {
       field: m.field ? columnLabel(m.field, lang) : '',
       expected: m.code === 'phase_mismatch' ? t(`tournaments.phases.${m.expected}`) : m.expected
     }
+    if (m.code === 'date_outside') for (const k of ['date', 'starts_on', 'ends_on']) params[k] = dayTimeLabel(m[k])
+    if (m.code === 'reinstated') params.status = t(`tournaments.import.entryStatus.${m.status}`)
     return t(`tournaments.import.msg.${m.code}`, params)
   }
   const problem = (p) => t(`tournaments.import.problems.${p.code}`, {

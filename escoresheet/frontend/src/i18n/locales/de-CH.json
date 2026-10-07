@@ -2923,7 +2923,8 @@
       "notFound": "Nicht gefunden oder nicht für dich sichtbar.",
       "noManager": "Keine OpenBeach-Wettbewerbsverantwortliche Person hat diese E-Mail.",
       "slotConflict": "Dieser Platz passt nicht in den Spielplan.",
-      "resultChanged": "Jemand anderes hat dieses Resultat inzwischen geändert. Schau es dir nochmals an."
+      "resultChanged": "Jemand anderes hat dieses Resultat inzwischen geändert. Schau es dir nochmals an.",
+      "drawExists": "Das Turnier hat schon ein Tableau dieser Kategorie und dieses Geschlechts."
     },
     "import": {
       "open": "Excel/CSV importieren",
@@ -3057,7 +3058,13 @@
         "kept_drawn_one": "{{draw}}: {{count}} Team fehlt in der Datei und bleibt, weil das Tableau ausgelost ist.",
         "kept_drawn_other": "{{draw}}: {{count}} Teams fehlen in der Datei und bleiben, weil das Tableau ausgelost ist.",
         "seeds_assigned_one": "{{draw}}: {{count}} Team erhält seine Setzung aus der Reihenfolge (zum Auslosen braucht jedes Team eine).",
-        "seeds_assigned_other": "{{draw}}: {{count}} Teams erhalten ihre Setzung aus der Reihenfolge (zum Auslosen braucht jedes Team eine)."
+        "seeds_assigned_other": "{{draw}}: {{count}} Teams erhalten ihre Setzung aus der Reihenfolge (zum Auslosen braucht jedes Team eine).",
+        "bad_char": "{{field}} enthält ein Steuerzeichen. Ist die Datei UTF-16? Speichere sie als UTF-8 oder als Excel-Datei.",
+        "ambiguous_draw": "Das Turnier hat {{count}} Tableaus {{draw}}: Benenne zuerst eines um.",
+        "date_outside": "{{date}} ist kein Turniertag ({{starts_on}} bis {{ends_on}}).",
+        "name_twice": "{{name}} steht auch in Zeile {{first_row}}.",
+        "licence_other_draw": "Lizenz {{licence}} spielt auch in {{draw}}.",
+        "reinstated": "Dieses Team ist {{status}} und wird wieder angemeldet."
       }
     }
   }

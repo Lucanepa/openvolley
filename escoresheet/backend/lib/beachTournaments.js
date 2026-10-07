@@ -33,7 +33,7 @@ import { fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
 import { accessForSport } from './access.js'
 import { DE_MAX_TEAMS, DE_MIN_TEAMS, boardSizeFor, doubleElimination, drawWarnings, entryOfSource } from './beachBracket.js'
 import { daysBetween, minutesOf, scheduleMatches, slotIssues } from './beachSchedule.js'
-import { fold, importHash, normalizeImport, planImport } from './beachImport.js'
+import { CONTROL_RE, fold, importHash, normalizeImport, planImport } from './beachImport.js'
 
 export const TOURNAMENT_STATUSES = Object.freeze(['draft', 'published', 'live', 'finished', 'archived'])
 export const DRAW_GENDERS = Object.freeze(['men', 'women', 'mixed'])
@@ -49,7 +49,7 @@ const LISTED_FOR_READERS = ['published', 'live', 'finished']
 const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const COUNTRY_RE = /^[A-Z]{3}$/
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const EMAIL_RE = /^[^\s@\u0000-\u001F\u007F]+@[^\s@\u0000-\u001F\u007F]+\.[^\s@\u0000-\u001F\u007F]+$/
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k)
 const iso = (v) => (v instanceof Date ? v.toISOString() : (v ?? null))
@@ -75,6 +75,8 @@ function text (raw, max, { required = false, min = 1 } = {}) {
   if (raw === null || (typeof raw === 'string' && raw.trim() === '')) return required ? { error: 'required' } : { value: null }
   if (typeof raw !== 'string') return { error: 'must be text' }
   const s = raw.trim()
+  // NUL is refused by Postgres (a 503 instead of this 400); the other control characters are no text either
+  if (CONTROL_RE.test(s)) return { error: 'no control characters' }
   if (s.length < min) return { error: `at least ${min} characters` }
   if (s.length > max) return { error: `at most ${max} characters` }
   return { value: s }
@@ -563,11 +565,22 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     return { out: f.out }
   }
 
+  /** A draw of the tournament with this category (any case) and gender, other than exceptId: one per pair (the import finds draws so). */
+  async function drawTaken (client, tournamentId, category, gender, exceptId = null) {
+    const { rows } = await client.query(
+      `SELECT 1 FROM public.beach_draws
+        WHERE tournament_id = $1 AND lower(category) = lower($2) AND gender IS NOT DISTINCT FROM $3
+          AND ($4::uuid IS NULL OR id <> $4::uuid) LIMIT 1`, [tournamentId, category, gender, exceptId])
+    return rows.length > 0
+  }
+  const DRAW_EXISTS = () => fail(409, 'OV_DRAW_EXISTS', 'The tournament already has a draw of this category and gender')
+
   async function createDraw ({ user, access, id, body }) {
     const { out, error } = drawFields(body, { partial: false })
     if (error) return error
     return guarded('create-draw', () => withTx(async (client) => {
       const t = await requireTournament(client, id, user, access, { edit: true, forUpdate: true })
+      if (await drawTaken(client, t.id, out.category, out.gender ?? null)) throw abort(DRAW_EXISTS())
       const cols = Object.keys(out)
       const { rows: [d] } = await client.query(
         `INSERT INTO public.beach_draws (tournament_id, ${cols.join(', ')}) VALUES ($1, ${cols.map((_, i) => `$${i + 2}`).join(', ')}) RETURNING *`,
@@ -594,12 +607,19 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     if (error) return error
     return guarded('update-draw', () => withTx(async (client) => {
       await requireVia(client, 'draw', id, user, access, { edit: true })
-      const d = await lockDraw(client, id)
       const keys = Object.keys(out)
+      const renamed = keys.some((k) => k === 'category' || k === 'gender')
+      // a new category or gender: the tournament row first (as createDraw and
+      // the import lock it before its draws), so two renames cannot pass each other
+      if (renamed) await client.query('SELECT 1 FROM public.beach_tournaments WHERE id = (SELECT tournament_id FROM public.beach_draws WHERE id = $1) FOR UPDATE', [id])
+      const d = await lockDraw(client, id)
       if (!keys.length) return ok({ draw: drawOut(d) })
       // the category, gender and board of a drawn bracket stay (regenerate first)
       if (d.status !== 'entries' && d.status !== 'seeded' && keys.some((k) => ['gender', 'board_size'].includes(k))) {
         throw abort(fail(409, 'OV_DRAW_DRAWN', 'Reset the bracket first'))
+      }
+      if (renamed) {
+        if (await drawTaken(client, d.tournament_id, out.category ?? d.category, has(out, 'gender') ? out.gender : d.gender, d.id)) throw abort(DRAW_EXISTS())
       }
       const { rows: [u] } = await client.query(
         `UPDATE public.beach_draws SET ${keys.map((k, i) => `${k} = $${i + 2}`).join(', ')} WHERE id = $1 RETURNING *`,
@@ -906,10 +926,13 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
       await client.query('INSERT INTO public.beach_courts (tournament_id, number) VALUES ($1, $2)', [t.id, c.number])
     }
     const drawIdOf = new Map(plan.draws.filter((d) => d.draw_id).map((d) => [d.key, d.draw_id]))
+    // created_at = clock_timestamp(): now() is the transaction's one instant,
+    // and the lists read 'ORDER BY created_at, id', so the draws and pairs of
+    // one import keep the file's order (not the random order of their ids)
     for (const d of plan.draws) {
       if (d.op !== 'new') continue
       const { rows: [row] } = await client.query(
-        'INSERT INTO public.beach_draws (tournament_id, category, gender) VALUES ($1, $2, $3) RETURNING id', [t.id, d.category, d.gender])
+        'INSERT INTO public.beach_draws (tournament_id, category, gender, created_at) VALUES ($1, $2, $3, clock_timestamp()) RETURNING id', [t.id, d.category, d.gender])
       drawIdOf.set(d.key, row.id)
     }
     const json = (k, v) => (k === 'player1' || k === 'player2' ? JSON.stringify(v) : v)
@@ -920,8 +943,8 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
       if (e.op === 'new') {
         const v = e.values
         await client.query(
-          `INSERT INTO public.beach_entries (draw_id, name, seed, wildcard, team_id, player1, player2)
-           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb)`,
+          `INSERT INTO public.beach_entries (draw_id, name, seed, wildcard, team_id, player1, player2, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, clock_timestamp())`,
           [drawId, v.name, v.seed, v.wildcard, v.team_id, JSON.stringify(v.player1), JSON.stringify(v.player2)])
       } else if (e.op === 'removed') {
         await client.query("UPDATE public.beach_entries SET status = 'withdrawn', seed = NULL WHERE id = $1", [e.entry_id])

@@ -187,7 +187,8 @@ export function cellText(v, field, { date1904 = false } = {}) {
   if (typeof v === 'boolean') return v ? 'yes' : 'no'
   if (typeof v === 'number') {
     if (!Number.isFinite(v)) return ''
-    if (field === 'date' && v > 0) {
+    // a day number; a fraction below 1 is a time only (Excel's 30.12.1899), not a date
+    if (field === 'date' && v >= 1) {
       const { day, time } = excelSerial(v, date1904)
       return time ? `${day} ${time}` : day
     }

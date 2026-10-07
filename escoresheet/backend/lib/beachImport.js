@@ -20,9 +20,12 @@
  *
  * Entries (one row per pair): Draw (the category, e.g. A1) and Gender name
  * the draw, which is created when the tournament has none of that category
- * and gender. A row finds its pair in the draw by both licence numbers,
- * else by both players' names (in either order); a pair of the draw missing
- * from the file is withdrawn. A blank cell keeps what the pair has; seeds:
+ * and gender (two draws of one category and gender: an error). A row finds
+ * its pair in the draw by both licence numbers, else by both players' names
+ * (in either order; a blank first name matches any); a pair of the draw
+ * missing from the file is withdrawn. A blank cell keeps what the pair has;
+ * a disqualified or replaced pair the file names again comes back (a
+ * warning), and so does a player in two pairs or two draws. Seeds:
  * when any row of a draw has a seed, the file's seeds are the draw's seeds
  * (blank = none), else the pairs keep theirs. A new pair whose two licences
  * are exactly those of one saved beach pair (db/009) is linked to it.
@@ -39,7 +42,9 @@
  * pairs take the next seeds in the file's order). Team 1 / Team 2 (a seed or
  * a pair) and Phase are only compared with the bracket (warnings). A slot
  * is checked like a hand move (lib/beachSchedule.js slotIssues): clashes are
- * warnings, since the organiser's plan wins.
+ * warnings, since the organiser's plan wins; a date on no day of the
+ * tournament is an error. A cell with a control character (NUL, as in a
+ * UTF-16 file read as UTF-8) is an error.
  */
 
 import { createHash } from 'node:crypto'
@@ -83,6 +88,11 @@ const PHASE_WORDS = {
 const PHASE_OF = new Map(Object.entries(PHASE_WORDS).flatMap(([p, words]) => words.map((w) => [w, p])))
 
 // ------------------------------------------------------------------ values
+// control characters that no cell may carry (tab, line feed and the other
+// whitespace are collapsed to a space): NUL is refused by Postgres on the
+// apply, so a cell with one is a row error, not a 503 after a green preview
+// (a UTF-16 file read as UTF-8 has a NUL in every other byte)
+export const CONTROL_RE = /[\u0000-\u0008\u000E-\u001F\u007F￾￿]/
 /** A cell as text: trimmed, inner whitespace collapsed ('' when empty). */
 function cell (v) {
   if (v == null) return ''
@@ -186,6 +196,11 @@ function texts (raw, fields, msgs) {
       continue
     }
     const s = cell(v)
+    if (CONTROL_RE.test(s)) {
+      msgs.push({ level: 'error', code: 'bad_char', field: f })
+      out[f] = ''
+      continue
+    }
     if (s.length > MAX_CELL) {
       msgs.push({ level: 'error', code: 'too_long', field: f, max: MAX_CELL })
       out[f] = ''
@@ -279,6 +294,7 @@ function matchRow (raw, i) {
     msgs,
     draw,
     game,
+    day: date && minutes != null ? date : null,
     scheduled_at: date && minutes != null ? zurichToIso(date, minutes) : null,
     court,
     phase: v.phase ? v.phase.slice(0, 120) : null,
@@ -297,12 +313,22 @@ const licenceKey = (a, b) => {
   return l1 && l2 ? [l1, l2].sort().join('|') : null
 }
 const namesKey = (a, b) => [personKey(a), personKey(b)].sort().join('||')
+/**
+ * The same player, loosely: the licences when both have one, else the last
+ * names, and the first names only when both have one (a file of 'Muster /
+ * Beispiel' keeps the pair typed in with first names).
+ */
 const samePerson = (x, y) => {
   const lx = fold(x?.licence)
   const ly = fold(y?.licence)
   if (lx && ly) return lx === ly
-  return personKey(x) === personKey(y)
+  if (fold(x?.last) !== fold(y?.last)) return false
+  const fx = fold(x?.first)
+  const fy = fold(y?.first)
+  return !fx || !fy || fx === fy
 }
+/** The same pair, loosely (samePerson, in either order). */
+const samePair = (a1, a2, b1, b2) => (samePerson(a1, b1) && samePerson(a2, b2)) || (samePerson(a1, b2) && samePerson(a2, b1))
 const playerOut = (p) => ({ first: p?.first || '', last: p?.last || '', licence: p?.licence ?? null, country: p?.country ?? null })
 const sameJson = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 const isoOf = (v) => (v == null ? null : new Date(v).toISOString())
@@ -322,6 +348,15 @@ export function planImport (state, input) {
   const t = state.tournament
   const warnings = []
   const drawsByKey = new Map(state.draws.map((d) => [drawKey(d.category, d.gender), d]))
+  // two draws of one category (in any case) and gender: a row cannot tell
+  // them apart, so it is an error (never the later one, silently)
+  const drawCount = new Map()
+  for (const d of state.draws) drawCount.set(drawKey(d.category, d.gender), (drawCount.get(drawKey(d.category, d.gender)) || 0) + 1)
+  const ambiguous = (r) => {
+    if ((drawCount.get(r.draw.key) || 0) < 2) return false
+    r.msgs.push({ level: 'error', code: 'ambiguous_draw', category: r.draw.category, gender: r.draw.gender, count: drawCount.get(r.draw.key) })
+    return true
+  }
   const drawById = new Map(state.draws.map((d) => [d.id, d]))
   const entriesOf = (drawId) => state.entries.filter((e) => e.draw_id === drawId)
 
@@ -344,10 +379,40 @@ export function planImport (state, input) {
   const entryRows = input.entries
   const byDraw = new Map()
   for (const r of entryRows) {
-    if (!r.draw) continue
+    if (!r.draw || ambiguous(r)) continue
     const p = planDraw(r.draw)
     if (!byDraw.has(p.key)) byDraw.set(p.key, [])
     byDraw.get(p.key).push(r)
+  }
+  // a licence in two draws of the tournament (the file's rows, and the
+  // registered pairs of the draws the file leaves alone): a warning, since a
+  // player may play two categories, but rarely does
+  const isError = (r) => r.msgs.some((m) => m.level === 'error')
+  const licenceDraw = new Map() // licence -> { key, category, gender, row }
+  for (const d of state.draws) {
+    const key = drawKey(d.category, d.gender)
+    if (byDraw.has(key) || (drawCount.get(key) || 0) > 1) continue
+    for (const e of entriesOf(d.id)) {
+      if (e.status !== 'registered') continue
+      for (const pl of [e.player1, e.player2]) {
+        const l = fold(pl?.licence)
+        if (l && !licenceDraw.has(l)) licenceDraw.set(l, { key, category: d.category, gender: d.gender, row: null })
+      }
+    }
+  }
+  for (const r of entryRows) {
+    if (!r.draw || isError(r)) continue
+    const p = plannedByKey.get(r.draw.key)
+    if (!p) continue
+    for (const pl of [r.p1, r.p2]) {
+      const l = fold(pl.licence)
+      if (!l) continue
+      const seen = licenceDraw.get(l)
+      if (!seen) licenceDraw.set(l, { key: p.key, category: p.category, gender: p.gender, row: r.row })
+      else if (seen.key !== p.key) {
+        r.msgs.push({ level: 'warning', code: 'licence_other_draw', licence: pl.licence, category: seen.category, gender: seen.gender, first_row: seen.row })
+      }
+    }
   }
   const entryOps = [] // { op, row, key, entry_id, name, values?, changes? }
   const finalEntries = new Map() // key -> [{ id|null, op|null, row|null, seed }]: the draw's pairs after the import
@@ -381,6 +446,7 @@ export function planImport (state, input) {
     const seenPair = new Map()
     const seenSeed = new Map()
     const seenLicence = new Map()
+    const seenPeople = [] // { pl, row }: a player without a licence is found by name (samePerson)
     for (const r of rows) {
       if (r.msgs.some((m) => m.level === 'error')) continue
       const k = licenceKey(r.p1, r.p2) || namesKey(r.p1, r.p2)
@@ -399,13 +465,29 @@ export function planImport (state, input) {
         if (seenLicence.has(l)) r.msgs.push({ level: 'error', code: 'player_twice', licence: pl.licence, first_row: seenLicence.get(l) })
         else seenLicence.set(l, r.row)
       }
+      for (const pl of [r.p1, r.p2]) {
+        // two licences decide (player_twice above); else the names, as a warning (namesakes exist)
+        const prev = seenPeople.find((x) => x.row !== r.row && !(fold(x.pl.licence) && fold(pl.licence)) && samePerson(x.pl, pl))
+        if (prev) r.msgs.push({ level: 'warning', code: 'name_twice', name: [pl.first, pl.last].filter(Boolean).join(' '), first_row: prev.row })
+      }
+      seenPeople.push({ pl: r.p1, row: r.row }, { pl: r.p2, row: r.row })
     }
-    // match the rows to the draw's pairs: both licences, then both names
+    // match the rows to the draw's pairs: both licences, then both full
+    // names, then loosely (last names; first names and licences only where
+    // both sides have one), so a blank cell keeps the pair
     const matched = new Map() // row -> entry
     const taken = new Set()
-    for (const pass of ['licence', 'names']) {
+    for (const pass of ['licence', 'names', 'loose']) {
       for (const r of rows) {
         if (matched.has(r)) continue
+        if (pass === 'loose') {
+          const e = existing.find((x) => !taken.has(x.id) && samePair(r.p1, r.p2, x.player1, x.player2))
+          if (e) {
+            matched.set(r, e)
+            taken.add(e.id)
+          }
+          continue
+        }
         const k = pass === 'licence' ? licenceKey(r.p1, r.p2) : namesKey(r.p1, r.p2)
         if (!k) continue
         const e = existing.find((x) => !taken.has(x.id) &&
@@ -470,6 +552,8 @@ export function planImport (state, input) {
         const pair = savedPairFor(to.player1, to.player2)
         if (pair) changes.push({ field: 'team_id', from: null, to: pair.id, saved_pair: pair.name })
       }
+      // a disqualified or replaced pair comes back only with notice
+      if (e.status === 'dq' || e.status === 'replaced') r.msgs.push({ level: 'warning', code: 'reinstated', status: e.status })
       // once drawn: names, players and wildcards only
       if (!open && changes.some((c) => ['seed', 'status'].includes(c.field))) {
         r.msgs.push({ level: 'error', code: 'draw_drawn', category: p.category, gender: p.gender })
@@ -503,6 +587,10 @@ export function planImport (state, input) {
   const existingGames = new Set(state.matches.map((m) => m.game_n))
   for (const r of matchRows) {
     if (!r.draw) continue
+    if (ambiguous(r)) {
+      r.unknownDraw = true
+      continue
+    }
     const known = plannedByKey.get(r.draw.key) || (drawsByKey.has(r.draw.key) ? planDraw(r.draw) : null)
     if (!known) {
       r.msgs.push({ level: 'error', code: 'unknown_draw', category: r.draw.category, gender: r.draw.gender })
@@ -637,6 +725,11 @@ export function planImport (state, input) {
       if (cur !== r.scheduled_at) {
         set.scheduled_at = r.scheduled_at
         changes.push({ field: 'scheduled_at', from: cur, to: r.scheduled_at })
+        // a day of no tournament (another year from '11.7.62', or Excel's
+        // 30.12.1899 of a time-only cell) would vanish from the day grid
+        if (r.day && t.starts_on && t.ends_on && (r.day < t.starts_on || r.day > t.ends_on)) {
+          r.msgs.push({ level: 'error', code: 'date_outside', date: r.day, starts_on: t.starts_on, ends_on: t.ends_on })
+        }
       }
     }
     for (const k of ['referee', 'scorer']) {
