@@ -1602,6 +1602,104 @@ button:disabled {
   pointer-events: none;
 }
 
+/* Game captain (not the team captain): the court's amber C */
+.lineup-cap--game {
+  color: #fbbf24;
+}
+
+/* Optional game captain choice, under the court: one fixed-height block
+   whatever the line-up holds (no players yet, six options, a two-line note),
+   so the modal keeps its size (and still fits 85vh of a 1280x720 screen) */
+.lineup-gcapt {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--ov-hairline);
+  border-radius: var(--ov-radius-lg);
+}
+
+.lineup-gcapt__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.lineup-gcapt__title {
+  font-weight: 600;
+  color: var(--ov-text-secondary);
+}
+
+.lineup-gcapt__optional {
+  font-size: 12px;
+  color: var(--ov-text-muted);
+}
+
+.lineup-gcapt__choices {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  height: 36px;
+  overflow: hidden;
+}
+
+.lineup-gcapt__choice {
+  flex: none;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 6px;
+  border: 1px solid var(--ov-hairline-strong);
+  border-radius: var(--ov-radius);
+  background: var(--ov-card);
+  color: var(--ov-text);
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.lineup-gcapt__choice--none {
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.lineup-gcapt__choice:hover:not(:disabled) {
+  border-color: var(--ov-text-muted);
+}
+
+.lineup-gcapt__choice[aria-pressed="true"] {
+  background: var(--ov-selected);
+  border-color: var(--ov-selected);
+  color: var(--ov-on-dark);
+}
+
+.lineup-gcapt__choice:disabled {
+  cursor: default;
+  background: var(--ov-card);
+  border-color: var(--ov-hairline);
+  color: var(--ov-text-faint);
+}
+
+.lineup-gcapt__choice:focus-visible {
+  outline: 2px solid var(--ov-focus);
+  outline-offset: 2px;
+}
+
+.lineup-gcapt__note {
+  margin: 0;
+  height: 32px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ov-text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .lineup-lfp {
   position: absolute;
   bottom: -5px;
