@@ -25,6 +25,7 @@ import {
 import { trackServiceRounds, courtChangeIndex, splitSet5Rounds, type ServiceRound } from './utils/serviceRounds';
 import { awardsPoint as sanctionAwardsPoint } from '../src/domain/sanctions.js';
 import { generatedRemarks } from './utils/sheetRemarks';
+import { isoOf, setDurationMinutes, setEndMs, setStartMs } from './utils/matchTimes';
 import { BRAND } from '../src/brand.js';
 import { PhoneIcon } from '../src/components/icons';
 import { deliverPdfToOpener, getOpenerWindow, isOwnDownload, savePdfThroughApp } from '../src/utils/appWindowGuest';
@@ -705,13 +706,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
       : [[], [], [], [], [], []];
     const rightSubs: SubRecordLocal[][] = convertSubsMapToArray(rightSubsByPlayer, rightLineup);
 
-    // Determine start time - only show confirmed set start time from modal
-    let startTimeStr = '';
-    if (hasBeenPlayed && setInfo?.startTime) {
-      // Use confirmed start time from "Confirm start time for Set X" modal (display as local)
-      startTimeStr = formatTimeLocal(setInfo.startTime);
-    }
-    // Note: Don't fallback to scheduledAt - only show time if explicitly confirmed
+    // The set's ACTUAL start: its first rally (utils/matchTimes, owner 2026-10-07),
+    // never the schedule; the same value the RESULT table and MatchEnd use
+    const actualStart = hasBeenPlayed ? setStartMs(setInfo, setEvents) : null;
+    const startTimeStr = actualStart !== null ? formatTimeLocal(isoOf(actualStart)) : '';
+    const actualEnd = hasBeenPlayed && setInfo?.endTime ? setEndMs(setInfo, setEvents) : null;
 
     // Calculate current server info for validation
     // Determine which team is currently serving
@@ -767,7 +766,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
     return {
       startTime: startTimeStr,
-      endTime: hasBeenPlayed && setInfo?.endTime ? formatTimeLocal(setInfo.endTime) : '',
+      endTime: actualEnd !== null ? formatTimeLocal(isoOf(actualEnd)) : '',
       setFinished: setInfo?.finished || false,
       leftLineup,
       rightLineup,
@@ -977,42 +976,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         ? (teamBPoints > teamAPoints ? 1 : 0)
         : null;
 
-      // Calculate duration (in minutes with single quote, only if set is finished)
-      // Use confirmed set start time from the "Confirm start time for Set X" modal
-      // This ensures postponed matches use actual start time, not scheduled time
-      let duration = '';
-      // a set awarded by default has no duration (field-spec 11)
-      if (isSetFinished && setInfo?.endTime && !isDefaultSet(setNum)) {
-        let start: Date | null = null;
-        // Always use the set's confirmed startTime (from "Confirm start time" modal)
-        if (setInfo?.startTime) {
-          start = new Date(setInfo.startTime);
-        }
-
-        // Fallback: if startTime is missing, use the first event timestamp for this set
-        if (!start && setEvents.length > 0) {
-          const firstEvent = setEvents.sort((a, b) => {
-            const aSeq = a.seq || 0;
-            const bSeq = b.seq || 0;
-            if (aSeq !== 0 || bSeq !== 0) return aSeq - bSeq;
-            return new Date(a.ts).getTime() - new Date(b.ts).getTime();
-          })[0];
-          if (firstEvent?.ts) {
-            start = new Date(firstEvent.ts);
-          }
-        }
-
-        // Only calculate duration if we have both start and end times
-        if (start) {
-          const end = new Date(setInfo.endTime);
-          const durationMs = end.getTime() - start.getTime();
-          // Only show duration if it's positive (end is after start)
-          if (durationMs > 0) {
-            const minutes = Math.floor(durationMs / 60000);
-            duration = minutes > 0 ? `${minutes}'` : '';
-          }
-        }
-      }
+      // Set duration = its end - its ACTUAL start (first rally), whole minutes
+      // (utils/matchTimes, shared with MatchEnd). A set awarded by default has
+      // none (field-spec 11).
+      const minutes = isSetFinished && !isDefaultSet(setNum) ? setDurationMinutes(setInfo, setEvents) : null;
+      const duration = minutes !== null && minutes > 0 ? `${minutes}'` : '';
 
       results.push({
         setNumber: setNum,
@@ -1161,7 +1129,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   // includes the intervals. A match decided by default before any rally has none.
   const rallySets = sets.filter(s => s && !isDefaultSet(s.index));
   const set1 = rallySets.find(s => s.index === 1);
-  const matchStart = set1?.startTime ? formatClockHoursMinutes(set1.startTime) : '';
+  // the actual start of set 1 (its first rally), empty until the match has started
+  // (owner 2026-10-07: never the scheduled time)
+  const set1StartMs = setStartMs(set1, events);
+  const matchStart = set1StartMs !== null ? formatClockHoursMinutes(isoOf(set1StartMs)) : '';
 
   // Winner: full team name, result "3-1" (only once the match is finished)
   const winner = isMatchFinished
@@ -1175,11 +1146,12 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     .filter(s => s?.endTime && (rallySets.includes(s) || s.forfeitCreated))
     .sort((a, b) => new Date(b.endTime).getTime() - new Date(a.endTime).getTime())[0];
   const anyRally = rallySets.some(s => (s.homePoints || 0) + (s.awayPoints || 0) > 0);
-  const matchEndFinal = isMatchFinished && anyRally && lastSet?.endTime
-    ? formatClockHoursMinutes(lastSet.endTime)
+  const lastSetEndMs = setEndMs(lastSet, events);
+  const matchEndFinal = isMatchFinished && anyRally && lastSetEndMs !== null
+    ? formatClockHoursMinutes(isoOf(lastSetEndMs))
     : '';
-  const matchDuration = isMatchFinished && anyRally && set1?.startTime && lastSet?.endTime
-    ? formatHoursMinutes(Math.floor((new Date(lastSet.endTime).getTime() - new Date(set1.startTime).getTime()) / 60000))
+  const matchDuration = isMatchFinished && anyRally && set1StartMs !== null && lastSetEndMs !== null && lastSetEndMs >= set1StartMs
+    ? formatHoursMinutes(Math.floor((lastSetEndMs - set1StartMs) / 60000))
     : '';
 
   // Set 5: three panels (field-spec 6). Panel 1 = the left team until the change of

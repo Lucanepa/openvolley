@@ -292,6 +292,8 @@ continues until one team leads by 2.
   - **OV decision:** print the recorded start time, rounded to the minute. If it differs from
     the schedule by more than 5 minutes and no remark exists, offer to add one. Never insert the
     remark silently.
+  - **Owner decision (2026-10-07, section 16):** the recorded start is the **actual** start of the
+    set's first rally (the `rally_start` event), never the scheduled time.
 - **Line-ups**: each set gets the line-up from that set's line-up sheet. Check every number
   against the roster, and check for disqualified players (SC p.23, 66).
   - A player **expelled** in the previous set may play again.
@@ -545,7 +547,9 @@ The functions in `utils/scoresheetModel.ts` are pure, so all of these can be uni
 
 ### 12.1 Calculations
 
-- `setStart[n]`, `setEnd[n]`: the recorded set start and set end (time of the last rally).
+- `setStart[n]`, `setEnd[n]`: the actual set start (its first rally, `rally_start`; else the
+  confirmed start; else its first point) and the recorded set end (else its last point), both
+  to the minute (`utils/matchTimes.ts`, section 16).
   Format `HH:MM`, local time in the match's time zone, Europe/Zurich by default.
 - `setDuration[n] = minutes(setEnd − setStart)`, rounded down to whole minutes.
 - `totalDuration = Σ setDuration`.
@@ -657,4 +661,16 @@ These override the paper conventions above wherever they differ. The audit must 
    the pre-printed numbers, the ticks of the points won and the circles of the points awarded
    (penalty, delay penalty, default); nothing else. This departs from SC p.39, 64 and 77-79
    (sections 4.7 step 4 and 6 steps 2-3).
+2. **Actual times only.** Owner: "match start only written the actual match start". One source,
+   `scoresheet_pdf/utils/matchTimes.ts`, for the set headers, the RESULT table and the in-app
+   "Match complete" card (MatchEnd.jsx) and MatchEntry:
+   - set start = the real start of the set's first rally (`rally_start`, the device clock). The
+     "Set n start time" dialog value is used only for records without `rally_start`, then the
+     set's first point. A scorer who kept the scheduled 14:30 in that dialog for a match that
+     started at 16:05 no longer gets "Match Start 14:30" and a 104' first set;
+   - set end = the recorded set end, else the last point;
+   - set duration = end − start of that set; match start = set 1's actual start (empty until the
+     match has started); match end = the last set's end; match duration = end − start;
+   - all to the minute (rounded down), so every duration is the difference of the printed times.
+   This answers open question 15.2 (the recorded actual minute, never the schedule).
 
