@@ -6,7 +6,7 @@ Owner checklist for the `feat/activity-log` branch. Background:
 | Piece | Change |
 |---|---|
 | Database | `backend/db/015_event_revisions.sql` (events gain `voided_at`, `voided_by`, `void_reason` and `rev`, plus the `event_revisions` table and two triggers; `ov_match_children_guard()` is redefined to let an account deletion clear `voided_by` / `actor_id` on a closed match). `backend/db/016_activity_log.sql` (the `activity_log` table and its delete-with-the-match trigger). Both are additive and idempotent, and each runs in one transaction. |
-| `roles.sql` | **Changed:** revokes UPDATE on `event_revisions` and `activity_log` from `ov_app`, which makes them append-only. Run it **after** 015 and 016. |
+| `roles.sql` | **Changed:** revokes UPDATE on `event_revisions` and `activity_log` from `ov_app`, which makes them append-only, and grants back UPDATE of the account columns only (`event_revisions.actor_id`, `activity_log.account_id` / `uploader_id`), which account deletion clears. Run it **after** 015 and 016. |
 | Backend image | New build with the new routes: `POST /api/match/event-revisions`, `POST/GET /api/activity`, `GET/DELETE /api/admin/activity`, `GET /api/admin/activity/export` and `GET /api/admin/matches/:id/revisions`. It also has the daily activity purge and the extended account deletion. |
 | Env vars | None. |
 | Clients | Web (Pages), desktop and Android builds of 2.4.0. **Old clients keep working:** every new column is nullable or has a default, and no old route changed. Old clients simply never send revisions or activity. |
@@ -35,13 +35,16 @@ lenovo$ ssh hetzner 'cd /opt/openvolley && docker compose exec -T ov-postgres ps
 lenovo$ ssh hetzner /opt/openvolley/apply-roles.sh < escoresheet/backend/db/roles.sql
 ```
 
-Check: `ov_app` may insert into both tables but not update them.
+Check: `ov_app` may insert into both tables but not update them, except the account columns (account deletion).
 
 ```bash
 hetzner# docker compose exec -T ov-postgres psql -U ov_owner -d openvolley -tAc \
   "SELECT t, has_table_privilege('ov_app', t, 'INSERT'), has_table_privilege('ov_app', t, 'UPDATE') FROM unnest(ARRAY['public.event_revisions','public.activity_log']) t"
 # public.event_revisions|t|f
 # public.activity_log|t|f
+hetzner# docker compose exec -T ov-postgres psql -U ov_owner -d openvolley -tAc \
+  "SELECT has_column_privilege('ov_app','public.event_revisions','actor_id','UPDATE'), has_column_privilege('ov_app','public.activity_log','account_id','UPDATE')"
+# t|t
 ```
 
 The `ALTER TABLE events ADD COLUMN rev integer NOT NULL DEFAULT 0` is a
