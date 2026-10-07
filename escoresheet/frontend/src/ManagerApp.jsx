@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CircleCheck, ExternalLink, KeyRound, LogIn, LogOut, MailCheck, RotateCw, ShieldOff, UserPlus } from 'lucide-react'
+import { CircleCheck, ExternalLink, KeyRound, LogIn, LogOut, MailCheck, RotateCw, ShieldOff, UserPlus, Users } from 'lucide-react'
 import { useAuth } from './contexts/AuthContext'
 import ManageConsole, { manageTabsFor } from './components/manage/ManageConsole'
 import LoginModal from './components/auth/LoginModal'
@@ -9,9 +9,11 @@ import InviteCodeForm from './components/auth/InviteCodeForm'
 import EmailConfirmBanner from './components/auth/EmailConfirmBanner'
 import { ConfirmEmailPage, ResetPasswordPage } from './components/auth/AuthLinkPages'
 import { AppSpinner, BUTTON_SIZES, BUTTON_VARIANTS, Button, cn, consoleHeaderBtn, FOCUS_RING, GateScreen } from './ui'
-import { mainAppUrl, SIGN_UP_HASH } from './utils/managerSite'
-import { BRAND } from './brand'
+import { scorerAppUrlFor, SIGN_UP_HASH } from './utils/managerSite'
 import { parseAuthLinkHash, takeAuthLinkFromLocation } from './utils/authLinks'
+import { useManagerBrand } from './managerBrand'
+import { accessForApp } from './lib/access'
+import { fetchMe, joinApp } from './lib/accountApi'
 
 /**
  * manager.openvolley.app: the manage console as a site of its own, for
@@ -36,6 +38,11 @@ import { parseAuthLinkHash, takeAuthLinkFromLocation } from './utils/authLinks'
  *
  * Hiding tabs is cosmetic, as in the app: the server refuses every action
  * the account's roles do not allow.
+ *
+ * Built twice (src/managerBrand.js): OpenVolley's manager as above, and
+ * OpenBeach's (manager-beach.openvolley.app), where the roles are the beach
+ * ones and an account that has not joined OpenBeach yet first gets "Join
+ * OpenBeach" (POST /api/account/join; one login for both apps, plan 1.1).
  */
 
 // How long a signed-in account may show "loading" before offering a retry.
@@ -111,9 +118,31 @@ function useHashRoute(onAuthLink) {
   return [route, go, replace]
 }
 
-const logo = (cls) => (
-  <img src={BRAND.lockup} alt="OpenVolley" className={cls} />
-)
+/** The brand's text for `key`: OpenBeach's own (managerBeach.*) where it has one. */
+function useBrandText() {
+  const { t } = useTranslation()
+  const brand = useManagerBrand()
+  const beach = brand.app === 'beach'
+  return {
+    brand,
+    beach,
+    signInHeading: t(beach ? 'managerBeach.signInHeading' : 'managerSite.signInHeading'),
+    signInBody: t(beach ? 'managerBeach.signInBody' : 'managerSite.signInBody'),
+    noAccountYet: t(beach ? 'managerBeach.noAccountYet' : 'managerSite.noAccountYet'),
+    signUpBody: t(beach ? 'managerBeach.signUpBody' : 'managerSite.signUpBody'),
+    inviteStepBody: t(beach ? 'managerBeach.inviteStepBody' : 'managerSite.inviteStepBody'),
+    nativeAppsNote: t(beach ? 'managerBeach.nativeAppsNote' : 'managerSite.nativeAppsNote'),
+    allSetBody: t(beach ? 'managerBeach.allSetBody' : 'managerSite.allSetBody'),
+    openApp: t(beach ? 'managerBeach.openApp' : 'managerSite.openApp'),
+    openAppLong: t(beach ? 'managerBeach.openAppLong' : 'managerSite.openAppLong'),
+    appUrl: scorerAppUrlFor(brand)
+  }
+}
+
+function Logo({ className }) {
+  const brand = useManagerBrand()
+  return <img src={brand.lockup} alt={brand.name} className={className} />
+}
 
 // "Open the scorer app" as a full-width link button
 const linkButton = (variant, size) => cn('inline-flex w-full items-center justify-center font-medium transition-colors', FOCUS_RING, size && BUTTON_SIZES[size], BUTTON_VARIANTS[variant])
@@ -144,14 +173,15 @@ function accountName(user, profile) {
 
 function Gate({ width, className, children }) {
   const { t } = useTranslation()
+  const brand = useManagerBrand()
   return (
     <GateScreen
       width={width}
       className={className}
-      logo={logo('h-9 w-auto')}
+      logo={<Logo className="h-9 w-auto" />}
       eyebrow={t('managerSite.eyebrow')}
       corner={<LanguageSelect compact />}
-      footer={`OpenVolley ${typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''}`.trim()}
+      footer={`${brand.name} ${typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''}`.trim()}
     >
       {children}
     </GateScreen>
@@ -160,19 +190,20 @@ function Gate({ width, className, children }) {
 
 function SignInScreen({ initialMode = null, onCreateAccount }) {
   const { t } = useTranslation()
+  const text = useBrandText()
   // initialMode 'signin' | 'forgot': opened from an email-link page
   const [open, setOpen] = useState(!!initialMode)
   return (
     <>
       <Gate>
         <div data-testid="manager-sign-in" className="text-center">
-          <h1 className="text-xl font-bold tracking-tight text-stone-900">{t('managerSite.signInHeading')}</h1>
-          <p className="mt-2 text-sm text-stone-600">{t('managerSite.signInBody')}</p>
+          <h1 className="text-xl font-bold tracking-tight text-stone-900">{text.signInHeading}</h1>
+          <p className="mt-2 text-sm text-stone-600">{text.signInBody}</p>
           <Button variant="hero" block icon={LogIn} onClick={() => setOpen(true)} className="mt-6">
             {t('managerSite.signIn')}
           </Button>
           <div className="mt-5 border-t border-stone-100 pt-4">
-            <p className="text-xs text-stone-500">{t('managerSite.noAccountYet')}</p>
+            <p className="text-xs text-stone-500">{text.noAccountYet}</p>
             <Button variant="secondary" size="lg" block icon={UserPlus} onClick={onCreateAccount} className="mt-2">
               {t('managerSite.createAccount')}
             </Button>
@@ -192,6 +223,7 @@ function SignInScreen({ initialMode = null, onCreateAccount }) {
 /** #signup: accounts are made here (the scorer apps link to this page). */
 function SignUpScreen({ onSignedUp, onBack }) {
   const { t } = useTranslation()
+  const text = useBrandText()
   const [loginOpen, setLoginOpen] = useState(false)
   return (
     <>
@@ -199,9 +231,15 @@ function SignUpScreen({ onSignedUp, onBack }) {
         <div data-testid="manager-sign-up">
           <div className="mb-5 text-center">
             <h1 className="text-xl font-bold tracking-tight text-stone-900">{t('managerSite.signUpHeading')}</h1>
-            <p className="mt-2 text-sm text-stone-600">{t('managerSite.signUpBody')}</p>
+            <p className="mt-2 text-sm text-stone-600">{text.signUpBody}</p>
           </div>
-          <SignUpForm onSignedUp={onSignedUp} onSwitchToLogin={() => setLoginOpen(true)} />
+          <SignUpForm
+            onSignedUp={onSignedUp}
+            onSwitchToLogin={() => setLoginOpen(true)}
+            // OpenBeach: an address that already has an account (OpenVolley's
+            // or OpenBeach's) signs in with its password and then joins
+            existingAccountMessage={text.beach ? t('managerBeach.existingAccount') : undefined}
+          />
           <p className="mt-2 text-center">
             <button type="button" onClick={onBack} className={cn('min-h-11 text-xs text-stone-500 transition-colors hover:text-stone-800', FOCUS_RING, 'rounded')}>
               {t('managerSite.backToSignIn')}
@@ -286,14 +324,14 @@ function AccountLoadingScreen() {
 
 /** "Desktop / Android app? Just sign in there" + the link to the web app. */
 function ScorerAppLinks({ primary = false }) {
-  const { t } = useTranslation()
+  const text = useBrandText()
   return (
     <div data-testid="scorer-app-links">
-      <a href={mainAppUrl()} className={primary ? cn(linkButton('hero'), 'gap-2') : cn(linkButton('secondary', 'lg'))}>
+      <a href={text.appUrl} className={primary ? cn(linkButton('hero'), 'gap-2') : cn(linkButton('secondary', 'lg'))}>
         <ExternalLink size={16} aria-hidden />
-        {t('managerSite.openAppLong')}
+        {text.openAppLong}
       </a>
-      <p className="mt-2 text-center text-xs text-stone-500">{t('managerSite.nativeAppsNote')}</p>
+      <p className="mt-2 text-center text-xs text-stone-500">{text.nativeAppsNote}</p>
     </div>
   )
 }
@@ -306,6 +344,7 @@ function ScorerAppLinks({ primary = false }) {
  */
 function InviteStepScreen({ justSignedUp, linkSentTo = null }) {
   const { t } = useTranslation()
+  const text = useBrandText()
   return (
     <Gate>
       <div data-testid="manager-invite-step">
@@ -329,7 +368,7 @@ function InviteStepScreen({ justSignedUp, linkSentTo = null }) {
         <div className="text-center">
           <KeyRound className="mx-auto h-8 w-8 text-stone-400" aria-hidden />
           <h1 className="mt-3 text-base font-semibold text-stone-900">{t('managerSite.inviteStepTitle')}</h1>
-          <p className="mt-1.5 text-sm text-stone-600">{t('managerSite.inviteStepBody')}</p>
+          <p className="mt-1.5 text-sm text-stone-600">{text.inviteStepBody}</p>
         </div>
         <InviteCodeForm className="mt-4" />
         <p className="mt-3 text-xs text-stone-500">{t('managerSite.inviteStepNoCode')}</p>
@@ -346,6 +385,7 @@ function InviteStepScreen({ justSignedUp, linkSentTo = null }) {
 /** An approved scorer without a manage role: nothing to do here, score in the app. */
 function AllSetScreen() {
   const { t } = useTranslation()
+  const text = useBrandText()
   const [showCode, setShowCode] = useState(false)
   return (
     <Gate>
@@ -353,7 +393,7 @@ function AllSetScreen() {
         <div className="text-center">
           <CircleCheck className="mx-auto h-8 w-8 text-emerald-600" aria-hidden />
           <h1 className="mt-3 text-base font-semibold text-stone-900">{t('managerSite.allSetTitle')}</h1>
-          <p className="mt-1.5 text-sm text-stone-600">{t('managerSite.allSetBody')}</p>
+          <p className="mt-1.5 text-sm text-stone-600">{text.allSetBody}</p>
         </div>
         <div className="mt-5"><ScorerAppLinks primary /></div>
         <div className="mt-5 border-t border-stone-100 pt-3">
@@ -376,6 +416,7 @@ function AllSetScreen() {
 /** Accounts with a role that gives nothing here (referee only). */
 function NoAccessScreen() {
   const { t } = useTranslation()
+  const text = useBrandText()
   return (
     <Gate>
       <div data-testid="manager-no-access">
@@ -391,7 +432,7 @@ function NoAccessScreen() {
         <InviteCodeForm className="mt-5 border-t border-stone-100 pt-4" />
         <div className="mt-5"><SignOutButton block /></div>
         <p className="mt-3 text-center text-xs">
-          <a href={mainAppUrl()} className={quietLink}>{t('managerSite.openAppLong')}</a>
+          <a href={text.appUrl} className={quietLink}>{text.openAppLong}</a>
         </p>
       </div>
     </Gate>
@@ -399,19 +440,79 @@ function NoAccessScreen() {
 }
 
 function ConsoleHeaderActions() {
-  const { t } = useTranslation()
+  const text = useBrandText()
   const { user, profile } = useAuth()
   const name = accountName(user, profile)
   return (
     <>
       {name && <span className="hidden min-w-0 max-w-[16rem] truncate text-xs text-stone-500 md:inline" title={name}>{name}</span>}
-      <a href={mainAppUrl()} className={consoleHeaderBtn} aria-label={t('managerSite.openAppLong')} title={t('managerSite.openAppLong')}>
+      <a href={text.appUrl} className={consoleHeaderBtn} aria-label={text.openAppLong} title={text.openAppLong}>
         <ExternalLink size={14} aria-hidden />
-        <span className="hidden sm:inline">{t('managerSite.openApp')}</span>
+        <span className="hidden sm:inline">{text.openApp}</span>
       </a>
       <LanguageSelect compact />
       <SignOutButton />
     </>
+  )
+}
+
+/**
+ * OpenBeach's manager: has the signed-in account joined OpenBeach? A role of
+ * the app or the global admin counts as joined (as on the server); otherwise
+ * GET /api/me says. null while unknown. OpenVolley's manager never asks (an
+ * account without any membership counts as indoor there).
+ */
+function useAppMembership(app, userId, ownAccess) {
+  // Nothing to ask: OpenVolley's manager, nobody signed in, roles not known
+  // yet, or a role of the app / the global admin (members by definition)
+  const ask = app === 'beach' && !!userId && !!ownAccess && !ownAccess.isAdmin && !(ownAccess.roles?.length > 0)
+  const key = ask ? `${app}:${userId}` : null
+  const [state, setState] = useState({ key: null, member: null })
+  useEffect(() => {
+    if (!key) return undefined
+    let live = true
+    fetchMe().then((res) => {
+      if (!live) return
+      // Unreadable (offline, server error): carry on to the invite step; a
+      // beach invite code makes the account a member too
+      setState({ key, member: res?.error ? true : res?.data?.apps?.[app]?.member !== false })
+    })
+    return () => { live = false }
+  }, [key, app])
+  const joined = useCallback(() => setState({ key, member: true }), [key])
+  if (!key) return { member: true, joined }
+  return { member: state.key === key ? state.member : null, joined }
+}
+
+/** Signed in on OpenBeach's manager with an account that has not joined OpenBeach. */
+function JoinAppScreen({ app, onJoined }) {
+  const { t } = useTranslation()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const join = async () => {
+    setBusy(true)
+    setError('')
+    const res = await joinApp(app)
+    setBusy(false)
+    if (res?.error) return setError(t('managerBeach.joinFailed'))
+    onJoined()
+  }
+  return (
+    <Gate>
+      <div data-testid="manager-join-app">
+        <div className="text-center">
+          <Users className="mx-auto h-8 w-8 text-stone-400" aria-hidden />
+          <h1 className="mt-3 text-base font-semibold text-stone-900">{t('managerBeach.joinTitle')}</h1>
+          <p className="mt-1.5 text-sm text-stone-600">{t('managerBeach.joinBody')}</p>
+        </div>
+        {error && <p role="alert" className="mt-4 text-xs font-medium text-red-600">{error}</p>}
+        <Button variant="hero" block icon={UserPlus} loading={busy} disabled={busy} onClick={join} className="mt-5">
+          {t('managerBeach.joinButton')}
+        </Button>
+        <div className="text-center"><SignedInAs /></div>
+        <div className="mt-4"><SignOutButton block /></div>
+      </div>
+    </Gate>
   )
 }
 
@@ -429,6 +530,10 @@ function AuthLinkScreen({ link, onDone }) {
 export default function ManagerApp({ authLink = null }) {
   const { t, i18n } = useTranslation()
   const { user, access, loading, signOut, refreshUser } = useAuth()
+  const brand = useManagerBrand()
+  // OpenVolley's manager: the access itself; OpenBeach's: the beach flags
+  const own = accessForApp(access, brand.app)
+  const membership = useAppMembership(brand.app, user?.id ?? null, user && access?.known ? own : null)
   const [tab, setTab] = useState(tabFromHash)
   const [link, setLink] = useState(authLink)
   const [signInMode, setSignInMode] = useState(null)
@@ -512,10 +617,12 @@ export default function ManagerApp({ authLink = null }) {
     )
   }
   if (!access.known) return <div className="ov-kit"><AccountLoadingScreen /></div>
-  if (manageTabsFor(access).length === 0) {
+  if (manageTabsFor(access, brand).length === 0) {
+    if (membership.member === null) return <div className="ov-kit"><AccountLoadingScreen /></div>
+    if (membership.member === false) return <div className="ov-kit"><JoinAppScreen app={brand.app} onJoined={membership.joined} /></div>
     let screen = <NoAccessScreen />
-    if (access.isPending) screen = <InviteStepScreen justSignedUp={justSignedUp} linkSentTo={linkSentTo} />
-    else if (access.canScore) screen = <AllSetScreen />
+    if (own.isPending) screen = <InviteStepScreen justSignedUp={justSignedUp} linkSentTo={linkSentTo} />
+    else if (own.canScore) screen = <AllSetScreen />
     return <div className="ov-kit">{screen}</div>
   }
 

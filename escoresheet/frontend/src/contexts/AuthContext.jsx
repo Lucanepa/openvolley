@@ -38,7 +38,13 @@ export const PENDING_PROFILE_POLL_MS = 60000
 // Check if backend proxy is available (for auth operations)
 const hasBackend = () => !!getCloudApiUrl('/api/auth/sign-in')
 
-export function AuthProvider({ children }) {
+/**
+ * @param {object} props
+ * @param {'beach'} [props.app] the OpenBeach manager (manager-beach-main.jsx):
+ *   sign-up, password reset and "send a new link" ask for OpenBeach's mails
+ *   and sign-up joins OpenBeach. Left out (every other page): as before.
+ */
+export function AuthProvider({ children, app = null }) {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
   // Only show loading if backend is configured (otherwise show sign-in immediately)
@@ -189,6 +195,7 @@ export function AuthProvider({ children }) {
       password,
       options: {
         lang: i18n.language,
+        ...(app ? { app } : {}),
         data: {
           first_name: profileData.firstName || null,
           last_name: profileData.lastName || null,
@@ -197,13 +204,13 @@ export function AuthProvider({ children }) {
           // No roles: the server never takes them from the client. New
           // accounts are pending until an admin approves them or they
           // redeem an invite code.
-          sport_type: 'indoor'
+          sport_type: app === 'beach' ? 'beach' : 'indoor'
         }
       }
     })
 
     return { data, error }
-  }, [])
+  }, [app])
 
   // Sign out
   const signOut = useCallback(async () => {
@@ -265,10 +272,10 @@ export function AuthProvider({ children }) {
     }
 
     // The email's language follows the app's (the server maps de-CH to de)
-    const { data, error, status } = await apiAuth.resetPasswordForEmail(email, { lang: i18n.language })
+    const { data, error, status } = await apiAuth.resetPasswordForEmail(email, { lang: i18n.language, ...(app ? { app } : {}) })
 
     return { data, error, status }
-  }, [])
+  }, [app])
 
   // Re-reads the signed-in user from the server (after the address was
   // confirmed on another page or device). Returns the fresh user or null.
@@ -289,8 +296,8 @@ export function AuthProvider({ children }) {
     if (!hasBackend()) {
       return { error: { message: 'Backend not configured' } }
     }
-    return apiAuth.resendConfirmation(i18n.language)
-  }, [])
+    return app ? apiAuth.resendConfirmation(i18n.language, app) : apiAuth.resendConfirmation(i18n.language)
+  }, [app])
 
   // Update email - sends confirmation to new email
   const updateEmail = useCallback(async (newEmail) => {

@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { KNOWN_ROLES } from '../../lib/access'
+import { ADMIN_ROLES, BEACH_ROLES, KNOWN_ROLES, plainRole } from '../../lib/access'
 
 const CHIP = 'inline-flex items-center whitespace-nowrap rounded border px-1.5 py-[3px] text-[11px] font-semibold leading-none'
 const TONE = {
@@ -11,10 +11,15 @@ const TONE = {
   pending: 'border-amber-300 bg-amber-50 text-amber-800'
 }
 
-/** Square role chips of an account; an amber "Pending approval" chip without a role. */
-export default function RoleChips({ roles = [], pending = false, className = '' }) {
+/**
+ * Square role chips of an account; an amber "Pending approval" chip without a role.
+ * `app` 'beach' (the OpenBeach manager): the beach roles (by their plain names)
+ * and the admin roles; otherwise the indoor ones, as before.
+ */
+export default function RoleChips({ roles = [], pending = false, app, className = '' }) {
   const { t } = useTranslation()
-  const known = (roles || []).filter(r => KNOWN_ROLES.includes(r))
+  const shown = app === 'beach' ? [...BEACH_ROLES, ...ADMIN_ROLES] : KNOWN_ROLES
+  const known = (roles || []).filter(r => shown.includes(r)).map(plainRole)
   return (
     <span className={`flex flex-wrap gap-1 ${className}`}>
       {pending || known.length === 0

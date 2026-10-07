@@ -14,15 +14,19 @@ function plusDays(days) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-/** Invite codes: create (shown once), list, revoke (admins). */
-export default function InvitesPanel() {
+/**
+ * Invite codes: create (shown once), list, revoke (admins). `app` 'beach'
+ * (the OpenBeach manager): OpenBeach's codes only, and new codes grant the
+ * beach role. Left out: as before.
+ */
+export default function InvitesPanel({ app }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
   const [creating, setCreating] = useState(false)
   const [created, setCreated] = useState(null) // { code, invite } — shown once
   const [rowError, setRowError] = useState({})
-  const { data, error, loading, reload } = usePanelData(() => admin.listInvites(), [], { enabled: online })
+  const { data, error, loading, reload } = usePanelData(() => (app ? admin.listInvites({ app }) : admin.listInvites()), [app], { enabled: online })
   const invites = data?.invites || []
 
   const revoke = async (invite) => {
@@ -82,6 +86,7 @@ export default function InvitesPanel() {
         </RowList>
       )}
       <CreateInviteModal
+        app={app}
         open={creating}
         onClose={() => setCreating(false)}
         onCreated={(res) => { setCreating(false); setCreated(res); reload() }}
@@ -120,7 +125,7 @@ export default function InvitesPanel() {
   )
 }
 
-function CreateInviteModal({ open, onClose, onCreated }) {
+function CreateInviteModal({ app, open, onClose, onCreated }) {
   const { t } = useTranslation()
   const errorText = useErrorText()
   const [label, setLabel] = useState('')
@@ -146,7 +151,8 @@ function CreateInviteModal({ open, onClose, onCreated }) {
       club: club.trim() || null,
       role,
       max_uses: maxUses === '' ? null : Number(maxUses),
-      expires_at: expiresAt
+      expires_at: expiresAt,
+      ...(app === 'beach' ? { sport: 'beach' } : {})
     })
     setBusy(false)
     if (res.error || !res.data?.code) {

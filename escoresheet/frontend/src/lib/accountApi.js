@@ -30,6 +30,19 @@ export function redeemInvite(code) {
   return apiRequest('POST', '/api/account/redeem-invite', { code: String(code || '').trim() }, { fallbackError: 'Invite code not accepted' })
 }
 
+/**
+ * GET /api/me -> { roles, ...indoor flags, apps: { indoor: {member, ...}, beach: {member, ...} } }
+ * (the OpenBeach manager reads apps.beach.member).
+ */
+export function fetchMe() {
+  return apiRequest('GET', '/api/me')
+}
+
+/** POST /api/account/join { app } -> { app, member: true, already_member }: "Join OpenBeach with your existing password". */
+export function joinApp(app) {
+  return apiRequest('POST', '/api/account/join', { app })
+}
+
 /** POST /api/match/official-check → { taken: false } | { taken: true, claim } */
 export function officialCheck({ game_n, scheduled_at = null, sport_type = 'indoor', external_id = null }, { timeoutMs } = {}) {
   return apiRequest('POST', '/api/match/official-check', { game_n, scheduled_at, sport_type, external_id }, timeoutMs ? { timeoutMs } : undefined)
@@ -40,20 +53,24 @@ export function officialCheck({ game_n, scheduled_at = null, sport_type = 'indoo
 export const OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS = 3500
 
 // ── Admin ──
+// `app` ('indoor' | 'beach'): the lists of one app (the OpenBeach manager
+// sends 'beach'); left out, the server answers as before (OpenVolley's console).
 
 export const admin = {
-  listAccounts({ filter = 'pending', q, limit } = {}) {
-    return apiRequest('GET', `/api/admin/accounts${query({ filter, q, limit })}`)
+  listAccounts({ filter = 'pending', q, limit, app } = {}) {
+    return apiRequest('GET', `/api/admin/accounts${query({ filter, q, limit, app })}`)
   },
   setRoles(userId, { add = [], remove = [] } = {}) {
     return apiRequest('POST', `/api/admin/accounts/${enc(userId)}/roles`, { add, remove })
   },
-  listInvites() {
-    return apiRequest('GET', '/api/admin/invites')
+  listInvites({ app } = {}) {
+    return apiRequest('GET', `/api/admin/invites${query({ app })}`)
   },
-  createInvite({ label, club = null, role = 'scorer', max_uses = 1, expires_at } = {}) {
+  /** sport 'beach': a code that grants beach:<role> (left out: indoor, as before). */
+  createInvite({ label, club = null, role = 'scorer', max_uses = 1, expires_at, sport } = {}) {
     const body = { label, club, role, max_uses }
     if (expires_at !== undefined) body.expires_at = expires_at
+    if (sport) body.sport = sport
     return apiRequest('POST', '/api/admin/invites', body)
   },
   revokeInvite(id) {
@@ -74,8 +91,8 @@ export const admin = {
   releaseGame(matchId, { reason }) {
     return apiRequest('POST', `/api/admin/matches/${enc(matchId)}/release-game`, { reason })
   },
-  listAudit({ limit, before, action } = {}) {
-    return apiRequest('GET', `/api/admin/audit${query({ limit, before, action })}`)
+  listAudit({ limit, before, action, app } = {}) {
+    return apiRequest('GET', `/api/admin/audit${query({ limit, before, action, app })}`)
   }
 }
 
