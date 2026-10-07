@@ -34,7 +34,7 @@ import {
 } from './describe'
 import { getSetResult, scoreFromPointEvents, getFirstServeForSet, isDecidingSet } from './rules'
 import { rotateLineup } from './rotation'
-import { validateManualTimeout, validateManualSubstitution, planSubstitutionDeletion } from './substitutions'
+import { validateManualTimeout, validateManualSubstitution, planSubstitutionDeletion, classifySubstitutionRequest } from './substitutions'
 import { resolveSanction, isDelaySanction, awardsPoint, validateMemberSanction } from './sanctions'
 
 const POSITIONS = ['I', 'II', 'III', 'IV', 'V', 'VI']
@@ -395,6 +395,9 @@ export function planAddSubstitution(events, { setIndex, team, playerOut, playerI
   if (conflict) return fail('laterConflict', { out: playerOut, in: playerIn })
 
   if (!exceptional) {
+    // Six regular substitutions per set (FIVB 15.6); exceptional ones are made
+    // beyond the limit and never use one of the six (domain/substitutions).
+    if (classifySubstitutionRequest(events, team, setIndex) === 'improper_request') return fail('subLimit', { set })
     const regular = (events || []).filter(e => !(e.type === 'substitution' && e.payload?.isExceptional))
     const v = validateManualSubstitution(regular, team, setIndex, playerOut, playerIn)
     if (!v.legal) {
