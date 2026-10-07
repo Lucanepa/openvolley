@@ -66,7 +66,8 @@ export async function signHttpScenario({ httpBase, startHeaders = {}, matchKey =
 
   const signed = await post(httpBase, 'wait', { watch, known: 'opened' })
   expect('wait returns the strokes', signed.status === 200 && signed.json?.state === 'signed' &&
-    JSON.stringify(signed.json?.strokes) === JSON.stringify(INK.strokes) && JSON.stringify(signed.json?.pad) === JSON.stringify(INK.pad), signed.text)
+    // key order is not the protocol (serde_json sorts keys)
+    JSON.stringify(signed.json?.strokes) === JSON.stringify(INK.strokes) && signed.json?.pad?.w === INK.pad.w && signed.json?.pad?.h === INK.pad.h, signed.text)
 
   code(await post(httpBase, 'close', { watch }), 200, null, 'close')
   const closed = await post(httpBase, 'wait', { watch, known: 'signed' })
