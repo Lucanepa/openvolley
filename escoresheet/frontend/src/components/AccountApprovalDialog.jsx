@@ -161,7 +161,7 @@ export default function AccountApprovalDialog({ open, onClose, match, role, role
     >
       <form onSubmit={submit} className="space-y-3" noValidate data-testid="account-approval-form">
         {entered && (
-          <p className="m-0 text-sm text-stone-600" data-testid="account-approval-entered">
+          <p className="m-0 pb-1 text-sm text-stone-600" data-testid="account-approval-entered">
             {t('approval.officialEntered', { name: entered })}
           </p>
         )}
