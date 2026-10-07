@@ -7,6 +7,7 @@
  * PIN redaction and message shapes differed between relays.
  */
 import core from './electron/lanRelayCore.cjs'
+import signCore from './electron/signSessionCore.cjs'
 
 export const {
   MATCH_SECRET_FIELDS,
@@ -34,7 +35,17 @@ export const {
   createRateLimiter,
   createLocalAddressCheck,
   createMainInstanceGate,
-  createLanRelay,
 } = core
+
+/**
+ * One relay instance, with Sign on phone (/api/sign/*) wired to
+ * ./electron/signSessionCore.cjs (the .cjs core may not require() it).
+ * @param {Parameters<typeof core.createLanRelay>[0]} [options]
+ */
+export function createLanRelay(options = {}) {
+  return core.createLanRelay({ signCore, ...options })
+}
+
+export { signCore }
 
 export default core
