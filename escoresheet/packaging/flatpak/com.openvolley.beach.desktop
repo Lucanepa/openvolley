@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=OpenBeach
+GenericName=Beach volleyball scoresheet
+Comment=Open Source Beach Volleyball eScoresheet
+Keywords=beach;volleyball;scoresheet;scorer;referee;score;match;FIVB;
+Categories=Utility;Sports;
+Exec=openbeach-escoresheet
+Icon=com.openvolley.beach
+StartupWMClass=openbeach-escoresheet
+Terminal=false
+SingleMainWindow=true
