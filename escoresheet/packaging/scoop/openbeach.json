@@ -1,0 +1,59 @@
+{
+    "##": [
+        "OpenBeach for Windows through Scoop, without a bucket: scoop install https://raw.githubusercontent.com/Lucanepa/openvolley/main/escoresheet/packaging/scoop/openbeach.json",
+        "It runs the official installer silently (the same one winget and the download page use), so the app lands in Program Files with its Start menu entry and the firewall rule for the tablets.",
+        "Regenerate for a new version: escoresheet/packaging/scoop/update-manifests.sh. README.md next to this file says more."
+    ],
+    "version": "2.0.0",
+    "description": "Open Source Beach Volleyball eScoresheet: an offline scoretable with a built-in LAN server for the referee and livescore tablets and the court displays.",
+    "homepage": "https://beach.openvolley.app",
+    "license": {
+        "identifier": "GPL-3.0-only",
+        "url": "https://github.com/Lucanepa/openbeach/blob/main/escoresheet/LICENSE"
+    },
+    "notes": [
+        "OpenBeach was installed with its own installer (one administrator prompt) to Program Files, like a download from the website. Start it from the Start menu.",
+        "It also updates itself between matches; 'scoop update' installs the same versions. Do not update during a match: the installer quits the app and the tablets disconnect."
+    ],
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/Lucanepa/openvolley/releases/download/beach-desktop-v2.0.0/OpenBeach_2.0.0_x64-setup.exe#/setup.exe",
+            "hash": "23ad6ba0ec4be29c00100aaceb80571a73a45f43c699342a0b14e617c0adcaad"
+        }
+    },
+    "installer": {
+        "script": [
+            "$setup = Join-Path $dir 'setup.exe'",
+            "Write-Host 'Running the OpenBeach installer (Windows asks for administrator rights)...'",
+            "$p = Start-Process -FilePath $setup -ArgumentList '/S' -Verb RunAs -Wait -PassThru",
+            "Remove-Item $setup -ErrorAction SilentlyContinue",
+            "if ($p.ExitCode -ne 0) { abort \"The OpenBeach installer stopped (exit code $($p.ExitCode)).\" }"
+        ]
+    },
+    "uninstaller": {
+        "script": [
+            "# 'scoop update': the new installer replaces this version in place (an uninstall first would drop the firewall rule and ask twice)",
+            "if (Get-PSCallStack | Where-Object { $_.ScriptName -like '*scoop-update.ps1' }) { return }",
+            "$name = 'OpenBeach'",
+            "$key = @('HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall', 'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall') | ForEach-Object { Join-Path $_ $name } | Where-Object { Test-Path $_ } | Select-Object -First 1",
+            "if (!$key) { warn \"$name is not installed any more (removed in Settings > Apps?): nothing to uninstall.\"; return }",
+            "$uninstaller = (Get-ItemProperty -Path $key).UninstallString.Trim('\"')",
+            "# silent: the match data and backups stay (the 'delete the application data' box is never ticked)",
+            "Start-Process -FilePath $uninstaller -ArgumentList '/S' -Verb RunAs -Wait",
+            "# an NSIS uninstaller copies itself to %TEMP% and returns at once: wait until it is done",
+            "for ($i = 0; $i -lt 120 -and (Test-Path $key); $i++) { Start-Sleep -Milliseconds 500 }",
+            "if (Test-Path $key) { warn \"$name is still installed: uninstall it in Settings > Apps.\" }"
+        ]
+    },
+    "checkver": {
+        "url": "https://api.github.com/repos/Lucanepa/openvolley/releases?per_page=50",
+        "regex": "\"tag_name\":\\s*\"beach-desktop-v([\\d.]+)\""
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/Lucanepa/openvolley/releases/download/beach-desktop-v$version/OpenBeach_$version_x64-setup.exe#/setup.exe"
+            }
+        }
+    }
+}
