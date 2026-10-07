@@ -1,12 +1,17 @@
 name: Build Desktop App (Tauri)
 
-# Builds the offline scoretable desktop apps (Rust/Tauri) for Windows + Linux.
+# Builds the offline scoretable desktop apps (Rust/Tauri) for Windows, Linux
+# and macOS (one universal .dmg + the updater's .app.tar.gz, ad-hoc signed: no
+# Apple developer account, so not notarized; the release says how to open it).
 # One shell, two apps (src-tauri/src/flavour.rs):
 #   - OpenVolley eScoresheet: push a tag like `desktop-v2.2.0`;
 #   - OpenBeach: push a tag like `beach-desktop-v2.0.0`. It builds the
 #     Lucanepa/openbeach frontend at the same tag name (tag both repos), checked
 #     out at ./openbeach (tauri.beach.conf.json reads it from there).
 # Or trigger it manually and pick the app (and, for OpenBeach, the openbeach ref).
+# A manual run only builds: it uploads workflow artifacts and never creates or
+# edits a GitHub release (the release jobs run for tag pushes only).
+# CI never signs updater files: publish-pkgs.sh --desktop signs them on lenovoserver.
 on:
   workflow_dispatch:
     inputs:
@@ -56,7 +61,7 @@ jobs:
       fail-fast: false
       matrix:
         flavour: ${{ fromJSON(needs.setup.outputs.flavours) }}
-        platform: [windows, linux]
+        platform: [windows, linux, macos]
         include:
           - platform: windows
             os: windows-latest
@@ -64,8 +69,19 @@ jobs:
           - platform: linux
             os: ubuntu-22.04
             label: linux
+          # One arm64 runner builds both slices (universal-apple-darwin): the
+          # Intel images are going away (macos-13 retired in Dec 2025,
+          # macos-15-intel is the last one), and one universal .dmg means no
+          # "which chip?" for the scorer, one cask URL and one updater file.
+          - platform: macos
+            os: macos-15
+            label: macos
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    # macOS is new: a failed macOS build does not hold back the Windows and
+    # Linux release (that release then has no macOS files, and
+    # publish-pkgs.sh announces no darwin update for it).
+    continue-on-error: ${{ matrix.platform == 'macos' }}
+    timeout-minutes: ${{ matrix.platform == 'macos' && 75 || 40 }}
     steps:
       - uses: actions/checkout@v4
 
@@ -100,6 +116,9 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          # macOS: both slices of the universal binary
+          targets: ${{ matrix.platform == 'macos' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Cache Rust build
         uses: swatinem/rust-cache@v2
@@ -158,6 +177,8 @@ jobs:
           NODE_OPTIONS: '--max-old-space-size=4096'
         with:
           projectPath: escoresheet/frontend
+          # no tagName / releaseId: tauri-action only builds, it releases nothing
+          args: ${{ matrix.platform == 'macos' && '--target universal-apple-darwin' || '' }}
 
       # OpenBeach: the same shell with tauri.beach.conf.json (+ the Linux one)
       # merged on top; its beforeBuildCommand builds ./openbeach. Same reason
@@ -171,7 +192,114 @@ jobs:
         run: |
           args=(--ci --config src-tauri/tauri.beach.conf.json)
           if [ "${{ matrix.platform }}" = linux ]; then args+=(--config src-tauri/tauri.beach.linux.conf.json); fi
+          # macOS: tauri.macos.conf.json is merged first, OpenBeach's names on top
+          if [ "${{ matrix.platform }}" = macos ]; then args+=(--target universal-apple-darwin); fi
           npx tauri build "${args[@]}"
+
+      # macOS: check the bundle (both slices, ad-hoc signature, the app's own
+      # identifier), give the .dmg a name without spaces, and make the
+      # updater's archive: <Name>.app at the top of a .tar.gz
+      # (tauri-plugin-updater drops the first path component and puts the
+      # rest in place of the running bundle). Not signed here: publish-pkgs.sh
+      # --desktop signs it on lenovoserver like the other installers.
+      - name: Package the macOS app (dmg + updater archive)
+        id: mac
+        if: matrix.platform == 'macos'
+        working-directory: escoresheet/frontend/src-tauri
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.flavour }}" = beach ]; then
+            pkg=openbeach-escoresheet; id=com.openvolley.beach; name=OpenBeach; data=OpenBeach; port=5174
+          else
+            pkg=openvolley-escoresheet; id=com.openvolley.escoresheet; name='OpenVolley eScoresheet'; data=OpenVolley; port=5173
+          fi
+          b=target/universal-apple-darwin/release/bundle
+          app="$b/macos/$name.app"
+          if [ ! -d "$app" ]; then ls -la "$b/macos" || true; echo "::error::no $app"; exit 1; fi
+          plist="$app/Contents/Info.plist"
+          pb() { /usr/libexec/PlistBuddy -c "Print :$1" "$plist"; }
+          v=$(pb CFBundleShortVersionString)
+          [ "$(pb CFBundleIdentifier)" = "$id" ] || { echo "::error::identifier $(pb CFBundleIdentifier), expected $id"; exit 1; }
+          [ "$(pb CFBundleExecutable)" = "$pkg" ] || { echo "::error::executable $(pb CFBundleExecutable), expected $pkg"; exit 1; }
+          [ "$(pb LSMinimumSystemVersion)" = 11.0 ] || { echo "::error::LSMinimumSystemVersion $(pb LSMinimumSystemVersion), expected 11.0"; exit 1; }
+          pb NSLocalNetworkUsageDescription >/dev/null
+          pb NSCameraUsageDescription >/dev/null
+          exe="$app/Contents/MacOS/$pkg"
+          archs=$(lipo -archs "$exe" | tr ' ' '\n' | sort | xargs)
+          [ "$archs" = "arm64 x86_64" ] || { echo "::error::$exe has slices '$archs', expected arm64 x86_64"; exit 1; }
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv "$app" 2>&1 | grep -q '^Signature=adhoc$' || { codesign -dv "$app"; echo "::error::not ad-hoc signed"; exit 1; }
+
+          tgz="$b/macos/${pkg}_${v}_universal.app.tar.gz"
+          COPYFILE_DISABLE=1 tar -czf "$tgz" -C "$b/macos" "$name.app"
+          tar -tzf "$tgz" | awk -v top="$name.app/" 'index($0, top) != 1 { bad = 1; print "outside " top ": " $0 } END { exit bad }'
+          x=$(mktemp -d)
+          tar -xzf "$tgz" -C "$x"
+          codesign --verify --deep --strict "$x/$name.app"
+          rm -rf "$x"
+
+          n=0; src=
+          for f in "$b"/dmg/*.dmg; do if [ -e "$f" ]; then n=$((n + 1)); src=$f; fi; done
+          [ "$n" = 1 ] || { ls -la "$b/dmg" || true; echo "::error::expected one .dmg, found $n"; exit 1; }
+          dmg="$b/dmg/${name// /.}_${v}_universal.dmg"
+          [ "$src" = "$dmg" ] || mv "$src" "$dmg"
+          hdiutil verify "$dmg"
+          m=$(mktemp -d)
+          hdiutil attach -nobrowse -readonly -mountpoint "$m" "$dmg" >/dev/null
+          ok=1
+          [ -d "$m/$name.app" ] && [ -L "$m/Applications" ] && codesign --verify --deep --strict "$m/$name.app" || ok=0
+          hdiutil detach "$m" >/dev/null || hdiutil detach -force "$m" >/dev/null
+          [ "$ok" = 1 ] || { echo "::error::$dmg does not hold $name.app and the Applications link"; exit 1; }
+          ls -la "$b/macos" "$b/dmg"
+          { echo "exe=$PWD/$exe"; echo "port=$port"; echo "logs=$HOME/Library/Logs/$data"; } >> "$GITHUB_OUTPUT"
+
+      # macOS: each slice runs the tablet relay (x86_64 under Rosetta), then
+      # the app starts with its window, serves the page and quits on SIGTERM.
+      # The screenshot and the log are uploaded below.
+      - name: Smoke test the macOS app
+        if: matrix.platform == 'macos'
+        shell: bash
+        env:
+          EXE: ${{ steps.mac.outputs.exe }}
+          PORT: ${{ steps.mac.outputs.port }}
+          LOGS: ${{ steps.mac.outputs.logs }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/mac-smoke"; mkdir -p "$out"
+          # wait_http URL SECONDS
+          wait_http() { for _ in $(seq 1 "$2"); do curl -fsS -o /dev/null "$1" && return 0; sleep 1; done; return 1; }
+          for a in arm64 x86_64; do
+            if ! arch "-$a" /usr/bin/true 2>/dev/null; then echo "::warning::cannot run $a here (no Rosetta?): its slice is not smoke-tested"; continue; fi
+            OPENVOLLEY_HTTP_PORT=18090 OPENVOLLEY_WS_PORT=18091 arch "-$a" "$EXE" --server-only > "$out/relay-$a.log" 2>&1 &
+            pid=$!
+            ok=1; wait_http http://127.0.0.1:18090/ 40 || ok=0
+            kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
+            [ "$ok" = 1 ] || { cat "$out/relay-$a.log"; echo "::error::the $a relay did not answer"; exit 1; }
+            echo "$a: relay answers"
+          done
+          "$EXE" > "$out/app.log" 2>&1 &
+          pid=$!
+          wait_http "http://127.0.0.1:$PORT/" 60 || { cat "$out/app.log"; echo "::error::the app's relay did not answer"; exit 1; }
+          sleep 20
+          kill -0 "$pid" || { cat "$out/app.log"; echo "::error::the app ended by itself"; exit 1; }
+          screencapture -x "$out/screen.png" || echo "::warning::no screenshot"
+          kill -TERM "$pid"
+          for _ in $(seq 1 15); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+          if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid"; echo "::error::the app did not quit on SIGTERM"; exit 1; fi
+          cp "$LOGS/desktop.log" "$out/" || { echo "::error::no desktop.log in $LOGS"; exit 1; }
+          grep -q 'window.open from scripts allowed' "$out/desktop.log" || echo "::warning::WKWebView did not take javaScriptCanOpenWindowsAutomatically (see desktop.log)"
+          # the bundle (Contents/MacOS in a .app) is an installed copy for the updater
+          grep -q '\[update\] .* MacApp: checking' "$out/desktop.log" || echo "::warning::the updater did not take this bundle for an installed macOS app (see desktop.log)"
+
+      - name: Upload the macOS smoke test
+        if: always() && matrix.platform == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.flavour == 'beach' && 'openbeach' || 'escoresheet' }}-desktop-macos-smoke
+          path: ${{ runner.temp }}/mac-smoke
+          retention-days: 14
+          if-no-files-found: ignore
 
       # The .deb updates itself through a root helper and a polkit policy
       # (src-tauri/linux, updater.rs): lint both, and check that the helper is
@@ -214,6 +342,8 @@ jobs:
             escoresheet/frontend/src-tauri/target/release/bundle/**/*.msi
             escoresheet/frontend/src-tauri/target/release/bundle/**/*.AppImage
             escoresheet/frontend/src-tauri/target/release/bundle/**/*.deb
+            escoresheet/frontend/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            escoresheet/frontend/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
           retention-days: 14
           if-no-files-found: warn
 
@@ -279,15 +409,26 @@ jobs:
             - **Linux (Debian/Ubuntu)**: `curl -fsSL https://get.openvolley.app/install.sh | sudo sh`
               (signed APT repository, package `openvolley-escoresheet`; `sudo apt upgrade` keeps it current),
               or download the `.deb` and `sudo apt install ./openvolley-escoresheet_*_amd64.deb`.
+            - **macOS 11 or newer** (Apple silicon and Intel): download `OpenVolley.eScoresheet_…_universal.dmg`,
+              open it and drag the app to Applications, or `brew install --cask lucanepa/tap/openvolley`.
+              The app is not notarized by Apple, so macOS blocks its first start: try to open it once,
+              then System Settings › Privacy & Security › **Open Anyway** (macOS 14 and older:
+              right-click the app › Open). Or in Terminal:
+              `xattr -dr com.apple.quarantine "/Applications/OpenVolley eScoresheet.app"`.
+              The tablet Wi-Fi is not available on macOS: use the venue's Wi-Fi, a travel router
+              or macOS Internet Sharing.
 
             ### Updates
             From 2.2.0 the app updates itself: it downloads in the background and installs when
             you quit, never during a match. On Windows each update asks once for an administrator.
+            On macOS it updates itself once it runs from Applications.
             Versions before 2.2.0: install 2.2.0 once by hand (APT users: `sudo apt update && sudo apt upgrade`).
           files: |
             artifacts/escoresheet-desktop-windows/**/*.exe
             artifacts/escoresheet-desktop-linux/**/*.AppImage
             artifacts/escoresheet-desktop-linux/**/*.deb
+            artifacts/escoresheet-desktop-macos/**/*.dmg
+            artifacts/escoresheet-desktop-macos/**/*.app.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -354,6 +495,12 @@ jobs:
             - **Linux (Debian/Ubuntu)**: `curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s openbeach-escoresheet`
               (signed APT repository, package `openbeach-escoresheet`; `sudo apt upgrade` keeps it current),
               or download the `.deb` and `sudo apt install ./openbeach-escoresheet_*_amd64.deb`.
+            - **macOS 11 or newer** (Apple silicon and Intel): download `OpenBeach_…_universal.dmg`,
+              open it and drag the app to Applications, or `brew install --cask lucanepa/tap/openbeach`.
+              The app is not notarized by Apple, so macOS blocks its first start: try to open it once,
+              then System Settings › Privacy & Security › **Open Anyway** (macOS 14 and older:
+              right-click the app › Open). Or in Terminal:
+              `xattr -dr com.apple.quarantine /Applications/OpenBeach.app`.
 
             ### Updates
             The app updates itself: it downloads in the background and installs when you quit,
@@ -362,3 +509,5 @@ jobs:
             artifacts/openbeach-desktop-windows/**/*.exe
             artifacts/openbeach-desktop-linux/**/*.AppImage
             artifacts/openbeach-desktop-linux/**/*.deb
+            artifacts/openbeach-desktop-macos/**/*.dmg
+            artifacts/openbeach-desktop-macos/**/*.app.tar.gz
