@@ -26,7 +26,7 @@ import { NarrowScreenOverlay } from './dashboards/EntryKit.jsx'
 import { lastEventFromLiveState, lastEventFromMatchData, pickNewerLastEvent } from '../utils/refereeLastEvent.js'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
 import PlayerDisc from './referee/PlayerDisc.jsx'
-import { teamDiscPaint, teamLiberoColour } from '../utils/teamColours.js'
+import { matchDiscPaint, teamLiberoColour, teamBoxStyle } from '../utils/teamColours.js'
 import { discCapPx, discMetrics } from './referee/discSizing.js'
 import { isWideLayout, screenFit, SIDE_PANEL_CSS, REFEREE_LAYOUT } from './referee/refereeLayout.js'
 import { layoutReception, pointToFormation } from './referee/receptionLayout.js'
@@ -1425,10 +1425,11 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const rightColor = rightTeamData?.color || (rightTeam === 'home' ? '#ef4444' : '#3b82f6')
   // Player discs in the shirt colours (null when the match has no colour for
   // a team: those discs keep the neutral grey / navy look)
-  const discPaintByTeam = {
-    home: teamDiscPaint(data?.homeTeam?.color, { opponent: data?.awayTeam?.color, libero: teamLiberoColour(data?.homeTeam) }),
-    away: teamDiscPaint(data?.awayTeam?.color, { opponent: data?.homeTeam?.color, libero: teamLiberoColour(data?.awayTeam) })
-  }
+  // (the two liberos picked together, so they never match)
+  const discPaintByTeam = matchDiscPaint(data?.homeTeam?.color, data?.awayTeam?.color, {
+    homeLibero: teamLiberoColour(data?.homeTeam),
+    awayLibero: teamLiberoColour(data?.awayTeam)
+  })
 
   // Compute team name texts for adaptive sizing
   const leftShortName = (leftTeam === 'home' ? data?.match?.homeShortName : data?.match?.awayShortName) || leftTeamData?.name || 'Team'
@@ -1660,17 +1661,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       (String(e.payload?.player) === String(playerNumber) || String(e.payload?.playerNumber) === String(playerNumber))
     )
   }, [data?.events])
-
-  // Helper to determine if a color is bright
-  const isBrightColor = (color) => {
-    if (!color) return false
-    const hex = color.replace('#', '')
-    const r = parseInt(hex.substr(0, 2), 16)
-    const g = parseInt(hex.substr(2, 2), 16)
-    const b = parseInt(hex.substr(4, 2), 16)
-    const brightness = (r * 299 + g * 587 + b * 114) / 1000
-    return brightness > 155
-  }
 
   // Get setter position (P1-P6) based on current lineup
   const getSetterPosition = useCallback((lineup, setterNum) => {
@@ -2792,8 +2782,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               <div style={{
                 fontSize: `${section2AFontSize.fontSize}px`,
                 fontWeight: 700,
-                background: leftColor,
-                color: isBrightColor(leftColor) ? '#000' : '#fff',
+                ...teamBoxStyle(leftColor),
                 padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)',
                 borderRadius: '6px',
                 whiteSpace: 'nowrap',
@@ -2804,7 +2793,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 {leftShortName}
               </div>
             </div>
-            <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)', background: leftColor, color: isBrightColor(leftColor) ? '#000' : '#fff', borderRadius: '6px', fontSize: 'clamp(18px, 4.5vw, 32px)', fontWeight: 800, flexShrink: 0 }}>{leftLabel}</div>
+            <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)', ...teamBoxStyle(leftColor), borderRadius: '6px', fontSize: 'clamp(18px, 4.5vw, 32px)', fontWeight: 800, flexShrink: 0 }}>{leftLabel}</div>
           </div>
 
           {/* Center: Set scores + SET n */}
@@ -2826,14 +2815,13 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
           {/* Right: A/B + Team Name (centered in its space) */}
           <div style={{ flex: '1 1 0', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 'clamp(6px, 1.5vw, 12px)', minWidth: 0 }}>
-            <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)', background: rightColor, color: isBrightColor(rightColor) ? '#000' : '#fff', borderRadius: '6px', fontSize: 'clamp(18px, 4.5vw, 32px)', fontWeight: 800, flexShrink: 0 }}>{rightLabel}</div>
+            <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)', ...teamBoxStyle(rightColor), borderRadius: '6px', fontSize: 'clamp(18px, 4.5vw, 32px)', fontWeight: 800, flexShrink: 0 }}>{rightLabel}</div>
             <div style={{ flex: '1 1 0', display: 'flex', justifyContent: 'center', minWidth: 0, overflow: 'hidden' }}>
               <div
                 style={{
                   fontSize: `${section2AFontSize.fontSize}px`,
                   fontWeight: 700,
-                  background: rightColor,
-                  color: isBrightColor(rightColor) ? '#000' : '#fff',
+                  ...teamBoxStyle(rightColor),
                   padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)',
                   borderRadius: '6px',
                   whiteSpace: 'nowrap',

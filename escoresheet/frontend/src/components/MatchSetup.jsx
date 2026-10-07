@@ -28,6 +28,7 @@ import { generateSecurePin } from '../utils/stringUtils'
 import { setExtId } from '../utils/syncIds'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
 import { buildConnectionPins } from '../utils/connectionPins'
+import { readableTextOn, teamBoxStyle } from '../utils/teamColours'
 import { missingConnectionPins, connectionPinsSyncJob, fetchPendingRoster, clearPendingRosterJob, isKnownDob } from '../utils/remoteRoster'
 import { FileTextIcon, ClipboardIcon } from './icons'
 import { AlertTriangle, Loader2 } from 'lucide-react'
@@ -1898,22 +1899,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     }
   }, [home, away, currentView])
 
-  // Helper function to determine if a color is bright/light
-  function isBrightColor(color) {
-    if (!color || color === 'image.png') return false
-    // Convert hex to RGB
-    const hex = color.replace('#', '')
-    const r = parseInt(hex.substr(0, 2), 16)
-    const g = parseInt(hex.substr(2, 2), 16)
-    const b = parseInt(hex.substr(4, 2), 16)
-    // Calculate luminance
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-    return luminance > 0.5
-  }
-
-  // Helper function to get contrasting color (white or black)
+  // Near-black or white, whichever reads better on the team colour
+  // (utils/teamColours.js, as on the court and in the headers)
   function getContrastColor(color) {
-    return isBrightColor(color) ? '#000000' : '#ffffff'
+    return readableTextOn(color)
   }
 
   // Validate and set date with immediate feedback
@@ -3660,11 +3649,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       textAlign: 'center',
                       fontSize: '20px',
                       fontWeight: 700,
-                      color: getContrastColor(homeColor),
                       padding: '10px',
                       border: '0.5px solid white',
                       borderRadius: '10px',
-                      background: homeColor
+                      ...teamBoxStyle(homeColor)
                     }}
                   >
                     {t('matchSetup.homeTeam').toUpperCase()}
@@ -3714,11 +3702,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       textAlign: 'center',
                       fontSize: '20px',
                       fontWeight: 700,
-                      color: getContrastColor(awayColor),
                       padding: '10px',
                       border: '0.5px solid white',
                       borderRadius: '10px',
-                      background: awayColor
+                      ...teamBoxStyle(awayColor)
                     }}
                   >
                     {t('matchSetup.awayTeam').toUpperCase()}
@@ -6808,8 +6795,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               {/* Team-colour bar: frozen (team colour + contrast text, sizes) */}
               <h1 style={{
                 margin: 0,
-                background: homeColor,
-                color: getContrastColor(homeColor),
+                ...teamBoxStyle(homeColor),
                 padding: `${s(6)}px ${s(16)}px`,
                 borderRadius: s(8),
                 fontSize: s(22)
@@ -6864,8 +6850,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               {/* Team-colour bar: frozen (team colour + contrast text, sizes) */}
               <h1 style={{
                 margin: 0,
-                background: awayColor,
-                color: getContrastColor(awayColor),
+                ...teamBoxStyle(awayColor),
                 padding: `${s(6)}px ${s(16)}px`,
                 borderRadius: s(8),
                 fontSize: s(22)
