@@ -26,6 +26,8 @@ function flatten(obj, prefix = '', out = []) {
 const PROPER = new Set([
   'Chrome', 'Edge', 'Supabase', 'WebSocket', 'WiFi', 'German', 'English', 'French', 'Italian',
   'Swiss', 'Escape', 'Enter', 'Space', 'Esc', 'Bluetooth',
+  // the OpenBeach tournament import (T2) reads Excel files
+  'Excel',
 ])
 
 // Title-Cased words after the first one, ignoring placeholders, words after a

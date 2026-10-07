@@ -4,11 +4,13 @@
 //
 // Light "Volleyball style" (the app's volleyui look): stone page, white cards
 // with a hairline and a soft shadow, Swiss Volley red as the one accent, sentence
-// case. Self-contained on purpose: inline CSS, inline SVG icons (lib/icons.js),
+// case. Self-contained on purpose: inline CSS, inline SVG icons (lib/icons.js)
+// and logo (lib/brandMark.js),
 // system fonts, no scripts and nothing fetched from anywhere else, because the
 // page is opened on venue LANs with no internet.
 
 import { icon } from './icons.js'
+import { brandMark } from './brandMark.js'
 
 export const INDOOR_ROLES = [
   { key: 'referee', label: 'Referee', path: '/referee', icon: 'whistle' },
@@ -60,7 +62,7 @@ const STYLE = `
 
     .header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 16px; margin-bottom: 24px; }
     .title { display: flex; align-items: center; gap: 10px; }
-    .title .icon { color: var(--red-600); }
+    .title .brand-mark { flex: none; }
     h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; color: var(--stone-900); line-height: 1.2; }
     @media (min-width: 640px) { h1 { font-size: 30px; } }
     .subtitle { margin-top: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--stone-500); word-break: break-all; }
@@ -168,7 +170,7 @@ export function renderLandingPage({ baseUrl, clientCount, matchCount, indoor, be
 <main class="page">
   <header class="header">
     <div>
-      <div class="title">${icon('volleyball', { size: 28 })}<h1>OpenVolley server</h1></div>
+      <div class="title">${brandMark({ size: 32 })}<h1>OpenVolley server</h1></div>
       <p class="subtitle">${escapeHtml(baseUrl)}</p>
     </div>
     <div class="status">

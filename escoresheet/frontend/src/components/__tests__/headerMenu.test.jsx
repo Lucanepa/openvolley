@@ -16,7 +16,6 @@ vi.mock('../TabletStatusIndicator', () => ({ default: () => null }))
 const auth = vi.hoisted(() => ({ value: { user: null, profile: null, loading: false, signOut: async () => {} } }))
 vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => auth.value }))
 vi.mock('../auth/LoginModal', () => ({ default: ({ open }) => (open ? <div role="dialog">login-modal</div> : null) }))
-vi.mock('../auth/SignUpModal', () => ({ default: () => null }))
 vi.mock('../auth/ProfileModal', () => ({ default: ({ open }) => (open ? <div role="dialog">profile-modal</div> : null) }))
 vi.mock('../connect/ConnectTabletsModal', () => ({
   default: ({ match }) => <div role="dialog">connect-tablets {match?.seed_key || 'no match'}</div>

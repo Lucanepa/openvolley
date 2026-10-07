@@ -2,12 +2,27 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import { formatInviteCode, errorKeyOf } from '../../lib/accountApi'
+import { plainRole } from '../../lib/access'
 import { Button, Input, toast } from '../../ui'
+
+/**
+ * The success text of a redeemed code, for the role the server actually
+ * granted (`role_granted`, 'beach:<role>' for a beach code): a competition
+ * manager's code does not say "you can now score".
+ */
+export function redeemedText(t, data) {
+  const role = plainRole(data?.role_granted)
+  if (role === 'competition_manager' && (data?.sport === 'beach' || String(data?.role_granted).startsWith('beach:'))) {
+    return t('access.redeemedAs.beach_competition_manager')
+  }
+  if (role === 'scorer' || role === 'referee' || role === 'competition_manager') return t(`access.redeemedAs.${role}`)
+  return t('access.redeemed')
+}
 
 /**
  * Invite-code field + "Redeem code" button (same height). Uppercase,
  * monospace, grouped as the user types. The error shows inline; success
- * toasts once the server granted the role.
+ * toasts once the server granted the role, worded for that role.
  */
 export default function InviteCodeForm({ onRedeemed, autoFocus = false, className = '' }) {
   const { t } = useTranslation()
@@ -34,7 +49,7 @@ export default function InviteCodeForm({ onRedeemed, autoFocus = false, classNam
       return
     }
     setCode('')
-    toast.success(t('access.redeemed'))
+    toast.success(redeemedText(t, data))
     onRedeemed?.(data)
   }
 
@@ -55,9 +70,11 @@ export default function InviteCodeForm({ onRedeemed, autoFocus = false, classNam
           invalid={!!error}
           aria-invalid={!!error || undefined}
           aria-describedby={error ? 'ov-invite-code-error' : undefined}
-          className="font-mono uppercase tracking-[0.2em] min-[420px]:w-56"
+          // Side by side from 420px: the field takes the room the button leaves
+          // (a fixed w-56 wrapped "Redeem code" onto two lines in a 320px card)
+          className="font-mono uppercase tracking-[0.2em] min-[420px]:min-w-0 min-[420px]:max-w-56 min-[420px]:flex-1"
         />
-        <Button type="submit" size="md" loading={busy} disabled={busy || clean.length < 12}>
+        <Button type="submit" size="md" loading={busy} disabled={busy || clean.length < 12} className="shrink-0 whitespace-nowrap">
           {busy ? t('access.redeeming') : t('access.redeem')}
         </Button>
       </div>

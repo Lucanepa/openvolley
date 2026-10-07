@@ -17,6 +17,7 @@ import { clearCachesAndReload } from '../../hooks/useServiceWorker'
 import { ChevronDown, Info, X } from 'lucide-react'
 import { cn, IconButton, SegmentedControl, Switch } from '../../ui'
 import { allowLeaving } from '../../utils/leaveGuard'
+import { backdropDismiss } from '../../ui/backdropDismiss.js'
 
 // Opened over the scoreboard: no brand-red fills here (RESTYLE-SPEC R4).
 // Selection and "on" are slate-900, the non-destructive confirm emerald.
@@ -831,7 +832,7 @@ export default function ScoreboardOptionsModal({
         {/* Cloud Backups Modal */}
         {showCloudBackups && (
           <div
-            onClick={() => setShowCloudBackups(false)}
+            {...backdropDismiss(() => setShowCloudBackups(false))}
             className="fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm"
             style={{ zIndex: 10000 }}
           >
@@ -877,7 +878,7 @@ export default function ScoreboardOptionsModal({
         {/* Restore Confirmation Modal */}
         {restoreConfirm && (
           <div
-            onClick={() => setRestoreConfirm(null)}
+            {...backdropDismiss(() => setRestoreConfirm(null))}
             className="fixed inset-0 flex items-center justify-center bg-stone-900/60 p-4 backdrop-blur-sm"
             style={{ zIndex: 10001 }}
           >
@@ -931,7 +932,7 @@ export default function ScoreboardOptionsModal({
         {/* Clear Cache Confirmation Modal */}
         {clearCacheModal && (
           <div
-            onClick={() => setClearCacheModal(null)}
+            {...backdropDismiss(() => setClearCacheModal(null))}
             className="fixed inset-0 flex items-center justify-center bg-stone-900/60 p-4 backdrop-blur-sm"
             style={{ zIndex: 10000 }}
           >

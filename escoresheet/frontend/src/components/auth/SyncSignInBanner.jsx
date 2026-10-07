@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import LoginModal from './LoginModal'
-import SignUpModal from './SignUpModal'
 import { cn } from '../../ui'
 
 const DISMISS_KEY = 'ov_sync_signin_banner_dismissed'
@@ -33,7 +32,6 @@ export default function SyncSignInBanner({ syncStatus, compact = false }) {
   const { user, loading } = useAuth()
   const [dismissed, setDismissed] = useState(readDismissed)
   const [showLogin, setShowLogin] = useState(false)
-  const [showSignUp, setShowSignUp] = useState(false)
 
   const visible = shouldShowSyncSignIn({ syncStatus, loading, dismissed })
   // Signed in as far as the app knows, but the backend refused the session
@@ -49,7 +47,7 @@ export default function SyncSignInBanner({ syncStatus, compact = false }) {
 
   return (
     <>
-      {visible && !showLogin && !showSignUp && (
+      {visible && !showLogin && (
         <div
           role="status"
           aria-live="polite"
@@ -101,22 +99,10 @@ export default function SyncSignInBanner({ syncStatus, compact = false }) {
         </div>
       )}
 
+      {/* Sign-in only: "Don't have an account?" opens manager.openvolley.app */}
       <LoginModal
         open={showLogin}
         onClose={() => setShowLogin(false)}
-        onSwitchToSignUp={() => {
-          setShowLogin(false)
-          setShowSignUp(true)
-        }}
-      />
-
-      <SignUpModal
-        open={showSignUp}
-        onClose={() => setShowSignUp(false)}
-        onSwitchToLogin={() => {
-          setShowSignUp(false)
-          setShowLogin(true)
-        }}
       />
     </>
   )

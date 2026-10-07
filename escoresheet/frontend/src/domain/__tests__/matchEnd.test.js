@@ -40,9 +40,10 @@ describe('post-match signatures', () => {
       'ref1Signature'
     ])
   })
-  it('clearedPostMatchSignatures nulls every one of them', () => {
+  it('clearedPostMatchSignatures nulls every one of them, and the account approvals', () => {
     const cleared = clearedPostMatchSignatures()
-    expect(Object.keys(cleared)).toEqual([...POST_MATCH_SIGNATURE_FIELDS])
+    expect(Object.keys(cleared)).toEqual([...POST_MATCH_SIGNATURE_FIELDS, 'accountApprovals'])
+    expect(cleared.accountApprovals).toBeNull()
     expect(Object.values(cleared).every(v => v === null)).toBe(true)
   })
 })

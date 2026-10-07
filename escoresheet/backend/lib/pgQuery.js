@@ -26,6 +26,11 @@
  * - Writes need X-OV-Proto >= 2 (426 otherwise).
  * - opts.matchOwner.testOnly (accounts that are not approved scorers): only
  *   test matches and their children may be written (403 OV_SCORER_REQUIRED).
+ *   opts.matchOwner.testOnlySports narrows that to the sports the account
+ *   cannot score in (db/012): the sport is the ROW's (matches.sport_type of
+ *   the payload for inserts, of the stored match for updates, and of the
+ *   parent match for sets / events / live state). db/012 keeps a match's
+ *   sport fixed (SQLSTATE OVS01 -> 409 OV_SPORT_LOCKED).
  * - opts.actorId: the acting account, handed to the db/007 triggers as the
  *   ov.user_id setting of the write's transaction (closed_by).
  * - db/007's closed-match lock (SQLSTATE OVC01) and official-game index come
@@ -105,7 +110,11 @@ export const DEFAULT_CONFIG = Object.freeze({
   // generic SQLSTATE answer; never with details (a 23505 DETAIL quotes values).
   errorMap: {
     sqlstate: {
-      OVC01: { status: 409, code: 'OV_MATCH_CLOSED', message: 'This match is closed. Only an admin can reopen it.' }
+      OVC01: { status: 409, code: 'OV_MATCH_CLOSED', message: 'This match is closed. Only an admin can reopen it.' },
+      // db/011: match_approvals rows are append-only (only a bug reaches it)
+      OVA01: { status: 409, code: 'OV_APPROVAL_IMMUTABLE', message: 'An approval cannot be changed.' },
+      // db/012: matches.sport_type is fixed after insert
+      OVS01: { status: 409, code: 'OV_SPORT_LOCKED', message: 'The sport of a match cannot be changed.' }
     },
     constraint: {
       matches_official_game_uidx: { status: 409, code: 'OV_GAME_TAKEN', message: 'This official game is already scored by another account.' }
@@ -113,6 +122,8 @@ export const DEFAULT_CONFIG = Object.freeze({
   },
   // The column that marks a test match (opts.matchOwner.testOnly).
   testColumn: 'test',
+  // The sport of a match (opts.matchOwner.testOnlySports): 'beach', else indoor.
+  sportColumn: 'sport_type',
   maxRows: 1000,
   minWriteProto: 2,
   statementTimeoutMs: 10000,
@@ -131,6 +142,19 @@ const GENERIC_MESSAGE = 'Database operation failed'
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const SCORER_REQUIRED_MESSAGE = 'Your account is not approved for official matches yet'
 const DB_ERROR_INVALIDATES_CATALOG = new Set(['42P01', '42703'])
+const SPORTS = ['indoor', 'beach']
+const sportOfValue = (v) => (v === 'beach' ? 'beach' : 'indoor')
+
+/**
+ * The sports in which opts.matchOwner may write test matches only:
+ * testOnlySports when given (the sports the account cannot score in), else
+ * every sport for testOnly: true. An admin is never limited.
+ */
+function testOnlySportsOf (mo) {
+  if (!mo || mo.admin === true) return []
+  if (Array.isArray(mo.testOnlySports)) return SPORTS.filter(s => mo.testOnlySports.includes(s))
+  return mo.testOnly === true ? [...SPORTS] : []
+}
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -665,8 +689,19 @@ export function createPgQuery (options = {}) {
     }
     if (fk) requireColumn(t, fk, 'match column')
     // admin: the creator is still recorded on insert, but nothing is checked.
-    // testOnly: an account that is not an approved scorer writes test matches only.
-    return { userId: mo.userId, isParent, fk, parent, admin: mo.admin === true, testOnly: mo.testOnly === true && mo.admin !== true }
+    // testOnly: an account that is not an approved scorer writes test matches
+    // only, in the sports of testSports (every sport: allSports).
+    const testSports = testOnlySportsOf(mo)
+    return {
+      userId: mo.userId,
+      isParent,
+      fk,
+      parent,
+      admin: mo.admin === true,
+      testOnly: testSports.length > 0,
+      testSports,
+      allSports: testSports.length === SPORTS.length
+    }
   }
 
   /**
@@ -743,7 +778,32 @@ export function createPgQuery (options = {}) {
   /** SQL: the match row `alias` is not a test match (every match is, without the column). */
   function nonTestSql (guard, alias) {
     const col = cfg.testColumn
-    return col && guard.parent.columns.has(col) ? `${alias}.${quoteIdent(col)} IS NOT TRUE` : 'true'
+    const nonTest = col && guard.parent.columns.has(col) ? `${alias}.${quoteIdent(col)} IS NOT TRUE` : 'true'
+    if (guard.allSports) return nonTest
+    // One sport only: and the match is of that sport (no sport column: indoor)
+    return `(${nonTest} AND ${sportIsSql(guard, alias, guard.testSports[0])})`
+  }
+
+  /** SQL: the match row `alias` is of `sport` ('beach', else indoor; NULL is indoor). */
+  function sportIsSql (guard, alias, sport) {
+    const col = cfg.sportColumn
+    if (!col || !guard.parent.columns.has(col)) return sport === 'beach' ? 'false' : 'true'
+    return `${alias}.${quoteIdent(col)} IS ${sport === 'beach' ? 'NOT ' : ''}DISTINCT FROM 'beach'`
+  }
+
+  /** The payload rows of a matches insert/upsert that are non-test matches of a test-only sport. */
+  function nonTestRowsOf (guard, rows) {
+    const sc = cfg.sportColumn
+    return rows.filter(r => r[cfg.testColumn] !== true && guard.testSports.includes(sportOfValue(sc ? r[sc] : null)))
+  }
+
+  /** None of the matches an update matches is of a test-only sport (the update makes them non-test). */
+  async function assertFilteredRowsTestSport (client, t, params, secrets, guard) {
+    const c = freshCtx()
+    const where = buildWhere(t, params, secrets, c, null)
+    const sql = `SELECT count(*)::int AS bad FROM ${qTable(t.name)} AS t${where.sql ? where.sql + ' AND' : ' WHERE'} ${sportIsSql(guard, 't', guard.testSports[0])}`
+    const res = await client.query(sql, c.values)
+    if (res.rows[0].bad > 0) scorerRequired('a match cannot stop being a test match')
   }
 
   /** None of the match ids in `ids` is a non-test match (unknown ids are left to the ownership check). */
@@ -772,15 +832,37 @@ export function createPgQuery (options = {}) {
     if (res.rows[0].bad > 0) scorerRequired(`${res.rows[0].bad} ${t.name} row(s) of a non-test match`)
   }
 
-  /** An upsert of matches would not update an existing non-test match (conflict target `target`). */
-  async function assertUpsertTargetsTest (client, t, rows, target, guard) {
+  /**
+   * An upsert of matches (conflict target `target`, payload columns `cols`)
+   * would not update an existing non-test match of a test-only sport.
+   * One sport only (testOnlySports): nor write a non-test match of that
+   * sport, judged on the MERGED row, payload over the stored one: the
+   * payload's sport and test value when it sets the column, else the stored
+   * match's (a new row: missing is indoor, non-test). A payload judged alone
+   * would read a missing sport_type as indoor, so {external_id, test: false}
+   * would un-test a stored beach test match of an indoor-only scorer; and a
+   * beach scorer's {external_id, status} onto its own beach match would be
+   * refused. A row that changes the sport is left to db/012's lock.
+   * Every sport (testOnly): the payload is checked before (every row
+   * test: true), here only the stored matches.
+   */
+  async function assertUpsertTargetsTest (client, t, rows, cols, target, guard) {
     const c = freshCtx()
     const on = target.map(col => `t.${quoteIdent(col)} = r.${quoteIdent(col)}`).join(' AND ')
-    const sql = `SELECT count(*)::int AS bad FROM ${qTable(t.name)} AS t
-      JOIN json_populate_recordset(NULL::${qTable(t.name)}, ${c.p(JSON.stringify(rows))}::json) AS r ON ${on}
-     WHERE ${nonTestSql(guard, 't')}`
+    let cond = `(t.ctid IS NOT NULL AND ${nonTestSql(guard, 't')})`
+    if (!guard.allSports) {
+      const tc = cfg.testColumn
+      const sc = cfg.sportColumn
+      const notTest = tc && guard.parent.columns.has(tc) ? `${cols.includes(tc) ? 'r' : 't'}.${quoteIdent(tc)} IS NOT TRUE` : 'true'
+      const sport = sportIsSql(guard, sc && cols.includes(sc) ? 'r' : 't', guard.testSports[0])
+      cond += ` OR (${notTest} AND ${sport})`
+    }
+    const sql = `SELECT count(*)::int AS bad
+      FROM json_populate_recordset(NULL::${qTable(t.name)}, ${c.p(JSON.stringify(rows))}::json) AS r
+      LEFT JOIN ${qTable(t.name)} AS t ON ${on}
+     WHERE ${cond}`
     const res = await client.query(sql, c.values)
-    if (res.rows[0].bad > 0) scorerRequired(`${res.rows[0].bad} existing match(es) are not test matches`)
+    if (res.rows[0].bad > 0) scorerRequired(`${res.rows[0].bad} match row(s) are not test matches`)
   }
 
   async function runWrite (cat, t, action, params, opts, ctx) {
@@ -824,10 +906,11 @@ export function createPgQuery (options = {}) {
         const ids = rows.map(r => r[enforce.fk])
         ownPre = (client) => assertMatchIdsOwned(client, enforce, ids)
       }
-      if (testOnly && testOnly.isParent) {
-        const notTest = rows.filter(r => r[cfg.testColumn] !== true).length
+      // one sport only, an upsert: judged on the merged rows (assertUpsertTargetsTest)
+      if (testOnly && testOnly.isParent && (action === 'insert' || testOnly.allSports)) {
+        const notTest = nonTestRowsOf(testOnly, rows).length
         if (notTest > 0) scorerRequired(`${notTest} match row(s) are not test matches`)
-      } else if (testOnly) {
+      } else if (testOnly && !testOnly.isParent) {
         const ids = rows.map(r => r[testOnly.fk])
         testPre = (client) => assertTestMatchIds(client, testOnly, ids)
       }
@@ -852,7 +935,7 @@ export function createPgQuery (options = {}) {
         }
         if (testOnly && testOnly.isParent) {
           const conflictTarget = target
-          testPre = (client) => assertUpsertTargetsTest(client, t, rows, conflictTarget, testOnly)
+          testPre = (client) => assertUpsertTargetsTest(client, t, rows, cols, conflictTarget, testOnly)
         }
         // The creator of an existing match never changes through an upsert.
         const updatable = cols.filter(c => !target.includes(c) && !(guard?.isParent && c === ownerCol))
@@ -897,12 +980,14 @@ export function createPgQuery (options = {}) {
       if (where.filters.length === 0) fail('OV_UNFILTERED_WRITE', 'update needs a filter')
       if (guard?.isParent && cols.includes(ownerCol)) fail('OV_INVALID_DATA', `${ownerCol} is set by the server`)
       if (testOnly) {
-        if (testOnly.isParent && cols.includes(cfg.testColumn) && row[cfg.testColumn] !== true) {
-          scorerRequired('a match cannot stop being a test match')
-        }
+        // Making matches non-test: refused at once in every sport, else for
+        // the matched rows of the test-only sport (checked in the transaction)
+        const untests = testOnly.isParent && cols.includes(cfg.testColumn) && row[cfg.testColumn] !== true
+        if (untests && testOnly.allSports) scorerRequired('a match cannot stop being a test match')
         const movedTo = !testOnly.isParent && cols.includes(testOnly.fk) ? [row[testOnly.fk]] : null
         const p1 = params
         testPre = async (client) => {
+          if (untests) await assertFilteredRowsTestSport(client, t, p1, secrets, testOnly)
           await assertFilteredRowsTest(client, t, p1, secrets, testOnly)
           if (movedTo) await assertTestMatchIds(client, testOnly, movedTo)
         }
@@ -1057,6 +1142,8 @@ export function createPgQuery (options = {}) {
    *        nor edits get 403 OV_NOT_MATCH_OWNER. admin: true records the creator but checks nothing.
    *        testOnly: true (not an approved scorer): only test matches and their children may be
    *        written, else 403 OV_SCORER_REQUIRED (checked before ownership). Omit for trusted server code.
+   *        testOnlySports: ['indoor'|'beach'] (wins over testOnly): only in these sports, by the
+   *        sport of the row (children: of their match).
    * @param {string} [opts.actorId]        writes: the acting account (ov.user_id for db/007's triggers)
    * @param {boolean} [opts.collectChanges] return `changes` for realtime (default: changeTables)
    * @param {{userId:string, restrict?:boolean}} [opts.readOwner] selects of matches and its children:

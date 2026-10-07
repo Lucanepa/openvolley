@@ -73,7 +73,8 @@ These names are shared with the self-host wiring in `escoresheet/backend` and mu
 | `PORT` | `8080` | HTTP **and** WebSocket. `server.js` attaches `ws` to the HTTP server (`new WebSocketServer({ server })`), so there is no separate WS port and the tunnel needs one origin only |
 | `PUBLIC_ORIGINS` | from `.env` | Comma-separated CORS origins |
 | `TRUST_PROXY` | `cloudflare` | Client IP from `cf-connecting-ip`. Safe because the tunnel is the only way in: no host port exists that could be hit with a forged header |
-| `RESEND_API_KEY`, `RESEND_FROM`, `SMTP_*`, `CONTACT_EMAIL` | from `.env` | Unchanged from today. (`REOPEN_PASSWORD_HASH` was replaced by the admin reopen of db/007 and is no longer read.) |
+| `RESEND_API_KEY`, `RESEND_FROM`, `CONTACT_EMAIL` | from `.env` | Unchanged from today. (`REOPEN_PASSWORD_HASH` was replaced by the admin reopen of db/007 and is no longer read.) |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`, `MANAGER_URL`, `SMTP_LEGACY_ROUTES` | from `.env`, all optional | Account emails (backend README "Account emails"): reset and confirmation links. Without `SMTP_HOST`/`SMTP_PASS`: none, reset answers 503, sign-up confirms at once. `SMTP_LEGACY_ROUTES=1` also lets `/api/contact` and `/api/match/send-info` use the account (off: they would relay to anonymous addresses) |
 | `IS_CLOUD` | `1` | Existing switch for HSTS/CSP in `server.js` |
 | `OV_MIN_MATCHES` | from `.env` | `/health` row-count floor |
 

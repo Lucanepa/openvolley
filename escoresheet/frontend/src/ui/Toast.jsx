@@ -2,6 +2,7 @@
 // Rendered by <UiHost />; fired with toast.success / toast.error / toast.info.
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AlertCircle, Check, Info, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { cn } from './cn.js';
 import { FOCUS_RING } from './Button.jsx';
 import { dismissToast, getToastsSnapshot, subscribeToasts } from './uiStore.js';
@@ -13,6 +14,9 @@ const ICONS = { success: Check, error: AlertCircle, info: Info };
 const ACCENT = TOAST_ACCENT;
 
 function ToastRow({ item }) {
+  // The dismiss label in the app's language (all five locales); the English
+  // default only shows where no i18n instance is set up (kit tests).
+  const { t } = useTranslation();
   const [paused, setPaused] = useState(false);
   // Banked so that leaving the pointer restarts the remainder, not the whole
   // duration — hovering to read should not make a toast immortal either.
@@ -59,7 +63,7 @@ function ToastRow({ item }) {
       <button
         type="button"
         data-testid="toast-dismiss"
-        aria-label={item.lang === 'EN' ? 'Dismiss notification' : 'Meldung schliessen'}
+        aria-label={t('common.dismissNotification', 'Dismiss notification')}
         onClick={() => dismissToast(item.id)}
         className={cn('pointer-events-auto shrink-0 h-10 w-10 sm:h-7 sm:w-7 -my-1.5 sm:my-0 inline-flex items-center justify-center rounded text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors', FOCUS_RING)}
       >

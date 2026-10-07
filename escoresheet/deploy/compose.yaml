@@ -141,10 +141,20 @@ services:
       OV_MIN_MATCHES: ${OV_MIN_MATCHES:-0}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_FROM: ${RESEND_FROM:-}
+      # Account emails (password reset, email confirmation; backend README
+      # "Account emails"). All optional: without SMTP_HOST/SMTP_PASS reset
+      # answers 503 and sign-up confirms accounts at once.
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MANAGER_URL: ${MANAGER_URL:-}
+      # OpenBeach's account mails: the same mailbox under its own name, links
+      # to manager-beach (defaults in lib/mailer.js)
+      MAIL_FROM_BEACH: ${MAIL_FROM_BEACH:-}
+      MANAGER_URL_BEACH: ${MANAGER_URL_BEACH:-}
+      SMTP_LEGACY_ROUTES: ${SMTP_LEGACY_ROUTES:-}
       CONTACT_EMAIL: ${CONTACT_EMAIL:-}
       VM_USERNAME: ${VM_USERNAME:-}
       VM_PASSWORD: ${VM_PASSWORD:-}

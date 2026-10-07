@@ -2927,7 +2927,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
                 >
                   <img
                     src="/ball.png"
-                    alt="Openvolley"
+                    alt="OpenVolley"
                     style={{
                       width: '97px',
                       height: '97px',
@@ -3032,6 +3032,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
                       <Approvals
                         officials={match?.officials}
                         match={match}
+                        sets={sets}
                         teamAKey={teamAKey}
                         lineJudges={[
                           match?.officials?.find((o: any) => o.role === 'line judge 1')?.name || '',

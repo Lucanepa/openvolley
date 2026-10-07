@@ -22,6 +22,7 @@ const SURFACE = {
   boxShadow: 'var(--ov-shadow-card)'
 }
 import { setsToWin } from '../utils/matchFormat'
+import { matchDiscPaint, teamLiberoColour, markColourOn } from '../utils/teamColours'
 
 export default function MatchEntry({ matchId, team, onBack, embedded = false }) {
   const { t } = useTranslation()
@@ -246,6 +247,31 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       bench: isHome ? (data.match?.bench_away || []) : (data.match?.bench_home || [])
     }
   }, [data, team])
+
+  // Player discs in the team's shirt colour, the libero in the colour that
+  // stands out most from both teams, picked together with the other team's
+  // libero so the two never match, as on the scoring and referee courts
+  // (null without a team colour: the discs keep the neutral look)
+  const discPaint = useMemo(() => {
+    if (!data) return null
+    const paint = matchDiscPaint(data.homeTeam?.color, data.awayTeam?.color, {
+      homeLibero: teamLiberoColour(data.homeTeam),
+      awayLibero: teamLiberoColour(data.awayTeam)
+    })
+    return team === 'home' ? paint.home : paint.away
+  }, [data, team])
+
+  const discStyle = (isLibero) => {
+    const paint = discPaint?.[isLibero ? 'libero' : 'player']
+    if (!paint) return { background: isLibero ? '#FFF8E7' : undefined, color: isLibero ? '#000' : undefined }
+    return {
+      background: paint.background,
+      color: paint.color,
+      textShadow: paint.textShadow,
+      borderColor: paint.ring || undefined
+    }
+  }
+  const liberoMarkOn = (isLibero) => markColourOn(discStyle(isLibero).background, '#3b82f6', '#0f172a')
 
   // Get current set points
   const points = useMemo(() => {
@@ -899,10 +925,12 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       )}
 
       {/* SECTION 1: TO+SUB | Score & Sets | Sanctions */}
+      {/* minmax(0, 1fr) and the clamps below: at 360 px the three panels
+          were wider than the screen and the sanctions ran off the right edge. */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'auto 1fr auto',
-        gap: '8px',
+        gridTemplateColumns: 'auto minmax(0, 1fr) auto',
+        gap: 'clamp(6px, 2vw, 8px)',
         alignItems: 'stretch'
       }}>
         {/* Left: TO + SUB side by side */}
@@ -914,13 +942,13 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           <div style={{
             background: timeoutsUsed >= 2 ? 'rgba(239, 68, 68, 0.2)' : 'var(--panel-2)',
             borderRadius: '8px',
-            padding: '6px 12px',
+            padding: '6px clamp(6px, 2.5vw, 12px)',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
             border: timeoutsUsed >= 2 ? '2px solid #ef4444' : '1px solid var(--border)',
-            minWidth: '50px'
+            minWidth: 'clamp(40px, 12vw, 50px)'
           }}>
             <div style={{ fontSize: '10px', color: 'var(--muted)', marginBottom: '2px' }}>{t('matchEntry.to', 'TO')}</div>
             <div style={{
@@ -935,13 +963,13 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           <div style={{
             background: substitutionsUsed >= 6 ? 'rgba(239, 68, 68, 0.2)' : substitutionsUsed >= 5 ? 'rgba(234, 179, 8, 0.2)' : 'var(--panel-2)',
             borderRadius: '8px',
-            padding: '6px 12px',
+            padding: '6px clamp(6px, 2.5vw, 12px)',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
             border: substitutionsUsed >= 6 ? '2px solid #ef4444' : substitutionsUsed >= 5 ? '2px solid #eab308' : '1px solid var(--border)',
-            minWidth: '50px'
+            minWidth: 'clamp(40px, 12vw, 50px)'
           }}>
             <div style={{ fontSize: '10px', color: 'var(--muted)', marginBottom: '2px' }}>{t('matchEntry.sub', 'SUB')}</div>
             <div style={{
@@ -958,12 +986,13 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         <div style={{
           ...SURFACE,
           borderRadius: '12px',
-          padding: '8px 12px',
+          padding: '8px clamp(6px, 2vw, 12px)',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: '2px'
+          gap: '2px',
+          minWidth: 0
         }}>
           {/* Score */}
           <div style={{
@@ -972,7 +1001,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
             gap: '8px'
           }}>
             <span style={{
-              fontSize: '48px',
+              fontSize: 'clamp(36px, 12vw, 48px)',
               fontWeight: 800,
               color: '#22c55e'
             }}>{points.team}</span>
@@ -1019,7 +1048,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           gap: '4px',
           maxHeight: '80px',
           overflow: 'auto',
-          minWidth: '100px'
+          minWidth: 'clamp(76px, 22vw, 100px)'
         }}>
           <div style={{ fontSize: '9px', color: 'var(--muted)', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{t('matchEntry.sanctions', 'SANCTIONS')}</div>
           {allSanctionsForDisplay.length === 0 ? (
@@ -1109,11 +1138,13 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
                         key={`front-${player.position}-${idx}`}
                         className="court-player"
                         style={{
-                          background: player.isLibero ? '#FFF8E7' : undefined,
-                          color: player.isLibero ? '#000' : undefined,
+                          ...discStyle(player.isLibero),
                           position: 'relative',
                           aspectRatio: '1 / 1',
-                          fontSize: 'clamp(25px, 10vw, 40px)'
+                          // half the disc (.court-player is 22cqh), as on the
+                          // referee discs (discSizing DISC.number): 10vw spilled
+                          // two digits out of a 60 px disc at 360 px wide
+                          fontSize: '11cqh'
                         }}
                       >
                         {shouldShowBall && (
@@ -1145,7 +1176,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
                         {player.isLibero && !player.isCaptain && (
                           <span style={{
                             position: 'absolute', bottom: '-6px', left: '-6px',
-                            width: '18px', height: '14px', background: '#3b82f6',
+                            width: '18px', height: '14px', background: liberoMarkOn(true),
                             border: '2px solid rgba(255,255,255,0.4)', borderRadius: '3px',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             fontSize: '8px', fontWeight: 700, color: '#fff', zIndex: 5
@@ -1190,12 +1221,14 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
                         key={`back-${player.position}-${idx}`}
                         className="court-player"
                         style={{
-                          background: player.isLibero ? '#FFF8E7' : undefined,
-                          color: player.isLibero ? '#000' : undefined,
+                          ...discStyle(player.isLibero),
                           position: 'relative',
-                          width: 'clamp(44px, 10vw, 72px)',
-                          height: 'clamp(44px, 10vw, 72px)',
-                          fontSize: 'clamp(18px, 4vw, 28px)'
+                          // capped by the court's height (cqh): sized from the
+                          // width alone, three back-row discs ran off a short
+                          // court (a phone on its side, 844x390)
+                          width: 'min(clamp(44px, 10vw, 72px), 24cqh)',
+                          height: 'min(clamp(44px, 10vw, 72px), 24cqh)',
+                          fontSize: 'min(clamp(18px, 4vw, 28px), 12cqh)'
                         }}
                       >
                         {shouldShowBall && (
@@ -1227,7 +1260,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
                         {player.isLibero && !player.isCaptain && (
                           <span style={{
                             position: 'absolute', bottom: '-6px', left: '-6px',
-                            width: '18px', height: '14px', background: '#3b82f6',
+                            width: '18px', height: '14px', background: liberoMarkOn(true),
                             border: '2px solid rgba(255,255,255,0.4)', borderRadius: '3px',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             fontSize: '8px', fontWeight: 700, color: '#fff', zIndex: 5
