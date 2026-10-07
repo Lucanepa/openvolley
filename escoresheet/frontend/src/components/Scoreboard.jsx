@@ -4586,8 +4586,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const pointsBefore = setEvents
       .filter(e => e.type === 'point' && (e.seq || 0) < (lastPoint.seq || 0))
       .sort((a, b) => (b.seq || 0) - (a.seq || 0))
-    const previousServer = pointsBefore.length > 0 ? pointsBefore[0].payload?.team : null
-    // If no previous point, first serve team had serve — sideout if scoring team differs
+    // No earlier point: the set's first-serving team had the serve. (Comparing
+    // with null counted every first point as a sideout, and since the serving
+    // team's point writes no rotation the serve box stayed hidden until 2:0.)
+    const previousServer = pointsBefore.length > 0
+      ? pointsBefore[0].payload?.team
+      : getFirstServeForSet(data.set.index, data.match)
     if (previousServer === lastPoint.payload?.team) return false // Not a sideout
 
     // It's a sideout — check if rotation event exists (sub-event of the point, e.g., 7.1)
@@ -4598,7 +4602,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       (e.seq || 0) !== pointBaseSeq // Has decimal part (sub-event)
     )
     return !hasRotation
-  }, [data?.events, data?.set])
+  }, [data?.events, data?.set, data?.match])
 
   // Hide serve indicator while rotation is pending (prevents wrong server flash)
   // Show serve on left as placeholder before coin toss or before set starts
@@ -17920,9 +17924,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           const description = getActionDescription(lastEvent)
 
                           return (
-                            <div style={{ fontSize: '12px', wordBreak: 'break-word', margin: '0 auto', whiteSpace: 'normal' }}>
-                              <span className="summary-label" style={{ whiteSpace: 'normal' }}>{t('scoreboard.lastAction', 'Last action:')} </span>
-                              <span className="summary-value" style={{ color: 'var(--muted)', whiteSpace: 'normal' }}>
+                            // One fixed line: a description that wrapped to two lines made the
+                            // court shrink, then grow back with the next shorter one
+                            <div title={description} style={{ fontSize: '12px', lineHeight: '16px', height: '16px', margin: '0 auto', maxWidth: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              <span className="summary-label">{t('scoreboard.lastAction', 'Last action:')} </span>
+                              <span className="summary-value" style={{ color: 'var(--muted)' }}>
                                 {description} <span style={{ opacity: 0.5, fontSize: '10px' }}>(seq: {lastEvent.seq})</span>
                               </span>
                             </div>
