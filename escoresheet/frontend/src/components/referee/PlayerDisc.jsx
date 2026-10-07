@@ -1,5 +1,6 @@
 import ballFallback from '../../ball_fallback.png'
 import { DISC, discCssVars } from './discSizing.js'
+import { markColourOn } from '../../utils/teamColours.js'
 
 // Primary ball image (with a bundled copy as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
@@ -34,6 +35,8 @@ const card = (color, widthShare = 0.38) => ({
 
 const YELLOW = '#fde047'
 const RED = '#ef4444'
+const LIBERO_BLUE = '#3b82f6'
+const SLATE = '#0f172a'
 
 /**
  * One player on the referee court: a disc with the shirt number, the
@@ -49,8 +52,10 @@ const RED = '#ef4444'
  * @param {string} props.position I..VI
  * @param {number} props.capPx largest diameter in px (discCapPx)
  * @param {'left'|'right'} props.side court half: the ball goes to the end-line side
- * @param {string} props.background disc fill
+ * @param {string} props.background disc fill (the team's shirt colour, see utils/teamColours.js)
  * @param {string} props.color number colour
+ * @param {string} [props.textShadow] outline for the number on a mid-tone fill
+ * @param {string|null} [props.ring] edge colour for a fill that would melt into the court (white, yellow...)
  * @param {boolean} [props.flash] recently substituted in: orange flashing ring
  * @param {boolean} [props.showBall]
  * @param {string|number|null} [props.replacedNumber]
@@ -63,13 +68,15 @@ const RED = '#ef4444'
  * @param {null|boolean} [props.lfp] null: LFP tracking off; true/false: LFP / !LFP
  */
 export default function PlayerDisc({
-  number, position, capPx, side, background, color, flash = false, showBall = false,
+  number, position, capPx, side, background, color, textShadow, ring = null, flash = false, showBall = false,
   replacedNumber = null, replacedByLibero = false, liberoLabel = null, liberoRedesignated = false, liberoUnable = false,
   captain = null, sanctions = {}, lfp = null
 }) {
   const { warning, penalty, expulsion, disqualification } = sanctions
   const hasSanction = warning || penalty || expulsion || disqualification
   const liberoCaptain = captain === 'LC' || captain === 'LGC'
+  // The blue libero mark stays apart from a blue shirt
+  const liberoMark = markColourOn(background, LIBERO_BLUE, SLATE)
   return (
     <div
       data-player-disc={position}
@@ -80,7 +87,7 @@ export default function PlayerDisc({
         width: 'var(--disc)',
         height: 'var(--disc)',
         flexShrink: 0,
-        border: flash ? '3px solid #f97316' : '1px solid var(--border)',
+        border: flash ? '3px solid #f97316' : ring ? `2px solid ${ring}` : '1px solid var(--border)',
         borderRadius: '50%',
         background,
         color,
@@ -172,7 +179,7 @@ export default function PlayerDisc({
           ...badgeBase,
           bottom: 0,
           left: 0,
-          background: '#3b82f6',
+          background: liberoMark,
           border: '2px solid var(--border)',
           color: '#fff'
         }}>
@@ -202,7 +209,7 @@ export default function PlayerDisc({
           left: liberoLabel && !liberoCaptain ? 'calc(var(--disc-badge) + 2px)' : 0,
           // LC keeps the type size of every other mark and widens its badge
           // instead (a smaller share fell to 5 px on a 36 px disc)
-          background: captain === 'LC' ? '#ffffff' : captain === 'LGC' ? '#3b82f6' : 'rgba(15, 23, 42, 0.95)',
+          background: captain === 'LC' ? '#ffffff' : captain === 'LGC' ? liberoMark : 'rgba(15, 23, 42, 0.95)',
           border: `2px solid ${captain === 'C' || captain === 'LC' ? '#22c55e' : '#fbbf24'}`,
           color: captain === 'C' || captain === 'LC' ? '#22c55e' : '#fbbf24'
         }}>
@@ -236,7 +243,7 @@ export default function PlayerDisc({
         </span>
       )}
 
-      <span data-disc-number="">{number}</span>
+      <span data-disc-number="" style={textShadow ? { textShadow } : undefined}>{number}</span>
     </div>
   )
 }

@@ -22,6 +22,7 @@ const SURFACE = {
   boxShadow: 'var(--ov-shadow-card)'
 }
 import { setsToWin } from '../utils/matchFormat'
+import { teamDiscPaint, teamLiberoColour, markColourOn } from '../utils/teamColours'
 
 export default function MatchEntry({ matchId, team, onBack, embedded = false }) {
   const { t } = useTranslation()
@@ -246,6 +247,28 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       bench: isHome ? (data.match?.bench_away || []) : (data.match?.bench_home || [])
     }
   }, [data, team])
+
+  // Player discs in the team's shirt colour, the libero in the colour that
+  // stands out most from both teams (null without a team colour: the discs
+  // keep the neutral look)
+  const discPaint = useMemo(() => {
+    if (!data) return null
+    const own = team === 'home' ? data.homeTeam : data.awayTeam
+    const other = team === 'home' ? data.awayTeam : data.homeTeam
+    return teamDiscPaint(own?.color, { opponent: other?.color, libero: teamLiberoColour(own) })
+  }, [data, team])
+
+  const discStyle = (isLibero) => {
+    const paint = discPaint?.[isLibero ? 'libero' : 'player']
+    if (!paint) return { background: isLibero ? '#FFF8E7' : undefined, color: isLibero ? '#000' : undefined }
+    return {
+      background: paint.background,
+      color: paint.color,
+      textShadow: paint.textShadow,
+      borderColor: paint.ring || undefined
+    }
+  }
+  const liberoMarkOn = (isLibero) => markColourOn(discStyle(isLibero).background, '#3b82f6', '#0f172a')
 
   // Get current set points
   const points = useMemo(() => {
@@ -1112,8 +1135,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
                         key={`front-${player.position}-${idx}`}
                         className="court-player"
                         style={{
-                          background: player.isLibero ? '#FFF8E7' : undefined,
-                          color: player.isLibero ? '#000' : undefined,
+                          ...discStyle(player.isLibero),
                           position: 'relative',
                           aspectRatio: '1 / 1',
                           // half the disc (.court-player is 22cqh), as on the
@@ -1151,7 +1173,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
                         {player.isLibero && !player.isCaptain && (
                           <span style={{
                             position: 'absolute', bottom: '-6px', left: '-6px',
-                            width: '18px', height: '14px', background: '#3b82f6',
+                            width: '18px', height: '14px', background: liberoMarkOn(true),
                             border: '2px solid rgba(255,255,255,0.4)', borderRadius: '3px',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             fontSize: '8px', fontWeight: 700, color: '#fff', zIndex: 5
@@ -1196,8 +1218,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
                         key={`back-${player.position}-${idx}`}
                         className="court-player"
                         style={{
-                          background: player.isLibero ? '#FFF8E7' : undefined,
-                          color: player.isLibero ? '#000' : undefined,
+                          ...discStyle(player.isLibero),
                           position: 'relative',
                           // capped by the court's height (cqh): sized from the
                           // width alone, three back-row discs ran off a short
@@ -1236,7 +1257,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
                         {player.isLibero && !player.isCaptain && (
                           <span style={{
                             position: 'absolute', bottom: '-6px', left: '-6px',
-                            width: '18px', height: '14px', background: '#3b82f6',
+                            width: '18px', height: '14px', background: liberoMarkOn(true),
                             border: '2px solid rgba(255,255,255,0.4)', borderRadius: '3px',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             fontSize: '8px', fontWeight: 700, color: '#fff', zIndex: 5
