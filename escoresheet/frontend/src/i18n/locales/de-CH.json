@@ -2322,7 +2322,8 @@
       "lastSignIn": "Letzte Anmeldung {{date}}",
       "neverSignedIn": "Nie angemeldet",
       "selfDemote": "Du kannst dir die Admin-Rolle nicht selbst entziehen.",
-      "superAdminOnly": "Nur ein Super-Admin kann dieses Konto ändern."
+      "superAdminOnly": "Nur ein Super-Admin kann dieses Konto ändern.",
+      "emailUnconfirmed": "E-Mail nicht bestätigt"
     },
     "invites": {
       "new": "Neuer Einladungscode",
@@ -2398,7 +2399,10 @@
         "match_close": "Spiel abgeschlossen",
         "match_reopen": "Spiel wieder geöffnet",
         "match_editor_add": "Bearbeiter durch Admin hinzugefügt",
-        "match_release_game": "Spiel freigegeben"
+        "match_release_game": "Spiel freigegeben",
+        "account_password_reset_requested": "Passwort-Reset angefordert",
+        "account_password_reset": "Passwort per E-Mail-Link zurückgesetzt",
+        "account_email_confirmed": "E-Mail-Adresse bestätigt"
       }
     }
   },
@@ -2583,5 +2587,39 @@
     "trayStatus": "Update parat",
     "copy": "Kopiere",
     "copied": "Kopiert."
+  },
+  "authEmail": {
+    "resetSentTitle": "Lueged Sie i Ihres Poschtfach",
+    "resetSent": "Wänn s es Konto für {{email}} git, händ mir em en Link für es neus Passwort gschickt. De Link gaht eimal und 60 Minute lang. Nüt aacho? Lueged Sie im Spam-Ordner.",
+    "resetUnavailable": "S Passwort zruggsetze gaht im Moment nöd. Kontakt: {{contact}}.",
+    "newPasswordTitle": "Neus Passwort setze",
+    "newPasswordBody": "Wähled Sie es neus Passwort für Ihres OpenVolley-Konto. Nachher werdet alli Grät abgmäldet.",
+    "newPassword": "Neus Passwort",
+    "repeatPassword": "Neus Passwort wiederhole",
+    "passwordHint": "Mindestens 6 Zeiche. Es paar Wörter hinderenand gänd es starchs Passwort.",
+    "savePassword": "Neus Passwort speichere",
+    "saving": "Wird gspeicheret…",
+    "passwordSavedTitle": "Passwort gänderet",
+    "passwordSaved": "Alli Grät sind abgmäldet worde. Mälded Sie sich mit em neue Passwort aa.",
+    "signIn": "Aamälde",
+    "invalidLinkTitle": "De Link gaht nöd",
+    "invalidLink": "Er isch ungültig, isch scho bruucht worde oder isch abgloffe.",
+    "requestNewLink": "Neue Link aafordere",
+    "confirmTitle": "E-Mail-Adresse bestätige",
+    "confirmBody": "Bestätiged Sie, dass die Adresse zu Ihrem OpenVolley-Konto ghört.",
+    "confirmButton": "E-Mail-Adresse bestätige",
+    "confirming": "Wird bestätiget…",
+    "confirmedTitle": "E-Mail-Adresse bestätiget",
+    "confirmed": "Merci. Sie chönd die Siite zuemache.",
+    "alreadyConfirmed": "Ihri E-Mail-Adresse isch scho bestätiget gsi. Sie chönd die Siite zuemache.",
+    "confirmInvalid": "Er isch ungültig oder abgloffe. Mälded Sie sich i de Schriiber-App aa und schicked Sie i Ihrem Profil en neue Link.",
+    "tooManyAttempts": "Z vill Versüech – bitte warted Sie es Wiili und probiered Sie es nomal.",
+    "offline": "Kei Verbindig zum Server – bitte WLAN oder mobili Date prüefe.",
+    "genericError": "Öppis isch schiefgange – bitte probiered Sie es nomal.",
+    "notConfirmed": "E-Mail-Adresse no nöd bestätiget. Tüend Sie de Link us eusem E-Mail uf.",
+    "resend": "Neue Link schicke",
+    "resent": "Mir händ en neue Link a {{email}} gschickt.",
+    "resendUnavailable": "Bestätigungs-E-Mails chönd grad nöd verschickt werde – bitte probiered Sie es spöter nomal.",
+    "signUpLinkSent": "Willkomme! Mir händ en Link a {{email}} gschickt: Tüend Sie en uf, zum Ihri Adresse bestätige."
   }
 }

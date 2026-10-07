@@ -5,6 +5,7 @@ import { useAuth } from './contexts/AuthContext'
 import ManageConsole, { manageTabsFor } from './components/manage/ManageConsole'
 import LoginModal from './components/auth/LoginModal'
 import InviteCodeForm from './components/auth/InviteCodeForm'
+import { ConfirmEmailPage, ResetPasswordPage } from './components/auth/AuthLinkPages'
 import { AppSpinner, Button, cn, consoleHeaderBtn, FOCUS_RING, GateScreen } from './ui'
 import { mainAppUrl } from './utils/managerSite'
 
@@ -12,6 +13,10 @@ import { mainAppUrl } from './utils/managerSite'
  * manager.openvolley.app: the manage console as a site of its own, for
  * admins (every tab) and competition managers (saved teams).
  *
+ *   #reset?token= / #confirm?token= (the links of the account emails;
+ *   manager-main.jsx strips them from the URL before the first render and
+ *   passes them in as `authLink`) -> set a new password / confirm the email,
+ *   whether or not someone is signed in
  *   signed out                  -> sign-in card (the app's LoginModal)
  *   signed in, profile unknown  -> loading, then "try again"
  *   no manage role              -> "no access, ask an admin" + invite code
@@ -88,9 +93,10 @@ function Gate({ children }) {
   )
 }
 
-function SignInScreen() {
+function SignInScreen({ initialMode = null }) {
   const { t } = useTranslation()
-  const [open, setOpen] = useState(false)
+  // initialMode 'signin' | 'forgot': opened from an email-link page
+  const [open, setOpen] = useState(!!initialMode)
   const appUrl = mainAppUrl()
   return (
     <>
@@ -108,7 +114,7 @@ function SignInScreen() {
         </div>
       </Gate>
       {/* "Sign up" in the dialog goes to the scorer app, where accounts are made */}
-      <LoginModal open={open} onClose={() => setOpen(false)} onSwitchToSignUp={() => window.location.assign(appUrl)} />
+      <LoginModal open={open} initialForgot={initialMode === 'forgot'} onClose={() => setOpen(false)} onSwitchToSignUp={() => window.location.assign(appUrl)} />
     </>
   )
 }
@@ -226,16 +232,48 @@ function ConsoleHeaderActions() {
   )
 }
 
-export default function ManagerApp() {
-  const { t } = useTranslation()
-  const { user, access, loading } = useAuth()
+/** The page behind an email link, in the gate card. */
+function AuthLinkScreen({ link, onDone }) {
+  return (
+    <Gate>
+      {link.page === 'reset'
+        ? <ResetPasswordPage token={link.token} lang={link.lang} onSignIn={() => onDone('signin')} onRequestNew={() => onDone('forgot')} />
+        : <ConfirmEmailPage token={link.token} onSignIn={() => onDone('signin')} />}
+    </Gate>
+  )
+}
+
+export default function ManagerApp({ authLink = null }) {
+  const { t, i18n } = useTranslation()
+  const { user, access, loading, signOut } = useAuth()
   const [tab, setTab] = useState(tabFromHash)
+  const [link, setLink] = useState(authLink)
+  const [signInMode, setSignInMode] = useState(null)
+
+  // The link carries the language the email was written in (en/de/fr/it):
+  // follow it unless the site already shows that language (de-CH for de).
+  useEffect(() => {
+    const lang = authLink?.lang
+    if (lang && String(i18n.language || '').split('-')[0] !== lang) i18n.changeLanguage(lang)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const leaveLink = useCallback(async (mode) => {
+    // After a reset every session of the account is revoked: drop this one too.
+    if (link?.page === 'reset' && user) {
+      try { await signOut() } catch { /* the server already revoked it */ }
+    }
+    setLink(null)
+    setSignInMode(mode)
+  }, [link, user, signOut])
 
   // The open tab lives in the URL hash, so a reload or a bookmark keeps it
   const selectTab = useCallback((id) => {
     setTab(id)
     try { window.history.replaceState(window.history.state, '', `#${id}`) } catch { /* no history */ }
   }, [])
+
+  if (link) return <div className="ov-kit"><AuthLinkScreen link={link} onDone={leaveLink} /></div>
 
   if (loading) {
     return (
@@ -244,7 +282,7 @@ export default function ManagerApp() {
       </div>
     )
   }
-  if (!user) return <div className="ov-kit"><SignInScreen /></div>
+  if (!user) return <div className="ov-kit"><SignInScreen initialMode={signInMode} /></div>
   if (!access.known) return <div className="ov-kit"><AccountLoadingScreen /></div>
   if (manageTabsFor(access).length === 0) return <div className="ov-kit"><NoAccessScreen /></div>
 

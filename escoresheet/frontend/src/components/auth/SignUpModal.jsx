@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
-import { needsEmailConfirmation } from './signUpResult'
+import { confirmationLinkSent, needsEmailConfirmation } from './signUpResult'
 import { Check, X } from 'lucide-react'
-import { Button, cn, Field, FOCUS_RING, IconButton, Input } from '../../ui'
+import { Button, cn, Field, FOCUS_RING, IconButton, Input, toast } from '../../ui'
 
 export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
   const { t } = useTranslation()
@@ -58,6 +58,8 @@ export default function SignUpModal({ open, onClose, onSwitchToLogin }) {
         const { error: signInError } = await signIn(email, password)
         if (!signInError) {
           setLoading(false)
+          // The link is still to be opened: info, not success
+          if (confirmationLinkSent(signUpData)) toast.info(t('authEmail.signUpLinkSent', { email: email.trim() }))
           onClose?.()
           return
         }
