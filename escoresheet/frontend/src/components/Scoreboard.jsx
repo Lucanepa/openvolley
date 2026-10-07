@@ -13,6 +13,8 @@ import { useScaledLayout } from '../hooks/useScaledLayout'
 
 import ConnectionStatus from './ConnectionStatus'
 import MenuList from './MenuList'
+import { matchMenuSections, toMenuListSections } from './matchMenu'
+import SanctionsResultsModal from './SanctionsResultsModal'
 import ScoreboardOptionsModal from './options/ScoreboardOptionsModal'
 import NativeBackupAlert from './options/NativeBackupAlert'
 import ConnectTabletsModal from './connect/ConnectTabletsModal'
@@ -69,7 +71,7 @@ import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
 import { isNativeApp } from '../utils/backendConfig'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
-import { WarningIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, DownloadIcon, SettingsIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon } from './icons'
+import { WarningIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon } from './icons'
 import { cn } from '../ui/cn.js'
 import { FOCUS_RING, Button } from '../ui/Button.jsx'
 import { ActionSheet, ActionSheetItem } from '../ui/Modal.jsx'
@@ -12520,6 +12522,54 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return null
   }
 
+  // Export every table of the local database as one JSON file (Match menu)
+  const downloadGameData = async () => {
+    try {
+      const exportData = {
+        exportDate: new Date().toISOString(),
+        matchId: matchId,
+        matches: await db.matches.toArray(),
+        teams: await db.teams.toArray(),
+        players: await db.players.toArray(),
+        sets: await db.sets.toArray(),
+        events: await db.events.toArray(),
+        referees: await db.referees.toArray(),
+        scorers: await db.scorers.toArray()
+      }
+      const jsonString = JSON.stringify(exportData, null, 2)
+      const blob = new Blob([jsonString], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `database_export_${matchId}_${new Date().toISOString().split('T')[0]}.json`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      return true
+    } catch (error) {
+      console.error('Error exporting database:', error)
+      showAlert(t('scoreboard.errors.exportFailed'), 'error')
+      return false
+    }
+  }
+
+  // The "Match" menu, grouped (toolbar dropdown and the phone action sheet)
+  const matchMenu = matchMenuSections(t, {
+    showRosters: () => setShowRosters(true),
+    showSanctions: () => setShowSanctions(true),
+    showActionLog: () => setShowLogs(true),
+    openRemarks: () => setShowRemarks(true),
+    openMatchSetup: onOpenMatchSetup ? () => onOpenMatchSetup() : undefined,
+    manualChanges: () => setShowManualPanel(true),
+    editRosterHome: () => setReopenRosterConfirm('home'),
+    editRosterAway: () => setReopenRosterConfirm('away'),
+    showPins: () => setShowPinsModal(true),
+    downloadGameData: () => { downloadGameData() },
+    options: () => setShowOptionsInMenu(true),
+    stopMatch: () => setStopMatchModal('select')
+  })
+
   // Show duplicate tab error if scoresheet is already open in another tab
   if (duplicateTabError) {
     return (
@@ -13074,8 +13124,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               }
             ]}
           />
-          {/* The match's own menu (logs, sanctions, manual changes): labelled
-              "Match" so it is never mistaken for the app header's menu */}
+          {/* The match's own menu, grouped (matchMenu.jsx): labelled "Match"
+              so it is never mistaken for the app header's menu */}
           <MenuList
             buttonLabel={t('header.match', 'Match')}
             buttonTitle={t('header.match', 'Match')}
@@ -13088,129 +13138,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               textAlign: 'center'
             }}
             position="right"
-            items={[
-              {
-                key: 'action-log',
-                label: 'Show action log',
-                onClick: () => {
-                  setShowLogs(true)
-                }
-              },
-              {
-                key: 'sanctions',
-                label: 'Show sanctions and results',
-                onClick: () => {
-                  setShowSanctions(true)
-                }
-              },
-              {
-                key: 'manual',
-                label: 'Manual changes',
-                onClick: () => {
-                  setShowManualPanel(true)
-                }
-              },
-              {
-                key: 'remarks',
-                label: 'Open remarks recording',
-                onClick: () => {
-                  setShowRemarks(true)
-                }
-              },
-              {
-                key: 'stop-match',
-                label: t('scoreboard.menu.stopMatch', 'Stop the match'),
-                icon: '⛔',
-                onClick: () => {
-                  setStopMatchModal('select')
-                },
-                style: { color: '#ef4444' }
-              },
-              {
-                key: 'rosters',
-                label: 'Show rosters',
-                onClick: () => {
-                  setShowRosters(true)
-                }
-              },
-              {
-                key: 'edit-roster-home',
-                label: t('scoreboard.reopenRoster.menuHome', 'Edit home roster'),
-                onClick: () => setReopenRosterConfirm('home')
-              },
-              {
-                key: 'edit-roster-away',
-                label: t('scoreboard.reopenRoster.menuAway', 'Edit away roster'),
-                onClick: () => setReopenRosterConfirm('away')
-              },
-              {
-                key: 'pins',
-                label: 'Show PINs',
-                onClick: () => {
-                  setShowPinsModal(true)
-                }
-              },
-              ...(onOpenMatchSetup ? [{
-                key: 'match-setup',
-                label: 'Show match setup',
-                onClick: () => {
-                  onOpenMatchSetup()
-                }
-              }] : []),
-              { separator: true },
-              {
-                key: 'export',
-                icon: <DownloadIcon />,
-                label: 'Download game data (JSON)',
-                onClick: async () => {
-                  try {
-                    // Export all database data
-                    const allMatches = await db.matches.toArray()
-                    const allTeams = await db.teams.toArray()
-                    const allPlayers = await db.players.toArray()
-                    const allSets = await db.sets.toArray()
-                    const allEvents = await db.events.toArray()
-                    const allReferees = await db.referees.toArray()
-                    const allScorers = await db.scorers.toArray()
-
-                    const exportData = {
-                      exportDate: new Date().toISOString(),
-                      matchId: matchId,
-                      matches: allMatches,
-                      teams: allTeams,
-                      players: allPlayers,
-                      sets: allSets,
-                      events: allEvents,
-                      referees: allReferees,
-                      scorers: allScorers
-                    }
-
-                    // Create a blob and download
-                    const jsonString = JSON.stringify(exportData, null, 2)
-                    const blob = new Blob([jsonString], { type: 'application/json' })
-                    const url = URL.createObjectURL(blob)
-                    const link = document.createElement('a')
-                    link.href = url
-                    link.download = `database_export_${matchId}_${new Date().toISOString().split('T')[0]}.json`
-                    document.body.appendChild(link)
-                    link.click()
-                    document.body.removeChild(link)
-                    URL.revokeObjectURL(url)
-                  } catch (error) {
-                    console.error('Error exporting database:', error)
-                    showAlert(t('scoreboard.errors.exportFailed'), 'error')
-                  }
-                }
-              },
-              {
-                key: 'options',
-                icon: <SettingsIcon />,
-                label: 'Options',
-                onClick: () => {
-                  setShowOptionsInMenu(true)
-                }
-              }
-            ]}
+            columns={2}
+            sections={toMenuListSections(matchMenu)}
           />
         </div>
       </ScoreboardToolbar>
@@ -18888,76 +18817,29 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       {menuModal && (
         <div className="ov-kit" style={{ position: 'relative', zIndex: 1000 }}>
           <ActionSheet open={true} onClose={() => setMenuModal(false)} title={t('scoreboard.menu.menu')} closeLabel={t('common.close', 'Close')} railOffset={false}>
-            <ActionSheetItem onClick={() => { setShowLogs(true); setMenuModal(false) }}>
-              {t('scoreboard.menu.showActionLog', 'Show action log')}
-            </ActionSheetItem>
-            <ActionSheetItem onClick={() => { setShowSanctions(true); setMenuModal(false) }}>
-              {t('scoreboard.menu.showSanctionsResults', 'Show sanctions and results')}
-            </ActionSheetItem>
-            <ActionSheetItem onClick={() => { setShowManualPanel(true); setMenuModal(false) }}>
-              {t('scoreboard.menu.manualChanges', 'Manual changes')}
-            </ActionSheetItem>
-            <ActionSheetItem onClick={() => { setShowRemarks(true); setMenuModal(false) }}>
-              {t('scoreboard.menu.openRemarksRecording', 'Open remarks recording')}
-            </ActionSheetItem>
-            <ActionSheetItem onClick={() => { setShowRosters(true); setMenuModal(false) }}>
-              {t('scoreboard.showRosters')}
-            </ActionSheetItem>
-            <ActionSheetItem onClick={() => { setShowPinsModal(true); setMenuModal(false) }}>
-              {t('scoreboard.menu.showPins', 'Show PINs')}
-            </ActionSheetItem>
-            {onOpenMatchSetup && (
-              <ActionSheetItem onClick={() => { onOpenMatchSetup(); setMenuModal(false) }}>
-                {t('scoreboard.menu.showMatchSetup', 'Show match setup')}
-              </ActionSheetItem>
-            )}
-            <div className="my-1 h-px bg-stone-100" role="separator" />
-            <ActionSheetItem icon={DownloadIcon} onClick={async () => {
-                  try {
-                    // Export all database data
-                    const allMatches = await db.matches.toArray()
-                    const allTeams = await db.teams.toArray()
-                    const allPlayers = await db.players.toArray()
-                    const allSets = await db.sets.toArray()
-                    const allEvents = await db.events.toArray()
-                    const allReferees = await db.referees.toArray()
-                    const allScorers = await db.scorers.toArray()
-
-                    const exportData = {
-                      exportDate: new Date().toISOString(),
-                      matchId: matchId,
-                      matches: allMatches,
-                      teams: allTeams,
-                      players: allPlayers,
-                      sets: allSets,
-                      events: allEvents,
-                      referees: allReferees,
-                      scorers: allScorers
-                    }
-
-                    // Create a blob and download
-                    const jsonString = JSON.stringify(exportData, null, 2)
-                    const blob = new Blob([jsonString], { type: 'application/json' })
-                    const url = URL.createObjectURL(blob)
-                    const link = document.createElement('a')
-                    link.href = url
-                    link.download = `database_export_${matchId}_${new Date().toISOString().split('T')[0]}.json`
-                    document.body.appendChild(link)
-                    link.click()
-                    document.body.removeChild(link)
-                    URL.revokeObjectURL(url)
-
-                    setMenuModal(false)
-                  } catch (error) {
-                    console.error('Error exporting database:', error)
-                    showAlert(t('scoreboard.errors.exportFailed'), 'error')
-                  }
-                }}>
-              {t('scoreboard.menu.downloadGameData', 'Download game data (JSON)')}
-            </ActionSheetItem>
-            <ActionSheetItem icon={SettingsIcon} onClick={() => { setShowOptionsInMenu(true) }}>
-              {t('scoreboard.menu.options', 'Options')}
-            </ActionSheetItem>
+            {matchMenu.map(section => (
+              <div key={section.key} role="group" aria-label={section.title} className={section.danger ? 'mt-1 border-t border-stone-100 pt-1' : undefined}>
+                <p className={cn('m-0 px-4 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em]', section.danger ? 'text-red-600' : 'text-stone-500')}>
+                  {section.title}
+                </p>
+                {section.items.map(item => (
+                  <ActionSheetItem
+                    key={item.key}
+                    icon={item.Icon}
+                    className={item.danger ? 'text-red-600 hover:bg-red-50' : undefined}
+                    onClick={async () => {
+                      // Options opens over the sheet; the download keeps it open on failure
+                      if (item.key === 'options') { item.onClick(); return }
+                      if (item.key === 'export') { if (await downloadGameData()) setMenuModal(false); return }
+                      item.onClick()
+                      setMenuModal(false)
+                    }}
+                  >
+                    {item.label}
+                  </ActionSheetItem>
+                ))}
+              </div>
+            ))}
           </ActionSheet>
         </div>
       )}
@@ -19975,522 +19857,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         </Modal>
       )}
 
-      {/* Sanctions and Results Modal */}
-      {showSanctions && (
-        <Modal
-          title={t('scoreboard.modals.sanctionsAndResults')}
-          open={true}
-          onClose={() => setShowSanctions(false)}
-          width={1000}
-        >
-          <div style={{ padding: '4px 0' }}>
-            <section className="panel">
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px', overflowX: 'auto' }}>
-                {/* Left half: Sanctions */}
-                <div>
-                  <SbSection as="h4" title={t('matchEnd.sanctions')} className="mb-3" />
-                  {/* Improper Request Row */}
-                  <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div style={{ fontWeight: 600, fontSize: '12px', minWidth: '100px' }}>Improper request:</div>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      {['A', 'B'].map(team => {
-                        const teamKey = team === 'A' ? teamAKey : teamBKey
-                        const teamKeyCapitalized = teamKey === 'home' ? 'Home' : 'Away'
-                        const hasImproperRequest = data?.match?.sanctions?.[`improperRequest${teamKeyCapitalized}`]
-
-                        return (
-                          <div key={team} style={{
-                            width: '28px',
-                            height: '28px',
-                            borderRadius: '50%',
-                            border: '2px solid var(--border)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '12px',
-                            fontWeight: 700,
-                            position: 'relative'
-                          }}>
-                            {team}
-                            {hasImproperRequest && (
-                              <div style={{
-                                position: 'absolute',
-                                inset: 0,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '20px',
-                                color: '#ef4444',
-                                fontWeight: 900
-                              }}>
-                                ✕
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Sanctions Table */}
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                        <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600 }}>Warn</th>
-                        <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600 }}>Pen</th>
-                        <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600 }}>Exp</th>
-                        <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600 }}>Disq</th>
-                        <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600 }}>Team</th>
-                        <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600 }}>Set</th>
-                        <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600 }}>Score</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(() => {
-                        // Get all sanction events except improper_request (already shown in box above)
-                        const sanctionEvents = (data?.events || []).filter(e =>
-                          e.type === 'sanction' && e.payload?.type !== 'improper_request'
-                        )
-
-                        if (sanctionEvents.length === 0) {
-                          return (
-                            <tr>
-                              <td colSpan="7" style={{ padding: '12px', textAlign: 'center', color: 'var(--muted)', fontSize: '11px' }}>
-                                No sanctions recorded
-                              </td>
-                            </tr>
-                          )
-                        }
-
-                        return sanctionEvents.map((event, idx) => {
-                          const sanctionType = event.payload?.type
-                          const team = event.payload?.team
-                          const teamLabel = team === teamAKey ? 'A' : 'B'
-                          const setIndex = event.setIndex || 1
-                          const playerType = event.payload?.playerType
-                          const playerNumber = event.payload?.playerNumber
-                          const role = event.payload?.role
-
-                          // Get the identifier to display (player number or role abbreviation)
-                          let identifier = null
-                          if (role) {
-                            identifier = role === 'Coach' ? 'C' :
-                              role === 'Assistant Coach 1' ? 'AC1' :
-                                role === 'Assistant Coach 2' ? 'AC2' :
-                                  role === 'Physiotherapist' ? 'P' :
-                                    role === 'Medic' ? 'M' : role
-                          } else if (playerNumber !== undefined && playerNumber !== null) {
-                            identifier = String(playerNumber)
-                          }
-
-                          // Calculate score at time of sanction
-                          const setEvents = (data?.events || []).filter(e => e.setIndex === setIndex)
-                          const eventIndex = setEvents.findIndex(e => e.id === event.id)
-                          let homeScore = 0
-                          let awayScore = 0
-                          for (let i = 0; i <= eventIndex; i++) {
-                            const e = setEvents[i]
-                            if (e.type === 'point') {
-                              if (e.payload?.team === 'home') homeScore++
-                              else if (e.payload?.team === 'away') awayScore++
-                            }
-                          }
-
-                          const sanctionedTeamScore = team === 'home' ? homeScore : awayScore
-                          const otherTeamScore = team === 'home' ? awayScore : homeScore
-                          const scoreDisplay = `${sanctionedTeamScore}:${otherTeamScore}`
-
-                          return (
-                            <tr key={event.id || idx} style={{ borderBottom: '1px solid var(--border)' }}>
-                              <td style={{ padding: '6px 4px', textAlign: 'center' }}>
-                                {sanctionType === 'warning' && identifier}
-                                {sanctionType === 'delay_warning' && !identifier && 'D'}
-                              </td>
-                              <td style={{ padding: '6px 4px', textAlign: 'center' }}>
-                                {sanctionType === 'penalty' && identifier}
-                                {sanctionType === 'delay_penalty' && !identifier && 'D'}
-                              </td>
-                              <td style={{ padding: '6px 4px', textAlign: 'center' }}>
-                                {sanctionType === 'expulsion' && identifier}
-                              </td>
-                              <td style={{ padding: '6px 4px', textAlign: 'center' }}>
-                                {sanctionType === 'disqualification' && identifier}
-                              </td>
-                              <td style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600 }}>{teamLabel}</td>
-                              <td style={{ padding: '6px 4px', textAlign: 'center' }}>{setIndex}</td>
-                              <td style={{ padding: '6px 4px', textAlign: 'center' }}>{scoreDisplay}</td>
-                            </tr>
-                          )
-                        })
-                      })()}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Right half: Results */}
-                <div>
-                  <SbSection as="h4" title={t('matchEnd.results')} className="mb-3" />
-                  {(() => {
-                    // Get current left and right teams
-                    const currentLeftTeamKey = leftIsHome ? 'home' : 'away'
-                    const currentRightTeamKey = leftIsHome ? 'away' : 'home'
-                    const leftTeamData = currentLeftTeamKey === 'home' ? data?.homeTeam : data?.awayTeam
-                    const rightTeamData = currentRightTeamKey === 'home' ? data?.homeTeam : data?.awayTeam
-                    const leftTeamColor = leftTeamData?.color || (currentLeftTeamKey === 'home' ? '#ef4444' : '#3b82f6')
-                    const rightTeamColor = rightTeamData?.color || (currentRightTeamKey === 'home' ? '#ef4444' : '#3b82f6')
-                    const leftTeamName = leftTeamData?.name || 'Left team'
-                    const rightTeamName = rightTeamData?.name || 'Right team'
-                    const leftTeamLabel = currentLeftTeamKey === teamAKey ? 'A' : 'B'
-                    const rightTeamLabel = currentRightTeamKey === teamAKey ? 'A' : 'B'
-
-                    // Get all sets including current (copy: never sort the live-query array in place)
-                    const allSets = [...(data?.sets || [])].sort((a, b) => a.index - b.index)
-                    const finishedSets = allSets.filter(s => s.finished)
-
-                    // Check if match is over (ended -> approved -> final)
-                    const isMatchFinal = isMatchOverStatus(data?.match?.status)
-
-                    // If match is final, show match results table
-                    if (isMatchFinal) {
-                      // Calculate totals for each team
-                      const leftTotalTimeouts = finishedSets.reduce((sum, set) => {
-                        return sum + (data?.events || []).filter(e =>
-                          e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
-                        ).length
-                      }, 0)
-                      const rightTotalTimeouts = finishedSets.reduce((sum, set) => {
-                        return sum + (data?.events || []).filter(e =>
-                          e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
-                        ).length
-                      }, 0)
-
-                      const leftTotalSubs = finishedSets.reduce((sum, set) => {
-                        return sum + (data?.events || []).filter(e =>
-                          e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
-                        ).length
-                      }, 0)
-                      const rightTotalSubs = finishedSets.reduce((sum, set) => {
-                        return sum + (data?.events || []).filter(e =>
-                          e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
-                        ).length
-                      }, 0)
-
-                      const leftTotalWins = finishedSets.filter(s => {
-                        const leftPoints = currentLeftTeamKey === 'home' ? s.homePoints : s.awayPoints
-                        const rightPoints = currentRightTeamKey === 'home' ? s.homePoints : s.awayPoints
-                        return leftPoints > rightPoints
-                      }).length
-                      const rightTotalWins = finishedSets.filter(s => {
-                        const leftPoints = currentLeftTeamKey === 'home' ? s.homePoints : s.awayPoints
-                        const rightPoints = currentRightTeamKey === 'home' ? s.homePoints : s.awayPoints
-                        return rightPoints > leftPoints
-                      }).length
-
-                      const leftTotalPoints = finishedSets.reduce((sum, set) => {
-                        return sum + (currentLeftTeamKey === 'home' ? set.homePoints : set.awayPoints)
-                      }, 0)
-                      const rightTotalPoints = finishedSets.reduce((sum, set) => {
-                        return sum + (currentRightTeamKey === 'home' ? set.homePoints : set.awayPoints)
-                      }, 0)
-
-                      // Calculate total match duration
-                      let totalDurationMin = 0
-                      finishedSets.forEach(set => {
-                        if (set.startTime && set.endTime) {
-                          const start = new Date(set.startTime)
-                          const end = new Date(set.endTime)
-                          const durationMs = end - start
-                          totalDurationMin += Math.floor(durationMs / 60000)
-                        }
-                      })
-
-                      // Find match start time (first set_start event or first set startTime)
-                      const firstSetStartEvent = (data?.events || []).find(e => e.type === 'set_start' && e.setIndex === 1)
-                      const matchStartTime = firstSetStartEvent ? new Date(firstSetStartEvent.ts) : (finishedSets[0]?.startTime ? new Date(finishedSets[0].startTime) : null)
-
-                      // Find match end time (last set endTime)
-                      const matchEndTime = finishedSets.length > 0 && finishedSets[finishedSets.length - 1]?.endTime
-                        ? new Date(finishedSets[finishedSets.length - 1].endTime)
-                        : null
-
-                      // Calculate match duration
-                      let matchDurationMin = 0
-                      if (matchStartTime && matchEndTime) {
-                        const durationMs = matchEndTime - matchStartTime
-                        matchDurationMin = Math.floor(durationMs / 60000)
-                      }
-
-                      // Determine winner (none for a match stopped with level sets)
-                      const winnerTeamKey = getMatchWinner(allSets, data?.match?.bestOf, { forfeitTeam: data?.match?.forfeitTeam })
-                      const winnerTeamData = winnerTeamKey === 'home' ? data?.homeTeam : data?.awayTeam
-                      const winnerTeamName = winnerTeamKey
-                        ? (winnerTeamData?.name || (winnerTeamKey === 'home' ? 'Home' : 'Away'))
-                        : t('matchEnd.noWinner', 'No winner (match stopped)')
-                      const winnerScore = `${leftTotalWins}-${rightTotalWins}`
-
-                      // Get captain signatures
-                      const homeCaptainSignature = data?.match?.homePostGameCaptainSignature || null
-                      const awayCaptainSignature = data?.match?.awayPostGameCaptainSignature || null
-
-                      return (
-                        <div>
-                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9px' }}>
-                            <thead>
-                              <tr>
-                                <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid var(--border)', width: '42%' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                    <span style={{ fontSize: '10px', wordBreak: 'break-word' }}>{leftTeamName}</span>
-                                    <span style={{
-                                      padding: '1px 6px',
-                                      borderRadius: '3px',
-                                      fontSize: '9px',
-                                      fontWeight: 700,
-                                      ...teamBoxStyle(leftTeamColor)
-                                    }}>{leftTeamLabel}</span>
-                                  </div>
-                                </th>
-                                <th style={{ padding: '4px', fontSize: '8px', width: '16%' }}>Dur</th>
-                                <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid var(--border)', width: '42%' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                    <span style={{ fontSize: '10px', wordBreak: 'break-word' }}>{rightTeamName}</span>
-                                    <span style={{
-                                      padding: '1px 6px',
-                                      borderRadius: '3px',
-                                      fontSize: '9px',
-                                      fontWeight: 700,
-                                      ...teamBoxStyle(rightTeamColor)
-                                    }}>{rightTeamLabel}</span>
-                                  </div>
-                                </th>
-                              </tr>
-                              <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                                <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>T</th>
-                                <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>S</th>
-                                <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>W</th>
-                                <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>P</th>
-                                <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}></th>
-                                <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>P</th>
-                                <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>W</th>
-                                <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>S</th>
-                                <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>T</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                                <td style={{ padding: '4px 2px', textAlign: 'center' }}>{leftTotalTimeouts}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center' }}>{leftTotalSubs}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center' }}>{leftTotalWins}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center' }}>{leftTotalPoints}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center', fontSize: '8px', color: 'var(--muted)' }}>{totalDurationMin}'</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center' }}>{rightTotalPoints}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center' }}>{rightTotalWins}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center' }}>{rightTotalSubs}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center' }}>{rightTotalTimeouts}</td>
-                              </tr>
-                            </tbody>
-                          </table>
-
-                          {/* Match time information */}
-                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9px', marginTop: '12px' }}>
-                            <tbody>
-                              <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                                <td style={{ padding: '4px 2px', textAlign: 'left', fontWeight: 600, fontSize: '8px' }}>Match start time:</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'left', fontSize: '8px' }}>
-                                  {matchStartTime ? `${String(matchStartTime.getUTCHours()).padStart(2, '0')}:${String(matchStartTime.getUTCMinutes()).padStart(2, '0')}:${String(matchStartTime.getUTCSeconds()).padStart(2, '0')}` : '—'}
-                                </td>
-                                <td style={{ padding: '4px 2px', textAlign: 'left', fontWeight: 600, fontSize: '8px' }}>Match end time:</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'left', fontSize: '8px' }}>
-                                  {matchEndTime ? `${String(matchEndTime.getUTCHours()).padStart(2, '0')}:${String(matchEndTime.getUTCMinutes()).padStart(2, '0')}:${String(matchEndTime.getUTCSeconds()).padStart(2, '0')}` : '—'}
-                                </td>
-                                <td style={{ padding: '4px 2px', textAlign: 'left', fontWeight: 600, fontSize: '8px' }}>{t('scoreboard.matchDuration')}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'left', fontSize: '8px' }}>
-                                  {matchDurationMin > 0 ? `${matchDurationMin} min` : '—'}
-                                </td>
-                              </tr>
-                              <tr>
-                                <td style={{ padding: '4px 2px', textAlign: 'left', fontWeight: 600, fontSize: '8px' }}>{t('scoreboard.winnerLabel')}</td>
-                                <td colSpan="5" style={{ padding: '4px 2px', textAlign: 'left', fontSize: '8px' }}>
-                                  {winnerTeamName} ({winnerScore})
-                                </td>
-                              </tr>
-                            </tbody>
-                          </table>
-
-                          {/* Post-match signatures */}
-                          <div style={{ marginTop: '16px', display: 'flex', gap: '16px', justifyContent: 'space-around' }}>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: '9px', fontWeight: 600, marginBottom: '4px' }}>
-                                {t('scoreboard.captainLabel', { team: data?.homeTeam?.name || t('common.home') })}
-                              </div>
-                              {homeCaptainSignature ? (
-                                <div style={{ border: '1px solid var(--border)', borderRadius: '4px', padding: '4px', minHeight: '40px', background: 'var(--panel-2)' }}>
-                                  <img src={homeCaptainSignature} alt={t('common.signature')} style={{ maxWidth: '100%', maxHeight: '40px', objectFit: 'contain' }} />
-                                </div>
-                              ) : (
-                                <SbButton variant="secondary"
-                                  onClick={() => setPostMatchSignature('home-captain')}
-                                  style={{ width: '100%' }}
-                                >
-                                  {t('scoreboard.sign')}
-                                </SbButton>
-                              )}
-                            </div>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: '9px', fontWeight: 600, marginBottom: '4px' }}>
-                                {t('scoreboard.captainLabel', { team: data?.awayTeam?.name || t('common.away') })}
-                              </div>
-                              {awayCaptainSignature ? (
-                                <div style={{ border: '1px solid var(--border)', borderRadius: '4px', padding: '4px', minHeight: '40px', background: 'var(--panel-2)' }}>
-                                  <img src={awayCaptainSignature} alt={t('common.signature')} style={{ maxWidth: '100%', maxHeight: '40px', objectFit: 'contain' }} />
-                                </div>
-                              ) : (
-                                <SbButton variant="secondary"
-                                  onClick={() => setPostMatchSignature('away-captain')}
-                                  style={{ width: '100%' }}
-                                >
-                                  {t('scoreboard.sign')}
-                                </SbButton>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    }
-
-                    // Otherwise show set breakdown
-                    // Helper to convert set number to Roman numeral
-                    const toRoman = (num) => {
-                      const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
-                      return romanNumerals[num - 1] || num.toString()
-                    }
-
-                    // Only show sets that have been played (started or have points)
-                    const playedSets = allSets.filter(s => s.homePoints > 0 || s.awayPoints > 0 || s.finished || s.startTime)
-
-                    return (
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9px' }}>
-                        <thead>
-                          <tr>
-                            <th style={{ padding: '4px 2px', textAlign: 'center', width: '8%' }}></th>
-                            <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid var(--border)', width: '38%' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                <span style={{ fontSize: '10px', wordBreak: 'break-word' }}>{leftTeamName}</span>
-                                <span style={{
-                                  padding: '1px 6px',
-                                  borderRadius: '3px',
-                                  fontSize: '9px',
-                                  fontWeight: 700,
-                                  ...teamBoxStyle(leftTeamColor)
-                                }}>{leftTeamLabel}</span>
-                              </div>
-                            </th>
-                            <th style={{ padding: '4px 2px', fontSize: '8px', width: '8%' }}>Dur</th>
-                            <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid var(--border)', width: '38%' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                <span style={{ fontSize: '10px', wordBreak: 'break-word' }}>{rightTeamName}</span>
-                                <span style={{
-                                  padding: '1px 6px',
-                                  borderRadius: '3px',
-                                  fontSize: '9px',
-                                  fontWeight: 700,
-                                  ...teamBoxStyle(rightTeamColor)
-                                }}>{rightTeamLabel}</span>
-                              </div>
-                            </th>
-                          </tr>
-                          <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                            <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>Set</th>
-                            <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>T</th>
-                            <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>S</th>
-                            <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>W</th>
-                            <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>P</th>
-                            <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}></th>
-                            <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>P</th>
-                            <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>W</th>
-                            <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>S</th>
-                            <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>T</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {playedSets.map(set => {
-                            // Always show from CURRENT left/right perspective
-                            const leftPoints = currentLeftTeamKey === 'home' ? set.homePoints : set.awayPoints
-                            const rightPoints = currentRightTeamKey === 'home' ? set.homePoints : set.awayPoints
-
-                            // Calculate timeouts for current left/right teams
-                            const leftTimeouts = (data?.events || []).filter(e =>
-                              e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
-                            ).length
-                            const rightTimeouts = (data?.events || []).filter(e =>
-                              e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
-                            ).length
-
-                            // Calculate substitutions for current left/right teams
-                            const leftSubs = (data?.events || []).filter(e =>
-                              e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
-                            ).length
-                            const rightSubs = (data?.events || []).filter(e =>
-                              e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
-                            ).length
-
-                            // Determine winner for current left/right teams
-                            const leftWon = leftPoints > rightPoints ? 1 : 0
-                            const rightWon = rightPoints > leftPoints ? 1 : 0
-
-                            // Calculate set duration
-                            let duration = ''
-                            if (set.startTime && set.endTime) {
-                              const start = new Date(set.startTime)
-                              const end = new Date(set.endTime)
-                              const durationMs = end - start
-                              const durationMin = Math.floor(durationMs / 60000)
-                              duration = `${durationMin}'`
-                            }
-
-                            return (
-                              <tr key={set.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                                <td style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>{toRoman(set.index)}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center', fontSize: '8px' }}>{leftTimeouts || 0}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center', fontSize: '8px' }}>{leftSubs || 0}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center', fontSize: '8px' }}>{leftWon}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center', fontSize: '8px' }}>{leftPoints}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center', fontSize: '8px', color: 'var(--muted)' }}>{duration}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center', fontSize: '8px' }}>{rightPoints}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center', fontSize: '8px' }}>{rightWon}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center', fontSize: '8px' }}>{rightSubs || 0}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center', fontSize: '8px' }}>{rightTimeouts || 0}</td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    )
-                  })()}
-                </div>
-              </div>
-
-              {/* Remarks section */}
-              {data?.match?.remarks && (
-                <div style={{ marginTop: '24px' }}>
-                  <SbSection as="h4" title={t('matchEnd.remarks')} className="mb-3" />
-                  <div style={{
-                    background: 'var(--panel-2)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '8px',
-                    padding: '12px',
-                    fontSize: '12px',
-                    whiteSpace: 'pre-wrap',
-                    maxHeight: '200px',
-                    overflowY: 'auto'
-                  }}>
-                    {data.match.remarks}
-                  </div>
-                </div>
-              )}
-            </section>
-          </div>
-        </Modal>
-      )}
+      {/* Sanctions and Results Modal (SanctionsResultsModal.jsx) */}
+      <SanctionsResultsModal
+        open={showSanctions}
+        onClose={() => setShowSanctions(false)}
+        data={data}
+        teamAKey={teamAKey}
+        leftIsHome={leftIsHome}
+        onSign={setPostMatchSignature}
+      />
 
       {/* Timeout confirmation modal - only show before timeout starts, not during countdown.
           Its wording comes from timeoutModal.ordinal / .consecutive, taken when it

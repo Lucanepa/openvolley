@@ -673,7 +673,14 @@
       "actionLog": "Aktionsprotokoll",
       "manualChanges": "Manuelle Änderungen",
       "keyboardShortcuts": "Tastaturkürzel",
-      "searchEvents": "Ereignisse suchen..."
+      "searchEvents": "Ereignisse suchen...",
+      "sections": {
+        "matchInfo": "Spielinfos",
+        "corrections": "Korrekturen",
+        "devicesData": "Geräte und Daten",
+        "settings": "Einstellungen",
+        "endOfMatch": "Spielende"
+      }
     },
     "stopMatch": {
       "title": "Spiel abbrechen",
@@ -839,7 +846,19 @@
       "repeatedDelay": "Die Mannschaft hat bereits eine Verzögerungswarnung, diese Verzögerung ist deshalb eine Strafe.",
       "pointToOpponent": "Punkt und Aufschlag für {{opponent}}."
     },
-    "benchInjuryRecorded": "Verletzung erfasst für #{{number}} (Bank)"
+    "benchInjuryRecorded": "Verletzung erfasst für #{{number}} (Bank)",
+    "sanctionsResults": {
+      "card": "Karte",
+      "sanction": "Sanktion",
+      "person": "Person",
+      "team": "Team",
+      "score": "Spielstand",
+      "wholeTeam": "Mannschaft",
+      "leftTeam": "Linkes Team",
+      "rightTeam": "Rechtes Team",
+      "durShort": "Dauer",
+      "legend": "T Auszeiten · S Wechsel · W gewonnene Sätze · P Punkte · Dauer Satzdauer"
+    }
   },
   "settings": {
     "title": "Einstellungen",
