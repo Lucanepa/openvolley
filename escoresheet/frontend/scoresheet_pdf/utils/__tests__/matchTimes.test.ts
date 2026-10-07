@@ -23,6 +23,15 @@ describe('actual set and match times (owner 2026-10-07)', () => {
     expect(setDurationMinutes(set2, events)).toBe(9)
   })
 
+  it('a start corrected after the dialog (edit modal) wins over the first rally', () => {
+    const edited = { ...set1, startTime: iso(16, 3) }
+    const withDialog = [{ type: 'set_start', setIndex: 1, seq: 1, ts: iso(14, 30), payload: { startTime: iso(14, 30) } }, ...events.slice(1)]
+    expect(setStartMs(edited, withDialog)).toBe(min(16, 3))
+    expect(setDurationMinutes(edited, withDialog)).toBe(11)
+    // unedited: the dialog value equals the set's start time, the first rally decides
+    expect(setStartMs(set1, withDialog)).toBe(min(16, 5))
+  })
+
   it('falls back to the confirmed start, then to the first point', () => {
     expect(setStartMs(set1, [])).toBe(min(14, 30))
     expect(setStartMs({ index: 3 }, [{ type: 'point', setIndex: 3, ts: iso(17, 1, 59) }])).toBe(min(17, 1))
