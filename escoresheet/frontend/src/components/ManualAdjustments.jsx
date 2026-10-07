@@ -9,6 +9,7 @@ import { mergeOfficialsEdits } from '../domain/officials'
 import { changedSets, approvedSheetChanged } from '../domain/accountApproval'
 import { setScoreSyncJobs } from '../domain/corrections'
 import { clearedPostMatchSignatures } from '../domain/matchEnd'
+import { describeEvent } from '../domain/describe'
 import { apiFrom } from '../lib/apiClient'
 import { approvalsApi } from '../lib/accountApi'
 import { X } from 'lucide-react'
@@ -812,6 +813,11 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   const substitutionEvents = getEventsByType('substitution')
   const sanctionEvents = getEventsByType('sanction')
 
+  // Rows in the paper-scoresheet wording (domain/describe): "Penalty — Player
+  // #8 (bench)", the concerned team's score first, never a raw event type
+  const describeCtx = { t, match: editedMatch || data?.match, homeTeam: editedHomeTeam, awayTeam: editedAwayTeam }
+  const describe = (event) => describeEvent(event, allEvents, describeCtx)
+
   // Get sanctions for a specific player
   const getPlayerSanctions = (playerNumber, team) => {
     return sanctionEvents.filter(e =>
@@ -1159,10 +1165,10 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto' }}>
                 {timeoutEvents.map(event => (
                   <div key={event.id} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px 40px', gap: '8px', alignItems: 'center', padding: '8px 10px', background: 'var(--ov-warning-soft)', border: '1px solid var(--ov-warning-border)', borderRadius: 'var(--ov-radius)' }}>
-                    <span style={{ fontSize: '13px' }}>{t('common.setIndex', { index: event.setIndex })}</span>
-                    <span style={{ fontSize: '13px', fontWeight: 500 }}>{event.payload?.team === 'home' ? editedHomeTeam?.name || t('common.home') : editedAwayTeam?.name || t('common.away')}</span>
+                    <span style={{ fontSize: '13px' }}>{describe(event)?.setLabel}</span>
+                    <span style={{ fontSize: '13px', fontWeight: 500 }}>{describe(event)?.teamText}</span>
                     <span style={{ fontSize: '12px', color: 'var(--ov-text-muted)', fontVariantNumeric: 'tabular-nums' }}>
-                      {event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0}-{event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0}
+                      {describe(event)?.score}
                     </span>
                     <span className={KIT_SCOPE}><Button variant="danger-soft" size="sm" icon={X} className={`${ROW_TOOL} w-8 px-0`} onClick={() => deleteEvent(event.id)} aria-label={t('manualAdjustmentsEditor.deleteTimeout', 'Delete timeout')} /></span>
                   </div>
@@ -1187,13 +1193,13 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     style={{ display: 'grid', gridTemplateColumns: '80px 1fr 120px 80px 40px 40px', gap: '8px', alignItems: 'center', padding: '8px 10px', background: 'var(--ov-info-soft)', border: '1px solid var(--ov-info-border)', borderRadius: 'var(--ov-radius)', cursor: 'pointer' }}
                     onClick={() => setEditingSub({ ...event, playerOut: event.payload?.playerOut, playerIn: event.payload?.playerIn, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 })}
                   >
-                    <span style={{ fontSize: '13px' }}>{t('common.setIndex', { index: event.setIndex })}</span>
-                    <span style={{ fontSize: '13px', fontWeight: 500 }}>{event.payload?.team === 'home' ? editedHomeTeam?.name || t('common.home') : editedAwayTeam?.name || t('common.away')}</span>
+                    <span style={{ fontSize: '13px' }}>{describe(event)?.setLabel}</span>
+                    <span style={{ fontSize: '13px', fontWeight: 500 }}>{describe(event)?.teamText}</span>
                     <span style={{ fontSize: '13px' }}>
-                      #{event.payload?.playerOut} → #{event.payload?.playerIn}
+                      {describe(event)?.detail}
                     </span>
                     <span style={{ fontSize: '12px', color: 'var(--ov-text-muted)', fontVariantNumeric: 'tabular-nums' }}>
-                      {event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0}-{event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0}
+                      {describe(event)?.score}
                     </span>
                     <span className={KIT_SCOPE}><Button variant="secondary" size="sm" className={ROW_TOOL} onClick={(e) => { e.stopPropagation(); setEditingSub({ ...event, playerOut: event.payload?.playerOut, playerIn: event.payload?.playerIn, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 }) }}>{t('manualAdjustmentsEditor.edit', 'Edit')}</Button></span>
                     <span className={KIT_SCOPE}><Button variant="danger-soft" size="sm" icon={X} className={`${ROW_TOOL} w-8 px-0`} onClick={(e) => { e.stopPropagation(); deleteEvent(event.id) }} aria-label={t('manualAdjustmentsEditor.deleteSubstitution', 'Delete substitution')} /></span>
@@ -1219,18 +1225,18 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     style={{ display: 'grid', gridTemplateColumns: '80px 80px 120px 100px 100px 1fr 40px 40px', gap: '8px', alignItems: 'center', padding: '8px 10px', background: 'var(--ov-danger-soft)', border: '1px solid var(--ov-danger-border)', borderRadius: 'var(--ov-radius)', cursor: 'pointer' }}
                     onClick={() => setEditingSanction({ ...event, type: event.payload?.sanctionType || event.payload?.type, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 })}
                   >
-                    <span style={{ fontSize: '13px' }}>{t('common.setIndex', { index: event.setIndex })}</span>
-                    <span style={{ fontSize: '13px', fontWeight: 500 }}>{event.payload?.team === 'home' ? editedHomeTeam?.name || t('common.home') : editedAwayTeam?.name || t('common.away')}</span>
-                    <span style={{ fontSize: '13px', textTransform: 'capitalize', color: 'var(--ov-danger-text)', fontWeight: 500 }}>
-                      {event.payload?.sanctionType || event.payload?.type}
+                    <span style={{ fontSize: '13px' }}>{describe(event)?.setLabel}</span>
+                    <span style={{ fontSize: '13px', fontWeight: 500 }}>{describe(event)?.teamText}</span>
+                    <span style={{ fontSize: '13px', color: 'var(--ov-danger-text)', fontWeight: 500 }}>
+                      {describe(event)?.title}
                     </span>
-                    <span style={{ fontSize: '13px' }}>
-                      {event.payload?.playerType}: #{event.payload?.playerNumber}
+                    <span style={{ fontSize: '13px', fontFamily: 'var(--ov-font-mono, monospace)' }}>
+                      {describe(event)?.code}
                     </span>
-                    <span style={{ fontSize: '12px', color: 'var(--muted)' }}>
-                      Score: {event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0}-{event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0}
+                    <span style={{ fontSize: '12px', color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>
+                      {describe(event)?.score}
                     </span>
-                    <span />
+                    <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{describe(event)?.detail}</span>
                     <span className={KIT_SCOPE}><Button variant="secondary" size="sm" className={ROW_TOOL} onClick={(e) => { e.stopPropagation(); setEditingSanction({ ...event, type: event.payload?.sanctionType || event.payload?.type, scoreA: event.stateSnapshot?.pointsA ?? event.stateSnapshot?.scoreA ?? 0, scoreB: event.stateSnapshot?.pointsB ?? event.stateSnapshot?.scoreB ?? 0 }) }}>{t('manualAdjustmentsEditor.edit', 'Edit')}</Button></span>
                     <span className={KIT_SCOPE}><Button variant="danger-soft" size="sm" icon={X} className={`${ROW_TOOL} w-8 px-0`} onClick={(e) => { e.stopPropagation(); deleteEvent(event.id) }} aria-label={t('manualAdjustmentsEditor.deleteSanction', 'Delete sanction')} /></span>
                   </div>
