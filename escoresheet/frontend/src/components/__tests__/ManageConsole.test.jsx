@@ -20,7 +20,11 @@ const api = vi.hoisted(() => ({
     reopenMatch: vi.fn(),
     addMatchEditor: vi.fn(),
     releaseGame: vi.fn(),
-    listAudit: vi.fn(async () => ({ data: { entries: [], next_before: null }, error: null, status: 200 }))
+    listAudit: vi.fn(async () => ({ data: { entries: [], next_before: null }, error: null, status: 200 })),
+    listActivity: vi.fn(async () => ({ data: { entries: [], next: null }, error: null, status: 200 })),
+    exportActivity: vi.fn(),
+    deleteActivity: vi.fn(),
+    listRevisions: vi.fn(async () => ({ data: [], error: null, status: 200 }))
   },
   savedTeamsApi: { fetchBundle: vi.fn(async () => ({ data: { version: '0', competitions: [], teams: [] }, error: null, status: 200 })) }
 }))
@@ -43,8 +47,8 @@ const asUser = (roles) => { auth.value = { user: { id: 'u-1', email: 'a@b.ch' },
 describe('ManageConsole', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('an admin sees six tabs, a competition manager only saved teams, others none', () => {
-    expect(manageTabsFor(accessFromRoles(['admin']))).toEqual(['accounts', 'invites', 'games', 'matches', 'audit', 'teams'])
+  it('an admin sees seven tabs, a competition manager only saved teams, others none', () => {
+    expect(manageTabsFor(accessFromRoles(['admin']))).toEqual(['accounts', 'invites', 'games', 'matches', 'audit', 'activity', 'teams'])
     expect(manageTabsFor(accessFromRoles(['competition_manager']))).toEqual(['teams'])
     expect(manageTabsFor(accessFromRoles(['scorer']))).toEqual([])
   })
@@ -53,7 +57,7 @@ describe('ManageConsole', () => {
     asUser(['admin'])
     render(<ManageConsole tab="accounts" onTab={() => {}} onClose={() => {}} />)
     const nav = screen.getAllByRole('navigation')[0]
-    expect(within(nav).getAllByRole('button')).toHaveLength(6)
+    expect(within(nav).getAllByRole('button')).toHaveLength(7)
     await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalled())
   })
 
@@ -137,5 +141,29 @@ describe('InvitesPanel', () => {
     fireEvent.change(screen.getByLabelText('manage.invites.label'), { target: { value: 'VBC' } })
     fireEvent.click(screen.getByTestId('create-invite'))
     await waitFor(() => expect(api.admin.createInvite).toHaveBeenCalledWith(expect.objectContaining({ label: 'VBC', role: 'scorer', sport: 'indoor' })))
+  })
+
+  it('activity tab: opened from a match, filtered by it, a row opens its JSON; the match lists its corrections', async () => {
+    asUser(['admin'])
+    api.admin.listActivity.mockResolvedValue({
+      data: { entries: [{ id: 5, uid: 'u', client_ts: '2026-10-07T10:00:00.000Z', kind: 'event.undo', level: 'info', match_external_id: 'match_1_a', game_n: 12, data: { type: 'point', seq: 3, reason: 'undo' }, device_id: 'abcdef1234', app_version: '2.4.0', platform: 'web', account_email: 'anna@example.ch' }], next: null },
+      error: null,
+      status: 200
+    })
+    api.admin.listMatches.mockResolvedValue({ data: { matches: [{ id: '11111111-1111-4111-8111-111111111111', external_id: 'match_1_a', game_n: 12, status: 'final', closed_at: '2026-10-07T12:00:00Z' }] }, error: null, status: 200 })
+    let tab = 'matches'
+    const onTab = vi.fn((x) => { tab = x })
+    const { rerender } = render(<ManageConsole tab={tab} onTab={onTab} onClose={() => {}} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'manage.matches.activity' }))
+    expect(onTab).toHaveBeenCalledWith('activity')
+    rerender(<ManageConsole tab={tab} onTab={onTab} onClose={() => {}} />)
+    await waitFor(() => expect(api.admin.listActivity).toHaveBeenCalledWith(expect.objectContaining({ match: 'match_1_a' })))
+    const row = await screen.findByRole('button', { name: 'event.undo' })
+    expect(row.textContent).toContain('anna@example.ch')
+    fireEvent.click(row)
+    expect(await screen.findByText(/"abcdef1234"/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /manage.matches.corrections/, hidden: true }))
+    await waitFor(() => expect(api.admin.listRevisions).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111'))
   })
 })

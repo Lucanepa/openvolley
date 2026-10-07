@@ -2391,7 +2391,8 @@
       "matches": "Closed matches",
       "audit": "Audit log",
       "teams": "Saved teams",
-      "tournaments": "Tournaments"
+      "tournaments": "Tournaments",
+      "activity": "Activity"
     },
     "status": {
       "setup": "Set-up",
@@ -2483,7 +2484,9 @@
       "reopenBody": "The match goes back to “ended”: the scorer can correct it and approve it again. This is recorded in the audit log.",
       "reopenReason": "Reason",
       "reopened": "Match reopened.",
-      "empty": "No matches found."
+      "empty": "No matches found.",
+      "activity": "Activity",
+      "corrections": "Corrections"
     },
     "audit": {
       "loadMore": "Load more",
@@ -2546,6 +2549,73 @@
       "requestedBy": "Sent by {{name}}",
       "wrongPins": "{{failures}} wrong PINs",
       "blocked": "blocked"
+    },
+    "activity": {
+      "match": "Game no. or match id",
+      "matchPlaceholder": "e.g. 12345",
+      "account": "Account email",
+      "kind": "What",
+      "allKinds": "Everything",
+      "level": "Level",
+      "allLevels": "All levels",
+      "from": "From",
+      "to": "To",
+      "search": "Search",
+      "empty": "No activity for this search.",
+      "loadMore": "Load more",
+      "exportCsv": "Export CSV",
+      "exportNdjson": "Export NDJSON",
+      "deleteEllipsis": "Delete activity…",
+      "deleteNeedsFilter": "Search for a match or an account first.",
+      "deleteTitle": "Delete this activity?",
+      "deleteBody": "Every activity entry {{what}} is deleted from the server for good. Use this for a deletion request. It is recorded in the audit log.",
+      "ofMatch": "of match {{match}}",
+      "ofAccount": "of {{email}}",
+      "delete": "Delete",
+      "deleted_one": "{{count}} entry deleted.",
+      "deleted_other": "{{count}} entries deleted.",
+      "noAccount": "No account with this email.",
+      "device": "Device {{id}}",
+      "levels": {
+        "info": "Info",
+        "warn": "Warning",
+        "error": "Error"
+      },
+      "kinds": {
+        "event": "Events",
+        "event_undo": "Undo",
+        "set": "Sets",
+        "match": "Match",
+        "match_manual_change": "Manual changes",
+        "sync": "Sync",
+        "app": "App",
+        "app_error": "App errors",
+        "auth": "Sign-in",
+        "backup": "Backups"
+      }
+    },
+    "revisions": {
+      "title": "Corrections · game {{game}}",
+      "description": "Undone, deleted and edited events, as the scoring device sent them.",
+      "empty": "No corrections in this match.",
+      "notOnServer": "(undone before it was uploaded)",
+      "before": "Before",
+      "after": "After",
+      "ops": {
+        "void": "Removed",
+        "edit": "Edited",
+        "restore": "Restored"
+      },
+      "reasons": {
+        "undo": "Undo",
+        "delete": "Deleted",
+        "decision_change": "Decision change",
+        "manual_adjustment": "Manual adjustment",
+        "forfeit_reversal": "Forfeit reversed",
+        "reopen_set": "Set reopened",
+        "roster_reopen": "Roster corrected",
+        "other": "Other"
+      }
     }
   },
   "savedTeams": {

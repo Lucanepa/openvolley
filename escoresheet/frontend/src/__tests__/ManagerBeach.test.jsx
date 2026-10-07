@@ -95,15 +95,15 @@ describe('managerBrand', () => {
 
   it('tabs: OpenBeach has no official games or closed matches, but tournaments (T1); roles of its own app', () => {
     const beach = MANAGER_BRANDS.beach
-    expect(manageTabsFor(accessFromRoles(['admin']), beach)).toEqual(['accounts', 'invites', 'audit', 'teams', 'tournaments'])
+    expect(manageTabsFor(accessFromRoles(['admin']), beach)).toEqual(['accounts', 'invites', 'audit', 'activity', 'teams', 'tournaments'])
     expect(manageTabsFor(accessFromRoles(['beach:competition_manager']), beach)).toEqual(['teams', 'tournaments'])
     expect(manageTabsFor(accessFromRoles(['beach:scorer']), beach)).toEqual([])
     // an indoor competition manager manages nothing in OpenBeach, and the reverse
     expect(manageTabsFor(accessFromRoles(['competition_manager']), beach)).toEqual([])
     expect(manageTabsFor(accessFromRoles(['beach:competition_manager']))).toEqual([])
     // OpenVolley's console: as before
-    expect(manageTabsFor(accessFromRoles(['admin']))).toEqual(['accounts', 'invites', 'games', 'matches', 'audit', 'teams'])
-    expect(manageTabsFor(accessFromRoles(['admin']), MANAGER_BRANDS.indoor)).toEqual(['accounts', 'invites', 'games', 'matches', 'audit', 'teams'])
+    expect(manageTabsFor(accessFromRoles(['admin']))).toEqual(['accounts', 'invites', 'games', 'matches', 'audit', 'activity', 'teams'])
+    expect(manageTabsFor(accessFromRoles(['admin']), MANAGER_BRANDS.indoor)).toEqual(['accounts', 'invites', 'games', 'matches', 'audit', 'activity', 'teams'])
   })
 
   it('accessForApp: the beach flags; indoor is the access itself', () => {
@@ -136,10 +136,10 @@ describe('ManagerApp as OpenBeach\'s manager', () => {
     expect(api.fetchMe).not.toHaveBeenCalled()
   })
 
-  it('admin: five tabs, every list asked for ?app=beach, a link to OpenBeach', async () => {
+  it('admin: six tabs, every list asked for ?app=beach, a link to OpenBeach', async () => {
     setAuth({ roles: ['admin'] })
     renderBeach()
-    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.accounts', 'manage.tabs.invites', 'manage.tabs.audit', 'manage.tabs.teams', 'manage.tabs.tournaments'])
+    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.accounts', 'manage.tabs.invites', 'manage.tabs.audit', 'manage.tabs.activity', 'manage.tabs.teams', 'manage.tabs.tournaments'])
     expect(screen.getByRole('link', { name: 'managerBeach.openAppLong' })).toHaveAttribute('href', BEACH_APP)
     expect(screen.getByAltText('OpenBeach')).toBeInTheDocument()
     await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalledWith({ filter: 'pending', q: undefined, app: 'beach' }))

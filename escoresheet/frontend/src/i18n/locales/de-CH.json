@@ -2385,7 +2385,8 @@
       "matches": "Abgeschlossene Spiele",
       "audit": "Protokoll",
       "teams": "Gespeicherte Teams",
-      "tournaments": "Turniere"
+      "tournaments": "Turniere",
+      "activity": "Aktivität"
     },
     "status": {
       "setup": "Vorbereitung",
@@ -2477,7 +2478,9 @@
       "reopenBody": "Das Spiel geht zurück auf «beendet»: Der Schreiber kann es korrigieren und nochmals genehmigen. Dies wird im Protokoll festgehalten.",
       "reopenReason": "Grund",
       "reopened": "Spiel wieder geöffnet.",
-      "empty": "Keine Spiele gefunden."
+      "empty": "Keine Spiele gefunden.",
+      "activity": "Aktivität",
+      "corrections": "Korrekture"
     },
     "audit": {
       "loadMore": "Mehr laden",
@@ -2540,6 +2543,73 @@
       "requestedBy": "Gesendet von {{name}}",
       "wrongPins": "{{failures}} falsche PINs",
       "blocked": "gesperrt"
+    },
+    "activity": {
+      "match": "Matchnr. oder Match-ID",
+      "matchPlaceholder": "z. B. 12345",
+      "account": "Konto-E-Mail",
+      "kind": "Was",
+      "allKinds": "Alles",
+      "level": "Stufe",
+      "allLevels": "Alli Stufe",
+      "from": "Vo",
+      "to": "Bis",
+      "search": "Sueche",
+      "empty": "Kei Aktivität für die Suechi.",
+      "loadMore": "Meh lade",
+      "exportCsv": "CSV exportiere",
+      "exportNdjson": "NDJSON exportiere",
+      "deleteEllipsis": "Aktivität lösche…",
+      "deleteNeedsFilter": "Zersch nach emene Match oder Konto sueche.",
+      "deleteTitle": "Die Aktivität lösche?",
+      "deleteBody": "Alli Aktivitätsiiträg {{what}} werded endgültig vom Server glöscht. Für es Löschgsuech. Es wird im Audit-Protokoll vermerkt.",
+      "ofMatch": "vom Match {{match}}",
+      "ofAccount": "vo {{email}}",
+      "delete": "Lösche",
+      "deleted_one": "{{count}} Iitrag glöscht.",
+      "deleted_other": "{{count}} Iiträg glöscht.",
+      "noAccount": "Kei Konto mit dere E-Mail.",
+      "device": "Grät {{id}}",
+      "levels": {
+        "info": "Info",
+        "warn": "Warnig",
+        "error": "Fähler"
+      },
+      "kinds": {
+        "event": "Ereignis",
+        "event_undo": "Rückgängig",
+        "set": "Sätz",
+        "match": "Match",
+        "match_manual_change": "Manuelli Änderige",
+        "sync": "Synchronisierig",
+        "app": "App",
+        "app_error": "App-Fähler",
+        "auth": "Aamäldig",
+        "backup": "Sicherige"
+      }
+    },
+    "revisions": {
+      "title": "Korrekture · Match {{game}}",
+      "description": "Rückgängig gmachti, glöschti und gänderti Ereignis, wie s Erfassigsgrät si gschickt het.",
+      "empty": "Kei Korrekture i däm Match.",
+      "notOnServer": "(rückgängig gmacht, bevor s ufeglade gsi isch)",
+      "before": "Vorher",
+      "after": "Nachher",
+      "ops": {
+        "void": "Entfernt",
+        "edit": "Gänderet",
+        "restore": "Wiederhergstellt"
+      },
+      "reasons": {
+        "undo": "Rückgängig",
+        "delete": "Glöscht",
+        "decision_change": "Entscheidigsänderig",
+        "manual_adjustment": "Manuelli Aapassig",
+        "forfeit_reversal": "Forfait ufghobe",
+        "reopen_set": "Satz wieder ufgmacht",
+        "roster_reopen": "Kader korrigiert",
+        "other": "Anders"
+      }
     }
   },
   "savedTeams": {
