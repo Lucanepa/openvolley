@@ -231,6 +231,9 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$app"
           codesign -dv "$app" 2>&1 | grep -q '^Signature=adhoc$' || { codesign -dv "$app"; echo "::error::not ad-hoc signed"; exit 1; }
 
+          # tauri-action leaves its own "<Name>.app.tar.gz" (unsigned, for its
+          # release uploads): only ours goes on, so a release has one archive
+          rm -f "$b"/macos/*.app.tar.gz "$b"/macos/*.app.tar.gz.sig
           tgz="$b/macos/${pkg}_${v}_universal.app.tar.gz"
           # no AppleDouble ._ files, no extended attributes (quarantine, provenance)
           COPYFILE_DISABLE=1 tar --no-xattrs -czf "$tgz" -C "$b/macos" "$name.app"
@@ -349,7 +352,7 @@ jobs:
             escoresheet/frontend/src-tauri/target/release/bundle/**/*.AppImage
             escoresheet/frontend/src-tauri/target/release/bundle/**/*.deb
             escoresheet/frontend/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
-            escoresheet/frontend/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+            escoresheet/frontend/src-tauri/target/universal-apple-darwin/release/bundle/macos/*_universal.app.tar.gz
           retention-days: 14
           if-no-files-found: warn
 
@@ -434,7 +437,7 @@ jobs:
             artifacts/escoresheet-desktop-linux/**/*.AppImage
             artifacts/escoresheet-desktop-linux/**/*.deb
             artifacts/escoresheet-desktop-macos/**/*.dmg
-            artifacts/escoresheet-desktop-macos/**/*.app.tar.gz
+            artifacts/escoresheet-desktop-macos/**/*_universal.app.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -516,4 +519,4 @@ jobs:
             artifacts/openbeach-desktop-linux/**/*.AppImage
             artifacts/openbeach-desktop-linux/**/*.deb
             artifacts/openbeach-desktop-macos/**/*.dmg
-            artifacts/openbeach-desktop-macos/**/*.app.tar.gz
+            artifacts/openbeach-desktop-macos/**/*_universal.app.tar.gz
