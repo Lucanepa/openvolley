@@ -28,6 +28,7 @@ license: GPL-3.0-only
 website: https://beach.openvolley.app
 source-code: https://github.com/Lucanepa/openvolley
 issues: https://github.com/Lucanepa/openvolley/issues
+contact: https://github.com/Lucanepa/openvolley/issues
 icon: snap/gui/icon.png
 
 base: core24
@@ -44,8 +45,8 @@ apps:
     command-chain: [bin/launch]
     desktop: usr/share/applications/openbeach-escoresheet.desktop
     common-id: com.openvolley.beach
-    # GTK 3, WebKitGTK 4.1, libsoup 3 from the gnome-46-2404 runtime;
-    # plugs desktop, desktop-legacy, gsettings, opengl, wayland, x11
+    # GTK 3, WebKitGTK 4.1, libsoup 3, appindicator from the gnome-46-2404
+    # runtime; plugs desktop, desktop-legacy, gsettings, opengl, wayland, x11
     extensions: [gnome]
     plugs:
       # the tablets' relay: HTTP :5174 and WebSocket :8081 on every interface
@@ -77,15 +78,8 @@ parts:
     source: https://github.com/Lucanepa/openvolley/releases/download/beach-desktop-v2.0.0/openbeach-escoresheet_2.0.0_amd64.deb
     source-type: deb
     source-checksum: sha256/cd4d9557c4417179733852d732568416f887cf4d86ad204728ecb11e7e0559ec
-    # the tray: tray-icon dlopens libayatana-appindicator3 (lifecycle.rs
-    # probes for it first; without it the app runs without a tray icon)
-    stage-packages:
-      - libayatana-appindicator3-1
-    override-build: |
-      craftctl default
-      # the theme icon name means nothing inside the snap: point at the file
-      sed -i 's|^Icon=.*|Icon=${SNAP}/usr/share/icons/hicolor/128x128/apps/openbeach-escoresheet.png|' \
-        "$CRAFT_PART_INSTALL/usr/share/applications/openbeach-escoresheet.desktop"
+    # GTK 3, WebKitGTK 4.1, libsoup 3 and libayatana-appindicator3 (the
+    # tray) all come from the gnome-46-2404 runtime: nothing is staged
     prime:
       # the .deb's APT self-update helper and its polkit action: the Snap
       # Store updates the snap, and a snap cannot run pkexec or apt anyway
@@ -99,16 +93,3 @@ parts:
       launch: bin/launch
     prime:
       - bin/launch
-
-  # Drop what stage-packages pulled in that the base or the gnome runtime
-  # already ships (GTK, GLib, ...): only appindicator and its own few
-  # libraries stay in the snap.
-  cleanup:
-    after: [openbeach-escoresheet, launcher]
-    plugin: nil
-    build-snaps: [core24, gnome-46-2404]
-    override-prime: |
-      set -eu
-      for snap in core24 gnome-46-2404; do
-        cd "/snap/$snap/current" && find . -type f,l -exec rm -f "$CRAFT_PRIME/{}" \;
-      done
