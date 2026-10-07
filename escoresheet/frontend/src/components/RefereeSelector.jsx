@@ -32,7 +32,9 @@ export default function RefereeSelector({ open, onClose, onSelect }) {
   const { t } = useTranslation()
   const [searchQuery, setSearchQuery] = useState('')
   const [referees, setReferees] = useState([])
-  const [loading, setLoading] = useState(false)
+  // true from the moment the picker opens until this open's response is in,
+  // so the first frame already shows the skeleton (not a stale "no referees")
+  const [loading, setLoading] = useState(true)
   const [offline, setOffline] = useState(false)
 
   // Load the referees each time the picker opens; the last list stays on
@@ -40,7 +42,6 @@ export default function RefereeSelector({ open, onClose, onSelect }) {
   useEffect(() => {
     if (!open) return
     let cancelled = false
-    setLoading(true)
     ;(async () => {
       try {
         const { data, error } = await apiFrom('referee_database')
@@ -71,7 +72,10 @@ export default function RefereeSelector({ open, onClose, onSelect }) {
         if (!cancelled) setLoading(false)
       }
     })()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      setLoading(true) // the next open starts as loading again
+    }
   }, [open])
 
   const filteredReferees = useMemo(() => {
