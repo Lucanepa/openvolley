@@ -25,6 +25,7 @@ import {
 import { awardsPoint } from '../../domain/sanctions'
 import { scoreFromPointEvents, getFirstServeForSet } from '../../domain/rules'
 import { applyCorrectionPlan } from '../../services/corrections/applyCorrectionPlan'
+import { useConfirmAction } from '../../hooks/useConfirmAction'
 import { switchSides, switchFirstServe, firstServerOf, teamASide } from './liveActions'
 import { SectionCard, EmptyLine, TeamDot, CourtMini, HIT } from './shared.jsx'
 import { TimeoutForm, SubstitutionForm, SanctionForm, RemarkForm, SetTimesForm, FinalScoreForm, playedSets } from './forms.jsx'
@@ -114,24 +115,33 @@ export default function CorrectionsPanel({
   const presetSet = filter === 'all' ? null : Number(filter)
 
   // ── write path ──
+  // Every write goes through useConfirmAction (as the scoreboard's confirm
+  // dialogs do): one write at a time, so a double tap or Enter + click on a
+  // Confirm writes once, and the click that follows a confirm is swallowed.
+  // The kit confirm dialogs are already closed when they resolve (close first).
+  const runConfirm = useConfirmAction((err) => {
+    console.error('[corrections] write failed', err)
+    toast.error(tr(t, 'corrections.saveError', 'The correction could not be saved: {{message}}', { message: err?.message || '' }))
+  })
+
   const apply = async (plan) => {
     if (!plan || plan.error) return false
-    setBusy(true)
-    try {
-      const res = await applyCorrectionPlan(plan, { matchId, db, mode, hooks })
-      if (plan.followUp?.awardPointTo) await hooks.addPoint?.(plan.followUp.awardPointTo)
-      if (res.signaturesCleared) setSignaturesCleared(true)
-      await hooks.afterApply?.(res, plan)
-      toast.success(plan.log?.text || tr(t, 'corrections.saved', 'Correction saved'))
-      setForm(null)
-      return true
-    } catch (err) {
-      console.error('[corrections] apply failed', err)
-      toast.error(tr(t, 'corrections.saveError', 'The correction could not be saved: {{message}}', { message: err?.message || '' }))
-      return false
-    } finally {
-      setBusy(false)
-    }
+    let saved = false
+    await runConfirm(async () => {
+      setBusy(true)
+      try {
+        const res = await applyCorrectionPlan(plan, { matchId, db, mode, hooks })
+        if (plan.followUp?.awardPointTo) await hooks.addPoint?.(plan.followUp.awardPointTo)
+        if (res.signaturesCleared) setSignaturesCleared(true)
+        await hooks.afterApply?.(res, plan)
+        toast.success(plan.log?.text || tr(t, 'corrections.saved', 'Correction saved'))
+        setForm(null)
+        saved = true
+      } finally {
+        setBusy(false)
+      }
+    })
+    return saved
   }
 
   /** Record a correction that the live handlers wrote themselves (log only). */
@@ -318,8 +328,10 @@ export default function CorrectionsPanel({
                         cancelLabel: tr(t, 'corrections.action.cancel', 'Cancel')
                       })
                       if (!ok) return
-                      await hooks.addPoint(team)
-                      await logOnly(tr(t, 'corrections.log.missedPoint', 'Added: missed point for {{team}}', { team: name }), 'addMissedPoint')
+                      await runConfirm(async () => {
+                        await hooks.addPoint(team)
+                        await logOnly(tr(t, 'corrections.log.missedPoint', 'Added: missed point for {{team}}', { team: name }), 'addMissedPoint')
+                      })
                     }}>
                     {tr(t, 'corrections.action.addMissedPointFor', 'Add a missed point: {{team}}', { team: teamLabel(team, ctx).name })}
                   </Button>
@@ -335,8 +347,10 @@ export default function CorrectionsPanel({
                       cancelLabel: tr(t, 'corrections.action.cancel', 'Cancel')
                     })
                     if (!ok) return
-                    const r = await switchFirstServe({ db, matchId, match, setIndex: liveSetIndex })
-                    await logOnly(tr(t, 'corrections.log.firstServe', 'First serve changed to {{team}}', { team: teamNameWithLetter(after, ctx) }), 'changeServe', r)
+                    await runConfirm(async () => {
+                      const r = await switchFirstServe({ db, matchId, match, setIndex: liveSetIndex })
+                      await logOnly(tr(t, 'corrections.log.firstServe', 'First serve changed to {{team}}', { team: teamNameWithLetter(after, ctx) }), 'changeServe', r)
+                    })
                   }}>
                   {tr(t, 'corrections.action.changeServe', 'Change who serves first')}
                 </Button>
@@ -350,8 +364,10 @@ export default function CorrectionsPanel({
                       cancelLabel: tr(t, 'corrections.action.cancel', 'Cancel')
                     })
                     if (!ok) return
-                    const r = await switchSides({ db, matchId, match, setIndex: liveSetIndex })
-                    await logOnly(tr(t, 'corrections.log.sides', 'Sides switched in set {{set}}', { set: displaySetNumber(liveSetIndex, match) }), 'switchSides', r)
+                    await runConfirm(async () => {
+                      const r = await switchSides({ db, matchId, match, setIndex: liveSetIndex })
+                      await logOnly(tr(t, 'corrections.log.sides', 'Sides switched in set {{set}}', { set: displaySetNumber(liveSetIndex, match) }), 'switchSides', r)
+                    })
                   }}>
                   {tr(t, 'corrections.action.switchSides', 'Switch sides')}
                 </Button>

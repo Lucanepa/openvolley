@@ -10,6 +10,7 @@ vi.mock('../../../services/corrections/applyCorrectionPlan', () => ({
 }))
 
 import CorrectionsPanel from '../CorrectionsPanel.jsx'
+import { resetGhostClickGuard } from '../../../hooks/useConfirmAction'
 
 const HOME_PLAYERS = [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ({ id: n, number: n, name: `Home ${n}` }))
 const AWAY_PLAYERS = [11, 12, 13, 14, 15, 16, 17, 18].map(n => ({ id: 100 + n, number: n, name: `Away ${n}` }))
@@ -35,7 +36,8 @@ function setup({ events: evs, sets: st, mode = 'review', liveSetIndex = null } =
 }
 
 describe('CorrectionsPanel (review mode)', () => {
-  beforeEach(() => { applied.plans = [] })
+  // A confirm swallows the clicks of the next moment (useConfirmAction)
+  beforeEach(() => { applied.plans = []; resetGhostClickGuard() })
 
   it('shows an Add button on every list, also when the list is empty', () => {
     setup()
@@ -68,6 +70,20 @@ describe('CorrectionsPanel (review mode)', () => {
     const row = await screen.findByText('Delay warning — Team')
     expect(row).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/delay_warning|: #/)
+  })
+
+  it('a double tap on Confirm writes the correction once', async () => {
+    setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Add sanction' }))
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Set' })).getByRole('radio', { name: 'Set 1' }))
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Team' })).getByRole('radio', { name: /VC Smash/ }))
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Sanction' })).getByRole('radio', { name: /Delay warning/ }))
+    const confirm = screen.getByRole('button', { name: 'Confirm' })
+    fireEvent.click(confirm)
+    fireEvent.click(confirm)
+    await vi.waitFor(() => expect(applied.plans).toHaveLength(1))
+    await new Promise(r => setTimeout(r, 20))
+    expect(applied.plans).toHaveLength(1)
   })
 
   it('adding a time-out previews the score it is written at', () => {
