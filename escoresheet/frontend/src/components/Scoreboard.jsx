@@ -42,7 +42,7 @@ import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from 
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 import { defaultSetStartTime } from '../utils/setStartTime'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
-import { getSetResult, getFirstServeForSet, scoreFromPointEvents } from '../domain/rules'
+import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet } from '../domain/rules'
 import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags } from '../domain/sanctions'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
 import { planSubstitutionDeletion, countRegularSubstitutions, classifySubstitutionRequest, MAX_SUBSTITUTIONS_PER_SET } from '../domain/substitutions'
@@ -565,6 +565,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // The page's one order (shared with App's syncs, which mark it): its
   // numbers keep rising across remounts, so the tablets can order by them.
   const liveStateOrderRef = useRef(scorerLiveOrder)
+  // set_interval_started_at of the last set_end push: a set 5 setup push
+  // during the interval keeps it, so the tablets' countdown does not restart
+  const intervalStartedAtRef = useRef(null)
   // Relay refused this scoreboard (another device holds the match id, or too
   // many failed claims): shown to the scorer instead of failing silently.
   const [relayRejection, setRelayRejection] = useState(null) // { code, message, at } | null
@@ -1109,28 +1112,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const setIndex = currentSet.index
       const teamAKey = match.coinTossTeamA || 'home'
       const teamBKey = teamAKey === 'home' ? 'away' : 'home'
-      const is5thSet = setIndex === 5
       const set5CourtSwitched = match.set5CourtSwitched
       const set5LeftTeam = match.set5LeftTeam
 
-      // Determine which side Team A is on this set
-      // setLeftTeamOverrides stores 'A' or 'B' - which team is on the LEFT
-      const setLeftTeamOverrides = match.setLeftTeamOverrides || {}
-      let sideA
-      if (setLeftTeamOverrides[setIndex] !== undefined) {
-        // Override stores 'A' or 'B', not 'home'/'away'
-        sideA = setLeftTeamOverrides[setIndex] === 'A' ? 'left' : 'right'
-      } else if (is5thSet && set5LeftTeam) {
-        // Use set5LeftTeam for Set 5 (from coin toss or manual switch)
-        sideA = set5LeftTeam === 'A' ? 'left' : 'right'
-      } else {
-        sideA = setIndex % 2 === 1 ? 'left' : 'right'
-      }
-
-      // If Set 5 court switch at 8 points has happened, flip the sides
-      if (is5thSet && set5CourtSwitched) {
-        sideA = sideA === 'left' ? 'right' : 'left'
-      }
+      // Which side Team A is on this set: override / set 5 coin toss (both the
+      // LEFT team 'A'/'B'), else odd sets left; set 5 flips at the 8-point switch
+      const sideA = getSideAForSet(setIndex, match)
 
       // Team names and colors
       const teamAName = teamAKey === 'home' ? match.homeName : match.awayName
@@ -1992,6 +1979,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Determine match status from event type and current state
       const isMatchEnd = eventType === 'match_end' || match?.status === 'ended'
       const isSetInterval = !isMatchEnd && (eventType === 'set_end' || match?.status === 'interval')
+      // Set 5 coin toss changed while the interval runs: the fresh snapshot
+      // already is the set 5 state, and the tablets keep the interval
+      const keepInterval = !isMatchEnd && !isSetInterval && eventData?.duringInterval === true
       const activeTimeout = timeoutModalRef.current
       const isTimeout = eventType === 'timeout' || (eventType !== 'end_timeout' && !!activeTimeout?.started)
 
@@ -2037,7 +2027,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       let matchStatus = 'in_progress'
       if (isMatchEnd || isMatchFinished) matchStatus = 'ended'
       else if (isTimeout) matchStatus = 'timeout'
-      else if (isSetInterval) matchStatus = 'interval'
+      else if (isSetInterval || keepInterval) matchStatus = 'interval'
 
       // Calculate side for next set: a manual side override or the set 5 coin
       // toss choice (both stored as the LEFT team 'A'/'B') wins, as in
@@ -2164,8 +2154,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         last_event_ts: new Date().toISOString(),
         timeout_active: isTimeout,
         timeout_started_at: isTimeout ? (activeTimeout?.startedAt || timeoutStartedAt) : null,
-        set_interval_active: isSetInterval,
-        set_interval_started_at: isSetInterval ? (match?.intervalStartedAt || intervalStartedAt) : null,
+        set_interval_active: isSetInterval || keepInterval,
+        set_interval_started_at: isSetInterval
+          ? (match?.intervalStartedAt || intervalStartedAt)
+          : (keepInterval ? (intervalStartedAtRef.current || eventData?.intervalStartedAt || null) : null),
         match_status: matchStatus,
         scorer_attention_trigger: scorerAttentionTriggerRef.current,
         // Match metadata (from IndexedDB match record)
@@ -2175,6 +2167,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         updated_at: new Date().toISOString(),
         sport_type: 'indoor'
       }
+
+      if (eventType === 'set_end') intervalStartedAtRef.current = liveStateData.set_interval_started_at
 
       // Also push the computed live-state over the LAN relay so offline consumers
       // (referee dashboard, LedBox bridge) receive it without needing Supabase.
@@ -3119,6 +3113,43 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     syncLiveStateToSupabase('end_interval', null, null)
     // The set will start when user clicks "Start set" button
   }, [sendActionToReferee, syncLiveStateToSupabase])
+
+  // The set 5 coin toss (left team, first serve) lives in match fields, not in
+  // events, so no event push carries it. Push it to the referee / bench /
+  // livescore: a fresh live state (side_a, serving_team) over the relay (Node
+  // and Rust) and to the cloud, and the match bundle (set5LeftTeam,
+  // set5FirstServe). During the interval the tablets keep it; endInterval
+  // (Confirm) ends it there as on the scorer.
+  const syncSet5Setup = useCallback(async ({ endInterval = false, duringInterval = false } = {}) => {
+    if (!matchId) return
+    if (endInterval) {
+      setBetweenSetsCountdown(null)
+      countdownDismissedRef.current = true
+      sendActionToReferee('end_interval', {})
+    }
+    const match = await db.matches.get(matchId)
+    const keepInterval = duringInterval && !endInterval
+    let intervalInfo = {}
+    if (keepInterval) {
+      const previousSet = findPreviousSet(await db.sets.where({ matchId }).toArray(), 5)
+      // Fallback start (no set_end push in this session): the scorer's countdown
+      const startTs = betweenSetsStartTimestampRef.current
+        ? betweenSetsStartTimestampRef.current - (setIntervalDuration - (betweenSetsInitialCountdownRef.current || setIntervalDuration)) * 1000
+        : Date.now()
+      intervalInfo = {
+        duringInterval: true,
+        intervalStartedAt: new Date(startTs).toISOString(),
+        setIndex: previousSet?.index,
+        winner: previousSet ? (previousSet.homePoints > previousSet.awayPoints ? 'home' : 'away') : undefined
+      }
+    }
+    syncLiveStateToSupabase('manual_set5_setup', null, {
+      leftTeam: match?.set5LeftTeam || null,
+      firstServe: match?.set5FirstServe || null,
+      ...intervalInfo
+    })
+    syncToReferee()
+  }, [matchId, setIntervalDuration, sendActionToReferee, syncLiveStateToSupabase, syncToReferee])
 
   const getTeamLineupState = useCallback((teamKey) => {
     if (!data?.events || !data?.set) {
@@ -6166,6 +6197,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           // Reset set5CourtSwitched flag (for non-set-5 transitions)
           if (newSetIndex !== 5) {
             await db.matches.update(matchId, { set5CourtSwitched: false })
+          } else {
+            // The set_end push went out before the set 5 defaults were written
+            syncSet5Setup({ duringInterval: true })
           }
 
           // Sync new set to cloud (if not test match)
@@ -6211,7 +6245,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Don't re-throw - the match can continue from local data
     }
-  }, [setEndTimeModal, data?.match, data?.set, data?.events, matchId, logEvent, onFinishSet, getCurrentServe, teamAKey, onTriggerEventBackup, syncSetEnd, resetSyncState, setIntervalDuration, showAlert, t])
+  }, [setEndTimeModal, data?.match, data?.set, data?.events, matchId, logEvent, onFinishSet, getCurrentServe, teamAKey, onTriggerEventBackup, syncSetEnd, resetSyncState, setIntervalDuration, showAlert, t, syncSet5Setup])
 
   // Confirm set 5 side and service choices (works with both modal and inline UI)
   const confirmSet5SideService = useCallback(async (leftTeam, firstServe, inlineMode = false) => {
@@ -14502,16 +14536,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                       setLeftTeamOverrides: { ...overrides, 5: sideVal },
                                       set5FirstServe: set5CoinTossDraft.serve // 'A' or 'B'
                                     })
-                                    // This syncs via the regular queue mechanism if the Scoreboard/App handles it, 
-                                    // but Scoreboard doesn't auto-sync DB changes to queue usually without a hook?
-                                    // Actually, CoinToss.jsx manually adds to sync_queue.
-                                    // The Scoreboard uses useSyncQueue but usually for 'logged events'.
-                                    // We should ideally add a sync task here or rely on the fact that match updates usually aren't synced unless triggered?
-                                    // Wait, Scoreboard.jsx line 50: `flushSyncQueue`.
-                                    // The user might be online.
-                                    // I'll stick to updating the local DB for now, which updates the UI.
-                                    // The sync logic for generic match updates might be elsewhere.
-                                    // Given existing patterns, direct DB update renders the changes.
+                                    // Dexie alone reaches no tablet: push sides / serve to them
+                                    syncSet5Setup({ duringInterval: !!betweenSetsCountdown })
                                   }}
                                   style={{
                                     marginTop: '8px',
@@ -17755,6 +17781,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         onClick={async () => {
                           const newLeftTeam = data?.match?.set5LeftTeam === 'A' ? 'B' : 'A'
                           await db.matches.update(matchId, { set5LeftTeam: newLeftTeam })
+                          syncSet5Setup({ duringInterval: !!betweenSetsCountdown })
                         }}
                         style={{
                           display: 'flex',
@@ -17780,6 +17807,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         onClick={async () => {
                           const newFirstServe = data?.match?.set5FirstServe === 'A' ? 'B' : 'A'
                           await db.matches.update(matchId, { set5FirstServe: newFirstServe })
+                          syncSet5Setup({ duringInterval: !!betweenSetsCountdown })
                         }}
                         style={{
                           display: 'flex',
@@ -17802,9 +17830,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         {t('scoreboard.buttons.switchServe')}
                       </button>
                       <button
-                        onClick={() => {
-                          confirmSet5SideService(data?.match?.set5LeftTeam || 'A', data?.match?.set5FirstServe || 'A', true)
-                          setBetweenSetsCountdown(null)
+                        onClick={async () => {
+                          await confirmSet5SideService(data?.match?.set5LeftTeam || 'A', data?.match?.set5FirstServe || 'A', true)
+                          // Ends the interval here and on the tablets, with the confirmed sides / serve
+                          await syncSet5Setup({ endInterval: true })
                         }}
                         style={{
                           display: 'flex',
