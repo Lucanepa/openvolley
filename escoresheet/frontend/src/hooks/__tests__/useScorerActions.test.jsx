@@ -289,4 +289,47 @@ describe('runActionEffects', () => {
     expect(order).toEqual(['final'])
     spy.mockRestore()
   })
+
+  const push = (eventType, sent, cachedSnapshot = null) => ({
+    wantsSnapshot: true,
+    liveState: { eventType, cachedSnapshot },
+    run: (final) => sent.push([eventType, pickLiveStateSnapshot(cachedSnapshot, final)])
+  })
+
+  it('a side-out sends its final state once ("point", not the lineup-only "rotation" push)', () => {
+    const sent = []
+    const final = { currentSetIndex: 1, pointsA: 1, pointsB: 1 }
+    runActionEffects([
+      push('point', sent, { currentSetIndex: 1, pointsA: 1, pointsB: 0 }),
+      { once: 'referee-sync', run: () => sent.push(['sync']) },
+      push('rotation', sent)
+    ], final)
+    expect(sent).toEqual([['point', final], ['sync']])
+  })
+
+  it('with the automatic libero exit: one push, named after the libero exit, at the first push', () => {
+    const sent = []
+    const final = { currentSetIndex: 1 }
+    runActionEffects([
+      { run: () => sent.push(['before']) },
+      push('point', sent, { currentSetIndex: 1 }),
+      push('libero_exit', sent),
+      push('rotation', sent)
+    ], final)
+    expect(sent).toEqual([['before'], ['libero_exit', final]])
+  })
+
+  it('a push that keeps its own snapshot (another set) is sent as well', () => {
+    const sent = []
+    const setEnd = { currentSetIndex: 1, pointsA: 25 }
+    const final = { currentSetIndex: 2 }
+    runActionEffects([push('set_end', sent, setEnd), push('set_start', sent), push('lineup', sent)], final)
+    expect(sent).toEqual([['set_end', setEnd], ['lineup', final]])
+  })
+
+  it('without a final snapshot every push keeps its own', () => {
+    const sent = []
+    runActionEffects([push('point', sent, { currentSetIndex: 1 }), push('rotation', sent)], null)
+    expect(sent).toEqual([['point', { currentSetIndex: 1 }], ['rotation', null]])
+  })
 })

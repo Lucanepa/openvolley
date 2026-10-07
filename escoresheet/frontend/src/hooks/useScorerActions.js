@@ -25,14 +25,50 @@ export function pickLiveStateSnapshot(cached, final) {
   return final
 }
 
+// A live-state push that only re-sent the lineup after a side-out (the 'point'
+// push used to carry the lineup from before the rotation): it names no event
+// of its own
+const LINEUP_ONLY_PUSHES = new Set(['rotation'])
+
+/**
+ * One live-state push per action. Every push of an action that goes out with
+ * the action's final snapshot (pickLiveStateSnapshot) sends the same state,
+ * so the tablets, the livescore and the cloud got it two or three times (a
+ * side-out: 'point' + 'rotation'; with the automatic libero exit: 'point' +
+ * 'libero_exit' + 'rotation'). They are merged into one push, sent at the
+ * first one's position and named after the action's last event that is more
+ * than a re-sent lineup (the libero exit: the referee flashes it, as it did
+ * when it came last). A push that keeps its own snapshot (the set end of an
+ * action that is already in the next set) is sent as it is.
+ * @param {Array<{ liveState?: { cachedSnapshot?: object|null, eventType?: string|null } }>} effects
+ * @param {object|null} finalSnapshot
+ */
+export function mergeLiveStatePushes(effects, finalSnapshot) {
+  if (!finalSnapshot) return effects
+  const finalPushes = effects.filter(e => e.liveState &&
+    pickLiveStateSnapshot(e.liveState.cachedSnapshot ?? null, finalSnapshot) === finalSnapshot)
+  if (finalPushes.length < 2) return effects
+  const named = finalPushes.filter(e => !LINEUP_ONLY_PUSHES.has(e.liveState.eventType))
+  const keep = named.length > 0 ? named[named.length - 1] : finalPushes[finalPushes.length - 1]
+  const first = finalPushes[0]
+  const merged = new Set(finalPushes)
+  const out = []
+  for (const effect of effects) {
+    if (effect === first) out.push(keep)
+    else if (!merged.has(effect)) out.push(effect)
+  }
+  return out
+}
+
 /**
  * Run the given side effects of one committed action: in their original
  * order, a `once` kind (the full referee sync, the backup) only at its first
- * position.
+ * position, the live-state pushes of the final state as one
+ * (mergeLiveStatePushes).
  */
 export function runActionEffects(effects, finalSnapshot) {
   const seen = new Set()
-  for (const effect of effects) {
+  for (const effect of mergeLiveStatePushes(effects, finalSnapshot)) {
     if (effect.once) {
       if (seen.has(effect.once)) continue
       seen.add(effect.once)

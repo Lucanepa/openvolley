@@ -1976,9 +1976,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // cachedSnapshot: Optional snapshot passed from logEvent to avoid re-fetching/re-computing
   const syncLiveStateToSupabase = useCallback(async (eventType, eventTeam, eventData, cachedSnapshot = null) => {
     // During an action: after its commit, in order, with the action's final
-    // snapshot (a side-out 'point' push carried the state before the rotation)
+    // snapshot (a side-out 'point' push carried the state before the rotation);
+    // the action's pushes of that final state go out as one (mergeLiveStatePushes)
     if (deferEffect({
       wantsSnapshot: true,
+      liveState: { eventType, cachedSnapshot },
       run: (finalSnapshot) => syncLiveStateToSupabase(eventType, eventTeam, eventData, pickLiveStateSnapshot(cachedSnapshot, finalSnapshot))
     })) return
     const _tl = performance.now()
