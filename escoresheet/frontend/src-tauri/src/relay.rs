@@ -502,7 +502,8 @@ fn bundle_sport(bundle: &Value) -> &'static str {
 
 /// Build the stored bundle from a sync (flat or `{ matchData }`) or response payload.
 /// `sportType` ("beach" only, when the sync says so) is the relay's own note
-/// for POST /api/match/validate-pin `{ sport }`: it never goes out
+/// for POST /api/match/validate-pin `{ sport }` and the `sportType` of its
+/// GET /api/match/list row: it is not part of any bundle sent out
 /// (`strip_bundle_secrets`, `summary_bundle`).
 fn bundle_from(src: &Value) -> Option<Value> {
     let src = match src.get("matchData") {
@@ -1070,6 +1071,8 @@ fn match_list_entry(id: &str, bundle: &Value, include_finished: bool) -> Option<
         // No display string here (no time zone data): clients format scheduledAt
         "dateTime": Value::Null,
         "status": status,
+        // "beach" (openbeach) or "indoor": each app lists its own sport's matches
+        "sportType": bundle_sport(bundle),
         "test": m.get("test") == Some(&json!(true)),
         // PINs intentionally NOT returned: validated via /api/match/validate-pin
         "refereeConnectionEnabled": m.get("refereeConnectionEnabled") == Some(&json!(true)),
@@ -2590,7 +2593,7 @@ mod tests {
         assert_eq!(ids, vec!["seed-b", "seed-a", "test-seed"]);
         assert_eq!(rows[1], json!({
             "id": "seed-a", "gameNumber": 4242, "homeTeam": "Home VC", "awayTeam": "Away VC",
-            "scheduledAt": "2026-10-05T17:00:00.000Z", "dateTime": null, "status": "scheduled", "test": false,
+            "scheduledAt": "2026-10-05T17:00:00.000Z", "dateTime": null, "status": "scheduled", "sportType": "indoor", "test": false,
             "refereeConnectionEnabled": false, "homeTeamConnectionEnabled": true, "awayTeamConnectionEnabled": false,
         }));
         assert_eq!(rows[2]["test"], json!(true));
@@ -2606,7 +2609,7 @@ mod tests {
         assert!(ids.contains(&"seed-d"));
         let done = all.iter().find(|r| r["id"] == json!("seed-d")).unwrap();
         assert_eq!(done["status"], json!("final"));
-        assert_eq!(done.as_object().unwrap().len(), 11);
+        assert_eq!(done.as_object().unwrap().len(), 12);
         assert!(!Value::Array(all.clone()).to_string().contains("444444"));
         assert_eq!(match_list_entry("x", &bundle(1, "1", "ended"), false), None);
         assert!(match_list_entry("x", &bundle(1, "1", "ended"), true).is_some());
@@ -2629,12 +2632,19 @@ mod tests {
         let row = match_list_entry("beach-1", &b, false).unwrap();
         assert_eq!(row["homeTeam"], json!("Muster / Meier"));
         assert_eq!(row["awayTeam"], json!("Rossi / Bianchi"));
+        // The list row names the sport (openbeach lists only its own matches)
+        assert_eq!(row["sportType"], json!("beach"));
         let summary = summary_bundle(&b);
         assert_eq!(summary["homeTeam"], json!({ "name": "Muster / Meier", "color": "#e2001a" }));
         // Its periodic sync names them team1 / team2; homeTeam wins when both are sent
         let p = bundle_from(&json!({ "match": { "id": 1 }, "team1": { "name": "A" }, "homeTeam": { "name": "H" }, "team2": "B" })).unwrap();
         let row = match_list_entry("beach-2", &p, false).unwrap();
         assert_eq!((row["homeTeam"].clone(), row["awayTeam"].clone(), row["status"].clone()), (json!("H"), json!("B"), json!("scheduled")));
+        // The home/away wire shape naming its sport is beach too; none is indoor
+        let wire = bundle_from(&json!({ "match": { "id": 1, "sport_type": "beach" }, "homeTeam": { "name": "A" } })).unwrap();
+        assert_eq!(match_list_entry("beach-3", &wire, false).unwrap()["sportType"], json!("beach"));
+        let indoor = bundle_from(&json!({ "match": { "id": 1 }, "homeTeam": { "name": "A" } })).unwrap();
+        assert_eq!(match_list_entry("indoor-1", &indoor, false).unwrap()["sportType"], json!("indoor"));
     }
 
     /// An openbeach court as it syncs today: team1 / team2 names, its own PINs.
@@ -2714,6 +2724,8 @@ mod tests {
         obj.insert("team1".into(), json!({ "name": "Keller / Huber" }));
         sync(&state, 1, "beach-court-1", bundle_from(&periodic).unwrap()).await.unwrap();
         assert_eq!(bundle_sport(state.matches.lock().await.get("beach-court-1").unwrap()), "beach");
+        // and its match list row still names it a beach court
+        assert_eq!(match_list_rows(&state, false).await[0]["sportType"], json!("beach"));
     }
 
     #[tokio::test]

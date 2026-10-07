@@ -86,7 +86,7 @@
  *   match-data-request | game-number-request | match-update-request  (proven scoreboards only)
  *
  *   GET /api/match/list  { success, matches: [{ id, gameNumber, homeTeam, awayTeam, scheduledAt,
- *                     dateTime, status, test, refereeConnectionEnabled,
+ *                     dateTime, status, sportType ('beach' | 'indoor'), test, refereeConnectionEnabled,
  *                     homeTeamConnectionEnabled, awayTeamConnectionEnabled }] }: every match a
  *                     scorer currently publishes here (see matchListEntry), newest
  *                     scheduledAt first, whatever its referee connection: display devices
@@ -412,7 +412,8 @@ function firstArray(src, keys) {
 /**
  * Build the stored bundle from a sync-match-data (flat or { matchData }) message.
  * `sportType` ('beach' only, when the sync says so) is the relay's own note for
- * POST /api/match/validate-pin { sport }: it never goes out (toWireBundle).
+ * POST /api/match/validate-pin { sport } and the sportType of its GET
+ * /api/match/list row: it is not part of any bundle sent out (toWireBundle).
  */
 function bundleFromMessage(msg) {
   const src = msg && msg.matchData && typeof msg.matchData === 'object' ? msg.matchData : msg
@@ -679,6 +680,8 @@ function matchListEntry(key, bundle, { includeFinished = false } = {}) {
     scheduledAt: match.scheduledAt ?? null,
     dateTime: formatDateTime(match.scheduledAt),
     status,
+    // 'beach' (openbeach) or 'indoor': each app lists its own sport's matches
+    sportType: bundleSport(bundle),
     test: match.test === true,
     // PINs intentionally NOT returned — validated via /api/match/validate-pin
     refereeConnectionEnabled: match.refereeConnectionEnabled === true,
