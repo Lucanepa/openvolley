@@ -1244,14 +1244,25 @@ fn serve_asset(req_path: &str) -> Response {
     (StatusCode::NOT_FOUND, "Not Found").into_response()
 }
 
+/// Cache-Control of a file of the built app. Only Vite's content-hashed files
+/// (`assets/...`: a new build means a new name) may be kept for a year; every
+/// other file keeps its name across versions (`ball.png`, `openvolley_logo.png`,
+/// `favicon.ico`, the pages, the service worker), so the webview must ask again
+/// (no-cache: it revalidates). A year-long cache of the unhashed `/ball.png`
+/// kept showing the old green ball after an update.
+pub fn cache_control_for(path: &str) -> &'static str {
+    let path = path.trim_start_matches('/');
+    if path.starts_with("assets/") {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    }
+}
+
 fn try_file(path: &str) -> Option<Response> {
     Assets::get(path).map(|file| {
         let mime = mime_guess::from_path(path).first_or_octet_stream();
-        let no_cache = path.ends_with(".html")
-            || path.ends_with(".json")
-            || path.ends_with("sw.js")
-            || path.ends_with(".webmanifest");
-        let cache = if no_cache { "no-cache" } else { "public, max-age=31536000" };
+        let cache = cache_control_for(path);
         Response::builder()
             .status(StatusCode::OK)
             .header("content-type", mime.as_ref())
@@ -2024,6 +2035,18 @@ async fn notify_subscribers(state: &Arc<AppState>, match_id: &str, msg: &Value, 
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn only_content_hashed_files_are_cached_for_long() {
+        // Vite's hashed bundle: a new build is a new name
+        assert_eq!(cache_control_for("assets/index-3f9a1c.js"), "public, max-age=31536000, immutable");
+        assert_eq!(cache_control_for("/assets/ball_fallback-ab12cd.png"), "public, max-age=31536000, immutable");
+        // same name in every version: always revalidated (the old green /ball.png stayed for a year)
+        for p in ["ball.png", "/ball.png", "openvolley_logo.png", "favicon.ico", "index.html", "scoresheet/index.html",
+                  "sw.js", "manifest.webmanifest", "version.json", "workbox-1234.js"] {
+            assert_eq!(cache_control_for(p), "no-cache", "{p}");
+        }
+    }
     use super::*;
 
     #[test]

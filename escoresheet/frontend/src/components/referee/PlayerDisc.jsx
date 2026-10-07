@@ -3,7 +3,9 @@ import { DISC, discCssVars } from './discSizing.js'
 import { markColourOn } from '../../utils/teamColours.js'
 
 // Primary ball image (with a bundled copy as fallback)
-const ballImage = `${import.meta.env.BASE_URL}ball.png`
+// The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
+// stay cached (old green ball) after an update
+const ballImage = ballFallback
 
 // Corner badge: a square of --disc-badge, inside the disc's box (never outset,
 // so nothing on a disc can leave its column or the court).
