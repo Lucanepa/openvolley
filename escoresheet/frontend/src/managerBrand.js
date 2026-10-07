@@ -11,8 +11,9 @@
  * and audit are scoped to, and the `app` the auth calls send (which only
  * chooses the mail's brand and link host: the server never authorises by it).
  *
- * Without a provider the brand is OpenVolley's, so every screen outside the
- * OpenBeach manager (the main app's manage console included) is unchanged.
+ * Without a provider the brand is OpenVolley's: every screen outside the
+ * OpenBeach manager (the main app's manage console included) is OpenVolley's
+ * console, whose lists are scoped to ?app=indoor.
  */
 import { createContext, createElement, useContext } from 'react'
 import { BRAND } from './brand'
@@ -29,8 +30,10 @@ export const MANAGER_BRANDS = Object.freeze({
     scorerAppUrl: 'https://app.openvolley.app',
     // every tab of the console (ManageConsole filters by role)
     tabs: null,
-    // the account lists, invites and audit of this console: no ?app= (as before)
-    scope: null
+    // the account lists, invites and audit of this console: ?app=indoor, so
+    // OpenBeach's members, codes and entries stay out of it (plan 1.4, 1.6;
+    // a 2.1/2.2 client sends no ?app= and keeps the old, unscoped answer)
+    scope: 'indoor'
   }),
   beach: Object.freeze({
     app: 'beach',

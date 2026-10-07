@@ -15,9 +15,10 @@ function plusDays(days) {
 }
 
 /**
- * Invite codes: create (shown once), list, revoke (admins). `app` 'beach'
- * (the OpenBeach manager): OpenBeach's codes only, and new codes grant the
- * beach role. Left out: as before.
+ * Invite codes: create (shown once), list, revoke (admins). `app` 'indoor' /
+ * 'beach' (OpenVolley's / OpenBeach's console): that app's codes only, and
+ * new codes are of that sport (beach: they grant the beach role). Left out:
+ * every code, new codes indoor (as before).
  */
 export default function InvitesPanel({ app }) {
   const { t } = useTranslation()
@@ -152,7 +153,8 @@ function CreateInviteModal({ app, open, onClose, onCreated }) {
       role,
       max_uses: maxUses === '' ? null : Number(maxUses),
       expires_at: expiresAt,
-      ...(app === 'beach' ? { sport: 'beach' } : {})
+      // the code's sport is the console's app (left out: indoor, as before)
+      ...(app ? { sport: app } : {})
     })
     setBusy(false)
     if (res.error || !res.data?.code) {

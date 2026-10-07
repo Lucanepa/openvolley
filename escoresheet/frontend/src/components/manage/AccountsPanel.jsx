@@ -11,7 +11,8 @@ import { SegmentedControl, SearchInput, RowList, Row, RowTool, EmptyInset, Skele
  * Accounts: approve pending accounts, grant and revoke roles (admins).
  * `app` 'beach' (the OpenBeach manager): the members of OpenBeach, pending =
  * no beach role, and the beach roles only (shown by their plain names).
- * Left out: as before (every account, indoor roles).
+ * `app` 'indoor' (OpenVolley's console): the members of OpenVolley, indoor
+ * roles. Left out: every account, indoor roles (as before).
  */
 export default function AccountsPanel({ selfId, app }) {
   const { t } = useTranslation()
