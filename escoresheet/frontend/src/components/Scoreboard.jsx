@@ -55,7 +55,7 @@ import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
 import { isNativeApp } from '../utils/backendConfig'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
-import { WarningIcon, TimerIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, DownloadIcon, SettingsIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon, CardIcon } from './icons'
+import { WarningIcon, TimerIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, DownloadIcon, SettingsIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon } from './icons'
 import { cn } from '../ui/cn.js'
 import { FOCUS_RING, Button } from '../ui/Button.jsx'
 import { ActionSheet, ActionSheetItem } from '../ui/Modal.jsx'
@@ -15061,9 +15061,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   background: '#fffbeb', // amber-50
                   border: '1px solid #fcd34d', // amber-300
                   borderRadius: '1.25cqw',
-                  color: '#92400e' // amber-800
+                  color: '#92400e', // amber-800
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5em'
                 }}>
-                  {t('scoreboard.sanctions.sanctionedFormalWarning')} <CardIcon size="1.1em" />
+                  {/* A real yellow card, in line with the text */}
+                  <span
+                    className="sanction-card yellow"
+                    aria-hidden="true"
+                    style={{ width: '0.75em', height: '1.05em', borderRadius: '0.15em', flexShrink: 0, boxShadow: '0 0 0 1px rgba(146, 64, 14, 0.25)' }}
+                  />
+                  <span>{t('scoreboard.sanctions.sanctionedFormalWarning')}</span>
                 </div>
               )}
             </div>
@@ -18432,9 +18441,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   background: '#fffbeb', // amber-50
                   border: '1px solid #fcd34d', // amber-300
                   borderRadius: '1.25cqw',
-                  color: '#92400e' // amber-800
+                  color: '#92400e', // amber-800
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5em'
                 }}>
-                  {t('scoreboard.sanctions.sanctionedFormalWarning')} <CardIcon size="1.1em" />
+                  {/* A real yellow card, in line with the text */}
+                  <span
+                    className="sanction-card yellow"
+                    aria-hidden="true"
+                    style={{ width: '0.75em', height: '1.05em', borderRadius: '0.15em', flexShrink: 0, boxShadow: '0 0 0 1px rgba(146, 64, 14, 0.25)' }}
+                  />
+                  <span>{t('scoreboard.sanctions.sanctionedFormalWarning')}</span>
                 </div>
               )}
             </div>
