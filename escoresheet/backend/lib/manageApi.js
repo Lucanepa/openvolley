@@ -13,6 +13,8 @@
  *   GET    /api/saved-teams[?sport=indoor|beach|all]  canReadTeams of that sport (no sport = indoor;
  *                                                     all = the sports the account may read)
  *   POST/PATCH/DELETE/PUT /api/saved-teams/*         canManageTeams of the competition's sport
+ *   *      /api/beach/*                               beach canReadTeams (beach:scorer, beach:competition_manager,
+ *                                                     admin); lib/beachTournaments.js decides the rest (T1)
  *
  * Sports (db/012, lib/access.js): every check uses the sport of the ROW (the
  * body's sport_type, the competition of a saved team), never the app the
@@ -38,10 +40,11 @@ export function manageFamilyOf (pathname) {
   if (pathname === '/api/match/official-check') return 'officialCheck'
   if (pathname.startsWith('/api/admin/')) return 'admin'
   if (pathname === '/api/saved-teams' || pathname.startsWith('/api/saved-teams/')) return 'savedTeams'
+  if (pathname.startsWith('/api/beach/')) return 'beach'
   return null
 }
 
-export function createManageApi ({ accounts, savedTeams }) {
+export function createManageApi ({ accounts, savedTeams, beach = null }) {
   const q = (query, k) => {
     const v = query?.get?.(k)
     return v == null ? undefined : v
@@ -121,6 +124,8 @@ export function createManageApi ({ accounts, savedTeams }) {
   function familyRefusal (family, method, access) {
     if (family === 'admin') return refuse('admin', access)
     if (family === 'savedTeams') return sportsWith(access, method === 'GET' ? 'canReadTeams' : 'canManageTeams').length ? null : FORBIDDEN()
+    // tournaments (lib/beachTournaments.js): some beach right first
+    if (family === 'beach') return accessForSport(access, 'beach').canReadTeams ? null : FORBIDDEN()
     return null
   }
 
@@ -129,6 +134,7 @@ export function createManageApi ({ accounts, savedTeams }) {
     if (!family) return notFound()
     const early = familyRefusal(family, method, access)
     if (early) return early
+    if (family === 'beach') return beach ? beach.route({ method, pathname, body, user, access }) : notFound()
     let pathKnown = false
     for (const [m, re, need, handler] of routes) {
       const match = re.exec(pathname)

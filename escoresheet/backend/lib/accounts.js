@@ -50,7 +50,10 @@ export const AUDIT_ACTIONS = Object.freeze([
   'match.close',
   'match.reopen', 'match.editor_add', 'match.release_game',
   // db/012: an existing account joined another app (POST /api/account/join)
-  'account.join'
+  'account.join',
+  // db/014: OpenBeach tournaments (lib/beachTournaments.js, app 'beach')
+  'tournament.create', 'tournament.update', 'tournament.delete', 'tournament.managers',
+  'tournament.draw', 'tournament.entry', 'tournament.schedule', 'tournament.result'
 ])
 export const APPS = SPORTS
 // How a membership came about (auth.app_memberships.joined_via)
