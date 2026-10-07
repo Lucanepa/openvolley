@@ -8,8 +8,9 @@
 //       Check FILE.sig for each FILE, the way the app's updater does.
 //   desktop-updater.mjs manifest (--tauri-conf FILE | --pubkey B64) --version V --out FILE
 //                                --nsis FILE URL --appimage FILE URL --deb FILE URL
-//                                [--notes-file FILE] [--pub-date RFC3339]
-//       Verify the three signatures, then write latest.json.
+//                                [--app FILE URL] [--notes-file FILE] [--pub-date RFC3339]
+//       Verify the signatures, then write latest.json. --app: the macOS
+//       universal .app.tar.gz, announced for both Mac architectures.
 //   desktop-updater.mjs check    (--tauri-conf FILE | --pubkey B64) [--version V] [--dir DIR] FILE
 //       Validate a latest.json; with --dir, also verify every signature against
 //       the file named like the last segment of its URL in DIR.
@@ -42,6 +43,15 @@ export const PLATFORMS = {
   'linux-x86_64-appimage': 'appimage',
   'linux-x86_64': 'appimage',
   'linux-x86_64-deb': 'deb',
+}
+// macOS: one universal .app.tar.gz for both architectures (each slice looks
+// up its own darwin-{arch}). All four or none: a release built before the
+// macOS job, or whose macOS build failed, announces no Mac update.
+export const MAC_PLATFORMS = {
+  'darwin-aarch64-app': 'app',
+  'darwin-aarch64': 'app',
+  'darwin-x86_64-app': 'app',
+  'darwin-x86_64': 'app',
 }
 
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/
@@ -168,8 +178,9 @@ export function pubkeyFromConf(confFile) {
 }
 
 // Mirrors InnerRemoteRelease + get_urls, plus our own stricter rules:
-// exactly our five targets, https only, every signature by the trusted key
-// and bound to the announced version.
+// exactly our five targets (and the four macOS ones, all or none, one file),
+// https only, every signature by the trusted key and bound to the announced
+// version.
 export function checkManifest(m, pub, expectVersion) {
   if (!m || typeof m !== 'object' || Array.isArray(m)) fail('manifest: not a JSON object')
   const allowed = new Set(['version', 'notes', 'pub_date', 'platforms'])
@@ -182,8 +193,12 @@ export function checkManifest(m, pub, expectVersion) {
   }
   const p = m.platforms
   if (!p || typeof p !== 'object' || Array.isArray(p)) fail('manifest: no platforms object')
-  for (const k of Object.keys(p)) if (!(k in PLATFORMS)) fail(`manifest: unexpected platform ${k}`)
-  for (const k of Object.keys(PLATFORMS)) {
+  for (const k of Object.keys(p)) if (!(k in PLATFORMS) && !(k in MAC_PLATFORMS)) fail(`manifest: unexpected platform ${k}`)
+  const mac = Object.keys(MAC_PLATFORMS).filter((k) => k in p)
+  if (mac.length && mac.length !== Object.keys(MAC_PLATFORMS).length) {
+    fail(`manifest: macOS platforms ${mac.join(', ')} without ${Object.keys(MAC_PLATFORMS).filter((k) => !(k in p)).join(', ')}`)
+  }
+  for (const k of [...Object.keys(PLATFORMS), ...mac]) {
     const e = p[k]
     if (!e || typeof e !== 'object') fail(`manifest: platform ${k} missing`)
     for (const f of Object.keys(e)) if (f !== 'url' && f !== 'signature') fail(`manifest: ${k}: unexpected field ${f}`)
@@ -194,7 +209,9 @@ export function checkManifest(m, pub, expectVersion) {
     if (typeof e.signature !== 'string') fail(`manifest: ${k}: no signature`)
     checkSignatureMeta(e.signature, pub, m.version, `manifest: ${k}`)
   }
-  for (const [bare, full] of [['windows-x86_64', 'windows-x86_64-nsis'], ['linux-x86_64', 'linux-x86_64-appimage']]) {
+  const same = [['windows-x86_64', 'windows-x86_64-nsis'], ['linux-x86_64', 'linux-x86_64-appimage']]
+  for (const k of mac.slice(1)) same.push([k, mac[0]])
+  for (const [bare, full] of same) {
     if (p[bare].url !== p[full].url || p[bare].signature !== p[full].signature) fail(`manifest: ${bare} differs from ${full}`)
   }
   return m
@@ -253,11 +270,12 @@ async function main(argv) {
       return
     }
     case 'manifest': {
-      const o = parseArgs(rest, { 'tauri-conf': 1, pubkey: 1, version: 1, out: 1, nsis: 2, appimage: 2, deb: 2, 'notes-file': 1, 'pub-date': 1 })
+      const o = parseArgs(rest, { 'tauri-conf': 1, pubkey: 1, version: 1, out: 1, nsis: 2, appimage: 2, deb: 2, app: 2, 'notes-file': 1, 'pub-date': 1 })
       const pub = pubFrom(o)
       for (const k of ['version', 'out', 'nsis', 'appimage', 'deb']) if (!o[k]) fail(`--${k} is required`)
       const entries = {}
-      for (const kind of ['nsis', 'appimage', 'deb']) {
+      const kinds = ['nsis', 'appimage', 'deb', ...(o.app ? ['app'] : [])]
+      for (const kind of kinds) {
         const [file, url] = o[kind]
         if (urlName(url) !== basename(file)) fail(`--${kind}: ${url} does not end in ${basename(file)}`)
         const signature = readSig(file)
@@ -268,7 +286,8 @@ async function main(argv) {
       const notes = o['notes-file'] ? readFileSync(o['notes-file'], 'utf8').trim() : ''
       if (notes) m.notes = notes
       m.pub_date = o['pub-date'] ?? new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
-      m.platforms = Object.fromEntries(Object.entries(PLATFORMS).map(([k, kind]) => [k, entries[kind]]))
+      const targets = { ...PLATFORMS, ...(o.app ? MAC_PLATFORMS : {}) }
+      m.platforms = Object.fromEntries(Object.entries(targets).map(([k, kind]) => [k, entries[kind]]))
       checkManifest(m, pub, o.version)
       writeFileSync(`${o.out}.tmp`, `${JSON.stringify(m, null, 2)}\n`)
       renameSync(`${o.out}.tmp`, o.out)

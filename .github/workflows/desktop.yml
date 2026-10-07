@@ -232,7 +232,8 @@ jobs:
           codesign -dv "$app" 2>&1 | grep -q '^Signature=adhoc$' || { codesign -dv "$app"; echo "::error::not ad-hoc signed"; exit 1; }
 
           tgz="$b/macos/${pkg}_${v}_universal.app.tar.gz"
-          COPYFILE_DISABLE=1 tar -czf "$tgz" -C "$b/macos" "$name.app"
+          # no AppleDouble ._ files, no extended attributes (quarantine, provenance)
+          COPYFILE_DISABLE=1 tar --no-xattrs -czf "$tgz" -C "$b/macos" "$name.app"
           tar -tzf "$tgz" | awk -v top="$name.app/" 'index($0, top) != 1 { bad = 1; print "outside " top ": " $0 } END { exit bad }'
           x=$(mktemp -d)
           tar -xzf "$tgz" -C "$x"
