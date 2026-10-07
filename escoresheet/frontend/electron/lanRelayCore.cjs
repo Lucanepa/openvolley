@@ -1420,7 +1420,10 @@ function createLanRelay(options = {}) {
     const sessions = getSignSessions()
     const ipKey = stripV4Prefix(ip)
     if (endpoint === 'start') {
-      const who = signOwner(req, body, ipKey)
+      // The wrong-PIN key is the raw socket address, spelled exactly as getMatch
+      // and the WS subscribe count it (a dual-stack server sees '::ffff:a.b.c.d'):
+      // one budget for every PIN check, not one per spelling
+      const who = signOwner(req, body, ip)
       return sendSign(res, who.error || sessions.start(body, { owner: who.owner }))
     }
     if (endpoint === 'open') return sendSign(res, sessions.open(body, { ipKey }))

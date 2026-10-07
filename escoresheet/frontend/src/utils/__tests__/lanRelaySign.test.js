@@ -119,6 +119,18 @@ describe('Sign on phone on the LAN relay core', () => {
     expect((await relay.getMatch('seed-1', { pin: '987654', ip: '192.168.1.66' })).status).toBe(429)
   })
 
+  it('a dual-stack address shares one wrong-PIN budget with GET /api/match/:id', async () => {
+    // A server listening on '::' sees IPv4 callers as '::ffff:a.b.c.d'; the
+    // budget must not split between that spelling and the stripped one
+    const relay = newRelay({ isLocal: () => false })
+    syncMatch(relay, 'seed-1', '987654')
+    const addr = '::ffff:192.168.1.67'
+    for (let i = 0; i < 3; i++) expect((await relay.getMatch('seed-1', { pin: String(200000 + i), ip: addr })).status).toBe(200)
+    const start = (pin) => call(relay, '/api/sign/start', { slot: 'captain-a', matchKey: 'seed-1', context: CTX }, { headers: { 'x-ov-match-pin': pin }, addr })
+    for (let i = 0; i < 2; i++) expect((await start(String(100000 + i))).json.code).toBe('OV_SIGN_PIN_INVALID')
+    expect((await start('987654')).status).toBe(429)
+  })
+
   it('a test match without a game PIN cannot be proven by anyone else', async () => {
     const relay = newRelay({ isLocal: () => false })
     syncMatch(relay, 'test-1', null)
