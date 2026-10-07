@@ -44,7 +44,7 @@ export function matchMenuSections(t, actions) {
       column: 0,
       title: t('scoreboard.menu.sections.corrections', 'Corrections'),
       items: [
-        ...row('manual', Wrench, t('scoreboard.menu.manualChanges', 'Manual changes'), actions.manualChanges),
+        ...row('manual', Wrench, t('corrections.title', 'Corrections'), actions.manualChanges),
         ...row('edit-roster-home', UserPen, t('scoreboard.reopenRoster.menuHome', 'Edit home roster'), actions.editRosterHome),
         ...row('edit-roster-away', UserPen, t('scoreboard.reopenRoster.menuAway', 'Edit away roster'), actions.editRosterAway)
       ]
