@@ -21749,7 +21749,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       }
 
                       setBenchPlayerActionMenu(null)
-                      setConfirmMessage(`Injury recorded for #${playerNumber} (bench)`)
+                      showAlert(t('scoreboard.benchInjuryRecorded', { number: playerNumber }), 'success')
                     } catch (err) {
                       console.error('Failed to record bench injury:', err)
                       setBenchPlayerActionMenu(null)

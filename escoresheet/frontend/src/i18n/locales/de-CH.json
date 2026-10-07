@@ -845,7 +845,8 @@
       "repeatedImproperRequest": "D Mannschaft hät scho e unzulässigi Aafraag, die zellt drum als Verzögerig.",
       "repeatedDelay": "D Mannschaft hät scho e Verzögerigswarnig, die Verzögerig isch drum e Straaf.",
       "pointToOpponent": "Punkt und Ufschlag für {{opponent}}."
-    }
+    },
+    "benchInjuryRecorded": "Verletzig erfasst für #{{number}} (Bank)"
   },
   "settings": {
     "title": "Iistellige",

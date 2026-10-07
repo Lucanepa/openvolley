@@ -845,7 +845,8 @@
       "repeatedImproperRequest": "La squadra ha già una richiesta impropria: questa conta come ritardo.",
       "repeatedDelay": "La squadra ha già un avvertimento per ritardo: questo ritardo è una penalità.",
       "pointToOpponent": "Punto e servizio a {{opponent}}."
-    }
+    },
+    "benchInjuryRecorded": "Infortunio registrato per il n. {{number}} (panchina)"
   },
   "settings": {
     "title": "Impostazioni",

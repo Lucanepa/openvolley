@@ -846,7 +846,8 @@
       "repeatedImproperRequest": "The team already has an improper request on record, so this one counts as a delay.",
       "repeatedDelay": "The team already has a delay warning, so this delay is a penalty.",
       "pointToOpponent": "Point and service to {{opponent}}."
-    }
+    },
+    "benchInjuryRecorded": "Injury recorded for #{{number}} (bench)"
   },
   "settings": {
     "title": "Settings",
