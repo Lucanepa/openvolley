@@ -184,7 +184,7 @@ PrivacyUrl: https://openvolley.app/en/privacy
 Author: Luca Canepa
 PackageName: $(q "$package_name")
 PackageUrl: $package_url
-License: GPL-3.0-only
+License: GPL-3.0-or-later
 LicenseUrl: $license_url
 ShortDescription: $(q "$short_en")
 Description: $(q "$desc_en")
@@ -210,7 +210,7 @@ PrivacyUrl: https://openvolley.app/datenschutz
 Author: Luca Canepa
 PackageName: $(q "$package_name")
 PackageUrl: $package_url
-License: GPL-3.0-only
+License: GPL-3.0-or-later
 LicenseUrl: $license_url
 ShortDescription: $(q "$short_de")
 Description: $(q "$desc_de")

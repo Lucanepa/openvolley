@@ -23,7 +23,7 @@ description: |
       sudo snap connect openvolley-escoresheet:bluez
 
   Updates come from the Snap Store; the app's own updater is off in the snap.
-license: GPL-3.0-only
+license: GPL-3.0-or-later
 website: https://openvolley.app
 source-code: https://github.com/Lucanepa/openvolley
 issues: https://github.com/Lucanepa/openvolley/issues
