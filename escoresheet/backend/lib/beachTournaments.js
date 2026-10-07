@@ -32,7 +32,8 @@
 import { fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
 import { accessForSport } from './access.js'
 import { DE_MAX_TEAMS, DE_MIN_TEAMS, boardSizeFor, doubleElimination, drawWarnings, entryOfSource } from './beachBracket.js'
-import { daysBetween, minutesOf, scheduleMatches, zurichDayMinutes } from './beachSchedule.js'
+import { daysBetween, minutesOf, scheduleMatches, slotIssues } from './beachSchedule.js'
+import { fold, importHash, normalizeImport, planImport } from './beachImport.js'
 
 export const TOURNAMENT_STATUSES = Object.freeze(['draft', 'published', 'live', 'finished', 'archived'])
 export const DRAW_GENDERS = Object.freeze(['men', 'women', 'mixed'])
@@ -369,6 +370,8 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     }
     f.set('public', bool(body.public))
     if (partial) f.set('status', oneOf(body.status, TOURNAMENT_STATUSES))
+    // where it came from: typed in, or the Excel/CSV upload (T2); 'swissvolley' is the server's (T5)
+    else f.set('source', oneOf(body.source, ['manual', 'xlsx']))
     if (f.error) return { error: f.error }
     return { out: f.out }
   }
@@ -792,32 +795,191 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
       }
       if (dryRun) return ok(preview)
 
-      await client.query('DELETE FROM public.beach_tmatches WHERE draw_id = $1', [id])
-      // only registered pairs keep a seed (a withdrawn one must not hold 1..n)
-      await client.query("UPDATE public.beach_entries SET seed = NULL WHERE draw_id = $1 AND status <> 'registered' AND seed IS NOT NULL", [id])
-      for (const [i, e] of entries.entries()) {
-        let snap = {}
-        if (e.team_id) {
-          const pair = await savedPair(client, e.team_id)
-          if (pair) snap = { player1: pair.player1, player2: pair.player2 }
-        }
-        await client.query(
-          `UPDATE public.beach_entries SET seed = $2, final_rank = NULL,
-                  player1 = coalesce($3::jsonb, player1), player2 = coalesce($4::jsonb, player2) WHERE id = $1`,
-          [e.id, i + 1, snap.player1 ? JSON.stringify(snap.player1) : null, snap.player2 ? JSON.stringify(snap.player2) : null])
-      }
-      for (const m of preview.matches) {
-        await client.query(
-          `INSERT INTO public.beach_tmatches (tournament_id, draw_id, game_n, code, phase, round, position, wave,
-                                              source1, source2, winner_rank, loser_rank, duration_min)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-          [t.id, id, m.game_n, m.code, m.phase, m.round, m.position, m.wave, m.source1, m.source2, m.winner_rank, m.loser_rank, d.slot_minutes])
-      }
-      await client.query("UPDATE public.beach_draws SET status = 'drawn', board_size = $2 WHERE id = $1", [id, chosen])
-      await recompute(client, id)
+      await writeBracket(client, { t, d, entries, matches: preview.matches, chosen })
       await audit(client, user.id, 'tournament.draw', { tournament_id: t.id, draw_id: id, op: 'generate', teams: n, board_size: size })
       return ok(preview)
     }))
+  }
+
+  /**
+   * Writes a draw's bracket (inside the caller's transaction, the tournament
+   * and the draw locked; generate and the import): replaces the draw's
+   * matches with `matches` (doubleElimination's, with their game numbers),
+   * seeds `entries` (the registered pairs) 1..n in their order, refreshes
+   * their player snapshots from the saved pairs, stores `chosen` (the board
+   * the manager chose, or null) and recomputes the draw.
+   */
+  async function writeBracket (client, { t, d, entries, matches, chosen }) {
+    await client.query('DELETE FROM public.beach_tmatches WHERE draw_id = $1', [d.id])
+    // only registered pairs keep a seed (a withdrawn one must not hold 1..n)
+    await client.query("UPDATE public.beach_entries SET seed = NULL WHERE draw_id = $1 AND status <> 'registered' AND seed IS NOT NULL", [d.id])
+    for (const [i, e] of entries.entries()) {
+      let snap = {}
+      if (e.team_id) {
+        const pair = await savedPair(client, e.team_id)
+        if (pair) snap = { player1: pair.player1, player2: pair.player2 }
+      }
+      await client.query(
+        `UPDATE public.beach_entries SET seed = $2, final_rank = NULL,
+                player1 = coalesce($3::jsonb, player1), player2 = coalesce($4::jsonb, player2) WHERE id = $1`,
+        [e.id, i + 1, snap.player1 ? JSON.stringify(snap.player1) : null, snap.player2 ? JSON.stringify(snap.player2) : null])
+    }
+    for (const m of matches) {
+      await client.query(
+        `INSERT INTO public.beach_tmatches (tournament_id, draw_id, game_n, code, phase, round, position, wave,
+                                            source1, source2, winner_rank, loser_rank, duration_min)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        [t.id, d.id, m.game_n, m.code, m.phase, m.round, m.position, m.wave, m.source1, m.source2, m.winner_rank, m.loser_rank, d.slot_minutes])
+    }
+    await client.query("UPDATE public.beach_draws SET status = 'drawn', board_size = $2 WHERE id = $1", [d.id, chosen])
+    await recompute(client, d.id)
+  }
+
+  // ------------------------------------------------------------------ import (T2)
+  /**
+   * POST /api/beach/tournaments/:id/import[?dryRun=1] { entries?, matches?, hash? }
+   * (plan 3.4, phase T2; lib/beachImport.js). With dryRun the answer is the
+   * plan (per row OK / warning / error, the diff) and its hash, and nothing
+   * is written. Without it the plan is made again with the tournament and
+   * its draws locked and applied only when its hash is the one the preview
+   * showed (409 OV_IMPORT_CHANGED { preview } otherwise: the file or the
+   * tournament changed meanwhile) and no row has an error (400
+   * OV_IMPORT_INVALID { preview }). Editors only.
+   */
+  async function importTournament ({ user, access, id, body, query }) {
+    const dryRun = ['1', 'true'].includes(String(query?.get?.('dryRun') ?? '').toLowerCase())
+    const input = normalizeImport(body)
+    if (input.error) return invalid(input.error)
+    const hash = body.hash
+    if (!dryRun && (typeof hash !== 'string' || !/^[0-9a-f]{64}$/.test(hash))) return invalid('hash: the hash of the preview (?dryRun=1)')
+    return guarded('import', () => withTx(async (client) => {
+      const t = await requireTournament(client, id, user, access, { edit: true, forUpdate: !dryRun })
+      const plan = planImport(await importState(client, t, input, { lock: !dryRun }), input)
+      const preview = { ...plan, hash: importHash(plan) }
+      if (dryRun) return ok(preview)
+      if (preview.hash !== hash) throw abort(fail(409, 'OV_IMPORT_CHANGED', 'The tournament or the file changed since the preview', { preview }))
+      if (plan.summary.errors) throw abort(fail(400, 'OV_IMPORT_INVALID', 'Some rows have errors', { preview }))
+      if (plan.can_apply) await applyImport(client, t, plan, user)
+      return ok({ applied: plan.summary, hash: preview.hash })
+    }))
+  }
+
+  /** The tournament as lib/beachImport.js planImport() reads it (ordered lists; locked for the apply). */
+  async function importState (client, t, input, { lock }) {
+    const forUpdate = lock ? ' FOR UPDATE' : ''
+    const { rows: draws } = await client.query(
+      `SELECT id, category, gender, status, board_size, slot_minutes, rest_minutes FROM public.beach_draws
+        WHERE tournament_id = $1 ORDER BY created_at, id${forUpdate}`, [t.id])
+    const { rows: entries } = await client.query(
+      `SELECT e.id, e.draw_id, e.seed, e.team_id, e.name, e.player1, e.player2, e.wildcard, e.status
+         FROM public.beach_entries e JOIN public.beach_draws d ON d.id = e.draw_id
+        WHERE d.tournament_id = $1 ORDER BY e.created_at, e.id`, [t.id])
+    const { rows: courts } = await client.query('SELECT id, number FROM public.beach_courts WHERE tournament_id = $1 ORDER BY number', [t.id])
+    const { rows: matches } = await client.query(
+      `SELECT id, draw_id, game_n, code, phase, source1, source2, entry1_id, entry2_id, court_id, scheduled_at,
+              duration_min, status, match_id, referee, scorer
+         FROM public.beach_tmatches WHERE tournament_id = $1 ORDER BY game_n${forUpdate}`, [t.id])
+    // saved beach pairs (db/009) with a licence of the file: a new pair with
+    // exactly their two licences is linked to them
+    const licences = [...new Set(input.entries.flatMap((r) => [r.p1?.licence, r.p2?.licence]).map(fold).filter(Boolean))]
+    let savedPairs = []
+    if (licences.length) {
+      const { rows } = await client.query(
+        `SELECT ct.id, ct.name, c.season, array_agg(cp.license_number ORDER BY cp.license_number) AS licences
+           FROM public.competition_teams ct
+           JOIN public.competitions c ON c.id = ct.competition_id AND c.sport = 'beach'
+           JOIN public.competition_players cp ON cp.team_id = ct.id
+          WHERE ct.id IN (SELECT team_id FROM public.competition_players
+                           WHERE lower(regexp_replace(coalesce(license_number, ''), '[^a-zA-Z0-9]', '', 'g')) = ANY($1::text[]))
+          GROUP BY ct.id, ct.name, c.season
+         HAVING count(*) = 2 AND count(cp.license_number) = 2
+          ORDER BY ct.id`, [licences])
+      savedPairs = rows
+    }
+    return { tournament: { id: t.id, ...tournamentClock(t) }, draws, entries, courts, matches, savedPairs }
+  }
+
+  /** Applies a plan of planImport() (inside the caller's transaction, the tournament locked). */
+  async function applyImport (client, t, plan, user) {
+    const conflict = () => abort(fail(409, 'OV_CONFLICT', 'Another change of this tournament came first; try again'))
+    for (const c of plan.courts) {
+      await client.query('INSERT INTO public.beach_courts (tournament_id, number) VALUES ($1, $2)', [t.id, c.number])
+    }
+    const drawIdOf = new Map(plan.draws.filter((d) => d.draw_id).map((d) => [d.key, d.draw_id]))
+    for (const d of plan.draws) {
+      if (d.op !== 'new') continue
+      const { rows: [row] } = await client.query(
+        'INSERT INTO public.beach_draws (tournament_id, category, gender) VALUES ($1, $2, $3) RETURNING id', [t.id, d.category, d.gender])
+      drawIdOf.set(d.key, row.id)
+    }
+    const json = (k, v) => (k === 'player1' || k === 'player2' ? JSON.stringify(v) : v)
+    const touched = new Set()
+    for (const e of plan.entries) {
+      const drawId = drawIdOf.get(e.key)
+      touched.add(drawId)
+      if (e.op === 'new') {
+        const v = e.values
+        await client.query(
+          `INSERT INTO public.beach_entries (draw_id, name, seed, wildcard, team_id, player1, player2)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb)`,
+          [drawId, v.name, v.seed, v.wildcard, v.team_id, JSON.stringify(v.player1), JSON.stringify(v.player2)])
+      } else if (e.op === 'removed') {
+        await client.query("UPDATE public.beach_entries SET status = 'withdrawn', seed = NULL WHERE id = $1", [e.entry_id])
+      } else if (e.op === 'changed') {
+        const keys = e.changes.map((c) => c.field)
+        await client.query(
+          `UPDATE public.beach_entries SET ${keys.map((k, i) => `${k} = $${i + 2}`).join(', ')} WHERE id = $1`,
+          [e.entry_id, ...e.changes.map((c) => json(c.field, c.to))])
+      }
+    }
+    for (const drawId of touched) {
+      await client.query(
+        `UPDATE public.beach_draws SET status = 'seeded' WHERE id = $1 AND status = 'entries'
+            AND EXISTS (SELECT 1 FROM public.beach_entries WHERE draw_id = $1 AND status = 'registered' AND seed IS NOT NULL)`, [drawId])
+    }
+    // the brackets of the Matches sheet, in the plan's order (its game numbers)
+    for (const d of plan.draws) {
+      if (!d.bracket) continue
+      const draw = await lockDraw(client, drawIdOf.get(d.key))
+      const { rows: entries } = await client.query(
+        "SELECT * FROM public.beach_entries WHERE draw_id = $1 AND status = 'registered' ORDER BY seed NULLS LAST, created_at, id", [draw.id])
+      if (entries.length !== d.bracket.teams || entries.some((e, i) => e.seed !== i + 1)) throw conflict()
+      const bracket = doubleElimination(entries.length, { boardSize: d.bracket.board_size })
+      const matches = bracket.matches.map((m) => ({ ...m, game_n: d.bracket.first_game - 1 + m.n }))
+      const chosen = draw.board_size != null && draw.board_size >= entries.length ? draw.board_size : null
+      await writeBracket(client, { t, d: draw, entries, matches, chosen })
+    }
+    if (plan.matches.length) {
+      const { rows: games } = await client.query('SELECT id, game_n FROM public.beach_tmatches WHERE tournament_id = $1', [t.id])
+      const { rows: courts } = await client.query('SELECT id, number FROM public.beach_courts WHERE tournament_id = $1', [t.id])
+      const gameId = new Map(games.map((g) => [g.game_n, g.id]))
+      const courtId = new Map(courts.map((c) => [c.number, c.id]))
+      for (const m of plan.matches) {
+        const id = gameId.get(m.game_n)
+        if (!id) throw conflict()
+        const set = {}
+        if (m.set.court != null) set.court_id = courtId.get(m.set.court)
+        if (m.set.scheduled_at) set.scheduled_at = m.set.scheduled_at
+        if (m.set.referee) set.referee = m.set.referee
+        if (m.set.scorer) set.scorer = m.set.scorer
+        const keys = Object.keys(set)
+        if (!keys.length) continue
+        await client.query(
+          `UPDATE public.beach_tmatches SET ${keys.map((k, i) => `${k} = $${i + 2}`).join(', ')} WHERE id = $1`, [id, ...keys.map((k) => set[k])])
+      }
+    }
+    const s = plan.summary
+    await audit(client, user.id, 'tournament.import', {
+      tournament_id: t.id,
+      title: t.title,
+      draws_new: s.draws_new,
+      entries_new: s.entries_new,
+      entries_changed: s.entries_changed,
+      entries_removed: s.entries_removed,
+      brackets: s.brackets,
+      matches_changed: s.matches_changed,
+      courts_new: s.courts_new
+    })
   }
 
   /** DELETE bracket: back to entries (only before any match began). */
@@ -1028,45 +1190,22 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
   async function slotConflicts (client, t, m) {
     if (!m.scheduled_at) return []
     const { rows: [d] } = await client.query('SELECT slot_minutes, rest_minutes FROM public.beach_draws WHERE id = $1', [m.draw_id])
-    const rest = d?.rest_minutes || 0
-    const minute = 60000
-    const start = new Date(m.scheduled_at).getTime()
-    const end = start + (m.duration_min || d?.slot_minutes || 50) * minute
     const { rows: others } = await client.query(
       `SELECT x.id, x.draw_id, x.code, x.game_n, x.court_id, x.scheduled_at, x.source1, x.source2,
               coalesce(x.duration_min, dd.slot_minutes) AS dur
          FROM public.beach_tmatches x JOIN public.beach_draws dd ON dd.id = x.draw_id
         WHERE x.tournament_id = $1 AND x.id <> $2 AND x.scheduled_at IS NOT NULL AND x.status <> 'cancelled'
         ORDER BY x.game_n`, [t.id, m.id])
-    const out = []
-    const at = (x) => new Date(x.scheduled_at).getTime()
-    const until = (x) => at(x) + (x.dur || 50) * minute
-    const z = zurichDayMinutes(new Date(start).toISOString())
-    const days = daysBetween(day(t.starts_on), day(t.ends_on))
-    if (!z || !days.includes(z.day)) out.push({ reason: 'days' })
-    else {
-      const from = minutesOf(hhmm(t.day_start)) ?? 0
-      const to = minutesOf(hhmm(t.day_end)) ?? 24 * 60
-      if (z.minutes < from || z.minutes + (end - start) / minute > to) out.push({ reason: 'hours' })
-    }
-    if (m.court_id) {
-      for (const x of others) {
-        if (x.court_id === m.court_id && at(x) < end && until(x) > start) out.push({ reason: 'court', game_n: x.game_n, code: x.code })
-      }
-    }
-    const sameDraw = others.filter((x) => x.draw_id === m.draw_id)
-    const ref = (s) => /^(?:winner|loser):(.+)$/.exec(s || '')?.[1] ?? null
-    for (const code of new Set([ref(m.source1), ref(m.source2)].filter(Boolean))) {
-      const src = sameDraw.find((x) => x.code === code)
-      if (src && start < until(src) + rest * minute) out.push({ reason: 'before_source', game_n: src.game_n, code: src.code })
-    }
-    for (const x of sameDraw) {
-      if ((ref(x.source1) === m.code || ref(x.source2) === m.code) && at(x) < end + rest * minute) {
-        out.push({ reason: 'after_dependent', game_n: x.game_n, code: x.code })
-      }
-    }
-    return out
+    return slotIssues({
+      match: m,
+      others,
+      tournament: tournamentClock(t),
+      slotMinutes: d?.slot_minutes || 50,
+      restMinutes: d?.rest_minutes || 0
+    })
   }
+  /** The days and play hours of a tournament row, as slotIssues() and the import read them. */
+  const tournamentClock = (t) => ({ starts_on: day(t.starts_on), ends_on: day(t.ends_on), day_start: hhmm(t.day_start), day_end: hhmm(t.day_end) })
 
   // ------------------------------------------------------------------ schedule
   /**
@@ -1203,6 +1342,7 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     ['PUT', new RegExp(`^/api/beach/tournaments/${ID}/courts$`), (m, c) => putCourts({ ...c, id: m[1] })],
     ['POST', new RegExp(`^/api/beach/tournaments/${ID}/draws$`), (m, c) => createDraw({ ...c, id: m[1] })],
     ['POST', new RegExp(`^/api/beach/tournaments/${ID}/schedule$`), (m, c) => schedule({ ...c, id: m[1] })],
+    ['POST', new RegExp(`^/api/beach/tournaments/${ID}/import$`), (m, c) => importTournament({ ...c, id: m[1] })],
     ['PATCH', new RegExp(`^/api/beach/draws/${ID}$`), (m, c) => updateDraw({ ...c, id: m[1] })],
     ['DELETE', new RegExp(`^/api/beach/draws/${ID}$`), (m, c) => deleteDraw({ ...c, id: m[1] })],
     ['POST', new RegExp(`^/api/beach/draws/${ID}/entries$`), (m, c) => createEntry({ ...c, id: m[1] })],
@@ -1221,7 +1361,7 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
    * Route an authenticated /api/beach/* call. The caller (lib/manageApi.js)
    * has already checked that the account may read beach data at all.
    */
-  async function route ({ method, pathname, body, user, access }) {
+  async function route ({ method, pathname, query, body, user, access }) {
     let pathKnown = false
     for (const [m, re, handler] of routes) {
       const match = re.exec(pathname)
@@ -1230,7 +1370,7 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
       if (m !== method) continue
       const ids = match.map((v, i) => (i > 0 && typeof v === 'string' ? v.toLowerCase() : v))
       if (ids.slice(1).some((v) => !isUuid(v))) return notFound()
-      return handler(ids, { user, access, body })
+      return handler(ids, { user, access, body, query })
     }
     return pathKnown ? METHOD_NOT_ALLOWED() : notFound()
   }
@@ -1245,6 +1385,7 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     deleteTournament,
     generate,
     schedule,
+    importTournament,
     enterResult,
     withdrawResult,
     ranking

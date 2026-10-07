@@ -53,7 +53,9 @@ export const AUDIT_ACTIONS = Object.freeze([
   'account.join',
   // db/014: OpenBeach tournaments (lib/beachTournaments.js, app 'beach')
   'tournament.create', 'tournament.update', 'tournament.delete', 'tournament.managers',
-  'tournament.draw', 'tournament.entry', 'tournament.schedule', 'tournament.result'
+  'tournament.draw', 'tournament.entry', 'tournament.schedule', 'tournament.result',
+  // T2: an Excel/CSV import applied (lib/beachTournaments.js importTournament)
+  'tournament.import'
 ])
 export const APPS = SPORTS
 // How a membership came about (auth.app_memberships.joined_via)

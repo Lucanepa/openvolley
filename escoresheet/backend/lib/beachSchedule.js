@@ -199,3 +199,60 @@ export function scheduleMatches ({ matches, draws, courts, days, dayStart = '09:
   }
   return { slots, unplaced, warnings }
 }
+
+/**
+ * What the slot of one match clashes with, by the planner's rules (a hand
+ * move, PATCH tmatches/:id, and the Matches sheet of an import, T2):
+ * [{ reason, game_n?, code? }], reason one of
+ *   court            another match on the same court at the same time
+ *   days             not on a day of the tournament
+ *   hours            outside the play hours (day_start .. day_end, Zurich)
+ *   before_source    before a match it waits for has ended plus the rest
+ *   after_dependent  a match that waits for this one starts before it has ended plus the rest
+ *
+ * @param {object} o
+ * @param {{ id: string, draw_id: string, code: string, court_id: string|null, scheduled_at: string|null,
+ *   duration_min?: number|null, source1: string, source2: string }} o.match
+ * @param {Array<{ id: string, draw_id: string, code: string, game_n: number, court_id: string|null,
+ *   scheduled_at: string, dur?: number|null, source1: string, source2: string }>} o.others
+ *   the tournament's other matches that have a start time (not cancelled)
+ * @param {{ starts_on: string, ends_on: string, day_start: string, day_end: string }} o.tournament
+ *   'YYYY-MM-DD' and 'HH:MM'
+ * @param {number} [o.slotMinutes]  the draw's minutes per match (when the match has no duration)
+ * @param {number} [o.restMinutes]  the draw's rest
+ */
+export function slotIssues ({ match: m, others, tournament: t, slotMinutes = 50, restMinutes = 0 }) {
+  if (!m.scheduled_at) return []
+  const rest = restMinutes || 0
+  const minute = 60000
+  const start = new Date(m.scheduled_at).getTime()
+  const end = start + (m.duration_min || slotMinutes || 50) * minute
+  const out = []
+  const at = (x) => new Date(x.scheduled_at).getTime()
+  const until = (x) => at(x) + (x.dur || 50) * minute
+  const z = zurichDayMinutes(new Date(start).toISOString())
+  const days = daysBetween(t.starts_on, t.ends_on)
+  if (!z || !days.includes(z.day)) out.push({ reason: 'days' })
+  else {
+    const from = minutesOf(t.day_start) ?? 0
+    const to = minutesOf(t.day_end) ?? DAY_MIN
+    if (z.minutes < from || z.minutes + (end - start) / minute > to) out.push({ reason: 'hours' })
+  }
+  if (m.court_id) {
+    for (const x of others) {
+      if (x.court_id === m.court_id && at(x) < end && until(x) > start) out.push({ reason: 'court', game_n: x.game_n, code: x.code })
+    }
+  }
+  const sameDraw = others.filter((x) => x.draw_id === m.draw_id)
+  const ref = (s) => /^(?:winner|loser):(.+)$/.exec(s || '')?.[1] ?? null
+  for (const code of new Set([ref(m.source1), ref(m.source2)].filter(Boolean))) {
+    const src = sameDraw.find((x) => x.code === code)
+    if (src && start < until(src) + rest * minute) out.push({ reason: 'before_source', game_n: src.game_n, code: src.code })
+  }
+  for (const x of sameDraw) {
+    if ((ref(x.source1) === m.code || ref(x.source2) === m.code) && at(x) < end + rest * minute) {
+      out.push({ reason: 'after_dependent', game_n: x.game_n, code: x.code })
+    }
+  }
+  return out
+}
