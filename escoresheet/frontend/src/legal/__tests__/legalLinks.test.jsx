@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { render, screen } from '@testing-library/react'
-import { LEGAL_DOCS, LEGAL_LANGUAGES, LEGAL_PATHS, LEGAL_SITE, legalLanguage, legalUrl } from '../legalLinks'
+import { LEGAL_DOCS, LEGAL_LANGUAGES, LEGAL_PATHS, LEGAL_SITE, legalLanguage, legalUrl } from '../legalUrls'
 import en from '../../i18n/locales/en.json'
 import de from '../../i18n/locales/de.json'
 import deCH from '../../i18n/locales/de-CH.json'
@@ -55,7 +55,7 @@ describe('legal page URLs', () => {
   })
 
   it('the backend copy (its Docker build sees only backend/) is the same code', () => {
-    const front = readRel('../legalLinks.js')
+    const front = readRel('../legalUrls.js')
     const back = readRel('../../../../backend/lib/legalLinks.js')
     expect(back.endsWith(front)).toBe(true)
     expect(back.slice(0, back.length - front.length)).toMatch(/^(\/\/ .*\n)+\n$/)
