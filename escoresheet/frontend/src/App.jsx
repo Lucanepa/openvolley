@@ -1061,6 +1061,22 @@ export default function App() {
     if (currentRelayKey && relaySyncRef.current) relaySyncRef.current()
   }, [currentRelayKey])
 
+  // A role let in or out (Connect tablets, Match setup) or a new PIN: tell
+  // the relay at once, not after the 30 s backup sync. The relay checks the
+  // PINs itself, so until then a tablet just let in was told its right PIN
+  // is wrong (and each retry counted toward the per-minute PIN limit), and
+  // one just switched off could still get in. An open Scoreboard syncs on
+  // these changes itself; a second sync of the same data is harmless.
+  const relayAccessSignature = currentMatch
+    ? [
+        currentMatch.refereeConnectionEnabled, currentMatch.homeTeamConnectionEnabled, currentMatch.awayTeamConnectionEnabled,
+        currentMatch.refereePin, currentMatch.homeTeamPin, currentMatch.awayTeamPin
+      ].map(v => String(v ?? '')).join('|')
+    : null
+  useEffect(() => {
+    if (relayAccessSignature != null && relaySyncRef.current) relaySyncRef.current()
+  }, [relayAccessSignature])
+
   useEffect(() => {
     // Keep the match on the relay even on the home screen (for dashboards).
     // Use matchId or fall back to currentMatch?.id for background sync
