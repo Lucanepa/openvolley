@@ -6,7 +6,9 @@ import { db } from '../db/db'
 import ballFallback from '../ball_fallback.png'
 
 // Primary ball image (with a bundled copy as fallback)
-const ballImage = `${import.meta.env.BASE_URL}ball.png`
+// The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
+// stay cached (old green ball) after an update
+const ballImage = ballFallback
 import { Results } from '../../scoresheet_pdf/components/FooterSection'
 import TestModeControls from './TestModeControls'
 import { ArrowLeft } from 'lucide-react'

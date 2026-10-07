@@ -25,7 +25,9 @@ import { useDashboardServer } from './hooks/useDashboardServer'
 import ballFallback from './ball_fallback.png'
 
 // Primary ball image (with a bundled copy as fallback)
-const ballImage = `${import.meta.env.BASE_URL}ball.png`
+// The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
+// stay cached (old green ball) after an update
+const ballImage = ballFallback
 
 import {
   TEST_REFEREE_SEED_DATA,

@@ -11,7 +11,9 @@ import { loadMatchList } from './utils/matchListSource'
 import ballFallback from './ball_fallback.png'
 
 // Primary ball image (with a bundled copy as fallback)
-const ballImage = `${import.meta.env.BASE_URL}ball.png`
+// The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
+// stay cached (old green ball) after an update
+const ballImage = ballFallback
 import { supabase } from './lib/supabaseClient'
 import { apiFrom } from './lib/apiClient'
 import { CalendarX2, ChevronRight, Loader2, RefreshCw } from 'lucide-react'

@@ -22,7 +22,9 @@ import { useComponentLogging } from '../contexts/LoggingContext'
 import { exportLogsAsNDJSON } from '../utils/comprehensiveLogger'
 
 // Primary ball image (with a bundled copy as fallback)
-const ballImage = `${import.meta.env.BASE_URL}ball.png`
+// The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
+// stay cached (old green ball) after an update
+const ballImage = ballFallback
 import { sanitizeForFilename } from '../utils/stringUtils'
 import { formatTimeLocal } from '../utils/timeUtils'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
