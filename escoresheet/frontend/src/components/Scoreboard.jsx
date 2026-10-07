@@ -16540,11 +16540,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   alt="Volleyball"
                                   style={{
                                     position: 'absolute',
-                                    left: vmin(-8),
+                                    // 15% smaller than the old 8, set off the circle so it clears the I and C badges
+                                    left: vmin(-9.5),
                                     top: '50%',
                                     transform: 'translateY(-50%)',
-                                    width: vmin(8),
-                                    height: vmin(8),
+                                    width: vmin(6.8),
+                                    height: vmin(6.8),
                                     zIndex: 5
                                   }}
                                 />
@@ -17121,11 +17122,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                   alt="Volleyball"
                                   style={{
                                     position: 'absolute',
-                                    right: vmin(-8),
+                                    // 15% smaller than the old 8, set off the circle so it clears the I and C badges
+                                    right: vmin(-9.5),
                                     top: '50%',
                                     transform: 'translateY(-50%)',
-                                    width: vmin(8),
-                                    height: vmin(8),
+                                    width: vmin(6.8),
+                                    height: vmin(6.8),
                                     zIndex: 5
                                   }}
                                 />
