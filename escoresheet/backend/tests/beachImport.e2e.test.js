@@ -150,6 +150,11 @@ describe('beach tournament import end to end', { skip: SKIP }, () => {
     assert.equal(done.applied.entries_new, 5)
     const b = await bundle()
     assert.deepEqual(b.draws.map((d) => [d.category, d.gender, d.status]), [['A1', 'women', 'seeded'], ['B1', 'men', 'entries']])
+    // the file's order is kept by created_at (one transaction: not now(), whose ties fell to the random ids)
+    const { rows: stamps } = await sql.query(
+      `SELECT (SELECT count(DISTINCT created_at)::int FROM public.beach_draws WHERE tournament_id = $1) AS draws,
+              (SELECT count(DISTINCT e.created_at)::int FROM public.beach_entries e JOIN public.beach_draws d ON d.id = e.draw_id WHERE d.tournament_id = $1) AS entries`, [tid])
+    assert.deepEqual(stamps[0], { draws: 2, entries: 5 })
     const women = b.entries.filter((e) => e.draw_id === b.draws[0].id)
     assert.deepEqual(women.map((e) => [e.seed, e.name, e.wildcard]), [
       [1, 'Muster/Beispiel', false], [2, 'Keller/Frei', false], [3, 'Huber/Meier', false], [4, 'Graf/Roth', true]
@@ -191,6 +196,15 @@ describe('beach tournament import end to end', { skip: SKIP }, () => {
     assert.equal(p.can_apply, false)
     assert.deepEqual(p.rows.entries[0].messages.map((m) => m.code).sort(), ['bad_country', 'bad_gender'])
     expectCode(await apply(users.mia, bad, p.hash), 400, 'OV_IMPORT_INVALID')
+    // a NUL (Postgres refuses it) is a row error in the preview, never a 503 on the apply
+    for (const nul of [{ p1_last: 'Mu\u0000ster' }, { team: 'Te\u0000am' }]) {
+      const body = { entries: [pair(2, 'Muster', 'Beispiel', { draw: 'Z9', ...nul })] }
+      const n = okData(await preview(users.mia, body))
+      assert.equal(n.can_apply, false)
+      assert.equal(n.rows.entries[0].status, 'error')
+      assert.ok(n.rows.entries[0].messages.some((m) => m.code === 'bad_char'))
+      expectCode(await apply(users.mia, body, n.hash), 400, 'OV_IMPORT_INVALID')
+    }
 
     const comp = okData(await call(users.mia, 'POST', '/api/saved-teams/competitions', { name: `Pairs ${tag}`, season: '2026', sport: 'beach' }), 201)
     const team = okData(await call(users.mia, 'POST', '/api/saved-teams/teams', { competition_id: comp.competition?.id ?? comp.id, name: 'Graf/Roth' }), 201)

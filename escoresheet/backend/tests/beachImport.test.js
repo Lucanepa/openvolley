@@ -77,6 +77,27 @@ describe('import values', () => {
     assert.deepEqual(input.matches[1].msgs.map((m) => m.code), ['bad_time', 'date_time_pair', 'bad_court'])
   })
 
+  it('refuses control characters in a cell (NUL would fail on the apply), keeps tabs and line breaks as spaces', () => {
+    const input = normalizeImport({
+      entries: [
+        { draw: 'Z9', gender: 'W', p1_last: 'Mu\u0000ster', p2_last: 'B' },
+        { draw: 'Z9', gender: 'W', p1_last: 'C', p2_last: 'D', team: 'Te\u0000am' },
+        { draw: 'Z9', gender: 'W', p1_last: 'E\u001Fx', p2_last: 'F\uFFFF' },
+        { draw: 'Z9', gender: 'W', p1_last: 'Mus\tter', p2_last: 'Bei\r\nspiel' }
+      ]
+    })
+    assert.deepEqual(input.entries.map((r) => r.msgs.filter((m) => m.level === 'error').map((m) => [m.code, m.field])), [
+      [['bad_char', 'p1_last'], ['required', 'p1_last']],
+      [['bad_char', 'team']],
+      [['bad_char', 'p1_last'], ['bad_char', 'p2_last'], ['required', 'p1_last'], ['required', 'p2_last']],
+      []
+    ])
+    assert.deepEqual([input.entries[3].p1.last, input.entries[3].p2.last], ['Mus ter', 'Bei spiel'])
+    const p = planImport(state(), input)
+    assert.equal(p.can_apply, false)
+    assert.deepEqual(p.rows.entries.map((r) => r.status), ['error', 'error', 'error', 'warning'])
+  })
+
   it('takes the time from a date cell that has one, as Zurich time', () => {
     const [m] = normalizeImport({ matches: [{ game: '1', date: '2026-07-11 14:20' }] }).matches
     assert.deepEqual(m.msgs, [])
@@ -174,11 +195,96 @@ describe('import entries', () => {
       ]
     })
     assert.deepEqual(p.rows.entries.map((r) => [r.row, codes(r)]), [
-      [2, []], [3, ['duplicate_pair']], [4, ['duplicate_seed']], [5, ['player_twice']], [6, ['player_twice']], [7, []]
+      [2, []], [3, ['duplicate_pair']], [4, ['duplicate_seed']], [5, ['player_twice']], [6, ['player_twice']],
+      // the same two licences in another draw: allowed, with notice
+      [7, ['licence_other_draw', 'licence_other_draw']]
     ])
+    assert.deepEqual(p.rows.entries[5].messages.map((m) => [m.level, m.licence, m.category, m.first_row]), [['warning', 'A-lic', 'A1', 2], ['warning', 'B-lic', 'A1', 2]])
     assert.equal(p.rows.entries[1].messages[0].first_row, 2)
     assert.equal(p.can_apply, false)
     assert.equal(p.summary.errors, 4)
+  })
+
+  it('a pair without licences keeps its first names when the file has none (no withdraw + re-entry)', () => {
+    const anna = { first: 'Anna', last: 'Muster', licence: null, country: 'SUI' }
+    const bea = { first: 'Bea', last: 'Beispiel', licence: null, country: null }
+    const stored = (status) => state({
+      draws: [draw('d1', 'A1', 'women', { status })],
+      entries: [{ id: 'e1', draw_id: 'd1', seed: 1, team_id: 'saved-1', name: 'Muster/Beispiel', player1: anna, player2: bea, wildcard: false, status: 'registered' }]
+    })
+    const file = (over = {}) => ({ entries: [{ row: 2, draw: 'A1', gender: 'W', p1_last: 'Muster', p2_last: 'Beispiel', seed: '1', ...over }] })
+    for (const body of [file(), file({ p1_last: 'Beispiel', p2_last: 'Muster' }), file({ p2_first: 'Bea', p2_licence: '777' })]) {
+      const p = plan(stored('entries'), body)
+      assert.equal(p.rows.entries[0].op, body.entries[0].p2_licence ? 'changed' : 'unchanged', JSON.stringify(body))
+      assert.equal(p.summary.entries_new, 0)
+      assert.equal(p.summary.entries_removed, 0)
+      for (const e of p.entries) assert.equal(e.entry_id, 'e1')
+    }
+    // the licence fills in; the first names and the country stay
+    const p = plan(stored('entries'), file({ p2_first: 'Bea', p2_licence: '777' }))
+    assert.deepEqual(p.entries[0].changes, [{ field: 'player2', from: bea, to: { ...bea, licence: '777' } }])
+    // a drawn bracket: the same file is no error
+    const drawn = plan(stored('drawn'), file())
+    assert.equal(drawn.summary.errors, 0)
+    assert.deepEqual(drawn.warnings, [])
+    assert.equal(drawn.rows.entries[0].op, 'unchanged')
+    // another first name is another player: a new pair
+    const other = plan(stored('entries'), file({ p1_first: 'Alma' }))
+    assert.deepEqual(other.entries.map((e) => e.op), ['new', 'removed'])
+  })
+
+  it('warns of a player in two pairs of a draw, by name when unlicensed, and of a disqualified pair named again', () => {
+    const p = plan(state(), {
+      entries: [
+        { row: 2, draw: 'A1', gender: 'W', p1_first: 'Anna', p1_last: 'Muster', p2_last: 'B' },
+        { row: 3, draw: 'A1', gender: 'W', p1_first: 'Anna', p1_last: 'Muster', p2_last: 'C' },
+        { row: 4, draw: 'A1', gender: 'W', p1_last: 'Muster', p2_last: 'D' },
+        // namesakes with two different licences are two players
+        row(5, 'A1', 'women', 'Same', 'E', { p1_first: 'Eva' }),
+        row(6, 'A1', 'women', 'Same', 'F', { p1_first: 'Eva', p1_licence: 'other-lic' })
+      ]
+    })
+    assert.deepEqual(p.rows.entries.map((r) => [r.row, codes(r)]), [
+      [2, ['no_licence']], [3, ['no_licence', 'name_twice']], [4, ['no_licence', 'name_twice']], [5, []], [6, []]
+    ])
+    assert.deepEqual(p.rows.entries[1].messages[1], { level: 'warning', code: 'name_twice', name: 'Anna Muster', first_row: 2 })
+    assert.equal(p.summary.errors, 0)
+
+    for (const status of ['dq', 'replaced']) {
+      const st = state({ draws: [draw('d1', 'A1', 'women')], entries: [entry('e1', 'd1', 1, 'A', 'B', { status })] })
+      const q = plan(st, { entries: [row(2, 'A1', 'women', 'A', 'B', { seed: '1' })] })
+      assert.equal(q.rows.entries[0].status, 'warning')
+      assert.deepEqual(q.rows.entries[0].messages, [{ level: 'warning', code: 'reinstated', status }])
+      assert.deepEqual(q.entries[0].changes, [{ field: 'status', from: status, to: 'registered' }])
+    }
+    // a withdrawn pair comes back without notice
+    const w = plan(state({ draws: [draw('d1', 'A1', 'women')], entries: [entry('e1', 'd1', 1, 'A', 'B', { status: 'withdrawn' })] }),
+      { entries: [row(2, 'A1', 'women', 'A', 'B', { seed: '1' })] })
+    assert.equal(w.rows.entries[0].status, 'ok')
+  })
+
+  it('a licence in a draw the file leaves alone is a warning too', () => {
+    const st = state({ draws: [draw('d1', 'A1', 'women'), draw('d2', 'A1', 'mixed')], entries: [entry('e1', 'd2', 1, 'A', 'X')] })
+    const p = plan(st, { entries: [row(2, 'A1', 'women', 'A', 'B')] })
+    assert.deepEqual(p.rows.entries[0].messages, [{ level: 'warning', code: 'licence_other_draw', licence: 'A-lic', category: 'A1', gender: 'mixed', first_row: null }])
+  })
+
+  it('refuses rows of a category and gender that two draws share (any case), instead of picking one', () => {
+    const st = state({
+      draws: [draw('d1', 'A1', 'women'), draw('d2', 'a1', 'women'), draw('d3', 'B1', 'women')],
+      entries: [entry('e1', 'd1', 1, 'A', 'B')],
+      matches: [{ id: 'm1', draw_id: 'd1', game_n: 1, code: 'W1', phase: 'winners', source1: 'seed:1', source2: 'seed:4', entry1_id: null, entry2_id: null, court_id: null, scheduled_at: null, duration_min: 50, status: 'scheduled', match_id: null, referee: null, scorer: null }]
+    })
+    const p = plan(st, {
+      entries: [row(2, 'A1', 'women', 'A', 'B'), row(3, 'B1', 'women', 'C', 'D')],
+      matches: [{ row: 2, draw: 'a1', gender: 'W', game: '1', court: '1' }]
+    })
+    assert.deepEqual(p.rows.entries.map((r) => [r.row, r.status, codes(r)]), [[2, 'error', ['ambiguous_draw']], [3, 'ok', []]])
+    assert.deepEqual(p.rows.entries[0].messages[0], { level: 'error', code: 'ambiguous_draw', category: 'A1', gender: 'women', count: 2 })
+    assert.deepEqual(codes(p.rows.matches[0]), ['ambiguous_draw'])
+    // nothing of the two draws is planned: no new pair, no withdrawal
+    assert.deepEqual(p.entries.map((e) => [e.op, e.key]), [['new', 'b1|women']])
+    assert.equal(p.can_apply, false)
   })
 
   it('a drawn bracket takes names, players and wildcards only; its missing pairs stay', () => {
@@ -259,6 +365,28 @@ describe('import matches', () => {
     assert.equal(p.rows.matches[0].messages[1].reason, 'court')
     assert.equal(p.rows.matches[0].messages[1].game, 3)
     assert.equal(p.rows.matches[2].messages[0].reason, 'hours')
+    assert.equal(p.can_apply, false)
+  })
+
+  it('refuses a date on no day of the tournament (another year, Excel\'s 1899 of a time-only cell); a day just played stays', () => {
+    const st = state({
+      draws: [draw('d1', 'A1', 'women', { status: 'drawn' })],
+      entries: four('d1'),
+      matches: games('d1', 1, ['W1', 'W2', 'W3', 'W4']).map((m, i) => (i === 3 ? { ...m, scheduled_at: new Date('2026-07-01T07:00:00Z') } : m))
+    })
+    const p = plan(st, {
+      matches: [
+        { row: 2, game: '1', date: '11.7.62', time: '09:00' },
+        { row: 3, game: '2', date: '1899-12-30 09:00' },
+        { row: 4, game: '3', date: '12.07.2026', time: '09:00' },
+        // the stored (old) start, unchanged: not written, no error
+        { row: 5, game: '4', date: '01.07.2026', time: '09:00' }
+      ]
+    })
+    assert.deepEqual(p.rows.matches.map((r) => [r.row, r.status, codes(r)]), [
+      [2, 'error', ['date_outside']], [3, 'error', ['date_outside']], [4, 'ok', []], [5, 'ok', []]
+    ])
+    assert.deepEqual(p.rows.matches[0].messages[0], { level: 'error', code: 'date_outside', date: '2062-07-11', starts_on: '2026-07-11', ends_on: '2026-07-12' })
     assert.equal(p.can_apply, false)
   })
 

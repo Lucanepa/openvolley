@@ -67,6 +67,8 @@ describe('cells', () => {
     expect(cellText(46214.75, 'time')).toBe('18:00')
     expect(cellText('2026-07-11T00:00:00', 'date')).toBe('2026-07-11')
     expect(cellText('2026-07-11T09:30:00', 'date')).toBe('2026-07-11 09:30')
+    // a time-only number in the Date column is no day (the server says bad_date), never 30.12.1899
+    expect(cellText(0.375, 'date')).toBe('0.375')
   })
 
   it('keeps other numbers as written, booleans as yes / no, text trimmed', () => {

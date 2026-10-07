@@ -152,6 +152,16 @@ describe('beach tournaments end to end', { skip: SKIP }, () => {
     const men = okData(await call(users.mia, 'POST', `/api/beach/tournaments/${ids.t}/draws`, { gender: 'men', category: 'B1' }), 201).draw
     ids.women = women.id
     ids.men = men.id
+    // one draw per category (any case) and gender: the import finds draws so
+    expectCode(await call(users.mia, 'POST', `/api/beach/tournaments/${ids.t}/draws`, { gender: 'women', category: 'a1' }), 409, 'OV_DRAW_EXISTS')
+    const mixed = okData(await call(users.mia, 'POST', `/api/beach/tournaments/${ids.t}/draws`, { gender: 'mixed', category: 'A1' }), 201).draw
+    expectCode(await call(users.mia, 'PATCH', `/api/beach/draws/${men.id}`, { category: 'A1', gender: 'women' }), 409, 'OV_DRAW_EXISTS')
+    expectCode(await call(users.mia, 'PATCH', `/api/beach/draws/${men.id}`, { category: 'a1 ', gender: 'mixed' }), 409, 'OV_DRAW_EXISTS')
+    okData(await call(users.mia, 'PATCH', `/api/beach/draws/${women.id}`, { category: 'A1' })) // itself: no clash
+    okData(await call(users.mia, 'DELETE', `/api/beach/draws/${mixed.id}`))
+    // a NUL typed by hand is a 400, not a 503 from Postgres
+    expectCode(await call(users.mia, 'POST', `/api/beach/tournaments/${ids.t}/draws`, { gender: 'men', category: 'B\u00002' }), 400)
+    expectCode(await call(users.mia, 'PATCH', `/api/beach/tournaments/${ids.t}`, { venue: 'Strand\u0000bad' }), 400)
     // a saved beach pair (db/009) of the organiser
     const comp = okData(await call(users.mia, 'POST', '/api/saved-teams/competitions', { name: `Tour ${tag}`, season: '2026', sport: 'beach' }), 201)
     const team = okData(await call(users.mia, 'POST', '/api/saved-teams/teams', { competition_id: comp.competition?.id ?? comp.id, name: 'Muster/Beispiel' }), 201)
