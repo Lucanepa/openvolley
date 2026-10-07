@@ -3209,6 +3209,7 @@
       "circledPoint": "Der Punkt von {{team}} bei {{score}} wird als Strafpunkt eingekreist.",
       "pointNow": "Der Punkt für {{team}} wird nach der Sanktion hinzugefügt.",
       "pointStays": "Der Punkt bleibt als normaler Punkt (nicht mehr eingekreist).",
+      "penaltyNotNext": "Den Ballwechsel nach {{score}} hat {{team}} gewonnen, nicht der Gegner: Prüfe, ob die Sanktion bei diesem Spielstand ausgesprochen wurde.",
       "irBox": "Der Buchstabe von Team {{letter}} wird im Feld «Nicht ordnungsgemässer Antrag» durchgestrichen (X); kein Spielstand.",
       "expulsionReplacement": "Erfasse den Ersatz mit «+ Spielerwechsel hinzufügen» (ausserordentlich, wenn kein regulärer Wechsel möglich war).",
       "laterRotations": "Spätere Rotationen dieses Satzes werden nicht neu berechnet.",
