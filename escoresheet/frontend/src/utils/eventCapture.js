@@ -3,7 +3,10 @@
  * Captures all user interactions at the document level
  */
 
-import { logUI, throttle, debounce } from './comprehensiveLogger'
+import { logUI, throttle, debounce, redactScreenText } from './comprehensiveLogger'
+
+export { redactScreenText }
+import { reportAppError } from './activity/appError'
 
 // Event configuration with throttle settings
 const EVENT_CONFIG = {
@@ -133,11 +136,23 @@ function extractDataAttributes(element) {
   return data
 }
 
+// Link targets without their query or fragment (tablet links carry ?pin=)
+function linkWithoutQuery(href) {
+  if (!href) return null
+  try {
+    const u = new URL(href)
+    return `${u.origin}${u.pathname}`
+  } catch {
+    return String(href).split(/[?#]/)[0]
+  }
+}
+
 /**
  * Extract meaningful info from a DOM element
  */
 function extractTargetInfo(element) {
   if (!element) return null
+  const hidden = !!element.closest?.('[data-sensitive]')
 
   return {
     tagName: element.tagName?.toLowerCase(),
@@ -148,9 +163,10 @@ function extractTargetInfo(element) {
     name: element.name || null,
     type: element.type || null,
     role: element.getAttribute?.('role') || null,
-    ariaLabel: element.getAttribute?.('aria-label') || null,
-    textContent: element.textContent?.substring(0, 50)?.trim() || null,
-    href: element.tagName === 'A' ? element.href : null,
+    ariaLabel: hidden ? null : redactScreenText(element.getAttribute?.('aria-label') || null),
+    // a 6-digit PIN is cut at character 50 the same way, so redact the whole text first
+    textContent: hidden ? null : (redactScreenText(element.textContent?.trim() || '')?.substring(0, 50)?.trim() || null),
+    href: element.tagName === 'A' ? linkWithoutQuery(element.href) : null,
     path: getElementPath(element),
     dataAttributes: extractDataAttributes(element)
   }
@@ -397,6 +413,7 @@ export function uninstallGlobalEventCapture() {
  * Handle global errors
  */
 function handleGlobalError(event) {
+  reportAppError(event.error?.message || event.message, event.error?.stack, 'window.error')
   logUI('error', 'global', 'error', {
     message: event.message,
     filename: event.filename,
@@ -410,6 +427,7 @@ function handleGlobalError(event) {
  * Handle unhandled promise rejections
  */
 function handleUnhandledRejection(event) {
+  reportAppError(event.reason?.message || String(event.reason), event.reason?.stack, 'unhandledrejection')
   logUI('error', 'global', 'unhandledrejection', {
     reason: event.reason?.message || String(event.reason),
     stack: event.reason?.stack

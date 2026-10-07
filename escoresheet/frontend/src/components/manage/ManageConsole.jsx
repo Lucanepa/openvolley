@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, ClipboardList, KeyRound, Medal, ScrollText, ShieldCheck, Trophy, Users } from 'lucide-react'
+import { Activity, ArrowLeft, ClipboardList, KeyRound, Medal, ScrollText, ShieldCheck, Trophy, Users } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { ConsoleShell, ConsolePanel, consoleHeaderBtn } from '../../ui'
 import AccountsPanel from './AccountsPanel'
@@ -8,6 +8,7 @@ import InvitesPanel from './InvitesPanel'
 import OfficialGamesPanel from './OfficialGamesPanel'
 import ClosedMatchesPanel from './ClosedMatchesPanel'
 import AuditPanel from './AuditPanel'
+import ActivityPanel from './ActivityPanel'
 import SavedTeamsPanel from './SavedTeamsPanel'
 import TournamentsPanel from './tournaments/TournamentsPanel'
 import { accessForApp } from '../../lib/access'
@@ -20,6 +21,8 @@ const TABS = [
   { id: 'games', icon: Trophy, admin: true },
   { id: 'matches', icon: ShieldCheck, admin: true },
   { id: 'audit', icon: ScrollText, admin: true },
+  // the scoring devices' activity log (db/016)
+  { id: 'activity', icon: Activity, admin: true },
   { id: 'teams', icon: ClipboardList, admin: false },
   // OpenBeach only (plan phase T1): beach competition managers and the admin
   { id: 'tournaments', icon: Medal, admin: false, apps: ['beach'] }
@@ -60,6 +63,11 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions }) {
   const current = allowed.includes(tab) ? tab : allowed[0]
   // Panels mount on first visit and then stay mounted (ConsolePanel)
   const [visited, setVisited] = useState(() => new Set(current ? [current] : []))
+  // "Activity" on a match (matches tab): the activity tab, filtered to it
+  const [activityMatch, setActivityMatch] = useState('')
+  const showActivity = allowed.includes('activity')
+    ? (ext) => { setActivityMatch(ext); onTab?.('activity') }
+    : null
   useEffect(() => {
     if (current && !visited.has(current)) setVisited(v => new Set([...v, current]))
   }, [current, visited])
@@ -106,8 +114,9 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions }) {
         {visited.has('accounts') && <ConsolePanel id="accounts" current={current}><AccountsPanel selfId={user.id} app={scope} /></ConsolePanel>}
         {visited.has('invites') && <ConsolePanel id="invites" current={current}><InvitesPanel app={scope} /></ConsolePanel>}
         {visited.has('games') && <ConsolePanel id="games" current={current}><OfficialGamesPanel /></ConsolePanel>}
-        {visited.has('matches') && <ConsolePanel id="matches" current={current}><ClosedMatchesPanel /></ConsolePanel>}
+        {visited.has('matches') && <ConsolePanel id="matches" current={current}><ClosedMatchesPanel onShowActivity={showActivity} /></ConsolePanel>}
         {visited.has('audit') && <ConsolePanel id="audit" current={current}><AuditPanel app={scope} /></ConsolePanel>}
+        {visited.has('activity') && <ConsolePanel id="activity" current={current}><ActivityPanel app={scope} initialMatch={activityMatch} /></ConsolePanel>}
         {visited.has('teams') && <ConsolePanel id="teams" current={current}><SavedTeamsPanel userId={user.id} sport={scope} /></ConsolePanel>}
         {visited.has('tournaments') && <ConsolePanel id="tournaments" current={current}><TournamentsPanel /></ConsolePanel>}
       </ConsoleShell>

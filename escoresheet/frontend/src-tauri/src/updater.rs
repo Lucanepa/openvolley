@@ -626,7 +626,7 @@ fn save_prefs(path: Option<&Path>, prefs: &Prefs) {
     }
     if let Ok(text) = serde_json::to_string_pretty(prefs) {
         if let Err(e) = std::fs::write(path, text) {
-            eprintln!("[update] cannot save {}: {e}", path.display());
+            log::warn!("[update] cannot save {}: {e}", path.display());
         }
     }
 }
@@ -649,10 +649,10 @@ pub fn start<R: Runtime>(app: AppHandle<R>) {
         i.kind
     };
     if kind == Kind::Unsupported {
-        eprintln!("[update] not an installed copy (no bundle type): no automatic updates");
+        log::warn!("[update] not an installed copy (no bundle type): no automatic updates");
         return;
     }
-    eprintln!("[update] {} {kind:?}: checking after the page loaded, then every 6 h", app.package_info().version);
+    log::info!("[update] {} {kind:?}: checking after the page loaded, then every 6 h", app.package_info().version);
     tauri::async_runtime::spawn(async move {
         // never at startup: once the scoretable page is there, and a minute later
         while !app.state::<Lifecycle>().page_ready() {
@@ -808,7 +808,7 @@ pub async fn check<R: Runtime>(app: &AppHandle<R>, reason: Reason) {
         match found {
             Err(e) => {
                 // offline, a venue Wi-Fi without uplink, both endpoints down
-                eprintln!("[update] check failed: {e}");
+                log::warn!("[update] check failed: {e}");
                 i.phase = Phase::Failed { msg: "checkFailed".into() };
                 None
             }
@@ -819,7 +819,7 @@ pub async fn check<R: Runtime>(app: &AppHandle<R>, reason: Reason) {
                 None
             }
             Ok(Some(update)) => {
-                eprintln!("[update] {} is available (running {})", update.version, update.current_version);
+                log::info!("[update] {} is available (running {})", update.version, update.current_version);
                 let same = i.available.as_ref().is_some_and(|a| a.version == update.version);
                 i.available = Some(Available {
                     version: update.version.clone(),
@@ -908,16 +908,16 @@ async fn download_update<R: Runtime>(app: &AppHandle<R>, update: Update) {
     let mut i = updates.lock();
     match result {
         None => {
-            eprintln!("[update] a match started: download stopped, again after it");
+            log::info!("[update] a match started: download stopped, again after it");
             i.phase = Phase::Available;
         }
         Some(Err(e)) => {
             // includes a signature that does not verify
-            eprintln!("[update] download of {} failed: {e}", update.version);
+            log::warn!("[update] download of {} failed: {e}", update.version);
             i.phase = Phase::Failed { msg: "downloadFailed".into() };
         }
         Some(Ok(bytes)) => {
-            eprintln!("[update] {} downloaded and verified ({} bytes)", update.version, bytes.len());
+            log::info!("[update] {} downloaded and verified ({} bytes)", update.version, bytes.len());
             i.pending = Some(Pending { update, bytes });
             i.phase = Phase::Ready;
         }
@@ -948,7 +948,7 @@ async fn deb_upgrade<R: Runtime>(app: &AppHandle<R>) {
             .status()
             .map(|s| s.code())
             .unwrap_or_else(|e| {
-                eprintln!("[update] pkexec: {e}");
+                log::info!("[update] pkexec: {e}");
                 None
             })
     })
@@ -956,7 +956,7 @@ async fn deb_upgrade<R: Runtime>(app: &AppHandle<R>) {
     .unwrap_or(None);
     let replaced = std::fs::read_link("/proc/self/exe").map(|p| exe_replaced(&p.to_string_lossy())).unwrap_or(false);
     let outcome = deb_outcome(code, replaced);
-    eprintln!("[update] apt-upgrade for {version:?}: exit {code:?} -> {outcome:?}");
+    log::info!("[update] apt-upgrade for {version:?}: exit {code:?} -> {outcome:?}");
     let mut i = updates.lock();
     i.phase = match outcome {
         DebOutcome::Upgraded => Phase::RestartPending,
@@ -982,7 +982,7 @@ async fn deb_upgrade<R: Runtime>(_app: &AppHandle<R>) {}
 /// RunEvent::Exit, then Tauri starts the binary again (for a deb: the new one
 /// on disk; for an AppImage: $APPIMAGE).
 fn restart_app<R: Runtime>(app: &AppHandle<R>) {
-    eprintln!("[update] restarting into the new version");
+    log::info!("[update] restarting into the new version");
     lifecycle::confirm_restart(app);
     app.request_restart();
 }
@@ -1016,7 +1016,7 @@ fn gate_clear<R: Runtime>(app: &AppHandle<R>) -> Result<(), InstallError> {
 fn restart_when_clear<R: Runtime>(app: &AppHandle<R>) -> Result<(), InstallError> {
     app.state::<Updates>().set_phase(Phase::RestartPending);
     if let Err(e) = gate_clear(app) {
-        eprintln!("[update] installed; the restart waits (the gate closed meanwhile)");
+        log::info!("[update] installed; the restart waits (the gate closed meanwhile)");
         return Err(e);
     }
     restart_app(app);
@@ -1061,7 +1061,7 @@ pub async fn install_now<R: Runtime>(app: &AppHandle<R>) -> Result<(), InstallEr
                 // AppImage: the file is replaced; Windows does not get here
                 Ok(()) => restart_when_clear(app),
                 Err(e) => {
-                    eprintln!("[update] install of {version} failed: {e}");
+                    log::warn!("[update] install of {version} failed: {e}");
                     after_failed_install(app);
                     let code = if needs_admin(&e) { "needsAdmin" } else { "installFailed" };
                     let mut i = updates.lock();
@@ -1104,7 +1104,7 @@ pub fn install_from_tray<R: Runtime>(app: &AppHandle<R>) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         if let Err(e) = install_now(&app).await {
-            eprintln!("[update] tray restart refused: {}", e.code);
+            log::warn!("[update] tray restart refused: {}", e.code);
             lifecycle::show_windows(&app);
         }
     });
@@ -1127,17 +1127,17 @@ pub fn on_confirmed_quit<R: Runtime>(app: &AppHandle<R>) {
         }
         let declined = i.pending.as_ref().is_some_and(|p| i.prefs.declined_active(&p.update.version, now_secs()));
         if declined {
-            eprintln!("[update] the administrator prompt was declined recently: not installing on quit");
+            log::warn!("[update] the administrator prompt was declined recently: not installing on quit");
             return;
         }
         let Some(p) = i.pending.take() else { return };
         p
     };
     let version = pending.update.version.clone();
-    eprintln!("[update] installing {version} on quit");
+    log::info!("[update] installing {version} on quit");
     let update = pending.update.restart_after_install(false);
     if let Err(e) = update.install(&pending.bytes) {
-        eprintln!("[update] install of {version} on quit failed: {e}");
+        log::warn!("[update] install of {version} on quit failed: {e}");
         if needs_admin(&e) {
             let mut i = updates.lock();
             i.prefs.decline(&version, now_secs());

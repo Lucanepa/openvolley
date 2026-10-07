@@ -58,7 +58,9 @@ export const AUDIT_ACTIONS = Object.freeze([
   'tournament.create', 'tournament.update', 'tournament.delete', 'tournament.managers',
   'tournament.draw', 'tournament.entry', 'tournament.schedule', 'tournament.result',
   // T2: an Excel/CSV import applied (lib/beachTournaments.js importTournament)
-  'tournament.import'
+  'tournament.import',
+  // db/016: activity log rows deleted on request (lib/activityLog.js)
+  'activity.delete'
 ])
 export const APPS = SPORTS
 // How a membership came about (auth.app_memberships.joined_via)

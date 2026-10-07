@@ -105,7 +105,7 @@ fn open_in_system(url: &Url) {
         let mut last = LAST_SYSTEM_OPEN.lock().unwrap_or_else(|e| e.into_inner());
         let now = Instant::now();
         if !system_open_allowed(*last, now, SYSTEM_OPEN_MIN_INTERVAL) {
-            eprintln!("[popup] refused {url}: another link was opened less than a second ago");
+            log::warn!("[popup] refused {}: another link was opened less than a second ago", short(url));
             return;
         }
         *last = Some(now);
@@ -116,7 +116,7 @@ fn open_in_system(url: &Url) {
                 let _ = child.wait(); // reap it (no zombie)
             });
         }
-        Err(e) => eprintln!("[popup] cannot open {url} in the system browser: {e}"),
+        Err(e) => log::warn!("[popup] cannot open {} in the system browser: {e}", short(url)),
     }
 }
 
@@ -195,7 +195,7 @@ pub fn new_window_handler<R: Runtime>(
         PopupTarget::AppWindow => match build_popup(&app, http_port, features) {
             Ok(window) => NewWindowResponse::Create { window },
             Err(e) => {
-                eprintln!("[popup] cannot open a window for {url}: {e}");
+                log::warn!("[popup] cannot open a window for {}: {e}", short(&url));
                 NewWindowResponse::Deny
             }
         },
@@ -204,7 +204,7 @@ pub fn new_window_handler<R: Runtime>(
             NewWindowResponse::Deny
         }
         PopupTarget::Deny => {
-            eprintln!("[popup] refused window.open({url})");
+            log::warn!("[popup] refused window.open({})", short(&url));
             NewWindowResponse::Deny
         }
     }
@@ -504,7 +504,7 @@ pub fn on_download<R: Runtime>(webview: Webview<R>, event: DownloadEvent<'_>) ->
                 *destination = free_path(&dir, &name);
             }
             remember_requested(&url, destination);
-            eprintln!("[download] {} -> {}", short(&url), destination.display());
+            log::info!("[download] {} -> {}", short(&url), destination.display());
             true
         }
         DownloadEvent::Finished { url, path, success } => {
@@ -512,7 +512,7 @@ pub fn on_download<R: Runtime>(webview: Webview<R>, event: DownloadEvent<'_>) ->
             let dest = path.or(requested);
             // the file on disk decides (see verify_download)
             let ok = dest.as_deref().is_some_and(verify_download);
-            eprintln!("[download] {} finished: reported {success}, on disk {ok}: {:?}", short(&url), dest);
+            log::info!("[download] {} finished: reported {success}, on disk {ok}: {:?}", short(&url), dest);
             let id = if ok { dest.clone().map(record_download) } else { None };
             let script = download_finished_script(if ok { dest.as_deref() } else { None }, ok, id);
             if cfg!(target_os = "linux") {
@@ -529,13 +529,24 @@ pub fn on_download<R: Runtime>(webview: Webview<R>, event: DownloadEvent<'_>) ->
 }
 
 // blob:/data: URLs can be huge (data:) or meaningless; log the scheme + start only
+/// A URL for the log: scheme, host and path only (a query or fragment may
+/// carry a PIN or token), at most 80 characters.
 fn short(url: &Url) -> String {
-    url.as_str().chars().take(80).collect()
+    let host = url.host_str().unwrap_or("");
+    let port = url.port().map(|p| format!(":{p}")).unwrap_or_default();
+    let s = if host.is_empty() { format!("{}:{}", url.scheme(), url.path()) } else { format!("{}://{host}{port}{}", url.scheme(), url.path()) };
+    s.chars().take(80).collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn logged_urls_never_carry_a_query() {
+        let url = Url::parse("http://localhost:5173/scoresheet/?matchId=7&pin=123456#token=abc").unwrap();
+        assert_eq!(short(&url), "http://localhost:5173/scoresheet/");
+    }
 
     fn u(s: &str) -> Url {
         s.parse().unwrap()

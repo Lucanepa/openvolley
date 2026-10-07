@@ -257,6 +257,18 @@ file tar). The policy must say so (F8).
 | Android | Installed from an F-Droid client: never checks on its own. Sideloaded: asks once (default off). Only with **yes** does it read `get.openvolley.app/fdroid/repo/index-v2.json` at most every 24 h (`utils/androidUpdate.js`). This is consent (a) |
 | `app.openvolley.app` home page | On a desktop OS (outside the desktop app) the browser fetches `api.github.com/repos/Lucanepa/openvolley/releases` to link the newest installer (F14) |
 
+### 4.17 Activity log and event history (2.4.0; db/015, db/016)
+
+| | |
+|---|---|
+| **Event history** (`event_history` in IndexedDB; `events.voided_*` + `event_revisions` on the server) | Every undo, delete, edit and restore of a match event: the event row before (and after) **without** the state snapshot, the reason (undo, decision change, manual adjustment, forfeit reversal, reopen set, roster reopen), time, random device id, app version, account id. Server: an undone event is marked voided, never deleted; the revision rows are append-only for the app (`db/roles.sql`) and live as long as the match (part of the match record). Owner / editors write them (`lib/eventRevisions.js`); admins read them (`GET /api/admin/matches/:id/revisions`). Account deletion clears `voided_by` / `actor_id` |
+| **Activity log** (`activity_log` in IndexedDB and on the server) | One entry per scoring action, correction, set start/end, match status, signature (role only), approval (role and method, **never the PIN**), remarks (**length only**), manual change (sensitive fields such as DOB as "changed"), roster change (number only), sync error (HTTP status, code, request id), app start/update/quit, app error (message, top 5 `file:line` frames), backup error, sign-in/out. Each with random device id (`ov.deviceId`), app version, platform, account id. Sanitized twice (allowlist per kind, key denylist, no data URLs/JWTs, 4 KB): `domain/activitySummary.js`, `lib/activitySanitize.js` |
+| **Who reads it** | The match's owner and editors (`GET /api/activity?match=`, only what the match's scorers uploaded); admins (console tab Activity, CSV/NDJSON export). Not reachable through `/api/db` |
+| **Retention as built** | Device: uploaded rows 180 days and at most 100,000 rows; rows still to upload kept below 200,000 (`utils/activity/writer.js`). Daily files `OpenVolley/logs/activity-YYYY-MM-DD.jsonl` (desktop: `src-tauri/src/activity.rs`, Android: Documents, **survive uninstall** like the backups): 30 files, 50 MB. Server: match entries 24 months after the event, or deleted with the match (trigger); entries without a match 90 days (`purgeActivity`, daily). Delete on request: `DELETE /api/admin/activity?match=|account=` (audited `activity.delete`). Account deletion: entries without a match deleted, match entries kept with `account_id` / `uploader_id` cleared |
+| **Interaction (click/key) log** | `interaction_logs` in IndexedDB only, **never uploaded**; password and PIN fields are never recorded; 30 days, 50,000 rows; exported by the user (options → diagnostic log, match-end ZIP). The scoreboard's debug lines are in it too (category `debug`) |
+| **Desktop log** | `desktop.log` in the same folder (tauri-plugin-log): app start, updates, popups (URLs without query), tablet count changes; never PINs, tokens or hotspot credentials. 5 MB × 5 files |
+| **Basis** | (f) integrity of the official match record and troubleshooting; (b) for the scorer's own account |
+
 ## 5. Processors and transfers
 
 | Recipient | Role | Country | Transfer basis to cite | Action |
@@ -285,6 +297,10 @@ PocketBase (legacy relay backup), Supabase (left in 2026-10).
 | Approval PIN | Until removed or account deleted |
 | Approvals (with IP/device hash, name snapshot) | Indefinitely, with the match |
 | Audit log | Indefinitely |
+| Event history (undone / corrected events) | With the match (part of the record) |
+| Activity log (server) | Match entries 24 months or with the match; others 90 days; delete on request |
+| Activity log (device) | Uploaded rows 180 days / 100,000 rows; daily files 30 days / 50 MB |
+| Interaction (click) log (device only) | 30 days / 50,000 rows |
 | Match records (cloud) | Indefinitely; closed matches read-only |
 | Saved teams, beach tournaments | Until deleted by a manager (kept after the creator's account is deleted) |
 | Referee directory | Until an admin deletes a row |

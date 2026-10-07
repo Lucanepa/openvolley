@@ -174,6 +174,22 @@ REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM PUBLIC, ov_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ov_app;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ov_app;
 
+-- Append-only for the app (db/015, db/016): the event history and the
+-- activity log are written with INSERT and removed with DELETE (retention,
+-- account deletion, delete on request), never rewritten. One exception:
+-- lib/auth.js deleteAccount detaches the account (cfg.detachedColumns runs
+-- UPDATE ... SET <account column> = NULL as ov_app), so ov_app keeps UPDATE
+-- of those account columns only. Without it every account deletion fails
+-- (the UPDATE privilege is checked even when no row matches). A table-level
+-- REVOKE also drops column grants, so the column GRANT comes after it.
+SELECT format('REVOKE UPDATE ON %s FROM ov_app', t)
+  FROM unnest(ARRAY['public.event_revisions', 'public.activity_log']) AS t
+ WHERE to_regclass(t) IS NOT NULL \gexec
+SELECT format('GRANT UPDATE (%s) ON %s TO ov_app', c, t)
+  FROM (VALUES ('public.event_revisions', 'actor_id'),
+               ('public.activity_log', 'account_id, uploader_id')) AS g(t, c)
+ WHERE to_regclass(t) IS NOT NULL \gexec
+
 -- No public table is held back: the daily VolleyManager sync (lib/vmSync.js,
 -- scheduled by the backend in cloud mode) writes svrz_games and svrz_sync_log
 -- (INSERT ... RETURNING id, so it needs svrz_sync_log_id_seq too) as ov_app.

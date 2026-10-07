@@ -24,7 +24,9 @@ const between = (from, to) => {
 const handler = header => {
   const a = sb.indexOf(header)
   if (a < 0) throw new Error(`not found: ${header}`)
-  const end = sb.slice(a).search(/\n  \}\)+, \[/)
+  // `  })), [deps]`, or with runAction options `  }, { reason: 'undo' })), [deps]`
+  const end = sb.slice(a).search(/\n  \}(, \{ [^\n]*\})?\)+, \[/)
+  if (end < 0) throw new Error(`no end: ${header}`)
   return sb.slice(a, a + end)
 }
 

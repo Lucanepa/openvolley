@@ -15,7 +15,7 @@ import { createServer } from 'http'
 import { WebSocketServer } from 'ws'
 import nodemailer from 'nodemailer'
 import ical from 'node-ical'
-import { randomBytes, timingSafeEqual } from 'crypto'
+import { randomBytes, timingSafeEqual, createHash } from 'crypto'
 import { existsSync, readFileSync, statSync } from 'fs'
 import { readFile } from 'fs/promises'
 import { isIP, BlockList } from 'net'
@@ -38,6 +38,8 @@ import { createAttemptLimiter } from './lib/matchRestore.js'
 import { newRequestId, formatDbRejection, createLogLimiter, createConnectionSummary } from './lib/opsLog.js'
 import { renderLandingPage, INDOOR_ROLES, BEACH_ROLES } from './lib/landingPage.js'
 import { createOriginPolicy, parsePublicOrigins } from './lib/cors.js'
+import { createSignSessions, signEndpointOf, signBodyLimit, signError, isSignPagePath, SIGN_API_HEADERS, SIGN_PAGE_HEADERS } from './lib/signSessions.js'
+import { signPageFile } from './lib/signPage.js'
 
 const PORT = process.env.PORT || 8080
 
@@ -212,9 +214,13 @@ const DB_IP_RATE_LIMIT_MAX = 1200    // /api/db per IP (/64), any action, checke
 // /api/match/restore bodies (up to MAX_RESTORE_BODY_SIZE) parsed at once, per process
 const restoreGate = createConcurrencyGate({ maxConcurrent: 2, maxQueue: 4 })
 const RESTORE_RATE_LIMIT_MAX = 30    // /api/match/restore per user
+// POST /api/match/event-revisions bodies (at most 200 revisions, lib/eventRevisions.js)
+const EVENT_REVISIONS_MAX_BODY = 256 * 1024
 const RESTORE_PIN_IP_RATE_LIMIT_MAX = 60 // /api/match/restore-by-pin per IP (the attempt limiter is inside)
 // docs/scorer-accounts-spec.md section 5
 const MANAGE_RATE_LIMIT_MAX = 300        // /api/admin/* and /api/saved-teams* per user and minute
+const ACTIVITY_RATE_LIMIT_MAX = 30       // POST /api/activity per user and minute (one batch per 10 s in a match)
+const ACTIVITY_MAX_BODY = 512 * 1024     // POST /api/activity body (<= 500 entries)
 const OFFICIAL_CHECK_RATE_LIMIT_MAX = 120 // /api/match/official-check per user and minute
 // Invite redemption: FAILED attempts per account and per IP (/64); a success is refunded
 const redeemLimiter = createAttemptLimiter({ max: 10, windowMs: 10 * 60 * 1000 })
@@ -272,8 +278,10 @@ function getDataLayer() {
     import('./lib/officialGame.js'),
     import('./lib/mailer.js'),
     import('./lib/approvals.js'),
-    import('./lib/beachTournaments.js')
-  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, apv, bt]) => {
+    import('./lib/beachTournaments.js'),
+    import('./lib/eventRevisions.js'),
+    import('./lib/activityLog.js')
+  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, apv, bt, evr, act]) => {
     const poolMax = Number(process.env.PG_POOL_MAX) > 0 ? Math.floor(Number(process.env.PG_POOL_MAX)) : undefined
     const db = pgq.createPgQuery({
       connectionString: DATABASE_URL,
@@ -324,8 +332,12 @@ function getDataLayer() {
     const accounts = acc.createAccounts({ pool: db.pool, db, restore, access, approvalsForMatches: approvals.approvalsForMatches })
     const savedTeams = svt.createSavedTeams({ pool: db.pool })
     const beach = bt.createBeachTournaments({ pool: db.pool, accounts })
-    const manage = mg.createManageApi({ accounts, savedTeams, beach, approvals })
-    dataLayer = { db, restore, auth, storage, pins, access, accounts, savedTeams, beach, approvals, manage, publicClaim: og.publicClaim, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
+    // Undo / delete / edit history of events (db/015)
+    const revisions = evr.createEventRevisions(db)
+    // The match activity log (db/016)
+    const activity = act.createActivityLog({ pool: db.pool, accounts })
+    const manage = mg.createManageApi({ accounts, savedTeams, beach, approvals, revisions, activity })
+    dataLayer = { db, restore, auth, storage, pins, access, accounts, savedTeams, beach, approvals, manage, revisions, activity, activityCsvLine: act.csvLine, activityCsvColumns: act.CSV_COLUMNS, publicClaim: og.publicClaim, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
     return dataLayer
   })
   return dataLayerPromise
@@ -384,7 +396,10 @@ const WRITE_DENYLIST = {
   profiles: ['roles', 'user_id', 'id'],
   user_matches: ['user_id', 'id'],
   // tournament_match_id (db/014): the link to a beach tournament match is the server's
-  matches: ['created_by', 'closed_at', 'closed_by', 'official_game_exempt', 'created_at', 'tournament_match_id']
+  matches: ['created_by', 'closed_at', 'closed_by', 'official_game_exempt', 'created_at', 'tournament_match_id'],
+  // db/015: an event is voided / edited only through POST /api/match/event-revisions
+  // (which keeps the revision); /api/db can never void or unvoid one
+  events: ['voided_at', 'voided_by', 'void_reason', 'rev']
 }
 
 // Match ownership (db/005_match_ownership.sql, lib/pgQuery.js opts.matchOwner):
@@ -1082,7 +1097,8 @@ const rateLimitMaps = {
   restorePin: new Map(), // /api/match/restore-by-pin, per IP
   manage: new Map(),    // /api/admin/*, /api/saved-teams*, per user id
   officialCheck: new Map(), // /api/match/official-check, per user id
-  publicBeach: new Map() // /api/public/beach/t/:slug, per IP
+  publicBeach: new Map(), // /api/public/beach/t/:slug, per IP
+  activity: new Map()   // POST /api/activity, per user id
 }
 
 function isRateLimited(ip, maxRequests = RATE_LIMIT_MAX_REQUESTS, category = 'default') {
@@ -1111,6 +1127,17 @@ setInterval(() => {
   // lib/auth.js in-memory counters (sign-in/sign-up/session buckets, lockouts)
   try { dataLayer?.auth.sweep() } catch { /* ignore */ }
 }, 5 * 60 * 1000)
+
+/**
+ * The external_id of an /api/db filter list that is exactly ONE eq on
+ * external_id (the app's delete of one event), else null.
+ */
+function singleExternalIdFilter(filters) {
+  if (!Array.isArray(filters) || filters.length !== 1) return null
+  const f = filters[0]
+  if (!f || typeof f !== 'object' || f.type !== 'eq' || f.column !== 'external_id') return null
+  return typeof f.value === 'string' && f.value !== '' ? f.value : null
+}
 
 // --- Request body reader ---
 // Reads at most maxSize bytes. A larger body is NOT destroyed mid-stream (that
@@ -1192,6 +1219,112 @@ const LOG_EACH_CONNECTION = process.env.OV_LOG_CONNECTIONS === '1'
 const logDbRejection = createLogLimiter({ max: 30, windowMs: 60_000 })
 const relaySummary = createConnectionSummary({ label: '[WS]', intervalMs: 60_000 })
 setInterval(() => { relaySummary.flush(); logDbRejection.flush() }, 60_000).unref()
+
+// --- Sign on phone (docs/qr-signing-spec.md 4; lib/signSessions.js) --------
+// POST /api/sign/start|open|submit|wait|close and the phone page at /sign.
+// Sessions live in memory only (D4), created on the first request. Cloud
+// (DATABASE_URL): start needs a session of a scorer, referee (indoor or beach)
+// or admin account (D2). LAN / SEA (--local): the relay host itself, or the
+// game PIN of a match this relay holds in X-OV-Match-Pin (D3, wrong PINs
+// counted in pinFailureLimiter). OV_SIGN_DISABLED=1: 503 OV_SIGN_UNAVAILABLE.
+const SIGN_DISABLED = process.env.OV_SIGN_DISABLED === '1'
+const SIGN_STARTER_ROLES = ['scorer', 'referee', 'beach:scorer', 'beach:referee']
+let signSessions = null
+function getSignSessions() {
+  signSessions ??= createSignSessions({
+    via: DB_MODE ? 'cloud' : 'lan',
+    randomBytes: (n) => randomBytes(n),
+    sha256: (text) => createHash('sha256').update(text, 'utf8').digest('hex'),
+    log: (line) => console.log(`[Sign] ${line}`)
+  })
+  return signSessions
+}
+
+/** May this account start phone signing (spec D2)? Same callers as account approval. */
+function mayStartPhoneSign(access) {
+  if (access?.isAdmin === true) return true
+  const roles = Array.isArray(access?.roles) ? access.roles : []
+  return SIGN_STARTER_ROLES.some((r) => roles.includes(r))
+}
+
+/** The request comes from this machine itself: loopback or one of its own addresses. */
+function isLocalCaller(req) {
+  const addr = String(req.socket?.remoteAddress || '').replace(/^::ffff:/, '')
+  if (!addr) return false
+  if (addr === '::1' || addr.startsWith('127.')) return true
+  try {
+    for (const list of Object.values(os.networkInterfaces())) {
+      for (const net of list || []) if (net.address === addr) return true
+    }
+  } catch { /* remote */ }
+  return false
+}
+
+async function handleSignRequest(req, res, endpoint) {
+  const send = (r) => sendJson(res, r.status, r.body, {
+    ...SIGN_API_HEADERS,
+    ...(r.headers || {}),
+    ...(r.status === 413 ? { Connection: 'close' } : {})
+  })
+  const refuse = (r) => { req.resume(); send(r) }
+  if (SIGN_DISABLED) return refuse(signError(503, 'OV_SIGN_UNAVAILABLE'))
+  if (!/^application\/json\b/i.test(String(req.headers['content-type'] || ''))) return refuse(signError(400, 'OV_SIGN_BAD_REQUEST'))
+  const ipKey = ipBucketKey(getClientIp(req))
+  let owner = null
+  if (endpoint === 'start' && DB_MODE) {
+    // The account first, before the body is read
+    const token = bearerFromHeaders(req.headers)
+    if (!token) return refuse(signError(401, 'OV_AUTH_REQUIRED'))
+    let user = null
+    let access = null
+    try {
+      const layer = await getDataLayer()
+      const v = await layer.auth.verifyAccessToken(token)
+      user = v?.user || null
+      if (user) access = await layer.access.get(user.id)
+    } catch (err) {
+      console.warn('[Sign] account check failed:', err?.message)
+      return refuse(signError(503, 'OV_SIGN_UNAVAILABLE', { 'Retry-After': '5' }))
+    }
+    if (!user) return refuse(signError(401, 'OV_AUTH_REQUIRED'))
+    if (!mayStartPhoneSign(access)) return refuse(signError(403, 'OV_SIGN_FORBIDDEN'))
+    owner = `u:${user.id}`
+  }
+  let body
+  try {
+    body = await readJsonBody(req, signBodyLimit(endpoint))
+  } catch (err) {
+    return send(err?.code === 'BODY_TOO_LARGE' ? signError(413, 'OV_SIGN_TOO_LARGE') : signError(400, 'OV_SIGN_BAD_REQUEST'))
+  }
+  if (endpoint === 'start' && !DB_MODE) {
+    if (isLocalCaller(req)) {
+      owner = 'local'
+    } else {
+      const pin = String(req.headers['x-ov-match-pin'] || '').trim().slice(0, 32)
+      if (!pin) return send(signError(403, 'OV_SIGN_FORBIDDEN'))
+      const matchKey = typeof body?.matchKey === 'string' ? normalizeMatchId(body.matchKey) : null
+      const stored = matchKey ? gamePinOf(activeMatches.get(matchKey)?.match) : null
+      if (!stored) return send(signError(403, 'OV_SIGN_FORBIDDEN'))
+      // The brute-force budget of every PIN check: counted now, refunded on success
+      if (pinFailureLimiter.isLimited(ipKey)) return send(signError(429, 'OV_SIGN_RATE_LIMITED', { 'Retry-After': '600' }))
+      if (!safeEqualStr(stored, pin)) return send(signError(403, 'OV_SIGN_PIN_INVALID'))
+      pinFailureLimiter.refund(ipKey)
+      owner = `pin:${matchKey}`
+    }
+  }
+  const sessions = getSignSessions()
+  if (endpoint === 'start') return send(sessions.start(body, { owner }))
+  if (endpoint === 'open') return send(sessions.open(body, { ipKey }))
+  if (endpoint === 'submit') return send(sessions.submit(body, { ipKey }))
+  if (endpoint === 'close') return send(sessions.close(body))
+  // wait: dropped when the scoring device goes away
+  const ac = new AbortController()
+  const onGone = () => { if (!res.writableEnded) ac.abort() }
+  res.on('close', onGone)
+  const r = await sessions.wait(body, { signal: ac.signal })
+  res.off('close', onGone)
+  if (r.status !== 499) send(r)
+}
 
 // --- Log sanitizer (prevent log injection via newlines/control chars) ---
 function sanitizeLog(str) {
@@ -1614,6 +1747,23 @@ const server = createServer((req, res) => {
       uptime: process.uptime(),
       pocketbase: pbReady ? 'connected' : (POCKETBASE_URL ? 'configured' : 'not_configured')
     }))
+    return
+  }
+
+  // Sign on phone: the phone page (same-origin with its API, so no CORS) ...
+  if ((req.method === 'GET' || req.method === 'HEAD') && isSignPagePath(url.pathname)) {
+    const file = signPageFile(url.pathname)
+    res.writeHead(file ? 200 : 404, { 'Content-Type': file ? file.type : 'text/plain', ...SIGN_PAGE_HEADERS })
+    res.end(req.method === 'HEAD' ? undefined : (file ? file.body : 'Not Found'))
+    return
+  }
+  // ... and its API (start/wait/close come from the app origins through the CORS above)
+  const signEndpoint = req.method === 'POST' ? signEndpointOf(url.pathname) : null
+  if (signEndpoint) {
+    handleSignRequest(req, res, signEndpoint).catch((err) => {
+      console.error('[Sign] request failed:', err?.message)
+      sendJson(res, 503, signError(503, 'OV_SIGN_UNAVAILABLE').body, SIGN_API_HEADERS)
+    })
     return
   }
 
@@ -2622,6 +2772,110 @@ Generated by eScoresheet
     return
   }
 
+  // The match activity log (lib/activityLog.js, db/016): POST /api/activity
+  // (upload, signed in) and GET /api/activity?match= (owner / editor; admin).
+  if (url.pathname === '/api/activity' && (req.method === 'POST' || req.method === 'GET')) {
+    if (!DB_MODE) {
+      sendNoDb()
+      return
+    }
+    ;(async () => {
+      const noStore = { 'Cache-Control': 'no-store' }
+      try {
+        const layer = await getDataLayer()
+        const user = await layer.auth.requireUser(req, res)
+        if (!user) return
+        const limited = req.method === 'POST'
+          ? isRateLimited(user.id, ACTIVITY_RATE_LIMIT_MAX, 'activity')
+          : isRateLimited(user.id, MANAGE_RATE_LIMIT_MAX, 'manage')
+        if (limited) {
+          req.resume()
+          sendJson(res, 429, TOO_MANY, { 'Retry-After': '60', ...noStore })
+          return
+        }
+        const isAdmin = await isAdminUser(layer, user.id)
+        let r
+        if (req.method === 'POST') {
+          let body
+          try {
+            body = await readJsonBody(req, ACTIVITY_MAX_BODY)
+          } catch (err) {
+            sendBodyError(res, err)
+            return
+          }
+          r = await layer.activity.ingest({ user, body, isAdmin })
+        } else {
+          req.resume()
+          r = await layer.activity.listForMatch({ user, isAdmin, query: url.searchParams })
+        }
+        sendJson(res, r.status, r.body, { ...noStore, ...(r.status >= 500 ? { 'Retry-After': '5' } : {}) })
+      } catch (err) {
+        sendLayerError('activity', err)
+      }
+    })()
+    return
+  }
+
+  // GET /api/admin/activity/export?...&format=csv|ndjson — the admin's
+  // activity export, streamed page by page (at most 50,000 rows).
+  if (url.pathname === '/api/admin/activity/export' && req.method === 'GET') {
+    if (!DB_MODE) {
+      sendNoDb()
+      return
+    }
+    ;(async () => {
+      try {
+        const layer = await getDataLayer()
+        const user = await layer.auth.requireUser(req, res)
+        if (!user) return
+        if (isRateLimited(user.id, MANAGE_RATE_LIMIT_MAX, 'manage')) {
+          sendJson(res, 429, TOO_MANY, { 'Retry-After': '60', 'Cache-Control': 'no-store' })
+          return
+        }
+        if (!(await isAdminUser(layer, user.id))) {
+          sendJson(res, 403, { data: null, error: { message: 'You do not have access to this', code: 'OV_FORBIDDEN' } }, { 'Cache-Control': 'no-store' })
+          return
+        }
+        const format = url.searchParams.get('format') === 'csv' ? 'csv' : 'ndjson'
+        const pages = layer.activity.exportPages(url.searchParams)
+        let first
+        try {
+          first = await pages.next()
+        } catch (err) {
+          if (err?.result) {
+            sendJson(res, err.result.status, err.result.body, { 'Cache-Control': 'no-store' })
+            return
+          }
+          throw err
+        }
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+        res.writeHead(200, {
+          'Content-Type': format === 'csv' ? 'text/csv; charset=utf-8' : 'application/x-ndjson; charset=utf-8',
+          'Content-Disposition': `attachment; filename="openvolley-activity-${stamp}.${format}"`,
+          'Cache-Control': 'no-store'
+        })
+        if (format === 'csv') res.write(layer.activityCsvColumns.join(',') + '\n')
+        const writeRows = (rows) => {
+          const text = rows.map((r) => (format === 'csv' ? layer.activityCsvLine(r) : JSON.stringify(r))).join('\n') + '\n'
+          return res.write(text)
+        }
+        try {
+          let page = first
+          while (!page.done) {
+            if (!writeRows(page.value)) await new Promise((resolve) => res.once('drain', resolve))
+            page = await pages.next()
+          }
+        } catch (err) {
+          console.warn('[activity] export stopped:', err?.message)
+        }
+        res.end()
+      } catch (err) {
+        sendLayerError('activity/export', err)
+      }
+    })()
+    return
+  }
+
   // Approved scorers, admin console and saved teams (lib/manageApi.js,
   // docs/scorer-accounts-spec.md section 5): /api/account/redeem-invite,
   // /api/match/official-check, /api/admin/*, /api/saved-teams*, and (db/012)
@@ -2826,9 +3080,13 @@ Generated by eScoresheet
         // id lookups cost nothing.
         let anonView = false
         let readOwner = null
+        // events: who may ask for voided rows too (params.include_voided, lib/pgQuery.js)
+        let includeVoided = null
         if (!isWrite && hasAnonPolicy(table)) {
           const check = anonSelectCheck(table, params)
-          if (check.needsMore || check.badFilter) {
+          // Voided events are never public: asking for them needs the session
+          const wantsVoided = table === 'events' && params?.include_voided === true
+          if (check.needsMore || check.badFilter || wantsVoided) {
             let reader = null
             if (bearerFromHeaders(req.headers)) {
               try {
@@ -2853,6 +3111,9 @@ Generated by eScoresheet
               anonView = true
             } else if (MATCH_OWNED_TABLES.has(table) && !(await isAdminUser(layer, reader.id))) {
               readOwner = { userId: reader.id, restrict: !!check.badFilter }
+              includeVoided = 'owned'
+            } else {
+              includeVoided = 'all'
             }
           }
         }
@@ -2928,13 +3189,29 @@ Generated by eScoresheet
           }
         }
 
+        // db/015: a delete of ONE event by its external_id (a correction of an
+        // app from before the event history) voids the event, never deletes
+        // it (lib/eventRevisions.js voidByExternalId). Whole-match deletes
+        // (filter on match_id) are unchanged.
+        const singleEventExt = table === 'events' && action === 'delete' ? singleExternalIdFilter(p.filters) : null
+        if (singleEventExt && layer.revisions?.voidByExternalId) {
+          const v = await layer.revisions.voidByExternalId({ eventExt: singleEventExt, user: authUser, matchOwner })
+          if (v) {
+            if (v.status === 200 && v.changes?.length) publishChanges(v.changes)
+            if (v.status >= 400) logRejected(v.status, v.body?.error?.code)
+            sendJson(res, v.status, v.body, v.status >= 500 ? { 'Retry-After': '5' } : {})
+            return
+          }
+        }
+
         const runOpts = {
           proto: req.headers['x-ov-proto'],
           scope: ownerScoped ? { column: 'user_id', value: authUser.id } : undefined,
           matchOwner,
           // the acting account for db/007's triggers (closed_by)
           ...(isWrite ? { actorId: authUser.id } : {}),
-          ...(readOwner ? { readOwner } : {})
+          ...(readOwner ? { readOwner } : {}),
+          ...(includeVoided ? { includeVoided } : {})
         }
         let r = await layer.db.runQuery({ table, action, params: p }, runOpts)
         // Take-over inline: a scorer's match insert/upsert refused only for
@@ -3048,6 +3325,50 @@ Generated by eScoresheet
           return
         }
         sendLayerError('match/restore', err)
+      }
+    })()
+    return
+  }
+
+  // POST /api/match/event-revisions {match_external_id, revisions} — the undo /
+  // delete / edit / restore history of a match's events (lib/eventRevisions.js,
+  // db/015): the server voids or edits its copy and keeps the revision.
+  // Same owner / editor rule as an /api/db write of the match's events.
+  if (url.pathname === '/api/match/event-revisions' && req.method === 'POST') {
+    if (!DB_MODE) {
+      sendNoDb()
+      return
+    }
+    ;(async () => {
+      try {
+        const layer = await getDataLayer()
+        const user = await layer.auth.requireUser(req, res)
+        if (!user) return
+        if (isRateLimited(user.id, DB_WRITE_RATE_LIMIT_MAX, 'dbWrite')) {
+          req.resume()
+          sendTooMany()
+          return
+        }
+        let body
+        try {
+          body = await readJsonBody(req, EVENT_REVISIONS_MAX_BODY)
+        } catch (err) {
+          sendBodyError(res, err)
+          return
+        }
+        let matchOwner
+        try {
+          matchOwner = await matchOwnerFor(layer, user)
+        } catch (err) {
+          console.warn('[match/event-revisions] access check failed:', err?.message)
+          sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5' })
+          return
+        }
+        const r = await layer.revisions.apply({ body, user, matchOwner })
+        if (r.status === 200) publishChanges(r.changes)
+        sendJson(res, r.status, r.body, r.status >= 500 ? { 'Retry-After': '5' } : {})
+      } catch (err) {
+        sendLayerError('match/event-revisions', err)
       }
     })()
     return
@@ -4493,6 +4814,12 @@ if (DB_MODE) {
       (cat) => console.log(`[DB] catalog loaded: ${cat.allowed.length} tables`),
       (err) => console.warn('[DB] catalog not loaded yet (retrying on demand):', err.message)
     )
+    // Activity log retention (db/016): 10 min after start, then daily
+    const purgeActivity = () => layer.activity.purge()
+      .then((r) => { if (r.unlinked || r.linked) console.log('[Activity] purge', JSON.stringify(r)) })
+      .catch((err) => console.warn('[Activity] purge failed:', err.message))
+    setTimeout(purgeActivity, 10 * 60 * 1000).unref()
+    setInterval(purgeActivity, 24 * 60 * 60 * 1000).unref()
     // Expired sessions, hourly
     setInterval(() => {
       layer.auth.sweepExpiredSessions().catch((err) => console.warn('[Auth] session sweep failed:', err.message))

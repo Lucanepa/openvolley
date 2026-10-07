@@ -91,7 +91,7 @@ function TravelRouterTip() {
 const firewallText = (t) => t('connectTablets.windowsFirewall', 'Tablets join but the page does not load? Windows Security › Firewall & network protection › Allow an app through firewall › OpenVolley › tick “Public”.')
 
 /** Windows without the installer's firewall rule: the manual step. */
-function FirewallTip() {
+export function FirewallTip() {
   const { t } = useTranslation()
   return (
     <p className="mt-2 flex items-start gap-1.5 text-xs leading-snug text-stone-600" data-testid="firewall-step">

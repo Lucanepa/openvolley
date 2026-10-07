@@ -27,6 +27,8 @@ Notation:
 - `T` means a vertical stroke with a bar on top, drawn through the printed numbers that were
   not used.
 - `⊥` means a reverse T: a vertical stroke with a bar at the bottom.
+- **Owner decision (2026-10-07):** the generated sheet draws **neither `T` nor `⊥`** in the
+  points columns (see section 16). Both are described below only as the paper convention.
 - A score written `a:b` always puts **the concerned team's points first**. The concerned team is
   the team that asked for the time-out or substitution, or the team that was sanctioned or is
   named in a remark (SC p.46, 51, 55, 69).
@@ -262,7 +264,8 @@ the next round box (1, 2, … 8).
 3. **Circle the final points in the service boxes of BOTH teams.** For the loser, this is its
    last closed box. **Do not circle in the points column.**
 4. In the points columns of **both** teams, draw a `T` from the first unused number to the
-   bottom of the column.
+   bottom of the column. **Not on the generated sheet (owner decision 2026-10-07, section 16):**
+   the points columns show only the points actually scored.
 5. Check the box counts:
    - The team that **served first** wins: both circled finals are at the **same** service count.
    - The team that **received first** wins: the winner has **one service box more** than the
@@ -289,6 +292,8 @@ continues until one team leads by 2.
   - **OV decision:** print the recorded start time, rounded to the minute. If it differs from
     the schedule by more than 5 minutes and no remark exists, offer to add one. Never insert the
     remark silently.
+  - **Owner decision (2026-10-07, section 16):** the recorded start is the **actual** start of the
+    set's first rally (the `rally_start` event), never the scheduled time.
 - **Line-ups**: each set gets the line-up from that set's line-up sheet. Check every number
   against the roster, and check for disqualified players (SC p.23, 66).
   - A player **expelled** in the previous set may play again.
@@ -324,8 +329,10 @@ Other differences from sets 1 to 4:
 1. Write the **left team's points at the change** (only the left team's points) in the
    "Pte. beim Seitenwechsel" box of panel 3.
 2. In **panel 3's points column**, draw a **reverse T `⊥`** over numbers 1..N, the points
-   already scored.
+   already scored. **Not on the generated sheet (owner decision 2026-10-07, section 16):**
+   1..N stay plain printed numbers.
 3. In **panel 1's points column**, draw a standard **T** over the numbers not ticked (N+1 to 8).
+   **Not on the generated sheet (section 16):** N+1..8 stay plain printed numbers.
 4. Copy **all time-outs and substitutions**, with their scores and circles, from panel 1 to
    panel 3.
 5. Service boxes:
@@ -341,8 +348,8 @@ Other differences from sets 1 to 4:
 
 **Winning set 5** (FIVB 6.3.2): 15 points with a lead of at least 2, for example 15:13 or 17:15.
 
-**End of set 5**: same steps as section 4.7, applied to panels 2 and 3. Panel 1 already has its
-T. The end time goes in panel 2's **Ende** field.
+**End of set 5**: same steps as section 4.7, applied to panels 2 and 3 (without the T, section
+16). The end time goes in panel 2's **Ende** field.
 
 **Best-of-3 formats**:
 
@@ -510,7 +517,7 @@ Rows, from top to bottom:
 |---|---|
 | Set won 25:23 | Points column ticked to 25 and 23. T marks from 26 and from 24. Circled finals in the service boxes. W = 1/0. |
 | Set won 30:28 | Same as above with 30 and 28. The 48-number column is enough. |
-| Tie-break 15:x | Section 6: change of courts at 8, ⊥ and T marks, finals circled in panels 2 and 3. |
+| Tie-break 15:x | Section 6: change of courts at 8, finals circled in panels 2 and 3 (no ⊥ / T marks, section 16). |
 | Winner was receiving on set point | Final written in the next server's box, round number **not** ticked, circled (SC p.64). |
 | Time-out | `req:opp` on a T line (4.5). Counted in the result "T". |
 | Third time-out request | Improper request: cross the team letter (7.1). On a repeat: delay sanction. |
@@ -540,7 +547,9 @@ The functions in `utils/scoresheetModel.ts` are pure, so all of these can be uni
 
 ### 12.1 Calculations
 
-- `setStart[n]`, `setEnd[n]`: the recorded set start and set end (time of the last rally).
+- `setStart[n]`, `setEnd[n]`: the actual set start (its first rally, `rally_start`; else the
+  confirmed start; else its first point) and the recorded set end (else its last point), both
+  to the minute (`utils/matchTimes.ts`, section 16).
   Format `HH:MM`, local time in the match's time zone, Europe/Zurich by default.
 - `setDuration[n] = minutes(setEnd − setStart)`, rounded down to whole minutes.
 - `totalDuration = Σ setDuration`.
@@ -638,3 +647,54 @@ These are pointers for the implementation phase, not a complete audit.
    2 minutes (paper practice, SC p.27)? This spec assumes the recorded minute.
 3. Best-of-3 deciding set: printed in the set-5 grid and labelled "3" (section 6). Is that
    right for Swiss youth formats?
+
+---
+
+## 16. Owner decisions, 2026-10-07 (scoresheet review, round 2)
+
+These override the paper conventions above wherever they differ. The audit must not flag them.
+
+1. **No `T` / `⊥` in the points columns.** Owner: "here no need to do the inverse T. just write
+   the points actually scored". The generated sheet (preview and PDF, every set, set 5 included)
+   draws no `T` through the unused numbers at set end, no `T` in set-5 panel 1 at the change of
+   courts and no reverse `⊥` over the points already scored in panel 3. The points columns show
+   the pre-printed numbers, the ticks of the points won and the circles of the points awarded
+   (penalty, delay penalty, default); nothing else. This departs from SC p.39, 64 and 77-79
+   (sections 4.7 step 4 and 6 steps 2-3).
+2. **Actual times only.** Owner: "match start only written the actual match start". One source,
+   `scoresheet_pdf/utils/matchTimes.ts`, for the set headers, the RESULT table and the in-app
+   "Match complete" card (MatchEnd.jsx) and MatchEntry:
+   - set start = the real start of the set's first rally (`rally_start`, the device clock). The
+     "Set n start time" dialog value is used only for records without `rally_start`, then the
+     set's first point. A scorer who kept the scheduled 14:30 in that dialog for a match that
+     started at 16:05 no longer gets "Match Start 14:30" and a 104' first set. A start time
+     corrected afterwards in the Scoreboard's edit modal (set.startTime no longer equals the
+     time the `set_start` event recorded) is the scorer's deliberate word and wins;
+   - set end = the recorded set end, else the last point;
+   - set duration = end − start of that set; match start = set 1's actual start (empty until the
+     match has started); match end = the last set's end; match duration = end − start;
+   - all to the minute (rounded down), so every duration is the difference of the printed times.
+   This answers open question 15.2 (the recorded actual minute, never the schedule).
+3. **Signatures are saved the moment the pad is confirmed** and are on the sheet at once. The
+   coin-toss captain and coach signatures (CoinToss, also its roster dialog, and MatchSetup for
+   an existing match) and the post-match captains drawn on the scoreboard are written to the
+   match row and queued for the cloud as soon as the pad is confirmed (`utils/saveSignature.js`,
+   as MatchEnd already did for the approvals), not when the screen is confirmed. The sheet reads
+   them from the match row on every render: the captain / coach boxes of each roster, "CAPTAIN
+   SIGNATURE A/B" and the officials' column, identical in the live preview and the PDF.
+   Signatures made on a phone (QR signing) land in the same fields through the same handlers.
+4. **Automatic remarks in the sheet's convention.** Owner: the bench-injury remark read "Time
+   14h28m" (and that was UTC). The remarks the scoreboard writes (bench injury, injury and
+   exceptional substitution, libero unable / re-designated) now read
+   `Set 3, 14:28, B 15:5, #4 injured (bench)`: the set as printed, the local time `HH:MM`, the
+   team and the score with the concerned team first, then what happened
+   (`domain/remarks.js eventRemark`). The manual-edit and roster-change remarks use the same
+   local `HH:MM`.
+
+5. **Number circles fit their cell** (how owner item 7 is met; the owner should confirm it). Owner: "circle can be a little bigger", centred, inside the
+   cell without touching its borders, one size everywhere. The 5 mm cells leave ~4.74 mm between
+   the row rules and ~4.6 mm across a service box, so a ring can be at most ~4.0 mm (plus its
+   ~0.3 mm stroke) and still show a gap. The sheet draws every number circle at 4.0 mm
+   (`components/Marks.tsx NUMBER_CIRCLE_MM`). The number inside is set at 9.5 px
+   (`CIRCLED_NUMBER_PX`), so the ring sits well clear of the digits: it is bigger relative to the
+   number, as asked, though not in absolute size, which the cell does not allow.

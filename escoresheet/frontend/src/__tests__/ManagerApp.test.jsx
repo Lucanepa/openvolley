@@ -132,7 +132,7 @@ describe('ManagerApp (manager.openvolley.app)', () => {
     expect(screen.getByTestId('manage-console')).toBeInTheDocument()
     expect(railButtons().map(b => b.textContent)).toEqual([
       'manage.tabs.accounts', 'manage.tabs.invites', 'manage.tabs.games',
-      'manage.tabs.matches', 'manage.tabs.audit', 'manage.tabs.teams'
+      'manage.tabs.matches', 'manage.tabs.audit', 'manage.tabs.activity', 'manage.tabs.teams'
     ])
     expect(screen.queryByRole('button', { name: 'manage.backToApp' })).toBeNull()
     expect(screen.getByRole('link', { name: 'managerSite.openAppLong' })).toHaveAttribute('href', APP_URL)

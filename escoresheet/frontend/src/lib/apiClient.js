@@ -35,7 +35,12 @@ async function safeJsonResponse(response, fallbackError = 'Request failed') {
     try {
       body = await response.json()
     } catch { /* non-JSON error body */ }
-    return { data: null, error: normalizeError(body?.error, status, fallbackError), status }
+    const error = normalizeError(body?.error, status, fallbackError)
+    // The backend's X-Request-Id (its log line of the refusal): the activity log keeps it
+    let requestId = null
+    try { requestId = response.headers?.get?.('X-Request-Id') || null } catch { /* no headers */ }
+    if (requestId && error && typeof error === 'object') error.requestId = String(requestId).slice(0, 64)
+    return { data: null, error, status }
   }
   const result = await response.json()
   if (result && typeof result === 'object' && !Array.isArray(result)) {
@@ -283,6 +288,29 @@ export async function apiRequest(method, path, body, { timeoutMs = DB_REQUEST_TI
 }
 
 /**
+ * GET a file from a cloud endpoint with the session's token (the admin's
+ * activity export). Resolves { blob, filename } or { error }.
+ */
+export async function apiDownload(path, { timeoutMs = 120000 } = {}) {
+  const apiUrl = getCloudApiUrl(path)
+  if (!apiUrl) return { error: { message: 'Backend not available', status: 0, network: true } }
+  let response
+  try {
+    response = await fetch(apiUrl, { method: 'GET', headers: getAuthHeaders(), signal: requestTimeoutSignal(timeoutMs) })
+  } catch (err) {
+    return { error: networkError(err) }
+  }
+  if (!response.ok) {
+    let body = null
+    try { body = await response.json() } catch { /* not JSON */ }
+    return { error: normalizeError(body?.error, response.status, 'Download failed') }
+  }
+  const disposition = response.headers?.get?.('Content-Disposition') || ''
+  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] || null
+  return { blob: await response.blob(), filename }
+}
+
+/**
  * Restore one match in the cloud in a single server-side transaction:
  * upsert the match by external_id, replace its sets, events and live state.
  * Needs a session. 426 / 429 / 5xx / network errors are worth retrying later.
@@ -316,6 +344,31 @@ export function apiMatchRestoreByPin(gameN, pin) {
  */
 export function apiMatchClaim(externalId, pin) {
   return postJson('/api/match/claim', { externalId, pin }, { fallbackError: 'Match take-over failed' })
+}
+
+/**
+ * Upload activity log entries (utils/activity/upload): at most 500 per call.
+ * Needs a session.
+ * @returns {Promise<{data: {accepted: string[], rejected: {uid: string, code: string}[]}|null, error: object|null, status: number}>}
+ */
+export function apiPostActivity(entries) {
+  return postJson('/api/activity', { entries }, { timeoutMs: 30000, fallbackError: 'Activity upload failed' })
+}
+
+/**
+ * Send event revisions (undo / delete / edit / restore of logged events, see
+ * db/eventHistory.js) of one match. The server voids or edits its copy of the
+ * events and keeps the revision (POST /api/match/event-revisions). Needs a
+ * session. 404 OV_MATCH_NOT_FOUND: the match is not on the server yet; a 404
+ * without that code: a server without the route (older backend, LAN relay).
+ * @param {string} matchExternalId the match seed_key
+ * @param {object[]} revisions domain/eventRevisions revisionOfJob() bodies
+ * @returns {Promise<{data: {applied: number, pending: number}|null, error: object|null, status: number}>}
+ */
+export function apiPostEventRevisions(matchExternalId, revisions) {
+  return postJson('/api/match/event-revisions', { match_external_id: matchExternalId, revisions }, {
+    fallbackError: 'Event history upload failed'
+  })
 }
 
 // ==================== Base64 (storage uploads) ====================
@@ -466,6 +519,15 @@ function notifyTokenChange(session) {
       window.dispatchEvent(new CustomEvent(TOKEN_CHANGE_EVENT, { detail: session || null }))
     }
   } catch { /* ignore */ }
+}
+
+/**
+ * { Authorization: 'Bearer <session>' } for a cloud call made outside this
+ * client (lib/phoneSignApi.js), or {} without a valid session.
+ */
+export function authorizationHeader() {
+  const token = getStoredToken()
+  return token?.access_token ? { Authorization: `Bearer ${token.access_token}` } : {}
 }
 
 // Session token management

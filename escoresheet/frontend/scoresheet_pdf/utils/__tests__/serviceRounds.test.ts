@@ -105,3 +105,32 @@ describe('set 5: change of courts (field-spec 6)', () => {
     expect(boxes(r.away)).toEqual(['II/1:/8', 'III/1:/15()'])
   })
 })
+
+// The audit's set-5 fixtures (2026-10, lines L1-L3): B (away) on the left, A serves first
+describe('set 5 audit fixtures M1 / M2 (regression)', () => {
+  const seq = (s: string) => s.split('').map(c => (c === 'h' ? 'home' : 'away')) as ('home' | 'away')[]
+  const run = (s: string) => {
+    const pts = seq(s)
+    const tracked = trackServiceRounds({ pointTeams: pts, firstServer: 'home', finished: true })
+    const split = splitSet5Rounds(tracked.away, courtChangeIndex(pts))
+    return { tracked, ...split }
+  }
+
+  it('M1: B wins 15:13 on receive; its final is not ticked; the box closed at the change is copied to panel 3', () => {
+    const { before, after, tracked } = run('hhaahhaahhaaha' + 'h' + 'aahaahaahahha')
+    const finalB = after[after.length - 1]
+    expect(finalB).toMatchObject({ points: 15, circled: true, ticked: false })
+    const lastClosedP1 = [...before].reverse().find(r => r.points !== null)!
+    expect(after[0]).toMatchObject({ position: lastClosedP1.position, box: lastClosedP1.box, points: lastClosedP1.points })
+    // A (panel 2): its last round circled with 13
+    expect(tracked.home[tracked.home.length - 1]).toMatchObject({ points: 13, circled: true })
+  })
+
+  it('M2: A wins 15:8; B\'s last closed box (8, panel 3) is circled, nothing invented in panel 1', () => {
+    const { before, after } = run('hhaahhaahhaah' + 'h' + 'aa' + 'hhhhhhh')
+    expect(before.some(r => r.circled)).toBe(false)
+    expect(before.some(r => r.points === 8)).toBe(false)
+    const last = after[after.length - 1]
+    expect(last).toMatchObject({ points: 8, circled: true })
+  })
+})

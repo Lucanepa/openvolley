@@ -21,6 +21,9 @@
  *                                                    handlers check match ownership and the
  *                                                    official's role in the match's sport
  *   GET    /api/admin/approvals[?app=indoor|beach]   isAdmin
+ *   GET    /api/admin/matches/:id/revisions          isAdmin: undone / edited events (db/015)
+ *   GET    /api/admin/activity?match=&account=&...   isAdmin: the activity log (db/016)
+ *   DELETE /api/admin/activity?match=|account=&confirm=yes  isAdmin: delete on request (audited)
  *
  * Sports (db/012, lib/access.js): every check uses the sport of the ROW (the
  * body's sport_type, the competition of a saved team, the match of an
@@ -56,7 +59,7 @@ export function manageFamilyOf (pathname) {
   return null
 }
 
-export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null }) {
+export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null }) {
   // approvals?.x, or 503 when the module is not there
   const ap = (name) => (args) => (approvals && typeof approvals[name] === 'function' ? approvals[name](args) : APPROVALS_OFF())
   const q = (query, k) => {
@@ -110,6 +113,11 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['POST', new RegExp(`^/api/admin/matches/${ID}/reopen$`), 'admin', (m, c) => accounts.reopenMatch({ actorId: c.user.id, matchId: m[1], body: c.body })],
     ['POST', new RegExp(`^/api/admin/matches/${ID}/editors$`), 'admin', (m, c) => accounts.addMatchEditor({ actorId: c.user.id, matchId: m[1], body: c.body })],
     ['POST', new RegExp(`^/api/admin/matches/${ID}/release-game$`), 'admin', (m, c) => accounts.releaseGame({ actorId: c.user.id, matchId: m[1], body: c.body })],
+    // The activity log (db/016, lib/activityLog.js); the export is streamed by server.js
+    ['GET', /^\/api\/admin\/activity$/, 'admin', (m, c) => (activity ? activity.adminList({ query: c.query }) : notFound())],
+    ['DELETE', /^\/api\/admin\/activity$/, 'admin', (m, c) => (activity ? activity.adminDelete({ actorId: c.user.id, query: c.query }) : notFound())],
+    // Undone / edited events of a match (db/015, lib/eventRevisions.js)
+    ['GET', new RegExp(`^/api/admin/matches/${ID}/revisions$`), 'admin', (m) => (revisions ? revisions.listForMatch({ matchId: m[1] }) : notFound())],
     ['GET', /^\/api\/admin\/audit$/, 'admin', (m, c) => accounts.listAudit({ limit: q(c.query, 'limit'), before: q(c.query, 'before'), action: q(c.query, 'action'), app: q(c.query, 'app') })],
     ['GET', /^\/api\/admin\/approvals$/, 'admin', (m, c) => ap('adminSearch')({ q: q(c.query, 'q') ?? '', includeRevoked: q(c.query, 'include_revoked'), limit: q(c.query, 'limit'), app: q(c.query, 'app') })],
 

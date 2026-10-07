@@ -5,6 +5,8 @@ import { useAlert } from '../contexts/AlertContext'
 import { useAuth } from '../contexts/AuthContext'
 import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
+import { saveMatchSignature } from '../utils/saveSignature'
+import { phoneSignContext, signatureSource, signatureUpdate, SLOT_OF_ROLE, PRE_MATCH_SIGNATURE_FIELD } from '../domain/phoneSignature'
 import Modal from './Modal'
 import RefereeSelector from './RefereeSelector'
 import LoadOfficialMatchModal from './LoadOfficialMatchModal'
@@ -869,6 +871,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [awayCoachSignature, setAwayCoachSignature] = useState(null)
   const [awayCaptainSignature, setAwayCaptainSignature] = useState(null)
   const [savedSignatures, setSavedSignatures] = useState({ homeCoach: null, homeCaptain: null, awayCoach: null, awayCaptain: null })
+  // "Signed on phone" of the signatures given here (field -> source | null),
+  // written with the images (docs/qr-signing-spec.md 5.6)
+  const [signatureSources, setSignatureSources] = useState({})
+  /** The source updates of `fields` that were signed on this screen. */
+  const signatureSourceUpdates = (fields, written) => {
+    const out = {}
+    for (const f of fields) if (f in signatureSources) out[`signatureSources.${f}`] = written[f] ? signatureSources[f] : null
+    return out
+  }
 
   // Check if coin toss was previously confirmed (all signatures match saved ones)
   const isCoinTossConfirmed = useMemo(() => {
@@ -2257,7 +2268,37 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     }
   }
 
-  function handleSignatureSave(signatureImage) {
+  // Sign on phone for a pre-match signature (SignaturePad `phone`)
+  function phoneSigning(role) {
+    if (!role || !match) return null
+    const slot = SLOT_OF_ROLE[role]
+    const coachOf = (bench) => (bench || []).find(b => /coach/i.test(b?.role || '') && !/assistant/i.test(b?.role || '')) || null
+    return {
+      slot,
+      matchKey: match.seed_key || match.seedKey || null,
+      gamePin: match.gamePin || null,
+      context: phoneSignContext({
+        match,
+        slot,
+        homeTeam: home,
+        awayTeam: away,
+        homeCaptain: homeRoster.find(p => p.isCaptain || p.captain) || null,
+        awayCaptain: awayRoster.find(p => p.isCaptain || p.captain) || null,
+        homeCoach: coachOf(benchHome),
+        awayCoach: coachOf(benchAway),
+        lang: i18n.language,
+        fallbackHome: t('common.home'),
+        fallbackAway: t('common.away')
+      })
+    }
+  }
+
+  function handleSignatureSave(signatureImage, meta) {
+    const field = PRE_MATCH_SIGNATURE_FIELD[openSignature]
+    if (field) setSignatureSources(prev => ({ ...prev, [field]: signatureSource(signatureImage, meta) }))
+    // an existing match: saved at once (owner 2026-10-07), with its phone-signing
+    // record in the same update; a new one keeps it in the draft
+    if (field && matchId) saveMatchSignature(db, matchId, field, signatureImage, signatureUpdate(field, signatureImage, meta))
     if (openSignature === 'home-coach') {
       setHomeCoachSignature(signatureImage)
     } else if (openSignature === 'home-captain') {
@@ -2693,6 +2734,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         updateData.homeCaptainSignature = homeCaptainSignature
         updateData.awayCoachSignature = awayCoachSignature
         updateData.awayCaptainSignature = awayCaptainSignature
+        Object.assign(updateData, signatureSourceUpdates(Object.values(PRE_MATCH_SIGNATURE_FIELD), updateData))
       }
 
       const updateResult = await db.matches.update(matchId, updateData)
@@ -4818,6 +4860,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 updateData.homeCaptainSignature = savedSignatures.homeCaptain
                 setHomeCaptainSignature(savedSignatures.homeCaptain)
               }
+              // "Signed on phone" of the images signed on this screen (not of restored ones)
+              const currentHomeSignatures = { homeCoachSignature: homeCoachSignature, homeCaptainSignature: homeCaptainSignature }
+              Object.assign(updateData, signatureSourceUpdates(
+                Object.keys(currentHomeSignatures).filter(f => updateData[f] && updateData[f] === currentHomeSignatures[f]),
+                updateData
+              ))
 
               await db.matches.update(matchId, updateData)
 
@@ -5105,6 +5153,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           open={openSignature !== null}
           onClose={() => setOpenSignature(null)}
           onSave={handleSignatureSave}
+          phone={phoneSigning(openSignature)}
           title={openSignature === 'home-coach' ? 'Home coach signature' :
             openSignature === 'home-captain' ? 'Home captain signature' :
               openSignature === 'away-coach' ? 'Away coach signature' :
@@ -5960,6 +6009,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 updateData.awayCaptainSignature = savedSignatures.awayCaptain
                 setAwayCaptainSignature(savedSignatures.awayCaptain)
               }
+              // "Signed on phone" of the images signed on this screen (not of restored ones)
+              const currentAwaySignatures = { awayCoachSignature: awayCoachSignature, awayCaptainSignature: awayCaptainSignature }
+              Object.assign(updateData, signatureSourceUpdates(
+                Object.keys(currentAwaySignatures).filter(f => updateData[f] && updateData[f] === currentAwaySignatures[f]),
+                updateData
+              ))
 
               await db.matches.update(matchId, updateData)
 
@@ -6248,6 +6303,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           open={openSignature !== null}
           onClose={() => setOpenSignature(null)}
           onSave={handleSignatureSave}
+          phone={phoneSigning(openSignature)}
           title={openSignature === 'home-coach' ? 'Home coach signature' :
             openSignature === 'home-captain' ? 'Home captain signature' :
               openSignature === 'away-coach' ? 'Away coach signature' :
@@ -7748,6 +7804,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         open={openSignature !== null}
         onClose={() => setOpenSignature(null)}
         onSave={handleSignatureSave}
+        phone={phoneSigning(openSignature)}
         title={openSignature === 'home-coach' ? 'Home coach signature' :
           openSignature === 'home-captain' ? 'Home captain signature' :
             openSignature === 'away-coach' ? 'Away coach signature' :

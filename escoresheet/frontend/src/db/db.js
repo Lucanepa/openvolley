@@ -1,5 +1,6 @@
 import Dexie from 'dexie'
 import { rewriteQueuedSyncJobs } from '../utils/syncIds'
+import { installEventHistoryHooks } from './eventHistory'
 
 /**
  * ============================================================================
@@ -347,6 +348,22 @@ db.version(19).stores({
   saved_teams: 'id, competitionId, nameKey, svrzKey',
   saved_teams_meta: 'key'
 })
+
+// Version 20: logging (docs/activity-log-spec.md).
+//  - event_history: every undo, delete and edit of a logged event (db/eventHistory.js);
+//    [matchId+seq] gives the seq high-water mark, so an undone seq is never reused.
+//  - activity_log: the match activity log, synced to the server (utils/activity).
+//  - interaction_logs: + matchId index (the diagnostic export of one match).
+// New tables and one new index, no upgrade function: nothing to migrate, so the
+// upgrade cannot reject.
+db.version(20).stores({
+  event_history: '++id, matchId, [matchId+seq], eventId, &revUid, ts',
+  activity_log: '++lid, &uid, ts, matchId, [matchId+ts], kind, synced',
+  interaction_logs: 'id, ts, gameNumber, matchId, category, sessionId'
+})
+
+// Undo / delete / edit history of events, from Dexie hooks (see db/eventHistory.js)
+installEventHistoryHooks(db)
 
 // Request DURABLE storage for the origin. All match state lives in IndexedDB;
 // without this the browser treats it as "best-effort" and may evict it under

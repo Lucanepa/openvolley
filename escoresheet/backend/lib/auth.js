@@ -135,7 +135,19 @@ const DEFAULTS = Object.freeze({
     // db/011: approvals keep the official's name snapshot (club records)
     { table: 'public.match_approvals', column: 'user_id' },
     { table: 'public.match_approvals', column: 'requested_by' },
-    { table: 'public.match_approvals', column: 'revoked_by' }
+    { table: 'public.match_approvals', column: 'revoked_by' },
+    // db/015: the history of undone / edited events stays with its match
+    { table: 'public.events', column: 'voided_by' },
+    { table: 'public.event_revisions', column: 'actor_id' },
+    // db/016: match activity stays (club record) without the account
+    { table: 'public.activity_log', column: 'account_id' },
+    { table: 'public.activity_log', column: 'uploader_id' }
+  ],
+  // Rows of a table that go with the account under a condition (the table's
+  // other rows stay, detached above). db/016: the account's device and app
+  // activity (no match) is deleted.
+  ownedRows: [
+    { table: 'public.activity_log', column: 'account_id', where: 'match_external_id IS NULL', needs: 'match_external_id' }
   ],
   // async (userId) => counts: removes the account's files (server.js passes
   // lib/storage.js deleteUserData: backup/<user>/ and scoresheet owner
@@ -1315,6 +1327,11 @@ export function createAuth(options = {}) {
         const cols = await columnsOf(table, client)
         if (!cols.has(column)) continue
         await client.query(`DELETE FROM ${qualify(table)} WHERE ${quoteIdent(column)} = $1`, [userId])
+      }
+      for (const { table, column, where, needs } of cfg.ownedRows || []) {
+        const cols = await columnsOf(table, client)
+        if (!cols.has(column) || (needs && !cols.has(needs))) continue
+        await client.query(`DELETE FROM ${qualify(table)} WHERE ${quoteIdent(column)} = $1 AND ${where}`, [userId])
       }
       for (const { table, column } of cfg.detachedColumns) {
         const cols = await columnsOf(table, client)

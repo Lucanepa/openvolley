@@ -7,7 +7,8 @@ import { IconButton } from '../ui/IconButton.jsx'
 // text-lg title and the round × close button. The API and behaviour are
 // unchanged on purpose: the backdrop swallows taps and never closes the modal
 // (scoring screens depend on that), there is no Escape handling, and
-// `width`, `position`, `customStyle` and `zIndex` work as before.
+// `width`, `position`, `customStyle` and `zIndex` work as before. `panelStyle`
+// adds to the centred panel's style (a large dialog's own maxHeight).
 //
 // Children are NOT wrapped in `.ov-kit`: they are legacy views (lineup grid,
 // set-end readouts...) that rely on the legacy element rules. Only the close
@@ -16,7 +17,7 @@ import { IconButton } from '../ui/IconButton.jsx'
 const OVERLAY = 'no-print fixed inset-0 bg-stone-900/50 backdrop-blur-sm'
 const PANEL = 'bg-white rounded-2xl shadow-2xl p-5 max-h-[85vh] overflow-auto text-stone-800'
 
-export default function Modal({ title, open, onClose, children, width = 800, hideCloseButton = false, position = 'center', customStyle = {}, zIndex = 1000 }) {
+export default function Modal({ title, open, onClose, children, width = 800, hideCloseButton = false, position = 'center', customStyle = {}, zIndex = 1000, panelStyle = null }) {
   const { t } = useTranslation()
 
   if (!open) return null
@@ -82,7 +83,7 @@ export default function Modal({ title, open, onClose, children, width = 800, hid
         role="dialog"
         aria-modal="true"
         className={PANEL}
-        style={{ width: modalWidth }}
+        style={panelStyle ? { width: modalWidth, ...panelStyle } : { width: modalWidth }}
         onClick={(e) => e.stopPropagation()}
       >
         {header}

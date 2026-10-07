@@ -1,7 +1,11 @@
 /**
  * Comprehensive Logger - Captures every user interaction and function call
- * Stores logs LOCALLY (IndexedDB + memory) - no real-time API calls
- * Logs can be downloaded from menu or included in end-of-match ZIP
+ * Stores logs LOCALLY (IndexedDB + memory) - no real-time API calls, never
+ * synced: click and keystroke streams stay on the device (the synced match
+ * activity log is utils/activity).
+ * Logs can be downloaded from the options menu (this match) or included in
+ * the end-of-match ZIP. Kept 30 days, at most 50,000 rows (pruneInteractionLogs).
+ * The scoreboard's debug lines (utils/debugLogger) land here too, category 'debug'.
  */
 
 import { db } from '../db/db'
@@ -12,7 +16,11 @@ const CONFIG = {
   INDEXEDDB_FLUSH_SIZE: 1000, // Flush to IndexedDB every 1000 entries
   INDEXEDDB_FLUSH_INTERVAL: 30000, // Or every 30 seconds
   LOG_TO_CONSOLE: false,      // Set to true for debugging
-  EXPORT_CHUNK_SIZE: 10000    // Entries per export chunk
+  EXPORT_CHUNK_SIZE: 10000,   // Entries per export chunk
+  MAX_AGE_MS: 30 * 24 * 3600 * 1000, // pruneInteractionLogs: older rows go
+  MAX_ROWS: 50000,            // ... and the oldest beyond this many
+  PRUNE_INTERVAL_MS: 60 * 60 * 1000,
+  EMERGENCY_MAX: 2000         // beforeunload localStorage copy (entries)
 }
 
 // State
@@ -23,6 +31,7 @@ let matchId = null
 let sessionId = null
 let isInitialized = false
 let pendingFlush = false
+let pruneTimer = null
 
 /**
  * Generate a unique session ID
@@ -59,8 +68,14 @@ export function initComprehensiveLogger(gameN = null, mId = null) {
   // Start periodic flush to IndexedDB
   startFlushTimer()
 
-  // Recover any logs from previous session
+  // Recover any logs from previous session, then keep the table bounded
   recoverFromStorage()
+    .then(() => migrateDebugLogs())
+    .then(() => pruneInteractionLogs())
+    .catch(() => {})
+  if (!pruneTimer && typeof setInterval === 'function') {
+    pruneTimer = setInterval(() => { pruneInteractionLogs().catch(() => {}) }, CONFIG.PRUNE_INTERVAL_MS)
+  }
 
   // Log initialization
   log('system', 'init', 'ComprehensiveLogger', 'initialized', {
@@ -83,9 +98,17 @@ export function initComprehensiveLogger(gameN = null, mId = null) {
  * @param {string|null} mId - Match ID
  */
 export function setGameContext(gameN, mId = null) {
-  gameNumber = gameN
-  if (mId) matchId = mId
-  log('system', 'config_change', 'ComprehensiveLogger', 'setGameContext', { gameNumber: gameN, matchId: mId })
+  const nextGame = gameN ?? null
+  const nextMatch = mId ?? matchId
+  if (nextGame === gameNumber && nextMatch === matchId) return
+  gameNumber = nextGame
+  matchId = nextMatch
+  log('system', 'config_change', 'ComprehensiveLogger', 'setGameContext', { gameNumber: nextGame, matchId: nextMatch })
+}
+
+/** The current game number and local match id (null when none is open). */
+export function getGameContext() {
+  return { gameNumber, matchId }
 }
 
 /**
@@ -331,7 +354,7 @@ function persistToLocalStorageSync() {
     const key = `comprehensive_logs_emergency_${sessionId}`
     const existing = localStorage.getItem(key)
     const existingLogs = existing ? JSON.parse(existing) : []
-    const combined = [...existingLogs, ...logBuffer].slice(-5000) // Keep last 5000
+    const combined = [...existingLogs, ...logBuffer].slice(-CONFIG.EMERGENCY_MAX)
     localStorage.setItem(key, JSON.stringify(combined))
   } catch (err) {
     // Silent fail
@@ -345,6 +368,26 @@ function persistToLocalStorageSync() {
 // (eventCapture redacted by field name only). Such an entry is dropped, here
 // and from the emergency copies, never exported.
 const SECRET_LABEL = /password|passwort|secret|token|pin|credential/i
+// A PIN on screen (Show PINs, the match popover, the connect dialog) is six
+// digits, possibly grouped ("771 234"): a click on it must not put it in the
+// log (eventCapture). Runs of 6+ digits go (a 6-digit game number too: the
+// entry carries the game number anyway).
+const DIGIT_RUN = /\d(?:[\s\u00a0-]?\d){5,}/g
+
+/** Visible text of a clicked element for the log, without PIN-like digit runs. */
+export function redactScreenText(text) {
+  if (text == null) return null
+  return String(text).replace(DIGIT_RUN, '[digits]')
+}
+
+// Entries stored before the click text was redacted: scrubbed on export
+function scrubExportEntry(entry) {
+  const t = entry?.target
+  if (!t || typeof t !== 'object') return entry
+  const href = typeof t.href === 'string' ? t.href.split(/[?#]/)[0] : t.href
+  return { ...entry, target: { ...t, textContent: redactScreenText(t.textContent ?? null), ariaLabel: redactScreenText(t.ariaLabel ?? null), href } }
+}
+
 export function isSecretEntry(entry) {
   const t = entry?.target
   if (!t) return false
@@ -386,6 +429,129 @@ async function recoverFromStorage() {
     console.error('[ComprehensiveLogger] Recovery failed:', err)
   }
 }
+
+/**
+ * Keep interaction_logs bounded: rows older than maxAgeMs go, then the oldest
+ * beyond maxRows. Runs at init and every hour. Never throws.
+ * @returns {Promise<number>} rows removed
+ */
+export async function pruneInteractionLogs({ now = Date.now(), maxAgeMs = CONFIG.MAX_AGE_MS, maxRows = CONFIG.MAX_ROWS } = {}) {
+  let removed = 0
+  try {
+    if (!db.interaction_logs) return 0
+    removed += await db.interaction_logs.where('ts').below(now - maxAgeMs).delete()
+    const count = await db.interaction_logs.count()
+    if (count > maxRows) {
+      const ids = await db.interaction_logs.orderBy('ts').limit(count - maxRows).primaryKeys()
+      await db.interaction_logs.bulkDelete(ids)
+      removed += ids.length
+    }
+  } catch (err) {
+    console.warn('[ComprehensiveLogger] Prune failed:', err?.message)
+  }
+  return removed
+}
+
+// utils/debugLogger kept its own whole-array copy in localStorage before
+// 2.4.0 (rewritten at every entry, quota failures silent). Moved once into
+// interaction_logs (category 'debug'), then the key goes.
+export const LEGACY_DEBUG_KEY = 'escoresheet_debug_logs'
+export async function migrateDebugLogs() {
+  let raw = null
+  try {
+    raw = localStorage.getItem(LEGACY_DEBUG_KEY)
+  } catch {
+    return 0
+  }
+  if (!raw) return 0
+  let moved = 0
+  try {
+    const list = JSON.parse(raw)
+    if (Array.isArray(list) && list.length && db.interaction_logs) {
+      const rows = list.slice(-CONFIG.MAX_ROWS).map((e, i) => {
+        const ts = Date.parse(e?.timestamp) || Date.now()
+        return {
+          id: `dbg_${ts}_${i}_${Math.random().toString(36).slice(2, 7)}`,
+          ts,
+          timestamp: new Date(ts).toISOString(),
+          category: 'debug',
+          type: String(e?.action || 'debug'),
+          component: 'DebugLogger',
+          action: String(e?.action || 'debug'),
+          payload: sanitizeForStorage(trimDebugData(e?.data)),
+          target: null,
+          gameNumber: null,
+          matchId: null,
+          sessionId: 'legacy-debug'
+        }
+      })
+      await db.interaction_logs.bulkPut(rows)
+      moved = rows.length
+    }
+  } catch (err) {
+    console.warn('[ComprehensiveLogger] Debug log migration skipped:', err?.message)
+  }
+  try { localStorage.removeItem(LEGACY_DEBUG_KEY) } catch { /* storage blocked */ }
+  return moved
+}
+
+const SNAPSHOT_MAX_CHARS = 20 * 1024
+
+/** Debug data without a state snapshot larger than 20 KB. */
+export function trimDebugData(data) {
+  if (!data || typeof data !== 'object') return data
+  if (!('stateSnapshot' in data)) return data
+  let size = 0
+  try { size = JSON.stringify(data.stateSnapshot ?? null).length } catch { size = Infinity }
+  if (size <= SNAPSHOT_MAX_CHARS) return data
+  const { stateSnapshot: _dropped, ...rest } = data
+  return { ...rest, stateSnapshotDropped: true }
+}
+
+/**
+ * The entries of one match: logged with its local id, or with its game
+ * number, or (no match id on the entry: written before the context was set,
+ * or before 2.4.0) logged while the match was open, between `from` and `to`.
+ * @param {{ matchId?: number|string|null, gameN?: number|string|null, from?: number|string|null, to?: number|string|null }} q
+ */
+export async function getLogsForMatch({ matchId: mId = null, gameN = null, from = null, to = null } = {}) {
+  const fromMs = from == null ? null : (typeof from === 'number' ? from : Date.parse(from))
+  const toMs = to == null ? Date.now() : (typeof to === 'number' ? to : Date.parse(to))
+  const gameKey = gameN == null || gameN === '' ? null : String(gameN)
+  const inWindow = (e) => Number.isFinite(fromMs) && e.ts >= fromMs && e.ts <= (Number.isFinite(toMs) ? toMs : Date.now())
+  const belongs = (e) => {
+    if (mId != null && e.matchId != null) return String(e.matchId) === String(mId)
+    if (gameKey != null && e.gameNumber != null && String(e.gameNumber) === gameKey) return true
+    return e.matchId == null && inWindow(e)
+  }
+  try {
+    let rows = []
+    if (db.interaction_logs) {
+      const byId = new Map()
+      const add = (list) => { for (const e of list) byId.set(e.id, e) }
+      if (mId != null) add(await db.interaction_logs.where('matchId').equals(mId).toArray())
+      if (gameKey != null) {
+        add(await db.interaction_logs.where('gameNumber').anyOf([gameN, gameKey, Number(gameKey)].filter(v => v === v)).toArray())
+      }
+      if (Number.isFinite(fromMs)) {
+        add(await db.interaction_logs.where('ts').between(fromMs, Number.isFinite(toMs) ? toMs : Date.now(), true, true).toArray())
+      }
+      rows = [...byId.values()]
+    }
+    const all = [...rows, ...logBuffer].filter(belongs)
+    const seen = new Set()
+    const out = all.filter(e => (seen.has(e.id) ? false : (seen.add(e.id), true)))
+    out.sort((a, b) => a.ts - b.ts)
+    return out.filter(e => !isSecretEntry(e)).map(scrubExportEntry)
+  } catch (err) {
+    console.error('[ComprehensiveLogger] Error getting the logs of a match:', err)
+    return logBuffer.filter(belongs).filter(e => !isSecretEntry(e)).map(scrubExportEntry)
+  }
+}
+
+// Export helpers take a game number (legacy) or a match query object
+const isMatchQuery = (q) => q !== null && typeof q === 'object'
+const logsOf = (q) => (isMatchQuery(q) ? getLogsForMatch(q) : getAllLogs(q))
 
 /**
  * Get all logs for current game/match (from IndexedDB + buffer)
@@ -464,7 +630,7 @@ export async function getLogCount(gameN = null) {
  * @returns {Promise<string>} NDJSON formatted logs
  */
 export async function exportLogsAsNDJSON(gameN = null) {
-  const logs = await getAllLogs(gameN)
+  const logs = await logsOf(gameN)
   return logs.map(entry => JSON.stringify(entry)).join('\n')
 }
 
@@ -474,10 +640,10 @@ export async function exportLogsAsNDJSON(gameN = null) {
  * @returns {Promise<string>} Formatted JSON
  */
 export async function exportLogsAsJSON(gameN = null) {
-  const logs = await getAllLogs(gameN)
+  const logs = await logsOf(gameN)
   return JSON.stringify({
     exportDate: new Date().toISOString(),
-    gameNumber: gameN ?? gameNumber,
+    gameNumber: isMatchQuery(gameN) ? gameN.gameN ?? null : gameN ?? gameNumber,
     matchId,
     sessionId,
     totalLogs: logs.length,
@@ -513,8 +679,9 @@ export async function downloadLogs(gameN = null, format = 'ndjson') {
     const blob = await exportLogsAsBlob(gameN, format)
     const extension = format === 'json' ? 'json' : 'ndjson'
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-    const gameStr = (gameN ?? gameNumber) ? `_game${gameN ?? gameNumber}` : ''
-    const filename = `comprehensive_logs${gameStr}_${timestamp}.${extension}`
+    const game = isMatchQuery(gameN) ? gameN.gameN : (gameN ?? gameNumber)
+    const gameStr = game ? `_game${String(game).replace(/[^A-Za-z0-9_-]/g, '')}` : ''
+    const filename = `diagnostic_log${gameStr}_${timestamp}.${extension}`
 
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -594,8 +761,12 @@ export function shutdownLogger() {
   // Flush remaining logs
   flushToIndexedDB()
 
-  // Stop timer
+  // Stop timers
   stopFlushTimer()
+  if (pruneTimer) {
+    clearInterval(pruneTimer)
+    pruneTimer = null
+  }
 
   // Remove event listeners
   document.removeEventListener('visibilitychange', handleVisibilityChange)
