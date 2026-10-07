@@ -673,4 +673,12 @@ These override the paper conventions above wherever they differ. The audit must 
      match has started); match end = the last set's end; match duration = end − start;
    - all to the minute (rounded down), so every duration is the difference of the printed times.
    This answers open question 15.2 (the recorded actual minute, never the schedule).
+3. **Signatures are saved the moment the pad is confirmed** and are on the sheet at once. The
+   coin-toss captain and coach signatures (CoinToss, also its roster dialog, and MatchSetup for
+   an existing match) and the post-match captains drawn on the scoreboard are written to the
+   match row and queued for the cloud as soon as the pad is confirmed (`utils/saveSignature.js`,
+   as MatchEnd already did for the approvals), not when the screen is confirmed. The sheet reads
+   them from the match row on every render: the captain / coach boxes of each roster, "CAPTAIN
+   SIGNATURE A/B" and the officials' column, identical in the live preview and the PDF.
+   Signatures made on a phone (QR signing) land in the same fields through the same handlers.
 

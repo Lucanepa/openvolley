@@ -16,6 +16,7 @@ import { useSyncQueue, isAuthBlocked } from '../hooks/useSyncQueue'
 import { useSequentialSync } from '../hooks/useSequentialSync'
 import SyncProgressModal from './SyncProgressModal'
 import SignaturePad from './SignaturePad'
+import { saveMatchSignature } from '../utils/saveSignature'
 import LongPressProgressIndicator from './LongPressProgressIndicator'
 import DraggedPlayerOverlay from './DraggedPlayerOverlay'
 import { setPlayerDragImage } from '../utils/dragImage'
@@ -27270,7 +27271,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             <SignaturePad
               onSave={async (signatureDataUrl) => {
                 const fieldName = postMatchSignature === 'home-captain' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature'
-                await db.matches.update(matchId, { [fieldName]: signatureDataUrl })
+                // saved and queued for the cloud at once, as MatchEnd does
+                await saveMatchSignature(db, matchId, fieldName, signatureDataUrl)
                 setPostMatchSignature(null)
               }}
               onCancel={() => setPostMatchSignature(null)}

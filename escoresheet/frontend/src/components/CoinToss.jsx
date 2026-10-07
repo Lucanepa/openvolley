@@ -6,6 +6,8 @@ import { useScaledLayout } from '../hooks/useScaledLayout'
 import { db } from '../db/db'
 import { apiFrom } from '../lib/apiClient'
 import SignaturePad from './SignaturePad'
+import { saveMatchSignature } from '../utils/saveSignature'
+import { signatureFieldOfRole } from '../domain/signatureEdits'
 import Modal from './Modal'
 import MenuList from './MenuList'
 import ballFallback from '../ball_fallback.png'
@@ -564,6 +566,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
   }
 
   function handleSignatureSave(signatureImage) {
+    // saved to the match at once, not on "Confirm coin toss result" (owner 2026-10-07)
+    saveMatchSignature(db, matchId, signatureFieldOfRole(openSignature), signatureImage)
     if (openSignature === 'home-coach') {
       setHomeCoachSignature(signatureImage)
     } else if (openSignature === 'home-captain') {
@@ -2164,6 +2168,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     </h3>
                     <SignaturePad
                       onSave={(sig) => {
+                        saveMatchSignature(db, matchId, signatureFieldOfRole(`${currentTeam}-${rosterModalSignature}`), sig)
                         if (rosterModalSignature === 'coach') {
                           setCoachSig(sig)
                         } else {
