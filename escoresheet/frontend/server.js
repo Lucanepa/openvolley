@@ -206,39 +206,10 @@ const requestHandler = (req, res) => {
     return
   }
 
-  // Check if accessing main page and block if another instance exists
-  const isMainPage = urlPath === '/' || urlPath === '/index.html'
-  if (isMainPage) {
-    if (mainGate.blocksMainPage(req.socket.remoteAddress, req.headers['x-instance-id'])) {
-      res.writeHead(403, { 'Content-Type': 'text/html' })
-      res.end(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Main Instance Already Running</title>
-          <style>
-            body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-            h1 { color: #ef4444; }
-            p { color: #666; }
-          </style>
-        </head>
-        <body>
-          <h1>Main Scoresheet Already Running</h1>
-          <p>Another instance of the main scoresheet is already active.</p>
-          <p>Only one main scoresheet instance can run at a time.</p>
-          <p>You can still access:</p>
-          <ul style="list-style: none; padding: 0;">
-            <li><a href="/referee">Referee App</a></li>
-            <li><a href="/bench">Bench App</a></li>
-            <li><a href="/livescore">Livescore App</a></li>
-          </ul>
-        </body>
-        </html>
-      `)
-      return
-    }
-  }
-  
+  // Single main-instance gate for "/" (the "already running" page, and the
+  // /?court=other opt-in for a scoresheet on another court): lanRelayCore
+  if (mainGate.handleMainPage(req, res, urlPath)) return
+
   // Allow access to referee, bench, livescore, etc. even if main instance exists
   let filePath = join(DIST_DIR, urlPath === '/' ? 'index.html' : urlPath)
 
