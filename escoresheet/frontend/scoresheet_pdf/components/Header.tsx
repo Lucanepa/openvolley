@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import swissvolleyLogo from './swissvolleylogo.jpg';
-// Logo for white background (scoresheet PDF)
-const openvolleyLogo = '/openvolley_no_bg.png';
+// OpenVolley lockup (ball + wordmark), a PNG rendered from brand/lockup.svg:
+// the PDF capture paths (html-to-image, utils/pdfCapture.ts) draw rasters reliably.
+const openvolleyLogo = '/openvolley_logo.png';
 import { formatTimeLocal } from '../../src/utils/timeUtils';
 
 // The scoresheet window also loads the scorer app's styles.css, whose global
@@ -230,8 +231,8 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamA
             {!faviconImageError ? (
                 <img
                     src={openvolleyLogo}
-                    alt="Openvolley"
-                    style={{ aspectRatio: '1/1', height:'45px' }}
+                    alt="OpenVolley"
+                    style={{ height: '24px', width: 'auto' }}
                     onError={() => setFaviconImageError(true)}
                 />
             ) : (

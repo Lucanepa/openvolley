@@ -31,6 +31,7 @@ export default function AccountsPanel({ selfId }) {
   const roleError = (err) => {
     if (err?.code === 'OV_SELF_DEMOTE') return t('manage.accounts.selfDemote')
     if (err?.code === 'OV_FORBIDDEN') return t('manage.accounts.superAdminOnly')
+    if (err?.code === 'OV_EMAIL_UNCONFIRMED') return t('manage.accounts.confirmEmailFirst')
     return errorText(err)
   }
 
@@ -86,6 +87,7 @@ export default function AccountsPanel({ selfId }) {
                 <span className="break-all">{a.email}</span>
                 <span>{t('manage.accounts.created', { date: date(a.created_at) })}</span>
                 <span>{a.last_sign_in_at ? t('manage.accounts.lastSignIn', { date: date(a.last_sign_in_at) }) : t('manage.accounts.neverSignedIn')}</span>
+                {a.email_confirmed === false && <span className="font-medium text-amber-700">{t('manage.accounts.emailUnconfirmed')}</span>}
               </>}
               chips={<RoleChips roles={a.roles} pending={a.pending} />}
               tools={<>

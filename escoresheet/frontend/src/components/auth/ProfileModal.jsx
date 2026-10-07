@@ -6,6 +6,7 @@ import { X } from 'lucide-react'
 import { Button, cn, Field, FOCUS_RING, IconButton, Input } from '../../ui'
 import RoleChips from './RoleChips'
 import PendingApprovalBanner from './PendingApprovalBanner'
+import EmailConfirmBanner from './EmailConfirmBanner'
 import DateOfBirthInput from './DateOfBirthInput'
 import { backdropDismiss } from '../../ui/backdropDismiss.js'
 
@@ -251,6 +252,7 @@ export default function ProfileModal({ open, onClose }) {
                 </Button>
               </div>
             )}
+            <EmailConfirmBanner className="mt-2" />
           </div>
 
           {/* Role (read-only) */}

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
-import { needsEmailConfirmation } from './signUpResult'
+import { confirmationLinkSent, needsEmailConfirmation } from './signUpResult'
 import DateOfBirthInput from './DateOfBirthInput'
 import { Button, cn, Field, FOCUS_RING, Input } from '../../ui'
 
@@ -13,13 +13,17 @@ export const MIN_PASSWORD_LENGTH = 6
  * password + confirmation. Accounts are made on manager.openvolley.app only;
  * the scorer apps link there (CreateAccountLink).
  *
- * On a backend that confirms accounts at sign-up (ours: no email is sent) the
- * user is signed in right away and `onSignedUp({ signedIn: true })` runs; the
- * page then follows the account (pending -> invite code step). Otherwise the
- * form shows "check your email" or "you can sign in now" with a sign-in button.
+ * Our backend lets a new account sign in at once: it either confirms the
+ * address at sign-up (no mail server) or mails a confirmation link
+ * (`email_confirmation: 'sent'`, see ./signUpResult). The user is signed in
+ * right away and `onSignedUp({ signedIn: true, linkSentTo })` runs, with
+ * `linkSentTo` the address the link went to (null when none was mailed); the
+ * page then follows the account (pending -> invite code step) and says where
+ * the link went. Otherwise the form shows "check your email" (or where the
+ * link went, or "you can sign in now") with a sign-in button.
  *
  * @param {object} props
- * @param {(result: { signedIn: boolean, confirmByEmail: boolean }) => void} [props.onSignedUp]
+ * @param {(result: { signedIn: boolean, confirmByEmail: boolean, linkSentTo: string | null }) => void} [props.onSignedUp]
  * @param {() => void} [props.onSwitchToLogin] "Already have an account? Sign in"
  */
 export default function SignUpForm({ onSignedUp, onSwitchToLogin }) {
@@ -39,6 +43,7 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin }) {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [confirmByEmail, setConfirmByEmail] = useState(false)
+  const [linkSentTo, setLinkSentTo] = useState(null)
 
   const dobInvalidText = t('auth.dobInvalid', 'Enter the date of birth as DD.MM.YYYY.')
 
@@ -74,21 +79,25 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin }) {
       return
     }
 
-    // The backend confirms the account at sign-up (no email is sent): sign
-    // the user in right away. Only an unconfirmed account gets the email step.
+    // The backend confirms the account at sign-up, or mails a link and lets it
+    // sign in anyway: sign the user in right away. Only an account the server
+    // will not let in before the confirmation gets the "check your email" step.
     const mustConfirm = needsEmailConfirmation(signUpData)
+    // A confirmation link went out, but the account may sign in already
+    const sentTo = confirmationLinkSent(signUpData) ? email.trim() : null
     setConfirmByEmail(mustConfirm)
+    setLinkSentTo(sentTo)
     if (!mustConfirm) {
       const { error: signInError } = await signIn(email.trim(), password)
       if (!signInError) {
         setLoading(false)
-        onSignedUp?.({ signedIn: true, confirmByEmail: false })
+        onSignedUp?.({ signedIn: true, confirmByEmail: false, linkSentTo: sentTo })
         return
       }
     }
     setSuccess(true)
     setLoading(false)
-    onSignedUp?.({ signedIn: false, confirmByEmail: mustConfirm })
+    onSignedUp?.({ signedIn: false, confirmByEmail: mustConfirm, linkSentTo: sentTo })
   }
 
   if (success) {
@@ -101,7 +110,9 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin }) {
         <p className="text-sm text-stone-600">
           {confirmByEmail
             ? t('auth.checkEmail', 'Check your email to confirm your account')
-            : t('auth.accountReady', 'Your account is ready. You can sign in now.')}
+            : linkSentTo
+              ? t('authEmail.signUpLinkSent', { email: linkSentTo })
+              : t('auth.accountReady', 'Your account is ready. You can sign in now.')}
         </p>
         {onSwitchToLogin && (
           <Button variant="hero" block onClick={onSwitchToLogin} className="mt-5">

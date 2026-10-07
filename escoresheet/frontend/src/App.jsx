@@ -27,8 +27,6 @@ import ballFallback from './ball_fallback.png'
 // Primary ball image (with a bundled copy as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
 
-// Logo for dark background (HomePage)
-const openvolleyLogo = `${import.meta.env.BASE_URL}openvolley_dark_bg.png`
 import {
   TEST_REFEREE_SEED_DATA,
   TEST_SCORER_SEED_DATA,
@@ -334,12 +332,11 @@ export default function App() {
     }
   }, [wakeLockActive, reEnableWakeLock])
 
-  // Preload assets that are used later (e.g., coin toss volleyball image, logo)
+  // Preload assets that are used later (e.g., coin toss volleyball image)
   useEffect(() => {
     const assetsToPreload = [
       ballImage,
-      ballFallback,
-      openvolleyLogo
+      ballFallback
     ]
 
     assetsToPreload.forEach(src => {
@@ -885,9 +882,9 @@ export default function App() {
 
   const restoredRef = useRef(false)
 
-  // Preload ball and logo images when app loads
+  // Preload the ball images when app loads
   useEffect(() => {
-    const imagesToPreload = [ballImage, ballFallback, openvolleyLogo]
+    const imagesToPreload = [ballImage, ballFallback]
 
     imagesToPreload.forEach(src => {
       // Preload the image
@@ -1016,7 +1013,7 @@ export default function App() {
   // Update document title based on match type
   useEffect(() => {
     if (!currentMatch) {
-      document.title = 'Openvolley eScoresheet'
+      document.title = 'OpenVolley eScoresheet'
       return
     }
 
@@ -1024,11 +1021,11 @@ export default function App() {
 
     if (isTestMatch) {
       // Test matches don't have a game number - just show base title
-      document.title = 'Openvolley eScoresheet'
+      document.title = 'OpenVolley eScoresheet'
     } else {
       // Official match - show game number only
       const gameNumber = currentMatch.externalId || 'Official match'
-      document.title = `Openvolley eScoresheet - ${gameNumber}`
+      document.title = `OpenVolley eScoresheet - ${gameNumber}`
     }
   }, [currentMatch])
 
@@ -2987,7 +2984,6 @@ export default function App() {
                   {/* the desktop app's own update (updater.rs): home screen only */}
                   <DesktopUpdateNotice />
                   <HomePage
-                    favicon={openvolleyLogo}
                     newMatchMenuOpen={newMatchMenuOpen}
                     setNewMatchMenuOpen={setNewMatchMenuOpen}
                     createNewOfficialMatch={createNewOfficialMatch}

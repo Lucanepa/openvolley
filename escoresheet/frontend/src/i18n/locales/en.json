@@ -929,7 +929,7 @@
     "viewportHeight": "Viewport height"
   },
   "home": {
-    "title": "Openvolley eScoresheet",
+    "title": "OpenVolley eScoresheet",
     "newMatch": "New match",
     "officialMatch": "Official match",
     "testMatch": "Test match",
@@ -2280,7 +2280,8 @@
       "inviteExpired": "This invite code has expired.",
       "inviteUsedUp": "This invite code has been used up.",
       "tooManyAttempts": "Too many attempts. Please wait a few minutes.",
-      "offline": "Redeeming a code needs a connection."
+      "offline": "Redeeming a code needs a connection.",
+      "emailUnconfirmed": "Confirm your email address first: open the link we emailed you, or send a new one from your profile."
     },
     "roles": {
       "scorer": "Scorer",
@@ -2365,7 +2366,9 @@
       "lastSignIn": "Last sign-in {{date}}",
       "neverSignedIn": "Never signed in",
       "selfDemote": "You cannot remove your own admin role.",
-      "superAdminOnly": "Only a super admin can change this account."
+      "superAdminOnly": "Only a super admin can change this account.",
+      "emailUnconfirmed": "Email not confirmed",
+      "confirmEmailFirst": "This account has not confirmed its email address yet. Roles can be given once it has."
     },
     "invites": {
       "new": "New invite code",
@@ -2398,6 +2401,7 @@
       "from": "From",
       "to": "To",
       "search": "Search team or game number",
+      "searchButton": "Search",
       "notClaimed": "Not claimed",
       "scoredBy": "Scored by {{name}}",
       "unknownScorer": "Unknown scorer",
@@ -2441,7 +2445,10 @@
         "match_close": "Match closed",
         "match_reopen": "Match reopened",
         "match_editor_add": "Editor added by admin",
-        "match_release_game": "Game released"
+        "match_release_game": "Game released",
+        "account_password_reset_requested": "Password reset requested",
+        "account_password_reset": "Password reset by email link",
+        "account_email_confirmed": "Email address confirmed"
       }
     }
   },
@@ -2626,5 +2633,39 @@
     "trayStatus": "Update ready",
     "copy": "Copy",
     "copied": "Copied."
+  },
+  "authEmail": {
+    "resetSentTitle": "Check your inbox",
+    "resetSent": "If an account exists for {{email}}, we sent it a link to set a new password. The link works once, for 60 minutes. Nothing there? Look in the spam folder.",
+    "resetUnavailable": "Password reset is temporarily unavailable. Contact {{contact}}.",
+    "newPasswordTitle": "Set a new password",
+    "newPasswordBody": "Choose a new password for your OpenVolley account. Afterwards every device is signed out.",
+    "newPassword": "New password",
+    "repeatPassword": "Repeat the new password",
+    "passwordHint": "At least 6 characters. A few words in a row make a strong password.",
+    "savePassword": "Save the new password",
+    "saving": "Saving…",
+    "passwordSavedTitle": "Password changed",
+    "passwordSaved": "Every device was signed out. Sign in with your new password.",
+    "signIn": "Sign in",
+    "invalidLinkTitle": "This link does not work",
+    "invalidLink": "It is invalid, was already used or has expired.",
+    "requestNewLink": "Request a new link",
+    "confirmTitle": "Confirm your email address",
+    "confirmBody": "Confirm that this address belongs to your OpenVolley account.",
+    "confirmButton": "Confirm my email address",
+    "confirming": "Confirming…",
+    "confirmedTitle": "Email address confirmed",
+    "confirmed": "Thank you. You can close this page.",
+    "alreadyConfirmed": "Your email address was already confirmed. You can close this page.",
+    "confirmInvalid": "It is invalid or has expired. Sign in to the scorer app and send a new link from your profile.",
+    "tooManyAttempts": "Too many attempts – please wait a while and try again.",
+    "offline": "No connection to the server – please check Wi-Fi or mobile data.",
+    "genericError": "Something went wrong – please try again.",
+    "notConfirmed": "Email address not confirmed yet. Open the link we emailed you.",
+    "resend": "Send a new link",
+    "resent": "We sent a new link to {{email}}.",
+    "resendUnavailable": "Confirmation emails cannot be sent right now – please try again later.",
+    "signUpLinkSent": "Welcome! We sent a link to {{email}}: open it to confirm your address."
   }
 }

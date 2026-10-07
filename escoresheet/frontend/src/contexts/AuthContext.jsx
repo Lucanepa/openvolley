@@ -6,6 +6,7 @@ import { discardUnsentLogs } from '../utils/logger'
 import { accessFromRoles, accessChanged, NO_ACCESS, ACCESS_CHANGED_EVENT } from '../lib/access'
 import { redeemInvite as apiRedeemInvite } from '../lib/accountApi'
 import { clearSavedTeams, refreshSavedTeams } from '../db/savedTeams'
+import i18n from 'i18next'
 
 const AuthContext = createContext(null)
 
@@ -142,7 +143,9 @@ export function AuthProvider({ children }) {
         setUser(null)
         setProfile(null)
       } else if (session.user && !session.unverified) {
-        setUser(prev => (prev?.id === session.user.id ? prev : session.user))
+        // Same account: keep the object, unless the server now says the
+        // address is confirmed (the stored copy is from before the link)
+        setUser(prev => (prev?.id === session.user.id && !!prev.email_confirmed_at === !!session.user.email_confirmed_at ? prev : session.user))
       }
     }).catch((err) => {
       clearTimeout(loadingTimeout)
@@ -185,6 +188,7 @@ export function AuthProvider({ children }) {
       email,
       password,
       options: {
+        lang: i18n.language,
         data: {
           first_name: profileData.firstName || null,
           last_name: profileData.lastName || null,
@@ -260,11 +264,32 @@ export function AuthProvider({ children }) {
       return { error: { message: 'Backend not configured' } }
     }
 
-    const { data, error } = await apiAuth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`
-    })
+    // The email's language follows the app's (the server maps de-CH to de)
+    const { data, error, status } = await apiAuth.resetPasswordForEmail(email, { lang: i18n.language })
 
-    return { data, error }
+    return { data, error, status }
+  }, [])
+
+  // Re-reads the signed-in user from the server (after the address was
+  // confirmed on another page or device). Returns the fresh user or null.
+  const refreshUser = useCallback(async () => {
+    if (!hasBackend()) return null
+    try {
+      const { data } = await apiAuth.getSession()
+      const fresh = data?.session && !data.session.unverified ? data.session.user : null
+      if (fresh) setUser(prev => (prev?.id === fresh.id ? fresh : prev))
+      return fresh ?? null
+    } catch {
+      return null
+    }
+  }, [])
+
+  // A fresh confirmation link for the signed-in, unconfirmed account
+  const resendConfirmation = useCallback(async () => {
+    if (!hasBackend()) {
+      return { error: { message: 'Backend not configured' } }
+    }
+    return apiAuth.resendConfirmation(i18n.language)
   }, [])
 
   // Update email - sends confirmation to new email
@@ -406,10 +431,12 @@ export function AuthProvider({ children }) {
     updateProfile,
     updateEmail,
     resetPassword,
+    resendConfirmation,
+    refreshUser,
     fetchProfile,
     getCachedProfile,
     deleteAccount
-  }), [user, profile, access, redeemInvite, loading, signIn, signUp, signOut, updateProfile, updateEmail, resetPassword, fetchProfile, getCachedProfile, deleteAccount])
+  }), [user, profile, access, redeemInvite, loading, signIn, signUp, signOut, updateProfile, updateEmail, resetPassword, resendConfirmation, refreshUser, fetchProfile, getCachedProfile, deleteAccount])
 
   return (
     <AuthContext.Provider value={value}>

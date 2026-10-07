@@ -158,10 +158,13 @@ Deploy to Render for cloud backup, also run locally when available. The frontend
 | `RENDER` | Auto-set by Render (legacy) | - |
 | `RESEND_API_KEY` | Resend API key for email (recommended) | - |
 | `RESEND_FROM` | Sender address for Resend | `eScoresheet <escoresheet@openvolley.app>` |
-| `SMTP_HOST` | SMTP server hostname (alternative to Resend) | - |
-| `SMTP_PORT` | SMTP port | `587` |
-| `SMTP_USER` | SMTP username | - |
-| `SMTP_PASS` | SMTP password | - |
+| `SMTP_HOST` | SMTP server of the account emails ("Account emails"), e.g. `smtp.migadu.com`. With `SMTP_PASS`: reset and confirmation links are mailed; without either: none, reset answers 503 and sign-up confirms at once | - |
+| `SMTP_PORT` | `465` implicit TLS, any other port STARTTLS (required; `587`). Certificates are always verified | `465` |
+| `SMTP_USER` | SMTP username (the mailbox, e.g. `noreply@openvolley.app`) | - |
+| `SMTP_PASS` | SMTP password (secret; never logged) | - |
+| `MAIL_FROM` | Sender of the account emails | `OpenVolley <SMTP_USER>` |
+| `MANAGER_URL` | Base of the links in the account emails (`#reset?token=`, `#confirm?token=`); https only | `https://manager.openvolley.app` |
+| `SMTP_LEGACY_ROUTES` | `1`: `/api/contact` and `/api/match/send-info` may also send through the SMTP account. Off by default: both mail addresses an anonymous request supplies | - |
 | `POCKETBASE_URL`, `POCKETBASE_ADMIN_EMAIL`, `POCKETBASE_ADMIN_PASSWORD` | Optional relay snapshot backup (unchanged) | - |
 
 `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are no longer read.
@@ -488,8 +491,12 @@ was in flight). Tests: `tests/accountData.e2e.test.js`, `tests/auth.test.js`,
 ### Sign-up
 
 The form is on `manager.openvolley.app/#signup` only (the scorer apps sign in
-and link there). Auto-confirmed (no email flow yet). Limits: 5 per hour per IP (/64), 3 per
-hour per mailbox (across IPs; `name+tag@` counts as `name@`), and 300 created
+and link there). With account emails configured ("Account emails"): the address stays
+unconfirmed, a 24-hour confirmation link is mailed, and the account may sign
+in right away, but gets no role (no invite code, no admin approval) until it
+has confirmed the address. Without them: confirmed at once, as before.
+Limits: 5 per hour per IP (/64), 3 per hour per delivered inbox (across IPs;
+`name+tag@` counts as `name@`, and for Gmail `n.a.me@` as `name@`), and 300 created
 accounts per hour in total (requests for existing addresses or that fail are
 not counted, so nobody can use the budget up without creating that many
 accounts); client `roles` in the metadata are dropped and `profiles.roles` is
@@ -529,7 +536,7 @@ answers at the same backend URL. Optional, to decouple the two: first ship a
 backend-only change to the current production backend that adds `X-OV-Proto`
 to `Access-Control-Allow-Headers`.
 
-Email sending requires either `RESEND_API_KEY` (recommended -- uses HTTPS, works on all cloud platforms) or SMTP credentials.
+Match-info and contact-form email (`/api/match/send-info`, `/api/contact`) requires `RESEND_API_KEY`, or the SMTP settings with `SMTP_LEGACY_ROUTES=1`. Account emails: "Account emails" above.
 
 ## Self-hosted storage (`lib/storage.js`)
 
@@ -721,10 +728,10 @@ Errors: 401 no session, 403 `OV_FORBIDDEN` (role), 400 `OV_INVALID_REQUEST`
 
 | Route | Who | Answer |
 |---|---|---|
-| `POST /api/account/redeem-invite {code}` | any account | `{ roles, role_granted, already_had }`; 404 `OV_INVITE_INVALID`, 410 `OV_INVITE_EXPIRED`, 409 `OV_INVITE_USED_UP`, 429 `OV_TOO_MANY_ATTEMPTS` |
+| `POST /api/account/redeem-invite {code}` | any account | `{ roles, role_granted, already_had }`; 404 `OV_INVITE_INVALID`, 410 `OV_INVITE_EXPIRED`, 409 `OV_INVITE_USED_UP`, 409 `OV_EMAIL_UNCONFIRMED` (address not confirmed yet), 429 `OV_TOO_MANY_ATTEMPTS` |
 | `POST /api/match/official-check {game_n, scheduled_at, sport_type, external_id}` | scorer | `{ taken: false }` or `{ taken: true, claim }`; 403 `OV_SCORER_REQUIRED` |
-| `GET /api/admin/accounts?filter=pending\|all&q=&limit=` | admin | `{ accounts: [{ id, email, first_name, last_name, roles, pending, created_at, last_sign_in_at }] }` |
-| `POST /api/admin/accounts/:userId/roles {add, remove}` | admin | `{ id, roles }`; 400 `OV_INVALID_ROLE`, 403, 404, 409 `OV_SELF_DEMOTE` |
+| `GET /api/admin/accounts?filter=pending\|all&q=&limit=` | admin | `{ accounts: [{ id, email, first_name, last_name, roles, pending, created_at, last_sign_in_at, email_confirmed }] }` |
+| `POST /api/admin/accounts/:userId/roles {add, remove}` | admin | `{ id, roles }`; 400 `OV_INVALID_ROLE`, 403, 404, 409 `OV_SELF_DEMOTE`, 409 `OV_EMAIL_UNCONFIRMED` (adding a role to an account that has not confirmed its address) |
 | `GET /api/admin/invites`, `POST /api/admin/invites {label, club?, role?, max_uses?, expires_at?}` | admin | list; create **201** `{ invite, code }` (the only time the code is shown; default 1 use, 30 days) |
 | `POST /api/admin/invites/:id/revoke` | admin | `{ invite }` (idempotent) |
 | `GET /api/admin/official-games?from=&to=&q=` | admin | `svrz_games` rows (default Zurich today -1 .. +14, at most 120 days) with the claiming match, if any |
@@ -771,7 +778,10 @@ Replaces Supabase GoTrue behind `/api/auth/*` once the backend runs against its 
 | `delete-account` `{access_token}` | Deletes the account's personal data (user, sessions, profile, user_matches, match_editors, backups, scoresheet owner entries) and keeps its matches with `created_by` NULL; see "Deleting an account". 503 and nothing deleted when the files cannot be removed |
 | `profile` `{access_token}` | Read-only; `updates` is ignored |
 | `update-user` | 501 (email change returns in Phase 7) |
-| `reset-password` | 503 "temporarily unavailable", until Phase 7 |
+| `reset-password` `{email, lang}` | With account emails: always 200 `{requested: true}` for a valid address, known or not (no enumeration; the lookup and the mail happen after the answer); 422 `email_address_invalid`; 429 per client / per address. Without: 503 `reset_unavailable` "temporarily unavailable. Contact CONTACT_EMAIL" |
+| `reset-password/confirm` `{token, password, lang}` | Sets the password (policy as at sign-up), marks the address confirmed, revokes **all** sessions, spends the link and every other open reset link, mails a "password changed" notice. 200 `{password_updated: true}`; 400 `invalid_link` (unknown, used, superseded or expired); 422 `weak_password` (the link stays valid) |
+| `confirm-email` `{token}` | 200 `{confirmed: true, already_confirmed}` (a spent link of an address confirmed by now is not an error); 400 `invalid_link` |
+| `resend-confirmation` `{access_token, lang}` | A fresh 24-hour link for the signed-in, unconfirmed account (older ones spent). 200 `{sent}` / `{already_confirmed: true}`; 503 `confirm_unavailable` without account emails or when the send fails |
 
 Sessions last 30 days, slide forward when fewer than 15 days remain, and never live past `created_at + 90 days`. A database failure is a **503** `auth_unavailable`, never a 401, so clients keep their session.
 
@@ -781,7 +791,23 @@ Sessions last 30 days, slide forward when fewer than 15 days remain, and never l
 
 **CPU guard.** bcryptjs runs on the main event loop, which also serves the live-scoring relay. At most `bcryptMaxConcurrent` (2) bcrypt operations run at once and `bcryptMaxQueue` (16) wait; beyond that, and when the global sign-in bucket is empty, the answer is **503 `auth_busy`** with `Retry-After`, never a queued request. Existing sessions are unaffected.
 
-**Unconfirmed emails.** Users whose `email_confirmed_at` is NULL (possible in a Supabase import) cannot sign in, as under GoTrue. The owner can confirm one with `set-password.mjs <email> --confirm-email`; `createAuth({ requireConfirmedEmail: false })` turns the check off.
+**Unconfirmed emails.** Users whose `email_confirmed_at` is NULL (possible in a Supabase import) cannot sign in, as under GoTrue. The owner can confirm one with `set-password.mjs <email> --confirm-email`, and a reset link confirms it too; `createAuth({ requireConfirmedEmail: false })` turns the check off. **Exception:** accounts this server created with a confirmation link (`raw_app_meta_data.ov_email_confirmation = 'link'`) may sign in while unconfirmed. Decision (2026-10): blocking them would only add friction, because a new account is pending anyway until an admin approves it (no official scoring), the profile and the admin Accounts list show "email not confirmed", and whoever owns the mailbox can take the account over with a reset link at any time.
+
+### Account emails (`lib/mailer.js`, `db/010_auth_tokens.sql`)
+
+Password-reset links, confirmation links for new accounts and the "your password was changed" notice, over SMTP with nodemailer (pooled, 10 s connect / 20 s socket timeouts, TLS 1.2+, certificates verified; port 465 implicit TLS, otherwise STARTTLS is required). Plain text plus a minimal HTML part in en/de/fr/it (the request's `lang`, else `Accept-Language`, else English; `de-CH` -> `de`); no tracking, no remote images, one link. The server logs once at start whether they are on (`[Mail] account emails on: ...` / `off (<reason>)`); recipients are logged masked (`an***@example.ch`), links never, and a failed send as its error code, SMTP reply code and message with every address in it masked (an SMTP rejection quotes the recipient).
+
+- **Volume** (per process, one-hour windows): two budgets of 50 mails each, `account` (reset, password changed) and `confirm` (confirmation links), so a burst of sign-ups can delay confirmations but never stops password reset; and at most 5 reset + confirmation mails per delivered inbox (`inboxKey`: plus-tags removed, Gmail dots ignored, `googlemail.com` = `gmail.com`), so one inbox cannot be flooded through spellings of its address. A mail over a limit is dropped and logged (`[mail] hourly ... budget ... used up` / `... mails per hour to one inbox reached`); the answer does not change. The counters (`used`, `dropped`, `exhausted`, `inboxDropped`, `failed`, no addresses) are in the internal `/health` body under `mail`; a used-up budget does not make the server unhealthy.
+
+- **Links**: `MANAGER_URL/#reset?token=<43 chars>&lang=de` and `#confirm?token=...` (the token sits in the fragment, so it reaches no server log; the manager page removes it from the address bar at once). 32 random bytes; only `SHA-256(token)` is stored in `auth.app_tokens` (`purpose` reset|confirm, `user_id`, `expires_at`, `used_at`). Reset: 60 minutes, single use; a new request and every password change (also `set-password.mjs`) spend all open reset links of the account. Confirm: 24 hours, single use, a new one replaces the older ones. Rows go with the account (FK cascade) and are swept hourly a week after they were used or expired.
+- **No enumeration by reset**: `reset-password` answers a valid address with the same status, headers and body whether or not an account exists, is not blocked, or the mail fails; the work runs after the answer. Sign-up still answers 422 `user_already_exists` for a registered address (accepted, as before): a new account may sign in before it confirms, so sign-up followed by sign-in would tell anyway; the sign-up limits below bound the probing.
+- **Unconfirmed accounts get no role**: an account created with a confirmation link may sign in at once (test matches, profile), but `redeem-invite` and an admin's role grant answer 409 `OV_EMAIL_UNCONFIRMED` until the address is confirmed (by the confirmation link, or by a reset link, which proves the mailbox too). So nobody becomes a scorer, referee or competition manager under an address they never proved. Removing roles stays possible. If the mails are switched off while such accounts are still unconfirmed, `scripts/set-password.mjs <email> --confirm-email` confirms one by hand (with a new password, which the owner then hands over; it also signs the account out everywhere).
+- **Limits**: reset 10/hour per IP (/64), 3/hour per delivered inbox (`inboxKey`), counted for unknown addresses too; redeeming links (`reset-password/confirm`, `confirm-email`) 30 per 15 min per IP; `resend-confirmation` 3/hour per account and 10/hour per IP.
+- **Audit log** (when `public.audit_log` exists): `account.password_reset_requested` (existing accounts only; never visible in an API answer), `account.password_reset`, `account.email_confirmed`.
+- **Turned off** (no `SMTP_HOST`/`SMTP_PASS`, or `auth.app_tokens` missing): reset answers 503 `reset_unavailable` as before, sign-up confirms at once, `resend-confirmation` answers 503 `confirm_unavailable`. Links already sent stay redeemable while the table exists.
+- **Legacy routes**: `/api/contact` and `/api/match/send-info` do **not** use these SMTP settings unless `SMTP_LEGACY_ROUTES=1` (both send to an address an anonymous request supplies).
+- **Tests**: `tests/mailer.test.js` (templates, settings, real SMTP sessions over implicit TLS and STARTTLS against `tests/helpers/fakeSmtp.js`, an `smtp-server` sink with a throwaway certificate), `tests/emailAuth.pg.test.js` (the flows against Postgres), `tests/emailAuth.e2e.test.js` (server.js end to end, links followed out of the captured mails). Never against a real mailbox.
+- **Operations**: deploy/RUNBOOK-hetzner.md, "Account emails (SMTP)".
 
 **Contact address** in the reset-password message: `contactEmail` option, else `CONTACT_EMAIL`, else the same fallback as server.js.
 
@@ -821,7 +847,8 @@ Files in `db/`, all run as `ov_owner` (the cluster superuser, `docker exec` only
 | `007_scorer_accounts.sql` | after 006 | Approved scorers (`profiles.roles` default `'{}'`; existing roles untouched), `matches.closed_at/closed_by/official_game_exempt`, the official-game index (duplicates exempted and reported with NOTICEs), the closed-match triggers (existing non-test `approved`/`final` matches become closed), `audit_log`, `invite_codes`/`invite_redemptions`, and the saved-team tables. One transaction, idempotent; trigger functions need no EXECUTE for `ov_app`. Read its NOTICEs on production (duplicates) and check them in the admin page. |
 | `008_live_state_tto.sql` | after 007 | `match_live_state.tto_active` / `tto_started_at` (openbeach's technical timeout, missing on Supabase; without them every beach live-state write fails). Idempotent. |
 | `009_beach_saved_teams.sql` | after 008 | `competitions.sport`, season per sport, `competition_players.country`. Idempotent, no grants. Deploy order: 009, `roles.sql`, then the new backend, then the frontends (`../docs/beach-saved-teams-deploy.md`). |
-| `roles.sql` | after **every** restore or migration | `ov_app` (backend login): DML on every public table (incl. `svrz_games`/`svrz_sync_log`, written by the in-backend vm-sync), sequences USAGE/SELECT, `auth.users` SELECT/INSERT/DELETE + UPDATE of 4 columns, `auth.app_sessions` DML, no DDL/TEMP/function EXECUTE, `statement_timeout=10s`; default privileges for future tables; ownership back to `ov_owner`. Password from psql variable `ov_app_pw` (unchanged when not set). |
+| `010_auth_tokens.sql` | after 009 | `auth.app_tokens`: the one-time reset / confirmation links ("Account emails"), SHA-256 only, FK cascade to `auth.users`. Idempotent, new table only; grants itself to `ov_app` when the role exists, and `roles.sql` grants it too. Without it reset answers 503 even with SMTP configured. |
+| `roles.sql` | after **every** restore or migration | `ov_app` (backend login): DML on every public table (incl. `svrz_games`/`svrz_sync_log`, written by the in-backend vm-sync), sequences USAGE/SELECT, `auth.users` SELECT/INSERT/DELETE + UPDATE of 4 columns, `auth.app_sessions` DML, `auth.app_tokens` DML (when 010 ran), no DDL/TEMP/function EXECUTE, `statement_timeout=10s`; default privileges for future tables; ownership back to `ov_owner`. Password from psql variable `ov_app_pw` (unchanged when not set). |
 
 **A database already running** gets a new `db/NNN_*.sql` file by hand, in number order, as `ov_owner`, then `roles.sql` (RUNBOOK-hetzner.md, "Apply a new db migration"). `restore.sh` only picks the files up on a restore. For `006`:
 

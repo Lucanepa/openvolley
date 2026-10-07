@@ -27,6 +27,7 @@ import { lastEventFromLiveState, lastEventFromMatchData, pickNewerLastEvent } fr
 import { backdropDismiss } from '../ui/backdropDismiss.js'
 import PlayerDisc from './referee/PlayerDisc.jsx'
 import { discCapPx } from './referee/discSizing.js'
+import { BRAND } from '../brand'
 
 // Get current version from package.json (injected by Vite at build time)
 const currentVersion = __APP_VERSION__
@@ -3610,7 +3611,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 </div>
               ) : (
                 <img
-                  src={`${import.meta.env.BASE_URL}openvolley_no_bg.png`}
+                  src={BRAND.lockupStacked}
                   alt="OpenVolley"
                   style={{
                     width: '100%',

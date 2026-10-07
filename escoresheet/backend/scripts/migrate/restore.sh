@@ -471,6 +471,7 @@ users=$(query_db "select count(*) from auth.users")
 grants=$(query_db "select concat_ws(' ',
     case when not has_table_privilege('ov_app', 'public.matches', 'SELECT, INSERT, UPDATE, DELETE') then 'no-DML-on-matches' end,
     case when not has_table_privilege('ov_app', 'auth.app_sessions', 'SELECT, INSERT, UPDATE, DELETE') then 'no-DML-on-app_sessions' end,
+    case when to_regclass('auth.app_tokens') is not null and not has_table_privilege('ov_app', 'auth.app_tokens', 'SELECT, INSERT, UPDATE, DELETE') then 'no-DML-on-app_tokens' end,
     case when not has_column_privilege('ov_app', 'auth.users', 'last_sign_in_at', 'UPDATE') then 'no-update-last_sign_in_at' end,
     case when has_column_privilege('ov_app', 'auth.users', 'email', 'UPDATE') then 'can-update-users.email' end,
     case when has_schema_privilege('ov_app', 'public', 'CREATE') or has_schema_privilege('ov_app', 'auth', 'CREATE') then 'can-CREATE' end,
