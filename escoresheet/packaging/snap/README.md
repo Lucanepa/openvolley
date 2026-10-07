@@ -84,11 +84,10 @@ App version then says "Updates come from your package manager" and has no
 check button.
 
 **Only a release that has this switch may be published.** It is commit
-e323002f on `feat/packaging`, not yet on `main`: the released OpenVolley 2.4.0
-(tag `desktop-v2.4.0` = `main` d471d80d) and OpenBeach 2.0.0 do **not** have
-it (their binaries have no `SNAP_NAME` string). The first OpenVolley and
-OpenBeach releases built after `feat/packaging` is merged are the first to
-publish. The yaml files point at 2.3.0 / 2.0.0 only because those build; a snap
+e323002f (merged into `main`): OpenVolley 2.4.1 and OpenBeach 2.0.1 are the
+first releases that have it. OpenVolley 2.4.0 (tag `desktop-v2.4.0` = `main`
+d471d80d) and OpenBeach 2.0.0 do **not** (their binaries have no `SNAP_NAME`
+string). The yaml files point at 2.3.0 / 2.0.0 only because those build; a snap
 of any release without the switch treats itself as a .deb installed by hand
 (it checks get.openvolley.app, offers updates it cannot install and "add the
 APT repository"). `bump.sh` refuses such a release.
@@ -227,10 +226,9 @@ the snapcraft.yaml. Commit, build, upload.
    first login at snapcraft.io).
 2. Register the names: `snapcraft register openvolley-escoresheet` and
    `snapcraft register openbeach-escoresheet`.
-3. Merge `feat/packaging` (the updater switch, e323002f) and release
-   OpenVolley and OpenBeach from it; 2.4.0 does not have the switch. Bump to
-   those releases (`bump.sh`, with `minisign` installed), build both, then
-   upload, first to a test channel:
+3. Bump to OpenVolley 2.4.1 and OpenBeach 2.0.1, the first releases with the
+   updater switch (e323002f; 2.4.0 does not have it): `bump.sh`, with
+   `minisign` installed. Build both, then upload, first to a test channel:
    `snapcraft upload --release=edge openvolley-escoresheet_<X>_amd64.snap`.
    Install from edge on a real Ubuntu laptop, connect the plugs, test a hotspot
    and a tablet, then `snapcraft release openvolley-escoresheet <rev> stable`.

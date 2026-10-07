@@ -51,7 +51,7 @@ Flatpak it must not: `flatpak update` does that. Two switches:
    script fails unless it finds exactly one stamp). The app then logs
    `[update] not an installed copy (no bundle type): no automatic updates`
    and Options shows "This build does not update itself".
-2. **`updater.rs` `managed_by`** (from 2.4.0). The app itself sees `FLATPAK_ID`
+2. **`updater.rs` `managed_by`** (from 2.4.1, OpenBeach 2.0.1). The app itself sees `FLATPAK_ID`
    or `/.flatpak-info` (also `SNAP_NAME`, `OPENVOLLEY_PACKAGED=<name>` or a
    distro package's `/usr/lib/<command>/package-manager` marker) and never
    checks; Options says "Updates come from your package manager".

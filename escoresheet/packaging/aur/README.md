@@ -68,11 +68,11 @@ does two things:
 1. **The marker file** `/usr/lib/<pkg>/package-manager` (one line: `aur`).
    The updater's `managed_by()` looks for `<prefix>/lib/<command>/package-manager`
    next to `<prefix>/bin/<command>`; a release that has it (`Kind::Managed`,
-   commit e323002f on feat/packaging, so 2.4.0 at the earliest) never checks,
+   commit e323002f, in OpenVolley 2.4.1 and OpenBeach 2.0.1 on) never checks,
    downloads or runs the APT helper, logs
    `[update] installed by aur: it updates the app`, and Options > App version
    says "Updates come from your package manager".
-2. **The bundle-type stamp**, for releases before that (2.3.0, OpenBeach
+2. **The bundle-type stamp**, for releases before that (2.3.0, 2.4.0, OpenBeach
    2.0.0). The Tauri bundler writes the bundle type into the binary
    (`__TAURI_BUNDLE_TYPE_VAR_DEB` in the `.deb`). Left as it is, an Arch
    install would count as "a .deb without the APT repo" and tell the scorer
