@@ -67,6 +67,25 @@ describe('mailer: links and templates', () => {
     assert.throws(() => renderMail('spam', 'en', { link }), /unknown mail kind/)
   })
 
+  it('approval notices: the values on one line, escaped in HTML, in every language', () => {
+    const vars = { slot: 'referee1', game: '#12 Home – Away', result: '25:20, 23:25', id: '6F1C2A9B', time: '07.10.2026 19:42', sender: 'Olga <b>Owner</b>\r\nBcc: evil@example.test' }
+    for (const lang of MAIL_LANGS) {
+      const m = renderMail('approval', lang, { link: DEFAULT_MANAGER_URL, vars })
+      assert.ok(m.subject.includes('#12 Home – Away'), lang)
+      assert.doesNotMatch(m.subject, /[\r\n]/)
+      for (const v of ['25:20, 23:25', '6F1C2A9B', '07.10.2026 19:42']) assert.ok(m.text.includes(v), `${lang}: ${v}`)
+      assert.ok(m.text.includes('Olga <b>Owner</b> Bcc: evil@example.test'), 'one line')
+      assert.ok(m.html.includes('Olga &lt;b&gt;Owner&lt;/b&gt;'), 'escaped')
+      assert.ok(!m.html.includes('<b>Owner'))
+      const locked = renderMail('approval_pin_locked', lang, { link: DEFAULT_MANAGER_URL, vars: { game: '#12 A – B', until: '07.10.2026 20:00', disabled: false } })
+      const blocked = renderMail('approval_pin_locked', lang, { link: DEFAULT_MANAGER_URL, vars: { game: '#12 A – B', until: '', disabled: true } })
+      assert.ok(locked.text.includes('07.10.2026 20:00'), lang)
+      assert.notEqual(locked.subject, blocked.subject)
+    }
+    assert.ok(renderMail('approval', 'en', { link: DEFAULT_MANAGER_URL, vars }).text.includes('as 1st referee'))
+    assert.ok(!renderMail('approval', 'en', { link: DEFAULT_MANAGER_URL, vars: { ...vars, sender: '' } }).text.includes('Sent by'))
+  })
+
   it('escapes the link in HTML', () => {
     const m = renderMail('confirm', 'en', { link: 'https://x.test/#confirm?token=a&lang=en"><b>' })
     assert.ok(m.html.includes('token=a&amp;lang=en&quot;&gt;&lt;b&gt;'))
@@ -248,8 +267,8 @@ describe('mailer: budgets and the per-inbox cap (stub transport)', () => {
   }
   const link = 'https://x.test/#t?token=t'
 
-  it('defaults: 50 + 50 per hour (100 in total, as before), 5 per inbox', () => {
-    assert.deepEqual({ ...DEFAULT_BUDGETS }, { account: 50, confirm: 50 })
+  it('defaults: 50 + 50 per hour (100 in total, as before), 100 approval notices, 5 per inbox', () => {
+    assert.deepEqual({ ...DEFAULT_BUDGETS }, { account: 50, confirm: 50, notify: 100 })
     assert.equal(DEFAULT_MAX_PER_INBOX, 5)
     const m = createMailer({ ...stub(), from: 'x <x@example.test>', logger: silent })
     const st = m.stats()

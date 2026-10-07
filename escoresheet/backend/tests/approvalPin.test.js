@@ -66,7 +66,22 @@ describe('approval PIN helpers', () => {
 
   it('weak PINs: one repeated digit and strict runs', () => {
     for (const p of ['0000', '1234', '0123', '9876', '123456', '111111', '4321', '987654', '3456']) assert.equal(isWeakPin(p), true, p)
-    for (const p of ['1357', '482917', '0420', '1235', '9870', '12345a', '']) assert.equal(isWeakPin(p), false, p)
+    for (const p of ['482917', '1235', '9870', '4738', '5821', '83917', '615038', '12345a', '']) assert.equal(isWeakPin(p), false, p)
+  })
+
+  it('weak PINs: the common human PINs that the runs rule let through (review fix)', () => {
+    // pairs, palindromes, few digits
+    for (const p of ['1212', '6969', '1122', '1313', '1010', '1221', '2112', '1001', '1000', '2000', '4545', '121212', '696969', '112211', '12321', '123321']) {
+      assert.equal(isWeakPin(p), true, p)
+    }
+    // years 1940-2039 and dates DDMM / MMDD
+    for (const p of ['1984', '1999', '2001', '2025', '2039', '1940', '1004', '2512', '3112', '0101', '1231', '0704']) assert.equal(isWeakPin(p), true, p)
+    // keypad lines and other favourites
+    for (const p of ['2580', '0852', '1357', '2468', '1470', '5683', '147258', '159753', '258369']) assert.equal(isWeakPin(p), true, p)
+    // 6 digits: ABCABC, AABBCC, dates DDMMYY / MMDDYY / YYMMDD
+    for (const p of ['123123', '520520', '112233', '150390', '031590', '900315']) assert.equal(isWeakPin(p), true, p)
+    // still allowed: no pattern, no date, no year
+    for (const p of ['1939', '2040', '3213', '4738', '8296', '7351', '482917', '730164', '918273', '529638']) assert.equal(isWeakPin(p), false, p)
   })
 
   it('PIN_RE: 4 to 6 digits only', () => {

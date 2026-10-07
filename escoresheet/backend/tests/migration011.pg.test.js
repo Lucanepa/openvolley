@@ -204,6 +204,26 @@ describe('db/011_account_approvals.sql', { skip: SKIP_PG }, () => {
     assert.equal((await activeOf(m3)).length, 0, 'approved -> live voids')
   })
 
+  it('a team name change after the end voids (result_changed); before the end or the same name does not', async () => {
+    const m = await newMatch('live')
+    await raw.query(`UPDATE public.matches SET home_team = '{"name":"Home"}', away_team = '{"name":"Away"}' WHERE id = $1`, [m])
+    await raw.query("UPDATE public.matches SET status = 'ended' WHERE id = $1", [m])
+    await approval(raw, m, 'referee1', ids.ref)
+    // the same names, other keys and case: kept
+    await raw.query(`UPDATE public.matches SET home_team = '{"name":" HOME ","color":"#fff"}', away_team = '{"name":"Away","short_name":"A"}' WHERE id = $1`, [m])
+    assert.equal((await activeOf(m)).length, 1)
+    // swapped teams: voided
+    await raw.query(`UPDATE public.matches SET home_team = '{"name":"Away"}', away_team = '{"name":"Home"}' WHERE id = $1`, [m])
+    assert.deepEqual(await activeOf(m), [])
+    const { rows: [row] } = await raw.query('SELECT revoked_reason FROM public.match_approvals WHERE match_id = $1', [m])
+    assert.equal(row.revoked_reason, 'result_changed')
+    assert.equal((await voidAudits(m))[0].details.reason, 'result_changed')
+    // a rename while live (no approvals can exist) writes nothing
+    const live = await newMatch('live')
+    await raw.query(`UPDATE public.matches SET home_team = '{"name":"X"}' WHERE id = $1`, [live])
+    assert.equal((await voidAudits(live)).length, 0)
+  })
+
   it('deleting an account nulls user_id and keeps the row, also on a closed match', async () => {
     const official = await newUser('official')
     const m = await newMatch()

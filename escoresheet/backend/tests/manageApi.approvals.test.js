@@ -18,6 +18,8 @@ describe('manageApi: account approvals', () => {
     assert.equal(manageFamilyOf('/api/approvals'), 'approvals')
     assert.equal(manageFamilyOf(`/api/approvals/${ID}`), 'approvals')
     assert.equal(manageFamilyOf('/api/approvalsx'), null)
+    assert.equal(manageFamilyOf('/api/account/approvals'), 'approvals')
+    assert.equal(manageFamilyOf('/api/account/approvalsx'), null)
     assert.equal(manageFamilyOf('/api/admin/approvals'), 'admin')
   })
 
@@ -31,18 +33,21 @@ describe('manageApi: account approvals', () => {
   it('dispatches with the caller, access, body, query and ip', async () => {
     const calls = []
     const rec = (name) => async (args) => { calls.push([name, args]); return { status: 200, body: { data: name, error: null } } }
-    const approvals = Object.fromEntries(['getPinStatus', 'setPin', 'removePin', 'approve', 'listForMatch', 'revoke', 'adminSearch'].map((n) => [n, rec(n)]))
+    const approvals = Object.fromEntries(['getPinStatus', 'setPin', 'removePin', 'approve', 'listForMatch', 'listMine', 'revoke', 'adminSearch'].map((n) => [n, rec(n)]))
     const api = createManageApi({ accounts: {}, savedTeams: {}, approvals })
     const user = { id: 'u1' }
     const access = { isAdmin: false }
-    const route = (method, pathname, extra = {}) => api.route({ method, pathname, query: new URLSearchParams(extra.query || ''), body: extra.body, user, access: extra.access || access, ip: '203.0.113.7' })
+    const route = (method, pathname, extra = {}) => api.route({ method, pathname, query: new URLSearchParams(extra.query || ''), body: extra.body, user, access: extra.access || access, ip: '203.0.113.7', lang: 'de-CH,de;q=0.9' })
     assert.equal((await route('GET', '/api/account/approval-pin')).body.data, 'getPinStatus')
     assert.equal((await route('POST', '/api/account/approval-pin', { body: { pin: '1' } })).body.data, 'setPin')
     assert.equal((await route('POST', '/api/account/approval-pin/remove', { body: {} })).body.data, 'removePin')
     assert.equal((await route('POST', '/api/approvals', { body: { slot: 'scorer' } })).body.data, 'approve')
     assert.equal((await route('GET', '/api/approvals', { query: 'external_id=abc' })).body.data, 'listForMatch')
     assert.equal((await route('DELETE', `/api/approvals/${ID.toUpperCase()}`)).body.data, 'revoke')
-    assert.deepEqual(calls.find(([n]) => n === 'approve')[1], { callerId: 'u1', access, body: { slot: 'scorer' }, ip: '203.0.113.7' })
+    assert.equal((await route('GET', '/api/account/approvals', { query: 'limit=10' })).body.data, 'listMine')
+    assert.deepEqual(calls.find(([n]) => n === 'approve')[1], { callerId: 'u1', access, body: { slot: 'scorer' }, ip: '203.0.113.7', lang: 'de-CH,de;q=0.9' })
+    assert.deepEqual(calls.find(([n]) => n === 'listMine')[1], { callerId: 'u1', limit: '10' })
+    assert.equal((await route('POST', '/api/account/approvals')).status, 405)
     assert.deepEqual(calls.find(([n]) => n === 'listForMatch')[1], { callerId: 'u1', access, externalId: 'abc' })
     assert.deepEqual(calls.find(([n]) => n === 'revoke')[1], { callerId: 'u1', access, id: ID })
     assert.deepEqual(calls.find(([n]) => n === 'setPin')[1], { userId: 'u1', body: { pin: '1' } })
