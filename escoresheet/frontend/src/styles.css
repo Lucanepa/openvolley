@@ -96,9 +96,10 @@ body {
 /* Text fields, selects and textareas: the kit's `focus:ring-2 focus:ring-red-500`
    (RESTYLE-SPEC 2.4), on any focus, hugging the field's own radius. Drawn as an
    outline so it still beats the many inline `outline: none` styles. --ring is
-   red-500 (tailwind.css) and slate-900 inside the scoring controls (R4). */
+   red-500 (tailwind.css) and slate-900 inside the scoring controls (R4).
+   Not on a kit Select (.ov-select) either: it draws its own ring. */
 :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
-       select, textarea):not(.ov-kit *):focus {
+       select:not(.ov-select), textarea):not(.ov-kit *):focus {
   outline: 2px solid var(--ring, #ef4444) !important;
   outline-offset: 0;
 }
@@ -483,7 +484,7 @@ textarea::placeholder {
 }
 
 input:disabled,
-select:disabled,
+select:where(:not(.ov-select)):disabled,
 textarea:disabled {
   background: var(--ov-sunken);
   color: var(--ov-text-muted);
@@ -529,17 +530,42 @@ input[type=number] {
   appearance: textfield;
 }
 
-select {
+/* The raw (legacy) <select>s. Never the kit Select: it carries .ov-select and
+   its whole look (tokens.css + SELECT_SIZES), and these padding, font-size and
+   line-height values used to leak into it, so the text sat low and clipped in
+   its h-9 box. :where keeps the old `select` specificity, so every class-level
+   override still wins as before. Every select rule in this file is scoped the
+   same way (guarded by src/ui/__tests__/selectStyles.test.jsx).
+   The same finish as the kit: appearance none (WebKitGTK and Android WebView
+   drew a grey, inset menulist with its own theme padding) and the kit chevron,
+   sized in em so it follows each select's font size. The chevron's background
+   and the room kept for it are !important because many legacy selects set an
+   inline `background:` / `padding:` shorthand, which would wipe them.
+   No text-transform: option labels are written in sentence case. */
+select:where(:not(.ov-select)) {
   width: 100%;
   padding: calc(8px * var(--scale-factor)) calc(10px * var(--scale-factor));
-  background: var(--ov-card);
+  background-color: var(--ov-card);
   color: var(--ov-text-body);
   border: 1px solid var(--ov-hairline-strong);
   border-radius: var(--ov-radius);
   font-family: inherit;
-  text-transform: capitalize;
   font-size: calc(13px * var(--scale-factor));
   line-height: 1.2;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2378716c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 0.5em center !important;
+  background-size: 1.1em 1.1em !important;
+  padding-right: 1.9em !important;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+select:where(:not(.ov-select)):disabled {
+  cursor: not-allowed;
 }
 
 /* Coin toss "Sign A/B": the kit's outline button (was white text on white).
@@ -689,9 +715,9 @@ button:disabled {
 
 /* Inputs/selects in grid: size to content, not 100% */
 .roster-grid-row input,
-.roster-grid-row select,
+.roster-grid-row select:where(:not(.ov-select)),
 .bench-grid-row input,
-.bench-grid-row select {
+.bench-grid-row select:where(:not(.ov-select)) {
   width: auto;
   min-width: calc(80px * var(--scale-factor));
   box-sizing: border-box;
@@ -2649,7 +2675,7 @@ button.start-rally-button {
 
   /* Form inputs */
   input,
-  select,
+  select:where(:not(.ov-select)),
   textarea {
     font-size: 14px;
     padding: 8px 10px;
@@ -2683,7 +2709,7 @@ button.start-rally-button {
 
   /* Form inputs */
   input,
-  select,
+  select:where(:not(.ov-select)),
   textarea {
     font-size: 13px;
     padding: 6px 8px;
@@ -2941,7 +2967,7 @@ button.start-rally-button {
   .btn,
   input[type="checkbox"],
   input[type="radio"],
-  select {
+  select:where(:not(.ov-select)) {
     min-height: 10px;
     min-width: 10px;
   }

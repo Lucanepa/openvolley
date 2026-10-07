@@ -120,7 +120,7 @@
     "libero2": "L2",
     "liberoFull1": "Libéro 1",
     "liberoFull2": "Libéro 2",
-    "none": "aucun",
+    "none": "Aucun",
     "duplicateNumber": "Numéro de maillot déjà utilisé !",
     "signatures": "Signatures",
     "signatureTitle": "Signature {{role}} - {{team}}",

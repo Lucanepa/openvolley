@@ -11,7 +11,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { SatelliteDishIcon } from '../icons'
 import { clearCachesAndReload, applyServiceWorkerUpdate } from '../../hooks/useServiceWorker'
 import { Info, LifeBuoy, X } from 'lucide-react'
-import { Button, cn, IconButton, SegmentedControl, Switch } from '../../ui'
+import { Button, cn, IconButton, Select, SegmentedControl, Switch } from '../../ui'
 import { isAndroidApp } from '../../utils/androidUpdate'
 import AndroidVersionRows from './AndroidVersionRows'
 import { backdropDismiss } from '../../ui/backdropDismiss.js'
@@ -541,7 +541,7 @@ export default function HomeOptionsModal({
               {lfpTrackingEnabled && (
                 <div className="mt-2 flex items-center gap-2">
                   <span className="text-xs text-stone-500">{t('options.minimumLfpsOnCourt')}</span>
-                  <select
+                  <Select
                     value={lfpMinimumOnCourt}
                     aria-label={t('options.minimumLfpsOnCourt')}
                     onChange={(e) => {
@@ -549,12 +549,12 @@ export default function HomeOptionsModal({
                       setLfpMinimumOnCourt(val)
                       localStorage.setItem('lfpMinimumOnCourt', String(val))
                     }}
-                    className={cn(SMALL_FIELD, 'w-16')}
+                    className="w-16 tabular-nums focus:ring-red-500"
                   >
                     {[1, 2, 3, 4, 5, 6].map(n => (
                       <option key={n} value={n}>{n}</option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
               )}
             </div>

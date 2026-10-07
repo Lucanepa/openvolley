@@ -121,7 +121,7 @@
     "libero2": "L2",
     "liberoFull1": "Libero 1",
     "liberoFull2": "Libero 2",
-    "none": "none",
+    "none": "None",
     "duplicateNumber": "Duplicate jersey number!",
     "signatures": "Signatures",
     "signatureTitle": "{{role}} signature - {{team}}",
