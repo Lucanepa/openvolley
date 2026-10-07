@@ -213,7 +213,7 @@ describe('account emails end to end', { skip: SKIP }, () => {
     const internal = await (await fetch(`${srv.base}/health`)).json()
     assert.equal(internal.mail.enabled, true)
     assert.ok(internal.mail.sent >= 6, JSON.stringify(internal.mail))
-    assert.deepEqual(Object.keys(internal.mail.budgets).sort(), ['account', 'confirm'])
+    assert.deepEqual(Object.keys(internal.mail.budgets).sort(), ['account', 'confirm', 'notify'])
     assert.deepEqual(internal.mail.exhausted, [])
     assert.equal(JSON.stringify(internal.mail).includes('@'), false)
     const proxied = await (await fetch(`${srv.base}/health`, { headers: { 'cf-connecting-ip': nextIp() } })).json()

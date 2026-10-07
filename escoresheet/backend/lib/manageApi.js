@@ -10,12 +10,20 @@
  *   *      /api/admin/*                               isAdmin  (else 403 OV_FORBIDDEN)
  *   GET    /api/saved-teams[?sport=indoor|beach|all]  canReadTeams (no sport = indoor)
  *   POST/PATCH/DELETE/PUT /api/saved-teams/*         canManageTeams
+ *   GET/POST /api/account/approval-pin[/remove]      any signed-in account (lib/approvals.js)
+ *   GET    /api/account/approvals                    any signed-in account: its own approvals
+ *   POST/GET /api/approvals, DELETE /api/approvals/:id  any signed-in account; the
+ *                                                    handlers check match ownership
+ *   GET    /api/admin/approvals                      isAdmin
  *
  * route() returns { status, body, changes? } and never throws (the handlers
  * never throw either).
  */
 
 import { fail, notFound } from './accounts.js'
+
+// Before lib/approvals.js is wired (or on a server built without it)
+const APPROVALS_OFF = () => fail(503, 'OV_APPROVAL_UNAVAILABLE', 'Approval with an account is not available on this server')
 
 const FORBIDDEN = () => fail(403, 'OV_FORBIDDEN', 'You do not have access to this')
 const SCORER_REQUIRED = () => fail(403, 'OV_SCORER_REQUIRED', 'Your account is not approved for official matches yet')
@@ -28,10 +36,14 @@ export function manageFamilyOf (pathname) {
   if (pathname === '/api/match/official-check') return 'officialCheck'
   if (pathname.startsWith('/api/admin/')) return 'admin'
   if (pathname === '/api/saved-teams' || pathname.startsWith('/api/saved-teams/')) return 'savedTeams'
+  if (pathname === '/api/account/approval-pin' || pathname === '/api/account/approval-pin/remove') return 'approvalPin'
+  if (pathname === '/api/approvals' || pathname.startsWith('/api/approvals/') || pathname === '/api/account/approvals') return 'approvals'
   return null
 }
 
-export function createManageApi ({ accounts, savedTeams }) {
+export function createManageApi ({ accounts, savedTeams, approvals = null }) {
+  // approvals?.x, or 503 when the module is not there
+  const ap = (name) => (args) => (approvals && typeof approvals[name] === 'function' ? approvals[name](args) : APPROVALS_OFF())
   const q = (query, k) => {
     const v = query?.get?.(k)
     return v == null ? undefined : v
@@ -53,6 +65,16 @@ export function createManageApi ({ accounts, savedTeams }) {
     ['POST', new RegExp(`^/api/admin/matches/${ID}/editors$`), 'admin', (m, c) => accounts.addMatchEditor({ actorId: c.user.id, matchId: m[1], body: c.body })],
     ['POST', new RegExp(`^/api/admin/matches/${ID}/release-game$`), 'admin', (m, c) => accounts.releaseGame({ actorId: c.user.id, matchId: m[1], body: c.body })],
     ['GET', /^\/api\/admin\/audit$/, 'admin', (m, c) => accounts.listAudit({ limit: q(c.query, 'limit'), before: q(c.query, 'before'), action: q(c.query, 'action') })],
+    ['GET', /^\/api\/admin\/approvals$/, 'admin', (m, c) => ap('adminSearch')({ q: q(c.query, 'q') ?? '', includeRevoked: q(c.query, 'include_revoked'), limit: q(c.query, 'limit') })],
+
+    // Account approvals (docs/account-approval-spec.md section 3)
+    ['GET', /^\/api\/account\/approval-pin$/, 'any', (m, c) => ap('getPinStatus')({ userId: c.user.id })],
+    ['POST', /^\/api\/account\/approval-pin$/, 'any', (m, c) => ap('setPin')({ userId: c.user.id, body: c.body })],
+    ['POST', /^\/api\/account\/approval-pin\/remove$/, 'any', (m, c) => ap('removePin')({ userId: c.user.id, body: c.body })],
+    ['POST', /^\/api\/approvals$/, 'any', (m, c) => ap('approve')({ callerId: c.user.id, access: c.access, body: c.body, ip: c.ip, lang: c.lang })],
+    ['GET', /^\/api\/account\/approvals$/, 'any', (m, c) => ap('listMine')({ callerId: c.user.id, limit: q(c.query, 'limit') })],
+    ['GET', /^\/api\/approvals$/, 'any', (m, c) => ap('listForMatch')({ callerId: c.user.id, access: c.access, externalId: q(c.query, 'external_id') })],
+    ['DELETE', new RegExp(`^/api/approvals/${ID}$`), 'any', (m, c) => ap('revoke')({ callerId: c.user.id, access: c.access, id: m[1] })],
 
     ['GET', /^\/api\/saved-teams$/, 'readTeams', (m, c) => savedTeams.getBundle({ sport: q(c.query, 'sport') })],
     ['POST', /^\/api\/saved-teams\/competitions$/, 'manageTeams', (m, c) => savedTeams.createCompetition({ actorId: c.user.id, body: c.body })],
@@ -83,7 +105,7 @@ export function createManageApi ({ accounts, savedTeams }) {
     return null
   }
 
-  async function route ({ method, pathname, query, body, user, access }) {
+  async function route ({ method, pathname, query, body, user, access, ip, lang }) {
     const family = manageFamilyOf(pathname)
     if (!family) return notFound()
     const early = familyRefusal(family, method, access)
@@ -99,7 +121,7 @@ export function createManageApi ({ accounts, savedTeams }) {
       // path ids are compared lower-case (uuid columns answer lower-case)
       const ids = match.map((v, i) => (i > 0 && typeof v === 'string' ? v.toLowerCase() : v))
       if (ids.slice(1).some((v) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v))) return notFound()
-      return handler(ids, { user, access, body, query })
+      return handler(ids, { user, access, body, query, ip, lang })
     }
     return pathKnown ? METHOD_NOT_ALLOWED() : notFound()
   }

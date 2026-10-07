@@ -2427,8 +2427,40 @@
         "match_release_game": "Spiel freigegeben",
         "account_password_reset_requested": "Passwort-Reset angefordert",
         "account_password_reset": "Passwort per E-Mail-Link zurückgesetzt",
-        "account_email_confirmed": "E-Mail-Adresse bestätigt"
+        "account_email_confirmed": "E-Mail-Adresse bestätigt",
+        "approval_pin_set": "Genehmigungs-PIN gesetzt",
+        "approval_pin_remove": "Genehmigungs-PIN entfernt",
+        "approval_pin_locked": "Genehmigungs-PIN gesperrt",
+        "match_approve": "Resultat mit Konto genehmigt",
+        "match_approval_revoke": "Konto-Genehmigung rückgängig gemacht",
+        "match_approval_void": "Konto-Genehmigungen ungültig"
       }
+    },
+    "approvals": {
+      "chip": "{{slot}} · {{name}}",
+      "chipTitle": "Genehmigt {{time}} · ID {{id}}",
+      "resultChanged": "Resultat geändert",
+      "slots": {
+        "referee1": "1. Schiedsrichter",
+        "referee2": "2. Schiedsrichter",
+        "scorer": "Schreiber"
+      },
+      "lookup": "Genehmigungen",
+      "lookupPlaceholder": "Genehmigungs-ID oder Spielnummer",
+      "lookupButton": "Suchen",
+      "lookupEmpty": "Keine Genehmigung gefunden.",
+      "includeRevoked": "Widerrufene anzeigen",
+      "revoked": "Widerrufen",
+      "active": "Gültig",
+      "reasons": {
+        "undo": "rückgängig gemacht",
+        "match_reopened": "Spiel wieder geöffnet",
+        "result_changed": "Resultat geändert"
+      },
+      "hashes": "IP {{ip}} · Gerät {{device}}",
+      "requestedBy": "Gesendet von {{name}}",
+      "wrongPins": "{{failures}} falsche PINs",
+      "blocked": "gesperrt"
     }
   },
   "savedTeams": {
@@ -2650,5 +2682,92 @@
   "errors": {
     "syncFailed": "Synchronisierung fehlgeschlagen",
     "databaseWriteError": "Fehler beim Schreiben in die Datenbank"
+  },
+  "approval": {
+    "pin": {
+      "title": "Genehmigungs-PIN",
+      "explainer": "Genehmige Spielresultate mit deinem Konto statt mit einer gezeichneten Unterschrift. Deine persönliche PIN, nicht eine Spiel-PIN. Gib sie nie weiter.",
+      "notSet": "Nicht gesetzt",
+      "setOn": "Gesetzt am {{date}}",
+      "lockedUntil": "Gesperrt bis {{time}}",
+      "disabled": "Gesperrt nach zu vielen falschen PINs. Setze eine neue.",
+      "ineligible": {
+        "email": "Bestätige zuerst deine E-Mail-Adresse",
+        "role": "Braucht die Rolle Schiedsrichter oder Schreiber"
+      },
+      "needsInternet": "Braucht Internet",
+      "set": "PIN setzen",
+      "change": "PIN ändern",
+      "remove": "PIN entfernen",
+      "setTitle": "Genehmigungs-PIN setzen",
+      "changeTitle": "Genehmigungs-PIN ändern",
+      "removeTitle": "Genehmigungs-PIN entfernen",
+      "currentPassword": "Aktuelles Passwort",
+      "passwordHint": "Dein Kontopasswort bestätigt die Änderung.",
+      "newPin": "Neue PIN",
+      "repeatPin": "PIN wiederholen",
+      "rule": "4 bis 6 Ziffern. Kein Datum, keine Jahreszahl und kein Muster wie 1212 oder 1234.",
+      "mismatch": "Die PINs stimmen nicht überein.",
+      "removeConfirmTitle": "Genehmigungs-PIN entfernen?",
+      "removeConfirmBody": "Du kannst Resultate erst wieder mit deinem Konto genehmigen, wenn du eine neue PIN setzt.",
+      "save": "PIN speichern",
+      "saved": "Genehmigungs-PIN gespeichert.",
+      "removed": "Genehmigungs-PIN entfernt."
+    },
+    "approveWithAccount": "Mit Konto genehmigen",
+    "dialogTitle": "Genehmigen als {{role}}",
+    "officialEntered": "Erfasster Offizieller: {{name}}",
+    "email": "E-Mail des Kontos des Offiziellen",
+    "pinLabel": "Genehmigungs-PIN",
+    "pinHint": "Der Offizielle tippt seine eigene Genehmigungs-PIN ein. Sie wird in seinem Profil gesetzt.",
+    "approve": "Genehmigen",
+    "approved": "Genehmigt.",
+    "done": "Elektronisch genehmigt",
+    "stale": "Resultat geändert. Neu genehmigen oder unterschreiben",
+    "undo": "Rückgängig",
+    "undoConfirm": "Diese Genehmigung rückgängig machen?",
+    "undoConfirmBody": "Der Offizielle genehmigt danach neu oder unterschreibt von Hand.",
+    "undone": "Genehmigung rückgängig gemacht.",
+    "needsInternet": "Braucht Internet",
+    "needsInternetSignByHand": "Braucht Internet: von Hand unterschreiben",
+    "syncing": "Resultat wird gesendet…",
+    "nameDiffers": "Kontoname {{account}} weicht vom erfassten Offiziellen ab ({{entered}})",
+    "revalidateFailed": "Eine Konto-Genehmigung ist nicht mehr gültig. Prüfe die Unterschriften und genehmige neu.",
+    "errors": {
+      "pinInvalid": "E-Mail oder PIN nicht akzeptiert. Nach mehreren falschen PINs pausiert die PIN: Der Offizielle sieht das in seinem Profil. Oder von Hand unterschreiben.",
+      "pinFormat": "Die PIN muss 4 bis 6 Ziffern haben.",
+      "pinWeak": "Diese PIN ist zu leicht zu erraten. Bitte kein Datum, keine Jahreszahl und kein Muster wie 1212, 2580 oder 1234.",
+      "passwordInvalid": "Falsches Passwort.",
+      "roleRequired": "Dieses Konto hat nicht die Rolle für diese Unterschrift.",
+      "notMatchScorer": "Nur der Schreiber dieses Spiels kann als Schreiber genehmigen.",
+      "nameRequired": "Das Konto hat keinen Namen. Zuerst im Profil ergänzen.",
+      "oneSlot": "Dieses Konto hat bereits eine andere Unterschrift dieses Spiels genehmigt.",
+      "slotTaken": "Jemand anderes hat diese Unterschrift bereits genehmigt.",
+      "matchClosed": "Das Spiel ist abgeschlossen.",
+      "matchNotEnded": "Das Spiel ist auf dem Server noch nicht beendet. Warte auf die Synchronisation und versuche es dann nochmals.",
+      "resultNotSynced": "Das Resultat ist noch nicht beim Server angekommen. Prüfe die Verbindung und versuche es nochmals.",
+      "unsupported": "Für Beachspiele nicht verfügbar.",
+      "unavailable": "Die Genehmigung mit Konto ist auf diesem Server nicht verfügbar.",
+      "emailUnconfirmed": "Der Offizielle hat die E-Mail-Adresse des Kontos noch nicht bestätigt.",
+      "scorerNotReferee": "Das Konto, das dieses Spiel schreibt, kann nicht als Schiedsrichter genehmigen.",
+      "callerRole": "Für die Genehmigung mit Konto braucht dieses Gerät ein Schreiber- oder Schiedsrichterkonto."
+    },
+    "mine": {
+      "title": "Ihre Genehmigungen",
+      "hint": "Jede Genehmigung mit Ihrer PIN. Wenn eine nicht von Ihnen ist, machen Sie sie rückgängig, solange das Spiel offen ist, und ändern Sie Ihre PIN.",
+      "empty": "Noch keine Genehmigungen.",
+      "sentBy": "Gesendet von {{name}}",
+      "test": "Testspiel",
+      "valid": "Gültig",
+      "resultChanged": "Resultat geändert",
+      "closed": "Abgeschlossen",
+      "revoked": "Widerrufen",
+      "undoBody": "Die Genehmigung zählt nicht mehr. Das Spiel wird danach neu genehmigt oder von Hand unterschrieben.",
+      "slots": {
+        "referee1": "1. Schiedsrichter",
+        "referee2": "2. Schiedsrichter",
+        "scorer": "Schreiber"
+      }
+    }
   }
 }

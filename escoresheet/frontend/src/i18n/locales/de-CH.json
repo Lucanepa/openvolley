@@ -2443,8 +2443,40 @@
         "match_release_game": "Spiel freigegeben",
         "account_password_reset_requested": "Passwort-Reset angefordert",
         "account_password_reset": "Passwort per E-Mail-Link zurückgesetzt",
-        "account_email_confirmed": "E-Mail-Adresse bestätigt"
+        "account_email_confirmed": "E-Mail-Adresse bestätigt",
+        "approval_pin_set": "Genehmigungs-PIN gesetzt",
+        "approval_pin_remove": "Genehmigungs-PIN entfernt",
+        "approval_pin_locked": "Genehmigungs-PIN gesperrt",
+        "match_approve": "Resultat mit Konto genehmigt",
+        "match_approval_revoke": "Konto-Genehmigung rückgängig gemacht",
+        "match_approval_void": "Konto-Genehmigungen ungültig"
       }
+    },
+    "approvals": {
+      "chip": "{{slot}} · {{name}}",
+      "chipTitle": "Genehmigt {{time}} · ID {{id}}",
+      "resultChanged": "Resultat geändert",
+      "slots": {
+        "referee1": "1. Schiedsrichter",
+        "referee2": "2. Schiedsrichter",
+        "scorer": "Schreiber"
+      },
+      "lookup": "Genehmigungen",
+      "lookupPlaceholder": "Genehmigungs-ID oder Spielnummer",
+      "lookupButton": "Suchen",
+      "lookupEmpty": "Keine Genehmigung gefunden.",
+      "includeRevoked": "Widerrufene anzeigen",
+      "revoked": "Widerrufen",
+      "active": "Gültig",
+      "reasons": {
+        "undo": "rückgängig gemacht",
+        "match_reopened": "Spiel wieder geöffnet",
+        "result_changed": "Resultat geändert"
+      },
+      "hashes": "IP {{ip}} · Gerät {{device}}",
+      "requestedBy": "Gesendet von {{name}}",
+      "wrongPins": "{{failures}} falsche PINs",
+      "blocked": "gesperrt"
     }
   },
   "savedTeams": {
@@ -2662,5 +2694,92 @@
     "resent": "Mir händ en neue Link a {{email}} gschickt.",
     "resendUnavailable": "Bestätigungs-E-Mails chönd grad nöd verschickt werde – bitte probiered Sie es spöter nomal.",
     "signUpLinkSent": "Willkomme! Mir händ en Link a {{email}} gschickt: Tüend Sie en uf, zum Ihri Adresse bestätige."
+  },
+  "approval": {
+    "pin": {
+      "title": "Genehmigungs-PIN",
+      "explainer": "Genehmiged Sie Spielresultat mit Ihrem Konto statt mit ere zeichnete Underschrift. Ihri persönlichi PIN, kei Spiil-PIN. Gänd Sie sie nie wiiter.",
+      "notSet": "Nöd gsetzt",
+      "setOn": "Gsetzt am {{date}}",
+      "lockedUntil": "Gsperrt bis {{time}}",
+      "disabled": "Gsperrt nach z vill falsche PINs. Setzed Sie e neui.",
+      "ineligible": {
+        "email": "Bestätiged Sie zerscht Ihri E-Mail-Adresse",
+        "role": "Bruucht d Rolle Schiri oder Schriiber"
+      },
+      "needsInternet": "Bruucht Internet",
+      "set": "PIN setze",
+      "change": "PIN ändere",
+      "remove": "PIN entferne",
+      "setTitle": "Genehmigungs-PIN setze",
+      "changeTitle": "Genehmigungs-PIN ändere",
+      "removeTitle": "Genehmigungs-PIN entferne",
+      "currentPassword": "Aktuells Passwort",
+      "passwordHint": "Ihres Kontopasswort bestätigt d Änderig.",
+      "newPin": "Neui PIN",
+      "repeatPin": "PIN widerhole",
+      "rule": "4 bis 6 Ziffere. Kei Datum, kei Jahrzahl und kei Muster wie 1212 oder 1234.",
+      "mismatch": "D PINs stimmed nöd überii.",
+      "removeConfirmTitle": "Genehmigungs-PIN entferne?",
+      "removeConfirmBody": "Sie chönd Resultat erscht wieder mit Ihrem Konto genehmige, wänn Sie e neui PIN setzed.",
+      "save": "PIN speichere",
+      "saved": "Genehmigungs-PIN gspeicheret.",
+      "removed": "Genehmigungs-PIN entfernt."
+    },
+    "approveWithAccount": "Mit Konto genehmige",
+    "dialogTitle": "Genehmige als {{role}}",
+    "officialEntered": "Erfasste Offizielle: {{name}}",
+    "email": "E-Mail vom Konto vom Offizielle",
+    "pinLabel": "Genehmigungs-PIN",
+    "pinHint": "De Offizielli tippt sini eigeti Genehmigungs-PIN ii. Sie wird i sim Profil gsetzt.",
+    "approve": "Genehmige",
+    "approved": "Genehmigt.",
+    "done": "Elektronisch genehmigt",
+    "stale": "Resultat gänderet. Neu genehmige oder underschriibe",
+    "undo": "Rückgängig",
+    "undoConfirm": "Die Genehmigung rückgängig mache?",
+    "undoConfirmBody": "De Offizielli genehmigt dänn neu oder underschriibt vo Hand.",
+    "undone": "Genehmigung rückgängig gmacht.",
+    "needsInternet": "Bruucht Internet",
+    "needsInternetSignByHand": "Bruucht Internet: vo Hand underschriibe",
+    "syncing": "Resultat wird gschickt…",
+    "nameDiffers": "Kontoname {{account}} wiicht vom erfasste Offizielle ab ({{entered}})",
+    "revalidateFailed": "E Konto-Genehmigung isch nümme gültig. Prüefed Sie d Underschrifte und genehmiged Sie neu.",
+    "errors": {
+      "pinInvalid": "E-Mail oder PIN nöd akzeptiert. Nach mehrere falsche PINs macht d PIN e Pause: De Offizielli gseht das i sim Profil. Oder vo Hand underschriibe.",
+      "pinFormat": "D PIN muess 4 bis 6 Ziffere ha.",
+      "pinWeak": "Die PIN isch z eifach z errate. Bitte kei Datum, kei Jahrzahl und kei Muster wie 1212, 2580 oder 1234.",
+      "passwordInvalid": "Falschs Passwort.",
+      "roleRequired": "Das Konto hät nöd d Rolle für die Underschrift.",
+      "notMatchScorer": "Nur de Schriiber vo däm Spiil chan als Schriiber genehmige.",
+      "nameRequired": "S Konto hät kei Name. Zerscht im Profil ergänze.",
+      "oneSlot": "Das Konto hät scho en anderi Underschrift vo däm Spiil genehmigt.",
+      "slotTaken": "Öpper anders hät die Underschrift scho genehmigt.",
+      "matchClosed": "S Spiil isch abgschlosse.",
+      "matchNotEnded": "S Spiil isch uf em Server no nöd beendet. Warted Sie uf d Synchronisation und probiered Sie es dänn nomal.",
+      "resultNotSynced": "S Resultat isch no nöd bim Server aacho. Prüefed Sie d Verbindig und probiered Sie es nomal.",
+      "unsupported": "Für Beachspiil nöd verfüegbar.",
+      "unavailable": "D Genehmigung mit Konto isch uf däm Server nöd verfüegbar.",
+      "emailUnconfirmed": "De Offizielli hät d E-Mail-Adresse vom Konto no nöd bestätigt.",
+      "scorerNotReferee": "S Konto, wo das Spiil schriibt, chan nöd als Schiri genehmige.",
+      "callerRole": "Für d Genehmigung mit Konto bruucht das Gerät es Schriiber- oder Schirikonto."
+    },
+    "mine": {
+      "title": "Ihri Genehmigunge",
+      "hint": "Jedi Genehmigung mit Ihrer PIN. Wänn eini nöd vo Ihne isch, mached Sie sie rückgängig, solang s Spiil offe isch, und ändered Sie Ihri PIN.",
+      "empty": "No kei Genehmigunge.",
+      "sentBy": "Gschickt vo {{name}}",
+      "test": "Testspiil",
+      "valid": "Gültig",
+      "resultChanged": "Resultat gänderet",
+      "closed": "Abgschlosse",
+      "revoked": "Widerrüeft",
+      "undoBody": "D Genehmigung zellt nümme. S Spiil wird dänn neu genehmigt oder vo Hand underschribe.",
+      "slots": {
+        "referee1": "1. Schiri",
+        "referee2": "2. Schiri",
+        "scorer": "Schriiber"
+      }
+    }
   }
 }
