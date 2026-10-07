@@ -1331,24 +1331,6 @@ button:disabled {
   color: var(--text) !important;
 }
 
-.coin-toss-date-input::-webkit-calendar-picker-indicator {
-  display: none;
-  -webkit-appearance: none;
-}
-
-.coin-toss-date-input::-webkit-inner-spin-button,
-.coin-toss-date-input::-webkit-outer-spin-button {
-  display: none;
-}
-
-.coin-toss-date-input[type="date"]::-webkit-calendar-picker-indicator {
-  opacity: 0;
-  position: absolute;
-  right: 0;
-  width: 0;
-  height: 0;
-}
-
 /* Line-up entry modal (Scoreboard LineupModal). One constant size from open
    to confirm: every slot (error messages, the edit tools, the players pool)
    is reserved up front, so typing, picking, errors and Clear never move it.

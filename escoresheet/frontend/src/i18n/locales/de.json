@@ -3202,5 +3202,30 @@
     "impressum": "Impressum",
     "opensource": "Open-Source-Hinweis",
     "signUpConsent": "Wer ein Konto erstellt, akzeptiert die <terms>Nutzungsbedingungen</terms> und die <privacy>Datenschutzerklärung</privacy>."
+  },
+  "picker": {
+    "calendar": "Kalender",
+    "openCalendar": "Kalender öffnen",
+    "prevMonth": "Vorheriger Monat",
+    "nextMonth": "Nächster Monat",
+    "month": "Monat",
+    "year": "Jahr",
+    "today": "Heute",
+    "clear": "Leeren",
+    "done": "Fertig",
+    "time": "Uhrzeit",
+    "date": "Datum",
+    "chooseTime": "Uhrzeit wählen",
+    "hours": "Stunden",
+    "minutes": "Minuten",
+    "now": "Jetzt",
+    "datePlaceholder": "TT.MM.JJJJ",
+    "timePlaceholder": "HH:MM",
+    "invalidDate": "Datum als TT.MM.JJJJ eingeben.",
+    "invalidTime": "Uhrzeit als HH:MM eingeben.",
+    "dateBeforeMin": "Frühestens am {{date}}.",
+    "dateAfterMax": "Spätestens am {{date}}.",
+    "timeBeforeMin": "Frühestens um {{time}}.",
+    "timeAfterMax": "Spätestens um {{time}}."
   }
 }

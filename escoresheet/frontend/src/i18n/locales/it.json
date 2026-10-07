@@ -3219,5 +3219,30 @@
     "impressum": "Note legali",
     "opensource": "Avviso open source",
     "signUpConsent": "Creando un account si accettano le <terms>condizioni d’uso</terms> e l’<privacy>informativa sulla protezione dei dati</privacy>."
+  },
+  "picker": {
+    "calendar": "Calendario",
+    "openCalendar": "Apri il calendario",
+    "prevMonth": "Mese precedente",
+    "nextMonth": "Mese successivo",
+    "month": "Mese",
+    "year": "Anno",
+    "today": "Oggi",
+    "clear": "Cancella",
+    "done": "Fatto",
+    "time": "Ora",
+    "date": "Data",
+    "chooseTime": "Scegli l’ora",
+    "hours": "Ore",
+    "minutes": "Minuti",
+    "now": "Adesso",
+    "datePlaceholder": "GG.MM.AAAA",
+    "timePlaceholder": "HH:MM",
+    "invalidDate": "Inserisci una data come GG.MM.AAAA.",
+    "invalidTime": "Inserisci un’ora come HH:MM.",
+    "dateBeforeMin": "Non prima del {{date}}.",
+    "dateAfterMax": "Non oltre il {{date}}.",
+    "timeBeforeMin": "Non prima delle {{time}}.",
+    "timeAfterMax": "Non oltre le {{time}}."
   }
 }

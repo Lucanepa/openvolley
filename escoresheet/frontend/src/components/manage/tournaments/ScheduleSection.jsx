@@ -6,7 +6,7 @@ import { InlineError, useKitLang } from '../common'
 import { tournamentApi } from '../../../lib/tournamentApi'
 import { askConfirm } from '../../../utils/askConfirm'
 import { fromZurichInput, scheduleGrid, toZurichInput, zurichDay } from '../../../domain/beachTournament'
-import { Button, Card, CardHeading, Field, Input, Select, EmptyInset, SectionHeader, Notice, toast, timeLabel, shortDayLabel } from '../../../ui'
+import { Button, Card, CardHeading, DateTimeField, Field, Input, Select, TimeField, EmptyInset, SectionHeader, Notice, toast, timeLabel, shortDayLabel } from '../../../ui'
 import { useDrawName, useSideLabel, useTournamentError } from './shared'
 
 const OPEN = ['scheduled', 'ready', 'called']
@@ -69,7 +69,7 @@ function MoveModal({ match, courts, onClose, onSaved }) {
               options={courts.map(c => ({ value: c.id, label: c.name ? `${c.number} · ${c.name}` : t('tournaments.courtN', { n: c.number }) }))} />
           </Field>
           <Field label={t('tournaments.startTime')}>
-            <Input type="datetime-local" value={at} onChange={e => setAt(e.target.value)} disabled={!movable} />
+            <DateTimeField value={at} onChange={setAt} disabled={!movable} />
           </Field>
         </div>
         <div className="grid grid-cols-2 gap-2">
@@ -152,8 +152,8 @@ export default function ScheduleSection({ bundle, reload }) {
         <Card>
           <CardHeading title={t('tournaments.scheduleTitle')} hint={t('tournaments.scheduleHint')} />
           <div className="flex flex-wrap items-end gap-2">
-            <Field label={t('tournaments.dayStart')}><Input type="time" value={dayStart} onChange={e => setDayStart(e.target.value)} /></Field>
-            <Field label={t('tournaments.dayEnd')}><Input type="time" value={dayEnd} onChange={e => setDayEnd(e.target.value)} /></Field>
+            <Field label={t('tournaments.dayStart')}><TimeField value={dayStart} onChange={setDayStart} /></Field>
+            <Field label={t('tournaments.dayEnd')}><TimeField value={dayEnd} onChange={setDayEnd} /></Field>
             <Button icon={CalendarClock} onClick={plan} loading={busy} disabled={busy || !courts.length || !bundle.matches.length} data-testid="schedule-plan">
               {t('tournaments.planSchedule')}
             </Button>

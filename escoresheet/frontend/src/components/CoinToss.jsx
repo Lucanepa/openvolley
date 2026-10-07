@@ -22,6 +22,7 @@ import { teamBoxStyle } from '../utils/teamColours'
 import { FileTextIcon, SearchIcon, TrashIcon } from './icons'
 import { ArrowLeft, ArrowLeftRight } from 'lucide-react'
 import { Button } from '../ui/Button.jsx'
+import { DateField } from '../ui/DateField.jsx'
 import StackLabel from './StackLabel'
 import { useFormStack } from '../hooks/useFormStack'
 
@@ -1899,18 +1900,19 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                           </td>
                           <td style={{ verticalAlign: 'middle', padding: '6px', width: '90px' }}>
                             <StackLabel>{t('roster.dateOfBirth')}</StackLabel>
-                            <input
+                            <DateField
+                              size="bare"
+                              // 90px column: typed only (the native field's picker icon was hidden here too)
+                              calendar={false}
                               aria-label={t('roster.dateOfBirth')}
-                              type="date"
                               value={p.dob ? formatDateToISO(p.dob) : ''}
-                              onChange={e => {
-                                const value = e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''
+                              onChange={v => {
+                                const value = v ? formatDateToDDMMYYYY(v) : ''
                                 const updated = [...roster]
                                 updated[originalIdx] = { ...updated[originalIdx], dob: value }
                                 setRoster(updated)
                               }}
                               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
-                              className="coin-toss-date-input"
                               style={{ width: '100%', padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px' }}
                             />
                           </td>
@@ -2085,17 +2087,18 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                           </td>
                           <td style={{ verticalAlign: 'middle', padding: '6px', width: '90px' }}>
                             <StackLabel>{t('roster.dateOfBirth')}</StackLabel>
-                            <input
+                            <DateField
+                              size="bare"
+                              // 90px column: typed only (the native field's picker icon was hidden here too)
+                              calendar={false}
                               aria-label={t('roster.dateOfBirth')}
-                              type="date"
                               value={official.dob ? formatDateToISO(official.dob) : ''}
-                              onChange={e => {
-                                const value = e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''
+                              onChange={v => {
+                                const value = v ? formatDateToDDMMYYYY(v) : ''
                                 const updated = [...bench]
                                 updated[originalIdx] = { ...updated[originalIdx], dob: value }
                                 setBench(updated)
                               }}
-                              className="coin-toss-date-input"
                               style={{ width: '100%', padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px' }}
                             />
                           </td>
@@ -2267,12 +2270,12 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
               </div>
               <div>
                 <label className={FIELD_LABEL} style={{ margin: '0 0 4px' }}>{t('roster.dateOfBirth')}</label>
-                <input
+                <DateField
+                  size="bare"
                   aria-label={t('roster.dateOfBirth')}
-                  type="date"
                   value={dob ? formatDateToISO(dob) : ''}
-                  onChange={e => {
-                    const value = e.target.value ? formatDateToDDMMYYYY(e.target.value) : ''
+                  onChange={v => {
+                    const value = v ? formatDateToDDMMYYYY(v) : ''
                     currentTeam === 'home' ? setHomeDob(value) : setAwayDob(value)
                   }}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}

@@ -62,6 +62,7 @@ import { cn } from '../ui/cn.js'
 import { FOCUS_RING, Button } from '../ui/Button.jsx'
 import { ActionSheet, ActionSheetItem } from '../ui/Modal.jsx'
 import { SectionHeader } from '../ui/SectionHeader.jsx'
+import { DateField, DateTimeField } from '../ui/DateField.jsx'
 import { askConfirm } from '../utils/askConfirm.js'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
 
@@ -22031,12 +22032,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 <label style={{ fontSize: '11px', minWidth: '80px' }}>Start time:</label>
-                                <input
-                                  type="datetime-local"
+                                <DateTimeField
+                                  size="bare"
                                   defaultValue={(() => {
                                     if (!set.startTime) return ''
                                     const d = new Date(set.startTime)
-                                    // Format as local datetime for datetime-local input
+                                    // Local date + time, as the field shows and saves it
                                     const year = d.getFullYear()
                                     const month = String(d.getMonth() + 1).padStart(2, '0')
                                     const day = String(d.getDate()).padStart(2, '0')
@@ -22044,8 +22045,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     const minutes = String(d.getMinutes()).padStart(2, '0')
                                     return `${year}-${month}-${day}T${hours}:${minutes}`
                                   })()}
-                                  onBlur={async (e) => {
-                                    const newTime = e.target.value ? new Date(e.target.value).toISOString() : null
+                                  onCommit={async (value) => {
+                                    const newTime = value ? new Date(value).toISOString() : null
                                     await db.sets.update(set.id, { startTime: newTime })
                                   }}
                                   style={{
@@ -22060,12 +22061,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 <label style={{ fontSize: '11px', minWidth: '80px' }}>End time:</label>
-                                <input
-                                  type="datetime-local"
+                                <DateTimeField
+                                  size="bare"
                                   defaultValue={(() => {
                                     if (!set.endTime) return ''
                                     const d = new Date(set.endTime)
-                                    // Format as local datetime for datetime-local input
+                                    // Local date + time, as the field shows and saves it
                                     const year = d.getFullYear()
                                     const month = String(d.getMonth() + 1).padStart(2, '0')
                                     const day = String(d.getDate()).padStart(2, '0')
@@ -22073,8 +22074,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     const minutes = String(d.getMinutes()).padStart(2, '0')
                                     return `${year}-${month}-${day}T${hours}:${minutes}`
                                   })()}
-                                  onBlur={async (e) => {
-                                    const newTime = e.target.value ? new Date(e.target.value).toISOString() : null
+                                  onCommit={async (value) => {
+                                    const newTime = value ? new Date(value).toISOString() : null
                                     await db.sets.update(set.id, { endTime: newTime })
                                   }}
                                   style={{
@@ -29049,10 +29050,10 @@ function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose,
                     placeholder={t('scoreboard.reopenRoster.lastName', 'Last name')}
                     style={{ ...inputStyle, padding: '6px 8px' }}
                   />
-                  <input
-                    type="date"
+                  <DateField
+                    size="bare"
                     value={toISODate(player.dob)}
-                    onChange={(e) => updatePlayer(idx, 'dob', e.target.value)}
+                    onChange={(v) => updatePlayer(idx, 'dob', v)}
                     style={{ ...inputStyle, padding: '4px', fontSize: '11px' }}
                   />
                 </div>
@@ -29137,10 +29138,10 @@ function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose,
                     placeholder={t('scoreboard.reopenRoster.lastName', 'Last name')}
                     style={{ ...inputStyle, padding: '6px 8px' }}
                   />
-                  <input
-                    type="date"
+                  <DateField
+                    size="bare"
                     value={toISODate(staff.dob)}
-                    onChange={(e) => updateBench(idx, 'dob', e.target.value)}
+                    onChange={(v) => updateBench(idx, 'dob', v)}
                     style={{ ...inputStyle, padding: '4px', fontSize: '11px' }}
                   />
                   <button
