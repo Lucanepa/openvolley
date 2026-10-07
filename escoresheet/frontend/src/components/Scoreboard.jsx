@@ -50,7 +50,7 @@ import { useConfirmAction } from '../hooks/useConfirmAction'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
 import { playerReplacedByLibero } from '../domain/liberos'
 import { planSubstitutionDeletion, countRegularSubstitutions, classifySubstitutionRequest, MAX_SUBSTITUTIONS_PER_SET } from '../domain/substitutions'
-import { decisionChangeUndoRecord, planDecisionChangeReversal, syncJobsForEvents, syncJobsForSets } from '../domain/corrections'
+import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, syncJobsForSets } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, renumberPlayerInEvents } from '../domain/roster'
 import { appendRemark, removeRemarkLine } from '../domain/remarks'
 import { LINEUP_POSITIONS, lineupEntryErrors, lineupCandidates } from '../domain/lineupEntry'
@@ -12611,44 +12611,31 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }), [runCourtSwitchConfirm, courtSwitchModal, matchId, syncLiveStateToSupabase])
 
   const runCourtSwitchCancel = useConfirmAction(onConfirmFailed)
+  // The change of courts at 8 in the deciding set is mandatory (FIVB 18.2.2;
+  // a missed one is made as soon as noticed, score unchanged, 18.2.3), so
+  // "cancel" never means "do not switch". It can only mean the point that
+  // reached 8 was recorded in error: it is taken back exactly like Undo of that
+  // point (the point, its sub-events such as the side-out rotation and an
+  // automatic libero_exit, their queued cloud jobs, and the rally_start), and
+  // the set score follows the remaining point events.
   const cancelCourtSwitch = useCallback(() => runCourtSwitchCancel(async () => {
-    if (!courtSwitchModal || !data?.events) return
+    if (!courtSwitchModal) return
     // Close first, then undo the point (useConfirmAction)
     const modal = courtSwitchModal
     setCourtSwitchModal(null)
 
-    // Undo the last point that caused the 8-point threshold
-    // Find the last event by sequence number
-    const sortedEvents = [...data.events].sort((a, b) => {
-      const aSeq = a.seq || 0
-      const bSeq = b.seq || 0
-      if (aSeq !== 0 || bSeq !== 0) {
-        return bSeq - aSeq // Descending
-      }
-      const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-      const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-      return bTime - aTime
-    })
-
-    const lastEvent = sortedEvents[0]
-    if (lastEvent) {
-      // Delete the last event (point or sanction)
-      await db.events.delete(lastEvent.id)
-
-      // Update set points
-      const newHomePoints = modal.teamThatScored === 'home'
-        ? modal.homePoints - 1
-        : modal.homePoints
-      const newAwayPoints = modal.teamThatScored === 'away'
-        ? modal.awayPoints - 1
-        : modal.awayPoints
-
-      await db.sets.update(modal.set.id, {
-        homePoints: newHomePoints,
-        awayPoints: newAwayPoints
-      })
+    try {
+      const allEvents = await db.events.where('matchId').equals(matchId).toArray()
+      const plan = planPointRemoval(allEvents, null, { setIndex: modal.set.index, includeRallyStart: true })
+      if (!plan) return
+      const deleteIds = new Set(plan.deleteEventIds)
+      await discardEvents(allEvents.filter(e => deleteIds.has(e.id)))
+      await resyncSetScoreFromEvents(plan.setIndex)
+    } finally {
+      syncToReferee()
+      syncLiveStateToSupabase('undo', null, null)
     }
-  }), [runCourtSwitchCancel, courtSwitchModal, data?.events])
+  }), [runCourtSwitchCancel, courtSwitchModal, matchId, discardEvents, resyncSetScoreFromEvents, syncToReferee, syncLiveStateToSupabase])
 
   // Check if match is already finished (loaded a completed match)
   // If so, trigger onFinishSet to navigate to MatchEnd screen

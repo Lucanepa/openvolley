@@ -29,3 +29,24 @@ describe('expelled or disqualified libero on court', () => {
     expect(body).toMatch(/currentLineup\[position\] = String\(originalPlayerNumber\)/)
   })
 })
+
+describe('cancelling the set-5 change of courts (FIVB 18.2.2-18.2.3)', () => {
+  const body = () => between('const cancelCourtSwitch = useCallback(', '// Check if match is already finished')
+
+  it('takes back the point that reached 8 with its sub-events, like Undo, not the newest event row', () => {
+    const b = body()
+    expect(b).toMatch(/planPointRemoval\(allEvents, null, \{ setIndex: modal\.set\.index, includeRallyStart: true \}\)/)
+    expect(b).toMatch(/await discardEvents\(/)
+    expect(b).toMatch(/await resyncSetScoreFromEvents\(plan\.setIndex\)/)
+    // no more "delete whatever has the highest seq" (after a side-out that was
+    // the rotation sub-event, and the point stayed)
+    expect(b).not.toMatch(/db\.events\.delete\(lastEvent\.id\)/)
+    expect(b).not.toMatch(/sortedEvents\[0\]/)
+  })
+
+  it('the referee tablets and the livescore hear about it', () => {
+    const b = body()
+    expect(b).toMatch(/syncToReferee\(\)/)
+    expect(b).toMatch(/syncLiveStateToSupabase\('undo'/)
+  })
+})

@@ -71,6 +71,46 @@ export function planDecisionChangeReversal(decisionEvent, events) {
 }
 
 /**
+ * Plan taking back a point (recorded in error, or a rally to be replayed): the
+ * point and every sub-event it wrote (seq N.x: the side-out rotation lineup,
+ * an automatic libero_exit), and the set score from the point events left.
+ * Deleting only the newest event row is wrong: after a side-out that row is the
+ * rotation sub-event and the point stays.
+ * @param {Array} events all events of the match
+ * @param {object|null} pointEvent the point; null takes the newest point of opts.setIndex
+ * @param {{setIndex?:number, includeRallyStart?:boolean}} [opts]
+ *   includeRallyStart: also remove the rally_start that opened that rally (Undo)
+ * @returns {null | {pointEventId:any, setIndex:number, deleteEventIds:Array,
+ *   score:{homePoints:number, awayPoints:number}}}
+ */
+export function planPointRemoval(events, pointEvent, { setIndex, includeRallyStart = false } = {}) {
+  const all = (events || []).filter(Boolean)
+  const point = pointEvent || all
+    .filter(e => e.type === 'point' && e.setIndex === setIndex)
+    .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0]
+  if (!point || point.type !== 'point') return null
+
+  const pointSeq = point.seq || 0
+  const baseSeq = Math.floor(pointSeq)
+  const rows = all.filter(e => e.id === point.id || (pointSeq > 0 && Math.floor(e.seq || 0) === baseSeq))
+
+  if (includeRallyStart) {
+    const rallyStart = all
+      .filter(e => e.type === 'rally_start' && e.setIndex === point.setIndex && (e.seq || 0) < baseSeq)
+      .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0]
+    if (rallyStart && !rows.includes(rallyStart)) rows.push(rallyStart)
+  }
+
+  const deleted = new Set(rows.map(e => e.id))
+  return {
+    pointEventId: point.id,
+    setIndex: point.setIndex,
+    deleteEventIds: rows.map(e => e.id),
+    score: scoreFromPointEvents(all.filter(e => !deleted.has(e.id)), point.setIndex)
+  }
+}
+
+/**
  * The local Dexie id a sync job's external_id stands for: the namespaced form
  * `${seedKey}:e:${id}` / `${seedKey}:s:${id}` (utils/syncIds), or a bare id
  * queued before ids were namespaced. Null for anything else.

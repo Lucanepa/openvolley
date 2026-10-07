@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { decisionChangeUndoRecord, planDecisionChangeReversal, syncJobsForEvents, syncJobsForSets, localIdOfExtId, setScoreSyncJobs } from '../corrections'
+import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, syncJobsForSets, localIdOfExtId, setScoreSyncJobs } from '../corrections'
 
 // Set 1 at 3-2 (home), then point 6 goes to AWAY by mistake: away (receiving)
 // sides out, so the point wrote away's rotation 6.1 and an auto libero_exit 6.2.
@@ -127,5 +127,46 @@ describe('setScoreSyncJobs (Manual adjustments sends corrected sets; review fix)
     ])
     expect(setScoreSyncJobs(null, [{ id: 1 }])).toEqual([])
     expect(setScoreSyncJobs('m', [{ homePoints: 1 }])).toEqual([])
+  })
+})
+
+describe('planPointRemoval (taking back a point recorded in error)', () => {
+  // Set 5 at 7:7. Away scores the 8th point on a side-out: the point (seq 20)
+  // wrote away's rotation (20.1) and an auto libero_exit (20.2). Earlier,
+  // home's point 18 rotated (18.1) and a substitution (19 + 19.1) followed.
+  const events = [
+    { id: 17, seq: 17, setIndex: 5, type: 'rally_start', payload: {} },
+    point(18, 18, 'home', 5),
+    { id: 181, seq: 18.1, setIndex: 5, type: 'lineup', payload: { team: 'home', lineup: { I: '3' } } },
+    { id: 19, seq: 19, setIndex: 5, type: 'substitution', payload: { team: 'home', playerOut: 3, playerIn: 13 } },
+    { id: 191, seq: 19.1, setIndex: 5, type: 'lineup', payload: { team: 'home', lineup: { I: '13' }, fromSubstitution: true } },
+    { id: 195, seq: 19.5, setIndex: 5, type: 'rally_start', payload: {} },
+    point(20, 20, 'away', 5),
+    { id: 201, seq: 20.1, setIndex: 5, type: 'lineup', payload: { team: 'away', lineup: { I: '4' } } },
+    { id: 202, seq: 20.2, setIndex: 5, type: 'libero_exit', payload: { team: 'away', liberoOut: 9, playerIn: 5 } },
+    point(4, 4, 'home', 1)
+  ]
+  const pointEvent = events.find(e => e.id === 20)
+
+  it('removes the point with every sub-event it wrote (rotation, libero exit), not only the newest row', () => {
+    const plan = planPointRemoval(events, pointEvent)
+    expect(plan.deleteEventIds.sort()).toEqual([20, 201, 202])
+    expect(plan.setIndex).toBe(5)
+  })
+
+  it('the set score follows the remaining point events', () => {
+    // set 5 has one home and one away point; the away point goes
+    expect(planPointRemoval(events, pointEvent).score).toEqual({ homePoints: 1, awayPoints: 0 })
+  })
+
+  it('with includeRallyStart, also the rally_start that opened that rally (like Undo)', () => {
+    const plan = planPointRemoval(events, pointEvent, { includeRallyStart: true })
+    expect(plan.deleteEventIds.sort((a, b) => a - b)).toEqual([20, 195, 201, 202])
+  })
+
+  it('finds the newest point of the set when no point is given', () => {
+    expect(planPointRemoval(events, null, { setIndex: 5 }).deleteEventIds).toContain(20)
+    expect(planPointRemoval(events, null, { setIndex: 3 })).toBeNull()
+    expect(planPointRemoval(events, { id: 99, type: 'timeout', seq: 21, setIndex: 5 })).toBeNull()
   })
 })
