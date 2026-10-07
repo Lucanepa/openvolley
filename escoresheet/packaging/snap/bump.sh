@@ -42,9 +42,26 @@ else
   echo "WARNING: minisign not installed, the .deb's signature was NOT checked" >&2
 fi
 
-if command -v dpkg-deb >/dev/null; then
-  got=$(dpkg-deb -f "$tmp/$deb" Version)
-  [ "$got" = "$version" ] || { echo "the .deb says version $got, not $version" >&2; exit 1; }
+command -v dpkg-deb >/dev/null || { echo "dpkg-deb is needed to check the .deb" >&2; exit 1; }
+got=$(dpkg-deb -f "$tmp/$deb" Version)
+[ "$got" = "$version" ] || { echo "the .deb says version $got, not $version" >&2; exit 1; }
+
+# The binary must know it runs in a snap (updater.rs `managed_by`: SNAP_NAME ->
+# Kind::Managed), or it checks get.openvolley.app and offers updates the snap
+# cannot install. Releases before that switch lack it (OpenVolley 2.4.0 and
+# earlier, OpenBeach 2.0.0 and earlier). ALLOW_SELF_UPDATING=1 skips this
+# check, for a local test build only.
+mkdir "$tmp/x"
+dpkg-deb -x "$tmp/$deb" "$tmp/x"
+[ -f "$tmp/x/usr/bin/$snap" ] || { echo "no usr/bin/$snap in $deb" >&2; exit 1; }
+cp "$tmp/x/usr/bin/$snap" "$tmp/bin"
+if ! grep -qa SNAP_NAME "$tmp/bin"; then
+  if [ "${ALLOW_SELF_UPDATING:-}" = 1 ]; then
+    echo "WARNING: $version has no package-manager switch: the snap would update itself; do not publish it" >&2
+  else
+    echo "$version has no package-manager switch (no SNAP_NAME in usr/bin/$snap): its own updater would run inside the snap. Use a later release (ALLOW_SELF_UPDATING=1 for a local test only)." >&2
+    exit 1
+  fi
 fi
 
 sum=$(sha256sum "$tmp/$deb" | cut -d' ' -f1)
