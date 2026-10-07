@@ -71,6 +71,31 @@ export {
   SearchInput,
 } from './Input.jsx';
 export {
+  DateField,
+  TimeField,
+  DateTimeField,
+} from './DateField.jsx';
+export {
+  PickerPopover,
+} from './PickerPopover.jsx';
+export {
+  Calendar,
+} from './Calendar.jsx';
+export {
+  TimePanel,
+} from './TimePanel.jsx';
+export {
+  shapeDateText,
+  isoToDateText,
+  parseIsoDate,
+  parseDateText,
+  shapeTimeText,
+  parseTimeText,
+  normalizeTime,
+  splitDateTime,
+  joinDateTime,
+} from './dateTime.js';
+export {
   SELECT_SIZES,
   SELECT_PANEL,
   SELECT_OPTION_ROW,

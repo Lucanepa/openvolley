@@ -6,7 +6,7 @@ import { tournamentApi } from '../../../lib/tournamentApi'
 import { askConfirm } from '../../../utils/askConfirm'
 import { askText } from '../../../utils/askText'
 import {
-  Button, Card, CardHeading, Field, Input, Select, Switch, SegmentedControl, RowList, SimpleRow, Chip,
+  Button, Card, CardHeading, DateField, Field, Input, Select, Switch, TimeField, SegmentedControl, RowList, SimpleRow, Chip,
   EmptyInset, SkeletonRows, Notice, IconButton, toast
 } from '../../../ui'
 import { TournamentStatus, datesLabel, useTournamentError } from './shared'
@@ -32,7 +32,8 @@ function DetailsSection({ bundle, reload, onDeleted }) {
   // a reload (another section saved) shows the stored values
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { setForm(initial()) }, [tour.updated_at])
-  const set = (k) => (e) => { setForm(f => ({ ...f, [k]: e.target.value })); setError('') }
+  // Inputs hand over an event, the date and time fields their ISO value.
+  const set = (k) => (e) => { const v = e?.target ? e.target.value : e; setForm(f => ({ ...f, [k]: v })); setError('') }
 
   const save = async (e) => {
     e?.preventDefault()
@@ -92,10 +93,10 @@ function DetailsSection({ bundle, reload, onDeleted }) {
             <Field label={t('tournaments.city')}><Input value={form.city} onChange={set('city')} maxLength={120} disabled={!edit} /></Field>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <Field label={t('tournaments.startsOn')}><Input type="date" value={form.starts_on} onChange={set('starts_on')} required disabled={!edit} /></Field>
-            <Field label={t('tournaments.endsOn')}><Input type="date" value={form.ends_on} onChange={set('ends_on')} required disabled={!edit} /></Field>
-            <Field label={t('tournaments.dayStart')}><Input type="time" value={form.day_start} onChange={set('day_start')} required disabled={!edit} /></Field>
-            <Field label={t('tournaments.dayEnd')}><Input type="time" value={form.day_end} onChange={set('day_end')} required disabled={!edit} /></Field>
+            <Field label={t('tournaments.startsOn')}><DateField value={form.starts_on} onChange={set('starts_on')} required disabled={!edit} /></Field>
+            <Field label={t('tournaments.endsOn')}><DateField value={form.ends_on} onChange={set('ends_on')} required disabled={!edit} /></Field>
+            <Field label={t('tournaments.dayStart')}><TimeField value={form.day_start} onChange={set('day_start')} required disabled={!edit} /></Field>
+            <Field label={t('tournaments.dayEnd')}><TimeField value={form.day_end} onChange={set('day_end')} required disabled={!edit} /></Field>
           </div>
           <Field label={t('tournaments.status')}>
             <Select value={form.status} onChange={set('status')} disabled={!edit}

@@ -1,5 +1,7 @@
-// Input (text, email, url, date, time, month, number, password, search) and
-// SearchInput. Heights follow the Button scale so a field and its button line up.
+// Input (text, email, url, number, password, search) and SearchInput.
+// Dates and times: DateField / TimeField / DateTimeField (DateField.jsx), never
+// type="date|time|datetime-local" (a guard test fails on those).
+// Heights follow the Button scale so a field and its button line up.
 //
 //   sm   h-8, in popovers and date-range panels    App.tsx:1042 (focus-visible red-400 ring)
 //   md   h-9, every admin / editor field            AdminConsole.tsx:751 + BudgetCard.tsx:54

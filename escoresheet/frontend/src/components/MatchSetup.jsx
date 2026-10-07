@@ -32,7 +32,7 @@ import { readableTextOn, teamBoxStyle } from '../utils/teamColours'
 import { missingConnectionPins, connectionPinsSyncJob, fetchPendingRoster, clearPendingRosterJob, isKnownDob } from '../utils/remoteRoster'
 import { FileTextIcon, ClipboardIcon } from './icons'
 import { AlertTriangle, Loader2 } from 'lucide-react'
-import { Button, Field, Input, Select, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, cn, confirmDialog, toast } from '../ui'
+import { Button, DateField, Field, Input, Select, TimeField, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, cn, confirmDialog, toast } from '../ui'
 import SavedTeamPickerModal, { confirmReplaceRoster } from './SavedTeamPickerModal'
 import SaveRosterToTeamModal from './SaveRosterToTeamModal'
 import CloudBlockNotice from './CloudBlockNotice'
@@ -330,13 +330,12 @@ const OfficialCard = memo(function OfficialCard({
             <Field tone="compact" className={FIELD} label={t('matchSetup.country')}><Input aria-label={t('matchSetup.country')} value={country} onChange={e => setCountry(e.target.value)} /></Field>
             <div className="min-w-0">
               <Field tone="compact" className={FIELD} required={dobRequired || undefined} label={dobRequired ? `${t('matchSetup.dateOfBirth')} *` : t('matchSetup.dateOfBirth')}>
-                <Input
+                <DateField
                   aria-label={t('matchSetup.dateOfBirth')}
                   aria-describedby={dobMissing ? dobNoteId : undefined}
-                  className={cn('tabular-nums', dobMissing && 'border-amber-400')}
-                  type="date"
+                  className={cn(dobMissing && 'border-amber-400')}
                   value={dobValue}
-                  onChange={e => setDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')}
+                  onChange={v => setDob(v ? formatDateToDDMMYYYY(v) : '')}
                 />
               </Field>
               {dobMissing && (
@@ -3401,22 +3400,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </div>
             <div className="flex flex-col gap-3 p-4">
               <Field tone="compact" className={FIELD} label={t('matchSetup.date')} error={dateError || undefined}>
-                <Input
+                <DateField
                   aria-label={t('matchSetup.date')}
-                  className="tabular-nums"
-                  type="date"
                   value={date}
-                  onChange={e => handleDateChange(e.target.value)}
+                  onChange={handleDateChange}
                   invalid={!!dateError}
                 />
               </Field>
               <Field tone="compact" className={FIELD} label={t('matchSetup.time')} error={timeError || undefined}>
-                <Input
+                <TimeField
                   aria-label={t('matchSetup.time')}
-                  className="tabular-nums"
-                  type="text"
                   value={time}
-                  onChange={e => handleTimeChange(e.target.value)}
+                  onChange={handleTimeChange}
                   placeholder={t('matchSetup.placeholders.hhMm')}
                   invalid={!!timeError}
                 />
@@ -4276,7 +4271,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
                 <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={homeFirst} onChange={e => setHomeFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
-                <input aria-label={t('matchSetup.dateOfBirth')} placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={homeDob ? formatDateToISO(homeDob) : ''} onChange={e => setHomeDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <DateField size="bare" aria-label={t('matchSetup.dateOfBirth')} value={homeDob ? formatDateToISO(homeDob) : ''} onChange={v => setHomeDob(v ? formatDateToDDMMYYYY(v) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.roleLibero')} · {t('matchSetup.captain')}</StackLabel>
                 <select aria-label={t('matchSetup.libero', 'Libero')} className="cell-libero" data-help-id="setup-libero-toggle" value={homeLibero} onChange={e => {
                   let newValue = e.target.value
@@ -4443,15 +4438,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
-                <input
+                <DateField
+                  size="bare"
                   aria-label={t('matchSetup.dateOfBirth')}
-                  placeholder={t('matchSetup.dateOfBirthPlaceholder')}
-                  type="date"
                   value={p.dob ? formatDateToISO(p.dob) : ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
-                  onChange={e => {
+                  onChange={v => {
                     const updated = [...homeRoster]
-                    updated[i] = { ...updated[i], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }
+                    updated[i] = { ...updated[i], dob: v ? formatDateToDDMMYYYY(v) : '' }
                     setHomeRoster(updated)
                   }}
                 />
@@ -4591,7 +4585,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
                 <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
                 <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
-                <input aria-label={t('matchSetup.dateOfBirth')} placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }; return a })} />
+                <DateField size="bare" aria-label={t('matchSetup.dateOfBirth')} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
                 <div className="cell-action">
                   <Button variant="danger-outline" size="md" onClick={() => {
                     const updated = benchHome.filter((_, idx) => idx !== originalIdx)
@@ -5426,7 +5420,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
                 <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={awayFirst} onChange={e => setAwayFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
-                <input aria-label={t('matchSetup.dateOfBirth')} placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={awayDob ? formatDateToISO(awayDob) : ''} onChange={e => setAwayDob(e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <DateField size="bare" aria-label={t('matchSetup.dateOfBirth')} value={awayDob ? formatDateToISO(awayDob) : ''} onChange={v => setAwayDob(v ? formatDateToDDMMYYYY(v) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.roleLibero')} · {t('matchSetup.captain')}</StackLabel>
                 <select aria-label={t('matchSetup.libero', 'Libero')} className="cell-libero" value={awayLibero} onChange={e => {
                   let newValue = e.target.value
@@ -5590,15 +5584,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }}
                 />
                 <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
-                <input
+                <DateField
+                  size="bare"
                   aria-label={t('matchSetup.dateOfBirth')}
-                  placeholder={t('matchSetup.dateOfBirthPlaceholder')}
-                  type="date"
                   value={p.dob ? formatDateToISO(p.dob) : ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
-                  onChange={e => {
+                  onChange={v => {
                     const updated = [...awayRoster]
-                    updated[i] = { ...updated[i], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }
+                    updated[i] = { ...updated[i], dob: v ? formatDateToDDMMYYYY(v) : '' }
                     setAwayRoster(updated)
                   }}
                 />
@@ -5734,7 +5727,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
                 <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
                 <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
-                <input aria-label={t('matchSetup.dateOfBirth')} placeholder={t('matchSetup.dateOfBirthPlaceholder')} type="date" value={m.dob ? formatDateToISO(m.dob) : ''} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: e.target.value ? formatDateToDDMMYYYY(e.target.value) : '' }; return a })} />
+                <DateField size="bare" aria-label={t('matchSetup.dateOfBirth')} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
                 <div className="cell-action">
                   <Button variant="danger-outline" size="md" onClick={() => {
                     const updated = benchAway.filter((_, idx) => idx !== originalIdx)

@@ -15,6 +15,7 @@ import { CalendarX2, Check, ChevronRight, FileUp, Loader2, Plus } from 'lucide-r
 import { cn } from './ui/cn.js'
 import { Button } from './ui/Button.jsx'
 import { Card } from './ui/Card.jsx'
+import { DateField } from './ui/DateField.jsx'
 import { Field, FormError } from './ui/Field.jsx'
 import { EmptyState } from './ui/EmptyState.jsx'
 import { RowList } from './ui/Row.jsx'
@@ -1241,12 +1242,10 @@ export default function UploadRosterApp() {
                           aria-label={t('rosterSetup.firstName', 'First name')}
                           className={FIELD}
                         />
-                        <input
-                          type="date"
+                        <DateField
                           value={player.dob ? formatDateToISO(player.dob) : ''}
-                          onChange={(e) => handlePlayerChange(index, 'dob', e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')}
+                          onChange={(v) => handlePlayerChange(index, 'dob', v ? formatDateToDDMMYYYY(v) : '')}
                           aria-label={t('rosterSetup.dob', 'DOB')}
-                          className={FIELD}
                         />
                         <Select
                           value={player.libero}
@@ -1334,12 +1333,10 @@ export default function UploadRosterApp() {
                           aria-label={t('rosterSetup.firstName', 'First name')}
                           className={FIELD}
                         />
-                        <input
-                          type="date"
+                        <DateField
                           value={official.dob ? formatDateToISO(official.dob) : ''}
-                          onChange={(e) => handleBenchChange(index, 'dob', e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')}
+                          onChange={(v) => handleBenchChange(index, 'dob', v ? formatDateToDDMMYYYY(v) : '')}
                           aria-label={t('rosterSetup.dob', 'DOB')}
-                          className={FIELD}
                         />
                         <Button variant="danger-outline" size="sm" block onClick={() => handleDeleteBench(index)}>
                           {t('common.delete')}

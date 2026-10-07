@@ -3214,5 +3214,30 @@
     "impressum": "Impressum",
     "opensource": "Open-Source-Hinweis",
     "signUpConsent": "Wer ein Konto erstellt, akzeptiert die <terms>Nutzungsbedingungen</terms> und die <privacy>Datenschutzerklärung</privacy>."
+  },
+  "picker": {
+    "calendar": "Kaländer",
+    "openCalendar": "Kaländer öffne",
+    "prevMonth": "Vorhärige Monet",
+    "nextMonth": "Nächschte Monet",
+    "month": "Monet",
+    "year": "Jahr",
+    "today": "Hüt",
+    "clear": "Lääre",
+    "done": "Fertig",
+    "time": "Zyt",
+    "date": "Datum",
+    "chooseTime": "Zyt wähle",
+    "hours": "Stunde",
+    "minutes": "Minute",
+    "now": "Jetzt",
+    "datePlaceholder": "TT.MM.JJJJ",
+    "timePlaceholder": "HH:MM",
+    "invalidDate": "Datum als TT.MM.JJJJ ygä.",
+    "invalidTime": "Zyt als HH:MM ygä.",
+    "dateBeforeMin": "Früehstens am {{date}}.",
+    "dateAfterMax": "Spöötstens am {{date}}.",
+    "timeBeforeMin": "Früehstens um {{time}}.",
+    "timeAfterMax": "Spöötstens um {{time}}."
   }
 }
