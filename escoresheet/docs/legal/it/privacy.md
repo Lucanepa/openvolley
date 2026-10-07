@@ -26,8 +26,8 @@ la versione tedesca.
 
 Il titolare del trattamento è:
 
-**Luca Canepa**, persona privata, Svizzera
-Indirizzo postale: vedi le [note legali](impressum.md)
+**Luca Canepa**, persona privata, Svizzera\
+Indirizzo postale: vedi le [note legali](impressum.md)\
 E-mail: support@openvolley.app
 
 Gestisco OpenVolley come persona privata. Non ho nominato un consulente per la
