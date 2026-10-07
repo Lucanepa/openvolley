@@ -160,8 +160,9 @@ describe('account emails end to end', { skip: SKIP }, () => {
     const reuse = await auth(srv, 'reset-password/confirm', { token, password: 'third-password-3' })
     assert.equal(reuse.status, 400)
     assert.equal(reuse.json.error.code, 'invalid_link')
-    const audit = (await sql.query("SELECT action FROM public.audit_log WHERE target_user_id = $1 AND action LIKE 'account.%' ORDER BY id", [me.id])).rows.map((r) => r.action)
-    assert.deepEqual(audit, ['account.email_confirmed', 'account.password_reset_requested', 'account.password_reset'])
+    const audit = (await sql.query("SELECT action, app FROM public.audit_log WHERE target_user_id = $1 AND action LIKE 'account.%' ORDER BY id", [me.id])).rows
+    assert.deepEqual(audit.map((r) => r.action), ['account.email_confirmed', 'account.password_reset_requested', 'account.password_reset'])
+    assert.ok(audit.every((r) => r.app === null), 'an OpenVolley account: indoor entries, as before')
   })
 
   it('an expired link and an older link are refused', async () => {
@@ -261,6 +262,44 @@ describe('account emails end to end', { skip: SKIP }, () => {
     assert.ok(linkToken(plainMail).url.startsWith('https://manager.example.test/'))
     tokensSeen.push(linkToken(plainMail).token)
     assert.deepEqual((await sql.query('SELECT app FROM auth.app_memberships WHERE user_id = $1', [up3.json.data.user.id])).rows, [{ app: 'indoor' }])
+  })
+
+  it('the email-link audit entries go to the app of the account (S2 review)', async () => {
+    const authEntries = async (userId) => (await sql.query(
+      "SELECT action, app FROM public.audit_log WHERE target_user_id = $1 AND action LIKE 'account.%' ORDER BY id", [userId])).rows
+    const waitEntries = async (userId, n) => {
+      for (let i = 0; i < 50; i++) {
+        const rows = await authEntries(userId)
+        if (rows.length >= n) return rows
+        await sleep(100)
+      }
+      return authEntries(userId)
+    }
+    // the OpenBeach-only account of the test above: confirm and reset are OpenBeach's
+    const bea = (await sql.query("SELECT id FROM auth.users WHERE email = 'bea.beach@example.ch'")).rows[0].id
+    assert.deepEqual(await authEntries(bea), [
+      { action: 'account.email_confirmed', app: 'beach' },
+      { action: 'account.password_reset_requested', app: 'beach' },
+      { action: 'account.password_reset', app: 'beach' }
+    ])
+    // so the admin lists put them in OpenBeach's audit and not in OpenVolley's
+    const listed = (app) => sql.query(
+      "SELECT count(*)::int n FROM public.audit_log WHERE target_user_id = $1 AND action LIKE 'account.%' AND " +
+      (app === 'beach' ? "app = 'beach'" : "app IS DISTINCT FROM 'beach'"), [bea])
+    assert.equal((await listed('beach')).rows[0].n, 3)
+    assert.equal((await listed('indoor')).rows[0].n, 0)
+
+    // a member of both apps: the app of the request (an absent app is OpenVolley)
+    const email = 'bo.both@example.ch'
+    const up = await auth(srv, 'sign-up', { email, password: PW, app: 'indoor' })
+    assert.equal(up.status, 200, up.text)
+    const id = up.json.data.user.id
+    tokensSeen.push(linkToken(await mailFor(email)).token)
+    await sql.query("INSERT INTO auth.app_memberships (user_id, app, joined_via) VALUES ($1, 'beach', 'join')", [id])
+    assert.equal((await auth(srv, 'reset-password', { email, app: 'beach' })).status, 200)
+    assert.deepEqual(await waitEntries(id, 1), [{ action: 'account.password_reset_requested', app: 'beach' }])
+    assert.equal((await auth(srv, 'reset-password', { email })).status, 200)
+    assert.deepEqual((await waitEntries(id, 2))[1], { action: 'account.password_reset_requested', app: null })
   })
 
   it('never writes a link token into the server log', () => {
