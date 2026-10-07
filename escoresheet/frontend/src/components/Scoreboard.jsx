@@ -18,6 +18,7 @@ import SyncProgressModal from './SyncProgressModal'
 import SignaturePad from './SignaturePad'
 import LongPressProgressIndicator from './LongPressProgressIndicator'
 import DraggedPlayerOverlay from './DraggedPlayerOverlay'
+import { setPlayerDragImage } from '../utils/dragImage'
 import ballFallback from '../ball_fallback.png'
 
 // Primary ball image (with a bundled copy as fallback)
@@ -8424,31 +8425,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     e.dataTransfer.setData('text/plain', JSON.stringify({ team: teamKey, playerNumber, isLibero, type: 'bench' }))
     e.dataTransfer.effectAllowed = 'move'
 
-    // Create custom drag image showing the player number
-    const dragImage = document.createElement('div')
-    dragImage.textContent = String(playerNumber)
-    dragImage.style.cssText = `
-      position: absolute;
-      top: -1000px;
-      left: -1000px;
-      width: 50px;
-      height: 50px;
-      border-radius: 50%;
-      background: ${isLibero ? '#3b82f6' : '#4ade80'};
-      color: ${isLibero ? '#fff' : '#000'};
-      font-size: 20px;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    `
-    document.body.appendChild(dragImage)
-    e.dataTransfer.setDragImage(dragImage, 25, 25)
-
-    setTimeout(() => {
-      document.body.removeChild(dragImage)
-    }, 0)
+    // Custom drag image: a round disc with the player number
+    setPlayerDragImage(e, playerNumber, isLibero ? { bg: '#3b82f6', text: '#fff' } : { bg: '#4ade80', text: '#000' })
   }, [rallyStatus])
 
   // Handle drag start from court player (for substitution out)
@@ -8459,35 +8437,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     e.dataTransfer.setData('text/plain', JSON.stringify({ team: teamKey, playerNumber, position, isLibero, type: 'court' }))
     e.dataTransfer.effectAllowed = 'move'
 
-    // Create custom drag image showing the player number
-    const dragImage = document.createElement('div')
-    dragImage.textContent = String(playerNumber)
+    // Custom drag image: the player's disc as painted on the court
     const isLeft = (leftIsHome && teamKey === 'home') || (!leftIsHome && teamKey === 'away')
     const circleColors = getPlayerCircleColors(isLeft ? 'left' : 'right', isLibero)
-    dragImage.style.cssText = `
-      position: absolute;
-      top: -1000px;
-      left: -1000px;
-      width: 50px;
-      height: 50px;
-      border-radius: 50%;
-      background: ${circleColors.bg};
-      color: ${circleColors.text};
-      font-size: 20px;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      border: 2px solid ${circleColors.ring || 'rgba(0, 0, 0, 0.2)'};
-      ${circleColors.textShadow ? `text-shadow: ${circleColors.textShadow};` : ''}
-    `
-    document.body.appendChild(dragImage)
-    e.dataTransfer.setDragImage(dragImage, 25, 25)
-
-    setTimeout(() => {
-      document.body.removeChild(dragImage)
-    }, 0)
+    setPlayerDragImage(e, playerNumber, { ...circleColors, ring: circleColors.ring || 'rgba(0, 0, 0, 0.2)' })
   }, [rallyStatus, leftIsHome, getPlayerCircleColors])
 
   const handleBenchDragEnd = useCallback(() => {
@@ -28345,32 +28298,8 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     e.dataTransfer.setData('text/plain', String(playerNumber))
     e.dataTransfer.effectAllowed = 'move'
 
-    // Create custom drag image showing the player number
-    const dragImage = document.createElement('div')
-    dragImage.textContent = String(playerNumber)
-    dragImage.style.cssText = `
-      position: absolute;
-      top: -1000px;
-      left: -1000px;
-      width: 50px;
-      height: 50px;
-      border-radius: 50%;
-      background: #4ade80;
-      color: #000;
-      font-size: 20px;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    `
-    document.body.appendChild(dragImage)
-    e.dataTransfer.setDragImage(dragImage, 25, 25)
-
-    // Clean up drag image after a short delay
-    setTimeout(() => {
-      document.body.removeChild(dragImage)
-    }, 0)
+    // Custom drag image: a round disc with the player number
+    setPlayerDragImage(e, playerNumber, { bg: '#4ade80', text: '#000' })
   }
 
   const handleDragEnd = () => {
