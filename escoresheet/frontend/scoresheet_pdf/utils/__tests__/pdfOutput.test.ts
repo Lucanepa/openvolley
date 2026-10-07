@@ -57,7 +57,20 @@ describe('generated remarks: default / incomplete team (field-spec 8, 11)', () =
     ]
     const sets = [1, 2, 3].map(index => ({ index, homePoints: 25, awayPoints: 0, finished: true, forfeitCreated: index > 1 }))
     expect(generatedRemarks({ sets, events, teamAKey: 'home', bestOf: 5 }))
-      .toEqual(['Team B declared in default (default), match result 3:0 (25:0, 25:0, 25:0).'])
+      .toEqual(['Team B declared in default, match result 3:0 (25:0, 25:0, 25:0).'])
+  })
+
+  it("the Scoreboard's reason 'forfait' (and any generic one) adds no bracket; a real reason does", () => {
+    for (const [reason, tail] of [['forfait', ''], ['default', ''], ['no-show', ' (did not show up)'], ['bus broke down', ' (bus broke down)']]) {
+      seq = 0
+      const events = [
+        ...Array.from({ length: 25 }, () => ev('point', 1, { team: 'home', forfeitAwarded: true })),
+        ev('forfait', 1, { team: 'away', reason, scope: 'match', setIndex: 1 })
+      ]
+      const sets = [{ index: 1, homePoints: 25, awayPoints: 0, finished: true }]
+      expect(generatedRemarks({ sets, events, teamAKey: 'home', bestOf: 5 }))
+        .toEqual([`Team B declared in default${tail}, match result 1:0 (25:0).`])
+    }
   })
 
   it('a default during the match: set, score at the forfeit (concerned team first), result', () => {
@@ -74,7 +87,7 @@ describe('generated remarks: default / incomplete team (field-spec 8, 11)', () =
       { index: 3, homePoints: 25, awayPoints: 0, finished: true, forfeitCreated: true }
     ]
     expect(generatedRemarks({ sets, events, teamAKey: 'away', bestOf: 5 })).toEqual([
-      'Team A, Set 2, Result 10:14: declared in default (default). Match awarded to Team B, 3:0 (25:20, 25:10, 25:0).'
+      'Team A, Set 2, Result 10:14: declared in default. Match awarded to Team B, 3:0 (25:20, 25:10, 25:0).'
     ])
   })
 

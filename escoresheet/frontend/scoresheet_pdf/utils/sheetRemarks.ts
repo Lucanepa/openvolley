@@ -10,9 +10,12 @@ import { compareEventsBySeq, displaySetNumber } from './scoresheetModel'
 
 type TeamKey = 'home' | 'away'
 
+// The generic reasons (the Scoreboard writes 'forfait') add nothing to "declared in default":
+// they map to '' and the remark has no bracket ("in default (default)" before).
 const REASONS: Record<string, string> = {
-  forfeit: 'default',
-  default: 'default',
+  forfeit: '',
+  forfait: '',
+  default: '',
   injury: 'injury',
   illness: 'illness',
   expulsion: 'expulsion',
@@ -24,8 +27,10 @@ const REASONS: Record<string, string> = {
 
 const reasonText = (reason: unknown) => {
   const r = typeof reason === 'string' ? reason.trim() : ''
-  return REASONS[r.toLowerCase()] || r || 'default'
+  const key = r.toLowerCase()
+  return key in REASONS ? REASONS[key] : r
 }
+const inBrackets = (why: string) => (why ? ` (${why})` : '')
 
 const pts = (s: any, team: TeamKey) => (team === 'home' ? s?.homePoints || 0 : s?.awayPoints || 0)
 
@@ -69,7 +74,7 @@ export function generatedRemarks({ sets, events, teamAKey, bestOf }: {
     if (p.scope === 'set') {
       const set = allSets.find(s => s.index === setIndex)
       lines.push(
-        `Team ${letter(team)}, Set ${shown}, Result ${atForfeit}: incomplete team (${why}). ` +
+        `Team ${letter(team)}, Set ${shown}, Result ${atForfeit}: incomplete team${inBrackets(why === 'incomplete team' ? '' : why)}. ` +
         `Set awarded to Team ${letter(opp)}${set ? `, ${pts(set, opp)}:${pts(set, team)}` : ''}.`
       )
       continue
@@ -82,10 +87,10 @@ export function generatedRemarks({ sets, events, teamAKey, bestOf }: {
     const scores = finished.map(s => `${pts(s, opp)}:${pts(s, team)}`).join(', ')
     const anyRally = allEvents.some(x => x.type === 'point' && x.payload?.forfeitAwarded !== true)
     if (!anyRally) {
-      lines.push(`Team ${letter(team)} declared in default (${why}), match result ${won}:${lost}${scores ? ` (${scores})` : ''}.`)
+      lines.push(`Team ${letter(team)} declared in default${inBrackets(why)}, match result ${won}:${lost}${scores ? ` (${scores})` : ''}.`)
     } else {
       lines.push(
-        `Team ${letter(team)}, Set ${shown}, Result ${atForfeit}: declared in default (${why}). ` +
+        `Team ${letter(team)}, Set ${shown}, Result ${atForfeit}: declared in default${inBrackets(why)}. ` +
         `Match awarded to Team ${letter(opp)}, ${won}:${lost}${scores ? ` (${scores})` : ''}.`
       )
     }

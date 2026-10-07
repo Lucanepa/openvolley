@@ -346,7 +346,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
                         <div className="w-6 h-6 rounded-full border border-black text-center bg-gray-200 text-black font-bold text-sm shrink-0 flex items-center justify-center">{teamALabel}</div>
                         <SRSelector initialSelection={firstServeTeamA === true ? 'S' : firstServeTeamA === false ? 'R' : null} />
                     </div>
-                    <FitText max={12} min={6} className="w-full uppercase text-center font-bold bg-white ml-1">{teamNameA || ''}</FitText>
+                    <FitText max={12} min={5} multiline style={{ height: '0.7cm' }} className="w-full uppercase leading-none flex items-center justify-center text-center font-bold bg-white ml-1">{teamNameA || ''}</FitText>
                 </div>
            </div>
            <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '14.9mm' }}>Points</div>
@@ -354,7 +354,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
            {/* Panel 2 Header: Team RIGHT */}
            <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '40.1mm' }}>
                 <div className="flex items-center gap-1 w-full justify-end">
-                    <FitText max={12} min={6} className="w-full uppercase text-center font-bold bg-white mr-1">{teamNameB || ''}</FitText>
+                    <FitText max={12} min={5} multiline style={{ height: '0.7cm' }} className="w-full uppercase leading-none flex items-center justify-center text-center font-bold bg-white mr-1">{teamNameB || ''}</FitText>
                     <div className="flex items-center gap-1">
                         <SRSelector initialSelection={firstServeTeamA === true ? 'R' : firstServeTeamA === false ? 'S' : null} />
                         <div className="w-6 h-6 rounded-full border border-black text-center bg-gray-200 text-black font-bold text-sm shrink-0 flex items-center justify-center">{teamBLabel}</div>
@@ -373,7 +373,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
                     <div className="flex items-center gap-1">
                         <div className="w-6 h-6 rounded-full border border-black text-center bg-gray-200 text-black font-bold text-sm shrink-0 flex items-center justify-center">{teamALabel}</div>
                     </div>
-                    <FitText max={12} min={6} className="w-full uppercase text-center font-bold bg-white ml-1">{teamNameA || ''}</FitText>
+                    <FitText max={12} min={5} multiline style={{ height: '0.7cm' }} className="w-full uppercase leading-none flex items-center justify-center text-center font-bold bg-white ml-1">{teamNameA || ''}</FitText>
                 </div>
            </div>
 
