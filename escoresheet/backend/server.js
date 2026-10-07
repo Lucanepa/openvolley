@@ -15,7 +15,7 @@ import { createServer } from 'http'
 import { WebSocketServer } from 'ws'
 import nodemailer from 'nodemailer'
 import ical from 'node-ical'
-import { randomBytes, timingSafeEqual } from 'crypto'
+import { randomBytes, timingSafeEqual, createHash } from 'crypto'
 import { existsSync, readFileSync, statSync } from 'fs'
 import { readFile } from 'fs/promises'
 import { isIP, BlockList } from 'net'
@@ -38,6 +38,8 @@ import { createAttemptLimiter } from './lib/matchRestore.js'
 import { newRequestId, formatDbRejection, createLogLimiter, createConnectionSummary } from './lib/opsLog.js'
 import { renderLandingPage, INDOOR_ROLES, BEACH_ROLES } from './lib/landingPage.js'
 import { createOriginPolicy, parsePublicOrigins } from './lib/cors.js'
+import { createSignSessions, signEndpointOf, signBodyLimit, signError, isSignPagePath, SIGN_API_HEADERS, SIGN_PAGE_HEADERS } from './lib/signSessions.js'
+import { signPageFile } from './lib/signPage.js'
 
 const PORT = process.env.PORT || 8080
 
@@ -1207,6 +1209,112 @@ const logDbRejection = createLogLimiter({ max: 30, windowMs: 60_000 })
 const relaySummary = createConnectionSummary({ label: '[WS]', intervalMs: 60_000 })
 setInterval(() => { relaySummary.flush(); logDbRejection.flush() }, 60_000).unref()
 
+// --- Sign on phone (docs/qr-signing-spec.md 4; lib/signSessions.js) --------
+// POST /api/sign/start|open|submit|wait|close and the phone page at /sign.
+// Sessions live in memory only (D4), created on the first request. Cloud
+// (DATABASE_URL): start needs a session of a scorer, referee (indoor or beach)
+// or admin account (D2). LAN / SEA (--local): the relay host itself, or the
+// game PIN of a match this relay holds in X-OV-Match-Pin (D3, wrong PINs
+// counted in pinFailureLimiter). OV_SIGN_DISABLED=1: 503 OV_SIGN_UNAVAILABLE.
+const SIGN_DISABLED = process.env.OV_SIGN_DISABLED === '1'
+const SIGN_STARTER_ROLES = ['scorer', 'referee', 'beach:scorer', 'beach:referee']
+let signSessions = null
+function getSignSessions() {
+  signSessions ??= createSignSessions({
+    via: DB_MODE ? 'cloud' : 'lan',
+    randomBytes: (n) => randomBytes(n),
+    sha256: (text) => createHash('sha256').update(text, 'utf8').digest('hex'),
+    log: (line) => console.log(`[Sign] ${line}`)
+  })
+  return signSessions
+}
+
+/** May this account start phone signing (spec D2)? Same callers as account approval. */
+function mayStartPhoneSign(access) {
+  if (access?.isAdmin === true) return true
+  const roles = Array.isArray(access?.roles) ? access.roles : []
+  return SIGN_STARTER_ROLES.some((r) => roles.includes(r))
+}
+
+/** The request comes from this machine itself: loopback or one of its own addresses. */
+function isLocalCaller(req) {
+  const addr = String(req.socket?.remoteAddress || '').replace(/^::ffff:/, '')
+  if (!addr) return false
+  if (addr === '::1' || addr.startsWith('127.')) return true
+  try {
+    for (const list of Object.values(os.networkInterfaces())) {
+      for (const net of list || []) if (net.address === addr) return true
+    }
+  } catch { /* remote */ }
+  return false
+}
+
+async function handleSignRequest(req, res, endpoint) {
+  const send = (r) => sendJson(res, r.status, r.body, {
+    ...SIGN_API_HEADERS,
+    ...(r.headers || {}),
+    ...(r.status === 413 ? { Connection: 'close' } : {})
+  })
+  const refuse = (r) => { req.resume(); send(r) }
+  if (SIGN_DISABLED) return refuse(signError(503, 'OV_SIGN_UNAVAILABLE'))
+  if (!/^application\/json\b/i.test(String(req.headers['content-type'] || ''))) return refuse(signError(400, 'OV_SIGN_BAD_REQUEST'))
+  const ipKey = ipBucketKey(getClientIp(req))
+  let owner = null
+  if (endpoint === 'start' && DB_MODE) {
+    // The account first, before the body is read
+    const token = bearerFromHeaders(req.headers)
+    if (!token) return refuse(signError(401, 'OV_AUTH_REQUIRED'))
+    let user = null
+    let access = null
+    try {
+      const layer = await getDataLayer()
+      const v = await layer.auth.verifyAccessToken(token)
+      user = v?.user || null
+      if (user) access = await layer.access.get(user.id)
+    } catch (err) {
+      console.warn('[Sign] account check failed:', err?.message)
+      return refuse(signError(503, 'OV_SIGN_UNAVAILABLE', { 'Retry-After': '5' }))
+    }
+    if (!user) return refuse(signError(401, 'OV_AUTH_REQUIRED'))
+    if (!mayStartPhoneSign(access)) return refuse(signError(403, 'OV_SIGN_FORBIDDEN'))
+    owner = `u:${user.id}`
+  }
+  let body
+  try {
+    body = await readJsonBody(req, signBodyLimit(endpoint))
+  } catch (err) {
+    return send(err?.code === 'BODY_TOO_LARGE' ? signError(413, 'OV_SIGN_TOO_LARGE') : signError(400, 'OV_SIGN_BAD_REQUEST'))
+  }
+  if (endpoint === 'start' && !DB_MODE) {
+    if (isLocalCaller(req)) {
+      owner = 'local'
+    } else {
+      const pin = String(req.headers['x-ov-match-pin'] || '').trim().slice(0, 32)
+      if (!pin) return send(signError(403, 'OV_SIGN_FORBIDDEN'))
+      const matchKey = typeof body?.matchKey === 'string' ? normalizeMatchId(body.matchKey) : null
+      const stored = matchKey ? gamePinOf(activeMatches.get(matchKey)?.match) : null
+      if (!stored) return send(signError(403, 'OV_SIGN_FORBIDDEN'))
+      // The brute-force budget of every PIN check: counted now, refunded on success
+      if (pinFailureLimiter.isLimited(ipKey)) return send(signError(429, 'OV_SIGN_RATE_LIMITED', { 'Retry-After': '600' }))
+      if (!safeEqualStr(stored, pin)) return send(signError(403, 'OV_SIGN_PIN_INVALID'))
+      pinFailureLimiter.refund(ipKey)
+      owner = `pin:${matchKey}`
+    }
+  }
+  const sessions = getSignSessions()
+  if (endpoint === 'start') return send(sessions.start(body, { owner }))
+  if (endpoint === 'open') return send(sessions.open(body, { ipKey }))
+  if (endpoint === 'submit') return send(sessions.submit(body, { ipKey }))
+  if (endpoint === 'close') return send(sessions.close(body))
+  // wait: dropped when the scoring device goes away
+  const ac = new AbortController()
+  const onGone = () => { if (!res.writableEnded) ac.abort() }
+  res.on('close', onGone)
+  const r = await sessions.wait(body, { signal: ac.signal })
+  res.off('close', onGone)
+  if (r.status !== 499) send(r)
+}
+
 // --- Log sanitizer (prevent log injection via newlines/control chars) ---
 function sanitizeLog(str) {
   if (typeof str !== 'string') return String(str)
@@ -1628,6 +1736,23 @@ const server = createServer((req, res) => {
       uptime: process.uptime(),
       pocketbase: pbReady ? 'connected' : (POCKETBASE_URL ? 'configured' : 'not_configured')
     }))
+    return
+  }
+
+  // Sign on phone: the phone page (same-origin with its API, so no CORS) ...
+  if ((req.method === 'GET' || req.method === 'HEAD') && isSignPagePath(url.pathname)) {
+    const file = signPageFile(url.pathname)
+    res.writeHead(file ? 200 : 404, { 'Content-Type': file ? file.type : 'text/plain', ...SIGN_PAGE_HEADERS })
+    res.end(req.method === 'HEAD' ? undefined : (file ? file.body : 'Not Found'))
+    return
+  }
+  // ... and its API (start/wait/close come from the app origins through the CORS above)
+  const signEndpoint = req.method === 'POST' ? signEndpointOf(url.pathname) : null
+  if (signEndpoint) {
+    handleSignRequest(req, res, signEndpoint).catch((err) => {
+      console.error('[Sign] request failed:', err?.message)
+      sendJson(res, 503, signError(503, 'OV_SIGN_UNAVAILABLE').body, SIGN_API_HEADERS)
+    })
     return
   }
 

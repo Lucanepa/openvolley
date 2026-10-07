@@ -1,62 +1,123 @@
 import React from 'react';
 
-// Unified PointBox component - uses SetFive styling (thinner strokes, better proportions)
+// One printed number of a points column. As on the paper sheet every number is
+// pre-printed (light grey); a mark makes it black:
+//  - filledState 1: a tick (point won in a rally)
+//  - isCircled: a circle, no tick (penalty / delay-penalty / awarded point)
+// Owner decision 2026-10-07 (field-spec 4.4, 4.7, 6): no "T" through the unused
+// numbers at set end and no reverse T in set-5 panel 3. The column shows only the
+// points actually scored.
 export const PointBox: React.FC<{
     num: number;
     filledState?: 0 | 1;
     isCircled?: boolean;
-    showNumberOnly?: boolean;
-    voided?: boolean;
-}> = ({ num, filledState = 0, isCircled = false, showNumberOnly = false, voided = false }) => {
-    // type: 0 = none (blank), 1 = slash (scored)
-    // showNumberOnly: display number without slash (for pre-change points in Set 5 Panel 3)
-    // voided: at set end, strike remaining unused numbers vertically with a "T" (Swiss
-    // Schreiberanleitung / scorekeeper course slide 39 — done as the last step).
-    // Only show number if scored (filledState === 1), circled (penalty point), showNumberOnly, or voided
-    const showNumber = filledState === 1 || isCircled || showNumberOnly || voided;
-
+    fontPx?: number;
+}> = ({ num, filledState = 0, isCircled = false, fontPx = 8 }) => {
+    const marked = filledState === 1 || isCircled;
     return (
         <div
-            className="flex-1 w-full relative flex items-center justify-center"
+            className="flex-1 w-full relative flex items-center justify-center min-h-0"
+            data-point={num}
+            data-mark={isCircled ? 'circle' : filledState === 1 ? 'tick' : ''}
         >
-            {/* Background Number - only show if scored, circled, or voided */}
-            {showNumber && (
-                <span className="text-[8px] leading-none text-black">{num}</span>
-            )}
-            {/* Only show slash if scored and not circled (penalty points should only have circle, no slash) */}
-            {filledState === 1 && !isCircled && !voided && (
-                 <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
-                    <line x1="15" y1="85" x2="85" y2="15" stroke="black" strokeWidth="4" />
-                 </svg>
-            )}
-            {/* Circle for points scored due to sanctions (penalty points) - no slash, only circle */}
-            {isCircled && !voided && (
-                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
-                    <circle cx="50" cy="50" r="45" fill="none" stroke="black" strokeWidth="4" />
+            <span className="leading-none tabular-nums" style={{ fontSize: `${fontPx}px`, color: marked ? '#000' : '#a8a29e' }}>{num}</span>
+            {filledState === 1 && !isCircled && (
+                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                    <line x1="18" y1="88" x2="82" y2="12" stroke="black" strokeWidth="1.1" vectorEffect="non-scaling-stroke" />
                 </svg>
             )}
-            {/* Set-end finalization: vertical "T" strike through the unused number */}
-            {voided && (
-                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
-                    <line x1="50" y1="14" x2="50" y2="86" stroke="black" strokeWidth="4" />
-                    <line x1="28" y1="14" x2="72" y2="14" stroke="black" strokeWidth="4" />
+            {isCircled && (
+                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" aria-hidden="true">
+                    <circle cx="50" cy="50" r="46" fill="none" stroke="black" strokeWidth="1.1" vectorEffect="non-scaling-stroke" />
                 </svg>
             )}
         </div>
     );
 };
 
-// Helper function to calculate rows per column based on max score
-export const calculateRowsPerColumn = (maxScore: number): number => {
-    let rowsPerColumn = 8;
-    if (maxScore > 32) rowsPerColumn = 12;
-    if (maxScore > 48) rowsPerColumn = 16;
-    if (maxScore > 64) rowsPerColumn = 20;
-    if (maxScore > 80) rowsPerColumn = 24;
-    return rowsPerColumn;
+/**
+ * Rows per sub-column. Sets 1-4: 4 x 12 (1-48) as printed on the Matchblatt,
+ * growing by whole rows only beyond 48 (field-spec 4.4). Set 5 panels 2 and 3:
+ * 3 x 10 (1-30), growing beyond 30.
+ */
+export const calculateRowsPerColumn = (maxScore: number, columns = 4, baseRows = 12): number =>
+    Math.max(baseRows, Math.ceil((maxScore || 0) / columns));
+
+/** Number size that still fits a row of the given height (mm). */
+const fontForRows = (gridMm: number, rows: number): number => {
+    const rowPx = (gridMm / rows) * 3.78;
+    return Math.max(5, Math.min(8, Math.floor(rowPx * 0.85 * 2) / 2));
 };
 
-// Unified PointsColumn component for Sets 1-4 (4 columns x 8+ rows, expands dynamically)
+/** The printed grid: `columns` sub-columns of `rows` numbers, ruled between them. */
+const PointsGrid: React.FC<{
+    columns: number;
+    rows: number;
+    gridMm: number;
+    markedPoints: number[];
+    circledPoints: number[];
+}> = ({ columns, rows, gridMm, markedPoints, circledPoints }) => {
+    const fontPx = fontForRows(gridMm, rows);
+    return (
+        <div
+            className="grid bg-white border-b border-black shrink-0"
+            // the column's top border takes 1px: the grid's bottom rule then lands on the service-row line
+            style={{ height: `calc(${gridMm}mm - 1px)`, gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+            data-testid="points-grid"
+        >
+            {Array.from({ length: columns }).map((_, c) => (
+                <div key={c} className={`flex flex-col h-full min-w-0 ${c > 0 ? 'border-l ss-rule' : ''}`}>
+                    {Array.from({ length: rows }).map((__, i) => {
+                        const num = c * rows + i + 1;
+                        return (
+                            <PointBox
+                                key={i}
+                                num={num}
+                                fontPx={fontPx}
+                                filledState={markedPoints.includes(num) ? 1 : 0}
+                                isCircled={circledPoints.includes(num)}
+                            />
+                        );
+                    })}
+                </div>
+            ))}
+        </div>
+    );
+};
+
+/** A time-out score "req:opp" on its pre-printed ":" line. */
+const TimeoutLine: React.FC<{ value?: string }> = ({ value }) => (
+    <div className="flex items-center justify-center gap-0.5 text-[10px] font-bold leading-none shrink-0 tabular-nums" style={{ height: '5mm' }}>
+        {value ? (
+            <>
+                <span>{value.split(':')[0]}</span>
+                <span>:</span>
+                <span>{value.split(':')[1]}</span>
+            </>
+        ) : (
+            <span>:</span>
+        )}
+    </div>
+);
+
+/**
+ * The "T" block under a points column: the label, then the two time-out lines,
+ * each 5 mm so they line up with the service-round rows beside them (as on the
+ * Matchblatt, field-spec 4.5).
+ */
+const TimeoutBlock: React.FC<{ timeouts: [string, string]; labelRow?: boolean }> = ({ timeouts, labelRow = true }) => (
+    <div className="bg-white flex flex-col shrink-0" data-testid="timeout-block">
+        {labelRow && (
+            <div className="flex items-center justify-center text-[9px] font-bold leading-none shrink-0" style={{ height: '5mm' }}>"T"</div>
+        )}
+        <TimeoutLine value={timeouts[0]} />
+        <TimeoutLine value={timeouts[1]} />
+    </div>
+);
+
+// Sets 1-4: 1-48 (4 x 12) beside the team's block. The grid spans the roman
+// numerals, the line-up, the substitutions and service row 1 (30 mm); the "T"
+// block lines up with service rows 2-4.
 export const PointsColumn: React.FC<{
     isLast?: boolean;
     compact?: boolean;
@@ -66,70 +127,19 @@ export const PointsColumn: React.FC<{
     maxScore?: number;
     setFinished?: boolean;
     finalScore?: number;
-}> = ({ isLast, timeouts = ["", ""], markedPoints = [], circledPoints = [], maxScore = 0, setFinished = false, finalScore = 0 }) => {
-    const rowsPerColumn = calculateRowsPerColumn(maxScore);
-    const offsets = [0, rowsPerColumn, rowsPerColumn * 2, rowsPerColumn * 3];
-    const maxPoints = rowsPerColumn * 4;
-
+}> = ({ isLast, timeouts = ["", ""], markedPoints = [], circledPoints = [], maxScore = 0 }) => {
+    const rows = calculateRowsPerColumn(maxScore, 4, 12);
     return (
-        <div className={`flex flex-col h-full shrink-0 border-t border-black ${isLast ? '' : 'border-r border-black'}`} style={{ width: '15mm' }}>
-            <div
-                className="grid grid-cols-4 bg-white border-b border-black border-l border-black"
-                style={{ height: '2.98cm' }}
-            >
-                {offsets.map((offset) => (
-                    <div
-                        key={offset}
-                        className="flex flex-col h-full"
-                        style={{ minWidth: 0, flex: 1 }}
-                    >
-                        {Array.from({ length: rowsPerColumn }).map((_, i) => {
-                            const num = offset + i + 1;
-                            if (num > maxPoints) return <div key={i} className="flex-1"></div>;
-                            let state: 0 | 1 = 0;
-                            if (markedPoints.includes(num)) {
-                                state = 1;
-                            }
-                            // Set-end: void unused numbers above this team's final score with a "T".
-                            const voided = setFinished && finalScore > 0 && num > finalScore && num <= maxPoints;
-                            return <PointBox key={i} num={num} filledState={state} isCircled={circledPoints.includes(num)} voided={voided} />;
-                        })}
-                    </div>
-                ))}
-            </div>
-              {/* TO Boxes */}
-            <div className="bg-white flex flex-col items-center justify-start gap-1 py-1 border-l border-black" style={{ height: '1.498cm' }}>
-            <span className="text-[8px] font-bold leading-none" style={{ height: '0.5cm' }}>"T"</span>
-                <div className="flex flex-col w-full px-2 items-center" style={{ height: '1cm' }}>
-                    <div className="w-full text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center gap-0.5" style={{ height: '0.5cm' }}>
-                        {timeouts[0] ? (
-                            <>
-                                <span>{timeouts[0].split(':')[0]}</span>
-                                <span>:</span>
-                                <span>{timeouts[0].split(':')[1]}</span>
-                            </>
-                        ) : (
-                            <span>:</span>
-                        )}
-                    </div>
-                    <div className="w-full text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center gap-0.5" style={{ height: '0.5cm' }}>
-                        {timeouts[1] ? (
-                            <>
-                                <span>{timeouts[1].split(':')[0]}</span>
-                                <span>:</span>
-                                <span>{timeouts[1].split(':')[1]}</span>
-                            </>
-                        ) : (
-                            <span>:</span>
-                        )}
-                    </div>
-                </div>
-            </div>
+        <div className={`flex flex-col h-full shrink-0 border-t border-l border-black ${isLast ? '' : 'border-r'}`} style={{ width: '15mm' }}>
+            <PointsGrid columns={4} rows={rows} gridMm={30} markedPoints={markedPoints} circledPoints={circledPoints} />
+            <TimeoutBlock timeouts={timeouts} />
         </div>
     );
 };
 
-// Set 5 Panel 1 - Points 1-8 only (single column in center)
+// Set 5 panel 1: points 1-8 only (one column in the centre), as they stood at the
+// change of courts. The grid spans the header, line-up and substitutions (25 mm);
+// the "T" block lines up with service rows 1-3.
 export const PointsColumn5: React.FC<{
     compact?: boolean;
     timeouts?: [string, string];
@@ -137,136 +147,43 @@ export const PointsColumn5: React.FC<{
     circledPoints?: number[];
     setFinished?: boolean;
     finalScore?: number;
-}> = ({ timeouts = ["", ""], markedPoints = [], circledPoints = [], setFinished = false, finalScore = 0 }) => {
+    pointsAtChange?: number | null;
+}> = ({ timeouts = ["", ""], markedPoints = [], circledPoints = [] }) => {
+    const fontPx = fontForRows(25, 8);
     return (
-        <div className="flex flex-col shrink-0 border-t border-black" style={{ width: '15mm', height: '3.5cm' }}>
-            <div className="grid grid-cols-3 bg-white shrink-0 border-b border-black border-l" style={{ height: '2.47cm' }}>
+        <div className="flex flex-col shrink-0 border-t border-l border-black" style={{ width: '15mm', height: '40mm' }}>
+            <div className="grid grid-cols-3 bg-white shrink-0 border-b border-black" style={{ height: 'calc(25mm - 1px)' }} data-testid="points-grid">
                 <div className="h-full"></div>
-                <div className="flex flex-col h-full">
+                <div className="flex flex-col h-full border-l border-r ss-rule">
                     {Array.from({ length: 8 }).map((_, i) => {
                         const num = i + 1;
-                        let state: 0 | 1 = 0;
-                        if (markedPoints.includes(num)) {
-                            state = 1;
-                        }
-                        // Set-end: void numbers this team never reached (same "T" as sets 1-4)
-                        const voided = setFinished && finalScore > 0 && num > finalScore;
-                        return <PointBox key={i} num={num} filledState={state} isCircled={circledPoints.includes(num)} voided={voided} />;
+                        return <PointBox key={i} num={num} fontPx={fontPx} filledState={markedPoints.includes(num) ? 1 : 0} isCircled={circledPoints.includes(num)} />;
                     })}
                 </div>
                 <div className="h-full"></div>
             </div>
-
-            <div className="bg-white flex flex-col items-center justify-start gap-1 py-1 shrink-0 border-l border-black" style={{ height: '1.5cm' }}>
-            <span className="text-[8px] font-bold leading-none" style={{ height: '0.5cm' }}>"T"</span>
-                <div className="flex flex-col w-full px-2 items-center ">
-                    <div className="w-full text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center gap-0.5" style={{ height: '0.5cm' }}>
-                        {timeouts[0] ? (
-                            <>
-                                <span>{timeouts[0].split(':')[0]}</span>
-                                <span>:</span>
-                                <span>{timeouts[0].split(':')[1]}</span>
-                            </>
-                        ) : (
-                            <span>:</span>
-                        )}
-                    </div>
-                    <div className="w-full text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center gap-0.5" style={{ height: '0.5cm' }}>
-                        {timeouts[1] ? (
-                            <>
-                                <span>{timeouts[1].split(':')[0]}</span>
-                                <span>:</span>
-                                <span>{timeouts[1].split(':')[1]}</span>
-                            </>
-                        ) : (
-                            <span>:</span>
-                        )}
-                    </div>
-                </div>
-            </div>
+            <TimeoutBlock timeouts={timeouts} />
         </div>
     );
 };
 
-// Set 5 Panels 2 & 3 - Points 1-32+ with dynamic expansion
+// Set 5 panels 2 and 3: 1-30 (3 x 10), growing beyond 30.
 export const PointsColumn30: React.FC<{
     isLast?: boolean;
     isPanel3?: boolean;
     timeouts?: [string, string];
     markedPoints?: number[];
     circledPoints?: number[];
-    preChangePoints?: number;
+    preChangePoints?: number | null;
     maxScore?: number;
     setFinished?: boolean;
     finalScore?: number;
-}> = ({ isLast, isPanel3 = false, timeouts = ["", ""], markedPoints = [], circledPoints = [], preChangePoints = 0, maxScore = 0, setFinished = false, finalScore = 0 }) => {
-    const rowsPerColumn = calculateRowsPerColumn(maxScore);
-    const offsets = [0, rowsPerColumn, rowsPerColumn * 2, rowsPerColumn * 3];
-    const maxPoints = rowsPerColumn * 4;
-
+}> = ({ timeouts = ["", ""], markedPoints = [], circledPoints = [], maxScore = 0 }) => {
+    const rows = calculateRowsPerColumn(maxScore, 3, 10);
     return (
-        <div className={`flex flex-col shrink-0 border-t border-black`} style={{ width: '15mm', height: '3.5cm' }}>
-            <div className="grid grid-cols-4 bg-white shrink-0 border-b border-black border-l" style={{ height: '2.47cm' }}>
-                {offsets.map((offset) => (
-                    <div key={offset} className="flex flex-col h-full">
-                        {Array.from({ length: rowsPerColumn }).map((_, i) => {
-                             const num = offset + i + 1;
-                             if (num > maxPoints) return <div key={i} className="flex-1"></div>;
-                             let state: 0 | 1 = 0;
-                             let showNumberOnly = false;
-
-                             if (isPanel3) {
-                                 // Panel 3 special logic:
-                                 // Points 1 to preChangePoints: show number only (no slash) - these are pre-change points
-                                 // Points preChangePoints+1 onwards: tick if in markedPoints (scored after change)
-                                 if (num <= preChangePoints) {
-                                     showNumberOnly = true;
-                                 } else {
-                                     if (markedPoints && markedPoints.includes(num)) {
-                                         state = 1;
-                                     }
-                                 }
-                             } else {
-                                 // Normal logic for Panel 2
-                                 if (markedPoints.includes(num)) {
-                                     state = 1;
-                                 }
-                             }
-                             const isCircled = circledPoints && circledPoints.includes(num);
-                             // Set-end: void unused numbers above this team's final score with a "T"
-                             const voided = setFinished && finalScore > 0 && num > finalScore && num <= maxPoints;
-                             return <PointBox key={i} num={num} filledState={state} isCircled={isCircled} showNumberOnly={showNumberOnly} voided={voided} />
-                        })}
-                    </div>
-                ))}
-            </div>
-            <div className="bg-white flex flex-col items-center justify-start py-1 shrink-0 border-l border-black " style={{ height: '1.5cm' }}>
-                <span className="text-[8px] font-bold leading-none" style={{ height: '0.5cm' }}>"T"</span>
-                <div className="flex flex-col w-full px-2 items-center">
-                    <div className="w-full text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center gap-0.5" style={{ height: '0.5cm' }}>
-                        {timeouts[0] ? (
-                            <>
-                                <span>{timeouts[0].split(':')[0]}</span>
-                                <span>:</span>
-                                <span>{timeouts[0].split(':')[1]}</span>
-                            </>
-                        ) : (
-                            <span>:</span>
-                        )}
-                    </div>
-                    <div className="w-full text-center text-[10px] font-bold bg-white leading-none flex items-center justify-center gap-0.5" style={{ height: '0.5cm' }}>
-                        {timeouts[1] ? (
-                            <>
-                                <span>{timeouts[1].split(':')[0]}</span>
-                                <span>:</span>
-                                <span>{timeouts[1].split(':')[1]}</span>
-                            </>
-                        ) : (
-                            <span>:</span>
-                        )}
-                    </div>
-                </div>
-            </div>
+        <div className="flex flex-col shrink-0 border-t border-l border-black flex-1" style={{ minWidth: '15mm', height: '40mm' }}>
+            <PointsGrid columns={3} rows={rows} gridMm={25} markedPoints={markedPoints} circledPoints={circledPoints} />
+            <TimeoutBlock timeouts={timeouts} />
         </div>
     );
 };

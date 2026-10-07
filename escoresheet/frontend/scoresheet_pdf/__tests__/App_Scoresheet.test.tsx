@@ -89,9 +89,10 @@ describe('App_Scoresheet', () => {
     expect(sanctions).toContain('16B30:1')
     expect(sanctions).not.toContain('16B5')
 
-    // RESULT table: Team A set 1 = T0 S1 (exceptional sub excluded) W1 P25
-    const results = between(text, 'RESULT', 'Match Start')
-    expect(results).toContain('01125')
+    // RESULT table: Team A set 1 = T0 S2 W1 P25 (S counts the exceptional substitution
+    // too, field-spec 9 / SC p.71: "4 standard + 1 exceptional" = 5)
+    const results = between(text, 'RESULT', 'Start')
+    expect(results).toContain('02125')
 
     // Match not finished: final RESULT box stays empty instead of a live "1:1"
     expect(text).toContain('WINNERRESULTAHOM')

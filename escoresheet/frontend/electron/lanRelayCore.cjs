@@ -86,7 +86,7 @@
  *   match-data-request | game-number-request | match-update-request  (proven scoreboards only)
  *
  *   GET /api/match/list  { success, matches: [{ id, gameNumber, homeTeam, awayTeam, scheduledAt,
- *                     dateTime, status, test, refereeConnectionEnabled,
+ *                     dateTime, status, sportType ('beach' | 'indoor'), test, refereeConnectionEnabled,
  *                     homeTeamConnectionEnabled, awayTeamConnectionEnabled }] }: every match a
  *                     scorer currently publishes here (see matchListEntry), newest
  *                     scheduledAt first, whatever its referee connection: display devices
@@ -100,19 +100,42 @@
  *                     without a PIN: the public summary and every live-state-update.
  *
  * openbeach's scorer sends its teams as team1Team / team2Team (team1 / team2 in
- * its periodic sync): the relay takes them as homeTeam / awayTeam.
+ * its periodic sync) and its players as team1Players / team2Players: the relay
+ * takes them as homeTeam / awayTeam / homePlayers / awayPlayers (the wire is
+ * home/away for both sports). Its PIN fields (team1Pin, team2Pin, the upload
+ * PINs, matchPin) are secret like the indoor ones, and its bench PINs grant
+ * the match while team1TeamConnectionEnabled / team2TeamConnectionEnabled is on.
+ *   POST /api/match/validate-pin { pin, type, sport? }  sport 'beach' (openbeach)
+ *                     finds beach matches only, 'indoor' (the default) indoor
+ *                     ones only.
+ *
+ * Venue mode: one relay serves every court. Each scorer claims its own match
+ * (room key = seed_key), /api/match/list lists them all, and the
+ * main-instance lock only guards the "/" page (createMainInstanceGate).
  *
  * Match ids are always String(matchId). PINs never leave the relay: PIN
  * validation is answered from the relay's own store, never by a WS client.
+ *
+ * Sign on phone (docs/qr-signing-spec.md 4): POST /api/sign/start|open|submit|
+ *                   wait|close, JSON, state machine in ./signSessionCore.cjs (same
+ *                   protocol in backend/server.js and src-tauri/src/sign.rs). start
+ *                   from the relay host itself, or with X-OV-Match-Pin = the game PIN
+ *                   of the body's matchKey (wrong PINs counted like GET
+ *                   /api/match/:id). Bodies: 64 KB submit, 4 KB otherwise (413).
  */
 
 // Secret fields on a match object that must never be returned to a client.
 // PINs are the connection gate for referee/bench, so they are stripped from
-// every match-returning response and every WS message.
+// every match-returning response and every WS message. The team1* / team2*
+// ones are openbeach's names for the bench and upload PINs (team1Pin, older
+// builds team1TeamPin); matchPin is openbeach's PIN that protects the match on
+// the scorer's device. Same list as backend/server.js and src-tauri/src/relay.rs.
 const MATCH_SECRET_FIELDS = [
   'refereePin', 'homeTeamPin', 'awayTeamPin',
   'homeTeamUploadPin', 'awayTeamUploadPin',
   'connection_pins', 'connectionPins', 'game_pin', 'gamePin',
+  'team1Pin', 'team2Pin', 'team1TeamPin', 'team2TeamPin',
+  'team1UploadPin', 'team2UploadPin', 'team1TeamUploadPin', 'team2TeamUploadPin', 'matchPin',
 ]
 
 const WS_MAX_PAYLOAD = 10 * 1024 * 1024 // same cap as the cloud relay
@@ -135,7 +158,13 @@ const STALE_TAKEOVER_MS = 10 * 60 * 1000
 const CLAIM_FAILURE_LIMIT = 5
 // Distinct match ids the sockets of one (non-loopback) IP may own at once, and
 // new ids one IP may claim per minute: stops a LAN device squatting on ids.
-const MAX_OWNED_PER_IP = 4
+// Sized for a venue with several courts: every court tablet has its own
+// address, the relay host (loopback) is exempt, and a tablet keeps the ids of
+// the matches it scored on one connection until it releases them
+// (clear-all-matches / delete-match) or reconnects, so 8 covers a block of
+// matches on one court. The cloud relay allows 20 per address (venue NATs).
+// Same value in src-tauri/src/relay.rs.
+const MAX_OWNED_PER_IP = 8
 const NEW_CLAIM_LIMIT = 10
 const FINISHED_STATUSES = new Set(['final', 'ended', 'completed', 'finished'])
 // Wrong PINs offered for a match's bundle (subscribe-match, GET /api/match/:id)
@@ -262,10 +291,22 @@ function safeEqualText(a, b) {
   return diff === 0
 }
 
+/** The first non-empty PIN among `keys` of the match ('' when none). */
+function firstPin(match, keys) {
+  for (const k of keys) {
+    const v = match[k]
+    const s = v === undefined || v === null ? '' : String(v).trim()
+    if (s) return s
+  }
+  return ''
+}
+
 /**
  * Does `pin` prove access to the match: the referee PIN (referee connection
  * on), a bench PIN (that bench connection on) or the game PIN? A match without
- * any of them grants nothing. Same rule as backend/lib/matchAccess.js.
+ * any of them grants nothing. Beach (openbeach) names its benches team1 / team2
+ * (team1TeamConnectionEnabled, team1Pin, older builds team1TeamPin). Same rule
+ * as backend/lib/matchAccess.js.
  */
 function pinGrantsAccess(match, pin) {
   const p = pin === undefined || pin === null ? '' : String(pin).trim()
@@ -274,6 +315,8 @@ function pinGrantsAccess(match, pin) {
   if (match.refereeConnectionEnabled === true) candidates.push(match.refereePin)
   if (match.homeTeamConnectionEnabled === true) candidates.push(match.homeTeamPin)
   if (match.awayTeamConnectionEnabled === true) candidates.push(match.awayTeamPin)
+  if (match.team1TeamConnectionEnabled === true) candidates.push(firstPin(match, ['team1Pin', 'team1TeamPin']))
+  if (match.team2TeamConnectionEnabled === true) candidates.push(firstPin(match, ['team2Pin', 'team2TeamPin']))
   candidates.push(match.gamePin != null && match.gamePin !== '' ? match.gamePin : match.game_pin)
   let ok = false
   for (const c of candidates) {
@@ -356,20 +399,49 @@ function rememberKey(set, key, max) {
   set.add(key)
 }
 
-/** Build the stored bundle from a sync-match-data (flat or { matchData }) message. */
+/**
+ * Is this sync from openbeach? It sends its teams as team1Team / team2Team /
+ * team1Players / team2Players (before its home/away wire adapter) or names the
+ * sport on the match. Same rule as backend/server.js handleSyncMatchData.
+ */
+function isBeachSync(src) {
+  const m = src.match
+  return !!(src.team1Team || src.team2Team || src.team1Players || src.team2Players) ||
+    m.sportType === 'beach' || m.sport_type === 'beach'
+}
+
+/** The first array among `keys` of `src`, else []. */
+function firstArray(src, keys) {
+  for (const k of keys) if (Array.isArray(src[k])) return src[k]
+  return []
+}
+
+/**
+ * Build the stored bundle from a sync-match-data (flat or { matchData }) message.
+ * `sportType` ('beach' only, when the sync says so) is the relay's own note for
+ * POST /api/match/validate-pin { sport } and the sportType of its GET
+ * /api/match/list row: it is not part of any bundle sent out (toWireBundle).
+ */
 function bundleFromMessage(msg) {
   const src = msg && msg.matchData && typeof msg.matchData === 'object' ? msg.matchData : msg
   if (!src || !src.match || typeof src.match !== 'object') return null
-  return {
+  const bundle = {
     match: src.match,
     // openbeach names its teams team1Team / team2Team (team1 / team2)
     homeTeam: src.homeTeam ?? src.team1Team ?? src.team1 ?? null,
     awayTeam: src.awayTeam ?? src.team2Team ?? src.team2 ?? null,
-    homePlayers: Array.isArray(src.homePlayers) ? src.homePlayers : [],
-    awayPlayers: Array.isArray(src.awayPlayers) ? src.awayPlayers : [],
+    homePlayers: firstArray(src, ['homePlayers', 'team1Players']),
+    awayPlayers: firstArray(src, ['awayPlayers', 'team2Players']),
     sets: Array.isArray(src.sets) ? src.sets : [],
     events: Array.isArray(src.events) ? src.events : [],
   }
+  if (isBeachSync(src)) bundle.sportType = 'beach'
+  return bundle
+}
+
+/** The sport of a stored bundle: 'beach' or 'indoor'. */
+function bundleSport(bundle) {
+  return bundle && bundle.sportType === 'beach' ? 'beach' : 'indoor'
 }
 
 /**
@@ -437,6 +509,35 @@ function createLocalAddressCheck(networkInterfaces) {
   }
 }
 
+// "Score another court on this device": the "already running" page links to
+// /?court=other, which answers with this cookie and a redirect to "/". A
+// browser that carries it gets the scoresheet even while the main instance is
+// registered (a page navigation cannot send X-Instance-ID). Same names in
+// src-tauri/src/relay.rs.
+const OTHER_COURT_PARAM = 'court'
+const OTHER_COURT_VALUE = 'other'
+const OTHER_COURT_COOKIE = 'ov_other_court'
+
+/** Does the Cookie header carry the other-court opt-in? */
+function hasOtherCourtCookie(cookieHeader) {
+  if (typeof cookieHeader !== 'string') return false
+  return cookieHeader.split(';').some((c) => c.trim() === `${OTHER_COURT_COOKIE}=1`)
+}
+
+const MAIN_INSTANCE_PAGE = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Main Instance Already Running</title>
+<style>body{font-family:Arial,sans-serif;text-align:center;padding:50px 16px}h1{color:#ef4444}p{color:#666}ul{list-style:none;padding:0}li{margin:8px 0}</style>
+</head><body><h1>Main Scoresheet Already Running</h1>
+<p>Another scoretable is active on this server.</p>
+<p>You can still open:</p>
+<ul>
+<li><a href="/referee">Referee App</a></li>
+<li><a href="/bench">Bench App</a></li>
+<li><a href="/livescore">Livescore App</a></li>
+</ul>
+<p>Scoring a match on another court?</p>
+<ul><li><a href="/?${OTHER_COURT_PARAM}=${OTHER_COURT_VALUE}">Open the scoresheet for another court on this device</a></li></ul>
+</body></html>`
+
 /**
  * Single main-scoresheet lock, the same rule on every relay: only the relay
  * host itself (see createLocalAddressCheck) may register or release it, and it
@@ -444,6 +545,12 @@ function createLocalAddressCheck(networkInterfaces) {
  * out of "/". When the scorer runs on a LAN tablet (headless Pi) nobody
  * registers and the gate stays off — the gate would otherwise block that
  * tablet's own reload, since a page navigation cannot send X-Instance-ID.
+ *
+ * The lock is a page lock, not a match lock: it only keeps a LAN browser from
+ * opening "/" by mistake. Who scores a match is decided per match by the game
+ * PIN (sync-match-data claims), so several courts can share one relay with one
+ * scoretable each: a court tablet in the native app never loads "/", and a LAN
+ * browser opts in with /?court=other (OTHER_COURT_COOKIE).
  */
 function createMainInstanceGate({ isLocal }) {
   let mainInstanceId = null
@@ -463,9 +570,37 @@ function createMainInstanceGate({ isLocal }) {
       mainInstanceId = null // the host may always release its own lock
       return { status: 200, body: { success: true } }
     },
-    /** True when a request for "/" must get the "already running" page. */
-    blocksMainPage(addr, requestingInstanceId) {
-      return mainInstanceId !== null && !isLocal(addr) && requestingInstanceId !== mainInstanceId
+    /**
+     * True when a request for "/" must get the "already running" page.
+     * `cookieHeader`: the request's Cookie header (the other-court opt-in).
+     */
+    blocksMainPage(addr, requestingInstanceId, cookieHeader) {
+      return mainInstanceId !== null && !isLocal(addr) && requestingInstanceId !== mainInstanceId &&
+        !hasOtherCourtCookie(cookieHeader)
+    },
+    /**
+     * The gate for a page request: "/?court=other" sets the other-court cookie
+     * and redirects to "/"; a blocked "/" gets the "already running" page.
+     * Returns true when it answered (anything else is served as usual).
+     */
+    handleMainPage(req, res, path) {
+      if (path !== '/' && path !== '/index.html') return false
+      let query = null
+      try { query = new URL(req.url || '/', 'http://relay.local').searchParams } catch { query = null }
+      if (query && query.get(OTHER_COURT_PARAM) === OTHER_COURT_VALUE) {
+        res.writeHead(302, {
+          Location: '/',
+          'Set-Cookie': `${OTHER_COURT_COOKIE}=1; Path=/; Max-Age=43200; SameSite=Lax`,
+          'Cache-Control': 'no-store',
+        })
+        res.end()
+        return true
+      }
+      const addr = req.socket && req.socket.remoteAddress
+      if (!this.blocksMainPage(addr, req.headers['x-instance-id'], req.headers.cookie)) return false
+      res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
+      res.end(MAIN_INSTANCE_PAGE)
+      return true
     },
     /**
      * Serve /api/server/register-main and /api/server/unregister-main.
@@ -552,6 +687,8 @@ function matchListEntry(key, bundle, { includeFinished = false } = {}) {
     scheduledAt: match.scheduledAt ?? null,
     dateTime: formatDateTime(match.scheduledAt),
     status,
+    // 'beach' (openbeach) or 'indoor': each app lists its own sport's matches
+    sportType: bundleSport(bundle),
     test: match.test === true,
     // PINs intentionally NOT returned — validated via /api/match/validate-pin
     refereeConnectionEnabled: match.refereeConnectionEnabled === true,
@@ -572,7 +709,7 @@ function createRateLimiter({ windowMs = 60 * 1000, max = 10 } = {}) {
     for (const [key, e] of entries) if (now - e.windowStart > windowMs * 2) entries.delete(key)
   }, 5 * 60 * 1000)
   if (timer && typeof timer.unref === 'function') timer.unref()
-  return function isRateLimited(key, limit = max) {
+  function isRateLimited(key, limit = max) {
     const now = Date.now()
     const e = entries.get(key)
     if (!e || now - e.windowStart > windowMs) {
@@ -582,11 +719,74 @@ function createRateLimiter({ windowMs = 60 * 1000, max = 10 } = {}) {
     e.count++
     return e.count > limit
   }
+  /** Clears the cleanup timer (createLanRelay's close()). */
+  isRateLimited.dispose = () => clearInterval(timer)
+  return isRateLimited
 }
+
+// --- Sign on phone (docs/qr-signing-spec.md 4): /api/sign/* -----------------
+
+const SIGN_ENDPOINT_RE = /^\/api\/sign\/(start|open|submit|wait|close)$/
+
+/**
+ * Read at most `limit` bytes of a JSON body and stop: { body } or { error: status }.
+ * Never buffers more than the cap.
+ */
+function readSignBody(req, limit) {
+  return new Promise((resolve) => {
+    const declared = Number(req.headers && req.headers['content-length'])
+    if (Number.isFinite(declared) && declared > limit) {
+      req.resume()
+      resolve({ error: 413 })
+      return
+    }
+    const chunks = []
+    let size = 0
+    let done = false
+    const finish = (r) => { if (!done) { done = true; resolve(r) } }
+    req.on('data', (chunk) => {
+      if (done) return
+      size += chunk.length
+      if (size > limit) {
+        chunks.length = 0
+        finish({ error: 413 })
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => {
+      if (done) return
+      // Buffer is a Node global (no require): a multi-byte character split
+      // across two chunks decodes whole
+      const text = typeof Buffer !== 'undefined' && chunks.every((c) => typeof c !== 'string')
+        ? Buffer.concat(chunks).toString('utf8')
+        : chunks.map(String).join('')
+      try {
+        finish({ body: JSON.parse(text) })
+      } catch {
+        finish({ error: 400 })
+      }
+    })
+    req.on('error', () => finish({ error: 400 }))
+  })
+}
+
+const isJsonRequest = (req) => /^application\/json\b/i.test(String((req.headers && req.headers['content-type']) || ''))
 
 /**
  * Create one relay instance (state + WS protocol + HTTP API).
- * @param {{ log?: Console, requestTimeoutMs?: number, isRateLimited?: Function }} [options]
+ *
+ * Sign on phone (/api/sign/*, docs/qr-signing-spec.md 4): `signCore` is the
+ * module ./signSessionCore.cjs (this file must not require() it; the ESM entry
+ * ../lanRelayCore.js and ./relayServer.js pass it). Without it every sign call
+ * answers 503 OV_SIGN_UNAVAILABLE. The sessions (and their sweeper timer) are
+ * created on the first sign request, never at load: a module-level relay (the
+ * Vite plugin) must not keep `vite build` alive. close() disposes them.
+ * `isLocal(addr)`: the relay host itself may start a session; anyone else
+ * proves the match's game PIN (X-OV-Match-Pin). Defaults to loopback only.
+ *
+ * @param {{ log?: Console, requestTimeoutMs?: number, isRateLimited?: Function,
+ *   signCore?: object, isLocal?: (addr: string) => boolean, signOptions?: object }} [options]
  */
 function createLanRelay(options = {}) {
   const log = options.log || console
@@ -594,11 +794,15 @@ function createLanRelay(options = {}) {
   const orphanTakeoverMs = options.orphanTakeoverMs ?? ORPHAN_TAKEOVER_MS
   const staleTakeoverMs = options.staleTakeoverMs ?? STALE_TAKEOVER_MS
   const maxOwnedPerIp = options.maxOwnedPerIp ?? MAX_OWNED_PER_IP
-  const isRateLimited = options.isRateLimited || createRateLimiter()
+  const ownLimiters = []
+  const isRateLimited = options.isRateLimited || (ownLimiters[ownLimiters.length] = createRateLimiter())
   const claimFailures = createFailureCounter({ max: options.claimFailureLimit ?? CLAIM_FAILURE_LIMIT })
   // Wrong subscribe-match PINs per socket / IP and minute (no PIN compared beyond)
   const pinFailures = createFailureCounter({ max: options.pinFailureLimit ?? PIN_FAILURE_LIMIT })
-  const isNewClaimLimited = createRateLimiter({ max: options.newClaimLimit ?? NEW_CLAIM_LIMIT })
+  const isNewClaimLimited = (ownLimiters[ownLimiters.length] = createRateLimiter({ max: options.newClaimLimit ?? NEW_CLAIM_LIMIT }))
+  const signCore = options.signCore || null
+  const isLocalAddr = options.isLocal || isLoopbackAddress
+  let signSessions = null // created on the first /api/sign/* request
 
   const store = new Map() // matchId -> bundle (unstripped: the PINs live only here)
   const subscriptions = new Map() // matchId -> Set<ws>
@@ -867,6 +1071,8 @@ function createLanRelay(options = {}) {
     const prev = store.get(matchId)
     if (prev && (kind === 'owner' || kind === 'proved')) {
       bundle = { ...bundle, match: carryMatchSecrets(prev.match, bundle.match) }
+      // A sync without its teams keeps the sport the same scorer set before
+      if (prev.sportType && !bundle.sportType) bundle.sportType = prev.sportType
     }
     const carry = prev && prev.liveState !== undefined && bundle.liveState === undefined &&
       (kind === 'owner' || kind === 'proved') && gamePinOf(prev.match) === gamePinOf(bundle.match)
@@ -1150,18 +1356,27 @@ function createLanRelay(options = {}) {
 
   // --- Relay-owned HTTP API -------------------------------------------------
 
+  /**
+   * POST /api/match/validate-pin { pin, type, sport }: `sport` is the asking
+   * app's ('beach' from openbeach, 'indoor' when left out); a PIN never finds a
+   * match of the other sport (same rule as backend/server.js).
+   */
   function validatePin(body) {
     const pinStr = String((body && body.pin) ?? '').trim()
     const cfg = PIN_TYPES[(body && body.type) || 'referee']
+    const sport = (body && body.sport) ?? 'indoor'
+    if (sport !== 'indoor' && sport !== 'beach') return { status: 400, body: { success: false, error: 'Invalid request' } }
     if (pinStr.length !== 6) return { status: 400, body: { success: false, error: 'Invalid PIN format' } }
     if (!cfg) return { status: 400, body: { success: false, error: 'Invalid PIN type' } }
     for (const [key, bundle] of store) {
       const match = bundle.match
-      if (!match) continue
+      if (!match || bundleSport(bundle) !== sport) continue
       const expected = match[cfg.pin]
       if (expected === undefined || expected === null || String(expected).trim() !== pinStr) continue
       if (match[cfg.enabled] === true && match.status !== 'final') {
-        return { status: 200, body: { success: true, match: publicMatch({ ...match, id: publicMatchId(key) }) } }
+        const found = publicMatch({ ...match, id: publicMatchId(key) })
+        // A beach answer names its sport (the indoor answer is unchanged)
+        return { status: 200, body: { success: true, match: sport === 'beach' ? { ...found, sportType: 'beach' } : found } }
       }
     }
     return {
@@ -1285,6 +1500,85 @@ function createLanRelay(options = {}) {
     })
   }
 
+  // --- Sign on phone --------------------------------------------------------
+
+  function getSignSessions() {
+    if (!signSessions) {
+      signSessions = signCore.createSignSessions({
+        via: 'lan',
+        log: (line) => log.log(`[Sign] ${line}`),
+        ...(options.signOptions || {}),
+      })
+    }
+    return signSessions
+  }
+
+  function sendSign(res, r) {
+    if (res.headersSent || res.writableEnded) return
+    const headers = { 'Content-Type': 'application/json', ...(signCore ? signCore.SIGN_API_HEADERS : { 'Cache-Control': 'no-store' }), ...(r.headers || {}) }
+    if (r.status === 413) headers.Connection = 'close'
+    res.writeHead(r.status, headers)
+    res.end(JSON.stringify(r.body))
+  }
+  const signFail = (status, code, headers) => (signCore
+    ? signCore.signError(status, code, headers)
+    : { status, body: { ok: false, code, message: code }, ...(headers ? { headers } : {}) })
+
+  /**
+   * Who may start a session here (spec D3): the relay host itself ('local'),
+   * or a device that proves the game PIN of a match this relay holds
+   * ('pin:<matchKey>'). Wrong PINs count toward the per-IP wrong-PIN limit.
+   */
+  function signOwner(req, body, ip) {
+    if (isLocalAddr(req.socket && req.socket.remoteAddress)) return { owner: 'local' }
+    const raw = req.headers && req.headers['x-ov-match-pin']
+    const pin = typeof raw === 'string' ? raw.trim().slice(0, 32) : ''
+    if (!pin) return { error: signFail(403, 'OV_SIGN_FORBIDDEN') }
+    const key = `ip:${ip}`
+    if (pinFailures.blocked(key)) return { error: signFail(429, 'OV_SIGN_RATE_LIMITED', { 'Retry-After': '60' }) }
+    const matchKey = body && typeof body.matchKey === 'string' ? normalizeMatchId(body.matchKey) : null
+    const bundle = matchKey ? store.get(matchKey) : null
+    const stored = gamePinOf(bundle && bundle.match)
+    if (!stored) return { error: signFail(403, 'OV_SIGN_FORBIDDEN') }
+    if (!safeEqualText(stored, pin)) {
+      pinFailures.fail(key)
+      return { error: signFail(403, 'OV_SIGN_PIN_INVALID') }
+    }
+    return { owner: `pin:${matchKey}` }
+  }
+
+  /** POST /api/sign/<endpoint>. */
+  async function handleSign(req, res, endpoint, ip) {
+    if (!signCore) return sendSign(res, signFail(503, 'OV_SIGN_UNAVAILABLE'))
+    if (!isJsonRequest(req)) {
+      req.resume()
+      return sendSign(res, signFail(400, 'OV_SIGN_BAD_REQUEST'))
+    }
+    const read = await readSignBody(req, signCore.signBodyLimit(endpoint))
+    if (read.error === 413) return sendSign(res, signFail(413, 'OV_SIGN_TOO_LARGE'))
+    if (read.error) return sendSign(res, signFail(400, 'OV_SIGN_BAD_REQUEST'))
+    const body = read.body
+    const sessions = getSignSessions()
+    const ipKey = stripV4Prefix(ip)
+    if (endpoint === 'start') {
+      // The wrong-PIN key is the raw socket address, spelled exactly as getMatch
+      // and the WS subscribe count it (a dual-stack server sees '::ffff:a.b.c.d'):
+      // one budget for every PIN check, not one per spelling
+      const who = signOwner(req, body, ip)
+      return sendSign(res, who.error || sessions.start(body, { owner: who.owner }))
+    }
+    if (endpoint === 'open') return sendSign(res, sessions.open(body, { ipKey }))
+    if (endpoint === 'submit') return sendSign(res, sessions.submit(body, { ipKey }))
+    if (endpoint === 'close') return sendSign(res, sessions.close(body))
+    // wait: dropped when the scoring device goes away
+    const ac = typeof AbortController === 'function' ? new AbortController() : null
+    const onGone = () => { if (ac && !res.writableEnded) ac.abort() }
+    res.on('close', onGone)
+    const r = await sessions.wait(body, ac ? { signal: ac.signal } : {})
+    res.off('close', onGone)
+    if (r.status !== 499) sendSign(res, r)
+  }
+
   /**
    * Serve the relay-owned endpoints. `url` is the full '/api/...' path with
    * query (the Vite middleware strips '/api', so it passes '/api' + req.url).
@@ -1298,6 +1592,15 @@ function createLanRelay(options = {}) {
     const reply = (p) => Promise.resolve(p)
       .then((r) => sendJson(res, r.status, r.body))
       .catch((err) => sendJson(res, err.status || 500, { success: false, error: err.message || 'Internal error' }))
+
+    const sign = SIGN_ENDPOINT_RE.exec(path)
+    if (sign && method === 'POST') {
+      handleSign(req, res, sign[1], ip).catch((err) => {
+        log.error('[Sign] request failed:', err && err.message)
+        sendSign(res, signFail(500, 'OV_SIGN_BAD_REQUEST'))
+      })
+      return true
+    }
 
     if (path === '/api/match/validate-pin') {
       if (method !== 'POST') return false
@@ -1358,6 +1661,18 @@ function createLanRelay(options = {}) {
     get clientCount() { return clients.size },
     hasMatch: (id) => store.has(normalizeMatchId(id)),
     isScoreboard: (ws) => (clients.get(ws)?.owned.size || 0) > 0,
+    /** Sign session counts (tests): null before the first sign request. */
+    signStats: () => (signSessions ? signSessions.stats() : null),
+    /**
+     * Stop the relay's timers: the sign sessions (sweeper, held waits) and the
+     * rate limiters it created. A later sign request starts fresh sessions.
+     */
+    close() {
+      if (signSessions) signSessions.dispose()
+      signSessions = null
+      for (const limiter of ownLimiters) limiter.dispose()
+      for (const p of pending.values()) clearTimeout(p.timer)
+    },
   }
 }
 
@@ -1387,5 +1702,7 @@ module.exports = {
   createRateLimiter,
   createLocalAddressCheck,
   createMainInstanceGate,
+  OTHER_COURT_COOKIE,
+  MAX_OWNED_PER_IP,
   createLanRelay,
 }

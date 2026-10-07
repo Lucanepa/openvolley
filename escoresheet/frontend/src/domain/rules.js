@@ -42,6 +42,26 @@ export function getFirstServeForSet(setIndex, match = {}) {
 }
 
 /**
+ * Which side Team A (coin-toss winner) is on in a set, as the scorer's state
+ * snapshot computes it. setLeftTeamOverrides[setIndex] and set5LeftTeam store
+ * the LEFT team as 'A'/'B'; otherwise odd sets A left, even sets A right. In
+ * set 5 the 8-point court switch (set5CourtSwitched) flips it.
+ *
+ * @param {number} setIndex 1-based
+ * @param {object} match
+ * @returns {'left'|'right'}
+ */
+export function getSideAForSet(setIndex, match = {}) {
+  const override = (match.setLeftTeamOverrides || {})[setIndex]
+  let sideA
+  if (override !== undefined && override !== null) sideA = override === 'A' ? 'left' : 'right'
+  else if (setIndex === 5 && match.set5LeftTeam) sideA = match.set5LeftTeam === 'A' ? 'left' : 'right'
+  else sideA = setIndex % 2 === 1 ? 'left' : 'right'
+  if (setIndex === 5 && match.set5CourtSwitched) sideA = sideA === 'left' ? 'right' : 'left'
+  return sideA
+}
+
+/**
  * Set result + (optionally) whether winning this set ends the match.
  *
  * @param {number} homePoints
