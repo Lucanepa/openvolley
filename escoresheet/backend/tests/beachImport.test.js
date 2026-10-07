@@ -54,6 +54,10 @@ describe('import values', () => {
     assert.deepEqual(['9:30', '09:30', '9.30', '9h30', '09:30:00'].map(parseTime), Array(5).fill(570))
     assert.deepEqual(['24:00', '9', '9:5'].map(parseTime), [null, null, null])
     assert.deepEqual(['Winners', 'Hoffnungsrunde', 'Halbfinal', 'Petite finale'].map(parsePhase), ['winners', 'losers', 'final', 'placement'])
+    // the console's own phase names (tournaments.phases.* in the five locales; the template's example)
+    assert.deepEqual(['Gewinnerseite', 'Verliererseite', 'Finalspiele', 'Spiel um Platz 3'].map(parsePhase), ['winners', 'losers', 'final', 'placement'])
+    assert.deepEqual(['Tableau des gagnants', 'Tableau des perdants', 'Finales', 'Match pour la 3e place'].map(parsePhase), ['winners', 'losers', 'final', 'placement'])
+    assert.deepEqual(['Tabellone vincenti', 'Tabellone perdenti', 'Finali', 'Finale per il 3° posto'].map(parsePhase), ['winners', 'losers', 'final', 'placement'])
   })
 
   it('refuses a body that is not rows (400), and checks every row', () => {
