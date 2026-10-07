@@ -95,9 +95,8 @@ jobs:
         with:
           node-version: '24'
           cache: 'npm'
-          cache-dependency-path: |
-            escoresheet/frontend/package-lock.json
-            ${{ matrix.flavour == 'beach' && 'openbeach/escoresheet/frontend/package-lock.json' || '' }}
+          # OpenVolley's lock file, and openbeach's when it is checked out
+          cache-dependency-path: '**/escoresheet/frontend/package-lock.json'
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
