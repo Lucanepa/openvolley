@@ -48,7 +48,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Manager, Runtime, State, WebviewWindow};
 
 pub const MAIN: &str = "main";
-pub const TRAY_ID: &str = "openvolley";
+pub const TRAY_ID: &str = crate::flavour::CURRENT.tray_id;
 const MENU_SHOW: &str = "ov-show";
 const MENU_STATUS: &str = "ov-status";
 const MENU_QUIT: &str = "ov-quit";
@@ -301,23 +301,25 @@ pub struct TrayLabels {
 }
 
 impl Default for TrayLabels {
+    /// English, with the app's name (OpenVolley / OpenBeach, flavour.rs).
     fn default() -> Self {
+        let name = crate::flavour::CURRENT.name;
         Self {
-            tooltip: "OpenVolley eScoresheet".into(),
-            show: "Show OpenVolley".into(),
-            quit: "Quit OpenVolley…".into(),
+            tooltip: crate::flavour::CURRENT.window_title.into(),
+            show: format!("Show {name}"),
+            quit: format!("Quit {name}…"),
             no_tablets: "No tablets connected".into(),
             one_tablet: "1 tablet connected".into(),
             tablets: "{{count}} tablets connected".into(),
             match_live: "Match in progress".into(),
             test_match_live: "Test match in progress".into(),
-            quit_title: "Quit OpenVolley?".into(),
-            quit_title_match: "Quit OpenVolley during the match?".into(),
-            quit_title_test_match: "Quit OpenVolley during the test match?".into(),
+            quit_title: format!("Quit {name}?"),
+            quit_title_match: format!("Quit {name} during the match?"),
+            quit_title_test_match: format!("Quit {name} during the test match?"),
             quit_body: "Tablets on this computer's network will disconnect.".into(),
-            quit_match_body: "A match is in progress. It is saved on this computer: start OpenVolley again and continue it from the home screen.".into(),
-            quit_test_match_body: "A test match is in progress. It is saved on this computer: start OpenVolley again and continue it from the home screen.".into(),
-            quit_confirm: "Quit OpenVolley".into(),
+            quit_match_body: format!("A match is in progress. It is saved on this computer: start {name} again and continue it from the home screen."),
+            quit_test_match_body: format!("A test match is in progress. It is saved on this computer: start {name} again and continue it from the home screen."),
+            quit_confirm: format!("Quit {name}"),
             keep_running: "Keep running".into(),
             update_ready: "Restart to update to {{version}}".into(),
             update_status: "Update ready".into(),
@@ -1085,15 +1087,16 @@ mod tests {
 
     #[test]
     fn native_question_texts() {
+        let n = crate::flavour::CURRENT.name;
         let l = TrayLabels::default();
         let (title, message, ok, cancel) = l.native_question(MatchLive::None);
-        assert_eq!((title.as_str(), ok.as_str(), cancel.as_str()), ("Quit OpenVolley?", "Quit OpenVolley", "Keep running"));
+        assert_eq!((title, ok, cancel.as_str()), (format!("Quit {n}?"), format!("Quit {n}"), "Keep running"));
         assert_eq!(message, "Tablets on this computer's network will disconnect.");
         let (title, message, _, _) = l.native_question(MatchLive::Official);
-        assert_eq!(title, "Quit OpenVolley during the match?");
+        assert_eq!(title, format!("Quit {n} during the match?"));
         assert!(message.starts_with("A match is in progress.") && message.ends_with("will disconnect."));
         let (title, message, _, _) = l.native_question(MatchLive::Test);
-        assert_eq!(title, "Quit OpenVolley during the test match?");
+        assert_eq!(title, format!("Quit {n} during the test match?"));
         assert!(message.starts_with("A test match is in progress."));
         // the page's language, sentences kept longer than a tray label
         let page: TrayLabels = serde_json::from_str(&format!(
@@ -1104,7 +1107,7 @@ mod tests {
         let (title, message, ok, _) = page.cleaned().native_question(MatchLive::None);
         assert_eq!(title, "OpenVolley beenden?");
         assert_eq!(message.chars().count(), 200);
-        assert_eq!(ok, "Quit OpenVolley", "missing: English");
+        assert_eq!(ok, format!("Quit {n}"), "missing: English");
     }
 
     #[test]
@@ -1141,11 +1144,12 @@ mod tests {
         };
         let c = page.cleaned();
         assert_eq!(c.show, "OpenVolley anzeigen");
-        assert_eq!(c.quit, "Quit OpenVolley…", "empty after cleaning: English");
+        let n = crate::flavour::CURRENT.name;
+        assert_eq!(c.quit, format!("Quit {n}…"), "empty after cleaning: English");
         assert_eq!(c.tablets.chars().count(), MAX_LABEL);
         // a partial object from the page keeps the English defaults
         let partial: TrayLabels = serde_json::from_str(r#"{"show":"Afficher OpenVolley"}"#).unwrap();
-        assert_eq!(partial.cleaned().quit, "Quit OpenVolley…");
+        assert_eq!(partial.cleaned().quit, format!("Quit {n}…"));
         assert_eq!(serde_json::from_str::<MatchLive>(r#""test""#).unwrap(), MatchLive::Test);
     }
 

@@ -15,8 +15,8 @@ pub enum Val {
 
 pub type Section = (&'static str, Vec<(&'static str, Val)>);
 
-pub const HOTSPOT_CONNECTION_ID: &str = "OpenVolley tablets Wi-Fi";
-pub const BT_CONNECTION_ID: &str = "OpenVolley tablets Bluetooth";
+pub const HOTSPOT_CONNECTION_ID: &str = crate::flavour::CURRENT.hotspot_connection_id;
+pub const BT_CONNECTION_ID: &str = crate::flavour::CURRENT.bt_connection_id;
 
 /// NM_SETTING_WIRELESS_SECURITY_PMF_DISABLE: iPads failed to join some
 /// NetworkManager hotspots with protected management frames on.

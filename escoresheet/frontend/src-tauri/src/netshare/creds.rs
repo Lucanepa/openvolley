@@ -13,7 +13,7 @@ pub struct Credentials {
     pub password: String,
 }
 
-pub const SSID_PREFIX: &str = "OpenVolley-";
+pub const SSID_PREFIX: &str = crate::flavour::CURRENT.ssid_prefix;
 /// No 0/O, 1/I/L: read off a screen and typed on a tablet.
 const SSID_ALPHABET: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 const PASSWORD_ALPHABET: &[u8] = b"abcdefghijkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
