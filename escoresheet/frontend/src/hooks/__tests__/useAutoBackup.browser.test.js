@@ -101,6 +101,32 @@ describe('useAutoBackup in a browser', () => {
     unmount()
   })
 
+  it('a point scored while a file is being saved still gets the next file', async () => {
+    const { downloadMatchBackup, unmount } = await setup('scorer')
+    let finish
+    downloadMatchBackup.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    point()
+    minutes(5)
+    expect(downloadMatchBackup).toHaveBeenCalledTimes(1)
+    point() // the file above was read before this point
+    await act(async () => { finish('backup.json') })
+    minutes(5)
+    expect(downloadMatchBackup).toHaveBeenCalledTimes(2)
+    unmount()
+  })
+
+  it('a failed download keeps the change for the next try', async () => {
+    const { downloadMatchBackup, unmount } = await setup('scorer')
+    downloadMatchBackup.mockImplementationOnce(async () => { throw new Error('blocked') })
+    point()
+    minutes(5)
+    await act(async () => {})
+    expect(downloadMatchBackup).toHaveBeenCalledTimes(1)
+    minutes(1) // still changed, and no file since: tried again
+    expect(downloadMatchBackup).toHaveBeenCalledTimes(2)
+    unmount()
+  })
+
   it('does nothing on a referee, bench, livescore or unmarked page, even switched on', async () => {
     for (const entry of ['referee', 'bench', 'livescore', 'scoresheet', null]) {
       const { result, downloadMatchBackup, unmount } = await setup(entry)

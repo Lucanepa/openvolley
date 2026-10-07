@@ -171,7 +171,18 @@ export default function useAutoBackup(activeMatchId = null) {
         }
         setLastBackup(result.lastBackup || new Date())
         return true
-      } else if (hasFileSystemAccess && backupDirHandle) {
+      }
+      // Browsers: the file holds the match as read now, so clear the change
+      // flag before reading it; a write during the backup sets it again
+      // (cleared after the await, that write would wait for the next one)
+      const ofActive = matchId === activeMatchId
+      let hadChange = false
+      const markSaved = () => {
+        hadChange = matchChanged.current
+        if (ofActive) matchChanged.current = false
+      }
+      const markUnsaved = () => { if (ofActive && hadChange) matchChanged.current = true }
+      if (hasFileSystemAccess && backupDirHandle) {
         // Chrome/Edge: Write to file system
         const hasPermission = await verifyDirectoryPermission(backupDirHandle)
         if (!hasPermission) {
@@ -182,21 +193,27 @@ export default function useAutoBackup(activeMatchId = null) {
           return false
         }
 
+        markSaved()
         const result = await writeMatchBackup(matchId, backupDirHandle)
         if (result.success) {
-          if (matchId === activeMatchId) matchChanged.current = false
           setLastBackup(new Date())
           return true
         } else {
+          markUnsaved()
           setBackupError(result.error)
           return false
         }
       } else {
         // Safari/Firefox: Download file
-        await downloadMatchBackup(matchId)
+        markSaved()
+        try {
+          await downloadMatchBackup(matchId)
+        } catch (error) {
+          markUnsaved()
+          throw error
+        }
         setLastBackup(new Date())
         lastDownloadTime.current = Date.now()
-        if (matchId === activeMatchId) matchChanged.current = false
         return true
       }
     } catch (error) {
