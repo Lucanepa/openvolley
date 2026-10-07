@@ -96,9 +96,10 @@ body {
 /* Text fields, selects and textareas: the kit's `focus:ring-2 focus:ring-red-500`
    (RESTYLE-SPEC 2.4), on any focus, hugging the field's own radius. Drawn as an
    outline so it still beats the many inline `outline: none` styles. --ring is
-   red-500 (tailwind.css) and slate-900 inside the scoring controls (R4). */
+   red-500 (tailwind.css) and slate-900 inside the scoring controls (R4).
+   Not on a kit Select (.ov-select) either: it draws its own ring. */
 :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
-       select, textarea):not(.ov-kit *):focus {
+       select:not(.ov-select), textarea):not(.ov-kit *):focus {
   outline: 2px solid var(--ring, #ef4444) !important;
   outline-offset: 0;
 }
@@ -483,7 +484,7 @@ textarea::placeholder {
 }
 
 input:disabled,
-select:disabled,
+select:where(:not(.ov-select)):disabled,
 textarea:disabled {
   background: var(--ov-sunken);
   color: var(--ov-text-muted);
@@ -529,17 +530,42 @@ input[type=number] {
   appearance: textfield;
 }
 
-select {
+/* The raw (legacy) <select>s. Never the kit Select: it carries .ov-select and
+   its whole look (tokens.css + SELECT_SIZES), and these padding, font-size and
+   line-height values used to leak into it, so the text sat low and clipped in
+   its h-9 box. :where keeps the old `select` specificity, so every class-level
+   override still wins as before. Every select rule in this file is scoped the
+   same way (guarded by src/ui/__tests__/selectStyles.test.jsx).
+   The same finish as the kit: appearance none (WebKitGTK and Android WebView
+   drew a grey, inset menulist with its own theme padding) and the kit chevron,
+   sized in em so it follows each select's font size. The chevron's background
+   and the room kept for it are !important because many legacy selects set an
+   inline `background:` / `padding:` shorthand, which would wipe them.
+   No text-transform: option labels are written in sentence case. */
+select:where(:not(.ov-select)) {
   width: 100%;
   padding: calc(8px * var(--scale-factor)) calc(10px * var(--scale-factor));
-  background: var(--ov-card);
+  background-color: var(--ov-card);
   color: var(--ov-text-body);
   border: 1px solid var(--ov-hairline-strong);
   border-radius: var(--ov-radius);
   font-family: inherit;
-  text-transform: capitalize;
   font-size: calc(13px * var(--scale-factor));
   line-height: 1.2;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2378716c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 0.5em center !important;
+  background-size: 1.1em 1.1em !important;
+  padding-right: 1.9em !important;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+select:where(:not(.ov-select)):disabled {
+  cursor: not-allowed;
 }
 
 /* Coin toss "Sign A/B": the kit's outline button (was white text on white).
@@ -689,9 +715,9 @@ button:disabled {
 
 /* Inputs/selects in grid: size to content, not 100% */
 .roster-grid-row input,
-.roster-grid-row select,
+.roster-grid-row select:where(:not(.ov-select)),
 .bench-grid-row input,
-.bench-grid-row select {
+.bench-grid-row select:where(:not(.ov-select)) {
   width: auto;
   min-width: calc(80px * var(--scale-factor));
   box-sizing: border-box;
@@ -1305,22 +1331,330 @@ button:disabled {
   color: var(--text) !important;
 }
 
-.coin-toss-date-input::-webkit-calendar-picker-indicator {
-  display: none;
-  -webkit-appearance: none;
+/* Line-up entry modal (Scoreboard LineupModal). One constant size from open
+   to confirm: every slot (error messages, the edit tools, the players pool)
+   is reserved up front, so typing, picking, errors and Clear never move it.
+   Court on the left (net on top, front row IV III II, back row V VI I),
+   players and tools on the right; stacked below 940px. */
+.lineup-modal {
+  --lineup-col: 136px;
+  --lineup-gap: 12px;
+  --lineup-chip: 44px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-top: 4px;
 }
 
-.coin-toss-date-input::-webkit-inner-spin-button,
-.coin-toss-date-input::-webkit-outer-spin-button {
-  display: none;
+.lineup-modal__body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
 }
 
-.coin-toss-date-input[type="date"]::-webkit-calendar-picker-indicator {
-  opacity: 0;
+@media (max-width: 940px) {
+  .lineup-modal__body {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    gap: 20px;
+  }
+  .lineup-modal__side {
+    width: 100%;
+  }
+}
+
+.lineup-court {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: calc(3 * var(--lineup-col) + 2 * var(--lineup-gap));
+  max-width: 100%;
+}
+
+/* The net: exactly the grid's width, right above the front row */
+.lineup-net {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ov-rule);
+}
+
+.lineup-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--lineup-gap);
+}
+
+/* One position: label strip, number field and message slot in one shape
+   with a single hairline. Errors and focus redraw that one outline (a
+   box-shadow / outline, so the box never changes size). */
+.lineup-pos {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--ov-hairline-strong);
+  border-radius: var(--ov-radius-lg);
+  background: var(--ov-card);
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s, background-color 0.15s;
+}
+
+.lineup-pos__label {
+  height: 30px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ov-sunken-strong);
+  border-bottom: 1px solid var(--ov-hairline);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ov-text-secondary);
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.lineup-pos__field {
+  position: relative;
+  height: 76px;
+  flex: none;
+}
+
+.lineup-modal .lineup-pos__input {
   position: absolute;
-  right: 0;
-  width: 0;
-  height: 0;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: center;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ov-text);
+  caret-color: var(--ov-text);
+}
+
+/* The box draws the focus ring, not the field (one shape, same corners) */
+.lineup-modal .lineup-pos__input:focus {
+  outline: none !important;
+}
+
+.lineup-pos:focus-within {
+  outline: 2px solid var(--ov-selected);
+  outline-offset: 2px;
+}
+
+/* The filled position: a disc in the shirt colour, as on the court and in
+   the players pool, whether it was typed, clicked or dropped */
+.lineup-disc,
+.lineup-disc-anchor {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 54px;
+  height: 54px;
+  margin: -27px 0 0 -27px;
+  border-radius: 9999px;
+  pointer-events: none;
+}
+
+.lineup-disc {
+  z-index: 0;
+  box-sizing: border-box;
+}
+
+.lineup-disc-anchor {
+  z-index: 2;
+}
+
+.lineup-pos__msg {
+  height: 34px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px 4px;
+  text-align: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 14px;
+  color: var(--ov-danger-text);
+  overflow: hidden;
+}
+
+.lineup-pos__msg > span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.lineup-pos[data-error] {
+  border-color: var(--ov-danger-text);
+  box-shadow: 0 0 0 1px var(--ov-danger-text);
+  background: var(--ov-danger-soft);
+}
+
+.lineup-pos[data-error] .lineup-pos__label {
+  background: var(--ov-danger-border);
+  border-bottom-color: #fecaca;
+  color: var(--ov-danger-text);
+}
+
+.lineup-pos[data-error]:focus-within {
+  outline-color: var(--ov-danger-text);
+}
+
+.lineup-pos[data-over] {
+  border-color: var(--ov-success);
+  box-shadow: 0 0 0 1px var(--ov-success);
+  background: var(--ov-success-soft);
+}
+
+/* Players pool: fixed height for a full roster (two rows of seven), so it
+   never shrinks as players move to the court */
+.lineup-pool {
+  padding: 12px 14px 14px;
+  border: 1px solid var(--ov-hairline);
+  border-radius: var(--ov-radius-lg);
+  background: var(--ov-sunken);
+}
+
+.lineup-pool__title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ov-text-secondary);
+}
+
+.lineup-pool__chips {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, var(--lineup-chip));
+  grid-auto-rows: var(--lineup-chip);
+  gap: 8px;
+  align-content: start;
+  height: calc(2 * var(--lineup-chip) + 8px + 10px);
+  padding: 5px 5px 5px 4px;
+  margin: 0 -5px 0 -4px;
+  overflow-y: auto;
+}
+
+.lineup-chip {
+  position: relative;
+  width: var(--lineup-chip);
+  height: var(--lineup-chip);
+  box-sizing: border-box;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: grab;
+  user-select: none;
+  transition: transform 0.15s, opacity 0.15s, box-shadow 0.15s;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
+
+.lineup-chip:hover {
+  transform: scale(1.08);
+}
+
+.lineup-chip:focus-visible {
+  outline: 2px solid var(--ov-selected) !important;
+  outline-offset: 2px;
+  border-radius: 9999px !important;
+}
+
+.lineup-chip[data-dragging] {
+  opacity: 0.45;
+  transform: none;
+}
+
+/* Captain mark, the same on a chip and on a filled position: white C on
+   stone-900 (17:1) with a white halo, legible on any shirt colour */
+.lineup-cap {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: var(--ov-text);
+  color: #ffffff;
+  box-shadow: 0 0 0 2px #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  text-shadow: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.lineup-lfp {
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0 3px;
+  height: 12px;
+  border-radius: 3px;
+  background: #c2410c;
+  color: #ffffff;
+  font-size: 7.5px;
+  font-weight: 700;
+  line-height: 12px;
+  text-shadow: none;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.lineup-modal__side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.lineup-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ov-text-muted);
+}
+
+.lineup-tools {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.lineup-rotate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  font-size: 13px;
+  color: var(--ov-text-muted);
+}
+
+.lineup-modal__footer {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ov-hairline);
 }
 
 @keyframes lineupFlash {
@@ -2649,7 +2983,7 @@ button.start-rally-button {
 
   /* Form inputs */
   input,
-  select,
+  select:where(:not(.ov-select)),
   textarea {
     font-size: 14px;
     padding: 8px 10px;
@@ -2683,7 +3017,7 @@ button.start-rally-button {
 
   /* Form inputs */
   input,
-  select,
+  select:where(:not(.ov-select)),
   textarea {
     font-size: 13px;
     padding: 6px 8px;
@@ -2941,7 +3275,7 @@ button.start-rally-button {
   .btn,
   input[type="checkbox"],
   input[type="radio"],
-  select {
+  select:where(:not(.ov-select)) {
     min-height: 10px;
     min-width: 10px;
   }

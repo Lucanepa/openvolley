@@ -25,7 +25,9 @@ import { useDashboardServer } from './hooks/useDashboardServer'
 import ballFallback from './ball_fallback.png'
 
 // Primary ball image (with a bundled copy as fallback)
-const ballImage = `${import.meta.env.BASE_URL}ball.png`
+// The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
+// stay cached (old green ball) after an update
+const ballImage = ballFallback
 
 import {
   TEST_REFEREE_SEED_DATA,
@@ -42,7 +44,8 @@ import {
   TEST_AWAY_BENCH,
   getNextTestMatchStartTime,
   getTestHomeTeamShortName,
-  getTestAwayTeamShortName
+  getTestAwayTeamShortName,
+  getTestTeamByExternalId
 } from './constants/testSeeds'
 import { apiFrom } from './lib/apiClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
@@ -65,6 +68,7 @@ import ManageConsole from './components/manage/ManageConsole'
 import ManagerSiteLink from './components/ManagerSiteLink'
 import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, restorePrefill } from './utils/manageNav'
 import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
+import { needsEventCheck, pickCurrentMatch } from './utils/currentMatch'
 import { isRelayErrorFor, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
 
 function parseDateTime(dateTime) {
@@ -469,17 +473,21 @@ export default function App() {
     if (activeMatchLoaded) liveMatchKnown()
   }, [activeMatchStatus, activeMatchIsTest, activeMatchLoaded])
 
-  // Get current match (most recent match that's not final)
+  // Current match: the newest unfinished one by createdAt, never one created,
+  // edited and scheduled more than 7 days ago without a single event
+  // (abandoned: it was offered to
+  // the hall's tablets as "Home – Away" for months). utils/currentMatch.js.
+  // Only those old matches' events are read, so scoring the current match
+  // does not re-run this query.
   const currentMatch = useLiveQuery(async () => {
     try {
-      // First try to get a live match
-      const liveMatch = await db.matches.where('status').equals('live').first()
-      if (liveMatch) return liveMatch
-
-      // Otherwise get the most recent match that's not final
-      const matches = await db.matches.orderBy('createdAt').reverse().toArray()
-      const nonFinalMatch = matches.find(m => m.status !== 'final')
-      return nonFinalMatch || null
+      const now = Date.now()
+      const matches = (await db.matches.toArray()).filter(m => m.status !== 'final')
+      const withEvents = new Set()
+      for (const m of matches) {
+        if (needsEventCheck(m, now) && await db.events.where('matchId').equals(m.id).count() > 0) withEvents.add(m.id)
+      }
+      return pickCurrentMatch(matches, { now, hasEvents: (id) => withEvents.has(id) })
     } catch (error) {
       console.error('Unable to load current match', error)
       return null
@@ -1052,6 +1060,22 @@ export default function App() {
   useEffect(() => {
     if (currentRelayKey && relaySyncRef.current) relaySyncRef.current()
   }, [currentRelayKey])
+
+  // A role let in or out (Connect tablets, Match setup) or a new PIN: tell
+  // the relay at once, not after the 30 s backup sync. The relay checks the
+  // PINs itself, so until then a tablet just let in was told its right PIN
+  // is wrong (and each retry counted toward the per-minute PIN limit), and
+  // one just switched off could still get in. An open Scoreboard syncs on
+  // these changes itself; a second sync of the same data is harmless.
+  const relayAccessSignature = currentMatch
+    ? [
+        currentMatch.refereeConnectionEnabled, currentMatch.homeTeamConnectionEnabled, currentMatch.awayTeamConnectionEnabled,
+        currentMatch.refereePin, currentMatch.homeTeamPin, currentMatch.awayTeamPin
+      ].map(v => String(v ?? '')).join('|')
+    : null
+  useEffect(() => {
+    if (relayAccessSignature != null && relaySyncRef.current) relaySyncRef.current()
+  }, [relayAccessSignature])
 
   useEffect(() => {
     // Keep the match on the relay even on the home screen (for dashboards).
@@ -1662,8 +1686,8 @@ export default function App() {
       externalId: player.external_id
     })
 
-    const buildFallbackPlayers = (seedKey) => {
-      const teamSeed = TEST_TEAM_SEED_DATA.find(t => t.seedKey === seedKey)
+    const buildFallbackPlayers = (externalId) => {
+      const teamSeed = getTestTeamByExternalId(externalId)
       if (!teamSeed) return []
       return teamSeed.players.map(player => ({
         team_id: null,
@@ -1680,13 +1704,13 @@ export default function App() {
 
     let homePlayersData = (playersData || []).filter(p => p.team_id === matchData.home_team_id)
     if (!homePlayersData.length) {
-      homePlayersData = buildFallbackPlayers('test-team-alpha')
+      homePlayersData = buildFallbackPlayers(TEST_HOME_TEAM_EXTERNAL_ID)
       console.warn('[TestMatch] Supabase returned no home players, using fallback seed roster')
     }
 
     let awayPlayersData = (playersData || []).filter(p => p.team_id === matchData.away_team_id)
     if (!awayPlayersData.length) {
-      awayPlayersData = buildFallbackPlayers('test-team-bravo')
+      awayPlayersData = buildFallbackPlayers(TEST_AWAY_TEAM_EXTERNAL_ID)
       console.warn('[TestMatch] Supabase returned no away players, using fallback seed roster')
     }
 
@@ -1807,6 +1831,9 @@ export default function App() {
       awayTeamUploadPin: connectionPins.upload_away || matchData.away_team_upload_pin || null,
       homeTeamId,
       awayTeamId,
+      // the set boxes, rosters and the PDF's file name read them from the match
+      homeShortName: homeTeamData?.short_name || getTestHomeTeamShortName(),
+      awayShortName: awayTeamData?.short_name || getTestAwayTeamShortName(),
       bench_home: homeBench,
       bench_away: awayBench,
       officials,

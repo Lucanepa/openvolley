@@ -4,10 +4,10 @@
  * by deviceId() and the email memory, always inside try/catch.
  *
  * The 1st referee, the 2nd referee and the scorer may approve the result with
- * their account (email + personal approval PIN) instead of drawing a
- * signature. Each of these slots is complete with EITHER a drawn signature OR
- * a valid account approval. The assistant scorer and the captains sign by
- * hand only.
+ * their account (email + personal approval PIN), next to or instead of a
+ * drawn signature. Each of these slots is complete with EITHER a drawn
+ * signature OR a valid account approval; a slot signed by hand can still be
+ * approved. The assistant scorer and the captains sign by hand only.
  *
  * An approval is bound to the result it approved (`result_key`). When the
  * finished sets change, the approval is stale: it no longer completes the slot
@@ -104,6 +104,50 @@ export function approvalFor(match, role) {
 export function isApprovalValid(approval, sets) {
   if (!approval || approval.revoked_at) return false
   return typeof approval.result_key === 'string' && approval.result_key === resultKey(sets)
+}
+
+/**
+ * Why PIN approval is not offered, in the order they are checked: each one is
+ * the first thing to fix. 'signOnly' is the assistant scorer (owner decision:
+ * only the 1st and 2nd referee and the scorer approve with a PIN).
+ */
+export const PIN_APPROVAL_REASONS = Object.freeze([
+  'signOnly', 'locked', 'beach', 'localMatch', 'noCloud', 'serverOff', 'signedOut', 'callerRole', 'offline'
+])
+
+/**
+ * What the PIN-approval line next to an official's signature shows. A drawn
+ * signature does not hide it: an official who signed by hand may still
+ * approve with their PIN, and the line never stays silently empty.
+ *   { state: 'approved' }            a valid approval holds the slot
+ *   { state: 'offer' }               "Approve with PIN" (also over a stale approval)
+ *   { state: 'unavailable', reason } one of PIN_APPROVAL_REASONS
+ *   null                             not an official's box (the captains)
+ *
+ * The facts are the ones MatchEnd and the server check: the match is in the
+ * cloud (`hasSeedKey`), this device reaches the cloud API (`cloudApi`), the
+ * server has the feature (`feature` 'unavailable' after a 503
+ * OV_APPROVAL_UNAVAILABLE), a session (`signedIn`) with a scorer or referee
+ * role or admin (`callerMayApprove`, R2), and the connection (`online`).
+ * `locked`: the match is approved or closed.
+ */
+export function pinApprovalState({
+  role, approval = null, sets = [], locked = false, isBeach = false, hasSeedKey = false, cloudApi = false,
+  feature = 'unknown', signedIn = false, callerMayApprove = false, online = true
+} = {}) {
+  if (role === 'asst-scorer') return { state: 'unavailable', reason: 'signOnly' }
+  if (!ROLE_TO_SLOT[role]) return null
+  if (isApprovalValid(approval, sets)) return { state: 'approved' }
+  const reason = locked ? 'locked'
+    : isBeach ? 'beach'
+      : !hasSeedKey ? 'localMatch'
+        : !cloudApi ? 'noCloud'
+          : feature === 'unavailable' ? 'serverOff'
+            : !signedIn ? 'signedOut'
+              : !callerMayApprove ? 'callerRole'
+                : !online ? 'offline'
+                  : null
+  return reason ? { state: 'unavailable', reason } : { state: 'offer' }
 }
 
 /**

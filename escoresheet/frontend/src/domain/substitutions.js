@@ -5,7 +5,8 @@
  * no checks, permitting a 7th sub, an illegal reverse pairing, or re-entering a
  * completed-cycle player.
  *
- * SENIOR 6-6 scope: max 6 substitutions per set. Each player may enter (playerIn)
+ * SENIOR 6-6 scope: max 6 regular substitutions per set (exceptional ones are
+ * beyond the limit, see classifySubstitutionRequest). Each player may enter (playerIn)
  * at most once and be substituted out (playerOut) at most once per set; a player
  * who came on as a substitute may only be replaced by the starter he came in for
  * (one-in/one-out pairing, once per set).
@@ -24,18 +25,53 @@ export function getSetSubstitutions(events, teamKey, setIndex) {
   )
 }
 
+/** Max regular substitutions per team per set (FIVB 15.6, Swiss Volley senior 6-6). */
+export const MAX_SUBSTITUTIONS_PER_SET = 6
+
+/**
+ * Regular substitutions a team has made in a set. Exceptional substitutions
+ * (FIVB 15.7 / 15.8: injury, expulsion or disqualification when no legal one is
+ * possible) are made beyond the limit and do not use one of the 6. Libero
+ * replacements are other event types and never count.
+ */
+export function countRegularSubstitutions(events, teamKey, setIndex) {
+  return getSetSubstitutions(events, teamKey, setIndex).filter(e => !e.payload?.isExceptional).length
+}
+
+/** True while the team still has a regular substitution left in the set. */
+export function canMakeRegularSubstitution(events, teamKey, setIndex, { maxPerSet = MAX_SUBSTITUTIONS_PER_SET } = {}) {
+  return countRegularSubstitutions(events, teamKey, setIndex) < maxPerSet
+}
+
+/**
+ * How a substitution request has to be handled, from the count alone:
+ *  - 'exceptional' when it is flagged exceptional, or when it replaces an
+ *    injured / expelled / disqualified player and no regular substitution is
+ *    left (FIVB 15.7, 15.8);
+ *  - 'regular' while the team has a regular substitution left;
+ *  - 'improper_request' otherwise: a request beyond the limit (FIVB 16.1.3).
+ * @param {{isExceptional?: boolean, isInjury?: boolean, isExpelled?: boolean, isDisqualified?: boolean}} request
+ * @returns {'regular'|'exceptional'|'improper_request'}
+ */
+export function classifySubstitutionRequest(events, teamKey, setIndex, request = {}, { maxPerSet = MAX_SUBSTITUTIONS_PER_SET } = {}) {
+  if (request?.isExceptional) return 'exceptional'
+  if (canMakeRegularSubstitution(events, teamKey, setIndex, { maxPerSet })) return 'regular'
+  if (request?.isInjury || request?.isExpelled || request?.isDisqualified) return 'exceptional'
+  return 'improper_request'
+}
+
 /**
  * Validate a proposed substitution against the set's history.
  * @returns {{legal: boolean, reason?: string}}
  */
-export function validateManualSubstitution(events, teamKey, setIndex, playerOut, playerIn, { maxPerSet = 6 } = {}) {
+export function validateManualSubstitution(events, teamKey, setIndex, playerOut, playerIn, { maxPerSet = MAX_SUBSTITUTIONS_PER_SET } = {}) {
   const out = Number(playerOut)
   const inn = Number(playerIn)
   if (!out || !inn) return { legal: false, reason: 'Select both the player going out and the player coming in.' }
   if (out === inn) return { legal: false, reason: 'A player cannot be substituted for themselves.' }
 
   const subs = getSetSubstitutions(events, teamKey, setIndex)
-  if (subs.length >= maxPerSet) return { legal: false, reason: `Substitution limit reached (${maxPerSet} per set).` }
+  if (!canMakeRegularSubstitution(events, teamKey, setIndex, { maxPerSet })) return { legal: false, reason: `Substitution limit reached (${maxPerSet} per set).` }
 
   // A player may be substituted in at most once per set.
   if (subs.some(s => Number(s.payload?.playerIn) === inn)) {

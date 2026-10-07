@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { validateManualSubstitution, getSetSubstitutions, validateManualTimeout, planSubstitutionDeletion } from '../substitutions'
+import {
+  validateManualSubstitution, getSetSubstitutions, validateManualTimeout, planSubstitutionDeletion,
+  countRegularSubstitutions, canMakeRegularSubstitution, classifySubstitutionRequest, MAX_SUBSTITUTIONS_PER_SET,
+} from '../substitutions'
 
 const sub = (team, setIndex, playerOut, playerIn, seq) => ({
   type: 'substitution', setIndex, seq, payload: { team, playerOut, playerIn },
@@ -51,6 +54,73 @@ describe('validateManualSubstitution (FIVB 15.5-15.6)', () => {
   it('getSetSubstitutions filters by team + set', () => {
     const evs = [sub('home', 1, 5, 12, 1), sub('away', 1, 3, 10, 2), sub('home', 2, 6, 16, 3)]
     expect(getSetSubstitutions(evs, 'home', 1)).toHaveLength(1)
+  })
+})
+
+describe('substitution limit (FIVB 15.6, 15.7, 16.1.3)', () => {
+  // Owner's set: team away, 2->8, 5->9, 6->7, a point, then the three return subs.
+  const ownerSet = [
+    sub('away', 3, 2, 8, 1), sub('away', 3, 5, 9, 2), sub('away', 3, 6, 7, 3),
+    { type: 'point', setIndex: 3, seq: 4, payload: { team: 'home' } },
+    sub('away', 3, 8, 2, 5), sub('away', 3, 9, 5, 6), sub('away', 3, 7, 6, 7),
+  ]
+  const exc = (team, setIndex, playerOut, playerIn, seq) => ({
+    type: 'substitution', setIndex, seq, payload: { team, playerOut, playerIn, isExceptional: true },
+  })
+
+  it('allows six regular substitutions', () => {
+    const five = ownerSet.slice(0, 6)
+    expect(MAX_SUBSTITUTIONS_PER_SET).toBe(6)
+    expect(countRegularSubstitutions(five, 'away', 3)).toBe(5)
+    expect(canMakeRegularSubstitution(five, 'away', 3)).toBe(true)
+    expect(classifySubstitutionRequest(five, 'away', 3, {})).toBe('regular')
+    expect(countRegularSubstitutions(ownerSet, 'away', 3)).toBe(6)
+  })
+
+  it('refuses a 7th regular substitution and makes the request an improper request', () => {
+    expect(canMakeRegularSubstitution(ownerSet, 'away', 3)).toBe(false)
+    expect(classifySubstitutionRequest(ownerSet, 'away', 3, {})).toBe('improper_request')
+    expect(validateManualSubstitution(ownerSet, 'away', 3, 1, 10)).toEqual({
+      legal: false, reason: 'Substitution limit reached (6 per set).',
+    })
+    // other team / next set unaffected
+    expect(classifySubstitutionRequest(ownerSet, 'home', 3, {})).toBe('regular')
+    expect(classifySubstitutionRequest(ownerSet, 'away', 4, {})).toBe('regular')
+  })
+
+  it('allows an exceptional substitution beyond six (injury, expulsion, disqualification)', () => {
+    expect(classifySubstitutionRequest(ownerSet, 'away', 3, { isInjury: true })).toBe('exceptional')
+    expect(classifySubstitutionRequest(ownerSet, 'away', 3, { isExpelled: true })).toBe('exceptional')
+    expect(classifySubstitutionRequest(ownerSet, 'away', 3, { isDisqualified: true })).toBe('exceptional')
+    expect(classifySubstitutionRequest(ownerSet, 'away', 3, { isExceptional: true })).toBe('exceptional')
+    // with a regular sub left, an injury is a regular (legal) substitution
+    expect(classifySubstitutionRequest(ownerSet.slice(0, 6), 'away', 3, { isInjury: true })).toBe('regular')
+  })
+
+  it('does not count exceptional substitutions against the six', () => {
+    const evs = [sub('away', 1, 2, 8, 1), sub('away', 1, 5, 9, 2), sub('away', 1, 6, 7, 3), exc('away', 1, 4, 10, 4)]
+    expect(countRegularSubstitutions(evs, 'away', 1)).toBe(3)
+    const sixPlusExc = [...ownerSet, exc('away', 3, 1, 10, 8)]
+    expect(countRegularSubstitutions(sixPlusExc, 'away', 3)).toBe(6)
+    expect(classifySubstitutionRequest(sixPlusExc, 'away', 3, {})).toBe('improper_request')
+    expect(classifySubstitutionRequest(sixPlusExc, 'away', 3, { isInjury: true })).toBe('exceptional')
+  })
+
+  it('undo of the 6th substitution gives the regular substitution back', () => {
+    const undone = ownerSet.filter(e => e.seq !== 7) // undo deletes the event
+    expect(countRegularSubstitutions(undone, 'away', 3)).toBe(5)
+    expect(classifySubstitutionRequest(undone, 'away', 3, {})).toBe('regular')
+  })
+
+  it('does not count libero replacements', () => {
+    const liberoMoves = [
+      { type: 'libero_entry', setIndex: 3, seq: 8, payload: { team: 'away', playerOut: 2, liberoIn: 1 } },
+      { type: 'libero_exit', setIndex: 3, seq: 9, payload: { team: 'away', playerIn: 2, liberoOut: 1 } },
+      { type: 'libero_exchange', setIndex: 3, seq: 10, payload: { team: 'away' } },
+    ]
+    const five = [...ownerSet.slice(0, 6), ...liberoMoves]
+    expect(countRegularSubstitutions(five, 'away', 3)).toBe(5)
+    expect(classifySubstitutionRequest(five, 'away', 3, {})).toBe('regular')
   })
 })
 

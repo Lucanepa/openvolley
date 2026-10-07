@@ -341,13 +341,35 @@ function persistToLocalStorageSync() {
 /**
  * Recover logs from previous session
  */
+// Entries typed into a password or PIN field before 2.4.0 carried the secret
+// (eventCapture redacted by field name only). Such an entry is dropped, here
+// and from the emergency copies, never exported.
+const SECRET_LABEL = /password|passwort|secret|token|pin|credential/i
+export function isSecretEntry(entry) {
+  const t = entry?.target
+  if (!t) return false
+  if (t.type === 'password') return true
+  return [t.name, t.id, t.ariaLabel].some(v => typeof v === 'string' && SECRET_LABEL.test(v))
+}
+
+async function purgeSecretEntries() {
+  try {
+    if (!db.interaction_logs) return
+    const ids = await db.interaction_logs.filter(isSecretEntry).primaryKeys()
+    if (ids.length) await db.interaction_logs.bulkDelete(ids)
+  } catch (err) {
+    console.error('[ComprehensiveLogger] Purge failed:', err)
+  }
+}
+
 async function recoverFromStorage() {
+  await purgeSecretEntries()
   try {
     // Check localStorage emergency backup
     const emergencyKeys = Object.keys(localStorage).filter(k => k.startsWith('comprehensive_logs_emergency_'))
     for (const key of emergencyKeys) {
       try {
-        const logs = JSON.parse(localStorage.getItem(key))
+        const logs = (JSON.parse(localStorage.getItem(key)) || []).filter(e => !isSecretEntry(e))
         if (Array.isArray(logs) && logs.length > 0) {
           // Store in IndexedDB
           if (db.interaction_logs) {

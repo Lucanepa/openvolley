@@ -490,6 +490,8 @@ export function relayMatchListRow(entry, { includeFinished = false } = {}) {
     scheduledAt: match.scheduledAt ?? null,
     dateTime: formatListDateTime(match.scheduledAt),
     status,
+    // 'beach' (openbeach) or 'indoor': each app lists its own sport's matches
+    sportType: entry.sportType === 'beach' ? 'beach' : 'indoor',
     test: match.test === true,
     refereeConnectionEnabled: match.refereeConnectionEnabled === true,
     homeTeamConnectionEnabled: match.homeTeamConnectionEnabled === true,

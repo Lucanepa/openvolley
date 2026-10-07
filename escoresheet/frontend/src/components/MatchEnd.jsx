@@ -22,7 +22,9 @@ import { useComponentLogging } from '../contexts/LoggingContext'
 import { exportLogsAsNDJSON } from '../utils/comprehensiveLogger'
 
 // Primary ball image (with a bundled copy as fallback)
-const ballImage = `${import.meta.env.BASE_URL}ball.png`
+// The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
+// stay cached (old green ball) after an update
+const ballImage = ballFallback
 import { sanitizeForFilename } from '../utils/stringUtils'
 import { formatTimeLocal } from '../utils/timeUtils'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
@@ -30,14 +32,15 @@ import { waitForScoresheetPdf } from '../utils/scoresheetPdfRequest'
 import { getMatchWinner, clearedPostMatchSignatures, planForfeitReversal } from '../domain/matchEnd'
 import {
   ROLE_TO_SLOT, approvalFor, isApprovalValid, slotComplete, approvalLine, approvalsBySlot, approvalSummary,
-  resultKey, rememberApprovalEmail, namesDiffer, approvalsCompletingSlots, approvalsStillValid
+  resultKey, rememberApprovalEmail, namesDiffer, approvalsCompletingSlots, approvalsStillValid, pinApprovalState
 } from '../domain/accountApproval'
+import { signatureEditLocked, signaturesPayload, signaturesSyncJob } from '../domain/signatureEdits'
 import AccountApprovalDialog from './AccountApprovalDialog'
 import { askConfirm } from '../utils/askConfirm.js'
 import { getCloudApiUrl } from '../utils/backendConfig'
 import { syncJobsForEvents, syncJobsForSets } from '../domain/corrections'
 import { FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, ChartIcon } from './icons'
-import { X, Check, AlertTriangle, ShieldCheck } from 'lucide-react'
+import { X, Check, AlertTriangle, ShieldCheck, PenLine, Eraser, Info } from 'lucide-react'
 import { Button } from '../ui/Button.jsx'
 import { RowTool } from '../ui/Row.jsx'
 import { toast } from '../ui/uiStore.js'
@@ -697,7 +700,13 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   const isBeach = match.sport_type === 'beach' || match.sportType === 'beach'
   // Only a scorer or referee account (or an admin) may send approvals (the server checks the same)
   const callerMayApprove = !!access?.isAdmin || !!access?.roles?.some(r => r === 'scorer' || r === 'referee')
-  const accountApprovalOffered = !!match.seed_key && signedIn && callerMayApprove && cloudApi && approvalFeature !== 'unavailable' && !isBeach
+  // Re-sign and Clear close once the result is approved or the match closed
+  const signaturesLocked = signatureEditLocked(match, { isApproved })
+  // The PIN-approval line of an official's box: approved, offered, or why not
+  const pinStateOf = (role) => pinApprovalState({
+    role, approval: approvalFor(match, role), sets, locked: signaturesLocked, isBeach, hasSeedKey: !!match.seed_key,
+    cloudApi, feature: approvalFeature, signedIn, callerMayApprove, online
+  })
 
   // Determine current signature step
   const getCurrentStep = () => {
@@ -711,20 +720,40 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   const currentStep = getCurrentStep()
   const allSignaturesDone = currentStep === 'complete'
 
+  const signatureFieldMap = {
+    'captain-a': homeLabel === 'A' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature',
+    'captain-b': homeLabel === 'B' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature',
+    'asst-scorer': 'asstScorerSignature',
+    'scorer': 'scorerSignature',
+    'ref2': 'ref2Signature',
+    'ref1': 'ref1Signature'
+  }
+
+  // Every signature change is written at once and queued for the cloud: the
+  // match's whole `signatures` object (domain/signatureEdits.js). An account
+  // approval is bound to the result, not to the image, so it stays.
+  const writeSignature = async (role, signatureData) => {
+    const field = signatureFieldMap[role]
+    if (!field) return false
+    try {
+      await db.matches.update(matchId, { [field]: signatureData })
+      const job = signaturesSyncJob(await db.matches.get(matchId))
+      if (job) {
+        await db.sync_queue.add(job)
+        try { window.dispatchEvent(new Event('sync-queue-write')) } catch { /* no window */ }
+      }
+      return true
+    } catch (err) {
+      console.error('[MatchEnd] Could not save the signature:', err?.message)
+      toast.error(t('matchEnd.signatureSaveFailed'))
+      return false
+    }
+  }
+
   const handleSaveSignature = async (role, signatureData) => {
     cLogger.logHandler('handleSaveSignature', { role })
-    const fieldMap = {
-      'captain-a': homeLabel === 'A' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature',
-      'captain-b': homeLabel === 'B' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature',
-      'asst-scorer': 'asstScorerSignature',
-      'scorer': 'scorerSignature',
-      'ref2': 'ref2Signature',
-      'ref1': 'ref1Signature'
-    }
-    const field = fieldMap[role]
-    if (field) {
-      await db.matches.update(matchId, { [field]: signatureData })
-    }
+    if (signaturesLocked) return
+    await writeSignature(role, signatureData)
     // A drawn signature completes the slot: a stale account approval of it
     // (the result changed since) is dropped from the local copy
     const slot = ROLE_TO_SLOT[role]
@@ -733,6 +762,14 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       if (stale && !isApprovalValid(stale, sets)) await removeLocalApproval(slot, stale.id)
     }
     setOpenSignature(null)
+  }
+
+  // "Clear": the signature goes at once (saved and synced), then the pad opens
+  // empty. "Re-sign" only opens the pad: Cancel keeps the old signature.
+  const handleClearSignature = async (role) => {
+    cLogger.logHandler('handleClearSignature', { role })
+    if (signaturesLocked) return
+    if (await writeSignature(role, null)) setOpenSignature(role)
   }
 
   const getSignatureData = (role) => {
@@ -770,9 +807,12 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     const isSigned = !!signatureData
     const canApprove = !!ROLE_TO_SLOT[role]
     const approval = canApprove ? approvalFor(match, role) : null
-    const approvalValid = !isSigned && isApprovalValid(approval, sets)
-    const approvalStale = !isSigned && !!approval && !approvalValid
-    const showApproveAction = canApprove && !isSigned && !approvalValid && accountApprovalOffered
+    // The PIN line of an official (null for the captains); a drawn signature no longer hides it
+    const pin = pinStateOf(role)
+    const approved = pin?.state === 'approved'
+    // Without a drawn signature, a valid approval fills the well
+    const approvalValid = !isSigned && approved
+    const approvalStale = !isSigned && !!approval && !approved
 
     return (
       <div style={{
@@ -804,7 +844,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
              state with the signature image. A stale account approval: amber,
              and the slot can be signed or approved again. */
           <div
-            onClick={() => !disabled && !isSigned && setOpenSignature(role)}
+            onClick={() => !disabled && !isSigned && !signaturesLocked && setOpenSignature(role)}
             className={isSigned
               ? 'rounded-xl border-2 border-solid border-emerald-300 bg-emerald-50'
               : approvalStale
@@ -845,35 +885,94 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             )}
           </div>
         )}
-        {approvalValid && (
-          <div className="ov-kit flex">
+        {isSigned && (
+          // Change a collected signature. feat/qr-signing adds "Sign on phone"
+          // to this row (and inside the pad that both buttons open).
+          <div className="ov-kit flex gap-2" data-testid={`signature-actions-${role}`}>
             <RowTool
-              className="h-11 w-full flex-1 sm:h-11"
-              disabled={!online}
-              title={online ? undefined : t('approval.needsInternet')}
-              onClick={() => handleUndoAccountApproval(role, approval)}
-              data-testid={`account-approval-undo-${role}`}
+              className="h-11 flex-1 disabled:cursor-not-allowed disabled:opacity-50 sm:h-11 sm:flex-1"
+              disabled={signaturesLocked}
+              title={signaturesLocked ? t('matchEnd.signatureLocked') : undefined}
+              onClick={() => setOpenSignature(role)}
+              data-testid={`signature-resign-${role}`}
             >
-              {t('approval.undo')}
+              <PenLine size={14} aria-hidden="true" />
+              {t('matchEnd.resign')}
+            </RowTool>
+            <RowTool
+              className="h-11 flex-1 disabled:cursor-not-allowed disabled:opacity-50 sm:h-11 sm:flex-1"
+              disabled={signaturesLocked}
+              title={signaturesLocked ? t('matchEnd.signatureLocked') : undefined}
+              onClick={() => handleClearSignature(role)}
+              data-testid={`signature-clear-${role}`}
+            >
+              <Eraser size={14} aria-hidden="true" />
+              {t('matchEnd.clearSignature')}
             </RowTool>
           </div>
         )}
-        {showApproveAction && (
-          <div className="ov-kit flex">
-            <Button
-              variant="secondary"
-              size="xl"
-              icon={ShieldCheck}
-              className="w-full font-medium"
-              disabled={disabled || !online}
-              onClick={() => setApprovalRole(role)}
-              data-testid={`account-approval-open-${role}`}
-            >
-              {online ? t('approval.approveWithAccount') : t('approval.needsInternetSignByHand')}
-            </Button>
-          </div>
-        )}
+        {pin && renderPinLine(role, pin, approval, { isSigned, disabled })}
       </div>
+    )
+  }
+
+  // The PIN-approval line under an official's signature: approved (with
+  // Undo), "Approve with PIN", or one line saying why not. Never empty.
+  const renderPinLine = (role, pin, approval, { isSigned, disabled }) => {
+    if (pin.state === 'approved') {
+      return (
+        <div className="ov-kit flex flex-col gap-1.5">
+          {isSigned && (
+            // Signed by hand AND approved: the approval as a compact line
+            <div
+              className="flex min-h-[2.75rem] items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3 text-emerald-800"
+              data-testid={`account-approval-${role}`}
+            >
+              <Check size={16} strokeWidth={2.5} aria-hidden="true" className="shrink-0 text-emerald-700" />
+              <div className="min-w-0">
+                <div className="text-sm font-semibold leading-tight">{t('approval.done')}</div>
+                <div className="truncate text-xs leading-tight text-emerald-700 tabular-nums" title={approvalLine(approval)}>{approvalLine(approval)}</div>
+              </div>
+            </div>
+          )}
+          <RowTool
+            className="h-11 w-full flex-1 disabled:cursor-not-allowed disabled:opacity-50 sm:h-11"
+            disabled={!online || signaturesLocked}
+            title={online ? undefined : t('approval.needsInternet')}
+            onClick={() => handleUndoAccountApproval(role, approval)}
+            data-testid={`account-approval-undo-${role}`}
+          >
+            {t('approval.undo')}
+          </RowTool>
+        </div>
+      )
+    }
+    if (pin.state === 'offer') {
+      return (
+        <div className="ov-kit flex">
+          <Button
+            variant="secondary"
+            size="xl"
+            icon={ShieldCheck}
+            className="w-full font-medium"
+            disabled={disabled}
+            onClick={() => setApprovalRole(role)}
+            data-testid={`account-approval-open-${role}`}
+          >
+            {t('approval.approveWithPin')}
+          </Button>
+        </div>
+      )
+    }
+    return (
+      <p
+        className="flex min-h-[2.75rem] items-center gap-1.5 text-xs leading-snug text-stone-500"
+        data-testid={`account-approval-why-${role}`}
+        data-reason={pin.reason}
+      >
+        <Info size={14} aria-hidden="true" className="shrink-0" />
+        <span>{t(`approval.why.${pin.reason}`)}</span>
+      </p>
     )
   }
 
@@ -1009,7 +1108,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
       const dataStr = JSON.stringify(exportData, null, 2)
       const matchDate = match.scheduledAt
-        ? new Date(match.scheduledAt).toLocaleDateString('en-GB', { timeZone: 'UTC' }).replace(/\//g, '-')
+        // the LOCAL match day (the UTC day is the day before for a match after midnight)
+        ? new Date(match.scheduledAt).toLocaleDateString('en-GB').replace(/\//g, '-')
         : new Date().toLocaleDateString('en-GB').replace(/\//g, '-')
       const jsonFilename = `MatchData_${sanitizeForFilename(homeTeam?.name || t('common.home'))}_vs_${sanitizeForFilename(awayTeam?.name || t('common.away'))}_${matchDate}.json`
 
@@ -1460,7 +1560,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           action: 'update',
           payload: {
             id: match.seed_key,
-            status: 'live'
+            status: 'live',
+            // the post-match signatures were synced as they were made: clear them there too
+            ...(match.test ? {} : { signatures: signaturesPayload({ ...match, ...clearedPostMatchSignatures() }) })
           },
           ts: new Date().toISOString(),
           status: 'queued'

@@ -76,14 +76,6 @@ export default defineConfig({
     dedupe: ['react', 'react-dom', 'dexie'],
     alias: [
       { find: '@', replacement: resolve(__dirname, 'src') },
-      // Android app (F-Droid): the Swiss Volley logo in the scoresheet PDF
-      // header is a federation trademark with no licence to redistribute it,
-      // so it must not ship inside the APK. The import resolves to a module
-      // that exports null and the header leaves the slot empty. Web and
-      // desktop builds keep the logo.
-      ...(isCapacitor
-        ? [{ find: /^\.\/swissvolleylogo\.jpg$/, replacement: resolve(__dirname, 'scoresheet_pdf/components/noFederationLogo.js') }]
-        : []),
       // Android app: OpenBeach's tournament import (Excel/CSV) is
       // manager-beach's, a web page. Its XLSX reader and writer resolve to a
       // stub, so neither ships in the APK (the dialog is loaded on demand).

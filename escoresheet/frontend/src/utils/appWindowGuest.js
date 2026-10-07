@@ -4,7 +4,7 @@
  * Android app.
  */
 
-import { MSG_CLOSE, MSG_SAVE_PDF, isInAppView } from './openAppWindow'
+import { MSG_CLOSE, MSG_SAVE_PDF, PDF_BUSY_FLAG, isInAppView } from './openAppWindow'
 
 export { isInAppView }
 
@@ -14,6 +14,17 @@ export function getOpenerWindow(win = window) {
     if (win.opener && !win.opener.closed) return win.opener
   } catch { /* ignore */ }
   return isInAppView(win) ? win.parent : null
+}
+
+/**
+ * This page is making / saving a PDF (true) or done (false). The desktop
+ * app's quit question reads it from the scoretable (openAppWindow.js
+ * pdfBusyInAppWindows): "A PDF is still being saved in the scoresheet window".
+ */
+export function setPdfBusy(busy, win = window) {
+  try {
+    win[PDF_BUSY_FLAG] = !!busy
+  } catch { /* ignore */ }
 }
 
 /** Closes this page: the popup / app window, or the in-app view. */

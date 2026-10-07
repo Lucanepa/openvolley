@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { admin } from '../../lib/accountApi'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, MatchStatusPill, ReasonModal, InputModal, useErrorText, useKitLang } from './common'
-import { Field, Input, SearchInput, RowList, Row, RowTool, DateRail, StatusPill, EmptyInset, SkeletonRows, Notice, Button, weekdayLabel, dayLabel, timeLabel, shiftDayKey, todayKey, toast } from '../../ui'
+import { DateField, Field, Input, SearchInput, RowList, Row, RowTool, DateRail, StatusPill, EmptyInset, SkeletonRows, Notice, Button, weekdayLabel, dayLabel, timeLabel, shiftDayKey, todayKey, toast } from '../../ui'
 import { ApprovalChips } from './ApprovalBits'
 
 /** Official games (svrz_games) and which cloud match scores each (admins). */
@@ -32,10 +32,10 @@ export default function OfficialGamesPanel() {
       <OfflineBanner online={online} />
       <form className="mb-3 grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 sm:grid-cols-[10rem_10rem_1fr_auto] sm:items-end" onSubmit={e => { e.preventDefault(); setQuery(q.trim()) }}>
         <Field tone="compact" label={t('manage.games.from')}>
-          <Input type="date" value={from} onChange={e => e.target.value && setFrom(e.target.value)} />
+          <DateField value={from} onChange={v => v && setFrom(v)} />
         </Field>
         <Field tone="compact" label={t('manage.games.to')}>
-          <Input type="date" value={to} onChange={e => e.target.value && setTo(e.target.value)} />
+          <DateField value={to} onChange={v => v && setTo(v)} />
         </Field>
         <SearchInput size="md" value={q} onChange={e => { setQ(e.target.value); if (!e.target.value) setQuery('') }} placeholder={t('manage.games.search')} aria-label={t('manage.games.search')} className="min-[420px]:col-span-2 sm:col-span-1" />
         <Button type="submit" variant="secondary" className="hidden sm:inline-flex">{t('manage.games.searchButton')}</Button>

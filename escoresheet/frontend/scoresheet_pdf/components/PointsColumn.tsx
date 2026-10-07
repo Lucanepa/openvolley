@@ -1,45 +1,48 @@
 import React from 'react';
 
-// Unified PointBox component - uses SetFive styling (thinner strokes, better proportions)
+// One printed number of a points column. As on the paper sheet every number is
+// pre-printed (light grey); a mark makes it black:
+//  - filledState 1: a tick (point won in a rally)
+//  - isCircled: a circle, no tick (penalty / delay-penalty / awarded point)
+//  - voided: a "T" through an unused number at set end (SC p.39), or in set-5
+//    panel 1 above the left team's points at the change of courts
+//  - reverseT: an inverted T through the numbers already scored before the
+//    change of courts, in set-5 panel 3 (SC p.77)
 export const PointBox: React.FC<{
     num: number;
     filledState?: 0 | 1;
     isCircled?: boolean;
-    showNumberOnly?: boolean;
     voided?: boolean;
-}> = ({ num, filledState = 0, isCircled = false, showNumberOnly = false, voided = false }) => {
-    // type: 0 = none (blank), 1 = slash (scored)
-    // showNumberOnly: display number without slash (for pre-change points in Set 5 Panel 3)
-    // voided: at set end, strike remaining unused numbers vertically with a "T" (Swiss
-    // Schreiberanleitung / scorekeeper course slide 39 — done as the last step).
-    // Only show number if scored (filledState === 1), circled (penalty point), showNumberOnly, or voided
-    const showNumber = filledState === 1 || isCircled || showNumberOnly || voided;
-
+    reverseT?: boolean;
+}> = ({ num, filledState = 0, isCircled = false, voided = false, reverseT = false }) => {
+    const marked = filledState === 1 || isCircled || voided || reverseT;
     return (
         <div
             className="flex-1 w-full relative flex items-center justify-center"
+            data-point={num}
+            data-mark={voided ? 'T' : reverseT ? 'reverseT' : isCircled ? 'circle' : filledState === 1 ? 'tick' : ''}
         >
-            {/* Background Number - only show if scored, circled, or voided */}
-            {showNumber && (
-                <span className="text-[8px] leading-none text-black">{num}</span>
-            )}
-            {/* Only show slash if scored and not circled (penalty points should only have circle, no slash) */}
-            {filledState === 1 && !isCircled && !voided && (
+            <span className="text-[8px] leading-none" style={{ color: marked ? '#000' : '#a8a29e' }}>{num}</span>
+            {filledState === 1 && !isCircled && !voided && !reverseT && (
                  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
                     <line x1="15" y1="85" x2="85" y2="15" stroke="black" strokeWidth="4" />
                  </svg>
             )}
-            {/* Circle for points scored due to sanctions (penalty points) - no slash, only circle */}
-            {isCircled && !voided && (
+            {isCircled && !voided && !reverseT && (
                 <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
                     <circle cx="50" cy="50" r="45" fill="none" stroke="black" strokeWidth="4" />
                 </svg>
             )}
-            {/* Set-end finalization: vertical "T" strike through the unused number */}
             {voided && (
                 <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
                     <line x1="50" y1="14" x2="50" y2="86" stroke="black" strokeWidth="4" />
                     <line x1="28" y1="14" x2="72" y2="14" stroke="black" strokeWidth="4" />
+                </svg>
+            )}
+            {reverseT && (
+                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
+                    <line x1="50" y1="14" x2="50" y2="86" stroke="black" strokeWidth="4" />
+                    <line x1="28" y1="86" x2="72" y2="86" stroke="black" strokeWidth="4" />
                 </svg>
             )}
         </div>
@@ -90,8 +93,9 @@ export const PointsColumn: React.FC<{
                             if (markedPoints.includes(num)) {
                                 state = 1;
                             }
-                            // Set-end: void unused numbers above this team's final score with a "T".
-                            const voided = setFinished && finalScore > 0 && num > finalScore && num <= maxPoints;
+                            // Set-end: void unused numbers above this team's final score with a "T"
+                            // (also from 1 for a team that scored nothing).
+                            const voided = setFinished && num > finalScore && num <= maxPoints;
                             return <PointBox key={i} num={num} filledState={state} isCircled={circledPoints.includes(num)} voided={voided} />;
                         })}
                     </div>
@@ -137,7 +141,9 @@ export const PointsColumn5: React.FC<{
     circledPoints?: number[];
     setFinished?: boolean;
     finalScore?: number;
-}> = ({ timeouts = ["", ""], markedPoints = [], circledPoints = [], setFinished = false, finalScore = 0 }) => {
+    /** The left team's points at the change of courts; null before the change. */
+    pointsAtChange?: number | null;
+}> = ({ timeouts = ["", ""], markedPoints = [], circledPoints = [], setFinished = false, finalScore = 0, pointsAtChange = null }) => {
     return (
         <div className="flex flex-col shrink-0 border-t border-black" style={{ width: '15mm', height: '3.5cm' }}>
             <div className="grid grid-cols-3 bg-white shrink-0 border-b border-black border-l" style={{ height: '2.47cm' }}>
@@ -149,8 +155,11 @@ export const PointsColumn5: React.FC<{
                         if (markedPoints.includes(num)) {
                             state = 1;
                         }
-                        // Set-end: void numbers this team never reached (same "T" as sets 1-4)
-                        const voided = setFinished && finalScore > 0 && num > finalScore;
+                        // At the change of courts: "T" over N+1..8 (field-spec 6 step 3);
+                        // a set that ended before any change (default): above the final
+                        const voided = pointsAtChange !== null && pointsAtChange !== undefined
+                            ? num > pointsAtChange
+                            : setFinished && num > finalScore;
                         return <PointBox key={i} num={num} filledState={state} isCircled={circledPoints.includes(num)} voided={voided} />;
                     })}
                 </div>
@@ -195,11 +204,12 @@ export const PointsColumn30: React.FC<{
     timeouts?: [string, string];
     markedPoints?: number[];
     circledPoints?: number[];
-    preChangePoints?: number;
+    /** Panel 3: the left team's points at the change of courts, null before the change. */
+    preChangePoints?: number | null;
     maxScore?: number;
     setFinished?: boolean;
     finalScore?: number;
-}> = ({ isLast, isPanel3 = false, timeouts = ["", ""], markedPoints = [], circledPoints = [], preChangePoints = 0, maxScore = 0, setFinished = false, finalScore = 0 }) => {
+}> = ({ isLast, isPanel3 = false, timeouts = ["", ""], markedPoints = [], circledPoints = [], preChangePoints = null, maxScore = 0, setFinished = false, finalScore = 0 }) => {
     const rowsPerColumn = calculateRowsPerColumn(maxScore);
     const offsets = [0, rowsPerColumn, rowsPerColumn * 2, rowsPerColumn * 3];
     const maxPoints = rowsPerColumn * 4;
@@ -212,30 +222,16 @@ export const PointsColumn30: React.FC<{
                         {Array.from({ length: rowsPerColumn }).map((_, i) => {
                              const num = offset + i + 1;
                              if (num > maxPoints) return <div key={i} className="flex-1"></div>;
-                             let state: 0 | 1 = 0;
-                             let showNumberOnly = false;
-
-                             if (isPanel3) {
-                                 // Panel 3 special logic:
-                                 // Points 1 to preChangePoints: show number only (no slash) - these are pre-change points
-                                 // Points preChangePoints+1 onwards: tick if in markedPoints (scored after change)
-                                 if (num <= preChangePoints) {
-                                     showNumberOnly = true;
-                                 } else {
-                                     if (markedPoints && markedPoints.includes(num)) {
-                                         state = 1;
-                                     }
-                                 }
-                             } else {
-                                 // Normal logic for Panel 2
-                                 if (markedPoints.includes(num)) {
-                                     state = 1;
-                                 }
-                             }
-                             const isCircled = circledPoints && circledPoints.includes(num);
+                             // Panel 3: the points scored before the change of courts (1..N)
+                             // get an inverted T (SC p.77); later ones are ticked as usual
+                             const reverseT = isPanel3 && preChangePoints !== null && num <= preChangePoints;
+                             const state: 0 | 1 = !reverseT && markedPoints.includes(num) ? 1 : 0;
+                             const isCircled = !reverseT && circledPoints.includes(num);
                              // Set-end: void unused numbers above this team's final score with a "T"
-                             const voided = setFinished && finalScore > 0 && num > finalScore && num <= maxPoints;
-                             return <PointBox key={i} num={num} filledState={state} isCircled={isCircled} showNumberOnly={showNumberOnly} voided={voided} />
+                             // (panel 3 only once it is in use, i.e. after the change)
+                             const inUse = !isPanel3 || preChangePoints !== null;
+                             const voided = inUse && setFinished && num > finalScore && num <= maxPoints;
+                             return <PointBox key={i} num={num} filledState={state} isCircled={isCircled} voided={voided} reverseT={reverseT} />
                         })}
                     </div>
                 ))}
