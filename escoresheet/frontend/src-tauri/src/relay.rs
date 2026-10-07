@@ -8,6 +8,7 @@
 //! Ports mirror the JS relay so the existing client code connects unchanged:
 //!   - HTTP on 5173 (static site + API)
 //!   - WebSocket on 8080
+//! (OpenBeach: 5174 / 8081, src/flavour.rs, so both apps run on one laptop.)
 //!
 //! The WS message protocol and the `/api/*` shapes are a port of
 //! `electron/lanRelayCore.cjs` (shared by `server.js`, the Electron relay and
@@ -63,8 +64,10 @@ use rust_embed::RustEmbed;
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot, Mutex};
 
+/// The frontend this app serves: OpenVolley's ../dist, or the openbeach
+/// build for OpenBeach (build.rs sets OV_DIST from the Tauri config).
 #[derive(RustEmbed)]
-#[folder = "../dist"]
+#[folder = "$OV_DIST"]
 struct Assets;
 
 /// PIN/secret fields that must never be returned to a client. The team1* /
@@ -1342,7 +1345,10 @@ async fn static_handler(
 
 fn serve_asset(req_path: &str) -> Response {
     let p = req_path.trim_start_matches('/');
-    let p = if p.is_empty() { "index.html".to_string() } else { p.to_string() };
+    if p.is_empty() {
+        return serve_index().unwrap_or_else(|| (StatusCode::NOT_FOUND, "Not Found").into_response());
+    }
+    let p = p.to_string();
 
     if let Some(r) = try_file(&p) {
         return r;
@@ -1365,10 +1371,13 @@ fn serve_asset(req_path: &str) -> Response {
         }
     }
     // SPA fallback
-    if let Some(r) = try_file("index.html") {
-        return r;
-    }
-    (StatusCode::NOT_FOUND, "Not Found").into_response()
+    serve_index().unwrap_or_else(|| (StatusCode::NOT_FOUND, "Not Found").into_response())
+}
+
+/// The app's main page: index.html, or openbeach's index_beach.html
+/// (flavour.rs index_pages).
+fn serve_index() -> Option<Response> {
+    crate::flavour::CURRENT.index_pages.iter().find_map(|p| try_file(p))
 }
 
 fn try_file(path: &str) -> Option<Response> {

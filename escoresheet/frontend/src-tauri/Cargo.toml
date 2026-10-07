@@ -8,6 +8,9 @@ rust-version = "1.77"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+# build.rs reads the Tauri config to tell OpenVolley from OpenBeach
+# (src/flavour.rs). In the tree through tauri-build, no new crate.
+serde_json = "1"
 
 [dependencies]
 # tray-icon: the app keeps running in the tray when its window is closed
@@ -28,7 +31,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "signal"] }
 axum = { version = "0.7", features = ["ws"] }
-rust-embed = "8"
+# The relay's embedded frontend comes from $OV_DIST (build.rs: OpenVolley's
+# ../dist, or the openbeach build for OpenBeach).
+rust-embed = { version = "8", features = ["interpolate-folder-path"] }
 mime_guess = "2"
 local-ip-address = "0.6"
 futures-util = "0.3"

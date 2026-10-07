@@ -49,13 +49,13 @@ use crate::lifecycle::{self, Lifecycle, MatchLive};
 pub const UPDATE_EVENT: &str = "ov-update";
 /// `OPENVOLLEY_UPDATE_CHANNEL=staging`: the canary manifest (still verified
 /// with the same key).
-pub const STAGING_ENDPOINT: &str = "https://get.openvolley.app/desktop/staging.json";
+pub const STAGING_ENDPOINT: &str = crate::flavour::CURRENT.staging_endpoint;
 /// Written by install.sh: the machine gets the app from the APT repo.
 pub const APT_LIST: &str = "/etc/apt/sources.list.d/openvolley.list";
 /// The root helper the .deb ships (linux/apt-upgrade, polkit action
 /// com.openvolley.escoresheet.update).
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-pub const APT_HELPER: &str = "/usr/libexec/openvolley-escoresheet/apt-upgrade";
+pub const APT_HELPER: &str = crate::flavour::CURRENT.apt_helper;
 
 pub const CHECK_EVERY: Duration = Duration::from_secs(6 * 3600);
 pub const SIGN_IN_EVERY: Duration = Duration::from_secs(15 * 60);
@@ -570,7 +570,7 @@ fn notice_replaced_binary(_updates: &Updates) {}
 #[cfg(target_os = "linux")]
 fn installed_deb_version() -> Option<String> {
     let out = std::process::Command::new("dpkg-query")
-        .args(["-W", "-f=${Version}", "openvolley-escoresheet"])
+        .args(["-W", "-f=${Version}", crate::flavour::CURRENT.package])
         .output()
         .ok()?;
     let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
