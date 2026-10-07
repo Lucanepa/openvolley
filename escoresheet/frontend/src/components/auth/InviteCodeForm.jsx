@@ -55,9 +55,11 @@ export default function InviteCodeForm({ onRedeemed, autoFocus = false, classNam
           invalid={!!error}
           aria-invalid={!!error || undefined}
           aria-describedby={error ? 'ov-invite-code-error' : undefined}
-          className="font-mono uppercase tracking-[0.2em] min-[420px]:w-56"
+          // Side by side from 420px: the field takes the room the button leaves
+          // (a fixed w-56 wrapped "Redeem code" onto two lines in a 320px card)
+          className="font-mono uppercase tracking-[0.2em] min-[420px]:min-w-0 min-[420px]:max-w-56 min-[420px]:flex-1"
         />
-        <Button type="submit" size="md" loading={busy} disabled={busy || clean.length < 12}>
+        <Button type="submit" size="md" loading={busy} disabled={busy || clean.length < 12} className="shrink-0 whitespace-nowrap">
           {busy ? t('access.redeeming') : t('access.redeem')}
         </Button>
       </div>
