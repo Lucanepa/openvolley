@@ -1,6 +1,6 @@
 # Approval with an account (referees and scorer): implementation spec
 
-Status: the design is decided, nothing is implemented yet. Branch `feat/account-approval`, from `main`
+Status: implemented; the review fixes R1–R9 (end of section 0) are built. Branch `feat/account-approval`, from `main`
 (b4068cb1). This document is the contract between the backend agent (owns
 `escoresheet/backend/**`) and the frontend agent (owns `escoresheet/frontend/**`). They work in
 parallel and neither one changes the other's tree. Section 3 is the interface. Its paths, methods,
@@ -34,6 +34,18 @@ Other design decisions made in this spec. Each one is flagged so the owner can o
 - **D4** An approval is bound to the result it approved. A reopen voids it, and so does any change of the finished sets. The official approves again.
 - **D5** The official is identified by **email** typed on the scoring device. There is no server-side list of referee accounts to pick from, because that list would expose every referee's address to every scorer.
 - **D6** Test matches may be approved too, so officials can practise. A test match never closes, so its approvals stay undoable.
+
+**As built after the review (2026-10-07).** These changes override the sections below where they differ:
+
+- **R1 The scoring side never fills a referee slot.** A referee slot is refused with 403 `OV_APPROVAL_SCORER_NOT_REFEREE` when the approver is the match's creator, one of its editors, or the account that sends the request. A club volunteer with both roles can no longer approve as "1st referee" under a borrowed profile name.
+- **R2 Only the scoring table sends approvals.** The caller needs the `scorer` or `referee` role, or admin. Otherwise the answer is 403 `OV_APPROVAL_CALLER_ROLE`, checked right after step 5, before any address or PIN is looked up. A pending self-registered account can no longer lock officials' PINs through its own test match. The app hides "Approve with account" for such accounts.
+- **R3 Stronger PIN rule.** `isWeakPin` also refuses PINs with at most two different digits (1212, 1122, 1000, 121212), palindromes, 4-digit years 1940–2039 and dates DDMM/MMDD, 6-digit ABCABC, AABBCC and DDMMYY/MMDDYY/YYMMDD dates, and a list of keypad patterns and favourites (2580, 1357, 147258). The frontend copy is the same rule (a vitest compares both over every 4- and 5-digit PIN).
+- **R4 Rolling failure count.** A right PIN no longer clears `failed_attempts`. The count restarts only after 30 days without a failure, so a guesser gets at most 9 tries per official per 30 days, however often the official approves. Every 5th failure locks for 15 minutes, the 10th disables, as before.
+- **R5 No lock oracle.** A locked or disabled PIN answers 403 `OV_APPROVAL_PIN_INVALID`, exactly like a wrong PIN or an unknown address, and is not counted. 423 `OV_APPROVAL_PIN_LOCKED` is no longer sent. The owner sees the state in the profile and gets an email.
+- **R6 A malformed PIN is refused, not counted.** A PIN that is not 4–6 digits answers 400 `OV_APPROVAL_PIN_FORMAT` at step 1, before any lookup. The dialog keeps "Approve" disabled until the PIN has 4–6 digits.
+- **R7 The official is told.** With a mailer (SMTP configured), the official gets an email for every approval made with their PIN (match, result, slot, time, short ID, and who sent it) and when their PIN is locked or blocked. Mails go out after COMMIT, in the background, from the new `notify` budget (100 per hour). `GET /api/account/approvals` lists the caller's own approvals (active and revoked, newest first, with `requested_by_name` and the match). The profile shows them under "Your approvals", with undo while the match is open.
+- **R8 Teams are part of what was approved.** The `matches_void_approvals` trigger also voids the approvals (reason `result_changed`) when the home or away team's name changes (trimmed, case-insensitive) while the status is ended, approved or final. Swapping the teams after an approval no longer leaves it valid.
+- **R9 Frontend.** Before "Confirm and approve", only the approvals that complete a slot are re-checked: no drawn signature in that slot, and a match with the current result. A stale record in a slot that was signed by hand never blocks, and drawing a signature drops it. "Reopen match" keeps the account approvals, as it keeps the drawn signatures: the result is unchanged and the server keeps them on approved → ended. The admin reopen, "Reopen last set" and a result or team change in Manual adjustments drop them. Manual adjustments now sends the corrected sets through the sync queue, so an approval can bind to them. When the result or a team name changes there, it also clears the post-match signatures and undoes the account approvals online. The admin lookup reads "ID 6F1C2A9B", "#6F1C2A9B" and "#4711" as the bare ID or game number, both in the client and on the server.
 
 ---
 
@@ -118,21 +130,22 @@ parallel attempts serialise and none can skip the counter.
 
 | Event | Effect |
 |---|---|
-| Wrong PIN | `failed_attempts += 1`, `last_failed_at = now()`. If the new value is a multiple of 5, `locked_until = now() + 15 min`. If it is ≥ 10, `disabled_at = now()`. |
-| Correct PIN | `failed_attempts = 0`, `locked_until = NULL`, `last_used_at = now()`. |
+| Wrong PIN | `failed_attempts += 1` (back to 1 when `last_failed_at` is more than 30 days old), `last_failed_at = now()`. If the new value is a multiple of 5, `locked_until = now() + 15 min`. If it is ≥ 10, `disabled_at = now()`. |
+| Correct PIN | `last_used_at = now()`. The failure count stays (R4). |
 | PIN set or changed | New salt and MAC, `set_at = now()`, every counter reset (`failed_attempts = 0`, `locked_until`, `disabled_at`, `last_failed_at` NULL). |
-| `locked_until > now()` | 423 `OV_APPROVAL_PIN_LOCKED` `{ retry_after_sec }`, checked **before** the MAC. The attempt is not counted. |
-| `disabled_at IS NOT NULL` | 423 `OV_APPROVAL_PIN_LOCKED` `{ disabled: true }`. The owner must set a new PIN with their password. |
+| `locked_until > now()` | 403 `OV_APPROVAL_PIN_INVALID`, the same answer as a wrong PIN (R5). The attempt is not counted. |
+| `disabled_at IS NOT NULL` | 403 `OV_APPROVAL_PIN_INVALID` (R5). The owner must set a new PIN with their password. |
 
 When a failure causes a lock or a disable, the same transaction writes an audit row
 `approval_pin.locked` (actor = caller, target = approver, `match_id`, details
 `{ failures, locked_until, disabled }`). The failure update and that audit row are **committed**:
 the handler returns the 403 or 423 after COMMIT. It does not abort and roll back.
 
-Known trade-off: someone at the scoring table can lock a referee's PIN on purpose by typing
-wrong PINs. The referee then signs by hand, which is the fallback. Unknown emails have no row and
-never lock. An attacker can therefore tell a locked account from an unknown one after 5 tries,
-but the per-caller limiter (3.0) allows only 10 failures per 10 minutes.
+Known trade-off: an account with the scorer or referee role (R2) can lock an official's PIN on
+purpose by typing wrong PINs on a match it scores. The official then signs by hand, which is the
+fallback, gets an email (R7) and sees the lock in the profile. A locked or disabled PIN answers
+exactly like a wrong PIN or an unknown address (R5), so the answers never tell which addresses
+belong to officials with a PIN. Each lock writes an audit row with the sender as actor.
 
 ### 1.3 `public.match_approvals`
 
@@ -329,7 +342,7 @@ The order of the checks is part of the contract:
    - `external_id` must be a string of 1–200 characters.
    - `slot` must be in the list.
    - `email` must match the auth email regex and be at most 254 characters. It is lower-cased.
-   - `pin` must be a string. The format is checked only in step 9, so a malformed PIN counts as a wrong one.
+   - `pin` must be a string of 4 to 6 digits. A string of another shape answers 400 `OV_APPROVAL_PIN_FORMAT` here and is never counted (R6).
    - `result.sets` must be an array of at most 5 triples of integers (0–99 for the points, 1–5 for the index).
    - `device_id`, when present, must be a uuid.
 
@@ -338,17 +351,19 @@ The order of the checks is part of the contract:
 3. In one transaction, run `SELECT … FROM public.matches WHERE external_id = $1 FOR UPDATE`. This serialises all approvals of a match. No row: 404 `OV_NOT_FOUND`.
 4. `sport_type = 'beach'`: 409 `OV_APPROVAL_UNSUPPORTED`.
 5. The caller may write the match (`created_by = caller`, a `match_editors` row, or `access.isAdmin`). If not: 403 `OV_NOT_MATCH_OWNER`.
+5b. The caller holds `scorer` or `referee`, or is an admin. Otherwise 403 `OV_APPROVAL_CALLER_ROLE` `{ details: { roles: ['scorer','referee'] } }` (R2).
 6. `closed_at IS NOT NULL`: 409 `OV_MATCH_CLOSED`.
 7. `status <> 'ended'`: 409 `OV_MATCH_NOT_ENDED` `{ details: { status } }`.
 8. `resultKey(server sets)` differs from `resultKey(body.result.sets)`, or the server has no finished set at all: 409 `OV_RESULT_NOT_SYNCED` `{ details: { server: [[i,h,a],…] } }`. The client syncs and retries.
 9. Look up the approver with `auth.users` by `lower(email)`. Deleted, banned or blocked users count as unknown. Then `SELECT … FROM auth.approval_pins WHERE user_id = $1 FOR UPDATE`, which is skipped for an unknown user, but `verifyPin` still runs once with the dummy inputs:
-   - Disabled or locked: 423 `OV_APPROVAL_PIN_LOCKED` `{ details: { retry_after_sec } \| { disabled: true } }`. Not counted.
-   - Wrong PIN, unknown email, no PIN, old `key_id` or bad format: 403 `OV_APPROVAL_PIN_INVALID` (message "Email or PIN not accepted", no details). When a row exists, the failure is counted (1.2) and **committed**.
-   - Correct: the counters are reset (also committed).
+   - Disabled or locked: 403 `OV_APPROVAL_PIN_INVALID`, like a wrong PIN. Not counted (R5).
+   - Wrong PIN, unknown email, no PIN or old `key_id`: 403 `OV_APPROVAL_PIN_INVALID` (message "Email or PIN not accepted", no details). When a row exists, the failure is counted (1.2) and **committed**. A failure that locks or disables mails the official (R7).
+   - Correct: `last_used_at` is set (also committed). The failure count stays (R4).
 10. Eligibility, checked only after a correct PIN, so details are never revealed to someone without the PIN. Each failure returns after COMMIT, which keeps the counter reset:
     - Email unconfirmed: 409 `OV_EMAIL_UNCONFIRMED`.
     - Referee slots need the `referee` role. The scorer slot needs the `scorer` role (D2). Otherwise 403 `OV_APPROVAL_ROLE_REQUIRED` `{ details: { role: 'referee' \| 'scorer' } }`.
     - The scorer slot also needs the approver to be `created_by` or an editor of the match. Otherwise 403 `OV_APPROVAL_NOT_MATCH_SCORER`.
+    - A referee slot needs an approver who is **not** `created_by`, not an editor and not the caller. Otherwise 403 `OV_APPROVAL_SCORER_NOT_REFEREE` (R1).
     - The profile name is empty: 409 `OV_APPROVAL_NAME_REQUIRED`.
 11. Slot and account checks against the active rows of this match:
     - The same user, the same slot and `result_matches`: 200 with the existing record and `already: true`. No new row and no audit entry (idempotent retry).
@@ -395,12 +410,14 @@ These are active approvals only, fetched in one extra query per page, with `WHER
 | Status | Code | When |
 |---|---|---|
 | 400 | `OV_INVALID_REQUEST` | Bad body or query |
-| 400 | **`OV_APPROVAL_PIN_FORMAT`** | The PIN to set is not 4–6 digits |
-| 400 | **`OV_APPROVAL_PIN_WEAK`** | The PIN to set is a repeated digit or a sequence |
+| 400 | **`OV_APPROVAL_PIN_FORMAT`** | The PIN to set, or the PIN sent to approve, is not 4–6 digits |
+| 400 | **`OV_APPROVAL_PIN_WEAK`** | The PIN to set is too easy to guess (R3) |
 | 403 | **`OV_PASSWORD_INVALID`** | Wrong password on set or remove PIN |
 | 403 | **`OV_APPROVAL_PIN_INVALID`** | Email or PIN not accepted (uniform) |
 | 403 | **`OV_APPROVAL_ROLE_REQUIRED`** | The approver lacks the slot's role, or the PIN setter has neither role |
 | 403 | **`OV_APPROVAL_NOT_MATCH_SCORER`** | Scorer slot, but the approver is not the owner or an editor |
+| 403 | **`OV_APPROVAL_SCORER_NOT_REFEREE`** | Referee slot, but the approver is the owner, an editor or the caller (R1) |
+| 403 | **`OV_APPROVAL_CALLER_ROLE`** | The caller has neither the scorer nor the referee role and is not an admin (R2) |
 | 403 | `OV_NOT_MATCH_OWNER` | The caller may not write this match |
 | 403 | `OV_FORBIDDEN` | GET or undo by someone else |
 | 404 | `OV_NOT_FOUND` | Unknown match or approval |
@@ -412,7 +429,7 @@ These are active approvals only, fetched in one extra query per page, with `WHER
 | 409 | **`OV_APPROVAL_ONE_SLOT`** | The approver already holds another slot of this match |
 | 409 | **`OV_APPROVAL_SLOT_TAKEN`** | The slot already has a valid approval by someone else |
 | 409 | **`OV_APPROVAL_UNSUPPORTED`** | Beach match |
-| 423 | **`OV_APPROVAL_PIN_LOCKED`** | Locked (`retry_after_sec`) or disabled (`disabled: true`) |
+| 423 | ~~`OV_APPROVAL_PIN_LOCKED`~~ | No longer sent (R5) |
 | 429 | `OV_TOO_MANY_ATTEMPTS` | Limiter or password lockout |
 | 503 | **`OV_APPROVAL_UNAVAILABLE`** | No `OV_PIN_SECRET` |
 | 503 | `OV_DB_UNAVAILABLE`, `OV_DB_NOT_CONFIGURED`, `auth_busy` | As today |
@@ -530,11 +547,11 @@ Only `scorer`, `ref2` and `ref1` change. Captains and the assistant scorer stay 
     2. Send `{ external_id: seed_key, slot, email, pin, result: { sets: finished sets as [index, homePoints, awayPoints] }, device_id: deviceId() }`.
     3. On 200: write Dexie, call `rememberApprovalEmail` (not for the scorer slot), show the toast `approval.approved`, close the dialog and clear the PIN.
     4. On `OV_RESULT_NOT_SYNCED`: retry steps 1–2 once, then show the error.
-    5. On `OV_APPROVAL_PIN_LOCKED`: show the minutes left, or "blocked: set a new PIN in the profile".
+    5. (Removed by R5: a locked PIN reads as `approval.errors.pinInvalid`, whose text says that the PIN pauses after several wrong tries.)
     6. Other errors appear inline through `errorKeyOf`. Clear the PIN field on every error.
   - **Name mismatch:** if the account's `name` in the response differs from the officials entry (case- and accent-insensitive, order-insensitive), show a non-blocking notice `approval.nameDiffers` ("Account name {{account}} differs from the official entered ({{entered}})").
 - **Gating and order.** `scorerSigned`, `ref2Signed`, `ref1Signed` and therefore `currentStep` and `allSignaturesDone` use `slotComplete(...)`. The signing order (captains → assistant scorer → scorer → 2nd referee → 1st referee) is unchanged and applies to both methods. The server does not enforce the order.
-- **Reopen paths** (`handleReopenMatch`, reopen last set, admin reopen) clear `accountApprovals` through `clearedPostMatchSignatures()`. When the match is not closed and the app is online, they also call `undo` on each local approval, best effort. Otherwise the server trigger voids them once the status change syncs.
+- **Reopen paths** (reopen last set, admin reopen; "Reopen match" keeps them, R9) clear `accountApprovals` through `clearedPostMatchSignatures()`. When the match is not closed and the app is online, they also call `undo` on each local approval, best effort. Otherwise the server trigger voids them once the status change syncs.
 
 ### 4.6 PDF (`scoresheet_pdf/components/FooterSection.tsx` `Approvals`)
 
@@ -585,7 +602,7 @@ Claude-Session: https://claude.ai/code/session_01Tf9Me5uXmbq7Y9pLyiVvbq
 
 - **`tests/approvalPin.test.js`** (pure):
   - Both test vectors (1.1 and 1.4) and the IP hash vector (1.3).
-  - `isWeakPin` truth table: weak `0000`, `1234`, `0123`, `9876`, `123456`, `111111`; fine `1357`, `482917`, `0420`.
+  - `isWeakPin` truth table: weak `0000`, `1234`, `0123`, `9876`, `123456`, `111111`, and since R3 `1212`, `1984`, `1004`, `2580`, `123123`, `150390`; fine `482917`, `4738`.
   - `PIN_RE` rejects `123`, `1234567`, `12a4` and ` 1234`.
   - `verifyPin` is true only for the right PIN and user, and false with a changed salt, a different user id or an old `key_id`.
   - The unknown-user path calls the HMAC exactly once (spy).
@@ -594,7 +611,7 @@ Claude-Session: https://claude.ai/code/session_01Tf9Me5uXmbq7Y9pLyiVvbq
   - Set, change and remove PIN: password required, wrong password gives 403 and counts in the email lockout, format and weak checks, the unconfirmed and role gates, idempotent remove, and the audit rows.
   - Approve, happy path, for all three slots. The record shape has no `user_id` or email keys (assert on the JSON keys).
   - Every error in the 3.2 order, including that a wrong PIN for an ineligible account answers `PIN_INVALID`, not `ROLE_REQUIRED`, and that an unknown email gives the same answer as a wrong PIN.
-  - Lockout: after 5 wrong PINs the answer is 423 and the 6th attempt is not counted. After the lock expires (move the clock with `UPDATE locked_until`), 5 more wrong PINs set `disabled`. A correct PIN resets the counter. The counter persists even though the handler returned an error (committed). The `approval_pin.locked` audit row exists.
+  - Lockout: after 5 wrong PINs the PIN is locked; the answer stays 403 `OV_APPROVAL_PIN_INVALID` (R5) and the 6th attempt is not counted. After the lock expires (move the clock with `UPDATE locked_until`), 5 more wrong PINs set `disabled`. A correct PIN keeps the count; 30 quiet days restart it (R4). The counter persists even though the handler returned an error (committed). The `approval_pin.locked` audit row exists.
   - One slot per user; slot taken; an idempotent retry returns `already: true` with no second audit row.
   - Stale replacement: change the set points with `UPDATE sets`, approve again, and check that the old row has `result_changed`.
   - `OV_RESULT_NOT_SYNCED` with the server sets in `details`.
