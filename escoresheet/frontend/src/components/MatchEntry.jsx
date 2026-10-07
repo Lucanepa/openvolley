@@ -899,10 +899,12 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       )}
 
       {/* SECTION 1: TO+SUB | Score & Sets | Sanctions */}
+      {/* minmax(0, 1fr) and the clamps below: at 360 px the three panels
+          were wider than the screen and the sanctions ran off the right edge. */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'auto 1fr auto',
-        gap: '8px',
+        gridTemplateColumns: 'auto minmax(0, 1fr) auto',
+        gap: 'clamp(6px, 2vw, 8px)',
         alignItems: 'stretch'
       }}>
         {/* Left: TO + SUB side by side */}
@@ -914,13 +916,13 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           <div style={{
             background: timeoutsUsed >= 2 ? 'rgba(239, 68, 68, 0.2)' : 'var(--panel-2)',
             borderRadius: '8px',
-            padding: '6px 12px',
+            padding: '6px clamp(6px, 2.5vw, 12px)',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
             border: timeoutsUsed >= 2 ? '2px solid #ef4444' : '1px solid var(--border)',
-            minWidth: '50px'
+            minWidth: 'clamp(40px, 12vw, 50px)'
           }}>
             <div style={{ fontSize: '10px', color: 'var(--muted)', marginBottom: '2px' }}>{t('matchEntry.to', 'TO')}</div>
             <div style={{
@@ -935,13 +937,13 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           <div style={{
             background: substitutionsUsed >= 6 ? 'rgba(239, 68, 68, 0.2)' : substitutionsUsed >= 5 ? 'rgba(234, 179, 8, 0.2)' : 'var(--panel-2)',
             borderRadius: '8px',
-            padding: '6px 12px',
+            padding: '6px clamp(6px, 2.5vw, 12px)',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
             border: substitutionsUsed >= 6 ? '2px solid #ef4444' : substitutionsUsed >= 5 ? '2px solid #eab308' : '1px solid var(--border)',
-            minWidth: '50px'
+            minWidth: 'clamp(40px, 12vw, 50px)'
           }}>
             <div style={{ fontSize: '10px', color: 'var(--muted)', marginBottom: '2px' }}>{t('matchEntry.sub', 'SUB')}</div>
             <div style={{
@@ -958,12 +960,13 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         <div style={{
           ...SURFACE,
           borderRadius: '12px',
-          padding: '8px 12px',
+          padding: '8px clamp(6px, 2vw, 12px)',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: '2px'
+          gap: '2px',
+          minWidth: 0
         }}>
           {/* Score */}
           <div style={{
@@ -972,7 +975,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
             gap: '8px'
           }}>
             <span style={{
-              fontSize: '48px',
+              fontSize: 'clamp(36px, 12vw, 48px)',
               fontWeight: 800,
               color: '#22c55e'
             }}>{points.team}</span>
@@ -1019,7 +1022,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
           gap: '4px',
           maxHeight: '80px',
           overflow: 'auto',
-          minWidth: '100px'
+          minWidth: 'clamp(76px, 22vw, 100px)'
         }}>
           <div style={{ fontSize: '9px', color: 'var(--muted)', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{t('matchEntry.sanctions', 'SANCTIONS')}</div>
           {allSanctionsForDisplay.length === 0 ? (
@@ -1113,7 +1116,10 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
                           color: player.isLibero ? '#000' : undefined,
                           position: 'relative',
                           aspectRatio: '1 / 1',
-                          fontSize: 'clamp(25px, 10vw, 40px)'
+                          // half the disc (.court-player is 22cqh), as on the
+                          // referee discs (discSizing DISC.number): 10vw spilled
+                          // two digits out of a 60 px disc at 360 px wide
+                          fontSize: '11cqh'
                         }}
                       >
                         {shouldShowBall && (

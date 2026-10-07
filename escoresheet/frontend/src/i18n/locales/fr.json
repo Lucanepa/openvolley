@@ -32,6 +32,7 @@
     "retryAll": "Réessayer tout",
     "screenTooSmall": "Écran trop petit",
     "screenTooSmallMessage": "Cette application requiert une largeur d'écran minimale de 357px. Veuillez utiliser un appareil avec un écran plus large ou tourner votre appareil en mode paysage.",
+    "screenTooShortMessage": "Le terrain ne tient pas sur cet écran. Veuillez tourner votre appareil, quitter l'écran partagé ou utiliser un écran plus grand.",
     "tryFullscreen": "Essayez le plein écran",
     "fullscreenHint": "Le plein écran permet de gagner de l'espace en masquant l'interface utilisateur du navigateur.",
     "setIndex": "Set {{index}}",
