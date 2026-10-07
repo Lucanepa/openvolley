@@ -7,7 +7,7 @@ import CreateAccountLink from './CreateAccountLink'
 import { backdropDismiss } from '../../ui/backdropDismiss.js'
 
 // The contact address in the server's 503 answer ("... Contact x@y.")
-const DEFAULT_CONTACT = 'volleyball@lucanepa.com'
+const DEFAULT_CONTACT = 'support@openvolley.app'
 export function contactFromMessage(message) {
   const m = /Contact\s+([^\s@]+@[^\s@]+?)\.?$/.exec(String(message || '').trim())
   return m ? m[1] : DEFAULT_CONTACT
