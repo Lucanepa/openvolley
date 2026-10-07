@@ -153,6 +153,21 @@ describe('describeEvent', () => {
     }
   })
 
+  it('names a bench injury, an incomplete team and a stopped match (the Last action cases)', () => {
+    const extra = [
+      { id: 910, seq: 910, setIndex: 1, type: 'bench_injury', payload: { team: 'home', playerNumber: 7 } },
+      { id: 911, seq: 911, setIndex: 1, type: 'forfait', payload: { team: 'away', scope: 'match', reason: 'team_incomplete' } },
+      { id: 912, seq: 912, setIndex: 1, type: 'forfait', payload: { team: 'away', scope: 'set' } },
+      { id: 913, seq: 913, setIndex: 1, type: 'match_stopped', payload: { homePoints: 10, awayPoints: 8 } }
+    ]
+    const all = events.concat(extra)
+    const title = (id) => describeEvent(all.find(e => e.id === id), all, ctx).title
+    expect(title(910)).toBe('Injury: player #7 (bench)')
+    expect(title(911)).toBe('Team incomplete for the match')
+    expect(title(912)).toBe('Team incomplete for the set')
+    expect(title(913)).toBe('Match stopped')
+  })
+
   it('translates through t with interpolation', () => {
     const t = (key, opts) => (key === 'corrections.term.timeout' ? 'Auszeit' : key === 'corrections.term.set' ? `Satz ${opts.n}` : opts.defaultValue)
     const d = describeEvent(find(e => e.type === 'timeout'), events, { ...ctx, t })
