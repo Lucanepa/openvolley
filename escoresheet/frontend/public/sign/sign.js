@@ -49,7 +49,7 @@
     },
     fr: {
       title: 'Signer comme {role}', captainOf: 'capitaine de {team}', coachOf: 'entraîneur de {team}', scorer: 'marqueur',
-      asstScorer: 'marqueur assistant', ref1: '1er arbitre', ref2: '2e arbitre', team: 'Équipe {l}', match: 'Match n° {n}',
+      asstScorer: 'marqueur assistant', ref1: '1er arbitre', ref2: '2e arbitre', team: 'l’équipe {l}', match: 'Match n° {n}',
       hint: 'Signer ici', clear: 'Effacer', done: 'Terminé', pad: 'Zone de signature', loading: 'Ouverture…', sending: 'Envoi…',
       sent: 'Signature envoyée. Vous pouvez fermer cette page.', sendFailed: 'Échec de l’envoi. Vérifiez la connexion et touchez Terminé à nouveau.',
       openFailed: 'Appareil du marqueur injoignable. Vérifiez la connexion ; nouvel essai…',
@@ -58,7 +58,7 @@
     },
     it: {
       title: 'Firma come {role}', captainOf: 'capitano di {team}', coachOf: 'allenatore di {team}', scorer: 'segnapunti',
-      asstScorer: 'segnapunti assistente', ref1: '1° arbitro', ref2: '2° arbitro', team: 'Squadra {l}', match: 'Partita n. {n}',
+      asstScorer: 'segnapunti assistente', ref1: '1° arbitro', ref2: '2° arbitro', team: 'squadra {l}', match: 'Partita n. {n}',
       hint: 'Firma qui', clear: 'Cancella', done: 'Fatto', pad: 'Area firma', loading: 'Apertura…', sending: 'Invio…',
       sent: 'Firma inviata. Puoi chiudere questa pagina.', sendFailed: 'Invio non riuscito. Controlla la connessione e tocca di nuovo Fatto.',
       openFailed: 'Dispositivo del segnapunti non raggiungibile. Controlla la connessione; nuovo tentativo…',
