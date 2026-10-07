@@ -518,6 +518,16 @@
         "disqualified": "Disqualifié",
         "exceptionallySubstituted": "Remplacement exceptionnel",
         "saveFailed": "Échec de l’enregistrement"
+      },
+      "gameCaptain": {
+        "title": "Capitaine de jeu",
+        "optional": "facultatif",
+        "none": "Aucun",
+        "player": "Capitaine de jeu : joueur {{number}}",
+        "enterFirst": "À choisir une fois les joueurs saisis",
+        "noCaptain": "Aucun capitaine sur la liste d’équipe",
+        "whenCaptainLeaves": "Prend le relais quand le capitaine {{captain}} quitte le terrain",
+        "fromFirstRally": "Le capitaine {{captain}} n’est pas dans la composition : capitaine de jeu dès le premier échange"
       }
     },
     "lastAction": "Dernière action :",

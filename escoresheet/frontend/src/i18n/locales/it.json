@@ -519,6 +519,16 @@
         "disqualified": "Squalificato",
         "exceptionallySubstituted": "Sostituito eccezionalmente",
         "saveFailed": "Salvataggio non riuscito"
+      },
+      "gameCaptain": {
+        "title": "Capitano in gioco",
+        "optional": "facoltativo",
+        "none": "Nessuno",
+        "player": "Capitano in gioco: giocatore {{number}}",
+        "enterFirst": "Da scegliere dopo aver inserito i giocatori",
+        "noCaptain": "Nessun capitano nell’elenco squadra",
+        "whenCaptainLeaves": "Subentra quando il capitano {{captain}} lascia il campo",
+        "fromFirstRally": "Il capitano {{captain}} non è nella formazione: capitano in gioco dal primo scambio"
       }
     },
     "lastAction": "Ultima azione:",

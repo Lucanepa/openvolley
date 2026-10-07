@@ -512,6 +512,16 @@
         "disqualified": "Disqualifiziert",
         "exceptionallySubstituted": "Ausserordentlich ersetzt",
         "saveFailed": "Speichern fehlgeschlagen"
+      },
+      "gameCaptain": {
+        "title": "Spielkapitän",
+        "optional": "optional",
+        "none": "Keiner",
+        "player": "Spielkapitän: Spieler {{number}}",
+        "enterFirst": "Wählbar, sobald die Spieler eingetragen sind",
+        "noCaptain": "Kein Kapitän auf der Mannschaftsliste",
+        "whenCaptainLeaves": "Übernimmt, wenn Kapitän {{captain}} das Feld verlässt",
+        "fromFirstRally": "Kapitän {{captain}} ist nicht in der Aufstellung: Spielkapitän ab dem ersten Ballwechsel"
       }
     },
     "lastAction": "Letzte Aktion:",
