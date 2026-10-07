@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#e2001a">
 <meta name="color-scheme" content="light">
 <title>Get OpenVolley</title>
-<meta name="description" content="Install the OpenVolley eScoresheet and OpenBeach: Android via F-Droid or APK, Linux via APT, Windows installer.">
+<meta name="description" content="Install the OpenVolley eScoresheet and OpenBeach: Android via F-Droid or APK, Linux via APT, Flatpak or the AUR, Windows installer or Scoop.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Ccircle cx='256' cy='256' r='256' fill='%23ffffff'/%3E%3Cpath fill='%23e2001a' d='M495.37 273.44A240 240 0 0 1 480.87 339.85A182.72 182.72 0 0 0 262.66 226.69A130.72 130.72 0 0 1 237.07 188.46A226.72 226.72 0 0 1 495.37 273.44ZM297.34 19.59A240 240 0 0 1 486.05 187.6A278.72 278.72 0 0 0 226.09 137.36A130.72 130.72 0 0 1 297.34 19.59Z'/%3E%3Cpath fill='%231c1917' d='M440.07 410.01A240 240 0 0 1 70.94 408.82A182.72 182.72 0 0 0 278.05 276.42A130.72 130.72 0 0 1 440.07 410.01Z'/%3E%3Cpath fill='%231c1917' d='M30.59 338.4A240 240 0 0 1 216.18 19.33A182.72 182.72 0 0 0 227.29 264.89A130.72 130.72 0 0 1 30.59 338.4Z'/%3E%3C/svg%3E">
 <!-- Template: publish-pkgs.sh (lib/publish-lib.sh landing_page) fills in the placeholders
      DESKTOP_VERSION, DEB_PACKAGE, WINDOWS_URL, APK_VERSION, APK_FILE and, for OpenBeach,
@@ -52,6 +52,10 @@
   h3:first-of-type { margin-top: 0; }
   p { margin: .35rem 0; }
   .meta { font-size: 12px; color: var(--stone-500); }
+  .soon {
+    display: inline-block; margin-left: .4rem; padding: 0 .5rem; border: 1px solid var(--stone-200); border-radius: 999px;
+    background: var(--stone-100); color: var(--stone-600); font-size: 11px; font-weight: 600; line-height: 1.6; vertical-align: 1px;
+  }
   ol { margin: .35rem 0; padding-left: 1.25rem; }
   li { margin: .2rem 0; }
   code { font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
@@ -207,6 +211,32 @@ sudo apt update &amp;&amp; sudo apt install @DEB_PACKAGE@</code></pre><button cl
   </section>
   <!--/beach-->
 
+  <!-- Static card. When a channel marked "coming soon" goes live, delete its <span class="soon"> and
+       its "Waiting for ..." sentence (escoresheet/packaging/<manager>/README.md has the steps). -->
+  <section class="card" id="other">
+    <h2>Other ways to install <span>OpenVolley · OpenBeach</span></h2>
+    <p>The same releases through other package managers. On Linux these copies are updated by the package manager, not by the app itself.</p>
+    <h3>Arch Linux, Manjaro, EndeavourOS (AUR)</h3>
+    <div class="cmd"><pre><code>yay -S openvolley-escoresheet-bin</code></pre><button class="copy" type="button">Copy</button></div>
+    <div class="cmd"><pre><code>yay -S openbeach-escoresheet-bin</code></pre><button class="copy" type="button">Copy</button></div>
+    <p class="meta">Any AUR helper works (paru too). Updates come with <code>yay -Syu</code>. For the tablet Wi-Fi also install <code>networkmanager</code> and <code>dnsmasq</code>.</p>
+    <h3>Snap (Ubuntu and others) <span class="soon">coming soon</span></h3>
+    <div class="cmd"><pre><code>sudo snap install openvolley-escoresheet
+sudo snap connect openvolley-escoresheet:network-manager
+sudo snap connect openvolley-escoresheet:bluez</code></pre><button class="copy" type="button">Copy</button></div>
+    <p class="meta">Waiting for the Snap Store. OpenBeach: the same with <code>openbeach-escoresheet</code>. The two <code>snap connect</code> lines allow the tablet Wi-Fi and Bluetooth network. Matches of an APT install are not seen by the snap: back them up and restore them in the app.</p>
+    <h3>Windows: winget <span class="soon">coming soon</span></h3>
+    <div class="cmd"><pre><code>winget install Lucanepa.OpenVolley</code></pre><button class="copy" type="button">Copy</button></div>
+    <div class="cmd"><pre><code>winget install Lucanepa.OpenBeach</code></pre><button class="copy" type="button">Copy</button></div>
+    <p class="meta">Waiting for review in the winget repository. It runs the installer above, so the app keeps updating itself as well. Run <code>winget upgrade</code> only between matches: it closes the app.</p>
+    <h3>Windows: Scoop</h3>
+    <div class="cmd"><pre><code>scoop install https://raw.githubusercontent.com/Lucanepa/openvolley/main/escoresheet/packaging/scoop/openvolley.json</code></pre><button class="copy" type="button">Copy</button></div>
+    <div class="cmd"><pre><code>scoop install https://raw.githubusercontent.com/Lucanepa/openvolley/main/escoresheet/packaging/scoop/openbeach.json</code></pre><button class="copy" type="button">Copy</button></div>
+    <p class="meta">Runs the installer above (it asks once for an administrator). Same rule as winget: <code>scoop update</code> only between matches.</p>
+    <h3>Android: f-droid.org <span class="soon">coming soon</span></h3>
+    <p class="meta">Waiting for review at F-Droid. OpenVolley and OpenBeach in F-Droid's main repository, built by F-Droid from the source code and signed with the same key as the APKs here, so you can switch to it without reinstalling. Until then, use the F-Droid repository above.</p>
+  </section>
+
   <section class="card" id="updates">
     <h2>Automatic updates</h2>
     <h3>Android</h3>
@@ -214,6 +244,7 @@ sudo apt update &amp;&amp; sudo apt install @DEB_PACKAGE@</code></pre><button cl
     <p>Installed the APK from the browser? Open OpenVolley in F-Droid once and tap <kbd>Update</kbd>: from then on F-Droid updates it. Without F-Droid the app can tell you about a new version instead, if you say yes when it asks (about once a day it reads the version list on this site, never during a match; nothing else is sent). It never installs anything itself.</p>
     <h3>Windows and Linux</h3>
     <p>From version 2.2.0 the desktop app updates itself: it downloads the update in the background and installs it when you quit OpenVolley, never during a match. Windows asks once for an administrator per update. Linux installed with the command above updates in the background and runs the new version from the next start. Version 2.1.x and older: install 2.2.0 once by hand (Linux: <code>sudo apt update &amp;&amp; sudo apt upgrade</code>).</p>
+    <p>A Flatpak, Snap or AUR copy never updates itself: <code>flatpak update</code>, the Snap Store or <code>yay -Syu</code> brings the new version.</p>
   </section>
 
   <footer>
