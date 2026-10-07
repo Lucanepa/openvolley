@@ -15,11 +15,13 @@ import { CalendarX2, Check, ChevronRight, FileUp, Loader2, Plus } from 'lucide-r
 import { cn } from './ui/cn.js'
 import { Button } from './ui/Button.jsx'
 import { Card } from './ui/Card.jsx'
+import { DateField } from './ui/DateField.jsx'
 import { Field, FormError } from './ui/Field.jsx'
 import { EmptyState } from './ui/EmptyState.jsx'
 import { RowList } from './ui/Row.jsx'
 import { SectionHeader } from './ui/SectionHeader.jsx'
 import { SkeletonRows } from './ui/Skeleton.jsx'
+import { Select } from './ui/Select.jsx'
 import { PinInput, ListLabel, GameRow } from './components/dashboards/EntryKit.jsx'
 import LegalLinks from './legal/LegalLinks'
 
@@ -1240,23 +1242,21 @@ export default function UploadRosterApp() {
                           aria-label={t('rosterSetup.firstName', 'First name')}
                           className={FIELD}
                         />
-                        <input
-                          type="date"
+                        <DateField
                           value={player.dob ? formatDateToISO(player.dob) : ''}
-                          onChange={(e) => handlePlayerChange(index, 'dob', e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')}
+                          onChange={(v) => handlePlayerChange(index, 'dob', v ? formatDateToDDMMYYYY(v) : '')}
                           aria-label={t('rosterSetup.dob', 'DOB')}
-                          className={FIELD}
                         />
-                        <select
+                        <Select
                           value={player.libero}
                           onChange={(e) => handlePlayerChange(index, 'libero', e.target.value)}
                           aria-label={t('rosterSetup.libero', 'Libero')}
-                          className={FIELD}
+                          block
                         >
                           <option value=""></option>
                           <option value="libero1">{t('rosterSetup.libero', 'Libero')} 1</option>
                           <option value="libero2">{t('rosterSetup.libero', 'Libero')} 2</option>
-                        </select>
+                        </Select>
                         <div
                           onClick={() => handlePlayerChange(index, 'isCaptain', !player.isCaptain)}
                           style={{
@@ -1305,18 +1305,18 @@ export default function UploadRosterApp() {
                   <div className="divide-y divide-stone-100">
                     {parsedData.bench.map((official, index) => (
                       <div key={index} className={cn(ROSTER_ROW, 'grid-cols-[180px_1fr_1fr_140px_70px]')}>
-                        <select
+                        <Select
                           value={official.role}
                           onChange={(e) => handleBenchChange(index, 'role', e.target.value)}
                           aria-label={t('rosterSetup.role', 'Role')}
-                          className={FIELD}
+                          block
                         >
                           <option value="Coach">{t('benchRoles.coach', 'Coach')}</option>
                           <option value="Assistant Coach 1">{t('benchRoles.assistantCoach1', 'Assistant coach 1')}</option>
                           <option value="Assistant Coach 2">{t('benchRoles.assistantCoach2', 'Assistant coach 2')}</option>
                           <option value="Physiotherapist">{t('benchRoles.physiotherapist', 'Physiotherapist')}</option>
                           <option value="Medic">{t('benchRoles.medic', 'Medic')}</option>
-                        </select>
+                        </Select>
                         <input
                           type="text"
                           value={official.lastName}
@@ -1333,12 +1333,10 @@ export default function UploadRosterApp() {
                           aria-label={t('rosterSetup.firstName', 'First name')}
                           className={FIELD}
                         />
-                        <input
-                          type="date"
+                        <DateField
                           value={official.dob ? formatDateToISO(official.dob) : ''}
-                          onChange={(e) => handleBenchChange(index, 'dob', e.target.value ? formatDateToDDMMYYYY(e.target.value) : '')}
+                          onChange={(v) => handleBenchChange(index, 'dob', v ? formatDateToDDMMYYYY(v) : '')}
                           aria-label={t('rosterSetup.dob', 'DOB')}
-                          className={FIELD}
                         />
                         <Button variant="danger-outline" size="sm" block onClick={() => handleDeleteBench(index)}>
                           {t('common.delete')}

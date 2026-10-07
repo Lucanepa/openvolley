@@ -24,8 +24,8 @@
 
 use serde::Serialize;
 
-/// Must match OV_FW_RULE in windows/installer-hooks.nsh.
-pub const RULE_NAME: &str = "OpenVolley eScoresheet (tablets on the local network)";
+/// Must match OV_FW_RULE in windows/installer-hooks.nsh (per app: flavour.rs).
+pub const RULE_NAME: &str = crate::flavour::CURRENT.firewall_rule;
 
 const PROTOCOL_TCP: i32 = 6;
 const PROTOCOL_ANY: i32 = 256;

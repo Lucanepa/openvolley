@@ -97,6 +97,26 @@
     "connectionChecks": "Verbindigsprüefig",
     "proceedAnyway": "Glich wiitermache"
   },
+  "rosterLive": {
+    "pos": "Pos.",
+    "posTitle": "Position uf em Fäld",
+    "sanctions": "Sanktione",
+    "team": "Team",
+    "teamSanctions": "Mannschaftssanktione",
+    "server": "Ufschläger",
+    "gameCaptain": "Spiilcaptain",
+    "gameCaptainShort": "SK",
+    "setScore": "Satz {{set}}, {{score}}",
+    "delayShort": "V",
+    "improperRequestShort": "UA",
+    "out": {
+      "disqualified": "Disqualifiziert: darf für de Rescht vom Match nümm spiele",
+      "expelled": "Usgschlosse: darf i dem Satz nümm spiele",
+      "exceptional": "Usnahmswiis usgwächslet: darf für de Rescht vom Match nümm spiele",
+      "unable": "Libero cha nöd spiele"
+    },
+    "injured": "Verletzt"
+  },
   "roster": {
     "title": "Roster",
     "titleWithTeam": "{{team}} - Roster",
@@ -121,7 +141,7 @@
     "libero2": "L2",
     "liberoFull1": "Libero 1",
     "liberoFull2": "Libero 2",
-    "none": "kei",
+    "none": "Kei",
     "duplicateNumber": "Doppleti Trikotnummere!",
     "signatures": "Underschrifte",
     "signatureTitle": "{{role}} Underschrift - {{team}}",
@@ -197,6 +217,7 @@
     "delete": "Löschen"
   },
   "refereeSelector": {
+    "title": "Schiri-Datebank",
     "searchReferees": "Schiri sueche...",
     "connectToInternet": "Mit Internet verbinde, zum Schiri-Historie gseh",
     "noRefereesFound": "Kei Schiri gfunde",
@@ -489,7 +510,16 @@
       "confirm": "Bestätige",
       "close": "Schliesse",
       "modify": "Bearbeite",
-      "positionInput": "Spieler auf Position {{pos}}"
+      "positionInput": "Spieler auf Position {{pos}}",
+      "errors": {
+        "required": "Pflichtfeld",
+        "duplicate": "Doppelt",
+        "notOnRoster": "Nicht auf dem Matchblatt",
+        "libero": "Libero nicht erlaubt",
+        "disqualified": "Disqualifiziert",
+        "exceptionallySubstituted": "Ausserordentlich ersetzt",
+        "saveFailed": "Speichern fehlgeschlagen"
+      }
     },
     "lastAction": "Letschti Aktion:",
     "keybindings": {
@@ -551,10 +581,12 @@
       "confirmPoint": "Punkt bestätige",
       "confirmSanction": "Sanktion bestätige",
       "confirmUndo": "Rückgängig bestätige",
-      "confirmTimeout": "Zeitüberschreitung bestätigen",
+      "confirmReplay": "Ballwechsel wiederhole?",
+      "confirmReplayBody": "Es git kei Punkt, s glich Team schlaht nomal uf.",
       "decisionChange": "Entscheidsänderig",
       "exceptionalSubstitution": "Usserordentlichi Uswächslig",
       "exceptionalSubPlayerCantPlay": "Usserordentlichi Uswächslig - Spieler chan nüme teilnäh",
+      "substitutionLimitImproperRequest": "Das Team hät sini 6 Uswächsligä i dem Satz bruucht: en wiitere Wächselaatrag isch e unzulässigi Aafraag.",
       "substituteWithEligible": "Mit emene spielberechtigte Spieler vo de Bank ersetze",
       "liberoRedesignation": "Libero-Neubezeichnig",
       "courtSwitchRequired": "Sitewechsel erforderlich",
@@ -567,7 +599,6 @@
       "scoresheetAlreadyOpen": "eMatchblatt bereits offe",
       "remarksRecording": "Bemerkigserfassig",
       "sanctionsAndResults": "Sanktione und Ergebnis",
-      "confirmSecondTimeout": "{{ordinal}} Timeout-Aafraag bestätige?",
       "liberoOut": "Libero USE",
       "liberoIn": "Libero IE",
       "playerReturns": "Spieler chunt zrugg",
@@ -615,14 +646,11 @@
     "confirm": {
       "yesStartRally": "Ja, Ballwechsel starte",
       "yesAwardPoint": "Ja, Punkt vergäh",
-      "yesTimeout": "Ja, Zeitüberschreitung",
       "apply": "Aawende",
       "rallyStartedQuickly": "Ballwechsel sehr schnell gstartet",
       "areYouSureRallyStarted": "Sind Sie sicher, dass de Ballwechsel tatsächlich agfange hät?",
       "pointAwardedQuickly": "Punkt sehr schnell vergäh",
-      "areYouSureAwardPoint": "Sind Sie sicher, dass de Punkt a {{team}} vergäh werde söll?",
-      "timeoutAlreadyTaken": "Dieses Team hat in diesem Satz bereits eine Auszeit genommen.",
-      "areYouSureAnotherTimeout": "Sind Sie sicher, dass Sie einen weiteren Timeout für {{team}} aufrufen wollen?"
+      "areYouSureAwardPoint": "Sind Sie sicher, dass de Punkt a {{team}} vergäh werde söll?"
     },
     "menu": {
       "scoresheet": "eMatchblatt",
@@ -847,6 +875,24 @@
     "toolbar": {
       "hide": "Wärchzüügliischte uusblände",
       "show": "Wärchzüügliischte iiblände"
+    },
+    "confirmFailed": "Das isch nöd gspeicheret worde. Bitte s Matchblatt prüefe und nomal probiere.",
+    "timeoutRequest": {
+      "title": "Timeout — {{team}}",
+      "first": "Timeout 1 vo 2 i dem Satz für {{team}}.",
+      "second": "Zweits Timeout i dem Satz für {{team}} (1 vo 2 scho gnoh).",
+      "consecutive": "{{team}} hät i dere Unterbrechig scho es Timeout gnoh (sithär kein Ballwächsel). Jetzt s zweite Timeout erfasse?",
+      "confirmConsecutive": "Ja, zweits Timeout",
+      "notRecorded": "S Timeout isch nöd erfasst worde. Bitte nomal probiere."
+    },
+    "teamSanctionConfirm": {
+      "thirdTimeout": "{{team}} hät beidi Timeouts vo dem Satz gnoh. Es dritts Gsuech isch e unzulässigi Aafraag.",
+      "applyImproperRequest": "Unzulässigi Aafraag für {{team}} erfasse?",
+      "applyDelayWarning": "Verzögerigswarnig für {{team}} erfasse?",
+      "applyDelayPenalty": "Verzögerigsstraaf für {{team}} erfasse?",
+      "repeatedImproperRequest": "D Mannschaft hät scho e unzulässigi Aafraag, die zellt drum als Verzögerig.",
+      "repeatedDelay": "D Mannschaft hät scho e Verzögerigswarnig, die Verzögerig isch drum e Straaf.",
+      "pointToOpponent": "Punkt und Ufschlag für {{opponent}}."
     }
   },
   "settings": {
@@ -1255,7 +1301,11 @@
     "reopenAdminTitle": "Dieses abgeschlossene Spiel wieder öffnen?",
     "reopenAdminBody": "Es geht auf dem Server zurück auf «beendet» und kann nochmals genehmigt werden. Dies wird im Protokoll festgehalten.",
     "reopenReason": "Grund",
-    "reopenCheckFailed": "Das Spiel konnte auf dem Server nicht geprüft werden – bitte versuche es nochmals."
+    "reopenCheckFailed": "Das Spiel konnte auf dem Server nicht geprüft werden – bitte versuche es nochmals.",
+    "resign": "Neu underschriibe",
+    "clearSignature": "Lösche",
+    "signatureLocked": "Spiil genehmigt oder abgschlosse: d Underschrifte sind fix",
+    "signatureSaveFailed": "D Underschrift het nöd chöne gspeicheret werde. Probiered Sie s nomal."
   },
   "scoresheetPdf": {
     "zoomOut": "Verchliinere",
@@ -1278,7 +1328,18 @@
     "backToScoresheet": "Zrugg zum eMatchblatt",
     "lcs": "Libero-Kontrollblatt",
     "lcsTooltip": "Libero-Kontrollblatt aazeige",
-    "pdfFailed": "S PDF hät uf dem Grät nöd chöne erstellt werde."
+    "pdfFailed": "S PDF hät uf dem Grät nöd chöne erstellt werde.",
+    "matchNotFound": "Das Spiel isch nöd uf däm Gerät: Es git keis Matchblatt zum Speichere.",
+    "pdfInvalid": "S PDF hät nöd richtig chöne erstellt werde. Bitte nomal probiere.",
+    "pdfSavedAt": "PDF gspeicheret:",
+    "savingFile": "{{fileName}} wird im Ordner Downloads gspeicheret...",
+    "pdfDownloaded": "In Download-Ordner vom Browser abeglade:",
+    "pdfHandedToApp": "D App speicheret {{fileName}}: D Liiste obe zeigt, wo.",
+    "openFile": "Datei öffne",
+    "showInFolder": "Im Ordner zeige",
+    "dismiss": "Zuemache",
+    "fileActionFailed": "D Datei hät vo do us nöd chöne ufgmacht werde. Si isch in: {{path}}",
+    "checkTheMatch": "Spiel vor de Bestätigung prüefe:"
   },
   "supportFeedback": {
     "title": "Support & Feedback",
@@ -1782,24 +1843,20 @@
     "account": "Konto",
     "address": "Adresse",
     "allowRole": "{{role}} zueloh",
-    "btAlternative": "Nimm statt dem «WLAN für Tablets erstelle» im Tab LAN: Das gaht mit jedem Tablet.",
+    "btAlternative": "Nimm statt dem «WLAN vo däm Computer»: Das gaht mit jedem Tablet.",
     "btAndroid": "Android: Iistellige › Bluetooth › mit «{{name}}» koppple, uf ⚙ dernäbe tippe und «Internetzuegriff» iischalte. Wänns nöd verbindet, s WLAN vom Tablet uusschalte.",
     "btChecking": "Bluetooth wird prüeft…",
     "btDesktopOnly": "D OpenVolley-Desktop-App uf Linux cha es Bluetooth-Netz für d Tablets ufmache. Windows chas nöd (es cha nur eim biiträte).",
-    "btFound": "Bluetooth-Netz gfunde: Tablets, wo mit däm Computer kopplet sind, öffned d Links unde.",
+    "btFound": "Bluetooth-Netz gfunde: Tablets, wo mit däm Computer kopplet sind, chönd d Codes scanne.",
     "btIpad": "iPad (gaht evtl. nöd): Iistellige › Bluetooth › uf «{{name}}» tippe.",
-    "btLater": "Plant: e diräkti Bluetooth-Verbindig i de Android-App (Browser uf Tablets chönd kei Bluetooth).",
     "btStart": "Bluetooth-Netz starte",
     "btStop": "Bluetooth-Netz stoppe",
     "btThen": "Dänn de Code vo de Rolle scanne. Bluetooth isch langsam und hät Platz für öppe 6 Grät.",
     "btVisible": "3 Minute lang sichtbar zum Kopple",
-    "cloudBlocked": "Cloud-Sync isch i däm App-Fänster us (es lauft nöd uf Port 5173). Nimm de Tab LAN.",
-    "connection": "Verbindig",
+    "cloudBlocked": "Cloud-Sync isch i däm App-Fänster us (es lauft nöd uf Port 5173). Wähl «WLAN vo de Halle» oder «WLAN vo däm Computer».",
     "copied": "Kopiert",
-    "copy": "Kopiere",
-    "createWifiFirst": "Zersch s WLAN erstelle",
-    "description": "Schiri, Bänk und Livescore verfolged das Spiel uf em eigete Tablet. Wähl, wie d Tablets dä Computer erreiched.",
-    "devices": "Jetzt verbunde: {{count}}.",
+    "createWifiFirst": "Zersch s WLAN erstelle (Schritt 1)",
+    "description": "Schiri und Bänk verfolged das Spiel uf em eigete Tablet. Drü Schritt: Verbindig wähle, Tablet wähle, scanne und PIN iigä.",
     "err": {
       "bluetoothFailed": "S Bluetooth-Netz hät nöd chönne gstartet werde.",
       "bluetoothOff": "Bluetooth isch us und hät sich nöd lah iischalte.",
@@ -1835,44 +1892,31 @@
     "joinAndroid": "Android: Iistellige › WLAN › QR-Symbol (oder Kamera), WLAN-Code scanne.",
     "joinIpad": "iPad: Kamera ufmache, uf de WLAN-Code hebe, «Verbinde» tippe.",
     "joinNoInternet": "«Kei Internet»? «Verbunde bliibe» wähle, dänn de Code vo de Rolle scanne.",
-    "joinWifi": "WLAN verbinde",
     "kind": {
       "ethernet": "Ethernet",
       "other": "Netzwerk",
       "wifi": "WLAN",
       "hotspot": "Hotspot vo dem Computer"
     },
-    "lanHall": "WLAN vo de Halle",
-    "lanLaptop": "WLAN für Tablets erstelle",
-    "lanNeedsServer": "Tablets im lokale Netz bruuched d OpenVolley-Desktop-App (oder e Venue-Box) uf däm Computer: Si stellt d Siite für Schiri, Bank und Livescore bereit. Im Browser de Tab Server neh.",
-    "lanWhich": "Weles WLAN",
+    "lanNeedsServer": "Tablets im lokale Netz bruuched d OpenVolley-Desktop-App (oder e Venue-Box) uf däm Computer: Si stellt d Siite für Schiri, Bank und Livescore bereit. Im Browser «Internet» wähle.",
     "loading": "Lokale Server wird abgfrögt…",
     "needsAdmin": "Dis System frögt eventuell nach emne Administratorpasswort.",
     "needsDesktop": "Brucht d Desktop-App",
     "noAddress": "Kei Halle-Netz",
     "noHallNetwork": "Dä Computer isch in keim Netz. Verbind en mit em WLAN vo de Halle oder mach es WLAN für d Tablets.",
-    "noLinkYet": "No kein Link",
     "notHere": "Uf däm Computer nöd verfüegbar",
     "notSignedIn": "Nöd aagmeldet",
-    "openMatchFirst": "Mach es Spiel uf, zum siini Links und PINs gseh.",
-    "pinHint": "Jedes Tablet frögt nach sinere PIN: Lies si da vor. Links und QR-Codes händ nie e PIN. Schalt e Rolle us, zum ihres Tablet uussperre.",
-    "pinTitle": "S Tablet frögt nach dere PIN. Vorläse; si staht nie im Link.",
-    "qr": "QR",
     "role": {
-      "bench_away": "Bank (Gascht)",
-      "bench_home": "Bank (Heim)",
+      "bench_away": "Gaschtbank",
+      "bench_home": "Heimbank",
       "livescore": "Livescore",
       "main": "eMatchblatt",
       "referee": "Schiri"
     },
-    "roleOff": "Us",
-    "serverHint": "D Tablets bruuched Internet (WLAN vo de Halle oder mobili Date). Jedes Tablet frögt dänn nach sinere PIN.",
-    "serverNeedsSignIn": "Über d Cloud erreiched d Tablets das Spiel erscht, wänn du aagmeldet bisch und s Spiel synchronisiert isch.",
+    "serverHint": "D Tablets bruuched Internet (WLAN vo de Halle oder mobili Date).",
     "signIn": "Aamälde",
     "signedIn": "Aagmeldet",
-    "startBtFirst": "Zersch s Bluetooth-Netz starte",
-    "step1": "Schritt 1",
-    "step2": "Schritt 2",
+    "startBtFirst": "Zersch s Bluetooth-Netz starte (Schritt 1)",
     "sync": {
       "authRequired": "Aamäldig nötig",
       "connecting": "Verbinde…",
@@ -1883,11 +1927,6 @@
       "syncing": "Synchronisiere…"
     },
     "syncLabel": "Spiel-Sync",
-    "tab": {
-      "bluetooth": "Bluetooth",
-      "lan": "LAN",
-      "server": "Server"
-    },
     "takesOverWifi": "Dä Computer verlaht sis aktuelle WLAN, solang s WLAN vo de Tablets lauft. De Cloud-Sync pausiert, usser er hanget am Netzwerkchabel.",
     "thisComputer": "dä Computer",
     "title": "Tablets verbinde",
@@ -1896,7 +1935,7 @@
     "networkName": "WLAN-Name",
     "networkPassword": "Passwort",
     "newPassword": "Neus Passwort",
-    "hotspotExternal": "De Hotspot vo dem Computer isch i de Systemiistellige iigschaltet worde. Tablets drin chönd d Links une bruuche; usschalte det.",
+    "hotspotExternal": "De Hotspot vo dem Computer isch i de Systemiistellige iigschaltet worde. Tablets drin chönd d Codes scanne; usschalte det.",
     "windowsFirewall": "Tablets sind im WLAN, aber d Siite ladet nöd? Windows-Sicherheit › Firewall- & Netzwerkschutz › App durch Firewall zulassen › OpenVolley › «Öffentlich» aachrüüzle.",
     "btExternal": "Das Bluetooth-Netz isch nöd vo dere App-Sitzig gstartet worde. Stopp es i de Netzwerkiistellige vom System.",
     "confirm": {
@@ -1907,7 +1946,79 @@
       "stopWifiTitle": "WLAN vo de Tablets stoppe?",
       "stopMessage": "D Tablets drin verlüüred d Verbindig.",
       "stopBtTitle": "Bluetooth-Netz stoppe?"
-    }
+    },
+    "card": {
+      "connected": "Verbunde",
+      "connectedSince": "Verbunde · sit {{time}}",
+      "many": "{{count}} Tablets bruuched die PIN",
+      "nopin": "Ii · no kei PIN",
+      "off": "Us · iischalte, dass d PIN chunnt",
+      "public": "Öffentlich · kei PIN",
+      "remote": "Ii · Status übers Internet nöd sichtbar",
+      "unknown": "Live-Status nöd verfüegbar",
+      "waiting": "Wartet ufs Tablet…"
+    },
+    "copyLink": "Link kopiere",
+    "done": "Fertig",
+    "footer": {
+      "connected": "Verbunde: {{roles}} · {{count}} vo {{total}} Tablets",
+      "connectedOnly": "Verbunde: {{roles}}",
+      "none": "No kei Tablet verbunde",
+      "thisNetworkOnly": "De Live-Status zeigt nur Tablets i däm Netz"
+    },
+    "hallJoin": "D Tablets verbinded sich mit em WLAN «{{network}}».",
+    "howToJoin": "So verbinde",
+    "howToPair": "So kopple",
+    "isolationTip": "Siite ladet nöd ufem Tablet? Mängi Halle-WLANs trenned d Grät vonenand: dänn «WLAN vo däm Computer» oder «Internet» wähle.",
+    "noMatchText": "Codes und PINs ghöred zu me Spiel.",
+    "noMatchTitle": "Zersch es Spiel öffne",
+    "otherScorer": "Schriiber amene andere Computer",
+    "otherScorerText": "Öffnet e eigeti Schriiber-App mit eigete Spiel. Si folgt däm Spiel nöd.",
+    "reason": {
+      "btNotHere": "Uf däm Computer nöd verfüegbar",
+      "cannotCreateWifi": "Dä Computer cha kei WLAN erstelle",
+      "cloudBlocked": "Cloud isch i däm App-Fänster us",
+      "needsDesktop": "Brucht d Desktop-App (Windows, Linux)",
+      "needsLinuxDesktop": "Brucht d Desktop-App under Linux",
+      "needsServer": "Brucht d Desktop-App oder e Venue-Box",
+      "noNetwork": "Dä Computer isch i keim Netz",
+      "windowsBluetooth": "Windows cha kei Bluetooth-Netz bereitstelle"
+    },
+    "recommended": "Empfohle",
+    "scan": {
+      "connected": "Tablet verbunde um {{time}} (…{{ip}})",
+      "hideAddress": "Adrässe uusblände",
+      "instruction": "Mit de Kamera vom Tablet scanne, dänn die PIN iigä:",
+      "many": "{{count}} Tablets händ die PIN iigä",
+      "noPin": "Das Tablet hät no kei PIN. Leg eini fescht under Spiel iirichte › Verbindige.",
+      "noPinInLink": "Links und Codes händ nie d PIN drin.",
+      "off": "{{role}} isch us. Es Tablet, wo jetzt scannt, überchunnt «PIN falsch».",
+      "public": "Mit jedem Handy oder Bildschirm scanne. Kei PIN nötig.",
+      "remote": "Nachefrög, ob si drin sind",
+      "title": "Tablet: {{role}}",
+      "typeAddress": "Adrässe iitippe",
+      "waiting": "Wartet ufs Tablet…"
+    },
+    "serverNotSynced": "S Spiel isch no nöd i de Cloud. D Tablets finded s, sobald de Sync «Synchronisiert» zeigt.",
+    "serverSignIn": "Meld dich aa, dass d Tablets das Spiel übers Internet finded.",
+    "signInFirst": "Zersch aamälde (Schritt 1)",
+    "step": {
+      "connect": "Wie d Tablets verbinded",
+      "scan": "Scanne, dänn PIN iigä",
+      "tablet": "Weles Tablet"
+    },
+    "thisComputerAt": "Dä Computer: {{ip}} ({{kind}})",
+    "transport": {
+      "bluetooth": "Bluetooth",
+      "bluetoothWhen": "Letschte Uusweg, wänn kes WLAN gaht. Nur Linux.",
+      "hall": "WLAN vo de Halle",
+      "hallWhen": "D Halle hät WLAN und dä Computer isch drin.",
+      "laptop": "WLAN vo däm Computer",
+      "laptopWhen": "Kei WLAN i de Halle, oder d Tablets erreiched dä Computer det nöd. Kei Internet nötig.",
+      "server": "Internet",
+      "serverWhen": "D Tablets händ mobili Date, oder s Halle-WLAN trennt d Grät. Aamäldig nötig."
+    },
+    "wifiQrCaption": "Zersch scanne, zum i das WLAN gah"
   },
   "startupConnectivity": {
     "cloudWaits": "Kei Internet: D Cloud-Synchronisation startet, sobald das Gerät online isch. D Spiel blibed da und uf em lokale Server gspeicheret.",
@@ -2261,7 +2372,10 @@
     "pdfSaveFailed": "S PDF hät nöd chöne gspeicheret werde: {{error}}",
     "savingPdf": "PDF wird gspeicheret...",
     "downloadFailed": "De Download isch nöd fertig worde.",
-    "downloadsFolder": "Downloads"
+    "downloadsFolder": "Downloads",
+    "openPdf": "Öffne",
+    "sharePdf": "Teile",
+    "pdfActionFailed": "Es hät nöd chöne ufgmacht werde: {{error}}"
   },
   "access": {
     "pendingTitle": "Dein Konto wartet auf Freigabe",
@@ -2651,6 +2765,11 @@
     "quitWifiBluetooth": "S WLAN und s Bluetooth-Netz vom Laptop für d Tablets gönd us.",
     "quitConfirm": "OpenVolley beände",
     "keepRunning": "Wiiterlaufe lah",
+    "quitAlsoCloses": "Schliesst au: {{windows}}",
+    "quitWindowGroup_one": "{{name}} ({{count}} Fänschter)",
+    "quitWindowGroup_other": "{{name}} ({{count}} Fänschter)",
+    "windowScoresheet": "Matchblatt",
+    "quitPdfBusy": "Im Matchblatt-Fänschter wird no es PDF gspeicheret.",
     "closeNoticeTitle": "OpenVolley lauft im Infobereich wiiter",
     "closeNoticeBody": "D Tablets bliibed verbunde. Mit em OpenVolley-Symbol im Infobereich wieder ufmache; zum Beände i sim Menü «OpenVolley beände…» wähle.",
     "closeNoticeHide": "Fänster usblände",
@@ -3193,6 +3312,18 @@
         "referee2": "2. Schiri",
         "scorer": "Schriiber"
       }
+    },
+    "approveWithPin": "Mit PIN genehmige",
+    "why": {
+      "signOnly": "Nur Underschrift: de Assistant scorer genehmiget nöd mit PIN",
+      "locked": "Spiil genehmigt oder abgschlosse: d Genehmigunge sind fix",
+      "beach": "D Genehmigung mit PIN gits bi Beachvolleyball-Spiil nöd",
+      "localMatch": "Das Spiil isch nöd online gspeicheret: d Genehmigung mit PIN bruucht es Online-Spiil",
+      "noCloud": "Kei Online-Verbindig uf dem Gerät: vo Hand underschriibe",
+      "serverOff": "D Genehmigung mit PIN isch uf dem Server abgschaltet",
+      "signedOut": "Mälded Sie sich uf dem Gerät aa, zum mit PIN genehmige",
+      "callerRole": "S Konto uf dem Gerät cha kei Genehmigunge schicke: es bruucht d Rolle Schriiber oder Schiri",
+      "offline": "Offline: d Genehmigung mit PIN chunnt wieder, sobald Sie online sind"
     }
   },
   "legal": {
@@ -3202,6 +3333,31 @@
     "impressum": "Impressum",
     "opensource": "Open-Source-Hinweis",
     "signUpConsent": "Wer ein Konto erstellt, akzeptiert die <terms>Nutzungsbedingungen</terms> und die <privacy>Datenschutzerklärung</privacy>."
+  },
+  "picker": {
+    "calendar": "Kaländer",
+    "openCalendar": "Kaländer öffne",
+    "prevMonth": "Vorhärige Monet",
+    "nextMonth": "Nächschte Monet",
+    "month": "Monet",
+    "year": "Jahr",
+    "today": "Hüt",
+    "clear": "Lääre",
+    "done": "Fertig",
+    "time": "Zyt",
+    "date": "Datum",
+    "chooseTime": "Zyt wähle",
+    "hours": "Stunde",
+    "minutes": "Minute",
+    "now": "Jetzt",
+    "datePlaceholder": "TT.MM.JJJJ",
+    "timePlaceholder": "HH:MM",
+    "invalidDate": "Datum als TT.MM.JJJJ ygä.",
+    "invalidTime": "Zyt als HH:MM ygä.",
+    "dateBeforeMin": "Früehstens am {{date}}.",
+    "dateAfterMax": "Spöötstens am {{date}}.",
+    "timeBeforeMin": "Früehstens um {{time}}.",
+    "timeAfterMax": "Spöötstens um {{time}}."
   },
   "phoneSign": {
     "signOnPhone": "Ufem Handy underschriibe",
@@ -3222,6 +3378,8 @@
     "expired": "De Link isch abgloffe. En neue mache.",
     "cancelled": "S Underschriibe ufem Handy isch abbroche worde.",
     "joinWifiFirst": "Zersch i das WLAN",
+    "step1": "Schritt 1",
+    "step2": "Schritt 2",
     "transportInternet": "Internet",
     "transportHall": "Hallenetz",
     "hallBlocked": "S Handy chas nöd ufmache? Mängi Halle-WLAN trenned d Grät vonenand. S eigete WLAN vom Laptop oder s Internet bruuche.",

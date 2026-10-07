@@ -101,11 +101,19 @@ export function assignSubsToColumns<T>(subsByStarter: Map<number, T[]>, starting
   return result;
 }
 
-/** Regular (non-exceptional) substitutions of a team, as counted for the RESULT "S" column. */
+/** Regular (non-exceptional) substitutions of a team: the 6-substitution limit (FIVB 15.6). */
 export function countRegularSubstitutions(setEvents: any[], team: TeamKey): number {
   return (setEvents || []).filter(e =>
     e?.type === 'substitution' && e.payload?.team === team && !e.payload?.isExceptional
   ).length;
+}
+
+/**
+ * Every substitution of a team in a set, exceptional ones included: the RESULT
+ * "S" column (field-spec 9 / 12.1; SC p.71 counts "4 standard + 1 exceptional" as 5).
+ */
+export function countAllSubstitutions(setEvents: any[], team: TeamKey): number {
+  return (setEvents || []).filter(e => e?.type === 'substitution' && e.payload?.team === team).length;
 }
 
 /**
@@ -166,4 +174,45 @@ export function getFirstServeTeamKey(setIndex: number, match: any, teamAKey: Tea
     return set1Server;
   }
   return setIndex % 2 === 1 ? set1Server : other;
+}
+
+/**
+ * Consistency checks before the sheet is printed (field-spec 12.2). They never
+ * change the sheet: the scoresheet window lists them above it (not in the PDF)
+ * so the scorer can correct the match before approving it.
+ */
+export function consistencyWarnings({ sets, events, teamAKey, homePlayers, awayPlayers }: {
+  sets: any[]
+  events: any[]
+  teamAKey: TeamKey
+  homePlayers?: any[]
+  awayPlayers?: any[]
+}): string[] {
+  const out: string[] = []
+  const letter = (t: TeamKey) => (t === teamAKey ? 'A' : 'B')
+  const roster: Record<TeamKey, Set<string>> = {
+    home: new Set((homePlayers || []).map(p => String(p?.number ?? '')).filter(Boolean)),
+    away: new Set((awayPlayers || []).map(p => String(p?.number ?? '')).filter(Boolean))
+  }
+  for (const set of (sets || []).filter(Boolean).sort((a, b) => a.index - b.index)) {
+    const n = displaySetNumber(set.index, undefined)
+    const setEvents = (events || []).filter(e => e?.setIndex === set.index)
+    const pts = { home: 0, away: 0 }
+    for (const e of setEvents) if (e.type === 'point' && (e.payload?.team === 'home' || e.payload?.team === 'away')) pts[e.payload.team as TeamKey]++
+    const hasPoints = pts.home + pts.away > 0
+    if (hasPoints && (pts.home !== (set.homePoints || 0) || pts.away !== (set.awayPoints || 0))) {
+      out.push(`Set ${n}: the points recorded (${pts.home}:${pts.away}, home:away) do not match the set score (${set.homePoints || 0}:${set.awayPoints || 0}).`)
+    }
+    for (const team of ['home', 'away'] as TeamKey[]) {
+      const subs = countRegularSubstitutions(setEvents, team)
+      if (subs > 6) out.push(`Set ${n}, Team ${letter(team)}: ${subs} regular substitutions (at most 6).`)
+      const tos = setEvents.filter(e => e.type === 'timeout' && e.payload?.team === team).length
+      if (tos > 2) out.push(`Set ${n}, Team ${letter(team)}: ${tos} time-outs (at most 2).`)
+      if (roster[team].size > 0) {
+        const missing = getStartingLineup(events, set.index, team).filter(num => num && !roster[team].has(num))
+        if (missing.length) out.push(`Set ${n}, Team ${letter(team)}: starting player${missing.length > 1 ? 's' : ''} ${missing.join(', ')} not on the roster.`)
+      }
+    }
+  }
+  return out
 }

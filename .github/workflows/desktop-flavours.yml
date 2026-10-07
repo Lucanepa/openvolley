@@ -1,0 +1,45 @@
+name: Desktop app identities
+
+# The desktop shell builds OpenVolley eScoresheet and OpenBeach
+# (src-tauri/src/flavour.rs). OpenVolley's identity (identifier, names, ports,
+# package, firewall rule, update endpoints) must never change, and OpenBeach
+# must share none of it: src/__tests__/desktopFlavours.test.js checks the
+# merged Tauri configs, the Rust flavours, the NSIS hooks and the Linux files
+# on every change to them. (desktop.yml runs it again before each build.)
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'escoresheet/frontend/src-tauri/**'
+      - 'escoresheet/frontend/src/__tests__/desktopFlavours.test.js'
+      - '.github/workflows/desktop-flavours.yml'
+  pull_request:
+    paths:
+      - 'escoresheet/frontend/src-tauri/**'
+      - 'escoresheet/frontend/src/__tests__/desktopFlavours.test.js'
+      - '.github/workflows/desktop-flavours.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  identities:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: escoresheet/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: escoresheet/frontend
+        run: npm ci
+
+      - name: Check the desktop app identities
+        working-directory: escoresheet/frontend
+        run: npx vitest run src/__tests__/desktopFlavours.test.js

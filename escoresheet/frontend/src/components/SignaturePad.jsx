@@ -17,7 +17,10 @@ import { REASON_KEYS } from '../utils/phoneSignTransport'
  * @param {{ open: boolean, onClose: () => void, onSave: (dataUrl: string, meta: object) => void,
  *   title?: string, existingSignature?: string|null, readOnly?: boolean, zIndex?: number,
  *   phone?: { slot: string, matchKey?: string|null, context: object, gamePin?: string|null,
- *     onOpenConnectTablets?: () => void } | null }} props
+ *     onOpenConnectTablets?: () => void, locked?: boolean, lockedReason?: string } | null }} props
+ *
+ * `phone.locked` (MatchEnd: the match is approved, closed or final) keeps the
+ * button but disables it, and no phone session is started or kept open.
  */
 export default function SignaturePad({ open, onClose, onSave, title = 'Sign', existingSignature = null, readOnly = false, zIndex, phone = null }) {
   const { t } = useTranslation()
@@ -28,12 +31,15 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign', ex
   const [mode, setMode] = useState('draw') // 'draw' | 'phone'
   const [hallIp, setHallIp] = useState(null)
   const phoneOffered = !!phone && !readOnly
-  const { transports } = usePhoneSignTransports(open && phoneOffered, { hallIp })
+  const phoneLocked = phoneOffered && !!phone.locked
+  // Locked while on the phone view: unmounting PhoneSignPanel closes its session
+  const showPhone = mode === 'phone' && phoneOffered && !phoneLocked
+  const { transports } = usePhoneSignTransports(open && phoneOffered && !phoneLocked, { hallIp })
 
-  // Every opening starts on the pad
+  // Every opening starts on the pad, and a lock sends it back there
   useEffect(() => {
-    if (!open) setMode('draw')
-  }, [open])
+    if (!open || phoneLocked) setMode('draw')
+  }, [open, phoneLocked])
 
   useEffect(() => {
     if (!open || mode !== 'draw') {
@@ -214,13 +220,15 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign', ex
     onClose()
   }
 
-  const phoneReason = phoneOffered && !transports.default ? t(REASON_KEYS[transports.reason] || REASON_KEYS.none) : null
+  const phoneReason = phoneLocked
+    ? (phone.lockedReason || t('matchEnd.signatureLocked'))
+    : phoneOffered && !transports.default ? t(REASON_KEYS[transports.reason] || REASON_KEYS.none) : null
 
   return (
-    <Modal title={title} open={open} onClose={onClose} width={mode === 'phone' ? 640 : 600} zIndex={zIndex}>
+    <Modal title={title} open={open} onClose={onClose} width={showPhone ? 640 : 600} zIndex={zIndex}>
       {/* `phone` can go away while the modal is open (the caller's data
           reloading): back on the pad rather than reading a null */}
-      {mode === 'phone' && phoneOffered ? (
+      {showPhone ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <PhoneSignPanel
             transports={transports}
@@ -274,8 +282,8 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign', ex
                   size="xl"
                   icon={Smartphone}
                   className="font-medium"
-                  onClick={() => setMode('phone')}
-                  disabled={!transports.default}
+                  onClick={() => { if (!phoneLocked) setMode('phone') }}
+                  disabled={phoneLocked || !transports.default}
                   title={phoneReason || undefined}
                   data-testid="sign-on-phone"
                 >

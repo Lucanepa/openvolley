@@ -6,11 +6,12 @@ import { useAlert } from '../contexts/AlertContext'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { apiFrom } from '../lib/apiClient'
 import { AlertTriangle, Loader2, Search, X } from 'lucide-react'
-import { cn, FOCUS_RING, IconButton } from '../ui'
+import { cn, FOCUS_RING, IconButton, Select } from '../ui'
 
 // Kit recipes: native select at h-11 (tablet), compact label, filter pills
 // (slate when on), sticky table head.
-const SELECT_CLS = 'h-11 min-w-[8rem] rounded-xl border border-stone-300 bg-white px-3 text-sm text-stone-800 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:cursor-not-allowed disabled:opacity-50'
+// Kit Select size lg (h-11), in this modal's text-sm, stone-300 border and red-500 ring.
+const SELECT_CLS = 'min-w-[8rem] border-stone-300 text-sm leading-[42px] focus:border-stone-300 focus:ring-red-500 disabled:opacity-50'
 const LABEL_CLS = 'mb-1 block text-xs font-medium text-stone-500'
 const PILL_CLS = 'shrink-0 h-9 px-3.5 rounded-full border text-xs font-medium whitespace-nowrap transition-colors'
 const PILL_ON = 'bg-slate-900 border-slate-900 text-white'
@@ -443,7 +444,8 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
             {/* Gender Dropdown */}
             <div>
               <label className={LABEL_CLS}>{t('loadOfficialMatch.gender', 'Gender')}</label>
-              <select
+              <Select
+                size="lg"
                 value={gender}
                 onChange={e => setGender(e.target.value)}
                 aria-label={t('loadOfficialMatch.gender', 'Gender')}
@@ -452,14 +454,15 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
                 <option value="">{t('loadOfficialMatch.selectGender', 'Select...')}</option>
                 <option value="men">{t('matchSetup.men', 'Men')} ♂</option>
                 <option value="women">{t('matchSetup.women', 'Women')} ♀</option>
-              </select>
+              </Select>
             </div>
 
             {/* League Dropdown */}
             <div>
               <label className={LABEL_CLS}>{t('loadOfficialMatch.league', 'League')}</label>
               <div className="flex items-center">
-                <select
+                <Select
+                  size="lg"
                   value={league}
                   onChange={e => setLeague(e.target.value)}
                   aria-label={t('loadOfficialMatch.league', 'League')}
@@ -470,7 +473,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
                   {availableLeagues.map(l => (
                     <option key={l.code} value={l.code}>{formatLeagueDisplay(l.code, l.gender)}</option>
                   ))}
-                </select>
+                </Select>
                 {!gender && (
                   <span
                     ref={showLeagueWarning ? leagueWarningRef : undefined}

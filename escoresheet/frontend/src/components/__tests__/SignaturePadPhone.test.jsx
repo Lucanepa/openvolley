@@ -133,6 +133,38 @@ describe('SignaturePad with Sign on phone', () => {
     expect(api.close).toHaveBeenCalledTimes(1)
   })
 
+  it('locked (MatchEnd: approved, closed or final): the button is disabled with the reason, no session starts', async () => {
+    cfg.cloud = 'https://backend.test'
+    auth.value = { user: { id: 'u' }, access: { roles: ['scorer'] } }
+    render(<SignaturePad open onClose={() => {}} onSave={() => {}} phone={{ ...PHONE, locked: true, lockedReason: en.matchEnd.signatureLocked }} />)
+    const btn = screen.getByTestId('sign-on-phone')
+    expect(btn).toBeDisabled()
+    expect(screen.getByTestId('sign-on-phone-reason')).toHaveTextContent(en.matchEnd.signatureLocked)
+    fireEvent.click(btn)
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
+    expect(screen.queryByTestId('phone-sign-panel')).toBeNull()
+    expect(document.querySelector('canvas')).toBeTruthy()
+    expect(api.start).not.toHaveBeenCalled()
+  })
+
+  it('locked while the link is shown: back on the pad, and the session is closed', async () => {
+    cfg.cloud = 'https://backend.test'
+    auth.value = { user: { id: 'u' }, access: { roles: ['scorer'] } }
+    const { rerender } = render(<SignaturePad open onClose={() => {}} onSave={() => {}} phone={PHONE} />)
+    fireEvent.click(screen.getByTestId('sign-on-phone'))
+    await waitFor(() => expect(screen.getByTestId('phone-sign-link')).toBeInTheDocument())
+    rerender(<SignaturePad open onClose={() => {}} onSave={() => {}} phone={{ ...PHONE, locked: true }} />)
+    expect(screen.queryByTestId('phone-sign-panel')).toBeNull()
+    expect(document.querySelector('canvas')).toBeTruthy()
+    expect(api.close).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('sign-on-phone')).toBeDisabled()
+    expect(screen.getByTestId('sign-on-phone-reason')).toHaveTextContent(en.matchEnd.signatureLocked)
+    // Unlocked again ("Reopen match"): offered again, nothing started by itself
+    rerender(<SignaturePad open onClose={() => {}} onSave={() => {}} phone={PHONE} />)
+    expect(screen.getByTestId('sign-on-phone')).toBeEnabled()
+    expect(api.start).toHaveBeenCalledTimes(1)
+  })
+
   it('a drawn signature is saved with { source: "device" }', async () => {
     vi.useFakeTimers()
     const onSave = vi.fn()

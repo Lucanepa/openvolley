@@ -281,3 +281,88 @@ describe('MatchEnd: Sign on phone', () => {
     await waitFor(() => expect(row().accountApprovals?.scorer).toBeUndefined())
   })
 })
+
+// The match-end signature edits (Re-sign / Clear, domain/signatureEdits.js):
+// one writer (writeSignature) for a drawing, a phone result and a Clear
+describe('MatchEnd: Sign on phone with Re-sign and Clear', () => {
+  const matchJobs = () => [...store.tables.sync_queue.values()].filter(j => j.resource === 'match' && j.payload?.signatures)
+  const PHONE_SRC = { via: 'phone', transport: 'lan', at: '2026-10-07T20:00:00.000Z' }
+
+  it('a phone result is saved at once and queued for the cloud, like a drawing', async () => {
+    seed({ ...BEFORE_SCORER, homeCoachSignature: 'data:coach' })
+    render(<MatchEnd matchId={1} />)
+    await signVia('scorer', 'phone')
+    await waitFor(() => expect(row().scorerSignature).toBe('data:image/png;base64,PHONE'))
+    const job = matchJobs().at(-1)
+    expect(job).toBeTruthy()
+    expect(job.payload.id).toBe(SEED)
+    expect(job.payload.signatures).toMatchObject({ scorer: 'data:image/png;base64,PHONE', home_coach: 'data:coach', asst_scorer: 'data:asst' })
+  })
+
+  it('Clear empties the image AND its phone record, then the pad offers the phone again', async () => {
+    seed({ ...BEFORE_SCORER, scorerSignature: 'data:old', signatureSources: { scorerSignature: PHONE_SRC } })
+    render(<MatchEnd matchId={1} />)
+    await settle()
+    expect(within(slot('scorer')).getByTestId('signed-on-phone-scorer')).toBeInTheDocument()
+    fireEvent.click(await screen.findByTestId('signature-clear-scorer'))
+    await waitFor(() => expect(row().scorerSignature).toBeNull())
+    expect(row().signatureSources.scorerSignature).toBeNull()
+    expect(matchJobs().at(-1).payload.signatures.scorer).toBeNull()
+    // The pad Clear opens has "Sign on phone": signing there sets the record again
+    fireEvent.click(await screen.findByRole('button', { name: /^phone / }))
+    expect(pad.phone).toMatchObject({ slot: 'scorer', locked: false })
+    await waitFor(() => expect(row().scorerSignature).toBe('data:image/png;base64,PHONE'))
+    expect(row().signatureSources.scorerSignature).toMatchObject({ via: 'phone', transport: 'cloud' })
+  })
+
+  it('Re-sign on the phone records the phone; Re-sign on this device resets it', async () => {
+    seed({ ...BEFORE_SCORER, scorerSignature: 'data:old' })
+    render(<MatchEnd matchId={1} />)
+    await settle()
+    fireEvent.click(await screen.findByTestId('signature-resign-scorer'))
+    fireEvent.click(await screen.findByRole('button', { name: /^phone / }))
+    await waitFor(() => expect(row().scorerSignature).toBe('data:image/png;base64,PHONE'))
+    expect(row().signatureSources.scorerSignature).toMatchObject({ via: 'phone' })
+    await settle()
+    fireEvent.click(await screen.findByTestId('signature-resign-scorer'))
+    fireEvent.click(await screen.findByRole('button', { name: /^draw / }))
+    await waitFor(() => expect(row().scorerSignature).toBe('data:image/png;base64,SIG'))
+    expect(row().signatureSources.scorerSignature).toBeNull()
+    expect(within(slot('scorer')).queryByTestId('signed-on-phone-scorer')).toBeNull()
+  })
+
+  it('a locked match (approved, closed or final) opens no pad, so no phone session', async () => {
+    for (const lock of [{ approved: true }, { closed_at: '2026-10-07T20:00:00Z' }, { status: 'final' }]) {
+      seed({ ...BEFORE_SCORER, ...lock })
+      const view = render(<MatchEnd matchId={1} />)
+      await settle()
+      fireEvent.click(await within(await screen.findByTestId('signature-slot-scorer')).findByText(en.matchEnd.tapToSign))
+      await settle()
+      expect(screen.queryByRole('button', { name: /^phone / })).toBeNull()
+      expect(pad.phone).toBeNull()
+      expect(screen.getByTestId('signature-resign-captain-a')).toBeDisabled()
+      view.unmount()
+    }
+  })
+
+  it('locked while the pad is open: "Sign on phone" is locked and a late phone result is not written', async () => {
+    seed(BEFORE_SCORER)
+    render(<MatchEnd matchId={1} />)
+    await settle()
+    fireEvent.click(await within(slot('scorer')).findByText(en.matchEnd.tapToSign))
+    await screen.findByRole('button', { name: /^phone / })
+    expect(pad.phone.locked).toBe(false)
+    // Approved meanwhile (another device, the live query reloads)
+    await act(async () => {
+      store.tables.matches.set(1, { ...row(), approved: true })
+      for (const l of [...store.listeners]) l()
+    })
+    await waitFor(() => expect(pad.phone.locked).toBe(true))
+    expect(pad.phone.lockedReason).toBe(en.matchEnd.signatureLocked)
+    fireEvent.click(screen.getByRole('button', { name: /^phone / }))
+    await settle()
+    expect(row().scorerSignature).toBeUndefined()
+    expect(row().signatureSources).toBeUndefined()
+    expect(matchJobs()).toHaveLength(0)
+  })
+})

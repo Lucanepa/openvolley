@@ -35,6 +35,8 @@ export const {
   createRateLimiter,
   createLocalAddressCheck,
   createMainInstanceGate,
+  OTHER_COURT_COOKIE,
+  MAX_OWNED_PER_IP,
 } = core
 
 /**

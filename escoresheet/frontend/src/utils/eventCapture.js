@@ -62,6 +62,22 @@ function isSensitiveField(name) {
 }
 
 /**
+ * Whether a form field holds a secret. The field's name alone is not enough:
+ * the sign-in password and the approval PIN have no name, and their typed
+ * values were stored in the log. Type, autocomplete, id, label and
+ * placeholder count too, and any [data-sensitive] ancestor.
+ */
+export function isSensitiveTarget(el) {
+  if (!el || typeof el !== 'object') return false
+  if (el.type === 'password') return true
+  const auto = String(el.autocomplete || el.getAttribute?.('autocomplete') || '')
+  if (/password|one-time-code/i.test(auto)) return true
+  const labels = [el.name, el.id, el.getAttribute?.('aria-label'), el.getAttribute?.('placeholder')]
+  if (labels.some(isSensitiveField)) return true
+  return !!el.closest?.('[data-sensitive]')
+}
+
+/**
  * Sanitize a value for logging (mask sensitive data)
  */
 function sanitizeValue(value, fieldName) {
@@ -249,6 +265,10 @@ function buildEventPayload(eventType, event, target) {
 
     case 'keydown':
     case 'keyup':
+      // A key typed into a password/PIN field is the secret itself
+      if (isSensitiveTarget(target)) {
+        return { ...base, key: '[REDACTED]', code: '[REDACTED]', repeat: event.repeat }
+      }
       return {
         ...base,
         key: event.key,
@@ -264,14 +284,15 @@ function buildEventPayload(eventType, event, target) {
       return {
         ...base,
         inputType: event.inputType,
-        value: sanitizeValue(target?.value, target?.name),
-        valueLength: target?.value?.length || 0
+        value: isSensitiveTarget(target) ? '[REDACTED]' : sanitizeValue(target?.value, target?.name),
+        // The length of a PIN is part of the secret
+        valueLength: isSensitiveTarget(target) ? null : (target?.value?.length || 0)
       }
 
     case 'change':
       return {
         ...base,
-        value: sanitizeValue(target?.value, target?.name),
+        value: isSensitiveTarget(target) ? '[REDACTED]' : sanitizeValue(target?.value, target?.name),
         checked: target?.type === 'checkbox' ? target.checked : undefined,
         selectedIndex: target?.selectedIndex
       }

@@ -15,7 +15,7 @@ import BackupTable from '../BackupTable'
 import { SatelliteDishIcon } from '../icons'
 import { clearCachesAndReload } from '../../hooks/useServiceWorker'
 import { ChevronDown, Info, X } from 'lucide-react'
-import { cn, IconButton, SegmentedControl, Switch } from '../../ui'
+import { cn, IconButton, Select, SegmentedControl, Switch } from '../../ui'
 import { allowLeaving } from '../../utils/leaveGuard'
 import { backdropDismiss } from '../../ui/backdropDismiss.js'
 
@@ -635,7 +635,7 @@ export default function ScoreboardOptionsModal({
               {lfpTrackingEnabled && (
                 <div className="mt-2 flex items-center gap-2">
                   <span className="text-xs text-stone-500">{t('options.minimumLfpsOnCourt')}</span>
-                  <select
+                  <Select
                     value={lfpMinimumOnCourt}
                     aria-label={t('options.minimumLfpsOnCourt')}
                     onChange={(e) => {
@@ -643,12 +643,12 @@ export default function ScoreboardOptionsModal({
                       setLfpMinimumOnCourt(val)
                       localStorage.setItem('lfpMinimumOnCourt', String(val))
                     }}
-                    className={cn(SMALL_FIELD, 'w-16')}
+                    className="w-16 tabular-nums focus:ring-slate-400"
                   >
                     {[1, 2, 3, 4, 5, 6].map(n => (
                       <option key={n} value={n}>{n}</option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
               )}
             </div>

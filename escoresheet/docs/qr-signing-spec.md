@@ -375,6 +375,7 @@ as a locally drawn one.
 - `match.signatureSources` is a plain object on the Dexie row. It is not indexed, so Dexie needs no new version: `{ [field]: { via: 'phone', transport: 'cloud'|'lan', at: ISO } }`. It is written **in the same `db.matches.update`** as the image, through key paths (`{ [field]: dataUrl, ['signatureSources.' + field]: {...} }`). A drawn signature in that field sets the key path to `null`, so the record always describes the image that is there.
 - CoinToss and MatchSetup keep the four pre-match sources in React state beside the images and write them with the same `updateData`.
 - `clearedPostMatchSignatures()` also nulls `signatureSources.<f>` for every `POST_MATCH_SIGNATURE_FIELDS` entry. Its test in `domain/__tests__/matchEnd.test.js` is extended.
+- **MatchEnd Re-sign / Clear** (`domain/signatureEdits.js`): `writeSignature(role, dataUrl, meta)` is the single writer of a post-match slot. A drawing, a phone result and a Clear all go through it: one `db.matches.update` with `signatureUpdate(field, …)` (so Clear and a local re-sign set `signatureSources.<field>` to `null`, a phone result sets the record), then the match's `signatures` sync job at once. A phone result drops a stale account approval exactly as a drawing does. Re-sign and Clear both open the pad, which offers "Sign on phone". Once `signatureEditLocked()` holds (approved, closed or final), MatchEnd passes `phone.locked`: the button is disabled with the lock sentence, no transport is probed, an open panel is unmounted (its session closed), and a late result is not written.
 - **Approval JSON** (MatchEnd ~1120): it adds `signatureSources: { captainA: 'phone'|'device', captainB, scorer, asstScorer, ref1, ref2 }`. No server change is needed, because `approval` is JSONB the client writes.
 - **UI:** a signed MatchEnd slot shows a 12 px `Smartphone` icon with the tooltip "Signed on phone". The PDF stays unchanged (owner brief: same PDF output).
 
@@ -384,7 +385,7 @@ as a locally drawn one.
 `copyFailedUseQr`, `validFor` (`{{time}}`), `waiting`, `opened`, `received`, `signedOnPhone`,
 `useSignature`, `discard`, `newLink`, `expired`, `cancelled`, `joinWifiFirst`, `transportInternet`,
 `transportHall`, `hallBlocked`, `openConnectTablets`, `reasonNone`, `reasonSignIn`, `reasonRole`,
-`reasonNoNetwork`, `startFailed`.
+`reasonNoNetwork`, `startFailed`, `step1`, `step2` (the Wi-Fi then link QR captions; `connectTablets.step1/2` went with the Connect tablets redesign).
 
 The existing `localeKeys`, `missingKeys`, `duplicateKeys` and `sentenceCase` tests cover them.
 

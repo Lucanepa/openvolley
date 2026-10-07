@@ -199,7 +199,7 @@ pub fn backup_root<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
         return Ok(PathBuf::from(dir));
     }
     let data = app.path().data_dir().map_err(|e| format!("no data folder: {e}"))?;
-    Ok(data.join("OpenVolley").join("backups"))
+    Ok(data.join(crate::flavour::CURRENT.data_folder).join("backups"))
 }
 
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
@@ -278,7 +278,7 @@ pub async fn backup_pick_file<R: Runtime>(app: AppHandle<R>) -> Result<Option<St
             .file()
             .set_title("Restore from a backup file")
             .set_directory(&root)
-            .add_filter("OpenVolley backup", &["json"])
+            .add_filter(format!("{} backup", crate::flavour::CURRENT.name), &["json"])
             .blocking_pick_file();
         let Some(picked) = picked else { return Ok(None) };
         let path = picked.into_path().map_err(|e| e.to_string())?;

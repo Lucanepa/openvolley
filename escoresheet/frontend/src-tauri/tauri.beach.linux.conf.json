@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "openbeach-escoresheet",
+  "mainBinaryName": "openbeach-escoresheet",
+  "bundle": {
+    "linux": {
+      "deb": {
+        "provides": null,
+        "conflicts": null,
+        "replaces": null,
+        "desktopTemplate": "openbeach-escoresheet.desktop",
+        "files": {
+          "/usr/libexec/openvolley-escoresheet/apt-upgrade": null,
+          "/usr/share/polkit-1/actions/com.openvolley.escoresheet.update.policy": null,
+          "/usr/libexec/openbeach-escoresheet/apt-upgrade": "linux/beach/apt-upgrade",
+          "/usr/share/polkit-1/actions/com.openvolley.beach.update.policy": "linux/beach/com.openvolley.beach.update.policy"
+        }
+      }
+    }
+  }
+}

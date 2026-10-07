@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-download-reveal"
+description = "Enables the download_reveal command without any pre-configured scope."
+commands.allow = ["download_reveal"]
+
+[[permission]]
+identifier = "deny-download-reveal"
+description = "Denies the download_reveal command without any pre-configured scope."
+commands.deny = ["download_reveal"]

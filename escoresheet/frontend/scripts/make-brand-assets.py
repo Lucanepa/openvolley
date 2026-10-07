@@ -8,7 +8,9 @@ renders, commit them with the SVG. It writes:
 - public/: favicon.svg, favicon.ico, apple-touch-icon.png, icon-192/512.png
   and icon-maskable-192/512.png (PWA manifest), ball.png (serve indicator,
   scoresheet PDF), openvolley_logo.png (PDF header)
-- src/ball_fallback.png (bundled copy of the serve ball)
+- src/ball_fallback.png (the bundled serve ball, BRAND.ballPng: every serve
+  indicator and the scoresheet ball) and src/assets/brand/openvolley_lockup.png
+  (BRAND.lockupPng: the scoresheet header)
 - android/app/src/main/res: launcher icons (square, round, adaptive
   foreground, themed-icon monochrome) for every density, pre-Android-12 splash
 - src-tauri/icons and electron/: desktop app icons (png, ico, icns)
@@ -140,6 +142,12 @@ for s in (192, 512):
 save_png(render('ball.svg', 1024), PUBLIC / 'ball.png')
 save_png(render('ball.svg', 256), ROOT / 'src/ball_fallback.png')
 save_png(fit_box('lockup.svg', 1024), PUBLIC / 'openvolley_logo.png')
+# Imported by the code (src/brand.js BRAND.lockupPng, like src/ball_fallback.png =
+# BRAND.ballPng): Vite gives them a content-hashed URL, so an app update can never
+# show a cached old logo or ball (the unhashed /ball.png was cached for a year by
+# the desktop app's built-in server)
+(ROOT / 'src/assets/brand').mkdir(parents=True, exist_ok=True)
+save_png(fit_box('lockup.svg', 1024), ROOT / 'src/assets/brand/openvolley_lockup.png')
 
 # ---- Android -----------------------------------------------------------
 DENSITIES = {'mdpi': 1, 'hdpi': 1.5, 'xhdpi': 2, 'xxhdpi': 3, 'xxxhdpi': 4}

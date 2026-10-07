@@ -14,6 +14,7 @@ import { setExtId, eventExtId, jobMatchKey } from './syncIds'
 import { buildConnectionPins } from './connectionPins'
 import { missingConnectionPins } from './remoteRoster'
 import { generateSecurePin } from './stringUtils'
+import { isScorerEntry } from './appEntry'
 
 // IndexedDB key for storing file system directory handle
 const BACKUP_DB_NAME = 'escoresheet_backup'
@@ -252,9 +253,14 @@ export async function writeMatchBackup(matchId, directoryHandle) {
 }
 
 /**
- * Download match backup as file (Safari/Firefox fallback)
+ * Download match backup as file (Safari/Firefox fallback). Only the
+ * scoretable page saves backups: a referee / bench / livescore page opened
+ * from a tablet QR code never downloads a match file (utils/appEntry).
  */
 export async function downloadMatchBackup(matchId) {
+  if (!isScorerEntry()) {
+    throw new Error('Match backups are saved by the scoretable only')
+  }
   const data = await exportMatchData(matchId)
   const filename = generateBackupFilename(data)
 
