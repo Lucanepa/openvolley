@@ -553,6 +553,8 @@
       "confirmPoint": "Confirm point",
       "confirmSanction": "Confirm sanction",
       "confirmUndo": "Confirm undo",
+      "confirmReplay": "Replay rally?",
+      "confirmReplayBody": "No point is scored and the same team serves again.",
       "confirmTimeout": "Confirm timeout",
       "decisionChange": "Decision change",
       "exceptionalSubstitution": "Exceptional substitution",

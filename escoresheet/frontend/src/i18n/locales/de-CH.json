@@ -552,6 +552,8 @@
       "confirmPoint": "Punkt bestätige",
       "confirmSanction": "Sanktion bestätige",
       "confirmUndo": "Rückgängig bestätige",
+      "confirmReplay": "Ballwechsel wiederhole?",
+      "confirmReplayBody": "Es git kei Punkt, s glich Team schlaht nomal uf.",
       "confirmTimeout": "Zeitüberschreitung bestätigen",
       "decisionChange": "Entscheidsänderig",
       "exceptionalSubstitution": "Usserordentlichi Uswächslig",
