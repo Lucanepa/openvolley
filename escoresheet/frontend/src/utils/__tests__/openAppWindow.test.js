@@ -11,6 +11,8 @@ import {
   openFailedMessageKey,
   resolveAppUrl,
   writePdfNative,
+  freePdfName,
+  absolutePathOf,
 } from '../openAppWindow'
 import {
   MSG_PDF_BLOB,
@@ -249,6 +251,29 @@ describe('writePdfNative (Save PDF in the Android app)', () => {
   it('throws when nothing is writable', async () => {
     const writeFile = vi.fn(async () => { throw new Error('nope') })
     await expect(writePdfNative({ Filesystem: { writeFile }, Directory }, pdf, 'x.pdf')).rejects.toThrow('nope')
+  })
+
+  it('tells the absolute path, and never overwrites an earlier PDF (" (1)", " (2)")', async () => {
+    const existing = new Set(['OpenVolley/scoresheets/20261007_382208_KSCW_vs_Spada.pdf', 'OpenVolley/scoresheets/20261007_382208_KSCW_vs_Spada (1).pdf'])
+    const stat = vi.fn(async ({ path }) => { if (!existing.has(path)) throw new Error('File does not exist') ; return { type: 'file' } })
+    const writeFile = vi.fn(async ({ path }) => ({ uri: `file:///storage/emulated/0/Documents/${encodeURI(path)}` }))
+    const res = await writePdfNative({ Filesystem: { writeFile, stat }, Directory }, pdf, '20261007_382208_KSCW_vs_Spada.pdf')
+    expect(writeFile).toHaveBeenCalledWith(expect.objectContaining({ path: 'OpenVolley/scoresheets/20261007_382208_KSCW_vs_Spada (2).pdf' }))
+    expect(res.fullPath).toBe('/storage/emulated/0/Documents/OpenVolley/scoresheets/20261007_382208_KSCW_vs_Spada (2).pdf')
+    expect(res.uri).toMatch(/^file:\/\/\/storage/)
+  })
+})
+
+describe('freePdfName / absolutePathOf', () => {
+  it('the first free name; a missing stat() means the name as it is', async () => {
+    expect(await freePdfName({}, 'DOCUMENTS', 'a.pdf')).toBe('a.pdf')
+    const stat = vi.fn(async ({ path }) => { if (path.endsWith('a.pdf')) return {}; throw new Error('missing') })
+    expect(await freePdfName({ stat }, 'DOCUMENTS', 'a.pdf')).toBe('a (1).pdf')
+  })
+  it('a file:// URI as the path a file manager shows', () => {
+    expect(absolutePathOf('file:///storage/emulated/0/Documents/OpenVolley/scoresheets/a%20(1).pdf', 'x')).toBe('/storage/emulated/0/Documents/OpenVolley/scoresheets/a (1).pdf')
+    expect(absolutePathOf(undefined, 'Documents/x.pdf')).toBe('Documents/x.pdf')
+    expect(absolutePathOf('content://x', 'Documents/x.pdf')).toBe('Documents/x.pdf')
   })
 })
 
