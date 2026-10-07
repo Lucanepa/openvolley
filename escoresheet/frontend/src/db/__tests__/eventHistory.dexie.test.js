@@ -1,10 +1,16 @@
 // Event history hooks against the real app database (Dexie 4 on fake-indexeddb).
 import 'fake-indexeddb/auto'
 import { describe, it, expect, beforeEach } from 'vitest'
-import { db, maxVoidedSeq, wipeMatchEvents } from '../db'
+import { db } from '../db'
+import { syncJobsForEvents } from '../../domain/corrections'
+import { eventExtId } from '../../utils/syncIds'
 import {
+  maxVoidedSeq as maxVoidedSeqOf, wipeMatchEvents as wipeMatchEventsOf,
   withActivityContext, eventHistorySettled, EVENT_HISTORY_SCOPE, onEventHistory, rememberSeedKey
 } from '../eventHistory'
+
+const maxVoidedSeq = (matchId) => maxVoidedSeqOf(db, matchId)
+const wipeMatchEvents = (matchId, opts) => wipeMatchEventsOf(db, matchId, opts)
 
 const SEED = 'match_1759740000000_ab12cd'
 const settle = async () => {
@@ -172,6 +178,20 @@ describe('event history hooks', () => {
     const jobs = await revisionJobs()
     expect(jobs.map(j => j.action)).toEqual(['void', 'restore'])
     expect(jobs[1].payload.after).toMatchObject({ type: 'lineup', payload: { team: 'home' } })
+  })
+
+  it('the void job survives the discardEvents clean-up of the insert jobs (undo before upload)', async () => {
+    const id = await db.events.add({ matchId, setIndex: 1, type: 'point', seq: 3, payload: {} })
+    await db.sync_queue.add({ resource: 'event', action: 'insert', status: 'queued', ts: 1, payload: { external_id: eventExtId(SEED, id), match_id: SEED } })
+    // Scoreboard discardEvents: delete, then drop the queued jobs of the events
+    await withActivityContext({ reason: 'undo' }, () => db.events.bulkDelete([id]))
+    await settle()
+    const queued = await db.sync_queue.where('status').equals('queued').toArray()
+    const stale = syncJobsForEvents(queued, [id])
+    await db.sync_queue.bulkDelete(stale.map(j => j.id))
+    const left = await db.sync_queue.toArray()
+    expect(left.map(j => j.action)).toEqual(['void'])
+    expect(left[0].payload.reason).toBe('undo')
   })
 
   it('tells listeners about stored rows', async () => {

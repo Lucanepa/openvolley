@@ -6,6 +6,7 @@
  */
 
 import { db } from '../db/db'
+import { wipeMatchEvents } from '../db/eventHistory'
 import { apiStorage, apiMatchRestoreByPin } from '../lib/apiClient'
 import { sanitizeSimple } from './stringUtils'
 import { getCloudApiUrl } from './backendConfig'
@@ -338,7 +339,8 @@ export async function restoreMatchFromJson(jsonData) {
     match = { ...match, ...pinsForRestore(jsonData, previous[0] || null) }
     if (externalId) {
       for (const old of previous) {
-        await db.events.where('matchId').equals(old.id).delete()
+        // replaced, not undone: the restored events are not voided (db/eventHistory)
+        await wipeMatchEvents(db, old.id)
         await db.sets.where('matchId').equals(old.id).delete()
         await db.matches.delete(old.id)
       }
@@ -591,7 +593,7 @@ export async function restoreMatchInPlace(matchId, jsonData) {
 
     // Delete existing sets and events for this match
     await db.sets.where('matchId').equals(matchId).delete()
-    await db.events.where('matchId').equals(matchId).delete()
+    await wipeMatchEvents(db, matchId)
 
     // Recreate sets (keep the new local ids: the cloud external_id is built from them)
     const newSetIds = []

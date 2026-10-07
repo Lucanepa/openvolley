@@ -129,13 +129,16 @@ async function matchInfo(database, matchId) {
 // ---------------------------------------------------------------------------
 // High-water seq: an undone seq is never given out again
 // ---------------------------------------------------------------------------
-/** The highest seq of an event of this match that has history (0 when none). */
-export async function maxVoidedSeq(database, matchId) {
+/**
+ * The highest seq of an event of this match that has history (0 when none);
+ * with { from, to } only seqs in that range (the sub-events of one base seq).
+ */
+export async function maxVoidedSeq(database, matchId, { from, to } = {}) {
   if (matchId == null || !database?.event_history) return 0
   try {
     const last = await database.event_history
       .where('[matchId+seq]')
-      .between([matchId, Dexie.minKey], [matchId, Dexie.maxKey])
+      .between([matchId, from ?? Dexie.minKey], [matchId, to ?? Dexie.maxKey], true, true)
       .last()
     const seq = Number(last?.seq)
     return Number.isFinite(seq) ? seq : 0
