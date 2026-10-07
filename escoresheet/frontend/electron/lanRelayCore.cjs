@@ -104,6 +104,13 @@
  *
  * Match ids are always String(matchId). PINs never leave the relay: PIN
  * validation is answered from the relay's own store, never by a WS client.
+ *
+ * Sign on phone (docs/qr-signing-spec.md 4): POST /api/sign/start|open|submit|
+ *                   wait|close, JSON, state machine in ./signSessionCore.cjs (same
+ *                   protocol in backend/server.js and src-tauri/src/sign.rs). start
+ *                   from the relay host itself, or with X-OV-Match-Pin = the game PIN
+ *                   of the body's matchKey (wrong PINs counted like GET
+ *                   /api/match/:id). Bodies: 64 KB submit, 4 KB otherwise (413).
  */
 
 // Secret fields on a match object that must never be returned to a client.
@@ -572,7 +579,7 @@ function createRateLimiter({ windowMs = 60 * 1000, max = 10 } = {}) {
     for (const [key, e] of entries) if (now - e.windowStart > windowMs * 2) entries.delete(key)
   }, 5 * 60 * 1000)
   if (timer && typeof timer.unref === 'function') timer.unref()
-  return function isRateLimited(key, limit = max) {
+  function isRateLimited(key, limit = max) {
     const now = Date.now()
     const e = entries.get(key)
     if (!e || now - e.windowStart > windowMs) {
@@ -582,11 +589,74 @@ function createRateLimiter({ windowMs = 60 * 1000, max = 10 } = {}) {
     e.count++
     return e.count > limit
   }
+  /** Clears the cleanup timer (createLanRelay's close()). */
+  isRateLimited.dispose = () => clearInterval(timer)
+  return isRateLimited
 }
+
+// --- Sign on phone (docs/qr-signing-spec.md 4): /api/sign/* -----------------
+
+const SIGN_ENDPOINT_RE = /^\/api\/sign\/(start|open|submit|wait|close)$/
+
+/**
+ * Read at most `limit` bytes of a JSON body and stop: { body } or { error: status }.
+ * Never buffers more than the cap.
+ */
+function readSignBody(req, limit) {
+  return new Promise((resolve) => {
+    const declared = Number(req.headers && req.headers['content-length'])
+    if (Number.isFinite(declared) && declared > limit) {
+      req.resume()
+      resolve({ error: 413 })
+      return
+    }
+    const chunks = []
+    let size = 0
+    let done = false
+    const finish = (r) => { if (!done) { done = true; resolve(r) } }
+    req.on('data', (chunk) => {
+      if (done) return
+      size += chunk.length
+      if (size > limit) {
+        chunks.length = 0
+        finish({ error: 413 })
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => {
+      if (done) return
+      // Buffer is a Node global (no require): a multi-byte character split
+      // across two chunks decodes whole
+      const text = typeof Buffer !== 'undefined' && chunks.every((c) => typeof c !== 'string')
+        ? Buffer.concat(chunks).toString('utf8')
+        : chunks.map(String).join('')
+      try {
+        finish({ body: JSON.parse(text) })
+      } catch {
+        finish({ error: 400 })
+      }
+    })
+    req.on('error', () => finish({ error: 400 }))
+  })
+}
+
+const isJsonRequest = (req) => /^application\/json\b/i.test(String((req.headers && req.headers['content-type']) || ''))
 
 /**
  * Create one relay instance (state + WS protocol + HTTP API).
- * @param {{ log?: Console, requestTimeoutMs?: number, isRateLimited?: Function }} [options]
+ *
+ * Sign on phone (/api/sign/*, docs/qr-signing-spec.md 4): `signCore` is the
+ * module ./signSessionCore.cjs (this file must not require() it; the ESM entry
+ * ../lanRelayCore.js and ./relayServer.js pass it). Without it every sign call
+ * answers 503 OV_SIGN_UNAVAILABLE. The sessions (and their sweeper timer) are
+ * created on the first sign request, never at load: a module-level relay (the
+ * Vite plugin) must not keep `vite build` alive. close() disposes them.
+ * `isLocal(addr)`: the relay host itself may start a session; anyone else
+ * proves the match's game PIN (X-OV-Match-Pin). Defaults to loopback only.
+ *
+ * @param {{ log?: Console, requestTimeoutMs?: number, isRateLimited?: Function,
+ *   signCore?: object, isLocal?: (addr: string) => boolean, signOptions?: object }} [options]
  */
 function createLanRelay(options = {}) {
   const log = options.log || console
@@ -594,11 +664,15 @@ function createLanRelay(options = {}) {
   const orphanTakeoverMs = options.orphanTakeoverMs ?? ORPHAN_TAKEOVER_MS
   const staleTakeoverMs = options.staleTakeoverMs ?? STALE_TAKEOVER_MS
   const maxOwnedPerIp = options.maxOwnedPerIp ?? MAX_OWNED_PER_IP
-  const isRateLimited = options.isRateLimited || createRateLimiter()
+  const ownLimiters = []
+  const isRateLimited = options.isRateLimited || (ownLimiters[ownLimiters.length] = createRateLimiter())
   const claimFailures = createFailureCounter({ max: options.claimFailureLimit ?? CLAIM_FAILURE_LIMIT })
   // Wrong subscribe-match PINs per socket / IP and minute (no PIN compared beyond)
   const pinFailures = createFailureCounter({ max: options.pinFailureLimit ?? PIN_FAILURE_LIMIT })
-  const isNewClaimLimited = createRateLimiter({ max: options.newClaimLimit ?? NEW_CLAIM_LIMIT })
+  const isNewClaimLimited = (ownLimiters[ownLimiters.length] = createRateLimiter({ max: options.newClaimLimit ?? NEW_CLAIM_LIMIT }))
+  const signCore = options.signCore || null
+  const isLocalAddr = options.isLocal || isLoopbackAddress
+  let signSessions = null // created on the first /api/sign/* request
 
   const store = new Map() // matchId -> bundle (unstripped: the PINs live only here)
   const subscriptions = new Map() // matchId -> Set<ws>
@@ -1285,6 +1359,82 @@ function createLanRelay(options = {}) {
     })
   }
 
+  // --- Sign on phone --------------------------------------------------------
+
+  function getSignSessions() {
+    if (!signSessions) {
+      signSessions = signCore.createSignSessions({
+        via: 'lan',
+        log: (line) => log.log(`[Sign] ${line}`),
+        ...(options.signOptions || {}),
+      })
+    }
+    return signSessions
+  }
+
+  function sendSign(res, r) {
+    if (res.headersSent || res.writableEnded) return
+    const headers = { 'Content-Type': 'application/json', ...(signCore ? signCore.SIGN_API_HEADERS : { 'Cache-Control': 'no-store' }), ...(r.headers || {}) }
+    if (r.status === 413) headers.Connection = 'close'
+    res.writeHead(r.status, headers)
+    res.end(JSON.stringify(r.body))
+  }
+  const signFail = (status, code, headers) => (signCore
+    ? signCore.signError(status, code, headers)
+    : { status, body: { ok: false, code, message: code }, ...(headers ? { headers } : {}) })
+
+  /**
+   * Who may start a session here (spec D3): the relay host itself ('local'),
+   * or a device that proves the game PIN of a match this relay holds
+   * ('pin:<matchKey>'). Wrong PINs count toward the per-IP wrong-PIN limit.
+   */
+  function signOwner(req, body, ip) {
+    if (isLocalAddr(req.socket && req.socket.remoteAddress)) return { owner: 'local' }
+    const raw = req.headers && req.headers['x-ov-match-pin']
+    const pin = typeof raw === 'string' ? raw.trim().slice(0, 32) : ''
+    if (!pin) return { error: signFail(403, 'OV_SIGN_FORBIDDEN') }
+    const key = `ip:${ip}`
+    if (pinFailures.blocked(key)) return { error: signFail(429, 'OV_SIGN_RATE_LIMITED', { 'Retry-After': '60' }) }
+    const matchKey = body && typeof body.matchKey === 'string' ? normalizeMatchId(body.matchKey) : null
+    const bundle = matchKey ? store.get(matchKey) : null
+    const stored = gamePinOf(bundle && bundle.match)
+    if (!stored) return { error: signFail(403, 'OV_SIGN_FORBIDDEN') }
+    if (!safeEqualText(stored, pin)) {
+      pinFailures.fail(key)
+      return { error: signFail(403, 'OV_SIGN_PIN_INVALID') }
+    }
+    return { owner: `pin:${matchKey}` }
+  }
+
+  /** POST /api/sign/<endpoint>. */
+  async function handleSign(req, res, endpoint, ip) {
+    if (!signCore) return sendSign(res, signFail(503, 'OV_SIGN_UNAVAILABLE'))
+    if (!isJsonRequest(req)) {
+      req.resume()
+      return sendSign(res, signFail(400, 'OV_SIGN_BAD_REQUEST'))
+    }
+    const read = await readSignBody(req, signCore.signBodyLimit(endpoint))
+    if (read.error === 413) return sendSign(res, signFail(413, 'OV_SIGN_TOO_LARGE'))
+    if (read.error) return sendSign(res, signFail(400, 'OV_SIGN_BAD_REQUEST'))
+    const body = read.body
+    const sessions = getSignSessions()
+    const ipKey = stripV4Prefix(ip)
+    if (endpoint === 'start') {
+      const who = signOwner(req, body, ipKey)
+      return sendSign(res, who.error || sessions.start(body, { owner: who.owner }))
+    }
+    if (endpoint === 'open') return sendSign(res, sessions.open(body, { ipKey }))
+    if (endpoint === 'submit') return sendSign(res, sessions.submit(body, { ipKey }))
+    if (endpoint === 'close') return sendSign(res, sessions.close(body))
+    // wait: dropped when the scoring device goes away
+    const ac = typeof AbortController === 'function' ? new AbortController() : null
+    const onGone = () => { if (ac && !res.writableEnded) ac.abort() }
+    res.on('close', onGone)
+    const r = await sessions.wait(body, ac ? { signal: ac.signal } : {})
+    res.off('close', onGone)
+    if (r.status !== 499) sendSign(res, r)
+  }
+
   /**
    * Serve the relay-owned endpoints. `url` is the full '/api/...' path with
    * query (the Vite middleware strips '/api', so it passes '/api' + req.url).
@@ -1298,6 +1448,15 @@ function createLanRelay(options = {}) {
     const reply = (p) => Promise.resolve(p)
       .then((r) => sendJson(res, r.status, r.body))
       .catch((err) => sendJson(res, err.status || 500, { success: false, error: err.message || 'Internal error' }))
+
+    const sign = SIGN_ENDPOINT_RE.exec(path)
+    if (sign && method === 'POST') {
+      handleSign(req, res, sign[1], ip).catch((err) => {
+        log.error('[Sign] request failed:', err && err.message)
+        sendSign(res, signFail(500, 'OV_SIGN_BAD_REQUEST'))
+      })
+      return true
+    }
 
     if (path === '/api/match/validate-pin') {
       if (method !== 'POST') return false
@@ -1358,6 +1517,18 @@ function createLanRelay(options = {}) {
     get clientCount() { return clients.size },
     hasMatch: (id) => store.has(normalizeMatchId(id)),
     isScoreboard: (ws) => (clients.get(ws)?.owned.size || 0) > 0,
+    /** Sign session counts (tests): null before the first sign request. */
+    signStats: () => (signSessions ? signSessions.stats() : null),
+    /**
+     * Stop the relay's timers: the sign sessions (sweeper, held waits) and the
+     * rate limiters it created. A later sign request starts fresh sessions.
+     */
+    close() {
+      if (signSessions) signSessions.dispose()
+      signSessions = null
+      for (const limiter of ownLimiters) limiter.dispose()
+      for (const p of pending.values()) clearTimeout(p.timer)
+    },
   }
 }
 
