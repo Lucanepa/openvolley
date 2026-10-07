@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   parseColour, normaliseColour, relativeLuminance, contrastRatio, colourDistance,
   readableTextOn, readableText, discRing, liberoColour, liberoScore, teamLiberoColour,
-  discPaint, teamDiscPaint, markColourOn, apcaContrast,
-  TEXT_DARK, TEXT_LIGHT, COURT_SURFACE, LIBERO_PALETTE, MIN_TEXT_CONTRAST, MIN_EDGE_CONTRAST, MIN_LARGE_TEXT_CONTRAST
+  discPaint, teamDiscPaint, markColourOn, apcaContrast, liberoPair, matchDiscPaint, teamBoxStyle,
+  LIBERO_CLASH_DISTANCE, HEADER_SURFACE, TEXT_DARK, TEXT_LIGHT, COURT_SURFACE, LIBERO_PALETTE, MIN_TEXT_CONTRAST, MIN_EDGE_CONTRAST, MIN_LARGE_TEXT_CONTRAST
 } from '../teamColours'
 
 const PALETTE = LIBERO_PALETTE.map(p => p.hex)
@@ -193,6 +193,127 @@ describe('liberoColour', () => {
     expect(PALETTE).toContain(liberoColour('#e2001a'))
     expect(liberoColour(null, '#ffffff')).toBeNull()
     expect(liberoColour('', '#ffffff')).toBeNull()
+  })
+})
+
+describe('liberoPair', () => {
+  const pairs = [
+    ['navy vs black', '#000080', '#000000'],
+    ['black vs navy', '#000000', '#000080'],
+    ['white vs white', '#ffffff', '#ffffff'],
+    ['red vs red', '#e2001a', '#e2001a'],
+    ['black vs black', '#000000', '#000000'],
+    ['navy vs navy', '#000080', '#000080'],
+    ['red vs blue', '#ef4444', '#3b82f6'],
+    ['white vs black', '#ffffff', '#000000'],
+    ['yellow vs orange', '#facc15', '#f97316'],
+    ['yellow vs green', '#facc15', '#16a34a'],
+    ['red vs pink', '#e2001a', '#ec4899'],
+    ['two blues', '#1d4ed8', '#2563eb'],
+    ['sky vs blue', '#38bdf8', '#1d4ed8'],
+    ['grey vs white', '#808080', '#ffffff']
+  ]
+  const joint = (h, a, home, away) => {
+    const d = colourDistance(h, a)
+    return Math.min(liberoScore(h, home, away), liberoScore(a, away, home), d < LIBERO_CLASH_DISTANCE ? d : Infinity)
+  }
+
+  it.each(pairs)('%s: two different liberos, each apart from both shirts', (_, home, away) => {
+    const p = liberoPair(home, away)
+    expect(PALETTE).toContain(p.home)
+    expect(PALETTE).toContain(p.away)
+    expect(colourDistance(p.home, p.away)).toBeGreaterThanOrEqual(LIBERO_CLASH_DISTANCE)
+    expect(contrastRatio(p.home, home)).toBeGreaterThanOrEqual(3)
+    expect(contrastRatio(p.away, away)).toBeGreaterThanOrEqual(3)
+    expect(colourDistance(p.home, away)).toBeGreaterThanOrEqual(25)
+    expect(colourDistance(p.away, home)).toBeGreaterThanOrEqual(25)
+    // and no other pair of palette colours does better on the weakest term
+    let best = -1
+    for (const h of PALETTE) for (const a of PALETTE) best = Math.max(best, joint(h, a, home, away))
+    expect(joint(p.home, p.away, home, away)).toBeCloseTo(best, 9)
+  })
+
+  it('navy vs black: the two liberos are no longer both white', () => {
+    expect(liberoColour('#000080', '#000000')).toBe('#ffffff')
+    expect(liberoColour('#000000', '#000080')).toBe('#ffffff')
+    expect(liberoPair('#000080', '#000000')).toEqual({ home: '#ffffff', away: '#f97316' }) // white, orange
+    expect(liberoPair('#000000', '#000080')).toEqual({ home: '#ffffff', away: '#f97316' })
+  })
+
+  it('white vs white and red vs red: home keeps its best pick, away takes the next', () => {
+    expect(liberoPair('#ffffff', '#ffffff')).toEqual({ home: '#1c1917', away: '#1d4ed8' }) // black, blue
+    expect(liberoPair('#e2001a', '#e2001a')).toEqual({ home: '#ffffff', away: '#1c1917' }) // white, black
+  })
+
+  it('keeps both teams\' own best picks when they do not clash', () => {
+    for (const [home, away] of [['#ffffff', '#000000'], ['#e2001a', '#ec4899'], ['#ef4444', '#3b82f6'], ['#38bdf8', '#1d4ed8']]) {
+      const solo = { home: liberoColour(home, away), away: liberoColour(away, home) }
+      if (colourDistance(solo.home, solo.away) >= LIBERO_CLASH_DISTANCE) expect(liberoPair(home, away), `${home} vs ${away}`).toEqual(solo)
+    }
+    // white vs black: blue and red, as each team picks alone
+    expect(liberoPair('#ffffff', '#000000')).toEqual({ home: '#1d4ed8', away: '#e2001a' })
+  })
+
+  it('is deterministic', () => {
+    for (const [, home, away] of pairs) expect(liberoPair(home, away)).toEqual(liberoPair(home, away))
+  })
+
+  it('works around an explicit libero colour, and keeps both when both are given', () => {
+    // away's libero is white: home (navy) must not be white too
+    const p = liberoPair('#000080', '#000000', { away: '#ffffff' })
+    expect(p.away).toBe('#ffffff')
+    expect(colourDistance(p.home, '#ffffff')).toBeGreaterThanOrEqual(LIBERO_CLASH_DISTANCE)
+    expect(liberoPair('#000080', '#000000', { home: '#00ff00', away: '#ff00ff' })).toEqual({ home: '#00ff00', away: '#ff00ff' })
+  })
+
+  it('falls back to a single pick when a team has no colour', () => {
+    expect(liberoPair('#e2001a', null)).toEqual({ home: liberoColour('#e2001a'), away: null })
+    expect(liberoPair(null, '#e2001a')).toEqual({ home: null, away: liberoColour('#e2001a') })
+    expect(liberoPair(null, null)).toEqual({ home: null, away: null })
+  })
+})
+
+describe('matchDiscPaint', () => {
+  it('paints both teams, with the two liberos picked together', () => {
+    const m = matchDiscPaint('#000080', '#000000')
+    expect(m.home.player.background).toBe('#000080')
+    expect(m.away.player.background).toBe('#000000')
+    expect(m.home.libero.background).toBe('#ffffff')
+    expect(m.away.libero.background).toBe('#f97316')
+    expect(m.away.libero.color).toBe(readableTextOn('#f97316'))
+    expect(m.home.libero.ring).toBeTruthy() // a white libero gets its ring on the court
+  })
+
+  it('null for a team without a colour, and honours explicit libero colours', () => {
+    const m = matchDiscPaint('#e2001a', '', { homeLibero: '#00ff00' })
+    expect(m.away).toBeNull()
+    expect(m.home.libero.background).toBe('#00ff00')
+  })
+})
+
+describe('teamBoxStyle', () => {
+  it('fills with the team colour and the readable text colour', () => {
+    expect(teamBoxStyle('#e2001a')).toEqual({ background: '#e2001a', color: readableTextOn('#e2001a') })
+    expect(teamBoxStyle('#1c1917')).toEqual({ background: '#1c1917', color: TEXT_LIGHT })
+    expect(teamBoxStyle('#facc15').color).toBe(TEXT_DARK)
+  })
+
+  it('a white or very light team keeps a ring on the white header, and dark text', () => {
+    for (const c of ['#ffffff', '#fff8e7', '#fef9c3', '#f5f5dc']) {
+      const st = teamBoxStyle(c)
+      expect(st.color, c).toBe(TEXT_DARK)
+      const ring = st.boxShadow.match(/#[0-9a-f]{6}/)[0]
+      expect(ring, c).toBe(discRing(c, HEADER_SURFACE))
+      expect(contrastRatio(ring, HEADER_SURFACE), c).toBeGreaterThanOrEqual(MIN_EDGE_CONTRAST)
+      expect(st.boxShadow).toMatch(/^inset 0 0 0 2px #/)
+    }
+    expect(teamBoxStyle('#e2001a').boxShadow).toBeUndefined()
+  })
+
+  it('uses the fallback for a missing colour and passes an unreadable one through', () => {
+    expect(teamBoxStyle(null, { fallback: '#3b82f6' }).background).toBe('#3b82f6')
+    expect(teamBoxStyle('var(--accent)')).toEqual({ background: 'var(--accent)', color: TEXT_LIGHT })
+    expect(teamBoxStyle(null)).toEqual({})
   })
 })
 

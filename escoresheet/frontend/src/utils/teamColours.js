@@ -258,6 +258,54 @@ export function liberoColour(teamColour, opponentColour = null, { explicit = nul
   return best.hex
 }
 
+// Two libero shirts closer than this (OKLab ΔE × 100) clash: red / orange /
+// pink, blue / purple, white / yellow / sky / grey
+export const LIBERO_CLASH_DISTANCE = 30
+
+/**
+ * The two liberos' shirts, chosen together so they also differ from each
+ * other (navy vs black would otherwise give both teams a white libero).
+ * Over every pair of palette colours (an explicit libero colour is kept as
+ * is), it maximises the weakest of: each libero's liberoScore (contrast and
+ * distance against its own team, distance from the opponent's shirt) and
+ * the OKLab distance between the two liberos. That distance only limits the
+ * pair while the two shirts clash (under LIBERO_CLASH_DISTANCE): past it they
+ * are plainly different shirts, so when the teams' own best picks don't
+ * clash both keep them. Ties go to the pair where the home libero scores
+ * best on its own, then the away libero, then palette order. Deterministic.
+ * @returns {{ home: string|null, away: string|null }} '#rrggbb' each, null for a team without a usable colour
+ */
+export function liberoPair(homeColour, awayColour, { home: homeExplicit = null, away: awayExplicit = null } = {}) {
+  const home = normaliseColour(homeColour)
+  const away = normaliseColour(awayColour)
+  if (!home || !away) {
+    return {
+      home: liberoColour(home, away, { explicit: home ? homeExplicit : null }),
+      away: liberoColour(away, home, { explicit: away ? awayExplicit : null })
+    }
+  }
+  const palette = LIBERO_PALETTE.map(p => p.hex)
+  const homeOptions = [normaliseColour(homeExplicit) ?? palette].flat()
+  const awayOptions = [normaliseColour(awayExplicit) ?? palette].flat()
+  const homeScore = new Map(homeOptions.map(c => [c, liberoScore(c, home, away)]))
+  const awayScore = new Map(awayOptions.map(c => [c, liberoScore(c, away, home)]))
+  const EPS = 1e-9
+  let best = null
+  for (const h of homeOptions) {
+    for (const a of awayOptions) {
+      const sh = homeScore.get(h)
+      const sa = awayScore.get(a)
+      const d = colourDistance(h, a)
+      const joint = Math.min(sh, sa, d < LIBERO_CLASH_DISTANCE ? d : Infinity)
+      const better = !best ||
+        joint > best.joint + EPS ||
+        (joint > best.joint - EPS && (sh > best.sh + EPS || (sh > best.sh - EPS && sa > best.sa + EPS)))
+      if (better) best = { home: h, away: a, joint, sh, sa }
+    }
+  }
+  return { home: best.home, away: best.away }
+}
+
 /** An explicit libero shirt colour on a team record, if the data has one */
 export function teamLiberoColour(team) {
   if (!team || typeof team !== 'object') return null
@@ -288,6 +336,55 @@ export function teamDiscPaint(teamColour, { opponent = null, libero = null, surf
   const player = discPaint(teamColour, surface)
   if (!player) return null
   return { player, libero: discPaint(liberoColour(teamColour, opponent, { explicit: libero }), surface) }
+}
+
+/**
+ * Disc paint for both teams of a match, with the two liberos picked together
+ * (liberoPair) so they never share a shirt colour.
+ * @param {string|null} homeColour
+ * @param {string|null} awayColour
+ * @param {object} [opts]
+ * @param {string|null} [opts.homeLibero] explicit home libero colour
+ * @param {string|null} [opts.awayLibero] explicit away libero colour
+ * @param {string} [opts.surface] the court colour under the discs
+ * @returns {{ home: { player: object, libero: object } | null, away: { player: object, libero: object } | null }} null for a team without a usable colour (callers keep their default look)
+ */
+export function matchDiscPaint(homeColour, awayColour, { homeLibero = null, awayLibero = null, surface = COURT_SURFACE } = {}) {
+  const liberos = liberoPair(homeColour, awayColour, { home: homeLibero, away: awayLibero })
+  const side = (colour, libero) => {
+    const player = discPaint(colour, surface)
+    return player ? { player, libero: discPaint(libero, surface) } : null
+  }
+  return { home: side(homeColour, liberos.home), away: side(awayColour, liberos.away) }
+}
+
+// The white header and panels the team name boxes sit on
+export const HEADER_SURFACE = '#ffffff'
+
+/**
+ * Inline style for a box filled with a team colour that shows a team name,
+ * label (A/B) or score: the fill, the readable text colour (readableTextOn)
+ * and, when the fill would melt into the white header (white, cream, light
+ * yellow...), an inset ring of the same colour darkened to 3:1 (discRing). An
+ * inset box-shadow, so the box keeps its size.
+ * @param {string|null} colour the team colour
+ * @param {object} [opts]
+ * @param {string} [opts.fallback] colour used when `colour` is missing or unusable
+ * @param {string} [opts.surface] what the box sits on
+ * @param {number} [opts.ringWidth] px
+ * @returns {{ background?: string, color?: string, boxShadow?: string }} (an unreadable colour such as a CSS variable is passed through with white text)
+ */
+export function teamBoxStyle(colour, { fallback = null, surface = HEADER_SURFACE, ringWidth = 2 } = {}) {
+  const background = normaliseColour(colour) ?? normaliseColour(fallback)
+  if (!background) {
+    // Not a colour we can read (a CSS variable...): keep it, with white text as before
+    const raw = typeof colour === 'string' && colour.trim() ? colour : (typeof fallback === 'string' && fallback.trim() ? fallback : null)
+    return raw ? { background: raw, color: TEXT_LIGHT } : {}
+  }
+  const ring = discRing(background, surface)
+  return ring
+    ? { background, color: readableTextOn(background), boxShadow: `inset 0 0 0 ${ringWidth}px ${ring}` }
+    : { background, color: readableTextOn(background) }
 }
 
 /**

@@ -22,7 +22,7 @@ const SURFACE = {
   boxShadow: 'var(--ov-shadow-card)'
 }
 import { setsToWin } from '../utils/matchFormat'
-import { teamDiscPaint, teamLiberoColour, markColourOn } from '../utils/teamColours'
+import { matchDiscPaint, teamLiberoColour, markColourOn } from '../utils/teamColours'
 
 export default function MatchEntry({ matchId, team, onBack, embedded = false }) {
   const { t } = useTranslation()
@@ -249,13 +249,16 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
   }, [data, team])
 
   // Player discs in the team's shirt colour, the libero in the colour that
-  // stands out most from both teams (null without a team colour: the discs
-  // keep the neutral look)
+  // stands out most from both teams, picked together with the other team's
+  // libero so the two never match, as on the scoring and referee courts
+  // (null without a team colour: the discs keep the neutral look)
   const discPaint = useMemo(() => {
     if (!data) return null
-    const own = team === 'home' ? data.homeTeam : data.awayTeam
-    const other = team === 'home' ? data.awayTeam : data.homeTeam
-    return teamDiscPaint(own?.color, { opponent: other?.color, libero: teamLiberoColour(own) })
+    const paint = matchDiscPaint(data.homeTeam?.color, data.awayTeam?.color, {
+      homeLibero: teamLiberoColour(data.homeTeam),
+      awayLibero: teamLiberoColour(data.awayTeam)
+    })
+    return team === 'home' ? paint.home : paint.away
   }, [data, team])
 
   const discStyle = (isLibero) => {

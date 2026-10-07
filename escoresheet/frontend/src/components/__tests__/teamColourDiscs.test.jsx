@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, waitFor } from '@testing-library/react'
 import PlayerDisc from '../referee/PlayerDisc.jsx'
 import DraggedPlayerOverlay from '../DraggedPlayerOverlay.jsx'
-import { liberoColour, readableTextOn, discRing, TEXT_DARK, TEXT_LIGHT } from '../../utils/teamColours'
+import { liberoPair, readableTextOn, discRing, TEXT_DARK, TEXT_LIGHT } from '../../utils/teamColours'
 
 // jsdom normalises inline colours to rgb()
 const rgb = (hex) => {
@@ -77,17 +77,17 @@ function benchBundle(homeColor, awayColor) {
     homeTeam: { name: 'Home', color: homeColor },
     awayTeam: { name: 'Away', color: awayColor },
     homePlayers: players([[1], [10, { isCaptain: true }], [88], [14], [99], [12], [7, { libero: 'libero1' }]]),
-    awayPlayers: players([[2], [11], [55], [66], [98], [13]]),
+    awayPlayers: players([[2], [11], [55], [66], [98], [13], [8, { libero: 'libero1' }]]),
     sets: [{ index: 1, homePoints: 3, awayPoints: 2, finished: false }],
     events: [
       { type: 'lineup', setIndex: 1, ts: 1, payload: { team: 'home', lineup: { I: 10, II: 88, III: 7, IV: 99, V: 12, VI: 1 } } },
-      { type: 'lineup', setIndex: 1, ts: 1, payload: { team: 'away', lineup: { I: 2, II: 11, III: 55, IV: 66, V: 98, VI: 13 } } }
+      { type: 'lineup', setIndex: 1, ts: 1, payload: { team: 'away', lineup: { I: 2, II: 11, III: 8, IV: 66, V: 98, VI: 13 } } }
     ]
   }
 }
 
-async function benchDiscs() {
-  const { container } = render(<MatchEntry matchId="m1" team="home" onBack={() => {}} embedded />)
+async function benchDiscs(team = 'home') {
+  const { container } = render(<MatchEntry matchId="m1" team={team} onBack={() => {}} embedded />)
   await waitFor(() => expect(container.querySelectorAll('.court-player').length).toBe(6))
   const byNumber = {}
   for (const el of container.querySelectorAll('.court-player')) {
@@ -107,7 +107,7 @@ describe('bench tablet court discs', () => {
       expect(d[n].style.background, n).toBe(rgb('#e2001a'))
       expect(d[n].style.color, n).toBe(rgb(readableTextOn('#e2001a')))
     }
-    const lib = liberoColour('#e2001a', '#3b82f6')
+    const lib = liberoPair('#e2001a', '#3b82f6').home
     expect(d['7'].style.background).toBe(rgb(lib))
     expect(d['7'].style.color).toBe(rgb(readableTextOn(lib)))
     expect(lib).not.toBe('#e2001a')
@@ -121,6 +121,25 @@ describe('bench tablet court discs', () => {
     expect(d['10'].style.borderColor).toBe(rgb(discRing('#ffffff')))
     expect(d['7'].style.background).not.toBe(rgb('#ffffff'))
     expect(d['7'].style.background).not.toBe(rgb('#1c1917'))
+  })
+
+  it('navy vs black: the two benches show different liberos (white for home, orange for away)', async () => {
+    bundle = benchBundle('#000080', '#000000')
+    const home = await benchDiscs('home')
+    expect(home['10'].style.background).toBe(rgb('#000080'))
+    expect(home['7'].style.background).toBe(rgb('#ffffff'))
+    document.body.innerHTML = ''
+    const away = await benchDiscs('away')
+    expect(away['2'].style.background).toBe(rgb('#000000'))
+    expect(away['8'].style.background).toBe(rgb(liberoPair('#000080', '#000000').away))
+    expect(away['8'].style.background).not.toBe(rgb('#ffffff'))
+  })
+
+  it('white vs white: home libero black, away libero blue', async () => {
+    bundle = benchBundle('#ffffff', '#ffffff')
+    expect((await benchDiscs('home'))['7'].style.background).toBe(rgb('#1c1917'))
+    document.body.innerHTML = ''
+    expect((await benchDiscs('away'))['8'].style.background).toBe(rgb('#1d4ed8'))
   })
 
   it('keeps the neutral look without a team colour (cream libero)', async () => {
