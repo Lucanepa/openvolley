@@ -552,12 +552,12 @@ export default function BenchApp() {
     try {
       // Validate PIN server-side (no local IndexedDB), like RefereeApp: the
       // backend's Supabase check (the bench lists Supabase matches) and the LAN
-      // relay. LAN first when the user chose WebSocket mode or the match list
-      // came from the LAN relay.
+      // relay. LAN first when the user chose WebSocket mode or the match
+      // came from the LAN relay (its row in a merged list, else the list).
       const pin = pinInput.trim()
       const result = await validateBenchPin(pin, selectedTeam, {
         connectionMode,
-        preferLan: activeConnection === 'websocket'
+        preferLan: (selectedMatch?.listSource || activeConnection) === 'websocket'
       })
 
       if (result?.success && result.match) {

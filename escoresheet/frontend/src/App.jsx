@@ -68,6 +68,7 @@ import ManageConsole from './components/manage/ManageConsole'
 import ManagerSiteLink from './components/ManagerSiteLink'
 import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, restorePrefill } from './utils/manageNav'
 import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
+import { needsEventCheck, pickCurrentMatch } from './utils/currentMatch'
 import { isRelayErrorFor, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
 
 function parseDateTime(dateTime) {
@@ -472,17 +473,21 @@ export default function App() {
     if (activeMatchLoaded) liveMatchKnown()
   }, [activeMatchStatus, activeMatchIsTest, activeMatchLoaded])
 
-  // Get current match (most recent match that's not final)
+  // Current match: the newest unfinished one by createdAt, never one created,
+  // edited and scheduled more than 7 days ago without a single event
+  // (abandoned: it was offered to
+  // the hall's tablets as "Home – Away" for months). utils/currentMatch.js.
+  // Only those old matches' events are read, so scoring the current match
+  // does not re-run this query.
   const currentMatch = useLiveQuery(async () => {
     try {
-      // First try to get a live match
-      const liveMatch = await db.matches.where('status').equals('live').first()
-      if (liveMatch) return liveMatch
-
-      // Otherwise get the most recent match that's not final
-      const matches = await db.matches.orderBy('createdAt').reverse().toArray()
-      const nonFinalMatch = matches.find(m => m.status !== 'final')
-      return nonFinalMatch || null
+      const now = Date.now()
+      const matches = (await db.matches.toArray()).filter(m => m.status !== 'final')
+      const withEvents = new Set()
+      for (const m of matches) {
+        if (needsEventCheck(m, now) && await db.events.where('matchId').equals(m.id).count() > 0) withEvents.add(m.id)
+      }
+      return pickCurrentMatch(matches, { now, hasEvents: (id) => withEvents.has(id) })
     } catch (error) {
       console.error('Unable to load current match', error)
       return null
@@ -1055,6 +1060,22 @@ export default function App() {
   useEffect(() => {
     if (currentRelayKey && relaySyncRef.current) relaySyncRef.current()
   }, [currentRelayKey])
+
+  // A role let in or out (Connect tablets, Match setup) or a new PIN: tell
+  // the relay at once, not after the 30 s backup sync. The relay checks the
+  // PINs itself, so until then a tablet just let in was told its right PIN
+  // is wrong (and each retry counted toward the per-minute PIN limit), and
+  // one just switched off could still get in. An open Scoreboard syncs on
+  // these changes itself; a second sync of the same data is harmless.
+  const relayAccessSignature = currentMatch
+    ? [
+        currentMatch.refereeConnectionEnabled, currentMatch.homeTeamConnectionEnabled, currentMatch.awayTeamConnectionEnabled,
+        currentMatch.refereePin, currentMatch.homeTeamPin, currentMatch.awayTeamPin
+      ].map(v => String(v ?? '')).join('|')
+    : null
+  useEffect(() => {
+    if (relayAccessSignature != null && relaySyncRef.current) relaySyncRef.current()
+  }, [relayAccessSignature])
 
   useEffect(() => {
     // Keep the match on the relay even on the home screen (for dashboards).

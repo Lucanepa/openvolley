@@ -706,9 +706,11 @@ Every scheduled or live match a scorer currently publishes on this relay,
 newest `scheduledAt` first, whatever its referee connection: display devices
 (the point-hub LedBox bridge) pick their match here and need no PIN. Rows are
 public: `{ id, gameNumber, homeTeam, awayTeam, scheduledAt, dateTime, status,
-test, refereeConnectionEnabled, homeTeamConnectionEnabled,
+sportType, test, refereeConnectionEnabled, homeTeamConnectionEnabled,
 awayTeamConnectionEnabled }`, never PINs or people (`dateTime` is a display
-string, or `null` on the Tauri relay: clients format `scheduledAt`). Not
+string, or `null` on the Tauri relay: clients format `scheduledAt`;
+`sportType` is `'beach'` for an OpenBeach court, `'indoor'` otherwise, so each
+app lists its own sport's matches). Not
 listed: a match whose scoreboard left more than 10 minutes ago, and on the
 cloud a test (rehearsal) match, which belongs to the venue's relay (the cloud
 also drops its `live-state-update`). Same rule on every LAN relay

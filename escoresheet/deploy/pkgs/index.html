@@ -6,11 +6,14 @@
 <meta name="theme-color" content="#e2001a">
 <meta name="color-scheme" content="light">
 <title>Get OpenVolley</title>
-<meta name="description" content="Install the OpenVolley eScoresheet: Android via F-Droid or APK, Linux via APT, Windows installer.">
+<meta name="description" content="Install the OpenVolley eScoresheet and OpenBeach: Android via F-Droid or APK, Linux via APT, Windows installer.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Ccircle cx='256' cy='256' r='256' fill='%23ffffff'/%3E%3Cpath fill='%23e2001a' d='M495.37 273.44A240 240 0 0 1 480.87 339.85A182.72 182.72 0 0 0 262.66 226.69A130.72 130.72 0 0 1 237.07 188.46A226.72 226.72 0 0 1 495.37 273.44ZM297.34 19.59A240 240 0 0 1 486.05 187.6A278.72 278.72 0 0 0 226.09 137.36A130.72 130.72 0 0 1 297.34 19.59Z'/%3E%3Cpath fill='%231c1917' d='M440.07 410.01A240 240 0 0 1 70.94 408.82A182.72 182.72 0 0 0 278.05 276.42A130.72 130.72 0 0 1 440.07 410.01Z'/%3E%3Cpath fill='%231c1917' d='M30.59 338.4A240 240 0 0 1 216.18 19.33A182.72 182.72 0 0 0 227.29 264.89A130.72 130.72 0 0 1 30.59 338.4Z'/%3E%3C/svg%3E">
-<!-- Template: publish-pkgs.sh fills in the placeholders DESKTOP_VERSION, DEB_PACKAGE, WINDOWS_URL,
-     APK_VERSION and APK_FILE (each between @ signs)
-     from the packages it publishes. Plain HTML, no external requests. -->
+<!-- Template: publish-pkgs.sh (lib/publish-lib.sh landing_page) fills in the placeholders
+     DESKTOP_VERSION, DEB_PACKAGE, WINDOWS_URL, APK_VERSION, APK_FILE and, for OpenBeach,
+     BEACH_DESKTOP_VERSION, BEACH_WINDOWS_URL, BEACH_APK_VERSION and BEACH_APK_FILE (each between
+     @ signs) from the packages it publishes. The beach block is left out until an OpenBeach
+     package is published, its beach-desktop / beach-android parts until that one is.
+     Plain HTML, no external requests. -->
 <style>
   :root {
     --stone-50: #fafaf9; --stone-100: #f5f5f4; --stone-200: #e7e5e4; --stone-300: #d6d3d1;
@@ -159,6 +162,33 @@ sudo apt update &amp;&amp; sudo apt install @DEB_PACKAGE@</code></pre><button cl
       <a class="btn btn-ghost" href="https://github.com/Lucanepa/openvolley/releases/tag/desktop-v@DESKTOP_VERSION@">All downloads</a>
     </div>
   </section>
+
+  <!--beach-->
+  <section class="card" id="openbeach">
+    <h2>OpenBeach <span>beach volleyball</span></h2>
+    <p>The beach volleyball eScoresheet, a separate app from the same team. It installs next to OpenVolley eScoresheet and runs on the same computer (OpenBeach uses ports 5174 and 8081).</p>
+    <!--beach-android-->
+    <h3>Android tablets <span class="meta">@BEACH_APK_VERSION@</span></h3>
+    <p>Same F-Droid repository as above: add it once, then search for <b>OpenBeach</b> and install. Or the APK directly (no automatic updates):</p>
+    <div class="actions">
+      <a class="btn btn-ghost" href="/fdroid/repo/@BEACH_APK_FILE@">Download OpenBeach APK @BEACH_APK_VERSION@</a>
+    </div>
+    <!--/beach-android-->
+    <!--beach-desktop-->
+    <h3>Linux (Debian, Ubuntu, Mint) <span class="meta">@BEACH_DESKTOP_VERSION@ · amd64</span></h3>
+    <p>The same signed APT repository; this installs the package <code>openbeach-escoresheet</code>.</p>
+    <div class="cmd"><pre><code>curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s openbeach-escoresheet</code></pre><button class="copy" type="button">Copy</button></div>
+    <p>Repository already added? <code>sudo apt install openbeach-escoresheet</code>. Start it from the app menu (<b>OpenBeach</b>) or with <code>openbeach-escoresheet</code>; tablet server only: <code>openbeach-escoresheet --server-only</code>.</p>
+    <h3>Windows <span class="meta">@BEACH_DESKTOP_VERSION@ · 64-bit</span></h3>
+    <p>It installs for all users and asks once for an administrator, so the tablets on the local network get through Windows Firewall.</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="@BEACH_WINDOWS_URL@">Download OpenBeach for Windows</a>
+      <a class="btn btn-ghost" href="https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v@BEACH_DESKTOP_VERSION@">All downloads</a>
+    </div>
+    <p class="meta">The desktop app updates itself like OpenVolley's: in the background, installed when you quit it, never during a match.</p>
+    <!--/beach-desktop-->
+  </section>
+  <!--/beach-->
 
   <section class="card" id="updates">
     <h2>Automatic updates</h2>

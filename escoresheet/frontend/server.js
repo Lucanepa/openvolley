@@ -12,7 +12,7 @@ import { fileURLToPath } from 'url'
 import { dirname, join, extname, basename, sep } from 'path'
 import { WebSocketServer } from 'ws'
 import { networkInterfaces } from 'os'
-import { createLanRelay, createLocalAddressCheck, createMainInstanceGate, WS_MAX_PAYLOAD } from './lanRelayCore.js'
+import { createLanRelay, createLocalAddressCheck, createMainInstanceGate, WS_MAX_PAYLOAD, signCore } from './lanRelayCore.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -79,8 +79,9 @@ if (useHttps) {
 const isLocalAddress = createLocalAddressCheck(networkInterfaces)
 const mainGate = createMainInstanceGate({ isLocal: isLocalAddress })
 
-// Shared match data store + WS protocol (populated by the scoreboard via WebSocket)
-const relay = createLanRelay()
+// Shared match data store + WS protocol (populated by the scoreboard via WebSocket).
+// Sign on phone: this machine may start a session, others prove the game PIN.
+const relay = createLanRelay({ isLocal: isLocalAddress })
 
 // MIME types for static files
 const MIME_TYPES = {
@@ -206,39 +207,10 @@ const requestHandler = (req, res) => {
     return
   }
 
-  // Check if accessing main page and block if another instance exists
-  const isMainPage = urlPath === '/' || urlPath === '/index.html'
-  if (isMainPage) {
-    if (mainGate.blocksMainPage(req.socket.remoteAddress, req.headers['x-instance-id'])) {
-      res.writeHead(403, { 'Content-Type': 'text/html' })
-      res.end(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Main Instance Already Running</title>
-          <style>
-            body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-            h1 { color: #ef4444; }
-            p { color: #666; }
-          </style>
-        </head>
-        <body>
-          <h1>Main Scoresheet Already Running</h1>
-          <p>Another instance of the main scoresheet is already active.</p>
-          <p>Only one main scoresheet instance can run at a time.</p>
-          <p>You can still access:</p>
-          <ul style="list-style: none; padding: 0;">
-            <li><a href="/referee">Referee App</a></li>
-            <li><a href="/bench">Bench App</a></li>
-            <li><a href="/livescore">Livescore App</a></li>
-          </ul>
-        </body>
-        </html>
-      `)
-      return
-    }
-  }
-  
+  // Single main-instance gate for "/" (the "already running" page, and the
+  // /?court=other opt-in for a scoresheet on another court): lanRelayCore
+  if (mainGate.handleMainPage(req, res, urlPath)) return
+
   // Allow access to referee, bench, livescore, etc. even if main instance exists
   let filePath = join(DIST_DIR, urlPath === '/' ? 'index.html' : urlPath)
 
@@ -303,11 +275,13 @@ const requestHandler = (req, res) => {
     const ext = extname(filePath).toLowerCase()
     const contentType = MIME_TYPES[ext] || 'application/octet-stream'
     
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': contentType,
       'Cache-Control': ext === '.html' || ext === '.json' || basename(filePath) === 'sw.js' || ext === '.webmanifest'
         ? 'no-cache'
-        : 'public, max-age=31536000'
+        : 'public, max-age=31536000',
+      // The phone signing page (/sign): strict CSP, no referrer, no-cache
+      ...(signCore.isSignPagePath(urlPath) ? signCore.SIGN_PAGE_HEADERS : {})
     })
     res.end(content)
   } catch (err) {
