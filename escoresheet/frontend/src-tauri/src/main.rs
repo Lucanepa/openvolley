@@ -265,8 +265,9 @@ fn apply_light_gtk_settings(settings: &gtk::Settings) {
 /// check of the installer's firewall rule (firewall.rs; same capability) and
 /// the close-to-tray / quit handshake (lifecycle.rs; capabilities/app.json) and
 /// the automatic updates (updater.rs; capabilities/update.json; the updater
-/// plugin's own commands are granted to no window). One invoke handler: a
-/// second call would replace the first.
+/// plugin's own commands are granted to no window) and opening / showing a
+/// file the app downloaded (popups.rs; capabilities/downloads.json, also for the
+/// scoresheet windows). One invoke handler: a second call would replace the first.
 fn with_app_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     builder
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -295,7 +296,9 @@ fn with_app_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Bu
         updater::update_status,
         updater::update_check_now,
         updater::update_install_now,
-        updater::update_set_prefs
+        updater::update_set_prefs,
+        popups::download_open,
+        popups::download_reveal
     ])
 }
 
@@ -426,6 +429,51 @@ mod ipc_acl_tests {
                 .expect_err(&format!("{cmd} from {label} must be refused"));
             assert!(err.to_string().contains("not allowed"), "{cmd} from {label}: refused by the ACL, got {err}");
         }
+    }
+
+    /// "Open file" / "Show in folder" after the scoresheet's Save PDF: the
+    /// scoresheet window (popup-<n>) and the scoretable may ask for a download
+    /// the app recorded, by its id; never another origin, and never a path.
+    #[test]
+    fn scoresheet_windows_may_open_their_downloads_only() {
+        let app = super::with_app_commands(mock_builder())
+            .build(tauri::generate_context!())
+            .expect("mock app");
+        let label = crate::popups::next_popup_label();
+        let popup = WebviewWindowBuilder::new(&app, label.as_str(), WebviewUrl::External("http://localhost:5173/scoresheet/".parse().unwrap()))
+            .build()
+            .unwrap();
+        let main = WebviewWindowBuilder::new(&app, "main", WebviewUrl::External("http://localhost:5173/".parse().unwrap()))
+            .build()
+            .unwrap();
+        let unknown = serde_json::json!({ "id": u64::MAX });
+        for (window, url) in [(&popup, "http://localhost:5173/scoresheet/?matchId=7&action=save"), (&main, "http://localhost:5173/")] {
+            for cmd in ["download_open", "download_reveal"] {
+                // through the ACL into the command, which knows no such download
+                let err = get_ipc_response(window, request(cmd, url, unknown.clone()))
+                    .expect_err(&format!("{cmd}: an unknown id is refused"));
+                assert!(err.to_string().contains("unknown download"), "{cmd} from {url}: refused by the command, got {err}");
+            }
+        }
+        // a path instead of an id never reaches a file
+        let err = get_ipc_response(&popup, request("download_open", "http://localhost:5173/scoresheet/", serde_json::json!({ "path": "/etc/passwd" })))
+            .expect_err("a path is not an id");
+        assert!(!err.to_string().contains("not allowed"), "reached the command (bad arguments): {err}");
+        // a tablet on the LAN, another site, a look-alike host: the ACL refuses
+        for url in ["http://192.168.1.20:5173/scoresheet/", "https://example.com/", "http://localhost.evil.com:5173/"] {
+            for cmd in ["download_open", "download_reveal"] {
+                let err = get_ipc_response(&popup, request(cmd, url, unknown.clone()))
+                    .expect_err(&format!("{cmd} from {url} must be refused"));
+                assert!(err.to_string().contains("not allowed"), "{cmd} from {url}: refused by the ACL, got {err}");
+            }
+        }
+        // a window that is neither the scoretable nor a scoresheet window
+        let other = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::External("http://localhost:5173/".parse().unwrap()))
+            .build()
+            .unwrap();
+        let err = get_ipc_response(&other, request("download_open", "http://localhost:5173/", unknown.clone()))
+            .expect_err("download_open from an unnamed window must be refused");
+        assert!(err.to_string().contains("not allowed"), "got {err}");
     }
 
     /// Close to tray / quit: the scoretable page reports its state; a tablet,

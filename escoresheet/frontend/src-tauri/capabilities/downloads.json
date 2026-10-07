@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "downloads",
+  "description": "After the scoresheet's Save PDF: the scoresheet windows (popup-<n>, popups.rs) and the scoretable window, loaded from the built-in server on http://localhost, may open a file the app downloaded or show it in its folder. The commands take only the id of a download the app recorded and checked itself (popups.rs on_download), never a path. LAN tablets are plain browsers and never get these commands.",
+  "windows": ["main", "popup-*"],
+  "remote": {
+    "urls": ["http://localhost:*"]
+  },
+  "permissions": [
+    "allow-download-open",
+    "allow-download-reveal"
+  ]
+}
