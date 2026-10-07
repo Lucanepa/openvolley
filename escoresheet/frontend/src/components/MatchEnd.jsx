@@ -22,6 +22,7 @@ import { redactScoresheetPath } from '../../scoresheet_pdf/utils/scoresheetStora
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { exportLogsAsNDJSON } from '../utils/comprehensiveLogger'
 import { diagnosticLogQuery } from '../utils/activity/logQuery'
+import { listActivity } from '../utils/activity'
 
 // Primary ball image (with a bundled copy as fallback)
 const ballImage = `${import.meta.env.BASE_URL}ball.png`
@@ -1158,6 +1159,15 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         }
       } catch (logsError) {
         console.warn('[MatchEnd] Failed to add interaction logs to ZIP:', logsError)
+      }
+      // ... and the match's activity log (oldest first, one JSON object per line)
+      try {
+        const activity = await listActivity(db, { matchId })
+        if (activity.length) {
+          zip.file(`activity_${matchDate}.ndjson`, [...activity].reverse().map(({ lid: _lid, ...r }) => JSON.stringify(r)).join('\n') + '\n')
+        }
+      } catch (activityError) {
+        console.warn('[MatchEnd] Failed to add the activity log to ZIP:', activityError)
       }
 
       const zipBlob = await zip.generateAsync({ type: 'blob' })
