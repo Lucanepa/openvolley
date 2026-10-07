@@ -132,8 +132,52 @@ pub fn is_popup_label(label: &str) -> bool {
     label.starts_with("popup-")
 }
 
+/// The n of "popup-<n>" (the order the windows were opened in); 0 for anything else.
+pub fn popup_number(label: &str) -> usize {
+    label.strip_prefix("popup-").and_then(|n| n.parse().ok()).unwrap_or(0)
+}
+
+/// Window titles are page titles: at most this many characters, no control
+/// characters, before they go into a question.
+pub const MAX_WINDOW_TITLE: usize = 60;
+
+pub fn clean_window_title(title: &str) -> String {
+    let t: String = title.chars().filter(|c| !c.is_control()).collect();
+    t.trim().chars().take(MAX_WINDOW_TITLE).collect::<String>().trim().to_string()
+}
+
+/// The titles of `(label, title)` app windows, in the order they were opened.
+pub fn popup_titles(windows: Vec<(String, String)>) -> Vec<String> {
+    let mut windows: Vec<_> = windows.into_iter().filter(|(label, _)| is_popup_label(label)).collect();
+    windows.sort_by_key(|(label, _)| popup_number(label));
+    windows.into_iter().map(|(_, title)| clean_window_title(&title)).collect()
+}
+
+/// The titles of every app window opened by window.open() (the scoresheet
+/// windows), hidden ones too: what a quit closes besides the scoretable.
+pub fn open_app_windows<R: Runtime>(app: &AppHandle<R>) -> Vec<String> {
+    popup_titles(
+        app.webview_windows()
+            .into_iter()
+            .map(|(label, window)| {
+                let title = window.title().unwrap_or_default();
+                (label, title)
+            })
+            .collect(),
+    )
+}
+
+/// The scoretable's quit question: which other app windows the quit closes
+/// (appLifecycle.js names them, "Also closes: Scoresheet (2 windows)").
+#[tauri::command]
+pub fn app_windows<R: Runtime>(app: AppHandle<R>) -> Vec<String> {
+    open_app_windows(&app)
+}
+
 /// Closes every app window opened by window.open() (the scoresheet windows).
-/// Called when the main window goes: they belong to the scoretable.
+/// Called when the main window goes (they belong to the scoretable), and
+/// right before every quit (lifecycle.rs), so a quit closes all of them
+/// explicitly rather than leaving it to the event loop's end.
 pub fn close_app_windows<R: Runtime>(app: &AppHandle<R>) {
     for (label, window) in app.webview_windows() {
         if is_popup_label(&label) {
@@ -642,6 +686,26 @@ mod tests {
         assert!(is_popup_label("popup-12"));
         assert!(!is_popup_label("main"));
         assert!(!is_popup_label("popup"));
+    }
+
+    #[test]
+    fn app_window_titles_in_opening_order() {
+        let windows = vec![
+            ("popup-10".to_string(), "Openvolley Scoresheet".to_string()),
+            ("main".to_string(), "OpenVolley eScoresheet - 7".to_string()),
+            ("popup-2".to_string(), "  OpenVolley eScoresheet\n".to_string()),
+            ("popup-3".to_string(), "x".repeat(200)),
+        ];
+        let titles = popup_titles(windows);
+        // the scoretable itself is not listed; popup-2 before popup-10
+        assert_eq!(titles.len(), 3);
+        assert_eq!(titles[0], "OpenVolley eScoresheet");
+        assert_eq!(titles[1].chars().count(), MAX_WINDOW_TITLE);
+        assert_eq!(titles[2], "Openvolley Scoresheet");
+        assert!(popup_titles(vec![("main".into(), "x".into())]).is_empty());
+        assert_eq!(popup_number("popup-12"), 12);
+        assert_eq!(popup_number("main"), 0);
+        assert_eq!(clean_window_title("\u{7}\t "), "");
     }
 
     #[test]

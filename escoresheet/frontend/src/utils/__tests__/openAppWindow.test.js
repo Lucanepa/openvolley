@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   APP_VIEW_ATTR,
   capacitorPageUrl,
@@ -9,6 +9,9 @@ import {
   detectAppPlatform,
   openAppWindow,
   openFailedMessageKey,
+  openedAppWindows,
+  pdfBusyInAppWindows,
+  resetAppWindowsForTests,
   resolveAppUrl,
   writePdfNative,
   freePdfName,
@@ -23,6 +26,7 @@ import {
   isInAppView,
   isOwnDownload,
   savePdfThroughApp,
+  setPdfBusy,
 } from '../appWindowGuest'
 import { waitForScoresheetPdf } from '../scoresheetPdfRequest'
 
@@ -290,6 +294,38 @@ describe('every window.open of the app goes through openAppWindow', () => {
       })
     }
     expect(offenders).toEqual([])
+  })
+})
+
+describe('the desktop app windows this page opened (quit question)', () => {
+  beforeEach(() => resetAppWindowsForTests())
+  afterEach(() => resetAppWindowsForTests())
+
+  it('tracks the app windows, not external links, and forgets closed ones', () => {
+    const scoresheet = { closed: false }
+    openAppWindow('/scoresheet/?matchId=7', { win: fakeWin({ opened: scoresheet }), platform: 'tauri' })
+    openAppWindow('https://openvolley.app/help', { win: fakeWin({ opened: null }), platform: 'tauri' })
+    // a browser popup is not an app window
+    openAppWindow('/scoresheet/', { win: fakeWin({ opened: { closed: false } }), platform: 'web' })
+    expect(openedAppWindows()).toEqual([scoresheet])
+    scoresheet.closed = true
+    expect(openedAppWindows()).toEqual([])
+  })
+
+  it('knows when one of them is still making / saving a PDF', () => {
+    const a = { closed: false }
+    const b = { closed: false }
+    openAppWindow('/scoresheet/?matchId=7', { win: fakeWin({ opened: a }), platform: 'tauri' })
+    openAppWindow('/scoresheet/?matchId=7&action=save', { win: fakeWin({ opened: b }), platform: 'tauri' })
+    expect(pdfBusyInAppWindows()).toBe(false)
+    setPdfBusy(true, b) // the scoresheet page sets it on its own window
+    expect(pdfBusyInAppWindows()).toBe(true)
+    setPdfBusy(false, b)
+    expect(pdfBusyInAppWindows()).toBe(false)
+    // a window that cannot be read is not counted as busy
+    const locked = { closed: false, get __ovPdfBusy() { throw new Error('SecurityError') } }
+    expect(pdfBusyInAppWindows([locked])).toBe(false)
+    expect(pdfBusyInAppWindows([{ closed: true, __ovPdfBusy: true }])).toBe(false)
   })
 })
 

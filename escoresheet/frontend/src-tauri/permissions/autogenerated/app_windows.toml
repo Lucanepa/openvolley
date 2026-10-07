@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-app-windows"
+description = "Enables the app_windows command without any pre-configured scope."
+commands.allow = ["app_windows"]
+
+[[permission]]
+identifier = "deny-app-windows"
+description = "Denies the app_windows command without any pre-configured scope."
+commands.deny = ["app_windows"]

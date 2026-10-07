@@ -15,10 +15,12 @@ import {
   resetAppLifecycleForTests,
   setLiveMatch,
   trayLabels,
+  windowsLine,
 } from '../appLifecycle'
 import { allowLeaving } from '../leaveGuard'
 import { askConfirm } from '../askConfirm'
 import { getConfirmSnapshot, settleConfirm } from '../../ui/uiStore'
+import { openAppWindow, resetAppWindowsForTests } from '../openAppWindow'
 
 beforeAll(async () => {
   await i18n.init({ lng: 'en', fallbackLng: 'en', resources: { en: { translation: en }, de: { translation: de } } })
@@ -26,6 +28,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   resetAppLifecycleForTests()
+  resetAppWindowsForTests()
   await i18n.changeLanguage('en')
 })
 
@@ -39,6 +42,7 @@ function desktopWin({ label = 'main', status = {} } = {}) {
     if (cmd === 'app_page_state') return { tray: status.tray ?? true }
     if (cmd === 'hotspot_status') return status.wifi ?? { active: false }
     if (cmd === 'bluetooth_status') return status.bt ?? { active: false }
+    if (cmd === 'app_windows') return typeof status.windows === 'function' ? status.windows() : (status.windows ?? [])
     return null
   })
   win.__TAURI_INTERNALS__ = { invoke, metadata: { currentWindow: { label } } }
@@ -109,6 +113,41 @@ describe('questions', () => {
       // a downloaded update (updater.rs): {{version}} for the app to fill in
       updateReady: 'Restart to update to {{version}}',
       updateStatus: 'Update ready',
+      // the other app windows the quit closes, in the native question
+      alsoCloses: 'Also closes: {{windows}}',
+      windowGroupOne: '{{name}} ({{count}} window)',
+      windowGroupOther: '{{name}} ({{count}} windows)',
+      windowScoresheet: 'Scoresheet',
+    })
+  })
+
+  it('quit lists the other app windows it closes, grouped, in one line', () => {
+    expect(windowsLine([])).toBe('')
+    expect(windowsLine(['Openvolley Scoresheet'])).toBe('Also closes: Scoresheet (1 window)')
+    // a popup before its page set a title has the app's title: a scoresheet too
+    expect(windowsLine(['Openvolley Scoresheet', 'OpenVolley eScoresheet', 'Help', ''])).toBe(
+      'Also closes: Scoresheet (3 windows), Help (1 window)')
+    const q = quitQuestion({ windows: ['Openvolley Scoresheet', 'Openvolley Scoresheet'] })
+    expect(q.message).toBe("Tablets on this computer's network will disconnect.\n\nAlso closes: Scoresheet (2 windows)")
+    expect(q.title).toBe('Quit OpenVolley?')
+    // a window title is page text: no control characters, cut
+    expect(windowsLine([`Report\u0007${'x'.repeat(200)}`])).toMatch(/^Also closes: Reportx{54} \(1 window\)$/)
+  })
+
+  it('says when a scoresheet window is still saving a PDF', () => {
+    expect(quitQuestion({ windows: ['Openvolley Scoresheet'], pdfBusy: true }).message).toMatch(
+      /Also closes: Scoresheet \(1 window\)\n\nA PDF is still being saved in the scoresheet window\.$/)
+    expect(quitQuestion({ windows: ['Openvolley Scoresheet'] }).message).not.toContain('PDF')
+  })
+
+  it('the windows line in the page language, placeholders kept for the app', async () => {
+    await i18n.changeLanguage('de')
+    expect(windowsLine(['Openvolley Scoresheet', 'Openvolley Scoresheet'])).toBe('Schliesst auch: Matchblatt (2 Fenster)')
+    expect(trayLabels()).toMatchObject({
+      alsoCloses: 'Schliesst auch: {{windows}}',
+      windowGroupOne: '{{name}} ({{count}} Fenster)',
+      windowGroupOther: '{{name}} ({{count}} Fenster)',
+      windowScoresheet: 'Matchblatt',
     })
   })
 
@@ -196,6 +235,53 @@ describe('desktop app', () => {
     ask.mockResolvedValue(true)
     expect(await requestDesktopQuit(win, ask)).toBe(true)
     expect(invoke).toHaveBeenCalledWith('app_quit')
+  })
+
+  it('one question for every window: it lists the scoresheet windows the quit closes', async () => {
+    const { win, invoke } = desktopWin({ status: { windows: ['Openvolley Scoresheet', 'Openvolley Scoresheet'] } })
+    const ask = vi.fn().mockResolvedValue(true)
+    expect(await requestDesktopQuit(win, ask)).toBe(true)
+    expect(ask).toHaveBeenCalledTimes(1)
+    expect(ask.mock.calls[0][0].message).toContain('Also closes: Scoresheet (2 windows)')
+    expect(invoke).toHaveBeenCalledWith('app_windows')
+    expect(invoke).toHaveBeenCalledWith('app_quit')
+    // quitting: the hidden scoresheet windows are not brought back
+    expect(invoke).not.toHaveBeenCalledWith('app_quit_cancel')
+  })
+
+  it('Keep running brings back the scoresheet windows the quit request left hidden', async () => {
+    const { win, invoke } = desktopWin({ status: { windows: ['Openvolley Scoresheet'] } })
+    const ask = vi.fn().mockResolvedValue(false)
+    expect(await requestDesktopQuit(win, ask)).toBe(false)
+    expect(invoke).not.toHaveBeenCalledWith('app_quit')
+    expect(invoke).toHaveBeenCalledWith('app_quit_cancel')
+  })
+
+  it('an app that does not list its windows in time does not hold the question', async () => {
+    vi.useFakeTimers()
+    try {
+      const { win } = desktopWin({ status: { windows: () => new Promise(() => {}) } })
+      const ask = vi.fn().mockResolvedValue(false)
+      const quitting = requestDesktopQuit(win, ask)
+      await vi.advanceTimersByTimeAsync(1500)
+      expect(await quitting).toBe(false)
+      expect(ask).toHaveBeenCalledTimes(1)
+      expect(ask.mock.calls[0][0].message).not.toContain('Also closes')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('says when a scoresheet window it opened is still saving a PDF', async () => {
+    const { win } = desktopWin({ status: { windows: ['Openvolley Scoresheet'] } })
+    const scoresheet = { closed: false, __ovPdfBusy: true }
+    openAppWindow('/scoresheet/?matchId=7&action=save', { win: { ...win, location: win.location, open: () => scoresheet }, platform: 'tauri' })
+    const ask = vi.fn().mockResolvedValue(false)
+    await requestDesktopQuit(win, ask)
+    expect(ask.mock.calls[0][0].message).toContain('A PDF is still being saved in the scoresheet window.')
+    scoresheet.__ovPdfBusy = false
+    await requestDesktopQuit(win, ask)
+    expect(ask.mock.calls[1][0].message).not.toContain('PDF')
   })
 
   it('a hotspot switched on outside the app is not mentioned (the app does not stop it)', async () => {
