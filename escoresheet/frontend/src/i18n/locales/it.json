@@ -1693,7 +1693,9 @@
     "deleting": "Eliminazione...",
     "deleteAccountConfirm": "Elimina il mio account",
     "dobInvalid": "Inserisci la data di nascita come GG.MM.AAAA.",
-    "dobPlaceholder": "GG.MM.AAAA"
+    "dobPlaceholder": "GG.MM.AAAA",
+    "createAtManager": "Creane uno su {{host}}",
+    "createNeedsInternet": "Serve una connessione internet. Si può refertare anche senza account."
   },
   "matchHistory": {
     "title": "Le mie partite",

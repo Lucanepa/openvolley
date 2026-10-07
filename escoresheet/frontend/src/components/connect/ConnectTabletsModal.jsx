@@ -408,7 +408,7 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
       </Modal>
 
       {showLogin && typeof document !== 'undefined' && createPortal(
-        <LoginModal open onClose={() => setShowLogin(false)} onSwitchToSignUp={() => setShowLogin(false)} />,
+        <LoginModal open onClose={() => setShowLogin(false)} />,
         document.body
       )}
     </div>

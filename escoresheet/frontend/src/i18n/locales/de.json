@@ -1481,7 +1481,9 @@
     "deleting": "Wird gelöscht...",
     "deleteAccountConfirm": "Mein Konto löschen",
     "dobInvalid": "Geben Sie das Geburtsdatum als TT.MM.JJJJ ein.",
-    "dobPlaceholder": "TT.MM.JJJJ"
+    "dobPlaceholder": "TT.MM.JJJJ",
+    "createAtManager": "Erstellen Sie eines auf {{host}}",
+    "createNeedsInternet": "Braucht eine Internetverbindung. Spiele führen geht auch ohne Konto."
   },
   "matchHistory": {
     "title": "Meine Spiele",

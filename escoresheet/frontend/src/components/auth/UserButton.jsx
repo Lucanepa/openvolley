@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import LoginModal from './LoginModal'
-import SignUpModal from './SignUpModal'
 import ProfileModal from './ProfileModal'
 import MatchHistory from './MatchHistory'
 import RedeemInviteModal from './RedeemInviteModal'
@@ -36,7 +35,6 @@ export default function UserButton({ style = {}, fullWidth = false, inline = fal
   const { user, profile, access, loading, signOut } = useAuth()
 
   const [showLogin, setShowLogin] = useState(false)
-  const [showSignUp, setShowSignUp] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
   const [showMatchHistory, setShowMatchHistory] = useState(false)
   const [showRedeem, setShowRedeem] = useState(false)
@@ -91,25 +89,13 @@ export default function UserButton({ style = {}, fullWidth = false, inline = fal
           <ChevronRight size={fullWidth ? 16 : 13} aria-hidden="true" className="text-stone-400" />
         </button>
 
-        {toBody(<>
-        <LoginModal
-          open={showLogin}
-          onClose={() => setShowLogin(false)}
-          onSwitchToSignUp={() => {
-            setShowLogin(false)
-            setShowSignUp(true)
-          }}
-        />
-
-        <SignUpModal
-          open={showSignUp}
-          onClose={() => setShowSignUp(false)}
-          onSwitchToLogin={() => {
-            setShowSignUp(false)
-            setShowLogin(true)
-          }}
-        />
-        </>)}
+        {/* Sign-in only: "Don't have an account?" opens manager.openvolley.app */}
+        {toBody(
+          <LoginModal
+            open={showLogin}
+            onClose={() => setShowLogin(false)}
+          />
+        )}
       </>
     )
   }
