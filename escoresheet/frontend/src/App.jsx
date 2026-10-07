@@ -44,7 +44,8 @@ import {
   TEST_AWAY_BENCH,
   getNextTestMatchStartTime,
   getTestHomeTeamShortName,
-  getTestAwayTeamShortName
+  getTestAwayTeamShortName,
+  getTestTeamByExternalId
 } from './constants/testSeeds'
 import { apiFrom } from './lib/apiClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
@@ -1664,8 +1665,8 @@ export default function App() {
       externalId: player.external_id
     })
 
-    const buildFallbackPlayers = (seedKey) => {
-      const teamSeed = TEST_TEAM_SEED_DATA.find(t => t.seedKey === seedKey)
+    const buildFallbackPlayers = (externalId) => {
+      const teamSeed = getTestTeamByExternalId(externalId)
       if (!teamSeed) return []
       return teamSeed.players.map(player => ({
         team_id: null,
@@ -1682,13 +1683,13 @@ export default function App() {
 
     let homePlayersData = (playersData || []).filter(p => p.team_id === matchData.home_team_id)
     if (!homePlayersData.length) {
-      homePlayersData = buildFallbackPlayers('test-team-alpha')
+      homePlayersData = buildFallbackPlayers(TEST_HOME_TEAM_EXTERNAL_ID)
       console.warn('[TestMatch] Supabase returned no home players, using fallback seed roster')
     }
 
     let awayPlayersData = (playersData || []).filter(p => p.team_id === matchData.away_team_id)
     if (!awayPlayersData.length) {
-      awayPlayersData = buildFallbackPlayers('test-team-bravo')
+      awayPlayersData = buildFallbackPlayers(TEST_AWAY_TEAM_EXTERNAL_ID)
       console.warn('[TestMatch] Supabase returned no away players, using fallback seed roster')
     }
 
@@ -1809,6 +1810,9 @@ export default function App() {
       awayTeamUploadPin: connectionPins.upload_away || matchData.away_team_upload_pin || null,
       homeTeamId,
       awayTeamId,
+      // the set boxes, rosters and the PDF's file name read them from the match
+      homeShortName: homeTeamData?.short_name || getTestHomeTeamShortName(),
+      awayShortName: awayTeamData?.short_name || getTestAwayTeamShortName(),
       bench_home: homeBench,
       bench_away: awayBench,
       officials,
