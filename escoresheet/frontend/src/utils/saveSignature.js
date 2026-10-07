@@ -12,11 +12,14 @@ import { signaturesSyncJob } from '../domain/signatureEdits'
  * @param {number|string|null|undefined} matchId
  * @param {string|null} field  a match-row signature field (homeCaptainSignature, ...)
  * @param {string|null} image  the PNG data URL, null to clear
+ * @param {object} [extra]  more fields written in the same update, e.g. the
+ *   phone-signing source record (`signatureSources.<field>`, from main's
+ *   domain/phoneSignature signatureUpdate) so it never lags the image
  */
-export async function saveMatchSignature(db, matchId, field, image) {
+export async function saveMatchSignature(db, matchId, field, image, extra = null) {
   if (matchId === null || matchId === undefined || !field) return false
   try {
-    await db.matches.update(matchId, { [field]: image ?? null })
+    await db.matches.update(matchId, { ...(extra || {}), [field]: image ?? null })
     const job = signaturesSyncJob(await db.matches.get(matchId))
     if (job) {
       await db.sync_queue.add(job)

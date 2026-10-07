@@ -31,6 +31,14 @@ describe('saveMatchSignature (owner 2026-10-07: saved as soon as the pad is conf
     expect(db.queue).toHaveLength(0)
   })
 
+  it('writes extra fields (a phone-signing source record) in the same update', async () => {
+    const db = fakeDb({ seed_key: 'k1' })
+    const src = { via: 'phone', transport: 'lan', at: '2026-10-07T18:00:00.000Z' }
+    await saveMatchSignature(db, 1, 'homeCoachSignature', 'data:p', { 'signatureSources.homeCoachSignature': src })
+    expect(db.matches.update).toHaveBeenCalledTimes(1)
+    expect(db.matches.update).toHaveBeenCalledWith(1, { 'signatureSources.homeCoachSignature': src, homeCoachSignature: 'data:p' })
+  })
+
   it('does nothing without a match or a field', async () => {
     const db = fakeDb({})
     expect(await saveMatchSignature(db, null, 'homeCaptainSignature', 'x')).toBe(false)
