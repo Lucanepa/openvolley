@@ -192,7 +192,7 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       assert.deepEqual((await off.getPinStatus({ userId: U.ref1.id })).body.data, { available: false, eligible: false, set: false, set_at: null, locked_until: null, disabled: false })
       expectErr(await off.setPin({ userId: U.ref1.id, body: { password: PW, pin: '482917' } }), 503, 'OV_APPROVAL_UNAVAILABLE')
       expectErr(await off.removePin({ userId: U.ref1.id, body: { password: PW } }), 503, 'OV_APPROVAL_UNAVAILABLE')
-      expectErr(await off.approve({ callerId: U.owner.id, body: { external_id: 'x', slot: 'scorer', email: 'a@b.ch', pin: '1', result: { sets: [] } } }), 503, 'OV_APPROVAL_UNAVAILABLE')
+      expectErr(await off.approve({ callerId: U.owner.id, body: { external_id: 'x', slot: 'scorer', email: 'a@b.ch', pin: '482917', result: { sets: [] } } }), 503, 'OV_APPROVAL_UNAVAILABLE')
       expectErr(await off.listForMatch({ callerId: U.owner.id, externalId: 'x' }), 503, 'OV_APPROVAL_UNAVAILABLE')
       expectErr(await off.revoke({ callerId: U.owner.id, id: randomUUID() }), 503, 'OV_APPROVAL_UNAVAILABLE')
       assert.throws(() => createApprovals({ pool, secret: 'short' }), /at least 32/)
@@ -282,16 +282,15 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       // 9. unknown email answers exactly like a wrong PIN
       const unknown = await call({ ...good, email: 'ghost@example.ch' })
       const wrong = await call({ ...good, pin: '000001' })
-      const malformed = await call({ ...good, pin: '12' })
       expectErr(unknown, 403, 'OV_APPROVAL_PIN_INVALID')
       assert.deepEqual(unknown, wrong)
-      assert.deepEqual(malformed, wrong)
       assert.equal(unknown.body.error.details, undefined)
-      assert.equal((await pinRow('ref1')).failed_attempts, 2, 'the wrong and the malformed PIN counted')
+      assert.equal((await pinRow('ref1')).failed_attempts, 1, 'the wrong PIN counted')
       // the email is matched case-insensitively
       const r = await call({ ...good, email: U.ref1.email.toUpperCase() })
       assert.equal(r.status, 200, JSON.stringify(r.body))
-      assert.equal((await pinRow('ref1')).failed_attempts, 0, 'a right PIN resets the counter')
+      assert.equal((await pinRow('ref1')).failed_attempts, 1, 'a right PIN does not clear the rolling count')
+      await pool.query('UPDATE auth.approval_pins SET failed_attempts = 0, last_failed_at = NULL WHERE user_id = $1', [U.ref1.id])
       // an admin who is not the owner may send it
       const m2 = await newMatch('owner')
       assert.equal((await call({ ...good, external_id: m2.ext }, 'admin')).status, 200)
@@ -306,7 +305,9 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       const rr = await approveAs('owner', m, 'referee1', 'lostRole')
       expectErr(rr, 403, 'OV_APPROVAL_ROLE_REQUIRED')
       assert.deepEqual(rr.body.error.details, { role: 'referee' })
-      assert.equal((await pinRow('lostRole')).failed_attempts, 0, 'the counter reset is committed with the refusal')
+      const lr = await pinRow('lostRole')
+      assert.equal(lr.failed_attempts, 1, 'the failure is committed with the refusal')
+      assert.ok(lr.last_used_at, 'and so is the use of the right PIN')
       // a referee cannot take the scorer slot; a scorer cannot take a referee slot
       const rs = await approveAs('owner', m, 'scorer', 'ref1')
       expectErr(rs, 403, 'OV_APPROVAL_ROLE_REQUIRED')
@@ -338,7 +339,7 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       assert.equal((await rowsOf(m)).length, 1)
     })
 
-    it('lockout: 5 wrong PINs lock for 15 min (not counted while locked), 10 disable; audited and committed', async () => {
+    it('lockout: 5 wrong PINs lock for 15 min, 10 disable; a paused PIN answers like a wrong one; audited and committed', async () => {
       const m = await newMatch('owner')
       const lk = await user('lockRef', ['referee'], { first: 'Lou', last: 'Lock', pin: '709152' })
       for (let i = 1; i <= 5; i++) expectErr(await approveAs('owner', m, 'referee1', 'lockRef', { pin: '100000' }), 403, 'OV_APPROVAL_PIN_INVALID')
@@ -346,9 +347,11 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(p.failed_attempts, 5)
       assert.ok(p.locked_until > new Date(Date.now() + 14 * 60000))
       assert.equal(p.disabled_at, null)
+      // locked: even the right PIN answers exactly like an unknown address (no oracle), not counted
       const locked = await approveAs('owner', m, 'referee1', 'lockRef')
-      expectErr(locked, 423, 'OV_APPROVAL_PIN_LOCKED')
-      assert.ok(locked.body.error.details.retry_after_sec > 800 && locked.body.error.details.retry_after_sec <= 900)
+      const ghost = await approveAs('owner', m, 'referee1', 'lockRef', { email: 'ghost@example.ch' })
+      expectErr(locked, 403, 'OV_APPROVAL_PIN_INVALID')
+      assert.deepEqual(locked, ghost)
       assert.equal((await pinRow('lockRef')).failed_attempts, 5, 'not counted while locked')
       const [a1] = await auditOf('approval_pin.locked', m.id)
       assert.equal(a1.actor_id, U.owner.id)
@@ -356,7 +359,7 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(a1.details.failures, 5)
       assert.equal(a1.details.disabled, false)
       assert.ok(a1.details.locked_until)
-      // the status shows it
+      // the owner sees it in the profile
       assert.ok((await approvals.getPinStatus({ userId: lk.id })).body.data.locked_until)
       // the lock expires
       await pool.query("UPDATE auth.approval_pins SET locked_until = now() - interval '1 second' WHERE user_id = $1", [lk.id])
@@ -366,8 +369,7 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       assert.ok(p.disabled_at)
       await pool.query("UPDATE auth.approval_pins SET locked_until = now() - interval '1 second' WHERE user_id = $1", [lk.id])
       const dis = await approveAs('owner', m, 'referee1', 'lockRef')
-      expectErr(dis, 423, 'OV_APPROVAL_PIN_LOCKED')
-      assert.deepEqual(dis.body.error.details, { disabled: true })
+      assert.deepEqual(dis, ghost, 'disabled: the same answer as a wrong PIN')
       const audits = await auditOf('approval_pin.locked', m.id)
       assert.equal(audits.length, 2)
       assert.deepEqual([audits[1].details.failures, audits[1].details.disabled], [10, true])
@@ -377,13 +379,68 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       U.lockRef.pin = '518203'
       allPins.add('518203')
       assert.equal((await approveAs('owner', m, 'referee1', 'lockRef')).status, 200)
-      // a right PIN resets the counter
-      const rs = await user('resetRef', ['referee'], { pin: '362915' })
-      for (let i = 0; i < 3; i++) await approveAs('owner', m, 'referee2', 'resetRef', { pin: '362916' })
-      assert.equal((await pinRow('resetRef')).failed_attempts, 3)
-      assert.equal((await approveAs('owner', m, 'referee2', 'resetRef')).status, 200)
-      assert.equal((await pinRow('resetRef')).failed_attempts, 0)
-      assert.equal(rs.id, (await rowsOf(m)).find((r) => r.slot === 'referee2').user_id)
+    })
+
+    it('the failure count is rolling: a right PIN does not clear it, 30 quiet days restart it (review fix)', async () => {
+      const m = await newMatch('owner')
+      const rs = await user('rollRef', ['referee'], { first: 'Rolf', last: 'Roll', pin: '362915' })
+      for (let i = 0; i < 4; i++) expectErr(await approveAs('owner', m, 'referee2', 'rollRef', { pin: '362916' }), 403, 'OV_APPROVAL_PIN_INVALID')
+      const ok1 = await approveAs('owner', m, 'referee2', 'rollRef')
+      assert.equal(ok1.status, 200, JSON.stringify(ok1.body))
+      assert.equal((await pinRow('rollRef')).failed_attempts, 4, 'a right PIN keeps the count')
+      // the official's next approval: one more wrong PIN locks (5 in the window)
+      await undoAs('owner', ok1.body.data.approval.id)
+      expectErr(await approveAs('owner', m, 'referee2', 'rollRef', { pin: '362916' }), 403, 'OV_APPROVAL_PIN_INVALID')
+      let p = await pinRow('rollRef')
+      assert.equal(p.failed_attempts, 5)
+      assert.ok(p.locked_until > new Date())
+      // 30 days without a failure: the count starts again at 1
+      await pool.query("UPDATE auth.approval_pins SET locked_until = NULL, last_failed_at = now() - interval '31 days' WHERE user_id = $1", [rs.id])
+      expectErr(await approveAs('owner', m, 'referee2', 'rollRef', { pin: '362916' }), 403, 'OV_APPROVAL_PIN_INVALID')
+      p = await pinRow('rollRef')
+      assert.equal(p.failed_attempts, 1)
+      assert.equal(p.disabled_at, null)
+    })
+
+    it('a malformed PIN is refused before any lookup and never counted (review fix)', async () => {
+      const m = await newMatch('owner')
+      const before = (await pinRow('ref2')).failed_attempts
+      for (const pin of ['123', '12', '', '1234567', '12a4']) {
+        expectErr(await approveAs('owner', m, 'referee2', 'ref2', { pin }), 400, 'OV_APPROVAL_PIN_FORMAT')
+      }
+      assert.equal((await pinRow('ref2')).failed_attempts, before)
+    })
+
+    it('the scoring side cannot fill a referee slot, even under the referee\'s name (review fix)', async () => {
+      // a club volunteer with both roles scores the match and renames itself
+      const dual = await user('dual', ['scorer', 'referee'], { first: 'Dora', last: 'Doppel', pin: '583027' })
+      const m = await newMatch('dual')
+      await pool.query("UPDATE public.profiles SET first_name = 'Anna', last_name = 'Muster' WHERE user_id = $1", [dual.id])
+      const self = await approveAs('dual', m, 'referee1', 'dual')
+      expectErr(self, 403, 'OV_APPROVAL_SCORER_NOT_REFEREE')
+      // the scorer slot stays theirs
+      assert.equal((await approveAs('dual', m, 'scorer', 'dual')).status, 200)
+      // an editor of the match (game PIN) with the referee role: refused as well
+      const ed = await user('editorRef', ['referee'], { first: 'Edi', last: 'Tor', pin: '692041' })
+      await pool.query("INSERT INTO public.match_editors (match_id, user_id, granted_via) VALUES ($1, $2, 'game_pin')", [m.id, ed.id])
+      expectErr(await approveAs('dual', m, 'referee2', 'editorRef'), 403, 'OV_APPROVAL_SCORER_NOT_REFEREE')
+      // the account that sends it (an admin helping out) cannot approve itself as referee
+      const adm = await user('adminRef', ['admin', 'referee'], { first: 'Adi', last: 'Ref', pin: '847203' })
+      expectErr(await approveAs('adminRef', m, 'referee1', 'adminRef'), 403, 'OV_APPROVAL_SCORER_NOT_REFEREE')
+      assert.ok(adm.id)
+      // a real referee still can
+      assert.equal((await approveAs('dual', m, 'referee1', 'ref1')).status, 200)
+      assert.deepEqual((await rowsOf(m)).map((r) => [r.slot, r.user_id]), [['scorer', dual.id], ['referee1', U.ref1.id]])
+    })
+
+    it('an account without the scorer or referee role cannot send approvals, not even on its own test match (review fix)', async () => {
+      const m = await newMatch('plain', { test: true })
+      const before = (await pinRow('ref1')).failed_attempts
+      for (let i = 0; i < 6; i++) {
+        expectErr(await approveAs('plain', m, 'referee1', 'ref1', { pin: '100000' }), 403, 'OV_APPROVAL_CALLER_ROLE')
+      }
+      assert.equal((await pinRow('ref1')).failed_attempts, before, 'the official\'s counter is not touched')
+      assert.equal((await pinRow('ref1')).locked_until, null)
     })
 
     it('one slot per account, a taken slot, an idempotent retry', async () => {
@@ -596,6 +653,118 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
         assert.equal(logs.includes(p.mac), false)
         assert.equal(audit.includes(p.mac), false)
       }
+    })
+  })
+
+  describe('review fixes: teams, the official\'s own list, notification mails, the lookup', () => {
+    it('renaming or swapping the teams after the end voids the approvals; the same names keep them', async () => {
+      const m = await newMatch('owner')
+      assert.equal((await approveAs('owner', m, 'referee1', 'ref1')).status, 200)
+      const write = (data) => db.runQuery({ table: 'matches', action: 'update', params: { data, filters: [{ type: 'eq', column: 'id', value: m.id }] } },
+        { proto: 2, matchOwner: { userId: U.owner.id }, actorId: U.owner.id })
+      // a rewrite of the same teams (other keys, other case) keeps them
+      const same = await write({ home_team: { name: ' home ', short_name: 'H', color: '#ff0000' }, away_team: { name: 'Away' } })
+      assert.equal(same.status, 200, JSON.stringify(same.body))
+      assert.equal((await listAs('owner', m)).body.data.approvals.length, 1)
+      // swapped
+      const swap = await write({ home_team: { name: 'Away' }, away_team: { name: 'Home' } })
+      assert.equal(swap.status, 200, JSON.stringify(swap.body))
+      assert.deepEqual((await listAs('owner', m)).body.data.approvals, [])
+      const [row] = await rowsOf(m)
+      assert.deepEqual([row.revoked_reason, row.revoked_by], ['result_changed', U.owner.id])
+      const [v] = await auditOf('match.approval_void', m.id)
+      assert.deepEqual(v.details, { count: 1, reason: 'result_changed', external_id: m.ext, game_n: m.gameN })
+      // the referee approves the sheet as it is now
+      assert.equal((await approveAs('owner', m, 'referee1', 'ref1')).status, 200)
+    })
+
+    it('GET /api/account/approvals: the official sees every use of their PIN and can undo it', async () => {
+      const m = await newMatch('owner')
+      const a = (await approveAs('owner', m, 'referee1', 'ref3')).body.data.approval
+      const mine = await approvals.listMine({ callerId: U.ref3.id })
+      assert.equal(mine.status, 200, JSON.stringify(mine.body))
+      const rec = mine.body.data.approvals.find((x) => x.id === a.id)
+      assert.ok(rec)
+      assert.equal(rec.mine, true)
+      assert.equal(rec.result_matches, true)
+      assert.equal(rec.requested_by_name, 'Olga Owner')
+      assert.deepEqual(rec.match, { external_id: m.ext, game_n: m.gameN, home_name: 'Home', away_name: 'Away', status: 'ended', closed_at: null, test: false })
+      assert.equal(/@|user_id|hash/.test(JSON.stringify(mine.body)), false, 'no ids, emails or hashes')
+      assert.ok(mine.body.data.approvals.every((x) => x.mine === true), 'only their own')
+      // nothing of someone else's
+      const other = await approvals.listMine({ callerId: U.stranger.id })
+      assert.deepEqual(other.body.data.approvals, [])
+      // undo by the official from their own list; it stays listed as revoked
+      assert.equal((await undoAs('ref3', a.id)).status, 200)
+      const after = (await approvals.listMine({ callerId: U.ref3.id })).body.data.approvals.find((x) => x.id === a.id)
+      assert.equal(after.revoked_reason, 'undo')
+      expectErr(await approvals.listMine({ callerId: U.ref3.id, limit: '0' }), 400, 'OV_INVALID_REQUEST')
+    })
+
+    it('mails the official on every approval and when the PIN locks; never on a plain failure', async () => {
+      const sent = []
+      const mailer = { enabled: true, managerUrl: 'https://manager.example.test', async send (kind, o) { sent.push({ kind, ...o }); return { sent: true } } }
+      const mailed = createApprovals({ pool, auth, secret: SECRET, mailer, logger })
+      const official = await user('mailRef', ['referee'], { first: 'Mia', last: 'Mail', pin: '736185' })
+      const m = await newMatch('owner')
+      const call = async (pin, slot = 'referee1') => mailed.approve({
+        callerId: U.owner.id,
+        access: await access.get(U.owner.id),
+        body: { external_id: m.ext, slot, email: official.email, pin, result: { sets: SETS }, lang: 'de-CH' },
+        ip: '203.0.113.7',
+        lang: 'en-US,en;q=0.9'
+      })
+      const ok1 = await call('736185')
+      assert.equal(ok1.status, 200, JSON.stringify(ok1.body))
+      await mailed.settle()
+      assert.equal(sent.length, 1)
+      assert.deepEqual(sent[0], {
+        kind: 'approval',
+        to: official.email,
+        lang: 'de',
+        link: 'https://manager.example.test',
+        vars: {
+          slot: 'referee1',
+          game: `#${m.gameN} Home – Away`,
+          result: '25:20, 23:25, 25:18, 25:22',
+          id: ok1.body.data.approval.short_id,
+          time: sent[0].vars.time,
+          sender: 'Olga Owner'
+        }
+      })
+      assert.match(sent[0].vars.time, /^\d\d\.\d\d\.\d{4} \d\d:\d\d$/)
+      // the idempotent retry sends nothing
+      assert.equal((await call('736185')).body.data.already, true)
+      await mailed.settle()
+      assert.equal(sent.length, 1)
+      // four failures: no mail; the fifth locks and mails
+      for (let i = 0; i < 4; i++) await call('100000')
+      await mailed.settle()
+      assert.equal(sent.length, 1)
+      await call('100000')
+      await mailed.settle()
+      assert.equal(sent.length, 2)
+      assert.equal(sent[1].kind, 'approval_pin_locked')
+      assert.equal(sent[1].to, official.email)
+      assert.equal(sent[1].vars.disabled, false)
+      assert.match(sent[1].vars.until, /^\d\d\.\d\d\.\d{4} \d\d:\d\d$/)
+      // a failing mailer never fails the request
+      const broken = createApprovals({ pool, auth, secret: SECRET, logger, mailer: { enabled: true, managerUrl: 'https://x.test', async send () { throw new Error('smtp down') } } })
+      const m2 = await newMatch('owner')
+      const r = await broken.approve({ callerId: U.owner.id, access: await access.get(U.owner.id), body: { external_id: m2.ext, slot: 'referee2', email: U.ref2.email, pin: U.ref2.pin, result: { sets: SETS } } })
+      assert.equal(r.status, 200, JSON.stringify(r.body))
+      await broken.settle()
+    })
+
+    it('the admin lookup takes the ID as printed on the PDF', async () => {
+      const m = await newMatch('owner')
+      const a = (await approveAs('owner', m, 'referee1', 'ref1')).body.data.approval
+      for (const q of [`ID ${a.short_id}`, `#${a.short_id}`, ` id: ${a.short_id.toLowerCase()} `]) {
+        const r = await approvals.adminSearch({ q })
+        assert.ok(r.body.data.approvals.some((x) => x.id === a.id), q)
+      }
+      const byGame = await approvals.adminSearch({ q: `#${m.gameN}` })
+      assert.deepEqual(byGame.body.data.approvals.map((x) => x.id), [a.id])
     })
   })
 })

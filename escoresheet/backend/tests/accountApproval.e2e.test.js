@@ -144,6 +144,33 @@ describe('account approvals end to end', { skip: SKIP }, () => {
     expectCode(await call(owner, 'DELETE', '/api/approvals/not-an-id'), 404, 'OV_NOT_FOUND')
   })
 
+  it('review fix: a scorer with the referee role cannot approve a referee slot under a borrowed name; the official lists their approvals', async () => {
+    const dual = await account('dualE2e', { first: 'Dora', last: 'Doppel', roles: ['scorer', 'referee'] })
+    assert.equal((await call(dual, 'POST', '/api/account/approval-pin', { password: PASSWORD, pin: '583027' })).status, 200)
+    const m = await endedMatch(dual)
+    const rename = await api(srv.base, '/api/db', {
+      token: dual.token,
+      headers: { 'cf-connecting-ip': dual.ip },
+      body: { table: 'profiles', action: 'update', params: { data: { first_name: 'Anna', last_name: 'Muster' }, filters: [{ type: 'eq', column: 'user_id', value: dual.id }] } }
+    })
+    assert.equal(rename.status, 200, rename.text)
+    expectCode(await call(dual, 'POST', '/api/approvals', approveBody(m, 'referee1', dual, '583027')), 403, 'OV_APPROVAL_SCORER_NOT_REFEREE')
+    assert.equal((await sql.query('SELECT count(*)::int AS n FROM public.match_approvals WHERE match_id = $1', [m.id])).rows[0].n, 0)
+    // a malformed PIN is a 400, not a counted failure
+    expectCode(await call(dual, 'POST', '/api/approvals', approveBody(m, 'referee1', users.ref1, '123')), 400, 'OV_APPROVAL_PIN_FORMAT')
+    // the real referee approves; the referee sees it in their own list
+    const ok = await call(dual, 'POST', '/api/approvals', approveBody(m, 'referee1', users.ref1, MARKER_PIN))
+    assert.equal(ok.status, 200, ok.text)
+    const mine = await call(users.ref1, 'GET', '/api/account/approvals')
+    assert.equal(mine.status, 200, mine.text)
+    assert.equal(mine.headers.get('cache-control'), 'no-store')
+    const rec = mine.json.data.approvals.find((a) => a.id === ok.json.data.approval.id)
+    assert.ok(rec, mine.text)
+    assert.equal(rec.requested_by_name, 'Anna Muster', 'the sender as their profile says now')
+    assert.equal(rec.match.external_id, m.ext)
+    expectCode(await call(users.ref1, 'POST', '/api/account/approvals', {}), 405, 'OV_METHOD_NOT_ALLOWED')
+  })
+
   it('/api/db cannot read match_approvals and live sockets never carry it', async () => {
     const { owner, ref1 } = users
     const m = await endedMatch(owner)

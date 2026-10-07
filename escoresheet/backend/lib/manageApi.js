@@ -11,6 +11,7 @@
  *   GET    /api/saved-teams[?sport=indoor|beach|all]  canReadTeams (no sport = indoor)
  *   POST/PATCH/DELETE/PUT /api/saved-teams/*         canManageTeams
  *   GET/POST /api/account/approval-pin[/remove]      any signed-in account (lib/approvals.js)
+ *   GET    /api/account/approvals                    any signed-in account: its own approvals
  *   POST/GET /api/approvals, DELETE /api/approvals/:id  any signed-in account; the
  *                                                    handlers check match ownership
  *   GET    /api/admin/approvals                      isAdmin
@@ -36,7 +37,7 @@ export function manageFamilyOf (pathname) {
   if (pathname.startsWith('/api/admin/')) return 'admin'
   if (pathname === '/api/saved-teams' || pathname.startsWith('/api/saved-teams/')) return 'savedTeams'
   if (pathname === '/api/account/approval-pin' || pathname === '/api/account/approval-pin/remove') return 'approvalPin'
-  if (pathname === '/api/approvals' || pathname.startsWith('/api/approvals/')) return 'approvals'
+  if (pathname === '/api/approvals' || pathname.startsWith('/api/approvals/') || pathname === '/api/account/approvals') return 'approvals'
   return null
 }
 
@@ -70,7 +71,8 @@ export function createManageApi ({ accounts, savedTeams, approvals = null }) {
     ['GET', /^\/api\/account\/approval-pin$/, 'any', (m, c) => ap('getPinStatus')({ userId: c.user.id })],
     ['POST', /^\/api\/account\/approval-pin$/, 'any', (m, c) => ap('setPin')({ userId: c.user.id, body: c.body })],
     ['POST', /^\/api\/account\/approval-pin\/remove$/, 'any', (m, c) => ap('removePin')({ userId: c.user.id, body: c.body })],
-    ['POST', /^\/api\/approvals$/, 'any', (m, c) => ap('approve')({ callerId: c.user.id, access: c.access, body: c.body, ip: c.ip })],
+    ['POST', /^\/api\/approvals$/, 'any', (m, c) => ap('approve')({ callerId: c.user.id, access: c.access, body: c.body, ip: c.ip, lang: c.lang })],
+    ['GET', /^\/api\/account\/approvals$/, 'any', (m, c) => ap('listMine')({ callerId: c.user.id, limit: q(c.query, 'limit') })],
     ['GET', /^\/api\/approvals$/, 'any', (m, c) => ap('listForMatch')({ callerId: c.user.id, access: c.access, externalId: q(c.query, 'external_id') })],
     ['DELETE', new RegExp(`^/api/approvals/${ID}$`), 'any', (m, c) => ap('revoke')({ callerId: c.user.id, access: c.access, id: m[1] })],
 
@@ -103,7 +105,7 @@ export function createManageApi ({ accounts, savedTeams, approvals = null }) {
     return null
   }
 
-  async function route ({ method, pathname, query, body, user, access, ip }) {
+  async function route ({ method, pathname, query, body, user, access, ip, lang }) {
     const family = manageFamilyOf(pathname)
     if (!family) return notFound()
     const early = familyRefusal(family, method, access)
@@ -119,7 +121,7 @@ export function createManageApi ({ accounts, savedTeams, approvals = null }) {
       // path ids are compared lower-case (uuid columns answer lower-case)
       const ids = match.map((v, i) => (i > 0 && typeof v === 'string' ? v.toLowerCase() : v))
       if (ids.slice(1).some((v) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v))) return notFound()
-      return handler(ids, { user, access, body, query, ip })
+      return handler(ids, { user, access, body, query, ip, lang })
     }
     return pathKnown ? METHOD_NOT_ALLOWED() : notFound()
   }

@@ -439,18 +439,30 @@ digits, set once in the profile with the account password
   approval PIN read as "not set". Officials set a new one with their password.
   Approvals already given stay valid: the PIN only gates new approvals.
 - **Wrong PINs** are counted per approver in the database, under the row lock
-  of the approve transaction: 5 lock the PIN for 15 minutes, 10 disable it
-  until its owner sets a new one. A caller may send 10 wrong PINs per 10
-  minutes (per account and per IP /64), 5 wrong passwords per 15 minutes on
-  set/remove PIN, and the password check counts in the sign-in lockout.
+  of the approve transaction. The count is rolling: a right PIN keeps it, 30
+  days without a failure restart it. Every 5th failure locks the PIN for 15
+  minutes, the 10th disables it until its owner sets a new one. A locked or
+  disabled PIN answers like a wrong one (no oracle). A caller may send 10
+  wrong PINs per 10 minutes (per account and per IP /64), 5 wrong passwords
+  per 15 minutes on set/remove PIN, and the password check counts in the
+  sign-in lockout. Weak PINs (dates, years, pairs, keypad patterns) are
+  refused when set.
+- **Who may approve what.** Only a scorer, referee or admin account sends
+  approvals. A referee slot is never filled by the match's creator, an
+  editor or the sending account (403 `OV_APPROVAL_SCORER_NOT_REFEREE`).
+- **The official is told.** With the account mailer (SMTP), the official
+  gets an email for every approval made with their PIN and when it locks;
+  `GET /api/account/approvals` (profile, "Your approvals") lists them with an
+  undo while the match is open.
 - **An admin cannot read or reset a PIN.** The admin console shows the
   approvals (`GET /api/admin/approvals`, the ID printed on the PDF), with the
   approver's address and the first 8 hex characters of the IP and device
   hashes. A blocked official signs by hand or sets a new PIN with their
   password.
 - `match_approvals` is not on the `/api/db` allowlist and never goes to live
-  sockets; a closed match freezes its approvals, a reopen voids them (trigger,
-  audit `match.approval_void`), deleting an account keeps them with the name.
+  sockets; a closed match freezes its approvals, a reopen or a team rename
+  after the end voids them (trigger, audit `match.approval_void`), deleting
+  an account keeps them with the name.
 
 ### Backups (`backup/` bucket)
 

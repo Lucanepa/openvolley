@@ -26,16 +26,50 @@ const DUMMY_USER_ID = '00000000-0000-0000-0000-000000000000'
 const DUMMY_MAC = Buffer.alloc(32, 0)
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+// Common PINs that no rule below catches: keypad lines and crosses, and a few
+// favourites from published PIN frequency lists.
+const COMMON_PINS = new Set([
+  '2580', '0852', '1470', '0741', '3690', '0963', '1357', '7531', '2468', '8642', '1379', '9731', '1397', '7913',
+  '1590', '0951', '7410', '0147', '3214', '1236', '6321', '1478', '8741', '3698', '8963', '1793', '3971', '7539',
+  '9357', '1593', '3579', '5683', '1230', '0007', '4200', '1004', '2684', '4862',
+  '147258', '258369', '159753', '753951', '159357', '147852', '258741', '369852', '789456', '456123', '741852',
+  '963852', '123654', '123789', '987321', '102030', '010203', '142536', '135790', '246810', '124578', '147369'
+])
+
+const isDate = (dd, mm) => dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12
+
 /**
- * True for a PIN nobody should pick: one repeated digit (0000, 111111) or a
- * strictly ascending or descending run (1234, 0123, 123456, 4321, 987654).
- * Only meaningful for a PIN that matches PIN_RE.
+ * True for a PIN that is too easy to guess (spec 1.1, 1.2). Only meaningful
+ * for a PIN that matches PIN_RE.
+ *   - at most two different digits: 0000, 1212, 1122, 1221, 1000, 6969, 121212
+ *   - a strictly ascending or descending run: 1234, 0123, 123456, 4321, 987654
+ *   - a palindrome: 12321, 123321
+ *   - 4 digits: a year 1940 to 2039, or a date DDMM or MMDD (1004, 2512)
+ *   - 6 digits: ABCABC (123123), AABBCC (112233), a date DDMMYY, MMDDYY or
+ *     YYMMDD (150390)
+ *   - a keypad pattern or another very common PIN (2580, 1357, 147258)
+ * frontend/src/domain/accountApproval.js isWeakPin is the same rule.
  */
 export function isWeakPin (pin) {
   if (typeof pin !== 'string' || !PIN_RE.test(pin)) return false
   const d = [...pin].map(Number)
   const steps = d.slice(1).map((v, i) => v - d[i])
-  return steps.every((s) => s === 0) || steps.every((s) => s === 1) || steps.every((s) => s === -1)
+  if (new Set(d).size <= 2) return true
+  if (steps.every((s) => s === 1) || steps.every((s) => s === -1)) return true
+  if (pin === [...pin].reverse().join('')) return true
+  if (COMMON_PINS.has(pin)) return true
+  const two = (i) => d[i] * 10 + d[i + 1]
+  if (pin.length === 4) {
+    const year = Number(pin)
+    if (year >= 1940 && year <= 2039) return true
+    if (isDate(two(0), two(2)) || isDate(two(2), two(0))) return true
+  }
+  if (pin.length === 6) {
+    if (pin.slice(0, 3) === pin.slice(3)) return true
+    if (d[0] === d[1] && d[2] === d[3] && d[4] === d[5]) return true
+    if (isDate(two(0), two(2)) || isDate(two(2), two(0)) || isDate(two(4), two(2))) return true
+  }
+  return false
 }
 
 function hkdf (secret, info) {

@@ -8,6 +8,7 @@
  *   POST /api/account/approval-pin/remove   removePin  (password required)
  *   POST /api/approvals                     approve
  *   GET  /api/approvals?external_id=        listForMatch
+ *   GET  /api/account/approvals             listMine   (the official's own approvals)
  *   DELETE /api/approvals/:id               revoke (undo)
  *   GET  /api/admin/approvals               adminSearch
  *   approvalsForMatches(ids)                the admin lists' attachment
@@ -22,14 +23,23 @@
  * IP and device hashes (admins see their first 8 hex characters).
  *
  * Wrong PINs are counted per approver in auth.approval_pins under the row
- * lock of the approve transaction, and COMMITTED with the error answer: 5
- * failures lock the PIN for 15 minutes, 10 disable it until its owner sets a
- * new one with their password.
+ * lock of the approve transaction, and COMMITTED with the error answer. The
+ * count is a rolling one: a right PIN does not clear it, it restarts only
+ * after 30 days without a failure. Every 5th failure locks the PIN for 15
+ * minutes, the 10th disables it until its owner sets a new one with their
+ * password. A locked or disabled PIN answers exactly like a wrong one (no
+ * oracle for whose address has a PIN); its owner sees the state in the
+ * profile and gets an email (with a mailer).
+ *
+ * With a mailer (lib/mailer.js) the official gets an email for every approval
+ * made with their PIN and when it is locked or disabled. The mails go out
+ * after COMMIT, in the background; settle() waits for them (tests).
  */
 
 import { randomBytes } from 'node:crypto'
 import { AUDIT_ACTIONS, fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
 import { ipBucketKey } from './auth.js'
+import { describeMailError, maskEmail, pickLang } from './mailer.js'
 import {
   KEY_ID, PIN_RE, RESULT_KEY_PREFIX, deriveKeys, deviceHash, ipHash, isCurrentPinRow, isWeakPin, macPin, resultHash,
   resultKey, shortId, triplesOf, verifyPin
@@ -41,11 +51,37 @@ const APPROVAL_ROLES = Object.freeze(['referee', 'scorer'])
 export const PIN_LOCK_EVERY = 5
 export const PIN_LOCK_MINUTES = 15
 export const PIN_DISABLE_AT = 10
+export const PIN_FAILURE_WINDOW_DAYS = 30
+// Who may send an approval: a scorer or referee account (the scoring table),
+// or an admin. A pending self-registered account may not, even on its own
+// test match: it could otherwise lock any official's PIN by address.
+const CALLER_ROLES = Object.freeze(['scorer', 'referee'])
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const DUMMY_UUID = '00000000-0000-0000-0000-000000000000'
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 const iso = (v) => (v instanceof Date ? v.toISOString() : (v ?? null))
+/**
+ * An admin lookup term as typed or pasted: "ID 6F1C2A9B" (as the PDF prints
+ * it), "#6F1C2A9B" or "#1234" become the bare short ID or game number;
+ * anything else (an external_id) stays as it is, trimmed.
+ */
+export function normalizeApprovalQuery (q) {
+  const t = String(q ?? '').trim()
+  const m = /^(?:id\s*[:#]?\s*|#\s*)([0-9a-f]{8}|\d{1,9})$/i.exec(t)
+  return m ? m[1] : t
+}
+
+/** "dd.mm.yyyy hh:mm" on the Swiss clock (the mails), '' without a value. */
+function formatZurich (value) {
+  const d = value instanceof Date ? value : new Date(value)
+  if (!value || Number.isNaN(d.getTime())) return ''
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Zurich', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+  }).formatToParts(d)
+  const at = (type) => parts.find((p) => p.type === type)?.value ?? ''
+  return `${at('day')}.${at('month')}.${at('year')} ${at('hour')}:${at('minute')}`
+}
 const hex8 = (b) => (Buffer.isBuffer(b) ? b.toString('hex').slice(0, 8) : null)
 const nameSql = (alias) => `nullif(trim(coalesce(${alias}.first_name, '') || ' ' || coalesce(${alias}.last_name, '')), '')`
 // lib/approvalPin.js resultKey() in SQL (the admin lists, many matches at once)
@@ -64,7 +100,6 @@ const EMAIL_UNCONFIRMED = () => fail(409, 'OV_EMAIL_UNCONFIRMED',
   'Confirm your email address first: open the link we sent you, or send a new one from your profile')
 const PASSWORD_INVALID = () => fail(403, 'OV_PASSWORD_INVALID', 'The password is not correct')
 const PIN_INVALID = () => fail(403, 'OV_APPROVAL_PIN_INVALID', 'Email or PIN not accepted')
-const PIN_LOCKED = (details) => fail(423, 'OV_APPROVAL_PIN_LOCKED', 'This approval PIN is locked after too many wrong attempts', details)
 const MATCH_CLOSED = () => fail(409, 'OV_MATCH_CLOSED', 'This match is closed. Only an admin can reopen it.')
 const FORBIDDEN = () => fail(403, 'OV_FORBIDDEN', 'You do not have access to this')
 const SLOT_TAKEN = (details) => fail(409, 'OV_APPROVAL_SLOT_TAKEN', 'This slot is already approved by someone else', details)
@@ -85,12 +120,31 @@ const safeMessage = (err) => String(err?.message || err).replace(/"[^"]*"/g, '"�
  * @param {import('pg').Pool} o.pool
  * @param {object} [o.auth]    lib/auth.js instance (verifyPassword)
  * @param {string|null} o.secret  OV_PIN_SECRET; null = the feature is off
+ * @param {object} [o.mailer]  lib/mailer.js mailer; none or disabled: no notification mails
  * @param {object} [o.logger]
  */
-export function createApprovals ({ pool, auth = null, secret = null, logger = console } = {}) {
+export function createApprovals ({ pool, auth = null, secret = null, mailer = null, logger = console } = {}) {
   if (!pool || typeof pool.query !== 'function') throw new Error('createApprovals: pool is required')
   const log = logger
   const keys = secret ? deriveKeys(secret) : null
+  const mails = mailer && mailer.enabled && typeof mailer.send === 'function' ? mailer : null
+
+  // Notification mails run after the answer; they never fail a request.
+  const pending = new Set()
+  function sendLater (kind, to, lang, vars) {
+    if (!mails || typeof to !== 'string' || !to.includes('@')) return
+    const job = (async () => {
+      try {
+        await mails.send(kind, { to, lang, vars, link: mails.managerUrl })
+      } catch (err) {
+        log.warn?.(`[approvals] ${kind} mail to ${maskEmail(to)} failed: ${describeMailError(err)}`)
+      }
+    })()
+    pending.add(job)
+    job.finally(() => pending.delete(job))
+  }
+  /** Resolves when the notification mails sent so far are done (tests). */
+  const settle = () => Promise.allSettled([...pending]).then(() => undefined)
 
   async function withTx (fn) {
     const client = await pool.connect()
@@ -143,7 +197,8 @@ export function createApprovals ({ pool, auth = null, secret = null, logger = co
   /** The match row of external_id, locked for the transaction. */
   async function lockMatch (client, { externalId, id }) {
     const { rows: [m] } = await client.query(
-      `SELECT id, external_id, game_n, status, closed_at, created_by, sport_type::text AS sport_type
+      `SELECT id, external_id, game_n, status, closed_at, created_by, sport_type::text AS sport_type,
+              home_team->>'name' AS home_name, away_team->>'name' AS away_name
          FROM public.matches WHERE ${externalId ? 'external_id' : 'id'} = $1 LIMIT 1 FOR UPDATE`, [externalId || id])
     return m || null
   }
@@ -287,6 +342,9 @@ export function createApprovals ({ pool, auth = null, secret = null, logger = co
     if (!SLOTS.includes(slot)) return { error: invalid('slot: referee1, referee2 or scorer') }
     if (typeof email !== 'string' || email.trim().length > 254 || !EMAIL_RE.test(email.trim())) return { error: invalid('email: an email address') }
     if (typeof pin !== 'string') return { error: invalid('pin: a string') }
+    // A malformed PIN can never be right: refused before any lookup, so a slip
+    // (three digits) is not counted against the official.
+    if (!PIN_RE.test(pin)) return { error: fail(400, 'OV_APPROVAL_PIN_FORMAT', 'The approval PIN must be 4 to 6 digits') }
     const sets = isPlainObject(result) ? result.sets : undefined
     const triple = (t) => Array.isArray(t) && t.length === 3 && t.every(Number.isInteger) &&
       t[0] >= 1 && t[0] <= 5 && t[1] >= 0 && t[1] <= 99 && t[2] >= 0 && t[2] <= 99
@@ -298,7 +356,7 @@ export function createApprovals ({ pool, auth = null, secret = null, logger = co
   /** The approver by address: null when unknown, ambiguous, deleted or banned. */
   async function findApprover (client, email) {
     const { rows } = await client.query(
-      `SELECT u.id,
+      `SELECT u.id, u.email,
               (to_jsonb(u) ->> 'deleted_at') IS NOT NULL
                 OR coalesce((to_jsonb(u) ->> 'banned_until')::timestamptz > now(), false) AS blocked,
               ${UNCONFIRMED_SQL} AS unconfirmed,
@@ -307,46 +365,74 @@ export function createApprovals ({ pool, auth = null, secret = null, logger = co
          FROM auth.users u WHERE lower(u.email) = $1 LIMIT 2`, [email])
     if (rows.length !== 1 || rows[0].blocked) return null
     const u = rows[0]
-    return { id: u.id, unconfirmed: u.unconfirmed === true, roles: rolesOf(u.roles), name: String(u.name || '').replace(/\s+/g, ' ').trim().slice(0, 160) }
+    // email: only for the notification mail, never returned, logged or audited
+    return { id: u.id, email: u.email, unconfirmed: u.unconfirmed === true, roles: rolesOf(u.roles), name: String(u.name || '').replace(/\s+/g, ' ').trim().slice(0, 160) }
   }
 
-  /** A wrong PIN on an existing current row: count it, lock or disable (spec 1.2). */
+  /**
+   * A wrong PIN on an existing current row: count it, lock or disable (spec
+   * 1.2). The count is rolling: it restarts only after PIN_FAILURE_WINDOW_DAYS
+   * without a failure, never on a right PIN, so a guesser gets at most
+   * PIN_DISABLE_AT - 1 tries per window however often the official approves.
+   * Returns { locked, disabled } when this failure locked or disabled the PIN.
+   */
   async function countFailure (client, { approver, row, callerId, match }) {
-    const failures = Number(row.failed_attempts) + 1
-    const lock = failures % PIN_LOCK_EVERY === 0
-    const disable = failures >= PIN_DISABLE_AT
     const { rows: [r] } = await client.query(
       `UPDATE auth.approval_pins
-          SET failed_attempts = $2, last_failed_at = now(),
-              locked_until = CASE WHEN $3 THEN now() + make_interval(mins => $5) ELSE locked_until END,
-              disabled_at = CASE WHEN $4 THEN coalesce(disabled_at, now()) ELSE disabled_at END
+          SET failed_attempts = CASE WHEN last_failed_at IS NULL OR last_failed_at < now() - make_interval(days => $2)
+                                     THEN 1 ELSE failed_attempts + 1 END,
+              last_failed_at = now()
         WHERE user_id = $1
-        RETURNING locked_until`, [approver.id, failures, lock, disable, PIN_LOCK_MINUTES])
-    if (lock || disable) {
-      await audit(client, {
-        actorId: callerId,
-        action: 'approval_pin.locked',
-        targetUserId: approver.id,
-        matchId: match.id,
-        details: { failures, locked_until: iso(r?.locked_until), disabled: disable }
-      })
-    }
+        RETURNING failed_attempts`, [approver.id, PIN_FAILURE_WINDOW_DAYS])
+    const failures = Number(r?.failed_attempts ?? Number(row.failed_attempts) + 1)
+    const lock = failures % PIN_LOCK_EVERY === 0
+    const disable = failures >= PIN_DISABLE_AT
+    if (!lock && !disable) return null
+    const { rows: [l] } = await client.query(
+      `UPDATE auth.approval_pins
+          SET locked_until = CASE WHEN $2 THEN now() + make_interval(mins => $4) ELSE locked_until END,
+              disabled_at = CASE WHEN $3 THEN coalesce(disabled_at, now()) ELSE disabled_at END
+        WHERE user_id = $1
+        RETURNING locked_until`, [approver.id, lock, disable, PIN_LOCK_MINUTES])
+    await audit(client, {
+      actorId: callerId,
+      action: 'approval_pin.locked',
+      targetUserId: approver.id,
+      matchId: match.id,
+      details: { failures, locked_until: iso(l?.locked_until), disabled: disable }
+    })
+    return { lockedUntil: l?.locked_until ?? null, disabled: disable }
   }
 
-  async function approve ({ callerId, access, body, ip } = {}) {
+  /** "Home – Away" and the game number of a match row, for the mails. */
+  const gameText = (m) => {
+    const teams = [m.home_name, m.away_name].map((n) => String(n || '').replace(/\s+/g, ' ').trim().slice(0, 80) || '–').join(' – ')
+    return m.game_n != null ? `#${m.game_n} ${teams}` : teams
+  }
+  const resultText = (key) => triplesOf(key).map(([, h, a]) => `${h}:${a}`).join(', ')
+
+  async function approve ({ callerId, access, body, ip, lang } = {}) {
     const v = approveBody(body)
     if (v.error) return v.error
     if (!keys) return APPROVAL_UNAVAILABLE()
     if (!isUuid(callerId)) return NOT_SIGNED_IN()
     const ipH = typeof ip === 'string' && ip ? ipHash(keys.ipKey, ipBucketKey(ip)) : null
     const devH = deviceHash(v.deviceId)
+    // The mail language: the app's language sent with the request, else the browser's
+    const mailLang = pickLang(typeof body?.lang === 'string' ? body.lang.slice(0, 16) : null, lang)
+    const after = [] // mails, sent once the transaction is committed
     // Every answer below is returned from inside the transaction, so it is
     // COMMITTED: the failure counter and its audit row survive an error answer.
-    return guarded('approve', () => withTx(async (client) => {
+    const out = await guarded('approve', () => withTx(async (client) => {
       const m = await lockMatch(client, { externalId: v.externalId })
       if (!m) return notFound()
       if (m.sport_type === 'beach') return fail(409, 'OV_APPROVAL_UNSUPPORTED', 'Approval with an account is not available for beach matches')
       if (!(await mayWrite(client, m, callerId, access))) return fail(403, 'OV_NOT_MATCH_OWNER', 'You may not change this match')
+      // 5b. The scoring table: a scorer or referee account, or an admin (not a
+      // pending account on its own test match)
+      if (!(access?.isAdmin === true || CALLER_ROLES.some((r) => rolesOf(access?.roles).includes(r)))) {
+        return fail(403, 'OV_APPROVAL_CALLER_ROLE', 'Approval with an account needs a scorer or referee account on this device', { roles: [...CALLER_ROLES] })
+      }
       if (m.closed_at) return MATCH_CLOSED()
       if (m.status !== 'ended') return fail(409, 'OV_MATCH_NOT_ENDED', 'The match has not ended on the server', { status: m.status ?? null })
       const currentKey = await serverResultKey(client, m.id)
@@ -355,21 +441,31 @@ export function createApprovals ({ pool, auth = null, secret = null, logger = co
       }
 
       // 9. Email and PIN. Both lookups always run; verifyPin always MACs once.
+      // A locked or disabled PIN answers like a wrong one and is not counted:
+      // only its owner learns the state (profile, mail).
       const approver = await findApprover(client, v.email)
       const { rows: [pinRow] } = await client.query(
         `SELECT key_id, salt, mac, failed_attempts, disabled_at,
                 CASE WHEN locked_until > now() THEN ceil(extract(epoch FROM locked_until - now()))::int END AS retry_after_sec
            FROM auth.approval_pins WHERE user_id = $1 FOR UPDATE`, [approver?.id ?? DUMMY_UUID])
-      const row = approver && isCurrentPinRow(pinRow) ? pinRow : null
-      if (row?.disabled_at) return PIN_LOCKED({ disabled: true })
-      if (row?.retry_after_sec > 0) return PIN_LOCKED({ retry_after_sec: row.retry_after_sec })
+      const current = approver && isCurrentPinRow(pinRow) ? pinRow : null
+      const paused = !!current && (current.disabled_at != null || current.retry_after_sec > 0)
+      const row = paused ? null : current
       const good = verifyPin(keys.pinKey, row, approver?.id ?? null, v.pin)
       if (!good) {
-        if (row) await countFailure(client, { approver, row, callerId, match: m })
+        if (row) {
+          const locked = await countFailure(client, { approver, row, callerId, match: m })
+          if (locked) {
+            after.push(() => sendLater('approval_pin_locked', approver.email, mailLang, {
+              game: gameText(m),
+              until: locked.disabled ? '' : formatZurich(locked.lockedUntil),
+              disabled: locked.disabled
+            }))
+          }
+        }
         return PIN_INVALID()
       }
-      await client.query(
-        'UPDATE auth.approval_pins SET failed_attempts = 0, locked_until = NULL, last_used_at = now() WHERE user_id = $1', [approver.id])
+      await client.query('UPDATE auth.approval_pins SET last_used_at = now() WHERE user_id = $1', [approver.id])
 
       // 10. Eligibility, only after a correct PIN
       if (approver.unconfirmed) return EMAIL_UNCONFIRMED()
@@ -377,8 +473,14 @@ export function createApprovals ({ pool, auth = null, secret = null, logger = co
       if (!approver.roles.includes(role)) {
         return fail(403, 'OV_APPROVAL_ROLE_REQUIRED', `This account does not have the ${role} role`, { role })
       }
-      if (v.slot === 'scorer' && !(await isOwnerOrEditor(client, m, approver.id))) {
+      const ownerOrEditor = await isOwnerOrEditor(client, m, approver.id)
+      if (v.slot === 'scorer' && !ownerOrEditor) {
         return fail(403, 'OV_APPROVAL_NOT_MATCH_SCORER', 'The scorer must be the account that scores this match, or one of its editors')
+      }
+      // A referee is never the scoring side of the same match: not the
+      // account that sends the approval, not its creator, not an editor.
+      if (v.slot !== 'scorer' && (ownerOrEditor || approver.id === callerId)) {
+        return fail(403, 'OV_APPROVAL_SCORER_NOT_REFEREE', 'The account that scores this match cannot approve as a referee')
       }
       if (!approver.name) return fail(409, 'OV_APPROVAL_NAME_REQUIRED', 'The approving account has no name in its profile')
 
@@ -432,8 +534,21 @@ export function createApprovals ({ pool, auth = null, secret = null, logger = co
         matchId: m.id,
         details: { slot: v.slot, short_id: record.short_id, external_id: m.external_id, game_n: m.game_n ?? null, result_key: currentKey }
       })
+      // The official hears of every approval made with their PIN
+      const { rows: [sender] } = await client.query(
+        `SELECT ${nameSql('p')} AS name FROM public.profiles p WHERE p.user_id = $1 LIMIT 1`, [callerId])
+      after.push(() => sendLater('approval', approver.email, mailLang, {
+        slot: v.slot,
+        game: gameText(m),
+        result: resultText(currentKey),
+        id: record.short_id,
+        time: formatZurich(inserted.approved_at),
+        sender: approver.id === callerId ? '' : String(sender?.name || '').slice(0, 160)
+      }))
       return ok({ approval: record, already: false })
     }))
+    if (out?.status < 500) for (const fn of after) fn()
+    return out
   }
 
   async function listForMatch ({ callerId, access, externalId } = {}) {
@@ -454,6 +569,49 @@ export function createApprovals ({ pool, auth = null, secret = null, logger = co
       return ok({
         match: { status: m.status ?? null, closed_at: iso(m.closed_at), result_key: currentKey },
         approvals: m.sport_type === 'beach' ? [] : visible.sort(bySlot).map((r) => recordOf(r, currentKey, callerId))
+      })
+    })
+  }
+
+  /**
+   * GET /api/account/approvals: the caller's own approvals (as the official),
+   * newest first, active and revoked, with the match and who sent each one,
+   * so an official sees every use of their PIN and can undo it while the
+   * match is open (DELETE /api/approvals/:id allows the approver).
+   */
+  async function listMine ({ callerId, limit } = {}) {
+    let lim = 30
+    if (limit != null && limit !== '') {
+      lim = Number(limit)
+      if (!Number.isInteger(lim) || lim < 1 || lim > 100) return invalid('limit: 1 to 100')
+    }
+    if (!keys) return APPROVAL_UNAVAILABLE()
+    if (!isUuid(callerId)) return NOT_SIGNED_IN()
+    return guarded('list-mine', async () => {
+      const { rows } = await pool.query(
+        `SELECT ${APPROVAL_COLUMNS.split(', ').map((c) => 'a.' + c).join(', ')}, ${nameSql('rp')} AS requested_by_name,
+                m.external_id, m.game_n, m.home_team->>'name' AS home_name, m.away_team->>'name' AS away_name,
+                m.status, m.closed_at, m.test, ${currentKeySql('a.match_id')} AS current_key
+           FROM public.match_approvals a
+           JOIN public.matches m ON m.id = a.match_id
+           LEFT JOIN public.profiles rp ON rp.user_id = a.requested_by
+          WHERE a.user_id = $1
+          ORDER BY a.approved_at DESC, a.id
+          LIMIT ${lim}`, [callerId])
+      return ok({
+        approvals: rows.map((r) => ({
+          ...recordOf(r, r.current_key, callerId),
+          requested_by_name: r.requested_by_name ?? null,
+          match: {
+            external_id: r.external_id,
+            game_n: r.game_n ?? null,
+            home_name: r.home_name ?? null,
+            away_name: r.away_name ?? null,
+            status: r.status ?? null,
+            closed_at: iso(r.closed_at),
+            test: r.test === true
+          }
+        }))
       })
     })
   }
@@ -502,7 +660,7 @@ export function createApprovals ({ pool, auth = null, secret = null, logger = co
       const p = (val) => { values.push(val); return '$' + values.length }
       const where = []
       if (inc === '0') where.push('a.revoked_at IS NULL')
-      const term = q.trim()
+      const term = normalizeApprovalQuery(q)
       if (term) {
         const any = [`m.external_id = ${p(term)}`]
         if (/^[0-9a-f]{8}$/i.test(term)) any.push(`a.id::text ILIKE ${p(term.toLowerCase() + '%')}`)
@@ -587,5 +745,5 @@ export function createApprovals ({ pool, auth = null, secret = null, logger = co
     return out
   }
 
-  return { enabled: !!keys, getPinStatus, setPin, removePin, approve, listForMatch, revoke, adminSearch, approvalsForMatches }
+  return { enabled: !!keys, getPinStatus, setPin, removePin, approve, listForMatch, listMine, revoke, adminSearch, approvalsForMatches, settle }
 }
