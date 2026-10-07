@@ -7,7 +7,7 @@ import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   pickLang, authLink, renderMail, maskEmail, mailerFromEnv, createMailer, transportOptions,
-  inboxKey, describeMailError, disabledMailer, mailApp, brandFrom,
+  inboxKey, describeMailError, disabledMailer, mailApp, brandFrom, beachManagerBase,
   MAIL_LANGS, MAIL_KINDS, MAIL_APPS, MAIL_BRANDS, DEFAULT_MANAGER_URL, DEFAULT_MANAGER_URL_BEACH, DEFAULT_BUDGETS, DEFAULT_MAX_PER_INBOX
 } from '../lib/mailer.js'
 import { startFakeSmtp, makeTestCert, linkToken, SMTP_USER, SMTP_PASS } from './helpers/fakeSmtp.js'
@@ -415,6 +415,37 @@ describe('mailer: brands (OpenVolley / OpenBeach)', () => {
       assert.match(m.reason, reason)
       assert.doesNotMatch(m.reason, /secret/)
     }
+  })
+
+  it('MANAGER_URL_BEACH unset follows MANAGER_URL: never the production OpenBeach manager from a dev / test backend (S2 review)', () => {
+    const base = { SMTP_HOST: 'smtp.example.test', SMTP_PASS: 'secret', SMTP_USER: 'noreply@openvolley.app' }
+    const cases = [
+      // [MANAGER_URL, OpenBeach link base, a startup warning?]
+      ['https://manager.openvolley.app/', 'https://manager-beach.openvolley.app', false],
+      ['http://localhost:5173', 'http://localhost:5173/manager-beach.html', false],
+      ['http://127.0.0.1:5173/manager.html', 'http://127.0.0.1:5173/manager-beach.html', false],
+      ['https://staging.example.test/ov/manager.html', 'https://staging.example.test/ov/manager-beach.html', false],
+      ['https://manager.example.test', 'https://manager.example.test', true]
+    ]
+    for (const [managerUrl, beach, warns] of cases) {
+      const m = mailerFromEnv({ ...base, MANAGER_URL: managerUrl })
+      try {
+        assert.equal(m.enabled, true, managerUrl)
+        assert.equal(m.managerUrlFor('beach'), beach, managerUrl)
+        assert.notEqual(m.managerUrlFor('beach') === DEFAULT_MANAGER_URL_BEACH, managerUrl !== 'https://manager.openvolley.app/', managerUrl)
+        assert.equal((m.warnings || []).length, warns ? 1 : 0, managerUrl)
+        if (warns) assert.match(m.warnings[0], /MANAGER_URL_BEACH is not set/)
+        const link = authLink(m.managerUrlFor('beach'), 'confirm', TOKEN, 'en')
+        assert.ok(link.startsWith(beach + '/#confirm?token='), link)
+      } finally { m.close() }
+    }
+    // Set explicitly: used as given, no warning, whatever MANAGER_URL is
+    const set = mailerFromEnv({ ...base, MANAGER_URL: 'https://manager.example.test', MANAGER_URL_BEACH: 'https://mb.example.test' })
+    try {
+      assert.equal(set.managerUrlFor('beach'), 'https://mb.example.test')
+      assert.equal(set.warnings, undefined)
+    } finally { set.close() }
+    assert.deepEqual(beachManagerBase(DEFAULT_MANAGER_URL), { url: DEFAULT_MANAGER_URL_BEACH, note: null })
   })
 
   it('brandFrom: the address of a sender under another name', () => {
