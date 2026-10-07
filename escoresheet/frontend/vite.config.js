@@ -83,6 +83,12 @@ export default defineConfig({
       // desktop builds keep the logo.
       ...(isCapacitor
         ? [{ find: /^\.\/swissvolleylogo\.jpg$/, replacement: resolve(__dirname, 'scoresheet_pdf/components/noFederationLogo.js') }]
+        : []),
+      // Android app: OpenBeach's tournament import (Excel/CSV) is
+      // manager-beach's, a web page. Its XLSX reader and writer resolve to a
+      // stub, so neither ships in the APK (the dialog is loaded on demand).
+      ...(isCapacitor
+        ? [{ find: /^(?:\.{1,2}\/)+lib\/xlsxCodec(?:\.js)?$/, replacement: resolve(__dirname, 'src/lib/xlsxCodec.stub.js') }]
         : [])
     ]
   },
