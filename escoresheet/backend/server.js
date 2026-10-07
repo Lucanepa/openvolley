@@ -1364,7 +1364,8 @@ const CLOUD_CONNECT_SRC = [
 // --- Health ------------------------------------------------------------------
 // /health/live: process is up (Docker healthcheck). Never touches the database.
 // /health:      monitors. DATABASE_URL mode: db ping, catalog, storage sentinel,
-//               free space (floor), last backup age, socket pools. 503 when the
+//               free space (floor), last backup age, socket pools, account-email
+//               counters (mail). 503 when the
 //               db, catalog, floor, sentinel or backup is not ok. Cached for 2 s.
 //               Full body for internal callers only (isInternalCaller).
 const HEALTH_CACHE_MS = 2000
@@ -1434,6 +1435,11 @@ async function computeCloudHealth() {
   }
   Object.assign(body, await readLastBackup(), relayStats())
   body.backup = backupState(body.lastBackupAgeMin)
+  // Account emails (lib/mailer.js): budgets used / dropped this hour, failed
+  // sends. Informational: a used-up budget does not make the server unhealthy.
+  if (layer?.auth?.mailer?.stats) {
+    try { body.mail = layer.auth.mailer.stats() } catch { body.mail = { enabled: null } }
+  }
   if (realtimeHub) body.realtime = realtimeHub.stats()
   const healthy = body.db === 'ok' && body.catalog.ok && body.sentinel === 'ok' && body.floor === 'ok' &&
     (body.backup === 'ok' || body.backup === 'unchecked')

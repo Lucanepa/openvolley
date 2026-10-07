@@ -7,7 +7,8 @@ import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   pickLang, authLink, renderMail, maskEmail, mailerFromEnv, createMailer, transportOptions,
-  MAIL_LANGS, MAIL_KINDS, DEFAULT_MANAGER_URL
+  inboxKey, describeMailError, disabledMailer,
+  MAIL_LANGS, MAIL_KINDS, DEFAULT_MANAGER_URL, DEFAULT_BUDGETS, DEFAULT_MAX_PER_INBOX
 } from '../lib/mailer.js'
 import { startFakeSmtp, makeTestCert, linkToken, SMTP_USER, SMTP_PASS } from './helpers/fakeSmtp.js'
 
@@ -137,7 +138,7 @@ describe('mailer: SMTP sessions against a local sink', () => {
   before(async () => {
     cert = makeTestCert()
     implicit = await startFakeSmtp({ implicitTls: true, cert })
-    starttls = await startFakeSmtp({ implicitTls: false, cert })
+    starttls = await startFakeSmtp({ implicitTls: false, cert, rejectRcpt: (a) => a.startsWith('rejected.') })
   })
   after(async () => {
     await implicit?.close()
@@ -198,5 +199,108 @@ describe('mailer: SMTP sessions against a local sink', () => {
       t = 60 * 60 * 1000
       assert.equal((await m.send('confirm', { to: 'd4@example.ch', link })).sent, true, 'a new hour')
     } finally { m.close() }
+  })
+
+  it('a recipient the server rejects: the error text is loggable without the address', async () => {
+    const m = mailerFor(starttls)
+    const to = 'rejected.victim.name@club.example'
+    try {
+      let caught
+      await m.send('reset', { to, link: 'https://x.test/#reset?token=t' }).catch((err) => { caught = err })
+      assert.ok(caught, 'the send failed')
+      assert.ok(String(caught.message).includes(to) || String(caught.response || '').includes(to),
+        'precondition: the raw SMTP error quotes the recipient')
+      const line = describeMailError(caught)
+      assert.equal(line.includes(to), false, line)
+      assert.equal(line.includes('victim.name'), false, line)
+      assert.match(line, /re\*\*\*@club\.example/)
+      assert.match(line, /SMTP 550/)
+      assert.equal(m.stats().failed, 1)
+    } finally { m.close() }
+  })
+})
+
+describe('mailer: inbox key and loggable errors', () => {
+  it('inboxKey: plus-tags removed; Gmail dots and googlemail.com folded; other domains keep their dots', () => {
+    assert.equal(inboxKey('Victim.Name+x@GMail.com'), 'victimname@gmail.com')
+    assert.equal(inboxKey('v.i.c.t.i.m.n.a.m.e@googlemail.com'), 'victimname@gmail.com')
+    assert.equal(inboxKey('victimname@gmail.com.'), 'victimname@gmail.com')
+    assert.equal(inboxKey('anna.muster+club@example.ch'), 'anna.muster@example.ch', 'dots are significant elsewhere')
+    assert.equal(inboxKey('+tag@example.ch'), '+tag@example.ch', 'a local part that starts with + is kept')
+    assert.equal(inboxKey('...@gmail.com'), '...@gmail.com', 'never an empty local part')
+  })
+  it('describeMailError masks every address and keeps the codes', () => {
+    const err = Object.assign(new Error("Can't send mail - all recipients were rejected: 550 5.1.1 <someone.else@club.ch>: Recipient address rejected; also a@b.ch"), { code: 'EENVELOPE', responseCode: 550 })
+    const line = describeMailError(err)
+    assert.equal(line.includes('someone.else@club.ch'), false)
+    assert.equal(line.includes('a@b.ch'), false)
+    assert.match(line, /^EENVELOPE SMTP 550 /)
+    assert.match(line, /so\*\*\*@club\.ch/)
+    assert.equal(describeMailError(undefined), 'unknown error')
+    assert.ok(describeMailError(new Error('x'.repeat(1000))).length <= 300)
+  })
+})
+
+describe('mailer: budgets and the per-inbox cap (stub transport)', () => {
+  const stub = () => {
+    const sent = []
+    return { sent, transport: { async sendMail(m) { sent.push(m) }, close() {} } }
+  }
+  const link = 'https://x.test/#t?token=t'
+
+  it('defaults: 50 + 50 per hour (100 in total, as before), 5 per inbox', () => {
+    assert.deepEqual({ ...DEFAULT_BUDGETS }, { account: 50, confirm: 50 })
+    assert.equal(DEFAULT_MAX_PER_INBOX, 5)
+    const m = createMailer({ ...stub(), from: 'x <x@example.test>', logger: silent })
+    const st = m.stats()
+    assert.equal(st.budgets.account.max, 50)
+    assert.equal(st.budgets.confirm.max, 50)
+    assert.deepEqual(disabledMailer('SMTP_HOST not set').stats(), { enabled: false, reason: 'SMTP_HOST not set' })
+  })
+
+  it('confirmation mails cannot use up the budget of reset and password-changed mails', async () => {
+    let t = 0
+    const { sent, transport } = stub()
+    const warnings = []
+    const m = createMailer({ transport, from: 'x <x@example.test>', budgets: { account: 3, confirm: 4 }, now: () => t, logger: { ...silent, warn: (s) => warnings.push(s) } })
+    for (let i = 0; i < 10; i++) await m.send('confirm', { to: `signup${i}@example.ch`, link })
+    assert.equal(sent.length, 4, 'the confirm budget')
+    assert.deepEqual(await m.send('reset', { to: 'owner@example.ch', link }), { sent: true }, 'reset has its own budget')
+    assert.deepEqual(await m.send('password_changed', { to: 'owner@example.ch' }), { sent: true })
+    const st = m.stats()
+    assert.deepEqual(st.exhausted, ['confirm'])
+    assert.equal(st.budgets.confirm.dropped, 6)
+    assert.equal(st.budgets.account.used, 2)
+    assert.ok(st.lastDropAt)
+    assert.ok(warnings.some((w) => /confirm budget/.test(w) && !w.includes('signup9@')), 'logged, masked')
+    t = 60 * 60 * 1000
+    assert.equal(m.stats().budgets.confirm.used, 0, 'a new hour')
+    assert.equal(m.stats().budgets.confirm.droppedTotal, 6)
+  })
+
+  it('one Gmail inbox gets at most 5 reset/confirm mails an hour, whatever the spelling; password_changed is not capped', async () => {
+    let t = 0
+    const { sent, transport } = stub()
+    const m = createMailer({ transport, from: 'x <x@example.test>', now: () => t, logger: silent })
+    const variants = ['victimname@gmail.com', 'victim.name@gmail.com', 'v.ictimname@gmail.com', 'vi.ctimname@googlemail.com',
+      'Victim.Name+a@gmail.com', 'v.i.ctimname@gmail.com', 'victimn.ame@gmail.com']
+    const results = []
+    for (const to of variants) results.push((await m.send('confirm', { to, link })).skipped || 'sent')
+    assert.deepEqual(results, ['sent', 'sent', 'sent', 'sent', 'sent', 'inbox', 'inbox'])
+    assert.deepEqual(await m.send('reset', { to: 'victim.name@gmail.com', link }), { sent: false, skipped: 'inbox' })
+    assert.deepEqual(await m.send('password_changed', { to: 'victim.name@gmail.com' }), { sent: true })
+    assert.equal(sent.length, 6)
+    const st = m.stats()
+    assert.equal(st.inboxDropped, 3)
+    assert.equal(st.budgets.confirm.used, 5, 'mails held back by the inbox cap do not use the budget')
+    assert.equal((await m.send('confirm', { to: 'someone.else@gmail.com', link })).sent, true, 'other inboxes are not affected')
+    t = 60 * 60 * 1000
+    assert.equal((await m.send('confirm', { to: 'victimname@gmail.com', link })).sent, true, 'a new hour')
+  })
+
+  it('maxPerHour sets every budget at once (tests)', () => {
+    const m = createMailer({ ...stub(), from: 'x <x@example.test>', maxPerHour: 7, logger: silent })
+    assert.equal(m.stats().budgets.account.max, 7)
+    assert.equal(m.stats().budgets.confirm.max, 7)
   })
 })

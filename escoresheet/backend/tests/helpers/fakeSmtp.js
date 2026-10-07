@@ -118,8 +118,11 @@ export function linkToken(mail) {
  * @param {boolean} [o.implicitTls=true]  TLS from the first byte (465) or STARTTLS (587)
  * @param {object} [o.cert]               a makeTestCert() result (made when absent)
  * @param {string} [o.user], [o.pass]     the only credentials accepted
+ * @param {(address: string) => boolean} [o.rejectRcpt]  answer RCPT TO for these
+ *        with "550 5.1.1 <address>: Recipient address rejected" (quotes the
+ *        address, like real servers do)
  */
-export async function startFakeSmtp({ implicitTls = true, cert = null, user = SMTP_USER, pass = SMTP_PASS } = {}) {
+export async function startFakeSmtp({ implicitTls = true, cert = null, user = SMTP_USER, pass = SMTP_PASS, rejectRcpt = null } = {}) {
   const ownCert = !cert
   const c = cert || makeTestCert()
   const mails = []
@@ -138,6 +141,12 @@ export async function startFakeSmtp({ implicitTls = true, cert = null, user = SM
       auths.push({ username: auth.username, secure: !!session.secure })
       if (auth.username === user && auth.password === pass) return cb(null, { user: auth.username })
       return cb(new Error('Invalid username or password'))
+    },
+    onRcptTo(address, session, cb) {
+      if (rejectRcpt?.(address.address)) {
+        return cb(Object.assign(new Error(`5.1.1 <${address.address}>: Recipient address rejected: User unknown`), { responseCode: 550 }))
+      }
+      cb()
     },
     onData(stream, session, cb) {
       const chunks = []

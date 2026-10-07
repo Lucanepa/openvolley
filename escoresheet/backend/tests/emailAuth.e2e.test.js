@@ -209,6 +209,17 @@ describe('account emails end to end', { skip: SKIP }, () => {
     for (const t of tokensSeen) assert.ok(!out.includes(t), 'token in the log')
   })
 
+  it('the internal /health body shows the mail counters (no addresses); the public one does not', async () => {
+    const internal = await (await fetch(`${srv.base}/health`)).json()
+    assert.equal(internal.mail.enabled, true)
+    assert.ok(internal.mail.sent >= 6, JSON.stringify(internal.mail))
+    assert.deepEqual(Object.keys(internal.mail.budgets).sort(), ['account', 'confirm'])
+    assert.deepEqual(internal.mail.exhausted, [])
+    assert.equal(JSON.stringify(internal.mail).includes('@'), false)
+    const proxied = await (await fetch(`${srv.base}/health`, { headers: { 'cf-connecting-ip': nextIp() } })).json()
+    assert.equal(proxied.mail, undefined)
+  })
+
   it('without SMTP settings: reset answers 503 with the contact address, sign-up confirms at once', async () => {
     plain = await bootServer(serverEnv())
     const out = plain.output.join('')

@@ -19,7 +19,17 @@
  *
  * Mails: plain text plus a minimal HTML part, in en/de/fr/it. No tracking, no
  * remote images, no links other than the one action link. Recipients are
- * never logged in full (maskEmail).
+ * never logged in full (maskEmail), SMTP error texts neither (describeMailError).
+ *
+ * Volume (per process, fixed one-hour windows):
+ *   - two budgets, so sign-ups cannot starve password resets: "account"
+ *     (reset, password_changed) and "confirm" (sign-up / resend confirmation);
+ *   - per delivered inbox (inboxKey: plus-tags removed, Gmail dots ignored,
+ *     googlemail.com = gmail.com) for reset and confirm mails, so one inbox
+ *     cannot be flooded through spelling variants of its address.
+ * A mail over a limit is dropped (the request still succeeds, so the answer
+ * never tells whether a mail went out), logged, and counted in stats(), which
+ * the internal /health body shows.
  *
  * Public API:
  *   mailerFromEnv(env, { logger }) -> mailer      (disabled mailer when not configured)
@@ -27,11 +37,15 @@
  *   disabledMailer(reason)         -> mailer
  *   mailer.enabled / mailer.reason / mailer.managerUrl
  *   mailer.send(kind, { to, lang, link }) -> Promise<{ sent, skipped? }>   kind: reset | confirm | password_changed
+ *                                            skipped: 'budget' | 'inbox' | 'disabled'
+ *   mailer.stats()                 -> { enabled, budgets, inboxDropped, failed, lastDropAt, ... }
  *   mailer.close()
  *   renderMail(kind, lang, vars) -> { subject, text, html }
  *   pickLang(explicit, acceptLanguage) -> 'en' | 'de' | 'fr' | 'it'
  *   authLink(managerUrl, page, token, lang) -> string
  *   maskEmail(email)
+ *   inboxKey(email)                -> the delivered inbox of an address (rate-limit key)
+ *   describeMailError(err)         -> loggable text of a send error, addresses masked
  */
 
 import nodemailer from 'nodemailer'
@@ -41,11 +55,19 @@ export const MAIL_KINDS = Object.freeze(['reset', 'confirm', 'password_changed']
 export const DEFAULT_MANAGER_URL = 'https://manager.openvolley.app'
 export const DEFAULT_FROM_NAME = 'OpenVolley'
 
-// Outgoing account mails per hour, all recipients together: protects the
-// mailbox's sending quota and reputation from a spread-out flood. A mail over
-// the budget is dropped and logged (the request itself still succeeds, so the
-// answer never tells whether a mail went out).
-const DEFAULT_MAX_PER_HOUR = 100
+// Outgoing account mails per hour, all recipients together, per budget:
+// protects the mailbox's sending quota and reputation from a spread-out flood
+// (100 per hour in total, as before the split). "account" carries the reset
+// and password-changed mails, "confirm" the confirmation links: a burst of
+// sign-ups uses up only the latter (whose holders can resend later).
+export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', confirm: 'confirm' })
+export const DEFAULT_BUDGETS = Object.freeze({ account: 50, confirm: 50 })
+// Reset + confirmation mails to one delivered inbox per hour. A real user
+// needs at most: a confirmation, three resends, one reset. password_changed
+// is not counted (only the inbox's holder can cause it, with a reset link).
+export const DEFAULT_MAX_PER_INBOX = 5
+const INBOX_CAPPED = new Set(['reset', 'confirm'])
+const HOUR_MS = 60 * 60 * 1000
 
 /** Normalizes a language tag to one of MAIL_LANGS, or null. de-CH -> de. */
 function langOf(tag) {
@@ -79,6 +101,49 @@ export function maskEmail(email) {
   const at = s.lastIndexOf('@')
   if (at <= 0) return '***'
   return s.slice(0, Math.min(2, at)) + '***' + s.slice(at)
+}
+
+// Providers that deliver every dot variant of a local part to the same inbox.
+const DOTLESS_DOMAINS = new Set(['gmail.com'])
+const DOMAIN_ALIASES = Object.freeze({ 'googlemail.com': 'gmail.com' })
+
+/**
+ * The inbox an address is delivered to, as a rate-limit key: lower case,
+ * "+tag" removed, and for Gmail the dots of the local part dropped and
+ * googlemail.com read as gmail.com. Not an address to send to.
+ */
+export function inboxKey(email) {
+  const s = String(email || '').trim().toLowerCase()
+  const at = s.lastIndexOf('@')
+  if (at <= 0) return s
+  let local = s.slice(0, at)
+  let domain = s.slice(at + 1).replace(/\.+$/, '')
+  domain = DOMAIN_ALIASES[domain] || domain
+  const plus = local.indexOf('+')
+  if (plus > 0) local = local.slice(0, plus)
+  if (DOTLESS_DOMAINS.has(domain)) local = local.replace(/\./g, '') || local
+  return `${local}@${domain}`
+}
+
+// Anything shaped like an address inside an error text (SMTP replies quote the
+// recipient: "550 5.1.1 <name@domain>: Recipient address rejected").
+const ADDRESS_IN_TEXT = /[^\s<>()[\]{}"',;:]+@[^\s<>()[\]{}"',;:]+/g
+
+/**
+ * The loggable text of a send error: nodemailer's code, the SMTP reply code
+ * and the message with every address masked (maskEmail), at most 300 chars.
+ */
+export function describeMailError(err) {
+  const parts = []
+  if (err && typeof err === 'object') {
+    if (err.code) parts.push(String(err.code).slice(0, 40))
+    if (err.responseCode) parts.push(`SMTP ${String(err.responseCode).slice(0, 5)}`)
+  }
+  const msg = String((err && typeof err === 'object' ? err.message : err) ?? '')
+    .replace(ADDRESS_IN_TEXT, (m) => maskEmail(m))
+    .replace(/\s+/g, ' ').trim().slice(0, 300)
+  if (msg) parts.push(msg)
+  return parts.join(' ') || 'unknown error'
 }
 
 /** MANAGER_URL/#reset?token=...&lang=de (the token is in the fragment: never sent to a server). */
@@ -213,16 +278,50 @@ export function renderMail(kind, lang, { link } = {}) {
 function hourlyBudget(max, now = Date.now) {
   let windowStart = now()
   let used = 0
+  let dropped = 0 // in this window
+  let droppedTotal = 0 // since start
+  const roll = () => {
+    const t = now()
+    if (t - windowStart >= HOUR_MS) { windowStart = t; used = 0; dropped = 0 }
+  }
   return {
     max,
     take() {
-      const t = now()
-      if (t - windowStart >= 60 * 60 * 1000) { windowStart = t; used = 0 }
-      if (used >= max) return false
+      roll()
+      if (used >= max) { dropped++; droppedTotal++; return false }
       used++
       return true
     },
-    get used() { return used }
+    /** Gives back a mail that did not go out after all (e.g. its inbox cap). */
+    refund() { if (used > 0) used-- },
+    get used() { roll(); return used },
+    snapshot() {
+      roll()
+      return { max, used, dropped, droppedTotal, exhausted: used >= max, windowStart: new Date(windowStart).toISOString() }
+    }
+  }
+}
+
+/** Per-inbox counters in fixed one-hour windows; entries expire with their window. */
+function inboxCounter(max, now = Date.now) {
+  const seen = new Map() // inboxKey -> { start, n }
+  let lastPrune = now()
+  return {
+    max,
+    /** False once `key` reached max in its window. Counts only when true. */
+    take(key) {
+      const t = now()
+      if (t - lastPrune >= 60 * 1000 || seen.size > 10_000) {
+        for (const [k, e] of seen) if (t - e.start >= HOUR_MS) seen.delete(k)
+        lastPrune = t
+      }
+      let e = seen.get(key)
+      if (!e || t - e.start >= HOUR_MS) { e = { start: t, n: 0 }; seen.set(key, e) }
+      if (e.n >= max) return false
+      e.n++
+      return true
+    },
+    get size() { return seen.size }
   }
 }
 
@@ -232,6 +331,7 @@ export function disabledMailer(reason = 'not configured') {
     reason,
     managerUrl: DEFAULT_MANAGER_URL,
     async send() { return { sent: false, skipped: 'disabled' } },
+    stats() { return { enabled: false, reason } },
     close() {}
   }
 }
@@ -272,7 +372,9 @@ export function transportOptions({ host, port, user, pass, tls = {}, secure }) {
  * @param {object} [o.tls]          extra TLS options (tests: { ca }); rejectUnauthorized stays true
  * @param {boolean} [o.secure]      implicit TLS (default: port === 465)
  * @param {object} [o.transport]    a ready nodemailer-like { sendMail, close } (tests)
- * @param {number} [o.maxPerHour]
+ * @param {number} [o.maxPerHour]     every budget at once (tests); else o.budgets
+ * @param {{account?: number, confirm?: number}} [o.budgets]  per hour, see DEFAULT_BUDGETS
+ * @param {number} [o.maxPerInbox]    reset + confirm mails per inbox and hour
  * @param {object} [o.logger]
  */
 export function createMailer(o = {}) {
@@ -284,28 +386,67 @@ export function createMailer(o = {}) {
   }
   if (!o.from) throw new Error('createMailer: from is required')
   const transport = o.transport || nodemailer.createTransport(transportOptions({ host: o.host, port, user: o.user, pass: o.pass, tls: o.tls, secure: o.secure }))
-  const budget = hourlyBudget(o.maxPerHour || DEFAULT_MAX_PER_HOUR, o.now)
+  const budgetMax = (name) => {
+    const v = o.maxPerHour ?? o.budgets?.[name] ?? DEFAULT_BUDGETS[name]
+    return Number.isInteger(v) && v > 0 ? v : DEFAULT_BUDGETS[name]
+  }
+  const budgets = Object.fromEntries(Object.keys(DEFAULT_BUDGETS).map((name) => [name, hourlyBudget(budgetMax(name), o.now)]))
+  const perInbox = inboxCounter(Number.isInteger(o.maxPerInbox) && o.maxPerInbox > 0 ? o.maxPerInbox : DEFAULT_MAX_PER_INBOX, o.now)
+  const counters = { sent: 0, failed: 0, inboxDropped: 0, lastDropAt: null, lastFailureAt: null }
   const managerUrl = String(o.managerUrl || DEFAULT_MANAGER_URL).replace(/\/+$/, '')
 
   async function send(kind, { to, lang, link } = {}) {
     if (!MAIL_KINDS.includes(kind)) throw new Error(`mailer: unknown mail kind ${kind}`)
     if (typeof to !== 'string' || !to.includes('@')) throw new Error('mailer: no recipient')
+    const budgetName = MAIL_BUDGET_OF[kind]
+    const budget = budgets[budgetName]
     if (!budget.take()) {
-      log.warn(`[mail] hourly budget used up; ${kind} mail to ${maskEmail(to)} dropped`)
+      counters.lastDropAt = new Date().toISOString()
+      log.warn(`[mail] hourly ${budgetName} budget (${budget.max}) used up; ${kind} mail to ${maskEmail(to)} dropped`)
       return { sent: false, skipped: 'budget' }
     }
+    if (INBOX_CAPPED.has(kind) && !perInbox.take(inboxKey(to))) {
+      budget.refund()
+      counters.inboxDropped++
+      counters.lastDropAt = new Date().toISOString()
+      log.warn(`[mail] ${perInbox.max} mails per hour to one inbox reached; ${kind} mail to ${maskEmail(to)} dropped`)
+      return { sent: false, skipped: 'inbox' }
+    }
     const { subject, text, html } = renderMail(kind, lang, { link })
-    await transport.sendMail({
-      from: o.from,
-      to,
-      subject,
-      text,
-      html,
-      headers: { 'Auto-Submitted': 'auto-generated', 'X-Auto-Response-Suppress': 'All' },
-      disableFileAccess: true,
-      disableUrlAccess: true
-    })
+    try {
+      await transport.sendMail({
+        from: o.from,
+        to,
+        subject,
+        text,
+        html,
+        headers: { 'Auto-Submitted': 'auto-generated', 'X-Auto-Response-Suppress': 'All' },
+        disableFileAccess: true,
+        disableUrlAccess: true
+      })
+    } catch (err) {
+      counters.failed++
+      counters.lastFailureAt = new Date().toISOString()
+      throw err
+    }
+    counters.sent++
     return { sent: true }
+  }
+
+  /** Counters for monitoring (no addresses): the internal /health body shows them. */
+  function stats() {
+    const b = Object.fromEntries(Object.entries(budgets).map(([k, v]) => [k, v.snapshot()]))
+    return {
+      enabled: true,
+      budgets: b,
+      exhausted: Object.keys(b).filter((k) => b[k].exhausted),
+      maxPerInbox: perInbox.max,
+      inboxDropped: counters.inboxDropped,
+      sent: counters.sent,
+      failed: counters.failed,
+      lastDropAt: counters.lastDropAt,
+      lastFailureAt: counters.lastFailureAt
+    }
   }
 
   return {
@@ -313,8 +454,9 @@ export function createMailer(o = {}) {
     reason: null,
     managerUrl,
     from: o.from,
-    budget,
+    budgets,
     send,
+    stats,
     close() { try { transport.close?.() } catch { /* already closed */ } }
   }
 }
@@ -324,7 +466,7 @@ export function createMailer(o = {}) {
  * when SMTP_HOST or SMTP_PASS is missing or the settings are invalid. Never
  * throws and never logs the password.
  */
-export function mailerFromEnv(env = process.env, { logger, tls, maxPerHour } = {}) {
+export function mailerFromEnv(env = process.env, { logger, tls, maxPerHour, budgets, maxPerInbox } = {}) {
   const host = (env.SMTP_HOST || '').trim()
   const pass = env.SMTP_PASS || ''
   if (!host || !pass) return disabledMailer(!host ? 'SMTP_HOST not set' : 'SMTP_PASS not set')
@@ -346,7 +488,7 @@ export function mailerFromEnv(env = process.env, { logger, tls, maxPerHour } = {
     return disabledMailer('MANAGER_URL is not a URL')
   }
   try {
-    return createMailer({ host, port, user, pass, from, managerUrl, logger, tls, maxPerHour })
+    return createMailer({ host, port, user, pass, from, managerUrl, logger, tls, maxPerHour, budgets, maxPerInbox })
   } catch (err) {
     return disabledMailer(err.message)
   }
