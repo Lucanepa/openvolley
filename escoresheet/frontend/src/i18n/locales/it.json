@@ -4,6 +4,7 @@
     "home": "Home",
     "away": "Ospite",
     "close": "Chiudi",
+    "dismissNotification": "Chiudi la notifica",
     "save": "Salva",
     "cancel": "Annulla",
     "confirm": "Conferma",
@@ -2275,6 +2276,12 @@
     "redeem": "Usa il codice",
     "redeeming": "Verifica…",
     "redeemed": "Codice accettato. Ora puoi refertare partite ufficiali.",
+    "redeemedAs": {
+      "scorer": "Codice accettato. Ora puoi refertare partite ufficiali.",
+      "referee": "Codice accettato. Il tuo account ha ora il ruolo di arbitro.",
+      "competition_manager": "Codice accettato. Ora puoi gestire competizioni e squadre salvate.",
+      "beach_competition_manager": "Codice accettato. Ora puoi gestire tornei e coppie di beach salvate."
+    },
     "errors": {
       "inviteInvalid": "Questo codice d’invito non è valido.",
       "inviteExpired": "Questo codice d’invito è scaduto.",
@@ -2317,7 +2324,7 @@
     "backToSignIn": "Torna all’accesso",
     "accountCreated": "Il tuo account è stato creato.",
     "inviteStepTitle": "Inserisci il codice d’invito del tuo club",
-    "inviteStepBody": "Il tuo club o l’admin di OpenVolley ti dà un codice; ti rende subito segnapunti approvato.",
+    "inviteStepBody": "Il tuo club o l’admin di OpenVolley ti dà un codice. Dà subito al tuo account il ruolo per cui è stato creato, per esempio segnapunti o responsabile competizione.",
     "inviteStepNoCode": "Nessun codice? Chiedi a un admin di approvare il tuo account – avrai accesso automaticamente. Nel frattempo puoi refertare partite di prova.",
     "nativeAppsNote": "Usi l’app desktop o Android? Accedi lì con questa email e questa password.",
     "allSetTitle": "Tutto pronto",
@@ -2330,7 +2337,7 @@
     "noAccountYet": "Non hai ancora un account? Crealo qui. Un solo account vale per OpenBeach e OpenVolley.",
     "signUpBody": "Un solo account per OpenBeach e OpenVolley. Ogni app ti approva separatamente.",
     "existingAccount": "Questa email ha già un account (OpenVolley o OpenBeach). Accedi con la tua password attuale per unirti a OpenBeach.",
-    "inviteStepBody": "Il tuo club, l’organizzatore del torneo o l’admin di OpenBeach ti dà un codice; ti rende subito segnapunti di beach approvato.",
+    "inviteStepBody": "Il tuo club, l’organizzatore del torneo o l’admin di OpenBeach ti dà un codice. Dà subito al tuo account il ruolo per cui è stato creato, per esempio segnapunti di beach o responsabile competizione.",
     "nativeAppsNote": "Usi l’app OpenBeach su Android? Accedi lì con questa email e questa password.",
     "allSetBody": "Il tuo account è approvato per refertare nel beach. Accedi in OpenBeach con questa email e questa password.",
     "openApp": "OpenBeach",

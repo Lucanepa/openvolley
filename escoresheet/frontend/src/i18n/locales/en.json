@@ -4,6 +4,7 @@
     "home": "Home",
     "away": "Away",
     "close": "Close",
+    "dismissNotification": "Dismiss notification",
     "save": "Save",
     "cancel": "Cancel",
     "confirm": "Confirm",
@@ -2276,6 +2277,12 @@
     "redeem": "Redeem code",
     "redeeming": "Checking…",
     "redeemed": "Code accepted. You can now score official matches.",
+    "redeemedAs": {
+      "scorer": "Code accepted. You can now score official matches.",
+      "referee": "Code accepted. Your account now has the referee role.",
+      "competition_manager": "Code accepted. You can now manage competitions and saved teams.",
+      "beach_competition_manager": "Code accepted. You can now manage tournaments and saved beach pairs."
+    },
     "errors": {
       "inviteInvalid": "This invite code is not valid.",
       "inviteExpired": "This invite code has expired.",
@@ -2318,7 +2325,7 @@
     "backToSignIn": "Back to sign in",
     "accountCreated": "Your account has been created.",
     "inviteStepTitle": "Enter your club's invite code",
-    "inviteStepBody": "Your club or the OpenVolley admin gives you a code; it makes you an approved scorer right away.",
+    "inviteStepBody": "Your club or the OpenVolley admin gives you a code. It gives your account the role it was made for right away, such as scorer or competition manager.",
     "inviteStepNoCode": "No code? Ask an admin to approve your account – you'll get access automatically. Until then you can score test matches.",
     "nativeAppsNote": "Using the desktop or Android app? Just sign in there with this email and password.",
     "allSetTitle": "You're all set",
@@ -2331,7 +2338,7 @@
     "noAccountYet": "No account yet? Create one here. One account works for OpenBeach and OpenVolley.",
     "signUpBody": "One account for OpenBeach and OpenVolley. Each app approves you separately.",
     "existingAccount": "This email already has an account (OpenVolley or OpenBeach). Sign in with your existing password to join OpenBeach.",
-    "inviteStepBody": "Your club, the tournament organiser or the OpenBeach admin gives you a code; it makes you an approved beach scorer right away.",
+    "inviteStepBody": "Your club, the tournament organiser or the OpenBeach admin gives you a code. It gives your account the role it was made for right away, such as beach scorer or competition manager.",
     "nativeAppsNote": "Using the OpenBeach app on Android? Just sign in there with this email and password.",
     "allSetBody": "Your account is approved for beach scoring. Sign in in OpenBeach with this email and password.",
     "openApp": "OpenBeach",

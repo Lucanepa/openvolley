@@ -4,6 +4,7 @@
     "home": "Heim",
     "away": "Gast",
     "close": "Schliessen",
+    "dismissNotification": "Meldung schliessen",
     "save": "Speichern",
     "cancel": "Abbrechen",
     "confirm": "Bestätigen",
@@ -2254,6 +2255,12 @@
     "redeem": "Code einlösen",
     "redeeming": "Wird geprüft…",
     "redeemed": "Code akzeptiert. Du kannst jetzt offizielle Spiele führen.",
+    "redeemedAs": {
+      "scorer": "Code akzeptiert. Du kannst jetzt offizielle Spiele führen.",
+      "referee": "Code akzeptiert. Dein Konto hat jetzt die Rolle Schiedsrichter.",
+      "competition_manager": "Code akzeptiert. Du kannst jetzt Wettbewerbe und gespeicherte Teams verwalten.",
+      "beach_competition_manager": "Code akzeptiert. Du kannst jetzt Turniere und gespeicherte Beach-Paare verwalten."
+    },
     "errors": {
       "inviteInvalid": "Dieser Einladungscode ist nicht gültig.",
       "inviteExpired": "Dieser Einladungscode ist abgelaufen.",
@@ -2296,7 +2303,7 @@
     "backToSignIn": "Zurück zur Anmeldung",
     "accountCreated": "Dein Konto wurde erstellt.",
     "inviteStepTitle": "Gib den Einladungscode deines Vereins ein",
-    "inviteStepBody": "Dein Verein oder der OpenVolley-Admin gibt dir einen Code; damit bist du sofort freigegebener Schreiber.",
+    "inviteStepBody": "Dein Verein oder der OpenVolley-Admin gibt dir einen Code. Er gibt deinem Konto sofort die Rolle, für die er erstellt wurde, zum Beispiel Schreiber oder Wettbewerbsverantwortlicher.",
     "inviteStepNoCode": "Kein Code? Bitte einen Admin, dein Konto freizugeben – du erhältst den Zugang dann automatisch. Bis dahin kannst du Testspiele führen.",
     "nativeAppsNote": "Du nutzt die Desktop- oder Android-App? Melde dich dort einfach mit dieser E-Mail und diesem Passwort an.",
     "allSetTitle": "Alles bereit",
@@ -2309,7 +2316,7 @@
     "noAccountYet": "Noch kein Konto? Erstelle es hier. Ein Konto gilt für OpenBeach und OpenVolley.",
     "signUpBody": "Ein Konto für OpenBeach und OpenVolley. Jede App gibt dich separat frei.",
     "existingAccount": "Für diese E-Mail gibt es schon ein Konto (OpenVolley oder OpenBeach). Melde dich mit deinem bisherigen Passwort an, um OpenBeach beizutreten.",
-    "inviteStepBody": "Dein Verein, die Turnierleitung oder der OpenBeach-Admin gibt dir einen Code; damit bist du sofort freigegebener Beach-Schreiber.",
+    "inviteStepBody": "Dein Verein, die Turnierleitung oder der OpenBeach-Admin gibt dir einen Code. Er gibt deinem Konto sofort die Rolle, für die er erstellt wurde, zum Beispiel Beach-Schreiber oder Wettbewerbsverantwortlicher.",
     "nativeAppsNote": "Du nutzt die OpenBeach-App auf Android? Melde dich dort einfach mit dieser E-Mail und diesem Passwort an.",
     "allSetBody": "Dein Konto ist für das Schreiben im Beach freigegeben. Melde dich in OpenBeach mit dieser E-Mail und diesem Passwort an.",
     "openApp": "OpenBeach",

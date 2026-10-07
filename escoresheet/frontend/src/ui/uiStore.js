@@ -69,6 +69,7 @@ export function settleConfirm(id, answer) {
 /* ── Toasts ──────────────────────────────────────────────────────────── */
 // kind: 'success' | 'error' | 'info'
 // ToastOptions: { duration?: number (ms; 0 or negative pins it), lang?: 'DE' | 'EN' }
+// (lang is kept on the item; the dismiss label follows the app's i18n language, Toast.jsx)
 
 // Anything past this is dropped oldest-first, so a burst cannot bury the
 // screen. (store.ts:81-87)

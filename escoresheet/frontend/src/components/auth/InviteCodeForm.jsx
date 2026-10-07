@@ -2,12 +2,27 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import { formatInviteCode, errorKeyOf } from '../../lib/accountApi'
+import { plainRole } from '../../lib/access'
 import { Button, Input, toast } from '../../ui'
+
+/**
+ * The success text of a redeemed code, for the role the server actually
+ * granted (`role_granted`, 'beach:<role>' for a beach code): a competition
+ * manager's code does not say "you can now score".
+ */
+export function redeemedText(t, data) {
+  const role = plainRole(data?.role_granted)
+  if (role === 'competition_manager' && (data?.sport === 'beach' || String(data?.role_granted).startsWith('beach:'))) {
+    return t('access.redeemedAs.beach_competition_manager')
+  }
+  if (role === 'scorer' || role === 'referee' || role === 'competition_manager') return t(`access.redeemedAs.${role}`)
+  return t('access.redeemed')
+}
 
 /**
  * Invite-code field + "Redeem code" button (same height). Uppercase,
  * monospace, grouped as the user types. The error shows inline; success
- * toasts once the server granted the role.
+ * toasts once the server granted the role, worded for that role.
  */
 export default function InviteCodeForm({ onRedeemed, autoFocus = false, className = '' }) {
   const { t } = useTranslation()
@@ -34,7 +49,7 @@ export default function InviteCodeForm({ onRedeemed, autoFocus = false, classNam
       return
     }
     setCode('')
-    toast.success(t('access.redeemed'))
+    toast.success(redeemedText(t, data))
     onRedeemed?.(data)
   }
 

@@ -53,7 +53,8 @@ vi.mock('../lib/apiClient', () => ({
   apiAuth: { confirmPasswordReset: vi.fn(async () => ({ data: { password_updated: true }, error: null })), confirmEmail: vi.fn() }
 }))
 
-import ManagerApp from '../ManagerApp'
+import ManagerApp, { managerFooter } from '../ManagerApp'
+import { redeemedText } from '../components/auth/InviteCodeForm'
 import ManageConsole, { manageTabsFor } from '../components/manage/ManageConsole'
 import AccountsPanel from '../components/manage/AccountsPanel'
 import AuditPanel, { auditDetailsLine } from '../components/manage/AuditPanel'
@@ -334,5 +335,40 @@ describe('auditDetailsLine', () => {
     expect(auditDetailsLine(e)).toBe('+ beach:scorer')
     expect(auditDetailsLine(e, { roleLabel: (r) => r.replace('beach:', '').toUpperCase() })).toBe('+ SCORER')
     expect(auditDetailsLine({ details: { label: 'Tour', role: 'scorer', sport: 'beach' } }, { roleLabel: () => 'Scorer' })).toBe('Tour · Scorer')
+  })
+})
+
+// Final-run fixes: the invite texts follow the role that was granted, and the
+// footer names OpenVolley's version as such
+describe('OpenBeach manager: invite wording and footer', () => {
+  const t = (key) => key
+  it('the redeem success text follows the granted role', () => {
+    expect(redeemedText(t, { role_granted: 'beach:scorer', sport: 'beach' })).toBe('access.redeemedAs.scorer')
+    expect(redeemedText(t, { role_granted: 'scorer' })).toBe('access.redeemedAs.scorer')
+    expect(redeemedText(t, { role_granted: 'beach:referee', sport: 'beach' })).toBe('access.redeemedAs.referee')
+    expect(redeemedText(t, { role_granted: 'beach:competition_manager', sport: 'beach' })).toBe('access.redeemedAs.beach_competition_manager')
+    expect(redeemedText(t, { role_granted: 'competition_manager' })).toBe('access.redeemedAs.competition_manager')
+    expect(redeemedText(t, { roles: ['scorer'] })).toBe('access.redeemed')
+    expect(redeemedText(t, null)).toBe('access.redeemed')
+  })
+
+  it('every locale has the role texts, and no invite text promises "scorer" for every code', () => {
+    for (const [name, loc] of Object.entries({ en, de, deCH, fr, it_ })) {
+      for (const k of ['scorer', 'referee', 'competition_manager', 'beach_competition_manager']) {
+        expect(loc.access.redeemedAs[k], `${name} ${k}`).toBeTruthy()
+      }
+      expect(loc.access.redeemedAs.competition_manager, name).not.toBe(loc.access.redeemedAs.scorer)
+      expect(loc.access.redeemedAs.beach_competition_manager, name).not.toBe(loc.access.redeemedAs.scorer)
+    }
+    expect(en.managerBeach.inviteStepBody).not.toMatch(/approved beach scorer/)
+    expect(en.managerSite.inviteStepBody).not.toMatch(/approved scorer/)
+    expect(en.access.redeemedAs.beach_competition_manager).not.toMatch(/score official matches/)
+  })
+
+  it('the footer: OpenVolley as before; OpenBeach names the version as OpenVolley\'s', () => {
+    expect(managerFooter(MANAGER_BRANDS.indoor, '2.3.0')).toBe('OpenVolley 2.3.0')
+    expect(managerFooter(MANAGER_BRANDS.beach, '2.3.0')).toBe('OpenBeach · OpenVolley 2.3.0')
+    expect(managerFooter(MANAGER_BRANDS.beach, '')).toBe('OpenBeach')
+    expect(managerFooter(MANAGER_BRANDS.beach, '2.3.0')).not.toMatch(/^OpenBeach 2/)
   })
 })

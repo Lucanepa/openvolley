@@ -45,7 +45,7 @@ const kitLang = (lang) => (String(lang || '').toLowerCase().startsWith('de') ? '
  * @param {() => boolean} opts.canSync  the cloud can take the jobs now (online)
  * @param {() => boolean} [opts.explained]  the screen already explains the wait
  *   (signed out: the Not signed in banner); then no toast at all
- * @param {string} [opts.lang]  i18n language (for the toast's dismiss label)
+ * @param {string} [opts.lang]  i18n language (kept on the toast; its dismiss label follows i18n itself)
  * @param {number} [opts.timeoutMs]
  * @param {number} [opts.pollMs]
  * @param {typeof toast} [opts.notify]
