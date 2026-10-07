@@ -6,6 +6,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, cleanup, act, within } from '@testing-library/react'
 import en from '../../i18n/locales/en.json'
+// Not *ByRole for the buttons: on this page each call costs ~60 ms of jsdom
+// getComputedStyle after every render, and under load the polled calls ran past
+// findBy's 1 s window and the 5 s test timeout (see buttonQueries)
+import { findButton, getButton } from '../../__tests__/buttonQueries'
 
 const lookup = (key) => key.split('.').reduce((o, k) => (o == null ? undefined : o[k]), en)
 const interpolate = (text, vars) => String(text).replace(/\{\{(\w+)\}\}/g, (_, k) => (vars && vars[k] !== undefined ? vars[k] : ''))
@@ -57,32 +61,39 @@ vi.mock('../SignaturePad', () => ({
   default: ({ open, onSave, title }) => (open ? <button type="button" onClick={() => onSave('data:image/png;base64,SIG')}>draw {title}</button> : null)
 }))
 
-// In-memory Dexie: where(field).equals(v), live queries re-run after writes
-const store = vi.hoisted(() => ({ tables: {}, nextId: 1, listeners: new Set() }))
+// In-memory Dexie: where(field).equals(v), live queries re-run after writes.
+// store.version counts the writes; store.shown holds, per mounted live query,
+// the version its last committed render reads from (see settled()).
+const store = vi.hoisted(() => ({ tables: {}, nextId: 1, listeners: new Set(), version: 0, shown: new Map() }))
 vi.mock('dexie-react-hooks', async () => {
   const React = await import('react')
   return {
     useLiveQuery: (fn, deps = []) => {
-      const [value, setValue] = React.useState(undefined)
+      const [result, setResult] = React.useState({ value: undefined, version: -1 })
       const [tick, setTick] = React.useState(0)
+      const id = React.useRef(Symbol('liveQuery'))
       React.useEffect(() => {
+        const key = id.current
         const l = () => setTick(x => x + 1)
         store.listeners.add(l)
-        return () => { store.listeners.delete(l) }
+        return () => { store.listeners.delete(l); store.shown.delete(key) }
       }, [])
       React.useEffect(() => {
         let alive = true
-        Promise.resolve(fn()).then((v) => { if (alive) setValue(v) })
+        const version = store.version
+        Promise.resolve(fn()).then((v) => { if (alive) setResult({ value: v, version }) })
         return () => { alive = false }
         // eslint-disable-next-line react-hooks/exhaustive-deps
       }, [...deps, tick])
-      return value
+      // after the commit: this render shows the rows as of `version`
+      React.useEffect(() => { store.shown.set(id.current, result.version) })
+      return result.value
     }
   }
 })
 vi.mock('../../db/db', () => {
   const rowsOf = (name) => (store.tables[name] ||= new Map())
-  const changed = () => { for (const l of [...store.listeners]) l() }
+  const changed = () => { store.version++; for (const l of [...store.listeners]) l() }
   const collection = (rows) => {
     const c = {
       equals: (v) => collection(rows.filter(r => r.__field === undefined ? true : r[r.__field] === v)),
@@ -162,12 +173,19 @@ const setOnline = (value) => {
   act(() => { window.dispatchEvent(new Event(value ? 'online' : 'offline')) })
 }
 
-// The mount refresh (list) writes the match row, which re-renders the boxes:
-// wait for it before clicking, or the click lands on a replaced node
+// Every live query has rendered the latest write: no re-render is pending. A
+// write re-renders the boxes (new nodes), so a click made before that lands on
+// a replaced node. (A fixed 20 ms wait did this before: too short under load.)
+async function settled() {
+  await waitFor(() => {
+    expect(store.shown.size).toBeGreaterThan(0)
+    for (const version of store.shown.values()) expect(version).toBe(store.version)
+  })
+}
+// The mount refresh (list) writes the match row: wait for it and its re-render
 async function refreshed() {
   await waitFor(() => expect(store.tables.matches.get(1)).toHaveProperty('accountApprovals'))
-  // let the live query re-render with the written row
-  await act(() => new Promise(resolve => setTimeout(resolve, 20)))
+  await settled()
 }
 async function openApprove(role) {
   await refreshed()
@@ -175,7 +193,7 @@ async function openApprove(role) {
   return screen.findByRole('dialog')
 }
 
-const confirmButton = () => screen.getByRole('button', { name: en.matchEnd.approveParams })
+const confirmButton = () => getButton(en.matchEnd.approveParams)
 const slot = (role) => screen.getByTestId(`signature-slot-${role}`)
 
 beforeEach(() => {
@@ -247,13 +265,13 @@ describe('MatchEnd: approve with an account', () => {
 
     // scorer and 2nd referee draw
     fireEvent.click(await within(await screen.findByTestId('signature-slot-scorer')).findByText(en.matchEnd.tapToSign))
-    fireEvent.click(await screen.findByRole('button', { name: /draw/ }))
+    fireEvent.click(await findButton(/^draw /))
     await waitFor(() => expect(store.tables.matches.get(1).scorerSignature).toBe('data:image/png;base64,SIG'))
-    await act(() => new Promise(resolve => setTimeout(resolve, 20)))
+    await settled()
     fireEvent.click(await within(slot('ref2')).findByText(en.matchEnd.tapToSign))
-    fireEvent.click(await screen.findByRole('button', { name: /draw/ }))
+    fireEvent.click(await findButton(/^draw /))
     await waitFor(() => expect(store.tables.matches.get(1).ref2Signature).toBeTruthy())
-    await act(() => new Promise(resolve => setTimeout(resolve, 20)))
+    await settled()
     expect(confirmButton()).toBeDisabled()
 
     // 1st referee approves with the account
@@ -436,7 +454,7 @@ describe('MatchEnd: approve with an account', () => {
     render(<MatchEnd matchId={1} />)
     await refreshed()
     fireEvent.click(await screen.findByTestId('account-approval-stale-ref1'))
-    fireEvent.click(await screen.findByRole('button', { name: /draw/ }))
+    fireEvent.click(await findButton(/^draw /))
     await waitFor(() => expect(store.tables.matches.get(1).ref1Signature).toBe('data:image/png;base64,SIG'))
     await waitFor(() => expect(store.tables.matches.get(1).accountApprovals).toBeNull())
   })
@@ -450,7 +468,7 @@ describe('MatchEnd: approve with an account', () => {
     render(<MatchEnd matchId={1} />)
     await waitFor(() => expect(confirmButton()).toBeEnabled())
     fireEvent.click(confirmButton())
-    const reopen = await screen.findByRole('button', { name: en.matchEnd.reopenMatch }, { timeout: 5000 })
+    const reopen = await findButton(en.matchEnd.reopenMatch, { timeout: 5000 })
     fireEvent.click(reopen)
     await waitFor(() => expect(store.tables.matches.get(1).approved).toBe(false))
     expect(api.undo).not.toHaveBeenCalled()
@@ -463,7 +481,7 @@ describe('MatchEnd: approve with an account', () => {
     auth.value = { user: { id: 'u-new', email: 'new@club.ch' }, access: { roles: [], isAdmin: false } }
     render(<MatchEnd matchId={1} />)
     await within(await screen.findByTestId('signature-slot-scorer')).findByText(en.matchEnd.tapToSign)
-    await act(() => new Promise(resolve => setTimeout(resolve, 20)))
+    await refreshed()
     expect(screen.queryByTestId('account-approval-open-scorer')).toBeNull()
     expect(screen.getByTestId('account-approval-why-ref1')).toHaveTextContent(en.approval.why.callerRole)
   })
@@ -510,7 +528,7 @@ describe('MatchEnd: Re-sign and Clear', () => {
     render(<MatchEnd matchId={1} />)
     await refreshed()
     fireEvent.click(await screen.findByTestId('signature-resign-scorer'))
-    fireEvent.click(await screen.findByRole('button', { name: /draw/ }))
+    fireEvent.click(await findButton(/^draw /))
     await waitFor(() => expect(store.tables.matches.get(1).scorerSignature).toBe('data:image/png;base64,SIG'))
     const job = matchJobs().at(-1)
     expect(job.payload.id).toBe(SEED)
@@ -525,7 +543,7 @@ describe('MatchEnd: Re-sign and Clear', () => {
     await waitFor(() => expect(store.tables.matches.get(1).scorerSignature).toBeNull())
     expect(matchJobs().at(-1).payload.signatures.scorer).toBeNull()
     // the pad is open for the new signature
-    expect(await screen.findByRole('button', { name: /draw/ })).toBeInTheDocument()
+    expect(await findButton(/^draw /)).toBeInTheDocument()
   })
 
   it('also on the captains; a test match is saved but not sent', async () => {
@@ -544,7 +562,7 @@ describe('MatchEnd: Re-sign and Clear', () => {
     render(<MatchEnd matchId={1} />)
     await refreshed()
     fireEvent.click(screen.getByTestId('signature-resign-ref1'))
-    fireEvent.click(await screen.findByRole('button', { name: /draw/ }))
+    fireEvent.click(await findButton(/^draw /))
     await waitFor(() => expect(store.tables.matches.get(1).ref1Signature).toBe('data:image/png;base64,SIG'))
     expect(store.tables.matches.get(1).accountApprovals).toEqual(approved)
     expect(api.undo).not.toHaveBeenCalled()

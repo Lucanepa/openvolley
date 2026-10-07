@@ -43,6 +43,17 @@ export function vitePluginApiRoutes(options = {}) {
   let viteServer = null
   let httpServer = null
 
+  // The WebSocket port actually bound: wsPort, or the one the system picked
+  // for wsPort 0 (the tests: a port looked up first and bound later can be
+  // taken in between by another process)
+  const boundWsPort = () => {
+    try {
+      const addr = httpServer ? httpServer.address() : wss?.address()
+      if (addr && typeof addr === 'object' && addr.port) return addr.port
+    } catch { /* not bound */ }
+    return wsPort
+  }
+
   return {
     name: 'vite-plugin-api-routes',
     enforce: 'pre', // Run before other plugins
@@ -150,6 +161,7 @@ export function vitePluginApiRoutes(options = {}) {
           const protocol = server.config.server.https ? 'https' : 'http'
           const wsProtocol = server.config.server.https ? 'wss' : 'ws'
           const port = server.config.server.port || 5173
+          const wsPortNow = boundWsPort()
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({
             running: true,
@@ -160,7 +172,7 @@ export function vitePluginApiRoutes(options = {}) {
             hostname: 'escoresheet.local',
             localIP,
             port,
-            wsPort,
+            wsPort: wsPortNow,
             urls: {
               main: `${protocol}://escoresheet.local:${port}/`,
               mainIP: `${protocol}://${localIP}:${port}/`,
@@ -170,8 +182,8 @@ export function vitePluginApiRoutes(options = {}) {
               benchIP: `${protocol}://${localIP}:${port}/bench/`,
               livescore: `${protocol}://escoresheet.local:${port}/livescore/`,
               livescoreIP: `${protocol}://${localIP}:${port}/livescore/`,
-              websocket: `${wsProtocol}://escoresheet.local:${wsPort}`,
-              websocketIP: `${wsProtocol}://${localIP}:${wsPort}`
+              websocket: `${wsProtocol}://escoresheet.local:${wsPortNow}`,
+              websocketIP: `${wsProtocol}://${localIP}:${wsPortNow}`
             }
           }))
           return
@@ -207,6 +219,8 @@ export function vitePluginApiRoutes(options = {}) {
       server.middlewares.use('/api', apiMiddleware)
     },
     
+    boundWsPort,
+
     closeBundle() {
       relay.close()
       if (wss) {
