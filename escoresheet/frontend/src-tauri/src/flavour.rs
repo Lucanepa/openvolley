@@ -60,6 +60,18 @@ pub struct Flavour {
     /// The relay serves the first of these that exists for "/" and as the
     /// single-page fallback (relay.rs).
     pub index_pages: &'static [&'static str],
+    /// The tablets' and displays' pages by the path the relay hands out
+    /// (server_status urls, QR codes, the "already running" page: /referee,
+    /// /livescore ...) and the file of this app's build behind each. A role
+    /// path (relay.rs ROLE_PATHS) this app has no page for is a 404, never
+    /// the scoretable.
+    pub role_pages: &'static [(&'static str, &'static str)],
+    /// The OTHER app's installers: their GitHub release tag prefix and the
+    /// lower-case start of their file names. Both apps' updates are signed
+    /// with one updater key, so the signature cannot tell them apart; the
+    /// updater refuses a manifest that would install the other app
+    /// (updater.rs foreign_update).
+    pub foreign_installers: (&'static str, &'static str),
 }
 
 #[allow(dead_code)]
@@ -81,6 +93,15 @@ pub const OPENVOLLEY: Flavour = Flavour {
     staging_endpoint: "https://get.openvolley.app/desktop/staging.json",
     apt_helper: "/usr/libexec/openvolley-escoresheet/apt-upgrade",
     index_pages: &["index.html"],
+    // Vite builds folder pages (vite.config.js rollupOptions.input)
+    role_pages: &[
+        ("referee", "referee/index.html"),
+        ("bench", "bench/index.html"),
+        ("livescore", "livescore/index.html"),
+        ("scoresheet", "scoresheet/index.html"),
+        ("upload_roster", "upload_roster/index.html"),
+    ],
+    foreign_installers: ("beach-desktop-v", "openbeach"),
 };
 
 #[allow(dead_code)]
@@ -103,6 +124,14 @@ pub const BEACH: Flavour = Flavour {
     apt_helper: "/usr/libexec/openbeach-escoresheet/apt-upgrade",
     // openbeach's Vite build names its scoretable page index_beach.html
     index_pages: &["index.html", "index_beach.html"],
+    // openbeach's pages are flat *_beach.html files; it has no bench page
+    role_pages: &[
+        ("referee", "referee_beach.html"),
+        ("livescore", "livescore_beach.html"),
+        ("scoreboard", "scoreboard_beach.html"),
+        ("scoresheet", "scoresheet_beach.html"),
+    ],
+    foreign_installers: ("desktop-v", "openvolley"),
 };
 
 #[cfg(not(ov_flavour = "beach"))]
@@ -131,6 +160,24 @@ mod tests {
         assert_eq!(f.staging_endpoint, "https://get.openvolley.app/desktop/staging.json");
         assert_eq!(f.apt_helper, "/usr/libexec/openvolley-escoresheet/apt-upgrade");
         assert_eq!(f.index_pages, &["index.html"]);
+        assert_eq!(page(f, "referee"), Some("referee/index.html"));
+        assert_eq!(page(f, "livescore"), Some("livescore/index.html"));
+        assert_eq!(page(f, "bench"), Some("bench/index.html"));
+    }
+
+    fn page(f: &Flavour, role: &str) -> Option<&'static str> {
+        f.role_pages.iter().find(|(r, _)| *r == role).map(|(_, file)| *file)
+    }
+
+    /// The links OpenBeach hands to tablets (/referee, /livescore) open its
+    /// own pages: openbeach builds referee_beach.html, not referee/index.html.
+    #[test]
+    fn beach_role_paths_open_its_beach_pages() {
+        let b = &BEACH;
+        assert_eq!(page(b, "referee"), Some("referee_beach.html"));
+        assert_eq!(page(b, "livescore"), Some("livescore_beach.html"));
+        assert_eq!(page(b, "scoreboard"), Some("scoreboard_beach.html"));
+        assert_eq!(page(b, "bench"), None, "openbeach has no bench page");
     }
 
     /// Nothing OpenBeach uses may collide with OpenVolley: both apps run on
