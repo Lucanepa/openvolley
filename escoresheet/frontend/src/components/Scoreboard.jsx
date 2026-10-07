@@ -6387,8 +6387,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     } else if (event.type === 'court_captain_designation') {
       const playerNumber = event.payload?.playerNumber || '?'
       eventDescription = `${t('scoreboard.courtCaptainDesignation', 'Court captain designation')} — ${teamName} (#${playerNumber})`
+    } else if (event.type === 'bench_injury') {
+      const playerNumber = event.payload?.playerNumber || '?'
+      eventDescription = `Injury — ${teamName} (#${playerNumber}, bench)`
+    } else if (event.type === 'forfait') {
+      const scope = event.payload?.scope === 'match' ? 'match' : 'set'
+      const reason = event.payload?.reason ? `, ${String(event.payload.reason).replace(/_/g, ' ')}` : ''
+      eventDescription = `Team incomplete for the ${scope} — ${teamName}${reason}`
+    } else if (event.type === 'match_stopped') {
+      eventDescription = `Match stopped, cannot be resumed (${homeLabel} ${event.payload?.homePoints ?? homeScore}:${event.payload?.awayPoints ?? awayScore} ${awayLabel})`
     } else {
-      eventDescription = event.type
+      // Never show an internal type name: "some_event" reads "Some event"
+      const readable = String(event.type || '').replace(/_/g, ' ')
+      eventDescription = readable.charAt(0).toUpperCase() + readable.slice(1)
       if (teamName) {
         eventDescription += ` — ${teamName}`
       }
