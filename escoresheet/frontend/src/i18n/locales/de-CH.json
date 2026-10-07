@@ -490,7 +490,16 @@
       "confirm": "Bestätige",
       "close": "Schliesse",
       "modify": "Bearbeite",
-      "positionInput": "Spieler auf Position {{pos}}"
+      "positionInput": "Spieler auf Position {{pos}}",
+      "errors": {
+        "required": "Pflichtfeld",
+        "duplicate": "Doppelt",
+        "notOnRoster": "Nicht auf dem Matchblatt",
+        "libero": "Libero nicht erlaubt",
+        "disqualified": "Disqualifiziert",
+        "exceptionallySubstituted": "Ausserordentlich ersetzt",
+        "saveFailed": "Speichern fehlgeschlagen"
+      }
     },
     "lastAction": "Letschti Aktion:",
     "keybindings": {

@@ -1349,6 +1349,332 @@ button:disabled {
   height: 0;
 }
 
+/* Line-up entry modal (Scoreboard LineupModal). One constant size from open
+   to confirm: every slot (error messages, the edit tools, the players pool)
+   is reserved up front, so typing, picking, errors and Clear never move it.
+   Court on the left (net on top, front row IV III II, back row V VI I),
+   players and tools on the right; stacked below 940px. */
+.lineup-modal {
+  --lineup-col: 136px;
+  --lineup-gap: 12px;
+  --lineup-chip: 44px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-top: 4px;
+}
+
+.lineup-modal__body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+
+@media (max-width: 940px) {
+  .lineup-modal__body {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    gap: 20px;
+  }
+  .lineup-modal__side {
+    width: 100%;
+  }
+}
+
+.lineup-court {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: calc(3 * var(--lineup-col) + 2 * var(--lineup-gap));
+  max-width: 100%;
+}
+
+/* The net: exactly the grid's width, right above the front row */
+.lineup-net {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ov-rule);
+}
+
+.lineup-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--lineup-gap);
+}
+
+/* One position: label strip, number field and message slot in one shape
+   with a single hairline. Errors and focus redraw that one outline (a
+   box-shadow / outline, so the box never changes size). */
+.lineup-pos {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--ov-hairline-strong);
+  border-radius: var(--ov-radius-lg);
+  background: var(--ov-card);
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s, background-color 0.15s;
+}
+
+.lineup-pos__label {
+  height: 30px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ov-sunken-strong);
+  border-bottom: 1px solid var(--ov-hairline);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ov-text-secondary);
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.lineup-pos__field {
+  position: relative;
+  height: 76px;
+  flex: none;
+}
+
+.lineup-modal .lineup-pos__input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: center;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ov-text);
+  caret-color: var(--ov-text);
+}
+
+/* The box draws the focus ring, not the field (one shape, same corners) */
+.lineup-modal .lineup-pos__input:focus {
+  outline: none !important;
+}
+
+.lineup-pos:focus-within {
+  outline: 2px solid var(--ov-selected);
+  outline-offset: 2px;
+}
+
+/* The filled position: a disc in the shirt colour, as on the court and in
+   the players pool, whether it was typed, clicked or dropped */
+.lineup-disc,
+.lineup-disc-anchor {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 54px;
+  height: 54px;
+  margin: -27px 0 0 -27px;
+  border-radius: 9999px;
+  pointer-events: none;
+}
+
+.lineup-disc {
+  z-index: 0;
+  box-sizing: border-box;
+}
+
+.lineup-disc-anchor {
+  z-index: 2;
+}
+
+.lineup-pos__msg {
+  height: 34px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px 4px;
+  text-align: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 14px;
+  color: var(--ov-danger-text);
+  overflow: hidden;
+}
+
+.lineup-pos__msg > span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.lineup-pos[data-error] {
+  border-color: var(--ov-danger-text);
+  box-shadow: 0 0 0 1px var(--ov-danger-text);
+  background: var(--ov-danger-soft);
+}
+
+.lineup-pos[data-error] .lineup-pos__label {
+  background: var(--ov-danger-border);
+  border-bottom-color: #fecaca;
+  color: var(--ov-danger-text);
+}
+
+.lineup-pos[data-error]:focus-within {
+  outline-color: var(--ov-danger-text);
+}
+
+.lineup-pos[data-over] {
+  border-color: var(--ov-success);
+  box-shadow: 0 0 0 1px var(--ov-success);
+  background: var(--ov-success-soft);
+}
+
+/* Players pool: fixed height for a full roster (two rows of seven), so it
+   never shrinks as players move to the court */
+.lineup-pool {
+  padding: 12px 14px 14px;
+  border: 1px solid var(--ov-hairline);
+  border-radius: var(--ov-radius-lg);
+  background: var(--ov-sunken);
+}
+
+.lineup-pool__title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ov-text-secondary);
+}
+
+.lineup-pool__chips {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, var(--lineup-chip));
+  grid-auto-rows: var(--lineup-chip);
+  gap: 8px;
+  align-content: start;
+  height: calc(2 * var(--lineup-chip) + 8px + 10px);
+  padding: 5px 5px 5px 4px;
+  margin: 0 -5px 0 -4px;
+  overflow-y: auto;
+}
+
+.lineup-chip {
+  position: relative;
+  width: var(--lineup-chip);
+  height: var(--lineup-chip);
+  box-sizing: border-box;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: grab;
+  user-select: none;
+  transition: transform 0.15s, opacity 0.15s, box-shadow 0.15s;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
+
+.lineup-chip:hover {
+  transform: scale(1.08);
+}
+
+.lineup-chip:focus-visible {
+  outline: 2px solid var(--ov-selected) !important;
+  outline-offset: 2px;
+  border-radius: 9999px !important;
+}
+
+.lineup-chip[data-dragging] {
+  opacity: 0.45;
+  transform: none;
+}
+
+/* Captain mark, the same on a chip and on a filled position: white C on
+   stone-900 (17:1) with a white halo, legible on any shirt colour */
+.lineup-cap {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: var(--ov-text);
+  color: #ffffff;
+  box-shadow: 0 0 0 2px #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  text-shadow: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.lineup-lfp {
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0 3px;
+  height: 12px;
+  border-radius: 3px;
+  background: #c2410c;
+  color: #ffffff;
+  font-size: 7.5px;
+  font-weight: 700;
+  line-height: 12px;
+  text-shadow: none;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.lineup-modal__side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.lineup-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ov-text-muted);
+}
+
+.lineup-tools {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.lineup-rotate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  font-size: 13px;
+  color: var(--ov-text-muted);
+}
+
+.lineup-modal__footer {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ov-hairline);
+}
+
 @keyframes lineupFlash {
 
   0%,

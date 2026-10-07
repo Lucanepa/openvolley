@@ -491,7 +491,16 @@
       "confirm": "Confirm",
       "close": "Close",
       "modify": "Modify",
-      "positionInput": "Player at position {{pos}}"
+      "positionInput": "Player at position {{pos}}",
+      "errors": {
+        "required": "Required",
+        "duplicate": "Duplicate",
+        "notOnRoster": "Not on roster",
+        "libero": "Cannot be libero",
+        "disqualified": "Disqualified",
+        "exceptionallySubstituted": "Exceptionally substituted",
+        "saveFailed": "Save failed"
+      }
     },
     "lastAction": "Last action:",
     "keybindings": {

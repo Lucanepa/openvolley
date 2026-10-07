@@ -481,7 +481,7 @@
       "dragInstruction": "Veuillez écrire le numéro, le faire glisser et le déposer, ou cliquer sur le joueur disponible pour remplir chacune des positions disponibles",
       "clickOrDragTooltip": "Cliquer ou faire glisser pour assigner une position",
       "undoLastEdit": "Annuler la dernière modification",
-      "clearLineup": "Une ligne claire",
+      "clearLineup": "Effacer la composition",
       "rotate": "Rotation",
       "rotateClockwise": "Rotation dans le sens des aiguilles d'une montre",
       "rotateCounterclockwise": "Rotation dans le sens inverse des aiguilles d'une montre",
@@ -489,7 +489,16 @@
       "confirm": "Confirmer",
       "close": "Fermer",
       "modify": "Modifier",
-      "positionInput": "Joueur en position {{pos}}"
+      "positionInput": "Joueur en position {{pos}}",
+      "errors": {
+        "required": "Obligatoire",
+        "duplicate": "En double",
+        "notOnRoster": "Pas sur la feuille",
+        "libero": "Libéro interdit",
+        "disqualified": "Disqualifié",
+        "exceptionallySubstituted": "Remplacé exceptionnellement",
+        "saveFailed": "Échec de l’enregistrement"
+      }
     },
     "lastAction": "Dernière action :",
     "keybindings": {
