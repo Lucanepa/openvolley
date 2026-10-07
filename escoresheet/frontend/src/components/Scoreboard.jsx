@@ -24373,6 +24373,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   <SbMenuItem
                     tone="positive"
                     icon={<ArrowUpDown size={16} strokeWidth={2.5} />}
+                    onClick={() => {
+                      if (canSubstitute && courtPlayerToSwapWith) {
+                        setBenchPlayerActionMenu(null)
+                        // Go directly to substitution confirmation modal
+                        setSubstitutionConfirm({
+                          team,
+                          position: courtPlayerToSwapWith.position,
+                          playerOut: courtPlayerToSwapWith.number,
+                          playerIn: playerNumber
+                        })
+                      }
+                    }}
                     disabled={!canSubstitute}
                   >
                     Substitution
@@ -25715,7 +25727,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 gap: '6px',
                 minWidth: '140px',
                 transform: 'scale(1.5)',
-                transformOrigin: isRightSide ? 'top right' : 'top left'
+                // Grow around the anchor (the wrapper is centred on it with
+                // translateY(-50%)), so the 1.5x menu stays on screen for a
+                // libero low in the bench column.
+                transformOrigin: isRightSide ? 'center right' : 'center left'
               }}>
                 {/* Put in section - collapsible */}
                 {canPutIn && (
