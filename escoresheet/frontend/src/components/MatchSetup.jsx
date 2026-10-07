@@ -5,6 +5,8 @@ import { useAlert } from '../contexts/AlertContext'
 import { useAuth } from '../contexts/AuthContext'
 import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
+import { saveMatchSignature } from '../utils/saveSignature'
+import { signatureFieldOfRole } from '../domain/signatureEdits'
 import Modal from './Modal'
 import RefereeSelector from './RefereeSelector'
 import LoadOfficialMatchModal from './LoadOfficialMatchModal'
@@ -2258,6 +2260,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   }
 
   function handleSignatureSave(signatureImage) {
+    // an existing match: saved at once (owner 2026-10-07); a new one keeps it in the draft
+    if (matchId) saveMatchSignature(db, matchId, signatureFieldOfRole(openSignature), signatureImage)
     if (openSignature === 'home-coach') {
       setHomeCoachSignature(signatureImage)
     } else if (openSignature === 'home-captain') {
