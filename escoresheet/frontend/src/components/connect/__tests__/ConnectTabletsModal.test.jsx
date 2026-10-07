@@ -86,7 +86,15 @@ function tauri(handlers) {
   return { __TAURI_INTERNALS__: { invoke }, invoke }
 }
 
-const tab = (name) => fireEvent.click(screen.getByRole('radio', { name }))
+const SEED = 'match_1759740000000_ab12cd'
+
+/** Step 1: pick a connection by its card's name. */
+const choose = (name) => fireEvent.click(screen.getByRole('radio', { name }))
+/** Step 2: pick a tablet. */
+const pick = (role) => fireEvent.click(within(screen.getByTestId(`role-row-${role}`)).getByRole('radio'))
+/** Step 3: the link the shown code encodes, or null without a code. */
+const qrUrl = () => screen.queryByTestId('role-qr')?.getAttribute('data-url') || null
+const scanText = () => screen.getByTestId('qr-panel').textContent
 
 describe('ConnectTabletsModal', () => {
   beforeEach(() => {
@@ -99,68 +107,138 @@ describe('ConnectTabletsModal', () => {
     relayTablets.value = null
   })
 
-  it('lists every role on the hall Wi-Fi with its link, and PINs only on the scorer\'s screen', async () => {
+  it('hall Wi-Fi: three steps, one code per tablet, PINs only on the scorer\'s screen', async () => {
     renderModal({ match: MATCH, fetchImpl: okFetch(), win: {} })
     expect(screen.getByText('Connect tablets')).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: /LAN/ })).toHaveAttribute('aria-checked', 'true')
-    await waitFor(() => expect(screen.getByText('http://192.168.1.42:5173/referee?match=match_1759740000000_ab12cd')).toBeInTheDocument())
+    expect(screen.getByText('How tablets connect')).toBeInTheDocument()
+    expect(screen.getByText('Which tablet')).toBeInTheDocument()
+    expect(screen.getByText('Scan, then enter the PIN')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'Hall Wi-Fi' })).toHaveAttribute('aria-checked', 'true')
+    expect(within(screen.getByTestId('transport-hall')).getByText('Recommended')).toBeInTheDocument()
 
-    for (const role of ['main', 'referee', 'bench_home', 'bench_away', 'livescore']) {
-      expect(screen.getByTestId(`role-row-${role}`)).toBeInTheDocument()
-    }
-    expect(screen.getByText('http://192.168.1.42:5173/')).toBeInTheDocument()
-    expect(screen.getByText('http://192.168.1.42:5173/bench?match=match_1759740000000_ab12cd&team=home')).toBeInTheDocument()
-    expect(screen.getByText('http://192.168.1.42:5173/bench?match=match_1759740000000_ab12cd&team=away')).toBeInTheDocument()
-    // livescore follows the relay on the hall Wi-Fi: a link, no match, no PIN
-    expect(screen.getByText('http://192.168.1.42:5173/livescore')).toBeInTheDocument()
-    expect(screen.queryByTestId('role-note-livescore')).toBeNull()
+    // the referee is let in and picked first
+    await waitFor(() => expect(qrUrl()).toBe(`http://192.168.1.42:5173/referee?match=${SEED}`))
+    expect(screen.getByTestId('pin-referee')).toHaveTextContent('123 456')
+    expect(screen.getByTestId('pin-referee')).toHaveAttribute('aria-label', 'PIN 1 2 3 4 5 6')
 
-    // PINs: referee and home bench (let in); away bench is off, so no PIN; never the game PIN
-    expect(screen.getByTestId('pin-referee')).toHaveTextContent('123456')
-    expect(screen.getByTestId('pin-bench_home')).toHaveTextContent('234567')
+    pick('bench_home')
+    expect(qrUrl()).toBe(`http://192.168.1.42:5173/bench?match=${SEED}&team=home`)
+    expect(screen.getByTestId('pin-bench_home')).toHaveTextContent('234 567')
+    expect(within(screen.getByTestId('role-row-bench_home')).getByText('VBC Zürich')).toBeInTheDocument()
+
+    // the away bench is off: no code (its tablet would be told the PIN is wrong), no PIN
+    pick('bench_away')
+    expect(qrUrl()).toBeNull()
     expect(screen.queryByTestId('pin-bench_away')).toBeNull()
-    expect(within(screen.getByTestId('role-row-bench_away')).getByText('Off')).toBeInTheDocument()
-    expect(screen.queryByTestId('pin-main')).toBeNull()
-    expect(screen.queryByTestId('pin-livescore')).toBeNull()
-    expect(document.body.textContent).not.toContain('999999')
+    expect(screen.getByTestId('scan-off')).toHaveTextContent('Away bench is off. A tablet that scans now is told its PIN is wrong.')
+    expect(within(screen.getByTestId('role-row-bench_away')).getByText('Off · turn on to show its PIN')).toBeInTheDocument()
 
-    // the QR code encodes the link, never a PIN
-    const qr = screen.getByTestId('role-qr')
-    expect(within(qr).getByText('Referee')).toBeInTheDocument()
-    expect(screen.getByText(/Connected now: 2/)).toBeInTheDocument()
+    // livescore follows the relay on the hall Wi-Fi: a code, no match, no PIN
+    pick('livescore')
+    expect(qrUrl()).toBe('http://192.168.1.42:5173/livescore')
+    expect(screen.queryByTestId('pin-livescore')).toBeNull()
+    expect(scanText()).toContain('No PIN needed')
+
+    // the scoretable link sits in the footer, explained
+    expect(screen.getByTestId('role-row-main')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Scorer on another computer' }))
+    expect(screen.getByTestId('role-row-main')).toHaveTextContent('It does not follow this match.')
+
+    // never the game PIN
+    expect(document.body.textContent).not.toContain('999999')
+    expect(document.body.textContent).not.toContain('999 999')
   })
 
-  it('switches the hall address and the QR role', async () => {
+  it('switches the hall address, and remembers it', async () => {
     renderModal({ match: MATCH, fetchImpl: okFetch(), win: {} })
     const select = await screen.findByRole('combobox', { name: 'Address' })
     fireEvent.change(select, { target: { value: '10.0.0.5' } })
-    expect(screen.getByText('http://10.0.0.5:5173/referee?match=match_1759740000000_ab12cd')).toBeInTheDocument()
-    fireEvent.click(within(screen.getByTestId('role-row-bench_home')).getByRole('button', { name: /QR/ }))
-    expect(within(screen.getByTestId('role-qr')).getByText('Bench (home)')).toBeInTheDocument()
+    expect(qrUrl()).toBe(`http://10.0.0.5:5173/referee?match=${SEED}`)
+    expect(JSON.parse(localStorage.getItem('ov_connect_tablets_view'))).toEqual({ tab: 'lan', lanMode: 'hall', hallIp: '10.0.0.5' })
+
+    cleanup()
+    renderModal({ match: MATCH, fetchImpl: okFetch(), win: {} })
+    await waitFor(() => expect(qrUrl()).toBe(`http://10.0.0.5:5173/referee?match=${SEED}`))
   })
 
   it('lets a role in: local match and the cloud copy with every PIN', async () => {
     dbMock.matches.get.mockResolvedValue({ ...MATCH, awayTeamConnectionEnabled: true })
     renderModal({ match: MATCH, fetchImpl: okFetch(), win: {} })
-    fireEvent.click(screen.getByRole('switch', { name: 'Let Bench (away) in' }))
+    fireEvent.click(screen.getByRole('switch', { name: 'Let Away bench in' }))
     await waitFor(() => expect(dbMock.sync_queue.add).toHaveBeenCalled())
     expect(dbMock.matches.update).toHaveBeenCalledWith(7, { awayTeamConnectionEnabled: true })
     const payload = dbMock.sync_queue.add.mock.calls[0][0].payload
     expect(payload).toMatchObject({ id: MATCH.seed_key, connections: { away_bench_enabled: true } })
     expect(payload.connection_pins).toMatchObject({ referee: '123456', bench_home: '234567', bench_away: '345678' })
-    expect(screen.getByTestId('pin-bench_away')).toHaveTextContent('345678')
+    // flipping the switch picks that tablet too
+    expect(within(screen.getByTestId('role-row-bench_away')).getByRole('radio')).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByTestId('pin-bench_away')).toHaveTextContent('345 678')
+  })
+
+  it('an off role is let in from step 3 as well', async () => {
+    dbMock.matches.get.mockResolvedValue({ ...MATCH, awayTeamConnectionEnabled: true })
+    renderModal({ match: MATCH, fetchImpl: okFetch(), win: {} })
+    pick('bench_away')
+    fireEvent.click(screen.getByRole('button', { name: 'Let Away bench in' }))
+    await waitFor(() => expect(dbMock.matches.update).toHaveBeenCalledWith(7, { awayTeamConnectionEnabled: true }))
+    await waitFor(() => expect(qrUrl()).toBe(`http://192.168.1.42:5173/bench?match=${SEED}&team=away`))
+  })
+
+  it('starts on the first tablet that is let in', () => {
+    renderModal({ match: { ...MATCH, refereeConnectionEnabled: false }, fetchImpl: okFetch(), win: {} })
+    expect(within(screen.getByTestId('role-row-bench_home')).getByRole('radio')).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByTestId('scan-title')).toHaveTextContent('Home bench tablet')
+  })
+
+  it('a bench let in without a PIN says so and shows no code', () => {
+    renderModal({ match: { ...MATCH, homeTeamPin: null }, fetchImpl: okFetch(), win: {} })
+    pick('bench_home')
+    expect(qrUrl()).toBeNull()
+    expect(scanText()).toContain('This tablet has no PIN yet. Set one in Match setup › Connections.')
+    expect(within(screen.getByTestId('role-row-bench_home')).getByText('On · no PIN yet')).toBeInTheDocument()
+  })
+
+  it('live status: waiting, then connected with the time and the address', async () => {
+    relayTablets.value = {
+      reachable: true,
+      connections: {
+        clients: [{ id: 'c1', role: 'referee', matchId: SEED, ip: '192.168.1.23', connectedAt: '2026-10-07T12:32:05.000Z' }]
+      },
+      referee: 1,
+      benchHome: 0,
+      benchAway: 0
+    }
+    renderModal({ match: MATCH, fetchImpl: okFetch(), win: {} })
+    // a tablet already in shows before the code does
+    expect(screen.getByTestId('scan-status')).toHaveTextContent('Tablet connected at 14:32 (…23)')
+    await waitFor(() => expect(qrUrl()).not.toBeNull())
+    expect(screen.getByTestId('role-status-referee')).toHaveTextContent('Connected · since 14:32')
+    expect(screen.getByTestId('role-status-referee')).toHaveAttribute('data-status', 'connected')
+    expect(screen.getByTestId('role-status-bench_home')).toHaveTextContent('Waiting for the tablet…')
+    expect(screen.getByTestId('role-status-bench_away')).toHaveAttribute('data-status', 'off')
+    expect(screen.getByTestId('scan-status')).toHaveTextContent('Tablet connected at 14:32 (…23)')
+    expect(screen.getByTestId('devices-connected')).toHaveTextContent('Connected: Referee · 1 of 2 tablets')
+    pick('bench_home')
+    expect(screen.getByTestId('scan-status')).toHaveTextContent('Waiting for the tablet…')
+  })
+
+  it('live status: never "waiting" when the relay cannot be read', () => {
+    renderModal({ match: MATCH, fetchImpl: okFetch(), win: {} })
+    expect(screen.getByTestId('role-status-referee')).toHaveTextContent('Live status not available')
+    expect(screen.getByTestId('devices-connected')).toHaveTextContent('Live status not available')
   })
 
   it('in a browser: no Wi-Fi button, the desktop app and a travel router instead', async () => {
     renderModal({ match: MATCH, fetchImpl: okFetch(), win: {} })
-    fireEvent.click(screen.getByRole('radio', { name: 'Create Wi-Fi for tablets' }))
+    expect(within(screen.getByTestId('transport-laptop')).getByText('Needs the desktop app (Windows, Linux)')).toBeInTheDocument()
+    choose('Wi-Fi from this computer')
     expect(screen.getByText(/desktop app \(Windows, Linux\) can create its own Wi-Fi/)).toBeInTheDocument()
     expect(screen.getByText(/travel router/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Create Wi-Fi/ })).toBeNull()
-    expect(within(screen.getByTestId('role-row-referee')).getByText('Needs the desktop app')).toBeInTheDocument()
+    expect(screen.getByTestId('scan-no-link')).toHaveTextContent('Needs the desktop app')
   })
 
-  it('desktop app: creates the Wi-Fi and shows its QR next to the role link on the laptop address', async () => {
+  it('desktop app: creates the Wi-Fi and shows its code in step 1, the tablet\'s code in step 3', async () => {
     let active = false
     const win = tauri({
       hotspot_status: () => ({ supported: true, active, platform: 'linux', method: 'networkmanager', ssid: 'OpenVolley-AB12', password: 'example-Pq2m', takesOverWifi: true, gatewayIp: active ? '10.42.0.1' : null }),
@@ -169,22 +247,30 @@ describe('ConnectTabletsModal', () => {
       bluetooth_status: () => ({ supported: false })
     })
     renderModal({ match: MATCH, fetchImpl: okFetch(), win })
-    fireEvent.click(screen.getByRole('radio', { name: 'Create Wi-Fi for tablets' }))
+    choose('Wi-Fi from this computer')
     await waitFor(() => expect(screen.getByTestId('network-ssid')).toHaveTextContent('OpenVolley-AB12'))
     expect(screen.getByTestId('network-password')).toHaveTextContent('example-Pq2m')
     expect(screen.getByText(/leaves its current Wi-Fi/)).toBeInTheDocument()
     expect(screen.queryByTestId('wifi-qr')).toBeNull()
-    expect(within(screen.getByTestId('role-row-referee')).getByText('Create the Wi-Fi first')).toBeInTheDocument()
+    expect(screen.getByTestId('scan-no-link')).toHaveTextContent('Create the Wi-Fi first (step 1)')
+    // nothing to scan yet: no "waiting for the tablet"
+    expect(screen.queryByTestId('scan-status')).toBeNull()
 
     // one card: it leaves the hall Wi-Fi, so it asks first
     fireEvent.click(screen.getByRole('button', { name: 'Create Wi-Fi' }))
     expect(await screen.findByTestId('confirm-dialog')).toHaveTextContent('Leave the hall Wi-Fi?')
     fireEvent.click(screen.getByTestId('confirm-accept'))
     await waitFor(() => expect(screen.getByTestId('wifi-qr')).toBeInTheDocument())
+    expect(within(screen.getByTestId('hotspot-panel')).getByTestId('wifi-qr')).toBeInTheDocument()
+    expect(screen.getByTestId('wifi-qr-caption')).toHaveTextContent('Scan to join this Wi-Fi first')
     expect(win.invoke).toHaveBeenCalledWith('hotspot_start', {})
-    expect(screen.getByText('http://10.42.0.1:5173/referee?match=match_1759740000000_ab12cd')).toBeInTheDocument()
+    expect(qrUrl()).toBe(`http://10.42.0.1:5173/referee?match=${SEED}`)
     expect(within(screen.getByTestId('wifi-qr')).getByText('OpenVolley-AB12')).toBeInTheDocument()
     expect(JSON.parse(localStorage.getItem('ov_tablet_wifi'))).toEqual({ ssid: 'OpenVolley-AB12', password: 'example-Pq2m' })
+    // the join steps wait behind "How to join"
+    expect(screen.queryByText(/Choose “Stay connected”/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'How to join' }))
+    expect(screen.getByText(/Choose “Stay connected”/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Stop Wi-Fi' }))
     await waitFor(() => expect(screen.queryByTestId('wifi-qr')).toBeNull())
@@ -197,49 +283,74 @@ describe('ConnectTabletsModal', () => {
       bluetooth_status: () => ({ supported: false })
     })
     renderModal({ match: MATCH, fetchImpl: okFetch(), win })
-    fireEvent.click(screen.getByRole('radio', { name: 'Create Wi-Fi for tablets' }))
+    await waitFor(() => expect(within(screen.getByTestId('transport-laptop')).getByText('This computer cannot create a Wi-Fi')).toBeInTheDocument())
+    choose('Wi-Fi from this computer')
     await waitFor(() => expect(screen.getByText(/cannot act as an access point/)).toBeInTheDocument())
     expect(screen.getByText('wlp1s0')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Create Wi-Fi' })).toBeNull()
   })
 
-  it('server tab: cloud links, game number, and sign-in when signed out', async () => {
+  it('internet, signed out: sign in first; the link can be copied but there is no code yet', async () => {
     authState.value = { user: null }
     renderModal({ match: MATCH, fetchImpl: okFetch(), win: {} })
-    tab(/Server/)
-    expect(screen.getByText('https://referee.openvolley.app/?server=https%3A%2F%2Fbackend.openvolley.app&match=match_1759740000000_ab12cd')).toBeInTheDocument()
-    expect(screen.getByText('https://bench.openvolley.app/?server=https%3A%2F%2Fbackend.openvolley.app&match=match_1759740000000_ab12cd&team=away')).toBeInTheDocument()
+    choose('Internet')
     expect(screen.getByTestId('server-game-number')).toHaveTextContent('4711')
     expect(screen.getByText('Synced')).toBeInTheDocument()
     expect(screen.getByText('Not signed in')).toBeInTheDocument()
+    expect(qrUrl()).toBeNull()
+    expect(screen.getByTestId('scan-no-link')).toHaveTextContent('Sign in first (step 1)')
+    expect(screen.getByRole('button', { name: 'Copy link' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Type the address' }))
+    expect(screen.getByTestId('scan-url')).toHaveTextContent(`https://referee.openvolley.app/?server=https%3A%2F%2Fbackend.openvolley.app&match=${SEED}`)
+    pick('bench_home')
+    fireEvent.click(screen.getByRole('button', { name: 'Type the address' }))
+    expect(screen.getByTestId('scan-url')).toHaveTextContent(`https://bench.openvolley.app/?server=https%3A%2F%2Fbackend.openvolley.app&match=${SEED}&team=home`)
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
     expect(screen.getByTestId('login-modal')).toBeInTheDocument()
-    expect(screen.getByTestId('pin-referee')).toHaveTextContent('123456')
   })
 
-  it('server tab: the signed-in account, and no links where the cloud is blocked', () => {
+  it('internet, signed in: the cloud code, and a status that does not pretend to see cloud tablets', () => {
+    authState.value = { user: { email: 'scorer@example.org' } }
+    relayTablets.value = { reachable: true, connections: { clients: [] }, referee: 0, benchHome: 0, benchAway: 0 }
+    renderModal({ match: MATCH, fetchImpl: okFetch(), win: {} })
+    choose('Internet')
+    expect(screen.getByTestId('server-account')).toHaveTextContent('scorer@example.org')
+    expect(qrUrl()).toBe(`https://referee.openvolley.app/?server=https%3A%2F%2Fbackend.openvolley.app&match=${SEED}`)
+    expect(screen.getByTestId('pin-referee')).toHaveTextContent('123 456')
+    expect(screen.getByTestId('role-status-referee')).toHaveTextContent('On · status not visible over the internet')
+    expect(screen.getByTestId('scan-status')).toHaveTextContent('Ask them to confirm they are in')
+    expect(screen.getByTestId('devices-connected')).toHaveTextContent('Live status shows tablets on this network only')
+  })
+
+  it('internet where the cloud is blocked: dimmed with the reason, no links', () => {
     backend.cloudBlocked = true
     authState.value = { user: { email: 'scorer@example.org' } }
+    localStorage.setItem('ov_connect_tablets_view', JSON.stringify({ tab: 'server', lanMode: 'hall' }))
     renderModal({ match: MATCH, fetchImpl: okFetch(), win: {} })
-    tab(/Server/)
-    expect(screen.getByTestId('server-account')).toHaveTextContent('scorer@example.org')
+    // the saved choice cannot work here: the recommendation instead
+    expect(screen.getByRole('radio', { name: 'Hall Wi-Fi' })).toHaveAttribute('aria-checked', 'true')
+    expect(within(screen.getByTestId('transport-server')).getByText('Cloud is off in this app window')).toBeInTheDocument()
+    choose('Internet')
     expect(screen.getByText(/does not run on port 5173/)).toBeInTheDocument()
-    expect(within(screen.getByTestId('role-row-referee')).getByRole('button', { name: /Copy/ })).toBeDisabled()
+    expect(qrUrl()).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Copy link' })).toBeNull()
   })
 
-  it('bluetooth tab: Windows says it cannot serve a Bluetooth network', async () => {
+  it('bluetooth: Windows says it cannot serve a Bluetooth network', async () => {
     const win = tauri({
-      hotspot_status: () => ({ supported: true, active: false, ssid: 'a', password: 'b' }),
+      hotspot_status: () => ({ supported: true, active: false, platform: 'windows', ssid: 'a', password: 'b' }),
       bluetooth_status: () => ({ supported: false, reason: 'windows-cannot-serve', platform: 'windows' })
     })
     renderModal({ match: MATCH, fetchImpl: okFetch(), win })
-    tab(/Bluetooth/)
-    await waitFor(() => expect(screen.getByText(/Windows cannot host a Bluetooth network/)).toBeInTheDocument())
-    expect(screen.getByText(/Planned: a direct Bluetooth link/)).toBeInTheDocument()
-    expect(within(screen.getByTestId('role-row-referee')).getByText('Not available on this computer')).toBeInTheDocument()
+    await waitFor(() => expect(within(screen.getByTestId('transport-bluetooth')).getByText('Windows cannot host a Bluetooth network')).toBeInTheDocument())
+    choose('Bluetooth')
+    await waitFor(() => expect(screen.getByText(/Windows cannot host a Bluetooth network for tablets/)).toBeInTheDocument())
+    expect(screen.queryByText(/Planned: a direct Bluetooth link/)).toBeNull()
+    expect(screen.getByText(/Wi-Fi from this computer” instead/)).toBeInTheDocument()
+    expect(screen.getByTestId('scan-no-link')).toHaveTextContent('Not available on this computer')
   })
 
-  it('bluetooth tab: Linux starts the network and links its address', async () => {
+  it('bluetooth: Linux starts the network and links its address', async () => {
     let active = false
     const win = tauri({
       hotspot_status: () => ({ supported: true, active: false, ssid: 'a', password: 'b' }),
@@ -247,36 +358,32 @@ describe('ConnectTabletsModal', () => {
       bluetooth_start: () => { active = true; return { supported: true, active: true, adapterName: 'framework', ip: '10.42.1.1', discoverable: true } }
     })
     renderModal({ match: MATCH, fetchImpl: okFetch(), win })
-    tab(/Bluetooth/)
+    choose('Bluetooth')
+    expect(within(screen.getByTestId('transport-bluetooth')).getByText('Experimental')).toBeInTheDocument()
     fireEvent.click(await screen.findByRole('button', { name: 'Start Bluetooth network' }))
-    await waitFor(() => expect(screen.getByText('http://10.42.1.1:5173/referee?match=match_1759740000000_ab12cd')).toBeInTheDocument())
+    await waitFor(() => expect(qrUrl()).toBe(`http://10.42.1.1:5173/referee?match=${SEED}`))
+    fireEvent.click(screen.getByRole('button', { name: 'How to pair' }))
     expect(screen.getByText(/pair with “framework”/)).toBeInTheDocument()
   })
 
-  it('livescore: a link and QR code on the laptop\'s Wi-Fi and Bluetooth (the relay feed), the cloud link on Server', async () => {
-    let active = true
+  it('livescore: a code on the laptop\'s Wi-Fi and Bluetooth (the relay feed), the cloud link on Internet', async () => {
     const win = tauri({
-      hotspot_status: () => ({ supported: true, active, platform: 'linux', ssid: 'OpenVolley-AB12', password: 'example-Pq2m', gatewayIp: '10.42.0.1' }),
+      hotspot_status: () => ({ supported: true, active: true, platform: 'linux', ssid: 'OpenVolley-AB12', password: 'example-Pq2m', gatewayIp: '10.42.0.1' }),
       bluetooth_status: () => ({ supported: true, active: true, adapterName: 'framework', ip: '10.42.1.1', platform: 'linux' })
     })
     renderModal({ match: MATCH, fetchImpl: okFetch(), win })
-    // the open Wi-Fi brings the dialog to "Create Wi-Fi"
-    await waitFor(() => expect(screen.getByText('http://10.42.0.1:5173/referee?match=match_1759740000000_ab12cd')).toBeInTheDocument())
-    const row = () => screen.getByTestId('role-row-livescore')
-    expect(within(row()).getByText('http://10.42.0.1:5173/livescore')).toBeInTheDocument()
-    expect(within(row()).queryByText(/Needs internet/)).toBeNull()
-    expect(within(row()).getByRole('button', { name: /QR/ })).toBeEnabled()
-    expect(within(row()).getByRole('button', { name: /Copy/ })).toBeEnabled()
+    // the open Wi-Fi brings the dialog to "Wi-Fi from this computer"
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Wi-Fi from this computer' })).toHaveAttribute('aria-checked', 'true'))
+    pick('livescore')
+    await waitFor(() => expect(qrUrl()).toBe('http://10.42.0.1:5173/livescore'))
+    expect(within(screen.getByTestId('role-row-livescore')).getByText('Public · no PIN')).toBeInTheDocument()
+    expect(within(screen.getByTestId('role-row-livescore')).queryByRole('switch')).toBeNull()
 
-    tab(/Bluetooth/)
-    await waitFor(() => expect(screen.getByText('http://10.42.1.1:5173/referee?match=match_1759740000000_ab12cd')).toBeInTheDocument())
-    expect(within(row()).getByText('http://10.42.1.1:5173/livescore')).toBeInTheDocument()
-    expect(within(row()).getByRole('button', { name: /QR/ })).toBeEnabled()
+    choose('Bluetooth')
+    await waitFor(() => expect(qrUrl()).toBe('http://10.42.1.1:5173/livescore'))
 
-    tab(/Server/)
-    expect(within(row()).getByText(/^https:\/\/livescore\.openvolley\.app\//)).toBeInTheDocument()
-    expect(within(row()).getByRole('button', { name: /QR/ })).toBeEnabled()
-    active = false
+    choose('Internet')
+    expect(qrUrl()).toMatch(/^https:\/\/livescore\.openvolley\.app\//)
   })
 
   it('hall Wi-Fi: a hotspot switched on outside the app is offered as "This computer’s hotspot"', async () => {
@@ -287,9 +394,8 @@ describe('ConnectTabletsModal', () => {
       bluetooth_status: () => ({ supported: false, reason: 'windows-cannot-serve', platform: 'windows' })
     })
     renderModal({ match: MATCH, fetchImpl: okFetch(status), win })
-    await waitFor(() => expect(screen.getByText('http://192.168.137.1:5173/referee?match=match_1759740000000_ab12cd')).toBeInTheDocument())
-    expect(screen.getByText('192.168.137.1 · This computer’s hotspot')).toBeInTheDocument()
-    expect(screen.queryByText('No hall network')).toBeNull()
+    await waitFor(() => expect(qrUrl()).toBe(`http://192.168.137.1:5173/referee?match=${SEED}`))
+    expect(screen.getByTestId('hall-address')).toHaveTextContent('This computer: 192.168.137.1 (This computer’s hotspot)')
 
     // with the uplink too: both, the hotspot pickable
     cleanup()
@@ -298,19 +404,31 @@ describe('ConnectTabletsModal', () => {
     const select = await screen.findByRole('combobox', { name: 'Address' })
     expect(within(select).getByRole('option', { name: /192\.168\.137\.1 · This computer’s hotspot/ })).toBeInTheDocument()
     fireEvent.change(select, { target: { value: '192.168.137.1' } })
-    expect(screen.getByText('http://192.168.137.1:5173/bench?match=match_1759740000000_ab12cd&team=home')).toBeInTheDocument()
+    pick('bench_home')
+    expect(qrUrl()).toBe(`http://192.168.137.1:5173/bench?match=${SEED}&team=home`)
   })
 
-  it('create Wi-Fi: a hotspot the system runs shows its links and Wi-Fi code, and cannot be stopped here', async () => {
+  it('hall Wi-Fi: names the Wi-Fi to join where the system says it', async () => {
+    const win = tauri({
+      hotspot_status: () => ({ supported: true, active: false, platform: 'linux', ssid: 'a', password: 'b', takesOverWifi: true, leavesNetwork: 'Halle-WLAN' }),
+      bluetooth_status: () => ({ supported: false })
+    })
+    renderModal({ match: MATCH, fetchImpl: okFetch(), win })
+    await waitFor(() => expect(screen.getByText('Tablets join the Wi-Fi “Halle-WLAN”.')).toBeInTheDocument())
+    expect(screen.getByTestId('isolation-tip')).toHaveTextContent('Some hall Wi-Fis keep devices apart')
+  })
+
+  it('create Wi-Fi: a hotspot the system runs shows its codes, and cannot be stopped here', async () => {
     const win = tauri({
       hotspot_status: () => ({ supported: true, active: true, external: true, platform: 'windows', method: 'mobile-hotspot', ssid: 'Luca-PC', password: 'home-secret', gatewayIp: '192.168.137.1', clients: 2, maxClients: 8 }),
       bluetooth_status: () => ({ supported: false, reason: 'windows-cannot-serve', platform: 'windows' })
     })
     renderModal({ match: MATCH, fetchImpl: okFetch(), win })
-    await waitFor(() => expect(screen.getByText('http://192.168.137.1:5173/referee?match=match_1759740000000_ab12cd')).toBeInTheDocument())
+    await waitFor(() => expect(qrUrl()).toBe(`http://192.168.137.1:5173/referee?match=${SEED}`))
     expect(screen.getByText(/switched on in the system settings/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Stop Wi-Fi' })).toBeDisabled()
     expect(within(screen.getByTestId('wifi-qr')).getByText('Luca-PC')).toBeInTheDocument()
+    expect(screen.getByText('2 of 8 devices joined')).toBeInTheDocument()
     // the user's own hotspot settings are never stored as the tablets' Wi-Fi
     expect(localStorage.getItem('ov_tablet_wifi')).toBeNull()
   })
@@ -331,12 +449,11 @@ describe('ConnectTabletsModal', () => {
       bluetooth_status: () => ({ supported: false, reason: 'windows-cannot-serve', platform: 'windows' })
     })
     renderModal({ match: MATCH, fetchImpl: okFetch(), win })
-    await waitFor(() => expect(screen.getByText('http://192.168.137.1:5173/referee?match=match_1759740000000_ab12cd')).toBeInTheDocument())
+    await waitFor(() => expect(qrUrl()).toBe(`http://192.168.137.1:5173/referee?match=${SEED}`))
     await waitFor(() => expect(win.invoke).toHaveBeenCalledWith('firewall_status', {}))
-    expect(screen.getByText(/Choose “Stay connected”/)).toBeInTheDocument()
     expect(screen.queryByText(/tick “Public”/)).toBeNull()
-    fireEvent.click(screen.getByRole('radio', { name: 'Hall Wi-Fi' }))
-    await waitFor(() => expect(screen.getByText('http://192.168.1.42:5173/referee?match=match_1759740000000_ab12cd')).toBeInTheDocument())
+    choose('Hall Wi-Fi')
+    await waitFor(() => expect(qrUrl()).toBe(`http://192.168.1.42:5173/referee?match=${SEED}`))
     expect(screen.queryByTestId('firewall-step')).toBeNull()
   })
 
@@ -349,11 +466,11 @@ describe('ConnectTabletsModal', () => {
     })
     renderModal({ match: MATCH, fetchImpl: okFetch(), win })
     // the hotspot (platform windows) has answered, the firewall check not yet
-    await waitFor(() => expect(screen.getByText(/Choose “Stay connected”/)).toBeInTheDocument())
+    await waitFor(() => expect(qrUrl()).toBe(`http://192.168.137.1:5173/referee?match=${SEED}`))
     await waitFor(() => expect(answer).toBeTypeOf('function'))
     expect(screen.queryByText(/tick “Public”/)).toBeNull()
-    fireEvent.click(screen.getByRole('radio', { name: 'Hall Wi-Fi' }))
-    await waitFor(() => expect(screen.getByText('http://192.168.1.42:5173/referee?match=match_1759740000000_ab12cd')).toBeInTheDocument())
+    choose('Hall Wi-Fi')
+    await waitFor(() => expect(qrUrl()).toBe(`http://192.168.1.42:5173/referee?match=${SEED}`))
     expect(screen.queryByTestId('firewall-step')).toBeNull()
     // then a Block rule for the app: the step
     answer({ platform: 'windows', supported: true, ready: false, reason: 'blocked-by-rule' })
@@ -377,10 +494,10 @@ describe('ConnectTabletsModal', () => {
       bluetooth_status: () => ({ supported: false })
     })
     renderModal({ match: MATCH, fetchImpl: okFetch(), win })
-    await waitFor(() => expect(screen.getByText(/Choose “Stay connected”/)).toBeInTheDocument())
+    await waitFor(() => expect(qrUrl()).toBe(`http://10.42.0.1:5173/referee?match=${SEED}`))
     await waitFor(() => expect(win.invoke).toHaveBeenCalledWith('firewall_status', {}))
     expect(screen.queryByText(/tick “Public”/)).toBeNull()
-    fireEvent.click(screen.getByRole('radio', { name: 'Hall Wi-Fi' }))
+    choose('Hall Wi-Fi')
     expect(screen.queryByTestId('firewall-step')).toBeNull()
   })
 
@@ -392,7 +509,7 @@ describe('ConnectTabletsModal', () => {
       bluetooth_status: () => ({ supported: false })
     })
     renderModal({ match: MATCH, fetchImpl: okFetch(), win })
-    fireEvent.click(screen.getByRole('radio', { name: 'Create Wi-Fi for tablets' }))
+    choose('Wi-Fi from this computer')
     fireEvent.click(await screen.findByRole('button', { name: 'Create Wi-Fi' }))
     const dialog = await screen.findByTestId('confirm-dialog')
     expect(dialog).toHaveTextContent('This computer leaves Halle-WLAN')
@@ -433,7 +550,7 @@ describe('ConnectTabletsModal', () => {
       bluetooth_status: () => ({ supported: false })
     })
     renderModal({ match: MATCH, fetchImpl: okFetch(), win })
-    fireEvent.click(screen.getByRole('radio', { name: 'Create Wi-Fi for tablets' }))
+    choose('Wi-Fi from this computer')
     await waitFor(() => expect(screen.getByTestId('network-password')).toHaveTextContent('leaked123456'))
     fireEvent.click(screen.getByRole('button', { name: 'New password' }))
     await waitFor(() => expect(screen.getByTestId('network-password')).not.toHaveTextContent('leaked123456'))
@@ -441,39 +558,65 @@ describe('ConnectTabletsModal', () => {
     expect(JSON.parse(localStorage.getItem('ov_tablet_wifi')).password).toBe(screen.getByTestId('network-password').textContent)
   })
 
-  it('bluetooth tab: a Bluetooth network the computer only joined (Windows tethering) gives no links', async () => {
+  it('bluetooth: a Bluetooth network the computer only joined (Windows tethering) gives no links', async () => {
     const status = { ...STATUS, interfaces: [...STATUS.interfaces, { name: 'Bluetooth Network Connection', ip: '192.168.44.3', kind: 'bluetooth' }] }
     const win = tauri({
       hotspot_status: () => ({ supported: true, active: false, platform: 'windows', ssid: 'a', password: 'b' }),
       bluetooth_status: () => ({ supported: false, reason: 'windows-cannot-serve', platform: 'windows' })
     })
     renderModal({ match: MATCH, fetchImpl: okFetch(status), win })
-    tab(/Bluetooth/)
-    await waitFor(() => expect(screen.getByText(/Windows cannot host a Bluetooth network/)).toBeInTheDocument())
+    choose('Bluetooth')
+    await waitFor(() => expect(screen.getByText(/Windows cannot host a Bluetooth network for tablets/)).toBeInTheDocument())
     expect(screen.queryByText(/192\.168\.44\.3/)).toBeNull()
-    for (const role of ['main', 'referee', 'bench_home', 'bench_away']) {
-      expect(within(screen.getByTestId(`role-row-${role}`)).getByRole('button', { name: /Copy/ })).toBeDisabled()
+    for (const role of ['referee', 'bench_home', 'livescore']) {
+      pick(role)
+      expect(qrUrl()).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Copy link' })).toBeNull()
     }
   })
 
-  it('bluetooth tab: a Bluetooth network not started by this run cannot be stopped here', async () => {
+  it('bluetooth: a Bluetooth network not started by this run cannot be stopped here', async () => {
     const win = tauri({
       hotspot_status: () => ({ supported: true, active: false, ssid: 'a', password: 'b' }),
       bluetooth_status: () => ({ supported: true, active: true, external: true, adapterName: 'framework', ip: '10.42.1.1', platform: 'linux' })
     })
     renderModal({ match: MATCH, fetchImpl: okFetch(), win })
-    tab(/Bluetooth/)
+    choose('Bluetooth')
     await waitFor(() => expect(screen.getByRole('button', { name: 'Stop Bluetooth network' })).toBeDisabled())
     expect(screen.getByText(/not started by this app run/)).toBeInTheDocument()
   })
 
-  it('without a local server (web build) the LAN tab points to the desktop app', () => {
+  it('without a local server (web build): opens on Internet; Hall Wi-Fi points to the desktop app', () => {
     backend.statusUrl = null
+    localStorage.setItem('ov_connect_tablets_view', JSON.stringify({ tab: 'lan', lanMode: 'hall' }))
     renderModal({ match: null, fetchImpl: okFetch(), win: {} })
-    // opens on Server; LAN explains
-    expect(screen.getByRole('radio', { name: /Server/ })).toHaveAttribute('aria-checked', 'true')
-    tab(/LAN/)
+    // the saved hall choice cannot work in a browser
+    expect(screen.getByRole('radio', { name: 'Internet' })).toHaveAttribute('aria-checked', 'true')
+    expect(within(screen.getByTestId('transport-hall')).getByText('Needs the desktop app or a venue box')).toBeInTheDocument()
+    expect(within(screen.getByTestId('transport-server')).getByText('Recommended')).toBeInTheDocument()
+    choose('Hall Wi-Fi')
     expect(screen.getByText(/need the OpenVolley desktop app/)).toBeInTheDocument()
-    expect(screen.getAllByText('Open a match to get links and PINs for it.').length).toBeGreaterThan(0)
+    expect(screen.getByText(/In a browser, choose Internet\./)).toBeInTheDocument()
+    // no match: no tablets, no codes
+    expect(screen.getByTestId('no-match')).toHaveTextContent('Open a match first')
+    expect(screen.queryByTestId('qr-panel')).toBeNull()
+  })
+
+  it('arrow keys move the choice in step 1 and step 2', () => {
+    renderModal({ match: MATCH, fetchImpl: okFetch(), win: {} })
+    fireEvent.keyDown(screen.getByRole('radio', { name: 'Hall Wi-Fi' }), { key: 'ArrowDown' })
+    expect(screen.getByRole('radio', { name: 'Wi-Fi from this computer' })).toHaveAttribute('aria-checked', 'true')
+    expect(document.activeElement).toBe(screen.getByRole('radio', { name: 'Wi-Fi from this computer' }))
+    fireEvent.keyDown(within(screen.getByTestId('role-row-referee')).getByRole('radio'), { key: 'ArrowDown' })
+    expect(within(screen.getByTestId('role-row-bench_home')).getByRole('radio')).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('no hover-only tooltips (title=) anywhere in the dialog', async () => {
+    authState.value = { user: null }
+    renderModal({ match: MATCH, fetchImpl: okFetch(), win: {} })
+    await waitFor(() => expect(qrUrl()).not.toBeNull())
+    expect(screen.getByRole('dialog').querySelectorAll('[title]')).toHaveLength(0)
+    choose('Internet')
+    expect(screen.getByRole('dialog').querySelectorAll('[title]')).toHaveLength(0)
   })
 })

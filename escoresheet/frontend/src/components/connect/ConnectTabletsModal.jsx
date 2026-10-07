@@ -1,8 +1,8 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { Bluetooth, Cloud, Tablet, Wifi } from 'lucide-react'
-import { Modal, SegmentedControl, confirmDialog } from '../../ui'
+import { Tablet } from 'lucide-react'
+import { Button, EmptyState, Modal, confirmDialog } from '../../ui'
 import { AuthContext } from '../../contexts/AuthContext'
 import LoginModal from '../auth/LoginModal'
 import { useSyncStatus } from '../../hooks/useSyncQueue'
@@ -17,18 +17,17 @@ import {
 import {
   bluetoothNetwork, displayedWifi, firewall, hotspot, isTabletNetworkAvailable, needsFirewallStep, netError, renewWifiPassword
 } from '../../utils/tabletNetwork'
-import { QrPanel, RoleRows } from './RoleLinks'
 import { BluetoothPanel, HallPanel, HotspotPanel, ServerPanel } from './NetworkPanels'
+import { TransportPicker } from './TransportPicker'
+import { RoleCards } from './RoleCards'
+import { CopyLinkButton, ScanPanel } from './ScanPanel'
+import { Disclosure, StepHeading, useRoleLabels } from './parts'
+import {
+  PICKABLE_ROLES, connectedSummary, defaultRole, initialTransport, readView, roleStatus, saveView, transportOf,
+  transportOptions, viewFor
+} from './connectView'
 
-const VIEW_KEY = 'ov_connect_tablets_view'
 const POLL_MS = 6000
-
-function readView() {
-  try { return JSON.parse(localStorage.getItem(VIEW_KEY) || 'null') || {} } catch { return {} }
-}
-function saveView(view) {
-  try { localStorage.setItem(VIEW_KEY, JSON.stringify(view)) } catch { /* private mode */ }
-}
 
 /**
  * Let a role in (or out) on the scorer's match: the local match, and the
@@ -62,47 +61,53 @@ function usePoll(active, load) {
 }
 
 /**
- * "Connect tablets": every role (scoretable, referee, home and away bench,
- * livescore) with its link, QR code and PIN, over
+ * "Connect tablets", in three steps:
  *
- *   - LAN: the hall Wi-Fi, or a Wi-Fi this laptop creates (desktop app);
- *   - Server: the cloud (scorer signed in, match synced, tablets online);
- *   - Bluetooth: a Bluetooth network this laptop serves (desktop app on
- *     Linux; Windows cannot serve one).
+ *   1. How tablets connect: the hall Wi-Fi, a Wi-Fi this computer creates
+ *      (desktop app), the internet (cloud; scorer signed in, match synced)
+ *      or a Bluetooth network this computer serves (desktop app on Linux).
+ *   2. Which tablet: referee, home and away bench (each switched on here to
+ *      be let in), livescore; each with its live state.
+ *   3. Scan, then enter the PIN: the picked tablet's code and its PIN.
  *
- * Every role has a LAN / Bluetooth link: the livescore served by the relay
- * follows the relay's public match summaries, no internet needed
+ * Every role has a link on every local network: the livescore served by the
+ * relay follows the relay's public match summaries, no internet needed
  * (utils/relayLivescore; tabletLinks LAN_UNAVAILABLE_ROLES is empty).
  *
  * Links only preselect the match; each tablet asks for its role's PIN, which
  * is shown here and never put in a link or a QR code. The game PIN is never
- * shown (the relay accepts it for every role).
+ * shown (the relay accepts it for every role). A role that is off gets no
+ * code: its tablet would be told its (right) PIN is wrong.
  */
 export default function ConnectTabletsModal({ open, onClose, match = null, fetchImpl = fetch, win = typeof window !== 'undefined' ? window : undefined }) {
   const { t } = useTranslation()
+  const labels = useRoleLabels()
   // Outside an AuthProvider (a test, an embedded page) there is no account
   const auth = useContext(AuthContext) || null
   const syncStatus = useSyncStatus()
   const desktop = isTabletNetworkAvailable(win)
   const statusUrl = getLocalServerStatusUrl()
   const served = !!statusUrl
+  const cloudBlocked = isCloudBlockedOnThisPort()
 
+  // { tab, lanMode, hallIp }: the saved shape (connectView); a saved
+  // connection that cannot work on this device opens on the recommendation
   const [view, setView] = useState(() => {
-    const v = readView()
-    const tab = ['lan', 'server', 'bluetooth'].includes(v.tab) ? v.tab : (served || desktop ? 'lan' : 'server')
-    return { tab, lanMode: v.lanMode === 'laptop' ? 'laptop' : 'hall' }
+    const saved = readView()
+    const options = transportOptions({ served, desktop, relayLoading: served, cloudBlocked })
+    return { ...viewFor(saved, initialTransport(transportOf(saved), options)), hallIp: saved.hallIp }
   })
-  const setTab = (tab) => setView(v => { const next = { ...v, tab }; saveView(next); return next })
-  const setLanMode = (lanMode) => setView(v => { const next = { ...v, lanMode }; saveView(next); return next })
+  const updateView = (fn) => setView(v => { const next = fn(v); saveView(next); return next })
+  const chooseTransport = (id) => updateView(v => viewFor(v, id))
+  const setHallIp = (ip) => updateView(v => ({ ...v, hallIp: ip || null }))
+  const transport = transportOf(view)
 
   const [relay, setRelay] = useState({ loading: served, status: null })
-  const [hallIp, setHallIp] = useState(null)
   const [hs, setHs] = useState({ loading: desktop, status: null, busy: false, error: null })
   const [bt, setBt] = useState({ loading: desktop, status: null, busy: false, error: null })
   // Windows: is the installer's firewall rule for the tablets there?
   // undefined = not answered yet (no step meanwhile), null = the check failed
   const [fw, setFw] = useState(undefined)
-  const [qrRole, setQrRole] = useState('referee')
   const [showLogin, setShowLogin] = useState(false)
   const [roleOverride, setRoleOverride] = useState({})
   // Bumped when the remembered Wi-Fi password changes (it lives in localStorage)
@@ -175,6 +180,10 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
   const gameNumber = match ? (match.gameNumber ?? match.gameN ?? match.game_n ?? null) : null
   useEffect(() => { setRoleOverride({}) }, [match?.id])
 
+  const [selectedRole, setSelectedRole] = useState(() => defaultRole(r => roleAccess(match, r)))
+  // Another match: start again on its first tablet still to connect
+  useEffect(() => { setSelectedRole(defaultRole(r => roleAccess(match, r))) }, [match?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const toggleRole = async (role, enabled) => {
     const access = roleAccess(match, role)
     if (!match?.id || !access.field) return
@@ -188,7 +197,6 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
   }
 
   const relayTablets = useRelayTablets(open && seedKey ? String(seedKey) : null, match, { enabled: open, intervalMs: 5000 })
-  const devices = relayTablets.connections?.dashboardClients ?? relayTablets.watchers ?? null
   // Referee and bench tablets on this match right now (the relay's view)
   const tabletsOnMatch = (relayTablets.referee || 0) + (relayTablets.benchHome || 0) + (relayTablets.benchAway || 0)
 
@@ -247,7 +255,7 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
   // -- links for the chosen connection --
   const port = relay.status?.port || (typeof window !== 'undefined' ? window.location.port : '') || null
   const halls = hallInterfaces(relay.status)
-  const hallAddress = halls.find(i => i.ip === hallIp)?.ip || halls[0]?.ip || null
+  const hallAddress = halls.find(i => i.ip === view.hallIp)?.ip || halls[0]?.ip || null
   const hotspotIp = hs.status?.active ? (hs.status.gatewayIp || firstOfKind(relay.status, 'hotspot')?.ip || null) : null
   // Only a Bluetooth network this computer serves: never one it merely joined
   // (tethered to a phone), which the tablets cannot reach. The desktop app
@@ -267,16 +275,17 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
       ? t('connectTablets.needsDesktop', 'Needs the desktop app')
       : hs.status && !hs.status.supported
         ? t('connectTablets.notHere', 'Not available on this computer')
-        : t('connectTablets.createWifiFirst', 'Create the Wi-Fi first')
+        : t('connectTablets.createWifiFirst', 'Create the Wi-Fi first (step 1)')
   } else if (view.tab === 'bluetooth') {
     ip = served ? btIp : null
     noUrlText = !desktop
       ? t('connectTablets.needsDesktop', 'Needs the desktop app')
       : bt.status && !bt.status.supported
         ? t('connectTablets.notHere', 'Not available on this computer')
-        : t('connectTablets.startBtFirst', 'Start the Bluetooth network first')
+        : t('connectTablets.startBtFirst', 'Start the Bluetooth network first (step 1)')
+  } else if (cloudBlocked) {
+    noUrlText = t('connectTablets.reason.cloudBlocked', 'Cloud is off in this app window')
   }
-  const cloudBlocked = isCloudBlockedOnThisPort()
   const cloudApiBase = cloudBlocked ? null : getCloudApiBaseUrl()
   // Why a role has no link on this network (tabletLinks LAN_UNAVAILABLE_ROLES; none today)
   const lanNotes = {}
@@ -286,7 +295,10 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
     if (unavailable) return { role, url: null, note: lanNotes[unavailable] }
     return { role, url: lanRoleUrl(ip, port, role, seedKey) }
   })
-  const qrRow = rows.find(r => r.role === qrRole) || rows[1]
+  const urlOf = (role) => rows.find(r => r.role === role)?.url || null
+  // Signed out on the internet: the cloud does not have this match, so its
+  // code would open an empty page. The link can still be copied.
+  const signInFirst = view.tab === 'server' && !cloudBlocked && !!auth && !auth.user
 
   const wifi = displayedWifi(hs.status)
   // A hotspot started outside the app without a known password gets no
@@ -298,15 +310,76 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
     if (renewWifiPassword(wifi)) setWifiRev(n => n + 1)
   }
 
-  const tabs = [
-    { value: 'lan', label: t('connectTablets.tab.lan', 'LAN'), icon: Wifi },
-    { value: 'server', label: t('connectTablets.tab.server', 'Server'), icon: Cloud },
-    { value: 'bluetooth', label: t('connectTablets.tab.bluetooth', 'Bluetooth'), icon: Bluetooth }
-  ]
-  const lanModes = [
-    { value: 'hall', label: t('connectTablets.lanHall', 'Hall Wi-Fi') },
-    { value: 'laptop', label: t('connectTablets.lanLaptop', 'Create Wi-Fi for tablets') }
-  ]
+  // -- step 1: which connections can work here --
+  const options = transportOptions({
+    served,
+    desktop,
+    relayLoading: relay.loading,
+    halls,
+    hotspot: hs.status,
+    bluetooth: bt.status,
+    bluetoothFound: !!firstOfKind(relay.status, 'bluetooth'),
+    platform: hs.status?.platform || fw?.platform || null,
+    cloudBlocked
+  })
+
+  // -- steps 2 and 3: each tablet's state --
+  const clients = relayTablets.connections?.clients || null
+  const statuses = {}
+  for (const role of PICKABLE_ROLES) {
+    statuses[role] = roleStatus({
+      role,
+      access: roleAccess(matchView, role),
+      clients,
+      matchKey: seedKey,
+      match: matchView,
+      transport,
+      reachable: !!relayTablets.reachable
+    })
+  }
+  const cards = PICKABLE_ROLES.map(role => ({
+    role,
+    team: role === 'bench_home' ? teamNames?.home : role === 'bench_away' ? teamNames?.away : null,
+    access: roleAccess(matchView, role),
+    status: statuses[role]
+  }))
+  const picked = PICKABLE_ROLES.includes(selectedRole) ? selectedRole : 'referee'
+  const summary = connectedSummary(statuses)
+
+  const step1Id = 'connect-step-1'
+  const step2Id = 'connect-step-2'
+
+  const footer = (
+    <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-2">
+      <p className="w-full min-w-0 text-xs text-stone-600 sm:w-auto sm:flex-1" data-testid="devices-connected">
+        {seedKey && (summary.connected.length
+          ? t('connectTablets.footer.connected', 'Connected: {{roles}} · {{count}} of {{total}} tablets', {
+            roles: summary.connected.map(r => labels[r]).join(', '),
+            count: summary.connected.length,
+            total: summary.on
+          })
+          : transport !== 'server' && !relayTablets.reachable
+            ? t('connectTablets.card.unknown', 'Live status not available')
+            : t('connectTablets.footer.none', 'No tablet connected yet'))}
+        {seedKey && transport === 'server' && (
+          <span className="text-stone-400"> · {t('connectTablets.footer.thisNetworkOnly', 'Live status shows tablets on this network only')}</span>
+        )}
+      </p>
+      <Disclosure
+        label={t('connectTablets.otherScorer', 'Scorer on another computer')}
+        className="mr-auto min-w-0 max-w-sm sm:mr-0"
+        testId="role-row-main"
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="min-w-0 flex-1 text-xs leading-snug text-stone-500">
+            {t('connectTablets.otherScorerText', 'Opens a separate scorer app with its own matches. It does not follow this match.')}
+          </p>
+          <CopyLinkButton url={urlOf('main')} />
+        </div>
+      </Disclosure>
+      <Button variant="dark" onClick={onClose} className="h-10">{t('connectTablets.done', 'Done')}</Button>
+    </div>
+  )
 
   // ov-kit: the kit's scoped preflight (the legacy unlayered button styles
   // would repaint the kit buttons otherwise)
@@ -316,95 +389,102 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
         open={open}
         onClose={onClose}
         size="xl"
-        className="max-w-3xl"
+        layout="sections"
+        className="max-w-5xl lg:min-h-[min(85vh,40rem)]"
         icon={Tablet}
         title={t('connectTablets.title', 'Connect tablets')}
-        description={t('connectTablets.description', 'Referee, benches and livescore follow this match on their own tablet. Pick how the tablets reach this computer.')}
+        description={t('connectTablets.description', 'Referee and benches follow this match on their own tablet. Three steps: choose the connection, pick a tablet, scan and enter its PIN.')}
         closeLabel={t('common.close', 'Close')}
+        footer={footer}
       >
-        <SegmentedControl
-          options={tabs}
-          value={view.tab}
-          onChange={setTab}
-          ariaLabel={t('connectTablets.connection', 'Connection')}
-          className="mb-4"
-        />
-
-        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_14.5rem]">
-          <div className="min-w-0 space-y-3">
-            {view.tab === 'lan' && (
-              <>
-                <SegmentedControl
-                  options={lanModes}
-                  value={view.lanMode}
-                  onChange={setLanMode}
-                  ariaLabel={t('connectTablets.lanWhich', 'Which Wi-Fi')}
+        <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_17rem] lg:grid-cols-[19rem_minmax(0,1fr)_17rem]">
+          <section className="min-w-0 md:col-span-2 lg:col-span-1" aria-labelledby={step1Id}>
+            <StepHeading n={1} id={step1Id}>{t('connectTablets.step.connect', 'How tablets connect')}</StepHeading>
+            <TransportPicker options={options} value={transport} onChange={chooseTransport} labelledBy={step1Id} />
+            <div className="mt-3">
+              {transport === 'hall' && (
+                <HallPanel
+                  served={served}
+                  loading={relay.loading}
+                  interfaces={halls}
+                  selectedIp={hallAddress}
+                  onSelectIp={setHallIp}
+                  firewallStep={firewallStep}
+                  network={hs.status?.leavesNetwork || null}
                 />
-                {view.lanMode === 'hall' ? (
-                  <HallPanel served={served} loading={relay.loading} interfaces={halls} selectedIp={hallAddress} onSelectIp={setHallIp} firewallStep={firewallStep} />
-                ) : (
-                  <HotspotPanel
-                    desktop={desktop}
-                    status={hs.status}
-                    loading={hs.loading}
-                    busy={hs.busy}
-                    error={hs.error}
-                    wifi={wifi}
-                    firewallStep={firewallStep}
-                    onStart={startHotspot}
-                    onStop={stopHotspot}
-                    onNewPassword={newPassword}
-                  />
-                )}
-              </>
-            )}
-            {view.tab === 'server' && (
-              <ServerPanel
-                user={auth?.user || null}
-                onSignIn={auth ? () => setShowLogin(true) : null}
-                syncStatus={syncStatus}
-                cloudBlocked={cloudBlocked}
-                gameNumber={gameNumber}
-                hasMatch={!!match}
-              />
-            )}
-            {view.tab === 'bluetooth' && (
-              <BluetoothPanel
-                desktop={desktop}
-                status={bt.status}
-                loading={bt.loading}
-                busy={bt.busy}
-                error={bt.error}
-                ip={btIp}
-                onStart={() => act(setBt, () => bluetoothNetwork.start(win))}
-                onStop={stopBluetooth}
-              />
-            )}
+              )}
+              {transport === 'laptop' && (
+                <HotspotPanel
+                  desktop={desktop}
+                  status={hs.status}
+                  loading={hs.loading}
+                  busy={hs.busy}
+                  error={hs.error}
+                  wifi={wifi}
+                  wifiQr={wifiQr}
+                  firewallStep={firewallStep}
+                  onStart={startHotspot}
+                  onStop={stopHotspot}
+                  onNewPassword={newPassword}
+                />
+              )}
+              {transport === 'server' && (
+                <ServerPanel
+                  user={auth?.user || null}
+                  onSignIn={auth ? () => setShowLogin(true) : null}
+                  syncStatus={syncStatus}
+                  cloudBlocked={cloudBlocked}
+                  gameNumber={gameNumber}
+                />
+              )}
+              {transport === 'bluetooth' && (
+                <BluetoothPanel
+                  desktop={desktop}
+                  status={bt.status}
+                  loading={bt.loading}
+                  busy={bt.busy}
+                  error={bt.error}
+                  ip={btIp}
+                  onStart={() => act(setBt, () => bluetoothNetwork.start(win))}
+                  onStop={stopBluetooth}
+                />
+              )}
+            </div>
+          </section>
 
-            <RoleRows
-              rows={rows}
-              match={matchView}
-              qrRole={qrRow?.role}
-              onPickQr={setQrRole}
-              onToggleRole={toggleRole}
-              noUrlText={noUrlText}
-              teamNames={teamNames}
-            />
-          </div>
-
-          <QrPanel row={qrRow} wifi={wifiQr} />
-        </div>
-
-        <p className="mt-4 text-xs leading-snug text-stone-500">
-          {match
-            ? t('connectTablets.pinHint', 'Each tablet asks for its PIN: read it out from here. Links and QR codes never contain a PIN. Switch a role off to keep its tablet out.')
-            : t('connectTablets.openMatchFirst', 'Open a match to get links and PINs for it.')}
-          {devices != null && seedKey && (
-            <span className="ml-1 tabular-nums" data-testid="devices-connected">
-              {t('connectTablets.devices', 'Connected now: {{count}}.', { count: devices })}
-            </span>
+          {match ? (
+            <>
+              <section className="min-w-0" aria-labelledby={step2Id}>
+                <StepHeading n={2} id={step2Id}>{t('connectTablets.step.tablet', 'Which tablet')}</StepHeading>
+                <RoleCards
+                  cards={cards}
+                  selected={picked}
+                  onSelect={setSelectedRole}
+                  onToggleRole={toggleRole}
+                  labelledBy={step2Id}
+                />
+              </section>
+              <section className="min-w-0 rounded-xl border border-stone-200/70 bg-stone-50/60 p-3">
+                <StepHeading n={3}>{t('connectTablets.step.scan', 'Scan, then enter the PIN')}</StepHeading>
+                <ScanPanel
+                  role={picked}
+                  url={urlOf(picked)}
+                  access={roleAccess(matchView, picked)}
+                  status={statuses[picked]}
+                  noUrlText={noUrlText}
+                  gateText={signInFirst ? t('connectTablets.signInFirst', 'Sign in first (step 1)') : null}
+                  onLetIn={match?.id ? () => toggleRole(picked, true) : null}
+                />
+              </section>
+            </>
+          ) : (
+            <section className="min-w-0 lg:col-span-2" data-testid="no-match">
+              <EmptyState icon={Tablet} title={t('connectTablets.noMatchTitle', 'Open a match first')}>
+                {t('connectTablets.noMatchText', 'Codes and PINs belong to a match.')}
+              </EmptyState>
+            </section>
           )}
-        </p>
+        </div>
       </Modal>
 
       {showLogin && typeof document !== 'undefined' && createPortal(
