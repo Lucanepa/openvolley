@@ -12,7 +12,7 @@ import { fileURLToPath } from 'url'
 import { dirname, join, extname, basename, sep } from 'path'
 import { WebSocketServer } from 'ws'
 import { networkInterfaces } from 'os'
-import { createLanRelay, createLocalAddressCheck, createMainInstanceGate, WS_MAX_PAYLOAD } from './lanRelayCore.js'
+import { createLanRelay, createLocalAddressCheck, createMainInstanceGate, WS_MAX_PAYLOAD, signCore } from './lanRelayCore.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -79,8 +79,9 @@ if (useHttps) {
 const isLocalAddress = createLocalAddressCheck(networkInterfaces)
 const mainGate = createMainInstanceGate({ isLocal: isLocalAddress })
 
-// Shared match data store + WS protocol (populated by the scoreboard via WebSocket)
-const relay = createLanRelay()
+// Shared match data store + WS protocol (populated by the scoreboard via WebSocket).
+// Sign on phone: this machine may start a session, others prove the game PIN.
+const relay = createLanRelay({ isLocal: isLocalAddress })
 
 // MIME types for static files
 const MIME_TYPES = {
@@ -274,11 +275,13 @@ const requestHandler = (req, res) => {
     const ext = extname(filePath).toLowerCase()
     const contentType = MIME_TYPES[ext] || 'application/octet-stream'
     
-    res.writeHead(200, { 
+    res.writeHead(200, {
       'Content-Type': contentType,
       'Cache-Control': ext === '.html' || ext === '.json' || basename(filePath) === 'sw.js' || ext === '.webmanifest'
         ? 'no-cache'
-        : 'public, max-age=31536000'
+        : 'public, max-age=31536000',
+      // The phone signing page (/sign): strict CSP, no referrer, no-cache
+      ...(signCore.isSignPagePath(urlPath) ? signCore.SIGN_PAGE_HEADERS : {})
     })
     res.end(content)
   } catch (err) {

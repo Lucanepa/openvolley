@@ -17,6 +17,7 @@ import { useSyncQueue, isAuthBlocked } from '../hooks/useSyncQueue'
 import { useSequentialSync } from '../hooks/useSequentialSync'
 import SyncProgressModal from './SyncProgressModal'
 import SignaturePad from './SignaturePad'
+import { phoneSignContext, signatureUpdate } from '../domain/phoneSignature'
 import LongPressProgressIndicator from './LongPressProgressIndicator'
 import DraggedPlayerOverlay from './DraggedPlayerOverlay'
 import { setPlayerDragImage } from '../utils/dragImage'
@@ -233,7 +234,7 @@ const SB_INJURY_ICON = <Cross size={16} fill="currentColor" strokeWidth={1.5} />
  */
 
 export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, onTriggerEventBackup }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { showAlert } = useAlert()
   const { vmin } = useScaledLayout()
   const { syncStatus, flush: flushSyncQueue } = useSyncQueue()
@@ -24473,25 +24474,36 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
 
 
-      {postMatchSignature && (
-        <Modal
-          title={t('scoreboard.captainLabel', { team: postMatchSignature === 'home-captain' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')) }) + ' ' + t('common.signature')}
-          open={true}
-          onClose={() => setPostMatchSignature(null)}
-          width={500}
-        >
-          <div style={{ padding: '4px 0' }}>
-            <SignaturePad
-              onSave={async (signatureDataUrl) => {
-                const fieldName = postMatchSignature === 'home-captain' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature'
-                await db.matches.update(matchId, { [fieldName]: signatureDataUrl })
-                setPostMatchSignature(null)
-              }}
-              onCancel={() => setPostMatchSignature(null)}
-            />
-          </div>
-        </Modal>
-      )}
+      {/* Post-match captain signature. SignaturePad is the modal itself: wrapped
+          in another Modal without `open` it rendered nothing (B1). */}
+      <SignaturePad
+        open={!!postMatchSignature}
+        title={postMatchSignature
+          ? t('scoreboard.captainLabel', { team: postMatchSignature === 'home-captain' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')) }) + ' ' + t('common.signature')
+          : ''}
+        onClose={() => setPostMatchSignature(null)}
+        onSave={async (signatureDataUrl, meta) => {
+          const fieldName = postMatchSignature === 'home-captain' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature'
+          await db.matches.update(matchId, signatureUpdate(fieldName, signatureDataUrl, meta))
+          setPostMatchSignature(null)
+        }}
+        phone={postMatchSignature && data?.match ? {
+          slot: postMatchSignature === 'home-captain' ? 'captain-post-home' : 'captain-post-away',
+          matchKey: data.match.seed_key || data.match.seedKey || null,
+          gamePin: data.match.gamePin || null,
+          context: phoneSignContext({
+            match: data.match,
+            slot: postMatchSignature === 'home-captain' ? 'captain-post-home' : 'captain-post-away',
+            homeTeam: data.homeTeam,
+            awayTeam: data.awayTeam,
+            homeCaptain: (data.homePlayers || []).find(p => p.isCaptain || p.captain) || null,
+            awayCaptain: (data.awayPlayers || []).find(p => p.isCaptain || p.captain) || null,
+            lang: i18n.language,
+            fallbackHome: t('common.home'),
+            fallbackAway: t('common.away')
+          })
+        } : null}
+      />
 
     </div>
   )
