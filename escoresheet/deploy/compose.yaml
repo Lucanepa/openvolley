@@ -150,6 +150,10 @@ services:
       SMTP_PASS: ${SMTP_PASS:-}
       MAIL_FROM: ${MAIL_FROM:-}
       MANAGER_URL: ${MANAGER_URL:-}
+      # OpenBeach's account mails: the same mailbox under its own name, links
+      # to manager-beach (defaults in lib/mailer.js)
+      MAIL_FROM_BEACH: ${MAIL_FROM_BEACH:-}
+      MANAGER_URL_BEACH: ${MANAGER_URL_BEACH:-}
       SMTP_LEGACY_ROUTES: ${SMTP_LEGACY_ROUTES:-}
       CONTACT_EMAIL: ${CONTACT_EMAIL:-}
       VM_USERNAME: ${VM_USERNAME:-}

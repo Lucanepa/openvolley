@@ -60,7 +60,7 @@ describe('account emails end to end', { skip: SKIP }, () => {
     statusDir = mkdtempSync(join(tmpdir(), 'ov-mail-status-'))
     writeFileSync(join(statusDir, 'last_backup'), new Date().toISOString().replace(/\.\d{3}Z$/, 'Z') + '\n')
     smtp = await startFakeSmtp({ implicitTls: false })
-    srv = await bootServer({ ...serverEnv(), ...smtp.env() })
+    srv = await bootServer({ ...serverEnv(), ...smtp.env(), MANAGER_URL_BEACH: 'https://manager-beach.example.test' })
   })
 
   after(async () => {
@@ -77,6 +77,7 @@ describe('account emails end to end', { skip: SKIP }, () => {
     const out = srv.output.join('')
     assert.equal(out.match(/\[Mail\] account emails on/g)?.length, 1, out.slice(-2000))
     assert.ok(!out.includes(SMTP_PASS))
+    assert.match(out, /OpenBeach from OpenBeach <noreply@example\.test>, links to https:\/\/manager-beach\.example\.test/)
   })
 
   it('sign-up mails a confirmation link; the account signs in at once; the link confirms it', async () => {
@@ -201,6 +202,65 @@ describe('account emails end to end', { skip: SKIP }, () => {
     tokensSeen.push(old, token)
     assert.equal((await auth(srv, 'confirm-email', { token: old })).json.error.code, 'invalid_link')
     assert.equal((await auth(srv, 'confirm-email', { token })).status, 200)
+  })
+
+  it('OpenBeach (app: beach): its sender, texts and manager links; the membership; never a host from the client', async () => {
+    const email = 'bea.beach@example.ch'
+    const up = await auth(srv, 'sign-up', { email, password: PW, lang: 'de', app: 'beach', redirectTo: 'https://evil.test/', metadata: { first_name: 'Bea' } })
+    assert.equal(up.status, 200, up.text)
+    const id = up.json.data.user.id
+    const confirm = await mailFor(email)
+    assert.match(confirm.from, /^"?OpenBeach"? <noreply@example\.test>$/)
+    assert.equal(confirm.subject, 'E-Mail-Adresse für OpenBeach bestätigen')
+    assert.match(confirm.text, /– OpenBeach/)
+    const c = linkToken(confirm)
+    assert.ok(c.url.startsWith('https://manager-beach.example.test/#confirm?token='), c.url)
+    assert.ok(!confirm.text.includes('evil.test'))
+    tokensSeen.push(c.token)
+    // the account joined OpenBeach at sign-up (and only it)
+    const rows = (await sql.query('SELECT app, joined_via FROM auth.app_memberships WHERE user_id = $1', [id])).rows
+    assert.deepEqual(rows, [{ app: 'beach', joined_via: 'signup' }])
+    // the token works on the backend whichever manager shows it
+    assert.equal((await auth(srv, 'confirm-email', { token: c.token, app: 'beach' })).status, 200)
+
+    // resend for an unconfirmed OpenBeach account
+    const email2 = 'ben.beach@example.ch'
+    await auth(srv, 'sign-up', { email: email2, password: PW, app: 'beach' })
+    await mailFor(email2)
+    const s2 = await signIn(srv, email2, PW)
+    assert.equal((await auth(srv, 'resend-confirmation', { access_token: s2.json.data.session.access_token, lang: 'fr', app: 'beach' })).status, 200)
+    const again = await smtp.waitForMail((m) => m.envelope.to.includes(email2) && /Confirmez/.test(m.subject))
+    assert.equal(again.subject, 'Confirmez votre adresse e-mail pour OpenBeach')
+    const a = linkToken(again)
+    assert.ok(a.url.startsWith('https://manager-beach.example.test/#confirm?token='))
+    tokensSeen.push(a.token)
+
+    // reset + the password-changed notice, both OpenBeach, saying it is the password of both apps
+    const s = await signIn(srv, email, PW)
+    assert.equal(s.status, 200, s.text)
+    assert.equal((await auth(srv, 'reset-password', { email, lang: 'en', app: 'beach', redirectTo: 'https://evil.test/' })).status, 200)
+    const reset = await mailFor(email, /password/i)
+    assert.equal(reset.subject, 'Reset your OpenBeach password')
+    assert.match(reset.from, /OpenBeach <noreply@example\.test>/)
+    assert.match(reset.text, /This changes the password of your account for OpenVolley and OpenBeach\./)
+    const r = linkToken(reset)
+    assert.ok(r.url.startsWith('https://manager-beach.example.test/#reset?token='), r.url)
+    tokensSeen.push(r.token)
+    assert.equal((await auth(srv, 'reset-password/confirm', { token: r.token, password: NEW_PW, lang: 'en', app: 'beach' })).status, 200)
+    const notice = await mailFor(email, /was changed/)
+    assert.equal(notice.subject, 'Your OpenBeach password was changed')
+    assert.match(notice.text, /OpenVolley and OpenBeach/)
+    // the one password signs in everywhere
+    assert.equal((await signIn(srv, email, NEW_PW)).status, 200)
+
+    // an unknown app is OpenVolley (and still a sign-up: it joins indoor)
+    const email3 = 'olga.other@example.ch'
+    const up3 = await auth(srv, 'sign-up', { email: email3, password: PW, app: 'snow' })
+    const plainMail = await mailFor(email3)
+    assert.match(plainMail.from, /OpenVolley Test/)
+    assert.ok(linkToken(plainMail).url.startsWith('https://manager.example.test/'))
+    tokensSeen.push(linkToken(plainMail).token)
+    assert.deepEqual((await sql.query('SELECT app FROM auth.app_memberships WHERE user_id = $1', [up3.json.data.user.id])).rows, [{ app: 'indoor' }])
   })
 
   it('never writes a link token into the server log', () => {

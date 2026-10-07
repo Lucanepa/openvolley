@@ -7,8 +7,8 @@ import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   pickLang, authLink, renderMail, maskEmail, mailerFromEnv, createMailer, transportOptions,
-  inboxKey, describeMailError, disabledMailer,
-  MAIL_LANGS, MAIL_KINDS, DEFAULT_MANAGER_URL, DEFAULT_BUDGETS, DEFAULT_MAX_PER_INBOX
+  inboxKey, describeMailError, disabledMailer, mailApp, brandFrom,
+  MAIL_LANGS, MAIL_KINDS, MAIL_APPS, MAIL_BRANDS, DEFAULT_MANAGER_URL, DEFAULT_MANAGER_URL_BEACH, DEFAULT_BUDGETS, DEFAULT_MAX_PER_INBOX
 } from '../lib/mailer.js'
 import { startFakeSmtp, makeTestCert, linkToken, SMTP_USER, SMTP_PASS } from './helpers/fakeSmtp.js'
 
@@ -302,5 +302,126 @@ describe('mailer: budgets and the per-inbox cap (stub transport)', () => {
     const m = createMailer({ ...stub(), from: 'x <x@example.test>', maxPerHour: 7, logger: silent })
     assert.equal(m.stats().budgets.account.max, 7)
     assert.equal(m.stats().budgets.confirm.max, 7)
+  })
+})
+
+describe('mailer: brands (OpenVolley / OpenBeach)', () => {
+  const stub = () => {
+    const sent = []
+    return { sent, transport: { async sendMail(m) { sent.push(m) }, close() {} } }
+  }
+  const link = authLink(DEFAULT_MANAGER_URL_BEACH, 'reset', TOKEN, 'en')
+
+  it('mailApp: an allowlist; only "beach" is OpenBeach, anything else (or nothing) OpenVolley', () => {
+    assert.deepEqual([...MAIL_APPS], ['indoor', 'beach'])
+    assert.equal(mailApp('beach'), 'beach')
+    assert.equal(mailApp(' Beach '), 'beach')
+    for (const v of [undefined, null, '', 'indoor', 'snow', 'beachx', ['beach'], { app: 'beach' }, 1]) assert.equal(mailApp(v), 'indoor', String(v))
+    assert.equal(MAIL_BRANDS.beach.managerUrl, 'https://manager-beach.openvolley.app')
+    assert.equal(MAIL_BRANDS.indoor.managerUrl, DEFAULT_MANAGER_URL)
+  })
+
+  it('OpenVolley mails are unchanged when the app is indoor, unknown or absent', () => {
+    for (const kind of MAIL_KINDS) {
+      for (const lang of MAIL_LANGS) {
+        const plain = renderMail(kind, lang, { link })
+        for (const app of ['indoor', 'snow', undefined]) assert.deepEqual(renderMail(kind, lang, { link, app }), plain, `${kind}/${lang}/${app}`)
+        assert.doesNotMatch(plain.text + plain.html + plain.subject, /OpenBeach/)
+      }
+    }
+  })
+
+  it('OpenBeach mails: its name everywhere, its own subjects, the shared-password note on reset and password_changed', () => {
+    const subjects = new Set()
+    for (const kind of MAIL_KINDS) {
+      for (const lang of MAIL_LANGS) {
+        const m = renderMail(kind, lang, { link, app: 'beach' })
+        const indoor = renderMail(kind, lang, { link })
+        assert.ok(m.subject.includes('OpenBeach') && !subjects.has(m.subject), `${kind}/${lang} subject`)
+        subjects.add(m.subject)
+        assert.notEqual(m.subject, indoor.subject)
+        assert.ok(m.text.trimEnd().endsWith('– OpenBeach'), `${kind}/${lang} signature`)
+        assert.ok(m.html.includes('>OpenBeach</p>'), `${kind}/${lang} html footer`)
+        assert.doesNotMatch(m.html, /<img|<script|<link|url\(|@import/i)
+        assert.doesNotMatch(m.text + m.subject, /ß/, 'Swiss spelling')
+        // OpenVolley appears only in the shared-password note
+        const shared = m.text.split('\n\n').filter((p) => /OpenVolley/.test(p))
+        assert.doesNotMatch(m.subject, /OpenVolley/)
+        if (kind === 'confirm') {
+          assert.equal(shared.length, 0, `${kind}/${lang}: no note`)
+        } else {
+          assert.equal(shared.length, 1, `${kind}/${lang}: one note`)
+          assert.match(shared[0], /OpenVolley .* OpenBeach/)
+          assert.ok(m.html.includes(shared[0]), `${kind}/${lang}: note in html`)
+        }
+        if (kind !== 'password_changed') assert.ok(m.text.includes(link))
+      }
+    }
+    assert.ok(renderMail('reset', 'en', { link, app: 'beach' }).text.includes('This changes the password of your account for OpenVolley and OpenBeach.'))
+  })
+
+  it('send(): the OpenBeach sender for app beach, OpenVolley otherwise; links per brand', async () => {
+    const s = stub()
+    const m = createMailer({ ...s, from: 'OpenVolley <noreply@openvolley.app>', logger: silent })
+    assert.equal(m.fromFor('beach'), 'OpenBeach <noreply@openvolley.app>')
+    assert.equal(m.fromFor('indoor'), 'OpenVolley <noreply@openvolley.app>')
+    assert.equal(m.managerUrlFor('beach'), DEFAULT_MANAGER_URL_BEACH)
+    assert.equal(m.managerUrlFor('snow'), DEFAULT_MANAGER_URL)
+    await m.send('reset', { to: 'a@example.ch', lang: 'de', link, app: 'beach' })
+    await m.send('reset', { to: 'b@example.ch', lang: 'de', link })
+    await m.send('confirm', { to: 'c@example.ch', lang: 'it', link, app: 'https://evil.test' })
+    assert.deepEqual(s.sent.map((x) => [x.from, x.subject]), [
+      ['OpenBeach <noreply@openvolley.app>', 'OpenBeach-Passwort zurücksetzen'],
+      ['OpenVolley <noreply@openvolley.app>', 'OpenVolley-Passwort zurücksetzen'],
+      ['OpenVolley <noreply@openvolley.app>', 'Confermi il suo indirizzo e-mail per OpenVolley']
+    ])
+    m.close()
+    const custom = createMailer({ ...stub(), from: 'x@example.test', fromBeach: 'Beach Team <beach@example.test>', managerUrlBeach: 'https://mb.example.test/', logger: silent })
+    assert.equal(custom.fromFor('beach'), 'Beach Team <beach@example.test>')
+    assert.equal(custom.managerUrlFor('beach'), 'https://mb.example.test')
+    assert.equal(disabledMailer().managerUrlFor('beach'), DEFAULT_MANAGER_URL_BEACH)
+  })
+
+  it('the budgets and inbox caps are shared by both brands', async () => {
+    const m = createMailer({ ...stub(), from: 'x <x@example.test>', logger: silent, maxPerInbox: 2 })
+    assert.deepEqual(await m.send('reset', { to: 'same@example.ch', link, app: 'beach' }), { sent: true })
+    assert.deepEqual(await m.send('reset', { to: 'same@example.ch', link }), { sent: true })
+    assert.deepEqual(await m.send('confirm', { to: 'same@example.ch', link, app: 'beach' }), { sent: false, skipped: 'inbox' })
+  })
+
+  it('environment: MAIL_FROM_BEACH / MANAGER_URL_BEACH with sensible defaults; unusable values turn the mailer off', () => {
+    const base = { SMTP_HOST: 'smtp.example.test', SMTP_PASS: 'secret', SMTP_USER: 'noreply@openvolley.app' }
+    const d = mailerFromEnv(base)
+    try {
+      assert.equal(d.fromFor('beach'), 'OpenBeach <noreply@openvolley.app>')
+      assert.equal(d.managerUrlFor('beach'), 'https://manager-beach.openvolley.app')
+      assert.equal(d.from, 'OpenVolley <noreply@openvolley.app>', 'OpenVolley unchanged')
+      assert.equal(d.managerUrl, 'https://manager.openvolley.app')
+    } finally { d.close() }
+    const fromMailFrom = mailerFromEnv({ ...base, SMTP_USER: 'login-name', MAIL_FROM: 'OpenVolley <noreply@openvolley.app>' })
+    try { assert.equal(fromMailFrom.fromFor('beach'), 'OpenBeach <noreply@openvolley.app>', 'the address of MAIL_FROM') } finally { fromMailFrom.close() }
+    const set = mailerFromEnv({ ...base, MAIL_FROM_BEACH: 'OpenBeach <beach@openvolley.app>', MANAGER_URL_BEACH: 'https://manager-beach.openvolley.app/' })
+    try {
+      assert.equal(set.fromFor('beach'), 'OpenBeach <beach@openvolley.app>')
+      assert.equal(set.managerUrlFor('beach'), 'https://manager-beach.openvolley.app')
+    } finally { set.close() }
+    for (const [env, reason] of [
+      [{ MANAGER_URL_BEACH: 'http://manager-beach.openvolley.app' }, /MANAGER_URL_BEACH must be an https URL/],
+      [{ MANAGER_URL_BEACH: 'not a url' }, /MANAGER_URL_BEACH is not a URL/],
+      [{ MAIL_FROM_BEACH: 'OpenBeach' }, /MAIL_FROM_BEACH/]
+    ]) {
+      const m = mailerFromEnv({ ...base, ...env })
+      assert.equal(m.enabled, false)
+      assert.match(m.reason, reason)
+      assert.doesNotMatch(m.reason, /secret/)
+    }
+  })
+
+  it('brandFrom: the address of a sender under another name', () => {
+    assert.equal(brandFrom('OpenBeach', 'OpenVolley <noreply@openvolley.app>'), 'OpenBeach <noreply@openvolley.app>')
+    assert.equal(brandFrom('OpenBeach', '"Open Volley" <a@b.ch> '), 'OpenBeach <a@b.ch>')
+    assert.equal(brandFrom('OpenBeach', 'a@b.ch'), 'OpenBeach <a@b.ch>')
+    assert.equal(brandFrom('OpenBeach', 'OpenVolley'), '')
+    assert.equal(brandFrom('OpenBeach', ''), '')
   })
 })
