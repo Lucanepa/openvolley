@@ -12,6 +12,11 @@
  * The expression must stay identical in three places: db/007 (index and
  * duplicate scan), SEASON_SQL below, and frontend/src/domain/season.js.
  * seasonOf() is the JS twin, tested against SEASON_SQL on Postgres.
+ *
+ * Beach (db/013): beach matches are no longer in the index. Beach game
+ * numbers restart with every tournament; a beach match is "official" when it
+ * is linked to a tournament match (db/014, one scored match per tournament
+ * match). findClaim() therefore answers null for beach.
  */
 
 export const OFFICIAL_INDEX = 'matches_official_game_uidx'
@@ -67,6 +72,8 @@ export function publicClaim (claim) {
 export async function findClaim (db, { gameN, scheduledAt = null, sportType = 'indoor', excludeExternalId = null, callerId = null } = {}) {
   const n = Number(gameN)
   if (!Number.isInteger(n) || n <= 0 || n > 2147483647) return null
+  // db/013: beach is not season-official (the index skips it)
+  if (sportOf(sportType) === 'beach') return null
   let scheduled = null
   if (scheduledAt != null && scheduledAt !== '') {
     const d = new Date(scheduledAt)

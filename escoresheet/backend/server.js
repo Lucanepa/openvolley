@@ -361,7 +361,8 @@ const OWNER_SCOPED_TABLES = new Set(['profiles', 'user_matches'])
 const WRITE_DENYLIST = {
   profiles: ['roles', 'user_id', 'id'],
   user_matches: ['user_id', 'id'],
-  matches: ['created_by', 'closed_at', 'closed_by', 'official_game_exempt', 'created_at']
+  // tournament_match_id (db/014): the link to a beach tournament match is the server's
+  matches: ['created_by', 'closed_at', 'closed_by', 'official_game_exempt', 'created_at', 'tournament_match_id']
 }
 
 // Match ownership (db/005_match_ownership.sql, lib/pgQuery.js opts.matchOwner):
