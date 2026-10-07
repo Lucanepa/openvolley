@@ -106,6 +106,8 @@ describe('Scoreboard: one transaction and one screen change per scorer action', 
     }
     // the live state of a deferred push is the action's final snapshot
     expect(handler('syncLiveStateToSupabase')).toContain('pickLiveStateSnapshot(cachedSnapshot, finalSnapshot)')
+    // ... and the action's pushes of that state go out as one (mergeLiveStatePushes)
+    expect(handler('syncLiveStateToSupabase')).toContain('liveState: { eventType, cachedSnapshot }')
   })
 
   it('a manual change written during an action is part of its transaction; its cloud push comes after', () => {
