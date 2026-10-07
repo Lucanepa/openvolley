@@ -69,3 +69,28 @@ describe('penalty points deferred until both line-ups are in (FIVB 16.2.3 / 21.3
     expect(b).toMatch(/await queueSetScoreSync\(db, \{ matchId, setIndex \}\)/)
   })
 })
+
+describe('replaying the rally of a point (decision change "replay")', () => {
+  const body = () => between('const handleReplayRally = useCallback(', 'const cancelReplayRally = useCallback(')
+
+  it('removes the point and its sub-events through discardEvents, so their queued cloud jobs go too', () => {
+    const b = body()
+    expect(b).toMatch(/const plan = planPointRemoval\(allEvents, lastEvent\)/)
+    expect(b).toMatch(/await discardEvents\(/)
+    // no raw deletes that leave the point's sync_queue job (and an automatic
+    // libero_exit's) behind for the server
+    expect(b).not.toMatch(/db\.events\.delete\(/)
+  })
+
+  it('the set score follows the remaining points and is queued for the cloud', () => {
+    const b = body()
+    expect(b).toMatch(/homePoints: plan\.score\.homePoints/)
+    expect(b).toMatch(/awayPoints: plan\.score\.awayPoints/)
+    expect(b).toMatch(/queueSetScoreSync\(db, \{ matchId, setIndex: plan\.setIndex \}\)/)
+    expect(b.indexOf('queueSetScoreSync(')).toBeGreaterThan(b.indexOf('await discardEvents('))
+  })
+
+  it('the referee tablets are told as well', () => {
+    expect(body()).toMatch(/syncToReferee\(\)/)
+  })
+})
