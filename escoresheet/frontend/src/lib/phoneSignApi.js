@@ -65,7 +65,13 @@ export async function startPhoneSign({ transport, apiBase, phoneBase, slot, matc
   else if (gamePin && !isLoopbackPage()) headers['X-OV-Match-Pin'] = String(gamePin)
   const body = { slot, context }
   if (matchKey) body.matchKey = String(matchKey)
-  const r = await postJson(`${apiBase}/api/sign/start`, body, { headers, timeoutMs: START_TIMEOUT_MS, fetchImpl })
+  let r = await postJson(`${apiBase}/api/sign/start`, body, { headers, timeoutMs: START_TIMEOUT_MS, fetchImpl })
+  // A loopback page whose relay does not see it as itself (a --local backend
+  // in Docker sees the bridge address): once more, now proving the game PIN
+  if (!r.ok && transport === 'lan' && r.code === 'OV_SIGN_FORBIDDEN' && gamePin && !headers['X-OV-Match-Pin']) {
+    headers['X-OV-Match-Pin'] = String(gamePin)
+    r = await postJson(`${apiBase}/api/sign/start`, body, { headers, timeoutMs: START_TIMEOUT_MS, fetchImpl })
+  }
   if (!r.ok) return r
   return {
     ok: true,
