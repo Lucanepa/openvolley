@@ -1240,14 +1240,15 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       e => (e.setIndex || 1) === (data.currentSet?.index || 1)
     )
 
+    // Regular substitutions only: exceptional ones (FIVB 15.7) are beyond the 6
     return {
       home: {
         timeouts: currentSetEvents.filter(e => e.type === 'timeout' && e.payload?.team === 'home').length,
-        substitutions: currentSetEvents.filter(e => e.type === 'substitution' && e.payload?.team === 'home').length
+        substitutions: currentSetEvents.filter(e => e.type === 'substitution' && e.payload?.team === 'home' && !e.payload?.isExceptional).length
       },
       away: {
         timeouts: currentSetEvents.filter(e => e.type === 'timeout' && e.payload?.team === 'away').length,
-        substitutions: currentSetEvents.filter(e => e.type === 'substitution' && e.payload?.team === 'away').length
+        substitutions: currentSetEvents.filter(e => e.type === 'substitution' && e.payload?.team === 'away' && !e.payload?.isExceptional).length
       }
     }
   }, [data])

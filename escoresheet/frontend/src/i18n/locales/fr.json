@@ -566,6 +566,7 @@
       "decisionChange": "Changement de décision",
       "exceptionalSubstitution": "Remplacement exceptionnel",
       "exceptionalSubPlayerCantPlay": "Remplacement exceptionnel - le joueur ne peut plus participer",
+      "substitutionLimitImproperRequest": "L'équipe a utilisé ses 6 remplacements dans ce set : une nouvelle demande de remplacement est une demande irrégulière.",
       "substituteWithEligible": "Remplacer par un joueur éligible sur le banc",
       "liberoRedesignation": "Nouvelle désignation libéro",
       "courtSwitchRequired": "Changement de côté requis",

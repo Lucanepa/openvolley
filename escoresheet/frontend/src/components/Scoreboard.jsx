@@ -45,7 +45,7 @@ import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../util
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents } from '../domain/rules'
 import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags } from '../domain/sanctions'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
-import { planSubstitutionDeletion } from '../domain/substitutions'
+import { planSubstitutionDeletion, countRegularSubstitutions, classifySubstitutionRequest, MAX_SUBSTITUTIONS_PER_SET } from '../domain/substitutions'
 import { decisionChangeUndoRecord, planDecisionChangeReversal, syncJobsForEvents, syncJobsForSets } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, renumberPlayerInEvents } from '../domain/roster'
 import { appendRemark, removeRemarkLine } from '../domain/remarks'
@@ -434,7 +434,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [scoresheetErrorModal, setScoresheetErrorModal] = useState(null) // { error: string, details?: string } | null
   const [exceptionalSubstitutionModal, setExceptionalSubstitutionModal] = useState(null) // { team: 'home'|'away', position: string, playerOut: number, reason: 'expulsion'|'disqualification'|'injury' } | null
   const [substitutionDropdown, setSubstitutionDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement, isInjury?: boolean } | null
-  const [substitutionConfirm, setSubstitutionConfirm] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerOut: number, playerIn: number, isInjury?: boolean, isExceptional?: boolean, isExpelled?: boolean, isDisqualified?: boolean } | null
+  const [substitutionConfirm, setSubstitutionConfirmState] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerOut: number, playerIn: number, isInjury?: boolean, isExceptional?: boolean, isExpelled?: boolean, isDisqualified?: boolean } | null
   const [liberoDropdown, setLiberoDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'V'|'VI', playerNumber: number, element: HTMLElement } | null
   const [liberoConfirm, setLiberoConfirm] = useState(null) // { team: 'home'|'away', position: 'I'|'V'|'VI', playerOut: number, liberoIn: string } | null
   const [liberoInDropdown, setLiberoInDropdown] = useState(null) // { team: 'home'|'away', side: 'left'|'right', element: HTMLElement, x?: number, y?: number } | null
@@ -463,6 +463,26 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [sanctionSubstitutionModal, setSanctionSubstitutionModal] = useState(null) // { team, expelledPlayer, liberoOnCourt?, availableSubs, reason: 'expulsion'|'disqualification', isExceptional: boolean, position?: string } | null
   const [injuryDropdown, setInjuryDropdown] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement, x?: number, y?: number } | null
   const [playerActionMenu, setPlayerActionMenu] = useState(null) // { team: 'home'|'away', position: 'I'|'II'|'III'|'IV'|'V'|'VI', playerNumber: number, element: HTMLElement, x?: number, y?: number, canSubstitute: boolean, canEnterLibero: boolean } | null
+  // Every substitution request (court menu, bench menu, drag and drop, injury,
+  // expulsion / disqualification) opens its confirm through this setter, so the
+  // 6-per-set limit is checked in one place (FIVB 15.6): a regular request
+  // beyond it becomes an improper request (16.1.3); one for an injured /
+  // expelled / disqualified player becomes exceptional (15.7, 15.8).
+  // substitutionGuardRef is refreshed on every render with the current events.
+  const substitutionGuardRef = useRef(null)
+  const setSubstitutionConfirm = useCallback((next) => {
+    const guard = substitutionGuardRef.current
+    if (next && guard) {
+      const verdict = classifySubstitutionRequest(guard.events, next.team, guard.setIndex, next)
+      if (verdict === 'improper_request') {
+        setSubstitutionConfirmState(null)
+        guard.onImproperRequest(next.team)
+        return
+      }
+      if (verdict === 'exceptional' && !next.isExceptional) next = { ...next, isExceptional: true }
+    }
+    setSubstitutionConfirmState(next)
+  }, [])
   const [benchPlayerActionMenu, setBenchPlayerActionMenu] = useState(null) // { team: 'home'|'away', playerNumber: number, element: HTMLElement, x?: number, y?: number, canSubstitute: boolean, courtPlayerToSwapWith?: { number: number, position: string } } | null
   const [summaryTableZoom, setSummaryTableZoom] = useState(null) // { side: 'left'|'right', teamKey: 'home'|'away' } | null
 
@@ -2789,21 +2809,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       )
   }, [data?.events, data?.set])
 
+  // Regular substitutions of the current set; exceptional ones (FIVB 15.7) are
+  // made beyond the 6 and are not counted, matching the details list.
   const substitutionsUsed = useMemo(() => {
     if (!data?.events || !data?.set) return { home: 0, away: 0 }
-    // Only count substitutions for the current set
-    return data.events
-      .filter(event => event.type === 'substitution' && event.setIndex === data.set.index)
-      .reduce(
-        (acc, event) => {
-          const team = event.payload?.team
-          if (team === 'home' || team === 'away') {
-            acc[team] = (acc[team] || 0) + 1
-          }
-          return acc
-        },
-        { home: 0, away: 0 }
-      )
+    return {
+      home: countRegularSubstitutions(data.events, 'home', data.set.index),
+      away: countRegularSubstitutions(data.events, 'away', data.set.index)
+    }
   }, [data?.events, data?.set])
 
   const rallyStatus = useMemo(() => {
@@ -2846,6 +2859,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // For lineup events after points, the rally is idle (waiting for next rally_start)
     return 'idle'
   }, [data?.events, data?.set])
+
+  substitutionGuardRef.current = {
+    events: data?.events,
+    setIndex: data?.set?.index,
+    onImproperRequest: (teamKey) => {
+      if (rallyStatus === 'idle') setSanctionConfirm({ side: mapTeamKeyToSide(teamKey), type: 'improper_request', reason: 'substitution_limit' })
+    }
+  }
 
   // Check if the rally is replayed (last event is a replay)
   const isRallyReplayed = useMemo(() => {
@@ -7930,17 +7951,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const isSubstitutionLegal = useCallback((teamKey, playerOutNumber) => {
     if (!data?.events || !data?.set) return true
 
-    // Check substitution limit (6 per set)
-    const substitutions = getSubstitutionHistory(teamKey)
-    if (substitutions.length >= 6) return false
+    // Check substitution limit (6 regular per set; exceptional ones do not count)
+    if (countRegularSubstitutions(data.events, teamKey, data.set.index) >= MAX_SUBSTITUTIONS_PER_SET) return false
 
     // Check if player can be substituted
     return canPlayerBeSubstituted(teamKey, playerOutNumber)
-  }, [data?.events, data?.set, getSubstitutionHistory, canPlayerBeSubstituted])
+  }, [data?.events, data?.set, canPlayerBeSubstituted])
 
   // Get available substitutes for a player being substituted out
   const getAvailableSubstitutes = useCallback((teamKey, playerOutNumber, allowExceptional = false) => {
     if (!data) return []
+    // No legal substitute once the 6 regular substitutions are used: injury and
+    // expulsion / disqualification then go to the exceptional substitution.
+    if (!allowExceptional && data.set && countRegularSubstitutions(data.events, teamKey, data.set.index) >= MAX_SUBSTITUTIONS_PER_SET) return []
 
     const benchPlayers = teamKey === 'home'
       ? (leftIsHome ? leftTeamBench.benchPlayers : rightTeamBench.benchPlayers)
@@ -9935,7 +9958,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     eventInProgressRef.current = true
 
     try {
-      const { team, position, playerOut, playerIn, isInjury, isExceptional, isExpelled, isDisqualified } = substitutionConfirm
+      const { team, position, playerOut, playerIn, isInjury, isExpelled, isDisqualified } = substitutionConfirm
+
+      // Final authority on the 6-per-set limit (FIVB 15.6), against the events
+      // as they are now: a regular request beyond it is an improper request
+      // (16.1.3), an injury / expulsion / disqualification one is exceptional.
+      const verdict = classifySubstitutionRequest(data.events, team, data.set.index, substitutionConfirm)
+      if (verdict === 'improper_request') {
+        setSubstitutionConfirmState(null)
+        substitutionGuardRef.current?.onImproperRequest(team)
+        return
+      }
+      const isExceptional = verdict === 'exceptional'
 
       // Get current lineup for this team in the current set
       // IMPORTANT: Sort by sequence number to get the most recent lineup event
@@ -10834,7 +10868,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const handleSanctionSubstitution = useCallback(async (substituteNumber) => {
     if (!sanctionSubstitutionModal) return
 
-    const { team, expelledPlayer, liberoOnCourt, reason, isExceptional, position } = sanctionSubstitutionModal
+    const { team, expelledPlayer, liberoOnCourt, reason, position } = sanctionSubstitutionModal
+    // Beyond the 6 regular substitutions this one is exceptional (FIVB 15.8)
+    const isExceptional = classifySubstitutionRequest(data?.events, team, data?.set?.index, {
+      isExceptional: sanctionSubstitutionModal.isExceptional, isExpelled: reason === 'expulsion', isDisqualified: reason === 'disqualification'
+    }) === 'exceptional'
 
     // Log substitution event - this is recorded on scoresheet
     // The position is where the libero currently is (the expelled player's original position)
@@ -25034,7 +25072,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 const requestingTeamColor = requestingTeamData?.color || (substitutionConfirm.team === 'home' ? '#ef4444' : '#3b82f6')
                 const otherTeamColor = otherTeamData?.color || (substitutionConfirm.team === 'home' ? '#3b82f6' : '#ef4444')
                 const currentSubs = substitutionsUsed[substitutionConfirm.team] || 0
-                const subLabel = currentSubs === 4 ? '5th' : currentSubs === 5 ? '6th' : ''
+                const subLabel = substitutionConfirm.isExceptional ? '' : currentSubs === 4 ? '5th' : currentSubs === 5 ? '6th' : ''
                 return (
                   <>
                     <div style={{ marginBottom: '19px', fontSize: '24px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
@@ -26200,6 +26238,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     return sideTeamKey === teamAKey ? 'A' : 'B'
                   })()}?
             </p>
+            {sanctionConfirm.reason === 'substitution_limit' && (
+              <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)' }}>
+                {t('scoreboard.modals.substitutionLimitImproperRequest', 'The team has used its 6 substitutions in this set: a further substitution request is an improper request.')}
+              </p>
+            )}
             {sanctionConfirm.type === 'delay_penalty' && (
               <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--muted)', fontStyle: 'italic' }}>
                 This will award a point and service to the opponent team
