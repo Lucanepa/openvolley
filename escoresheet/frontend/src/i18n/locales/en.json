@@ -2873,7 +2873,7 @@
     "scheduleTitle": "Plan the schedule",
     "scheduleHint": "Places every match that has not begun on the courts in use, in bracket order, with each draw's minutes per match and rest, inside the play hours of each tournament day.",
     "planSchedule": "Plan the schedule",
-    "scheduleBody": "{{placed}} matches get a court and a start time. Matches that have begun keep theirs.",
+    "scheduleBody": "{{placed}} matches get a court and a start time, during the tournament no earlier than now. Matches that have begun keep theirs; a match moved by hand that has not begun is planned again.",
     "applySchedule": "Apply",
     "scheduleDone": "{{placed}} matches planned.",
     "unplaced_one": "{{count}} match does not fit into the tournament days and stays without a court.",
@@ -2887,6 +2887,15 @@
     "moveTitle": "Game {{n}} · {{code}}",
     "referee": "1st referee",
     "scorer": "Scorer",
+    "slotConflictTitle": "Keep this slot anyway?",
+    "saveAnyway": "Save anyway",
+    "slotConflicts": {
+      "court": "The court is taken by game {{n}} ({{code}}) at that time.",
+      "days": "The start is not on a tournament day.",
+      "hours": "The match is outside the play hours.",
+      "before_source": "It starts before game {{n}} ({{code}}), whose result it waits for, has ended plus the rest time.",
+      "after_dependent": "Game {{n}} ({{code}}) waits for this result and starts before this match has ended plus the rest time."
+    },
     "rankingHint": "The final ranking for MyBeach (enter it by 12:00 the next day, Art. 29).",
     "rank": "Rank",
     "team": "Team",
@@ -2913,7 +2922,9 @@
       "matchBegun": "This match has already begun: its court and time stay.",
       "noCourts": "Add a court first.",
       "notFound": "Not found, or not yours to see.",
-      "noManager": "No OpenBeach competition manager has this email."
+      "noManager": "No OpenBeach competition manager has this email.",
+      "slotConflict": "This slot does not fit the schedule.",
+      "resultChanged": "Someone else changed this result meanwhile. Have another look."
     }
   }
 }

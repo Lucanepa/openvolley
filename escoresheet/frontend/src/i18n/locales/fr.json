@@ -2866,7 +2866,7 @@
     "scheduleTitle": "Établir le programme",
     "scheduleHint": "Place chaque match qui n’a pas commencé sur les terrains en service, dans l’ordre du tableau, avec les minutes par match et le repos de chaque tableau, dans les heures de jeu de chaque jour du tournoi.",
     "planSchedule": "Établir le programme",
-    "scheduleBody": "{{placed}} matchs reçoivent un terrain et une heure. Les matchs commencés gardent les leurs.",
+    "scheduleBody": "{{placed}} matchs reçoivent un terrain et une heure, pendant le tournoi au plus tôt maintenant. Les matchs commencés gardent les leurs ; un match déplacé à la main qui n’a pas commencé est replanifié.",
     "applySchedule": "Appliquer",
     "scheduleDone": "{{placed}} matchs planifiés.",
     "unplaced_one": "{{count}} match ne tient pas dans les jours du tournoi et reste sans terrain.",
@@ -2880,6 +2880,15 @@
     "moveTitle": "Match {{n}} · {{code}}",
     "referee": "1er arbitre",
     "scorer": "Marqueur",
+    "slotConflictTitle": "Garder quand même ce créneau ?",
+    "saveAnyway": "Enregistrer quand même",
+    "slotConflicts": {
+      "court": "Le terrain est occupé à cette heure par le match {{n}} ({{code}}).",
+      "days": "Le début ne tombe pas sur un jour du tournoi.",
+      "hours": "Le match est en dehors des heures de jeu.",
+      "before_source": "Il commence avant la fin du match {{n}} ({{code}}), dont il attend le résultat, plus le temps de repos.",
+      "after_dependent": "Le match {{n}} ({{code}}) attend ce résultat et commence avant la fin de ce match plus le temps de repos."
+    },
     "rankingHint": "Le classement final pour MyBeach (à saisir avant 12h00 le lendemain, art. 29).",
     "rank": "Rang",
     "team": "Équipe",
@@ -2906,7 +2915,9 @@
       "matchBegun": "Ce match a déjà commencé : son terrain et son heure restent.",
       "noCourts": "Ajoute d’abord un terrain.",
       "notFound": "Introuvable, ou pas visible pour toi.",
-      "noManager": "Aucun responsable de compétition OpenBeach n’a cet e-mail."
+      "noManager": "Aucun responsable de compétition OpenBeach n’a cet e-mail.",
+      "slotConflict": "Ce créneau ne convient pas au programme.",
+      "resultChanged": "Quelqu’un d’autre a modifié ce résultat entre-temps. Regarde-le à nouveau."
     }
   }
 }

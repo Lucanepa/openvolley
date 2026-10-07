@@ -2855,7 +2855,7 @@
     "scheduleTitle": "Spielplan erstellen",
     "scheduleHint": "Setzt jedes Spiel, das noch nicht begonnen hat, auf die Felder in Betrieb, in der Reihenfolge des Tableaus, mit den Minuten pro Spiel und der Pause jedes Tableaus, innerhalb der Spielzeiten jedes Turniertags.",
     "planSchedule": "Spielplan erstellen",
-    "scheduleBody": "{{placed}} Spiele erhalten ein Feld und eine Startzeit. Begonnene Spiele behalten ihre.",
+    "scheduleBody": "{{placed}} Spiele erhalten ein Feld und eine Startzeit, während des Turniers frühestens ab jetzt. Begonnene Spiele behalten ihre; ein von Hand verschobenes Spiel, das noch nicht begonnen hat, wird neu geplant.",
     "applySchedule": "Übernehmen",
     "scheduleDone": "{{placed}} Spiele geplant.",
     "unplaced_one": "{{count}} Spiel passt nicht in die Turniertage und bleibt ohne Feld.",
@@ -2869,6 +2869,15 @@
     "moveTitle": "Spiel {{n}} · {{code}}",
     "referee": "1. Schiedsrichter/in",
     "scorer": "Schreiber/in",
+    "slotConflictTitle": "Diesen Platz trotzdem behalten?",
+    "saveAnyway": "Trotzdem speichern",
+    "slotConflicts": {
+      "court": "Das Feld ist zu dieser Zeit durch Spiel {{n}} ({{code}}) belegt.",
+      "days": "Die Startzeit liegt an keinem Turniertag.",
+      "hours": "Das Spiel liegt ausserhalb der Spielzeiten.",
+      "before_source": "Es beginnt, bevor Spiel {{n}} ({{code}}) samt Pause vorbei ist, auf dessen Resultat es wartet.",
+      "after_dependent": "Spiel {{n}} ({{code}}) wartet auf dieses Resultat und beginnt, bevor dieses Spiel samt Pause vorbei ist."
+    },
     "rankingHint": "Die Schlussrangliste für MyBeach (bis 12:00 Uhr am Folgetag eintragen, Art. 29).",
     "rank": "Rang",
     "team": "Team",
@@ -2895,7 +2904,9 @@
       "matchBegun": "Dieses Spiel hat schon begonnen: Feld und Zeit bleiben.",
       "noCourts": "Zuerst ein Feld hinzufügen.",
       "notFound": "Nicht gefunden oder nicht für dich sichtbar.",
-      "noManager": "Keine OpenBeach-Wettbewerbsverantwortliche Person hat diese E-Mail."
+      "noManager": "Keine OpenBeach-Wettbewerbsverantwortliche Person hat diese E-Mail.",
+      "slotConflict": "Dieser Platz passt nicht in den Spielplan.",
+      "resultChanged": "Jemand anderes hat dieses Resultat inzwischen geändert. Schau es dir nochmals an."
     }
   }
 }

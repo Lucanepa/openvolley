@@ -2872,7 +2872,7 @@
     "scheduleTitle": "Crea il programma",
     "scheduleHint": "Mette ogni partita non ancora iniziata sui campi in uso, nell’ordine del tabellone, con i minuti per partita e la pausa di ogni tabellone, entro gli orari di gioco di ogni giorno del torneo.",
     "planSchedule": "Crea il programma",
-    "scheduleBody": "{{placed}} partite ricevono un campo e un orario. Le partite iniziate tengono i loro.",
+    "scheduleBody": "{{placed}} partite ricevono un campo e un orario, durante il torneo non prima di adesso. Le partite iniziate tengono i loro; una partita spostata a mano non ancora iniziata viene ripianificata.",
     "applySchedule": "Applica",
     "scheduleDone": "{{placed}} partite pianificate.",
     "unplaced_one": "{{count}} partita non rientra nei giorni del torneo e resta senza campo.",
@@ -2886,6 +2886,15 @@
     "moveTitle": "Partita {{n}} · {{code}}",
     "referee": "1° arbitro",
     "scorer": "Segnapunti",
+    "slotConflictTitle": "Tenere comunque questo orario?",
+    "saveAnyway": "Salva comunque",
+    "slotConflicts": {
+      "court": "A quell’ora il campo è occupato dalla partita {{n}} ({{code}}).",
+      "days": "L’inizio non cade in un giorno del torneo.",
+      "hours": "La partita è fuori dagli orari di gioco.",
+      "before_source": "Inizia prima che la partita {{n}} ({{code}}), di cui attende il risultato, sia finita più il tempo di pausa.",
+      "after_dependent": "La partita {{n}} ({{code}}) attende questo risultato e inizia prima che questa partita sia finita più il tempo di pausa."
+    },
     "rankingHint": "La classifica finale per MyBeach (da inserire entro le 12:00 del giorno dopo, art. 29).",
     "rank": "Rango",
     "team": "Squadra",
@@ -2912,7 +2921,9 @@
       "matchBegun": "Questa partita è già iniziata: campo e orario restano.",
       "noCourts": "Aggiungi prima un campo.",
       "notFound": "Non trovato, o non visibile per te.",
-      "noManager": "Nessun responsabile di competizione OpenBeach ha questa e-mail."
+      "noManager": "Nessun responsabile di competizione OpenBeach ha questa e-mail.",
+      "slotConflict": "Questo orario non si adatta al programma.",
+      "resultChanged": "Qualcun altro ha cambiato questo risultato nel frattempo. Ricontrollalo."
     }
   }
 }
