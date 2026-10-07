@@ -17,7 +17,8 @@
 #
 # Desktop updater release (publish-pkgs.sh --desktop VERSION [--staging] [--app APP]):
 #   desktop_check_setup         tools, key files, tauri CLI >= 2.12, trusted pubkey
-#   desktop_fetch V DIR         the three installers of desktop-vV into DIR
+#   desktop_fetch V DIR         the three installers of desktop-vV into DIR, and
+#                               the macOS .app.tar.gz when the release has one
 #   desktop_sign V FILE...      FILE.sig, bound to version V (tauri signer)
 #   desktop_verify V FILE...    each FILE.sig against the key the app trusts
 #   desktop_notes V OUT         What's new text (fastlane changelog) into OUT
@@ -57,9 +58,9 @@ declare -A APP_DESKTOP_DIR=([openvolley]=desktop [beach]=desktop/beach)
 
 # Set by desktop_app_select.
 DESKTOP_APP='' DESKTOP_NAME='' DESKTOP_TAG_PREFIX='' DESKTOP_DEB_NAME='' DESKTOP_DIR=''
-DESKTOP_TAURI_CONF='' DESKTOP_MAKE_LATEST='' DESKTOP_FALLBACK_TAG=''
-# Set by desktop_fetch.
-DESKTOP_EXE='' DESKTOP_APPIMAGE='' DESKTOP_DEB=''
+DESKTOP_TAURI_CONF='' DESKTOP_MAKE_LATEST='' DESKTOP_FALLBACK_TAG='' DESKTOP_ID=''
+# Set by desktop_fetch (DESKTOP_MAC empty: the release has no macOS build).
+DESKTOP_EXE='' DESKTOP_APPIMAGE='' DESKTOP_DEB='' DESKTOP_MAC=''
 
 # desktop_app_select APP: which app's desktop release the desktop_* steps handle.
 #   openvolley  tags desktop-vV, package openvolley-escoresheet, manifests in
@@ -71,10 +72,10 @@ DESKTOP_EXE='' DESKTOP_APPIMAGE='' DESKTOP_DEB=''
 desktop_app_select() {
   case "$1" in
     openvolley)
-      DESKTOP_APP=openvolley DESKTOP_NAME=OpenVolley DESKTOP_TAG_PREFIX=desktop-v
+      DESKTOP_APP=openvolley DESKTOP_NAME=OpenVolley DESKTOP_TAG_PREFIX=desktop-v DESKTOP_ID=com.openvolley.escoresheet
       DESKTOP_TAURI_CONF=$OPENVOLLEY_TAURI_CONF DESKTOP_MAKE_LATEST=1 DESKTOP_FALLBACK_TAG='' ;;
     beach)
-      DESKTOP_APP=beach DESKTOP_NAME=OpenBeach DESKTOP_TAG_PREFIX=beach-desktop-v
+      DESKTOP_APP=beach DESKTOP_NAME=OpenBeach DESKTOP_TAG_PREFIX=beach-desktop-v DESKTOP_ID=com.openvolley.beach
       DESKTOP_TAURI_CONF=$OPENBEACH_TAURI_CONF DESKTOP_MAKE_LATEST=0 DESKTOP_FALLBACK_TAG=beach-desktop-latest ;;
     *) die "unknown app $1 (openvolley or beach)" ;;
   esac
@@ -144,6 +145,18 @@ github_setup_exe_url() {
   printf '%s\n' "$url"
 }
 
+# github_dmg_url TAG: the macOS disk image (*_universal.dmg) of the GitHub
+# release TAG; nothing when GitHub lists the release without one (built
+# before macOS, or its macOS job failed); the release page when GitHub cannot
+# be asked.
+github_dmg_url() {
+  local rel="https://github.com/$OV_GH_REPO/releases/tag/$1" json url
+  json=$(curl -fsS --max-time 20 "https://api.github.com/repos/$OV_GH_REPO/releases/tags/$1" 2>/dev/null) || { printf '%s\n' "$rel"; return 0; }
+  url=$(python3 -c 'import json, sys; print(next((a["browser_download_url"] for a in json.load(sys.stdin)["assets"] if a["name"].endswith("_universal.dmg")), ""))' <<<"$json" 2>/dev/null) || url=$rel
+  [[ -z "$url" || "$url" =~ ^https://github\.com/Lucanepa/openvolley/releases/[A-Za-z0-9._/%+-]+$ ]] || url=$rel
+  printf '%s\n' "$url"
+}
+
 # newest_deb PACKAGES NAME: the newest version of NAME in an APT Packages file.
 newest_deb() {
   awk -v want="$2" '/^Package:/ { p = $2 } /^Version:/ && p == want { print $2 }' "$1" | sort -V | tail -1
@@ -166,14 +179,17 @@ PY
 # published versions. OpenVolley's .deb and APK must be there. The OpenBeach
 # section (<!--beach--> ... <!--/beach-->) is left out until something of it
 # is published, and within it the desktop (<!--beach-desktop-->) or Android
-# (<!--beach-android-->) part until that is.
+# (<!--beach-android-->) part until that is. Each app's macOS part
+# (<!--mac-->, <!--beach-mac-->) only when its GitHub release has a .dmg.
 landing_page() {
-  local template=$1 packages=$2 index=$3 out=$4 ver apk_ver='' apk_file='' win_url
-  local b_ver b_apk_ver='' b_apk_file='' b_win='' sed_args=()
+  local template=$1 packages=$2 index=$3 out=$4 ver apk_ver='' apk_file='' win_url mac_url
+  local b_ver b_apk_ver='' b_apk_file='' b_win='' b_mac='' sed_args=()
   ver=$(newest_deb "$packages" openvolley-escoresheet)
   read -r apk_ver apk_file < <(newest_apk "$index" com.openvolley.escoresheet) || true
   [[ -n "$ver" && -n "$apk_file" ]] || die "need at least one openvolley-escoresheet .deb and one com.openvolley.escoresheet APK"
   win_url=$(github_setup_exe_url "desktop-v$ver")
+  mac_url=$(github_dmg_url "desktop-v$ver")
+  [[ -n "$mac_url" ]] || sed_args+=(-e '/<!--mac/,/<!--\/mac-->/d')
   # The per-machine Windows installer (administrator prompt, firewall rule for
   # the tablets) comes after 2.1.0: up to 2.1.0 the linked setup.exe installs
   # per user, so the <!--per-machine--> block of the page is left out.
@@ -188,6 +204,8 @@ landing_page() {
   else
     if [[ -n "$b_ver" ]]; then
       b_win=$(github_setup_exe_url "beach-desktop-v$b_ver")
+      b_mac=$(github_dmg_url "beach-desktop-v$b_ver")
+      [[ -n "$b_mac" ]] || sed_args+=(-e '/<!--beach-mac-->/,/<!--\/beach-mac-->/d')
     else
       sed_args+=(-e '/<!--beach-desktop-->/,/<!--\/beach-desktop-->/d')
     fi
@@ -195,6 +213,7 @@ landing_page() {
   fi
   sed "${sed_args[@]}" \
     -e "s|@DESKTOP_VERSION@|$ver|g" -e "s|@DEB_PACKAGE@|openvolley-escoresheet|g" -e "s|@WINDOWS_URL@|$win_url|g" \
+    -e "s|@MAC_URL@|$mac_url|g" -e "s|@BEACH_MAC_URL@|$b_mac|g" \
     -e "s|@APK_VERSION@|$apk_ver|g" -e "s|@APK_FILE@|$apk_file|g" \
     -e "s|@BEACH_DESKTOP_VERSION@|$b_ver|g" -e "s|@BEACH_WINDOWS_URL@|$b_win|g" \
     -e "s|@BEACH_APK_VERSION@|$b_apk_ver|g" -e "s|@BEACH_APK_FILE@|$b_apk_file|g" \
@@ -224,21 +243,24 @@ desktop_tag() { printf '%s%s\n' "$DESKTOP_TAG_PREFIX" "$1"; }
 
 # desktop_fetch V DIR: the Windows installer, the AppImage and the .deb of the
 # GitHub release desktop-vV (OpenBeach: beach-desktop-vV; or of
-# $DESKTOP_RELEASE_DIR), each checked to be version V. Sets DESKTOP_EXE,
-# DESKTOP_APPIMAGE, DESKTOP_DEB.
+# $DESKTOP_RELEASE_DIR), each checked to be version V, and the macOS updater
+# archive when the release has one (desktop_check_mac). Sets DESKTOP_EXE,
+# DESKTOP_APPIMAGE, DESKTOP_DEB and DESKTOP_MAC (empty without a macOS build:
+# releases before it, or a failed macOS job; latest.json then announces no
+# macOS update).
 desktop_fetch() {
   local v=$1 dir=$2 f kind found pkg ver arch magic draft pre tag
   tag=$(desktop_tag "$v")
   mkdir -p "$dir"
   if [[ -n "$DESKTOP_RELEASE_DIR" ]]; then
-    for f in "$DESKTOP_RELEASE_DIR"/*-setup.exe "$DESKTOP_RELEASE_DIR"/*.AppImage "$DESKTOP_RELEASE_DIR"/*.deb; do
+    for f in "$DESKTOP_RELEASE_DIR"/*-setup.exe "$DESKTOP_RELEASE_DIR"/*.AppImage "$DESKTOP_RELEASE_DIR"/*.deb "$DESKTOP_RELEASE_DIR"/*.app.tar.gz; do
       if [[ -e "$f" ]]; then cp "$f" "$dir/"; fi
     done
   else
     read -r draft pre < <(gh release view "$tag" --repo "$OV_GH_REPO" --json isDraft,isPrerelease -q '"\(.isDraft) \(.isPrerelease)"') ||
       die "no GitHub release $tag"
     [[ "$draft $pre" == "false false" ]] || die "release $tag is a draft or a prerelease"
-    gh release download "$tag" --repo "$OV_GH_REPO" -p '*-setup.exe' -p '*.AppImage' -p '*.deb' -D "$dir" --clobber >/dev/null ||
+    gh release download "$tag" --repo "$OV_GH_REPO" -p '*-setup.exe' -p '*.AppImage' -p '*.deb' -p '*.app.tar.gz' -D "$dir" --clobber >/dev/null ||
       die "could not download the $tag installers"
   fi
   for kind in '*-setup.exe' '*.AppImage' '*.deb'; do
@@ -265,6 +287,46 @@ desktop_fetch() {
         DESKTOP_DEB=$f ;;
     esac
   done
+  found=()
+  for f in "$dir"/*.app.tar.gz; do
+    if [[ -e "$f" ]]; then found+=("$f"); fi
+  done
+  (( ${#found[@]} <= 1 )) || die "$tag: expected at most one *.app.tar.gz, found ${#found[@]}"
+  DESKTOP_MAC=''
+  if (( ${#found[@]} == 0 )); then
+    echo "$tag has no macOS build (*.app.tar.gz): latest.json announces no macOS update"
+  else
+    desktop_check_mac "$v" "${found[0]}"
+    DESKTOP_MAC=${found[0]}
+  fi
+}
+
+# desktop_check_mac V FILE: the updater archive the macOS job made
+# (desktop.yml): named <package>_V_universal.app.tar.gz, a gzip whose every
+# entry is under one <Name>.app/ (tauri-plugin-updater drops the first path
+# component and puts the rest in place of the running bundle), holding this
+# app's bundle (CFBundleIdentifier, the binary named after the package) at
+# version V.
+desktop_check_mac() {
+  local v=$1 f=$2 magic list top info
+  [[ "$(basename "$f")" == "${DESKTOP_DEB_NAME}_${v}_universal.app.tar.gz" ]] ||
+    die "$f: expected ${DESKTOP_DEB_NAME}_${v}_universal.app.tar.gz"
+  magic=$(head -c 2 "$f" | od -An -tx1 | tr -d ' \n')
+  [[ "$magic" == 1f8b ]] || die "$f: not a gzip archive"
+  list=$(tar -tzf "$f") || die "$f: not a tar.gz"
+  top=${list%%$'\n'*}
+  top=${top%%/*}
+  [[ "$top" == *.app && -n "${top%.app}" ]] || die "$f: the first entry is not a <Name>.app folder"
+  awk -v top="$top" '$0 != top && index($0, top "/") != 1 { bad = 1 } /(^|\/)\.\.(\/|$)/ { bad = 1 } END { exit bad }' <<<"$list" ||
+    die "$f: entries outside $top/ (or with ..)"
+  grep -qxF "$top/Contents/MacOS/$DESKTOP_DEB_NAME" <<<"$list" || die "$f: no $top/Contents/MacOS/$DESKTOP_DEB_NAME"
+  info=$(tar -xzOf "$f" "$top/Contents/Info.plist" | python3 -c '
+import plistlib, sys
+p = plistlib.loads(sys.stdin.buffer.read())
+print(p.get("CFBundleIdentifier", ""), p.get("CFBundleShortVersionString", ""), p.get("CFBundleExecutable", ""))') ||
+    die "$f: no readable $top/Contents/Info.plist"
+  [[ "$info" == "$DESKTOP_ID $v $DESKTOP_DEB_NAME" ]] ||
+    die "$f: Info.plist says '$info' (identifier, version, executable), expected '$DESKTOP_ID $v $DESKTOP_DEB_NAME'"
 }
 
 # desktop_sign V FILE...: FILE.sig with the updater key. The password goes to
@@ -339,15 +401,19 @@ desktop_manifest() {
   if [[ -z "$DESKTOP_RELEASE_DIR" ]]; then
     # The URLs below must be the assets GitHub really serves.
     urls=$(gh release view "$tag" --repo "$OV_GH_REPO" --json assets -q '.assets[].url') || die "cannot list the assets of $tag"
-    for u in "$gh_dl/$(basename "$DESKTOP_EXE")" "$gh_dl/$(basename "$DESKTOP_APPIMAGE")"; do
+    for u in "$gh_dl/$(basename "$DESKTOP_EXE")" "$gh_dl/$(basename "$DESKTOP_APPIMAGE")" ${DESKTOP_MAC:+"$gh_dl/$(basename "$DESKTOP_MAC")"}; do
       grep -qxF "$u" <<<"$urls" || die "$u is not an asset of $tag"
     done
   fi
+  # macOS: the universal archive for both architectures, when the release has it
+  local mac=()
+  [[ -z "$DESKTOP_MAC" ]] || mac=(--app "$DESKTOP_MAC" "$gh_dl/$(basename "$DESKTOP_MAC")")
   updater manifest --tauri-conf "$DESKTOP_TAURI_CONF" --version "$v" --out "$out" \
     --notes-file "$dir/notes.txt" \
     --nsis "$DESKTOP_EXE" "$gh_dl/$(basename "$DESKTOP_EXE")" \
     --appimage "$DESKTOP_APPIMAGE" "$gh_dl/$(basename "$DESKTOP_APPIMAGE")" \
-    --deb "$DESKTOP_DEB" "$APT_POOL_URL/${DESKTOP_DEB_NAME}_${v}_amd64.deb" || die "latest.json not written"
+    --deb "$DESKTOP_DEB" "$APT_POOL_URL/${DESKTOP_DEB_NAME}_${v}_amd64.deb" \
+    ${mac[@]+"${mac[@]}"} || die "latest.json not written"
   updater check --tauri-conf "$DESKTOP_TAURI_CONF" --version "$v" --dir "$dir" "$out" >/dev/null || die "latest.json does not check out"
 }
 
@@ -394,6 +460,7 @@ desktop_upload() {
   local v=$1 staging=$2 dir=$3 files latest tag
   tag=$(desktop_tag "$v")
   files=("$DESKTOP_EXE.sig" "$DESKTOP_APPIMAGE.sig" "$DESKTOP_DEB.sig")
+  [[ -z "$DESKTOP_MAC" ]] || files+=("$DESKTOP_MAC.sig")
   [[ "$staging" == 1 || "$DESKTOP_MAKE_LATEST" != 1 ]] || files+=("$dir/latest.json")
   gh release upload "$tag" --repo "$OV_GH_REPO" --clobber "${files[@]}" || die "upload to $tag failed"
   echo "uploaded to $tag: ${files[*]##*/}"

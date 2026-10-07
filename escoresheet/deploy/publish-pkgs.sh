@@ -17,7 +17,10 @@
 #
 #   0. --desktop VERSION (a desktop app release; replaces downloading the .deb
 #      by hand): downloads the Windows installer, the AppImage and the .deb of
-#      the GitHub release desktop-vVERSION and checks each is that version;
+#      the GitHub release desktop-vVERSION and checks each is that version
+#      (and the macOS updater archive *_universal.app.tar.gz when the release
+#      has one: latest.json then announces darwin-aarch64 and darwin-x86_64;
+#      without it, no macOS update);
 #      signs each with the updater key (tauri signer, signature bound to
 #      VERSION); verifies each signature against the key the app trusts
 #      (plugins.updater.pubkey in tauri.conf.json, also with minisign when it is
@@ -158,8 +161,9 @@ trap 'rm -rf "$WORK"' EXIT
 # --- 0. desktop release: fetch, sign, verify, latest.json -------------------
 if [[ -n "$DESKTOP_V" ]]; then
   desktop_fetch "$DESKTOP_V" "$WORK/desktop"
-  desktop_sign "$DESKTOP_V" "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB"
-  desktop_verify "$DESKTOP_V" "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB"
+  # (+ the macOS .app.tar.gz, when the release has one)
+  desktop_sign "$DESKTOP_V" "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB" ${DESKTOP_MAC:+"$DESKTOP_MAC"}
+  desktop_verify "$DESKTOP_V" "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB" ${DESKTOP_MAC:+"$DESKTOP_MAC"}
   desktop_manifest "$DESKTOP_V" "$WORK/desktop" "$WORK/desktop/latest.json"
   FILES+=("$DESKTOP_DEB")
 fi
