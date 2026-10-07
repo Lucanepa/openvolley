@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   scoreTimeline, insertionAt, applyPlanToEvents, planAddTimeout, planRemoveTimeout, planAddSubstitution,
   planRemoveSubstitution, planAddSanction, planRemoveSanction, planAdjustFinalScore, planSetTimes,
-  planRemoveGroup, planEditEvent, planMoveEvent, planRotateTeam, courtAt, errorText, describeRemoval
+  planRemoveGroup, planEditEvent, planMoveEvent, planRotateTeam, courtAt, errorText, describeRemoval, isRemovableEntry
 } from '../manualCorrections'
 import { scoreBeforeEvent, compareBySeq, tsMs } from '../describe'
 import { scoreFromPointEvents } from '../rules'
@@ -184,6 +184,24 @@ describe('substitutions', () => {
     const r = planAddSubstitution(withLibero, { setIndex: 1, team: 'home', playerOut: replaced, playerIn: 9, at }, review)
     expect(r.error).toBe('corrections.error.liberoOnCourt')
     expect(errorText(r)).toBe(`At A 5:4 B, #${replaced} was replaced by libero #2.`)
+
+    // the libero on court is never substituted, and the player he replaced
+    // cannot come in by a substitution while the libero is on court for him
+    const libOut = planAddSubstitution(withLibero, { setIndex: 1, team: 'home', playerOut: 2, playerIn: 9, at }, review)
+    expect(libOut.error).toBe('corrections.error.liberoNotSubstituted')
+    expect(errorText(libOut)).toMatch(/^#2 is a libero/)
+    const replacedIn = planAddSubstitution(withLibero, { setIndex: 1, team: 'home', playerOut: last.payload.lineup.I, playerIn: replaced, at }, review)
+    expect(replacedIn.error).toBe('corrections.error.liberoOnCourt')
+  })
+
+  it('refuses a roster libero as player in or out (ctx.liberos)', () => {
+    const { events } = fixture()
+    const tl = scoreTimeline(events, 1)
+    const at = idxOf(tl, 5, 4)
+    const lu = courtAt(events, 1, 'home', at).lineup
+    const r = planAddSubstitution(events, { setIndex: 1, team: 'home', playerOut: lu.I, playerIn: 9, at }, { ...review, liberos: { home: [9], away: [] } })
+    expect(r.error).toBe('corrections.error.liberoNotSubstituted')
+    expect(planAddSubstitution(events, { setIndex: 1, team: 'home', playerOut: lu.I, playerIn: 9, at }, review).error).toBeUndefined()
   })
 
   it('refuses when a later substitution involves either player', () => {
@@ -351,13 +369,38 @@ describe('set times, rotation, advanced removal', () => {
 
   it('removes a point with its rotation and rally start, refuses a set end', () => {
     const { events } = fixture()
-    const sidePoint = events.find(e => e.type === 'point' && e.setIndex === 1 && events.some(x => x.type === 'lineup' && baseOf(x) === e.seq && x.seq !== e.seq))
+    // a side-out point of the loser of set 1 (25:20 -> 25:19 stays a possible result)
+    const sidePoint = events.find(e => e.type === 'point' && e.setIndex === 1 && e.payload.team === 'away' && events.some(x => x.type === 'lineup' && baseOf(x) === e.seq && x.seq !== e.seq))
     const plan = planRemoveGroup(events, sidePoint.id, review)
     expect(plan.remove).toHaveLength(3)
     expect(plan.affectedSets).toEqual([1])
     expect(plan.notes[0].text).toBe('Later rotations of this set are not recalculated.')
     expect(describeRemoval(events, plan, review)[0]).toMatch(/^Point for /)
     expect(planRemoveGroup(events, events.find(e => e.type === 'set_end').id, review).error).toBe('corrections.error.useUndo')
+  })
+
+  it('never leaves a finished set with an impossible result or another winner', () => {
+    const { events } = fixture()
+    // set 1 is 25:20: a point of the winner removed would leave 24:20
+    const winnerPoint = events.find(e => e.type === 'point' && e.setIndex === 1 && e.payload.team === 'home')
+    const r = planRemoveGroup(events, winnerPoint.id, review)
+    expect(r.error).toBe('corrections.error.winnerWouldChange')
+    // the set being played has no final score yet: a point may go
+    const livePoint = events.find(e => e.type === 'point' && e.setIndex === 2 && e.payload.team === 'home')
+    expect(planRemoveGroup(events, livePoint.id, live).error).toBeUndefined()
+    // 26:24 -> 26:23 is not a final score
+    const { events: tight } = buildMatch({ sets: [{ points: pointsFor(26, 24), finished: true }] })
+    const loser = tight.find(e => e.type === 'point' && e.payload.team === 'away')
+    expect(planRemoveGroup(tight, loser.id, review).error).toBe('corrections.error.invalidFinalScore')
+  })
+
+  it('offers Remove in the advanced log only for removable rows', () => {
+    const { events } = fixture()
+    expect(isRemovableEntry(events.find(e => e.type === 'lineup' && e.payload.isInitial))).toBe(false)
+    expect(isRemovableEntry(events.find(e => e.type === 'set_end'))).toBe(false)
+    expect(isRemovableEntry(events.find(e => e.type === 'lineup' && !Number.isInteger(e.seq)))).toBe(false)
+    expect(isRemovableEntry(events.find(e => e.type === 'point'))).toBe(true)
+    expect(isRemovableEntry(events.find(e => e.type === 'timeout'))).toBe(true)
   })
 
   it('edits a sanction type in place', () => {

@@ -54,6 +54,7 @@ export const ERROR_DEFAULTS = {
   choosePlayers: 'Choose the player going out and the player coming in.',
   playerNotOnCourt: 'At {{score}}, #{{n}} was not on court.',
   liberoOnCourt: 'At {{score}}, #{{n}} was replaced by libero #{{libero}}.',
+  liberoNotSubstituted: '#{{n}} is a libero: a libero is not substituted. To correct a libero replacement, use Undo.',
   playerInOnCourt: 'At {{score}}, #{{n}} was already on court.',
   laterConflict: '#{{out}} or #{{in}} takes part in a later substitution or libero replacement in this set. Remove that one first.',
   noLaterOpponentPoint: '{{team}} has no later point in set {{set}} to mark as the penalty point. If the point was never recorded, use "Correct final score".',
@@ -363,6 +364,16 @@ export function planAddSubstitution(events, { setIndex, team, playerOut, playerI
   const lineup = lineupRow?.payload?.lineup
   if (!lineup) return fail('noLineup', { set })
   const ls = lineupRow.payload?.liberoSubstitution
+  // A libero is never substituted (FIVB 19.3.1: libero replacements are not
+  // substitutions), and the player the libero replaced cannot come back by a
+  // substitution while the libero is on court for him
+  if (ls && sameNumber(ls.liberoNumber, playerOut)) return fail('liberoNotSubstituted', { n: playerOut })
+  if (ls && sameNumber(ls.playerNumber, playerIn)) return fail('liberoOnCourt', { score: scoreStr, n: playerIn, libero: ls.liberoNumber })
+  // The roster's liberos, when the caller knows them (ctx.liberos = { home: [9], away: [20] })
+  const liberos = ctx.liberos?.[team] || []
+  if (liberos.some(n => sameNumber(n, playerOut) || sameNumber(n, playerIn))) {
+    return fail('liberoNotSubstituted', { n: liberos.some(n => sameNumber(n, playerOut)) ? playerOut : playerIn })
+  }
   const position = POSITIONS.find(pos => sameNumber(lineup[pos], playerOut))
   if (!position) {
     if (ls && sameNumber(ls.playerNumber, playerOut)) return fail('liberoOnCourt', { score: scoreStr, n: playerOut, libero: ls.liberoNumber })
@@ -818,6 +829,13 @@ export function planRotateTeam(events, { setIndex, team, direction = 1 } = {}, c
 
 const PROTECTED = ['set_end', 'set_start', 'coin_toss', 'set5_coin_toss', 'libero_entry', 'libero_exit', 'libero_exchange', 'libero_unable', 'libero_redesignation', 'decision_change', 'forfait', 'match_stopped']
 
+/** True when the Advanced log offers Remove for this row (planRemoveGroup would not refuse it outright). */
+export function isRemovableEntry(ev) {
+  if (!ev || (ev.seq || 0) !== baseOf(ev)) return false
+  if (ev.type === 'timeout' || ev.type === 'substitution' || ev.type === 'sanction') return true
+  return !PROTECTED.includes(ev.type) && !(ev.type === 'lineup' && ev.payload?.isInitial)
+}
+
 /**
  * Remove one entry of the log with everything that belongs to it (Advanced:
  * event log). Time-outs, substitutions and sanctions use their own planner;
@@ -833,6 +851,22 @@ export function planRemoveGroup(events, id, ctx = {}) {
   if ((ev.seq || 0) !== baseOf(ev)) return fail('subEvent')
   const plan = emptyPlan()
   if (ev.type === 'point') {
+    // A finished set keeps a possible final score with the same winner (the
+    // set end and the match result were certified on it), as "Correct final
+    // score" does
+    const setIndex = setOf(ev)
+    if (setIsFinished(events, setIndex)) {
+      const cur = scoreFromPointEvents(events, setIndex)
+      const next = { home: cur.homePoints, away: cur.awayPoints }
+      const team = ev.payload?.team
+      if (team === 'home' || team === 'away') next[team] -= 1
+      const before = getSetResult(cur.homePoints, cur.awayPoints, setIndex).winner
+      const res = getSetResult(next.home, next.away, setIndex)
+      if (!res.winner || res.winner !== before) return fail('winnerWouldChange', { set: setNumber(setIndex, ctx) })
+      if (!isValidFinalScore(next[res.winner], next[otherTeam(res.winner)], setIndex)) {
+        return fail('invalidFinalScore', { set: setNumber(setIndex, ctx), score: formatScore(next, null, ctx) })
+      }
+    }
     plan.remove = pointGroupIds(events, ev)
     plan.affectedSets = [setOf(ev)]
     const points = setEvents(events, setOf(ev)).filter(e => e.type === 'point')

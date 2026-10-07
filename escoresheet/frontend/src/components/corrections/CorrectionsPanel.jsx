@@ -89,7 +89,12 @@ export default function CorrectionsPanel({
 }) {
   const { t } = useTranslation()
   const live = mode === 'live'
-  const ctx = useMemo(() => ({ t, match, homeTeam, awayTeam, matchId, mode, liveSetIndex }), [t, match, homeTeam, awayTeam, matchId, mode, liveSetIndex])
+  // The roster's liberos: never offered in a substitution, refused by the planner
+  const liberos = useMemo(() => ({
+    home: (homePlayers || []).filter(p => p?.libero).map(p => p.number),
+    away: (awayPlayers || []).filter(p => p?.libero).map(p => p.number)
+  }), [homePlayers, awayPlayers])
+  const ctx = useMemo(() => ({ t, match, homeTeam, awayTeam, matchId, mode, liveSetIndex, liberos }), [t, match, homeTeam, awayTeam, matchId, mode, liveSetIndex, liberos])
   const sorted = useMemo(() => [...(events || [])].sort(compareBySeq), [events])
   const played = useMemo(() => playedSets(sets, sorted), [sets, sorted])
   const [filter, setFilter] = useState(live && liveSetIndex ? String(liveSetIndex) : 'all')

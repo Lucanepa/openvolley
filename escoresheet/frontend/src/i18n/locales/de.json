@@ -3181,6 +3181,7 @@
       "choosePlayers": "Wähle die Spieler/innen, die raus und rein gehen.",
       "playerNotOnCourt": "Bei {{score}} war #{{n}} nicht auf dem Feld.",
       "liberoOnCourt": "Bei {{score}} war #{{n}} durch Libero #{{libero}} ersetzt.",
+      "liberoNotSubstituted": "#{{n}} ist Libero: Ein Libero wird nicht ausgewechselt. Eine Libero-Auswechslung wird mit Rückgängig korrigiert.",
       "playerInOnCourt": "Bei {{score}} war #{{n}} bereits auf dem Feld.",
       "laterConflict": "#{{out}} oder #{{in}} ist in einem späteren Wechsel oder Libero-Austausch dieses Satzes beteiligt. Entferne diesen zuerst.",
       "noLaterOpponentPoint": "{{team}} hat in Satz {{set}} keinen späteren Punkt, der als Strafpunkt markiert werden kann. Wurde der Punkt nie erfasst, nutze «Endstand korrigieren».",

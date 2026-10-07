@@ -3199,6 +3199,7 @@
       "choosePlayers": "Choose the player going out and the player coming in.",
       "playerNotOnCourt": "At {{score}}, #{{n}} was not on court.",
       "liberoOnCourt": "At {{score}}, #{{n}} was replaced by libero #{{libero}}.",
+      "liberoNotSubstituted": "#{{n}} is a libero: a libero is not substituted. To correct a libero replacement, use Undo.",
       "playerInOnCourt": "At {{score}}, #{{n}} was already on court.",
       "laterConflict": "#{{out}} or #{{in}} takes part in a later substitution or libero replacement in this set. Remove that one first.",
       "noLaterOpponentPoint": "{{team}} has no later point in set {{set}} to mark as the penalty point. If the point was never recorded, use \"Correct final score\".",
