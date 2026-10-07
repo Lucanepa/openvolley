@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import { Check, X } from 'lucide-react'
 import { Button, cn, Field, FOCUS_RING, IconButton, Input } from '../../ui'
+import { backdropDismiss } from '../../ui/backdropDismiss.js'
 
 export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
   const { t } = useTranslation()
@@ -56,7 +57,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
   const quietLink = cn('inline-flex min-h-11 w-full items-center justify-center rounded-lg text-sm text-stone-500 transition-colors hover:text-stone-800', FOCUS_RING)
 
   return (
-    <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} onClick={onClose}>
+    <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} {...backdropDismiss(onClose)}>
       <div
         role="dialog"
         aria-modal="true"
