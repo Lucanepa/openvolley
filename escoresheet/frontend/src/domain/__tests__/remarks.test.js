@@ -28,3 +28,14 @@ describe('removeRemarkLine', () => {
     expect(removeRemarkLine(appendRemark(before, 'Set 1, Team A, ...'), 'Set 1, Team A, ...')).toBe(before)
   })
 })
+
+describe('eventRemark (owner 2026-10-07: the sheet convention, local time)', () => {
+  it('"Set 3, 14:28, B 15:5, #4 injured (bench)"', async () => {
+    const { eventRemark, remarkClock } = await import('../remarks.js')
+    const at = new Date(2026, 9, 7, 14, 28, 59)
+    expect(remarkClock(at)).toBe('14:28')
+    expect(eventRemark({ set: 3, at, team: 'B', teamScore: 15, oppScore: 5, text: '#4 injured (bench)' }))
+      .toBe('Set 3, 14:28, B 15:5, #4 injured (bench)')
+    expect(remarkClock(new Date('nope'))).toBe('')
+  })
+})

@@ -53,6 +53,8 @@ export interface SanctionRecord {
   type: 'warning' | 'penalty' | 'expulsion' | 'disqualification'; // W, P, E, D
   set: number;
   score: string;
+  /** A player sanctioned while on the bench: the number is circled (SC p.62). */
+  onBench?: boolean;
 }
 
 export interface MatchResult {

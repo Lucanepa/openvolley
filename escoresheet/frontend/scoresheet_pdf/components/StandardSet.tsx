@@ -1,6 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import { MARK_STROKE } from './Marks';
 import { SubRecord } from '../types_scoresheet';
 import { PointsColumn } from './PointsColumn';
+import { StrikeZ } from './StrikeZ';
+import { FitText } from './FitText';
+import { ServiceBox, SubstitutionCells } from './ServiceBox';
 
 interface ServiceRound {
   position: number; // 0-5 for I-VI
@@ -43,9 +47,10 @@ interface StandardSetProps {
   positionBoxRef?: React.RefObject<HTMLDivElement>;
   // True when the set is finished — enables T-bar finalization of unused numbers
   setFinished?: boolean;
+  /** Unused grid (unplayed set, or a set awarded by default): struck off with a Z. */
+  struckOff?: boolean;
 }
 
-// PointBox is now imported from ./PointsCol/87umn
 
 // Service/Reception Selector (S above R) - Static version
 export const SRSelector: React.FC<{ initialSelection?: 'S' | 'R' | null }> = ({ initialSelection = null }) => {
@@ -59,8 +64,8 @@ export const SRSelector: React.FC<{ initialSelection?: 'S' | 'R' | null }> = ({ 
                     {item}
                     {initialSelection === item && (
                         <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
-                            <line x1="20" y1="20" x2="80" y2="80" stroke="black" strokeWidth="15" />
-                            <line x1="80" y1="20" x2="20" y2="80" stroke="black" strokeWidth="15" />
+                            <line x1="18" y1="18" x2="82" y2="82" stroke="black" strokeWidth={MARK_STROKE} vectorEffect="non-scaling-stroke" />
+                            <line x1="82" y1="18" x2="18" y2="82" stroke="black" strokeWidth={MARK_STROKE} vectorEffect="non-scaling-stroke" />
                         </svg>
                     )}
                 </div>
@@ -69,7 +74,6 @@ export const SRSelector: React.FC<{ initialSelection?: 'S' | 'R' | null }> = ({ 
     );
 };
 
-// PointsColumn is now imported from ./PointsColumn
 
 // TeamServiceGrid for Sets 1-4 (8 rotation boxes)
 export const TeamServiceGrid: React.FC<{ 
@@ -88,11 +92,11 @@ export const TeamServiceGrid: React.FC<{
     const gridRows = 4;
 
     // Calculate total height for Sets 1-4: 0.5cm + 0.5cm + 1.5cm + 2.0cm = 4.5cm to match PointsColumn
-    const rotationHeight = '2cm';
-    const totalHeight = '4.5cm';
+    const rotationHeight = '20mm';
+    const totalHeight = '45mm';
 
     return (
-        <div className="flex flex-col shrink-0" style={{ width: '60mm', height: totalHeight }}>
+        <div className="flex flex-col shrink-0" style={{ width: '60mm', height: totalHeight }} data-testid="service-grid">
             {/* Roman Numerals Header */}
             <div className="flex shrink-0" style={{ height: '5mm' }}>
                 {['I', 'II', 'III', 'IV', 'V', 'VI'].map((roman, idx, arr) => {
@@ -123,151 +127,34 @@ export const TeamServiceGrid: React.FC<{
             </div>
 
             {/* Substitutions Area */}
-            <div className="flex shrink-0" style={{ height: '1.5cm' }}>
-                {positions.map((colIdx, colArrIdx) => {
-                    // Get subs for this specific position (I-VI)
-                    const posSubs = subs[colIdx] || [];
-                    const sub1 = posSubs[0];
-                    const sub2 = posSubs[1];
-                    const isLastCol = colArrIdx === positions.length - 1;
-
-                    return (
-                        <div key={colIdx} className={`flex flex-col h-full bg-white`} style={{ width: '10mm' }}>
-                            {/* Substitution Row - Only PlayerIn (PlayerOut is already in lineup row) */}
-                            <div className={`shrink-0 p-0.5 flex items-center justify-center relative border-b border-black ${isLastCol ? 'border-r-0' : 'border-r'}`} style={{ height: '0.5cm' }}>
-                                {sub1 ? (
-                                    <>
-                                        <div className="text-[14px] text-center font-bold">
-                                            {sub1.playerIn}
-                                        </div>
-                                        {/* Circle around playerIn if substitution is closed (can't re-enter) */}
-                                        {sub1.isCircled && (
-                                            <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" style={{ overflow: 'visible' }}>
-                                                <circle cx="50" cy="50" r="42" fill="none" stroke="black" strokeWidth="2" />
-                                            </svg>
-                                        )}
-                                    </>
-                                ) : sub2 ? (
-                                    <>
-                                        <div className="text-[14px] text-center font-bold">
-                                            {sub2.playerIn}
-                                        </div>
-                                        {/* Circle around playerIn if substitution is closed (can't re-enter) */}
-                                        {sub2.isCircled && (
-                                            <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" style={{ overflow: 'visible' }}>
-                                                <circle cx="50" cy="50" r="42" fill="none" stroke="black" strokeWidth="2" />
-                                            </svg>
-                                        )}
-                                    </>
-                                ) : (
-                                    <div className="text-[14px] text-center"></div>
-                                )}
-                            </div>
-                            {/* Sub 1 Score - upper box */}
-                            <div className={`flex items-center justify-center border-b border-black ${isLastCol ? 'border-r-0' : 'border-r'}`} style={{ height: '0.5cm' }}>
-                                {sub1 && sub1.score ? (
-                                    <div className="text-[12px] text-center leading-tight flex items-center gap-0.5">
-                                        <span>{sub1.score.split(':')[0]}</span>
-                                        <span>:</span>
-                                        <span>{sub1.score.split(':')[1]}</span>
-                                    </div>
-                                ) : (
-                                    <div className="text-[12px] text-center leading-tight">:</div>
-                                )}
-                            </div>
-
-                            {/* Sub 2 Score - lower box (for return substitution) */}
-                            <div className={`flex items-center justify-center bg-white border-b border-black ${isLastCol ? 'border-r-0' : 'border-r'}`} style={{ height: '0.5cm' }}>
-                                {sub2 && sub2.score ? (
-                                    <div className="text-[12px] text-center leading-tight flex items-center gap-0.5">
-                                        <span>{sub2.score.split(':')[0]}</span>
-                                        <span>:</span>
-                                        <span>{sub2.score.split(':')[1]}</span>
-                                    </div>
-                                ) : (
-                                    <div className="text-[12px] text-center leading-tight">:</div>
-                                )}
-                            </div>
-                        </div>
-                    );
-                })}
+            <div className="flex shrink-0" style={{ height: '15mm' }}>
+                {positions.map((colIdx, colArrIdx) => (
+                    <SubstitutionCells key={colIdx} subs={subs[colIdx] || []} lastCol={colArrIdx === positions.length - 1} />
+                ))}
             </div>
 
-            {/* Service Rotation Area */}
+            {/* Service Rotation Area: per position two columns of round boxes (1-4 | 5-8) */}
             <div className="flex shrink-0" style={{ height: rotationHeight }}>
                 {positions.map((colIdx, colArrIdx) => {
-                    // For receiving team, position I (colIdx === 0), box 1 gets an X
                     const isLastPosition = colArrIdx === positions.length - 1;
                     return (
                         <div
                             key={colIdx}
-                            className={`flex flex-col h-full ${isLastPosition ? '' : 'border-r border-black'}`}
-                            style={{ width: '10mm' }}
+                            className={`grid h-full ${isLastPosition ? '' : 'border-r border-black'}`}
+                            style={{ width: '10mm', gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${gridRows}, 5mm)`, gridAutoFlow: 'column' }}
                         >
-                            {/* Rotation Box Grid for Service Order tracking */}
-                            <div 
-                                className="grid grid-flow-col h-full relative" 
-                                style={{ 
-                                    gridTemplateColumns: `repeat(${gridCols}, 1fr)`, 
-                                    gridTemplateRows: `repeat(${gridRows}, 1fr)` 
-                                }}
-                            >
-                                {/* Vertical divider between the two columns - spans full height */}
-                                <div
-                                    className="absolute top-0 bottom-0 left-1/2 pointer-events-none border-l border-black"
-                                    style={{ transform: 'translateX(-50%)' }}
-                                />
-                                
-                                {rotationNumbers.map((num) => {
-                                    // X marks position I box 1 for receiving team (they start there, never serve from I)
-                                    const showX = startsReceiving && colIdx === 0 && num === 1;
-
-                                    // Find service round data for this position and box
-                                    const serviceRound = serviceRounds.find(sr => sr.position === colIdx && sr.box === num);
-                                    const hasPoints = serviceRound && serviceRound.points !== null && serviceRound.points !== undefined;
-                                    const isTicked = serviceRound?.ticked || false;
-                                    const isCircled = serviceRound?.circled || false;
-                                    
-                                    return (
-                                        <div
-                                            key={num}
-                                            className="relative flex items-center justify-center border-b border-black"
-                                            style={{
-                                                width: '5mm',
-                                                height: '5.05mm',
-                                            }}
-                                        >
-                                            <span className="absolute top-[0.5px] right-[1px] text-[6px] leading-none text-black font-medium pointer-events-none">
-                                                {num}
-                                            </span>
-                                            {/* Tick/slash through the box number when this position served */}
-                                            {isTicked && !showX && (
-                                                <svg className="absolute top-0 right-0 w-[1.5mm] h-[1.5mm] pointer-events-none" viewBox="0 0 100 100">
-                                                    <line x1="15" y1="85" x2="85" y2="15" stroke="black" strokeWidth="10" />
-                                                </svg>
-                                            )}
-                                            {showX && (
-                                                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
-                                                    <line x1="20" y1="20" x2="80" y2="80" stroke="black" strokeWidth="8" />
-                                                    <line x1="80" y1="20" x2="20" y2="80" stroke="black" strokeWidth="8" />
-                                                </svg>
-                                            )}
-                                            {/* Points scored when service lost - but not if this is the initial X box */}
-                                            {hasPoints && serviceRound && !showX && (
-                                                <span className="absolute inset-0 flex items-center justify-center text-[10.5px] font-bold text-black pointer-events-none">
-                                                    {serviceRound.points}
-                                                </span>
-                                            )}
-                                            {/* Circle for last point at end of set */}
-                                            {isCircled && (
-                                                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
-                                                    <circle cx="50" cy="50" r="45" fill="none" stroke="black" strokeWidth="3" />
-                                                </svg>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
+                            {rotationNumbers.map((num) => (
+                                <div key={num} className={num <= gridRows ? 'border-r ss-rule' : ''}>
+                                    <ServiceBox
+                                        num={num}
+                                        // X: the receiving team's position I, round 1 (it never serves from there)
+                                        showX={startsReceiving && colIdx === 0 && num === 1}
+                                        round={serviceRounds.find(sr => sr.position === colIdx && sr.box === num)}
+                                        // the set box's own border is the bottom line
+                                        lastRow={num % gridRows === 0}
+                                    />
+                                </div>
+                            ))}
                         </div>
                     );
                 })}
@@ -299,7 +186,8 @@ export const StandardSet: React.FC<StandardSetProps> = ({
     rightCircledPoints = [],
     rightServiceRounds = [],
     positionBoxRef,
-    setFinished = false
+    setFinished = false,
+    struckOff = false
 }) => {
   // A/B labels are always shown based on position (left=A when not swapped, left=B when swapped)
   const leftTeamLabel = isSwapped ? 'B' : 'A';
@@ -310,7 +198,7 @@ export const StandardSet: React.FC<StandardSetProps> = ({
   let leftServes: 'S' | 'R' | null = null;
   let rightServes: 'S' | 'R' | null = null;
   
-  if (firstServeTeamA !== undefined) {
+  if (firstServeTeamA !== undefined && firstServeTeamA !== null) {
     // Team A is left when not swapped, right when swapped
     const teamAIsLeft = !isSwapped;
 
@@ -333,7 +221,7 @@ export const StandardSet: React.FC<StandardSetProps> = ({
   const maxScore = Math.max(leftPoints || 0, rightPoints || 0);
 
   return (
-    <div className="bg-white flex flex-col overflow-hidden shadow-sm shrink-0 border border-black" style={{ width: '150mm' }}>
+    <div className="bg-white flex flex-col overflow-hidden shadow-sm shrink-0 border border-black relative" style={{ width: 'calc(150mm + 2px)' }} data-testid="set-box">
         {/* Header Strip */}
         <div className="flex bg-gray-100 shrink-0" style={{ height: '0.8cm', width: '150mm' }}>
              {/* Start Time */}
@@ -342,7 +230,7 @@ export const StandardSet: React.FC<StandardSetProps> = ({
                 <div className="bg-transparent text-center font-mono text-xs">{startTime}</div>
              </div>
              {/* Team Left (A or B) - matches TeamServiceGrid (60mm) + PointsColumn (15mm) = 75mm */}
-             <div className="flex items-center justify-between px-2 bg-white shrink-0 border-r border-black" style={{ width: '40.3mm' }}>
+             <div className="flex items-center justify-between px-2 bg-white shrink-0 border-r border-black" style={{ width: '40mm' }}>
                  <div className="flex items-center gap-1 w-full">
                      <div className="flex items-center gap-1">
                          <div className="w-6 h-6 rounded-full border border-black flex items-center justify-center bg-gray-200 text-black font-bold text-sm shrink-0">
@@ -350,14 +238,14 @@ export const StandardSet: React.FC<StandardSetProps> = ({
                          </div>
                          <SRSelector initialSelection={leftServes} />
                      </div>
-                     <div className="w-full text-xs uppercase text-center font-bold bg-white ml-1">{teamNameLeft}</div>
+                     <FitText max={12} min={5} multiline style={{ height: '0.7cm' }} className="w-full uppercase leading-none flex items-center justify-center text-center font-bold bg-white ml-1">{teamNameLeft}</FitText>
                  </div>
              </div>
-             <div className="flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px] border-r border-black" style={{ width: '14.7mm' }}>Points</div>
+             <div className="flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px] border-r border-black" style={{ width: '15mm' }}>Points</div>
               {/* Team Right (B or A) - matches TeamServiceGrid (60mm) + PointsColumn (15mm) = 75mm */}
              <div className="flex items-center justify-between px-2 bg-white shrink-0 border-r border-black" style={{ width: '40mm' }}>
                  <div className="flex items-center gap-1 w-full justify-end">
-                     <div className="w-full text-xs uppercase font-bold text-center bg-white mr-1">{teamNameRight}</div>
+                     <FitText max={12} min={5} multiline style={{ height: '0.7cm' }} className="w-full uppercase leading-none flex items-center justify-center font-bold text-center bg-white mr-1">{teamNameRight}</FitText>
                      <div className="flex items-center gap-1">
                         <SRSelector initialSelection={rightServes} />
                         <div className="w-6 h-6 rounded-full border border-black flex items-center justify-center bg-gray-200 text-black font-bold text-sm shrink-0">
@@ -367,7 +255,7 @@ export const StandardSet: React.FC<StandardSetProps> = ({
                  </div>
              </div>
               {/* End Time */}
-             <div className="flex items-center px-2 gap-2 justify-start bg-white shrink-0" style={{ width: '20mm' }}>
+             <div className="flex items-center pl-1 pr-1 gap-1 justify-start bg-white shrink-0" style={{ width: '20mm' }}>
                 <span className="font-bold text-[9px]">End:</span>
                 <div className="bg-transparent text-center font-mono text-xs">{endTime}</div>
              </div>
@@ -388,6 +276,7 @@ export const StandardSet: React.FC<StandardSetProps> = ({
                 <PointsColumn isLast={true} timeouts={rightTimeouts} markedPoints={rightMarkedPoints} circledPoints={rightCircledPoints} maxScore={maxScore} setFinished={setFinished} finalScore={typeof rightPoints === 'number' ? rightPoints : Number(rightPoints) || 0} />
             </div>
         </div>
+        {struckOff && <StrikeZ />}
     </div>
   );
 };

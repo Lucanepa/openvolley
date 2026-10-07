@@ -1,9 +1,8 @@
-import React, { useState } from 'react';
-import swissvolleyLogo from './swissvolleylogo.jpg';
-// OpenVolley lockup (ball + wordmark), a PNG rendered from brand/lockup.svg:
-// the PDF capture paths (html-to-image, utils/pdfCapture.ts) draw rasters reliably.
-const openvolleyLogo = '/openvolley_logo.png';
+import React from 'react';
+import { BRAND } from '../../src/brand.js';
 import { formatTimeLocal } from '../../src/utils/timeUtils';
+import { formatSheetDate, gameNumberOf } from '../utils/sheetFormat';
+import { FitText } from './FitText';
 
 // The scoresheet window also loads the scorer app's styles.css, whose global
 // (unlayered) `input { background: #0f172a; border-radius; padding; color }`
@@ -13,6 +12,7 @@ export const OTHER_FIELD_STYLE: React.CSSProperties = {
   background: '#fff',
   color: '#000',
   border: 0,
+  borderBottom: '1px dotted #000',
   borderRadius: 0,
   boxShadow: 'none',
   height: 'auto',
@@ -30,282 +30,180 @@ interface HeaderProps {
   coinTossConfirmed?: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, teamAName, teamBName, coinTossConfirmed }) => {
-  const [imageError, setImageError] = useState(false);
-  const [faviconImageError, setFaviconImageError] = useState(false);
+/** One category box: the square, an X when it applies, its label. */
+const CategoryBox: React.FC<{ checked: boolean; label: React.ReactNode }> = ({ checked, label }) => (
+  <div className="flex items-center gap-0.5 min-w-0">
+    {/* a box a hand X fits in (audit 2026-10: 2.6 mm was too small) */}
+    <div className="w-3 h-3 border border-black bg-white flex items-center justify-center relative shrink-0">
+      {checked && <span className="text-[11px] font-bold leading-none">X</span>}
+    </div>
+    {typeof label === 'string' ? <span className="text-[8px] whitespace-nowrap">{label}</span> : label}
+  </div>
+);
 
+/** The "other" box: X when the category is "other", the text on a dotted line. */
+const OtherField: React.FC<{
+  value: string;
+  ariaLabel: string;
+  onChange?: (value: string) => void;
+}> = ({ value, ariaLabel, onChange }) => (
+  <div className="flex items-center gap-0.5 min-w-0 flex-1">
+    <span className="text-[8px] shrink-0">Other:</span>
+    <input
+      type="text"
+      className="text-[8px] px-0.5 py-0.5 bg-white w-full min-w-0"
+      style={OTHER_FIELD_STYLE}
+      value={value}
+      onChange={e => onChange?.(e.target.value)}
+      disabled={!onChange}
+      aria-label={ariaLabel}
+    />
+  </div>
+);
+
+/**
+ * The sheet's header (field-spec 2): the OpenVolley logo at the top left (no
+ * federation logo on any platform), the category boxes, the match identity
+ * (league, match no.) at the top right, then the teams line and the venue.
+ *
+ * One fixed layout, whatever the window size: the PDF is a capture of this
+ * page, so a narrow window (an Android phone, a small desktop window) must not
+ * switch it to a stacked "mobile" layout that pushes the sheet off the page.
+ * Long names shrink to fit their box instead of growing the header.
+ */
+export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, coinTossConfirmed }) => {
   // Determine if home team is "A" based on coin toss result
   const homeIsA = (match?.coinTossTeamA || 'home') === 'home';
 
-  // Format date and time (display in local timezone)
-  const scheduledDate = match?.scheduledAt ? new Date(match.scheduledAt) : null;
-  const dateStr = scheduledDate ? scheduledDate.toISOString().split('T')[0] : '';
+  // The local calendar day as DD.MM.YYYY and the local time (never the UTC day)
+  const dateStr = formatSheetDate(match?.scheduledAt);
   const timeStr = match?.scheduledAt ? formatTimeLocal(match.scheduledAt) : '';
+
+  const matchType = match?.matchType || match?.match_type_1;
+  const gender = match?.gender || match?.match_type_2;
+  const level = match?.level || match?.match_type_3;
+  const isOtherLevel = level === 'other';
+  const isOtherChampionship = match?.championshipType === 'other';
+  const setChampionshipOther = typeof match?.setChampionshipTypeOther === 'function' ? match.setChampionshipTypeOther : undefined;
+  const setLevelOther = typeof match?.setMatchType3Other === 'function' ? match.setMatchType3Other : undefined;
 
   return (
     <header className="border border-black bg-white">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-0.5">
-        <div className="flex items-center justify-center min-w-[120px]">
-            {/* Swiss Volley logo (left slot), matching the official Matchblatt.
-                Null in the Android build (vite.config.js alias): the slot stays empty. */}
-            {swissvolleyLogo && !imageError ? (
-                <img
-                    src={swissvolleyLogo}
-                    alt="Swiss Volley"
-                    style={{ height:'40px' }}
-                    onError={() => setImageError(true)}
-                />
-            ) : null}
-        </div>
-        
-        <div className="flex-1 w-full md:w-auto grid grid-cols-1 md:grid-cols-4 gap-0.5 text-xs min-w-0 overflow-hidden">
-            {/* Match Type Block */}
-            <div className="border-r border-l border-black p-1 min-w-0 overflow-hidden">
-                <div className="grid grid-cols-2 gap-x-0.5 gap-y-0.5">
-                    <div className="flex items-center gap-0.5">
-                        <div className="w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative">
-                            {(match?.matchType === 'championship' || match?.match_type_1 === 'championship') && (
-                                <span className="text-[10px] font-bold leading-none">X</span>
-                            )}
-                        </div>
-                        <span className="text-[8px]">Championship</span>
-                    </div>
-                    <div className="flex items-center gap-0.5">
-                        <div className="w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative">
-                            {(match?.matchType === 'cup' || match?.match_type_1 === 'cup') && (
-                                <span className="text-[10px] font-bold leading-none">X</span>
-                            )}
-                        </div>
-                        <span className="text-[8px]">Cup</span>
-                    </div>
-                    <div className="flex items-center gap-0.5">
-                        <div className="w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative">
-                            {(match?.matchType === 'friendly' || match?.match_type_1 === 'friendly') && (
-                                <span className="text-[10px] font-bold leading-none">X</span>
-                            )}
-                        </div>
-                        <span className="text-[8px]">Friendly</span>
-                    </div>
-                    <div className="flex items-center gap-0.5">
-                        <div className="w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative">
-                            {(match?.matchType === 'tournament' || match?.match_type_1 === 'tournament') && (
-                                <span className="text-[10px] font-bold leading-none">X</span>
-                            )}
-                        </div>
-                        <span className="text-[8px]">Tournament</span>
-                    </div>
-                </div>
-            </div>
-            
-            {/* Championship Type Block */}
-            <div className="border-r border-black p-1 min-w-0 overflow-hidden mr-[-1px]">
-                <div className="grid grid-cols-2 gap-x-0.5 gap-y-0.5">
-                    <div className="flex items-center gap-0.5">
-                        <div className="w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative">
-                            {match?.championshipType === 'regional' && (
-                                <span className="text-[10px] font-bold leading-none">X</span>
-                            )}
-                        </div>
-                        <span className="text-[8px]">Regional</span>
-                    </div>
-                    <div className="flex items-center gap-0.5">
-                        <div className="w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative">
-                            {match?.championshipType === 'national' && (
-                                <span className="text-[10px] font-bold leading-none">X</span>
-                            )}
-                        </div>
-                        <span className="text-[8px]">National</span>
-                    </div>
-                    <div className="flex items-center gap-0.5">
-                        <div className="w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative">
-                            {match?.championshipType === 'international' && (
-                                <span className="text-[10px] font-bold leading-none">X</span>
-                            )}
-                        </div>
-                        <span className="text-[8px]">International</span>
-                    </div>
-                    <div className="flex items-center gap-0.5">
-                        <div className={`w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative shrink-0`}>
-                            {match?.championshipType === 'other' && match?.championshipTypeOther && (
-                                <span className="text-[10px] font-bold leading-none">X</span>
-                            )}
-                        </div>
-                        <input
-                            type="text"
-                            className="text-[8px] px-0.5 py-0.5 bg-white w-full max-w-[50px] min-w-0"
-                            style={OTHER_FIELD_STYLE}
-                            value={match?.championshipTypeOther || ''}
-                            onChange={e => {
-                                if (typeof match === 'object' && match !== null && typeof match.setChampionshipTypeOther === 'function') {
-                                    match.setChampionshipTypeOther(e.target.value);
-                                }
-                            }}
-                            disabled={!((match && typeof match.setChampionshipTypeOther === 'function'))}
-                            aria-label="Other championship type"
-                        />
-                    </div>
-                </div>
-            </div>
-            
-            {/* Gender Block */}
-            <div className="border-r border-black p-1 min-w-0 overflow-hidden">
-                <div className="grid grid-cols-3 gap-x-0.5 gap-y-0.5">
-                    <div className="flex items-center gap-0.5">
-                         <div className="w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative">
-                             {(match?.gender === 'men' || match?.match_type_2 === 'men') && (
-                                 <span className="text-[10px] font-bold leading-none">X</span>
-                             )}
-                         </div>
-                         <span className="text-[8px]">Men</span>
-                     </div>
-                     <div className="flex items-center gap-0.5">
-                         <div className="w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative">
-                             {(match?.level === 'U23' || match?.match_type_3 === 'U23') && (
-                                 <span className="text-[10px] font-bold leading-none">X</span>
-                             )}
-                         </div>
-                         <span className="text-[8px]">U23</span>
-                     </div>
-                     <div className="flex items-center gap-0.5">
-                         <div className="w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative">
-                             {(match?.level === 'U17' || match?.match_type_3 === 'U17') && (
-                                 <span className="text-[10px] font-bold leading-none">X</span>
-                             )}
-                         </div>
-                         <span className="text-[8px]">U17</span>
-                     </div>
-                     <div className="flex items-center gap-0.5">
-                         <div className="w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative">
-                             {(match?.gender === 'women' || match?.match_type_2 === 'women') && (
-                                 <span className="text-[10px] font-bold leading-none">X</span>
-                             )}
-                         </div>
-                         <span className="text-[8px]">Women</span>
-                     </div>
-                     <div className="flex items-center gap-0.5">
-                         <div className="w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative">
-                             {(match?.level === 'U19' || match?.match_type_3 === 'U19') && (
-                                 <span className="text-[10px] font-bold leading-none">X</span>
-                             )}
-                         </div>
-                         <span className="text-[8px]">U19</span>
-                     </div>
-                      <div className="flex items-center gap-0.5">
-                         <div className="w-2.5 h-2.5 border border-black bg-white flex items-center justify-center relative">
-                             {(match?.level === 'other' || (match?.match_type_3 === 'other' && match?.match_type_3_other)) && (
-                                 <span className="text-[10px] font-bold leading-none">X</span>
-                             )}
-                         </div>
-                         <input
-                             type="text"
-                             className="text-[8px] px-0.5 py-0.5 bg-white w-full max-w-[50px] min-w-0"
-                             style={OTHER_FIELD_STYLE}
-                             value={match?.match_type_3_other || ''}
-                             onChange={e => {
-                                 if (typeof match === 'object' && match !== null && typeof match.setMatchType3Other === 'function') {
-                                     match.setMatchType3Other(e.target.value);
-                                 }
-                             }}
-                             aria-label="Other age category"
-                             disabled={!((match && typeof match.setMatchType3Other === 'function'))}
-                         />
-                     </div>
-                 </div>
-             </div>
-
-            {/* Match ID Block */}
-             <div className="border-r border-black p-0.5 flex flex-col h-full text-xs justify-center min-w-0 overflow-hidden">
-                <div className="flex justify-between items-center pl-2 flex-1">
-                    <span>League:</span>
-                    <div className="w-1/2 text-center uppercase text-xs font-bold">{match?.league || ''}</div>
-                </div>
-                <div className="flex justify-between items-center pt-1 pl-2 flex-1">
-                    <span>Match No:</span>
-                    <div className="w-1/2 text-center text-xs font-bold">{match?.gameNumber || match?.externalId || ''}</div>
-                </div>
-            </div>
+      <div className="flex flex-row items-stretch" style={{ height: '11mm' }}>
+        {/* OpenVolley logo (the one place the brand appears in the header) */}
+        <div className="flex items-center justify-center shrink-0 border-r border-black px-2" style={{ width: '44mm' }}>
+          <img
+            src={BRAND.lockupPng}
+            alt="OpenVolley"
+            style={{ height: '26px', width: 'auto', maxWidth: '100%', objectFit: 'contain' }}
+            data-testid="header-logo"
+          />
         </div>
 
-        <div className="flex items-center justify-center min-w-[120px]">
-            {/* Openvolley Logo Section with Fallback */}
-            {!faviconImageError ? (
-                <img
-                    src={openvolleyLogo}
-                    alt="OpenVolley"
-                    style={{ height: '24px', width: 'auto' }}
-                    onError={() => setFaviconImageError(true)}
-                />
-            ) : (
-                <div className="flex flex-col items-center select-none text-[10px] font-bold text-gray-600">
-                  FIVB
-                </div>
-            )}
+        <div className="flex-1 grid grid-cols-3 text-xs min-w-0">
+          {/* Competition */}
+          <div className="border-r border-black p-1 min-w-0 overflow-hidden">
+            <div className="grid grid-cols-2 gap-x-0.5 gap-y-0.5">
+              <CategoryBox checked={matchType === 'championship'} label="Championship" />
+              <CategoryBox checked={matchType === 'cup'} label="Cup" />
+              <CategoryBox checked={matchType === 'friendly'} label="Friendly" />
+              <CategoryBox checked={matchType === 'tournament'} label="Tournament" />
+            </div>
+          </div>
+
+          {/* Level */}
+          <div className="border-r border-black p-1 min-w-0 overflow-hidden">
+            <div className="grid grid-cols-2 gap-x-0.5 gap-y-0.5">
+              <CategoryBox checked={match?.championshipType === 'regional'} label="Regional" />
+              <CategoryBox checked={match?.championshipType === 'national'} label="National" />
+              <CategoryBox checked={match?.championshipType === 'international'} label="International" />
+              <CategoryBox
+                checked={isOtherChampionship}
+                label={<OtherField value={match?.championshipTypeOther || ''} ariaLabel="Other championship type" onChange={setChampionshipOther} />}
+              />
+            </div>
+          </div>
+
+          {/* Gender / age */}
+          <div className="border-r border-black p-1 min-w-0 overflow-hidden">
+            <div className="grid grid-cols-3 gap-x-0.5 gap-y-0.5">
+              <CategoryBox checked={gender === 'men'} label="Men" />
+              <CategoryBox checked={level === 'U23'} label="U23" />
+              <CategoryBox checked={level === 'U17'} label="U17" />
+              <CategoryBox checked={gender === 'women'} label="Women" />
+              <CategoryBox checked={level === 'U19'} label="U19" />
+              <CategoryBox
+                checked={isOtherLevel}
+                label={<OtherField value={match?.match_type_3_other || ''} ariaLabel="Other age category" onChange={setLevelOther} />}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Match identity at the top right: league and match number */}
+        <div className="shrink-0 flex flex-col justify-center px-2 gap-0.5 min-w-0" style={{ width: '62mm' }} data-testid="header-identity">
+          <div className="flex items-baseline gap-1 min-w-0">
+            <span className="text-[9px] text-gray-500 shrink-0">League</span>
+            <FitText max={12} min={6} className="flex-1 font-bold uppercase text-right" title={match?.league || ''}>
+              {match?.league || ''}
+            </FitText>
+          </div>
+          <div className="flex items-baseline gap-1 min-w-0">
+            <span className="text-[9px] text-gray-500 shrink-0">Match No</span>
+            <FitText max={14} min={6} className="flex-1 font-bold text-right" data-testid="header-match-no">
+              {gameNumberOf(match)}
+            </FitText>
+          </div>
         </div>
       </div>
 
       {/* Teams and Location */}
-      <div className="grid grid-cols-12 gap-0 border-t border-black text-xs">
-        {/* Teams: 5-column grid layout with TEAMS above VS */}
-        <div className="col-span-6 border-r border-black px-2 py-1">
-            {/* 5-column grid: Circle | Home Name | TEAMS/VS | Away Name | Circle */}
-            <div className="grid grid-cols-[auto_1fr_auto_1fr_auto] items-center gap-1">
-                {/* Col 1: Left circle (Home team A/B) - vertically centered */}
-                <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">
-                    {coinTossConfirmed ? (homeIsA ? 'A' : 'B') : ''}
-                </div>
-                {/* Col 2: Home team name - vertically centered */}
-                <div className="font-bold text-[18px] uppercase text-center bg-white">
-                    {homeTeam?.name || ''}
-                </div>
-                {/* Col 3: TEAMS label above VS */}
-                <div className="flex flex-col items-center px-2">
-                    <span className="text-[12px] uppercase font-bold text-gray-500 tracking-wide">Teams</span>
-                    <span className="text-base font-bold text-gray-500 italic">VS</span>
-                </div>
-                {/* Col 4: Away team name - vertically centered */}
-                <div className="font-bold text-[18px] uppercase text-center bg-white">
-                    {awayTeam?.name || ''}
-                </div>
-                {/* Col 5: Right circle (Away team A/B) - vertically centered */}
-                <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">
-                    {coinTossConfirmed ? (homeIsA ? 'B' : 'A') : ''}
-                </div>
+      <div className="grid grid-cols-12 grid-rows-1 gap-0 border-t border-black text-xs" style={{ height: '10mm' }}>
+        {/* Teams: Circle | Home Name | TEAMS/VS | Away Name | Circle (home always left) */}
+        <div className="col-span-6 border-r border-black px-2 py-0.5 min-w-0 min-h-0 overflow-hidden">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)_auto] items-center gap-1 h-full">
+            <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">
+              {coinTossConfirmed ? (homeIsA ? 'A' : 'B') : ''}
             </div>
+            <FitText max={18} min={7} className="font-bold uppercase text-center bg-white" title={homeTeam?.name || ''} data-testid="header-home">
+              {homeTeam?.name || ''}
+            </FitText>
+            <div className="flex flex-col items-center px-2">
+              <span className="text-[11px] leading-tight uppercase font-bold text-gray-500 tracking-wide">Teams</span>
+              <span className="text-base font-bold text-gray-500 italic leading-none">VS</span>
+            </div>
+            <FitText max={18} min={7} className="font-bold uppercase text-center bg-white" title={awayTeam?.name || ''} data-testid="header-away">
+              {awayTeam?.name || ''}
+            </FitText>
+            <div className="w-7 h-7 rounded-full border border-black text-center font-bold text-base bg-white shrink-0 flex items-center justify-center">
+              {coinTossConfirmed ? (homeIsA ? 'B' : 'A') : ''}
+            </div>
+          </div>
         </div>
 
-        {/* City, Hall, Date, Time: All in one row */}
-        <div className="col-span-6 px-2 flex flex-col justify-center h-full">
-            <div className="flex gap-1 w-full">
-                <div className="flex flex-col flex-[2]">
-                    <span className="text-[12px] text-gray-500">City/Country</span>
-                    <div className="w-full bg-white text-[12px] pb-0.5 font-bold">{match?.city || ''}</div>
-                </div>
-                <div className="flex flex-col flex-[4]">
-                    <span className="text-[12px] text-gray-500">Hall/Gym</span>
-                    <div className="w-full bg-white text-[12px] pb-0.5 font-bold">{match?.hall || ''}</div>
-                </div>
-                <div className="flex flex-col flex-[1.5]">
-                    <span className="text-[12px] text-gray-500">Date</span>
-                    <div className="w-full bg-white text-[12px] pb-0.5 font-bold">
-                      {(() => {
-                        if (!dateStr) return '';
-                        const date = new Date(dateStr);
-                        if (isNaN(date.getTime())) return dateStr; // fallback
-                        const day = String(date.getDate()).padStart(2, '0');
-                        const month = String(date.getMonth() + 1).padStart(2, '0');
-                        const year = date.getFullYear();
-                        return `${day}/${month}/${year}`;
-                      })()}
-                    </div>
-                </div>
-                <div className="flex flex-col flex-[1.5]">
-                    <span className="text-[12px] text-gray-500">Time</span>
-                    <div className="w-full bg-white text-[12px] pb-0.5 font-bold">{timeStr}</div>
-                </div>
+        {/* City, Hall, Date, Time */}
+        {/* four separate fields, ruled apart as on the Matchblatt */}
+        <div className="col-span-6 flex flex-col min-w-0 min-h-0 overflow-hidden">
+          <div className="flex w-full min-w-0 h-full items-stretch" data-testid="header-venue">
+            <div className="flex flex-col justify-center flex-[2] min-w-0 px-2">
+              <span className="text-[11px] leading-tight text-gray-500">City/Country</span>
+              <FitText max={12} min={6} className="w-full bg-white pb-0.5 font-bold">{match?.city || ''}</FitText>
             </div>
+            <div className="flex flex-col justify-center flex-[4] min-w-0 px-1.5 border-l border-black">
+              <span className="text-[11px] leading-tight text-gray-500">Hall/Gym</span>
+              <FitText max={12} min={6} className="w-full bg-white pb-0.5 font-bold">{match?.hall || ''}</FitText>
+            </div>
+            <div className="flex flex-col justify-center flex-[1.5] min-w-0 px-1.5 border-l border-black">
+              <span className="text-[11px] leading-tight text-gray-500">Date</span>
+              <div className="w-full bg-white text-[12px] pb-0.5 font-bold whitespace-nowrap" data-testid="header-date">{dateStr}</div>
+            </div>
+            <div className="flex flex-col justify-center flex-[1.2] min-w-0 px-1.5 border-l border-black">
+              <span className="text-[11px] leading-tight text-gray-500">Time</span>
+              <div className="w-full bg-white text-[12px] pb-0.5 font-bold whitespace-nowrap">{timeStr}</div>
+            </div>
+          </div>
         </div>
       </div>
-
     </header>
   );
 };

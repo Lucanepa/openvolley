@@ -1,5 +1,6 @@
 import { apiFrom } from '../lib/apiClient'
 import { formatTimeLocal } from './timeUtils'
+import { isBeachPickerRow, pickerTeamNames } from './pickerMatches'
 
 /**
  * Cloud matches a team can still upload its roster for (Upload Roster app).
@@ -23,9 +24,13 @@ export const ROSTER_UPLOAD_STATUSES = Object.freeze(['setup'])
 export const ROSTER_UPLOAD_WINDOW = Object.freeze({ pastMs: 24 * 60 * 60 * 1000, futureMs: 14 * 24 * 60 * 60 * 1000 })
 export const ROSTER_UPLOAD_LIMIT = 200
 
-/** Is a match (cloud row) open for a roster upload? */
+/**
+ * Is a match (cloud row) open for a roster upload? In setup, not a test
+ * match, not a beach (OpenBeach) match: beach rosters are uploaded there.
+ * Older indoor rows have no sport_type.
+ */
 export function isOpenForRosterUpload(row) {
-  return !!row && ROSTER_UPLOAD_STATUSES.includes(row.status) && row.test !== true
+  return !!row && ROSTER_UPLOAD_STATUSES.includes(row.status) && row.test !== true && !isBeachPickerRow(row)
 }
 
 function displayDateTime(scheduledAt) {
@@ -44,8 +49,7 @@ function displayDateTime(scheduledAt) {
 
 /** A cloud matches row in the shape the Upload Roster list uses. */
 export function toRosterUploadMatch(m) {
-  const homeTeamName = m.home_team?.name || 'Home'
-  const awayTeamName = m.away_team?.name || 'Away'
+  const { home: homeTeamName, away: awayTeamName } = pickerTeamNames(m)
   return {
     id: m.external_id || m.id,
     external_id: m.external_id, // the cloud write targets this
@@ -67,7 +71,7 @@ export async function listRosterUploadMatches({ now = Date.now() } = {}) {
   try {
     const { data, error } = await apiFrom('matches')
       // Not connections: it carries the teams' pending rosters and signatures
-      .select('id, external_id, game_n, status, scheduled_at, home_team, away_team, test')
+      .select('id, external_id, game_n, status, scheduled_at, home_team, away_team, team1_data, team2_data, test, sport_type')
       .in('status', [...ROSTER_UPLOAD_STATUSES])
       .gte('scheduled_at', new Date(now - ROSTER_UPLOAD_WINDOW.pastMs).toISOString())
       .lte('scheduled_at', new Date(now + ROSTER_UPLOAD_WINDOW.futureMs).toISOString())

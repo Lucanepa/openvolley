@@ -16,17 +16,23 @@
 //!   the menu), menu: Show OpenVolley, a status line (tablets connected,
 //!   match in progress), Quit OpenVolley…. The page sends its translated
 //!   labels (`app_page_state`); until then they are English.
-//! - **Quit** (tray menu, the page's header menu): the window comes back and
-//!   the page asks (askConfirm, danger). Only its `app_quit` exits; the exit
-//!   then stops the tablets' network (RunEvent::Exit in main.rs) as before.
+//! - **Quit** (tray menu, the page's header menu): the scoretable window
+//!   comes back (only it: scoresheet windows hidden to the tray stay hidden
+//!   until a Keep running, `app_quit_cancel`) and the page asks (askConfirm,
+//!   danger), once for every app window: the question lists the scoresheet
+//!   windows the quit closes too (`app_windows`, popups.rs). Only its
+//!   `app_quit` exits; the scoresheet windows are closed explicitly first,
+//!   and the exit then stops the tablets' network (RunEvent::Exit in
+//!   main.rs) as before.
 //!   The page must take the request (`app_quit_ack`) within [`ACK_TIMEOUT`];
 //!   a page that cannot (crashed into its error screen, a hung web process,
 //!   still loading) gets a native "Quit OpenVolley?" from the app instead,
 //!   so the app can always be quit, and never without a confirmation.
 //! - **The OS ends the session**: never blocked. Windows ends the event loop
 //!   on WM_ENDSESSION (tao), which is RunEvent::Exit, not ExitRequested.
-//!   Linux: SIGTERM / SIGINT / SIGHUP quit at once (`os_exit`), with a
-//!   watchdog in case the event loop no longer answers.
+//!   Linux: SIGTERM / SIGINT / SIGHUP quit at once (`os_exit`, which closes
+//!   the scoresheet windows too, never asking), with a watchdog in case the
+//!   event loop no longer answers.
 //! - **An update is ready** (updater.rs): the tray menu gets "Restart to
 //!   update to {v}" while the update gate is open (no live match, no tablets,
 //!   no tablet network), and the status line says "Update ready". A confirmed
@@ -48,7 +54,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Manager, Runtime, State, WebviewWindow};
 
 pub const MAIN: &str = "main";
-pub const TRAY_ID: &str = "openvolley";
+pub const TRAY_ID: &str = crate::flavour::CURRENT.tray_id;
 const MENU_SHOW: &str = "ov-show";
 const MENU_STATUS: &str = "ov-status";
 const MENU_QUIT: &str = "ov-quit";
@@ -298,29 +304,43 @@ pub struct TrayLabels {
     pub update_ready: String,
     /// "Update ready" (appended to the status line)
     pub update_status: String,
+    /// "Also closes: {{windows}}" (the other app windows a quit closes)
+    pub also_closes: String,
+    /// "{{name}} ({{count}} window)"
+    pub window_group_one: String,
+    /// "{{name}} ({{count}} windows)"
+    pub window_group_other: String,
+    /// "Scoresheet": the name of a scoresheet window
+    pub window_scoresheet: String,
 }
 
 impl Default for TrayLabels {
+    /// English, with the app's name (OpenVolley / OpenBeach, flavour.rs).
     fn default() -> Self {
+        let name = crate::flavour::CURRENT.name;
         Self {
-            tooltip: "OpenVolley eScoresheet".into(),
-            show: "Show OpenVolley".into(),
-            quit: "Quit OpenVolley…".into(),
+            tooltip: crate::flavour::CURRENT.window_title.into(),
+            show: format!("Show {name}"),
+            quit: format!("Quit {name}…"),
             no_tablets: "No tablets connected".into(),
             one_tablet: "1 tablet connected".into(),
             tablets: "{{count}} tablets connected".into(),
             match_live: "Match in progress".into(),
             test_match_live: "Test match in progress".into(),
-            quit_title: "Quit OpenVolley?".into(),
-            quit_title_match: "Quit OpenVolley during the match?".into(),
-            quit_title_test_match: "Quit OpenVolley during the test match?".into(),
+            quit_title: format!("Quit {name}?"),
+            quit_title_match: format!("Quit {name} during the match?"),
+            quit_title_test_match: format!("Quit {name} during the test match?"),
             quit_body: "Tablets on this computer's network will disconnect.".into(),
-            quit_match_body: "A match is in progress. It is saved on this computer: start OpenVolley again and continue it from the home screen.".into(),
-            quit_test_match_body: "A test match is in progress. It is saved on this computer: start OpenVolley again and continue it from the home screen.".into(),
-            quit_confirm: "Quit OpenVolley".into(),
+            quit_match_body: format!("A match is in progress. It is saved on this computer: start {name} again and continue it from the home screen."),
+            quit_test_match_body: format!("A test match is in progress. It is saved on this computer: start {name} again and continue it from the home screen."),
+            quit_confirm: format!("Quit {name}"),
             keep_running: "Keep running".into(),
             update_ready: "Restart to update to {{version}}".into(),
             update_status: "Update ready".into(),
+            also_closes: "Also closes: {{windows}}".into(),
+            window_group_one: "{{name}} ({{count}} window)".into(),
+            window_group_other: "{{name}} ({{count}} windows)".into(),
+            window_scoresheet: "Scoresheet".into(),
         }
     }
 }
@@ -332,6 +352,16 @@ const MAX_TEXT: usize = 300;
 
 fn clean_label(s: &str, fallback: &str) -> String {
     clean_text(s, fallback, MAX_LABEL)
+}
+
+/// `s` when it still has every placeholder the app fills in, else `fallback`
+/// (a translation that lost one would print without the list / count).
+fn with_placeholders(s: String, placeholders: &[&str], fallback: String) -> String {
+    if placeholders.iter().all(|p| s.contains(p)) {
+        s
+    } else {
+        fallback
+    }
 }
 
 fn clean_text(s: &str, fallback: &str, max: usize) -> String {
@@ -372,6 +402,51 @@ impl TrayLabels {
                 d.update_ready
             },
             update_status: clean_label(&self.update_status, &d.update_status),
+            also_closes: with_placeholders(clean_text(&self.also_closes, &d.also_closes, MAX_TEXT), &["{{windows}}"], d.also_closes),
+            window_group_one: with_placeholders(clean_label(&self.window_group_one, &d.window_group_one), &["{{name}}"], d.window_group_one),
+            window_group_other: with_placeholders(
+                clean_label(&self.window_group_other, &d.window_group_other),
+                &["{{name}}", "{{count}}"],
+                d.window_group_other,
+            ),
+            window_scoresheet: clean_label(&self.window_scoresheet, &d.window_scoresheet),
+        }
+    }
+
+    /// "Also closes: Scoresheet (2 windows)" for the titles of the other app
+    /// windows (popups::open_app_windows), grouped by name in the order they
+    /// were opened; None without any.
+    pub fn windows_line(&self, titles: &[String]) -> Option<String> {
+        let mut groups: Vec<(String, usize)> = Vec::new();
+        for title in titles {
+            let name = self.window_name(title);
+            match groups.iter_mut().find(|(n, _)| *n == name) {
+                Some((_, count)) => *count += 1,
+                None => groups.push((name, 1)),
+            }
+        }
+        if groups.is_empty() {
+            return None;
+        }
+        let list: Vec<String> = groups
+            .iter()
+            .map(|(name, count)| {
+                let template = if *count == 1 { &self.window_group_one } else { &self.window_group_other };
+                template.replace("{{count}}", &count.to_string()).replace("{{name}}", name)
+            })
+            .collect();
+        Some(self.also_closes.replace("{{windows}}", &list.join(", ")))
+    }
+
+    /// What a window is called in the question: a scoresheet window (its page
+    /// title, or the app's title before the page set one) by its translated
+    /// name, anything else by its title.
+    fn window_name(&self, title: &str) -> String {
+        let title = crate::popups::clean_window_title(title);
+        if title.is_empty() || title.to_lowercase().contains("scoresheet") {
+            self.window_scoresheet.clone()
+        } else {
+            title
         }
     }
 
@@ -382,12 +457,16 @@ impl TrayLabels {
     }
 
     /// The native "Quit OpenVolley?": title, message, confirm and cancel.
-    pub fn native_question(&self, live: MatchLive) -> (String, String, String, String) {
-        let (title, message) = match live {
+    /// `windows`: the titles of the other app windows the quit closes too.
+    pub fn native_question(&self, live: MatchLive, windows: &[String]) -> (String, String, String, String) {
+        let (title, mut message) = match live {
             MatchLive::None => (self.quit_title.clone(), self.quit_body.clone()),
             MatchLive::Official => (self.quit_title_match.clone(), format!("{}\n\n{}", self.quit_match_body, self.quit_body)),
             MatchLive::Test => (self.quit_title_test_match.clone(), format!("{}\n\n{}", self.quit_test_match_body, self.quit_body)),
         };
+        if let Some(line) = self.windows_line(windows) {
+            message = format!("{message}\n\n{line}");
+        }
         (title, message, self.quit_confirm.clone(), self.keep_running.clone())
     }
 
@@ -510,18 +589,46 @@ fn main_window<R: Runtime>(app: &AppHandle<R>) -> Option<WebviewWindow<R>> {
 /// The scoretable (and the scoresheet windows hidden with it) back on screen,
 /// in front.
 pub fn show_windows<R: Runtime>(app: &AppHandle<R>) {
+    show_main(app);
+    restore_hidden_popups(app);
+}
+
+/// Only the scoretable back on screen, in front. A quit question shows this:
+/// the scoresheet windows hidden with it stay hidden (they would only flash
+/// up before the quit closes them); a cancelled quit brings them back
+/// (restore_hidden_popups).
+fn show_main<R: Runtime>(app: &AppHandle<R>) {
     let Some(main) = main_window(app) else { return };
     let _ = main.show();
     let _ = main.unminimize();
     let _ = main.set_focus();
+}
+
+/// The scoresheet windows hidden with the scoretable back on screen, behind
+/// it (show_windows, and a quit the scorer cancelled).
+pub fn restore_hidden_popups<R: Runtime>(app: &AppHandle<R>) {
     let hidden = std::mem::take(&mut *app.state::<Lifecycle>().hidden_popups.lock().unwrap_or_else(|e| e.into_inner()));
+    if hidden.is_empty() {
+        return;
+    }
     for label in hidden {
         if let Some(w) = app.get_webview_window(&label) {
             let _ = w.show();
         }
     }
     // the scoretable stays in front of its scoresheets
-    let _ = main.set_focus();
+    if let Some(main) = main_window(app) {
+        let _ = main.set_focus();
+    }
+}
+
+/// The quit: every other app window (the scoresheet windows, hidden ones
+/// too) is closed first, explicitly, then the app exits. The scorer was
+/// asked once for all of them (the page's question lists them, the native
+/// one too); the OS ending the app is never asked but closes them as well.
+fn exit_closing_windows<R: Runtime>(app: &AppHandle<R>) {
+    crate::popups::close_app_windows(app);
+    app.exit(0);
 }
 
 /// Out of the way, still running: hidden to the tray, or minimised without one.
@@ -570,18 +677,20 @@ pub fn on_close_requested<R: Runtime>(app: &AppHandle<R>) -> bool {
 
 /// "Quit OpenVolley…": the window comes back and the page asks. A page that
 /// does not take the request within ACK_TIMEOUT (crashed, hung, loading), or
-/// none at all, gets the app's own native question instead.
+/// none at all, gets the app's own native question instead. Only the
+/// scoretable comes back: scoresheet windows hidden with it stay hidden
+/// until the quit is cancelled.
 pub fn request_quit<R: Runtime>(app: &AppHandle<R>) {
     let action = app.state::<Lifecycle>().gate().quit_requested();
     match action {
-        QuitAction::Exit => app.exit(0),
-        QuitAction::Showing => show_windows(app),
+        QuitAction::Exit => exit_closing_windows(app),
+        QuitAction::Showing => show_main(app),
         QuitAction::AskNative => {
-            show_windows(app);
+            show_main(app);
             ask_native(app);
         }
         QuitAction::AskPage(n) => {
-            show_windows(app);
+            show_main(app);
             let sent = main_window(app).map(|w| w.eval(page_event_script("quit-requested")).is_ok()).unwrap_or(false);
             if !sent {
                 if app.state::<Lifecycle>().gate().quit_not_taken(n) {
@@ -604,12 +713,14 @@ pub fn request_quit<R: Runtime>(app: &AppHandle<R>) {
 }
 
 /// The app's own "Quit OpenVolley?" (tauri-plugin-dialog, no page needed),
-/// in the last language the page reported.
+/// in the last language the page reported, with the other app windows the
+/// quit closes ("Also closes: Scoresheet (2 windows)").
 fn ask_native<R: Runtime>(app: &AppHandle<R>) {
     use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
     let lifecycle = app.state::<Lifecycle>();
     let live = *lifecycle.live.lock().unwrap_or_else(|e| e.into_inner());
-    let (title, message, ok, cancel) = lifecycle.labels().native_question(live);
+    let windows = crate::popups::open_app_windows(app);
+    let (title, message, ok, cancel) = lifecycle.labels().native_question(live, &windows);
     let mut dialog = app
         .dialog()
         .message(message)
@@ -623,7 +734,9 @@ fn ask_native<R: Runtime>(app: &AppHandle<R>) {
     dialog.show(move |quit| {
         handle.state::<Lifecycle>().gate().native_answered(quit);
         if quit {
-            handle.exit(0);
+            exit_closing_windows(&handle);
+        } else {
+            restore_hidden_popups(&handle);
         }
     });
 }
@@ -643,11 +756,12 @@ pub fn on_exit_requested<R: Runtime>(app: &AppHandle<R>) -> bool {
     false
 }
 
-/// The OS ends the app (or the installer, after it asked): never blocked.
+/// The OS ends the app (or the installer, after it asked): never blocked,
+/// never asked, and the scoresheet windows close too.
 pub fn os_exit<R: Runtime>(app: &AppHandle<R>, why: &str) {
     log::info!("[app] {why}: quitting");
     app.state::<Lifecycle>().gate().os_exit();
-    app.exit(0);
+    exit_closing_windows(app);
 }
 
 /// Linux: SIGTERM (logout, shutdown, `kill`), SIGINT and SIGHUP quit cleanly
@@ -902,14 +1016,22 @@ pub fn app_hide<R: Runtime>(app: AppHandle<R>) {
     hide_windows(&app);
 }
 
-/// The scorer confirmed "Quit OpenVolley?": exit (the tablets' network stops
-/// on RunEvent::Exit). A downloaded update installs first when no match is
-/// live (updater.rs; Windows: the installer takes over and the app is gone).
+/// The scorer confirmed "Quit OpenVolley?": the scoresheet windows close and
+/// the app exits (the tablets' network stops on RunEvent::Exit). A
+/// downloaded update installs first when no match is live (updater.rs;
+/// Windows: the installer takes over and the app is gone).
 #[tauri::command]
 pub fn app_quit<R: Runtime>(app: AppHandle<R>, state: State<'_, Lifecycle>) {
     state.gate().confirm_quit();
     crate::updater::on_confirmed_quit(&app);
-    app.exit(0);
+    exit_closing_windows(&app);
+}
+
+/// The scorer answered the page's "Quit OpenVolley?" with Keep running: the
+/// scoresheet windows the quit request left hidden come back.
+#[tauri::command]
+pub fn app_quit_cancel<R: Runtime>(app: AppHandle<R>) {
+    restore_hidden_popups(&app);
 }
 
 /// An exit that is a restart (an update, updater.rs): never asked, never blocked.
@@ -1085,15 +1207,16 @@ mod tests {
 
     #[test]
     fn native_question_texts() {
+        let n = crate::flavour::CURRENT.name;
         let l = TrayLabels::default();
-        let (title, message, ok, cancel) = l.native_question(MatchLive::None);
-        assert_eq!((title.as_str(), ok.as_str(), cancel.as_str()), ("Quit OpenVolley?", "Quit OpenVolley", "Keep running"));
+        let (title, message, ok, cancel) = l.native_question(MatchLive::None, &[]);
+        assert_eq!((title, ok, cancel.as_str()), (format!("Quit {n}?"), format!("Quit {n}"), "Keep running"));
         assert_eq!(message, "Tablets on this computer's network will disconnect.");
-        let (title, message, _, _) = l.native_question(MatchLive::Official);
-        assert_eq!(title, "Quit OpenVolley during the match?");
+        let (title, message, _, _) = l.native_question(MatchLive::Official, &[]);
+        assert_eq!(title, format!("Quit {n} during the match?"));
         assert!(message.starts_with("A match is in progress.") && message.ends_with("will disconnect."));
-        let (title, message, _, _) = l.native_question(MatchLive::Test);
-        assert_eq!(title, "Quit OpenVolley during the test match?");
+        let (title, message, _, _) = l.native_question(MatchLive::Test, &[]);
+        assert_eq!(title, format!("Quit {n} during the test match?"));
         assert!(message.starts_with("A test match is in progress."));
         // the page's language, sentences kept longer than a tray label
         let page: TrayLabels = serde_json::from_str(&format!(
@@ -1101,10 +1224,51 @@ mod tests {
             "b".repeat(200)
         ))
         .unwrap();
-        let (title, message, ok, _) = page.cleaned().native_question(MatchLive::None);
+        let (title, message, ok, _) = page.cleaned().native_question(MatchLive::None, &[]);
         assert_eq!(title, "OpenVolley beenden?");
         assert_eq!(message.chars().count(), 200);
-        assert_eq!(ok, "Quit OpenVolley", "missing: English");
+        assert_eq!(ok, format!("Quit {n}"), "missing: English");
+    }
+
+    #[test]
+    fn the_native_question_lists_the_windows_the_quit_closes() {
+        let l = TrayLabels::default();
+        let titles = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // grouped by name: scoresheet pages (and a popup before its page set
+        // a title) are "Scoresheet"
+        let (_, message, _, _) = l.native_question(
+            MatchLive::None,
+            &titles(&["Openvolley Scoresheet", "OpenVolley eScoresheet", "Help"]),
+        );
+        assert_eq!(
+            message,
+            "Tablets on this computer's network will disconnect.\n\nAlso closes: Scoresheet (2 windows), Help (1 window)"
+        );
+        let (_, message, _, _) = l.native_question(MatchLive::Official, &titles(&["Openvolley Scoresheet"]));
+        assert!(message.ends_with("will disconnect.\n\nAlso closes: Scoresheet (1 window)"), "{message}");
+        assert_eq!(l.windows_line(&[]), None);
+        assert_eq!(l.windows_line(&titles(&[""])).as_deref(), Some("Also closes: Scoresheet (1 window)"));
+
+        // the page's language; a translation that lost a placeholder keeps the English one
+        let page: TrayLabels = serde_json::from_str(
+            r#"{"alsoCloses":"Schliesst auch: {{windows}}","windowGroupOne":"{{name}} ({{count}} Fenster)",
+                "windowGroupOther":"{{name}} ({{count}} Fenster)","windowScoresheet":"Matchblatt"}"#,
+        )
+        .unwrap();
+        let c = page.cleaned();
+        assert_eq!(
+            c.windows_line(&titles(&["Openvolley Scoresheet", "Openvolley Scoresheet"])).as_deref(),
+            Some("Schliesst auch: Matchblatt (2 Fenster)")
+        );
+        let lost: TrayLabels =
+            serde_json::from_str(r#"{"alsoCloses":"Schliesst auch","windowGroupOther":"{{name}} Fenster"}"#).unwrap();
+        let c = lost.cleaned();
+        assert_eq!(c.also_closes, "Also closes: {{windows}}");
+        assert_eq!(c.window_group_other, "{{name}} ({{count}} windows)");
+        // a window title is page text: no control characters, cut
+        let long = format!("Report\u{7}{}", "x".repeat(200));
+        let line = l.windows_line(&[long]).unwrap();
+        assert!(!line.contains('\u{7}') && line.chars().count() < 100, "{line}");
     }
 
     #[test]
@@ -1141,11 +1305,12 @@ mod tests {
         };
         let c = page.cleaned();
         assert_eq!(c.show, "OpenVolley anzeigen");
-        assert_eq!(c.quit, "Quit OpenVolley…", "empty after cleaning: English");
+        let n = crate::flavour::CURRENT.name;
+        assert_eq!(c.quit, format!("Quit {n}…"), "empty after cleaning: English");
         assert_eq!(c.tablets.chars().count(), MAX_LABEL);
         // a partial object from the page keeps the English defaults
         let partial: TrayLabels = serde_json::from_str(r#"{"show":"Afficher OpenVolley"}"#).unwrap();
-        assert_eq!(partial.cleaned().quit, "Quit OpenVolley…");
+        assert_eq!(partial.cleaned().quit, format!("Quit {n}…"));
         assert_eq!(serde_json::from_str::<MatchLive>(r#""test""#).unwrap(), MatchLive::Test);
     }
 

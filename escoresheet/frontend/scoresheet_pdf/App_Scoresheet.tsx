@@ -3,11 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { Header } from './components/Header';
 import { StandardSet } from './components/StandardSet';
 import { SetFive } from './components/SetFive';
-import { Sanctions, Results, Approvals, Roster, Remarks } from './components/FooterSection';
+import { Sanctions, Results, Approvals, Roster, Remarks, SANCTION_ROWS } from './components/FooterSection';
 import { LeftInfoBox } from './components/LeftInfoBox';
 import { LiberoControlSheet } from './components/LiberoControlSheet';
 import { Player, SanctionRecord } from './types_scoresheet';
-import { sanitizeSimple } from '../src/utils/stringUtils';
+import { asArray, buildScoresheetFilename, buildScoresheetTitle, displayShortName, findOfficial, formatDob, formatHoursMinutes, formatClockHoursMinutes, formatPersonName, normalizeOfficials } from './utils/sheetFormat';
 import { formatTimeLocal } from '../src/utils/timeUtils';
 import { extractLiberoData } from './utils/extractLiberoData';
 import { allStyleProperties, drawableImages, drawImagesOnto, hideImages, isWebKitGtk, styleListFor, usedStyleProperties } from './utils/pdfCapture';
@@ -15,13 +15,22 @@ import {
   getStartingLineup,
   assignSubsToColumns,
   countRegularSubstitutions,
+  countAllSubstitutions,
   displaySetNumber,
   getScoreBeforeEvent,
   getSet5LeftTeamLabel,
-  getFirstServeTeamKey
+  getFirstServeTeamKey,
+  consistencyWarnings
 } from './utils/scoresheetModel';
+import { trackServiceRounds, courtChangeIndex, splitSet5Rounds, type ServiceRound } from './utils/serviceRounds';
+import { awardsPoint as sanctionAwardsPoint } from '../src/domain/sanctions.js';
+import { generatedRemarks } from './utils/sheetRemarks';
+import { isoOf, setDurationMinutes, setEndMs, setStartMs } from './utils/matchTimes';
+import { BRAND } from '../src/brand.js';
 import { PhoneIcon } from '../src/components/icons';
-import { deliverPdfToOpener, isOwnDownload, savePdfThroughApp } from '../src/utils/appWindowGuest';
+import { deliverPdfToOpener, getOpenerWindow, isOwnDownload, savePdfThroughApp, setPdfBusy } from '../src/utils/appWindowGuest';
+import { detectAppPlatform } from '../src/utils/openAppWindow';
+import { assertCanvas, assertJpegDataUrl, assertValidPdf, assertVisibleSheet, downloadBlob, PdfCheckError, SHEET_MM, SHEET_OFFSET_MM, type SaveOutcome } from './utils/pdfOutput';
 
 interface AppScoresheetProps {
   matchData: {
@@ -35,44 +44,61 @@ interface AppScoresheetProps {
     sanctions?: SanctionRecord[];
   };
   autoAction?: 'preview' | 'print' | 'save' | 'getBlob';
+  /**
+   * Every live query has answered (LiveScoresheet). The automatic save / getBlob
+   * waits for it: the first render has the match but not yet its teams, players,
+   * sets and events. Static data (storage, import) is ready at once.
+   */
+  dataReady?: boolean;
+  /** ?matchId= named a match that is not on this device: show it, never save an empty sheet. */
+  matchMissing?: boolean;
 }
 
-const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
+const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = true, matchMissing = false }) => {
   const { t } = useTranslation();
-  const { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events, sanctions = [] } = matchData;
+  // Normalised once: a JSON import or an older row may miss lists or hold null
+  const match: any = matchData?.match || {};
+  const homeTeam: any = matchData?.homeTeam || null;
+  const awayTeam: any = matchData?.awayTeam || null;
+  const homePlayers = asArray(matchData?.homePlayers);
+  const awayPlayers = asArray(matchData?.awayPlayers);
+  const sets: any[] = asArray(matchData?.sets);
+  const events: any[] = asArray(matchData?.events);
+  // Officials: the array, the older role-keyed object or snake_case names (never throws)
+  const officials = normalizeOfficials(match?.officials);
 
-  console.log('[Scoresheet] matchData received:', {
-    matchId: match?.id,
-    status: match?.status,
-    coinTossTeamA: match?.coinTossTeamA,
-    coinTossConfirmedField: match?.coinTossConfirmed,
-    homeTeam: homeTeam?.name,
-    awayTeam: awayTeam?.name,
-    homePlayers: homePlayers?.length,
-    awayPlayers: awayPlayers?.length,
-    sets: sets?.length,
-    events: events?.length
-  });
-
-  // Helper function to format players for scoresheet
-  const formatPlayers = (players: any[]): Player[] => {
-    return players.map(p => ({
-      number: String(p.number || ''),
-      name: p.name || `${p.lastName || ''} ${p.firstName || ''}`.trim(),
-      firstName: p.firstName,
-      lastName: p.lastName,
-      dob: p.dob,
-      libero: p.libero,
-      isCaptain: p.isCaptain,
-      isLfp: p.isLfp || p.is_lfp || false,
-      license: p.license || '',
-      role: p.role
-    }));
+  // Players as the sheet prints them, sorted by shirt number (the roster's 14 rows;
+  // field-spec 3). Robust to a missing list (an imported JSON without players).
+  const formatPlayers = (players: unknown): Player[] => {
+    return asArray<any>(players)
+      .filter(p => p && typeof p === 'object')
+      .map(p => ({
+        number: String(p.number ?? ''),
+        name: (p.lastName ?? p.last_name) || (p.firstName ?? p.first_name)
+          ? formatPersonName(p.lastName ?? p.last_name, p.firstName ?? p.first_name)
+          : String(p.name || ''),
+        firstName: p.firstName ?? p.first_name,
+        lastName: p.lastName ?? p.last_name,
+        dob: formatDob(p.dob ?? p.date_of_birth),
+        libero: p.libero,
+        isCaptain: p.isCaptain || p.is_captain,
+        isLfp: p.isLfp || p.is_lfp || false,
+        license: p.license || '',
+        role: p.role
+      }))
+      .sort((a, b) => {
+        const na = parseInt(String(a.number), 10);
+        const nb = parseInt(String(b.number), 10);
+        if (Number.isNaN(na) && Number.isNaN(nb)) return 0;
+        if (Number.isNaN(na)) return 1;
+        if (Number.isNaN(nb)) return -1;
+        return na - nb;
+      });
   };
 
   // Determine team labels (A or B) based on coin toss
-  const teamAKey = match?.coinTossTeamA || 'home';
-  const teamBKey = teamAKey === 'home' ? 'away' : 'home';
+  const teamAKey: 'home' | 'away' = match?.coinTossTeamA === 'away' ? 'away' : 'home';
+  const teamBKey: 'home' | 'away' = teamAKey === 'home' ? 'away' : 'home';
 
   // Calculate if coin toss is confirmed (all coin toss fields are set)
   // Also treat as confirmed if match is live/ended/final (coin toss must have been completed to reach these states)
@@ -94,9 +120,23 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
   const teamAName = (teamAKey === 'home' ? homeTeam?.name : awayTeam?.name) || '';
   const teamBName = (teamBKey === 'home' ? homeTeam?.name : awayTeam?.name) || '';
 
-  // Use short names for set labels and rosters - show empty if not set (don't fallback to full name)
-  const teamAShortName = (teamAKey === 'home' ? match?.homeShortName : match?.awayShortName) || '';
-  const teamBShortName = (teamBKey === 'home' ? match?.homeShortName : match?.awayShortName) || '';
+  // Short names for the set boxes, the rosters and the result table: the stored
+  // short name, else (empty or a HOME / AWAY placeholder) the team's full name
+  const homeShortName = displayShortName(match?.homeShortName, homeTeam?.name ?? match?.homeTeamName);
+  const awayShortName = displayShortName(match?.awayShortName, awayTeam?.name ?? match?.awayTeamName);
+  const teamAShortName = teamAKey === 'home' ? homeShortName : awayShortName;
+  const teamBShortName = teamBKey === 'home' ? homeShortName : awayShortName;
+
+  // Who served first in set 1, as "is it Team A": coinTossServeA, else the legacy
+  // match.firstServe (server-synced matches may store coinTossServeA = null).
+  // The same rule as the service tracker (getFirstServeTeamKey), so the S/R
+  // crosses and the X always agree with the service boxes (code-map D5).
+  const set1ServeIsA: boolean | undefined =
+    match?.coinTossServeA !== undefined && match?.coinTossServeA !== null
+      ? !!match.coinTossServeA
+      : match?.firstServe === 'home' || match?.firstServe === 'away'
+        ? match.firstServe === teamAKey
+        : undefined;
 
   // Compute Libero Control Sheet data from events
   const lcsData = useMemo(() => {
@@ -186,461 +226,34 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
     // Shared with the set-5 service tracker and S/R cross so all three agree
     const firstServeTeam: 'home' | 'away' = getFirstServeTeamKey(setNumber, match, teamAKey, teamBKey);
 
-    // Service tracking: track service rounds for each team
-    interface ServiceRound {
-      position: number; // 0-5 for I-VI
-      box: number; // 1-8
-      ticked: boolean; // Has tick (4) when player starts serving
-      points: number | null; // Points scored when service lost (null if still serving)
-      circled: boolean; // Circled at end of set for last point
-    }
-
-    const leftServiceRounds: ServiceRound[] = [];
-    const rightServiceRounds: ServiceRound[] = [];
-
-    // Determine which team is left and right
-    const leftTeamKey = !isSwapped
-      ? (teamAKey === 'home' ? 'home' : 'away')
-      : (teamBKey === 'home' ? 'home' : 'away');
-    const rightTeamKey = !isSwapped
-      ? (teamBKey === 'home' ? 'home' : 'away')
-      : (teamAKey === 'home' ? 'home' : 'away');
-
-    // Wrap service tracking in try-catch to prevent crashes
-    try {
-      // Track current serve and service state
-      let currentServeTeam: 'home' | 'away' = firstServeTeam as 'home' | 'away';
-      let leftServiceRound = 0; // Current service round index (0-47, increments by 1 each rotation)
-      let rightServiceRound = 0; // Current service round index (0-47, increments by 1 each rotation)
-      let leftCurrentPosition = 0; // Current serving position (0-5 for I-VI)
-      let rightCurrentPosition = 0; // Current serving position (0-5 for I-VI)
-      let leftPointsInService = 0; // Points scored in current service
-      let rightPointsInService = 0; // Points scored in current service
-      let leftServiceStarted = false; // Has left team started serving?
-      let rightServiceStarted = false; // Has right team started serving?
-
-      // Track which team started receiving (position I box 1 will have X, so position I skips to box 2)
-      const leftStartedReceiving = firstServeTeam !== leftTeamKey;
-      const rightStartedReceiving = firstServeTeam !== rightTeamKey;
-
-      // Track who was serving BEFORE the last point (for end-of-set tick logic)
-      let serveTeamBeforeLastPoint: 'home' | 'away' = firstServeTeam as 'home' | 'away';
-
-      // Initialize first serve - only create initial service round entry if there are point events
-      // The tick mark should only appear when "start set" is confirmed (first point scored)
-      const hasPointEvents = pointEvents.length > 0;
-
-      if (firstServeTeam === leftTeamKey) {
-        leftServiceStarted = true;
-        leftCurrentPosition = 0;
-        // Only create ticked entry if gameplay has started (points scored)
-        if (hasPointEvents) {
-          leftServiceRounds.push({
-            position: 0, // Column I
-            box: 1,
-            ticked: true,
-            points: null,
-            circled: false
-          });
-        }
-      } else {
-        rightServiceStarted = true;
-        rightCurrentPosition = 0;
-        // Only create ticked entry if gameplay has started (points scored)
-        if (hasPointEvents) {
-          rightServiceRounds.push({
-            position: 0, // Column I
-            box: 1,
-            ticked: true,
-            points: null,
-            circled: false
-          });
-        }
+    // Ticked points: each team's running total after each of its points
+    pointEvents.forEach((event) => {
+      const scoringTeam = event.payload?.team;
+      if (scoringTeam === 'home') {
+        homeScore++;
+        homeMarkedPoints.push(homeScore);
+      } else if (scoringTeam === 'away') {
+        awayScore++;
+        awayMarkedPoints.push(awayScore);
       }
+    });
 
-      pointEvents.forEach((event, idx) => {
-        // Save who was serving BEFORE this point (for end-of-set logic)
-        serveTeamBeforeLastPoint = currentServeTeam;
+    // Which team is left and right in this set's grid
+    const leftTeamKey: 'home' | 'away' = !isSwapped ? teamAKey : teamBKey;
+    const rightTeamKey: 'home' | 'away' = !isSwapped ? teamBKey : teamAKey;
 
-        const scoringTeam = event.payload?.team as 'home' | 'away';
-        const isLeftTeam = scoringTeam === leftTeamKey;
-        const isRightTeam = scoringTeam === rightTeamKey;
-
-        // Update scores
-        if (scoringTeam === 'home') {
-          homeScore++;
-          homeMarkedPoints.push(homeScore);
-        } else if (scoringTeam === 'away') {
-          awayScore++;
-          awayMarkedPoints.push(awayScore);
-        }
-
-        // Check if service was lost (opponent scored while we had serve)
-        if (scoringTeam !== currentServeTeam) {
-          // Service was lost - record TEAM SCORE at time of service loss
-          if (currentServeTeam === leftTeamKey && leftServiceStarted) {
-            // Left team lost service - record their TEAM SCORE in service box
-            let boxNum = Math.floor(leftServiceRound / 6) + 1; // Box number (1-8)
-            // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
-            if (leftStartedReceiving && leftCurrentPosition === 0) {
-              boxNum++;
-            }
-            // Get the team score at the time of service loss
-            // This is the serving team's score (not the opponent's), which stays unchanged when opponent scores
-            const teamScoreAtLoss = leftTeamKey === 'home' ? homeScore : awayScore;
-
-            // Update or add service round
-            const existingRound = leftServiceRounds.find(sr => sr.position === leftCurrentPosition && sr.box === boxNum);
-            if (existingRound) {
-              existingRound.points = teamScoreAtLoss;
-            } else {
-              // Fallback: create entry if it doesn't exist (should have been created when gaining service)
-              leftServiceRounds.push({
-                position: leftCurrentPosition,
-                box: boxNum,
-                ticked: true, // Should always be ticked since team was serving from this position
-                points: teamScoreAtLoss,
-                circled: false
-              });
-            }
-
-            // Right team gains service
-            if (!rightServiceStarted) {
-              // First time serving - they were receiving, so they rotate when gaining serve
-              // Position II (index 1) is the new server after rotation from receiving position I
-              rightCurrentPosition = 1; // Position II
-              rightServiceRound = 0;
-              rightServiceRounds.push({
-                position: 1, // Column II (they rotated from receiving at I)
-                box: 1,
-                ticked: true, // Tick because this position is now serving
-                points: null,
-                circled: false
-              });
-            } else {
-              // Right team already served before - they rotate when gaining service back
-              rightCurrentPosition = (rightCurrentPosition + 1) % 6;
-              rightServiceRound++;
-              // Create entry for the new position
-              let newBoxNum = Math.floor(rightServiceRound / 6) + 1;
-              // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
-              if (rightStartedReceiving && rightCurrentPosition === 0) {
-                newBoxNum++;
-              }
-              rightServiceRounds.push({
-                position: rightCurrentPosition,
-                box: newBoxNum,
-                ticked: true, // Tick because this position is now serving
-                points: null,
-                circled: false
-              });
-            }
-
-            rightServiceStarted = true;
-            rightPointsInService = 0;
-          } else if (currentServeTeam === rightTeamKey && rightServiceStarted) {
-            // Right team lost service - record their TEAM SCORE in service box
-            let boxNum = Math.floor(rightServiceRound / 6) + 1;
-            // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
-            if (rightStartedReceiving && rightCurrentPosition === 0) {
-              boxNum++;
-            }
-            // Get the team score at the time of service loss
-            const teamScoreAtLoss = rightTeamKey === 'home' ? homeScore : awayScore;
-
-            const existingRound = rightServiceRounds.find(sr => sr.position === rightCurrentPosition && sr.box === boxNum);
-            if (existingRound) {
-              existingRound.points = teamScoreAtLoss;
-            } else {
-              // Fallback: create entry if it doesn't exist (should have been created when gaining service)
-              rightServiceRounds.push({
-                position: rightCurrentPosition,
-                box: boxNum,
-                ticked: true, // Should always be ticked since team was serving from this position
-                points: teamScoreAtLoss,
-                circled: false
-              });
-            }
-
-            // Left team gains service
-            if (!leftServiceStarted) {
-              // First time serving - they were receiving, so they rotate when gaining serve
-              // Position II (index 1) is the new server after rotation from receiving position I
-              leftCurrentPosition = 1; // Position II
-              leftServiceRound = 0;
-              leftServiceRounds.push({
-                position: 1, // Column II (they rotated from receiving at I)
-                box: 1,
-                ticked: true, // Tick because this position is now serving
-                points: null,
-                circled: false
-              });
-            } else {
-              // Left team already served before - they rotate when gaining service back
-              leftCurrentPosition = (leftCurrentPosition + 1) % 6;
-              leftServiceRound++;
-              // Create entry for the new position
-              let newBoxNum = Math.floor(leftServiceRound / 6) + 1;
-              // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
-              if (leftStartedReceiving && leftCurrentPosition === 0) {
-                newBoxNum++;
-              }
-              leftServiceRounds.push({
-                position: leftCurrentPosition,
-                box: newBoxNum,
-                ticked: true, // Tick because this position is now serving
-                points: null,
-                circled: false
-              });
-            }
-
-            leftServiceStarted = true;
-            leftPointsInService = 0;
-          }
-
-          // Update current serve
-          currentServeTeam = scoringTeam;
-        } else {
-          // Scoring team had serve - increment their service points (for tracking, but we use team score instead)
-          if (isLeftTeam && currentServeTeam === leftTeamKey) {
-            leftPointsInService++;
-          } else if (isRightTeam && currentServeTeam === rightTeamKey) {
-            rightPointsInService++;
-          }
-        }
-      });
-
-      // End of set logic: circle last point for both teams
-      const isSetFinished = setInfo?.finished || false;
-      if (isSetFinished && pointEvents.length > 0) {
-        const lastPoint = pointEvents[pointEvents.length - 1];
-        const lastScoringTeam = lastPoint.payload?.team as 'home' | 'away';
-        const isLastPointLeft = lastScoringTeam === leftTeamKey;
-        const isLastPointRight = lastScoringTeam === rightTeamKey;
-
-        // Get final scores from setInfo (after all points have been scored)
-        const leftFinalScore = !isSwapped
-          ? (teamAKey === 'home' ? (setInfo.homePoints || 0) : (setInfo.awayPoints || 0))
-          : (teamBKey === 'home' ? (setInfo.homePoints || 0) : (setInfo.awayPoints || 0));
-        const rightFinalScore = !isSwapped
-          ? (teamBKey === 'home' ? (setInfo.homePoints || 0) : (setInfo.awayPoints || 0))
-          : (teamAKey === 'home' ? (setInfo.homePoints || 0) : (setInfo.awayPoints || 0));
-
-        // DEBUG: Log end-of-set info
-        // Use serveTeamBeforeLastPoint to determine who was ACTUALLY serving when the last point was scored
-        // (currentServeTeam gets updated to the winner after each point, so it's always the winner at this point)
-        const winnerSide = isLastPointLeft ? 'LEFT' : 'RIGHT';
-        const loserSide = isLastPointLeft ? 'RIGHT' : 'LEFT';
-        const winnerScore = isLastPointLeft ? leftFinalScore : rightFinalScore;
-        const loserScore = isLastPointLeft ? rightFinalScore : leftFinalScore;
-        const winnerWasServing = (isLastPointLeft && serveTeamBeforeLastPoint === leftTeamKey) || (isLastPointRight && serveTeamBeforeLastPoint === rightTeamKey);
-
-        console.log(`\n========== SET ${setNumber} ENDED ==========`);
-        console.log(`Score: ${winnerSide} ${winnerScore} - ${loserScore} ${loserSide}`);
-        console.log(`serveTeamBeforeLastPoint: ${serveTeamBeforeLastPoint}, leftTeamKey: ${leftTeamKey}, rightTeamKey: ${rightTeamKey}`);
-        console.log(`Winner: ${winnerSide} team (${winnerWasServing ? 'was SERVING' : 'was RECEIVING'})`);
-        console.log(`Expected: Winner's service box should ${winnerWasServing ? 'BE TICKED (they served)' : 'NOT be ticked (won on receive)'}`);
-        console.log(`Loser (${loserSide}): Their last service round should be circled`);
-
-        // Circle the last point for the winning team (team that scored the last point)
-        if (isLastPointLeft) {
-          // Left team won - circle their last point
-          if (serveTeamBeforeLastPoint === leftTeamKey && leftServiceStarted) {
-            // Left team was serving - find their CURRENT active service round (the one with null points)
-            let currentBoxNum = Math.floor(leftServiceRound / 6) + 1;
-            // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
-            if (leftStartedReceiving && leftCurrentPosition === 0) {
-              currentBoxNum++;
-            }
-            let activeServiceRound = leftServiceRounds.find(sr =>
-              sr.position === leftCurrentPosition &&
-              sr.box === currentBoxNum &&
-              sr.points === null
-            );
-
-            if (activeServiceRound) {
-              // Found the active service round - update with final score and circle
-              activeServiceRound.points = leftFinalScore;
-              activeServiceRound.circled = true;
-            } else {
-              // No active round found, check the last one
-              const lastServiceRound = leftServiceRounds[leftServiceRounds.length - 1];
-              if (lastServiceRound && lastServiceRound.points === null) {
-                lastServiceRound.points = leftFinalScore;
-                lastServiceRound.circled = true;
-              } else {
-                // Create a new service round for the final score
-                leftServiceRounds.push({
-                  position: leftCurrentPosition,
-                  box: currentBoxNum,
-                  ticked: false,
-                  points: leftFinalScore,
-                  circled: true
-                });
-              }
-            }
-          } else {
-            // Left team won on receive - add final score for "the player who would have served"
-            if (!leftServiceStarted) {
-              // They never served - position I player "would have served"
-              // For receiving team, position I should be box 2 (box 1 has X)
-              leftServiceRounds.push({
-                position: 0, // Position I - the player who would have served
-                box: leftStartedReceiving ? 2 : 1, // Box 2 if receiving team (box 1 has X), otherwise box 1
-                ticked: false, // No tick - they never actually served
-                points: leftFinalScore,
-                circled: true
-              });
-            } else {
-              // They served before but won on receive (sideout win)
-              // The sideout code already created an entry with ticked: true, points: null
-              // Find and update that entry instead of creating a new one
-              const lastServiceRound = leftServiceRounds[leftServiceRounds.length - 1];
-              if (lastServiceRound && lastServiceRound.points === null) {
-                // Update the entry created by sideout code
-                lastServiceRound.ticked = false; // No tick - they didn't actually serve from this position
-                lastServiceRound.points = leftFinalScore;
-                lastServiceRound.circled = true;
-              } else {
-                // Fallback: create entry if needed (shouldn't normally happen)
-                const nextPosition = (leftCurrentPosition + 1) % 6;
-                let nextBox = Math.floor((leftServiceRound + 1) / 6) + 1;
-                // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
-                if (leftStartedReceiving && nextPosition === 0) {
-                  nextBox++;
-                }
-                leftServiceRounds.push({
-                  position: nextPosition,
-                  box: nextBox,
-                  ticked: false, // No tick - they didn't actually serve from this position
-                  points: leftFinalScore,
-                  circled: true
-                });
-              }
-            }
-          }
-        } else if (isLastPointRight) {
-          // Right team won - circle their last point
-          if (serveTeamBeforeLastPoint === rightTeamKey && rightServiceStarted) {
-            // Right team was serving - find their CURRENT active service round (the one with null points)
-            let currentBoxNum = Math.floor(rightServiceRound / 6) + 1;
-            // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
-            if (rightStartedReceiving && rightCurrentPosition === 0) {
-              currentBoxNum++;
-            }
-            let activeServiceRound = rightServiceRounds.find(sr =>
-              sr.position === rightCurrentPosition &&
-              sr.box === currentBoxNum &&
-              sr.points === null
-            );
-
-            if (activeServiceRound) {
-              // Found the active service round - update with final score and circle
-              activeServiceRound.points = rightFinalScore;
-              activeServiceRound.circled = true;
-            } else {
-              // No active round found, check the last one
-              const lastServiceRound = rightServiceRounds[rightServiceRounds.length - 1];
-              if (lastServiceRound && lastServiceRound.points === null) {
-                lastServiceRound.points = rightFinalScore;
-                lastServiceRound.circled = true;
-              } else {
-                // Create a new service round for the final score
-                rightServiceRounds.push({
-                  position: rightCurrentPosition,
-                  box: currentBoxNum,
-                  ticked: false,
-                  points: rightFinalScore,
-                  circled: true
-                });
-              }
-            }
-          } else {
-            // Right team won on receive - add final score for "the player who would have served"
-            if (!rightServiceStarted) {
-              // They never served - position I player "would have served"
-              // For receiving team, position I should be box 2 (box 1 has X)
-              rightServiceRounds.push({
-                position: 0, // Position I - the player who would have served
-                box: rightStartedReceiving ? 2 : 1, // Box 2 if receiving team (box 1 has X), otherwise box 1
-                ticked: false, // No tick - they never actually served
-                points: rightFinalScore,
-                circled: true
-              });
-            } else {
-              // They served before but won on receive (sideout win)
-              // The sideout code already created an entry with ticked: true, points: null
-              // Find and update that entry instead of creating a new one
-              const lastServiceRound = rightServiceRounds[rightServiceRounds.length - 1];
-              if (lastServiceRound && lastServiceRound.points === null) {
-                // Update the entry created by sideout code
-                lastServiceRound.ticked = false; // No tick - they didn't actually serve from this position
-                lastServiceRound.points = rightFinalScore;
-                lastServiceRound.circled = true;
-              } else {
-                // Fallback: create entry if needed (shouldn't normally happen)
-                const nextPosition = (rightCurrentPosition + 1) % 6;
-                let nextBox = Math.floor((rightServiceRound + 1) / 6) + 1;
-                // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
-                if (rightStartedReceiving && nextPosition === 0) {
-                  nextBox++;
-                }
-                rightServiceRounds.push({
-                  position: nextPosition,
-                  box: nextBox,
-                  ticked: false, // No tick - they didn't actually serve from this position
-                  points: rightFinalScore,
-                  circled: true
-                });
-              }
-            }
-          }
-        }
-
-        // Circle the last point for the losing team as well
-        // The losing team's service is "closed" - just circle their last service round
-        if (isLastPointLeft) {
-          // Right team lost - circle their last service round
-          if (rightServiceRounds.length > 0) {
-            const lastRightServiceRound = rightServiceRounds[rightServiceRounds.length - 1];
-            if (lastRightServiceRound.points === null) {
-              // Right team was still serving when they lost - add their final score
-              lastRightServiceRound.points = rightFinalScore;
-            }
-            lastRightServiceRound.circled = true;
-          }
-        } else if (isLastPointRight) {
-          // Left team lost - circle their last service round
-          if (leftServiceRounds.length > 0) {
-            const lastLeftServiceRound = leftServiceRounds[leftServiceRounds.length - 1];
-            if (lastLeftServiceRound.points === null) {
-              // Left team was still serving when they lost - add their final score
-              lastLeftServiceRound.points = leftFinalScore;
-            }
-            lastLeftServiceRound.circled = true;
-          }
-        }
-
-        // DEBUG: Log final service rounds after end-of-set processing
-        const leftCircled = leftServiceRounds.filter(sr => sr.circled);
-        const rightCircled = rightServiceRounds.filter(sr => sr.circled);
-
-        console.log(`\n--- LEFT team final circled service rounds ---`);
-        leftCircled.forEach(sr => {
-          console.log(`  Position ${sr.position} (${['I', 'II', 'III', 'IV', 'V', 'VI'][sr.position]}), Box ${sr.box}: ${sr.points} pts, ticked=${sr.ticked}, circled=${sr.circled}`);
-        });
-
-        console.log(`\n--- RIGHT team final circled service rounds ---`);
-        rightCircled.forEach(sr => {
-          console.log(`  Position ${sr.position} (${['I', 'II', 'III', 'IV', 'V', 'VI'][sr.position]}), Box ${sr.box}: ${sr.points} pts, ticked=${sr.ticked}, circled=${sr.circled}`);
-        });
-        console.log(`==========================================\n`);
-      }
-
-    } catch (error) {
-      // If service tracking fails, just use empty arrays
-      console.error('Error tracking service rounds:', error);
-    }
+    // Service rounds: one pure tracker for every set (utils/serviceRounds.ts)
+    const trackedRounds = trackServiceRounds({
+      pointTeams: pointEvents.map(e => e.payload?.team),
+      firstServer: firstServeTeam,
+      finished: !!setInfo?.finished
+    });
+    const leftServiceRounds: ServiceRound[] = trackedRounds[leftTeamKey];
+    const rightServiceRounds: ServiceRound[] = trackedRounds[rightTeamKey];
+    // Set 5: index of the point after which a team reached 8 (change of courts)
+    const set5ChangeAt = setNumber === 5
+      ? courtChangeIndex(pointEvents.map(e => e.payload?.team))
+      : null;
 
     // Identify points scored due to sanctions
     // Get all events (including sanctions) sorted chronologically
@@ -675,12 +288,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
         const sanctionedTeam = payload.team; // 'home' or 'away'
         const opponentTeam = sanctionedTeam === 'home' ? 'away' : 'home';
 
-        // Check if this sanction awards a point to the opponent
-        // Only penalty and delay_penalty award points
-        // Warning, delay_warning, expulsion, and disqualification do NOT award points
-        const awardsPoint = ['penalty', 'delay_penalty'].includes(sanctionType);
-
-        if (awardsPoint) {
+        // Penalty and delay penalty give the opponent a point (domain/sanctions.awardsPoint);
+        // warnings, expulsions and disqualifications do not
+        if (sanctionAwardsPoint(sanctionType)) {
           // Find the next point event scored by the opponent after this sanction
           // We need to calculate what the score will be when that point is scored
           let futureHomeCount = homePointCount;
@@ -710,6 +320,25 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
               }
             }
           }
+        }
+      }
+    }
+
+    // Points awarded to the opponent of a team that defaulted or was incomplete
+    // (Scoreboard.handleForfait, payload.forfeitAwarded): not won in a rally, so
+    // circled like a penalty point (field-spec 11, OV decision)
+    {
+      let h = 0;
+      let a = 0;
+      for (const e of pointEvents) {
+        const team = e.payload?.team;
+        if (team === 'home') h++;
+        else if (team === 'away') a++;
+        else continue;
+        if (e.payload?.forfeitAwarded === true) {
+          const list = team === 'home' ? homeCircledPoints : awayCircledPoints;
+          const n = team === 'home' ? h : a;
+          if (!list.includes(n)) list.push(n);
         }
       }
     }
@@ -1029,7 +658,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
       ];
     // For Panel 3, include ALL timeouts (before + after court change combined)
     const allLeftTimeouts = [...leftTimeoutsList_Before, ...leftTimeoutsList_After].filter(t => t);
-    const leftTimeouts_After: [string, string] = isSet5
+    // Panel 3 is unused until the change of courts (field-spec 6): empty before it
+    const leftTimeouts_After: [string, string] = isSet5 && courtChangeHappened
       ? [
         allLeftTimeouts[0] || '',
         allLeftTimeouts[1] || ''
@@ -1051,7 +681,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
       ? convertSubsMapToArray(leftSubsByPlayer_Before, leftLineup)
       : convertSubsMapToArray(leftSubsByPlayer, leftLineup);
     // For Set 5 Panel 3, merge substitutions from Panel 1 (before) with substitutions after change
-    const leftSubs_After: SubRecordLocal[][] = isSet5
+    const leftSubs_After: SubRecordLocal[][] = isSet5 && courtChangeHappened
       ? (() => {
         const beforeSubs = convertSubsMapToArray(leftSubsByPlayer_Before, leftLineup);
         const afterSubs = convertSubsMapToArray(leftSubsByPlayer_After, leftLineup);
@@ -1076,13 +706,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
       : [[], [], [], [], [], []];
     const rightSubs: SubRecordLocal[][] = convertSubsMapToArray(rightSubsByPlayer, rightLineup);
 
-    // Determine start time - only show confirmed set start time from modal
-    let startTimeStr = '';
-    if (hasBeenPlayed && setInfo?.startTime) {
-      // Use confirmed start time from "Confirm start time for Set X" modal (display as local)
-      startTimeStr = formatTimeLocal(setInfo.startTime);
-    }
-    // Note: Don't fallback to scheduledAt - only show time if explicitly confirmed
+    // The set's ACTUAL start: its first rally (utils/matchTimes, owner 2026-10-07),
+    // never the schedule; the same value the RESULT table and MatchEnd use
+    const actualStart = hasBeenPlayed ? setStartMs(setInfo, setEvents) : null;
+    const startTimeStr = actualStart !== null ? formatTimeLocal(isoOf(actualStart)) : '';
+    const actualEnd = hasBeenPlayed && setInfo?.endTime ? setEndMs(setInfo, setEvents) : null;
 
     // Calculate current server info for validation
     // Determine which team is currently serving
@@ -1138,7 +766,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
 
     return {
       startTime: startTimeStr,
-      endTime: hasBeenPlayed && setInfo?.endTime ? formatTimeLocal(setInfo.endTime) : '',
+      endTime: actualEnd !== null ? formatTimeLocal(isoOf(actualEnd)) : '',
       setFinished: setInfo?.finished || false,
       leftLineup,
       rightLineup,
@@ -1156,8 +784,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
       leftSubs,
       leftSubs_After: isSet5 ? leftSubs_After : undefined,
       rightSubs,
-      leftScoreAtCourtChange: isSet5 ? leftScoreAtCourtChange : 0,
-      rightScoreAtCourtChange: isSet5 ? rightScoreAtCourtChange : 0,
+      // null until a team reached 8 (no change of courts yet)
+      leftScoreAtCourtChange: isSet5 && courtChangeHappened ? leftScoreAtCourtChange : null,
+      rightScoreAtCourtChange: isSet5 && courtChangeHappened ? rightScoreAtCourtChange : null,
+      leftTrackedRounds: trackedRounds[leftTeamKey],
+      set5ChangeAt,
       currentServer: hasBeenPlayed ? {
         team: currentServeTeam,
         position: currentServePosition,
@@ -1172,6 +803,38 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
   const set3Data = getSetData(3, false);
   const set4Data = getSetData(4, true);
 
+  // Sets won, match over (also needed to strike off the unused grids)
+  const bestOf = match?.bestOf === 3 ? 3 : 5;
+  const neededToWin = bestOf === 3 ? 2 : 3;
+  const finishedSets = sets.filter(s => s?.finished);
+  const pointsOf = (s: any, key: 'home' | 'away') => (key === 'home' ? (s?.homePoints || 0) : (s?.awayPoints || 0));
+  const teamASetsWon = finishedSets.filter(s => pointsOf(s, teamAKey) > pointsOf(s, teamBKey)).length;
+  const teamBSetsWon = finishedSets.filter(s => pointsOf(s, teamBKey) > pointsOf(s, teamAKey)).length;
+  const isMatchFinished = teamASetsWon >= neededToWin || teamBSetsWon >= neededToWin;
+
+  // A set awarded by default / forfeit without a single rally: created by the
+  // forfeit (forfeitCreated), or every one of its points was awarded (a default
+  // before the start). Its grid stays empty and is struck off; no start / end
+  // time, no duration (field-spec 11).
+  const isDefaultSet = (setIndex: number): boolean => {
+    const info = sets.find(s => s?.index === setIndex);
+    if (!info) return false;
+    if (info.forfeitCreated) return true;
+    const pts = events.filter(e => e?.setIndex === setIndex && e?.type === 'point');
+    return pts.length > 0 && pts.every(e => e.payload?.forfeitAwarded === true);
+  };
+  const wasPlayed = (setIndex: number): boolean => {
+    const info = sets.find(s => s?.index === setIndex);
+    return !!info && (info.homePoints > 0 || info.awayPoints > 0 || !!info.startTime || info.finished === true);
+  };
+  // Struck off with a Z: a set awarded by default, and once the result is known the
+  // grids that were never played (best-of-3: sets 3 and 4 always) (field-spec 6, 11)
+  const isStruckOff = (setIndex: number): boolean => {
+    if (isDefaultSet(setIndex)) return true;
+    if (bestOf === 3 && (setIndex === 3 || setIndex === 4)) return true;
+    return isMatchFinished && !wasPlayed(setIndex);
+  };
+
   // Helper to check if a set has finished
   const isSetFinished = (setIndex: number) => {
     const setInfo = sets?.find(s => s.index === setIndex);
@@ -1184,7 +847,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
   // Set 3: shows when Set 2 is finished
   // For best-of-3: Sets 3 and 4 are never played (deciding set uses Set 5 tiebreak format),
   // so they should always remain blank — no team labels, S/R, or X
-  const isBestOf3 = (match?.bestOf || 5) === 3;
+  const isBestOf3 = bestOf === 3;
   const shouldShowSet1 = coinTossConfirmed;
   const shouldShowSet2 = isSetFinished(1);
   const shouldShowSet3 = isBestOf3 ? false : isSetFinished(2);
@@ -1227,6 +890,39 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
 
   // First server of the deciding set - one value for the service tracker, S/R cross and set data
   const set5FirstServeTeamKey = getFirstServeTeamKey(5, match, teamAKey, teamBKey);
+  // The deciding set is drawn once its toss is known or it started, unless it was
+  // awarded by default (then its grid is only struck off)
+  const set5Shown = !!(hasSet5CoinToss && set5Data && !isStruckOff(5));
+
+  // An empty set grid (unplayed set, or a set awarded by default)
+  const emptySetData = {
+    startTime: '',
+    endTime: '',
+    setFinished: false,
+    leftLineup: ['', '', '', '', '', ''],
+    rightLineup: ['', '', '', '', '', ''],
+    leftPoints: 0,
+    rightPoints: 0,
+    leftMarkedPoints: [] as number[],
+    rightMarkedPoints: [] as number[],
+    leftCircledPoints: [] as number[],
+    rightCircledPoints: [] as number[],
+    leftServiceRounds: [] as ServiceRound[],
+    rightServiceRounds: [] as ServiceRound[],
+    leftTimeouts: ['', ''] as [string, string],
+    rightTimeouts: ['', ''] as [string, string],
+    leftSubs: [[], [], [], [], [], []],
+    rightSubs: [[], [], [], [], [], []]
+  };
+
+  // Remarks the sheet writes itself: a default / an incomplete team (field-spec 8, 11)
+  const autoRemarks = generatedRemarks({ sets, events, teamAKey, bestOf });
+  // Consistency checks (field-spec 12.2): listed above the sheet, never printed
+  const sheetWarnings = useMemo(
+    () => consistencyWarnings({ sets, events, teamAKey, homePlayers, awayPlayers }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sets, events, teamAKey, homePlayers, awayPlayers]
+  );
 
   // Calculate set results for Results section
   const calculateSetResults = () => {
@@ -1237,11 +933,6 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
 
       // Check if set is finished
       const isSetFinished = setInfo?.finished === true;
-
-      // Determine which team is A and which is B for this set
-      const isSwapped = setNum === 2 || setNum === 4;
-      const teamAKey = match?.coinTossTeamA || 'home';
-      const teamBKey = teamAKey === 'home' ? 'away' : 'home';
 
       // Get points for each team (only if set is finished)
       // Points are always stored by home/away, not by left/right
@@ -1266,13 +957,15 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
         ).length
         : null;
 
-      // Count substitutions (only if set is finished)
-      // Exceptional substitutions are not regular ones (not drawn in the set box either)
+      // Count substitutions (only if set is finished). The result "S" counts EVERY
+      // substitution, exceptional ones included (field-spec 9 / 12.1, SC p.71:
+      // "4 standard + 1 exceptional" = 5); only the 6-substitution limit counts
+      // regular ones (countRegularSubstitutions).
       const teamASubstitutions = isSetFinished
-        ? countRegularSubstitutions(setEvents, teamAKey)
+        ? countAllSubstitutions(setEvents, teamAKey)
         : null;
       const teamBSubstitutions = isSetFinished
-        ? countRegularSubstitutions(setEvents, teamBKey)
+        ? countAllSubstitutions(setEvents, teamBKey)
         : null;
 
       // Determine winner (1 if won, 0 otherwise, only if set is finished)
@@ -1283,41 +976,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
         ? (teamBPoints > teamAPoints ? 1 : 0)
         : null;
 
-      // Calculate duration (in minutes with single quote, only if set is finished)
-      // Use confirmed set start time from the "Confirm start time for Set X" modal
-      // This ensures postponed matches use actual start time, not scheduled time
-      let duration = '';
-      if (isSetFinished && setInfo?.endTime) {
-        let start: Date | null = null;
-        // Always use the set's confirmed startTime (from "Confirm start time" modal)
-        if (setInfo?.startTime) {
-          start = new Date(setInfo.startTime);
-        }
-
-        // Fallback: if startTime is missing, use the first event timestamp for this set
-        if (!start && setEvents.length > 0) {
-          const firstEvent = setEvents.sort((a, b) => {
-            const aSeq = a.seq || 0;
-            const bSeq = b.seq || 0;
-            if (aSeq !== 0 || bSeq !== 0) return aSeq - bSeq;
-            return new Date(a.ts).getTime() - new Date(b.ts).getTime();
-          })[0];
-          if (firstEvent?.ts) {
-            start = new Date(firstEvent.ts);
-          }
-        }
-
-        // Only calculate duration if we have both start and end times
-        if (start) {
-          const end = new Date(setInfo.endTime);
-          const durationMs = end.getTime() - start.getTime();
-          // Only show duration if it's positive (end is after start)
-          if (durationMs > 0) {
-            const minutes = Math.floor(durationMs / 60000);
-            duration = minutes > 0 ? `${minutes}'` : '';
-          }
-        }
-      }
+      // Set duration = its end - its ACTUAL start (first rally), whole minutes
+      // (utils/matchTimes, shared with MatchEnd). A set awarded by default has
+      // none (field-spec 11).
+      const minutes = isSetFinished && !isDefaultSet(setNum) ? setDurationMinutes(setInfo, setEvents) : null;
+      const duration = minutes !== null && minutes > 0 ? `${minutes}'` : '';
 
       results.push({
         setNumber: setNum,
@@ -1443,7 +1106,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
             playerNr: playerNr,
             type: sanctionType as 'warning' | 'penalty' | 'expulsion' | 'disqualification',
             set: setNumberLabel,
-            score: score
+            score: score,
+            // a player sanctioned on the bench: number circled (SC p.62)
+            onBench: !!payload.playerNumber && payload.playerType === 'bench'
           };
           sanctionRecords.push(record);
         }
@@ -1455,798 +1120,60 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
 
   const { sanctions: processedSanctions, improperRequests } = processSanctions();
 
-  // Split sanctions into those that fit in the box (first 10) and overflow
-  const rowCount = 10;
-  const sanctionsInBox = processedSanctions.slice(0, rowCount);
-  const overflowSanctions = processedSanctions.slice(rowCount);
+  // Split sanctions into those that fit in the box (9 rows, as the Matchblatt) and overflow
+  const sanctionsInBox = processedSanctions.slice(0, SANCTION_ROWS);
+  const overflowSanctions = processedSanctions.slice(SANCTION_ROWS);
 
-  // Calculate match start - use Set 1's confirmed start time, not scheduled time
-  // This ensures postponed matches show the actual start time from "Confirm start time for Set 1" modal
-  const set1 = sets?.find(s => s.index === 1);
-  const matchStart = set1?.startTime
-    ? formatTimeLocal(set1.startTime)
-    : match?.scheduledAt
-      ? formatTimeLocal(match.scheduledAt)
-      : '';
+  // Match start / end / duration (field-spec 9): set 1's recorded start (never the
+  // schedule), the last set's end, both as "HH h MM min"; the duration "H h MM min"
+  // includes the intervals. A match decided by default before any rally has none.
+  const rallySets = sets.filter(s => s && !isDefaultSet(s.index));
+  const set1 = rallySets.find(s => s.index === 1);
+  // the actual start of set 1 (its first rally), empty until the match has started
+  // (owner 2026-10-07: never the scheduled time)
+  const set1StartMs = setStartMs(set1, events);
+  const matchStart = set1StartMs !== null ? formatClockHoursMinutes(isoOf(set1StartMs)) : '';
 
-  // Calculate winner and result - only if match is finished (a team won 3 sets)
-  // Points are stored by home/away, not by left/right, so we don't need to account for side swaps
-
-  const finishedSets = sets?.filter(s => s.finished) || [];
-
-  const teamASetsWon = finishedSets.filter(s => {
-    // Points are always stored by home/away, regardless of side swaps
-    const teamAPoints = teamAKey === 'home' ? s.homePoints : s.awayPoints;
-    const teamBPoints = teamBKey === 'home' ? s.homePoints : s.awayPoints;
-    return teamAPoints > teamBPoints;
-  }).length;
-
-  const teamBSetsWon = finishedSets.filter(s => {
-    // Points are always stored by home/away, regardless of side swaps
-    const teamAPoints = teamAKey === 'home' ? s.homePoints : s.awayPoints;
-    const teamBPoints = teamBKey === 'home' ? s.homePoints : s.awayPoints;
-    return teamBPoints > teamAPoints;
-  }).length;
-
-  // Match is finished if a team has won enough sets
-  const bestOf = match?.bestOf || 5;
-  const neededToWin = bestOf === 3 ? 2 : 3;
-  const isMatchFinished = teamASetsWon >= neededToWin || teamBSetsWon >= neededToWin;
-
-  // Winner: full team name (only if match is finished)
+  // Winner: full team name, result "3-1" (only once the match is finished)
   const winner = isMatchFinished
-    ? (teamASetsWon >= neededToWin
-      ? teamAName
-      : teamBSetsWon >= neededToWin
-        ? teamBName
-        : '')
+    ? (teamASetsWon >= neededToWin ? teamAName : teamBName)
     : '';
-
-  // Result: format as W-L where W is sets needed to win (only if match is finished)
   const result = isMatchFinished
-    ? (teamASetsWon >= neededToWin
-      ? `${teamASetsWon}-${teamBSetsWon}`
-      : teamBSetsWon >= neededToWin
-        ? `${teamBSetsWon}-${teamASetsWon}`
-        : '')
+    ? (teamASetsWon >= neededToWin ? `${teamASetsWon}-${teamBSetsWon}` : `${teamBSetsWon}-${teamASetsWon}`)
     : '';
 
-  // Calculate match end and duration - only if match is finished
-  const lastSet = sets?.filter(s => s.endTime).sort((a, b) => new Date(b.endTime).getTime() - new Date(a.endTime).getTime())[0];
-  const matchEndFinal = isMatchFinished && lastSet?.endTime
-    ? formatTimeLocal(lastSet.endTime)
+  const lastSet = sets
+    .filter(s => s?.endTime && (rallySets.includes(s) || s.forfeitCreated))
+    .sort((a, b) => new Date(b.endTime).getTime() - new Date(a.endTime).getTime())[0];
+  const anyRally = rallySets.some(s => (s.homePoints || 0) + (s.awayPoints || 0) > 0);
+  const lastSetEndMs = setEndMs(lastSet, events);
+  const matchEndFinal = isMatchFinished && anyRally && lastSetEndMs !== null
+    ? formatClockHoursMinutes(isoOf(lastSetEndMs))
     : '';
-  // Use Set 1's confirmed start time for match duration calculation
-  const matchDuration = isMatchFinished && set1?.startTime && lastSet?.endTime
-    ? (() => {
-      const start = new Date(set1.startTime);
-      const end = new Date(lastSet.endTime);
-      const durationMs = end.getTime() - start.getTime();
-      const totalMinutes = Math.floor(durationMs / 60000);
-      return totalMinutes > 0 ? `${totalMinutes}'` : '';
-    })()
+  const matchDuration = isMatchFinished && anyRally && set1StartMs !== null && lastSetEndMs !== null && lastSetEndMs >= set1StartMs
+    ? formatHoursMinutes(Math.floor((lastSetEndMs - set1StartMs) / 60000))
     : '';
 
-  // Get Set 5 marked points (special handling for 3 panels)
-  const set5Events = events?.filter(e => e.setIndex === 5) || [];
-  const set5PointEvents = set5Events
-    .filter(e => e.type === 'point')
-    .sort((a, b) => {
-      const aSeq = a.seq || 0;
-      const bSeq = b.seq || 0;
-      if (aSeq !== 0 || bSeq !== 0) return aSeq - bSeq;
-      return new Date(a.ts).getTime() - new Date(b.ts).getTime();
-    });
+  // Set 5: three panels (field-spec 6). Panel 1 = the left team until the change of
+  // courts (points 1-8), panel 2 = the right team, panel 3 = the left team after the
+  // change. Everything comes from getSetData(5): the same points, circles and the
+  // same service-round tracker as sets 1-4, split at the change.
+  const set5Changed = set5Data?.set5ChangeAt !== null && set5Data?.set5ChangeAt !== undefined;
+  // Left team's points at the change (N); no change yet: every left point is in panel 1
+  const leftScoreAtChange: number = set5Changed ? (set5Data?.leftScoreAtCourtChange ?? 0) : Infinity;
+  const set5LeftMarked: number[] = set5Data?.leftMarkedPoints || [];
+  const set5LeftCircled: number[] = set5Data?.leftCircledPoints || [];
+  const markedPointsA_Left = set5LeftMarked.filter(p => p <= leftScoreAtChange); // panel 1
+  const markedPointsA_Right = set5LeftMarked.filter(p => p > leftScoreAtChange); // panel 3
+  const markedPointsB = set5Data?.rightMarkedPoints || []; // panel 2
+  const circledPointsA_Left = set5LeftCircled.filter(p => p <= leftScoreAtChange);
+  const circledPointsA_Right = set5LeftCircled.filter(p => p > leftScoreAtChange);
+  const circledPointsB = set5Data?.rightCircledPoints || [];
 
-  const set5MarkedPointsHome: number[] = [];
-  const set5MarkedPointsAway: number[] = [];
-  const set5CircledPointsHome: number[] = []; // Points scored due to sanctions
-  const set5CircledPointsAway: number[] = []; // Points scored due to sanctions
-  let set5HomeScore = 0;
-  let set5AwayScore = 0;
-
-  // Get all Set 5 events (points and sanctions) sorted chronologically
-  const set5AllEvents = set5Events
-    .filter(e => e.type === 'point' || e.type === 'sanction')
-    .sort((a, b) => {
-      const aSeq = a.seq || 0;
-      const bSeq = b.seq || 0;
-      if (aSeq !== 0 || bSeq !== 0) return aSeq - bSeq;
-      return new Date(a.ts).getTime() - new Date(b.ts).getTime();
-    });
-
-  // First pass: process all point events to build marked points and track point numbers
-  const pointEventToNumber = new Map(); // Map event to its point number
-  let set5HomePointCount = 0;
-  let set5AwayPointCount = 0;
-
-  for (let i = 0; i < set5AllEvents.length; i++) {
-    const event = set5AllEvents[i];
-
-    if (event.type === 'point') {
-      // Track point counts
-      if (event.payload?.team === 'home') {
-        set5HomeScore++;
-        set5HomePointCount++;
-        set5MarkedPointsHome.push(set5HomeScore);
-        pointEventToNumber.set(event, set5HomePointCount);
-      } else if (event.payload?.team === 'away') {
-        set5AwayScore++;
-        set5AwayPointCount++;
-        set5MarkedPointsAway.push(set5AwayScore);
-        pointEventToNumber.set(event, set5AwayPointCount);
-      }
-    }
-  }
-
-  // Second pass: process sanctions and circle the next point scored by opponent
-  for (let i = 0; i < set5AllEvents.length; i++) {
-    const event = set5AllEvents[i];
-
-    if (event.type === 'sanction') {
-      const payload = event.payload || {};
-      const sanctionType = payload.type;
-      const sanctionedTeam = payload.team; // 'home' or 'away'
-      const opponentTeam = sanctionedTeam === 'home' ? 'away' : 'home';
-
-      // Check if this sanction awards a point to the opponent
-      // Only penalty and delay_penalty award points
-      // Warning, delay_warning, expulsion, and disqualification do NOT award points
-      const awardsPoint = ['penalty', 'delay_penalty'].includes(sanctionType);
-
-      if (awardsPoint) {
-        // Find the next point event scored by the opponent after this sanction
-        for (let j = i + 1; j < set5AllEvents.length; j++) {
-          const nextEvent = set5AllEvents[j];
-          if (nextEvent.type === 'point' && nextEvent.payload?.team === opponentTeam) {
-            // This point was scored due to the sanction - mark it for circling
-            const pointNumber = pointEventToNumber.get(nextEvent);
-            if (pointNumber !== undefined) {
-              if (opponentTeam === 'home') {
-                if (!set5CircledPointsHome.includes(pointNumber)) {
-                  set5CircledPointsHome.push(pointNumber);
-                }
-              } else {
-                if (!set5CircledPointsAway.includes(pointNumber)) {
-                  set5CircledPointsAway.push(pointNumber);
-                }
-              }
-            }
-            break; // Only circle the first point after the sanction
-          }
-        }
-      }
-    }
-  }
-
-  // Team A and B marked points
-  const set5MarkedPointsTeamA = teamAKey === 'home' ? set5MarkedPointsHome : set5MarkedPointsAway;
-  const set5MarkedPointsTeamB = teamBKey === 'home' ? set5MarkedPointsHome : set5MarkedPointsAway;
-
-  // The team on the left changes sides (splits at 8 points)
-  // The team on the right doesn't change sides
-  const set5MarkedPointsTeamOnLeft = set5LeftTeamIsB ? set5MarkedPointsTeamB : set5MarkedPointsTeamA;
-  const set5MarkedPointsTeamOnRight = set5LeftTeamIsB ? set5MarkedPointsTeamA : set5MarkedPointsTeamB;
-
-  // Split points for the team that changes sides (left team)
-  // Get the left team's score at the moment of court change from set5Data
-  const leftScoreAtChange = set5Data?.leftScoreAtCourtChange || 0;
-
-  // Panel 1 (1-8 column): Points scored BEFORE court change (points 1 to leftScoreAtChange)
-  // These are the actual points scored while left team was on left side before court change
-  const markedPointsLeftTeam_Left = set5MarkedPointsTeamOnLeft.filter(p => p <= leftScoreAtChange);
-
-  // Panel 3 (1-30 column): Points scored AFTER court change (points leftScoreAtChange+1 onwards)
-  // These points are displayed directly as their point number (no mapping needed)
-  // Panel 3's PointsColumn30 shows:
-  // - Points 1 to leftScoreAtChange as "number only" (preChangePoints)
-  // - Points leftScoreAtChange+1 onwards as ticked (from markedPointsA_Right)
-  const markedPointsLeftTeam_Right = set5MarkedPointsTeamOnLeft.filter(p => p > leftScoreAtChange);
-
-  const markedPointsRightTeam = set5MarkedPointsTeamOnRight; // Team on right doesn't change sides
-
-  // Get circled points for each team
-  const set5CircledPointsTeamA = teamAKey === 'home' ? set5CircledPointsHome : set5CircledPointsAway;
-  const set5CircledPointsTeamB = teamBKey === 'home' ? set5CircledPointsHome : set5CircledPointsAway;
-
-  // The team on the left changes sides (splits at 8 points)
-  const set5CircledPointsTeamOnLeft = set5LeftTeamIsB ? set5CircledPointsTeamB : set5CircledPointsTeamA;
-  const set5CircledPointsTeamOnRight = set5LeftTeamIsB ? set5CircledPointsTeamA : set5CircledPointsTeamB;
-
-  // Split circled points for the team that changes sides (left team)
-  // Use the same leftScoreAtChange to split correctly
-  const circledPointsLeftTeam_Left = set5CircledPointsTeamOnLeft.filter(p => p <= leftScoreAtChange);
-  const circledPointsLeftTeam_Right = set5CircledPointsTeamOnLeft.filter(p => p > leftScoreAtChange);
-  const circledPointsRightTeam = set5CircledPointsTeamOnRight; // Team on right doesn't change sides
-
-  // Map to SetFive component expectations
-  // SetFive always uses A for the team that changes sides (panels 1&3), B for the team that doesn't (panel 2)
-  // Panel 1 = left team before change (points 1-8)
-  // Panel 2 = right team (all points, no change)
-  // Panel 3 = left team after change (points 9+, continuation from Panel 1)
-  // So we map:
-  // - markedPointsA_Left = left team before change (Panel 1)
-  // - markedPointsA_Right = left team after change (Panel 3) - continuation
-  // - markedPointsB = right team (Panel 2)
-  const markedPointsA_Left = markedPointsLeftTeam_Left; // Panel 1: left team before change
-  const markedPointsA_Right = markedPointsLeftTeam_Right; // Panel 3: left team after change (continuation)
-  const markedPointsB = markedPointsRightTeam; // Panel 2: right team
-
-  const circledPointsA_Left = circledPointsLeftTeam_Left; // Panel 1: left team before change
-  const circledPointsA_Right = circledPointsLeftTeam_Right; // Panel 3: left team after change (continuation)
-  const circledPointsB = circledPointsRightTeam; // Panel 2: right team
-
-  // Service tracking for Set 5 - track by LEFT/RIGHT team (not A/B)
-  // The left team changes sides at 8 points, so we track:
-  // - Left team BEFORE change (≤8 points) -> Panel 1
-  // - Left team AFTER change (>8 points) -> Panel 3 (continuation of Panel 1)
-  // - Right team (doesn't change sides) -> Panel 2
-  interface ServiceRound {
-    position: number; // 0-5 for I-VI
-    box: number; // 1-6 for Set 5
-    ticked: boolean;
-    points: number | null;
-    circled: boolean;
-  }
-
-  const set5ServiceRoundsLeftTeam_Before: ServiceRound[] = []; // Panel 1: points 1-8
-  const set5ServiceRoundsLeftTeam_After: ServiceRound[] = []; // Panel 3: points 9+ (continuation)
-  const set5ServiceRoundsRightTeam: ServiceRound[] = []; // Panel 2: all points (no change)
-
-  // Wrap Set 5 service tracking in try-catch to prevent crashes
-  try {
-
-    // Determine first serve team for Set 5
-    const set5FirstServeTeam = set5FirstServeTeamKey;
-    const set5TeamAKey = teamAKey;
-    const set5TeamBKey = teamBKey;
-
-    // Track which team is on left and right
-    const set5LeftTeamKey = set5TeamOnLeft === 'home' ? 'home' : 'away';
-    const set5RightTeamKey = set5TeamOnRight === 'home' ? 'home' : 'away';
-
-    // Track service state for left team (before and after change) and right team
-    let set5CurrentServeTeam: 'home' | 'away' = set5FirstServeTeam as 'home' | 'away';
-    let set5LeftServiceRound_Before = 0; // Service round counter for left team before change
-    let set5LeftServiceRound_After = 0; // Service round counter for left team after change
-    let set5RightServiceRound = 0; // Service round counter for right team
-    let set5LeftCurrentPosition_Before = 0; // Current serving position for left team before change
-    let set5LeftCurrentPosition_After = 0; // Current serving position for left team after change
-    let set5RightCurrentPosition = 0; // Current serving position for right team
-    let set5LeftPointsInService_Before = 0;
-    let set5LeftPointsInService_After = 0;
-    let set5RightPointsInService = 0;
-    let set5LeftServiceStarted_Before = false;
-    let set5LeftServiceStarted_After = false;
-    let set5RightServiceStarted = false;
-    let set5LeftTeamTotalScore = 0; // Track total left team score to determine before/after change
-    let set5CourtChangeHappened = false; // Track when court change occurs (either team reaches 8)
-
-    // Track which team started receiving (their position I box 1 has X marker)
-    const set5LeftStartedReceiving = set5FirstServeTeam !== set5LeftTeamKey;
-    const set5RightStartedReceiving = set5FirstServeTeam !== set5RightTeamKey;
-
-    // Initialize first serve for Set 5 - create initial entry at position I, box 1
-    if (set5FirstServeTeam === set5LeftTeamKey) {
-      set5LeftServiceStarted_Before = true;
-      set5LeftCurrentPosition_Before = 0;
-      set5ServiceRoundsLeftTeam_Before.push({
-        position: 0, // Column I
-        box: 1,
-        ticked: true, // Tick because this position is serving
-        points: null,
-        circled: false
-      });
-    } else {
-      set5RightServiceStarted = true;
-      set5RightCurrentPosition = 0;
-      set5ServiceRoundsRightTeam.push({
-        position: 0, // Column I
-        box: 1,
-        ticked: true, // Tick because this position is serving
-        points: null,
-        circled: false
-      });
-    }
-
-    // Track team scores for Set 5
-    let set5HomeScore = 0;
-    let set5AwayScore = 0;
-
-    set5PointEvents.forEach((event) => {
-      const scoringTeam = event.payload?.team as 'home' | 'away';
-      const isLeftTeam = scoringTeam === set5LeftTeamKey;
-      const isRightTeam = scoringTeam === set5RightTeamKey;
-
-      // Update team scores
-      if (scoringTeam === 'home') {
-        set5HomeScore++;
-      } else if (scoringTeam === 'away') {
-        set5AwayScore++;
-      }
-
-      // Update left team total score
-      if (isLeftTeam) {
-        set5LeftTeamTotalScore++;
-      }
-
-      // Get current scores after this point
-      const leftTeamCurrentScore = set5LeftTeamKey === 'home' ? set5HomeScore : set5AwayScore;
-      const rightTeamCurrentScore = set5RightTeamKey === 'home' ? set5HomeScore : set5AwayScore;
-
-      // Detect when court change happens (first time either team reaches 8)
-      const courtChangeJustHappened = !set5CourtChangeHappened && (leftTeamCurrentScore >= 8 || rightTeamCurrentScore >= 8);
-
-      // Handle court change transition for left team's service box
-      if (courtChangeJustHappened) {
-        set5CourtChangeHappened = true;
-
-        // Copy state from before to after
-        set5LeftCurrentPosition_After = set5LeftCurrentPosition_Before;
-        set5LeftServiceRound_After = set5LeftServiceRound_Before;
-
-        if (isLeftTeam) {
-          // Left team scored the point that triggered court change
-          if (set5CurrentServeTeam === set5LeftTeamKey && set5LeftServiceStarted_Before) {
-            // Left team was serving - continue same service box in Panel 3 (don't close Panel 1 box)
-            // Find the current open service box in Panel 1 and create a copy in Panel 3
-            const currentBoxNum = Math.floor(set5LeftServiceRound_Before / 6) + 1;
-            set5ServiceRoundsLeftTeam_After.push({
-              position: set5LeftCurrentPosition_Before,
-              box: currentBoxNum,
-              ticked: true,
-              points: null, // Still open
-              circled: false
-            });
-            set5LeftServiceStarted_After = true;
-          } else {
-            // Left team was receiving when they scored - they will gain service after this
-            // The service box will be created when they gain service (handled below)
-          }
-        } else {
-          // Right team scored the point that triggered court change (left team lost)
-          // Copy the last closed service box to Panel 3 if left team was serving
-          if (set5LeftServiceStarted_Before && set5ServiceRoundsLeftTeam_Before.length > 0) {
-            const lastLeftServiceBox = set5ServiceRoundsLeftTeam_Before[set5ServiceRoundsLeftTeam_Before.length - 1];
-            if (lastLeftServiceBox.points !== null) {
-              // Box is closed - copy it to Panel 3
-              set5ServiceRoundsLeftTeam_After.push({
-                ...lastLeftServiceBox
-              });
-              set5LeftServiceStarted_After = true;
-            }
-          }
-        }
-      }
-
-      // Determine if we're before or after court change for this point's processing
-      const isBeforeCourtChange = !set5CourtChangeHappened || (set5CourtChangeHappened && courtChangeJustHappened && !isLeftTeam);
-
-      // Determine if left team is before change (≤8) or after change (>8)
-      // After court change happened, left team updates should go to Panel 3
-      const isLeftTeamBeforeChange = isLeftTeam && !set5CourtChangeHappened;
-      const isLeftTeamAfterChange = isLeftTeam && set5CourtChangeHappened;
-
-      // Check if service was lost
-      if (scoringTeam !== set5CurrentServeTeam) {
-        // Service was lost - record TEAM SCORE at time of service loss
-        if (set5CurrentServeTeam === set5LeftTeamKey) {
-          // Left team lost service - record their TEAM SCORE at the time of service loss
-          // This is the serving team's score (not the opponent's), which stays unchanged when opponent scores
-          const leftTeamScoreAtLoss = set5LeftTeamKey === 'home' ? set5HomeScore : set5AwayScore;
-          // The left team's total score hasn't changed (opponent scored), so use it directly
-          // to determine which phase (before/after 8-point change)
-
-          // Use court change flag instead of score comparison
-          // If court change hasn't happened, or just happened because opponent scored, use Panel 1
-          const usePanel1ForLeftLoss = !set5CourtChangeHappened || (courtChangeJustHappened && !isLeftTeam);
-
-          if (usePanel1ForLeftLoss && set5LeftServiceStarted_Before) {
-            // Left team was before change (Panel 1) when they lost service
-            let boxNum = Math.floor(set5LeftServiceRound_Before / 6) + 1;
-            // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
-            if (set5LeftStartedReceiving && set5LeftCurrentPosition_Before === 0) {
-              boxNum++;
-            }
-            const existingRound = set5ServiceRoundsLeftTeam_Before.find(sr => sr.position === set5LeftCurrentPosition_Before && sr.box === boxNum);
-            if (existingRound) {
-              existingRound.points = leftTeamScoreAtLoss;
-            } else {
-              // Fallback: create entry if it doesn't exist
-              set5ServiceRoundsLeftTeam_Before.push({
-                position: set5LeftCurrentPosition_Before,
-                box: boxNum,
-                ticked: true, // Should always be ticked since team was serving
-                points: leftTeamScoreAtLoss,
-                circled: false
-              });
-            }
-          } else if (set5CourtChangeHappened && set5LeftServiceStarted_After) {
-            // Left team was after change (Panel 3) when they lost service - continuation from Panel 1
-            let boxNum = Math.floor(set5LeftServiceRound_After / 6) + 1;
-            // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
-            if (set5LeftStartedReceiving && set5LeftCurrentPosition_After === 0) {
-              boxNum++;
-            }
-            const existingRound = set5ServiceRoundsLeftTeam_After.find(sr => sr.position === set5LeftCurrentPosition_After && sr.box === boxNum);
-            if (existingRound) {
-              existingRound.points = leftTeamScoreAtLoss;
-            } else {
-              // Fallback: create entry if it doesn't exist
-              set5ServiceRoundsLeftTeam_After.push({
-                position: set5LeftCurrentPosition_After,
-                box: boxNum,
-                ticked: true, // Should always be ticked since team was serving
-                points: leftTeamScoreAtLoss,
-                circled: false
-              });
-            }
-          }
-
-          // Right team gains service
-          if (!set5RightServiceStarted) {
-            // First time serving - they were receiving, so they rotate when gaining serve
-            // Position II (index 1) is the new server after rotation from receiving position I
-            set5RightCurrentPosition = 1; // Position II
-            set5ServiceRoundsRightTeam.push({
-              position: 1, // Column II (they rotated from receiving at I)
-              box: 1,
-              ticked: true, // Tick because this position is serving
-              points: null,
-              circled: false
-            });
-          } else {
-            // Right team already served before - they rotate when gaining service back
-            set5RightCurrentPosition = (set5RightCurrentPosition + 1) % 6;
-            set5RightServiceRound++;
-            // Create entry for the new position
-            let newBoxNum = Math.floor(set5RightServiceRound / 6) + 1;
-            // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
-            if (set5RightStartedReceiving && set5RightCurrentPosition === 0) {
-              newBoxNum++;
-            }
-            set5ServiceRoundsRightTeam.push({
-              position: set5RightCurrentPosition,
-              box: newBoxNum,
-              ticked: true, // Tick because this position is serving
-              points: null,
-              circled: false
-            });
-          }
-
-          set5RightServiceStarted = true;
-          set5RightPointsInService = 0;
-        } else if (set5CurrentServeTeam === set5RightTeamKey && set5RightServiceStarted) {
-          // Right team lost service - record their TEAM SCORE at the time of service loss
-          // This is the serving team's score (not the opponent's), which stays unchanged when opponent scores
-          const rightTeamScoreAtLoss = set5RightTeamKey === 'home' ? set5HomeScore : set5AwayScore;
-          let boxNum = Math.floor(set5RightServiceRound / 6) + 1;
-          // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
-          if (set5RightStartedReceiving && set5RightCurrentPosition === 0) {
-            boxNum++;
-          }
-          const existingRound = set5ServiceRoundsRightTeam.find(sr => sr.position === set5RightCurrentPosition && sr.box === boxNum);
-          if (existingRound) {
-            existingRound.points = rightTeamScoreAtLoss;
-          } else {
-            // Fallback: create entry if it doesn't exist
-            set5ServiceRoundsRightTeam.push({
-              position: set5RightCurrentPosition,
-              box: boxNum,
-              ticked: true, // Should always be ticked since team was serving
-              points: rightTeamScoreAtLoss,
-              circled: false
-            });
-          }
-
-          // Left team gains service
-          // Determine if left team is before or after change using court change flag
-          if (!set5CourtChangeHappened) {
-            // Left team before change (Panel 1)
-            if (!set5LeftServiceStarted_Before) {
-              // First time serving - they were receiving, so they rotate when gaining serve
-              // Position II (index 1) is the new server after rotation from receiving position I
-              set5LeftCurrentPosition_Before = 1; // Position II
-              set5ServiceRoundsLeftTeam_Before.push({
-                position: 1, // Column II (they rotated from receiving at I)
-                box: 1,
-                ticked: true, // Tick because this position is serving
-                points: null,
-                circled: false
-              });
-            } else {
-              // Already served before - rotate and create entry
-              set5LeftCurrentPosition_Before = (set5LeftCurrentPosition_Before + 1) % 6;
-              set5LeftServiceRound_Before++;
-              let newBoxNum = Math.floor(set5LeftServiceRound_Before / 6) + 1;
-              // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
-              if (set5LeftStartedReceiving && set5LeftCurrentPosition_Before === 0) {
-                newBoxNum++;
-              }
-              set5ServiceRoundsLeftTeam_Before.push({
-                position: set5LeftCurrentPosition_Before,
-                box: newBoxNum,
-                ticked: true, // Tick because this position is serving
-                points: null,
-                circled: false
-              });
-            }
-            set5LeftServiceStarted_Before = true;
-            set5LeftPointsInService_Before = 0;
-          } else {
-            // Left team after change (Panel 3) - continuation from Panel 1
-            // When transitioning from before to after, copy the state from before
-            if (!set5LeftServiceStarted_After) {
-              // Copy the last position and service round from before change
-              set5LeftCurrentPosition_After = set5LeftCurrentPosition_Before;
-              set5LeftServiceRound_After = set5LeftServiceRound_Before;
-              // Rotate for first serve after change
-              set5LeftCurrentPosition_After = (set5LeftCurrentPosition_After + 1) % 6;
-              set5LeftServiceRound_After++;
-              let newBoxNum = Math.floor(set5LeftServiceRound_After / 6) + 1;
-              // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
-              if (set5LeftStartedReceiving && set5LeftCurrentPosition_After === 0) {
-                newBoxNum++;
-              }
-              set5ServiceRoundsLeftTeam_After.push({
-                position: set5LeftCurrentPosition_After,
-                box: newBoxNum,
-                ticked: true, // Tick because this position is serving
-                points: null,
-                circled: false
-              });
-            } else {
-              // Already served after change - rotate and create entry
-              set5LeftCurrentPosition_After = (set5LeftCurrentPosition_After + 1) % 6;
-              set5LeftServiceRound_After++;
-              let newBoxNum = Math.floor(set5LeftServiceRound_After / 6) + 1;
-              // For receiving team, position I (0) skips box 1 (has X), so add 1 to box number
-              if (set5LeftStartedReceiving && set5LeftCurrentPosition_After === 0) {
-                newBoxNum++;
-              }
-              set5ServiceRoundsLeftTeam_After.push({
-                position: set5LeftCurrentPosition_After,
-                box: newBoxNum,
-                ticked: true, // Tick because this position is serving
-                points: null,
-                circled: false
-              });
-            }
-            set5LeftServiceStarted_After = true;
-            set5LeftPointsInService_After = 0;
-          }
-        }
-
-        set5CurrentServeTeam = scoringTeam;
-      } else {
-        // Scoring team had serve - increment service points (for tracking, but we use team score instead)
-        if (isLeftTeamBeforeChange && set5CurrentServeTeam === set5LeftTeamKey) {
-          set5LeftPointsInService_Before++;
-        } else if (isLeftTeamAfterChange && set5CurrentServeTeam === set5LeftTeamKey) {
-          set5LeftPointsInService_After++;
-        } else if (isRightTeam && set5CurrentServeTeam === set5RightTeamKey) {
-          set5RightPointsInService++;
-        }
-      }
-    });
-
-    // End of set logic for Set 5: circle last point for both teams
-    const isSet5Finished = set5Info?.finished || false;
-    if (isSet5Finished && set5PointEvents.length > 0) {
-      const lastPoint = set5PointEvents[set5PointEvents.length - 1];
-      const lastScoringTeam = lastPoint.payload?.team as 'home' | 'away';
-      const isLeftTeam = lastScoringTeam === set5LeftTeamKey;
-      const isRightTeam = lastScoringTeam === set5RightTeamKey;
-
-      // Get final scores from setInfo (after all points have been scored)
-      const leftTeamFinalScore = set5LeftTeamKey === 'home' ? (set5Info.homePoints || 0) : (set5Info.awayPoints || 0);
-      const rightTeamFinalScore = set5RightTeamKey === 'home' ? (set5Info.homePoints || 0) : (set5Info.awayPoints || 0);
-
-      // Circle the last point for the winning team (team that scored the last point)
-      if (isLeftTeam) {
-        // Left team won
-        // Use court change flag to determine which panel
-        const isLeftTeamBeforeChange = !set5CourtChangeHappened;
-
-        if (set5CurrentServeTeam === set5LeftTeamKey) {
-          // Left team was serving - find their CURRENT active service round (the one with null points)
-          if (isLeftTeamBeforeChange) {
-            const currentBoxNum = Math.floor(set5LeftServiceRound_Before / 6) + 1;
-            let activeServiceRound = set5ServiceRoundsLeftTeam_Before.find(sr =>
-              sr.position === set5LeftCurrentPosition_Before &&
-              sr.box === currentBoxNum &&
-              sr.points === null
-            );
-
-            if (activeServiceRound) {
-              activeServiceRound.points = leftTeamFinalScore;
-              activeServiceRound.circled = true;
-            } else {
-              const lastServiceRound = set5ServiceRoundsLeftTeam_Before[set5ServiceRoundsLeftTeam_Before.length - 1];
-              if (lastServiceRound && lastServiceRound.points === null) {
-                lastServiceRound.points = leftTeamFinalScore;
-                lastServiceRound.circled = true;
-              } else {
-                set5ServiceRoundsLeftTeam_Before.push({
-                  position: set5LeftCurrentPosition_Before,
-                  box: currentBoxNum,
-                  ticked: false,
-                  points: leftTeamFinalScore,
-                  circled: true
-                });
-              }
-            }
-          } else {
-            // Left team after change (Panel 3)
-            const currentBoxNum = Math.floor(set5LeftServiceRound_After / 6) + 1;
-            let activeServiceRound = set5ServiceRoundsLeftTeam_After.find(sr =>
-              sr.position === set5LeftCurrentPosition_After &&
-              sr.box === currentBoxNum &&
-              sr.points === null
-            );
-
-            if (activeServiceRound) {
-              activeServiceRound.points = leftTeamFinalScore;
-              activeServiceRound.circled = true;
-            } else {
-              const lastServiceRound = set5ServiceRoundsLeftTeam_After[set5ServiceRoundsLeftTeam_After.length - 1];
-              if (lastServiceRound && lastServiceRound.points === null) {
-                lastServiceRound.points = leftTeamFinalScore;
-                lastServiceRound.circled = true;
-              } else {
-                set5ServiceRoundsLeftTeam_After.push({
-                  position: set5LeftCurrentPosition_After,
-                  box: currentBoxNum,
-                  ticked: false,
-                  points: leftTeamFinalScore,
-                  circled: true
-                });
-              }
-            }
-          }
-        } else {
-          // Left team won on receive - add final score and circle
-          if (isLeftTeamBeforeChange) {
-            const nextLeftPosition = (set5LeftCurrentPosition_Before + 1) % 6;
-            const nextLeftBox = Math.floor((set5LeftServiceRound_Before + 1) / 6) + 1;
-            set5ServiceRoundsLeftTeam_Before.push({
-              position: nextLeftPosition,
-              box: nextLeftBox,
-              ticked: false,
-              points: leftTeamFinalScore,
-              circled: true
-            });
-          } else {
-            const nextLeftPosition = (set5LeftCurrentPosition_After + 1) % 6;
-            const nextLeftBox = Math.floor((set5LeftServiceRound_After + 1) / 6) + 1;
-            set5ServiceRoundsLeftTeam_After.push({
-              position: nextLeftPosition,
-              box: nextLeftBox,
-              ticked: false,
-              points: leftTeamFinalScore,
-              circled: true
-            });
-          }
-        }
-
-        // Circle right team's last point (losing team)
-        // Find the service round that matches the final score, or add a new one
-        if (set5ServiceRoundsRightTeam.length > 0) {
-          const lastRightServiceRound = set5ServiceRoundsRightTeam[set5ServiceRoundsRightTeam.length - 1];
-          if (lastRightServiceRound.points === null) {
-            // Still serving - set to final score and circle
-            lastRightServiceRound.points = rightTeamFinalScore;
-            lastRightServiceRound.circled = true;
-          } else if (lastRightServiceRound.points === rightTeamFinalScore) {
-            // Last service round matches final score - circle it
-            lastRightServiceRound.circled = true;
-          } else if (lastRightServiceRound.points < rightTeamFinalScore) {
-            // Final score is higher - add new service round with final score
-            const nextRightPosition = (set5RightCurrentPosition + 1) % 6;
-            const nextRightBox = Math.floor((set5RightServiceRound + 1) / 6) + 1;
-            set5ServiceRoundsRightTeam.push({
-              position: nextRightPosition,
-              box: nextRightBox,
-              ticked: false,
-              points: rightTeamFinalScore,
-              circled: true
-            });
-          }
-          // If lastRightServiceRound.points > rightTeamFinalScore, something is wrong, don't circle
-        }
-      } else if (isRightTeam) {
-        // Right team won
-        if (set5CurrentServeTeam === set5RightTeamKey) {
-          // Right team was serving - find their CURRENT active service round (the one with null points)
-          const currentBoxNum = Math.floor(set5RightServiceRound / 6) + 1;
-          let activeServiceRound = set5ServiceRoundsRightTeam.find(sr =>
-            sr.position === set5RightCurrentPosition &&
-            sr.box === currentBoxNum &&
-            sr.points === null
-          );
-
-          if (activeServiceRound) {
-            activeServiceRound.points = rightTeamFinalScore;
-            activeServiceRound.circled = true;
-          } else {
-            const lastServiceRound = set5ServiceRoundsRightTeam[set5ServiceRoundsRightTeam.length - 1];
-            if (lastServiceRound && lastServiceRound.points === null) {
-              lastServiceRound.points = rightTeamFinalScore;
-              lastServiceRound.circled = true;
-            } else {
-              set5ServiceRoundsRightTeam.push({
-                position: set5RightCurrentPosition,
-                box: currentBoxNum,
-                ticked: false,
-                points: rightTeamFinalScore,
-                circled: true
-              });
-            }
-          }
-        } else {
-          // Right team won on receive - add final score and circle
-          const nextRightPosition = (set5RightCurrentPosition + 1) % 6;
-          const nextRightBox = Math.floor((set5RightServiceRound + 1) / 6) + 1;
-          set5ServiceRoundsRightTeam.push({
-            position: nextRightPosition,
-            box: nextRightBox,
-            ticked: false,
-            points: rightTeamFinalScore,
-            circled: true
-          });
-        }
-
-        // Circle left team's last point (losing team)
-        // Find the service round that matches the final score, or add a new one
-        const isLeftTeamBeforeChange = set5LeftTeamTotalScore <= 8;
-
-        if (isLeftTeamBeforeChange) {
-          if (set5ServiceRoundsLeftTeam_Before.length > 0) {
-            const lastLeftServiceRound = set5ServiceRoundsLeftTeam_Before[set5ServiceRoundsLeftTeam_Before.length - 1];
-            if (lastLeftServiceRound.points === null) {
-              lastLeftServiceRound.points = leftTeamFinalScore;
-              lastLeftServiceRound.circled = true;
-            } else if (lastLeftServiceRound.points === leftTeamFinalScore) {
-              lastLeftServiceRound.circled = true;
-            } else if (lastLeftServiceRound.points < leftTeamFinalScore) {
-              const nextLeftPosition = (set5LeftCurrentPosition_Before + 1) % 6;
-              const nextLeftBox = Math.floor((set5LeftServiceRound_Before + 1) / 6) + 1;
-              set5ServiceRoundsLeftTeam_Before.push({
-                position: nextLeftPosition,
-                box: nextLeftBox,
-                ticked: false,
-                points: leftTeamFinalScore,
-                circled: true
-              });
-            }
-          }
-        } else {
-          if (set5ServiceRoundsLeftTeam_After.length > 0) {
-            const lastLeftServiceRound = set5ServiceRoundsLeftTeam_After[set5ServiceRoundsLeftTeam_After.length - 1];
-            if (lastLeftServiceRound.points === null) {
-              lastLeftServiceRound.points = leftTeamFinalScore;
-              lastLeftServiceRound.circled = true;
-            } else if (lastLeftServiceRound.points === leftTeamFinalScore) {
-              lastLeftServiceRound.circled = true;
-            } else if (lastLeftServiceRound.points < leftTeamFinalScore) {
-              const nextLeftPosition = (set5LeftCurrentPosition_After + 1) % 6;
-              const nextLeftBox = Math.floor((set5LeftServiceRound_After + 1) / 6) + 1;
-              set5ServiceRoundsLeftTeam_After.push({
-                position: nextLeftPosition,
-                box: nextLeftBox,
-                ticked: false,
-                points: leftTeamFinalScore,
-                circled: true
-              });
-            }
-          }
-        }
-      }
-    }
-  } catch (error) {
-    // If Set 5 service tracking fails, just use empty arrays
-    console.error('Error tracking Set 5 service rounds:', error);
-  }
+  const set5LeftSplit = splitSet5Rounds(set5Data?.leftTrackedRounds || [], set5Changed ? set5Data!.set5ChangeAt as number : null);
+  const set5ServiceRoundsLeftTeam_Before: ServiceRound[] = set5LeftSplit.before; // panel 1
+  const set5ServiceRoundsLeftTeam_After: ServiceRound[] = set5LeftSplit.after; // panel 3
+  const set5ServiceRoundsRightTeam: ServiceRound[] = set5Data?.rightServiceRounds || []; // panel 2
 
   // Ruler measurements
   const containerRef = useRef<HTMLDivElement>(null);
@@ -2368,58 +1295,77 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
 
   // State for PDF generation
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
-  // A line next to the buttons: where the PDF went (desktop app: a download
-  // into the Downloads folder, reported by src-tauri/src/popups.rs as
-  // ov-download-finished), or that it failed. Not alert(): in the desktop app
-  // the dialog plugin replaces it and this window may not call it.
-  const [pdfNotice, setPdfNotice] = useState<string | null>(null);
-  const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const generatingRef = useRef(false);
+  // Where the PDF went, shown next to the buttons until dismissed (field-spec 13.5):
+  // the full path on the desktop (Open file / Show in folder), the file name in a
+  // browser, or why it failed. Not alert(): in the desktop app the dialog plugin
+  // replaces it and this window may not call it.
+  const [saveOutcome, setSaveOutcome] = useState<SaveOutcome | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   // The file name of this window's last "Save PDF" download: on Linux every
   // window hears every download (the scoretable's match-end ZIP too).
   const pendingDownload = useRef<string | null>(null);
-  const showPdfNotice = (text: string) => {
-    setPdfNotice(text);
-    clearTimeout(noticeTimer.current);
-    noticeTimer.current = setTimeout(() => setPdfNotice(null), 10000);
-  };
   useEffect(() => {
     const onFinished = (e: Event) => {
-      const detail = (e as CustomEvent<{ path?: string | null; fileName?: string | null; success?: boolean }>).detail || {};
+      const detail = (e as CustomEvent<{ path?: string | null; fileName?: string | null; success?: boolean; id?: number | null }>).detail || {};
       if (!isOwnDownload(detail, pendingDownload.current)) return;
+      const fileName = detail.fileName || pendingDownload.current || '';
       pendingDownload.current = null;
-      showPdfNotice(detail.success
-        ? t('appWindow.pdfSaved', { path: detail.path || t('appWindow.downloadsFolder', 'Downloads') })
-        : t('appWindow.downloadFailed', 'The download did not finish.'));
+      setActionError(null);
+      setSaveOutcome(detail.success && detail.path
+        ? { kind: 'desktop', fileName, path: detail.path, id: detail.id ?? null }
+        : { kind: 'failed', message: t('appWindow.downloadFailed', 'The download did not finish.') });
     };
     window.addEventListener('ov-download-finished', onFinished);
-    return () => { window.removeEventListener('ov-download-finished', onFinished); clearTimeout(noticeTimer.current); };
+    return () => window.removeEventListener('ov-download-finished', onFinished);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [t]);
 
-  const handleSavePdf = async (returnBlob = false): Promise<{ blob: Blob; filename: string } | void> => {
-    if (!containerRef.current || isGeneratingPdf) return;
+  // A match that is not on this device: say so on the page itself, not only when saving
+  useEffect(() => {
+    if (matchMissing) {
+      setSaveOutcome({ kind: 'failed', message: t('scoresheetPdf.matchNotFound', 'This match is not on this device: there is no scoresheet to save.') });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchMissing]);
 
+  // The data of the LATEST render: a save started by autoAction or a click always
+  // names the file after what is on the sheet now (the first render had no teams yet:
+  // "match_HOME_AWAY_<date>.pdf").
+  const latestData = useRef({ match, homeTeam, awayTeam, sets });
+  latestData.current = { match, homeTeam, awayTeam, sets };
+
+  const handleSavePdf = async (returnBlob = false): Promise<{ blob: Blob; filename: string } | void> => {
+    if (!containerRef.current || generatingRef.current) return;
+    if (matchMissing) {
+      // ?matchId= of a match that is not on this device: never save an empty sheet
+      if (!returnBlob) setSaveOutcome({ kind: 'failed', message: t('scoresheetPdf.matchNotFound', 'This match is not on this device: there is no scoresheet to save.') });
+      return;
+    }
+
+    generatingRef.current = true;
     setIsGeneratingPdf(true);
+    setSaveOutcome(null);
+    setActionError(null);
+    const savedZoomLevel = zoomLevel;
+    const wasShowingLCS = showLCS;
+    // the desktop app's quit question says a PDF is still being saved here
+    setPdfBusy(true);
 
     try {
-      // Store current zoom level
-      const savedZoomLevel = zoomLevel;
+      const data = latestData.current;
+      const filename = buildScoresheetFilename(data);
+      const title = buildScoresheetTitle(data);
 
-      // Generate filename
-      const matchNum = match?.gameNumber || match?.externalId || match?.game_n?.toString() || 'match';
-      const homeShort = match?.homeShortName || homeTeam?.name || 'Home';
-      const awayShort = match?.awayShortName || awayTeam?.name || 'Away';
-      const date = match?.scheduledAt
-        ? new Date(match.scheduledAt).toISOString().slice(0, 10).replace(/-/g, '')
-        : new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      const filename = `${matchNum}_${sanitizeSimple(homeShort, 20)}_${sanitizeSimple(awayShort, 20)}_${date}.pdf`;
-
-      // Reset zoom to 100% for capture
+      // Capture the sheet itself at 100 %: back from the libero control sheet (the
+      // sheet is display:none there), zoom reset, fonts loaded
+      if (wasShowingLCS) setShowLCS(false);
       setZoomLevel(1);
+      await new Promise(resolve => setTimeout(resolve, 250));
+      await (document as any).fonts?.ready;
 
-      // Wait for zoom to apply and fonts to load
-      await new Promise(resolve => setTimeout(resolve, 200));
-      await document.fonts.ready;
+      const sheet = containerRef.current;
+      assertVisibleSheet(sheet);
 
       // Lazy-load PDF libraries (only needed when generating PDF)
       const [htmlToImage, { jsPDF }] = await Promise.all([
@@ -2427,10 +1373,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
         import('jspdf')
       ]);
 
-      // Capture using html-to-image toCanvas
-      // pixelRatio: 2 provides good quality for A3 print (300 DPI equivalent) while keeping file size reasonable
-      const sheet = containerRef.current;
-      const capture = (props: string[]) => htmlToImage.toCanvas(sheet, {
+      // pixelRatio 2: ~190 dpi on A3, sharp enough for print, a reasonable file size
+      const capture = (props: string[]) => htmlToImage.toCanvas(sheet!, {
         pixelRatio: 2,
         backgroundColor: '#ffffff',
         style: {
@@ -2445,83 +1389,128 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
       // as before, and the lean one only if that fails.
       let canvas: HTMLCanvasElement;
       if (isWebKitGtk()) {
-        const pictures = drawableImages(sheet);
+        const pictures = drawableImages(sheet!);
         const showPictures = hideImages(pictures);
         try {
-          canvas = await capture(usedStyleProperties(sheet));
+          canvas = await capture(usedStyleProperties(sheet!));
         } finally {
           showPictures();
         }
-        drawImagesOnto(canvas, sheet, pictures);
+        drawImagesOnto(canvas, sheet!, pictures);
       } else {
         try {
           canvas = await capture(allStyleProperties());
         } catch (err) {
           console.warn('[Scoresheet] Full capture failed, retrying with the used styles only:', err);
-          canvas = await capture(usedStyleProperties(sheet));
+          canvas = await capture(usedStyleProperties(sheet!));
         }
       }
+      assertCanvas(canvas);
 
-      // Restore zoom
-      setZoomLevel(savedZoomLevel);
-
-      // Convert canvas to JPEG with compression (0.85 quality is a good balance)
       const imgData = canvas.toDataURL('image/jpeg', 0.85);
+      assertJpegDataUrl(imgData);
 
-      // Create PDF (A3 landscape: 420mm x 297mm)
+      // A3 landscape (420 x 297 mm); the 410 x 287 mm sheet placed at its true size,
+      // centred (5 mm margins): to scale, circles stay circles
       const pdf = new jsPDF({
         orientation: 'landscape',
         unit: 'mm',
         format: 'a3',
         compress: true
       });
+      pdf.setProperties({
+        title,
+        subject: 'Volleyball scoresheet',
+        creator: 'OpenVolley eScoresheet',
+        keywords: 'OpenVolley, eScoresheet, volleyball, scoresheet'
+      });
+      pdf.addImage(imgData, 'JPEG', SHEET_OFFSET_MM.x, SHEET_OFFSET_MM.y, SHEET_MM.width, SHEET_MM.height, undefined, 'FAST');
+      // A searchable line (title, result) under the picture, not drawn
+      try {
+        pdf.setFontSize(6);
+        pdf.text(`${title}${result ? ` - ${result.replace('-', ':')}` : ''}`, SHEET_OFFSET_MM.x, 3, { renderingMode: 'invisible' } as any);
+      } catch { /* text layer is optional */ }
 
-      // Add canvas as full-page image using JPEG format
-      pdf.addImage(imgData, 'JPEG', 0, 0, 420, 297, undefined, 'FAST');
+      const bytes = pdf.output('arraybuffer');
+      assertValidPdf(bytes);
+      const pdfBlob = new Blob([bytes], { type: 'application/pdf' });
 
       if (returnBlob) {
-        // Return blob instead of saving
-        const pdfBlob = pdf.output('blob');
         return { blob: pdfBlob, filename };
-      } else if (!(await savePdfThroughApp(pdf.output('blob'), filename))) {
-        // Save PDF (a download). In the Android app's in-app view the WebView
-        // cannot download: savePdfThroughApp hands it to the app instead.
-        pendingDownload.current = filename;
-        pdf.save(filename);
       }
-
+      if (await savePdfThroughApp(pdfBlob, filename)) {
+        // Android in-app view: the app writes it and its bar says where (with Open / Share)
+        setSaveOutcome({ kind: 'app', fileName: filename });
+        return;
+      }
+      // A download. The desktop app puts it in Downloads and reports the full path
+      // (ov-download-finished); a browser keeps it in its download folder.
+      pendingDownload.current = filename;
+      downloadBlob(pdfBlob, filename);
+      setSaveOutcome(detectAppPlatform(window) === 'tauri' || getOpenerWindow() && detectAppPlatform(getOpenerWindow() as Window) === 'tauri'
+        ? { kind: 'desktop-pending', fileName: filename }
+        : { kind: 'web', fileName: filename });
     } catch (error) {
       console.error('Error generating PDF:', error);
       if (!returnBlob) {
-        showPdfNotice(t('scoresheetPdf.pdfFailed', 'The PDF could not be created on this device.'));
+        setSaveOutcome({
+          kind: 'failed',
+          message: error instanceof PdfCheckError
+            ? t('scoresheetPdf.pdfInvalid', 'The PDF could not be created correctly. Please try again.')
+            : t('scoresheetPdf.pdfFailed', 'The PDF could not be created on this device.')
+        });
       }
     } finally {
+      // the zoom and the view the scorer had, also after a failure
+      setZoomLevel(savedZoomLevel);
+      if (wasShowingLCS) setShowLCS(true);
+      generatingRef.current = false;
       setIsGeneratingPdf(false);
+      setPdfBusy(false);
+    }
+  };
+  // Always the latest closure (latest data, latest state) for the automatic action
+  const handleSavePdfRef = useRef(handleSavePdf);
+  handleSavePdfRef.current = handleSavePdf;
+
+  // Open / show the saved file through the desktop app (popups.rs download_open /
+  // download_reveal: only a download it recorded itself, by its id)
+  const runDownloadAction = async (command: 'download_open' | 'download_reveal', id: number | null | undefined) => {
+    setActionError(null);
+    try {
+      const internals = (window as any).__TAURI_INTERNALS__;
+      if (!internals?.invoke || id === null || id === undefined) throw new Error('not available');
+      await internals.invoke(command, { id });
+    } catch (e) {
+      setActionError(t('scoresheetPdf.fileActionFailed', 'The file could not be opened from here. It is in: {{path}}', {
+        path: saveOutcome && saveOutcome.kind === 'desktop' ? saveOutcome.path : ''
+      }));
     }
   };
 
-  // Auto-trigger save based on autoAction prop
+  // Automatic action (?action=print|save|getBlob): once every query has answered
+  // (dataReady), never on the first render with half the data; once only.
+  const autoActionDone = useRef(false);
   useEffect(() => {
-    if (!autoAction || autoAction === 'preview') return;
+    if (!autoAction || autoAction === 'preview' || !dataReady || autoActionDone.current) return;
+    autoActionDone.current = true;
 
-    // Wait for component to fully render and fonts to load
     const timer = setTimeout(async () => {
-      await document.fonts.ready;
-
+      await (document as any).fonts?.ready;
       if (autoAction === 'print' || autoAction === 'save') {
-        handleSavePdf();
+        await handleSavePdfRef.current();
       } else if (autoAction === 'getBlob') {
         // Generate the PDF and hand it to the opener (MatchEnd's approval),
         // or tell it the capture failed so it does not wait for its timeout;
         // then close this window / the in-app view either way.
-        const result = await handleSavePdf(true);
-        await deliverPdfToOpener(result || null);
+        const out = matchMissing ? null : await handleSavePdfRef.current(true);
+        await deliverPdfToOpener(out || null);
       }
     }, 500);
 
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); autoActionDone.current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoAction]);
+  }, [autoAction, dataReady]);
 
 
   return (
@@ -2640,7 +1629,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
         </div>
       )}
 
-      <div ref={buttonsContainerRef} className="mb-2 flex justify-center items-center print:hidden w-full sticky top-0 z-50 bg-gray-100 py-2">
+      <div ref={buttonsContainerRef} className="mb-2 flex flex-col justify-center items-center print:hidden w-full sticky top-0 z-50 bg-gray-100 py-2">
         <div className="flex items-center space-x-2">
           {/* Zoom controls */}
           <button
@@ -2705,12 +1694,69 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
             </button>
           )}
 
-          {pdfNotice && (
-            <span role="status" className="ml-2 max-w-[40ch] truncate text-sm text-gray-700" title={pdfNotice}>
-              {pdfNotice}
-            </span>
-          )}
         </div>
+        {sheetWarnings.length > 0 && (
+          <div data-testid="sheet-warnings" className="mt-2 mx-2 max-w-[min(100%,72rem)] rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs text-amber-900">
+            <span className="font-semibold">{t('scoresheetPdf.checkTheMatch', 'Check the match before approving it:')}</span>
+            <ul className="list-disc pl-5">
+              {sheetWarnings.map((w, i) => <li key={i}>{w}</li>)}
+            </ul>
+          </div>
+        )}
+        {/* Where the PDF went: the whole path (wraps, selectable), stays until closed */}
+        {saveOutcome && (
+          <div
+            role="status"
+            data-testid="pdf-notice"
+            className={`mt-2 mx-2 max-w-[min(100%,72rem)] flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-3 py-1.5 text-sm ${saveOutcome.kind === 'failed' ? 'border-red-300 bg-red-50 text-red-800' : 'border-stone-300 bg-white text-stone-800'}`}
+          >
+            <span className="min-w-0 break-all">
+              {saveOutcome.kind === 'desktop' && (
+                <>
+                  {t('scoresheetPdf.pdfSavedAt', 'PDF saved:')}{' '}
+                  <span className="font-mono font-semibold select-all" data-testid="pdf-notice-path">{saveOutcome.path}</span>
+                </>
+              )}
+              {saveOutcome.kind === 'desktop-pending' && t('scoresheetPdf.savingFile', 'Saving {{fileName}}...', { fileName: saveOutcome.fileName })}
+              {saveOutcome.kind === 'web' && (
+                <>
+                  {t('scoresheetPdf.pdfDownloaded', "Downloaded to your browser's download folder:")}{' '}
+                  <span className="font-mono font-semibold select-all" data-testid="pdf-notice-path">{saveOutcome.fileName}</span>
+                </>
+              )}
+              {saveOutcome.kind === 'app' && t('scoresheetPdf.pdfHandedToApp', 'The app is saving {{fileName}}: the bar at the top shows where.', { fileName: saveOutcome.fileName })}
+              {saveOutcome.kind === 'failed' && saveOutcome.message}
+            </span>
+            {saveOutcome.kind === 'desktop' && saveOutcome.id !== null && saveOutcome.id !== undefined && (
+              <span className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => runDownloadAction('download_open', saveOutcome.id)}
+                  className="rounded-md bg-stone-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-stone-700"
+                >
+                  {t('scoresheetPdf.openFile', 'Open file')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => runDownloadAction('download_reveal', saveOutcome.id)}
+                  className="rounded-md border border-stone-300 bg-white px-2.5 py-1 text-xs font-semibold text-stone-800 hover:bg-stone-100"
+                >
+                  {t('scoresheetPdf.showInFolder', 'Show in folder')}
+                </button>
+              </span>
+            )}
+            {actionError && <span className="text-xs text-red-700 break-all">{actionError}</span>}
+            <button
+              type="button"
+              onClick={() => { setSaveOutcome(null); setActionError(null); }}
+              className="ml-auto shrink-0 rounded px-1.5 text-stone-500 hover:text-stone-900"
+              aria-label={t('scoresheetPdf.dismiss', 'Close')}
+              title={t('scoresheetPdf.dismiss', 'Close')}
+            >
+              ×
+            </button>
+          </div>
+        )}
       </div>
       <style>{`
         @media print {
@@ -2808,11 +1854,12 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
                   <div className="flex-1">
                     <StandardSet
                       setNumber={1}
-                      teamNameLeft={shouldShowSet1 ? teamAShortName : ''}
-                      teamNameRight={shouldShowSet1 ? teamBShortName : ''}
-                      firstServeTeamA={shouldShowSet1 ? match?.coinTossServeA : undefined}
+                      teamNameLeft={shouldShowSet1 && !isStruckOff(1) ? teamAShortName : ''}
+                      teamNameRight={shouldShowSet1 && !isStruckOff(1) ? teamBShortName : ''}
+                      firstServeTeamA={shouldShowSet1 && !isStruckOff(1) ? set1ServeIsA : undefined}
                       positionBoxRef={positionBoxSet1Ref}
-                      {...set1Data}
+                      {...(isStruckOff(1) ? emptySetData : set1Data)}
+                      struckOff={isStruckOff(1)}
                     />
                   </div>
                 </div>
@@ -2829,24 +1876,32 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
                     <StandardSet
                       setNumber={2}
                       isSwapped={true}
-                      teamNameLeft={shouldShowSet2 ? teamBShortName : ''}
-                      teamNameRight={shouldShowSet2 ? teamAShortName : ''}
-                      firstServeTeamA={shouldShowSet2 ? match?.coinTossServeA : undefined}
-                      {...set2Data}
+                      teamNameLeft={shouldShowSet2 && !isStruckOff(2) ? teamBShortName : ''}
+                      teamNameRight={shouldShowSet2 && !isStruckOff(2) ? teamAShortName : ''}
+                      firstServeTeamA={shouldShowSet2 && !isStruckOff(2) ? set1ServeIsA : undefined}
+                      {...(isStruckOff(2) ? emptySetData : set2Data)}
+                      struckOff={isStruckOff(2)}
                     />
                   </div>
                 </div>
+                {/* Side banner: the product name as plain text (the logo is only at the top left) */}
                 <div
-                  className="flex items-center justify-center text-xl border border-black bg-gray-300"
+                  className="flex items-center justify-center border border-black bg-gray-300 shrink-0"
                   style={{
-                    width: '97px',
+                    // as tall as the set boxes: a taller banner stretched the SET columns
+                    // below the grids (audit 2026-10); 93px keeps the row inside the sheet
+                    // now that the set boxes are 150 mm inside their borders
+                    width: '93px',
+                    height: 'calc(5.3cm + 2px)',
+                    fontSize: '17px',
                     writingMode: 'vertical-lr',
                     transform: 'rotate(180deg)',
                     textAlign: 'center',
                     whiteSpace: 'nowrap'
                   }}
+                  data-testid="side-banner"
                 >
-                  eScoresheet<br />Openvolley
+                  OpenVolley eScoresheet
                 </div>
               </div>
             </div>
@@ -2872,10 +1927,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
                   <div className="flex-1">
                     <StandardSet
                       setNumber={3}
-                      teamNameLeft={shouldShowSet3 ? teamAShortName : ''}
-                      teamNameRight={shouldShowSet3 ? teamBShortName : ''}
-                      firstServeTeamA={shouldShowSet3 ? match?.coinTossServeA : undefined}
-                      {...set3Data}
+                      teamNameLeft={shouldShowSet3 && !isStruckOff(3) ? teamAShortName : ''}
+                      teamNameRight={shouldShowSet3 && !isStruckOff(3) ? teamBShortName : ''}
+                      firstServeTeamA={shouldShowSet3 && !isStruckOff(3) ? set1ServeIsA : undefined}
+                      {...(isStruckOff(3) ? emptySetData : set3Data)}
+                      struckOff={isStruckOff(3)}
                     />
                   </div>
                 </div>
@@ -2892,45 +1948,32 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
                     <StandardSet
                       setNumber={4}
                       isSwapped={true}
-                      teamNameLeft={shouldShowSet4 ? teamBShortName : ''}
-                      teamNameRight={shouldShowSet4 ? teamAShortName : ''}
-                      firstServeTeamA={shouldShowSet4 ? match?.coinTossServeA : undefined}
-                      {...(shouldShowSet4 ? set4Data : {
-                        startTime: '',
-                        endTime: '',
-                        leftLineup: ['', '', '', '', '', ''],
-                        rightLineup: ['', '', '', '', '', ''],
-                        leftPoints: 0,
-                        rightPoints: 0,
-                        leftMarkedPoints: [],
-                        rightMarkedPoints: [],
-                        leftCircledPoints: [],
-                        rightCircledPoints: [],
-                        leftServiceRounds: [],
-                        rightServiceRounds: [],
-                        leftTimeouts: ['', ''],
-                        rightTimeouts: ['', ''],
-                        leftSubs: [[], [], [], [], [], []],
-                        rightSubs: [[], [], [], [], [], []]
-                      })}
+                      teamNameLeft={shouldShowSet4 && !isStruckOff(4) ? teamBShortName : ''}
+                      teamNameRight={shouldShowSet4 && !isStruckOff(4) ? teamAShortName : ''}
+                      firstServeTeamA={shouldShowSet4 && !isStruckOff(4) ? set1ServeIsA : undefined}
+                      {...(shouldShowSet4 && !isStruckOff(4) ? set4Data : emptySetData)}
+                      struckOff={isStruckOff(4)}
                     />
                   </div>
                 </div>
                 <div
-                  className="flex items-center justify-center text-xl"
+                  className="flex items-center justify-center text-xl shrink-0"
                   style={{
-                    width: '97px',
+                    width: '93px',
                     writingMode: 'vertical-lr',
                     textAlign: 'center',
                     whiteSpace: 'nowrap'
                   }}
                 >
+                  {/* The flat ball A (brand/ball.svg), bundled with a content-hashed URL:
+                      never a cached old /ball.png */}
                   <img
-                    src="/ball.png"
-                    alt="OpenVolley"
+                    src={BRAND.ballPng}
+                    alt=""
+                    data-testid="sheet-ball"
                     style={{
-                      width: '97px',
-                      height: '97px',
+                      width: '93px',
+                      height: '93px',
                       objectFit: 'contain',
                       margin: '0 auto',
                       display: 'block'
@@ -2948,9 +1991,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
                 <div ref={set5Ref} className="flex">
                   <div className="mr-1">
                     <LeftInfoBox
-                      lineup={hasSet5CoinToss && set5Data ? set5Data.leftLineup : ['', '', '', '', '', '']}
-                      subs={hasSet5CoinToss && set5Data ? set5Data.leftSubs : [[], [], [], [], [], []]}
-                      serviceRounds={hasSet5CoinToss && set5Data ? set5ServiceRoundsLeftTeam_Before : []}
+                      lineup={set5Shown ? set5Data.leftLineup : ['', '', '', '', '', '']}
+                      subs={set5Shown ? set5Data.leftSubs : [[], [], [], [], [], []]}
+                      serviceRounds={set5Shown ? set5ServiceRoundsLeftTeam_Before : []}
                       isSet5={true}
                     />
                   </div>
@@ -2964,51 +2007,51 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
                   </div>
                   <div className="flex-1">
                     <SetFive
-                      teamNameA={hasSet5CoinToss && set5Data ? (set5LeftTeamIsB ? teamBShortName : teamAShortName) : ''}
-                      teamNameB={hasSet5CoinToss && set5Data ? (set5LeftTeamIsB ? teamAShortName : teamBShortName) : ''}
-                      teamALabel={hasSet5CoinToss && set5Data ? (set5LeftTeamIsB ? "B" : "A") : ''}
-                      teamBLabel={hasSet5CoinToss && set5Data ? (set5LeftTeamIsB ? "A" : "B") : ''}
-                      firstServeTeamA={hasSet5CoinToss && set5Data
+                      teamNameA={set5Shown ? (set5LeftTeamIsB ? teamBShortName : teamAShortName) : ''}
+                      teamNameB={set5Shown ? (set5LeftTeamIsB ? teamAShortName : teamBShortName) : ''}
+                      teamALabel={set5Shown ? (set5LeftTeamIsB ? "B" : "A") : ''}
+                      teamBLabel={set5Shown ? (set5LeftTeamIsB ? "A" : "B") : ''}
+                      firstServeTeamA={set5Shown
                         // SetFive expects firstServeTeamA to indicate if the team in Panel 1 serves
                         ? set5FirstServeTeamKey === set5TeamOnLeft
                         : undefined}
-                      startTime={hasSet5CoinToss && set5Data ? set5Data.startTime : ''}
-                      endTime={hasSet5CoinToss && set5Data ? set5Data.endTime : ''}
-                      setFinished={hasSet5CoinToss && set5Data ? set5Data.setFinished : false}
-                      lineupA={hasSet5CoinToss && set5Data ? set5Data.leftLineup : ['', '', '', '', '', '']}
-                      subsA={hasSet5CoinToss && set5Data ? set5Data.leftSubs : [[], [], [], [], [], []]}
-                      timeoutsA={hasSet5CoinToss && set5Data ? set5Data.leftTimeouts : ['', '']}
-                      subsA_Right={hasSet5CoinToss && set5Data ? set5Data.leftSubs_After : [[], [], [], [], [], []]}
-                      timeoutsA_Right={hasSet5CoinToss && set5Data ? set5Data.leftTimeouts_After : ['', '']}
-                      lineupB={hasSet5CoinToss && set5Data ? set5Data.rightLineup : ['', '', '', '', '', '']}
-                      subsB={hasSet5CoinToss && set5Data ? set5Data.rightSubs : [[], [], [], [], [], []]}
-                      timeoutsB={hasSet5CoinToss && set5Data ? set5Data.rightTimeouts : ['', '']}
-                      pointsA_Left={hasSet5CoinToss && set5Data ? (() => {
+                      startTime={set5Shown ? set5Data.startTime : ''}
+                      endTime={set5Shown ? set5Data.endTime : ''}
+                      setFinished={set5Shown ? set5Data.setFinished : false}
+                      lineupA={set5Shown ? set5Data.leftLineup : ['', '', '', '', '', '']}
+                      subsA={set5Shown ? set5Data.leftSubs : [[], [], [], [], [], []]}
+                      timeoutsA={set5Shown ? set5Data.leftTimeouts : ['', '']}
+                      subsA_Right={set5Shown ? set5Data.leftSubs_After : [[], [], [], [], [], []]}
+                      timeoutsA_Right={set5Shown ? set5Data.leftTimeouts_After : ['', '']}
+                      lineupB={set5Shown ? set5Data.rightLineup : ['', '', '', '', '', '']}
+                      subsB={set5Shown ? set5Data.rightSubs : [[], [], [], [], [], []]}
+                      timeoutsB={set5Shown ? set5Data.rightTimeouts : ['', '']}
+                      pointsA_Left={set5Shown ? (() => {
                         if (!set5Info || (!set5Info.homePoints && !set5Info.awayPoints && !set5Info.startTime)) return 0;
                         const leftTeamPoints = set5TeamOnLeft === 'home' ? (set5Info.homePoints || 0) : (set5Info.awayPoints || 0);
                         return Math.min(leftTeamPoints, 8);
                       })() : 0}
-                      markedPointsA_Left={hasSet5CoinToss && set5Data ? markedPointsA_Left : []}
-                      circledPointsA_Left={hasSet5CoinToss && set5Data ? circledPointsA_Left : []}
-                      serviceRoundsA_Left={hasSet5CoinToss && set5Data ? set5ServiceRoundsLeftTeam_Before : []}
-                      pointsB={hasSet5CoinToss && set5Data ? (() => {
+                      markedPointsA_Left={set5Shown ? markedPointsA_Left : []}
+                      circledPointsA_Left={set5Shown ? circledPointsA_Left : []}
+                      serviceRoundsA_Left={set5Shown ? set5ServiceRoundsLeftTeam_Before : []}
+                      pointsB={set5Shown ? (() => {
                         if (!set5Info || (!set5Info.homePoints && !set5Info.awayPoints && !set5Info.startTime)) return 0;
                         const rightTeamPoints = set5TeamOnRight === 'home' ? (set5Info.homePoints || 0) : (set5Info.awayPoints || 0);
                         return rightTeamPoints;
                       })() : 0}
-                      markedPointsB={hasSet5CoinToss && set5Data ? markedPointsB : []}
-                      circledPointsB={hasSet5CoinToss && set5Data ? circledPointsB : []}
-                      serviceRoundsB={hasSet5CoinToss && set5Data ? set5ServiceRoundsRightTeam : []}
-                      pointsA_Right={hasSet5CoinToss && set5Data ? (() => {
+                      markedPointsB={set5Shown ? markedPointsB : []}
+                      circledPointsB={set5Shown ? circledPointsB : []}
+                      serviceRoundsB={set5Shown ? set5ServiceRoundsRightTeam : []}
+                      pointsA_Right={set5Shown ? (() => {
                         if (!set5Info || (!set5Info.homePoints && !set5Info.awayPoints && !set5Info.startTime)) return 0;
                         const leftTeamPoints = set5TeamOnLeft === 'home' ? (set5Info.homePoints || 0) : (set5Info.awayPoints || 0);
                         return Math.max(leftTeamPoints - 8, 0);
                       })() : 0}
-                      markedPointsA_Right={hasSet5CoinToss && set5Data ? markedPointsA_Right : []}
-                      circledPointsA_Right={hasSet5CoinToss && set5Data ? circledPointsA_Right : []}
-                      serviceRoundsA_Right={hasSet5CoinToss && set5Data ? set5ServiceRoundsLeftTeam_After : []}
-                      pointsAtChangeA={hasSet5CoinToss && set5Data ? (set5Data.leftScoreAtCourtChange || 0) : 0}
-                      pointsAtChangeB={hasSet5CoinToss && set5Data ? (set5Data.rightScoreAtCourtChange || 0) : 0}
+                      markedPointsA_Right={set5Shown ? markedPointsA_Right : []}
+                      circledPointsA_Right={set5Shown ? circledPointsA_Right : []}
+                      serviceRoundsA_Right={set5Shown ? set5ServiceRoundsLeftTeam_After : []}
+                      pointsAtChangeA={set5Shown ? (set5Data.leftScoreAtCourtChange ?? null) : null}
+                      struckOff={isStruckOff(5)}
                       positionBoxRef={positionBoxSet5Ref}
                     />
                   </div>
@@ -3025,21 +2068,19 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
                   <div className="flex-1 flex flex-col gap-1 min-h-0">
                     {/* Remarks - 30% height */}
                     <div ref={remarksRef} className="flex-[3] min-h-0">
-                      <Remarks overflowSanctions={overflowSanctions} remarks={match?.remarks || ''} />
+                      <Remarks overflowSanctions={overflowSanctions} remarks={typeof match?.remarks === 'string' ? match.remarks : ''} generated={autoRemarks} />
                     </div>
                     {/* Approvals - 70% height */}
                     <div ref={approvalsRef} className="flex-[5] min-h-0">
                       <Approvals
-                        officials={match?.officials}
+                        officials={officials}
                         match={match}
                         sets={sets}
                         teamAKey={teamAKey}
-                        lineJudges={[
-                          match?.officials?.find((o: any) => o.role === 'line judge 1')?.name || '',
-                          match?.officials?.find((o: any) => o.role === 'line judge 2')?.name || '',
-                          match?.officials?.find((o: any) => o.role === 'line judge 3')?.name || '',
-                          match?.officials?.find((o: any) => o.role === 'line judge 4')?.name || ''
-                        ]}
+                        lineJudges={[1, 2, 3, 4].map(n => {
+                          const lj = findOfficial(officials, `line judge ${n}`);
+                          return lj ? (lj.name || formatPersonName(lj.lastName, lj.firstName)) : '';
+                        })}
                       />
                     </div>
                   </div>
@@ -3067,10 +2108,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
               <div className="flex gap-0.5 shrink-0" style={{ width: '110mm', height: '13.5cm', maxWidth: '110mm' }}>
                 <div ref={rosterARef} className="flex-1 min-w-0">
                   <Roster
-                    team={match?.homeShortName || ''}
+                    team={homeShortName}
                     side={teamAKey === 'home' ? 'A' : 'B'}
                     players={formatPlayers(homePlayers)}
-                    benchStaff={match?.bench_home}
+                    benchStaff={asArray(match?.bench_home)}
                     preGameCaptainSignature={match?.homeCaptainSignature}
                     preGameCoachSignature={match?.homeCoachSignature}
                     coinTossConfirmed={coinTossConfirmed}
@@ -3079,10 +2120,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction }) => {
                 </div>
                 <div ref={rosterBRef} className="flex-1 min-w-0">
                   <Roster
-                    team={match?.awayShortName || ''}
+                    team={awayShortName}
                     side={teamAKey === 'away' ? 'A' : 'B'}
                     players={formatPlayers(awayPlayers)}
-                    benchStaff={match?.bench_away}
+                    benchStaff={asArray(match?.bench_away)}
                     preGameCaptainSignature={match?.awayCaptainSignature}
                     preGameCoachSignature={match?.awayCoachSignature}
                     coinTossConfirmed={coinTossConfirmed}

@@ -6,8 +6,11 @@ import { db } from '../db/db'
 import ballFallback from '../ball_fallback.png'
 
 // Primary ball image (with a bundled copy as fallback)
-const ballImage = `${import.meta.env.BASE_URL}ball.png`
+// The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
+// stay cached (old green ball) after an update
+const ballImage = ballFallback
 import { Results } from '../../scoresheet_pdf/components/FooterSection'
+import { setDurationMinutes } from '../../scoresheet_pdf/utils/matchTimes'
 import TestModeControls from './TestModeControls'
 import { ArrowLeft } from 'lucide-react'
 import { Button } from '../ui/Button.jsx'
@@ -352,21 +355,9 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         ? (teamBPoints > teamAPoints ? 1 : 0)
         : null
 
-      let duration = ''
-      if (isSetFinished && setInfo?.endTime) {
-        let start
-        if (setNum === 1 && match?.scheduledAt) {
-          start = new Date(match.scheduledAt)
-        } else if (setInfo?.startTime) {
-          start = new Date(setInfo.startTime)
-        } else {
-          start = new Date()
-        }
-        const end = new Date(setInfo.endTime)
-        const durationMs = end.getTime() - start.getTime()
-        const minutes = Math.floor(durationMs / 60000)
-        duration = minutes > 0 ? `${minutes}'` : ''
-      }
+      // end - the set's actual start (its first rally), as on the sheet (never the schedule)
+      const minutes = isSetFinished ? setDurationMinutes(setInfo, setEvents) : null
+      const duration = minutes !== null && minutes > 0 ? `${minutes}'` : ''
 
       results.push({
         setNumber: setNum,

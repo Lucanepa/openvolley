@@ -25,7 +25,7 @@ function flatten(obj, prefix = '', out = []) {
 // Words that keep their capital mid-label.
 const PROPER = new Set([
   'Chrome', 'Edge', 'Supabase', 'WebSocket', 'WiFi', 'German', 'English', 'French', 'Italian',
-  'Swiss', 'Escape', 'Enter', 'Space', 'Esc', 'Bluetooth',
+  'Swiss', 'Escape', 'Enter', 'Space', 'Esc', 'Bluetooth', 'Windows', 'Linux',
   // the OpenBeach tournament import (T2) reads Excel files
   'Excel',
 ])

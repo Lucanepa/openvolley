@@ -8,6 +8,7 @@
 //! Ports mirror the JS relay so the existing client code connects unchanged:
 //!   - HTTP on 5173 (static site + API)
 //!   - WebSocket on 8080
+//! (OpenBeach: 5174 / 8081, src/flavour.rs, so both apps run on one laptop.)
 //!
 //! The WS message protocol and the `/api/*` shapes are a port of
 //! `electron/lanRelayCore.cjs` (shared by `server.js`, the Electron relay and
@@ -25,13 +26,23 @@
 //!     claims are limited per IP / connection and a LAN IP may own few ids;
 //!   - the liveState is kept across syncs only for the same owner / game PIN and
 //!     is mirrored as `data: { liveState }` for the LedBox bridge;
-//!   - only the relay host itself may take / release the main-instance lock;
+//!   - only the relay host itself may take / release the main-instance lock, a
+//!     lock of the "/" page only: several courts share one relay, each scorer
+//!     claims its own match, /api/match/list lists them all, and a LAN browser
+//!     opts in to score another court with `/?court=other`;
+//!   - openbeach's team1 / team2 names (teams, players, PINs, bench connections)
+//!     are taken as home / away, its PINs are secret, and validate-pin
+//!     `{ sport: "beach" }` finds beach matches only;
 //!   - subscribers get the bundle (rosters, events) and match-actions only after
 //!     proving a PIN of the match (subscribe-match `pin`, or the X-OV-Match-Pin
 //!     header on GET /api/match/:id): the referee PIN, an enabled bench PIN or
 //!     the game PIN. Everyone else gets the public summary (`access: "summary"`:
 //!     teams, status, set scores, live state). Wrong PINs are limited per
 //!     connection / IP.
+//!   - Sign on phone (`sign.rs`, docs/qr-signing-spec.md 4): POST /api/sign/start|
+//!     open|submit|wait|close and the phone page at /sign with its strict CSP.
+//!     `start` from the relay host itself, or with X-OV-Match-Pin = the game PIN of
+//!     the body's matchKey (wrong PINs counted with GET /api/match/:id's).
 
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
@@ -57,11 +68,16 @@ use rust_embed::RustEmbed;
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, oneshot, Mutex};
 
+/// The frontend this app serves: OpenVolley's ../dist, or the openbeach
+/// build for OpenBeach (build.rs sets OV_DIST from the Tauri config).
 #[derive(RustEmbed)]
-#[folder = "../dist"]
+#[folder = "$OV_DIST"]
 struct Assets;
 
-/// PIN/secret fields that must never be returned to a client.
+/// PIN/secret fields that must never be returned to a client. The team1* /
+/// team2* ones are openbeach's names for the bench and upload PINs (team1Pin,
+/// older builds team1TeamPin); matchPin is openbeach's PIN that protects the
+/// match on the scorer's device. Same list as lanRelayCore.cjs / backend server.js.
 const MATCH_SECRET_FIELDS: &[&str] = &[
     "refereePin",
     "homeTeamPin",
@@ -72,6 +88,15 @@ const MATCH_SECRET_FIELDS: &[&str] = &[
     "connectionPins",
     "game_pin",
     "gamePin",
+    "team1Pin",
+    "team2Pin",
+    "team1TeamPin",
+    "team2TeamPin",
+    "team1UploadPin",
+    "team2UploadPin",
+    "team1TeamUploadPin",
+    "team2TeamUploadPin",
+    "matchPin",
 ];
 
 /// Personal data the relay never hands out. Subscribing needs no PIN and the
@@ -151,7 +176,12 @@ const RATE_WINDOW: Duration = Duration::from_secs(60);
 /// address, unlike the cloud relay behind venue NATs (per-IP limit 20 there).
 const CLAIM_FAILURE_LIMIT: u32 = 5;
 /// Distinct match ids one (non-loopback) IP may own, and new ids per window.
-const MAX_OWNED_PER_IP: usize = 4;
+/// Sized for a venue with several courts: every court tablet has its own
+/// address, the relay host (loopback) is exempt, and a tablet keeps the ids of
+/// the matches it scored on one connection until it releases them
+/// (clear-all-matches / delete-match) or reconnects, so 8 covers a block of
+/// matches on one court. Same value as lanRelayCore.cjs (the cloud relay: 20).
+const MAX_OWNED_PER_IP: usize = 8;
 const NEW_CLAIM_LIMIT: u32 = 10;
 /// Same per-IP budgets as the Node relays' HTTP endpoints.
 const VALIDATE_PIN_LIMIT: u32 = 10;
@@ -224,6 +254,8 @@ pub struct AppState {
     displaced: Mutex<HashMap<String, String>>,
     pending: Mutex<HashMap<String, Pending>>,
     next_id: AtomicU64,
+    /// Sign on phone sessions (memory only; the sweeper starts with the first one)
+    sign: Arc<crate::sign::SignSessions>,
     pub http_port: u16,
     pub ws_port: u16,
 }
@@ -241,6 +273,7 @@ pub fn new_state(http_port: u16, ws_port: u16) -> Arc<AppState> {
         displaced: Mutex::new(HashMap::new()),
         pending: Mutex::new(HashMap::new()),
         next_id: AtomicU64::new(1),
+        sign: crate::sign::SignSessions::lan(),
         http_port,
         ws_port,
     })
@@ -362,9 +395,13 @@ fn strip_secrets(m: &mut Value) {
     }
 }
 
-/// A bundle as the relay hands it out: public match, players without personal keys.
+/// A bundle as the relay hands it out: public match, players without personal
+/// keys, without the relay's own `sportType` note (see `bundle_from`).
 fn strip_bundle_secrets(bundle: &Value) -> Value {
     let mut b = bundle.clone();
+    if let Some(obj) = b.as_object_mut() {
+        obj.remove("sportType");
+    }
     if let Some(m) = b.get_mut("match") {
         strip_secrets(m);
     }
@@ -451,7 +488,30 @@ fn game_pin_of(m: Option<&Value>) -> Option<String> {
     }
 }
 
+/// Is this sync from openbeach? It sends its teams as team1Team / team2Team /
+/// team1Players / team2Players (before its home/away wire adapter) or names the
+/// sport on the match (lanRelayCore `isBeachSync`, backend handleSyncMatchData).
+fn is_beach_sync(src: &Value, m: &Value) -> bool {
+    let truthy = |k: &str| src.get(k).map_or(false, |v| !matches!(v, Value::Null | Value::Bool(false)));
+    ["team1Team", "team2Team", "team1Players", "team2Players"].iter().any(|k| truthy(k))
+        || m.get("sportType").and_then(|v| v.as_str()) == Some("beach")
+        || m.get("sport_type").and_then(|v| v.as_str()) == Some("beach")
+}
+
+/// The sport of a stored bundle: "beach" or "indoor".
+fn bundle_sport(bundle: &Value) -> &'static str {
+    if bundle.get("sportType").and_then(|v| v.as_str()) == Some("beach") {
+        "beach"
+    } else {
+        "indoor"
+    }
+}
+
 /// Build the stored bundle from a sync (flat or `{ matchData }`) or response payload.
+/// `sportType` ("beach" only, when the sync says so) is the relay's own note
+/// for POST /api/match/validate-pin `{ sport }` and the `sportType` of its
+/// GET /api/match/list row: it is not part of any bundle sent out
+/// (`strip_bundle_secrets`, `summary_bundle`).
 fn bundle_from(src: &Value) -> Option<Value> {
     let src = match src.get("matchData") {
         Some(md) if md.is_object() => md,
@@ -465,21 +525,31 @@ fn bundle_from(src: &Value) -> Option<Value> {
         Some(v) if v.is_array() => v.clone(),
         _ => json!([]),
     };
+    // The first array among `keys` (openbeach: team1Players / team2Players)
+    let players = |keys: &[&str]| {
+        keys.iter()
+            .find_map(|k| src.get(*k).filter(|v| v.is_array()).cloned())
+            .unwrap_or_else(|| json!([]))
+    };
     // openbeach names its teams team1Team / team2Team (team1 / team2)
     let team = |keys: &[&str]| {
         keys.iter()
             .find_map(|k| src.get(*k).filter(|v| !v.is_null()).cloned())
             .unwrap_or(Value::Null)
     };
-    Some(json!({
+    let mut bundle = json!({
         "match": m.clone(),
         "homeTeam": team(&["homeTeam", "team1Team", "team1"]),
         "awayTeam": team(&["awayTeam", "team2Team", "team2"]),
-        "homePlayers": arr("homePlayers"),
-        "awayPlayers": arr("awayPlayers"),
+        "homePlayers": players(&["homePlayers", "team1Players"]),
+        "awayPlayers": players(&["awayPlayers", "team2Players"]),
         "sets": arr("sets"),
         "events": arr("events"),
-    }))
+    });
+    if is_beach_sync(src, m) {
+        bundle["sportType"] = json!("beach");
+    }
+    Some(bundle)
 }
 
 /// A flat, PIN-free match message: `{ type, matchId, match, homeTeam, ..., liveState? }`.
@@ -545,8 +615,9 @@ fn ct_eq(a: &str, b: &str) -> bool {
 }
 
 /// Does `pin` prove access to the match: the referee PIN (referee connection
-/// on), a bench PIN (that bench connection on) or the game PIN? A match
-/// without any of them grants nothing (lanRelayCore `pinGrantsAccess`).
+/// on), a bench PIN (that bench connection on; beach: team1 / team2) or the
+/// game PIN? A match without any of them grants nothing (lanRelayCore
+/// `pinGrantsAccess`).
 fn pin_grants_access(m: Option<&Value>, pin: &str) -> bool {
     let p = pin.trim();
     let Some(m) = m.filter(|m| m.is_object()) else { return false };
@@ -563,6 +634,14 @@ fn pin_grants_access(m: Option<&Value>, pin: &str) -> bool {
     }
     if on("awayTeamConnectionEnabled") {
         candidates.push(pin_text(m.get("awayTeamPin")));
+    }
+    // Beach (openbeach) benches: team1 / team2 (team1Pin, older builds team1TeamPin)
+    let first_pin = |keys: &[&str]| keys.iter().find_map(|k| pin_text(m.get(*k)));
+    if on("team1TeamConnectionEnabled") {
+        candidates.push(first_pin(&["team1Pin", "team1TeamPin"]));
+    }
+    if on("team2TeamConnectionEnabled") {
+        candidates.push(first_pin(&["team2Pin", "team2TeamPin"]));
     }
     candidates.push(game_pin_of(Some(m)));
     let mut ok = false;
@@ -662,6 +741,11 @@ fn http_router(state: Arc<AppState>) -> Router {
         .route("/api/match/by-game-number", get(by_game_number))
         .route("/api/match/:id", get(match_get).patch(match_patch))
         .route("/api/server/connections", get(server_connections))
+        .route("/api/sign/start", post(sign_api))
+        .route("/api/sign/open", post(sign_api))
+        .route("/api/sign/submit", post(sign_api))
+        .route("/api/sign/wait", post(sign_api))
+        .route("/api/sign/close", post(sign_api))
         .fallback(static_handler)
         .layer(middleware::from_fn(add_headers))
         .with_state(state)
@@ -713,10 +797,13 @@ async fn add_headers(req: Request<Body>, next: Next) -> Response {
     let h = res.headers_mut();
     h.insert("X-Content-Type-Options", HeaderValue::from_static("nosniff"));
     h.insert("X-Frame-Options", HeaderValue::from_static("SAMEORIGIN"));
-    h.insert(
-        "Referrer-Policy",
-        HeaderValue::from_static("strict-origin-when-cross-origin"),
-    );
+    // The phone signing page sets its own (no-referrer)
+    if !h.contains_key("Referrer-Policy") {
+        h.insert(
+            "Referrer-Policy",
+            HeaderValue::from_static("strict-origin-when-cross-origin"),
+        );
+    }
     if let Some(o) = origin {
         if cors_origin_allowed(&o) {
             if let Ok(val) = HeaderValue::from_str(&o) {
@@ -834,6 +921,14 @@ async fn validate_pin(
         _ => String::new(),
     };
     let typ = body.get("type").and_then(|v| v.as_str()).unwrap_or("referee").to_string();
+    // The asking app's sport (openbeach: "beach"; left out: "indoor"): a PIN
+    // never finds a match of the other sport (lanRelayCore `validatePin`).
+    let sport = match body.get("sport") {
+        None | Some(Value::Null) => "indoor",
+        Some(Value::String(s)) if s == "indoor" => "indoor",
+        Some(Value::String(s)) if s == "beach" => "beach",
+        _ => return json_response(StatusCode::BAD_REQUEST, json!({ "success": false, "error": "Invalid request" })),
+    };
     if pin.len() != 6 {
         return json_response(StatusCode::BAD_REQUEST, json!({ "success": false, "error": "Invalid PIN format" }));
     }
@@ -849,6 +944,9 @@ async fn validate_pin(
     let matches = state.matches.lock().await;
     for (id, bundle) in matches.iter() {
         let Some(m) = bundle.get("match") else { continue };
+        if bundle_sport(bundle) != sport {
+            continue;
+        }
         let match_pin = match m.get(pin_field) {
             Some(Value::String(p)) => Some(p.trim().to_string()),
             Some(Value::Number(n)) => Some(n.to_string()),
@@ -861,6 +959,10 @@ async fn validate_pin(
             strip_secrets(&mut found);
             if let Some(obj) = found.as_object_mut() {
                 obj.insert("id".to_string(), public_id(id));
+                // A beach answer names its sport (the indoor answer is unchanged)
+                if sport == "beach" {
+                    obj.insert("sportType".to_string(), json!("beach"));
+                }
             }
             return json_response(StatusCode::OK, json!({ "success": true, "match": found }));
         }
@@ -984,6 +1086,8 @@ fn match_list_entry(id: &str, bundle: &Value, include_finished: bool) -> Option<
         // No display string here (no time zone data): clients format scheduledAt
         "dateTime": Value::Null,
         "status": status,
+        // "beach" (openbeach) or "indoor": each app lists its own sport's matches
+        "sportType": bundle_sport(bundle),
         "test": m.get("test") == Some(&json!(true)),
         // PINs intentionally NOT returned: validated via /api/match/validate-pin
         "refereeConnectionEnabled": m.get("refereeConnectionEnabled") == Some(&json!(true)),
@@ -1177,6 +1281,49 @@ async fn server_connections(
 // Static file serving (embedded dist) with SPA fallback + main-instance gate
 // ---------------------------------------------------------------------------
 
+/// "Score another court on this device": the "already running" page links to
+/// `/?court=other`, which sets this cookie and redirects to "/"; a browser that
+/// carries it gets the scoresheet while the main instance is registered (a
+/// page navigation cannot send X-Instance-ID). Same names as lanRelayCore.cjs.
+const OTHER_COURT_COOKIE: &str = "ov_other_court";
+
+/// The "already running" page: links to the role pages this app has
+/// (OpenBeach has no bench page).
+fn main_instance_page(f: &crate::flavour::Flavour) -> String {
+    let links: String = [("referee", "Referee App"), ("bench", "Bench App"), ("livescore", "Livescore App")]
+        .iter()
+        .filter(|(role, _)| f.role_pages.iter().any(|(r, _)| r == role))
+        .map(|(role, label)| format!("<li><a href=\"/{role}\">{label}</a></li>"))
+        .collect();
+    format!(
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">\
+<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Main Instance Already Running</title>\
+<style>body{{font-family:Arial,sans-serif;text-align:center;padding:50px 16px}}h1{{color:#ef4444}}p{{color:#666}}ul{{list-style:none;padding:0}}li{{margin:8px 0}}</style>\
+</head><body><h1>Main Scoresheet Already Running</h1>\
+<p>Another scoretable is active on this server.</p>\
+<p>You can still open:</p>\
+<ul>{links}</ul>\
+<p>Scoring a match on another court?</p>\
+<ul><li><a href=\"/?court=other\">Open the scoresheet for another court on this device</a></li></ul>\
+</body></html>"
+    )
+}
+
+/// Does the query string carry `court=other`?
+fn is_other_court_query(query: &str) -> bool {
+    query.split('&').any(|kv| kv == "court=other")
+}
+
+/// Does the Cookie header carry the other-court opt-in?
+fn has_other_court_cookie(headers: &HeaderMap) -> bool {
+    let want = format!("{OTHER_COURT_COOKIE}=1");
+    headers
+        .get_all("cookie")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .any(|v| v.split(';').any(|c| c.trim() == want))
+}
+
 async fn static_handler(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<Arc<AppState>>,
@@ -1190,68 +1337,220 @@ async fn static_handler(
         return json_response(StatusCode::NOT_FOUND, json!({ "success": false, "error": "Not found" }));
     }
 
-    // Single main-instance gate — skipped for the desktop app itself and for a
-    // request that presents the registered instance id.
-    if (path == "/" || path == "/index.html") && !is_local(&addr) {
-        let main = state.main_instance.lock().await.clone();
-        let presented = headers.get("x-instance-id").and_then(|v| v.to_str().ok());
-        if main.is_some() && presented != main.as_deref() {
+    // Single main-instance gate — skipped for the desktop app itself, for a
+    // request that presents the registered instance id and for a browser that
+    // opted in to score another court (lanRelayCore `createMainInstanceGate`:
+    // a page lock, not a match lock; the game PIN decides who scores a match).
+    if path == "/" || path == "/index.html" {
+        if uri.query().map_or(false, is_other_court_query) {
             return (
-                StatusCode::FORBIDDEN,
-                [("content-type", "text/html")],
-                "<!DOCTYPE html><html><head><title>Main Instance Already Running</title></head><body>\
-                 <h1>Main Scoresheet Already Running</h1>\
-                 <p>Another scoretable is active. You can still open:</p>\
-                 <ul><li><a href=\"/referee\">Referee</a></li>\
-                 <li><a href=\"/bench\">Bench</a></li>\
-                 <li><a href=\"/livescore\">Livescore</a></li></ul></body></html>",
+                StatusCode::FOUND,
+                [
+                    ("location", "/".to_string()),
+                    ("set-cookie", format!("{OTHER_COURT_COOKIE}=1; Path=/; Max-Age=43200; SameSite=Lax")),
+                    ("cache-control", "no-store".to_string()),
+                ],
             )
                 .into_response();
         }
+        if !is_local(&addr) && !has_other_court_cookie(&headers) {
+            let main = state.main_instance.lock().await.clone();
+            let presented = headers.get("x-instance-id").and_then(|v| v.to_str().ok());
+            if main.is_some() && presented != main.as_deref() {
+                return (
+                    StatusCode::FORBIDDEN,
+                    [("content-type", "text/html; charset=utf-8"), ("cache-control", "no-store")],
+                    main_instance_page(crate::flavour::CURRENT),
+                )
+                    .into_response();
+            }
+        }
     }
 
-    serve_asset(path)
+    let mut res = serve_asset(path);
+    if crate::sign::is_sign_page_path(path) {
+        // The phone signing page (spec 4.7): strict CSP, no referrer, no-cache
+        let h = res.headers_mut();
+        h.insert("Content-Security-Policy", HeaderValue::from_static(crate::sign::SIGN_PAGE_CSP));
+        h.insert("Referrer-Policy", HeaderValue::from_static("no-referrer"));
+        h.insert("Cache-Control", HeaderValue::from_static("no-cache"));
+    }
+    res
+}
+
+// ---------------------------------------------------------------------------
+// Sign on phone (sign.rs): POST /api/sign/*
+// ---------------------------------------------------------------------------
+
+fn sign_response(a: crate::sign::Answer) -> Response {
+    let status = StatusCode::from_u16(a.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let mut res = (status, [("content-type", "application/json"), ("cache-control", "no-store")], a.body.to_string()).into_response();
+    if let Some(secs) = a.retry_after {
+        if let Ok(v) = HeaderValue::from_str(&secs.to_string()) {
+            res.headers_mut().insert("Retry-After", v);
+        }
+    }
+    if a.status == 413 {
+        res.headers_mut().insert("Connection", HeaderValue::from_static("close"));
+    }
+    res
+}
+
+/// Who may start a session here (spec D3): the relay host itself ("local"), or
+/// a device that proves the game PIN of a match this relay holds
+/// ("pin:<matchKey>"). Wrong PINs count toward the per-IP wrong-PIN limit.
+async fn sign_owner(state: &Arc<AppState>, addr: &SocketAddr, headers: &HeaderMap, body: &Value) -> Result<String, crate::sign::Answer> {
+    use crate::sign::sign_error;
+    if is_local(addr) {
+        return Ok("local".into());
+    }
+    let pin: String = headers
+        .get("x-ov-match-pin")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().chars().take(32).collect())
+        .unwrap_or_default();
+    if pin.is_empty() {
+        return Err(sign_error(403, "OV_SIGN_FORBIDDEN"));
+    }
+    let fail_key = format!("pinfail:ip:{}", canonical_ip(addr.ip()));
+    if window_count(&*state.limits.lock().await, &fail_key) >= PIN_FAILURE_LIMIT {
+        return Err(crate::sign::Answer { retry_after: Some(60), ..sign_error(429, "OV_SIGN_RATE_LIMITED") });
+    }
+    let key = body.get("matchKey").filter(|v| v.is_string()).and_then(|v| norm_id(Some(v)));
+    let stored = match &key {
+        Some(k) => state.matches.lock().await.get(k).and_then(|b| game_pin_of(b.get("match"))),
+        None => None,
+    };
+    let Some(stored) = stored else { return Err(sign_error(403, "OV_SIGN_FORBIDDEN")) };
+    if !ct_eq(&stored, &pin) {
+        window_bump(&mut *state.limits.lock().await, &fail_key);
+        return Err(sign_error(403, "OV_SIGN_PIN_INVALID"));
+    }
+    Ok(format!("pin:{}", key.unwrap_or_default()))
+}
+
+async fn sign_api(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+    uri: Uri,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    use crate::sign::sign_error;
+    let Some(endpoint) = crate::sign::endpoint_of(uri.path()) else {
+        return sign_response(sign_error(404, "OV_SIGN_NOT_FOUND"));
+    };
+    let is_json = headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .map(|ct| {
+            let ct = ct.trim_start().to_ascii_lowercase();
+            ct.strip_prefix("application/json").map_or(false, |rest| !rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_'))
+        })
+        .unwrap_or(false);
+    if !is_json {
+        return sign_response(sign_error(400, "OV_SIGN_BAD_REQUEST"));
+    }
+    let limit = crate::sign::body_limit(endpoint);
+    let declared = headers.get("content-length").and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<usize>().ok());
+    if declared.map_or(false, |n| n > limit) {
+        return sign_response(sign_error(413, "OV_SIGN_TOO_LARGE"));
+    }
+    // Reads at most `limit` bytes and stops
+    let Ok(bytes) = axum::body::to_bytes(body, limit).await else {
+        return sign_response(sign_error(413, "OV_SIGN_TOO_LARGE"));
+    };
+    let Ok(body) = serde_json::from_slice::<Value>(&bytes) else {
+        return sign_response(sign_error(400, "OV_SIGN_BAD_REQUEST"));
+    };
+    let ip_key = canonical_ip(addr.ip()).to_string();
+    let sessions = state.sign.clone();
+    let answer = match endpoint {
+        "start" => match sign_owner(&state, &addr, &headers, &body).await {
+            Ok(owner) => sessions.start(&body, &owner),
+            Err(a) => a,
+        },
+        "open" => sessions.open(&body, &ip_key),
+        "submit" => sessions.submit(&body, &ip_key),
+        "close" => sessions.close(&body),
+        // A dropped request drops this future, and the waiter with it
+        _ => sessions.wait(&body).await,
+    };
+    sign_response(answer)
 }
 
 fn serve_asset(req_path: &str) -> Response {
-    let p = req_path.trim_start_matches('/');
-    let p = if p.is_empty() { "index.html".to_string() } else { p.to_string() };
-
-    if let Some(r) = try_file(&p) {
-        return r;
+    let exists = |p: &str| Assets::get(p).is_some();
+    match resolve_asset(req_path, crate::flavour::CURRENT, &exists).and_then(|p| try_file(&p)) {
+        Some(r) => r,
+        None => (StatusCode::NOT_FOUND, "Not Found").into_response(),
     }
-    if p.ends_with('/') {
-        if let Some(r) = try_file(&format!("{}index.html", p)) {
-            return r;
+}
+
+/// The pages the relay hands out by name (server_status urls, the QR codes,
+/// the "already running" page) in either app. One of them that the running
+/// app does not have is a 404: a tablet must never get the scoretable for it.
+const ROLE_PATHS: &[&str] = &["referee", "bench", "livescore", "scoreboard", "scoresheet", "upload_roster"];
+
+/// Which embedded file answers `req_path` (None: 404). The file itself;
+/// a role page (/referee, /referee/, /referee.html) from the flavour's
+/// role_pages; folder pages (x/ -> x/index.html, x -> x.html | x/index.html,
+/// legacy x.html -> x/index.html); else the single-page fallback (index).
+fn resolve_asset(req_path: &str, f: &crate::flavour::Flavour, exists: &dyn Fn(&str) -> bool) -> Option<String> {
+    let index = || f.index_pages.iter().find(|p| exists(p)).map(|p| p.to_string());
+    let p = req_path.trim_start_matches('/');
+    if p.is_empty() {
+        return index();
+    }
+    if exists(p) {
+        return Some(p.to_string());
+    }
+    let role = p.strip_suffix('/').or_else(|| p.strip_suffix(".html")).unwrap_or(p);
+    if ROLE_PATHS.contains(&role) {
+        let own = f.role_pages.iter().find(|(r, _)| *r == role).map(|(_, file)| *file);
+        if let Some(file) = own.filter(|file| exists(file)) {
+            return Some(file.to_string());
         }
+    }
+    let candidates: Vec<String> = if p.ends_with('/') {
+        vec![format!("{p}index.html")]
     } else if !p.contains('.') {
-        if let Some(r) = try_file(&format!("{}.html", p)) {
-            return r;
-        }
-        if let Some(r) = try_file(&format!("{}/index.html", p)) {
-            return r;
-        }
+        vec![format!("{p}.html"), format!("{p}/index.html")]
     } else if let Some(stem) = p.strip_suffix(".html") {
         // Legacy /referee.html links: Vite builds folder pages (referee/index.html).
-        if let Some(r) = try_file(&format!("{}/index.html", stem)) {
-            return r;
-        }
+        vec![format!("{stem}/index.html")]
+    } else {
+        vec![]
+    };
+    if let Some(found) = candidates.into_iter().find(|c| exists(c)) {
+        return Some(found);
+    }
+    if ROLE_PATHS.contains(&role) {
+        return None;
     }
     // SPA fallback
-    if let Some(r) = try_file("index.html") {
-        return r;
+    index()
+}
+
+/// Cache-Control of a file of the built app. Only Vite's content-hashed files
+/// (`assets/...`: a new build means a new name) may be kept for a year; every
+/// other file keeps its name across versions (`ball.png`, `openvolley_logo.png`,
+/// `favicon.ico`, the pages, the service worker), so the webview must ask again
+/// (no-cache: it revalidates). A year-long cache of the unhashed `/ball.png`
+/// kept showing the old green ball after an update.
+pub fn cache_control_for(path: &str) -> &'static str {
+    let path = path.trim_start_matches('/');
+    if path.starts_with("assets/") {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
     }
-    (StatusCode::NOT_FOUND, "Not Found").into_response()
 }
 
 fn try_file(path: &str) -> Option<Response> {
     Assets::get(path).map(|file| {
         let mime = mime_guess::from_path(path).first_or_octet_stream();
-        let no_cache = path.ends_with(".html")
-            || path.ends_with(".json")
-            || path.ends_with("sw.js")
-            || path.ends_with(".webmanifest");
-        let cache = if no_cache { "no-cache" } else { "public, max-age=31536000" };
+        let cache = cache_control_for(path);
         Response::builder()
             .status(StatusCode::OK)
             .header("content-type", mime.as_ref())
@@ -1567,6 +1866,12 @@ async fn store_bundle(state: &Arc<AppState>, match_id: &str, mut bundle: Value, 
     if let Some(prev) = matches.get(match_id) {
         if matches!(kind, ClaimKind::Owner | ClaimKind::Proved) {
             carry_match_secrets(prev.get("match"), &mut bundle);
+            // A sync without its teams keeps the sport the same scorer set before
+            if bundle.get("sportType").is_none() {
+                if let Some(sport) = prev.get("sportType").cloned() {
+                    bundle["sportType"] = sport;
+                }
+            }
         }
         let same_pin = game_pin_of(prev.get("match")) == game_pin_of(bundle.get("match"));
         if matches!(kind, ClaimKind::Owner | ClaimKind::Proved) && same_pin && bundle.get("liveState").is_none() {
@@ -2024,6 +2329,18 @@ async fn notify_subscribers(state: &Arc<AppState>, match_id: &str, msg: &Value, 
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn only_content_hashed_files_are_cached_for_long() {
+        // Vite's hashed bundle: a new build is a new name
+        assert_eq!(cache_control_for("assets/index-3f9a1c.js"), "public, max-age=31536000, immutable");
+        assert_eq!(cache_control_for("/assets/ball_fallback-ab12cd.png"), "public, max-age=31536000, immutable");
+        // same name in every version: always revalidated (the old green /ball.png stayed for a year)
+        for p in ["ball.png", "/ball.png", "openvolley_logo.png", "favicon.ico", "index.html", "scoresheet/index.html",
+                  "sw.js", "manifest.webmanifest", "version.json", "workbox-1234.js"] {
+            assert_eq!(cache_control_for(p), "no-cache", "{p}");
+        }
+    }
     use super::*;
 
     #[test]
@@ -2423,7 +2740,7 @@ mod tests {
         assert_eq!(ids, vec!["seed-b", "seed-a", "test-seed"]);
         assert_eq!(rows[1], json!({
             "id": "seed-a", "gameNumber": 4242, "homeTeam": "Home VC", "awayTeam": "Away VC",
-            "scheduledAt": "2026-10-05T17:00:00.000Z", "dateTime": null, "status": "scheduled", "test": false,
+            "scheduledAt": "2026-10-05T17:00:00.000Z", "dateTime": null, "status": "scheduled", "sportType": "indoor", "test": false,
             "refereeConnectionEnabled": false, "homeTeamConnectionEnabled": true, "awayTeamConnectionEnabled": false,
         }));
         assert_eq!(rows[2]["test"], json!(true));
@@ -2439,7 +2756,7 @@ mod tests {
         assert!(ids.contains(&"seed-d"));
         let done = all.iter().find(|r| r["id"] == json!("seed-d")).unwrap();
         assert_eq!(done["status"], json!("final"));
-        assert_eq!(done.as_object().unwrap().len(), 11);
+        assert_eq!(done.as_object().unwrap().len(), 12);
         assert!(!Value::Array(all.clone()).to_string().contains("444444"));
         assert_eq!(match_list_entry("x", &bundle(1, "1", "ended"), false), None);
         assert!(match_list_entry("x", &bundle(1, "1", "ended"), true).is_some());
@@ -2462,12 +2779,239 @@ mod tests {
         let row = match_list_entry("beach-1", &b, false).unwrap();
         assert_eq!(row["homeTeam"], json!("Muster / Meier"));
         assert_eq!(row["awayTeam"], json!("Rossi / Bianchi"));
+        // The list row names the sport (openbeach lists only its own matches)
+        assert_eq!(row["sportType"], json!("beach"));
         let summary = summary_bundle(&b);
         assert_eq!(summary["homeTeam"], json!({ "name": "Muster / Meier", "color": "#e2001a" }));
         // Its periodic sync names them team1 / team2; homeTeam wins when both are sent
         let p = bundle_from(&json!({ "match": { "id": 1 }, "team1": { "name": "A" }, "homeTeam": { "name": "H" }, "team2": "B" })).unwrap();
         let row = match_list_entry("beach-2", &p, false).unwrap();
         assert_eq!((row["homeTeam"].clone(), row["awayTeam"].clone(), row["status"].clone()), (json!("H"), json!("B"), json!("scheduled")));
+        // The home/away wire shape naming its sport is beach too; none is indoor
+        let wire = bundle_from(&json!({ "match": { "id": 1, "sport_type": "beach" }, "homeTeam": { "name": "A" } })).unwrap();
+        assert_eq!(match_list_entry("beach-3", &wire, false).unwrap()["sportType"], json!("beach"));
+        let indoor = bundle_from(&json!({ "match": { "id": 1 }, "homeTeam": { "name": "A" } })).unwrap();
+        assert_eq!(match_list_entry("indoor-1", &indoor, false).unwrap()["sportType"], json!("indoor"));
+    }
+
+    /// An openbeach court as it syncs today: team1 / team2 names, its own PINs.
+    fn beach_sync(seed: &str) -> Value {
+        json!({
+            "type": "sync-match-data",
+            "matchId": 1,
+            "match": {
+                "id": 1, "seed_key": seed, "status": "live",
+                "refereeConnectionEnabled": true,
+                "team1TeamConnectionEnabled": true,
+                "team2TeamConnectionEnabled": false,
+                "gamePin": "259730", "refereePin": "360841",
+                "team1Pin": "471952", "team2Pin": "582063",
+                "team1UploadPin": "693174", "team2UploadPin": "704285",
+                "team1TeamUploadPin": "693175", "team2TeamUploadPin": "704286",
+                "team1TeamPin": "471953", "team2TeamPin": "582064",
+                "matchPin": "815396",
+            },
+            "team1Team": { "name": "Keller / Huber" },
+            "team2Team": { "name": "Weber / Frei" },
+            "team1Players": [{ "number": 1, "lastName": "Keller", "dob": "1999-03-14" }],
+            "team2Players": [{ "number": 1, "lastName": "Weber", "dob": "1999-03-14" }],
+        })
+    }
+
+    async fn body_json(r: Response) -> (StatusCode, Value) {
+        let status = r.status();
+        let bytes = axum::body::to_bytes(r.into_body(), usize::MAX).await.unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    }
+
+    #[test]
+    fn openbeach_pins_never_go_out_and_its_bench_pins_grant_the_match() {
+        let b = bundle_from(&beach_sync("beach-court-2")).unwrap();
+        assert_eq!(bundle_sport(&b), "beach");
+        assert_eq!(b["homePlayers"][0]["lastName"], json!("Keller"));
+        assert_eq!(b["awayPlayers"][0]["lastName"], json!("Weber"));
+        // The referee and the team1 bench (connection on) get in; team2 (off),
+        // the upload PINs and openbeach's match-protect PIN do not
+        let m = b.get("match");
+        assert!(pin_grants_access(m, "360841"));
+        assert!(pin_grants_access(m, "471952"));
+        assert!(pin_grants_access(m, "259730"));
+        for pin in ["582063", "693174", "815396", "000000"] {
+            assert!(!pin_grants_access(m, pin), "{pin}");
+        }
+        // Older builds: team1TeamPin when team1Pin is empty
+        let mut old = b.clone();
+        old["match"]["team1Pin"] = json!("");
+        assert!(pin_grants_access(old.get("match"), "471953"));
+        // Nothing the referee gets names a PIN (or the relay's sport note)
+        let full = bundle_message_access("match-full-data", "beach-court-2", &b, None, true);
+        let text = full.to_string();
+        for secret in ["259730", "360841", "471952", "582063", "693174", "704285", "693175", "704286", "471953", "582064", "815396", "Pin\"", "sportType", "1999-03-14"] {
+            assert!(!text.contains(secret), "{secret} in {text}");
+        }
+        assert_eq!(full["homePlayers"][0]["lastName"], json!("Keller"));
+        assert!(!summary_bundle(&b).to_string().contains("sportType"));
+        // The home/away wire shape with sport_type is beach too; indoor is not
+        let wire = bundle_from(&json!({ "match": { "id": 1, "sport_type": "beach" }, "homeTeam": { "name": "A" } })).unwrap();
+        assert_eq!(bundle_sport(&wire), "beach");
+        assert_eq!(bundle_sport(&bundle(7, "987654", "live")), "indoor");
+    }
+
+    #[tokio::test]
+    async fn a_scorer_s_team_less_sync_keeps_its_sport() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.31").await;
+        let first = bundle_from(&beach_sync("beach-court-1")).unwrap();
+        sync(&state, 1, "beach-court-1", first).await.unwrap();
+        let mut periodic = beach_sync("beach-court-1");
+        let obj = periodic.as_object_mut().unwrap();
+        for k in ["team1Team", "team2Team", "team1Players", "team2Players"] {
+            obj.remove(k);
+        }
+        obj.insert("team1".into(), json!({ "name": "Keller / Huber" }));
+        sync(&state, 1, "beach-court-1", bundle_from(&periodic).unwrap()).await.unwrap();
+        assert_eq!(bundle_sport(state.matches.lock().await.get("beach-court-1").unwrap()), "beach");
+        // and its match list row still names it a beach court
+        assert_eq!(match_list_rows(&state, false).await[0]["sportType"], json!("beach"));
+    }
+
+    #[tokio::test]
+    async fn validate_pin_finds_matches_of_the_asking_sport_only() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "192.168.1.31").await;
+        connect(&state, 2, "192.168.1.32").await;
+        sync(&state, 1, "beach-court-2", bundle_from(&beach_sync("beach-court-2")).unwrap()).await.unwrap();
+        let mut indoor = bundle(7, "987654", "live");
+        indoor["match"]["refereeConnectionEnabled"] = json!(true);
+        sync(&state, 2, "7", indoor).await.unwrap();
+        let addr: SocketAddr = "192.168.1.40:5000".parse().unwrap();
+        let ask = |body: Value| validate_pin(ConnectInfo(addr), State(state.clone()), Json(body));
+
+        let (status, body) = body_json(ask(json!({ "pin": "360841", "type": "referee", "sport": "beach" })).await).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["match"]["id"], json!("beach-court-2"));
+        assert_eq!(body["match"]["sportType"], json!("beach"));
+        let text = body.to_string();
+        for secret in ["259730", "471952", "582063", "693174", "815396", "Pin\""] {
+            assert!(!text.contains(secret), "{secret} in {text}");
+        }
+        // No sport: indoor only (the beach court is not found), and the reverse
+        assert_eq!(body_json(ask(json!({ "pin": "360841", "type": "referee" })).await).await.0, StatusCode::NOT_FOUND);
+        assert_eq!(body_json(ask(json!({ "pin": "314159", "type": "referee", "sport": "beach" })).await).await.0, StatusCode::NOT_FOUND);
+        let (status, body) = body_json(ask(json!({ "pin": "314159", "type": "referee" })).await).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["match"]["id"], json!(7));
+        assert!(body["match"].get("sportType").is_none());
+        assert_eq!(body_json(ask(json!({ "pin": "314159", "sport": "snow" })).await).await.0, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn the_page_lock_lets_a_browser_score_another_court() {
+        let state = new_state(0, 0);
+        *state.main_instance.lock().await = Some("desk".into());
+        let tablet: SocketAddr = "192.168.1.50:40000".parse().unwrap();
+        let page = |headers: HeaderMap, uri: &str| {
+            static_handler(ConnectInfo(tablet), State(state.clone()), headers, uri.parse::<Uri>().unwrap())
+        };
+        // Locked: the "already running" page, with the other-court link
+        let r = page(HeaderMap::new(), "/").await;
+        assert_eq!(r.status(), StatusCode::FORBIDDEN);
+        let html = axum::body::to_bytes(r.into_body(), usize::MAX).await.unwrap();
+        assert!(String::from_utf8_lossy(&html).contains("/?court=other"));
+        // The link sets the opt-in cookie and goes back to "/"
+        let r = page(HeaderMap::new(), "/?court=other").await;
+        assert_eq!(r.status(), StatusCode::FOUND);
+        assert_eq!(r.headers().get("location").unwrap(), "/");
+        let cookie = r.headers().get("set-cookie").unwrap().to_str().unwrap().to_string();
+        assert!(cookie.starts_with("ov_other_court=1;"), "{cookie}");
+        // With it the tablet gets the scoresheet (reloads included)
+        let mut with_cookie = HeaderMap::new();
+        with_cookie.insert("cookie", HeaderValue::from_static("theme=light; ov_other_court=1"));
+        assert_ne!(page(with_cookie, "/").await.status(), StatusCode::FORBIDDEN);
+        // A look-alike cookie does not count, and other pages were never locked
+        let mut other = HeaderMap::new();
+        other.insert("cookie", HeaderValue::from_static("ov_other_court=10"));
+        assert_eq!(page(other, "/").await.status(), StatusCode::FORBIDDEN);
+        assert_ne!(page(HeaderMap::new(), "/referee").await.status(), StatusCode::FORBIDDEN);
+        assert!(is_other_court_query("x=1&court=other") && !is_other_court_query("court=others"));
+    }
+
+    /// The links the relay hands to tablets (/referee, /livescore) open the
+    /// role pages of the app it runs: openbeach builds flat *_beach.html
+    /// files, so /referee missed both folder lookups and fell back to the
+    /// scoretable. A role page the app lacks is a 404, never the scoretable.
+    #[test]
+    fn role_paths_open_the_role_pages_never_the_scoretable() {
+        use crate::flavour::{BEACH, OPENVOLLEY};
+        const BEACH_DIST: &[&str] = &[
+            "index.html", "referee_beach.html", "livescore_beach.html", "scoreboard_beach.html",
+            "scoresheet_beach.html", "assets/main-x.js",
+        ];
+        let has = |files: &'static [&'static str]| move |p: &str| files.contains(&p);
+        let beach = has(BEACH_DIST);
+        let r = |path: &str| resolve_asset(path, &BEACH, &beach);
+        for path in ["/referee", "/referee/", "/referee.html", "/referee_beach.html"] {
+            assert_eq!(r(path).as_deref(), Some("referee_beach.html"), "{path}");
+        }
+        assert_eq!(r("/livescore").as_deref(), Some("livescore_beach.html"));
+        assert_eq!(r("/scoreboard").as_deref(), Some("scoreboard_beach.html"));
+        assert_eq!(r("/scoresheet/").as_deref(), Some("scoresheet_beach.html"));
+        assert_eq!(r("/bench"), None, "openbeach has no bench page");
+        assert_eq!(r("/upload_roster"), None);
+        assert_eq!(r("/").as_deref(), Some("index.html"));
+        assert_eq!(r("/assets/main-x.js").as_deref(), Some("assets/main-x.js"));
+        assert_eq!(r("/some/app/route").as_deref(), Some("index.html"), "SPA fallback for other paths");
+        // openbeach's scoretable may also be index_beach.html
+        let only_beach_index = has(&["index_beach.html", "referee_beach.html"]);
+        assert_eq!(resolve_asset("/", &BEACH, &only_beach_index).as_deref(), Some("index_beach.html"));
+        assert_eq!(resolve_asset("/livescore", &BEACH, &only_beach_index), None);
+
+        // OpenVolley: its folder pages, as before
+        const OV_DIST: &[&str] = &[
+            "index.html", "referee/index.html", "bench/index.html", "livescore/index.html",
+            "scoresheet/index.html", "upload_roster/index.html",
+        ];
+        let ov = has(OV_DIST);
+        let o = |path: &str| resolve_asset(path, &OPENVOLLEY, &ov);
+        for path in ["/referee", "/referee/", "/referee.html"] {
+            assert_eq!(o(path).as_deref(), Some("referee/index.html"), "{path}");
+        }
+        assert_eq!(o("/bench").as_deref(), Some("bench/index.html"));
+        assert_eq!(o("/scoresheet/").as_deref(), Some("scoresheet/index.html"));
+        assert_eq!(o("/upload_roster").as_deref(), Some("upload_roster/index.html"));
+        assert_eq!(o("/scoreboard"), None);
+        assert_eq!(o("/").as_deref(), Some("index.html"));
+        assert_eq!(o("/match/7").as_deref(), Some("index.html"));
+        // a build without the page (dev, partial dist): 404, not the scoretable
+        let bare = has(&["index.html"]);
+        assert_eq!(resolve_asset("/referee", &OPENVOLLEY, &bare), None);
+    }
+
+    /// The same through the handler, on the embedded build of this app.
+    #[tokio::test]
+    async fn the_referee_link_never_serves_the_scoretable() {
+        let state = new_state(0, 0);
+        let tablet: SocketAddr = "192.168.1.50:40000".parse().unwrap();
+        let body = |uri: &'static str| {
+            let state = state.clone();
+            async move {
+                let r = static_handler(ConnectInfo(tablet), State(state), HeaderMap::new(), uri.parse::<Uri>().unwrap()).await;
+                let status = r.status();
+                (status, axum::body::to_bytes(r.into_body(), usize::MAX).await.unwrap())
+            }
+        };
+        let (index_status, index) = body("/").await;
+        for uri in ["/referee", "/livescore"] {
+            let (status, page) = body(uri).await;
+            if index_status == StatusCode::OK {
+                assert_ne!(page, index, "{uri} served the scoretable");
+            }
+            let own = crate::flavour::CURRENT.role_pages.iter().find(|(r, _)| format!("/{r}") == uri).map(|(_, f)| *f).unwrap();
+            assert_eq!(status == StatusCode::OK, Assets::get(own).is_some(), "{uri}: {own}");
+        }
+        let html = main_instance_page(crate::flavour::CURRENT);
+        assert!(html.contains("href=\"/referee\"") && html.contains("href=\"/livescore\""));
+        assert_eq!(html.contains("href=\"/bench\""), crate::flavour::CURRENT.key == "openvolley");
     }
 
     #[test]
@@ -2481,5 +3025,157 @@ mod tests {
         assert_eq!(canonical_ip("::ffff:127.0.0.1".parse().unwrap()), "127.0.0.1".parse::<IpAddr>().unwrap());
         assert!(is_local(&"127.0.0.1:1".parse().unwrap()));
         assert!(!is_local(&"203.0.113.9:1".parse().unwrap()));
+    }
+
+    // --- Sign on phone through the router (sign.rs; docs/qr-signing-spec.md 8.3) ---
+
+    async fn sign_call(state: &Arc<AppState>, path: &str, body: String, addr: &str, headers: &[(&str, &str)]) -> (StatusCode, HeaderMap, Value) {
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        let mut b = Request::builder().method("POST").uri(path);
+        if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("content-type")) {
+            b = b.header("content-type", "application/json");
+        }
+        for (k, v) in headers {
+            b = b.header(*k, *v);
+        }
+        let mut req = b.body(Body::from(body)).unwrap();
+        req.extensions_mut().insert(ConnectInfo(addr.parse::<SocketAddr>().unwrap()));
+        let res = http_router(state.clone()).oneshot(req).await.unwrap();
+        let (status, headers) = (res.status(), res.headers().clone());
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        (status, headers, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    }
+
+    fn sign_start_body(match_key: &str) -> String {
+        json!({ "slot": "captain-a", "matchKey": match_key, "context": { "home": "A", "away": "B" } }).to_string()
+    }
+
+    #[tokio::test]
+    async fn sign_start_from_the_relay_host_or_with_the_game_pin() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "127.0.0.1").await;
+        sync(&state, 1, "seed-1", bundle(1, "987654", "live")).await.unwrap();
+        let start = |addr: &'static str, pin: Option<&'static str>, key: &'static str| {
+            let state = state.clone();
+            async move {
+                let h: Vec<(&str, &str)> = pin.map(|p| vec![("x-ov-match-pin", p)]).unwrap_or_default();
+                sign_call(&state, "/api/sign/start", sign_start_body(key), addr, &h).await
+            }
+        };
+        let (st, h, body) = start("127.0.0.1:50000", None, "seed-1").await;
+        assert_eq!(st, StatusCode::CREATED, "{body}");
+        assert_eq!(h.get("cache-control").unwrap(), "no-store");
+        // Another machine: needs the game PIN of a match this relay holds
+        assert_eq!(start("192.0.2.50:1", None, "seed-1").await.2["code"], "OV_SIGN_FORBIDDEN");
+        assert_eq!(start("192.0.2.50:1", Some("987654"), "other").await.2["code"], "OV_SIGN_FORBIDDEN");
+        // The referee PIN proves nothing here
+        assert_eq!(start("192.0.2.50:1", Some("314159"), "seed-1").await.2["code"], "OV_SIGN_PIN_INVALID");
+        let (st, _, body) = start("192.0.2.50:1", Some(" 987654 "), "seed-1").await;
+        assert_eq!(st, StatusCode::CREATED, "{body}");
+        for i in 0..(PIN_FAILURE_LIMIT - 1) {
+            let pin: &'static str = Box::leak(format!("{}", 100000 + i).into_boxed_str());
+            assert_eq!(start("192.0.2.50:1", Some(pin), "seed-1").await.2["code"], "OV_SIGN_PIN_INVALID");
+        }
+        let (st, h, body) = start("192.0.2.50:1", Some("987654"), "seed-1").await;
+        assert_eq!((st, body["code"].clone()), (StatusCode::TOO_MANY_REQUESTS, json!("OV_SIGN_RATE_LIMITED")));
+        assert_eq!(h.get("retry-after").unwrap(), "60");
+        // The same counter as GET /api/match/:id with a wrong PIN
+        let fail_key = "pinfail:ip:192.0.2.50";
+        assert!(window_count(&*state.limits.lock().await, fail_key) >= PIN_FAILURE_LIMIT);
+        // A test match without a game PIN cannot be proven
+        sync(&state, 1, "test-1", bundle(2, "", "live")).await.unwrap();
+        assert_eq!(start("192.0.2.51:1", Some("000000"), "test-1").await.2["code"], "OV_SIGN_FORBIDDEN");
+    }
+
+    #[tokio::test]
+    async fn sign_full_flow_and_body_caps_through_the_router() {
+        let state = new_state(0, 0);
+        let local = "127.0.0.1:1";
+        let (st, _, started) = sign_call(&state, "/api/sign/start", sign_start_body("m"), local, &[]).await;
+        assert_eq!(st, StatusCode::CREATED);
+        let (token, watch) = (started["token"].as_str().unwrap().to_string(), started["watch"].as_str().unwrap().to_string());
+        let phone = "192.0.2.77:1";
+        let (_, _, opened) = sign_call(&state, "/api/sign/open", json!({ "k": token }).to_string(), phone, &[]).await;
+        assert_eq!(opened["state"], "opened");
+        assert_eq!(opened["context"], json!({ "home": "A", "away": "B" }));
+        let ink = json!({ "k": token, "pad": { "w": 4000, "h": 2000 }, "strokes": [[0, 1000, 300, 1000]] }).to_string();
+        assert_eq!(sign_call(&state, "/api/sign/submit", ink.clone(), phone, &[]).await.0, StatusCode::OK);
+        assert_eq!(sign_call(&state, "/api/sign/submit", ink, phone, &[]).await.2["code"], "OV_SIGN_USED");
+        let (_, _, done) = sign_call(&state, "/api/sign/wait", json!({ "watch": watch, "known": "opened" }).to_string(), local, &[]).await;
+        assert_eq!(done["state"], "signed");
+        assert_eq!(done["strokes"], json!([[0, 1000, 300, 1000]]));
+        assert_eq!(sign_call(&state, "/api/sign/close", json!({ "watch": watch }).to_string(), local, &[]).await.0, StatusCode::OK);
+
+        // Bodies: 4 KB (64 KB for submit), JSON only
+        let big = json!({ "slot": "ref1", "context": { "home": "A", "away": "B", "name": "x".repeat(5000) } }).to_string();
+        let (st, h, body) = sign_call(&state, "/api/sign/start", big, local, &[]).await;
+        assert_eq!((st, body["code"].clone()), (StatusCode::PAYLOAD_TOO_LARGE, json!("OV_SIGN_TOO_LARGE")));
+        assert_eq!(h.get("connection").unwrap(), "close");
+        let huge = format!("{{\"k\":\"{token}\",\"x\":\"{}\"}}", "y".repeat(70_000));
+        assert_eq!(sign_call(&state, "/api/sign/submit", huge, phone, &[]).await.0, StatusCode::PAYLOAD_TOO_LARGE);
+        let (st, _, body) = sign_call(&state, "/api/sign/start", sign_start_body("m"), local, &[("content-type", "text/plain")]).await;
+        assert_eq!((st, body["code"].clone()), (StatusCode::BAD_REQUEST, json!("OV_SIGN_BAD_REQUEST")));
+        let (st, _, body) = sign_call(&state, "/api/sign/open", "{nope".into(), phone, &[]).await;
+        assert_eq!((st, body["code"].clone()), (StatusCode::BAD_REQUEST, json!("OV_SIGN_BAD_REQUEST")));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn sign_wait_long_polls_and_wakes_on_open() {
+        let state = new_state(0, 0);
+        let local = "127.0.0.1:1";
+        let started = sign_call(&state, "/api/sign/start", sign_start_body("m"), local, &[]).await.2;
+        let (token, watch) = (started["token"].as_str().unwrap().to_string(), started["watch"].as_str().unwrap().to_string());
+
+        // Nothing happens: the wait answers after 25 s with the same state
+        let t0 = tokio::time::Instant::now();
+        let r = sign_call(&state, "/api/sign/wait", json!({ "watch": watch, "known": "pending" }).to_string(), local, &[]).await.2;
+        assert_eq!(r["state"], "pending");
+        assert!(t0.elapsed() >= Duration::from_secs(25));
+
+        // The phone opens the link: the held wait answers at once
+        let t1 = tokio::time::Instant::now();
+        let (s2, w) = (state.clone(), watch.clone());
+        let held = tokio::spawn(async move {
+            sign_call(&s2, "/api/sign/wait", json!({ "watch": w, "known": "pending" }).to_string(), "127.0.0.1:1", &[]).await
+        });
+        for _ in 0..20 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(sign_call(&state, "/api/sign/open", json!({ "k": token }).to_string(), "192.0.2.77:1", &[]).await.0, StatusCode::OK);
+        let (_, _, woke) = held.await.unwrap();
+        assert_eq!(woke["state"], "opened");
+        assert!(t1.elapsed() < Duration::from_secs(1));
+    }
+
+    #[tokio::test]
+    async fn the_phone_page_is_served_with_its_csp() {
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        let state = new_state(0, 0);
+        let has_page = Assets::get("sign/index.html").is_some();
+        for path in ["/sign", "/sign/", "/sign/sign.js", "/sign/sign.css"] {
+            let mut req = Request::builder().uri(path).body(Body::empty()).unwrap();
+            req.extensions_mut().insert(ConnectInfo("192.0.2.77:1".parse::<SocketAddr>().unwrap()));
+            let res = http_router(state.clone()).oneshot(req).await.unwrap();
+            let h = res.headers().clone();
+            assert_eq!(h.get("content-security-policy").unwrap(), crate::sign::SIGN_PAGE_CSP, "{path}");
+            assert_eq!(h.get("referrer-policy").unwrap(), "no-referrer", "{path}");
+            assert_eq!(h.get("cache-control").unwrap(), "no-cache", "{path}");
+            assert_eq!(h.get("x-content-type-options").unwrap(), "nosniff", "{path}");
+            let body = res.into_body().collect().await.unwrap().to_bytes();
+            if has_page && path.starts_with("/sign/sign.") {
+                assert!(!String::from_utf8_lossy(&body).contains("<html"), "{path}: got HTML");
+            }
+            if has_page && (path == "/sign" || path == "/sign/") {
+                assert!(String::from_utf8_lossy(&body).contains("/sign/sign.js"), "{path}: not the phone page");
+            }
+        }
+        // Other pages keep the app's referrer policy and get no sign CSP
+        let mut req = Request::builder().uri("/referee").body(Body::empty()).unwrap();
+        req.extensions_mut().insert(ConnectInfo("192.0.2.77:1".parse::<SocketAddr>().unwrap()));
+        let res = http_router(state).oneshot(req).await.unwrap();
+        assert!(res.headers().get("content-security-policy").is_none());
+        assert_eq!(res.headers().get("referrer-policy").unwrap(), "strict-origin-when-cross-origin");
     }
 }

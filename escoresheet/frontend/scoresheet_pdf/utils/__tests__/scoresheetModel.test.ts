@@ -7,7 +7,8 @@ import {
   displaySetNumber,
   getScoreBeforeEvent,
   getSet5LeftTeamLabel,
-  getFirstServeTeamKey
+  getFirstServeTeamKey,
+  consistencyWarnings
 } from '../scoresheetModel'
 
 const lineup = (team: string, l: Record<string, number>, seq: number, extra: Record<string, unknown> = {}, setIndex = 1) => ({
@@ -254,5 +255,33 @@ describe('getFirstServeTeamKey', () => {
   it('falls back to match.firstServe when the coin-toss flag is missing', () => {
     expect(getFirstServeTeamKey(1, { firstServe: 'away' }, A, B)).toBe('away')
     expect(getFirstServeTeamKey(2, { firstServe: 'away' }, A, B)).toBe('home')
+  })
+})
+
+describe('consistencyWarnings (field-spec 12.2)', () => {
+  let s = 0
+  const e = (type: string, setIndex: number, payload: Record<string, unknown>) => ({ type, setIndex, seq: ++s, payload })
+
+  it('lists over-limit substitutions and time-outs, wrong totals and unknown starters', () => {
+    s = 0
+    const events = [
+      e('lineup', 1, { team: 'home', lineup: { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 99 }, isInitial: true }),
+      ...Array.from({ length: 7 }, (_, i) => e('substitution', 1, { team: 'home', playerOut: i + 1, playerIn: 10 + i, position: 'I' })),
+      e('substitution', 1, { team: 'home', playerOut: 2, playerIn: 20, position: 'II', isExceptional: true }),
+      ...Array.from({ length: 3 }, () => e('timeout', 1, { team: 'away' })),
+      e('point', 1, { team: 'home' })
+    ]
+    const sets = [{ index: 1, homePoints: 2, awayPoints: 0 }]
+    const homePlayers = [1, 2, 3, 4, 5, 6].map(number => ({ number }))
+    expect(consistencyWarnings({ sets, events, teamAKey: 'home', homePlayers, awayPlayers: [] })).toEqual([
+      'Set 1: the points recorded (1:0, home:away) do not match the set score (2:0).',
+      'Set 1, Team A: 7 regular substitutions (at most 6).',
+      'Set 1, Team A: starting player 99 not on the roster.',
+      'Set 1, Team B: 3 time-outs (at most 2).'
+    ])
+  })
+
+  it('a clean match has no warning', () => {
+    expect(consistencyWarnings({ sets: [{ index: 1, homePoints: 0, awayPoints: 0 }], events: [], teamAKey: 'home' })).toEqual([])
   })
 })

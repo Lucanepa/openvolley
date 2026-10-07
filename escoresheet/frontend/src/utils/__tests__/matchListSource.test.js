@@ -31,12 +31,45 @@ describe('referee / bench match list source', () => {
     expect(r).toMatchObject({ source: 'websocket', result: { success: true, matches: [] }, cloud: { success: false } })
   })
 
-  it('web page (cloud first): the cloud list wins and the relay is not asked', async () => {
-    const listCloud = vi.fn().mockResolvedValue({ success: true, matches: [cloudMatch] })
-    const listRelay = vi.fn()
+  it('web page (cloud first): cloud and relay lists merged by id, the relay\'s row winning', async () => {
+    const listCloud = vi.fn().mockResolvedValue({ success: true, matches: [cloudMatch, { id: 'both', gameNumber: 3, homeTeam: 'cloud' }] })
+    const listRelay = vi.fn().mockResolvedValue({ success: true, matches: [relayMatch, { id: 'both', gameNumber: 3, homeTeam: 'relay' }] })
     const r = await loadMatchList({ listCloud, listRelay })
     expect(r.source).toBe('supabase')
-    expect(listRelay).not.toHaveBeenCalled()
+    expect(listRelay).toHaveBeenCalled()
+    expect(r.result.success).toBe(true)
+    expect(r.result.matches.map((m) => [m.id, m.listSource])).toEqual([
+      ['cloud_1', 'supabase'], ['both', 'websocket'], ['relay_1', 'websocket']
+    ])
+    expect(r.result.matches.find((m) => m.id === 'both').homeTeam).toBe('relay')
+  })
+
+  it('web page: one cloud match no longer hides the hall\'s relay matches', async () => {
+    const r = await loadMatchList({
+      listCloud: vi.fn().mockResolvedValue({ success: true, matches: [cloudMatch] }),
+      listRelay: vi.fn().mockResolvedValue({ success: true, matches: [relayMatch] })
+    })
+    expect(r.result.matches.map((m) => m.id).sort()).toEqual(['cloud_1', 'relay_1'])
+  })
+
+  it('web page: a relay that never answers holds up the cloud list for the grace time only', async () => {
+    const started = Date.now()
+    const r = await loadMatchList({
+      listCloud: vi.fn().mockResolvedValue({ success: true, matches: [cloudMatch] }),
+      listRelay: vi.fn(never),
+      relayGraceMs: 50
+    })
+    expect(Date.now() - started).toBeLessThan(1000)
+    expect(r.result.matches.map((m) => m.id)).toEqual(['cloud_1'])
+  })
+
+  it('web page: a failing relay leaves the cloud list', async () => {
+    const r = await loadMatchList({
+      listCloud: vi.fn().mockResolvedValue({ success: true, matches: [cloudMatch] }),
+      listRelay: vi.fn().mockRejectedValue(new TypeError('Failed to fetch'))
+    })
+    expect(r).toMatchObject({ source: 'supabase', result: { success: true } })
+    expect(r.result.matches.map((m) => m.id)).toEqual(['cloud_1'])
   })
 
   it('web page: an empty or failing cloud falls back to the relay', async () => {

@@ -12,12 +12,22 @@
 export const PAGE_ENTRIES = ['referee', 'scoresheet', 'bench', 'livescore', 'upload_roster']
 
 // Precache everything the pages need for a cold offline start: code (incl. .mjs
-// workers), styles, fonts and images (the scoresheet's .jpg logo too).
+// workers), styles, fonts and images (the bundled, content-hashed ball and logo too).
 export const PRECACHE_GLOB_PATTERNS = ['**/*.{js,mjs,css,html,ico,png,jpg,jpeg,svg,webp,woff,woff2}']
 
+// The phone signing page (public/sign/, docs/qr-signing-spec.md 4.7) is opened
+// by OTHER phones from a QR code, never by the app: not precached, and a
+// navigation to /sign must reach the server (its own page and CSP), never the
+// app shell.
+// (vite-plugin-pwa's own defaults are kept: setting globIgnores replaces them)
+export const PRECACHE_GLOB_IGNORES = ['**/node_modules/**/*', 'sw.js', 'workbox-*.js', 'sign/**']
+export const NAVIGATE_FALLBACK_DENYLIST = [/^\/api\//, /^\/sign(\/|$)/]
+
 // Logo files the pages' heads link to (rendered from brand/ by
-// scripts/make-brand-assets.py), and the serve ball.
-export const PWA_INCLUDE_ASSETS = ['favicon.ico', 'favicon.svg', 'apple-touch-icon.png', 'ball.png', 'fonts/*.woff2']
+// scripts/make-brand-assets.py). The serve ball is not one of them: the code
+// imports it (src/brand.js, a content-hashed /assets/ URL), so a new build can
+// never be served the cached old /ball.png.
+export const PWA_INCLUDE_ASSETS = ['favicon.ico', 'favicon.svg', 'apple-touch-icon.png', 'fonts/*.woff2']
 
 // Manifest icons: the white tile ('any'), and a full-bleed white square with
 // the ball inside the safe zone for launchers that mask ('maskable').

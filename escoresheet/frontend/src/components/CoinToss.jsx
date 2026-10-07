@@ -6,12 +6,16 @@ import { useScaledLayout } from '../hooks/useScaledLayout'
 import { db } from '../db/db'
 import { apiFrom } from '../lib/apiClient'
 import SignaturePad from './SignaturePad'
+import { saveMatchSignature } from '../utils/saveSignature'
+import { phoneSignContext, signatureSource, signatureUpdate, SLOT_OF_ROLE, PRE_MATCH_SIGNATURE_FIELD as SIGNATURE_FIELD_OF_ROLE } from '../domain/phoneSignature'
 import Modal from './Modal'
 import MenuList from './MenuList'
 import ballFallback from '../ball_fallback.png'
 
 // Primary ball image (with a bundled copy as fallback)
-const ballImage = `${import.meta.env.BASE_URL}ball.png`
+// The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
+// stay cached (old green ball) after an update
+const ballImage = ballFallback
 import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
@@ -150,7 +154,7 @@ const sortBenchByHierarchy = (bench) => {
 const initBench = role => ({ role, firstName: '', lastName: '', dob: '' })
 
 export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnabled = false }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { showAlert } = useAlert()
   const { vmin } = useScaledLayout()
   // Portrait: the libero select's empty option reads "No libero" (its column
@@ -252,6 +256,13 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
   const [savedSignatures, setSavedSignatures] = useState({
     homeCoach: null, homeCaptain: null, awayCoach: null, awayCaptain: null
   })
+  // "Signed on phone" of the signatures given here (field -> source | null),
+  // written with the images on confirm (docs/qr-signing-spec.md 5.6)
+  const [signatureSources, setSignatureSources] = useState({})
+  const noteSignatureSource = (role, dataUrl, meta) => {
+    const field = SIGNATURE_FIELD_OF_ROLE[role]
+    if (field) setSignatureSources(prev => ({ ...prev, [field]: signatureSource(dataUrl, meta) }))
+  }
 
   // Helper function to compare roster/bench for changes
   const hasRosterChanges = (originalRoster, currentRoster, originalBench, currentBench) => {
@@ -561,7 +572,42 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
     setServeB(!serveB)
   }
 
-  function handleSignatureSave(signatureImage) {
+  // Sign on phone for a pre-match signature (SignaturePad `phone`)
+  function phoneSigning(role) {
+    if (!role || !match) return null
+    const slot = SLOT_OF_ROLE[role]
+    const coachOf = (bench) => (bench || []).find(b => /coach/i.test(b?.role || '') && !/assistant/i.test(b?.role || '')) || null
+    return {
+      slot,
+      matchKey: match.seed_key || match.seedKey || null,
+      gamePin: match.gamePin || null,
+      context: phoneSignContext({
+        // The letters as chosen on this screen, before the toss is confirmed
+        match: { ...match, coinTossTeamA: teamA },
+        slot,
+        homeTeam: home,
+        awayTeam: away,
+        homeCaptain: homeRoster.find(p => p.isCaptain || p.captain) || null,
+        awayCaptain: awayRoster.find(p => p.isCaptain || p.captain) || null,
+        homeCoach: coachOf(benchHome),
+        awayCoach: coachOf(benchAway),
+        lang: i18n.language,
+        fallbackHome: t('common.home'),
+        fallbackAway: t('common.away')
+      })
+    }
+  }
+
+  // Saved to the match at once, not on "Confirm coin toss result" (owner
+  // 2026-10-07), with its phone-signing record in the same update.
+  function saveSignatureNow(role, image, meta) {
+    const field = SIGNATURE_FIELD_OF_ROLE[role]
+    if (field) saveMatchSignature(db, matchId, field, image, signatureUpdate(field, image, meta))
+  }
+
+  function handleSignatureSave(signatureImage, meta) {
+    noteSignatureSource(openSignature, signatureImage, meta)
+    saveSignatureNow(openSignature, signatureImage, meta)
     if (openSignature === 'home-coach') {
       setHomeCoachSignature(signatureImage)
     } else if (openSignature === 'home-captain') {
@@ -612,6 +658,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
         updateData.homeCaptainSignature = homeCaptainSignature || generatePlaceholderSignature()
         updateData.awayCoachSignature = awayCoachSignature || generatePlaceholderSignature()
         updateData.awayCaptainSignature = awayCaptainSignature || generatePlaceholderSignature()
+      }
+      // Where the images given on this screen were made, beside them
+      for (const [field, source] of Object.entries(signatureSources)) {
+        updateData[`signatureSources.${field}`] = updateData[field] ? source : null
       }
 
       await db.matches.update(matchId, updateData)
@@ -2148,33 +2198,28 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                 </div>
               </div>
 
-              {/* Signature Pad Modal */}
-              {rosterModalSignature && (
-                <div className="bg-stone-900/50 backdrop-blur-sm" style={{
-                  position: 'fixed', inset: 0,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100
-                }}>
-                  <div className="bg-white rounded-2xl shadow-2xl" style={{
-                    padding: 20, maxWidth: '90vw'
-                  }}>
-                    <h3 className="text-lg font-bold text-stone-900" style={{ margin: '0 0 12px 0' }}>
-                      {t('roster.signatureTitle', { role: t(rosterModalSignature === 'coach' ? 'coinToss.coach' : 'coinToss.captain'), team: teamInfo.name })}
-                    </h3>
-                    <SignaturePad
-                      onSave={(sig) => {
-                        if (rosterModalSignature === 'coach') {
-                          setCoachSig(sig)
-                        } else {
-                          setCaptainSig(sig)
-                        }
-                        setRosterModalSignature(null)
-                      }}
-                      onCancel={() => setRosterModalSignature(null)}
-                      title={t('roster.signatureTitle', { role: t(rosterModalSignature === 'coach' ? 'coinToss.coach' : 'coinToss.captain'), team: '' }).replace(' - ', '')}
-                    />
-                  </div>
-                </div>
-              )}
+              {/* Signature pad over the roster dialog. SignaturePad is the modal
+                  itself: inside a hand-made overlay without `open` it rendered
+                  nothing (B2). */}
+              <SignaturePad
+                open={!!rosterModalSignature}
+                zIndex={1100}
+                onClose={() => setRosterModalSignature(null)}
+                onSave={(sig, meta) => {
+                  noteSignatureSource(`${currentTeam}-${rosterModalSignature}`, sig, meta)
+                  saveSignatureNow(`${currentTeam}-${rosterModalSignature}`, sig, meta)
+                  if (rosterModalSignature === 'coach') {
+                    setCoachSig(sig)
+                  } else {
+                    setCaptainSig(sig)
+                  }
+                  setRosterModalSignature(null)
+                }}
+                title={rosterModalSignature
+                  ? t('roster.signatureTitle', { role: t(rosterModalSignature === 'coach' ? 'coinToss.coach' : 'coinToss.captain'), team: teamInfo.name })
+                  : ''}
+                phone={rosterModalSignature ? phoneSigning(`${currentTeam}-${rosterModalSignature}`) : null}
+              />
             </div>
 
             {/* Custom Close/Modify Button */}
@@ -2614,6 +2659,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
         open={openSignature !== null}
         onClose={() => setOpenSignature(null)}
         onSave={handleSignatureSave}
+        phone={phoneSigning(openSignature)}
         title={openSignature === 'home-coach' ? 'Home coach signature' :
           openSignature === 'home-captain' ? 'Home captain signature' :
             openSignature === 'away-coach' ? 'Away coach signature' :

@@ -30,6 +30,7 @@ import { matchDiscPaint, teamLiberoColour, teamBoxStyle } from '../utils/teamCol
 import { discCapPx, discMetrics } from './referee/discSizing.js'
 import { isWideLayout, screenFit, SIDE_PANEL_CSS, REFEREE_LAYOUT } from './referee/refereeLayout.js'
 import { layoutReception, pointToFormation } from './referee/receptionLayout.js'
+import { getSideAForSet } from '../domain/rules'
 import { BRAND } from '../brand'
 
 // Get current version from package.json (injected by Vite at build time)
@@ -1240,14 +1241,15 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       e => (e.setIndex || 1) === (data.currentSet?.index || 1)
     )
 
+    // Regular substitutions only: exceptional ones (FIVB 15.7) are beyond the 6
     return {
       home: {
         timeouts: currentSetEvents.filter(e => e.type === 'timeout' && e.payload?.team === 'home').length,
-        substitutions: currentSetEvents.filter(e => e.type === 'substitution' && e.payload?.team === 'home').length
+        substitutions: currentSetEvents.filter(e => e.type === 'substitution' && e.payload?.team === 'home' && !e.payload?.isExceptional).length
       },
       away: {
         timeouts: currentSetEvents.filter(e => e.type === 'timeout' && e.payload?.team === 'away').length,
-        substitutions: currentSetEvents.filter(e => e.type === 'substitution' && e.payload?.team === 'away').length
+        substitutions: currentSetEvents.filter(e => e.type === 'substitution' && e.payload?.team === 'away' && !e.payload?.isExceptional).length
       }
     }
   }, [data])
@@ -1386,24 +1388,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       return sideA === 'left' ? (teamAKey === 'home') : (teamAKey !== 'home')
     }
 
-    const setIndex = data.currentSet.index
-    const setLeftTeamOverrides = data?.match?.setLeftTeamOverrides || {}
-    const is5thSet = setIndex === 5
-    const set5CourtSwitched = data?.match?.set5CourtSwitched
-    const set5LeftTeam = data?.match?.set5LeftTeam
-
-    // Determine which side Team A is on this set
-    let sideA
-    if (setLeftTeamOverrides[setIndex] !== undefined) {
-      // Manual override for this set
-      sideA = setLeftTeamOverrides[setIndex] === teamAKey ? 'left' : 'right'
-    } else if (is5thSet && set5CourtSwitched && set5LeftTeam) {
-      // Set 5 special configuration (after 8-point switch)
-      sideA = set5LeftTeam === teamAKey ? 'left' : 'right'
-    } else {
-      // Default alternating pattern: odd sets = Team A on left, even sets = Team A on right
-      sideA = setIndex % 2 === 1 ? 'left' : 'right'
-    }
+    // No live state: the same rule as the scorer's snapshot (the overrides and
+    // set5LeftTeam store the LEFT team as 'A'/'B'; set 5 coin toss, 8-point switch)
+    const sideA = getSideAForSet(data.currentSet.index, data?.match || {})
 
     // Convert sideA to homeOnLeft:
     // If sideA='left' (Team A on left), then home is on left only if teamAKey='home'

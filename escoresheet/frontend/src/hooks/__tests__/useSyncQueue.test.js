@@ -169,6 +169,18 @@ beforeEach(() => {
 })
 
 describe('runQueuePass', () => {
+  it('sends an event delete (a correction removed the event) by its namespaced external_id', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'event', action: 'insert', status: 'queued', retry_count: 0, payload: { external_id: 'match_100_aaa:e:7', match_id: 'match_100_aaa', seq: 8 } },
+      { id: 2, resource: 'event', action: 'delete', status: 'queued', retry_count: 0, payload: { external_id: 'match_100_aaa:e:4', match_id: 'match_100_aaa' } }
+    ])
+    await runQueuePass()
+    const del = api.calls.find(c => c.table === 'events' && c.action === 'delete')
+    expect(del.filters).toEqual([['eq', 'external_id', 'match_100_aaa:e:4']])
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+  })
+
   it('a write refused as OV_NOT_MATCH_OWNER takes the match over with the local game PIN, then is sent', async () => {
     fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', gamePin: '864201' }])
     fakeDb.sync_queue.reset([

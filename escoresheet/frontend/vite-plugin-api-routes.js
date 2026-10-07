@@ -11,15 +11,18 @@ import { createServer as createHttpServer } from 'http'
 import { readFileSync, existsSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
-import { createLanRelay, createLocalAddressCheck, createMainInstanceGate, WS_MAX_PAYLOAD } from './lanRelayCore.js'
+import { createLanRelay, createLocalAddressCheck, createMainInstanceGate, WS_MAX_PAYLOAD, signCore } from './lanRelayCore.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-// Shared relay state + WS protocol (same module as server.js and the Electron relay)
-const relay = createLanRelay()
 // Same main-instance rule as every relay: only this machine may take/release it
-const mainGate = createMainInstanceGate({ isLocal: createLocalAddressCheck(networkInterfaces) })
+const isLocalAddress = createLocalAddressCheck(networkInterfaces)
+// Shared relay state + WS protocol (same module as server.js and the Electron
+// relay). Module level, so it must start no timer: the sign sessions and their
+// sweeper are created on the first /api/sign/* request (vite build never sends one).
+const relay = createLanRelay({ isLocal: isLocalAddress })
+const mainGate = createMainInstanceGate({ isLocal: isLocalAddress })
 
 // Get local IP address
 function getLocalIP() {
@@ -107,7 +110,7 @@ export function vitePluginApiRoutes(options = {}) {
       // Use a function to ensure it's called for every request
       const apiMiddleware = (req, res, next) => {
         // Early return if not an API request (shouldn't happen due to .use('/api'), but just in case)
-        if (!req.url.startsWith('/match/') && !req.url.startsWith('/server/')) {
+        if (!req.url.startsWith('/match/') && !req.url.startsWith('/server/') && !req.url.startsWith('/sign/')) {
           return next()
         }
         // Vite's connect middleware strips the prefix when using .use('/api', ...)
@@ -189,12 +192,23 @@ export function vitePluginApiRoutes(options = {}) {
         next()
       }
       
+      // The phone signing page (public/sign/, served as is), with the page's
+      // headers; /sign and /sign/ open its index.html like on the relays.
+      // connect strips the prefix ('/sign' -> '/') and puts it back in next().
+      server.middlewares.use('/sign', (req, res, next) => {
+        const path = (req.url || '').split('?')[0]
+        if (path === '/' || path === '') req.url = '/index.html'
+        for (const [k, v] of Object.entries(signCore.SIGN_PAGE_HEADERS)) res.setHeader(k, v)
+        next()
+      })
+
       // Register the middleware - use unshift to add it first
       // This ensures it runs before Vite's default handlers
       server.middlewares.use('/api', apiMiddleware)
     },
     
     closeBundle() {
+      relay.close()
       if (wss) {
         wss.close()
         console.log('WebSocket server closed')

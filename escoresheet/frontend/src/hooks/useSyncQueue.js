@@ -1065,6 +1065,25 @@ async function processJobInner(job, ctx) {
       return true
     }
 
+    if (job.resource === 'event' && job.action === 'delete') {
+      // LEGACY: a job queued by an app before the event history
+      // (db/eventHistory), when a correction removed an event. Corrections
+      // now send a void revision instead (the db.events hooks); the server
+      // turns this delete of ONE event into a void too (lib/eventRevisions
+      // voidByExternalId), so its row is kept. A row that never reached the
+      // cloud is no error — the delete simply matches nothing. Scoped by the namespaced
+      // external_id (`${seedKey}:e:${id}`), which the backend requires for a
+      // child-row delete (pgQuery assertChildFilterScoped).
+      const externalId = job.payload?.external_id
+      if (!externalId) return DROP_JOB
+      const { error } = await apiFrom('events').delete().eq('external_id', externalId)
+      if (error) {
+        safeLog.error('[SyncQueue] Event delete error:', error, externalId)
+        return failureResult(error, ctx)
+      }
+      return true
+    }
+
     // ==================== ACTIVITY LOG UPLOAD ====================
     if (job.resource === 'activity' && job.action === 'flush') {
       const r = await uploadActivityBatch(db)

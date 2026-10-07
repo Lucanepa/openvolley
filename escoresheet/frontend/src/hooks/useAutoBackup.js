@@ -5,6 +5,11 @@
  *   scoring event, written by utils/nativeBackup (on by default, no browser API).
  * Chrome/Edge: Real-time backup to selected folder via File System Access API
  * Safari/Firefox: Periodic auto-downloads (every N minutes + on set/match end)
+ *
+ * Only on the scoretable page (utils/appEntry): a referee, bench or livescore
+ * page never backs anything up. A browser download needs something new to
+ * save: opening or loading a match never downloads a file; only a scoring
+ * write since the last backup (periodic) or the end of a set / the match does.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
@@ -29,10 +34,16 @@ import {
   openNativeBackupFolder
 } from '../utils/nativeBackup'
 import { setActiveMatch } from '../utils/activity/activeMatch'
+import { isScorerEntry } from '../utils/appEntry'
+
+/** The Scoreboard events that download a backup in a browser without a folder */
+export const BROWSER_DOWNLOAD_EVENTS = new Set(['set_end', 'match_end'])
 
 export default function useAutoBackup(activeMatchId = null) {
   // Apps write native backups; browsers keep the folder / download behaviour
   const [platform] = useState(() => detectBackupPlatform())
+  // Backups are the scoretable's job only (never a tablet's referee / bench page)
+  const [scorerPage] = useState(() => isScorerEntry())
   const nativeMode = isNativeBackupPlatform(platform)
   const nativeStatus = useNativeBackupStatus()
 
@@ -53,6 +64,11 @@ export default function useAutoBackup(activeMatchId = null) {
   const debounceTimer = useRef(null)
   const downloadIntervalRef = useRef(null)
   const lastDownloadTime = useRef(0)
+  // A scoring write of the open match since its last browser backup
+  const matchChanged = useRef(false)
+
+  // Settings stay as stored; nothing runs on a page that is not the scoretable
+  const autoOn = scorerPage && autoBackupEnabled
 
   // Check if File System Access API is available (never used in the apps:
   // WebView2 exposes it, but the native backup replaces it there)
@@ -75,7 +91,7 @@ export default function useAutoBackup(activeMatchId = null) {
   // Apps: back up the open match after every committed write of it (events,
   // sets, match row). Runs in the background; never blocks scoring.
   useEffect(() => {
-    if (!nativeMode || !autoBackupEnabled || activeMatchId == null) return
+    if (!nativeMode || !autoOn || activeMatchId == null) return
     let cancelled = false
     let unsubscribe = () => {}
     getNativeBackupEngine().then((engine) => {
@@ -87,7 +103,17 @@ export default function useAutoBackup(activeMatchId = null) {
       cancelled = true
       unsubscribe()
     }
-  }, [nativeMode, autoBackupEnabled, activeMatchId])
+  }, [nativeMode, autoOn, activeMatchId])
+
+  // Browsers: remember whether the open match changed since its last backup.
+  // Opening (or reloading) a match is no change: the periodic download and the
+  // folder backup wait for a real write.
+  useEffect(() => {
+    matchChanged.current = false
+    lastDownloadTime.current = Date.now()
+    if (nativeMode || !autoOn || activeMatchId == null) return
+    return subscribeMatchWrites(db, activeMatchId, () => { matchChanged.current = true })
+  }, [nativeMode, autoOn, activeMatchId])
 
   // Load stored directory handle on mount
   useEffect(() => {
@@ -145,7 +171,7 @@ export default function useAutoBackup(activeMatchId = null) {
 
   // Perform backup for a specific match
   const performBackup = useCallback(async (matchId) => {
-    if (!matchId) return false
+    if (!matchId || !scorerPage) return false
 
     setIsBackingUp(true)
     setBackupError(null)
@@ -160,7 +186,18 @@ export default function useAutoBackup(activeMatchId = null) {
         }
         setLastBackup(result.lastBackup || new Date())
         return true
-      } else if (hasFileSystemAccess && backupDirHandle) {
+      }
+      // Browsers: the file holds the match as read now, so clear the change
+      // flag before reading it; a write during the backup sets it again
+      // (cleared after the await, that write would wait for the next one)
+      const ofActive = matchId === activeMatchId
+      let hadChange = false
+      const markSaved = () => {
+        hadChange = matchChanged.current
+        if (ofActive) matchChanged.current = false
+      }
+      const markUnsaved = () => { if (ofActive && hadChange) matchChanged.current = true }
+      if (hasFileSystemAccess && backupDirHandle) {
         // Chrome/Edge: Write to file system
         const hasPermission = await verifyDirectoryPermission(backupDirHandle)
         if (!hasPermission) {
@@ -171,17 +208,25 @@ export default function useAutoBackup(activeMatchId = null) {
           return false
         }
 
+        markSaved()
         const result = await writeMatchBackup(matchId, backupDirHandle)
         if (result.success) {
           setLastBackup(new Date())
           return true
         } else {
+          markUnsaved()
           setBackupError(result.error)
           return false
         }
       } else {
         // Safari/Firefox: Download file
-        await downloadMatchBackup(matchId)
+        markSaved()
+        try {
+          await downloadMatchBackup(matchId)
+        } catch (error) {
+          markUnsaved()
+          throw error
+        }
         setLastBackup(new Date())
         lastDownloadTime.current = Date.now()
         return true
@@ -193,11 +238,11 @@ export default function useAutoBackup(activeMatchId = null) {
     } finally {
       setIsBackingUp(false)
     }
-  }, [nativeMode, hasFileSystemAccess, backupDirHandle])
+  }, [scorerPage, nativeMode, hasFileSystemAccess, backupDirHandle, activeMatchId])
 
   // Debounced backup for real-time changes (Chrome/Edge only)
   const debouncedBackup = useCallback((matchId) => {
-    if (!hasFileSystemAccess || !backupDirHandle || !autoBackupEnabled) return
+    if (!hasFileSystemAccess || !backupDirHandle || !autoOn) return
 
     if (debounceTimer.current) {
       clearTimeout(debounceTimer.current)
@@ -206,11 +251,11 @@ export default function useAutoBackup(activeMatchId = null) {
     debounceTimer.current = setTimeout(() => {
       performBackup(matchId)
     }, 500) // 500ms debounce
-  }, [hasFileSystemAccess, backupDirHandle, autoBackupEnabled, performBackup])
+  }, [hasFileSystemAccess, backupDirHandle, autoOn, performBackup])
 
   // Subscribe to Dexie changes for real-time backup (Chrome/Edge)
   useEffect(() => {
-    if (!hasFileSystemAccess || !backupDirHandle || !autoBackupEnabled || !activeMatchId) {
+    if (!hasFileSystemAccess || !backupDirHandle || !autoOn || !activeMatchId) {
       return
     }
 
@@ -245,7 +290,10 @@ export default function useAutoBackup(activeMatchId = null) {
 
     let intervalId = null
     if (!usedChangeEvents) {
-      intervalId = setInterval(() => debouncedBackup(activeMatchId), 15000)
+      // only after a write of the match: an opened match is not saved again
+      intervalId = setInterval(() => {
+        if (matchChanged.current) debouncedBackup(activeMatchId)
+      }, 15000)
     }
 
     return () => {
@@ -257,7 +305,7 @@ export default function useAutoBackup(activeMatchId = null) {
         clearTimeout(debounceTimer.current)
       }
     }
-  }, [hasFileSystemAccess, backupDirHandle, autoBackupEnabled, activeMatchId, debouncedBackup])
+  }, [hasFileSystemAccess, backupDirHandle, autoOn, activeMatchId, debouncedBackup])
 
   // Periodic auto-download for Safari/Firefox
   useEffect(() => {
@@ -266,7 +314,7 @@ export default function useAutoBackup(activeMatchId = null) {
       return
     }
 
-    if (!autoBackupEnabled || !activeMatchId) {
+    if (!autoOn || !activeMatchId) {
       if (downloadIntervalRef.current) {
         clearInterval(downloadIntervalRef.current)
         downloadIntervalRef.current = null
@@ -277,10 +325,11 @@ export default function useAutoBackup(activeMatchId = null) {
     // Set up periodic download interval
     const intervalMs = backupFrequency * 60 * 1000 // Convert minutes to ms
 
+    // Every N minutes after the match was opened or last saved, and only when
+    // it changed since: never a download just for opening a match
     const checkAndDownload = () => {
-      const now = Date.now()
-      const timeSinceLastDownload = now - lastDownloadTime.current
-
+      if (!matchChanged.current) return
+      const timeSinceLastDownload = Date.now() - lastDownloadTime.current
       if (timeSinceLastDownload >= intervalMs) {
         performBackup(activeMatchId)
       }
@@ -295,7 +344,7 @@ export default function useAutoBackup(activeMatchId = null) {
         downloadIntervalRef.current = null
       }
     }
-  }, [nativeMode, hasFileSystemAccess, backupDirHandle, autoBackupEnabled, activeMatchId, backupFrequency, performBackup])
+  }, [nativeMode, hasFileSystemAccess, backupDirHandle, autoOn, activeMatchId, backupFrequency, performBackup])
 
   // Toggle auto backup
   const toggleAutoBackup = useCallback((enabled) => {
@@ -311,17 +360,18 @@ export default function useAutoBackup(activeMatchId = null) {
 
   // Trigger immediate backup (can be called externally on set/match end)
   const triggerBackup = useCallback(() => {
-    if (activeMatchId && autoBackupEnabled) {
+    if (activeMatchId && autoOn) {
       performBackup(activeMatchId)
     }
-  }, [activeMatchId, autoBackupEnabled, performBackup])
+  }, [activeMatchId, autoOn, performBackup])
 
   // Event-based backup trigger for Safari/Firefox
-  // Only downloads if: no File System Access, auto-backup enabled, and not in Chrome/Edge with folder
+  // Only downloads if: no File System Access, auto-backup enabled, not in
+  // Chrome/Edge with folder, and the event ends a set or the match
   const triggerEventBackup = useCallback((eventType) => {
     // Apps: the write hook already backs up every event; this only nudges it
     if (nativeMode) {
-      if (activeMatchId != null && autoBackupEnabled) {
+      if (activeMatchId != null && autoOn) {
         getNativeBackupEngine().then(engine => engine?.notify(activeMatchId))
       }
       return
@@ -332,19 +382,23 @@ export default function useAutoBackup(activeMatchId = null) {
       return
     }
 
-    if (!activeMatchId || !autoBackupEnabled) {
+    if (!activeMatchId || !autoOn) {
       return
     }
 
+    // The start of a set (a 0:0 file) or a timeout is no reason to download:
+    // the periodic download covers the play, the set / match end closes it
+    if (!BROWSER_DOWNLOAD_EVENTS.has(eventType)) return
+
     console.log(`📦 Event backup triggered: ${eventType}`)
     performBackup(activeMatchId)
-  }, [nativeMode, hasFileSystemAccess, backupDirHandle, activeMatchId, autoBackupEnabled, performBackup])
+  }, [nativeMode, hasFileSystemAccess, backupDirHandle, activeMatchId, autoOn, performBackup])
 
   // Manual backup (always downloads, regardless of settings; apps write a
   // native backup file instead)
   const manualBackup = useCallback(async (matchId) => {
     const targetMatchId = matchId || activeMatchId
-    if (!targetMatchId) return false
+    if (!targetMatchId || !scorerPage) return false
     if (nativeMode) return performBackup(targetMatchId)
 
     setIsBackingUp(true)
@@ -361,7 +415,7 @@ export default function useAutoBackup(activeMatchId = null) {
     } finally {
       setIsBackingUp(false)
     }
-  }, [nativeMode, activeMatchId, performBackup])
+  }, [scorerPage, nativeMode, activeMatchId, performBackup])
 
   const openBackupFolder = useCallback(async () => {
     try {
