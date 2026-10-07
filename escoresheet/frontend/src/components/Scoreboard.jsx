@@ -19581,7 +19581,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       {/* Manual Changes Modal */}
       {showManualPanel && (
         <Modal
-          title={t('scoreboard.menu.manualChanges')}
+          title={t('corrections.title')}
           open={true}
           onClose={() => {
             setShowManualPanel(false)
