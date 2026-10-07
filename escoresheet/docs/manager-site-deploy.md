@@ -2,8 +2,17 @@
 
 `manager.openvolley.app` is the manage console as a site of its own: accounts,
 invite codes, official games, closed matches (reopen), the audit log and saved
-teams / competitions. Admins see every tab, competition managers saved teams;
-other accounts get a "no access, ask an admin" page with the invite-code field.
+teams / competitions. Admins see every tab, competition managers saved teams.
+
+It is also **where accounts are made**: `manager.openvolley.app/#signup` (and
+"Create account" on the sign-in card) is the only sign-up form. The scorer
+apps (web, desktop, Android, venue LAN server) sign in only; their sign-in
+dialog says "Don't have an account? Create one at manager.openvolley.app" and
+opens that page in the browser (system browser in the desktop and Android
+apps). After sign-up the new, pending account lands on "Enter your club's
+invite code"; an approved scorer without a manage role gets "You're all set,
+sign in in the scorer app"; a referee-only account the "no access, ask an
+admin" page with the invite-code field.
 
 Inside the scorer app nothing moves: the user menu's Admin / Saved teams rows
 still open the in-app console (the only console in the desktop and Android
@@ -65,12 +74,20 @@ Without it the preview loads but sign-in fails with a CORS error. Production
    `noindex, nofollow`; `https://manager.openvolley.app/robots.txt` disallows `/`.
 3. Sign in as an admin: six tabs, no "Back to the app", "Scorer app" and
    "Sign out" in the header; a reload keeps the tab (`#invites` etc.).
-4. Sign in as a competition manager: saved teams only. A scorer-only or
-   pending account: the "No access to the manager" page.
-5. In the scorer app on `app.openvolley.app`, user menu -> Admin: the console
+4. Sign in as a competition manager: saved teams only. A scorer-only
+   account: "You're all set". A pending account: "Enter your club's invite
+   code". A referee-only account: "No access to the manager".
+5. `https://manager.openvolley.app/#signup` shows "Create your account"; a
+   throwaway account lands on the invite-code step (delete it afterwards). In
+   the scorer app, Login -> "Create one at manager.openvolley.app" opens that
+   page in a new tab (desktop / Android: the system browser).
+6. In the scorer app on `app.openvolley.app`, user menu -> Admin: the console
    header shows `manager.openvolley.app`, opening it in a new tab.
 
 ## Local development
 
 `cd escoresheet/frontend && npm run dev`, then open
-`http://localhost:5173/manager.html` (the scorer app stays on `/`).
+`http://localhost:5173/manager.html` (the scorer app stays on `/`); the sign-up
+page is `http://localhost:5173/manager.html#signup`. The scorer app's "Create
+one at manager.openvolley.app" always opens the public site (a Pages preview
+of the app opens the matching manager preview).

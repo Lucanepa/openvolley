@@ -487,7 +487,8 @@ was in flight). Tests: `tests/accountData.e2e.test.js`, `tests/auth.test.js`,
 
 ### Sign-up
 
-Auto-confirmed (no email flow yet). Limits: 5 per hour per IP (/64), 3 per
+The form is on `manager.openvolley.app/#signup` only (the scorer apps sign in
+and link there). Auto-confirmed (no email flow yet). Limits: 5 per hour per IP (/64), 3 per
 hour per mailbox (across IPs; `name+tag@` counts as `name@`), and 300 created
 accounts per hour in total (requests for existing addresses or that fail are
 not counted, so nobody can use the budget up without creating that many
