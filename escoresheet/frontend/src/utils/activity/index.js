@@ -19,6 +19,7 @@ import { setActivitySink, emitActivity } from './bus'
 import { appVersion, platformName, currentAccountId } from '../identity'
 import { AUTH_TOKEN_CHANGE_EVENT } from '../../lib/apiClient'
 import { scheduleActivityUpload, ensureActivityFlushJob } from './upload'
+import { createActivityFileSink } from './fileSink'
 
 export { emitActivity, flushActivityNow } from './bus'
 export { SYNC } from './writer'
@@ -28,6 +29,9 @@ const PRUNE_INTERVAL_MS = 60 * 60 * 1000
 const SUMMARY_INTERVAL_MS = 5 * 60 * 1000
 
 let started = null
+// The daily JSONL file of the desktop / Android app (null in a browser)
+let fileSink = null
+let fileSinkReady = null
 
 /** Stored rows written after a batch (file copy, upload): set by the later stages. */
 const afterWrite = new Set()
@@ -71,9 +75,22 @@ export function startActivityLog({ db, win = typeof window !== 'undefined' ? win
     summary.dirty = false
     summary.at = Date.now()
   }
+  // The apps also keep the log as daily files next to the backups
+  fileSinkReady = createActivityFileSink({ win })
+    .then((s) => { fileSink = s; return s })
+    .catch(() => null)
+  const fileListener = (rows) => {
+    if (fileSink) fileSink.add(rows)
+    else fileSinkReady.then((s) => s?.add(rows))
+  }
+  afterWrite.add(fileListener)
+
   const sink = {
     record: (kind, data, opts) => writer.record(kind, data, opts),
-    flush: () => writer.flush(),
+    flush: async () => {
+      await writer.flush()
+      await fileSink?.flush()
+    },
     noteSyncPass: (o) => {
       if (!o) return
       summary.sent += o.sent || 0
@@ -87,7 +104,7 @@ export function startActivityLog({ db, win = typeof window !== 'undefined' ? win
   setActivitySink(sink)
 
   const uninstallHooks = installActivityHooks(db, writer)
-  const cleanups = [uninstallHooks]
+  const cleanups = [uninstallHooks, () => afterWrite.delete(fileListener)]
 
   // app.start / app.update
   const version = appVersion()
@@ -107,7 +124,7 @@ export function startActivityLog({ db, win = typeof window !== 'undefined' ? win
     const onHide = (e) => {
       if (e && e.persisted) return // bfcache: the page may come back
       writer.record('app.quit', {})
-      writer.flush()
+      writer.flush().then(() => fileSink?.flush())
     }
     win.addEventListener('pagehide', onHide)
     cleanups.push(() => win.removeEventListener('pagehide', onHide))
@@ -152,6 +169,19 @@ export function startActivityLog({ db, win = typeof window !== 'undefined' ? win
     }
   }
   return started
+}
+
+/** Can this app open the log folder (desktop)? */
+export async function canOpenLogFolder() {
+  const s = fileSink || (await fileSinkReady)
+  return !!s?.canOpenFolder
+}
+
+/** Open the log folder in the file manager (desktop); false when not possible. */
+export async function openLogFolder() {
+  const s = fileSink || (await fileSinkReady)
+  if (!s?.canOpenFolder) return false
+  return s.openFolder()
 }
 
 /** The writer of the running log (tests, the upload). */

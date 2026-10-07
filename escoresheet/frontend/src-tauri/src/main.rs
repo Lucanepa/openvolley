@@ -1,6 +1,7 @@
 // Prevents an extra console window on Windows in release.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod activity;
 mod backup;
 mod firewall;
 mod lifecycle;
@@ -280,6 +281,8 @@ fn with_app_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Bu
         backup::backup_remove,
         backup::backup_open_dir,
         backup::backup_pick_file,
+        activity::activity_append,
+        activity::activity_open_dir,
         netshare::hotspot_status,
         netshare::hotspot_start,
         netshare::hotspot_stop,
@@ -398,6 +401,39 @@ mod ipc_acl_tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// The activity log files: the scoretable page appends JSON lines to
+    /// today's file in the log folder; other origins may not.
+    #[test]
+    fn scoretable_page_may_append_activity_other_origins_may_not() {
+        let root = std::env::temp_dir().join(format!("ov-activity-ipc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::env::set_var("OPENVOLLEY_LOG_DIR", &root);
+
+        let app = super::with_app_commands(mock_builder())
+            .build(tauri::generate_context!())
+            .expect("mock app");
+        let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::External("http://localhost:5173/".parse().unwrap()))
+            .build()
+            .unwrap();
+        let body = serde_json::json!({ "lines": ["{\"kind\":\"app.start\"}"] });
+        let res = get_ipc_response(&window, request("activity_append", "http://localhost:5173/", body.clone()));
+        assert!(res.is_ok(), "localhost refused: {res:?}");
+        let files: Vec<_> = std::fs::read_dir(&root).unwrap().filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).collect();
+        assert_eq!(files.len(), 1);
+        assert!(files[0].starts_with("activity-") && files[0].ends_with(".jsonl"), "{files:?}");
+        let bad = get_ipc_response(&window, request("activity_append", "http://localhost:5173/", serde_json::json!({ "lines": ["not json"] })));
+        assert!(bad.is_err(), "an invalid line is refused");
+
+        for url in ["http://192.168.1.20:5173/", "https://example.com/", "http://localhost.evil.com:5173/"] {
+            for cmd in ["activity_append", "activity_open_dir"] {
+                let err = get_ipc_response(&window, request(cmd, url, body.clone()))
+                    .expect_err(&format!("{cmd} from {url} must be refused"));
+                assert!(err.to_string().contains("not allowed"), "{cmd} from {url}: refused by the ACL, got {err}");
+            }
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// A scoresheet window (window.open of /scoresheet/, label "popup-<n>",
     /// popups.rs) loads the same http://localhost origin as the scoretable,
     /// so only the capabilities naming "main" keep the backup and tablet-network
@@ -418,6 +454,7 @@ mod ipc_acl_tests {
             "latest": true
         });
         for cmd in ["backup_info", "backup_write", "backup_list", "backup_remove", "backup_open_dir", "backup_pick_file",
+                    "activity_append", "activity_open_dir",
                     "hotspot_status", "hotspot_start", "hotspot_stop", "bluetooth_status", "bluetooth_start", "bluetooth_stop",
                     "firewall_status",
                     "app_page_state", "app_page_gone", "app_hide", "app_quit", "app_quit_ack",

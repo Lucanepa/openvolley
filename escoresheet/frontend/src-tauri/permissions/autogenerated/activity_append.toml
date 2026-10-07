@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-activity-append"
+description = "Enables the activity_append command without any pre-configured scope."
+commands.allow = ["activity_append"]
+
+[[permission]]
+identifier = "deny-activity-append"
+description = "Denies the activity_append command without any pre-configured scope."
+commands.deny = ["activity_append"]

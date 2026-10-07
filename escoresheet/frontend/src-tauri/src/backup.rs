@@ -78,7 +78,7 @@ fn check_file(file_name: &str) -> Result<(), String> {
 }
 
 /// Creates a folder (and its parents) readable by the owner only on unix.
-fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+pub(crate) fn create_private_dir(dir: &Path) -> std::io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
@@ -239,7 +239,7 @@ pub async fn backup_remove<R: Runtime>(app: AppHandle<R>, match_dir: String, fil
 /// The system file manager command for a folder. The path is one argument
 /// (no shell), and it is always the backup root, never a path from the page.
 /// (tauri-plugin-opener would do the same but re-resolves ~60 locked crates.)
-fn file_manager_command(dir: &Path) -> std::process::Command {
+pub(crate) fn file_manager_command(dir: &Path) -> std::process::Command {
     #[cfg(target_os = "windows")]
     let program = "explorer";
     #[cfg(target_os = "macos")]
