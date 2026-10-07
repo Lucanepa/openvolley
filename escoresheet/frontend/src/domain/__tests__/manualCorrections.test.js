@@ -403,6 +403,14 @@ describe('final score', () => {
 })
 
 describe('set times, rotation, advanced removal', () => {
+  it('refuses a set that would end before it starts', () => {
+    const { events, sets } = fixture()
+    const late = new Date(Date.parse(sets[0].endTime) + 60000).toISOString()
+    expect(planSetTimes(events, sets, { setIndex: 1, startTime: late }, review).error).toBe('corrections.error.endBeforeStart')
+    const early = new Date(Date.parse(sets[0].startTime) - 60000).toISOString()
+    expect(planSetTimes(events, sets, { setIndex: 1, endTime: early }, review).error).toBe('corrections.error.endBeforeStart')
+  })
+
   it('corrects the set row and the set end, suggests a delayed-start remark', () => {
     const { events, sets } = fixture()
     const start = new Date(Date.parse(sets[0].endTime) + 9 * 60000).toISOString()

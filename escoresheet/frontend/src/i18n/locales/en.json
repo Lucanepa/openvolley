@@ -3346,7 +3346,8 @@
       "subEvent": "This row belongs to another entry; remove that entry instead.",
       "liberoOnCourtRotate": "A libero is on court for this team: rotate after the libero has left the court.",
       "removePointNotLast": "The penalty point can only be removed while it is the last point of the set being played.",
-      "noScoreChange": "Nothing to change."
+      "noScoreChange": "Nothing to change.",
+      "endBeforeStart": "Set {{set}} cannot end before it starts."
     },
     "note": {
       "ladder": "By the rules this would have been a {{expected}}; recorded as the referee decided.",

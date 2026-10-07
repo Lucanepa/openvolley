@@ -3345,7 +3345,8 @@
       "subEvent": "Questa riga appartiene a un'altra voce; rimuovi invece quella.",
       "liberoOnCourtRotate": "Un libero è in campo per questa squadra: ruota dopo che il libero è uscito.",
       "removePointNotLast": "Il punto di penalizzazione si può rimuovere solo se è l'ultimo punto del set in corso.",
-      "noScoreChange": "Niente da cambiare."
+      "noScoreChange": "Niente da cambiare.",
+      "endBeforeStart": "Il set {{set}} non può finire prima di iniziare."
     },
     "note": {
       "ladder": "Secondo le regole sarebbe un/a {{expected}}; registrato come deciso dall'arbitro.",
