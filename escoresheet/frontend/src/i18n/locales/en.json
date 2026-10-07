@@ -2723,7 +2723,7 @@
       "passwordHint": "Your account password confirms the change.",
       "newPin": "New PIN",
       "repeatPin": "Repeat PIN",
-      "rule": "4 to 6 digits. No repeated digit and no run such as 1234.",
+      "rule": "4 to 6 digits. No date, no year and no pattern such as 1212 or 1234.",
       "mismatch": "The PINs do not match.",
       "removeConfirmTitle": "Remove your approval PIN?",
       "removeConfirmBody": "You can no longer approve results with your account until you set a new PIN.",
@@ -2751,11 +2751,9 @@
     "nameDiffers": "Account name {{account}} differs from the official entered ({{entered}})",
     "revalidateFailed": "An account approval is no longer valid. Check the signatures and approve again.",
     "errors": {
-      "pinInvalid": "Email or PIN not accepted.",
-      "pinLocked": "Too many wrong PINs. Try again in {{minutes}} min, or sign by hand.",
-      "pinDisabled": "Blocked after too many wrong PINs: set a new PIN in the profile, or sign by hand.",
+      "pinInvalid": "Email or PIN not accepted. After several wrong PINs the PIN pauses: the official sees it in their profile. Or sign by hand.",
       "pinFormat": "The PIN must have 4 to 6 digits.",
-      "pinWeak": "This PIN is too easy to guess. Avoid repeated digits and runs such as 1234.",
+      "pinWeak": "This PIN is too easy to guess. Avoid dates, years and patterns such as 1212, 2580 or 1234.",
       "passwordInvalid": "Wrong password.",
       "roleRequired": "This account does not have the role for this signature.",
       "notMatchScorer": "Only the scorer of this match can approve as scorer.",
@@ -2767,7 +2765,26 @@
       "resultNotSynced": "The result has not reached the server yet. Check the connection and try again.",
       "unsupported": "Not available for beach matches.",
       "unavailable": "Approval with an account is not available on this server.",
-      "emailUnconfirmed": "The official has not confirmed the email address of the account yet."
+      "emailUnconfirmed": "The official has not confirmed the email address of the account yet.",
+      "scorerNotReferee": "The account that scores this match cannot approve as a referee.",
+      "callerRole": "Approving with an account needs a scorer or referee account on this device."
+    },
+    "mine": {
+      "title": "Your approvals",
+      "hint": "Every approval made with your PIN. If one was not you, undo it while the match is open and change your PIN.",
+      "empty": "No approvals yet.",
+      "sentBy": "Sent by {{name}}",
+      "test": "Test match",
+      "valid": "Valid",
+      "resultChanged": "Result changed",
+      "closed": "Closed",
+      "revoked": "Revoked",
+      "undoBody": "The approval no longer counts. The match is then approved again or signed by hand.",
+      "slots": {
+        "referee1": "1st referee",
+        "referee2": "2nd referee",
+        "scorer": "Scorer"
+      }
     }
   }
 }

@@ -155,6 +155,9 @@ describe('approval endpoints (account-approval spec 3)', () => {
     await approvalsApi.undo('6f1c')
     await admin.listApprovals({ q: '6F1C2A9B', include_revoked: true, limit: 20 })
     await admin.listApprovals({ q: '4711' })
+    await approvalsApi.mine()
+    await approvalsApi.mine({ limit: 10 })
+    await approvalsApi.approve({ external_id: 'match_1', slot: 'referee2', email: 'a@b.ch', pin: '482917', result: { sets: [] }, lang: 'de-CH' })
 
     const calls = globalThis.fetch.mock.calls.map((_, i) => call(i))
     expect(calls.map(c => `${c.method} ${c.url.replace('http://backend.test', '')}`)).toEqual([
@@ -166,18 +169,24 @@ describe('approval endpoints (account-approval spec 3)', () => {
       'GET /api/approvals?external_id=match%201%2Fx',
       'DELETE /api/approvals/6f1c',
       'GET /api/admin/approvals?q=6F1C2A9B&include_revoked=1&limit=20',
-      'GET /api/admin/approvals?q=4711'
+      'GET /api/admin/approvals?q=4711',
+      'GET /api/account/approvals',
+      'GET /api/account/approvals?limit=10',
+      'POST /api/approvals'
     ])
     expect(calls[1].body).toEqual({ password: 'pw', pin: '0420' })
     expect(calls[2].body).toEqual({ password: 'pw' })
     expect(calls[3].body).toEqual({ external_id: 'match_1', slot: 'referee1', email: 'a@b.ch', pin: '482917', result: { sets: [[1, 25, 20]] }, device_id: 'd-1' })
     expect(calls[4].body).not.toHaveProperty('device_id')
     expect(calls[6].body).toBeUndefined()
+    expect(calls[4].body).not.toHaveProperty('lang')
+    expect(calls[11].body).toMatchObject({ slot: 'referee2', lang: 'de-CH' })
   })
 
   it('maps every new error code to approval.errors.*', () => {
     const cases = {
-      OV_APPROVAL_PIN_INVALID: 'pinInvalid', OV_APPROVAL_PIN_LOCKED: 'pinLocked', OV_APPROVAL_PIN_FORMAT: 'pinFormat',
+      OV_APPROVAL_PIN_INVALID: 'pinInvalid', OV_APPROVAL_PIN_FORMAT: 'pinFormat',
+      OV_APPROVAL_SCORER_NOT_REFEREE: 'scorerNotReferee', OV_APPROVAL_CALLER_ROLE: 'callerRole',
       OV_APPROVAL_PIN_WEAK: 'pinWeak', OV_PASSWORD_INVALID: 'passwordInvalid', OV_APPROVAL_ROLE_REQUIRED: 'roleRequired',
       OV_APPROVAL_NOT_MATCH_SCORER: 'notMatchScorer', OV_APPROVAL_NAME_REQUIRED: 'nameRequired', OV_APPROVAL_ONE_SLOT: 'oneSlot',
       OV_APPROVAL_SLOT_TAKEN: 'slotTaken', OV_MATCH_CLOSED: 'matchClosed', OV_MATCH_NOT_ENDED: 'matchNotEnded',

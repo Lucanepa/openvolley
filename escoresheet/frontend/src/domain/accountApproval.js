@@ -27,16 +27,48 @@ export const APPROVAL_SLOTS = Object.freeze(['referee1', 'referee2', 'scorer'])
 /** A personal approval PIN: 4 to 6 digits (the server checks the same). */
 export const PIN_RE = /^\d{4,6}$/
 
+// Common PINs that no rule below catches: keypad lines and crosses, and a few
+// favourites from published PIN frequency lists (backend/lib/approvalPin.js).
+const COMMON_PINS = new Set([
+  '2580', '0852', '1470', '0741', '3690', '0963', '1357', '7531', '2468', '8642', '1379', '9731', '1397', '7913',
+  '1590', '0951', '7410', '0147', '3214', '1236', '6321', '1478', '8741', '3698', '8963', '1793', '3971', '7539',
+  '9357', '1593', '3579', '5683', '1230', '0007', '4200', '1004', '2684', '4862',
+  '147258', '258369', '159753', '753951', '159357', '147852', '258741', '369852', '789456', '456123', '741852',
+  '963852', '123654', '123789', '987321', '102030', '010203', '142536', '135790', '246810', '124578', '147369'
+])
+
+const isDate = (dd, mm) => dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12
+
 /**
- * A PIN that is too easy to guess: one repeated digit (0000, 111111) or a
- * strictly ascending or descending run (1234, 0123, 123456, 4321, 987654).
- * Mirrors the server's isWeakPin; the format is checked separately.
+ * A PIN that is too easy to guess. The same rule as the server's isWeakPin
+ * (backend/lib/approvalPin.js); the format is checked separately.
+ *   - at most two different digits: 0000, 1212, 1122, 1221, 1000, 121212
+ *   - a strictly ascending or descending run: 1234, 0123, 123456, 987654
+ *   - a palindrome: 12321, 123321
+ *   - 4 digits: a year 1940 to 2039, or a date DDMM or MMDD (1004, 2512)
+ *   - 6 digits: ABCABC, AABBCC, a date DDMMYY, MMDDYY or YYMMDD
+ *   - a keypad pattern or another very common PIN (2580, 1357, 147258)
  */
 export function isWeakPin(pin) {
   if (typeof pin !== 'string' || !PIN_RE.test(pin)) return false
   const d = [...pin].map(Number)
   const steps = d.slice(1).map((v, i) => v - d[i])
-  return steps.every(s => s === 0) || steps.every(s => s === 1) || steps.every(s => s === -1)
+  if (new Set(d).size <= 2) return true
+  if (steps.every(s => s === 1) || steps.every(s => s === -1)) return true
+  if (pin === [...pin].reverse().join('')) return true
+  if (COMMON_PINS.has(pin)) return true
+  const two = (i) => d[i] * 10 + d[i + 1]
+  if (pin.length === 4) {
+    const year = Number(pin)
+    if (year >= 1940 && year <= 2039) return true
+    if (isDate(two(0), two(2)) || isDate(two(2), two(0))) return true
+  }
+  if (pin.length === 6) {
+    if (pin.slice(0, 3) === pin.slice(3)) return true
+    if (d[0] === d[1] && d[2] === d[3] && d[4] === d[5]) return true
+    if (isDate(two(0), two(2)) || isDate(two(2), two(0)) || isDate(two(4), two(2))) return true
+  }
+  return false
 }
 
 const num = (v) => {
@@ -135,6 +167,72 @@ export function approvalLine(approval, opts) {
 export function formatApprovalStamp(approval, opts = {}) {
   if (!approval) return ''
   return `Approved electronically · ${approvalLine(approval, opts)}`
+}
+
+/**
+ * The account approvals that complete a signing slot right now, as
+ * { role, slot, approval }: the slot has no drawn signature and the approval
+ * matches the current result. Only these are re-checked with the server
+ * before the match is confirmed; a stale record in a slot that was signed by
+ * hand (or one that completes nothing) never blocks it. Without a 2nd
+ * referee the ref2 slot is not needed.
+ */
+export function approvalsCompletingSlots(match, sets, { hasRef2 = true } = {}) {
+  const out = []
+  for (const role of ['ref1', 'ref2', 'scorer']) {
+    if (role === 'ref2' && !hasRef2) continue
+    const field = signatureFieldOf(match, role)
+    if (field && match?.[field]) continue
+    const approval = approvalFor(match, role)
+    if (isApprovalValid(approval, sets)) out.push({ role, slot: ROLE_TO_SLOT[role], approval })
+  }
+  return out
+}
+
+/**
+ * True when every approval that completes a slot is still active on the
+ * server as the same record, bound to the current result `key`.
+ * `serverBySlot` is approvalsBySlot() of a fresh GET /api/approvals.
+ */
+export function approvalsStillValid(completing, serverBySlot, key) {
+  return (completing || []).every(({ slot, approval }) => {
+    const server = serverBySlot?.[slot]
+    return !!server && server.id === approval.id && server.result_matches !== false && server.result_key === key
+  })
+}
+
+/**
+ * The admin lookup term as typed or pasted: "ID 6F1C2A9B" (as the PDF prints
+ * it), "#6F1C2A9B" or "#1234" become the bare short ID or game number;
+ * anything else stays as it is, trimmed. The server reads it the same way.
+ */
+export function normalizeApprovalQuery(q) {
+  const t = String(q ?? '').trim()
+  const m = /^(?:id\s*[:#]?\s*|#\s*)([0-9a-f]{8}|\d{1,9})$/i.exec(t)
+  return m ? m[1] : t
+}
+
+/**
+ * The sets whose score or finished flag differ between two lists of Dexie set
+ * rows (matched by id): what Manual adjustments must send to the server.
+ */
+export function changedSets(original, edited) {
+  const before = new Map((Array.isArray(original) ? original : []).map(s => [s?.id, s]))
+  return (Array.isArray(edited) ? edited : []).filter(s => {
+    const o = before.get(s?.id)
+    return !o || num(o.homePoints) !== num(s.homePoints) || num(o.awayPoints) !== num(s.awayPoints) || !!o.finished !== !!s.finished
+  })
+}
+
+const teamName = (team) => String(team?.name ?? '').trim().toLowerCase()
+
+/**
+ * Does an edit change what the officials approved: the result (the finished
+ * sets) or who played (the team names; the server voids approvals then too)?
+ */
+export function approvedSheetChanged({ originalSets, editedSets, originalTeams = [], editedTeams = [] }) {
+  if (resultKey(originalSets) !== resultKey(editedSets)) return true
+  return [0, 1].some(i => editedTeams[i] && teamName(originalTeams[i]) !== teamName(editedTeams[i]))
 }
 
 /** Server records (GET /api/approvals) keyed by slot; unknown slots are dropped. */

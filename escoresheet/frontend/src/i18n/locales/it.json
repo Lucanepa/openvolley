@@ -2722,7 +2722,7 @@
       "passwordHint": "La password del tuo account conferma la modifica.",
       "newPin": "Nuovo PIN",
       "repeatPin": "Ripeti il PIN",
-      "rule": "Da 4 a 6 cifre. Nessuna cifra ripetuta e nessuna sequenza come 1234.",
+      "rule": "Da 4 a 6 cifre. Nessuna data, nessun anno e nessuno schema come 1212 o 1234.",
       "mismatch": "I PIN non coincidono.",
       "removeConfirmTitle": "Rimuovere il tuo PIN di approvazione?",
       "removeConfirmBody": "Non potrai più approvare risultati con il tuo account finché non imposti un nuovo PIN.",
@@ -2750,11 +2750,9 @@
     "nameDiffers": "Il nome dell'account {{account}} è diverso dall'ufficiale inserito ({{entered}})",
     "revalidateFailed": "Un'approvazione con account non è più valida. Controlla le firme e approva di nuovo.",
     "errors": {
-      "pinInvalid": "E-mail o PIN non accettati.",
-      "pinLocked": "Troppi PIN errati. Riprova tra {{minutes}} min o firma a mano.",
-      "pinDisabled": "Bloccato dopo troppi PIN errati: imposta un nuovo PIN nel profilo o firma a mano.",
+      "pinInvalid": "E-mail o PIN non accettati. Dopo diversi PIN sbagliati il PIN va in pausa: l’ufficiale lo vede nel suo profilo. Oppure firmi a mano.",
       "pinFormat": "Il PIN deve avere da 4 a 6 cifre.",
-      "pinWeak": "Questo PIN è troppo facile da indovinare. Evita cifre ripetute e sequenze come 1234.",
+      "pinWeak": "Questo PIN è troppo facile da indovinare. Eviti date, anni e schemi come 1212, 2580 o 1234.",
       "passwordInvalid": "Password errata.",
       "roleRequired": "Questo account non ha il ruolo per questa firma.",
       "notMatchScorer": "Solo il segnapunti di questa partita può approvare come segnapunti.",
@@ -2766,7 +2764,26 @@
       "resultNotSynced": "Il risultato non è ancora arrivato al server. Controlla la connessione e riprova.",
       "unsupported": "Non disponibile per le partite di beach.",
       "unavailable": "L'approvazione con account non è disponibile su questo server.",
-      "emailUnconfirmed": "L'ufficiale non ha ancora confermato l'indirizzo e-mail dell'account."
+      "emailUnconfirmed": "L'ufficiale non ha ancora confermato l'indirizzo e-mail dell'account.",
+      "scorerNotReferee": "L’account che tiene il referto di questa partita non può approvare come arbitro.",
+      "callerRole": "L’approvazione con un account richiede un account di segnapunti o di arbitro su questo dispositivo."
+    },
+    "mine": {
+      "title": "Le sue approvazioni",
+      "hint": "Ogni approvazione fatta con il suo PIN. Se una non è sua, la annulli finché la partita è aperta e cambi il PIN.",
+      "empty": "Ancora nessuna approvazione.",
+      "sentBy": "Inviata da {{name}}",
+      "test": "Partita di prova",
+      "valid": "Valida",
+      "resultChanged": "Risultato cambiato",
+      "closed": "Chiusa",
+      "revoked": "Revocata",
+      "undoBody": "L’approvazione non vale più. La partita viene poi approvata di nuovo o firmata a mano.",
+      "slots": {
+        "referee1": "1° arbitro",
+        "referee2": "2° arbitro",
+        "scorer": "Segnapunti"
+      }
     }
   }
 }

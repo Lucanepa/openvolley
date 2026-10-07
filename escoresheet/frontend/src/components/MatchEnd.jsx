@@ -30,7 +30,7 @@ import { waitForScoresheetPdf } from '../utils/scoresheetPdfRequest'
 import { getMatchWinner, clearedPostMatchSignatures, planForfeitReversal } from '../domain/matchEnd'
 import {
   ROLE_TO_SLOT, approvalFor, isApprovalValid, slotComplete, approvalLine, approvalsBySlot, approvalSummary,
-  resultKey, rememberApprovalEmail, namesDiffer
+  resultKey, rememberApprovalEmail, namesDiffer, approvalsCompletingSlots, approvalsStillValid
 } from '../domain/accountApproval'
 import AccountApprovalDialog from './AccountApprovalDialog'
 import { askConfirm } from '../utils/askConfirm.js'
@@ -695,7 +695,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   // "Approve with account" is offered when the match is in the cloud, this
   // device is signed in and the server has the feature (indoor only)
   const isBeach = match.sport_type === 'beach' || match.sportType === 'beach'
-  const accountApprovalOffered = !!match.seed_key && signedIn && cloudApi && approvalFeature !== 'unavailable' && !isBeach
+  // Only a scorer or referee account (or an admin) may send approvals (the server checks the same)
+  const callerMayApprove = !!access?.isAdmin || !!access?.roles?.some(r => r === 'scorer' || r === 'referee')
+  const accountApprovalOffered = !!match.seed_key && signedIn && callerMayApprove && cloudApi && approvalFeature !== 'unavailable' && !isBeach
 
   // Determine current signature step
   const getCurrentStep = () => {
@@ -722,6 +724,13 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     const field = fieldMap[role]
     if (field) {
       await db.matches.update(matchId, { [field]: signatureData })
+    }
+    // A drawn signature completes the slot: a stale account approval of it
+    // (the result changed since) is dropped from the local copy
+    const slot = ROLE_TO_SLOT[role]
+    if (slot && signatureData) {
+      const stale = approvalFor(match, role)
+      if (stale && !isApprovalValid(stale, sets)) await removeLocalApproval(slot, stale.id)
     }
     setOpenSignature(null)
   }
@@ -911,15 +920,14 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     }
   }
 
-  // Reopening voids the approvals on the server (db/011 trigger) once the
-  // status change syncs; online and not closed, undo them now as well.
-  const undoAccountApprovalsBestEffort = (current) => {
+  // Reopening the last set voids the approvals on the server (db/011
+  // trigger) once the status change syncs; online and not closed, undo them
+  // now as well, and wait for it so no later read brings them back.
+  const undoAccountApprovalsBestEffort = async (current) => {
     const records = Object.values(current?.accountApprovals || {}).filter(r => r?.id)
     if (!records.length || current?.closed_at) return
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return
-    for (const r of records) {
-      approvalsApi.undo(r.id).catch(() => { /* best effort */ })
-    }
+    await Promise.allSettled(records.map(r => approvalsApi.undo(r.id)))
   }
 
   const handleShowScoresheet = (action = 'preview') => {
@@ -965,20 +973,17 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         return
       }
 
-      // Account approvals are re-checked with the server before the result
-      // is approved (one may have been voided, or the sets changed). Offline
-      // the local copy is trusted: the approvals were made online.
-      const localApprovals = Object.values(match.accountApprovals || {}).filter(Boolean)
-      if (localApprovals.length && online && match.seed_key) {
+      // The account approvals that complete a slot (no drawn signature there)
+      // are re-checked with the server before the result is approved (one may
+      // have been voided, or the sets changed). A stale record in a slot that
+      // was signed by hand never blocks: the drawn signature is the fallback.
+      // Offline the local copy is trusted: the approvals were made online.
+      const currentSets = await db.sets.where('matchId').equals(matchId).toArray()
+      const completing = approvalsCompletingSlots(match, currentSets, { hasRef2 })
+      if (completing.length && online && match.seed_key) {
         const fresh = await refreshAccountApprovals()
         if (fresh) {
-          const currentSets = await db.sets.where('matchId').equals(matchId).toArray()
-          const key = resultKey(currentSets)
-          const stillValid = localApprovals.every(a => {
-            const server = fresh.bySlot[a.slot]
-            return server && server.id === a.id && server.result_matches !== false && server.result_key === key
-          })
-          if (!stillValid) {
+          if (!approvalsStillValid(completing, fresh.bySlot, resultKey(currentSets))) {
             showAlert(t('approval.revalidateFailed'), 'warning')
             setIsSaving(false)
             return
@@ -1280,26 +1285,27 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       return
     }
     setReopenDialog(null)
-    await handleReopenMatch({ queue: false })
+    // The admin reopen voided the account approvals on the server (db/011)
+    await handleReopenMatch({ queue: false, voidApprovals: true })
   }
 
   // Handle reopening match after approval - allows re-approval or adjustments
   // queue: false when the server already has the match open (or never saw
   // it closed): then nothing is sent.
-  const handleReopenMatch = async ({ queue = true } = {}) => {
-    cLogger.logHandler('handleReopenMatch', { matchId, queue })
+  // The account approvals stay, like the drawn signatures: the result has not
+  // changed, and the server keeps them on approved -> ended (db/011). A
+  // result change afterwards (Reopen last set, Manual adjustments) drops
+  // them. voidApprovals: the admin reopen, which voided them on the server.
+  const handleReopenMatch = async ({ queue = true, voidApprovals = false } = {}) => {
+    cLogger.logHandler('handleReopenMatch', { matchId, queue, voidApprovals })
 
     try {
-      // The account approvals certify the approved result: undo them on the
-      // server (best effort) and drop the local copy
-      undoAccountApprovalsBestEffort(match)
-
       // Clear approval state in database
       await db.matches.update(matchId, {
         approved: false,
         approvedAt: null,
         status: 'ended', // Match is finished but not final
-        accountApprovals: null
+        ...(voidApprovals ? { accountApprovals: null } : {})
       })
 
       // Mirror the un-approval to the cloud (approve queued status 'approved')
@@ -1391,7 +1397,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
       // The result changes: account approvals go (server: best-effort undo now,
       // and the db/011 trigger voids them when status 'live' syncs)
-      undoAccountApprovalsBestEffort(match)
+      await undoAccountApprovalsBestEffort(match)
 
       // Mark the last set as not finished
       await db.sets.update(lastSet.id, { finished: false, endTime: null })

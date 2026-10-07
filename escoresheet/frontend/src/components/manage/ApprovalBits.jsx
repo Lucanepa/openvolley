@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { admin } from '../../lib/accountApi'
-import { formatApprovalTime } from '../../domain/accountApproval'
+import { formatApprovalTime, normalizeApprovalQuery } from '../../domain/accountApproval'
 import { useErrorText } from './common'
 import { Button, Checkbox, Chip, EmptyInset, Input, Notice, RowList, Row, SkeletonRows, StatusPill } from '../../ui'
 
@@ -55,7 +55,8 @@ export function ApprovalLookup({ online }) {
 
   const search = async (e) => {
     e?.preventDefault?.()
-    const query = q.trim()
+    // "ID 6F1C2A9B" as printed on the PDF, "#4711", or an external_id
+    const query = normalizeApprovalQuery(q)
     if (!query || state.loading) return
     setState(s => ({ ...s, loading: true }))
     const res = await admin.listApprovals({ q: query, include_revoked: includeRevoked, limit: 50 })
