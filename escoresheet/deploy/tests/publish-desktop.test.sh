@@ -2,7 +2,10 @@
 # Offline tests for publish-pkgs.sh --desktop (lib/publish-lib.sh and
 # lib/desktop-updater.mjs): signing, verification, latest.json, the public
 # desktop/ tree and the key-material guard, with a THROWAWAY updater key made
-# here. It never reads the real key, never calls GitHub, never syncs.
+# here, for OpenVolley and for OpenBeach (--app beach: its own tags, package,
+# manifests and GitHub fallback), plus the multi-app parts: APT package names,
+# the per-app hold-back, the Android certificate per app id, install.sh and
+# the landing page. It never reads the real keys, never calls GitHub, never syncs.
 #
 #   escoresheet/deploy/tests/publish-desktop.test.sh
 #
@@ -20,6 +23,9 @@ trap 'rm -rf "$T"' EXIT
 # Isolation first: everything the library reads comes from $T.
 export OV_DESKTOP_KEYS="$T/keys"
 export OV_DESKTOP_TAURI_CONF="$T/tauri.conf.json"
+export OV_BEACH_TAURI_CONF="$T/tauri.beach.conf.json"
+export OV_BEACH_CERT_FILE="$T/beach-cert.sha256"
+export OV_BEACH_CHANGELOGS="$T/beach-changelogs"
 export OV_DESKTOP_RELEASE_DIR="$T/release"
 export OV_PKGS_HOME="$T/pkgs-home"
 export OV_PKGS_DEST="$T/dest/"
@@ -63,6 +69,9 @@ chmod 600 "$T/keys/updater.key" "$T/keys/key-password"
 node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ productName: "Openvolley eScoresheet",
   plugins: { updater: { pubkey: require("fs").readFileSync(process.argv[2], "utf8").trim() } } }, null, 2))' \
   "$OV_DESKTOP_TAURI_CONF" "$T/keys/updater.key.pub"
+node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ productName: "OpenBeach", identifier: "com.openvolley.beach",
+  plugins: { updater: { pubkey: require("fs").readFileSync(process.argv[2], "utf8").trim() } } }, null, 2))' \
+  "$OV_BEACH_TAURI_CONF" "$T/keys/updater.key.pub"
 
 # make_deb OUT VERSION [PACKAGE]
 make_deb() {
@@ -71,8 +80,8 @@ make_deb() {
   mkdir -p "$root/DEBIAN" "$root/usr/bin"
   printf 'Package: %s\nVersion: %s\nArchitecture: amd64\nMaintainer: test <test@example.invalid>\nDescription: test package\n' \
     "$pkg" "$ver" > "$root/DEBIAN/control"
-  printf '#!/bin/sh\necho %s\n' "$ver" > "$root/usr/bin/openvolley-escoresheet"
-  chmod 755 "$root/usr/bin/openvolley-escoresheet"
+  printf '#!/bin/sh\necho %s\n' "$ver" > "$root/usr/bin/$pkg"
+  chmod 755 "$root/usr/bin/$pkg"
   dpkg-deb --root-owner-group -b "$root" "$out" >/dev/null
 }
 { printf 'MZ'; head -c 300000 /dev/urandom; } > "$T/release/Openvolley.eScoresheet_${V}_x64-setup.exe"
@@ -290,6 +299,17 @@ if command -v fdroid >/dev/null && command -v apt-ftparchive >/dev/null && comma
   expect_fail "version 2.2.2 is not announced by desktop/latest.json" \
     "$KIT_DIR/publish-pkgs.sh" --no-sync "$POOL/openvolley-escoresheet_2.2.2_amd64.deb"
   [[ ! -e "$OV_PKGS_HOME/public/apt/pool/main/openvolley-escoresheet_2.2.2_amd64.deb" ]] || bad "the refused .deb reached the pool"
+  # OpenBeach's .deb against its own desktop/beach/latest.json
+  mkdir -p "$OV_PKGS_HOME/public/desktop/beach"
+  manifest_at 2.0.0 "$OV_PKGS_HOME/public/desktop/beach/latest.json"
+  make_deb "$T/openbeach-escoresheet_2.0.1_amd64.deb" 2.0.1 openbeach-escoresheet
+  expect_fail "version 2.0.1 is not announced by desktop/beach/latest.json, so APT would not list it; publish desktop releases with --desktop 2.0.1 --app beach" \
+    "$KIT_DIR/publish-pkgs.sh" --no-sync "$T/openbeach-escoresheet_2.0.1_amd64.deb"
+  # a package that is neither app (nor an OpenVolley old name)
+  make_deb "$T/other-tool_9.0.0_amd64.deb" 9.0.0 other-tool
+  expect_fail "package other-tool is not published here (openvolley-escoresheet openbeach-escoresheet)" \
+    "$KIT_DIR/publish-pkgs.sh" --no-sync "$T/other-tool_9.0.0_amd64.deb"
+  [[ -z "$(ls "$OV_PKGS_HOME/public/apt/pool/main/" 2>/dev/null)" ]] || bad "a refused .deb reached the pool"
 else
   echo "skip publish-pkgs.sh hand-given .deb refusal (fdroid, apt-ftparchive or rsync not installed)"
 fi
@@ -323,7 +343,11 @@ expect_fail "not a version like 2.2.0" pp --desktop banana --no-sync
 expect_fail "--desktop given twice" pp --desktop 2.2.0 --desktop 2.2.1 --no-sync
 expect_fail "OV_DESKTOP_RELEASE_DIR is for tests: use it with --no-sync" pp --desktop 2.2.0
 expect_fail "no signing key in $OV_PKGS_HOME" pp --desktop v2.2.0 --staging --no-sync
-pp --help | grep -q -- '--desktop VERSION \[--staging\]' && ok "--help documents --desktop"
+pp --help | grep -q -- '--desktop VERSION \[--app beach\] \[--staging\]' && ok "--help documents --desktop and --app"
+expect_fail "--app needs --desktop VERSION" pp --app beach --no-sync
+expect_fail "--app volley: expected openvolley or beach" pp --desktop 2.0.0 --app volley --no-sync
+expect_fail "--app given twice" pp --desktop 2.0.0 --app beach --app beach --no-sync
+expect_fail "--app needs openvolley or beach" pp --desktop 2.0.0 --no-sync --app
 
 if [[ -n "${OV_TEST_KEEP:-}" ]]; then
   # For a cross-check outside this script: the signed files, latest.json and the test pubkey.
@@ -331,4 +355,199 @@ if [[ -n "${OV_TEST_KEEP:-}" ]]; then
   cp "$DESKTOP_EXE"* "$DESKTOP_APPIMAGE"* "$DESKTOP_DEB"* "$L" "$T/keys/updater.key.pub" "$OV_TEST_KEEP/"
   echo "kept in $OV_TEST_KEEP"
 fi
+# === OpenBeach (--app beach) and the multi-app parts ==========================
+# The same steps for the second app: its own tag prefix, .deb, manifests dir,
+# Tauri config (same throwaway key), changelogs and GitHub fallback release.
+BV=2.0.0
+BGH="https://github.com/Lucanepa/openvolley/releases/download/beach-desktop-v$BV"
+desktop_app_select beach
+[[ "$DESKTOP_TAG_PREFIX $DESKTOP_DEB_NAME $DESKTOP_DIR $DESKTOP_TAURI_CONF $DESKTOP_MAKE_LATEST $DESKTOP_FALLBACK_TAG" == \
+   "beach-desktop-v openbeach-escoresheet desktop/beach $T/tauri.beach.conf.json 0 beach-desktop-latest" ]] ||
+  bad "beach: app settings"
+ok "beach: tag beach-desktop-v, package openbeach-escoresheet, desktop/beach/, its Tauri config, never Latest"
+expect_fail "unknown app volley" desktop_app_select volley
+
+mkdir -p "$T/beach-release" "$OV_BEACH_CHANGELOGS"
+{ printf 'MZ'; head -c 300000 /dev/urandom; } > "$T/beach-release/OpenBeach_${BV}_x64-setup.exe"
+{ printf '\177ELF'; head -c 500000 /dev/urandom; } > "$T/beach-release/openbeach-escoresheet_${BV}_amd64.AppImage"
+make_deb "$T/beach-release/openbeach-escoresheet_${BV}_amd64.deb" "$BV" openbeach-escoresheet
+printf 'OpenBeach 2.0.0\n- Beach courts on one relay.\n' > "$OV_BEACH_CHANGELOGS/20000000.txt"
+desktop_check_setup && ok "beach: setup reads the updater key from tauri.beach.conf.json"
+
+OV_DESKTOP_RELEASE_DIR="$T/beach-release"; DESKTOP_RELEASE_DIR="$T/beach-release"
+desktop_fetch "$BV" "$T/bwork"
+[[ "$DESKTOP_EXE" == "$T/bwork/OpenBeach_${BV}_x64-setup.exe" &&
+   "$DESKTOP_APPIMAGE" == "$T/bwork/openbeach-escoresheet_${BV}_amd64.AppImage" &&
+   "$DESKTOP_DEB" == "$T/bwork/openbeach-escoresheet_${BV}_amd64.deb" ]] || bad "beach: fetch picked the wrong files"
+ok "beach: fetch, one installer of each kind, version $BV"
+rm -rf "$T/rel-bpkg"; cp -r "$T/beach-release" "$T/rel-bpkg"
+make_deb "$T/rel-bpkg/openbeach-escoresheet_${BV}_amd64.deb" "$BV" openvolley-escoresheet
+bfetch_wrong() { OV_DESKTOP_RELEASE_DIR="$T/rel-bpkg"; DESKTOP_RELEASE_DIR="$T/rel-bpkg"; desktop_fetch "$BV" "$T/w-bpkg"; }
+expect_fail "package openvolley-escoresheet, expected openbeach-escoresheet" bfetch_wrong
+
+desktop_sign "$BV" "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB" >/dev/null
+desktop_verify "$BV" "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB" >/dev/null && ok "beach: sign and verify"
+desktop_notes "$BV" "$T/bnotes.txt"
+[[ "$(cat "$T/bnotes.txt")" == '- Beach courts on one relay.' ]] || bad "beach notes: $(cat "$T/bnotes.txt")"
+ok "beach: notes from openbeach's changelog, OpenBeach title dropped"
+desktop_manifest "$BV" "$T/bwork" "$T/bwork/latest.json" >/dev/null
+BL="$T/bwork/latest.json"
+node - "$BL" "$BV" "$BGH" <<'JS' || bad "beach latest.json content"
+const [file, v, gh] = process.argv.slice(2)
+const m = JSON.parse(require('fs').readFileSync(file, 'utf8'))
+const assert = require('assert')
+assert.strictEqual(m.version, v)
+assert.strictEqual(m.notes, '- Beach courts on one relay.')
+const p = m.platforms
+assert.strictEqual(p['windows-x86_64-nsis'].url, `${gh}/OpenBeach_${v}_x64-setup.exe`)
+assert.strictEqual(p['linux-x86_64-appimage'].url, `${gh}/openbeach-escoresheet_${v}_amd64.AppImage`)
+assert.strictEqual(p['linux-x86_64-deb'].url, `https://get.openvolley.app/apt/pool/main/openbeach-escoresheet_${v}_amd64.deb`)
+JS
+ok "beach latest.json: beach-desktop-v$BV assets, the openbeach-escoresheet pool .deb"
+
+BP="$T/bpublic"
+mkdir -p "$BP/desktop"; cp "$P/desktop/latest.json" "$BP/desktop/latest.json"
+desktop_publish_tree "$BV" 1 "$BL" "$BP" >/dev/null
+[[ -f "$BP/desktop/beach/staging.json" && -f "$BP/desktop/beach/latest-$BV.json" && ! -e "$BP/desktop/beach/latest.json" ]] ||
+  bad "beach --staging tree"
+desktop_publish_tree "$BV" 0 "$BL" "$BP" >/dev/null
+cmp -s "$BP/desktop/beach/latest.json" "$BL" || bad "beach latest.json not published"
+cmp -s "$BP/desktop/latest.json" "$P/desktop/latest.json" || bad "beach release touched OpenVolley's desktop/latest.json"
+[[ ! -e "$BP/desktop/staging.json" ]] || bad "beach release wrote OpenVolley's staging.json"
+ok "beach: desktop/beach/{staging,latest,latest-$BV}.json; OpenVolley's desktop/*.json untouched"
+bolder() {
+  node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('$BL','utf8')); m.version='1.9.9'; fs.writeFileSync('$T/bolder.json', JSON.stringify(m))"
+  desktop_publish_tree 1.9.9 0 "$T/bolder.json" "$BP"
+}
+expect_fail "desktop/beach/staging.json announces $BV, newer than 1.9.9" bolder
+
+# GitHub: the beach release never becomes "Latest"; latest.json goes to the
+# beach-desktop-latest prerelease (made when missing).
+GH_LOG="$T/gh.log"
+GH_FALLBACK_EXISTS=0
+gh() {
+  echo "gh $*" >> "$GH_LOG"
+  case "$1 $2" in
+    "api "*) echo "$GH_LATEST" ;;
+    "release view") [[ "$GH_FALLBACK_EXISTS" == 1 ]] ;;
+  esac
+}
+bupload_case() { : > "$GH_LOG"; GH_LATEST=$1; GH_FALLBACK_EXISTS=$2; desktop_upload "$BV" "$3" "$T/bwork" > "$T/upload.out" 2>&1; }
+bupload_case "desktop-v$V" 0 0
+grep -q "^gh release upload beach-desktop-v$BV .*latest.json" "$GH_LOG" || bad "beach upload: latest.json not on beach-desktop-v$BV"
+grep -q "^gh release create beach-desktop-latest --repo Lucanepa/openvolley --prerelease --latest=false " "$GH_LOG" || bad "beach upload: fallback prerelease not created"
+grep -q "^gh release upload beach-desktop-latest --repo Lucanepa/openvolley --clobber .*/latest.json$" "$GH_LOG" || bad "beach upload: latest.json not on the fallback"
+if grep -q -e '--latest$' -e 'release edit' "$GH_LOG"; then bad "beach upload: moved GitHub's Latest"; fi
+ok "beach upload: .sig + latest.json to beach-desktop-v$BV, latest.json to the beach-desktop-latest prerelease, Latest untouched"
+bupload_case "desktop-v$V" 1 0
+if grep -q '^gh release create' "$GH_LOG"; then bad "beach upload: re-created an existing fallback"; fi
+grep -q "^gh release upload beach-desktop-latest " "$GH_LOG" || bad "beach upload: existing fallback not updated"
+ok "beach upload: an existing fallback prerelease is only updated"
+bupload_case "beach-desktop-v$BV" 1 0
+grep -q "WARNING: GitHub's latest release is beach-desktop-v$BV" "$T/upload.out" || bad "beach upload: no warning when a beach release is Latest"
+ok "beach upload: warns when a beach release took GitHub's Latest (OpenVolley's fallback)"
+bupload_case "desktop-v$V" 1 1
+if grep -q 'latest' "$GH_LOG"; then bad "beach upload: --staging touched latest.json"; fi
+ok "beach upload: --staging uploads the .sig files only"
+unset -f gh
+
+# APT hold-back per package: each app against its own latest.json.
+BPOOL="$T/bapt/pool/main"
+mkdir -p "$BPOOL"
+for v in 2.2.0 2.2.1; do make_deb "$BPOOL/openvolley-escoresheet_${v}_amd64.deb" "$v"; done
+for v in 2.0.0 2.0.1; do make_deb "$BPOOL/openbeach-escoresheet_${v}_amd64.deb" "$v" openbeach-escoresheet; done
+(cd "$T/bapt" && dpkg-scanpackages --multiversion --arch amd64 pool/main 2>/dev/null) > "$T/bPackages"
+BHP="$T/bhold"; mkdir -p "$BHP/desktop/beach"
+manifest_at 2.2.0 "$BHP/desktop/latest.json"
+manifest_at 2.0.0 "$BHP/desktop/beach/latest.json"
+listed() { awk -v want="$2" '/^Package:/ { p = $2 } /^Version:/ && p == want { print $2 }' "$1" | sort -V | xargs; }
+apt_hold_init "$BHP"
+cp "$T/bPackages" "$T/bP1"; apt_hold_packages "$T/bP1" > "$T/bheld1"
+[[ "$(listed "$T/bP1" openvolley-escoresheet)|$(listed "$T/bP1" openbeach-escoresheet)" == "2.2.0|2.0.0" ]] || bad "hold per app: $(cat "$T/bheld1")"
+grep -q 'held back from APT: openbeach-escoresheet 2.0.1 (desktop/beach/latest.json announces 2.0.0)' "$T/bheld1" || bad "hold per app: report"
+ok "hold per app: each package held to its own latest.json"
+apt_hold_init "$BHP" 2.0.1 0   # a --desktop 2.0.1 --app beach release run
+cp "$T/bPackages" "$T/bP2"; apt_hold_packages "$T/bP2" >/dev/null
+[[ "$(listed "$T/bP2" openvolley-escoresheet)|$(listed "$T/bP2" openbeach-escoresheet)" == "2.2.0|2.0.0 2.0.1" ]] || bad "hold per app: beach release run"
+apt_held 2.2.1 openvolley-escoresheet && ! apt_held 2.0.1 && ! apt_held 2.0.1 openbeach-escoresheet || bad "hold per app: apt_held"
+ok "hold per app: a beach release lists its version and leaves OpenVolley's hold as it was"
+desktop_app_select openvolley
+apt_hold_init "$BHP"
+apt_held 2.2.1 && ! apt_held 2.0.1 || bad "hold: apt_held defaults to the selected app's package"
+ok "hold: apt_held without a package is the selected app's"
+
+# APT names and the Android certificate per app id.
+apt_name_ok openvolley-escoresheet && apt_name_ok openbeach-escoresheet && ! apt_name_ok openbeach && ! apt_name_ok openvolley ||
+  bad "apt_name_ok"
+ok "APT names: openvolley-escoresheet and openbeach-escoresheet only"
+[[ "$(app_cert_sha256 com.openvolley.escoresheet)" == 2c7f9db4da41f5475f36142403043e45452a3143baff764e3d511d686ddabe87 ]] || bad "OpenVolley cert"
+expect_fail "no signing certificate for com.openvolley.beach: put its SHA-256 in $OV_BEACH_CERT_FILE" app_cert_sha256 com.openvolley.beach
+BCERT=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+printf '%s\n' "$BCERT" | tr 'a-f' 'A-F' | sed 's/../&:/g; s/:$//' > "$OV_BEACH_CERT_FILE"
+[[ "$(app_cert_sha256 com.openvolley.beach)" == "$BCERT" ]] || bad "beach cert from the file (upper case, colons)"
+ok "Android: OpenBeach's certificate from its file, normalised"
+printf '%s\n' 2c7f9db4da41f5475f36142403043e45452a3143baff764e3d511d686ddabe87 > "$OV_BEACH_CERT_FILE"
+expect_fail "OpenBeach must have its own Android key" app_cert_sha256 com.openvolley.beach
+printf 'abc\n' > "$OV_BEACH_CERT_FILE"
+expect_fail "is not 64 hex digits" app_cert_sha256 com.openvolley.beach
+rm -f "$OV_BEACH_CERT_FILE"
+expect_fail "app id com.example.other is not published here" app_cert_sha256 com.example.other
+
+# install.sh: pins the key, defaults to OpenVolley, takes OpenBeach by name.
+check_install_sh "$KIT_DIR/pkgs/install.sh" AB469DA8DC3EC90F8057320D285B18D76C16B82C && ok "install.sh: key pinned, default and allowed packages"
+sed 's/^PACKAGES=.*/PACKAGES="openvolley-escoresheet openbeach-escoresheet evil"/' "$KIT_DIR/pkgs/install.sh" > "$T/install-extra.sh"
+expect_fail "does not allow exactly the packages" check_install_sh "$T/install-extra.sh" AB469DA8DC3EC90F8057320D285B18D76C16B82C
+sed 's/^DEFAULT_PKG=.*/DEFAULT_PKG=openbeach-escoresheet/' "$KIT_DIR/pkgs/install.sh" > "$T/install-default.sh"
+expect_fail "does not install openvolley-escoresheet by default" check_install_sh "$T/install-default.sh" AB469DA8DC3EC90F8057320D285B18D76C16B82C
+expect_fail "does not pin the APT key" check_install_sh "$KIT_DIR/pkgs/install.sh" 0000000000000000000000000000000000000000
+inst() { sh "$KIT_DIR/pkgs/install.sh" "$@"; }
+expect_fail "unknown package 'openbeach'; this repository has: openvolley-escoresheet openbeach-escoresheet" inst openbeach
+expect_fail "usage: install.sh [openvolley-escoresheet | openbeach-escoresheet]" inst a b
+if [[ "$(id -u)" != 0 ]] && command -v apt-get >/dev/null && [[ "$(dpkg --print-architecture)" == amd64 ]]; then
+  expect_fail "curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s openbeach-escoresheet" inst openbeach-escoresheet
+  out=$(inst 2>&1 || true)
+  [[ "$out" == *"| sudo sh" && "$out" != *" -s "* ]] || bad "install.sh: default package hint: $out"
+  ok "install.sh: the root hint repeats the package name only when it is not the default"
+fi
+
+# The landing page: OpenVolley's sections always, OpenBeach's once published.
+github_setup_exe_url() { echo "https://github.com/Lucanepa/openvolley/releases/download/$1/Setup_x64-setup.exe"; }
+fdroid_index() {
+  node -e '
+    const packages = {}
+    for (const a of process.argv.slice(1)) {
+      const [id, name, code, file] = a.split(",")
+      packages[id] = { versions: { x: { manifest: { versionName: name, versionCode: +code }, file: { name: "/" + file } },
+                                   y: { manifest: { versionName: "0.1", versionCode: 1 }, file: { name: "/old.apk" } } } }
+    }
+    console.log(JSON.stringify({ packages }))' "$@"
+}
+page() { landing_page "$KIT_DIR/pkgs/index.html" "$1" "$2" "$T/index.html"; }
+awk 'BEGIN { RS = ""; ORS = "\n\n" } !/Package: openbeach-escoresheet/' "$T/bPackages" > "$T/ovPackages"
+fdroid_index com.openvolley.escoresheet,2.2.1,22020010,com.openvolley.escoresheet_22020010.apk > "$T/index-ov.json"
+page "$T/ovPackages" "$T/index-ov.json"
+if grep -q 'id="openbeach"' "$T/index.html"; then bad "page: OpenBeach section without any OpenBeach package"; fi
+grep -q 'releases/download/desktop-v2.2.1/Setup_x64-setup.exe' "$T/index.html" || bad "page: OpenVolley Windows link"
+grep -q 'href="/fdroid/repo/com.openvolley.escoresheet_22020010.apk"' "$T/index.html" || bad "page: OpenVolley APK"
+grep -q 'It installs for all users and asks once' "$T/index.html" || bad "page: per-machine block missing for 2.2.1"
+ok "page: OpenVolley only until OpenBeach is published"
+fdroid_index com.openvolley.escoresheet,2.2.1,22020010,ov.apk com.openvolley.beach,2.0.0,20000000,com.openvolley.beach_20000000.apk > "$T/index-both.json"
+page "$T/ovPackages" "$T/index-both.json"
+grep -q 'id="openbeach"' "$T/index.html" && grep -q 'href="/fdroid/repo/com.openvolley.beach_20000000.apk"' "$T/index.html" ||
+  bad "page: OpenBeach Android part"
+if grep -q 'sudo sh -s openbeach-escoresheet' "$T/index.html"; then bad "page: OpenBeach desktop part without its .deb"; fi
+ok "page: OpenBeach's Android part once its APK is published"
+page "$T/bPackages" "$T/index-ov.json"
+grep -q 'sudo sh -s openbeach-escoresheet' "$T/index.html" &&
+  grep -q 'releases/download/beach-desktop-v2.0.1/Setup_x64-setup.exe' "$T/index.html" &&
+  grep -q 'releases/tag/beach-desktop-v2.0.1' "$T/index.html" || bad "page: OpenBeach desktop part"
+if grep -q 'com.openvolley.beach_' "$T/index.html"; then bad "page: OpenBeach Android part without its APK"; fi
+grep -q 'releases/download/desktop-v2.2.1/' "$T/index.html" || bad "page: OpenVolley's version must be its own newest"
+ok "page: OpenBeach's desktop part once its .deb is published; each app its own newest version"
+page "$T/bPackages" "$T/index-both.json"
+if grep -q '@[A-Z_]*@' "$T/index.html"; then bad "page: placeholders left"; fi
+ok "page: both apps, every placeholder filled"
+noov() { fdroid_index com.openvolley.beach,2.0.0,20000000,b.apk > "$T/index-b.json"; page "$T/bPackages" "$T/index-b.json"; }
+expect_fail "need at least one openvolley-escoresheet .deb and one com.openvolley.escoresheet APK" noov
+
 echo "all $PASS checks passed"
