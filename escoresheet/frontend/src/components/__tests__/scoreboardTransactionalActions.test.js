@@ -110,6 +110,22 @@ describe('Scoreboard: one transaction and one screen change per scorer action', 
     expect(handler('syncLiveStateToSupabase')).toContain('liveState: { eventType, cachedSnapshot }')
   })
 
+  it('the libero from the court player menu enters with its lineup in one action', () => {
+    const start = src.indexOf('const handleLiberoSelect = ')
+    expect(start).toBeGreaterThan(-1)
+    const body = src.slice(start, src.indexOf('\n                  return (', start))
+    expect(body).toMatch(/^const handleLiberoSelect = \(libero\) => runAction\('libero', async \(\) => \{/)
+    expect(body).toMatch(/deferUi\(\(\) => \{\s*setPlayerActionMenu\(null\)/)
+    expect(body.indexOf("await logEvent('libero_entry'")).toBeLessThan(body.indexOf("type: 'lineup'"))
+  })
+
+  it('"Libero out" and "Exchange libero" close the player menu with the result, not over the old court', () => {
+    for (const name of ['handleLiberoOut', 'handleExchangeLibero']) {
+      expect(handler(name), name).toMatch(/\(side, closeMenu = null\) => runAction\('libero', async \(\) => \{\s*if \(closeMenu\) deferUi\(closeMenu\)/)
+      expect(src, name).toContain(`onClick={() => ${name}(side, () => {`)
+    }
+  })
+
   it('a decision change sends the swapped point to the tablets (they kept the old team\'s point)', () => {
     const swap = handler('handleDecisionChange').split("} else {\n      // Replay rally")[0]
     expect(swap).toContain("syncLiveStateToSupabase('decision_change'")

@@ -11585,7 +11585,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [liberoReentryModal, data?.events, data?.set?.index])
 
   // Handle libero out
-  const handleLiberoOut = useCallback((side) => runAction('libero', async () => {
+  // closeMenu: the court player menu it was chosen in closes with the result (deferUi)
+  const handleLiberoOut = useCallback((side, closeMenu = null) => runAction('libero', async () => {
+    if (closeMenu) deferUi(closeMenu)
     if (rallyStatus !== 'idle') return
 
     // (runAction holds the event mutex for the whole transaction)
@@ -11963,7 +11965,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [rallyStatus, data?.homePlayers, data?.awayPlayers, getLiberoOnCourt, isLiberoUnable, mapSideToTeamKey, getCurrentServe, getTeamLineupState])
 
   // Handle exchange libero (L1 <-> L2)
-  const handleExchangeLibero = useCallback((side) => runAction('libero', async () => {
+  // closeMenu: the court player menu it was chosen in closes with the result (deferUi)
+  const handleExchangeLibero = useCallback((side, closeMenu = null) => runAction('libero', async () => {
+    if (closeMenu) deferUi(closeMenu)
     if (rallyStatus !== 'idle') return
 
     // (runAction holds the event mutex for the whole transaction)
@@ -23248,12 +23252,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       label: p.libero === 'libero1' ? 'L1' : p.libero === 'redesignated' ? 'LR' : 'L2'
                     }))
 
-                  const handleLiberoSelect = async (libero) => {
-                    // Close menus first
-                    setPlayerActionMenu(null)
-                    setCourtSubExpanded(false)
-                    setCourtLiberoExpanded(false)
-                    setCourtSanctionExpanded(false)
+                  // One action (runAction): the libero entry and its lineup are
+                  // one transaction, so the libero appears on court with its
+                  // "Libero in" (it showed the entry over the old lineup first),
+                  // and the tablets and the livescore get the lineup with the libero
+                  const handleLiberoSelect = (libero) => runAction('libero', async () => {
+                    // The menu closes with the libero on court (deferUi)
+                    deferUi(() => {
+                      setPlayerActionMenu(null)
+                      setCourtSubExpanded(false)
+                      setCourtLiberoExpanded(false)
+                      setCourtSanctionExpanded(false)
+                    })
 
                     // Directly execute libero substitution
                     const liberoType = libero.type
@@ -23319,7 +23329,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       ts: new Date().toISOString(),
                       seq: subEventSeq
                     })
-                  }
+                  })
 
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -23364,13 +23374,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       {/* Libero Out button */}
                       <SbMenuItem
                         tone="libero"
-                        onClick={() => {
+                        onClick={() => handleLiberoOut(side, () => {
                           setPlayerActionMenu(null)
                           setCourtSubExpanded(false)
                           setCourtLiberoExpanded(false)
                           setCourtSanctionExpanded(false)
-                          handleLiberoOut(side)
-                        }}
+                        })}
                         disabled={liberoOutDisabled}
                       >
                         Libero out
@@ -23379,13 +23388,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       {liberos.length >= 2 && (
                         <SbMenuItem
                           tone="libero"
-                          onClick={() => {
+                          onClick={() => handleExchangeLibero(side, () => {
                             setPlayerActionMenu(null)
                             setCourtSubExpanded(false)
                             setCourtLiberoExpanded(false)
                             setCourtSanctionExpanded(false)
-                            handleExchangeLibero(side)
-                          }}
+                          })}
                           disabled={exchangeLiberoDisabled}
                         >
                           Exchange libero
