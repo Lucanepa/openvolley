@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { renderLandingPage, escapeHtml, INDOOR_ROLES, BEACH_ROLES } from '../lib/landingPage.js'
 import { ICONS, icon } from '../lib/icons.js'
+import { BRAND_MARK, brandMark } from '../lib/brandMark.js'
 
 const BASE = 'http://192.168.1.20:8080'
 const withQr = (roles) => roles.map((r) => ({ ...r, url: `${BASE}${r.path}`, svg: '<svg data-qr="1"></svg>' }))
@@ -83,6 +84,26 @@ describe('landing page', () => {
       const firstShape = ICONS[name].slice(ICONS[name].indexOf('>') + 1, ICONS[name].indexOf('/>') + 2)
       assert.ok(html.includes(firstShape), name)
     }
+  })
+})
+
+describe('brand mark', () => {
+  it('heads the page with the OpenVolley ball, inline', () => {
+    const html = render()
+    assert.ok(html.includes(`<div class="title">${brandMark({ size: 32 })}<h1>OpenVolley server</h1></div>`))
+    assert.match(BRAND_MARK, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 512 512">/)
+    assert.equal(BRAND_MARK.match(/<path /g).length, 3)
+    assert.ok(BRAND_MARK.includes('fill="#e2001a"'), 'one red panel group')
+  })
+
+  it('is decorative: sized, hidden from screen readers (the h1 names it)', () => {
+    assert.match(brandMark({ size: 20 }), /^<svg class="brand-mark" width="20" height="20" aria-hidden="true" focusable="false" xmlns=/)
+  })
+
+  it('is generated from the frontend\'s brand/mark.svg', async () => {
+    const { readFile } = await import('node:fs/promises')
+    const svg = await readFile(new URL('../../frontend/brand/mark.svg', import.meta.url), 'utf8')
+    for (const d of BRAND_MARK.match(/ d="[^"]+"/g)) assert.ok(svg.includes(d), 'same paths as brand/mark.svg')
   })
 })
 
