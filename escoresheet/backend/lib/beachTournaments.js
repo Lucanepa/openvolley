@@ -691,6 +691,11 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
         const taken = await client.query('SELECT 1 FROM public.beach_entries WHERE draw_id = $1 AND seed = $2 AND id <> $3', [cur.draw_id, out.seed, id])
         if (taken.rows.length) throw abort(invalid('seed: already taken'))
       }
+      // a pair that is no longer registered gives up its seed
+      if (out.status && out.status !== 'registered' && !keys.includes('seed')) {
+        out.seed = null
+        keys.push('seed')
+      }
       const vals = keys.map((k) => (k === 'player1' || k === 'player2' ? JSON.stringify(out[k]) : out[k]))
       const { rows: [e] } = await client.query(
         `UPDATE public.beach_entries SET ${keys.map((k, i) => `${k} = $${i + 2}`).join(', ')} WHERE id = $1 RETURNING *`, [id, ...vals])
@@ -775,6 +780,8 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
       if (dryRun) return ok(preview)
 
       await client.query('DELETE FROM public.beach_tmatches WHERE draw_id = $1', [id])
+      // only registered pairs keep a seed (a withdrawn one must not hold 1..n)
+      await client.query("UPDATE public.beach_entries SET seed = NULL WHERE draw_id = $1 AND status <> 'registered' AND seed IS NOT NULL", [id])
       for (const [i, e] of entries.entries()) {
         let snap = {}
         if (e.team_id) {
