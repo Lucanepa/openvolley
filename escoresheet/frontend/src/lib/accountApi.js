@@ -4,7 +4,7 @@
  * The server enforces every rule: these calls only carry the request.
  */
 
-import { apiRequest } from './apiClient'
+import { apiRequest, apiDownload } from './apiClient'
 
 const enc = encodeURIComponent
 
@@ -57,6 +57,23 @@ export const OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS = 3500
 // sends 'beach'); left out, the server answers as before (OpenVolley's console).
 
 export const admin = {
+  /** The activity log (db/016): filters match (game no. or external id), account (id), kind (prefix), level, from, to, app, before, limit. */
+  listActivity({ match, account, kind, level, from, to, app, before, limit } = {}) {
+    return apiRequest('GET', `/api/admin/activity${query({ match, account, kind, level, from, to, app, before, limit })}`)
+  },
+  /** CSV / NDJSON of the same filters (at most 50,000 rows). */
+  exportActivity({ format = 'csv', ...filters } = {}) {
+    const { match, account, kind, level, from, to, app } = filters
+    return apiDownload(`/api/admin/activity/export${query({ match, account, kind, level, from, to, app, format })}`)
+  },
+  /** Delete on request: every entry of a match or an account (audited). */
+  deleteActivity({ match, account } = {}) {
+    return apiRequest('DELETE', `/api/admin/activity${query({ match, account, confirm: 'yes' })}`)
+  },
+  /** Undone / deleted / edited events of a match (db/015). */
+  listRevisions(matchId) {
+    return apiRequest('GET', `/api/admin/matches/${enc(matchId)}/revisions`)
+  },
   listAccounts({ filter = 'pending', q, limit, app } = {}) {
     return apiRequest('GET', `/api/admin/accounts${query({ filter, q, limit, app })}`)
   },

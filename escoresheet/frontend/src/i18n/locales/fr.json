@@ -2384,7 +2384,8 @@
       "matches": "Matchs clôturés",
       "audit": "Journal",
       "teams": "Équipes enregistrées",
-      "tournaments": "Tournois"
+      "tournaments": "Tournois",
+      "activity": "Activité"
     },
     "status": {
       "setup": "Préparation",
@@ -2476,7 +2477,9 @@
       "reopenBody": "Le match repasse à « terminé » : le marqueur peut le corriger et l’approuver à nouveau. Ceci est consigné dans le journal.",
       "reopenReason": "Motif",
       "reopened": "Match rouvert.",
-      "empty": "Aucun match trouvé."
+      "empty": "Aucun match trouvé.",
+      "activity": "Activité",
+      "corrections": "Corrections"
     },
     "audit": {
       "loadMore": "Charger plus",
@@ -2539,6 +2542,73 @@
       "requestedBy": "Envoyée par {{name}}",
       "wrongPins": "{{failures}} PIN erronés",
       "blocked": "bloqué"
+    },
+    "activity": {
+      "match": "N° de match ou id",
+      "matchPlaceholder": "p. ex. 12345",
+      "account": "E-mail du compte",
+      "kind": "Quoi",
+      "allKinds": "Tout",
+      "level": "Niveau",
+      "allLevels": "Tous les niveaux",
+      "from": "Du",
+      "to": "Au",
+      "search": "Rechercher",
+      "empty": "Aucune activité pour cette recherche.",
+      "loadMore": "Charger plus",
+      "exportCsv": "Exporter en CSV",
+      "exportNdjson": "Exporter en NDJSON",
+      "deleteEllipsis": "Supprimer l’activité…",
+      "deleteNeedsFilter": "Recherche d’abord un match ou un compte.",
+      "deleteTitle": "Supprimer cette activité ?",
+      "deleteBody": "Toutes les entrées d’activité {{what}} sont supprimées définitivement du serveur. Pour une demande de suppression. C’est consigné dans le journal d’audit.",
+      "ofMatch": "du match {{match}}",
+      "ofAccount": "de {{email}}",
+      "delete": "Supprimer",
+      "deleted_one": "{{count}} entrée supprimée.",
+      "deleted_other": "{{count}} entrées supprimées.",
+      "noAccount": "Aucun compte avec cet e-mail.",
+      "device": "Appareil {{id}}",
+      "levels": {
+        "info": "Info",
+        "warn": "Avertissement",
+        "error": "Erreur"
+      },
+      "kinds": {
+        "event": "Événements",
+        "event_undo": "Annulations",
+        "set": "Sets",
+        "match": "Match",
+        "match_manual_change": "Modifications manuelles",
+        "sync": "Synchronisation",
+        "app": "App",
+        "app_error": "Erreurs de l’app",
+        "auth": "Connexion",
+        "backup": "Sauvegardes"
+      }
+    },
+    "revisions": {
+      "title": "Corrections · match {{game}}",
+      "description": "Événements annulés, supprimés et modifiés, tels que l’appareil de saisie les a envoyés.",
+      "empty": "Aucune correction dans ce match.",
+      "notOnServer": "(annulé avant l’envoi)",
+      "before": "Avant",
+      "after": "Après",
+      "ops": {
+        "void": "Retiré",
+        "edit": "Modifié",
+        "restore": "Rétabli"
+      },
+      "reasons": {
+        "undo": "Annulation",
+        "delete": "Supprimé",
+        "decision_change": "Changement de décision",
+        "manual_adjustment": "Ajustement manuel",
+        "forfeit_reversal": "Forfait annulé",
+        "reopen_set": "Set rouvert",
+        "roster_reopen": "Liste corrigée",
+        "other": "Autre"
+      }
     }
   },
   "savedTeams": {

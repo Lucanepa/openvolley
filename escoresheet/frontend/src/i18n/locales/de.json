@@ -2369,7 +2369,8 @@
       "matches": "Abgeschlossene Spiele",
       "audit": "Protokoll",
       "teams": "Gespeicherte Teams",
-      "tournaments": "Turniere"
+      "tournaments": "Turniere",
+      "activity": "Aktivität"
     },
     "status": {
       "setup": "Vorbereitung",
@@ -2461,7 +2462,9 @@
       "reopenBody": "Das Spiel geht zurück auf «beendet»: Der Schreiber kann es korrigieren und nochmals genehmigen. Dies wird im Protokoll festgehalten.",
       "reopenReason": "Grund",
       "reopened": "Spiel wieder geöffnet.",
-      "empty": "Keine Spiele gefunden."
+      "empty": "Keine Spiele gefunden.",
+      "activity": "Aktivität",
+      "corrections": "Korrekturen"
     },
     "audit": {
       "loadMore": "Mehr laden",
@@ -2524,6 +2527,73 @@
       "requestedBy": "Gesendet von {{name}}",
       "wrongPins": "{{failures}} falsche PINs",
       "blocked": "gesperrt"
+    },
+    "activity": {
+      "match": "Spielnr. oder Spiel-ID",
+      "matchPlaceholder": "z. B. 12345",
+      "account": "Konto-E-Mail",
+      "kind": "Was",
+      "allKinds": "Alles",
+      "level": "Stufe",
+      "allLevels": "Alle Stufen",
+      "from": "Von",
+      "to": "Bis",
+      "search": "Suchen",
+      "empty": "Keine Aktivität für diese Suche.",
+      "loadMore": "Mehr laden",
+      "exportCsv": "CSV exportieren",
+      "exportNdjson": "NDJSON exportieren",
+      "deleteEllipsis": "Aktivität löschen…",
+      "deleteNeedsFilter": "Zuerst nach einem Spiel oder Konto suchen.",
+      "deleteTitle": "Diese Aktivität löschen?",
+      "deleteBody": "Alle Aktivitätseinträge {{what}} werden endgültig vom Server gelöscht. Für ein Löschgesuch. Es wird im Audit-Protokoll vermerkt.",
+      "ofMatch": "des Spiels {{match}}",
+      "ofAccount": "von {{email}}",
+      "delete": "Löschen",
+      "deleted_one": "{{count}} Eintrag gelöscht.",
+      "deleted_other": "{{count}} Einträge gelöscht.",
+      "noAccount": "Kein Konto mit dieser E-Mail.",
+      "device": "Gerät {{id}}",
+      "levels": {
+        "info": "Info",
+        "warn": "Warnung",
+        "error": "Fehler"
+      },
+      "kinds": {
+        "event": "Ereignisse",
+        "event_undo": "Rückgängig",
+        "set": "Sätze",
+        "match": "Spiel",
+        "match_manual_change": "Manuelle Änderungen",
+        "sync": "Synchronisierung",
+        "app": "App",
+        "app_error": "App-Fehler",
+        "auth": "Anmeldung",
+        "backup": "Sicherungen"
+      }
+    },
+    "revisions": {
+      "title": "Korrekturen · Spiel {{game}}",
+      "description": "Rückgängig gemachte, gelöschte und geänderte Ereignisse, wie das Erfassungsgerät sie gesendet hat.",
+      "empty": "Keine Korrekturen in diesem Spiel.",
+      "notOnServer": "(rückgängig gemacht, bevor es hochgeladen war)",
+      "before": "Vorher",
+      "after": "Nachher",
+      "ops": {
+        "void": "Entfernt",
+        "edit": "Geändert",
+        "restore": "Wiederhergestellt"
+      },
+      "reasons": {
+        "undo": "Rückgängig",
+        "delete": "Gelöscht",
+        "decision_change": "Entscheidungsänderung",
+        "manual_adjustment": "Manuelle Anpassung",
+        "forfeit_reversal": "Forfait aufgehoben",
+        "reopen_set": "Satz wieder geöffnet",
+        "roster_reopen": "Aufstellung korrigiert",
+        "other": "Andere"
+      }
     }
   },
   "savedTeams": {

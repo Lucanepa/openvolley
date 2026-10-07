@@ -288,6 +288,29 @@ export async function apiRequest(method, path, body, { timeoutMs = DB_REQUEST_TI
 }
 
 /**
+ * GET a file from a cloud endpoint with the session's token (the admin's
+ * activity export). Resolves { blob, filename } or { error }.
+ */
+export async function apiDownload(path, { timeoutMs = 120000 } = {}) {
+  const apiUrl = getCloudApiUrl(path)
+  if (!apiUrl) return { error: { message: 'Backend not available', status: 0, network: true } }
+  let response
+  try {
+    response = await fetch(apiUrl, { method: 'GET', headers: getAuthHeaders(), signal: requestTimeoutSignal(timeoutMs) })
+  } catch (err) {
+    return { error: networkError(err) }
+  }
+  if (!response.ok) {
+    let body = null
+    try { body = await response.json() } catch { /* not JSON */ }
+    return { error: normalizeError(body?.error, response.status, 'Download failed') }
+  }
+  const disposition = response.headers?.get?.('Content-Disposition') || ''
+  const filename = /filename="([^"]+)"/.exec(disposition)?.[1] || null
+  return { blob: await response.blob(), filename }
+}
+
+/**
  * Restore one match in the cloud in a single server-side transaction:
  * upsert the match by external_id, replace its sets, events and live state.
  * Needs a session. 426 / 429 / 5xx / network errors are worth retrying later.
