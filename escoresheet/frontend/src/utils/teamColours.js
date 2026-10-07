@@ -360,6 +360,8 @@ export function matchDiscPaint(homeColour, awayColour, { homeLibero = null, away
 
 // The white header and panels the team name boxes sit on
 export const HEADER_SURFACE = '#ffffff'
+// The stone page under the panels (--ov-page, src/tailwind.css)
+export const PAGE_SURFACE = '#f5f5f4'
 
 /**
  * Inline style for a box filled with a team colour that shows a team name,
@@ -385,6 +387,127 @@ export function teamBoxStyle(colour, { fallback = null, surface = HEADER_SURFACE
   return ring
     ? { background, color: readableTextOn(background), boxShadow: `inset 0 0 0 ${ringWidth}px ${ring}` }
     : { background, color: readableTextOn(background) }
+}
+
+/** sRGB '#rrggbb' from OKLab, or null when it falls outside the sRGB gamut */
+function fromOklab(L, a, b) {
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3
+  const s = (L - 0.0894841775 * a - 1.2914855480 * b) ** 3
+  const lin = [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
+  ]
+  if (lin.some(v => v < -1e-4 || v > 1 + 1e-4)) return null
+  const enc = (v) => {
+    const c = Math.max(0, Math.min(1, v))
+    return clamp255(255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055))
+  }
+  return '#' + lin.map(v => enc(v).toString(16).padStart(2, '0')).join('')
+}
+
+/** The colour at OKLab lightness L with the same hue and as much of its chroma as sRGB allows */
+function atLightness(L, a, b) {
+  const full = fromOklab(L, a, b)
+  if (full) return full
+  let lo = 0
+  let hi = 1
+  let best = fromOklab(L, 0, 0)
+  for (let i = 0; i < 20; i++) {
+    const t = (lo + hi) / 2
+    const c = fromOklab(L, a * t, b * t)
+    if (c) { best = c; lo = t } else hi = t
+  }
+  return best
+}
+
+// A team colour this light and this grey is "white" (white, off-white, cream):
+// a darker shade of it would read as a grey team, so it gets a swatch instead.
+// On a dark background the same goes for black and near-black.
+const NEAR_WHITE_L = 0.93
+const NEAR_BLACK_L = 0.3
+const NEAR_NEUTRAL_CHROMA = 0.06
+
+/**
+ * How to write text in a team's colour on `background` so it stays readable
+ * (WCAG large-text 3:1) and still says which team it is:
+ * - 'as-is': the team colour already reaches 3:1 and is used unchanged;
+ * - 'shade': a darker (on a dark background, lighter) shade of the same hue,
+ *   OKLab lightness moved just until it reaches 3:1, chroma kept as far as
+ *   sRGB allows: yellow turns ochre, sky a deeper blue, light grey mid grey;
+ * - 'swatch': a white or near-white team (near-black on a dark background),
+ *   where a shade would read as a grey team: near-black (white) text on a
+ *   small chip of the team colour, ringed (discRing) so the chip shows.
+ * @param {string|null} colour the team colour
+ * @param {string} [background] what the text sits on (default white)
+ * @param {object} [opts]
+ * @param {number} [opts.minContrast] default MIN_LARGE_TEXT_CONTRAST (3)
+ * @returns {{ mode: 'as-is'|'shade'|'swatch', color: string, swatch: string|null, ring: string|null, contrast: number } | null} null when `colour` is not a readable colour
+ */
+export function teamTextPaint(colour, background = HEADER_SURFACE, { minContrast = MIN_LARGE_TEXT_CONTRAST } = {}) {
+  const team = normaliseColour(colour)
+  if (!team) return null
+  const bg = normaliseColour(background) ?? HEADER_SURFACE
+  const contrast = contrastRatio(team, bg)
+  if (contrast >= minContrast) return { mode: 'as-is', color: team, swatch: null, ring: null, contrast }
+
+  const lab = toOklab(team)
+  const bgIsLight = relativeLuminance(bg) > 0.18
+  const chroma = Math.hypot(lab.a, lab.b)
+  const blendsIn = bgIsLight ? lab.L >= NEAR_WHITE_L : lab.L <= NEAR_BLACK_L
+  if (blendsIn && chroma < NEAR_NEUTRAL_CHROMA) {
+    const color = readableTextOn(team)
+    return { mode: 'swatch', color, swatch: team, ring: discRing(team, bg), contrast: contrastRatio(team, color) }
+  }
+
+  // The lightness that just reaches minContrast: contrast grows as L moves
+  // away from the background, so bisect between the team's own L and black
+  // (white on a dark background)
+  const passes = (L) => {
+    const c = atLightness(L, lab.a, lab.b)
+    return contrastRatio(c, bg) >= minContrast ? c : null
+  }
+  let near = lab.L
+  let far = bgIsLight ? 0 : 1
+  let best = passes(far) ?? (bgIsLight ? TEXT_DARK : TEXT_LIGHT)
+  for (let i = 0; i < 24; i++) {
+    const mid = (near + far) / 2
+    const c = passes(mid)
+    if (c) { best = c; far = mid } else near = mid
+  }
+  return { mode: 'shade', color: best, swatch: null, ring: null, contrast: contrastRatio(best, bg) }
+}
+
+/**
+ * Inline style for TEXT drawn in a team's colour (a set-end A/B letter, a
+ * score in the team colour) on `background`: the team colour when it reads
+ * (≥ 3:1), else a darker shade of the same hue, and for a white team
+ * near-black text on a small white chip with a grey ring (teamTextPaint).
+ * A colour that can't be read (a CSS variable...) is passed through as is; a
+ * missing one falls back to `fallback`, or to no style at all.
+ * @param {string|null} colour the team colour
+ * @param {string} [background] what the text sits on (default white)
+ * @param {object} [opts]
+ * @param {string} [opts.fallback] colour used when `colour` is missing or unusable
+ * @param {number} [opts.minContrast]
+ * @returns {{ color?: string, background?: string, boxShadow?: string, padding?: string, borderRadius?: string }}
+ */
+export function teamTextStyle(colour, background = HEADER_SURFACE, { fallback = null, minContrast = MIN_LARGE_TEXT_CONTRAST } = {}) {
+  const usable = normaliseColour(colour) ? colour : (normaliseColour(fallback) ? fallback : null)
+  const paint = teamTextPaint(usable, background, { minContrast })
+  if (!paint) {
+    const raw = typeof colour === 'string' && colour.trim() ? colour : (typeof fallback === 'string' && fallback.trim() ? fallback : null)
+    return raw ? { color: raw } : {}
+  }
+  if (paint.mode !== 'swatch') return { color: paint.color }
+  return {
+    color: paint.color,
+    background: paint.swatch,
+    padding: '0 0.3em',
+    borderRadius: '0.25em',
+    ...(paint.ring ? { boxShadow: `inset 0 0 0 1.5px ${paint.ring}` } : {})
+  }
 }
 
 /**
