@@ -7,10 +7,14 @@ import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   pickLang, authLink, renderMail, maskEmail, mailerFromEnv, createMailer, transportOptions,
-  inboxKey, describeMailError, disabledMailer, mailApp, brandFrom, beachManagerBase,
+  inboxKey, describeMailError, disabledMailer, mailApp, mailBrandOf, brandFrom, beachManagerBase,
   MAIL_LANGS, MAIL_KINDS, MAIL_APPS, MAIL_BRANDS, DEFAULT_MANAGER_URL, DEFAULT_MANAGER_URL_BEACH, DEFAULT_BUDGETS, DEFAULT_MAX_PER_INBOX
 } from '../lib/mailer.js'
 import { startFakeSmtp, makeTestCert, linkToken, SMTP_USER, SMTP_PASS } from './helpers/fakeSmtp.js'
+
+// The account mails come in both brands; the approval notices are OpenVolley's only
+const APPROVAL_KINDS = ['approval', 'approval_pin_locked']
+const ACCOUNT_KINDS = MAIL_KINDS.filter((k) => !APPROVAL_KINDS.includes(k))
 
 const TOKEN = 'A'.repeat(20) + '_-' + 'b'.repeat(21)
 const silent = { log() {}, warn() {}, error() {} }
@@ -65,6 +69,25 @@ describe('mailer: links and templates', () => {
     assert.equal(renderMail('reset', 'xx', { link }).subject, renderMail('reset', 'en', { link }).subject)
     assert.throws(() => renderMail('reset', 'en', {}), /needs a link/)
     assert.throws(() => renderMail('spam', 'en', { link }), /unknown mail kind/)
+  })
+
+  it('approval notices: the values on one line, escaped in HTML, in every language', () => {
+    const vars = { slot: 'referee1', game: '#12 Home – Away', result: '25:20, 23:25', id: '6F1C2A9B', time: '07.10.2026 19:42', sender: 'Olga <b>Owner</b>\r\nBcc: evil@example.test' }
+    for (const lang of MAIL_LANGS) {
+      const m = renderMail('approval', lang, { link: DEFAULT_MANAGER_URL, vars })
+      assert.ok(m.subject.includes('#12 Home – Away'), lang)
+      assert.doesNotMatch(m.subject, /[\r\n]/)
+      for (const v of ['25:20, 23:25', '6F1C2A9B', '07.10.2026 19:42']) assert.ok(m.text.includes(v), `${lang}: ${v}`)
+      assert.ok(m.text.includes('Olga <b>Owner</b> Bcc: evil@example.test'), 'one line')
+      assert.ok(m.html.includes('Olga &lt;b&gt;Owner&lt;/b&gt;'), 'escaped')
+      assert.ok(!m.html.includes('<b>Owner'))
+      const locked = renderMail('approval_pin_locked', lang, { link: DEFAULT_MANAGER_URL, vars: { game: '#12 A – B', until: '07.10.2026 20:00', disabled: false } })
+      const blocked = renderMail('approval_pin_locked', lang, { link: DEFAULT_MANAGER_URL, vars: { game: '#12 A – B', until: '', disabled: true } })
+      assert.ok(locked.text.includes('07.10.2026 20:00'), lang)
+      assert.notEqual(locked.subject, blocked.subject)
+    }
+    assert.ok(renderMail('approval', 'en', { link: DEFAULT_MANAGER_URL, vars }).text.includes('as 1st referee'))
+    assert.ok(!renderMail('approval', 'en', { link: DEFAULT_MANAGER_URL, vars: { ...vars, sender: '' } }).text.includes('Sent by'))
   })
 
   it('escapes the link in HTML', () => {
@@ -248,8 +271,8 @@ describe('mailer: budgets and the per-inbox cap (stub transport)', () => {
   }
   const link = 'https://x.test/#t?token=t'
 
-  it('defaults: 50 + 50 per hour (100 in total, as before), 5 per inbox', () => {
-    assert.deepEqual({ ...DEFAULT_BUDGETS }, { account: 50, confirm: 50 })
+  it('defaults: 50 + 50 per hour (100 in total, as before), 100 approval notices, 5 per inbox', () => {
+    assert.deepEqual({ ...DEFAULT_BUDGETS }, { account: 50, confirm: 50, notify: 100 })
     assert.equal(DEFAULT_MAX_PER_INBOX, 5)
     const m = createMailer({ ...stub(), from: 'x <x@example.test>', logger: silent })
     const st = m.stats()
@@ -333,7 +356,7 @@ describe('mailer: brands (OpenVolley / OpenBeach)', () => {
 
   it('OpenBeach mails: its name everywhere, its own subjects, the shared-password note on reset and password_changed', () => {
     const subjects = new Set()
-    for (const kind of MAIL_KINDS) {
+    for (const kind of ACCOUNT_KINDS) {
       for (const lang of MAIL_LANGS) {
         const m = renderMail(kind, lang, { link, app: 'beach' })
         const indoor = renderMail(kind, lang, { link })
@@ -358,6 +381,19 @@ describe('mailer: brands (OpenVolley / OpenBeach)', () => {
       }
     }
     assert.ok(renderMail('reset', 'en', { link, app: 'beach' }).text.includes('This changes the password of your account for OpenVolley and OpenBeach.'))
+  })
+
+  it('the approval notices are OpenVolley\'s only: app beach changes nothing', () => {
+    const vars = { slot: 'referee1', game: '#12 Home – Away', result: '25:20, 25:18, 25:22', id: '6F1C2A9B', time: '01.10.2026 20:15', sender: '', until: '', disabled: true }
+    for (const kind of APPROVAL_KINDS) {
+      assert.equal(mailBrandOf(kind, 'beach'), 'indoor')
+      for (const lang of MAIL_LANGS) {
+        const m = renderMail(kind, lang, { link, app: 'beach', vars })
+        assert.deepEqual(m, renderMail(kind, lang, { link, vars }), `${kind}/${lang}`)
+        assert.doesNotMatch(m.text + m.html + m.subject, /OpenBeach/)
+      }
+    }
+    for (const kind of ACCOUNT_KINDS) assert.equal(mailBrandOf(kind, 'beach'), 'beach')
   })
 
   it('send(): the OpenBeach sender for app beach, OpenVolley otherwise; links per brand', async () => {

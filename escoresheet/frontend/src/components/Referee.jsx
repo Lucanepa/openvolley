@@ -26,7 +26,10 @@ import { NarrowScreenOverlay } from './dashboards/EntryKit.jsx'
 import { lastEventFromLiveState, lastEventFromMatchData, pickNewerLastEvent } from '../utils/refereeLastEvent.js'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
 import PlayerDisc from './referee/PlayerDisc.jsx'
-import { discCapPx } from './referee/discSizing.js'
+import { matchDiscPaint, teamLiberoColour, teamBoxStyle } from '../utils/teamColours.js'
+import { discCapPx, discMetrics } from './referee/discSizing.js'
+import { isWideLayout, screenFit, SIDE_PANEL_CSS, REFEREE_LAYOUT } from './referee/refereeLayout.js'
+import { layoutReception, pointToFormation } from './referee/receptionLayout.js'
 import { BRAND } from '../brand'
 
 // Get current version from package.json (injected by Vite at build time)
@@ -201,8 +204,11 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 400)
   const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 700)
 
-  // Container width refs for adaptive text sizing
-  const section2AContainerRef = useRef(null)
+  // Container width for adaptive team-name sizing. A callback ref (state), so
+  // the observer attaches when the row mounts after the match has loaded; a
+  // mount-time effect ran during the loading screen, never observed, and left
+  // the width at 150 px: on a phone the names were cut to "V…" / "K…".
+  const [section2AContainerEl, section2AContainerRef] = useState(null)
   const [section2AWidth, setSection2AWidth] = useState(150)
 
   // Modal states (from Scoreboard actions)
@@ -231,6 +237,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   // Dragging state for player repositioning
   const [draggingPlayer, setDraggingPlayer] = useState(null) // { side: 'left'|'right', position: 'I'-'VI' }
   const courtRef = useRef({ left: null, right: null })
+  // The court box (size container of the discs), measured: the "screen too
+  // small" rule and the reception formation layout work from its real size.
+  const [courtBoxEl, setCourtBoxEl] = useState(null)
+  const [courtBox, setCourtBox] = useState(null) // { width, height } content box, px
 
   // Timer ref for auto-revert to standard mode
   const receptionModeTimerRef = useRef({ left: null, right: null })
@@ -278,6 +288,17 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
+
+  // Measure the court box (content box, as the discs' cqw / cqh see it)
+  useEffect(() => {
+    if (!courtBoxEl || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect
+      setCourtBox(prev => (prev && Math.abs(prev.width - width) < 0.5 && Math.abs(prev.height - height) < 0.5) ? prev : { width, height })
+    })
+    ro.observe(courtBoxEl)
+    return () => ro.disconnect()
+  }, [courtBoxEl])
 
   // Request wake lock to prevent screen from sleeping
   useEffect(() => {
@@ -1156,13 +1177,14 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
 
-    // Convert to percentage
-    const leftPercent = (x / rect.width) * 100
-    const topPercent = (y / rect.height) * 100
+    // To formation percentages (top: from the net, left: across the court
+    // seen from behind the end line), the coordinates the court draws from.
+    // Saving the raw x / y put the disc somewhere else than where it was dropped.
+    const spot = pointToFormation({ x, y }, side, rect.width, rect.height)
 
     // Clamp values to court bounds
-    const clampedLeft = Math.max(5, Math.min(95, leftPercent))
-    const clampedTop = Math.max(5, Math.min(95, topPercent))
+    const clampedLeft = Math.max(5, Math.min(95, spot.left))
+    const clampedTop = Math.max(5, Math.min(95, spot.top))
 
     const setIndex = data?.currentSet?.index || 1
 
@@ -1401,6 +1423,13 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const rightServing = getCurrentServe === rightTeam
   const leftColor = leftTeamData?.color || (leftTeam === 'home' ? '#ef4444' : '#3b82f6')
   const rightColor = rightTeamData?.color || (rightTeam === 'home' ? '#ef4444' : '#3b82f6')
+  // Player discs in the shirt colours (null when the match has no colour for
+  // a team: those discs keep the neutral grey / navy look)
+  // (the two liberos picked together, so they never match)
+  const discPaintByTeam = matchDiscPaint(data?.homeTeam?.color, data?.awayTeam?.color, {
+    homeLibero: teamLiberoColour(data?.homeTeam),
+    awayLibero: teamLiberoColour(data?.awayTeam)
+  })
 
   // Compute team name texts for adaptive sizing
   const leftShortName = (leftTeam === 'home' ? data?.match?.homeShortName : data?.match?.awayShortName) || leftTeamData?.name || 'Team'
@@ -1408,18 +1437,14 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   // Resize observer for adaptive text container widths
   useEffect(() => {
-    const updateWidths = () => {
-      if (section2AContainerRef.current) {
-        setSection2AWidth(section2AContainerRef.current.clientWidth)
-      }
-    }
+    if (!section2AContainerEl) return
+    const updateWidths = () => setSection2AWidth(section2AContainerEl.clientWidth)
     updateWidths()
-
+    if (typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(updateWidths)
-    if (section2AContainerRef.current) observer.observe(section2AContainerRef.current)
-
+    observer.observe(section2AContainerEl)
     return () => observer.disconnect()
-  }, [])
+  }, [section2AContainerEl])
 
   // Synced font sizes for paired team names (SECTION 2A)
   const section2AFontSize = useSyncedFontSize([leftShortName, rightShortName], section2AWidth, 28, 14, true)
@@ -1636,17 +1661,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       (String(e.payload?.player) === String(playerNumber) || String(e.payload?.playerNumber) === String(playerNumber))
     )
   }, [data?.events])
-
-  // Helper to determine if a color is bright
-  const isBrightColor = (color) => {
-    if (!color) return false
-    const hex = color.replace('#', '')
-    const r = parseInt(hex.substr(0, 2), 16)
-    const g = parseInt(hex.substr(2, 2), 16)
-    const b = parseInt(hex.substr(4, 2), 16)
-    const brightness = (r * 299 + g * 587 + b * 114) / 1000
-    return brightness > 155
-  }
 
   // Get setter position (P1-P6) based on current lineup
   const getSetterPosition = useCallback((lineup, setterNum) => {
@@ -2026,7 +2040,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         height: '100dvh', // Use dynamic viewport height (respects iOS browser chrome)
         maxHeight: '100dvh',
         width: '100vw',
-        maxWidth: '800px',
+        maxWidth: `${REFEREE_LAYOUT.maxWidth}px`,
         margin: '0 auto',
         background: 'var(--bg)',
         color: 'var(--text)',
@@ -2405,14 +2419,23 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       ? (isCaptain ? 'LC' : isCourtCaptain ? 'LGC' : null)
       : (isCaptain ? 'C' : isCourtCaptain ? 'GC' : null)
 
+    // Shirt colours: the team's for players, the most contrasting one for
+    // the libero (utils/teamColours.js); the orange flash wins while it runs
+    const paint = discPaintByTeam[team]?.[isLibero ? 'libero' : 'player'] || null
+    const background = isRecentlySub ? '#fdba74'
+      : paint ? paint.background
+        : isLibero ? '#FFF8E7' : (team === leftTeam ? 'rgba(65, 66, 68, 0.9)' : 'rgba(12, 14, 100, 0.7)')
+
     return (
       <PlayerDisc
         number={number}
         position={position}
         capPx={discCapPx(vmin)}
         side={team === leftTeam ? 'left' : 'right'}
-        background={isRecentlySub ? '#fdba74' : isLibero ? '#FFF8E7' : (team === leftTeam ? 'rgba(65, 66, 68, 0.9)' : 'rgba(12, 14, 100, 0.7)')}
-        color={isRecentlySub || isLibero ? '#000' : '#fff'}
+        background={background}
+        color={isRecentlySub ? '#000' : paint ? paint.color : isLibero ? '#000' : '#fff'}
+        textShadow={!isRecentlySub ? paint?.textShadow : undefined}
+        ring={!isRecentlySub ? paint?.ring : null}
         flash={isRecentlySub}
         showBall={!!shouldShowBall}
         replacedNumber={topRightBadge}
@@ -2448,7 +2471,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         height: '100dvh', // Use dynamic viewport height (respects iOS browser chrome)
         maxHeight: '100dvh',
         width: '100vw',
-        maxWidth: '800px',
+        maxWidth: `${REFEREE_LAYOUT.maxWidth}px`,
         margin: '0 auto',
         background: 'var(--bg)',
         color: 'var(--text)',
@@ -2491,12 +2514,59 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     )
   }
 
+  // Landscape screens: TO / SUB and sanctions beside the court, so the court
+  // gets the height (refereeLayout.js). Portrait keeps the stacked column.
+  const wide = isWideLayout(viewportWidth, viewportHeight)
+  const fit = screenFit({ viewportWidth, courtWidth: courtBox?.width, courtHeight: courtBox?.height })
+  // side panels sit on the court's page colour, like the court slot between them
+  const sideCell = { alignSelf: 'stretch', minHeight: 0 }
+
+  // Reception formation: disc centres in px inside the half, shrunk and pushed
+  // apart so that no two discs overlap (receptionLayout.js)
+  const receptionPlacement = (side, formation) => {
+    if (!courtBox || !courtBox.width || !courtBox.height) return null
+    const disc = discMetrics({ courtWidth: courtBox.width, courtHeight: courtBox.height, capPx: discCapPx(vmin), lfp: lfpTrackingEnabled }).disc
+    return layoutReception({ formation, side, width: courtBox.width / 2, height: courtBox.height, disc })
+  }
+
+  // Standard / reception formation switch: in the row above the court, beside
+  // the setter button (on the court it covered disc I)
+  const receptionToggle = (side) => {
+    const on = receptionMode[side] === 'reception'
+    const label = on ? t('refereeDashboard.switchToStandard') : t('refereeDashboard.switchToReception')
+    return (
+      <button
+        type="button"
+        onClick={() => toggleReceptionMode(side)}
+        title={label}
+        aria-label={label}
+        aria-pressed={on}
+        className="relative before:absolute before:-inset-x-2 before:-inset-y-3 before:content-['']"
+        style={{
+          padding: '4px 8px',
+          fontSize: '11px',
+          fontWeight: 600,
+          background: on ? 'rgba(139, 92, 246, 0.12)' : 'var(--ov-card)',
+          color: on ? '#6d28d9' : 'var(--ov-text-secondary)',
+          border: on ? '1px solid #8b5cf6' : '1px solid var(--ov-hairline)',
+          borderRadius: '6px',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          lineHeight: 1
+        }}
+      >
+        <RefreshIcon size={12} />
+      </button>
+    )
+  }
+
   return (
     <div style={{
       height: '100dvh', // Use dynamic viewport height (respects iOS browser chrome)
       maxHeight: '100dvh',
       width: '100vw',
-      maxWidth: '800px',
+      maxWidth: `${REFEREE_LAYOUT.maxWidth}px`,
       margin: '0 auto',
       background: 'var(--bg)',
       color: 'var(--text)',
@@ -2523,7 +2593,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         </div>
       )}
       {/* Narrow screen blocking overlay */}
-      {(viewportWidth < 357 || viewportHeight < 650) && <NarrowScreenOverlay t={t} />}
+      {!fit.fits && <NarrowScreenOverlay t={t} reason={fit.reason} />}
 
       {/* Debug overlay - triple-tap to show */}
       {!isMasterMode && <WsDebugOverlay matchId={matchId} />}
@@ -2695,19 +2765,24 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        minHeight: 0
+        minHeight: 0,
+        ...(wide ? {
+          display: 'grid',
+          gridTemplateColumns: `${SIDE_PANEL_CSS} minmax(0, 1fr) ${SIDE_PANEL_CSS}`,
+          gridTemplateRows: 'minmax(10%, auto) minmax(15%, auto) auto minmax(0, 1fr) auto 40px',
+          gridTemplateAreas: '"set set set" "score score score" "lcnt court rcnt" "lsan court rsan" "lsan center rsan" "foot foot foot"'
+        } : {})
       }}>
 
         {/* SECTION 2A: Set Counter Row - 8% */}
-        <div style={{ flex: '0 0 10%', padding: 'clamp(4px, 1vw, 8px) clamp(8px, 2vw, 16px)', background: 'var(--panel-2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', width: '100%', minHeight: 0, overflow: 'hidden' }}>
+        <div style={{ gridArea: 'set', flex: '0 0 10%', padding: 'clamp(4px, 1vw, 8px) clamp(8px, 2vw, 16px)', background: 'var(--panel-2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', width: '100%', minHeight: 0, overflow: 'hidden' }}>
           {/* Left: Team Name (centered in its space) + A/B */}
           <div style={{ flex: '1 1 0', display: 'flex', alignItems: 'center', gap: 'clamp(6px, 1.5vw, 12px)', minWidth: 0 }}>
             <div ref={section2AContainerRef} style={{ flex: '1 1 0', display: 'flex', justifyContent: 'center', minWidth: 0, overflow: 'hidden' }}>
               <div style={{
                 fontSize: `${section2AFontSize.fontSize}px`,
                 fontWeight: 700,
-                background: leftColor,
-                color: isBrightColor(leftColor) ? '#000' : '#fff',
+                ...teamBoxStyle(leftColor),
                 padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)',
                 borderRadius: '6px',
                 whiteSpace: 'nowrap',
@@ -2718,7 +2793,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 {leftShortName}
               </div>
             </div>
-            <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)', background: leftColor, color: isBrightColor(leftColor) ? '#000' : '#fff', borderRadius: '6px', fontSize: 'clamp(18px, 4.5vw, 32px)', fontWeight: 800, flexShrink: 0 }}>{leftLabel}</div>
+            <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)', ...teamBoxStyle(leftColor), borderRadius: '6px', fontSize: 'clamp(18px, 4.5vw, 32px)', fontWeight: 800, flexShrink: 0 }}>{leftLabel}</div>
           </div>
 
           {/* Center: Set scores + SET n */}
@@ -2740,14 +2815,13 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
           {/* Right: A/B + Team Name (centered in its space) */}
           <div style={{ flex: '1 1 0', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 'clamp(6px, 1.5vw, 12px)', minWidth: 0 }}>
-            <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)', background: rightColor, color: isBrightColor(rightColor) ? '#000' : '#fff', borderRadius: '6px', fontSize: 'clamp(18px, 4.5vw, 32px)', fontWeight: 800, flexShrink: 0 }}>{rightLabel}</div>
+            <div style={{ padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)', ...teamBoxStyle(rightColor), borderRadius: '6px', fontSize: 'clamp(18px, 4.5vw, 32px)', fontWeight: 800, flexShrink: 0 }}>{rightLabel}</div>
             <div style={{ flex: '1 1 0', display: 'flex', justifyContent: 'center', minWidth: 0, overflow: 'hidden' }}>
               <div
                 style={{
                   fontSize: `${section2AFontSize.fontSize}px`,
                   fontWeight: 700,
-                  background: rightColor,
-                  color: isBrightColor(rightColor) ? '#000' : '#fff',
+                  ...teamBoxStyle(rightColor),
                   padding: 'clamp(4px, 1vw, 8px) clamp(10px, 2.5vw, 18px)',
                   borderRadius: '6px',
                   whiteSpace: 'nowrap',
@@ -2778,7 +2852,11 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
         {/* SECTION 2B: Score & Serve - 12% */}
         <div style={{
-          flex: '0 0 15%',
+          gridArea: 'score',
+          // Stacked (portrait): at least 15 %, more when the score needs it
+          // (display scale 150 % on a portrait tablet cut the digits and ran
+          // them into the Advanced button); the panel below gives the room.
+          flex: wide ? '0 0 15%' : '0 0 auto',
           padding: '4px 0',
           background: 'var(--panel-2)',
           display: 'flex',
@@ -2788,23 +2866,29 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           width: '100%',
           maxWidth: '100%',
           overflow: 'hidden',
-          minHeight: 0,
-          height: '100%'
+          minHeight: wide ? 0 : '15%',
+          height: wide ? '100%' : 'auto'
         }}>
           {/* Score row: SERVE indicator left | Score left | : | Score right | SERVE indicator right */}
           <div style={{
-            display: 'flex',
+            // 1fr auto 1fr keeps the score centred; the side columns grow to
+            // the SERVE box when it is wider than their share, and the row's
+            // padding keeps it off the screen edge (it touched it at 800 px).
+            display: 'grid',
+            gridTemplateColumns: 'minmax(max-content, 1fr) auto minmax(max-content, 1fr)',
             alignItems: 'center',
-            justifyContent: 'center',
+            columnGap: 'clamp(8px, 2vw, 16px)',
             width: '100%',
-            maxWidth: '100%'
+            maxWidth: '100%',
+            padding: '0 clamp(10px, 2.5vw, 24px)',
+            boxSizing: 'border-box'
           }}>
-            {/* LEFT SERVE indicator - fixed width to keep score centered */}
+            {/* LEFT SERVE indicator */}
             <div style={{
-              flex: '0 0 clamp(60px, 15vw, 120px)',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center'
+              justifyContent: 'flex-start',
+              minWidth: 0
             }}>
               {leftServing && (
                 <div style={{
@@ -2869,12 +2953,12 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               </span>
             </div>
 
-            {/* RIGHT SERVE indicator - fixed width to keep score centered */}
+            {/* RIGHT SERVE indicator */}
             <div style={{
-              flex: '0 0 clamp(60px, 15vw, 120px)',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center'
+              justifyContent: 'flex-end',
+              minWidth: 0
             }}>
               {rightServing && (
                 <div style={{
@@ -2907,6 +2991,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
         {/* SECTION 3: Court Area - 40% (includes advanced mode buttons) */}
         <div style={{
+          gridArea: 'court',
           flex: '0 0 40%',
           display: 'flex',
           flexDirection: 'column',
@@ -2923,7 +3008,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             flex: '0 0 auto'
           }}>
             {/* Left team advanced mode button - only show when receiving and 2R view */}
-            <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+            <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
               {refereeView === '2nd' && !leftServing && leftLineup && (
                 <button
                   onClick={() => setSetterSelectionModal('left')}
@@ -2954,9 +3039,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   )}
                 </button>
               )}
+              {advancedMode.left && !leftServing && receptionToggle('left')}
             </div>
             {/* Right team advanced mode button - only show when receiving and 2R view */}
-            <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+            <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
               {refereeView === '2nd' && !rightServing && rightLineup && (
                 <button
                   onClick={() => setSetterSelectionModal('right')}
@@ -2987,6 +3073,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   )}
                 </button>
               )}
+              {advancedMode.right && !rightServing && receptionToggle('right')}
             </div>
           </div>
 
@@ -2999,9 +3086,15 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             overflow: 'hidden',
             minHeight: 0
           }}>
-            <div style={{
-              width: '98%',
-              height: '98%',
+            <div ref={setCourtBoxEl} style={{
+              // 98 % of the slot, but never wider than courtMaxAspect x its
+              // height (a landscape court stays court-shaped, refereeLayout.js)
+              height: `${REFEREE_LAYOUT.courtFill * 100}%`,
+              width: 'auto',
+              aspectRatio: `${REFEREE_LAYOUT.courtMaxAspect} / 1`,
+              maxWidth: `${REFEREE_LAYOUT.courtFill * 100}%`,
+              minWidth: 0,
+              flexShrink: 1,
               position: 'relative',
               // The player discs size themselves from this box (cqh / cqw).
               containerType: 'size',
@@ -3058,33 +3151,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   height: '100%'
                 }}
               >
-                {/* Circular arrows toggle for reception mode - only show when in advanced mode and receiving */}
-                {advancedMode.left && !leftServing && (
-                  <button
-                    onClick={() => toggleReceptionMode('left')}
-                    style={{
-                      position: 'absolute',
-                      bottom: '8px',
-                      left: '8px',
-                      width: '32px',
-                      height: '32px',
-                      borderRadius: '50%',
-                      background: receptionMode.left === 'reception' ? 'rgba(139, 92, 246, 0.4)' : 'var(--panel)',
-                      border: receptionMode.left === 'reception' ? '2px solid #8b5cf6' : '1px solid var(--border)',
-                      color: receptionMode.left === 'reception' ? '#a78bfa' : 'var(--muted)',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '16px',
-                      zIndex: 10,
-                      transition: 'all 0.2s'
-                    }}
-                    title={receptionMode.left === 'reception' ? t('refereeDashboard.switchToStandard') : t('refereeDashboard.switchToReception')}
-                  >
-                    <RefreshIcon size={16} />
-                  </button>
-                )}
 
                 {/* Standard grid layout when NOT in advanced mode OR when serving OR when in standard mode */}
                 {(!advancedMode.left || leftServing || receptionMode.left === 'standard') ? (
@@ -3126,6 +3192,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     {(() => {
                       const setterPos = getSetterPosition(leftLineup, setterNumber.left)
                       const formation = getFormationWithCustom('left', setterPos)
+                      const placed = receptionPlacement('left', formation)
                       // For left court: Net is on right
                       // formation gives top (from net) and left (from left side looking at net from behind)
                       // For horizontal court with net in middle:
@@ -3145,9 +3212,15 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                             onDragStart={(e) => handleDragStart(e, 'left', pos)}
                             style={{
                               position: 'absolute',
-                              right: `${rightPercent}%`,
-                              top: `${topPercent}%`,
-                              transform: 'translate(50%, -50%) scale(0.8)',
+                              ...(placed ? {
+                                left: `${placed.points[pos].x}px`,
+                                top: `${placed.points[pos].y}px`,
+                                transform: `translate(-50%, -50%) scale(${placed.scale})`
+                              } : {
+                                right: `${rightPercent}%`,
+                                top: `${topPercent}%`,
+                                transform: 'translate(50%, -50%) scale(0.8)'
+                              }),
                               zIndex: 3,
                               cursor: 'grab',
                               touchAction: 'none'
@@ -3222,33 +3295,6 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   height: '100%'
                 }}
               >
-                {/* Circular arrows toggle for reception mode - only show when in advanced mode and receiving */}
-                {advancedMode.right && !rightServing && (
-                  <button
-                    onClick={() => toggleReceptionMode('right')}
-                    style={{
-                      position: 'absolute',
-                      bottom: '8px',
-                      right: '8px',
-                      width: '32px',
-                      height: '32px',
-                      borderRadius: '50%',
-                      background: receptionMode.right === 'reception' ? 'rgba(139, 92, 246, 0.4)' : 'var(--panel)',
-                      border: receptionMode.right === 'reception' ? '2px solid #8b5cf6' : '1px solid var(--border)',
-                      color: receptionMode.right === 'reception' ? '#a78bfa' : 'var(--muted)',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '16px',
-                      zIndex: 10,
-                      transition: 'all 0.2s'
-                    }}
-                    title={receptionMode.right === 'reception' ? t('refereeDashboard.switchToStandard') : t('refereeDashboard.switchToReception')}
-                  >
-                    <RefreshIcon size={16} />
-                  </button>
-                )}
 
                 {/* Standard grid layout when NOT in advanced mode OR when serving OR when in standard mode */}
                 {(!advancedMode.right || rightServing || receptionMode.right === 'standard') ? (
@@ -3290,6 +3336,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     {(() => {
                       const setterPos = getSetterPosition(rightLineup, setterNumber.right)
                       const formation = getFormationWithCustom('right', setterPos)
+                      const placed = receptionPlacement('right', formation)
                       // For right court: Net is on left
                       // formation gives top (from net) and left (from left side looking at net from behind)
                       // For horizontal court with net in middle:
@@ -3308,9 +3355,15 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                             onDragStart={(e) => handleDragStart(e, 'right', pos)}
                             style={{
                               position: 'absolute',
-                              left: `${leftPercent}%`,
-                              top: `${topPercent}%`,
-                              transform: 'translate(-50%, -50%) scale(0.8)',
+                              ...(placed ? {
+                                left: `${placed.points[pos].x}px`,
+                                top: `${placed.points[pos].y}px`,
+                                transform: `translate(-50%, -50%) scale(${placed.scale})`
+                              } : {
+                                left: `${leftPercent}%`,
+                                top: `${topPercent}%`,
+                                transform: 'translate(-50%, -50%) scale(0.8)'
+                              }),
                               zIndex: 3,
                               cursor: 'grab',
                               touchAction: 'none'
@@ -3376,7 +3429,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         </div>{/* End SECTION 3: Court Area - 40% */}
 
         {/* SECTION 4: Combined TO/SUB counters + Sanctions - fills remaining space */}
-        <div style={{
+        <div style={wide ? { display: 'contents' } : {
           flex: '1 1 auto',
           border: '1px solid var(--border)',
           display: 'grid',
@@ -3390,6 +3443,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         }}>
           {/* Left team counters - TO SUB (vertical stacked) */}
           <div style={{
+            ...(wide ? { gridArea: 'lcnt', ...sideCell, justifyContent: 'flex-start', padding: '10px 6px 6px' } : {}),
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -3428,7 +3482,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           </div>
 
           {/* Center: Inner container with sanctions + countdown/icon */}
-          <div style={{
+          <div style={wide ? { display: 'contents' } : {
             display: 'grid',
             gridTemplateColumns: '1fr auto 1fr',
             alignItems: 'flex-start',
@@ -3438,6 +3492,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           }}>
             {/* Left team sanctions */}
             <div style={{
+              ...(wide ? { gridArea: 'lsan', ...sideCell, overflowY: 'auto', boxSizing: 'border-box', margin: '0 6px 6px' } : {}),
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
@@ -3490,7 +3545,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               {(leftTeamSanctions.warnings.length > 0 || leftTeamSanctions.penalties.length > 0 || leftTeamSanctions.expulsions.length > 0 || leftTeamSanctions.disqualifications.length > 0 || leftTeamSanctions.delayWarning || leftTeamSanctions.delayPenalty) && (
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(4, minmax(24px, auto))',
+                  // wide: W | P over E | D, to fit the side panel
+                  gridTemplateColumns: `repeat(${wide ? 2 : 4}, minmax(24px, auto))`,
                   gap: '3px',
                   alignItems: 'start',
                   justifyContent: 'center'
@@ -3583,8 +3639,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               )}
             </div>
 
-            {/* Center: Countdown when active, otherwise Favicon */}
+            {/* Center: Countdown when active, otherwise Favicon (wide: under
+                the court, only while a countdown runs) */}
             <div style={{
+              ...(wide ? { gridArea: 'center', padding: (timeoutModal || betweenSetsCountdown?.countdown > 0) ? '6px 0' : 0 } : {}),
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -3609,7 +3667,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                     </div>
                   </DonutCountdown>
                 </div>
-              ) : (
+              ) : wide ? null : (
                 <img
                   src={BRAND.lockupStacked}
                   alt="OpenVolley"
@@ -3627,6 +3685,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
             {/* Right team sanctions */}
             <div style={{
+              ...(wide ? { gridArea: 'rsan', ...sideCell, overflowY: 'auto', boxSizing: 'border-box', margin: '0 6px 6px' } : {}),
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
@@ -3678,7 +3737,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               {(rightTeamSanctions.warnings.length > 0 || rightTeamSanctions.penalties.length > 0 || rightTeamSanctions.expulsions.length > 0 || rightTeamSanctions.disqualifications.length > 0 || rightTeamSanctions.delayWarning || rightTeamSanctions.delayPenalty) && (
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(4, minmax(24px, auto))',
+                  // wide: W | P over E | D, to fit the side panel
+                  gridTemplateColumns: `repeat(${wide ? 2 : 4}, minmax(24px, auto))`,
                   gap: '3px',
                   alignItems: 'start',
                   justifyContent: 'center'
@@ -3775,6 +3835,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
           {/* Right team counters - TO SUB (vertical stacked) */}
           <div style={{
+            ...(wide ? { gridArea: 'rcnt', ...sideCell, justifyContent: 'flex-start', padding: '10px 6px 6px' } : {}),
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -3815,6 +3876,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
         {/* SECTION 5: Footer - Last Action - 40px */}
         <div style={{
+          gridArea: 'foot',
           flex: '0 0 40px',
           display: 'flex',
           alignItems: 'center',

@@ -1776,6 +1776,13 @@ button:disabled {
   flex-shrink: 0;
 }
 
+/* The number's outline on a mid-tone shirt (inline text-shadow, see
+   utils/teamColours.js) belongs to the number alone, a text node of the disc:
+   the badges and the name label are element children and stay crisp */
+.court-player > * {
+  text-shadow: none;
+}
+
 
 
 

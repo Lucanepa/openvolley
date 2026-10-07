@@ -127,11 +127,15 @@ export default function SimpleHeader({
 
   return (
     <div
-      className={cn('ov-kit', HEADER_BAR, 'flex items-center justify-between')}
-      style={{ height: '40px', minHeight: '40px', maxHeight: '40px', padding: '0 12px' }}
+      className={cn('ov-kit', HEADER_BAR, 'flex items-center justify-between gap-2')}
+      // 40 px, taller only when the system font size is raised (2.5rem): at
+      // 150 % the rem-sized buttons were cut at the top of a fixed 40 px bar
+      style={{ height: 'max(40px, 2.5rem)', minHeight: 'max(40px, 2.5rem)', maxHeight: 'max(40px, 2.5rem)', padding: '0 12px' }}
     >
-      {/* LEFT: Title/Version or Toggle */}
-      <div className="flex min-w-0 flex-1 basis-0 items-center gap-2">
+      {/* LEFT: Title/Version or Toggle. The toggle cannot shrink: its column
+          keeps the toggle's width, so on a narrow phone the menu button moves
+          right instead of sitting on "2 REF". */}
+      <div className={cn('flex min-w-0 flex-1 basis-0 items-center gap-2', toggleOptions?.length > 0 && 'min-w-max')}>
         {/* Segmented Toggle (like LOCAL/REMOTE) */}
         {toggleOptions && toggleOptions.length > 0 ? (
           // The courtside referee's view switch: h-9 segments from the tablet

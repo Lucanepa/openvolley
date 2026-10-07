@@ -22,6 +22,7 @@
  *     auth.verifyAccessToken(token)    -> { user, session } | null (throws on DB failure)
  *     auth.requireUser(req, res)       -> user | null   (writes 401/503 itself)
  *     auth.setPassword(emailOrId, pw)  -> { userId, email, revokedSessions }
+ *     auth.verifyPassword(userId, pw)  -> { ok } | { locked, retryAfterSec } (throws AUTH_BUSY)
  *     auth.findUserId(emailOrId)       -> { id, email } (throws if not exactly one)
  *     auth.revokeUserSessions(userId)  -> number
  *     auth.sweepExpiredSessions()      -> number
@@ -130,7 +131,11 @@ const DEFAULTS = Object.freeze({
   detachedColumns: [
     { table: 'public.matches', column: 'created_by' },
     { table: 'public.beach_competition_matches', column: 'created_by' },
-    { table: 'public.beach_competition_matches', column: 'claimed_by' }
+    { table: 'public.beach_competition_matches', column: 'claimed_by' },
+    // db/011: approvals keep the official's name snapshot (club records)
+    { table: 'public.match_approvals', column: 'user_id' },
+    { table: 'public.match_approvals', column: 'requested_by' },
+    { table: 'public.match_approvals', column: 'revoked_by' }
   ],
   // async (userId) => counts: removes the account's files (server.js passes
   // lib/storage.js deleteUserData: backup/<user>/ and scoresheet owner
@@ -908,6 +913,39 @@ export function createAuth(options = {}) {
     return { userId: id, email, revokedSessions, emailConfirmed }
   }
 
+  /**
+   * Re-checks the password of a signed-in account (lib/approvals.js: set or
+   * remove the approval PIN). Exactly one bcrypt comparison through the gate
+   * (a dummy hash when the account or its hash is missing), counted in the
+   * sign-in lockout of the account's address, so a stolen session cannot
+   * guess the password here faster than at sign-in.
+   * -> { ok: true } | { ok: false } | { locked: true, retryAfterSec }.
+   * Throws AUTH_BUSY when the bcrypt queue is full, and on a database error.
+   */
+  async function verifyPassword(userId, password) {
+    await usersColumns()
+    const byId = typeof userId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)
+    const { rows } = byId
+      ? await pool.query(`SELECT to_jsonb(u) AS u FROM ${T.users} u WHERE u.id = $1`, [userId])
+      : { rows: [] }
+    const user = rows[0]?.u || null
+    const key = normalizeEmail(user?.email) || `id:${String(userId).slice(0, 64)}`
+    const attempt = typeof lockout.begin === 'function' ? lockout.begin(key) : lockout.check(key)
+    if (attempt.locked) return { locked: true, retryAfterSec: attempt.retryAfterSec }
+    try {
+      const pw = typeof password === 'string' && password.length <= 1024 ? password : ''
+      const match = await checkPassword(pw, user?.encrypted_password)
+      if (!match || isUserBlocked(user)) {
+        lockout.fail(key)
+        return { ok: false }
+      }
+      lockout.succeed(key)
+      return { ok: true }
+    } finally {
+      attempt.release?.()
+    }
+  }
+
   // --- one-time email links (db/010) -----------------------------------------
   async function tokensAvailable(client = pool) {
     if (!cfg.tokensTable) return false
@@ -1502,6 +1540,7 @@ export function createAuth(options = {}) {
     verifyAccessToken,
     requireUser,
     setPassword,
+    verifyPassword,
     findUserId,
     revokeSession,
     revokeUserSessions,

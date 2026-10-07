@@ -44,7 +44,7 @@ describe('db/013 and db/014 (beach tournaments)', { skip: SKIP_PG }, () => {
   before(async () => {
     tdb = await createTestDatabase('mig014', {
       schemaSql: [SCHEMA_SQL_005_ONLY, ...['006_matches_updated_at.sql', '007_scorer_accounts.sql', '008_live_state_tto.sql',
-        '009_beach_saved_teams.sql', '010_auth_tokens.sql', '012_app_memberships.sql'].map(sqlOf)].join('\n')
+        '009_beach_saved_teams.sql', '010_auth_tokens.sql', '011_account_approvals.sql', '012_app_memberships.sql'].map(sqlOf)].join('\n')
     })
     raw = new pg.Client({ connectionString: tdb.url, options: '-c TimeZone=UTC' })
     await raw.connect()

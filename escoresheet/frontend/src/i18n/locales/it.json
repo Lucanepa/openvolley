@@ -32,6 +32,7 @@
     "retryAll": "Riprova tutto",
     "screenTooSmall": "Schermo troppo piccolo",
     "screenTooSmallMessage": "Questa applicazione richiede una larghezza minima dello schermo di 357px. Si prega di utilizzare un dispositivo con uno schermo più ampio o di ruotare il dispositivo in modalità orizzontale.",
+    "screenTooShortMessage": "Il campo non entra in questo schermo. Ruota il dispositivo, esci dallo schermo diviso o usa uno schermo più grande.",
     "tryFullscreen": "Prova a schermo intero",
     "fullscreenHint": "Lo schermo intero può fornire più spazio nascondendo l'interfaccia utente del browser.",
     "setIndex": "Set {{index}}",
@@ -2476,8 +2477,40 @@
         "tournament_entry": "Squadre modificate",
         "tournament_schedule": "Programma modificato",
         "tournament_result": "Risultato inserito",
-        "tournament_import": "Excel/CSV importato"
+        "tournament_import": "Excel/CSV importato",
+        "approval_pin_set": "PIN di approvazione impostato",
+        "approval_pin_remove": "PIN di approvazione rimosso",
+        "approval_pin_locked": "PIN di approvazione bloccato",
+        "match_approve": "Risultato approvato con account",
+        "match_approval_revoke": "Approvazione con account annullata",
+        "match_approval_void": "Approvazioni con account annullate"
       }
+    },
+    "approvals": {
+      "chip": "{{slot}} · {{name}}",
+      "chipTitle": "Approvato {{time}} · ID {{id}}",
+      "resultChanged": "Risultato cambiato",
+      "slots": {
+        "referee1": "1° arbitro",
+        "referee2": "2° arbitro",
+        "scorer": "Segnapunti"
+      },
+      "lookup": "Approvazioni",
+      "lookupPlaceholder": "ID di approvazione o numero di partita",
+      "lookupButton": "Cerca",
+      "lookupEmpty": "Nessuna approvazione trovata.",
+      "includeRevoked": "Includi revocate",
+      "revoked": "Revocata",
+      "active": "Valida",
+      "reasons": {
+        "undo": "annullata",
+        "match_reopened": "partita riaperta",
+        "result_changed": "risultato cambiato"
+      },
+      "hashes": "IP {{ip}} · dispositivo {{device}}",
+      "requestedBy": "Inviata da {{name}}",
+      "wrongPins": "{{failures}} PIN errati",
+      "blocked": "bloccato"
     }
   },
   "savedTeams": {
@@ -3070,6 +3103,93 @@
         "name_twice": "{{name}} c’è anche nella riga {{first_row}}.",
         "licence_other_draw": "La licenza {{licence}} gioca anche in {{draw}}.",
         "reinstated": "Questa squadra è {{status}} e viene iscritta di nuovo."
+      }
+    }
+  },
+  "approval": {
+    "pin": {
+      "title": "PIN di approvazione",
+      "explainer": "Approva i risultati con il tuo account invece di una firma disegnata. Il tuo PIN personale, non un PIN della partita. Non condividerlo mai.",
+      "notSet": "Non impostato",
+      "setOn": "Impostato il {{date}}",
+      "lockedUntil": "Bloccato fino alle {{time}}",
+      "disabled": "Bloccato dopo troppi PIN errati. Impostane uno nuovo.",
+      "ineligible": {
+        "email": "Conferma prima il tuo indirizzo e-mail",
+        "role": "Serve il ruolo di arbitro o di segnapunti"
+      },
+      "needsInternet": "Serve internet",
+      "set": "Imposta PIN",
+      "change": "Cambia PIN",
+      "remove": "Rimuovi PIN",
+      "setTitle": "Imposta il PIN di approvazione",
+      "changeTitle": "Cambia il PIN di approvazione",
+      "removeTitle": "Rimuovi il PIN di approvazione",
+      "currentPassword": "Password attuale",
+      "passwordHint": "La password del tuo account conferma la modifica.",
+      "newPin": "Nuovo PIN",
+      "repeatPin": "Ripeti il PIN",
+      "rule": "Da 4 a 6 cifre. Nessuna data, nessun anno e nessuno schema come 1212 o 1234.",
+      "mismatch": "I PIN non coincidono.",
+      "removeConfirmTitle": "Rimuovere il tuo PIN di approvazione?",
+      "removeConfirmBody": "Non potrai più approvare risultati con il tuo account finché non imposti un nuovo PIN.",
+      "save": "Salva PIN",
+      "saved": "PIN di approvazione salvato.",
+      "removed": "PIN di approvazione rimosso."
+    },
+    "approveWithAccount": "Approva con account",
+    "dialogTitle": "Approva come {{role}}",
+    "officialEntered": "Ufficiale inserito: {{name}}",
+    "email": "E-mail dell'account dell'ufficiale",
+    "pinLabel": "PIN di approvazione",
+    "pinHint": "L'ufficiale digita il proprio PIN di approvazione. Si imposta nel suo profilo.",
+    "approve": "Approva",
+    "approved": "Approvato.",
+    "done": "Approvato elettronicamente",
+    "stale": "Risultato cambiato. Approva di nuovo o firma",
+    "undo": "Annulla",
+    "undoConfirm": "Annullare questa approvazione?",
+    "undoConfirmBody": "L'ufficiale poi approva di nuovo o firma a mano.",
+    "undone": "Approvazione annullata.",
+    "needsInternet": "Serve internet",
+    "needsInternetSignByHand": "Serve internet: firma a mano",
+    "syncing": "Invio del risultato…",
+    "nameDiffers": "Il nome dell'account {{account}} è diverso dall'ufficiale inserito ({{entered}})",
+    "revalidateFailed": "Un'approvazione con account non è più valida. Controlla le firme e approva di nuovo.",
+    "errors": {
+      "pinInvalid": "E-mail o PIN non accettati. Dopo diversi PIN sbagliati il PIN va in pausa: l’ufficiale lo vede nel suo profilo. Oppure firmi a mano.",
+      "pinFormat": "Il PIN deve avere da 4 a 6 cifre.",
+      "pinWeak": "Questo PIN è troppo facile da indovinare. Eviti date, anni e schemi come 1212, 2580 o 1234.",
+      "passwordInvalid": "Password errata.",
+      "roleRequired": "Questo account non ha il ruolo per questa firma.",
+      "notMatchScorer": "Solo il segnapunti di questa partita può approvare come segnapunti.",
+      "nameRequired": "L'account non ha un nome. Aggiungilo prima nel profilo.",
+      "oneSlot": "Questo account ha già approvato un'altra firma di questa partita.",
+      "slotTaken": "Qualcun altro ha già approvato questa firma.",
+      "matchClosed": "La partita è chiusa.",
+      "matchNotEnded": "La partita non è ancora terminata sul server. Attendi la sincronizzazione, poi riprova.",
+      "resultNotSynced": "Il risultato non è ancora arrivato al server. Controlla la connessione e riprova.",
+      "unsupported": "Non disponibile per le partite di beach.",
+      "unavailable": "L'approvazione con account non è disponibile su questo server.",
+      "emailUnconfirmed": "L'ufficiale non ha ancora confermato l'indirizzo e-mail dell'account.",
+      "scorerNotReferee": "L’account che tiene il referto di questa partita non può approvare come arbitro.",
+      "callerRole": "L’approvazione con un account richiede un account di segnapunti o di arbitro su questo dispositivo."
+    },
+    "mine": {
+      "title": "Le sue approvazioni",
+      "hint": "Ogni approvazione fatta con il suo PIN. Se una non è sua, la annulli finché la partita è aperta e cambi il PIN.",
+      "empty": "Ancora nessuna approvazione.",
+      "sentBy": "Inviata da {{name}}",
+      "test": "Partita di prova",
+      "valid": "Valida",
+      "resultChanged": "Risultato cambiato",
+      "closed": "Chiusa",
+      "revoked": "Revocata",
+      "undoBody": "L’approvazione non vale più. La partita viene poi approvata di nuovo o firmata a mano.",
+      "slots": {
+        "referee1": "1° arbitro",
+        "referee2": "2° arbitro",
+        "scorer": "Segnapunti"
       }
     }
   }

@@ -1,6 +1,6 @@
 /**
  * db/012_app_memberships.sql on a database in the state before it (005 to
- * 010, with accounts, invite codes, audit entries and matches), the way it
+ * 011, with accounts, invite codes, audit entries and matches), the way it
  * will meet production. It runs twice; every existing account becomes an
  * indoor member and nobody becomes a beach member; existing invite codes are
  * indoor and existing audit entries keep app NULL; the 2.2.0 backend's
@@ -36,7 +36,7 @@ describe('db/012_app_memberships.sql', { skip: SKIP_PG }, () => {
   before(async () => {
     tdb = await createTestDatabase('mig012', {
       schemaSql: [SCHEMA_SQL_005_ONLY, ...['006_matches_updated_at.sql', '007_scorer_accounts.sql', '008_live_state_tto.sql',
-        '009_beach_saved_teams.sql', '010_auth_tokens.sql'].map(sqlOf)].join('\n')
+        '009_beach_saved_teams.sql', '010_auth_tokens.sql', '011_account_approvals.sql'].map(sqlOf)].join('\n')
     })
     raw = new pg.Client({ connectionString: tdb.url, options: '-c TimeZone=UTC' })
     await raw.connect()

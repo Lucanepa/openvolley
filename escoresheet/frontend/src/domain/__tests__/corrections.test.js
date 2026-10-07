@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { decisionChangeUndoRecord, planDecisionChangeReversal, syncJobsForEvents, syncJobsForSets, localIdOfExtId } from '../corrections'
+import { decisionChangeUndoRecord, planDecisionChangeReversal, syncJobsForEvents, syncJobsForSets, localIdOfExtId, setScoreSyncJobs } from '../corrections'
 
 // Set 1 at 3-2 (home), then point 6 goes to AWAY by mistake: away (receiving)
 // sides out, so the point wrote away's rotation 6.1 and an auto libero_exit 6.2.
@@ -115,5 +115,17 @@ describe('syncJobsForSets', () => {
     expect(syncJobsForSets(jobs, [7]).map(j => j.id)).toEqual([1, 2])
     expect(localIdOfExtId('match_1_a:e:3', 'set')).toBeNull()
     expect(localIdOfExtId(null, 'event')).toBeNull()
+  })
+})
+
+describe('setScoreSyncJobs (Manual adjustments sends corrected sets; review fix)', () => {
+  it('one set update per changed set, keyed like the scoreboard', () => {
+    const jobs = setScoreSyncJobs('match_1', [{ id: 12, homePoints: 25, awayPoints: 22, finished: true }, { id: 13, homePoints: '7', awayPoints: null, finished: false }], 'T')
+    expect(jobs).toEqual([
+      { resource: 'set', action: 'update', payload: { external_id: 'match_1:s:12', home_points: 25, away_points: 22, finished: true }, ts: 'T', status: 'queued' },
+      { resource: 'set', action: 'update', payload: { external_id: 'match_1:s:13', home_points: 7, away_points: 0, finished: false }, ts: 'T', status: 'queued' }
+    ])
+    expect(setScoreSyncJobs(null, [{ id: 1 }])).toEqual([])
+    expect(setScoreSyncJobs('m', [{ homePoints: 1 }])).toEqual([])
   })
 })

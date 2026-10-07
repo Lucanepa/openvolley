@@ -138,8 +138,12 @@ export function GameRow({ match, lang, gameLabel, home, away, noDate, onOpen, st
   );
 }
 
-/** Full-screen blocker for screens below the dashboards' minimum size. */
-export function NarrowScreenOverlay({ t }) {
+/**
+ * Full-screen blocker for screens below the dashboards' minimum size.
+ * reason: 'width' (narrower than 357 px) or 'court' (the referee court gets
+ * too little room for its player discs, e.g. a phone on its side).
+ */
+export function NarrowScreenOverlay({ t, reason = 'width' }) {
   return (
     <div
       className="ov-kit fixed inset-0 flex flex-col items-center justify-center bg-stone-900/60 p-6 text-center backdrop-blur-sm"
@@ -153,7 +157,9 @@ export function NarrowScreenOverlay({ t }) {
           {t('common.screenTooSmall', 'Screen too small')}
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-stone-600">
-          {t('common.screenTooSmallMessage', 'This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.')}
+          {reason === 'court'
+            ? t('common.screenTooShortMessage', 'The court does not fit on this screen. Please rotate your device, leave split screen or use a larger screen.')
+            : t('common.screenTooSmallMessage', 'This app requires a minimum screen width of 357px. Please use a device with a wider screen or rotate your device to landscape mode.')}
         </p>
         <Button
           variant="dark"
