@@ -491,11 +491,13 @@ export function SetTimesForm({ ctx, events, sets, setRow, match, busy, onCancel,
   const endIso = withClock(setRow?.endTime, end, setRow?.startTime || match?.scheduledAt)
   const base = useMemo(() => {
     const changes = {}
-    if (startIso && startIso !== setRow?.startTime) changes.startTime = startIso
-    if (endIso && endIso !== setRow?.endTime) changes.endTime = endIso
+    // Compared as the clock shows them: the stored times have seconds, the
+    // field has minutes, so an untouched field is not a change
+    if (startIso && start !== toClock(setRow?.startTime)) changes.startTime = startIso
+    if (endIso && end !== toClock(setRow?.endTime)) changes.endTime = endIso
     if (!Object.keys(changes).length) return null
     return planSetTimes(events, sets, { setIndex: setRow.index, ...changes, scheduledAt: match?.scheduledAt }, ctx)
-  }, [startIso, endIso, setRow, events, sets, match?.scheduledAt, ctx])
+  }, [start, end, startIso, endIso, setRow, events, sets, match?.scheduledAt, ctx])
   const suggestion = base && !base.error ? base.suggestedRemark : null
   const plan = base && !base.error && addRemark && suggestion ? { ...base, remarkAdd: [(remark ?? suggestion).trim()].filter(Boolean) } : base
   const set = displaySetNumber(setRow?.index, ctx.match)
