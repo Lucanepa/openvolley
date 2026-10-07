@@ -212,13 +212,19 @@ export function initialGameCaptainChoice({ lineup = [], players = [], events = [
  *   so the player takes over without a prompt when the team captain leaves
  *   the court.
  *
+ * Undo: the line-up event and the designation event carry `undo`
+ * ({ previousRememberedCourtCaptain } when the remembered field changes, else
+ * {}), so undoing them puts the remembered game captain back too and a line-up
+ * entered again with "None" asks again instead of reusing the undone choice.
+ *
  * @returns {{ action: 'none'|'designate'|'remember', playerNumber: number|null,
- *   matchUpdate: object, event: object|null }}
+ *   matchUpdate: object, event: object|null, undo: object }}
  *   matchUpdate: fields to write on the match ({} = nothing);
- *   event: payload of the 'court_captain_designation' event to log, or null
+ *   event: payload of the 'court_captain_designation' event to log, or null;
+ *   undo: fields to add to the line-up event's payload
  */
 export function lineupGameCaptainDecision({ lineup = [], players = [], events = [], team, choice, currentCourtCaptain = null, rememberedCourtCaptain = null }) {
-  const none = { action: 'none', playerNumber: null, matchUpdate: {}, event: null }
+  const none = { action: 'none', playerNumber: null, matchUpdate: {}, event: null, undo: {} }
   if (isBlank(choice)) return none
   const chosen = String(Number(choice))
   if (!gameCaptainOptions({ lineup, players, events, team }).includes(chosen)) return none
@@ -226,17 +232,19 @@ export function lineupGameCaptainDecision({ lineup = [], players = [], events = 
   const playerNumber = Number(chosen)
   const fields = courtCaptainFields(team)
   const matchUpdate = {}
+  let undo = {}
   if (isBlank(rememberedCourtCaptain) || String(Number(rememberedCourtCaptain)) !== chosen) {
     matchUpdate[fields.remembered] = playerNumber
+    undo = { previousRememberedCourtCaptain: isBlank(rememberedCourtCaptain) ? null : rememberedCourtCaptain }
   }
 
   if (lineupCaptainStatus({ lineup, players }) === 'onCourt') {
-    return { action: 'remember', playerNumber, matchUpdate, event: null }
+    return { action: 'remember', playerNumber, matchUpdate, event: null, undo }
   }
 
   const alreadyActing = !isBlank(currentCourtCaptain) && String(Number(currentCourtCaptain)) === chosen
   if (alreadyActing) {
-    return { action: 'designate', playerNumber, matchUpdate, event: null }
+    return { action: 'designate', playerNumber, matchUpdate, event: null, undo }
   }
   matchUpdate[fields.court] = playerNumber
   return {
@@ -247,7 +255,9 @@ export function lineupGameCaptainDecision({ lineup = [], players = [], events = 
       team,
       playerNumber,
       previousCourtCaptain: isBlank(currentCourtCaptain) ? null : currentCourtCaptain,
+      ...undo,
       fromLineup: true
-    }
+    },
+    undo
   }
 }
