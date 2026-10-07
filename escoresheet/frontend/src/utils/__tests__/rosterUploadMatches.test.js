@@ -63,4 +63,20 @@ describe('roster upload match list', () => {
     expect(isOpenForRosterUpload({ status: 'setup', test: true })).toBe(false)
     expect(isOpenForRosterUpload(null)).toBe(false)
   })
+
+  it('a beach (OpenBeach) match is not listed; older indoor rows without sport_type are', () => {
+    expect(isOpenForRosterUpload({ status: 'setup', sport_type: 'beach' })).toBe(false)
+    expect(isOpenForRosterUpload({ status: 'setup', sport_type: null })).toBe(true)
+    expect(isOpenForRosterUpload({ status: 'setup', sport_type: 'indoor' })).toBe(true)
+  })
+
+  it('team names fall back to team1_data / team2_data, then Home / Away', async () => {
+    api.rows = [
+      { id: 'u1', external_id: 'm1', game_n: 1, status: 'setup', scheduled_at: null, home_team: null, away_team: null, team1_data: { name: 'T1' }, team2_data: { name: 'T2' } },
+      { id: 'u2', external_id: 'm2', game_n: 2, status: 'setup', scheduled_at: null, home_team: null, away_team: null }
+    ]
+    const res = await listRosterUploadMatches()
+    expect(res.matches.map((m) => [m.homeTeam, m.awayTeam])).toEqual([['T1', 'T2'], ['Home', 'Away']])
+    expect(api.calls[0].columns).toMatch(/sport_type/)
+  })
 })
