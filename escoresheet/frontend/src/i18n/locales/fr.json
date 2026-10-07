@@ -1293,7 +1293,18 @@
     "backToScoresheet": "Retour à la eScoresheet",
     "lcs": "Feuille de contrôle des libéros",
     "lcsTooltip": "Afficher la feuille de contrôle des libéros",
-    "pdfFailed": "Le PDF n'a pas pu être créé sur cet appareil."
+    "pdfFailed": "Le PDF n'a pas pu être créé sur cet appareil.",
+    "matchNotFound": "Ce match n'est pas sur cet appareil : il n'y a pas de feuille de match à enregistrer.",
+    "pdfInvalid": "Le PDF n'a pas pu être créé correctement. Veuillez réessayer.",
+    "pdfSavedAt": "PDF enregistré :",
+    "savingFile": "Enregistrement de {{fileName}} dans le dossier Téléchargements...",
+    "pdfDownloaded": "Téléchargé dans le dossier de téléchargement du navigateur :",
+    "pdfHandedToApp": "L'app enregistre {{fileName}} : la barre en haut indique où.",
+    "openFile": "Ouvrir le fichier",
+    "showInFolder": "Afficher dans le dossier",
+    "dismiss": "Fermer",
+    "fileActionFailed": "Le fichier n'a pas pu être ouvert d'ici. Il se trouve dans : {{path}}",
+    "checkTheMatch": "Vérifier le match avant de l'approuver :"
   },
   "supportFeedback": {
     "title": "Support & avis",
@@ -2276,7 +2287,10 @@
     "pdfSaveFailed": "Le PDF n'a pas pu être enregistré : {{error}}",
     "savingPdf": "Enregistrement du PDF...",
     "downloadFailed": "Le téléchargement n'a pas abouti.",
-    "downloadsFolder": "Téléchargements"
+    "downloadsFolder": "Téléchargements",
+    "openPdf": "Ouvrir",
+    "sharePdf": "Partager",
+    "pdfActionFailed": "Il n'a pas pu être ouvert : {{error}}"
   },
   "access": {
     "pendingTitle": "Ton compte attend une validation",

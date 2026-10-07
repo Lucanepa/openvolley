@@ -1295,7 +1295,18 @@
     "backToScoresheet": "Back to scoresheet",
     "lcs": "Libero control sheet",
     "lcsTooltip": "View libero control sheet",
-    "pdfFailed": "The PDF could not be created on this device."
+    "pdfFailed": "The PDF could not be created on this device.",
+    "matchNotFound": "This match is not on this device: there is no scoresheet to save.",
+    "pdfInvalid": "The PDF could not be created correctly. Please try again.",
+    "pdfSavedAt": "PDF saved:",
+    "savingFile": "Saving {{fileName}}...",
+    "pdfDownloaded": "Downloaded to your browser's download folder:",
+    "pdfHandedToApp": "The app is saving {{fileName}}: the bar at the top shows where.",
+    "openFile": "Open file",
+    "showInFolder": "Show in folder",
+    "dismiss": "Close",
+    "fileActionFailed": "The file could not be opened from here. It is in: {{path}}",
+    "checkTheMatch": "Check the match before approving it:"
   },
   "supportFeedback": {
     "title": "Support & feedback",
@@ -2283,7 +2294,10 @@
     "pdfSaveFailed": "The PDF could not be saved: {{error}}",
     "savingPdf": "Saving the PDF...",
     "downloadFailed": "The download did not finish.",
-    "downloadsFolder": "Downloads"
+    "downloadsFolder": "Downloads",
+    "openPdf": "Open",
+    "sharePdf": "Share",
+    "pdfActionFailed": "It could not be opened: {{error}}"
   },
   "access": {
     "pendingTitle": "Your account is waiting for approval",

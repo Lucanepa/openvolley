@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { SubRecord } from '../types_scoresheet';
 import { PointsColumn } from './PointsColumn';
+import { StrikeZ } from './StrikeZ';
+import { FitText } from './FitText';
 
 interface ServiceRound {
   position: number; // 0-5 for I-VI
@@ -43,6 +45,8 @@ interface StandardSetProps {
   positionBoxRef?: React.RefObject<HTMLDivElement>;
   // True when the set is finished — enables T-bar finalization of unused numbers
   setFinished?: boolean;
+  /** Unused grid (unplayed set, or a set awarded by default): struck off with a Z. */
+  struckOff?: boolean;
 }
 
 // PointBox is now imported from ./PointsCol/87umn
@@ -299,7 +303,8 @@ export const StandardSet: React.FC<StandardSetProps> = ({
     rightCircledPoints = [],
     rightServiceRounds = [],
     positionBoxRef,
-    setFinished = false
+    setFinished = false,
+    struckOff = false
 }) => {
   // A/B labels are always shown based on position (left=A when not swapped, left=B when swapped)
   const leftTeamLabel = isSwapped ? 'B' : 'A';
@@ -310,7 +315,7 @@ export const StandardSet: React.FC<StandardSetProps> = ({
   let leftServes: 'S' | 'R' | null = null;
   let rightServes: 'S' | 'R' | null = null;
   
-  if (firstServeTeamA !== undefined) {
+  if (firstServeTeamA !== undefined && firstServeTeamA !== null) {
     // Team A is left when not swapped, right when swapped
     const teamAIsLeft = !isSwapped;
 
@@ -333,7 +338,7 @@ export const StandardSet: React.FC<StandardSetProps> = ({
   const maxScore = Math.max(leftPoints || 0, rightPoints || 0);
 
   return (
-    <div className="bg-white flex flex-col overflow-hidden shadow-sm shrink-0 border border-black" style={{ width: '150mm' }}>
+    <div className="bg-white flex flex-col overflow-hidden shadow-sm shrink-0 border border-black relative" style={{ width: '150mm' }}>
         {/* Header Strip */}
         <div className="flex bg-gray-100 shrink-0" style={{ height: '0.8cm', width: '150mm' }}>
              {/* Start Time */}
@@ -350,14 +355,14 @@ export const StandardSet: React.FC<StandardSetProps> = ({
                          </div>
                          <SRSelector initialSelection={leftServes} />
                      </div>
-                     <div className="w-full text-xs uppercase text-center font-bold bg-white ml-1">{teamNameLeft}</div>
+                     <FitText max={12} min={6} className="w-full uppercase text-center font-bold bg-white ml-1">{teamNameLeft}</FitText>
                  </div>
              </div>
              <div className="flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px] border-r border-black" style={{ width: '14.7mm' }}>Points</div>
               {/* Team Right (B or A) - matches TeamServiceGrid (60mm) + PointsColumn (15mm) = 75mm */}
              <div className="flex items-center justify-between px-2 bg-white shrink-0 border-r border-black" style={{ width: '40mm' }}>
                  <div className="flex items-center gap-1 w-full justify-end">
-                     <div className="w-full text-xs uppercase font-bold text-center bg-white mr-1">{teamNameRight}</div>
+                     <FitText max={12} min={6} className="w-full uppercase font-bold text-center bg-white mr-1">{teamNameRight}</FitText>
                      <div className="flex items-center gap-1">
                         <SRSelector initialSelection={rightServes} />
                         <div className="w-6 h-6 rounded-full border border-black flex items-center justify-center bg-gray-200 text-black font-bold text-sm shrink-0">
@@ -388,6 +393,7 @@ export const StandardSet: React.FC<StandardSetProps> = ({
                 <PointsColumn isLast={true} timeouts={rightTimeouts} markedPoints={rightMarkedPoints} circledPoints={rightCircledPoints} maxScore={maxScore} setFinished={setFinished} finalScore={typeof rightPoints === 'number' ? rightPoints : Number(rightPoints) || 0} />
             </div>
         </div>
+        {struckOff && <StrikeZ />}
     </div>
   );
 };

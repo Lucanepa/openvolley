@@ -2,14 +2,35 @@ import React, { useState, useEffect } from 'react';
 import { SanctionRecord, Player } from '../types_scoresheet';
 import { SignatureModal } from './SignatureModal';
 import { isApprovalValid, formatApprovalStamp } from '../../src/domain/accountApproval.js';
+import { FitText } from './FitText';
+import { findOfficial, formatDob, formatPersonName, type SheetOfficial } from '../utils/sheetFormat';
+
+/** Sanction rows in the box; further sanctions continue in REMARKS (field-spec 7.2). */
+export const SANCTION_ROWS = 9;
 
 interface SanctionsProps {
     items?: SanctionRecord[];
     improperRequests?: { teamA: boolean; teamB: boolean };
 }
 
+/** A member code in a sanction cell; a bench player's number is circled (SC p.62). */
+const SanctionCode: React.FC<{ item?: SanctionRecord; type: SanctionRecord['type'] }> = ({ item, type }) => {
+    if (!item || item.type !== type) return null;
+    return (
+        <span className="relative inline-flex items-center justify-center leading-none" style={{ minWidth: '14px', minHeight: '14px' }}>
+            {item.playerNr || ''}
+            {item.onBench && (
+                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" data-testid="sanction-bench-circle">
+                    <circle cx="50" cy="50" r="44" fill="none" stroke="black" strokeWidth="6" />
+                </svg>
+            )}
+        </span>
+    );
+};
+
 export const Sanctions: React.FC<SanctionsProps> = ({ items = [], improperRequests = { teamA: false, teamB: false } }) => {
-    const rowCount = 10;
+    const rowCount = SANCTION_ROWS;
+    const cell = 'border-r border-black flex items-center justify-center text-[10px] min-w-0';
 
     return (
         <div className="border border-black bg-white flex flex-col h-full relative group overflow-hidden">
@@ -39,11 +60,13 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [], improperReques
                 </div>
             </div>
 
+            {/* W(arning) P(enalty) E(xpulsion) DQ (disqualification): "DQ", not "D",
+                which the W / P columns use for a delay */}
             <div className="grid grid-cols-7 text-[9px] font-bold text-center border-b border-black bg-white shrink-0" style={{ height: '0.7cm' }}>
-                <div className="border-r border-black flex items-center justify-center">W</div>
-                <div className="border-r border-black flex items-center justify-center">P</div>
-                <div className="border-r border-black flex items-center justify-center">E</div>
-                <div className="border-r border-black flex items-center justify-center">D</div>
+                <div className="border-r border-black flex items-center justify-center" title="Warning">W</div>
+                <div className="border-r border-black flex items-center justify-center" title="Penalty">P</div>
+                <div className="border-r border-black flex items-center justify-center" title="Expulsion">E</div>
+                <div className="border-r border-black flex items-center justify-center" title="Disqualification">DQ</div>
                 <div className="border-r border-black flex items-center justify-center h-full">
                     <div className="flex flex-col items-center justify-center min-h-0 py-0.5 gap-0.5">
                         <div className="w-2.5 h-2.5 rounded-full border border-black flex items-center justify-center text-[7px] font-bold bg-white">A</div>
@@ -56,37 +79,19 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [], improperReques
                 <div className="border-r border-black flex items-center justify-center">Set</div>
                 <div className="flex items-center justify-center">Score</div>
             </div>
-            {/* flex-1 makes this container take remaining space and rows distribute evenly */}
+            {/* Ruled rows and columns, as the Matchblatt: a referee can still add an entry by hand */}
             <div className="flex-1 flex flex-col min-h-0">
                 {Array.from({ length: rowCount }).map((_, i) => {
                     const item = items[i];
                     return (
-                    <div key={i} className="grid grid-cols-7 flex-1 last:border-none text-xs min-h-0">
-                         <div className="flex items-center justify-center p-0.5" style={{ aspectRatio: '1' }}>
-                            <div className="text-center text-[10px]">
-                                {item?.type === 'warning' ? (item.playerNr || '') : ''}
-                            </div>
-                         </div>
-                         <div className="flex items-center justify-center p-0.5" style={{ aspectRatio: '1' }}>
-                            <div className="text-center text-[10px]">
-                                {item?.type === 'penalty' ? (item.playerNr || '') : ''}
-                            </div>
-                         </div>
-                         <div className="flex items-center justify-center p-0.5" style={{ aspectRatio: '1' }}>
-                            <div className="text-center text-[10px]">
-                                {item?.type === 'expulsion' ? (item.playerNr || '') : ''}
-                            </div>
-                         </div>
-                         <div className="flex items-center justify-center p-0.5" style={{ aspectRatio: '1' }}>
-                            <div className="text-center text-[10px]">
-                                {item?.type === 'disqualification' ? (item.playerNr || '') : ''}
-                            </div>
-                         </div>
-                         <div className="text-center uppercase flex items-center justify-center text-[10px] px-0.5" style={{ aspectRatio: '1' }}>
-                            {item?.team || ''}
-                         </div>
-                         <div className="text-center flex items-center justify-center text-[10px]" style={{ aspectRatio: '1' }}>{item?.set || ''}</div>
-                         <div className="text-center flex items-center justify-center text-[9px]" style={{ aspectRatio: '1' }}>{item?.score || ''}</div>
+                    <div key={i} className="grid grid-cols-7 flex-1 text-xs min-h-0 border-b border-black last:border-b-0" data-testid="sanction-row">
+                         <div className={cell}><SanctionCode item={item} type="warning" /></div>
+                         <div className={cell}><SanctionCode item={item} type="penalty" /></div>
+                         <div className={cell}><SanctionCode item={item} type="expulsion" /></div>
+                         <div className={cell}><SanctionCode item={item} type="disqualification" /></div>
+                         <div className={`${cell} uppercase px-0.5`}>{item?.team || ''}</div>
+                         <div className={cell}>{item?.set || ''}</div>
+                         <div className="flex items-center justify-center text-[9px] min-w-0">{item?.score || ':'}</div>
                     </div>
                 )})}
             </div>
@@ -97,67 +102,45 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [], improperReques
 interface RemarksProps {
     overflowSanctions?: SanctionRecord[];
     remarks?: string;
+    /** Remarks the sheet writes itself (a default, an incomplete team), printed first. */
+    generated?: string[];
 }
 
-export const Remarks: React.FC<RemarksProps> = ({ overflowSanctions = [], remarks = '' }) => {
-    const formatSanction = (sanction: SanctionRecord): string => {
-        // Check if it's a delay sanction (playerNr === 'D')
-        const isDelay = sanction.playerNr === 'D';
+/** One overflow sanction as a remark line, in the sanction-row format (field-spec 7.2). */
+export const formatSanctionRemark = (sanction: SanctionRecord): string => {
+    const isDelay = sanction.playerNr === 'D';
+    const typeLabel = sanction.type === 'warning'
+        ? (isDelay ? 'Delay Warning' : 'Warning')
+        : sanction.type === 'penalty'
+        ? (isDelay ? 'Delay Penalty' : 'Penalty')
+        : sanction.type === 'expulsion'
+        ? 'Expulsion'
+        : sanction.type === 'disqualification'
+        ? 'Disqualification'
+        : '';
+    const member = sanction.onBench ? `(${sanction.playerNr})` : sanction.playerNr;
+    const playerInfo = !isDelay && sanction.playerNr ? `, ${member}` : '';
+    return `Team ${sanction.team}, Set ${sanction.set}, Score ${sanction.score}, ${typeLabel}${playerInfo}`;
+};
 
-        // Capitalize sanction type
-        const typeLabel = sanction.type === 'warning'
-            ? (isDelay ? 'Delay Warning' : 'Warning')
-            : sanction.type === 'penalty'
-            ? (isDelay ? 'Delay Penalty' : 'Penalty')
-            : sanction.type === 'expulsion'
-            ? 'Expulsion'
-            : sanction.type === 'disqualification'
-            ? 'Disqualification'
-            : '';
-
-        // Format: Team A/B, Set X, Score X:X, sanction and player n/function if necessarily
-        const teamLabel = `Team ${sanction.team}`;
-        const setLabel = `Set ${sanction.set}`;
-        const scoreLabel = `Score ${sanction.score}`;
-
-        // Include player number/function if it exists and is not a delay sanction
-        // For delay sanctions, we already wrote "Delay" in the type, so no player info needed
-        // For non-delay sanctions, include the player number or function
-        const playerInfo = !isDelay && sanction.playerNr
-            ? `, ${sanction.playerNr}`
-            : '';
-
-        return `${teamLabel}, ${setLabel}, ${scoreLabel}, ${typeLabel}${playerInfo}`;
-    };
-
-    const hasContent = remarks.trim() || overflowSanctions.length > 0;
+export const Remarks: React.FC<RemarksProps> = ({ overflowSanctions = [], remarks = '', generated = [] }) => {
+    // One text: generated remarks, the scorer's own, then the sanctions beyond the box.
+    // It wraps and shrinks to fit the box: never hidden, never a scrollbar in the PDF.
+    const parts: string[] = [];
+    for (const line of generated) if (line.trim()) parts.push(line.trim());
+    if (remarks.trim()) parts.push(remarks.trim());
+    if (overflowSanctions.length > 0) {
+        parts.push(['Sanctions (overflow):', ...overflowSanctions.map(formatSanctionRemark)].join('\n'));
+    }
+    const text = parts.join('\n');
 
     return (
         <div className="border border-r-0 border-black bg-white flex flex-col h-full">
             <div className="bg-gray-200 border-b border-r border-black text-center font-bold text-[10px] py-0.5 shrink-0">REMARKS</div>
-            <div className="border-r border-black p-1 flex-1 flex flex-col overflow-y-auto">
-                {hasContent ? (
-                    <div className="w-full flex-1 bg-transparent text-[9px] leading-tight h-full">
-                        {remarks.trim() && (
-                            <div className="text-[9px] leading-tight whitespace-pre-wrap mb-1">
-                                {remarks.trim()}
-                            </div>
-                        )}
-                        {overflowSanctions.length > 0 && (
-                            <>
-                                {remarks.trim() && <div className="mb-1"></div>}
-                        <div className="font-bold mb-1 text-[9px]">Sanctions (overflow):</div>
-                        {overflowSanctions.map((sanction, index) => (
-                            <div key={index} className="text-[9px] leading-tight">
-                                {formatSanction(sanction)}
-                            </div>
-                        ))}
-                            </>
-                        )}
-                    </div>
-                ) : (
-                    <div className="w-full flex-1 bg-transparent text-[9px] leading-tight h-full"></div>
-                )}
+            <div className="border-r border-black p-1 flex-1 flex flex-col overflow-hidden min-h-0">
+                <FitText max={9} min={4} multiline className="w-full h-full leading-tight" data-testid="remarks-text">
+                    {text}
+                </FitText>
             </div>
         </div>
     );
@@ -195,6 +178,13 @@ interface ResultsProps {
   blankResultUntilFinished?: boolean;
 }
 
+/** A single line through an unused row (SC p.18: one line for one empty row). */
+const RowStrike: React.FC = () => (
+    <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none" data-testid="row-strike" aria-hidden="true">
+        <line x1="0" y1="50" x2="100" y2="50" stroke="black" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+    </svg>
+);
+
 // Component to display set duration (removed countdown functionality - duration should only show the set length)
 const SetIntervalCountdown: React.FC<{ endTime?: string; duration?: string }> = ({ duration }) => {
   // Simply show the duration - no countdown needed for Results table
@@ -215,6 +205,8 @@ export const Results: React.FC<ResultsProps> = ({
   bestOf = 5,
   blankResultUntilFinished = false
 }) => {
+    // Once the match is decided, the rows of sets never played are struck off (field-spec 9, 11)
+    const matchOver = !!result;
     // For best-of-3: show 3 rows (sets 1, 2, and the deciding set which is stored at index 5)
     // For best-of-5: show 5 rows (sets 1-5)
     const isBestOf3 = bestOf === 3;
@@ -227,7 +219,7 @@ export const Results: React.FC<ResultsProps> = ({
                 <div className="bg-white flex flex-col">
                     <div className="flex items-center gap-1 px-1 border-b border-black h-5 bg-gray-50">
                          <div className="w-4 h-4 rounded-full border border-black flex items-center justify-center bg-white text-black text-[9px] font-bold shrink-0">A</div>
-                         <div className="text-[9px] font-bold text-center uppercase w-full bg-transparent">{coinTossConfirmed ? teamAShortName : ''}</div>
+                         <FitText max={9} min={5} className="font-bold text-center uppercase w-full bg-transparent">{coinTossConfirmed ? teamAShortName : ''}</FitText>
                     </div>
                     <div className="grid grid-cols-4 text-[8px] text-center font-bold bg-white border-b border-black">
                         <div className="border-r border-black">T</div><div className="border-r border-black">S</div><div className="border-r border-black">W</div><div >P</div>
@@ -237,7 +229,8 @@ export const Results: React.FC<ResultsProps> = ({
                             const setData = setResults.find(r => r.setNumber === set);
                             const isFinished = setData && setData.teamATimeouts !== null;
                             return (
-                             <div key={set} className="grid grid-cols-4 flex-1 border-b border-gray-200 text-xs">
+                             <div key={set} className="grid grid-cols-4 flex-1 border-b border-gray-200 text-xs relative">
+                                {matchOver && !isFinished && <RowStrike />}
                                 <div className="border-r border-gray-200 flex items-center justify-center text-[9px] font-bold">
                                     {isFinished ? (setData.teamATimeouts ?? 0) : ''}
                                 </div>
@@ -276,7 +269,7 @@ export const Results: React.FC<ResultsProps> = ({
                      <div className="h-5 border-b border-black bg-gray-200"></div>
                      <div className="bg-white text-[8px] font-bold text-center border-b border-black h-[13px] grid" style={{ gridTemplateColumns: '1fr 2fr' }}>
                          <span className="border-r border-black flex-1">Set</span>
-                         <span className="flex-1">Time</span>
+                         <span className="flex-1">(Duration)</span>
                      </div>
                      <div className="flex-1 flex flex-col">
                         {displaySets.map((set, idx) => {
@@ -288,7 +281,8 @@ export const Results: React.FC<ResultsProps> = ({
                             // Only show set 4 and 5 labels (in best-of-5) if they were actually played
                             const showSetNumber = isBestOf3 || set <= 3 || (setData && setData.teamATimeouts !== null);
                             return (
-                            <div key={set} className="flex-1 border-b border-gray-200 grid font-bold text-xs bg-white" style={{ gridTemplateColumns: '1fr 2fr' }}>
+                            <div key={set} className="flex-1 border-b border-gray-200 grid font-bold text-xs bg-white relative" style={{ gridTemplateColumns: '1fr 2fr' }}>
+                                {matchOver && !(setData && setData.teamATimeouts !== null) && <RowStrike />}
                                 <div className="flex items-center justify-center border-r border-black text-[9px]">{showSetNumber ? displayLabel : ''}</div>
                                 <div className="flex items-center justify-center text-[9px]">
                                     <SetIntervalCountdown endTime={setData?.endTime} duration={setData?.duration} />
@@ -318,7 +312,7 @@ export const Results: React.FC<ResultsProps> = ({
                  <div className="bg-white flex flex-col">
                     <div className="flex items-center gap-1 px-1 border-b border-r border-black h-5 bg-gray-50 flex-row-reverse">
                          <div className="w-4 h-4 rounded-full border border-black flex items-center justify-center bg-white text-black text-[9px] font-bold shrink-0">B</div>
-                         <div className="text-[9px] font-bold text-center uppercase w-full bg-transparent">{coinTossConfirmed ? teamBShortName : ''}</div>
+                         <FitText max={9} min={5} className="font-bold text-center uppercase w-full bg-transparent">{coinTossConfirmed ? teamBShortName : ''}</FitText>
                     </div>
                     <div className="grid grid-cols-4 text-[8px] text-center font-bold bg-white border-b border-black">
                         <div className="border-r border-black">P</div><div className="border-r border-black">W</div><div className="border-r border-black">S</div><div className="border-r border-black">T</div>
@@ -328,7 +322,8 @@ export const Results: React.FC<ResultsProps> = ({
                             const setData = setResults.find(r => r.setNumber === set);
                             const isFinished = setData && setData.teamBTimeouts !== null;
                             return (
-                             <div key={set} className="grid grid-cols-4 flex-1 border-b border-gray-200 text-xs min-h-[16px]">
+                             <div key={set} className="grid grid-cols-4 flex-1 border-b border-gray-200 text-xs min-h-[16px] relative">
+                                {matchOver && !isFinished && <RowStrike />}
                                 <div className="border-r border-gray-200 flex items-center justify-center text-[9px] font-bold">
                                     {isFinished ? (setData.teamBPoints ?? 0) : ''}
                                 </div>
@@ -362,19 +357,19 @@ export const Results: React.FC<ResultsProps> = ({
                 </div>
             </div>
 
-            {/* Set Start/End/Duration Row - spans full width */}
-            <div className="border-t border-black grid grid-cols-6 bg-white shrink-0" style={{ height: '0.5cm' }}>
-                <div className="border-r border-black text-[6px] font-bold flex items-center justify-start pl-1">Match Start</div>
-                <div className="border-r border-black flex items-center justify-center">
-                    <div className="w-full text-center text-[6px] font-bold bg-white">{matchStart}</div>
+            {/* Match start / end / duration: "HH h MM min" / "H h MM min" (field-spec 9) */}
+            <div className="border-t border-black grid bg-white shrink-0" style={{ height: '0.6cm', gridTemplateColumns: 'auto 1fr auto 1fr auto 1fr' }}>
+                <div className="border-r border-black text-[8px] font-bold flex items-center justify-start px-1">Start</div>
+                <div className="border-r border-black flex items-center justify-center min-w-0">
+                    <FitText max={8} min={5} className="w-full text-center font-bold bg-white">{matchStart}</FitText>
                 </div>
-                <div className="border-r border-black text-[6px] font-bold flex items-center justify-start pl-1">Match End</div>
-                <div className="border-r border-black flex items-center justify-center">
-                    <div className="w-full text-center text-[6px] font-bold bg-white">{matchEnd}</div>
+                <div className="border-r border-black text-[8px] font-bold flex items-center justify-start px-1">End</div>
+                <div className="border-r border-black flex items-center justify-center min-w-0">
+                    <FitText max={8} min={5} className="w-full text-center font-bold bg-white">{matchEnd}</FitText>
                 </div>
-                <div className="border-r border-black text-[6px] font-bold flex items-center justify-start pl-1">Match Duration</div>
-                <div className="border-r border-black flex items-center justify-center">
-                    <div className="w-full text-center text-[6px] font-bold bg-white">{matchDuration}</div>
+                <div className="border-r border-black text-[8px] font-bold flex items-center justify-start px-1">Duration</div>
+                <div className="border-r border-black flex items-center justify-center min-w-0">
+                    <FitText max={8} min={5} className="w-full text-center font-bold bg-white">{matchDuration}</FitText>
                 </div>
             </div>
 
@@ -382,7 +377,10 @@ export const Results: React.FC<ResultsProps> = ({
             <div className="border-r border-black p-1 grid grid-cols-[3fr_1fr] gap-1 border-t border-black h-14 shrink-0 bg-white">
                  <div className="relative">
                      <span className="text-[12px] absolute top-0 left-0 text-gray-500">WINNER</span>
-                     <div className="w-full h-full text-center font-black uppercase text-lg bg-white flex items-end justify-center pb-0.5">{winner}</div>
+                     {/* the full name (field-spec 9): shrinks to fit, never cut or overflowing the box */}
+                     <div className="w-full h-full flex items-end justify-center pb-0.5 pt-3 min-w-0">
+                         <FitText max={18} min={6} multiline className="w-full h-full text-center font-black uppercase bg-white leading-none" data-testid="results-winner">{winner}</FitText>
+                     </div>
                  </div>
                  <div className="relative" >
                      <span className="text-[12px] absolute top-0 left-0 right-0 text-center text-gray-500">RESULT</span>
@@ -419,7 +417,8 @@ export const Results: React.FC<ResultsProps> = ({
 };
 
 interface ApprovalsProps {
-  officials?: any[];
+  /** normalizeOfficials(match.officials) */
+  officials?: SheetOfficial[];
   match?: any;
   teamAKey?: 'home' | 'away';
   lineJudges?: string[];
@@ -438,15 +437,9 @@ const APPROVAL_SLOT_OF_ROLE: Record<string, string> = {
 export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, teamAKey = 'home', lineJudges = [], sets = [] }) => {
     const roles = ["1st Referee", "2nd Referee", "Scorer", "Assistant Scorer"];
 
-    // Format line judge name from "FirstName LastName" to "LastName FirstName"
-    const formatLineJudgeName = (fullName: string): string => {
-        if (!fullName) return '';
-        const parts = fullName.trim().split(/\s+/);
-        if (parts.length === 1) return parts[0];
-        const firstName = parts[0];
-        const lastName = parts.slice(1).join(' ');
-        return `${lastName} ${firstName}`;
-    };
+    // Line judges are stored as one name, as typed: printed as entered (splitting it
+    // into first / last name garbled compound names, "Marie Claire de la Fontaine")
+    const formatLineJudgeName = (fullName: string): string => (fullName || '').trim();
 
     // Load signatures from match data
     const getSignatureForRole = (role: string): string | null => {
@@ -478,12 +471,7 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
     const captainASignature = homeIsA ? homeCaptainSignature : awayCaptainSignature;
     const captainBSignature = homeIsA ? awayCaptainSignature : homeCaptainSignature;
 
-    const getOfficial = (role: string) => {
-        return officials.find(o =>
-            o.role?.toLowerCase() === role.toLowerCase() ||
-            (role === 'Assistant Scorer' && o.role?.toLowerCase() === 'assistant scorer')
-        );
-    };
+    const getOfficial = (role: string) => findOfficial(officials, role);
 
     return (
         <div className="border border-r-0 border-black bg-white flex flex-col w-full">
@@ -494,7 +482,8 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
                  <div className="w-20 border-r border-black text-left text-[9px] h-5 flex items-center justify-left">Official</div>
                  <div className="w-28 border-r border-black text-left text-[9px] h-5 flex items-center justify-left">Name</div>
                  <div className="w-16 border-r border-black text-center text-[9px] h-5 flex items-center justify-center">Country</div>
-                 <div className="w-16 border-r border-black text-center text-[9px] h-5 flex items-center justify-center">Lic.</div>
+                 {/* the paper's "Lizenz-Nr." column holds the date of birth (SC p.9-11) */}
+                 <div className="w-16 border-r border-black text-center text-[9px] h-5 flex items-center justify-center">DoB</div>
                  <div className="flex-1 text-center text-[9px] h-5 flex items-center justify-center">Signature</div>
             </div>
 
@@ -502,22 +491,23 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
             <div className="flex flex-col flex-1 min-h-0">
                 {roles.map((role, idx) => {
                     const official = getOfficial(role);
-                    const fullName = official ? `${official.lastName || ''} ${official.firstName || ''}`.trim() : '';
+                    // "Lastname, F." (field-spec 10)
+                    const fullName = official ? formatPersonName(official.lastName, official.firstName) : '';
 
                     return (
                     <div key={idx} className="flex items-center border-b border-r border-black px-2 gap-2 flex-1 h-5">
                         <div className="w-20 border-r border-black font-bold text-[9px] shrink-0 flex items-center h-5">{role}</div>
 
-                        <div className="w-28 border-r border-black shrink-0 flex items-center h-5">
-                            <div className="w-full text-[9px] bg-white pb-0.5">{fullName}</div>
+                        <div className="w-28 border-r border-black shrink-0 flex items-center h-5 min-w-0">
+                            <FitText max={9} min={5} className="w-full bg-white pb-0.5 pr-0.5" title={fullName}>{fullName}</FitText>
                         </div>
 
                         <div className="w-16 border-r border-black shrink-0 flex items-center justify-center h-5">
                             <div className="text-center w-full text-[9px] bg-white pb-0.5">{fullName ? (official?.country || '') : ''}</div>
                         </div>
 
-                         <div className="w-16 border-r border-black shrink-0 flex items-center justify-center h-5">
-                            <div className="text-center w-full text-[9px] bg-white pb-0.5">{fullName ? ((official as { license?: string })?.license || '') : ''}</div>
+                         <div className="w-16 border-r border-black shrink-0 flex items-center justify-center h-5" data-testid={`approval-dob-${idx}`}>
+                            <div className="text-center w-full text-[9px] bg-white pb-0.5">{fullName ? formatDob(official?.dob) : ''}</div>
                         </div>
 
                         <div
@@ -533,12 +523,15 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
                                     style={{ maxHeight: '20px' }}
                                 />
                             ) : getApprovalStamp(role) ? (
-                                <div
-                                    className="w-full h-5 overflow-hidden text-left text-[6px] leading-[7px] text-black"
+                                <FitText
+                                    max={7.5}
+                                    min={5}
+                                    multiline
+                                    className="w-full h-5 text-left leading-[1.15] text-black pl-0.5 pt-[1px]"
                                     data-testid={`approval-stamp-${APPROVAL_SLOT_OF_ROLE[role]}`}
                                 >
                                     {getApprovalStamp(role)}
-                                </div>
+                                </FitText>
                             ) : (
                                 <div className="w-full h-5"></div>
                             )}
@@ -558,24 +551,24 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
                 <div className="flex-1 flex flex-col">
                     {/* Row 1: Line Judges 1 and 2 */}
                     <div className="flex-1 flex border-b border-black">
-                        <div className="flex-1 flex items-center px-2 border-r border-black">
+                        <div className="flex-1 flex items-center px-2 border-r border-black min-w-0">
                             <span className="text-[9px] font-bold mr-1">1.</span>
-                            <span className="text-[9px]">{formatLineJudgeName(lineJudges[0] || '')}</span>
+                            <FitText max={9} min={5} className="flex-1">{formatLineJudgeName(lineJudges[0] || '')}</FitText>
                         </div>
-                        <div className="flex-1 flex items-center px-2">
+                        <div className="flex-1 flex items-center px-2 min-w-0">
                             <span className="text-[9px] font-bold mr-1">2.</span>
-                            <span className="text-[9px]">{formatLineJudgeName(lineJudges[1] || '')}</span>
+                            <FitText max={9} min={5} className="flex-1">{formatLineJudgeName(lineJudges[1] || '')}</FitText>
                         </div>
                     </div>
                     {/* Row 2: Line Judges 3 and 4 */}
                     <div className="flex-1 flex">
-                        <div className="flex-1 flex items-center px-2 border-r border-black">
+                        <div className="flex-1 flex items-center px-2 border-r border-black min-w-0">
                             <span className="text-[9px] font-bold mr-1">3.</span>
-                            <span className="text-[9px]">{formatLineJudgeName(lineJudges[2] || '')}</span>
+                            <FitText max={9} min={5} className="flex-1">{formatLineJudgeName(lineJudges[2] || '')}</FitText>
                         </div>
-                        <div className="flex-1 flex items-center px-2">
+                        <div className="flex-1 flex items-center px-2 min-w-0">
                             <span className="text-[9px] font-bold mr-1">4.</span>
-                            <span className="text-[9px]">{formatLineJudgeName(lineJudges[3] || '')}</span>
+                            <FitText max={9} min={5} className="flex-1">{formatLineJudgeName(lineJudges[3] || '')}</FitText>
                         </div>
                     </div>
                 </div>
@@ -632,7 +625,7 @@ interface RosterProps {
   team: string;
   side: string;
   players?: Player[];
-  benchStaff?: any[];
+  benchStaff?: any[] | null;
   preGameCaptainSignature?: string;
   preGameCoachSignature?: string;
   coinTossConfirmed?: boolean;
@@ -641,6 +634,8 @@ interface RosterProps {
 
 export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchStaff = [], preGameCaptainSignature, preGameCoachSignature, coinTossConfirmed, isHome = true }) => {
     const [openSignature, setOpenSignature] = useState<string | null>(null);
+    // bench_home / bench_away may be null or an object in older rows
+    const staff: any[] = Array.isArray(benchStaff) ? benchStaff : [];
 
     // Create unique signature keys based on side
     const captainSignatureKey = `roster-${side.toLowerCase()}-captain`;
@@ -693,14 +688,18 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
         setOpenSignature(null);
     };
 
-    // DoB (44px), Number (20px), Licence-No (40px), Name (Remaining).
-    // The official Swiss Matchblatt roster records each player's Lizenz-Nr.
-    const gridClass = "grid grid-cols-[44px_20px_40px_1fr]";
+    // DoB | No | Name, as the Matchblatt roster (field-spec 3): its "Lizenz-Nr." column
+    // holds the date of birth (SC p.10), so there is no separate licence column.
+    // DD.MM.YYYY needs ~50 px at 9 px.
+    const gridClass = "grid grid-cols-[58px_22px_minmax(0,1fr)]";
     // Unified height for Libero and Bench Official cells
     const rowHeight = "h-4";
 
-    // Include all players in roster (including liberos) - up to 14 players total
+    // The 14 rows, liberos included, by shirt number (formatPlayers sorts them). A team
+    // with more than 14 players: the extra ones go in the last row's note, never dropped
+    // without a trace.
     const regularPlayers = players.slice(0, 14);
+    const extraPlayers = players.slice(14);
     // Get liberos separately for the libero section, sorted by jersey number
     const liberos = players
         .filter(p => p.libero)
@@ -713,11 +712,11 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                 {isHome ? (
                     <>
                         <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center shrink-0 font-bold text-[10px] uppercase">{coinTossConfirmed ? side : ''}</div>
-                        <div className="font-bold text-xs uppercase flex-1 text-center bg-white text-left pl-2">{team}</div>
+                        <FitText max={12} min={6} className="font-bold uppercase flex-1 bg-white text-left pl-2">{team}</FitText>
                     </>
                 ) : (
                     <>
-                        <div className="font-bold text-xs uppercase flex-1 text-center bg-white pr-2">{team}</div>
+                        <FitText max={12} min={6} className="font-bold uppercase flex-1 text-right bg-white pr-2">{team}</FitText>
                         <div className="w-5 h-5 rounded-full border border-black flex items-center justify-center shrink-0 font-bold text-[10px] uppercase ml-1">{coinTossConfirmed ? side : ''}</div>
                     </>
                 )}
@@ -726,7 +725,6 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
             <div className={`bg-white border-b border-r border-black ${gridClass} text-[11px] font-bold h-4 items-center shrink-0`}>
                 <div className="border-r border-black text-center h-full flex items-center justify-center">DoB</div>
                 <div className="border-r border-black text-center h-full flex items-center justify-center">No</div>
-                <div className="border-r border-black text-center h-full flex items-center justify-center text-[9px]">Lic.</div>
                 <div className="pl-1 h-full flex items-center">Name</div>
             </div>
 
@@ -737,7 +735,7 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                     const isCaptain = player?.isCaptain;
                     return (
                     <div key={i} className={`${gridClass} last:border-none flex-1 h-4`}>
-                        <div className="border-r border-black flex items-center justify-center text-center text-[9px]">{player?.dob || ''}</div>
+                        <div className="border-r border-black flex items-center justify-center text-center text-[9px] whitespace-nowrap overflow-hidden">{player?.dob || ''}</div>
                         <div className="border-r border-black flex items-center justify-center relative font-bold">
                             <div className="font-bold bg-white text-center w-full text-[10px]">{player?.number || ''}</div>
                             {isCaptain && (
@@ -746,10 +744,12 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                                 </svg>
                             )}
                         </div>
-                        <div className="border-r border-black flex items-center justify-center text-center text-[8px]">{player?.license || ''}</div>
-                        <div className="text-left px-1 font-medium uppercase text-[9px] flex items-center justify-between">
-                            <span>{player?.name || ''}</span>
+                        <div className="text-left px-1 font-medium flex items-center justify-between min-w-0">
+                            <FitText max={9} min={5} className="flex-1" title={player?.name || ''}>{player?.name || ''}</FitText>
                             {player?.isLfp && <span className="text-[7px] font-bold ml-1 shrink-0">LFP</span>}
+                            {i === 13 && extraPlayers.length > 0 && (
+                                <span className="text-[6px] ml-1 shrink-0" data-testid="roster-extra-players">+{extraPlayers.map(p => p.number).join(', ')}</span>
+                            )}
                         </div>
                     </div>
                 )})}
@@ -760,15 +760,13 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                 <div className="bg-gray-200 text-[12px] font-bold border-b border-black h-4 flex items-center justify-center">LIBERO</div>
                 {Array.from({ length: 2 }).map((_, i) => {
                     const libero = liberos[i];
-                    // Capitalize only (not UPPERCASE) for liberos
-                    const liberoName = libero?.name ? libero.name.charAt(0).toUpperCase() + libero.name.slice(1).toLowerCase() : '';
+                    const liberoName = libero?.name || '';
                     return (
                         <div key={i} className={`${gridClass} ${rowHeight} text-[9px]`}>
-                            <div className="border-r border-black text-center flex items-center justify-center">{libero?.dob || ''}</div>
+                            <div className="border-r border-black text-center flex items-center justify-center whitespace-nowrap overflow-hidden">{libero?.dob || ''}</div>
                             <div className="border-r border-black font-bold bg-white text-center flex items-center justify-center">{libero?.number || ''}</div>
-                            <div className="border-r border-black text-center flex items-center justify-center text-[8px]">{libero?.license || ''}</div>
-                            <div className="text-left px-1 font-medium uppercase text-[9px] flex items-center justify-between">
-                                <span>{liberoName}</span>
+                            <div className="text-left px-1 font-medium flex items-center justify-between min-w-0">
+                                <FitText max={9} min={5} className="flex-1">{liberoName}</FitText>
                                 {libero?.isLfp && <span className="text-[7px] font-bold ml-1 shrink-0">LFP</span>}
                             </div>
                         </div>
@@ -787,15 +785,18 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
                          'P': 'Physiotherapist',
                          'M': 'Medic'
                      };
-                     const official = benchStaff.find(s => s.role === roleMap[roleLabel]);
-                     const fullName = official ? `${official.lastName || ''} ${official.firstName || ''}`.trim() : '';
+                     const official = staff.find(s => s && s.role === roleMap[roleLabel]);
+                     const fullName = official
+                         ? formatPersonName(official.lastName ?? official.last_name, official.firstName ?? official.first_name)
+                         : '';
 
                      return (
                          <div key={roleLabel} className={`${gridClass} text-[9px] items-center ${rowHeight}`}>
-                             <div className="text-center flex items-center justify-center">{official?.dob || ''}</div>
+                             <div className="text-center flex items-center justify-center whitespace-nowrap overflow-hidden">{formatDob(official?.dob)}</div>
                              <div className="font-bold text-center border-r border-l border-black h-full flex items-center justify-center bg-white text-[9px]">{roleLabel}</div>
-                             <div className="border-r border-black h-full flex items-center justify-center text-[8px]">{(official as { license?: string })?.license || ''}</div>
-                             <div className="uppercase bg-white px-1 text-left flex items-center">{fullName}</div>
+                             <div className="bg-white px-1 text-left flex items-center min-w-0">
+                                 <FitText max={9} min={5} className="flex-1">{fullName}</FitText>
+                             </div>
                          </div>
                      );
                  })}

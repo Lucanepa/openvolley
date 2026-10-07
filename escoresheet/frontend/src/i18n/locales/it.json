@@ -1294,7 +1294,18 @@
     "backToScoresheet": "Torna all'eScoresheet",
     "lcs": "Foglio di controllo libero",
     "lcsTooltip": "Mostra il foglio di controllo libero",
-    "pdfFailed": "Non è stato possibile creare il PDF su questo dispositivo."
+    "pdfFailed": "Non è stato possibile creare il PDF su questo dispositivo.",
+    "matchNotFound": "Questa partita non è su questo dispositivo: non c’è nessun referto da salvare.",
+    "pdfInvalid": "Non è stato possibile creare correttamente il PDF. Riprova.",
+    "pdfSavedAt": "PDF salvato:",
+    "savingFile": "Salvataggio di {{fileName}} nella cartella Download...",
+    "pdfDownloaded": "Scaricato nella cartella dei download del browser:",
+    "pdfHandedToApp": "L’app sta salvando {{fileName}}: la barra in alto indica dove.",
+    "openFile": "Apri file",
+    "showInFolder": "Mostra nella cartella",
+    "dismiss": "Chiudi",
+    "fileActionFailed": "Non è stato possibile aprire il file da qui. Si trova in: {{path}}",
+    "checkTheMatch": "Controlla la partita prima di approvarla:"
   },
   "supportFeedback": {
     "title": "Supporto & feedback",
@@ -2282,7 +2293,10 @@
     "pdfSaveFailed": "Non è stato possibile salvare il PDF: {{error}}",
     "savingPdf": "Salvataggio del PDF...",
     "downloadFailed": "Il download non è stato completato.",
-    "downloadsFolder": "Download"
+    "downloadsFolder": "Download",
+    "openPdf": "Apri",
+    "sharePdf": "Condividi",
+    "pdfActionFailed": "Non è stato possibile aprirlo: {{error}}"
   },
   "access": {
     "pendingTitle": "Il tuo account è in attesa di approvazione",
