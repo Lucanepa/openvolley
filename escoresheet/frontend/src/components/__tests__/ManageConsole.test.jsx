@@ -68,6 +68,20 @@ describe('ManageConsole', () => {
     await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalled())
   })
 
+  it('OpenVolley\'s console scopes accounts, invites and audit to ?app=indoor (S2 review: no OpenBeach data)', async () => {
+    asUser(['admin'])
+    const { rerender } = render(<ManageConsole tab="accounts" onTab={() => {}} onClose={() => {}} />)
+    await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalledWith({ filter: 'pending', q: undefined, app: 'indoor' }))
+    expect(api.admin.listAccounts).toHaveBeenCalledWith({ filter: 'pending', app: 'indoor' })
+    rerender(<ManageConsole tab="invites" onTab={() => {}} onClose={() => {}} />)
+    await waitFor(() => expect(api.admin.listInvites).toHaveBeenCalledWith({ app: 'indoor' }))
+    rerender(<ManageConsole tab="audit" onTab={() => {}} onClose={() => {}} />)
+    await waitFor(() => expect(api.admin.listAudit).toHaveBeenCalledWith({ limit: 50, before: undefined, app: 'indoor' }))
+    for (const fn of [api.admin.listAccounts, api.admin.listInvites, api.admin.listAudit]) {
+      expect(fn.mock.calls.every(([o]) => o?.app === 'indoor')).toBe(true)
+    }
+  })
+
   it('a competition manager lands on saved teams whatever tab was asked', async () => {
     asUser(['competition_manager'])
     render(<ManageConsole tab="accounts" onTab={() => {}} onClose={() => {}} />)
@@ -108,5 +122,20 @@ describe('InvitesPanel', () => {
     fireEvent.click(closeButtons[closeButtons.length - 1])
     await waitFor(() => expect(screen.queryByTestId('invite-code')).toBeNull())
     expect(document.body.textContent).not.toContain('ABCD-EFGH-JKMN')
+  })
+
+  it('a code made in OpenVolley\'s console is an indoor code (sport: indoor)', async () => {
+    asUser(['admin'])
+    api.admin.createInvite.mockResolvedValue({
+      data: { code: 'ABCD-EFGH-JKMN', invite: { id: 'i1', label: 'VBC', club: null, role: 'scorer', sport: 'indoor', code_hint: 'JKMN', state: 'active', uses: 0, max_uses: 1 } },
+      error: null,
+      status: 201
+    })
+    render(<InvitesPanel app="indoor" />)
+    await waitFor(() => expect(api.admin.listInvites).toHaveBeenCalledWith({ app: 'indoor' }))
+    fireEvent.click(await screen.findByText('manage.invites.new'))
+    fireEvent.change(screen.getByLabelText('manage.invites.label'), { target: { value: 'VBC' } })
+    fireEvent.click(screen.getByTestId('create-invite'))
+    await waitFor(() => expect(api.admin.createInvite).toHaveBeenCalledWith(expect.objectContaining({ label: 'VBC', role: 'scorer', sport: 'indoor' })))
   })
 })

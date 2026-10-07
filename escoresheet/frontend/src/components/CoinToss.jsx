@@ -18,6 +18,7 @@ import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { getBackendUrl } from '../utils/backendConfig'
 import { setExtId, eventExtId } from '../utils/syncIds'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
+import { teamBoxStyle } from '../utils/teamColours'
 import { FileTextIcon, SearchIcon, TrashIcon } from './icons'
 import { ArrowLeft, ArrowLeftRight } from 'lucide-react'
 import { Button } from '../ui/Button.jsx'
@@ -95,17 +96,6 @@ const BENCH_ROLES = [
   { value: 'Physiotherapist', label: 'P', fullLabel: 'Physiotherapist' },
   { value: 'Medic', label: 'M', fullLabel: 'Medic' }
 ]
-
-// Helper function to determine if a color is bright/light
-function isBrightColor(color) {
-  if (!color || color === 'image.png') return false
-  const hex = color.replace('#', '')
-  const r = parseInt(hex.substr(0, 2), 16)
-  const g = parseInt(hex.substr(2, 2), 16)
-  const b = parseInt(hex.substr(4, 2), 16)
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-  return luminance > 0.5
-}
 
 // Date formatting helpers
 function formatDateToDDMMYYYY(dateStr) {
@@ -1535,8 +1525,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%' }}>
               <div
                 style={{
-                  background: teamAInfo.color,
-                  color: isBrightColor(teamAInfo.color) ? '#000' : '#fff',
+                  ...teamBoxStyle(teamAInfo.color),
                   flex: 1, padding: sizes.teamButtonPadding, fontSize: sizes.teamButtonFont, width: '100%',
                   fontWeight: 600, border: 'none', borderRadius: '8px',
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -1619,8 +1608,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%' }}>
               <div
                 style={{
-                  background: teamBInfo.color,
-                  color: isBrightColor(teamBInfo.color) ? '#000' : '#fff',
+                  ...teamBoxStyle(teamBInfo.color),
                   flex: 1, padding: sizes.teamButtonPadding, fontSize: sizes.teamButtonFont, width: '100%',
                   fontWeight: 600, border: 'none', borderRadius: '8px',
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',

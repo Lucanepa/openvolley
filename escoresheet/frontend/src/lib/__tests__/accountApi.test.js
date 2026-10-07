@@ -6,7 +6,7 @@ vi.mock('../../utils/backendConfig', () => ({
 }))
 
 import { apiRequest } from '../apiClient'
-import { redeemInvite, officialCheck, admin, savedTeamsApi, errorKeyOf, formatInviteCode, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS } from '../accountApi'
+import { redeemInvite, officialCheck, admin, savedTeamsApi, errorKeyOf, formatInviteCode, fetchMe, joinApp, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS, approvalPinApi, approvalsApi, isApprovalUnavailable } from '../accountApi'
 
 function jsonResponse(body, status = 200) {
   return { ok: status >= 200 && status < 300, status, json: async () => body }
@@ -139,10 +139,75 @@ describe('accountApi endpoints', () => {
   })
 })
 
+describe('approval endpoints (account-approval spec 3)', () => {
+  beforeEach(() => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: {}, error: null }))
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  it('hits the exact paths and bodies of the contract', async () => {
+    await approvalPinApi.status()
+    await approvalPinApi.set({ password: 'pw', pin: '0420' })
+    await approvalPinApi.remove({ password: 'pw' })
+    await approvalsApi.approve({ external_id: 'match_1', slot: 'referee1', email: 'a@b.ch', pin: '482917', result: { sets: [[1, 25, 20]] }, device_id: 'd-1' })
+    await approvalsApi.approve({ external_id: 'match_1', slot: 'scorer', email: 'a@b.ch', pin: '482917', result: { sets: [] }, device_id: null })
+    await approvalsApi.list('match 1/x')
+    await approvalsApi.undo('6f1c')
+    await admin.listApprovals({ q: '6F1C2A9B', include_revoked: true, limit: 20 })
+    await admin.listApprovals({ q: '4711' })
+    await approvalsApi.mine()
+    await approvalsApi.mine({ limit: 10 })
+    await approvalsApi.approve({ external_id: 'match_1', slot: 'referee2', email: 'a@b.ch', pin: '482917', result: { sets: [] }, lang: 'de-CH' })
+
+    const calls = globalThis.fetch.mock.calls.map((_, i) => call(i))
+    expect(calls.map(c => `${c.method} ${c.url.replace('http://backend.test', '')}`)).toEqual([
+      'GET /api/account/approval-pin',
+      'POST /api/account/approval-pin',
+      'POST /api/account/approval-pin/remove',
+      'POST /api/approvals',
+      'POST /api/approvals',
+      'GET /api/approvals?external_id=match%201%2Fx',
+      'DELETE /api/approvals/6f1c',
+      'GET /api/admin/approvals?q=6F1C2A9B&include_revoked=1&limit=20',
+      'GET /api/admin/approvals?q=4711',
+      'GET /api/account/approvals',
+      'GET /api/account/approvals?limit=10',
+      'POST /api/approvals'
+    ])
+    expect(calls[1].body).toEqual({ password: 'pw', pin: '0420' })
+    expect(calls[2].body).toEqual({ password: 'pw' })
+    expect(calls[3].body).toEqual({ external_id: 'match_1', slot: 'referee1', email: 'a@b.ch', pin: '482917', result: { sets: [[1, 25, 20]] }, device_id: 'd-1' })
+    expect(calls[4].body).not.toHaveProperty('device_id')
+    expect(calls[6].body).toBeUndefined()
+    expect(calls[4].body).not.toHaveProperty('lang')
+    expect(calls[11].body).toMatchObject({ slot: 'referee2', lang: 'de-CH' })
+  })
+
+  it('maps every new error code to approval.errors.*', () => {
+    const cases = {
+      OV_APPROVAL_PIN_INVALID: 'pinInvalid', OV_APPROVAL_PIN_FORMAT: 'pinFormat',
+      OV_APPROVAL_SCORER_NOT_REFEREE: 'scorerNotReferee', OV_APPROVAL_CALLER_ROLE: 'callerRole',
+      OV_APPROVAL_PIN_WEAK: 'pinWeak', OV_PASSWORD_INVALID: 'passwordInvalid', OV_APPROVAL_ROLE_REQUIRED: 'roleRequired',
+      OV_APPROVAL_NOT_MATCH_SCORER: 'notMatchScorer', OV_APPROVAL_NAME_REQUIRED: 'nameRequired', OV_APPROVAL_ONE_SLOT: 'oneSlot',
+      OV_APPROVAL_SLOT_TAKEN: 'slotTaken', OV_MATCH_CLOSED: 'matchClosed', OV_MATCH_NOT_ENDED: 'matchNotEnded',
+      OV_RESULT_NOT_SYNCED: 'resultNotSynced', OV_APPROVAL_UNSUPPORTED: 'unsupported', OV_APPROVAL_UNAVAILABLE: 'unavailable'
+    }
+    for (const [code, key] of Object.entries(cases)) {
+      // before the generic 401/403 fallback
+      expect(errorKeyOf({ code, status: 403 })).toBe(`approval.errors.${key}`)
+    }
+    expect(errorKeyOf({ code: 'OV_EMAIL_UNCONFIRMED', status: 409 }, { context: 'approval' })).toBe('approval.errors.emailUnconfirmed')
+    expect(isApprovalUnavailable({ code: 'OV_APPROVAL_UNAVAILABLE' })).toBe(true)
+    expect(isApprovalUnavailable({ code: 'OV_DB_NOT_CONFIGURED' })).toBe(true)
+    expect(isApprovalUnavailable({ code: 'OV_FORBIDDEN' })).toBe(false)
+  })
+})
+
 describe('errorKeyOf and formatInviteCode', () => {
   it('maps codes to i18n keys', () => {
     expect(errorKeyOf({ code: 'OV_INVITE_EXPIRED', status: 410 })).toBe('access.errors.inviteExpired')
     expect(errorKeyOf({ code: 'OV_SELF_DEMOTE', status: 409 })).toBe('manage.accounts.selfDemote')
+    expect(errorKeyOf({ code: 'OV_EMAIL_UNCONFIRMED', status: 409 })).toBe('access.errors.emailUnconfirmed')
     expect(errorKeyOf({ network: true, status: 0 })).toBe('manage.errors.offline')
     expect(errorKeyOf({ status: 403 })).toBe('manage.errors.forbidden')
     expect(errorKeyOf({ status: 500 })).toBe('manage.errors.generic')
@@ -152,5 +217,47 @@ describe('errorKeyOf and formatInviteCode', () => {
     expect(formatInviteCode('abcdefgh')).toBe('ABCD-EFGH')
     expect(formatInviteCode('ab cd-ef gh jk mn pq')).toBe('ABCD-EFGH-JKMN')
     expect(formatInviteCode('ABCD')).toBe('ABCD')
+  })
+})
+
+describe('per-app calls (OpenBeach\'s manager)', () => {
+  beforeEach(() => {
+    localStorage.setItem('api_auth_token', JSON.stringify({ access_token: 'tok', expires_at: Date.now() / 1000 + 3600 }))
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: {}, error: null }))
+  })
+  afterEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  it('the admin lists take ?app=; without it the URLs are as before', async () => {
+    await admin.listAccounts({ filter: 'all', app: 'beach' })
+    await admin.listInvites({ app: 'beach' })
+    await admin.listAudit({ limit: 50, app: 'beach' })
+    await admin.listAccounts({ filter: 'pending' })
+    await admin.listInvites()
+    await admin.listAudit({ limit: 50 })
+    expect(globalThis.fetch.mock.calls.map(c => c[0].replace('http://backend.test', ''))).toEqual([
+      '/api/admin/accounts?filter=all&app=beach',
+      '/api/admin/invites?app=beach',
+      '/api/admin/audit?limit=50&app=beach',
+      '/api/admin/accounts?filter=pending',
+      '/api/admin/invites',
+      '/api/admin/audit?limit=50'
+    ])
+  })
+
+  it('a beach invite carries sport; an indoor one sends what it sent', async () => {
+    await admin.createInvite({ label: 'Tour', role: 'scorer', max_uses: 30, sport: 'beach' })
+    await admin.createInvite({ label: 'Club', role: 'scorer' })
+    expect(call(0).body).toEqual({ label: 'Tour', club: null, role: 'scorer', max_uses: 30, sport: 'beach' })
+    expect(call(1).body).toEqual({ label: 'Club', club: null, role: 'scorer', max_uses: 1 })
+  })
+
+  it('GET /api/me and POST /api/account/join', async () => {
+    await fetchMe()
+    await joinApp('beach')
+    expect([call(0).method, call(0).url]).toEqual(['GET', 'http://backend.test/api/me'])
+    expect([call(1).method, call(1).url, call(1).body]).toEqual(['POST', 'http://backend.test/api/account/join', { app: 'beach' }])
   })
 })

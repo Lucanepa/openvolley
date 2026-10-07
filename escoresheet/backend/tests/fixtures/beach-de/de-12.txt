@@ -1,0 +1,24 @@
+# double elimination, 12 teams, board 16 (22 matches)
+# game code phase round wave source1 source2 [W=winner rank] [L=loser rank]
+1 W1 winners 1 1 seed:8 seed:9
+2 W2 winners 1 1 seed:5 seed:12
+3 W3 winners 1 1 seed:7 seed:10
+4 W4 winners 1 1 seed:6 seed:11
+5 W5 winners 2 2 seed:1 winner:W1
+6 W6 winners 2 2 seed:4 winner:W2
+7 W7 winners 2 2 seed:2 winner:W3
+8 W8 winners 2 2 seed:3 winner:W4
+9 W9 winners 3 3 winner:W5 winner:W6
+10 W10 winners 3 3 winner:W7 winner:W8
+11 L1 losers 2 3 loser:W1 loser:W8 L=9
+12 L2 losers 2 3 loser:W2 loser:W7 L=9
+13 L3 losers 2 3 loser:W3 loser:W6 L=9
+14 L4 losers 2 3 loser:W4 loser:W5 L=9
+15 L5 losers 3 4 winner:L1 winner:L2 L=7
+16 L6 losers 3 4 winner:L3 winner:L4 L=7
+17 L7 losers 4 5 winner:L5 loser:W9 L=5
+18 L8 losers 4 5 winner:L6 loser:W10 L=5
+19 SF1 final 1 6 winner:W9 winner:L8
+20 SF2 final 1 6 winner:W10 winner:L7
+21 P3 placement 2 7 loser:SF1 loser:SF2 W=3 L=4
+22 F final 2 7 winner:SF1 winner:SF2 W=1 L=2

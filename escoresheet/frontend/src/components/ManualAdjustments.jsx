@@ -6,9 +6,14 @@ import { useAlert } from '../contexts/AlertContext'
 import { validateManualSubstitution, validateManualTimeout } from '../domain/substitutions'
 import { swapTeamDesignation as swapTeamDesignationPatch } from '../domain/coinToss'
 import { mergeOfficialsEdits } from '../domain/officials'
+import { changedSets, approvedSheetChanged } from '../domain/accountApproval'
+import { setScoreSyncJobs } from '../domain/corrections'
+import { clearedPostMatchSignatures } from '../domain/matchEnd'
 import { apiFrom } from '../lib/apiClient'
+import { approvalsApi } from '../lib/accountApi'
 import { X } from 'lucide-react'
 import { Button } from '../ui/Button.jsx'
+import { discRing, HEADER_SURFACE } from '../utils/teamColours'
 
 // Standard volleyball team colors - keys for translation
 const TEAM_COLORS = [
@@ -545,6 +550,18 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
     setSaving(true)
     try {
+      // What the officials approved: the finished sets and the team names.
+      // Taken before the writes below re-run the live query.
+      const originalSets = data?.sets || []
+      const setChanges = changedSets(originalSets, editedSets)
+      const sheetChanged = approvedSheetChanged({
+        originalSets,
+        editedSets,
+        originalTeams: [data?.homeTeam, data?.awayTeam],
+        editedTeams: [editedHomeTeam, editedAwayTeam]
+      })
+      const priorApprovals = Object.values(data?.match?.accountApprovals || {}).filter(r => r?.id)
+
       // Update sets in IndexedDB
       for (const set of editedSets) {
         await db.sets.update(set.id, {
@@ -663,6 +680,25 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
             stateSnapshot: event.stateSnapshot
           })
         }
+      }
+
+      // The result or the teams changed: the post-match signatures and the
+      // account approvals certified the old sheet. They go, as with "Reopen
+      // last set"; online, the server approvals are undone as well (they would
+      // read as stale anyway once the corrected sets arrive).
+      if (sheetChanged) {
+        await db.matches.update(matchId, clearedPostMatchSignatures())
+        if (priorApprovals.length && !data?.match?.closed_at && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+          await Promise.allSettled(priorApprovals.map(r => approvalsApi.undo(r.id)))
+        }
+      }
+
+      // Corrected set scores go to the server through the sync queue (the
+      // server's sets are what an account approval binds to)
+      const seedKey = editedMatch?.seed_key || data?.match?.seed_key
+      if (seedKey && data?.match?.test !== true && setChanges.length) {
+        for (const job of setScoreSyncJobs(seedKey, setChanges)) await db.sync_queue.add(job)
+        try { window.dispatchEvent(new Event('sync-queue-write')) } catch { /* no window */ }
       }
 
       // Sync to Supabase if available
@@ -821,6 +857,17 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   }
 
   // Page card: white, rounded-2xl, stone-200/70 hairline, shadow-card.
+  // The team's colour dot beside the card title, ringed when it would vanish
+  // on the white card (a white or very light team)
+  const teamDotStyle = (colour) => {
+    const fill = colour || '#888'
+    const ring = discRing(fill, HEADER_SURFACE)
+    return {
+      width: '24px', height: '24px', borderRadius: '50%', background: fill, display: 'inline-block',
+      ...(ring ? { boxShadow: `inset 0 0 0 1.5px ${ring}` } : {})
+    }
+  }
+
   const cardStyle = {
     padding: '16px',
     background: 'var(--ov-card)',
@@ -989,7 +1036,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 {/* Team Info */}
                 <div style={cardStyle}>
                   <h2 style={{ ...cardTitleStyle, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: editedHomeTeam?.color || '#888', display: 'inline-block' }} />
+                    <span style={teamDotStyle(editedHomeTeam?.color)} />
                     {editedMatch?.coinTossTeamA === 'away'
                       ? t('manualAdjustmentsEditor.teamBHome', 'Team B (home)')
                       : t('manualAdjustmentsEditor.teamAHome', 'Team A (home)')}
@@ -1048,7 +1095,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 {/* Team Info */}
                 <div style={cardStyle}>
                   <h2 style={{ ...cardTitleStyle, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ width: '24px', height: '24px', borderRadius: '50%', background: editedAwayTeam?.color || '#888', display: 'inline-block' }} />
+                    <span style={teamDotStyle(editedAwayTeam?.color)} />
                     {editedMatch?.coinTossTeamA === 'away'
                       ? t('manualAdjustmentsEditor.teamAAway', 'Team A (away)')
                       : t('manualAdjustmentsEditor.teamBAway', 'Team B (away)')}

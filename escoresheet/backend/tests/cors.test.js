@@ -18,6 +18,14 @@ describe('CORS origin policy (lib/cors.js)', () => {
     assert.deepEqual(cloud.getCorsOrigin(req('https://manager.openvolley.app')), { origin: 'https://manager.openvolley.app', credentials: true })
   })
 
+  it('cloud: the OpenBeach manager (manager-beach) is listed and gets credentialed CORS; look-alikes do not', () => {
+    assert.ok(ALLOWED_ORIGINS.includes('https://manager-beach.openvolley.app'))
+    assert.deepEqual(cloud.getCorsOrigin(req('https://manager-beach.openvolley.app')), { origin: 'https://manager-beach.openvolley.app', credentials: true })
+    for (const o of ['http://manager-beach.openvolley.app', 'https://manager-beach.openvolley.app.evil.test', 'https://manager-beach.openvolley.app:8443']) {
+      assert.equal(cloud.isTrustedOrigin(o), false, o)
+    }
+  })
+
   it('cloud: the sites, the native shells, *.openvolley.app and PUBLIC_ORIGINS are trusted', () => {
     for (const o of [
       'https://app.openvolley.app', 'https://localhost', 'capacitor://localhost', 'tauri://localhost',

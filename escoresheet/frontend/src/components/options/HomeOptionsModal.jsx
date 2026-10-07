@@ -14,6 +14,7 @@ import { Info, LifeBuoy, X } from 'lucide-react'
 import { Button, cn, IconButton, SegmentedControl, Switch } from '../../ui'
 import { isAndroidApp } from '../../utils/androidUpdate'
 import AndroidVersionRows from './AndroidVersionRows'
+import { backdropDismiss } from '../../ui/backdropDismiss.js'
 
 // Kit field recipes for the small inline number/select controls (h-9, svrz md).
 const SMALL_FIELD = 'h-9 rounded-lg border border-stone-300 bg-white px-2 text-center text-sm tabular-nums text-stone-800 focus:outline-none focus:ring-2 focus:ring-red-500'
@@ -1010,7 +1011,7 @@ export default function HomeOptionsModal({
         {/* Clear Cache Confirmation Modal */}
         {clearCacheModal && (
           <div
-            onClick={() => setClearCacheModal(null)}
+            {...backdropDismiss(() => setClearCacheModal(null))}
             className="fixed inset-0 flex items-center justify-center bg-stone-900/60 p-4 backdrop-blur-sm"
             style={{ zIndex: 10000 }}
           >
@@ -1055,7 +1056,7 @@ export default function HomeOptionsModal({
         )}
 
         <div className="border-t border-stone-100 pt-4 text-center text-xs text-stone-500">
-          {t('common.support', 'Support:')} luca.canepa@gmail.com
+          {t('common.support', 'Support:')} support@openvolley.app
         </div>
       </div>
       </div>
@@ -1063,10 +1064,10 @@ export default function HomeOptionsModal({
       {/* Keybindings Modal */}
       {keybindingsModalOpen && (
         <div
-          onClick={() => {
+          {...backdropDismiss(() => {
             setKeybindingsModalOpen(false)
             setEditingKey(null)
-          }}
+          })}
           className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm"
           style={{ zIndex: 2000 }}
         >

@@ -33,6 +33,14 @@
 --                                          encrypted_password, updated_at,
 --                                          email_confirmed_at, last_sign_in_at only
 --                       auth.app_sessions  SELECT, INSERT, UPDATE, DELETE
+--                       auth.app_tokens    SELECT, INSERT, UPDATE, DELETE
+--                                          (db/010; skipped when absent)
+--                       auth.approval_pins SELECT, INSERT, UPDATE, DELETE
+--                                          (db/011, lib/approvals.js; skipped
+--                                          when absent)
+--                       auth.app_memberships SELECT, INSERT, DELETE
+--                                          (db/012, lib/accounts.js; skipped
+--                                          when absent)
 
 \set ON_ERROR_STOP on
 BEGIN;
@@ -199,5 +207,17 @@ END $$;
 GRANT SELECT, INSERT, DELETE ON auth.users TO ov_app;
 GRANT UPDATE (encrypted_password, updated_at, email_confirmed_at, last_sign_in_at) ON auth.users TO ov_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON auth.app_sessions TO ov_app;
+-- db/010: one-time email links (reset / confirm). Optional: on a database
+-- without 010 there is no such table (lib/auth.js then answers 503).
+SELECT 'GRANT SELECT, INSERT, UPDATE, DELETE ON auth.app_tokens TO ov_app'
+ WHERE to_regclass('auth.app_tokens') IS NOT NULL \gexec
+-- db/011: personal approval PINs (lib/approvals.js). Optional like app_tokens:
+-- without the table the approval endpoints answer 503.
+SELECT 'GRANT SELECT, INSERT, UPDATE, DELETE ON auth.approval_pins TO ov_app'
+ WHERE to_regclass('auth.approval_pins') IS NOT NULL \gexec
+-- db/012: which app (OpenVolley / OpenBeach) an account has joined. Optional
+-- like app_tokens; account deletion removes the rows through the FK cascade.
+SELECT 'GRANT SELECT, INSERT, DELETE ON auth.app_memberships TO ov_app'
+ WHERE to_regclass('auth.app_memberships') IS NOT NULL \gexec
 
 COMMIT;

@@ -12,21 +12,57 @@
  * crypto.randomInt, shown once as XXXX-XXXX-XXXX. Only sha256('ov-invite:' +
  * code) and the last 4 characters are stored; the plaintext is never stored
  * or logged.
+ *
+ * Unconfirmed addresses: an account lib/auth.js created with a confirmation
+ * link (raw_app_meta_data.ov_email_confirmation = 'link') may sign in before
+ * it confirms its address, but gets no role until it has: redeem-invite and
+ * an admin's role grant answer 409 OV_EMAIL_UNCONFIRMED. Removing roles stays
+ * possible.
+ *
+ * Apps (db/012; ~/ov-ops/openbeach-separation-tournaments-PLAN.md 1.3):
+ * OpenVolley ('indoor') and OpenBeach ('beach') share the login but keep
+ * their own membership (auth.app_memberships) and roles (lib/access.js). A
+ * member of an app: a membership row of it, or a role of it, or the global
+ * admin; an account with no membership row at all counts as indoor (one
+ * created after db/012 by an older backend, or by sign-up before it records
+ * the app). Adding the first membership of another app to such an account
+ * first writes its indoor one, so it never stops being indoor. "Pending" in
+ * an app: a member without a role of that app. Invite codes belong to one
+ * sport (a beach code grants beach:<role>). Audit entries carry the app
+ * (audit_log.app: 'beach', NULL = indoor); an entry about a match takes the
+ * match's sport. The admin lists take ?app=indoor|beach; without it they
+ * answer as before (every account, code, match and entry).
  */
 
 import { createHash, randomInt } from 'node:crypto'
-import { API_GRANTABLE_ROLES, KNOWN_ROLES, accessFromRoles, normalizeRoles } from './access.js'
+import { ADMIN_ROLES, API_GRANTABLE_ROLES, INDOOR_ROLES, SPORTS, SPORT_ROLES, accessForSport, accessFromRoles, normalizeRoles, roleFor, sportOfRole } from './access.js'
 import { findClaim, officialRowsOf, publicClaim, seasonOf, sportOf } from './officialGame.js'
+import { EMAIL_CONFIRMATION_MARK } from './auth.js'
 
 export const INVITE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 export const INVITE_ROLES = Object.freeze(['scorer', 'referee', 'competition_manager'])
 export const AUDIT_ACTIONS = Object.freeze([
   'account.roles',
+  // written by lib/auth.js (email links, db/010)
+  'account.password_reset_requested', 'account.password_reset', 'account.email_confirmed',
   'invite.create', 'invite.revoke', 'invite.redeem',
   'match.claim_game', 'match.claim_pin', 'match.game_taken',
   'match.close',
-  'match.reopen', 'match.editor_add', 'match.release_game'
+  'match.reopen', 'match.editor_add', 'match.release_game',
+  // lib/approvals.js (db/011); match.approval_void is written by the trigger
+  'approval_pin.set', 'approval_pin.remove', 'approval_pin.locked',
+  'match.approve', 'match.approval_revoke', 'match.approval_void',
+  // db/012: an existing account joined another app (POST /api/account/join)
+  'account.join',
+  // db/014: OpenBeach tournaments (lib/beachTournaments.js, app 'beach')
+  'tournament.create', 'tournament.update', 'tournament.delete', 'tournament.managers',
+  'tournament.draw', 'tournament.entry', 'tournament.schedule', 'tournament.result',
+  // T2: an Excel/CSV import applied (lib/beachTournaments.js importTournament)
+  'tournament.import'
 ])
+export const APPS = SPORTS
+// How a membership came about (auth.app_memberships.joined_via)
+const JOINED_VIA = Object.freeze(['backfill', 'signup', 'join', 'invite', 'admin'])
 const INVITE_CODE_RE = /^[0-9A-HJKMNP-TV-Z]{12}$/
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -90,6 +126,22 @@ function validDay (s) {
 const iso = (v) => (v instanceof Date ? v.toISOString() : (v ?? null))
 const likePattern = (q) => '%' + q.replace(/[\\%_]/g, (c) => '\\' + c) + '%'
 const nameSql = (alias) => `nullif(trim(coalesce(${alias}.first_name, '') || ' ' || coalesce(${alias}.last_name, '')), '')`
+// The roles that make an account a member of `app` (its own and the admin roles)
+const appRoles = (app) => [...Object.values(SPORT_ROLES[app]), ...ADMIN_ROLES]
+// SQL: the roles column `rolesExpr` holds one of the roles in bind parameter `param` (text[])
+const hasRoleSql = (rolesExpr, param) =>
+  `EXISTS (SELECT 1 FROM unnest(coalesce(${rolesExpr}, '{}'::text[])) AS r(role) WHERE lower(trim(r.role)) = ANY(${param}::text[]))`
+// SQL: account `uid` has a membership row of `app` (a bind parameter), or none at all (indoor only)
+const membershipSql = (uid, app, appParam) => app === 'indoor'
+  ? `(EXISTS (SELECT 1 FROM auth.app_memberships am WHERE am.user_id = ${uid} AND am.app = ${appParam})
+      OR NOT EXISTS (SELECT 1 FROM auth.app_memberships am WHERE am.user_id = ${uid}))`
+  : `EXISTS (SELECT 1 FROM auth.app_memberships am WHERE am.user_id = ${uid} AND am.app = ${appParam})`
+
+/** ?app= of an admin list: undefined when absent (the lists answer as before), null when invalid. */
+export function appParam (raw) {
+  if (raw == null || raw === '') return undefined
+  return APPS.includes(raw) ? raw : null
+}
 
 /** Integer query/body value within [min, max]; `fallback` when absent; undefined when invalid. */
 function intIn (raw, min, max, fallback) {
@@ -110,9 +162,14 @@ function trimmedText (raw, { min = 0, max }) {
  * @param {ReturnType<import('./pgQuery.js').createPgQuery>} o.db
  * @param {ReturnType<import('./matchRestore.js').createMatchRestore>} o.restore
  * @param {ReturnType<import('./access.js').createAccessResolver>} o.access
+ * @param {(ids: string[]) => Promise<Map<string, object[]>>} [o.approvalsForMatches]
+ *   lib/approvals.js approvalsForMatches: the active account approvals the
+ *   admin lists attach to each match (none without it)
  */
-export function createAccounts ({ pool, db, restore, access, logger = console } = {}) {
+export function createAccounts ({ pool, db, restore, access, approvalsForMatches = null, logger = console } = {}) {
   const log = logger
+  /** Active approvals per match id (empty without lib/approvals.js). Throws on a DB error. */
+  const approvalsOf = async (ids) => (typeof approvalsForMatches === 'function' ? approvalsForMatches(ids) : new Map())
 
   async function withTx (fn) {
     const client = await pool.connect()
@@ -142,12 +199,24 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
   const abort = (result) => Object.assign(new Error('abort'), { __result: result })
 
   // ------------------------------------------------------------------ audit
-  /** Insert one audit row. Throws on a database error (inside a transaction it must roll back). */
-  async function audit (clientOrPool, { actorId = null, action, targetUserId = null, matchId = null, details = {} }) {
+  /**
+   * Insert one audit row. Throws on a database error (inside a transaction it must roll back).
+   * `app` ('indoor' | 'beach'): the entry's app (beach is stored as 'beach', indoor as NULL);
+   * without it an entry about a match takes the match's sport, any other is indoor.
+   */
+  async function audit (clientOrPool, { actorId = null, action, targetUserId = null, matchId = null, details = {}, app }) {
     if (!AUDIT_ACTIONS.includes(action)) throw new Error(`unknown audit action ${action}`)
+    if (app !== undefined && !APPS.includes(app)) throw new Error(`unknown audit app ${app}`)
+    const mid = isUuid(matchId) ? matchId : null
     await (clientOrPool || pool).query(
-      'INSERT INTO public.audit_log (actor_id, action, target_user_id, match_id, details) VALUES ($1, $2, $3, $4, $5::jsonb)',
-      [isUuid(actorId) ? actorId : null, action, isUuid(targetUserId) ? targetUserId : null, isUuid(matchId) ? matchId : null, JSON.stringify(details || {})])
+      `INSERT INTO public.audit_log (actor_id, action, target_user_id, match_id, details, app)
+       VALUES ($1, $2, $3, $4, $5::jsonb,
+               CASE WHEN $7::boolean
+                    THEN (SELECT CASE WHEN m.sport_type IS NOT DISTINCT FROM 'beach' THEN 'beach' END
+                            FROM public.matches m WHERE m.id = $4::uuid)
+                    ELSE $6::text END)`,
+      [isUuid(actorId) ? actorId : null, action, isUuid(targetUserId) ? targetUserId : null, mid, JSON.stringify(details || {}),
+        app === 'beach' ? 'beach' : null, app === undefined && mid !== null])
   }
 
   /** Best-effort audit for request paths that already succeeded: logs instead of throwing. */
@@ -159,9 +228,105 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
     }
   }
 
+  // ------------------------------------------------------------------ confirmation
+  const EMAIL_UNCONFIRMED = () => fail(409, 'OV_EMAIL_UNCONFIRMED',
+    'Confirm your email address first: open the link we sent you, or send a new one from your profile')
+  /**
+   * The auth.users row of userId (locked) with `unconfirmed`: true for an
+   * account created with a confirmation link that has not confirmed yet.
+   * to_jsonb, so a users table without these columns reads as confirmed.
+   */
+  async function confirmationOf (client, userId) {
+    const { rows: [u] } = await client.query(
+      `SELECT u.id,
+              (to_jsonb(u) ->> 'email_confirmed_at') IS NULL
+                AND (to_jsonb(u) -> 'raw_app_meta_data' ->> $2) = $3 AS unconfirmed
+         FROM auth.users u WHERE u.id = $1 FOR SHARE`,
+      [userId, EMAIL_CONFIRMATION_MARK.key, EMAIL_CONFIRMATION_MARK.value])
+    return u ? { id: u.id, unconfirmed: u.unconfirmed === true } : null
+  }
+
+  // ------------------------------------------------------------------ memberships
+  /**
+   * Make `userId` a member of `app` (idempotent). An account without any
+   * membership counts as indoor: that one is written first, so joining
+   * OpenBeach never ends an indoor membership. Returns true when the
+   * membership is new.
+   */
+  async function addMembership (client, userId, app, via) {
+    if (!APPS.includes(app) || !JOINED_VIA.includes(via)) throw new Error(`addMembership: ${app} / ${via}`)
+    if (app !== 'indoor') {
+      await client.query(
+        `INSERT INTO auth.app_memberships (user_id, app, joined_via)
+         SELECT $1, 'indoor', 'backfill'
+          WHERE NOT EXISTS (SELECT 1 FROM auth.app_memberships WHERE user_id = $1)
+         ON CONFLICT DO NOTHING`, [userId])
+    }
+    const r = await client.query(
+      'INSERT INTO auth.app_memberships (user_id, app, joined_via) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING', [userId, app, via])
+    return r.rowCount === 1
+  }
+
+  /** { indoor, beach }: is `userId` a member (see the header)? `access` from lib/access.js. */
+  async function membershipsOf (client, userId, access) {
+    const { rows } = await client.query('SELECT app FROM auth.app_memberships WHERE user_id = $1', [userId])
+    const have = new Set(rows.map((r) => r.app))
+    const out = {}
+    for (const app of APPS) {
+      const flags = accessForSport(access, app)
+      out[app] = have.has(app) || (app === 'indoor' && have.size === 0) || flags.roles.length > 0 || !!access?.isAdmin
+    }
+    return out
+  }
+
+  /**
+   * POST /api/account/join { app }: the signed-in account joins OpenVolley or
+   * OpenBeach ("Join OpenBeach with your existing password"). Grants no role:
+   * the account is pending in that app until an invite code or an admin gives
+   * one. Says nothing about any other account.
+   */
+  async function joinApp ({ userId, body } = {}) {
+    if (!isUuid(userId)) return fail(401, 'invalid_token', 'Not signed in')
+    const app = isPlainObject(body) ? body.app : undefined
+    if (!APPS.includes(app)) return invalid('app: indoor or beach')
+    return guarded('join', () => withTx(async (client) => {
+      const joined = await addMembership(client, userId, app, 'join')
+      if (joined) await audit(client, { actorId: userId, action: 'account.join', targetUserId: userId, details: { app }, app })
+      return ok({ app, member: true, already_member: !joined })
+    }))
+  }
+
+  /**
+   * GET /api/me: the caller's roles and flags. The top-level flags are the
+   * indoor ones (as lib/access.js, for OpenVolley 2.1/2.2); `apps` holds both
+   * apps' flags with `member`. `access` is the server's (from the database).
+   */
+  async function me ({ userId, access } = {}) {
+    if (!isUuid(userId)) return fail(401, 'invalid_token', 'Not signed in')
+    return guarded('me', async () => {
+      const member = await membershipsOf(pool, userId, access)
+      const apps = {}
+      for (const app of APPS) {
+        const f = accessForSport(access, app)
+        apps[app] = { member: member[app], roles: f.roles, canScore: f.canScore, canManageTeams: f.canManageTeams, canReadTeams: f.canReadTeams, isPending: f.isPending }
+      }
+      return ok({
+        id: userId,
+        roles: access?.roles ?? [],
+        isAdmin: !!access?.isAdmin,
+        isSuperAdmin: !!access?.isSuperAdmin,
+        canScore: !!access?.canScore,
+        canManageTeams: !!access?.canManageTeams,
+        canReadTeams: !!access?.canReadTeams,
+        isPending: !!access?.isPending,
+        apps
+      })
+    })
+  }
+
   // ------------------------------------------------------------------ invites
   const INVITE_SELECT = `
-    SELECT i.id, i.code_hint, i.label, i.club, i.role, i.max_uses, i.uses, i.expires_at, i.revoked_at, i.created_at,
+    SELECT i.id, i.code_hint, i.label, i.club, i.role, i.sport, i.max_uses, i.uses, i.expires_at, i.revoked_at, i.created_at,
            ${nameSql('p')} AS created_by_name,
            CASE WHEN i.revoked_at IS NOT NULL THEN 'revoked'
                 WHEN i.expires_at IS NOT NULL AND i.expires_at <= now() THEN 'expired'
@@ -175,6 +340,7 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
     label: r.label,
     club: r.club ?? null,
     role: r.role,
+    sport: r.sport === 'beach' ? 'beach' : 'indoor',
     max_uses: r.max_uses ?? null,
     uses: r.uses,
     expires_at: iso(r.expires_at),
@@ -190,27 +356,37 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
     const normalized = normalizeInviteCode(code)
     if (!normalized) return fail(404, 'OV_INVITE_INVALID', 'This invite code is not valid')
     return guarded('redeem-invite', () => withTx(async (client) => {
+      // Before the code is looked at: an unconfirmed account learns nothing
+      // about the code and does not use it up.
+      if ((await confirmationOf(client, userId))?.unconfirmed) throw abort(EMAIL_UNCONFIRMED())
       const { rows: [inv] } = await client.query(
-        `SELECT id, label, role, max_uses, uses, revoked_at,
+        `SELECT id, label, role, sport, max_uses, uses, revoked_at,
                 (expires_at IS NOT NULL AND expires_at <= now()) AS expired
            FROM public.invite_codes WHERE code_hash = $1 FOR UPDATE`, [hashInviteCode(normalized)])
       if (!inv || inv.revoked_at) throw abort(fail(404, 'OV_INVITE_INVALID', 'This invite code is not valid'))
       if (inv.expired) throw abort(fail(410, 'OV_INVITE_EXPIRED', 'This invite code has expired'))
+      // The role in the code's sport: a beach code grants beach:<role> (db/012)
+      const sport = inv.sport === 'beach' ? 'beach' : 'indoor'
+      const role = roleFor(sport, inv.role)
+      if (!role) throw abort(fail(404, 'OV_INVITE_INVALID', 'This invite code is not valid'))
+      const beachOnly = sport === 'beach' ? { sport } : {}
       const { rows: [prof] } = await client.query('SELECT roles FROM public.profiles WHERE user_id = $1 LIMIT 1 FOR UPDATE', [userId])
       const before = normalizeRoles(prof?.roles)
       const { rows: [again] } = await client.query('SELECT 1 FROM public.invite_redemptions WHERE invite_id = $1 AND user_id = $2', [inv.id, userId])
       // Idempotent: a code redeemed before, or a role the account already has,
       // is not counted (a single-use code is not wasted).
-      if (again || before.includes(inv.role)) {
-        return ok({ roles: before, role_granted: inv.role, already_had: true })
+      if (again || before.includes(role)) {
+        await addMembership(client, userId, sport, 'invite')
+        return ok({ roles: before, role_granted: role, already_had: true, ...beachOnly })
       }
       if (inv.max_uses != null && inv.uses >= inv.max_uses) throw abort(fail(409, 'OV_INVITE_USED_UP', 'This invite code has been used up'))
       await client.query('INSERT INTO public.invite_redemptions (invite_id, user_id) VALUES ($1, $2)', [inv.id, userId])
       await client.query('UPDATE public.invite_codes SET uses = uses + 1 WHERE id = $1', [inv.id])
-      const after = [...before, inv.role]
+      const after = [...before, role]
       await writeRoles(client, userId, after, !!prof)
-      await audit(client, { actorId: userId, action: 'invite.redeem', targetUserId: userId, details: { invite_id: inv.id, label: inv.label, role: inv.role } })
-      return ok({ roles: after, role_granted: inv.role, already_had: false })
+      await addMembership(client, userId, sport, 'invite')
+      await audit(client, { actorId: userId, action: 'invite.redeem', targetUserId: userId, details: { invite_id: inv.id, label: inv.label, role, ...beachOnly }, app: sport })
+      return ok({ roles: after, role_granted: role, already_had: false, ...beachOnly })
     })).finally(() => access?.invalidate(userId))
   }
 
@@ -226,8 +402,12 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
     }
   }
 
-  async function createInvite ({ actorId, body } = {}) {
+  /** POST /api/admin/invites: body.sport (else ?app=, else indoor) is the code's sport. */
+  async function createInvite ({ actorId, body, app } = {}) {
     if (!isPlainObject(body)) return invalid('body: must be an object')
+    const sport = body.sport ?? app ?? 'indoor'
+    if (!APPS.includes(sport)) return invalid('sport: indoor or beach')
+    if (app && body.sport != null && body.sport !== app) return invalid('sport: not the app of this console')
     const label = trimmedText(body.label, { min: 1, max: 120 })
     if (label === undefined) return invalid('label: 1 to 120 characters')
     let club = null
@@ -259,10 +439,10 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
         try {
           return await withTx(async (client) => {
             const { rows: [row] } = await client.query(
-              `INSERT INTO public.invite_codes (code_hash, code_hint, label, club, role, max_uses, expires_at, created_by)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-              [hashInviteCode(normalized), normalized.slice(-4), label, club, role, maxUses, expiresAt, isUuid(actorId) ? actorId : null])
-            await audit(client, { actorId, action: 'invite.create', details: { invite_id: row.id, label, role } })
+              `INSERT INTO public.invite_codes (code_hash, code_hint, label, club, role, max_uses, expires_at, created_by, sport)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+              [hashInviteCode(normalized), normalized.slice(-4), label, club, role, maxUses, expiresAt, isUuid(actorId) ? actorId : null, sport])
+            await audit(client, { actorId, action: 'invite.create', details: { invite_id: row.id, label, role, ...(sport === 'beach' ? { sport } : {}) }, app: sport })
             const { rows: [inv] } = await client.query(`${INVITE_SELECT} WHERE i.id = $1`, [row.id])
             return ok({ invite: inviteOut(inv), code }, 201)
           })
@@ -275,9 +455,14 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
     })
   }
 
-  async function listInvites () {
+  /** GET /api/admin/invites[?app=indoor|beach]: the codes of one sport (all without ?app=). */
+  async function listInvites ({ app } = {}) {
+    const a = appParam(app)
+    if (a === null) return invalid('app: indoor or beach')
     return guarded('list-invites', async () => {
-      const { rows } = await pool.query(`${INVITE_SELECT} ORDER BY i.created_at DESC, i.id LIMIT 500`)
+      const { rows } = a
+        ? await pool.query(`${INVITE_SELECT} WHERE i.sport = $1 ORDER BY i.created_at DESC, i.id LIMIT 500`, [a])
+        : await pool.query(`${INVITE_SELECT} ORDER BY i.created_at DESC, i.id LIMIT 500`)
       return ok({ invites: rows.map(inviteOut) })
     })
   }
@@ -285,11 +470,11 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
   async function revokeInvite ({ actorId, id } = {}) {
     if (!isUuid(id)) return notFound()
     return guarded('revoke-invite', () => withTx(async (client) => {
-      const { rows: [cur] } = await client.query('SELECT id, label, revoked_at FROM public.invite_codes WHERE id = $1 FOR UPDATE', [id])
+      const { rows: [cur] } = await client.query('SELECT id, label, sport, revoked_at FROM public.invite_codes WHERE id = $1 FOR UPDATE', [id])
       if (!cur) throw abort(notFound())
       if (!cur.revoked_at) {
         await client.query('UPDATE public.invite_codes SET revoked_at = now() WHERE id = $1', [id])
-        await audit(client, { actorId, action: 'invite.revoke', details: { invite_id: id, label: cur.label } })
+        await audit(client, { actorId, action: 'invite.revoke', details: { invite_id: id, label: cur.label }, app: cur.sport === 'beach' ? 'beach' : 'indoor' })
       }
       const { rows: [inv] } = await client.query(`${INVITE_SELECT} WHERE i.id = $1`, [id])
       return ok({ invite: inviteOut(inv) })
@@ -297,17 +482,26 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
   }
 
   // ------------------------------------------------------------------ accounts
-  async function listAccounts ({ filter = 'pending', q = '', limit } = {}) {
+  /**
+   * GET /api/admin/accounts?filter=pending|all&q=&limit=[&app=indoor|beach].
+   * With ?app=: the members of that app, pending = without a role of it.
+   * Without: every account, pending = without an indoor role (as before).
+   */
+  async function listAccounts ({ filter = 'pending', q = '', limit, app } = {}) {
     if (!['pending', 'all'].includes(filter || 'pending')) return invalid('filter: pending or all')
     if (typeof q !== 'string' || q.length > 80) return invalid('q: at most 80 characters')
     const lim = intIn(limit, 1, 500, 200)
     if (lim === undefined) return invalid('limit: 1 to 500')
+    const a = appParam(app)
+    if (a === null) return invalid('app: indoor or beach')
     return guarded('list-accounts', async () => {
       const where = []
       const values = []
       const p = (v) => { values.push(v); return '$' + values.length }
+      const own = a ? p(appRoles(a)) : null
+      if (a) where.push(`(${membershipSql('u.id', a, p(a))} OR ${hasRoleSql('p.roles', own)})`)
       if ((filter || 'pending') === 'pending') {
-        where.push(`NOT EXISTS (SELECT 1 FROM unnest(coalesce(p.roles, '{}'::text[])) AS r(role) WHERE lower(trim(r.role)) = ANY(${p([...KNOWN_ROLES])}::text[]))`)
+        where.push(`NOT ${hasRoleSql('p.roles', own ?? p([...INDOOR_ROLES, ...ADMIN_ROLES]))}`)
       }
       const term = q.trim()
       if (term) {
@@ -315,7 +509,8 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
         where.push(`(u.email ILIKE ${pat} OR p.first_name ILIKE ${pat} OR p.last_name ILIKE ${pat})`)
       }
       const { rows } = await pool.query(
-        `SELECT u.id, u.email, p.first_name, p.last_name, p.roles, u.created_at, u.last_sign_in_at
+        `SELECT u.id, u.email, p.first_name, p.last_name, p.roles, u.created_at, u.last_sign_in_at,
+                (to_jsonb(u) ->> 'email_confirmed_at') IS NOT NULL AS email_confirmed
            FROM auth.users u
            LEFT JOIN public.profiles p ON p.user_id = u.id
           ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
@@ -323,16 +518,17 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
           LIMIT ${lim}`, values)
       return ok({
         accounts: rows.map((r) => {
-          const a = accessFromRoles(r.roles)
+          const acc = accessFromRoles(r.roles)
           return {
             id: r.id,
             email: r.email,
             first_name: r.first_name ?? null,
             last_name: r.last_name ?? null,
-            roles: a.roles,
-            pending: a.isPending,
+            roles: acc.roles,
+            pending: a ? acc.apps[a].isPending : acc.isPending,
             created_at: iso(r.created_at),
-            last_sign_in_at: iso(r.last_sign_in_at)
+            last_sign_in_at: iso(r.last_sign_in_at),
+            email_confirmed: r.email_confirmed === true
           }
         })
       })
@@ -362,8 +558,9 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
       return fail(409, 'OV_SELF_DEMOTE', 'You cannot remove your own admin role')
     }
     const res = await guarded('set-roles', () => withTx(async (client) => {
-      const { rows: [u] } = await client.query('SELECT id FROM auth.users WHERE id = $1', [userId])
+      const u = await confirmationOf(client, userId)
       if (!u) throw abort(notFound())
+      if (u.unconfirmed && lists.add.length) throw abort(EMAIL_UNCONFIRMED())
       const { rows: [prof] } = await client.query('SELECT roles FROM public.profiles WHERE user_id = $1 LIMIT 1 FOR UPDATE', [userId])
       const before = normalizeRoles(prof?.roles)
       if (before.includes('super_admin') && !actor?.access?.isSuperAdmin) {
@@ -374,7 +571,15 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
       const after = [...before.filter((r) => !removed.includes(r)), ...added]
       if (added.length || removed.length || !prof) {
         await writeRoles(client, userId, after, !!prof)
-        await audit(client, { actorId: actor?.id, action: 'account.roles', targetUserId: userId, details: { added, removed, before, after } })
+        // A role of an app makes the account a member of it
+        for (const app of new Set(added.map(sportOfRole).filter(Boolean))) await addMembership(client, userId, app, 'admin')
+        // One entry per app whose roles changed (admin counts as indoor, as before)
+        const appOf = (r) => sportOfRole(r) || 'indoor'
+        const apps = [...new Set([...added, ...removed].map(appOf))]
+        for (const app of apps.length ? apps : ['indoor']) {
+          const details = { added: added.filter((r) => appOf(r) === app), removed: removed.filter((r) => appOf(r) === app), before, after }
+          await audit(client, { actorId: actor?.id, action: 'account.roles', targetUserId: userId, details, app })
+        }
       }
       return ok({ id: userId, roles: after })
     }))
@@ -422,6 +627,7 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
           if (!claims.has(key)) claims.set(key, m)
         }
       }
+      const approvals = await approvalsOf([...claims.values()].map((m) => m.id))
       return ok({
         games: games.map((g) => {
           const m = claims.get(`${Number(g.game_number)}|${seasonOf(g.datetime)}`)
@@ -445,7 +651,8 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
                   scorer_email: m.scorer_email ?? null,
                   editors: m.editors,
                   closed_at: iso(m.closed_at),
-                  updated_at: iso(m.updated_at)
+                  updated_at: iso(m.updated_at),
+                  approvals: approvals.get(m.id) || []
                 }
               : null
           }
@@ -455,16 +662,21 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
   }
 
   // ------------------------------------------------------------------ matches
-  async function listMatches ({ state = 'closed', q = '', limit } = {}) {
+  /** GET /api/admin/matches?state=&q=&limit=[&app=indoor|beach] (every sport without ?app=). */
+  async function listMatches ({ state = 'closed', q = '', limit, app } = {}) {
     const st = state || 'closed'
     if (!['closed', 'open', 'all'].includes(st)) return invalid('state: closed, open or all')
     if (typeof q !== 'string' || q.length > 80) return invalid('q: at most 80 characters')
     const lim = intIn(limit, 1, 500, 100)
     if (lim === undefined) return invalid('limit: 1 to 500')
+    const a = appParam(app)
+    if (a === null) return invalid('app: indoor or beach')
     return guarded('list-matches', async () => {
       const values = []
       const p = (v) => { values.push(v); return '$' + values.length }
       const where = ['m.test IS NOT TRUE']
+      if (a === 'beach') where.push("m.sport_type IS NOT DISTINCT FROM 'beach'")
+      if (a === 'indoor') where.push("m.sport_type IS DISTINCT FROM 'beach'")
       if (st === 'closed') where.push('m.closed_at IS NOT NULL')
       if (st === 'open') where.push('m.closed_at IS NULL')
       const term = q.trim()
@@ -478,7 +690,8 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
                 m.home_team->>'name' AS home_name, m.away_team->>'name' AS away_name, m.match_info->>'league' AS league,
                 ${nameSql('p')} AS scorer_name, u.email AS scorer_email,
                 (SELECT count(*)::int FROM public.match_editors e WHERE e.match_id = m.id) AS editors,
-                m.closed_at, ${nameSql('cp')} AS closed_by_name, m.official_game_exempt, m.updated_at
+                m.closed_at, ${nameSql('cp')} AS closed_by_name, m.official_game_exempt, m.updated_at,
+                (m.sport_type IS NOT DISTINCT FROM 'beach') AS is_beach
            FROM public.matches m
            LEFT JOIN public.profiles p ON p.user_id = m.created_by
            LEFT JOIN auth.users u ON u.id = m.created_by
@@ -486,6 +699,7 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
           WHERE ${where.join(' AND ')}
           ORDER BY coalesce(m.closed_at, m.updated_at) DESC NULLS LAST, m.id
           LIMIT ${lim}`, values)
+      const approvals = await approvalsOf(rows.map((r) => r.id))
       return ok({
         matches: rows.map((r) => ({
           id: r.id,
@@ -502,7 +716,9 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
           closed_at: iso(r.closed_at),
           closed_by_name: r.closed_by_name ?? null,
           official_game_exempt: r.official_game_exempt === true,
-          updated_at: iso(r.updated_at)
+          updated_at: iso(r.updated_at),
+          sport: r.is_beach === true ? 'beach' : 'indoor',
+          approvals: approvals.get(r.id) || []
         }))
       })
     })
@@ -588,20 +804,25 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
   }
 
   // ------------------------------------------------------------------ audit log
-  async function listAudit ({ limit, before, action } = {}) {
+  /** GET /api/admin/audit?limit=&before=&action=[&app=indoor|beach] (every app without ?app=). */
+  async function listAudit ({ limit, before, action, app } = {}) {
     const lim = intIn(limit, 1, 200, 100)
     if (lim === undefined) return invalid('limit: 1 to 200')
     const bef = intIn(before, 1, Number.MAX_SAFE_INTEGER, null)
     if (bef === undefined) return invalid('before: an entry id')
     if (action != null && action !== '' && !AUDIT_ACTIONS.includes(action)) return invalid('action: unknown action')
+    const ap = appParam(app)
+    if (ap === null) return invalid('app: indoor or beach')
     return guarded('list-audit', async () => {
       const values = []
       const p = (v) => { values.push(v); return '$' + values.length }
       const where = []
       if (bef != null) where.push(`a.id < ${p(bef)}`)
       if (action) where.push(`a.action = ${p(action)}`)
+      if (ap === 'beach') where.push("a.app = 'beach'")
+      if (ap === 'indoor') where.push("a.app IS DISTINCT FROM 'beach'")
       const { rows } = await pool.query(
-        `SELECT a.id, a.at, a.action, a.match_id, a.details,
+        `SELECT a.id, a.at, a.action, a.match_id, a.details, a.app,
                 ${nameSql('ap')} AS actor_name, au.email AS actor_email,
                 ${nameSql('tp')} AS target_name, tu.email AS target_email
            FROM public.audit_log a
@@ -624,7 +845,8 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
           target_name: r.target_name ?? null,
           target_email: r.target_email ?? null,
           match_id: r.match_id ?? null,
-          details: r.details ?? {}
+          details: r.details ?? {},
+          app: r.app === 'beach' ? 'beach' : 'indoor'
         })),
         next_before: more && page.length ? Number(page[page.length - 1].id) : null
       })
@@ -637,7 +859,7 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
    * official game another match already holds. Returns null or the full claim
    * (with match_id; send publicClaim() to the client). Throws on a DB error.
    */
-  async function findTakenGame ({ userId, rows }) {
+  async function findTakenGame ({ userId, rows, sports }) {
     const list = (Array.isArray(rows) ? rows : [rows]).filter((r) => r && typeof r === 'object').slice(0, 50)
     // A partial upsert keeps the stored values of the columns it leaves out,
     // so the key is the stored row's with the payload over it.
@@ -653,6 +875,8 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
       const old = typeof payload.external_id === 'string' ? stored.get(payload.external_id) : undefined
       const row = old ? { ...old, ...withoutUndefined(payload) } : payload
       if (officialRowsOf([row]).length === 0) continue
+      // Only the sports the caller can score in (the others are refused by pgQuery first)
+      if (Array.isArray(sports) && !sports.includes(sportOf(row.sport_type))) continue
       const ext = typeof row.external_id === 'string' ? row.external_id : null
       // The season the index sees: scheduled_at, else created_at, else now
       const declaredAt = row.scheduled_at ?? row.created_at ?? null
@@ -705,7 +929,7 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
    * key (game_n, scheduled_at, sport_type, test): the stored rows the filters
    * match, with the update over them. Throws on a DB error.
    */
-  async function findTakenGameForUpdate ({ userId, filters, data }) {
+  async function findTakenGameForUpdate ({ userId, filters, data, sports }) {
     if (!isPlainObject(data) || !OFFICIAL_KEY_COLUMNS.some((c) => c in data)) return null
     const r = await db.runQuery({
       table: 'matches',
@@ -715,7 +939,7 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
     if (r.body.error) return null // a bad filter: the update itself answers it
     const rows = (r.body.data || []).filter((m) => typeof m.external_id === 'string')
       .map((m) => ({ ...data, external_id: m.external_id }))
-    return rows.length ? findTakenGame({ userId, rows }) : null
+    return rows.length ? findTakenGame({ userId, rows, sports }) : null
   }
 
   /** POST /api/match/official-check (the caller can score). */
@@ -774,6 +998,9 @@ export function createAccounts ({ pool, db, restore, access, logger = console } 
   return {
     audit,
     auditQuietly,
+    joinApp,
+    me,
+    membershipsOf,
     redeemInvite,
     createInvite,
     listInvites,

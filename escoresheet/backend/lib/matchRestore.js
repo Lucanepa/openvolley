@@ -69,7 +69,7 @@ export const RESTORE_DEFAULTS = Object.freeze({
   // backupManager.js builds the restore-in-place live state with `status`.
   legacyAliases: { match_live_state: { status: 'match_status' } },
   // Columns only the server writes (db/005, db/007): dropped from a backup's match row.
-  serverOnlyColumns: ['created_by', 'closed_at', 'closed_by', 'official_game_exempt'],
+  serverOnlyColumns: ['created_by', 'closed_at', 'closed_by', 'official_game_exempt', 'tournament_match_id'],
   // Statuses that close a non-test match (db/007's trigger); a restore sets them last.
   closingStatuses: ['approved', 'final'],
   closingPlaceholderStatus: 'ended',

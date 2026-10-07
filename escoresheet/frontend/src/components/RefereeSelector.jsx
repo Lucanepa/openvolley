@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { apiFrom } from '../lib/apiClient'
 import { FOCUS_RING_INSET } from '../ui/Button.jsx'
+import { backdropDismiss } from '../ui/backdropDismiss.js'
 
 // Sport type for indoor volleyball
 const SPORT_TYPE = 'indoor'
@@ -119,7 +120,7 @@ export default function RefereeSelector({ open, onClose, onSelect, position = {}
           zIndex: 999,
           background: 'transparent'
         }}
-        onClick={onClose}
+        {...backdropDismiss(onClose)}
       />
       {/* Dropdown */}
       <div

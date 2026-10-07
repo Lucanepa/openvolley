@@ -17,7 +17,6 @@ vi.mock('../../hooks/useSyncQueue', () => ({ useSyncQueueStats: () => live.value
 const auth = vi.hoisted(() => ({ value: { user: null, loading: false } }))
 vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => auth.value }))
 vi.mock('../auth/LoginModal', () => ({ default: ({ open }) => (open ? <div>login-modal</div> : null) }))
-vi.mock('../auth/SignUpModal', () => ({ default: () => null }))
 
 import ConnectionStatus from '../ConnectionStatus'
 import StartupConnectivityModal from '../StartupConnectivityModal'

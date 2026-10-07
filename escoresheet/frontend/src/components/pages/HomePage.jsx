@@ -7,6 +7,7 @@ import CloudBlockNotice from '../CloudBlockNotice'
 import { ChevronDown, Download, LifeBuoy, Loader2, Settings } from 'lucide-react'
 import { Button, Card, cn, FOCUS_RING, FOCUS_RING_INSET } from '../../ui'
 import { isServedFromLocalServer } from '../../utils/backendConfig'
+import { BRAND } from '../../brand'
 
 const RELEASES_PAGE = 'https://github.com/Lucanepa/openvolley/releases'
 const RELEASES_API = 'https://api.github.com/repos/Lucanepa/openvolley/releases?per_page=20'
@@ -30,7 +31,6 @@ function isInsideDesktopApp() {
 }
 
 export default function HomePage({
-  favicon,
   newMatchMenuOpen,
   setNewMatchMenuOpen,
   createNewOfficialMatch,
@@ -81,7 +81,7 @@ export default function HomePage({
       <div className="w-full max-w-md">
         <h1 className="text-center text-2xl sm:text-3xl font-bold tracking-tight text-stone-900">{t('home.title')}</h1>
         <div className="my-4 flex justify-center">
-          <img src={`${import.meta.env.BASE_URL}openvolley_no_bg.png`} alt="Openvolley" className="h-28 w-auto sm:h-32" />
+          <img src={BRAND.lockupStacked} alt="OpenVolley" className="h-24 w-auto sm:h-28" />
         </div>
 
         <PendingApprovalBanner className="mb-4" />

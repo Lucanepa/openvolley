@@ -97,7 +97,7 @@ if (!Number.isFinite(BACKUP_MAX_AGE_HOURS) || BACKUP_MAX_AGE_HOURS < 0) {
   console.error(`[Config] BACKUP_MAX_AGE_HOURS must be a number >= 0 (got ${JSON.stringify(process.env.BACKUP_MAX_AGE_HOURS)})`)
   process.exit(1)
 }
-const CONTACT_EMAIL = process.env.CONTACT_EMAIL || 'volleyball@lucanepa.com'
+const CONTACT_EMAIL = process.env.CONTACT_EMAIL || 'support@openvolley.app'
 // Match access tokens (lib/matchAccess.js): answered by the PIN checks, accepted
 // by the relay, GET /api/match/:id and anonymous /api/db reads. A too short
 // OV_MATCH_TOKEN_SECRET stops the start (like OV_PIN_SECRET); unset, the
@@ -218,14 +218,31 @@ const MANAGE_RATE_LIMIT_MAX = 300        // /api/admin/* and /api/saved-teams* p
 const OFFICIAL_CHECK_RATE_LIMIT_MAX = 120 // /api/match/official-check per user and minute
 // Invite redemption: FAILED attempts per account and per IP (/64); a success is refunded
 const redeemLimiter = createAttemptLimiter({ max: 10, windowMs: 10 * 60 * 1000 })
+// Account approvals (docs/account-approval-spec.md 3.0, lib/approvals.js)
+const APPROVAL_PIN_RATE_LIMIT_MAX = 30   // /api/account/approval-pin* per user and minute
+const APPROVALS_RATE_LIMIT_MAX = 60      // /api/approvals* per user and minute
+// Wrong passwords on set/remove PIN and wrong PINs on approve, per account and
+// per IP (/64); every other answer is refunded.
+const APPROVAL_PASSWORD_FAILURES = { max: 5, windowMs: 15 * 60 * 1000 }
+const APPROVAL_PIN_FAILURES = { max: 10, windowMs: 10 * 60 * 1000 }
+const approvalPasswordLimiter = createAttemptLimiter(APPROVAL_PASSWORD_FAILURES)
+const approvalPinFailLimiter = createAttemptLimiter(APPROVAL_PIN_FAILURES)
 // The paths of lib/manageApi.js (same as its manageFamilyOf, which loads with the data layer)
 function manageFamilyOf(pathname) {
+  if (pathname === '/api/me') return 'me'
+  if (pathname === '/api/account/join') return 'join'
   if (pathname === '/api/account/redeem-invite') return 'account'
   if (pathname === '/api/match/official-check') return 'officialCheck'
   if (pathname.startsWith('/api/admin/')) return 'admin'
   if (pathname === '/api/saved-teams' || pathname.startsWith('/api/saved-teams/')) return 'savedTeams'
+  if (pathname.startsWith('/api/beach/')) return 'beach'
+  if (pathname === '/api/account/approval-pin' || pathname === '/api/account/approval-pin/remove') return 'approvalPin'
+  if (pathname === '/api/approvals' || pathname.startsWith('/api/approvals/') || pathname === '/api/account/approvals') return 'approvals'
   return null
 }
+// GET /api/public/beach/t/:slug (lib/beachTournaments.js publicTournament): anonymous, per IP
+const PUBLIC_BEACH_RATE_LIMIT_MAX = 120
+const PUBLIC_BEACH_RE = /^\/api\/public\/beach\/t\/([a-z0-9-]{1,80})$/
 // Internal scan of setup/live matches for validate-connection-pin
 const PIN_SCAN_MAX_ROWS = 20000
 
@@ -252,8 +269,11 @@ function getDataLayer() {
     import('./lib/accounts.js'),
     import('./lib/savedTeams.js'),
     import('./lib/manageApi.js'),
-    import('./lib/officialGame.js')
-  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og]) => {
+    import('./lib/officialGame.js'),
+    import('./lib/mailer.js'),
+    import('./lib/approvals.js'),
+    import('./lib/beachTournaments.js')
+  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, apv, bt]) => {
     const poolMax = Number(process.env.PG_POOL_MAX) > 0 ? Math.floor(Number(process.env.PG_POOL_MAX)) : undefined
     const db = pgq.createPgQuery({
       connectionString: DATABASE_URL,
@@ -274,8 +294,18 @@ function getDataLayer() {
     })
     // One pg Pool for everything (auth shares pgQuery's pool). delete-account
     // removes the account's files too (README "Deleting an account").
+    // Account emails (reset / confirmation links; lib/mailer.js). Without
+    // SMTP_HOST or SMTP_PASS: reset answers 503, sign-up confirms at once.
+    const mailer = ml.mailerFromEnv(process.env)
+    if (mailer.enabled) {
+      console.log(`[Mail] account emails on: SMTP ${process.env.SMTP_HOST}:${process.env.SMTP_PORT || 465} as ${process.env.SMTP_USER}, from ${mailer.from}, links to ${mailer.managerUrl}; OpenBeach from ${mailer.fromFor('beach')}, links to ${mailer.managerUrlFor('beach')}`)
+      for (const w of mailer.warnings || []) console.warn(`[Mail] ${w}`)
+    } else {
+      console.log(`[Mail] account emails off (${mailer.reason}): password reset answers 503, sign-up confirms accounts at once`)
+    }
     const auth = au.createAuth({
       pool: db.pool,
+      mailer,
       contactEmail: CONTACT_EMAIL,
       onAccountDeleted: async (userId) => {
         const r = await storage.deleteUserData(userId)
@@ -287,10 +317,15 @@ function getDataLayer() {
     })
     // Roles from public.profiles (never the request), 30 s per process (lib/access.js)
     const access = ac.createAccessResolver({ pool: db.pool })
-    const accounts = acc.createAccounts({ pool: db.pool, db, restore, access })
+    // Account approvals (lib/approvals.js): the approval PINs need OV_PIN_SECRET
+    // (never plaintext); without it every endpoint answers 503.
+    const approvals = apv.createApprovals({ pool: db.pool, auth, mailer, secret: pins.enabled ? String(process.env.OV_PIN_SECRET) : null })
+    if (!approvals.enabled) console.warn('⚠️  [Config] OV_PIN_SECRET is not set: approval with an account is off (503 OV_APPROVAL_UNAVAILABLE).')
+    const accounts = acc.createAccounts({ pool: db.pool, db, restore, access, approvalsForMatches: approvals.approvalsForMatches })
     const savedTeams = svt.createSavedTeams({ pool: db.pool })
-    const manage = mg.createManageApi({ accounts, savedTeams })
-    dataLayer = { db, restore, auth, storage, pins, access, accounts, savedTeams, manage, publicClaim: og.publicClaim, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
+    const beach = bt.createBeachTournaments({ pool: db.pool, accounts })
+    const manage = mg.createManageApi({ accounts, savedTeams, beach, approvals })
+    dataLayer = { db, restore, auth, storage, pins, access, accounts, savedTeams, beach, approvals, manage, publicClaim: og.publicClaim, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
     return dataLayer
   })
   return dataLayerPromise
@@ -348,7 +383,8 @@ const OWNER_SCOPED_TABLES = new Set(['profiles', 'user_matches'])
 const WRITE_DENYLIST = {
   profiles: ['roles', 'user_id', 'id'],
   user_matches: ['user_id', 'id'],
-  matches: ['created_by', 'closed_at', 'closed_by', 'official_game_exempt', 'created_at']
+  // tournament_match_id (db/014): the link to a beach tournament match is the server's
+  matches: ['created_by', 'closed_at', 'closed_by', 'official_game_exempt', 'created_at', 'tournament_match_id']
 }
 
 // Match ownership (db/005_match_ownership.sql, lib/pgQuery.js opts.matchOwner):
@@ -439,14 +475,40 @@ async function claimByUpsertPin(layer, userId, data, clientIp) {
   }
 }
 
+// The sports of a match (db/012): OpenVolley 'indoor', OpenBeach 'beach'.
+const MATCH_SPORTS = ['indoor', 'beach']
+
 /**
  * pgQuery opts.matchOwner for this user: an admin's records the creator and
- * checks nothing; an account that cannot score is limited to test matches.
+ * checks nothing; otherwise the sports the account cannot score in
+ * (testOnlySports, lib/access.js apps.<sport>.canScore) are limited to test
+ * matches, judged by the sport of the ROW (lib/pgQuery.js). testOnly: it
+ * cannot score in any sport.
  * THROWS when the roles cannot be read (callers answer 503, never "not a scorer").
  */
 async function matchOwnerFor(layer, user) {
   const a = await layer.access.get(user.id)
-  return a.isAdmin ? { userId: user.id, admin: true } : { userId: user.id, testOnly: !a.canScore }
+  if (a.isAdmin) return { userId: user.id, admin: true }
+  const canScoreIn = (sport) => (a.apps ? a.apps[sport]?.canScore === true : sport === 'indoor' && a.canScore === true)
+  const testOnlySports = MATCH_SPORTS.filter((sport) => !canScoreIn(sport))
+  return { userId: user.id, testOnly: testOnlySports.length === MATCH_SPORTS.length, testOnlySports }
+}
+
+/** The sports in which a matchOwner may write non-test matches (undefined: every sport). */
+function scoringSportsOf(matchOwner) {
+  if (!matchOwner || matchOwner.admin) return undefined
+  return MATCH_SPORTS.filter((sport) => !(matchOwner.testOnlySports || MATCH_SPORTS).includes(sport))
+}
+
+/**
+ * The sport of a scoresheet path: OpenBeach writes under beach/ (the first
+ * segment, compared like a case-insensitive file system would), everything
+ * else is indoor. Malformed paths are refused by lib/storage.js anyway.
+ */
+function scoresheetSportOf(path) {
+  if (typeof path !== 'string') return 'indoor'
+  const first = path.normalize('NFKC').split('/')[0]
+  return first.toLowerCase() === 'beach' ? 'beach' : 'indoor'
 }
 
 const DB_UNAVAILABLE_BODY = { data: null, error: { message: 'Service unavailable', code: 'OV_DB_UNAVAILABLE', retryable: true } }
@@ -461,11 +523,12 @@ function gameTakenBody(layer, claim) {
  * A 409 OV_GAME_TAKEN from the database (a race, or an update onto a taken
  * game): add the claim when the payload names a game. Never throws.
  */
-async function enrichGameTaken(layer, userId, result, rows) {
+async function enrichGameTaken(layer, userId, result, rows, matchOwner) {
   if (result?.status !== 409 || result.body?.error?.code !== 'OV_GAME_TAKEN') return result
   let claim = null
   try {
-    claim = await layer.accounts.findTakenGame({ userId, rows })
+    // only the sports the caller can score in: never who holds a game of the other sport
+    claim = await layer.accounts.findTakenGame({ userId, rows, sports: scoringSportsOf(matchOwner) })
   } catch { claim = null }
   if (claim) await layer.accounts.auditGameTaken({ actorId: userId, claim })
   return { ...result, body: gameTakenBody(layer, claim) }
@@ -594,7 +657,13 @@ function matchDataMessage(type, matchId, entry, scoreboardTs, access = 'full') {
 // RESEND_API_KEY
 // Option 2: SMTP (may be blocked by some cloud providers)
 // SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, CONTACT_EMAIL
-if (process.env.RESEND_API_KEY || process.env.SMTP_HOST) {
+// The SMTP settings are the account-email mailbox (lib/mailer.js). These two
+// legacy routes (/api/contact, /api/match/send-info) mail addresses that an
+// anonymous request supplies, so they use it only with SMTP_LEGACY_ROUTES=1:
+// otherwise configuring password-reset mail would turn them into an open
+// relay of the noreply mailbox.
+const LEGACY_SMTP = !!process.env.SMTP_HOST && process.env.SMTP_LEGACY_ROUTES === '1'
+if (process.env.RESEND_API_KEY || LEGACY_SMTP) {
   console.log('[Email Config] RESEND_API_KEY:', process.env.RESEND_API_KEY ? 'SET' : 'NOT SET')
   console.log('[Email Config] SMTP_HOST:', process.env.SMTP_HOST ? 'SET' : 'NOT SET')
   console.log('[Email Config] SMTP_PORT:', process.env.SMTP_PORT || 'NOT SET')
@@ -630,7 +699,7 @@ async function sendViaResend(to, subject, text) {
     clearTimeout(timeout)
   }
 }
-const emailTransporter = process.env.SMTP_HOST ? nodemailer.createTransport({
+const emailTransporter = LEGACY_SMTP ? nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: parseInt(process.env.SMTP_PORT || '587'),
   secure: process.env.SMTP_PORT === '465',
@@ -1012,7 +1081,8 @@ const rateLimitMaps = {
   restore: new Map(),   // /api/match/restore, per user id
   restorePin: new Map(), // /api/match/restore-by-pin, per IP
   manage: new Map(),    // /api/admin/*, /api/saved-teams*, per user id
-  officialCheck: new Map() // /api/match/official-check, per user id
+  officialCheck: new Map(), // /api/match/official-check, per user id
+  publicBeach: new Map() // /api/public/beach/t/:slug, per IP
 }
 
 function isRateLimited(ip, maxRequests = RATE_LIMIT_MAX_REQUESTS, category = 'default') {
@@ -1348,7 +1418,8 @@ const CLOUD_CONNECT_SRC = [
 // --- Health ------------------------------------------------------------------
 // /health/live: process is up (Docker healthcheck). Never touches the database.
 // /health:      monitors. DATABASE_URL mode: db ping, catalog, storage sentinel,
-//               free space (floor), last backup age, socket pools. 503 when the
+//               free space (floor), last backup age, socket pools, account-email
+//               counters (mail). 503 when the
 //               db, catalog, floor, sentinel or backup is not ok. Cached for 2 s.
 //               Full body for internal callers only (isInternalCaller).
 const HEALTH_CACHE_MS = 2000
@@ -1418,6 +1489,11 @@ async function computeCloudHealth() {
   }
   Object.assign(body, await readLastBackup(), relayStats())
   body.backup = backupState(body.lastBackupAgeMin)
+  // Account emails (lib/mailer.js): budgets used / dropped this hour, failed
+  // sends. Informational: a used-up budget does not make the server unhealthy.
+  if (layer?.auth?.mailer?.stats) {
+    try { body.mail = layer.auth.mailer.stats() } catch { body.mail = { enabled: null } }
+  }
   if (realtimeHub) body.realtime = realtimeHub.stats()
   const healthy = body.db === 'ok' && body.catalog.ok && body.sentinel === 'ok' && body.floor === 'ok' &&
     (body.backup === 'ok' || body.backup === 'unchecked')
@@ -2053,7 +2129,7 @@ const server = createServer((req, res) => {
           typeof str === 'string' ? str.replace(/[\r\n]/g, ' ').substring(0, maxLen).trim() : String(str || '')
 
         // Build email content
-        const contactEmail = process.env.CONTACT_EMAIL || 'volleyball@lucanepa.com'
+        const contactEmail = process.env.CONTACT_EMAIL || 'support@openvolley.app'
         const typeLabels = { support: 'Support', feedback: 'Feedback', request: 'Feature Request' }
         const supportTypeLabels = { bug: 'Bug Report', help: 'Help / Question' }
         const severityLabels = {
@@ -2130,7 +2206,7 @@ eScoresheet Developer
             // Continue anyway - the form data is logged
           }
         } else {
-          console.log('[Contact] Email not configured (SMTP_HOST not set). Form data logged only.')
+          console.log('[Contact] Email not configured (SMTP_HOST with SMTP_LEGACY_ROUTES=1 not set). Form data logged only.')
         }
 
         res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -2519,9 +2595,37 @@ Generated by eScoresheet
     return
   }
 
+  // OpenBeach tournaments, public (lib/beachTournaments.js publicTournament,
+  // decision D9): names and countries only, tournaments marked public and no
+  // longer in draft. Anonymous, rate-limited per IP, cached 15 s here and in
+  // the browser.
+  const publicBeach = req.method === 'GET' ? PUBLIC_BEACH_RE.exec(url.pathname) : null
+  if (publicBeach) {
+    if (!DB_MODE) {
+      sendNoDb()
+      return
+    }
+    if (isRateLimited(ipBucketKey(getClientIp(req)), PUBLIC_BEACH_RATE_LIMIT_MAX, 'publicBeach')) {
+      sendTooMany()
+      return
+    }
+    ;(async () => {
+      try {
+        const layer = await getDataLayer()
+        const r = await layer.beach.publicTournament({ slug: publicBeach[1] })
+        const cache = r.status === 200 ? { 'Cache-Control': 'public, max-age=15' } : { 'Cache-Control': 'no-store' }
+        sendJson(res, r.status, r.body, { ...cache, ...(r.status >= 500 ? { 'Retry-After': '5' } : {}) })
+      } catch (err) {
+        sendLayerError('public-beach', err)
+      }
+    })()
+    return
+  }
+
   // Approved scorers, admin console and saved teams (lib/manageApi.js,
   // docs/scorer-accounts-spec.md section 5): /api/account/redeem-invite,
-  // /api/match/official-check, /api/admin/*, /api/saved-teams*. Every call
+  // /api/match/official-check, /api/admin/*, /api/saved-teams*, and (db/012)
+  // GET /api/me and POST /api/account/join. Every call
   // needs a session; the roles come from the database (lib/access.js). The
   // UI hides what an account may not do, but the check is here.
   const manageFamily = manageFamilyOf(url.pathname)
@@ -2539,7 +2643,12 @@ Generated by eScoresheet
         if (!user) return
         const limited = manageFamily === 'officialCheck'
           ? isRateLimited(user.id, OFFICIAL_CHECK_RATE_LIMIT_MAX, 'officialCheck')
-          : (manageFamily === 'admin' || manageFamily === 'savedTeams') && isRateLimited(user.id, MANAGE_RATE_LIMIT_MAX, 'manage')
+          : manageFamily === 'approvalPin'
+            ? isRateLimited(user.id, APPROVAL_PIN_RATE_LIMIT_MAX, 'approvalPin')
+            : manageFamily === 'approvals'
+              ? isRateLimited(user.id, APPROVALS_RATE_LIMIT_MAX, 'approvals')
+              : (manageFamily === 'admin' || manageFamily === 'savedTeams' || manageFamily === 'me' || manageFamily === 'join' || manageFamily === 'beach') &&
+                isRateLimited(user.id, MANAGE_RATE_LIMIT_MAX, 'manage')
         if (limited) {
           req.resume()
           sendJson(res, 429, TOO_MANY, { 'Retry-After': '60', ...noStore })
@@ -2565,21 +2674,49 @@ Generated by eScoresheet
             return
           }
         }
+        // Approval PIN set/remove (wrong passwords) and approve (wrong PINs):
+        // failed attempts per account AND per IP (/64), counted before the
+        // body is read; every answer but the failure is refunded.
+        const failure = req.method !== 'POST'
+          ? null
+          : manageFamily === 'approvalPin'
+            ? { limiter: approvalPasswordLimiter, code: 'OV_PASSWORD_INVALID', retryAfter: String(APPROVAL_PASSWORD_FAILURES.windowMs / 1000) }
+            : manageFamily === 'approvals' && url.pathname === '/api/approvals'
+              ? { limiter: approvalPinFailLimiter, code: 'OV_APPROVAL_PIN_INVALID', retryAfter: String(APPROVAL_PIN_FAILURES.windowMs / 1000) }
+              : null
+        const failureKeys = failure ? [`u:${user.id}`, `ip:${ipBucketKey(clientIp)}`] : []
+        if (failure) {
+          const overUser = failure.limiter.isLimited(failureKeys[0])
+          const overIp = failure.limiter.isLimited(failureKeys[1])
+          if (overUser || overIp) {
+            req.resume()
+            sendJson(res, 429, { data: null, error: { message: 'Too many attempts. Please wait a few minutes.', code: 'OV_TOO_MANY_ATTEMPTS' } }, { 'Retry-After': failure.retryAfter, ...noStore })
+            return
+          }
+        }
         let body = {}
         if (req.method !== 'GET' && req.method !== 'DELETE' && req.method !== 'HEAD') {
           try {
             body = await readJsonBody(req)
           } catch (err) {
+            if (failure) for (const k of failureKeys) failure.limiter.refund(k)
             sendBodyError(res, err)
             return
           }
         } else {
           req.resume()
         }
-        const r = await layer.manage.route({ method: req.method, pathname: url.pathname, query: url.searchParams, body, user, access })
+        let r
+        try {
+          r = await layer.manage.route({ method: req.method, pathname: url.pathname, query: url.searchParams, body, user, access, ip: clientIp, lang: String(req.headers['accept-language'] || '').slice(0, 512) })
+        } finally {
+          if (failure && !(r?.status === 403 && r.body?.error?.code === failure.code)) {
+            for (const k of failureKeys) failure.limiter.refund(k)
+          }
+        }
         if (redeemKeys.length && r.status === 200) for (const k of redeemKeys) redeemLimiter.refund(k)
         if (r.status === 200 && r.changes?.length) publishChanges(r.changes)
-        const headers = { ...noStore, ...(r.status >= 500 ? { 'Retry-After': '5' } : {}) }
+        const headers = { ...noStore, ...(r.status >= 500 ? { 'Retry-After': '5' } : {}), ...(r.headers || {}) }
         sendJson(res, r.status, r.body, headers)
       } catch (err) {
         console.error('[manage] error:', err?.message || err)
@@ -2772,9 +2909,11 @@ Generated by eScoresheet
         if (table === 'matches' && officialWrite && matchOwner && !matchOwner.testOnly) {
           let claim
           try {
+            // only the sports the caller can score in: the others get pgQuery's 403 first
+            const sports = scoringSportsOf(matchOwner)
             claim = action === 'update'
-              ? await layer.accounts.findTakenGameForUpdate({ userId: authUser.id, filters: p.filters, data: p.data })
-              : await layer.accounts.findTakenGame({ userId: authUser.id, rows: p.data })
+              ? await layer.accounts.findTakenGameForUpdate({ userId: authUser.id, filters: p.filters, data: p.data, sports })
+              : await layer.accounts.findTakenGame({ userId: authUser.id, rows: p.data, sports })
           } catch (err) {
             console.warn('[DB] official-game check failed:', err?.message)
             logRejected(503, 'OV_DB_UNAVAILABLE')
@@ -2810,7 +2949,7 @@ Generated by eScoresheet
             r = await layer.db.runQuery({ table, action, params: p }, runOpts)
           }
         }
-        if (table === 'matches' && isWrite) r = await enrichGameTaken(layer, authUser.id, r, p.data)
+        if (table === 'matches' && isWrite) r = await enrichGameTaken(layer, authUser.id, r, p.data, matchOwner)
         if (r.status === 200 && r.changes?.length) {
           publishChanges(r.changes)
           if (table === 'matches') await layer.accounts.auditClaimedGames({ actorId: authUser.id, changes: r.changes })
@@ -2882,7 +3021,7 @@ Generated by eScoresheet
           if (!matchOwner.testOnly && body && typeof body === 'object' && body.match && typeof body.match === 'object') {
             let claim
             try {
-              claim = await layer.accounts.findTakenGame({ userId: user.id, rows: [body.match] })
+              claim = await layer.accounts.findTakenGame({ userId: user.id, rows: [body.match], sports: scoringSportsOf(matchOwner) })
             } catch (err) {
               console.warn('[match/restore] official-game check failed:', err?.message)
               sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5' })
@@ -2895,7 +3034,7 @@ Generated by eScoresheet
             }
           }
           let r = await layer.restore.restoreMatch(body, { proto: req.headers['x-ov-proto'], matchOwner, actorId: user.id })
-          r = await enrichGameTaken(layer, user.id, r, body?.match ? [body.match] : [])
+          r = await enrichGameTaken(layer, user.id, r, body?.match ? [body.match] : [], matchOwner)
           if (r.status === 200) {
             publishChanges(r.changes)
             await layer.accounts.auditClaimedGames({ actorId: user.id, changes: r.changes })
@@ -3115,11 +3254,14 @@ Generated by eScoresheet
           sendBodyError(res, err, { tooLargeBody: layer.storage.bodyTooLarge().body })
           return
         }
-        // Scoresheets of official matches: approved scorers only (backups stay open)
+        // Scoresheets of official matches: approved scorers only (backups stay
+        // open), of the sport of the path (beach/... needs beach scoring rights)
         if (action === 'upload' && body && body.bucket === 'scoresheets') {
           let canScore
           try {
-            canScore = (await layer.access.get(user.id)).canScore
+            const a = await layer.access.get(user.id)
+            const sport = scoresheetSportOf(body.path)
+            canScore = a.apps ? a.apps[sport]?.canScore === true : sport === 'indoor' && a.canScore === true
           } catch (err) {
             console.warn('[Storage] access check failed:', err?.message)
             sendJson(res, 503, DB_UNAVAILABLE_BODY, { 'Retry-After': '5' })
@@ -4354,6 +4496,7 @@ if (DB_MODE) {
     // Expired sessions, hourly
     setInterval(() => {
       layer.auth.sweepExpiredSessions().catch((err) => console.warn('[Auth] session sweep failed:', err.message))
+      layer.auth.sweepExpiredTokens().catch((err) => console.warn('[Auth] email-link sweep failed:', err.message))
     }, 60 * 60 * 1000).unref()
     // backup/backups/** older than 30 days and stale temp files: 5 min after start, then daily
     // While the host backup is stale or missing, keep every backup/ file (the

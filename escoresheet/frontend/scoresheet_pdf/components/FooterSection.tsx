@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { SanctionRecord, Player } from '../types_scoresheet';
 import { SignatureModal } from './SignatureModal';
+import { isApprovalValid, formatApprovalStamp } from '../../src/domain/accountApproval.js';
 
 interface SanctionsProps {
     items?: SanctionRecord[];
@@ -422,9 +423,19 @@ interface ApprovalsProps {
   match?: any;
   teamAKey?: 'home' | 'away';
   lineJudges?: string[];
+  /** The match's sets: an account approval prints only while it matches their result. */
+  sets?: any[];
 }
 
-export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, teamAKey = 'home', lineJudges = [] }) => {
+// Rows that may be approved with an account instead of a drawn signature
+// (docs/account-approval-spec.md 4.6). The assistant scorer signs only.
+const APPROVAL_SLOT_OF_ROLE: Record<string, string> = {
+    '1st Referee': 'referee1',
+    '2nd Referee': 'referee2',
+    'Scorer': 'scorer'
+};
+
+export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, teamAKey = 'home', lineJudges = [], sets = [] }) => {
     const roles = ["1st Referee", "2nd Referee", "Scorer", "Assistant Scorer"];
 
     // Format line judge name from "FirstName LastName" to "LastName FirstName"
@@ -444,6 +455,13 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
         if (role === 'Scorer') return match?.scorerSignature || null;
         if (role === 'Assistant Scorer') return match?.asstScorerSignature || null;
         return null;
+    };
+
+    // A valid account approval of the role, printed as text when no signature was drawn
+    const getApprovalStamp = (role: string): string | null => {
+        const slot = APPROVAL_SLOT_OF_ROLE[role];
+        const record = slot ? match?.accountApprovals?.[slot] : null;
+        return record && isApprovalValid(record, sets) ? formatApprovalStamp(record) : null;
     };
 
     // Post-game captain signatures (separate from pre-game coin toss signatures)
@@ -505,7 +523,8 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
                         <div
                             className="flex-1 h-full relative flex items-end min-h-0"
                         >
-                            {/* Signature space - read-only in PDF */}
+                            {/* Signature space - read-only in PDF. A drawn signature wins;
+                                else the stamp of a valid account approval; else empty. */}
                             {getSignatureForRole(role) ? (
                                 <img
                                     src={getSignatureForRole(role)!}
@@ -513,6 +532,13 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
                                     className="w-full h-5 object-contain"
                                     style={{ maxHeight: '20px' }}
                                 />
+                            ) : getApprovalStamp(role) ? (
+                                <div
+                                    className="w-full h-5 overflow-hidden text-left text-[6px] leading-[7px] text-black"
+                                    data-testid={`approval-stamp-${APPROVAL_SLOT_OF_ROLE[role]}`}
+                                >
+                                    {getApprovalStamp(role)}
+                                </div>
                             ) : (
                                 <div className="w-full h-5"></div>
                             )}

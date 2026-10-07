@@ -6,6 +6,7 @@ import { discardUnsentLogs } from '../utils/logger'
 import { accessFromRoles, accessChanged, NO_ACCESS, ACCESS_CHANGED_EVENT } from '../lib/access'
 import { redeemInvite as apiRedeemInvite } from '../lib/accountApi'
 import { clearSavedTeams, refreshSavedTeams } from '../db/savedTeams'
+import i18n from 'i18next'
 
 const AuthContext = createContext(null)
 
@@ -37,7 +38,13 @@ export const PENDING_PROFILE_POLL_MS = 60000
 // Check if backend proxy is available (for auth operations)
 const hasBackend = () => !!getCloudApiUrl('/api/auth/sign-in')
 
-export function AuthProvider({ children }) {
+/**
+ * @param {object} props
+ * @param {'beach'} [props.app] the OpenBeach manager (manager-beach-main.jsx):
+ *   sign-up, password reset and "send a new link" ask for OpenBeach's mails
+ *   and sign-up joins OpenBeach. Left out (every other page): as before.
+ */
+export function AuthProvider({ children, app = null }) {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
   // Only show loading if backend is configured (otherwise show sign-in immediately)
@@ -142,7 +149,9 @@ export function AuthProvider({ children }) {
         setUser(null)
         setProfile(null)
       } else if (session.user && !session.unverified) {
-        setUser(prev => (prev?.id === session.user.id ? prev : session.user))
+        // Same account: keep the object, unless the server now says the
+        // address is confirmed (the stored copy is from before the link)
+        setUser(prev => (prev?.id === session.user.id && !!prev.email_confirmed_at === !!session.user.email_confirmed_at ? prev : session.user))
       }
     }).catch((err) => {
       clearTimeout(loadingTimeout)
@@ -185,6 +194,8 @@ export function AuthProvider({ children }) {
       email,
       password,
       options: {
+        lang: i18n.language,
+        ...(app ? { app } : {}),
         data: {
           first_name: profileData.firstName || null,
           last_name: profileData.lastName || null,
@@ -193,13 +204,13 @@ export function AuthProvider({ children }) {
           // No roles: the server never takes them from the client. New
           // accounts are pending until an admin approves them or they
           // redeem an invite code.
-          sport_type: 'indoor'
+          sport_type: app === 'beach' ? 'beach' : 'indoor'
         }
       }
     })
 
     return { data, error }
-  }, [])
+  }, [app])
 
   // Sign out
   const signOut = useCallback(async () => {
@@ -260,12 +271,33 @@ export function AuthProvider({ children }) {
       return { error: { message: 'Backend not configured' } }
     }
 
-    const { data, error } = await apiAuth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`
-    })
+    // The email's language follows the app's (the server maps de-CH to de)
+    const { data, error, status } = await apiAuth.resetPasswordForEmail(email, { lang: i18n.language, ...(app ? { app } : {}) })
 
-    return { data, error }
+    return { data, error, status }
+  }, [app])
+
+  // Re-reads the signed-in user from the server (after the address was
+  // confirmed on another page or device). Returns the fresh user or null.
+  const refreshUser = useCallback(async () => {
+    if (!hasBackend()) return null
+    try {
+      const { data } = await apiAuth.getSession()
+      const fresh = data?.session && !data.session.unverified ? data.session.user : null
+      if (fresh) setUser(prev => (prev?.id === fresh.id ? fresh : prev))
+      return fresh ?? null
+    } catch {
+      return null
+    }
   }, [])
+
+  // A fresh confirmation link for the signed-in, unconfirmed account
+  const resendConfirmation = useCallback(async () => {
+    if (!hasBackend()) {
+      return { error: { message: 'Backend not configured' } }
+    }
+    return app ? apiAuth.resendConfirmation(i18n.language, app) : apiAuth.resendConfirmation(i18n.language)
+  }, [app])
 
   // Update email - sends confirmation to new email
   const updateEmail = useCallback(async (newEmail) => {
@@ -406,10 +438,12 @@ export function AuthProvider({ children }) {
     updateProfile,
     updateEmail,
     resetPassword,
+    resendConfirmation,
+    refreshUser,
     fetchProfile,
     getCachedProfile,
     deleteAccount
-  }), [user, profile, access, redeemInvite, loading, signIn, signUp, signOut, updateProfile, updateEmail, resetPassword, fetchProfile, getCachedProfile, deleteAccount])
+  }), [user, profile, access, redeemInvite, loading, signIn, signUp, signOut, updateProfile, updateEmail, resetPassword, resendConfirmation, refreshUser, fetchProfile, getCachedProfile, deleteAccount])
 
   return (
     <AuthContext.Provider value={value}>

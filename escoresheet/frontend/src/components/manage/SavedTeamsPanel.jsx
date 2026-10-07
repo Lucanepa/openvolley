@@ -46,8 +46,12 @@ export function leaguesForGender(rows, gender) {
  * loads every sport and switches between them; the offline cache keeps only
  * the indoor teams (storeSavedTeamsBundle filters), since beach teams are
  * loaded by OpenBeach.
+ *
+ * `sport` 'beach' (the OpenBeach manager): beach competitions and pairs only,
+ * loaded with ?sport=beach (the server wants a beach role for it), no sport
+ * switch, and no offline cache (that one is OpenVolley's indoor teams).
  */
-export default function SavedTeamsPanel({ userId }) {
+export default function SavedTeamsPanel({ userId, sport: fixedSport }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
@@ -58,7 +62,8 @@ export default function SavedTeamsPanel({ userId }) {
   const [competitionForm, setCompetitionForm] = useState(null) // null | {} (new) | competition (edit)
   const [teamFormOpen, setTeamFormOpen] = useState(false)
   const [actionError, setActionError] = useState('')
-  const [sport, setSportState] = useState(readSport)
+  const [chosenSport, setSportState] = useState(readSport)
+  const sport = fixedSport === 'beach' ? 'beach' : chosenSport
   const setSport = (v) => {
     setSportState(v)
     setSeason('')
@@ -66,13 +71,13 @@ export default function SavedTeamsPanel({ userId }) {
   }
 
   const { data, error, loading, reload } = usePanelData(async () => {
-    const res = await savedTeamsApi.fetchBundle({ sport: 'all' })
-    if (!res.error && res.data && userId) {
+    const res = await savedTeamsApi.fetchBundle({ sport: fixedSport === 'beach' ? 'beach' : 'all' })
+    if (!res.error && res.data && userId && fixedSport !== 'beach') {
       // The console's load is also the cache refresh for MatchSetup
       try { await storeSavedTeamsBundle(res.data, userId) } catch { /* cache is best effort */ }
     }
     return res
-  }, [userId], { enabled: online })
+  }, [userId, fixedSport], { enabled: online })
 
   const competitions = data?.competitions || []
   const teams = data?.teams || []
@@ -196,17 +201,19 @@ export default function SavedTeamsPanel({ userId }) {
         <Button icon={Plus} onClick={() => setCompetitionForm({})} disabled={!online}>{t('savedTeams.newCompetition')}</Button>
       </PanelHead>
       <OfflineBanner online={online} />
-      <div className="mb-3">
-        <SegmentedControl
-          ariaLabel={t('savedTeams.sport')}
-          value={sport}
-          onChange={setSport}
-          options={[
-            { value: 'indoor', label: t('savedTeams.sportIndoor') },
-            { value: 'beach', label: t('savedTeams.sportBeach') }
-          ]}
-        />
-      </div>
+      {fixedSport !== 'beach' && (
+        <div className="mb-3">
+          <SegmentedControl
+            ariaLabel={t('savedTeams.sport')}
+            value={sport}
+            onChange={setSport}
+            options={[
+              { value: 'indoor', label: t('savedTeams.sportIndoor') },
+              { value: 'beach', label: t('savedTeams.sportBeach') }
+            ]}
+          />
+        </div>
+      )}
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
         <Select value={season} onChange={e => setSeason(e.target.value)} aria-label={t('savedTeams.season')} className="sm:w-48">
           <option value="">{t('savedTeams.season')}: –</option>

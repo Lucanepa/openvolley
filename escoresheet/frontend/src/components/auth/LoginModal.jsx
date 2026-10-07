@@ -3,8 +3,30 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import { Check, X } from 'lucide-react'
 import { Button, cn, Field, FOCUS_RING, IconButton, Input } from '../../ui'
+import CreateAccountLink from './CreateAccountLink'
+import { backdropDismiss } from '../../ui/backdropDismiss.js'
 
-export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
+// The contact address in the server's 503 answer ("... Contact x@y.")
+const DEFAULT_CONTACT = 'support@openvolley.app'
+export function contactFromMessage(message) {
+  const m = /Contact\s+([^\s@]+@[^\s@]+?)\.?$/.exec(String(message || '').trim())
+  return m ? m[1] : DEFAULT_CONTACT
+}
+
+/**
+ * The text for a failed reset request. 503 reset_unavailable: the server sends
+ * no emails (SMTP not configured), so the contact address is the way out.
+ */
+export function resetErrorText(t, error) {
+  if (error?.code === 'reset_unavailable' || error?.status === 503) {
+    return t('authEmail.resetUnavailable', { contact: contactFromMessage(error?.message) })
+  }
+  if (error?.status === 429) return t('authEmail.tooManyAttempts')
+  if (error?.network || error?.status === 0) return t('authEmail.offline')
+  return error?.message || t('authEmail.genericError')
+}
+
+export default function LoginModal({ open, onClose, onSwitchToSignUp, initialForgot = false }) {
   const { t } = useTranslation()
   const { signIn, resetPassword } = useAuth()
 
@@ -12,7 +34,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [showForgotPassword, setShowForgotPassword] = useState(false)
+  const [showForgotPassword, setShowForgotPassword] = useState(initialForgot)
   const [resetSent, setResetSent] = useState(false)
 
   if (!open) return null
@@ -42,21 +64,22 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
     setError('')
     setLoading(true)
 
-    const { error: resetError } = await resetPassword(email)
+    const { error: resetError } = await resetPassword(email.trim())
 
     if (resetError) {
-      setError(resetError.message)
+      setError(resetErrorText(t, resetError))
     } else {
+      // The same answer whether or not the address has an account
       setResetSent(true)
     }
     setLoading(false)
   }
 
-  // Same auth recipe as SignUpModal: labelled kit Field + lg Input, hero submit.
+  // Same auth recipe as SignUpForm: labelled kit Field + lg Input, hero submit.
   const quietLink = cn('inline-flex min-h-11 w-full items-center justify-center rounded-lg text-sm text-stone-500 transition-colors hover:text-stone-800', FOCUS_RING)
 
   return (
-    <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} onClick={onClose}>
+    <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} {...backdropDismiss(onClose)}>
       <div
         role="dialog"
         aria-modal="true"
@@ -88,7 +111,8 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
               <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-green-50 text-green-600">
                 <Check size={26} strokeWidth={2.25} aria-hidden="true" />
               </div>
-              <p className="text-sm text-stone-700">{t('auth.resetEmailSent', 'Check your email for a password reset link')}</p>
+              <p className="text-sm font-semibold text-stone-900">{t('authEmail.resetSentTitle')}</p>
+              <p data-testid="reset-sent" className="mt-1 text-sm text-stone-600">{t('authEmail.resetSent', { email: email.trim() })}</p>
               <Button
                 variant="hero"
                 block
@@ -121,7 +145,7 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
               </Button>
               <button
                 type="button"
-                onClick={() => setShowForgotPassword(false)}
+                onClick={() => { setShowForgotPassword(false); setError('') }}
                 className={quietLink}
               >
                 {t('auth.backToSignIn', 'Back to sign in')}
@@ -157,22 +181,28 @@ export default function LoginModal({ open, onClose, onSwitchToSignUp }) {
 
               <button
                 type="button"
-                onClick={() => setShowForgotPassword(true)}
+                onClick={() => { setShowForgotPassword(true); setError('') }}
                 className={cn(quietLink, 'mt-1')}
               >
                 {t('auth.forgotPassword', 'Forgot password?')}
               </button>
 
-              <div className="mt-3 border-t border-stone-100 pt-4 text-center text-sm text-stone-500">
-                {t('auth.noAccount', "Don't have an account?")}{' '}
-                <button
-                  type="button"
-                  onClick={onSwitchToSignUp}
-                  className={cn('min-h-11 rounded font-medium text-red-600 underline decoration-red-300 underline-offset-2 transition-colors hover:text-red-700 hover:decoration-red-500', FOCUS_RING)}
-                >
-                  {t('auth.signUp', 'Sign up')}
-                </button>
-              </div>
+              {/* Accounts are made on manager.openvolley.app: the scorer apps
+                  link there; the manager passes onSwitchToSignUp (its own page) */}
+              {onSwitchToSignUp ? (
+                <div className="mt-3 border-t border-stone-100 pt-4 text-center text-sm text-stone-500">
+                  {t('auth.noAccount', "Don't have an account?")}{' '}
+                  <button
+                    type="button"
+                    onClick={onSwitchToSignUp}
+                    className={cn('min-h-11 rounded font-medium text-red-600 underline decoration-red-300 underline-offset-2 transition-colors hover:text-red-700 hover:decoration-red-500', FOCUS_RING)}
+                  >
+                    {t('auth.createAccount', 'Create account')}
+                  </button>
+                </div>
+              ) : (
+                <CreateAccountLink className="mt-3 border-t border-stone-100 pt-3" />
+              )}
             </>
           )}
         </div>

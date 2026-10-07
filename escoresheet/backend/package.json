@@ -23,7 +23,8 @@
   },
   "devDependencies": {
     "esbuild": "^0.25.0",
-    "postject": "^1.0.0-alpha.6"
+    "postject": "^1.0.0-alpha.6",
+    "smtp-server": "^3.19.17"
   },
   "engines": {
     "node": ">=22.0.0"

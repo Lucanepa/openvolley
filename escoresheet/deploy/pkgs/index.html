@@ -7,7 +7,7 @@
 <meta name="color-scheme" content="light">
 <title>Get OpenVolley</title>
 <meta name="description" content="Install the OpenVolley eScoresheet and OpenBeach: Android via F-Droid or APK, Linux via APT, Windows installer.">
-<link rel="icon" href="/fdroid/repo/icons/icon.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Ccircle cx='256' cy='256' r='256' fill='%23ffffff'/%3E%3Cpath fill='%23e2001a' d='M495.37 273.44A240 240 0 0 1 480.87 339.85A182.72 182.72 0 0 0 262.66 226.69A130.72 130.72 0 0 1 237.07 188.46A226.72 226.72 0 0 1 495.37 273.44ZM297.34 19.59A240 240 0 0 1 486.05 187.6A278.72 278.72 0 0 0 226.09 137.36A130.72 130.72 0 0 1 297.34 19.59Z'/%3E%3Cpath fill='%231c1917' d='M440.07 410.01A240 240 0 0 1 70.94 408.82A182.72 182.72 0 0 0 278.05 276.42A130.72 130.72 0 0 1 440.07 410.01Z'/%3E%3Cpath fill='%231c1917' d='M30.59 338.4A240 240 0 0 1 216.18 19.33A182.72 182.72 0 0 0 227.29 264.89A130.72 130.72 0 0 1 30.59 338.4Z'/%3E%3C/svg%3E">
 <!-- Template: publish-pkgs.sh (lib/publish-lib.sh landing_page) fills in the placeholders
      DESKTOP_VERSION, DEB_PACKAGE, WINDOWS_URL, APK_VERSION, APK_FILE and, for OpenBeach,
      BEACH_DESKTOP_VERSION, BEACH_WINDOWS_URL, BEACH_APK_VERSION and BEACH_APK_FILE (each between
@@ -32,7 +32,7 @@
   }
   main { max-width: 48rem; margin: 0 auto; padding: 2rem 1rem 3rem; }
   header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
-  header img { width: 56px; height: 56px; border-radius: 14px; flex: none; }
+  header .hero-icon { width: 56px; height: 56px; flex: none; }
   .eyebrow { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .14em; color: var(--stone-400); margin: 0 0 .15rem; }
   h1 { font-size: 1.75rem; line-height: 1.2; font-weight: 700; letter-spacing: -.02em; color: var(--stone-900); margin: 0; }
   .lead { color: var(--stone-600); margin: 0 0 1.5rem; max-width: 40rem; }
@@ -94,7 +94,7 @@
 <body>
 <main>
   <header>
-    <img src="/fdroid/repo/icons/icon.png" alt="">
+    <svg class="hero-icon" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect x="0.75" y="0.75" width="510.5" height="510.5" rx="114" fill="#ffffff" stroke="#e7e5e4" stroke-width="1.5"/><path fill="#e2001a" d="M405.99 254.5A150 150 0 0 1 391.96 319.36A106.45 106.45 0 0 0 257.95 246.38A89.45 89.45 0 0 1 234.12 209.23A149.45 149.45 0 0 1 405.99 254.5ZM269.35 106.6A150 150 0 0 1 403.05 226.4A166.45 166.45 0 0 0 230.29 192.48A89.45 89.45 0 0 1 269.35 106.6Z"/><path fill="#1c1917" d="M182.3 386.65A150 150 0 0 1 133.15 342.06A106.45 106.45 0 0 0 263.36 262.5A89.45 89.45 0 0 1 307.44 260.44A149.45 149.45 0 0 1 182.3 386.65ZM378.71 342.26A150 150 0 0 1 208.11 398.15A166.45 166.45 0 0 0 323.87 265.5A89.45 89.45 0 0 1 378.71 342.26Z"/><path fill="#1c1917" d="M179.71 126.85A150 150 0 0 1 242.89 106.57A106.45 106.45 0 0 0 246.69 259.12A89.45 89.45 0 0 1 226.43 298.33A149.45 149.45 0 0 1 179.71 126.85ZM119.94 319.14A150 150 0 0 1 156.84 143.45A166.45 166.45 0 0 0 213.84 310.03A89.45 89.45 0 0 1 119.94 319.14Z"/></svg>
     <div>
       <p class="eyebrow">get.openvolley.app</p>
       <h1>Install OpenVolley eScoresheet</h1>

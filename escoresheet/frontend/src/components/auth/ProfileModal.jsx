@@ -6,6 +6,10 @@ import { X } from 'lucide-react'
 import { Button, cn, Field, FOCUS_RING, IconButton, Input } from '../../ui'
 import RoleChips from './RoleChips'
 import PendingApprovalBanner from './PendingApprovalBanner'
+import EmailConfirmBanner from './EmailConfirmBanner'
+import DateOfBirthInput from './DateOfBirthInput'
+import ApprovalPinSection from './ApprovalPinSection'
+import { backdropDismiss } from '../../ui/backdropDismiss.js'
 
 export default function ProfileModal({ open, onClose }) {
   const { t } = useTranslation()
@@ -122,6 +126,11 @@ export default function ProfileModal({ open, onClose }) {
     e.preventDefault()
     setError('')
     setSuccess(false)
+    // null: the date of birth is unfinished or impossible (DateOfBirthInput)
+    if (dob === null) {
+      setError(t('auth.dobInvalid', 'Enter the date of birth as DD.MM.YYYY.'))
+      return
+    }
     setLoading(true)
 
     const { error: updateError } = await updateProfile({
@@ -145,7 +154,7 @@ export default function ProfileModal({ open, onClose }) {
   const labelCls = 'mb-1.5 block text-sm font-medium text-stone-700'
 
   return (
-    <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} onClick={onClose}>
+    <div className="ov-kit fixed inset-0 flex items-center justify-center bg-stone-900/50 p-4 backdrop-blur-sm" style={{ zIndex: 2000 }} {...backdropDismiss(onClose)}>
       <div
         role="dialog"
         aria-modal="true"
@@ -244,6 +253,7 @@ export default function ProfileModal({ open, onClose }) {
                 </Button>
               </div>
             )}
+            <EmailConfirmBanner className="mt-2" />
           </div>
 
           {/* Role (read-only) */}
@@ -254,6 +264,8 @@ export default function ProfileModal({ open, onClose }) {
             {access?.known ? <RoleChips roles={access.roles} pending={access.isPending} /> : <span className="text-xs text-stone-400">–</span>}
           </div>
           <PendingApprovalBanner className="mb-4" />
+          {/* Referees and scorers: the personal PIN to approve results with the account */}
+          <ApprovalPinSection className="mb-4" />
 
           <form onSubmit={handleSubmit} className="space-y-3">
             {/* Name fields */}
@@ -295,11 +307,9 @@ export default function ProfileModal({ open, onClose }) {
                 />
               </Field>
               <Field label={t('auth.dob', 'Date of birth')}>
-                <Input
-                  size="lg"
-                  type="date"
+                <DateOfBirthInput
                   value={dob}
-                  onChange={e => setDob(e.target.value)}
+                  onChange={setDob}
                   aria-label={t('auth.dob', 'Date of birth')}
                 />
               </Field>
@@ -350,7 +360,7 @@ export default function ProfileModal({ open, onClose }) {
         <div
           className="fixed inset-0 flex items-center justify-center bg-stone-900/60 p-4 backdrop-blur-sm"
           style={{ zIndex: 2100 }}
-          onClick={() => setShowDeleteConfirm(false)}
+          {...backdropDismiss(() => setShowDeleteConfirm(false))}
         >
           <div
             role="alertdialog"

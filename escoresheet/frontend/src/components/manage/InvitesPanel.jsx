@@ -14,15 +14,20 @@ function plusDays(days) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-/** Invite codes: create (shown once), list, revoke (admins). */
-export default function InvitesPanel() {
+/**
+ * Invite codes: create (shown once), list, revoke (admins). `app` 'indoor' /
+ * 'beach' (OpenVolley's / OpenBeach's console): that app's codes only, and
+ * new codes are of that sport (beach: they grant the beach role). Left out:
+ * every code, new codes indoor (as before).
+ */
+export default function InvitesPanel({ app }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
   const [creating, setCreating] = useState(false)
   const [created, setCreated] = useState(null) // { code, invite } — shown once
   const [rowError, setRowError] = useState({})
-  const { data, error, loading, reload } = usePanelData(() => admin.listInvites(), [], { enabled: online })
+  const { data, error, loading, reload } = usePanelData(() => (app ? admin.listInvites({ app }) : admin.listInvites()), [app], { enabled: online })
   const invites = data?.invites || []
 
   const revoke = async (invite) => {
@@ -82,6 +87,7 @@ export default function InvitesPanel() {
         </RowList>
       )}
       <CreateInviteModal
+        app={app}
         open={creating}
         onClose={() => setCreating(false)}
         onCreated={(res) => { setCreating(false); setCreated(res); reload() }}
@@ -120,7 +126,7 @@ export default function InvitesPanel() {
   )
 }
 
-function CreateInviteModal({ open, onClose, onCreated }) {
+function CreateInviteModal({ app, open, onClose, onCreated }) {
   const { t } = useTranslation()
   const errorText = useErrorText()
   const [label, setLabel] = useState('')
@@ -146,7 +152,9 @@ function CreateInviteModal({ open, onClose, onCreated }) {
       club: club.trim() || null,
       role,
       max_uses: maxUses === '' ? null : Number(maxUses),
-      expires_at: expiresAt
+      expires_at: expiresAt,
+      // the code's sport is the console's app (left out: indoor, as before)
+      ...(app ? { sport: app } : {})
     })
     setBusy(false)
     if (res.error || !res.data?.code) {
