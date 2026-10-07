@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAlert } from '../../contexts/AlertContext'
 import Modal from '../Modal'
@@ -18,6 +18,9 @@ import { ChevronDown, Info, X } from 'lucide-react'
 import { cn, IconButton, Select, SegmentedControl, Switch } from '../../ui'
 import { allowLeaving } from '../../utils/leaveGuard'
 import { backdropDismiss } from '../../ui/backdropDismiss.js'
+import ActivityLogModal from '../ActivityLogModal'
+import { canOpenLogFolder, openLogFolder } from '../../utils/activity'
+import { diagnosticLogQuery } from '../../utils/activity/logQuery'
 
 // Opened over the scoreboard: no brand-red fills here (RESTYLE-SPEC R4).
 // Selection and "on" are slate-900, the non-destructive confirm emerald.
@@ -137,6 +140,28 @@ export default function ScoreboardOptionsModal({
   const [backupPlatform] = useState(() => detectBackupPlatform())
   const nativeBackup = isNativeBackupPlatform(backupPlatform)
   const nativeBackupStatus = useNativeBackupStatus()
+  // Logs: the activity log (synced) and the diagnostic log (clicks, local only)
+  const [showActivityLog, setShowActivityLog] = useState(false)
+  const [logFolder, setLogFolder] = useState(false)
+  useEffect(() => {
+    if (!open) return undefined
+    let alive = true
+    canOpenLogFolder().then((ok) => { if (alive) setLogFolder(ok) }).catch(() => {})
+    return () => { alive = false }
+  }, [open])
+  const exportDiagnosticLog = async () => {
+    try {
+      const match = matchId != null ? await db.matches.get(matchId) : null
+      const { downloadLogs } = await import('../../utils/comprehensiveLogger')
+      await downloadLogs(diagnosticLogQuery(matchId, match), 'ndjson')
+    } catch (err) {
+      console.error('[Options] diagnostic log export failed:', err)
+      showAlert(t('options.diagnosticLogFailed'), 'error')
+    }
+  }
+  const openLogs = async () => {
+    if (!(await openLogFolder().catch(() => false))) showAlert(t('options.logFolderOpenFailed'), 'error')
+  }
 
   // Load cloud backups
   const loadBackups = async () => {
@@ -781,6 +806,32 @@ export default function ScoreboardOptionsModal({
           </Section>
         )}
 
+        <Section title={t('options.logs')}>
+          <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
+            <div className="flex items-center gap-1.5">
+              <div className="text-sm font-semibold text-stone-900">{t('options.activityLog')}</div>
+              <InfoDot title={t('options.activityLogInfo')} />
+            </div>
+            <button type="button" onClick={() => setShowActivityLog(true)} className={cn(BTN_OUTLINE, 'w-full')} data-testid="options-activity-log">
+              {t('options.openActivityLog')}
+            </button>
+          </Row>
+          <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
+            <div className="flex items-center gap-1.5">
+              <div className="text-sm font-semibold text-stone-900">{t('options.diagnosticLog')}</div>
+              <InfoDot title={t('options.diagnosticLogInfo')} />
+            </div>
+            <button type="button" onClick={exportDiagnosticLog} className={cn(BTN_OUTLINE, 'w-full')} data-testid="options-diagnostic-log">
+              {t('options.exportDiagnosticLog')}
+            </button>
+            {logFolder && (
+              <button type="button" onClick={openLogs} className={cn(BTN_OUTLINE, 'w-full')} data-testid="options-log-folder">
+                {t('options.openLogFolder')}
+              </button>
+            )}
+          </Row>
+        </Section>
+
         <Section title={t('options.cloudBackup')}>
           <Row style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
             <div className="flex items-center gap-1.5">
@@ -978,6 +1029,7 @@ export default function ScoreboardOptionsModal({
 
       </div>
       </div>
+      <ActivityLogModal open={showActivityLog} onClose={() => setShowActivityLog(false)} matchId={matchId ?? null} />
     </Modal >
   )
 }

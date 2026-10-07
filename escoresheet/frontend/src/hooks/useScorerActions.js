@@ -1,5 +1,7 @@
 import { useCallback, useMemo, useRef } from 'react'
 import Dexie from 'dexie'
+import { withActivityContext, currentActivityContext } from '../db/eventHistory'
+import { randomUuid } from '../utils/deviceId'
 
 // The event mutex (eventInProgressRef) is waited for at most this long, as
 // logEvent always did, before an action goes ahead anyway.
@@ -84,6 +86,20 @@ export function runActionEffects(effects, finalSnapshot) {
   }
 }
 
+/**
+ * Run `fn` with the event-history reason of an action (db/eventHistory: why
+ * its deletes and edits void or edit the server's events). A top-level action
+ * gets its own action id; an action that joins a running one (the replay of a
+ * decision change) keeps the outer reason and id, so the rows it voids are
+ * labelled as what the scorer did.
+ */
+export function inActivityContext(reason, fn, { joined = false } = {}) {
+  if (!reason) return fn()
+  const current = currentActivityContext()
+  if (joined && current?.reason) return fn()
+  return withActivityContext({ reason, actionId: current?.actionId ?? randomUuid() }, fn)
+}
+
 /** An action failure already shown to the scorer (onError, or by the action itself). */
 export function isReportedActionError(err) {
   return !!(err && typeof err === 'object' && err.scorerActionReported)
@@ -119,6 +135,11 @@ export function markActionErrorReported(err) {
  *   tap), from the synchronous call on until its data is on screen.
  * - The event mutex (eventInProgressRef) is held for the whole transaction
  *   (skipMutex: the caller holds it).
+ * - The transaction covers every table (db.tables), the event history's
+ *   included (EVENT_HISTORY_SCOPE): the void / edit rows and their sync jobs
+ *   the db.events hooks write for a delete or an edit commit or roll back with
+ *   the action. `reason` ('undo', 'decision_change', ...) labels them
+ *   (inActivityContext); without it a delete is 'delete', an edit 'other'.
  * - If the transaction fails nothing of it is written, its screen changes and
  *   side effects are dropped and the error is rethrown. A keyed action (a
  *   scorer tap) also passes it to `onError` (the scorer must see that nothing
@@ -148,10 +169,10 @@ export function useScorerActions({ db, commits, mutexRef, captureFinalSnapshot, 
     return trans && trans.idbtrans === ctx.idbtrans ? ctx : null
   }, [])
 
-  const runAction = useCallback(async (key, body, { skipMutex = false } = {}) => {
+  const runAction = useCallback(async (key, body, { skipMutex = false, reason = null } = {}) => {
     // Called from inside a running action (e.g. the delay penalty's point): join it
     const outer = actionOfCaller()
-    if (outer) return body(outer)
+    if (outer) return inActivityContext(reason, () => body(outer), { joined: true })
 
     const inFlight = inFlightRef.current
     if (key != null) {
@@ -178,7 +199,7 @@ export function useScorerActions({ db, commits, mutexRef, captureFinalSnapshot, 
         result = await db.transaction('rw', db.tables, async () => {
           ctx.idbtrans = Dexie.currentTransaction.idbtrans
           ctxRef.current = ctx
-          const value = await body(ctx)
+          const value = await inActivityContext(reason, () => body(ctx))
           // Writes started without awaiting them (logManualChange) finish inside
           while (ctx.pending.length > 0) await ctx.pending.shift()
           ctx.wrote = 'mutatedParts' in ctx.idbtrans

@@ -13,6 +13,9 @@ const APP_COMMANDS: &[&str] = &[
     "backup_remove",
     "backup_open_dir",
     "backup_pick_file",
+    // the activity log's daily files (activity.rs)
+    "activity_append",
+    "activity_open_dir",
     // networks the laptop creates for the tablets (netshare/)
     "hotspot_status",
     "hotspot_start",
@@ -48,7 +51,7 @@ fn main() {
     select_flavour();
 
     // An app ACL manifest: these commands are denied unless a capability
-    // grants them (capabilities/backup.json, capabilities/netshare.json,
+    // grants them (capabilities/backup.json, capabilities/activity.json, capabilities/netshare.json,
     // capabilities/app.json, capabilities/update.json: only the main window,
     // only from http://localhost; capabilities/downloads.json: the main window
     // and the scoresheet windows, only from http://localhost).

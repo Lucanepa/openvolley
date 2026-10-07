@@ -110,3 +110,31 @@ export function deferredPenaltyPoints(events, setIndex) {
     .sort((a, b) => (a.seq || 0) - (b.seq || 0))
     .map(e => (e.payload.team === 'home' ? 'away' : 'home'))
 }
+
+const hasNumber = (n) => n !== undefined && n !== null && n !== '' && n !== '?'
+
+/**
+ * Misconduct checks for one team member (player or official), the same two
+ * rules the live sanction flow applies (Scoreboard confirmSanctionAction):
+ *  - a member cannot receive the same sanction type twice in the match;
+ *  - a (formal) warning cannot be given once the team has been warned —
+ *    only one warning per team per match (FIVB 21.1 / 21.3.1).
+ * Delays and improper requests are team sanctions and are not checked here
+ * (resolveSanction does).
+ * @param {Array} priorEvents events BEFORE the sanction (any set of the match)
+ * @param {{team:'home'|'away', playerNumber?:any, role?:string, type:string}} sanction
+ * @returns {{legal:boolean, reason?:'sameSanctionTwice'|'teamAlreadyWarned'}}
+ */
+export function validateMemberSanction(priorEvents, { team, playerNumber, role, type } = {}) {
+  const sanctions = (priorEvents || []).filter(e => e?.type === 'sanction' && e.payload?.team === team)
+  const sameMember = (e) => hasNumber(playerNumber)
+    ? String(e.payload?.playerNumber) === String(playerNumber)
+    : (!!role && e.payload?.role === role && !hasNumber(e.payload?.playerNumber))
+  if (sanctions.some(e => sameMember(e) && e.payload?.type === type)) {
+    return { legal: false, reason: 'sameSanctionTwice' }
+  }
+  if (type === 'warning' && sanctions.some(e => e.payload?.type === 'warning')) {
+    return { legal: false, reason: 'teamAlreadyWarned' }
+  }
+  return { legal: true }
+}

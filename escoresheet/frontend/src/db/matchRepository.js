@@ -62,3 +62,29 @@ export function mergeJsonbColumns(updateData, existing) {
   }
   return merged
 }
+
+/**
+ * Queue an update of the cloud match row (sync_queue, resource 'match',
+ * action 'update'): sent when the device is online, in order with the
+ * match's other jobs, retried when it fails. Never for test matches or
+ * matches without a seed_key. Arrays are full snapshots (they replace the
+ * stored value), so an older queued update is safely superseded by a newer
+ * one (useSyncQueue payloadCovers / supersedeStaleUpdates).
+ * @param {import('dexie').Dexie} database
+ * @param {string} seedKey the match's seed_key (cloud external_id)
+ * @param {Record<string, unknown>} fields cloud columns (VALID_MATCH_COLUMNS)
+ * @param {{ test?: boolean }} [opts]
+ * @returns {Promise<number|null>} the job id, or null when nothing was queued
+ */
+export async function queueMatchUpdate(database, seedKey, fields, { test = false } = {}) {
+  if (!database?.sync_queue || !seedKey || test === true) return null
+  const payload = filterMatchPayload(fields)
+  if (Object.keys(payload).length === 0) return null
+  return database.sync_queue.add({
+    resource: 'match',
+    action: 'update',
+    payload: { id: seedKey, ...payload },
+    ts: new Date().toISOString(),
+    status: 'queued'
+  })
+}

@@ -27,6 +27,10 @@ tauri-plugin-single-instance = "2"
 # newest on tauri 2.11 (2.13 needs tauri 2.12 + Rust 1.90, same updater code).
 # Its JS commands are not granted to any window (capabilities/update.json).
 tauri-plugin-updater = "~2.12"
+# The desktop log (main.rs): <data dir>/OpenVolley/logs/desktop.log, rotated.
+# ~2.9: 2.10 needs Rust 1.90. None of its JS commands is granted to a window.
+tauri-plugin-log = "~2.9"
+log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "signal"] }
@@ -40,6 +44,11 @@ futures-util = "0.3"
 # OS randomness for the tablet Wi-Fi password (hotspot.rs). Already in the
 # tree (0.8 through tauri), so this adds no new crate.
 rand = "0.8"
+# Sign on phone (sign.rs): SHA-256 of the session secrets (already in the
+# tree through tauri) and NFC for the context the phone page shows, the same
+# as String.prototype.normalize('NFC') in electron/signSessionCore.cjs.
+sha2 = "0.10"
+unicode-normalization = "0.1"
 
 # GtkSettings: keep the window light on a dark GTK theme (main.rs). Already
 # in the tree through tauri (wry/tao), so this adds no new crate.
@@ -79,6 +88,13 @@ windows = { version = "0.61", features = [
 [dev-dependencies]
 # mock runtime for the IPC/ACL test of the backup commands (main.rs)
 tauri = { version = "2", features = ["test"] }
+# Router tests of /api/sign/* (relay.rs): Router::oneshot and body reading,
+# both already in the tree through axum
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+# tokio::time::pause for the long-poll tests (sign.rs, relay.rs)
+tokio = { version = "1", features = ["test-util"] }
+
 
 # Release profile tuned for a small, fast single binary.
 [profile.release]

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, syncJobsForSets, localIdOfExtId, setScoreSyncJobs } from '../corrections'
+import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, syncJobsForSets, localIdOfExtId, setScoreSyncJobs, scoreAfterUndo } from '../corrections'
 
 // Set 1 at 3-2 (home), then point 6 goes to AWAY by mistake: away (receiving)
 // sides out, so the point wrote away's rotation 6.1 and an auto libero_exit 6.2.
@@ -82,9 +82,9 @@ describe('planDecisionChangeReversal', () => {
 describe('syncJobsForEvents', () => {
   it('matches queued event jobs by external_id, never a set job with the same id', () => {
     const jobs = [
-      { id: 1, resource: 'event', payload: { external_id: '61' } },
+      { id: 1, resource: 'event', action: 'insert', payload: { external_id: '61' } },
       { id: 2, resource: 'set', payload: { external_id: '61' } },
-      { id: 3, resource: 'event', payload: { external_id: '99' } },
+      { id: 3, resource: 'event', action: 'insert', payload: { external_id: '99' } },
       { id: 4, resource: 'match', payload: { id: 'abc' } }
     ]
     expect(syncJobsForEvents(jobs, [61, 62]).map(j => j.id)).toEqual([1])
@@ -93,14 +93,24 @@ describe('syncJobsForEvents', () => {
 
   it('matches the namespaced ids every job carries now (<seed>:e:<id>)', () => {
     const jobs = [
-      { id: 1, resource: 'event', payload: { external_id: 'match_100_aaa:e:61' } },
-      { id: 2, resource: 'event', payload: { external_id: 'match_100_aaa:e:610' } },
-      { id: 3, resource: 'set', payload: { external_id: 'match_100_aaa:s:62' } },
-      { id: 4, resource: 'event', payload: { external_id: 'match_100_aaa:s:62' } },
-      { id: 5, resource: 'event', payload: { external_id: 'match_100_aaa:e:62' } },
-      { id: 6, resource: 'event', payload: { external_id: 'coin_toss_match_100_aaa' } }
+      { id: 1, resource: 'event', action: 'insert', payload: { external_id: 'match_100_aaa:e:61' } },
+      { id: 2, resource: 'event', action: 'insert', payload: { external_id: 'match_100_aaa:e:610' } },
+      { id: 3, resource: 'set', action: 'insert', payload: { external_id: 'match_100_aaa:s:62' } },
+      { id: 4, resource: 'event', action: 'insert', payload: { external_id: 'match_100_aaa:s:62' } },
+      { id: 5, resource: 'event', action: 'insert', payload: { external_id: 'match_100_aaa:e:62' } },
+      { id: 6, resource: 'event', action: 'insert', payload: { external_id: 'coin_toss_match_100_aaa' } }
     ]
     expect(syncJobsForEvents(jobs, [61, 62]).map(j => j.id)).toEqual([1, 5])
+  })
+
+  it('never the void / edit / restore jobs the deletion itself queued (event history)', () => {
+    const jobs = [
+      { id: 1, resource: 'event', action: 'insert', payload: { external_id: 'match_100_aaa:e:61' } },
+      { id: 2, resource: 'event', action: 'void', payload: { external_id: 'match_100_aaa:e:61', rev_uid: 'u1' } },
+      { id: 3, resource: 'event', action: 'edit', payload: { external_id: 'match_100_aaa:e:61', rev_uid: 'u2' } },
+      { id: 4, resource: 'event', action: 'restore', payload: { external_id: 'match_100_aaa:e:61', rev_uid: 'u3' } }
+    ]
+    expect(syncJobsForEvents(jobs, [61]).map(j => j.id)).toEqual([1])
   })
 })
 
@@ -167,10 +177,12 @@ describe('planPointRemoval (taking back a point recorded in error)', () => {
   it('the queued cloud jobs of the removed point and its libero_exit are found, not the earlier ones', () => {
     const plan = planPointRemoval(events, pointEvent)
     const jobs = [
-      { id: 1, resource: 'event', payload: { external_id: 'match_1_k:e:18' } },
-      { id: 2, resource: 'event', payload: { external_id: 'match_1_k:e:20' } },
-      { id: 3, resource: 'event', payload: { external_id: 'match_1_k:e:202' } },
-      { id: 4, resource: 'set', payload: { external_id: 'match_1_k:s:20' } }
+      { id: 1, resource: 'event', action: 'insert', payload: { external_id: 'match_1_k:e:18' } },
+      { id: 2, resource: 'event', action: 'insert', payload: { external_id: 'match_1_k:e:20' } },
+      { id: 3, resource: 'event', action: 'insert', payload: { external_id: 'match_1_k:e:202' } },
+      { id: 4, resource: 'set', action: 'insert', payload: { external_id: 'match_1_k:s:20' } },
+      // the void the removal itself queued (db/eventHistory) must reach the server
+      { id: 5, resource: 'event', action: 'void', payload: { external_id: 'match_1_k:e:20' } }
     ]
     expect(syncJobsForEvents(jobs, plan.deleteEventIds).map(j => j.id)).toEqual([2, 3])
   })
@@ -179,5 +191,19 @@ describe('planPointRemoval (taking back a point recorded in error)', () => {
     expect(planPointRemoval(events, null, { setIndex: 5 }).deleteEventIds).toContain(20)
     expect(planPointRemoval(events, null, { setIndex: 3 })).toBeNull()
     expect(planPointRemoval(events, { id: 99, type: 'timeout', seq: 21, setIndex: 5 })).toBeNull()
+  })
+})
+
+describe('scoreAfterUndo', () => {
+  it('delete an old point, then undo a time-out: the score follows the points, not the stale snapshot', () => {
+    // 3:2, then a time-out whose predecessor (point 5) carries a 3:2 snapshot
+    const log = [
+      point(1, 1, 'home'), point(2, 2, 'home'), point(3, 3, 'away'), point(4, 4, 'home'),
+      { ...point(5, 5, 'away'), stateSnapshot: { pointsA: 3, pointsB: 2, currentSetIndex: 1 } },
+      { id: 6, seq: 6, setIndex: 1, type: 'timeout', payload: { team: 'home' } }
+    ]
+    // a correction removes point 2 (the referee's decision), then the scorer undoes the time-out
+    const remaining = log.filter(e => e.id !== 2 && e.id !== 6)
+    expect(scoreAfterUndo(remaining, 1)).toEqual({ homePoints: 2, awayPoints: 2 })
   })
 })

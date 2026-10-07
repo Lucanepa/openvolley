@@ -4,9 +4,10 @@ import { admin } from '../../lib/accountApi'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, MatchStatusPill, ReasonModal, useErrorText } from './common'
 import { SegmentedControl, SearchInput, RowList, Row, RowTool, Chip, EmptyInset, SkeletonRows, Notice, dayTimeLabel, toast } from '../../ui'
 import { ApprovalChips, ApprovalLookup } from './ApprovalBits'
+import RevisionsModal from './RevisionsModal'
 
 /** Non-test matches by closed state; reopen a closed one (admins, audit-logged). */
-export default function ClosedMatchesPanel() {
+export default function ClosedMatchesPanel({ onShowActivity = null }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
@@ -14,6 +15,7 @@ export default function ClosedMatchesPanel() {
   const [q, setQ] = useState('')
   const [query, setQuery] = useState('')
   const [reopenFor, setReopenFor] = useState(null)
+  const [revisionsFor, setRevisionsFor] = useState(null)
   const { data, error, loading, reload } = usePanelData(
     () => admin.listMatches({ state, q: query || undefined }),
     [state, query],
@@ -72,11 +74,16 @@ export default function ClosedMatchesPanel() {
                 {m.official_game_exempt && <Chip>{t('manage.games.releaseGame')}</Chip>}
                 <ApprovalChips approvals={m.approvals} />
               </>}
-              tools={m.closed_at ? <RowTool disabled={!online} onClick={() => setReopenFor(m)}>{t('manage.matches.reopen')}</RowTool> : null}
+              tools={<>
+                {m.closed_at && <RowTool disabled={!online} onClick={() => setReopenFor(m)}>{t('manage.matches.reopen')}</RowTool>}
+                {onShowActivity && m.external_id && <RowTool disabled={!online} onClick={() => onShowActivity(m.external_id)}>{t('manage.matches.activity')}</RowTool>}
+                <RowTool disabled={!online} onClick={() => setRevisionsFor(m)}>{t('manage.matches.corrections')}</RowTool>
+              </>}
             />
           ))}
         </RowList>
       )}
+      <RevisionsModal match={revisionsFor} onClose={() => setRevisionsFor(null)} />
       <ReasonModal
         open={!!reopenFor}
         title={t('manage.matches.reopenTitle', { game: reopenFor?.game_n ?? '' })}

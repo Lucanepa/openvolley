@@ -3,6 +3,8 @@
 // other section's unsaved edits.
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+// Not *ByRole: on a loaded machine its getComputedStyle work ran past findBy's 1 s window (see buttonQueries)
+import { findButton, getButton } from '../../__tests__/buttonQueries'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key, opts) => (typeof opts === 'string' ? opts : key), i18n: { language: 'en' } })
@@ -53,16 +55,19 @@ describe('saved team editor keeps unsaved edits of the other section', () => {
       return { data: { team: { id } }, error: null, status: 200 }
     })
     render(<SavedTeamsPanel userId="u1" />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Liga' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Volley Alpha' }))
+    fireEvent.click(await findButton('Liga'))
+    fireEvent.click(await findButton('Volley Alpha'))
 
     const lastName = await screen.findByDisplayValue('Muster')
     fireEvent.change(lastName, { target: { value: 'Muster-Neu' } })
     fireEvent.change(screen.getByDisplayValue('Volley Alpha'), { target: { value: 'Volley Beta' } })
-    fireEvent.click(screen.getByRole('button', { name: 'manage.accounts.save' }))
+    fireEvent.click(getButton('manage.accounts.save'))
 
     await waitFor(() => expect(api.savedTeamsApi.fetchBundle).toHaveBeenCalledTimes(2))
-    await waitFor(() => expect(screen.getByDisplayValue('Volley Beta')).toBeInTheDocument())
+    // The reloaded bundle is on screen (the heading shows the saved name) before
+    // the editor is checked: the typed name alone shows before the reload lands
+    await screen.findByText('Volley Beta', { selector: 'h1' })
+    expect(screen.getByDisplayValue('Volley Beta')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Muster-Neu')).toBeInTheDocument()
     expect(api.savedTeamsApi.putRoster).not.toHaveBeenCalled()
   })

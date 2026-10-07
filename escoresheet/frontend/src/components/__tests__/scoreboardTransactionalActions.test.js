@@ -42,8 +42,9 @@ const ACTIONS = [
 function handler(name) {
   const start = src.indexOf(`  const ${name} = useCallback(`)
   expect(start, name).toBeGreaterThan(-1)
-  // `  }, [deps])`, `  }), [deps])`, `  })), [deps])`, or a multi-line `  )`
-  const end = src.slice(start).search(/\n {2}(\}\)*, \[|\)\n)/)
+  // `  }, [deps])`, `  }), [deps])`, `  })), [deps])`, with runAction options
+  // (`  }, { reason: 'undo' })), [deps])`), or a multi-line `  )`
+  const end = src.slice(start).search(/\n {2}(\}(, \{ [^\n]*\})?\)*, \[|\)\n)/)
   expect(end, `${name} end`).toBeGreaterThan(0)
   return src.slice(start, start + end)
 }
@@ -132,10 +133,47 @@ describe('Scoreboard: one transaction and one screen change per scorer action', 
     expect(swap).toContain('syncToReferee()')
   })
 
-  it('a manual change written during an action is part of its transaction; its cloud push comes after', () => {
+  it('a manual change written during an action is part of its transaction, its cloud update too (sync queue)', () => {
     const body = handler('logManualChange')
     expect(body).toContain('trackWrite(db.matches.update(matchId, { manualChanges: updatedChanges })')
-    expect(body).toContain('if (!deferEffect({ run: pushManualChanges })) pushManualChanges()')
+    // the cloud copy goes through the sync queue (a Dexie write): in the transaction, no network
+    expect(body).toContain('trackWrite(queueMatchUpdate(db, data.match?.seed_key, { manual_changes: updatedChanges }')
+    expect(body).not.toMatch(/apiFrom\(/)
+  })
+
+  // The event history (db/eventHistory): the db.events hooks write a void /
+  // edit row and its sync job for every delete and edit, labelled with the
+  // reason of the surrounding action, inside the action's transaction
+  it.each([
+    ['handleUndo', 'undo'],
+    ['handleDecisionChange', 'decision_change'],
+    ['handleReplayRally', 'decision_change'],
+    ['cancelCourtSwitch', 'undo']
+  ])('%s labels the events it takes back (reason %s) inside its action', (name, reason) => {
+    const body = handler(name)
+    // the closing line of the action, right after its body
+    const closing = src.slice(src.indexOf(body) + body.length).split('\n')[1]
+    expect(closing).toMatch(new RegExp(`^ {2}\\}, \\{ reason: '${reason}' \\}\\)+, \\[`))
+    // no second context around the action: the reason is set inside its transaction
+    expect(handler(name)).not.toMatch(/withActivityContext\(/)
+  })
+
+  it('points taken back become voids, their unsent insert jobs go (discardEvents)', () => {
+    for (const name of ['handleReplayRally', 'cancelCourtSwitch']) {
+      expect(handler(name), name).toContain('planPointRemoval(')
+      expect(handler(name), name).toContain('await discardEvents(')
+    }
+    const discard = handler('discardEvents')
+    expect(discard).toContain('db.events.bulkDelete(')
+    expect(discard).toContain('syncJobsForEvents(queued,')
+  })
+
+  it('the history knows the match key, so its jobs are queued in the action\'s transaction', () => {
+    expect(src).toContain('rememberSeedKey(matchId, data.match.seed_key ?? null, data.match.test === true)')
+  })
+
+  it('the game captain chosen in the line-up dialog is one action', () => {
+    expect(src).toMatch(/await runAction\('gameCaptain', async \(\) => \{\s*if \(Object\.keys\(gameCaptain\.matchUpdate\)\.length\) await db\.matches\.update\(matchId, gameCaptain\.matchUpdate\)\s*if \(gameCaptain\.event\) await logEvent\('court_captain_designation', gameCaptain\.event\)/)
   })
 
   it('Dexie-only helpers that were not awaited are awaited inside the actions', () => {

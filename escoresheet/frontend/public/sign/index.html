@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#f5f5f4">
+<title>OpenVolley</title>
+<link rel="stylesheet" href="/sign/sign.css">
+<script src="/sign/sign.js" defer></script>
+</head>
+<!-- Sign on phone (docs/qr-signing-spec.md 6): the signer's own phone draws the
+     signature; the strokes go back to the scoring device. No app bundle, no
+     fonts, no service worker, no cookies. The link's token is in the fragment. -->
+<body>
+<main class="page" data-state="loading">
+<header class="brand"><svg class="mark" width="28" height="28" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path fill="#e2001a" d="M495.95 251.01A240 240 0 0 1 472.49 359.6A168.72 168.72 0 0 0 258.72 242.41A144.72 144.72 0 0 1 219.01 180.24A240.72 240.72 0 0 1 495.95 251.01ZM274.82 16.74A240 240 0 0 1 491.81 211.34A264.72 264.72 0 0 0 213.55 156.59A144.72 144.72 0 0 1 274.82 16.74Z"/><path fill="#1c1917" d="M140.35 466.3A240 240 0 0 1 58.03 391.68A168.72 168.72 0 0 0 266.41 265.15A144.72 144.72 0 0 1 340.1 261.84A240.72 240.72 0 0 1 140.35 466.3ZM453.79 391.93A240 240 0 0 1 176.78 482.55A264.72 264.72 0 0 0 363.32 268.95A144.72 144.72 0 0 1 453.79 391.93Z"/><path fill="#1c1917" d="M131.7 50.69A240 240 0 0 1 237.48 16.72A168.72 168.72 0 0 0 242.87 260.44A144.72 144.72 0 0 1 208.89 325.91A240.72 240.72 0 0 1 131.7 50.69ZM39.38 359.33A240 240 0 0 1 99.42 74.12A264.72 264.72 0 0 0 191.13 342.47A144.72 144.72 0 0 1 39.38 359.33Z"/></svg><span>OpenVolley</span></header>
+<section class="who">
+<h1 id="title"></h1>
+<p id="teams" class="sub"></p>
+<p id="meta" class="sub"></p>
+<p id="name" class="name"></p>
+</section>
+<div id="padwrap" class="pad">
+<canvas id="pad" role="img" aria-label="Signature pad"></canvas>
+<span id="hint" class="hint" aria-hidden="true"></span>
+</div>
+<p id="status" class="status" role="status" aria-live="polite"></p>
+<div class="actions">
+<button id="clear" type="button" class="btn ghost"></button>
+<button id="done" type="button" class="btn primary" disabled></button>
+</div>
+<section id="end" class="end" hidden aria-hidden="true">
+<span id="endIcon" class="end-icon" aria-hidden="true"></span>
+<p id="endText" class="end-text"></p>
+</section>
+</main>
+</body>
+</html>

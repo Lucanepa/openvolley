@@ -38,6 +38,7 @@ import { getConfirmSnapshot, hasConfirmHost, settleConfirm } from '../ui/uiStore
 import { detectAppPlatform, isInAppView, pdfBusyInAppWindows } from './openAppWindow.js'
 import { isLeavingAllowed, resetLeaveGuardForTests } from './leaveGuard.js'
 
+import { emitActivity, flushActivityNow } from './activity/bus'
 export { allowLeaving } from './leaveGuard.js'
 
 export const LIFECYCLE_EVENT = 'ov-app-lifecycle'
@@ -310,6 +311,9 @@ export async function requestDesktopQuit(win = desktopWin || window, ask = askCo
     const [nets, windows] = await Promise.all([laptopNetworks(invoke), appWindows(invoke)])
     // ONE question for every app window: the quit closes the scoresheets too
     if (!(await ask(quitQuestion({ live, ...nets, windows, pdfBusy: pdfBusyNow() })))) return false
+    // The activity log's last line, written before the app goes
+    emitActivity('app.quit', {})
+    await flushActivityNow(800)
     quitting = true
     await invoke('app_quit')
     return true

@@ -4,6 +4,8 @@ import { useAlert } from '../contexts/AlertContext'
 import { useLiveQuery } from 'dexie-react-hooks'
 import Dexie from 'dexie'
 import { db } from '../db/db'
+import { queueMatchUpdate } from '../db/matchRepository'
+import { withActivityContext, currentActivityContext, maxVoidedSeq, rememberSeedKey } from '../db/eventHistory'
 import Modal from './Modal'
 import RostersPanel from './rosters/RostersPanel'
 import { useScaledLayout } from '../hooks/useScaledLayout'
@@ -12,6 +14,8 @@ import { useScorerActions, pickLiveStateSnapshot, isReportedActionError, markAct
 
 import ConnectionStatus from './ConnectionStatus'
 import MenuList from './MenuList'
+import { matchMenuSections, toMenuListSections } from './matchMenu'
+import SanctionsResultsModal from './SanctionsResultsModal'
 import ScoreboardOptionsModal from './options/ScoreboardOptionsModal'
 import NativeBackupAlert from './options/NativeBackupAlert'
 import ConnectTabletsModal from './connect/ConnectTabletsModal'
@@ -19,6 +23,8 @@ import { useSyncQueue, isAuthBlocked } from '../hooks/useSyncQueue'
 import { useSequentialSync } from '../hooks/useSequentialSync'
 import SyncProgressModal from './SyncProgressModal'
 import SignaturePad from './SignaturePad'
+import { saveMatchSignature } from '../utils/saveSignature'
+import { phoneSignContext, signatureUpdate } from '../domain/phoneSignature'
 import LongPressProgressIndicator from './LongPressProgressIndicator'
 import DraggedPlayerOverlay from './DraggedPlayerOverlay'
 import { setPlayerDragImage } from '../utils/dragImage'
@@ -52,10 +58,12 @@ import { useConfirmAction } from '../hooks/useConfirmAction'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
 import { playerReplacedByLibero } from '../domain/liberos'
 import { planSubstitutionDeletion, countRegularSubstitutions, classifySubstitutionRequest, MAX_SUBSTITUTIONS_PER_SET } from '../domain/substitutions'
-import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, syncJobsForSets } from '../domain/corrections'
+import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, syncJobsForSets, scoreAfterUndo } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, renumberPlayerInEvents } from '../domain/roster'
-import { appendRemark, removeRemarkLine } from '../domain/remarks'
-import { LINEUP_POSITIONS, lineupEntryErrors, lineupCandidates } from '../domain/lineupEntry'
+import { appendRemark, removeRemarkLine, eventRemark, remarkClock } from '../domain/remarks'
+import { LINEUP_POSITIONS, lineupEntryErrors, lineupCandidates, lineupCaptainStatus, teamCaptainNumber, gameCaptainOptions, initialGameCaptainChoice, lineupGameCaptainDecision } from '../domain/lineupEntry'
+import { describeEventText } from '../domain/describe'
+import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal } from '../domain/matchEnd'
 import { swapTeamDesignation } from '../domain/coinToss'
 import { liveStateNeedsFreshSnapshot } from '../utils/livescoreModel'
@@ -65,7 +73,7 @@ import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
 import { isNativeApp } from '../utils/backendConfig'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
-import { WarningIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, DownloadIcon, SettingsIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon } from './icons'
+import { WarningIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon } from './icons'
 import { cn } from '../ui/cn.js'
 import { FOCUS_RING, Button } from '../ui/Button.jsx'
 import { ActionSheet, ActionSheetItem } from '../ui/Modal.jsx'
@@ -240,7 +248,7 @@ const SB_INJURY_ICON = <Cross size={16} fill="currentColor" strokeWidth={1.5} />
  */
 
 export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, onTriggerEventBackup }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { showAlert } = useAlert()
   const { vmin } = useScaledLayout()
   const { syncStatus, flush: flushSyncQueue } = useSyncQueue()
@@ -1489,6 +1497,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     captureFinalSnapshot: async () => (await captureFullStateSnapshot())?.snapshot ?? null,
     onError: onActionFailed
   })
+
+  // The event history (db/eventHistory) queues the void / edit job of an
+  // undone or changed event INSIDE the action's transaction only when it knows
+  // the match's seed_key; told here, the job commits (or rolls back) with the
+  // action instead of being queued after it
+  useEffect(() => {
+    if (matchId != null && data?.match) rememberSeedKey(matchId, data.match.seed_key ?? null, data.match.test === true)
+  }, [matchId, data?.match?.seed_key, data?.match?.test]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Restore match state from a snapshot (used by undo)
   const restoreStateFromSnapshot = useCallback(async (snapshot) => {
@@ -3347,13 +3363,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [data?.events, data?.set, data?.homePlayers, data?.awayPlayers])
 
   // Check if captain is on court and show modal to select new captain if needed
-  const checkAndRequestCaptainOnCourt = useCallback(async (teamKey) => {
+  // onCourt: the six just saved by the line-up modal, which `data` may not
+  // show yet (it then read an empty court and asked for a game captain even
+  // with the captain, or a chosen game captain, on court)
+  const checkAndRequestCaptainOnCourt = useCallback(async (teamKey, onCourt = null) => {
     // Check if manage captain on court is enabled
     if (!localManageCaptainOnCourt) return
 
     const teamPlayers = teamKey === 'home' ? data?.homePlayers || [] : data?.awayPlayers || []
-    const teamLineupState = getTeamLineupState(teamKey)
-    const playersOnCourt = teamLineupState.playersOnCourt || []
+    const playersOnCourt = onCourt || getTeamLineupState(teamKey).playersOnCourt || []
 
     // Find team captain
     const teamCaptain = teamPlayers.find(p => p.isCaptain || p.captain)
@@ -3837,7 +3855,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       .where('[matchId+seq]')
       .between([matchId, Dexie.minKey], [matchId, Dexie.maxKey])
       .last()
-    const maxBaseSeq = lastEvent ? Math.floor(lastEvent.seq || 0) : 0
+    // An undone or deleted event's seq is never given out again (event history)
+    const maxBaseSeq = Math.max(lastEvent ? Math.floor(lastEvent.seq || 0) : 0, Math.floor(await maxVoidedSeq(db, matchId)))
 
     // Coin toss check: only needed if maxBaseSeq is 0 or 1
     if (maxBaseSeq <= 1) {
@@ -3863,7 +3882,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       .between([matchId, baseSeq], [matchId, baseSeq + 0.99])
       .last()
 
-    const maxSubSeq = lastRelated ? (lastRelated.seq - baseSeq) : 0
+    // ... nor an undone sub-event's (event history)
+    const voidedSub = await maxVoidedSeq(db, matchId, { from: baseSeq, to: baseSeq + 0.99 })
+    const maxSubSeq = Math.max(lastRelated ? lastRelated.seq : baseSeq, voidedSub || baseSeq) - baseSeq
 
     // If maxSubSeq is 0, it means only the base event exists (no sub-events yet)
     // Round to 1 decimal to avoid floating point drift
@@ -4109,29 +4130,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         console.error('[ManualChange] IndexedDB error:', err)
       }))
 
-      // Sync to Supabase (during an action: after its commit)
-      const pushManualChanges = () => {
-        console.log('[ManualChange] Syncing to Supabase:', { seed_key: data.match.seed_key, changes: updatedChanges })
-        apiFrom('matches')
-          .update({ manual_changes: updatedChanges })
-          .eq('external_id', data.match.seed_key)
-          .then((result) => {
-            // The proxy does not return written rows; only an error is meaningful.
-            if (result.error) {
-              console.warn('[ManualChange] Supabase update failed:', result.error)
-            } else {
-              console.log('[ManualChange] Synced manual_changes to Supabase:', data.match.seed_key)
-            }
-          })
-          .catch((err) => {
-            console.error('[ManualChange] Supabase error:', err)
-          })
-      }
-      if (data.match?.seed_key) {
-        if (!deferEffect({ run: pushManualChanges })) pushManualChanges()
-      } else {
-        console.log('[ManualChange] No Supabase sync:', { seed_key: data.match?.seed_key })
-      }
+      // To the cloud through the sync queue (kept while offline, retried); a
+      // Dexie write, so inside an action it is part of its transaction
+      trackWrite(queueMatchUpdate(db, data.match?.seed_key, { manual_changes: updatedChanges }, { test: data.match?.test === true }).catch((err) => {
+        console.warn('[ManualChange] Could not queue the cloud update:', err?.message)
+      }))
     } else {
       console.log('[ManualChange] No match data:', { matchId, hasMatch: !!data?.match })
     }
@@ -4141,8 +4144,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   const logManualChangeWithRemark = useCallback(async (category, field, before, after, description, { setIndex, scoreStr } = {}) => {
     logManualChange(category, field, before, after, description)
-    const now = new Date()
-    const timeStr = `${String(now.getUTCHours()).padStart(2, '0')}h${String(now.getUTCMinutes()).padStart(2, '0')}m`
+    const timeStr = remarkClock(new Date())
     const si = setIndex ?? data?.set?.index ?? '?'
     const sc = scoreStr ?? `${data?.set?.homePoints ?? '?'}-${data?.set?.awayPoints ?? '?'}`
     const remark = `Manual edit (Set ${si}, ${sc}, ${timeStr}): ${description}`
@@ -4265,8 +4267,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     // Build remarks summary and append
-    const now = new Date()
-    const timeStr = `${String(now.getUTCHours()).padStart(2, '0')}h${String(now.getUTCMinutes()).padStart(2, '0')}m`
+    const timeStr = remarkClock(new Date())
     const setIndex = data?.set?.index || '?'
     const header = `${t('scoreboard.reopenRoster.remarkPrefix', 'Roster change after coin toss')} (${teamLabel}, Set ${setIndex}, ${timeStr}):`
     const remarkBlock = [header, ...remarkLines].join('\n')
@@ -4319,9 +4320,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const renumberMatchUpdate = {}
     if (renumbers?.length) {
       const teamEvents = await db.events.where('matchId').equals(matchId).toArray()
-      for (const { id, payload } of renumberPlayerInEvents(teamEvents, teamKey, renumbers)) {
-        await db.events.update(id, { payload })
-      }
+      await withActivityContext({ reason: 'roster_reopen' }, async () => {
+        for (const { id, payload } of renumberPlayerInEvents(teamEvents, teamKey, renumbers)) {
+          await db.events.update(id, { payload })
+        }
+      })
       const matchNow = await db.matches.get(matchId)
       const courtCaptainField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
       const renumbered = renumbers.find(r => String(r.from) === String(matchNow?.[courtCaptainField]))
@@ -6384,227 +6387,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     })
   })), [runAction, deferUi, runSet5SideService, set5SideServiceModal, data?.match, matchId, getNextSeq, getStateSnapshot])
 
-  // Get action description for an event
+  // Get action description for an event: the paper-scoresheet wording of
+  // domain/describe (localized, concerned team first, no raw event types)
   const getActionDescription = useCallback((event) => {
     if (!event || !data) return 'Unknown action'
-
-    const teamName = event.payload?.team === 'home'
-      ? (data.homeTeam?.name || t('common.home'))
-      : event.payload?.team === 'away'
-        ? (data.awayTeam?.name || t('common.away'))
-        : null
-
-    // Determine team labels (A or B)
-    const teamALabel = data?.match?.coinTossTeamA === 'home' ? 'A' : 'B'
-    const teamBLabel = data?.match?.coinTossTeamB === 'home' ? 'A' : 'B'
-    const homeLabel = data?.match?.coinTossTeamA === 'home' ? 'A' : (data?.match?.coinTossTeamB === 'home' ? 'B' : 'A')
-    const awayLabel = data?.match?.coinTossTeamA === 'away' ? 'A' : (data?.match?.coinTossTeamB === 'away' ? 'B' : 'B')
-
-    // Calculate score at time of event
-    const setIdx = event.setIndex || 1
-    const setEvents = data.events?.filter(e => (e.setIndex || 1) === setIdx) || []
-    const eventIndex = setEvents.findIndex(e => e.id === event.id)
-
-    let homeScore = 0
-    let awayScore = 0
-    for (let i = 0; i <= eventIndex; i++) {
-      const e = setEvents[i]
-      if (e.type === 'point') {
-        if (e.payload?.team === 'home') {
-          homeScore++
-        } else if (e.payload?.team === 'away') {
-          awayScore++
-        }
-      }
-    }
-
-    let eventDescription = ''
-    if (event.type === 'coin_toss') {
-      const teamAName = event.payload?.teamA === 'home'
-        ? (data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home'))
-        : (data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away'))
-      const teamBName = event.payload?.teamB === 'home'
-        ? (data?.homeTeam?.shortName || data?.homeTeam?.name || t('common.home'))
-        : (data?.awayTeam?.shortName || data?.awayTeam?.name || t('common.away'))
-      // Determine if first serve is Team A or Team B
-      const firstServeLabel = event.payload?.firstServe === event.payload?.teamA ? 'A' : 'B'
-      eventDescription = `Coin toss - A: ${teamAName}, B: ${teamBName}, First serve: ${firstServeLabel}`
-    } else if (event.type === 'point') {
-      eventDescription = `Point — ${teamName} (${homeLabel} ${homeScore}:${awayScore} ${awayLabel})`
-    } else if (event.type === 'timeout') {
-      eventDescription = `Timeout — ${teamName}`
-    } else if (event.type === 'substitution') {
-      const playerOut = event.payload?.playerOut || '?'
-      const playerIn = event.payload?.playerIn || '?'
-      const isExceptional = event.payload?.isExceptional === true
-      const substitutionType = isExceptional ? 'Exceptional substitution' : 'Substitution'
-      eventDescription = `${substitutionType} — ${teamName} (OUT: ${playerOut} IN: ${playerIn}) (${homeLabel} ${homeScore}:${awayScore} ${awayLabel})`
-    } else if (event.type === 'set_start') {
-      // Format the relative time as MM:SS
-      const relativeTime = typeof event.ts === 'number' ? event.ts : 0
-      const totalSeconds = Math.floor(relativeTime / 1000)
-      const minutes = Math.floor(totalSeconds / 60)
-      const seconds = totalSeconds % 60
-      const minutesStr = String(minutes).padStart(2, '0')
-      const secondsStr = String(seconds).padStart(2, '0')
-      eventDescription = `Set start — ${minutesStr}:${secondsStr}`
-    } else if (event.type === 'rally_start') {
-      eventDescription = 'Rally started'
-    } else if (event.type === 'replay') {
-      // Show detailed replay info with scores
-      const { oldHomePoints, oldAwayPoints, newHomePoints, newAwayPoints } = event.payload || {}
-      if (oldHomePoints !== undefined && newHomePoints !== undefined) {
-        // Get team labels (A/B) based on coin toss
-        const teamAKey = data?.match?.coinTossTeamA || 'home'
-        const oldLeftScore = teamAKey === 'home' ? oldHomePoints : oldAwayPoints
-        const oldRightScore = teamAKey === 'home' ? oldAwayPoints : oldHomePoints
-        const newLeftScore = teamAKey === 'home' ? newHomePoints : newAwayPoints
-        const newRightScore = teamAKey === 'home' ? newAwayPoints : newHomePoints
-        eventDescription = `${oldLeftScore}:${oldRightScore} Rally Replayed, new score ${newLeftScore}:${newRightScore}`
-      } else {
-        eventDescription = 'Rally replayed'
-      }
-    } else if (event.type === 'decision_change') {
-      const fromTeam = event.payload?.fromTeam === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))
-      const toTeam = event.payload?.toTeam === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))
-      eventDescription = `Decision change — Point swapped from ${fromTeam} to ${toTeam}`
-    } else if (event.type === 'lineup') {
-      // Only show initial lineups, not rotation lineups or libero substitution lineups
-      const isInitial = event.payload?.isInitial === true
-      const hasSubstitution = event.payload?.fromSubstitution === true
-      const hasLiberoSub = event.payload?.liberoSubstitution !== null && event.payload?.liberoSubstitution !== undefined
-
-      // Skip rotation lineups (they're part of the point)
-      if (!isInitial && !hasSubstitution && !hasLiberoSub) {
-        return null
-      }
-
-      // Only show initial lineups as "Line-up setup"
-      if (isInitial) {
-        eventDescription = `${t('scoreboard.lineupSetup', 'Line-up setup')} — ${teamName}`
-      } else if (hasLiberoSub) {
-        // Show libero-related lineup changes with the new lineup
-        const lineup = event.payload?.lineup || {}
-        const positions = ['I', 'II', 'III', 'IV', 'V', 'VI']
-        const lineupStr = positions.map(pos => lineup[pos] || '?').join('-')
-        eventDescription = `Lineup changed — ${teamName} (${lineupStr})`
-      } else {
-        return null // Skip rotation lineups (they're part of the point)
-      }
-    } else if (event.type === 'libero_entry') {
-      const liberoNumber = event.payload?.liberoIn || '?'
-      const playerOut = event.payload?.playerOut || '?'
-      const liberoType = event.payload?.liberoType === 'libero1' ? 'L1' : event.payload?.liberoType === 'redesignated' ? 'LR' : 'L2'
-      eventDescription = `Libero entry — ${teamName} (${liberoType} ${liberoNumber} in for ${playerOut})`
-    } else if (event.type === 'libero_exit') {
-      const liberoNumber = event.payload?.liberoOut || '?'
-      const playerIn = event.payload?.playerIn || '?'
-      const liberoType = event.payload?.liberoType === 'libero1' ? 'L1' : event.payload?.liberoType === 'redesignated' ? 'LR' : 'L2'
-      eventDescription = `Libero exit — ${teamName} (${liberoType} ${liberoNumber} out, ${playerIn} in)`
-    } else if (event.type === 'libero_exchange') {
-      const liberoOut = event.payload?.liberoOut || '?'
-      const liberoIn = event.payload?.liberoIn || '?'
-      const liberoOutType = event.payload?.liberoOutType === 'libero1' ? 'L1' : event.payload?.liberoOutType === 'redesignated' ? 'LR' : 'L2'
-      const liberoInType = event.payload?.liberoInType === 'libero1' ? 'L1' : event.payload?.liberoInType === 'redesignated' ? 'LR' : 'L2'
-      eventDescription = `Libero exchange — ${teamName} (${liberoOutType} ${liberoOut} ↔ ${liberoInType} ${liberoIn})`
-    } else if (event.type === 'libero_unable') {
-      const liberoNumber = event.payload?.liberoNumber || '?'
-      const liberoType = event.payload?.liberoType === 'libero1' ? 'L1' : event.payload?.liberoType === 'redesignated' ? 'LR' : 'L2'
-      const reason = event.payload?.reason || 'declared'
-      if (reason === 'declared') {
-        eventDescription = `Libero declared unable — ${teamName} (${liberoType} ${liberoNumber})`
-      } else if (reason === 'injury') {
-        eventDescription = `Libero became unable — ${teamName} (${liberoType} ${liberoNumber} - injury)`
-      } else if (reason === 'expulsion') {
-        eventDescription = `Libero became unable — ${teamName} (${liberoType} ${liberoNumber} - expelled)`
-      } else if (reason === 'disqualification') {
-        eventDescription = `Libero became unable — ${teamName} (${liberoType} ${liberoNumber} - disqualified)`
-      } else {
-        eventDescription = `Libero became unable — ${teamName} (${liberoType} ${liberoNumber})`
-      }
-    } else if (event.type === 'libero_redesignation') {
-      const unableLiberoNumber = event.payload?.unableLiberoNumber || '?'
-      const newLiberoNumber = event.payload?.newLiberoNumber || '?'
-      const unableType = event.payload?.unableLiberoType === 'libero1' ? 'L1' : event.payload?.unableLiberoType === 'libero2' ? 'L2' : 'L'
-      eventDescription = `Libero redesignation — ${teamName} (${unableType} ${unableLiberoNumber} → R ${newLiberoNumber})`
-    } else if (event.type === 'set_end') {
-      const winnerLabel = event.payload?.teamLabel || '?'
-      const setIndex = event.payload?.setIndex || event.setIndex || '?'
-      const startTime = event.payload?.startTime
-      const endTime = event.payload?.endTime
-
-      let timeInfo = ''
-      if (startTime && endTime) {
-        const start = new Date(startTime)
-        const end = new Date(endTime)
-        const durationMs = end - start
-        const durationMin = Math.floor(durationMs / 60000)
-        const durationSec = Math.floor((durationMs % 60000) / 1000)
-        const startTimeStr = `${String(start.getUTCHours()).padStart(2, '0')}:${String(start.getUTCMinutes()).padStart(2, '0')}`
-        const endTimeStr = `${String(end.getUTCHours()).padStart(2, '0')}:${String(end.getUTCMinutes()).padStart(2, '0')}`
-        timeInfo = ` (${startTimeStr} - ${endTimeStr}, ${durationMin} min)`
-      }
-
-      eventDescription = `Team ${winnerLabel} won Set ${setIndex}${timeInfo}`
-    } else if (event.type === 'set5_coin_toss') {
-      const leftTeam = event.payload?.leftTeam || '?'
-      const firstServe = event.payload?.firstServe || '?'
-      eventDescription = `Set 5 coin toss — Left: Team ${leftTeam}, First serve: Team ${firstServe}`
-    } else if (event.type === 'sanction') {
-      const sanctionType = event.payload?.type || 'unknown'
-      const sanctionLabel = sanctionType === 'improper_request' ? 'Improper Request' :
-        sanctionType === 'delay_warning' ? 'Delay Warning' :
-          sanctionType === 'delay_penalty' ? 'Delay Penalty' :
-            sanctionType === 'warning' ? 'Warning' :
-              sanctionType === 'penalty' ? 'Penalty' :
-                sanctionType === 'expulsion' ? 'Expulsion' :
-                  sanctionType === 'disqualification' ? 'Disqualification' :
-                    sanctionType
-
-      // Add player/official info if available
-      let target = ''
-      if (event.payload?.playerNumber) {
-        target = ` ${event.payload.playerNumber}`
-      } else if (event.payload?.role) {
-        const roleAbbr = event.payload.role === 'Coach' ? 'C' :
-          event.payload.role === 'Assistant Coach 1' ? 'AC1' :
-            event.payload.role === 'Assistant Coach 2' ? 'AC2' :
-              event.payload.role === 'Physiotherapist' ? 'P' :
-                event.payload.role === 'Medic' ? 'M' : event.payload.role
-        target = ` ${roleAbbr}`
-      } else {
-        target = ' Team'
-      }
-
-      eventDescription = `Sanction — ${teamName}${target} (${sanctionLabel}) (${homeLabel} ${homeScore}:${awayScore} ${awayLabel})`
-    } else if (event.type === 'remark') {
-      const remarkText = event.payload?.text || ''
-      // Show first line or first 50 characters
-      const preview = remarkText.split('\n')[0].substring(0, 50)
-      eventDescription = `Remark added — ${preview}${remarkText.length > 50 ? '...' : ''}`
-    } else if (event.type === 'court_captain_designation') {
-      const playerNumber = event.payload?.playerNumber || '?'
-      eventDescription = `${t('scoreboard.courtCaptainDesignation', 'Court captain designation')} — ${teamName} (#${playerNumber})`
-    } else if (event.type === 'bench_injury') {
-      const playerNumber = event.payload?.playerNumber || '?'
-      eventDescription = `Injury — ${teamName} (#${playerNumber}, bench)`
-    } else if (event.type === 'forfait') {
-      const scope = event.payload?.scope === 'match' ? 'match' : 'set'
-      const reason = event.payload?.reason ? `, ${String(event.payload.reason).replace(/_/g, ' ')}` : ''
-      eventDescription = `Team incomplete for the ${scope} — ${teamName}${reason}`
-    } else if (event.type === 'match_stopped') {
-      eventDescription = `Match stopped, cannot be resumed (${homeLabel} ${event.payload?.homePoints ?? homeScore}:${event.payload?.awayPoints ?? awayScore} ${awayLabel})`
-    } else {
-      // Never show an internal type name: "some_event" reads "Some event"
-      const readable = String(event.type || '').replace(/_/g, ' ')
-      eventDescription = readable.charAt(0).toUpperCase() + readable.slice(1)
-      if (teamName) {
-        eventDescription += ` — ${teamName}`
-      }
-    }
-
-    return eventDescription
-  }, [data])
+    const text = describeEventText(event, data.events || [], { t, match: data.match, homeTeam: data.homeTeam, awayTeam: data.awayTeam })
+    if (text) return text
+    if (event.type === 'rally_start') return t('corrections.describe.rallyStart', 'Rally started')
+    if (event.type === 'set_start') return t('corrections.describe.setStart', 'Set start')
+    return null
+  }, [data, t])
 
   // Show undo confirmation
   const showUndoConfirm = useCallback(() => {
@@ -6835,6 +6627,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
     if (remarks !== (match?.remarks || '')) matchUpdate.remarks = remarks
 
+    // The remembered game captain a line-up's game-captain choice replaced
+    // (domain/lineupEntry.js lineupGameCaptainDecision undo); newest first, so
+    // the oldest removed event's value is the one that stays
+    for (const e of [...removed].sort((a, b) => (b.seq || 0) - (a.seq || 0))) {
+      if ((e.type === 'lineup' || e.type === 'court_captain_designation') &&
+          (e.payload?.team === 'home' || e.payload?.team === 'away') &&
+          Object.prototype.hasOwnProperty.call(e.payload, 'previousRememberedCourtCaptain')) {
+        matchUpdate[e.payload.team === 'home' ? 'homeRememberedCourtCaptain' : 'awayRememberedCourtCaptain'] = e.payload.previousRememberedCourtCaptain ?? null
+      }
+    }
+
     for (const e of removed) {
       if (e.type === 'court_captain_designation' && (e.payload?.team === 'home' || e.payload?.team === 'away')) {
         matchUpdate[e.payload.team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'] = e.payload.previousCourtCaptain ?? null
@@ -6855,10 +6658,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // libero flags, court captain, sanction flags). Every manual delete, the
   // decision-change swap and undo go through here so none of them leaves a
   // phantom remark line or a cloud row for an event that no longer exists.
-  const discardEvents = useCallback(async (eventsToRemove) => {
+  // `reason` (event history: 'decision_change', 'forfeit_reversal', ...) is
+  // used when the surrounding action (undo) did not set one; else 'delete'.
+  const discardEvents = useCallback(async (eventsToRemove, reason) => {
     const rows = (eventsToRemove || []).filter(e => e && e.id != null)
     if (rows.length === 0) return
-    await db.events.bulkDelete(rows.map(e => e.id))
+    await withActivityContext({ reason: currentActivityContext()?.reason || reason }, () => db.events.bulkDelete(rows.map(e => e.id)))
     const queued = await db.sync_queue.where('status').equals('queued').toArray()
     const jobs = syncJobsForEvents(queued, rows.map(e => e.id))
     if (jobs.length > 0) await db.sync_queue.bulkDelete(jobs.map(j => j.id))
@@ -6876,7 +6681,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!plan.hasForfeit) return plan
 
     const deleteIds = new Set(plan.deleteEventIds)
-    await discardEvents(events.filter(e => deleteIds.has(e.id)))
+    await discardEvents(events.filter(e => deleteIds.has(e.id)), 'forfeit_reversal')
     if (plan.deleteSetIds.length > 0) await db.sets.bulkDelete(plan.deleteSetIds)
     for (const r of plan.restoreSets) {
       await db.sets.update(r.id, { homePoints: r.homePoints, awayPoints: r.awayPoints, finished: false, endTime: null })
@@ -6907,7 +6712,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [matchId, discardEvents])
 
   const runUndoConfirm = useConfirmAction(onConfirmFailed)
-  // One action: every write of the undo and the dialog closing appear together
+  // One action: every write of the undo, its event history (the voids and
+  // their sync jobs, reason 'undo') and the dialog closing appear together
   const handleUndo = useCallback(() => runUndoConfirm(() => runAction('undo', async () => {
     cLogger.logHandler('handleUndo', { hasUndoConfirm: !!undoConfirm, eventType: undoConfirm?.event?.type })
     if (!undoConfirm || !data?.set) {
@@ -7007,6 +6813,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (previousEvent?.stateSnapshot) {
         console.log('[handleUndo] Restoring from snapshot, points:', previousEvent.stateSnapshot.pointsA, '-', previousEvent.stateSnapshot.pointsB)
         await restoreStateFromSnapshot(previousEvent.stateSnapshot)
+        // The score follows the point events, not the snapshot: a snapshot is
+        // stale once a correction added or removed events before it
+        const undoneSet = await db.sets.where({ matchId }).and(s => s.index === undoneSetIndex).first()
+        if (undoneSet) await db.sets.update(undoneSet.id, scoreAfterUndo(await db.events.where('matchId').equals(matchId).toArray(), undoneSetIndex))
       } else {
         // No previous event with snapshot - calculate state from remaining events
         console.log('[handleUndo] No previous snapshot, calculating state from remaining events')
@@ -7087,7 +6897,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       syncLiveStateToSupabase('undo', null, null)
       notifyScoresheetUpdate('undo')
     }
-  })), [runUndoConfirm, undoConfirm, data?.set, matchId, restoreStateFromSnapshot, discardEvents, applyForfeitReversal, resyncSetScoreFromEvents, showAlert, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, runAction, deferUi])
+  }, { reason: 'undo' })), [runUndoConfirm, undoConfirm, data?.set, matchId, restoreStateFromSnapshot, discardEvents, applyForfeitReversal, resyncSetScoreFromEvents, showAlert, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, runAction, deferUi])
 
   // OLD UNDO LOGIC REMOVED - The following complex per-event-type logic has been replaced
   // by the snapshot-based undo system above. Keeping this comment for reference.
@@ -7101,8 +6911,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [])
 
   // Handle replay rally - undo last point (go back to state before the point, no rally restart)
-  // One action: the point taken back, the replay event and the dialog closing
-  // appear together (the dialog's score preview never shows the new score)
+  // One action: the point taken back (voided in the event history: the
+  // server keeps it, marked voided; its insert job is dropped if still
+  // queued), the replay event and the dialog closing appear together (the
+  // dialog's score preview never shows the new score). A replay is the
+  // referee's decision: reason 'decision_change' (the event history has no
+  // 'replay' reason); reached from handleDecisionChange it joins that action.
   const handleReplayRally = useCallback(() => runAction('decision', async () => {
     if (!replayRallyConfirm || !data?.set) {
       deferUi(() => setReplayRallyConfirm(null))
@@ -7171,7 +6985,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Rethrown: the replay rolls back as a whole (see handleUndo)
       throw error
     }
-  }), [replayRallyConfirm, data?.set, matchId, getNextSeq, discardEvents, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, runAction, deferUi])
+  }, { reason: 'decision_change' }), [replayRallyConfirm, data?.set, matchId, getNextSeq, discardEvents, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, runAction, deferUi])
 
   const cancelReplayRally = useCallback(() => {
     setReplayRallyConfirm(null)
@@ -7179,8 +6993,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Handle decision change - either swap point to other team or replay rally
   const runDecisionChange = useConfirmAction(onConfirmFailed)
-  // One action: the swapped point, the rotation it moves and the dialog closing
-  // appear together
+  // One action: the swapped point, the rotation it moves, its event history
+  // (reason 'decision_change') and the dialog closing appear together
   const handleDecisionChange = useCallback(() => runDecisionChange(() => runAction('decision', async () => {
     if (!replayRallyConfirm || !data?.set) {
       deferUi(() => setReplayRallyConfirm(null))
@@ -7430,7 +7244,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       await handleReplayRally()
       return // handleReplayRally closes the modal and syncs
     }
-  })), [runAction, deferUi, runDecisionChange, replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, syncToReferee, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents])
+  }, { reason: 'decision_change' })), [runAction, deferUi, runDecisionChange, replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, syncToReferee, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents])
 
 
 
@@ -10059,19 +9873,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const setIndex = data.set.index
       const teamLabel = team === teamAKey ? 'A' : 'B'
 
-      // Current time (HHhMMm format) - use UTC for consistency
-      const now = new Date()
-      const timeStr = `${String(now.getUTCHours()).padStart(2, '0')}h${String(now.getUTCMinutes()).padStart(2, '0')}m`
-
-      // Get current score - always put the interested team's score first
+      // The sheet's remark convention: "Set 3, 14:28, B 15:5, ..." (local time, concerned team first)
       const teamScore = team === 'home' ? data.set.homePoints : data.set.awayPoints
       const opponentScore = team === 'home' ? data.set.awayPoints : data.set.homePoints
-      const scoreStr = `${teamScore}:${opponentScore}`
+      const remarkOf = (text) => eventRemark({ set: displaySetNumber(setIndex, data?.match?.bestOf), team: teamLabel, teamScore, oppScore: opponentScore, text })
 
       if (isInjury) {
-        autoRemark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Score ${scoreStr}, Player #${playerOut} substituted due to injury`
+        autoRemark = remarkOf(`#${playerOut} substituted due to injury`)
       } else if (isExceptional) {
-        autoRemark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Score ${scoreStr}, Player #${playerOut} exceptionally substituted by Player #${playerIn}`
+        autoRemark = remarkOf(`#${playerOut} exceptionally substituted by #${playerIn}`)
       }
     }
 
@@ -11764,15 +11574,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Get current score: left = team involved, right = other team
     const teamPoints = team === 'home' ? data.set.homePoints : data.set.awayPoints
     const otherPoints = team === 'home' ? data.set.awayPoints : data.set.homePoints
-    const scoreStr = `${teamPoints}:${otherPoints}`
 
-    // Get actual time of day (HHhMMm format, no seconds) - use UTC for consistency
-    const currentTime = new Date()
-    const hours = String(currentTime.getUTCHours()).padStart(2, '0')
-    const minutes = String(currentTime.getUTCMinutes()).padStart(2, '0')
-    const timeStr = `${hours}h${minutes}m`
-
-    const remark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Score ${scoreStr}, Player #${newLiberoNumber} re-designated as Libero (replacing ${unableLiberoNumber})`
+    // The sheet's remark convention: "Set 3, 14:28, B 15:5, ..." (local time, concerned team first)
+    const remark = eventRemark({ set: displaySetNumber(setIndex, data?.match?.bestOf), team: teamLabel, teamScore: teamPoints, oppScore: otherPoints, text: `#${newLiberoNumber} re-designated as Libero (replacing #${unableLiberoNumber})` })
 
     // Log the re-designation event. It records the player flags it changes and
     // the remark it writes, so undo can put both back.
@@ -11871,17 +11675,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const setIndex = data.set.index
       const teamLabel = team === teamAKey ? 'A' : 'B'
 
-      // Current time (HHhMMm format) - use UTC for consistency
-      const now = new Date()
-      const timeStr = `${String(now.getUTCHours()).padStart(2, '0')}h${String(now.getUTCMinutes()).padStart(2, '0')}m`
-
-      // Get current score - always put the interested team's score first
+      // The sheet's remark convention: "Set 3, 14:28, B 15:5, ..." (local time, concerned team first)
       const teamScore = team === 'home' ? data.set.homePoints : data.set.awayPoints
       const opponentScore = team === 'home' ? data.set.awayPoints : data.set.homePoints
-      const scoreStr = `${teamScore}:${opponentScore}`
 
       const reasonText = reason === 'injury' ? 'becomes unable to play (injury)' : 'declared unable to play'
-      const remark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Score ${scoreStr}, Libero #${liberoNumber} ${reasonText}`
+      const remark = eventRemark({ set: displaySetNumber(setIndex, data?.match?.bestOf), team: teamLabel, teamScore, oppScore: opponentScore, text: `Libero #${liberoNumber} ${reasonText}` })
 
       // Mark libero as unable (declared by coach or injury)
       await logEvent('libero_unable', {
@@ -12555,7 +12354,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       syncToReferee()
       syncLiveStateToSupabase('undo', null, null)
     }
-  })), [runAction, deferUi, runCourtSwitchCancel, courtSwitchModal, matchId, discardEvents, resyncSetScoreFromEvents, syncToReferee, syncLiveStateToSupabase])
+  }, { reason: 'undo' })), [runAction, deferUi, runCourtSwitchCancel, courtSwitchModal, matchId, discardEvents, resyncSetScoreFromEvents, syncToReferee, syncLiveStateToSupabase])
 
   // Check if match is already finished (loaded a completed match)
   // If so, trigger onFinishSet to navigate to MatchEnd screen
@@ -12638,6 +12437,54 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const getHelpContent = () => {
     return null
   }
+
+  // Export every table of the local database as one JSON file (Match menu)
+  const downloadGameData = async () => {
+    try {
+      const exportData = {
+        exportDate: new Date().toISOString(),
+        matchId: matchId,
+        matches: await db.matches.toArray(),
+        teams: await db.teams.toArray(),
+        players: await db.players.toArray(),
+        sets: await db.sets.toArray(),
+        events: await db.events.toArray(),
+        referees: await db.referees.toArray(),
+        scorers: await db.scorers.toArray()
+      }
+      const jsonString = JSON.stringify(exportData, null, 2)
+      const blob = new Blob([jsonString], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `database_export_${matchId}_${new Date().toISOString().split('T')[0]}.json`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      return true
+    } catch (error) {
+      console.error('Error exporting database:', error)
+      showAlert(t('scoreboard.errors.exportFailed'), 'error')
+      return false
+    }
+  }
+
+  // The "Match" menu, grouped (toolbar dropdown and the phone action sheet)
+  const matchMenu = matchMenuSections(t, {
+    showRosters: () => setShowRosters(true),
+    showSanctions: () => setShowSanctions(true),
+    showActionLog: () => setShowLogs(true),
+    openRemarks: () => setShowRemarks(true),
+    openMatchSetup: onOpenMatchSetup ? () => onOpenMatchSetup() : undefined,
+    manualChanges: () => setShowManualPanel(true),
+    editRosterHome: () => setReopenRosterConfirm('home'),
+    editRosterAway: () => setReopenRosterConfirm('away'),
+    showPins: () => setShowPinsModal(true),
+    downloadGameData: () => { downloadGameData() },
+    options: () => setShowOptionsInMenu(true),
+    stopMatch: () => setStopMatchModal('select')
+  })
 
   // Show duplicate tab error if scoresheet is already open in another tab
   if (duplicateTabError) {
@@ -13193,8 +13040,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               }
             ]}
           />
-          {/* The match's own menu (logs, sanctions, manual changes): labelled
-              "Match" so it is never mistaken for the app header's menu */}
+          {/* The match's own menu, grouped (matchMenu.jsx): labelled "Match"
+              so it is never mistaken for the app header's menu */}
           <MenuList
             buttonLabel={t('header.match', 'Match')}
             buttonTitle={t('header.match', 'Match')}
@@ -13207,129 +13054,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               textAlign: 'center'
             }}
             position="right"
-            items={[
-              {
-                key: 'action-log',
-                label: 'Show action log',
-                onClick: () => {
-                  setShowLogs(true)
-                }
-              },
-              {
-                key: 'sanctions',
-                label: 'Show sanctions and results',
-                onClick: () => {
-                  setShowSanctions(true)
-                }
-              },
-              {
-                key: 'manual',
-                label: 'Manual changes',
-                onClick: () => {
-                  setShowManualPanel(true)
-                }
-              },
-              {
-                key: 'remarks',
-                label: 'Open remarks recording',
-                onClick: () => {
-                  setShowRemarks(true)
-                }
-              },
-              {
-                key: 'stop-match',
-                label: t('scoreboard.menu.stopMatch', 'Stop the match'),
-                icon: '⛔',
-                onClick: () => {
-                  setStopMatchModal('select')
-                },
-                style: { color: '#ef4444' }
-              },
-              {
-                key: 'rosters',
-                label: 'Show rosters',
-                onClick: () => {
-                  setShowRosters(true)
-                }
-              },
-              {
-                key: 'edit-roster-home',
-                label: t('scoreboard.reopenRoster.menuHome', 'Edit home roster'),
-                onClick: () => setReopenRosterConfirm('home')
-              },
-              {
-                key: 'edit-roster-away',
-                label: t('scoreboard.reopenRoster.menuAway', 'Edit away roster'),
-                onClick: () => setReopenRosterConfirm('away')
-              },
-              {
-                key: 'pins',
-                label: 'Show PINs',
-                onClick: () => {
-                  setShowPinsModal(true)
-                }
-              },
-              ...(onOpenMatchSetup ? [{
-                key: 'match-setup',
-                label: 'Show match setup',
-                onClick: () => {
-                  onOpenMatchSetup()
-                }
-              }] : []),
-              { separator: true },
-              {
-                key: 'export',
-                icon: <DownloadIcon />,
-                label: 'Download game data (JSON)',
-                onClick: async () => {
-                  try {
-                    // Export all database data
-                    const allMatches = await db.matches.toArray()
-                    const allTeams = await db.teams.toArray()
-                    const allPlayers = await db.players.toArray()
-                    const allSets = await db.sets.toArray()
-                    const allEvents = await db.events.toArray()
-                    const allReferees = await db.referees.toArray()
-                    const allScorers = await db.scorers.toArray()
-
-                    const exportData = {
-                      exportDate: new Date().toISOString(),
-                      matchId: matchId,
-                      matches: allMatches,
-                      teams: allTeams,
-                      players: allPlayers,
-                      sets: allSets,
-                      events: allEvents,
-                      referees: allReferees,
-                      scorers: allScorers
-                    }
-
-                    // Create a blob and download
-                    const jsonString = JSON.stringify(exportData, null, 2)
-                    const blob = new Blob([jsonString], { type: 'application/json' })
-                    const url = URL.createObjectURL(blob)
-                    const link = document.createElement('a')
-                    link.href = url
-                    link.download = `database_export_${matchId}_${new Date().toISOString().split('T')[0]}.json`
-                    document.body.appendChild(link)
-                    link.click()
-                    document.body.removeChild(link)
-                    URL.revokeObjectURL(url)
-                  } catch (error) {
-                    console.error('Error exporting database:', error)
-                    showAlert(t('scoreboard.errors.exportFailed'), 'error')
-                  }
-                }
-              },
-              {
-                key: 'options',
-                icon: <SettingsIcon />,
-                label: 'Options',
-                onClick: () => {
-                  setShowOptionsInMenu(true)
-                }
-              }
-            ]}
+            columns={2}
+            sections={toMenuListSections(matchMenu)}
           />
         </div>
       </ScoreboardToolbar>
@@ -19007,76 +18733,29 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       {menuModal && (
         <div className="ov-kit" style={{ position: 'relative', zIndex: 1000 }}>
           <ActionSheet open={true} onClose={() => setMenuModal(false)} title={t('scoreboard.menu.menu')} closeLabel={t('common.close', 'Close')} railOffset={false}>
-            <ActionSheetItem onClick={() => { setShowLogs(true); setMenuModal(false) }}>
-              {t('scoreboard.menu.showActionLog', 'Show action log')}
-            </ActionSheetItem>
-            <ActionSheetItem onClick={() => { setShowSanctions(true); setMenuModal(false) }}>
-              {t('scoreboard.menu.showSanctionsResults', 'Show sanctions and results')}
-            </ActionSheetItem>
-            <ActionSheetItem onClick={() => { setShowManualPanel(true); setMenuModal(false) }}>
-              {t('scoreboard.menu.manualChanges', 'Manual changes')}
-            </ActionSheetItem>
-            <ActionSheetItem onClick={() => { setShowRemarks(true); setMenuModal(false) }}>
-              {t('scoreboard.menu.openRemarksRecording', 'Open remarks recording')}
-            </ActionSheetItem>
-            <ActionSheetItem onClick={() => { setShowRosters(true); setMenuModal(false) }}>
-              {t('scoreboard.showRosters')}
-            </ActionSheetItem>
-            <ActionSheetItem onClick={() => { setShowPinsModal(true); setMenuModal(false) }}>
-              {t('scoreboard.menu.showPins', 'Show PINs')}
-            </ActionSheetItem>
-            {onOpenMatchSetup && (
-              <ActionSheetItem onClick={() => { onOpenMatchSetup(); setMenuModal(false) }}>
-                {t('scoreboard.menu.showMatchSetup', 'Show match setup')}
-              </ActionSheetItem>
-            )}
-            <div className="my-1 h-px bg-stone-100" role="separator" />
-            <ActionSheetItem icon={DownloadIcon} onClick={async () => {
-                  try {
-                    // Export all database data
-                    const allMatches = await db.matches.toArray()
-                    const allTeams = await db.teams.toArray()
-                    const allPlayers = await db.players.toArray()
-                    const allSets = await db.sets.toArray()
-                    const allEvents = await db.events.toArray()
-                    const allReferees = await db.referees.toArray()
-                    const allScorers = await db.scorers.toArray()
-
-                    const exportData = {
-                      exportDate: new Date().toISOString(),
-                      matchId: matchId,
-                      matches: allMatches,
-                      teams: allTeams,
-                      players: allPlayers,
-                      sets: allSets,
-                      events: allEvents,
-                      referees: allReferees,
-                      scorers: allScorers
-                    }
-
-                    // Create a blob and download
-                    const jsonString = JSON.stringify(exportData, null, 2)
-                    const blob = new Blob([jsonString], { type: 'application/json' })
-                    const url = URL.createObjectURL(blob)
-                    const link = document.createElement('a')
-                    link.href = url
-                    link.download = `database_export_${matchId}_${new Date().toISOString().split('T')[0]}.json`
-                    document.body.appendChild(link)
-                    link.click()
-                    document.body.removeChild(link)
-                    URL.revokeObjectURL(url)
-
-                    setMenuModal(false)
-                  } catch (error) {
-                    console.error('Error exporting database:', error)
-                    showAlert(t('scoreboard.errors.exportFailed'), 'error')
-                  }
-                }}>
-              {t('scoreboard.menu.downloadGameData', 'Download game data (JSON)')}
-            </ActionSheetItem>
-            <ActionSheetItem icon={SettingsIcon} onClick={() => { setShowOptionsInMenu(true) }}>
-              {t('scoreboard.menu.options', 'Options')}
-            </ActionSheetItem>
+            {matchMenu.map(section => (
+              <div key={section.key} role="group" aria-label={section.title} className={section.danger ? 'mt-1 border-t border-stone-100 pt-1' : undefined}>
+                <p className={cn('m-0 px-4 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em]', section.danger ? 'text-red-600' : 'text-stone-500')}>
+                  {section.title}
+                </p>
+                {section.items.map(item => (
+                  <ActionSheetItem
+                    key={item.key}
+                    icon={item.Icon}
+                    className={item.danger ? 'text-red-600 hover:bg-red-50' : undefined}
+                    onClick={async () => {
+                      // Options opens over the sheet; the download keeps it open on failure
+                      if (item.key === 'options') { item.onClick(); return }
+                      if (item.key === 'export') { if (await downloadGameData()) setMenuModal(false); return }
+                      item.onClick()
+                      setMenuModal(false)
+                    }}
+                  >
+                    {item.label}
+                  </ActionSheetItem>
+                ))}
+              </div>
+            ))}
           </ActionSheet>
         </div>
       )}
@@ -19818,2423 +19497,44 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       {/* Manual Changes Modal */}
       {showManualPanel && (
         <Modal
-          title={t('scoreboard.menu.manualChanges')}
+          title={t('corrections.title')}
           open={true}
           onClose={() => {
             setShowManualPanel(false)
             // Notify scoresheet to refresh after manual panel is closed
             notifyScoresheetUpdate('manual_panel_closed')
           }}
-          width={650}
+          width={760}
         >
-          <div>
-            {/* Collapsible Section: Current Set */}
-            <div className={cn(SB_BLOCK, 'mb-3 overflow-hidden')}>
-              <button
-                onClick={() => setManualPanelExpandedSections(prev => ({ ...prev, currentSet: !prev.currentSet }))}
-                className={SB_DISCLOSURE}
-              >
-                <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: '18px' }}>⚡</span>
-                  Current set
-                </span>
-                <span style={{ fontSize: '12px', transform: manualPanelExpandedSections.currentSet ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-              </button>
-              {manualPanelExpandedSections.currentSet && (
-                <div style={{ padding: '0 16px 16px 16px' }}>
-                  {data?.match && (() => {
-                    // Calculate which team is on which side based on set index and overrides
-                    const currentSetIndex = data.set?.index || 1
-                    const setLeftTeamOverrides = data.match?.setLeftTeamOverrides || {}
-                    const is5thSet = currentSetIndex === 5
-                    const set5LeftTeam = data.match?.set5LeftTeam
-
-                    let sideA // 'left' or 'right' for Team A
-                    if (setLeftTeamOverrides[currentSetIndex] !== undefined) {
-                      // Override stores 'A' or 'B' (not 'home'/'away')
-                      sideA = setLeftTeamOverrides[currentSetIndex] === 'A' ? 'left' : 'right'
-                    } else if (is5thSet && set5LeftTeam) {
-                      // set5LeftTeam stores 'A' or 'B'
-                      sideA = set5LeftTeam === 'A' ? 'left' : 'right'
-                    } else {
-                      // Default alternating pattern: odd sets = A on left, even sets = A on right
-                      sideA = currentSetIndex % 2 === 1 ? 'left' : 'right'
-                    }
-
-                    // If Team A is on left, and Team A is home, then home is on left
-                    const leftIsHome = sideA === 'left' ? (teamAKey === 'home') : (teamAKey !== 'home')
-                    const rightIsHome = !leftIsHome
-
-                    // Determine current serving team
-                    const servingTeam = data.match.firstServe || 'home'
-                    const leftTeamKey = leftIsHome ? 'home' : 'away'
-                    const rightTeamKey = leftIsHome ? 'away' : 'home'
-                    const leftTeamName = leftIsHome ? (data.homeTeam?.shortName || data.homeTeam?.name || t('common.home')) : (data.awayTeam?.shortName || data.awayTeam?.name || t('common.away'))
-                    const rightTeamName = leftIsHome ? (data.awayTeam?.shortName || data.awayTeam?.name || t('common.away')) : (data.homeTeam?.shortName || data.homeTeam?.name || t('common.home'))
-                    const leftTeamColor = leftIsHome ? (data.homeTeam?.color || '#3b82f6') : (data.awayTeam?.color || '#ef4444')
-                    const rightTeamColor = leftIsHome ? (data.awayTeam?.color || '#ef4444') : (data.homeTeam?.color || '#3b82f6')
-                    const leftIsServing = servingTeam === leftTeamKey
-                    const rightIsServing = servingTeam === rightTeamKey
-
-                    return (
-                      <>
-                        <div
-                          className="manual-item"
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '12px',
-                            paddingBottom: '16px',
-                            borderBottom: '1px solid var(--border)'
-                          }}
-                        >
-                          <div style={{ fontWeight: 600, marginBottom: '4px' }}>Teams setup</div>
-                          <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '8px' }}>
-                            Current court positions and serving team
-                          </div>
-
-                          {/* Visual Court Representation */}
-                          <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '8px',
-                            padding: '16px',
-                            background: 'var(--panel-2)',
-                            borderRadius: '12px',
-                            border: '1px solid var(--border)'
-                          }}>
-                            {/* Left Team */}
-                            <div style={{
-                              flex: 1,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '8px',
-                              padding: '12px',
-                              ...teamBoxStyle(leftTeamColor),
-                              borderRadius: '8px'
-                            }}>
-                              {leftIsServing && <VolleyballIcon size={20} />}
-                              <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontWeight: 700, fontSize: '14px' }}>{leftTeamName}</div>
-                                <div style={{ fontSize: '10px', opacity: 0.8 }}>{leftIsHome ? t('common.home').toUpperCase() : t('common.away').toUpperCase()}</div>
-                              </div>
-                            </div>
-
-                            {/* Net divider */}
-                            <div style={{
-                              width: '4px',
-                              height: '60px',
-                              background: 'var(--border)',
-                              borderRadius: '2px'
-                            }} />
-
-                            {/* Right Team */}
-                            <div style={{
-                              flex: 1,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '8px',
-                              padding: '12px',
-                              ...teamBoxStyle(rightTeamColor),
-                              borderRadius: '8px'
-                            }}>
-                              <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontWeight: 700, fontSize: '14px' }}>{rightTeamName}</div>
-                                <div style={{ fontSize: '10px', opacity: 0.8 }}>{rightIsHome ? t('common.home').toUpperCase() : t('common.away').toUpperCase()}</div>
-                              </div>
-                              {rightIsServing && <VolleyballIcon size={20} />}
-                            </div>
-                          </div>
-
-                          {/* Action Buttons */}
-                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                            <button
-                              className="secondary"
-                              onClick={async () => {
-                                // For sets 1-4, update the override for current set
-                                const setIdx = data.set?.index || 1
-
-                                // Helper to convert A/B to Home/Away for logging
-                                const getTeamLabel = (ab) => ab === 'A' ? (teamAKey === 'home' ? 'Home' : 'Away') : (teamAKey === 'home' ? 'Away' : 'Home')
-
-                                console.log('[SwitchSides] Current state:', {
-                                  setIdx,
-                                  teamAKey,
-                                  leftIsHome,
-                                  rightIsHome,
-                                  servingTeam,
-                                  leftTeamName,
-                                  rightTeamName,
-                                  currentOverrides: data.match?.setLeftTeamOverrides,
-                                  set5LeftTeam: data.match?.set5LeftTeam
-                                })
-
-                                if (setIdx === 5) {
-                                  const automatic5 = teamAKey === 'home' ? 'A' : 'B'
-                                  const currentLeftTeam = data.match.set5LeftTeam || automatic5
-                                  const newLeftTeam = currentLeftTeam === 'A' ? 'B' : 'A'
-                                  const oldLeft = getTeamLabel(currentLeftTeam)
-                                  const newLeft = getTeamLabel(newLeftTeam)
-                                  console.log('[SwitchSides] Set 5:', { automatic5, currentLeftTeam, newLeftTeam, oldLeft, newLeft })
-                                  await db.matches.update(matchId, { set5LeftTeam: newLeftTeam })
-                                  // Sync to Supabase
-                                  if (data.match?.seed_key) {
-                                    db.sync_queue.add({
-                                      resource: 'match',
-                                      action: 'update',
-                                      payload: { id: data.match.seed_key, set5LeftTeam: newLeftTeam },
-                                      createdAt: new Date().toISOString()
-                                    })
-                                  }
-                                  logManualChangeWithRemark('Teams Setup', 'Court Sides', `${oldLeft} on left`, `${newLeft} on left`, `Switched court sides (Set 5)`)
-                                  // Sync updated side to Supabase live state
-                                  syncLiveStateToSupabase('manual_side_change', null, { oldSide: oldLeft, newSide: newLeft })
-                                } else {
-                                  // Sets 1-4: Swap coinTossTeamA (A ALWAYS on left in Set 1)
-                                  // Swapping which team is "A" effectively swaps the teams on court.
-                                  // A and B must be swapped together (and the A/B serve flags with
-                                  // them) so they stay two different teams and the first server
-                                  // does not change.
-                                  const swapPatch = swapTeamDesignation(data.match)
-                                  const currentTeamA = data.match.coinTossTeamA || 'home'
-                                  const newTeamA = swapPatch.coinTossTeamA
-                                  const newTeamB = swapPatch.coinTossTeamB
-                                  const oldLeft = leftIsHome ? 'Home' : 'Away'
-                                  const newLeft = leftIsHome ? 'Away' : 'Home'
-                                  console.log('[SwitchSides] Sets 1-4:', { currentTeamA, newTeamA, oldLeft, newLeft, setIdx })
-
-                                  // Update local IndexedDB
-                                  await db.matches.update(matchId, swapPatch)
-
-                                  // Sync coin_toss JSONB to Supabase
-                                  if (data.match?.seed_key) {
-                                    const currentServeA = swapPatch.coinTossServeA
-                                    const firstServeTeam = currentServeA ? newTeamA : newTeamB
-                                    await db.sync_queue.add({
-                                      resource: 'match',
-                                      action: 'update',
-                                      payload: {
-                                        id: data.match.seed_key,
-                                        coin_toss: {
-                                          team_a: newTeamA,
-                                          team_b: newTeamB,
-                                          serve_a: currentServeA,
-                                          confirmed: true,
-                                          first_serve: firstServeTeam
-                                        }
-                                      },
-                                      createdAt: new Date().toISOString()
-                                    })
-                                    console.log('[SwitchSides] Queued coin_toss sync:', { newTeamA, newTeamB, firstServeTeam })
-                                  }
-
-                                  logManualChangeWithRemark('Teams Setup', 'Court Sides', `${oldLeft} on left`, `${newLeft} on left`, `Switched court sides (Set ${setIdx})`)
-                                  // Sync updated side to Supabase live state
-                                  syncLiveStateToSupabase('manual_side_change', null, { oldSide: oldLeft, newSide: newLeft })
-                                }
-                              }}
-                              style={{
-                                flex: 1,
-                                padding: '10px 16px',
-                                fontSize: '13px',
-                                borderRadius: '8px',
-                                fontWeight: 600
-                              }}
-                            >
-                              <SwitchIcon size={14} /> Switch sides
-                            </button>
-                            <button
-                              className="secondary"
-                              onClick={async () => {
-                                const oldServing = servingTeam === 'home' ? 'Home' : 'Away'
-                                const newServe = servingTeam === 'home' ? 'away' : 'home'
-                                const newServing = newServe === 'home' ? 'Home' : 'Away'
-
-                                if (data.set?.index === 5) {
-                                  const currentSet5Serve = data.match.set5FirstServe || 'A'
-                                  const newSet5Serve = currentSet5Serve === 'A' ? 'B' : 'A'
-                                  await db.matches.update(matchId, { set5FirstServe: newSet5Serve })
-                                  // Sync to Supabase
-                                  if (data.match?.seed_key) {
-                                    db.sync_queue.add({
-                                      resource: 'match',
-                                      action: 'update',
-                                      payload: { id: data.match.seed_key, set5FirstServe: newSet5Serve },
-                                      createdAt: new Date().toISOString()
-                                    })
-                                  }
-                                } else {
-                                  const coinTossTeamA = data.match.coinTossTeamA || 'home'
-                                  const coinTossTeamB = coinTossTeamA === 'home' ? 'away' : 'home'
-                                  const coinTossServeA = newServe === coinTossTeamA
-                                  await db.matches.update(matchId, { firstServe: newServe, coinTossServeA, coinTossServeB: !coinTossServeA })
-
-                                  // Sync coin_toss JSONB to Supabase
-                                  if (data.match?.seed_key) {
-                                    await db.sync_queue.add({
-                                      resource: 'match',
-                                      action: 'update',
-                                      payload: {
-                                        id: data.match.seed_key,
-                                        coin_toss: {
-                                          team_a: coinTossTeamA,
-                                          team_b: coinTossTeamB,
-                                          serve_a: coinTossServeA,
-                                          confirmed: true,
-                                          first_serve: newServe
-                                        }
-                                      },
-                                      createdAt: new Date().toISOString()
-                                    })
-                                    console.log('[SwitchServe] Queued coin_toss sync:', { coinTossTeamA, coinTossServeA, firstServe: newServe })
-                                  }
-                                }
-                                logManualChangeWithRemark('Teams Setup', 'First Serve', oldServing, newServing, `Changed first serve from ${oldServing} to ${newServing}`)
-                                // Sync updated serve to Supabase live state
-                                syncLiveStateToSupabase('manual_serve_change', null, { oldServe: oldServing, newServe: newServing })
-                              }}
-                              style={{
-                                flex: 1,
-                                padding: '10px 16px',
-                                fontSize: '13px',
-                                borderRadius: '8px',
-                                fontWeight: 600
-                              }}
-                            >
-                              <VolleyballIcon size={14} /> Switch serve
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Edit Lineup */}
-                        <div
-                          className="manual-item"
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '8px',
-                            paddingTop: '16px',
-                            borderTop: '1px solid var(--border)'
-                          }}
-                        >
-                          <div style={{ fontWeight: 600, marginBottom: '8px' }}>{t('scoreboard.edit.changeCurrentLineup')}</div>
-                          <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
-                            {t('scoreboard.edit.overrideLineupDesc')}
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                            {/* LEFT BUTTON */}
-                            <button
-                              className="secondary"
-                              disabled={!data?.set}
-                              onClick={() => openManualLineup(leftTeamKey)}
-                              style={{
-                                flex: 1,
-                                minWidth: '120px',
-                                padding: '12px 16px',
-                                ...teamBoxStyle(leftTeamColor),
-                                borderRadius: '8px',
-                                fontWeight: 600
-                              }}
-                            >
-                              {t('scoreboard.edit.editTeamLeft', { team: leftTeamKey === teamAKey ? 'A' : 'B' })}
-                            </button>
-                            {/* RIGHT BUTTON */}
-                            <button
-                              className="secondary"
-                              disabled={!data?.set}
-                              onClick={() => openManualLineup(rightTeamKey)}
-                              style={{
-                                flex: 1,
-                                minWidth: '120px',
-                                padding: '12px 16px',
-                                ...teamBoxStyle(rightTeamColor),
-                                borderRadius: '8px',
-                                fontWeight: 600
-                              }}
-                            >
-                              {t('scoreboard.edit.editTeamRight', { team: rightTeamKey === teamAKey ? 'A' : 'B' })}
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Edit Current Set Score */}
-                        {data?.set && (
-                          <div
-                            className="manual-item"
-                            style={{
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: '8px',
-                              paddingTop: '16px',
-                              borderTop: '1px solid var(--border)'
-                            }}
-                          >
-                            <div style={{ fontWeight: 600, marginBottom: '8px' }}>{t('scoreboard.edit.editCurrentSetScore')}</div>
-                            <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
-                              {t('scoreboard.edit.editCurrentSetScoreDesc')}
-                            </div>
-                            <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
-                              {/* LEFT TEAM Score */}
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <label style={{ fontSize: '12px', minWidth: '60px' }}>
-                                  {leftIsHome ? t('common.home') : t('common.away')}:
-                                </label>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max="99"
-                                  key={`cur-left-${data.set.id}-${(leftIsHome ? data.set.homePoints : data.set.awayPoints) || 0}`}
-                                  defaultValue={(leftIsHome ? data.set.homePoints : data.set.awayPoints) || 0}
-                                  onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
-                                  onBlur={async (e) => {
-                                    // Commit on blur / Enter (not per keystroke: typing 25 must not save 2 first)
-                                    const oldPoints = (leftIsHome ? data.set.homePoints : data.set.awayPoints) || 0
-                                    const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
-                                    if (newPoints === oldPoints) { e.target.value = String(oldPoints); return }
-                                    const update = leftIsHome ? { homePoints: newPoints } : { awayPoints: newPoints }
-                                    await db.sets.update(data.set.id, update)
-
-                                    // Sync to Supabase
-                                    if (data.match?.seed_key) {
-                                      try {
-                                        const sbUpdate = leftIsHome ? { home_points: newPoints, sport_type: 'indoor' } : { away_points: newPoints, sport_type: 'indoor' }
-                                        // Queued (not written directly): processJob scopes set updates to
-                                        // their match and also matches pre-namespacing set rows.
-                                        if (!data.match.test) await db.sync_queue.add({ resource: 'set', action: 'update', payload: { external_id: setExtId(data.match.seed_key, data.set.id), ...sbUpdate }, ts: new Date().toISOString(), status: 'queued' })
-                                      } catch (err) { /* ignore */ }
-                                    }
-
-                                    const teamSide = leftIsHome ? 'Home' : 'Away'
-                                    logManualChangeWithRemark('Score', `${teamSide} Points Set ${data.set.index}`, oldPoints, newPoints,
-                                      `${teamSide} score changed from ${oldPoints} to ${newPoints} in Set ${data.set.index}`)
-                                    // Update Live State immediately
-                                    syncLiveStateToSupabase('manual_score_update')
-                                    notifyScoresheetUpdate('manual_score_update_left')
-                                  }}
-                                  style={{
-                                    width: '60px',
-                                    padding: '6px 8px',
-                                    fontSize: '14px',
-                                    background: 'var(--bg-secondary)',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)'
-                                  }}
-                                />
-                              </div>
-                              {/* RIGHT TEAM Score */}
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <label style={{ fontSize: '12px', minWidth: '60px' }}>
-                                  {rightIsHome ? t('common.home') : t('common.away')}:
-                                </label>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max="99"
-                                  key={`cur-right-${data.set.id}-${(rightIsHome ? data.set.homePoints : data.set.awayPoints) || 0}`}
-                                  defaultValue={(rightIsHome ? data.set.homePoints : data.set.awayPoints) || 0}
-                                  onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
-                                  onBlur={async (e) => {
-                                    // Commit on blur / Enter (not per keystroke: typing 25 must not save 2 first)
-                                    const oldPoints = (rightIsHome ? data.set.homePoints : data.set.awayPoints) || 0
-                                    const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
-                                    if (newPoints === oldPoints) { e.target.value = String(oldPoints); return }
-                                    const update = rightIsHome ? { homePoints: newPoints } : { awayPoints: newPoints }
-                                    await db.sets.update(data.set.id, update)
-
-                                    // Sync to Supabase
-                                    if (data.match?.seed_key) {
-                                      try {
-                                        const sbUpdate = rightIsHome ? { home_points: newPoints, sport_type: 'indoor' } : { away_points: newPoints, sport_type: 'indoor' }
-                                        // Queued (not written directly): processJob scopes set updates to
-                                        // their match and also matches pre-namespacing set rows.
-                                        if (!data.match.test) await db.sync_queue.add({ resource: 'set', action: 'update', payload: { external_id: setExtId(data.match.seed_key, data.set.id), ...sbUpdate }, ts: new Date().toISOString(), status: 'queued' })
-                                      } catch (err) { /* ignore */ }
-                                    }
-
-                                    const teamSide = rightIsHome ? 'Home' : 'Away'
-                                    logManualChangeWithRemark('Score', `${teamSide} Points Set ${data.set.index}`, oldPoints, newPoints,
-                                      `${teamSide} score changed from ${oldPoints} to ${newPoints} in Set ${data.set.index}`)
-                                    // Update Live State immediately
-                                    syncLiveStateToSupabase('manual_score_update')
-                                    notifyScoresheetUpdate('manual_score_update_right')
-                                  }}
-                                  style={{
-                                    width: '60px',
-                                    padding: '6px 8px',
-                                    fontSize: '14px',
-                                    background: 'var(--bg-secondary)',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)'
-                                  }}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    )
-                  })()}
-                </div>
-              )}
-            </div>
-
-            {/* Collapsible Section: Score & Sets */}
-            <div className={cn(SB_BLOCK, 'mb-3 overflow-hidden')}>
-              <button
-                onClick={() => setManualPanelExpandedSections(prev => ({ ...prev, scores: !prev.scores }))}
-                className={SB_DISCLOSURE}
-              >
-                <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <ChartIcon size={18} />
-                  Score &amp; sets
-                </span>
-                <span style={{ fontSize: '12px', transform: manualPanelExpandedSections.scores ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-              </button>
-              {manualPanelExpandedSections.scores && (
-                <div style={{ padding: '0 16px 16px 16px' }}>
-                  <div className="manual-list">
-
-                    {/* Reopen completed sets */}
-                    {data?.sets && (() => {
-                      // Filter out the current set - only show finished sets that are not the current set
-                      const currentSetIndex = data?.set?.index
-                      const completedSets = data.sets
-                        .filter(s => s.finished && s.index !== currentSetIndex)
-                        .sort((a, b) => b.index - a.index)
-                      if (completedSets.length === 0) return null
-
-                      return (
-                        <div
-                          className="manual-item"
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '8px',
-                            paddingTop: '16px'
-                          }}
-                        >
-                          <div style={{ fontWeight: 600, marginBottom: '8px' }}>{t('scoreboard.edit.reopenCompletedSets')}</div>
-                          <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
-                            {t('scoreboard.edit.reopenCompletedSetsDesc')}
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            {completedSets.map(set => (
-                              <button
-                                key={set.id}
-                                className="secondary"
-                                onClick={() => setReopenSetConfirm({ setId: set.id, setIndex: set.index })}
-                                style={{ textAlign: 'left', padding: '10px 16px' }}
-                              >
-                                {t('scoreboard.edit.reopenSetWithScore', { setIndex: set.index, homePoints: set.homePoints, awayPoints: set.awayPoints })}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )
-                    })()}
-
-
-
-                    {/* Edit All Sets */}
-                    {data?.sets && data.sets.length > 0 && (
-                      <div
-                        className="manual-item"
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '8px',
-                          paddingTop: '16px',
-                          borderTop: '1px solid var(--border)'
-                        }}
-                      >
-                        <div style={{ fontWeight: 600, marginBottom: '8px' }}>{t('scoreboard.edit.editAllSets')}</div>
-                        <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
-                          {t('scoreboard.edit.editAllSetsDesc')}
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          {[...data.sets].sort((a, b) => a.index - b.index).map(set => (
-                            <div key={set.id} style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '12px',
-                              padding: '8px',
-                              background: 'var(--panel-2)',
-                              borderRadius: '6px'
-                            }}>
-                              <div style={{ fontWeight: 600, minWidth: '60px' }}>{t('scoreboard.edit.setNumber', { number: set.index })}</div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <label style={{ fontSize: '11px' }}>{t('common.home')}:</label>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max="99"
-                                  key={`all-home-${set.id}-${set.homePoints || 0}`}
-                                  defaultValue={set.homePoints || 0}
-                                  onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
-                                  onBlur={async (e) => {
-                                    // Commit on blur / Enter (not per keystroke)
-                                    const oldPoints = set.homePoints || 0
-                                    const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
-                                    if (newPoints === oldPoints) { e.target.value = String(oldPoints); return }
-                                    await db.sets.update(set.id, { homePoints: newPoints })
-                                    // Sync to Supabase
-                                    if (data.match?.seed_key) {
-                                      try {
-                                        // Queued (not written directly): processJob scopes set updates to
-                                        // their match and also matches pre-namespacing set rows.
-                                        if (!data.match.test) await db.sync_queue.add({ resource: 'set', action: 'update', payload: { external_id: setExtId(data.match.seed_key, set.id), home_points: newPoints, sport_type: 'indoor' }, ts: new Date().toISOString(), status: 'queued' })
-                                      } catch (err) { /* ignore */ }
-                                    }
-                                    logManualChangeWithRemark('Score', `Home Points Set ${set.index}`, oldPoints, newPoints,
-                                      `Home score changed from ${oldPoints} to ${newPoints} in Set ${set.index}`,
-                                      { setIndex: set.index, scoreStr: `${newPoints}-${set.awayPoints || 0}` })
-                                    notifyScoresheetUpdate('edit_all_sets_home')
-                                  }}
-                                  style={{
-                                    width: '50px',
-                                    padding: '4px 6px',
-                                    fontSize: '12px',
-                                    background: 'var(--bg-secondary)',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)'
-                                  }}
-                                />
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <label style={{ fontSize: '11px' }}>{t('common.away')}:</label>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max="99"
-                                  key={`all-away-${set.id}-${set.awayPoints || 0}`}
-                                  defaultValue={set.awayPoints || 0}
-                                  onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
-                                  onBlur={async (e) => {
-                                    // Commit on blur / Enter (not per keystroke)
-                                    const oldPoints = set.awayPoints || 0
-                                    const newPoints = Math.max(0, Math.min(99, parseInt(e.target.value) || 0))
-                                    if (newPoints === oldPoints) { e.target.value = String(oldPoints); return }
-                                    await db.sets.update(set.id, { awayPoints: newPoints })
-                                    // Sync to Supabase
-                                    if (data.match?.seed_key) {
-                                      try {
-                                        // Queued (not written directly): processJob scopes set updates to
-                                        // their match and also matches pre-namespacing set rows.
-                                        if (!data.match.test) await db.sync_queue.add({ resource: 'set', action: 'update', payload: { external_id: setExtId(data.match.seed_key, set.id), away_points: newPoints, sport_type: 'indoor' }, ts: new Date().toISOString(), status: 'queued' })
-                                      } catch (err) { /* ignore */ }
-                                    }
-                                    logManualChangeWithRemark('Score', `Away Points Set ${set.index}`, oldPoints, newPoints,
-                                      `Away score changed from ${oldPoints} to ${newPoints} in Set ${set.index}`,
-                                      { setIndex: set.index, scoreStr: `${set.homePoints || 0}-${newPoints}` })
-                                    notifyScoresheetUpdate('edit_all_sets_away')
-                                  }}
-                                  style={{
-                                    width: '50px',
-                                    padding: '4px 6px',
-                                    fontSize: '12px',
-                                    background: 'var(--bg-secondary)',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)'
-                                  }}
-                                />
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto' }}>
-                                <label style={{ fontSize: '11px' }}>{t('scoreboard.edit.finished')}</label>
-                                <input
-                                  type="checkbox"
-                                  checked={set.finished || false}
-                                  onChange={async (e) => {
-                                    const oldFinished = set.finished || false
-                                    const newFinished = e.target.checked
-                                    if (!newFinished) {
-                                      // Un-finishing a set is a reopen: go through the Reopen Set flow,
-                                      // which also removes its set_end, later sets and the match-end state
-                                      setReopenSetConfirm({ setId: set.id, setIndex: set.index })
-                                      return
-                                    }
-                                    const endTime = set.endTime || roundToMinute(new Date().toISOString())
-                                    await db.sets.update(set.id, { finished: newFinished, endTime })
-                                    // Sync to Supabase
-                                    if (data.match?.seed_key) {
-                                      try {
-                                        // Queued (not written directly): processJob scopes set updates to
-                                        // their match and also matches pre-namespacing set rows.
-                                        if (!data.match.test) await db.sync_queue.add({ resource: 'set', action: 'update', payload: { external_id: setExtId(data.match.seed_key, set.id), finished: newFinished, end_time: endTime, sport_type: 'indoor' }, ts: new Date().toISOString(), status: 'queued' })
-                                      } catch (err) { /* ignore */ }
-                                    }
-                                    logManualChangeWithRemark('Score', `Set ${set.index} Finished`, oldFinished, newFinished,
-                                      `Set ${set.index} finished flag changed from ${oldFinished} to ${newFinished}`,
-                                      { setIndex: set.index, scoreStr: `${set.homePoints || 0}-${set.awayPoints || 0}` })
-                                    notifyScoresheetUpdate('edit_all_sets_finished')
-                                  }}
-                                  style={{
-                                    width: '18px',
-                                    height: '18px',
-                                    cursor: 'pointer'
-                                  }}
-                                />
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Collapsible Section: Match Settings */}
-            <div className={cn(SB_BLOCK, 'mb-3 overflow-hidden')}>
-              <button
-                onClick={() => setManualPanelExpandedSections(prev => ({ ...prev, matchSettings: !prev.matchSettings }))}
-                className={SB_DISCLOSURE}
-              >
-                <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <SettingsIcon size={18} />
-                  Match settings
-                </span>
-                <span style={{ fontSize: '12px', transform: manualPanelExpandedSections.matchSettings ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-              </button>
-              {manualPanelExpandedSections.matchSettings && (
-                <div style={{ padding: '0 16px 16px 16px' }}>
-
-
-
-                  {/* Edit Match Information */}
-                  {data?.match && (
-                    <div
-                      className="manual-item"
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '8px',
-                        paddingTop: '16px',
-                        borderTop: '1px solid var(--border)'
-                      }}
-                    >
-                      <div style={{ fontWeight: 600, marginBottom: '8px' }}>{t('scoreboard.edit.editMatchInfo')}</div>
-                      <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
-                        {t('scoreboard.edit.editMatchInfoDesc')}
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <label style={{ fontSize: '12px', minWidth: '120px' }}>{t('scoreboard.edit.matchStatus')}</label>
-                          <select
-                            value={data.match.status || 'live'}
-                            onChange={async (e) => {
-                              const oldStatus = data.match.status || 'live'
-                              const newStatus = e.target.value
-                              // Update local IndexedDB
-                              await db.matches.update(matchId, { status: newStatus })
-
-                              // Also sync to Supabase if match has seed_key
-                              if (data.match?.seed_key) {
-                                try {
-                                  await apiFrom('matches')
-                                    .update({ status: newStatus })
-                                    .eq('external_id', data.match.seed_key)
-                                } catch (err) {
-                                  // Failed to sync status to Supabase
-                                }
-                              }
-                              logManualChangeWithRemark('Match', 'Status', oldStatus, newStatus,
-                                `Match status changed from "${oldStatus}" to "${newStatus}"`)
-                            }}
-                            style={{
-                              flex: 1,
-                              padding: '6px 8px',
-                              fontSize: '12px',
-                              background: 'var(--panel)',
-                              border: '1px solid var(--border)',
-                              borderRadius: '4px',
-                              color: 'var(--text)'
-                            }}
-                          >
-                            <option value="setup" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.edit.setup')}</option>
-                            <option value="live" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.edit.live')}</option>
-                            {/* The lifecycle the app writes: live -> ended (scoreboard) -> approved -> final (MatchEnd) */}
-                            <option value="ended" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.edit.ended', 'Ended')}</option>
-                            <option value="approved" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.edit.approved', 'Approved')}</option>
-                            <option value="final" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.edit.final')}</option>
-                            <option value="paused" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.edit.paused')}</option>
-                          </select>
-                        </div>
-                        {data?.set?.index === 5 && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <label style={{ fontSize: '12px', minWidth: '120px' }}>{t('scoreboard.edit.set5FirstServe')}</label>
-                            <select
-                              value={data.match.set5FirstServe || 'A'}
-                              onChange={async (e) => {
-                                const oldVal = data.match.set5FirstServe || 'A'
-                                const newVal = e.target.value
-                                await db.matches.update(matchId, { set5FirstServe: newVal })
-                                logManualChangeWithRemark('Match', 'Set 5 First Serve', oldVal, newVal,
-                                  `Set 5 first serve changed from Team ${oldVal} to Team ${newVal}`)
-                              }}
-                              style={{
-                                flex: 1,
-                                padding: '6px 8px',
-                                fontSize: '12px',
-                                background: 'var(--panel)',
-                                border: '1px solid var(--border)',
-                                borderRadius: '4px',
-                                color: 'var(--text)'
-                              }}
-                            >
-                              <option value="A" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.edit.teamA')}</option>
-                              <option value="B" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.edit.teamB')}</option>
-                            </select>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-
-                </div>
-              )}
-            </div>
-
-            {/* Collapsible Section: Event History */}
-            <div className={cn(SB_BLOCK, 'mb-3 overflow-hidden')}>
-              <button
-                onClick={() => setManualPanelExpandedSections(prev => ({ ...prev, events: !prev.events }))}
-                className={SB_DISCLOSURE}
-              >
-                <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <NotebookIcon size={18} />
-                  Event history
-                </span>
-                <span style={{ fontSize: '12px', transform: manualPanelExpandedSections.events ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-              </button>
-              {manualPanelExpandedSections.events && (
-                <div style={{ padding: '0 16px 16px 16px' }}>
-
-                  {/* Edit Points */}
-                  {data?.events && (() => {
-                    const pointEvents = data.events.filter(e => e.type === 'point').sort((a, b) => (b.seq || 0) - (a.seq || 0)).slice(0, 20)
-                    if (pointEvents.length === 0) return null
-
-                    return (
-                      <div
-                        className="manual-item"
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '8px',
-                          paddingBottom: '16px',
-                          borderBottom: '1px solid var(--border)'
-                        }}
-                      >
-                        <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Points ({pointEvents.length} most recent)</div>
-                        <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
-                          Edit or delete point events. Score shown is at time of point.
-                        </div>
-                        <div style={{
-                          maxHeight: '300px',
-                          overflowY: 'auto',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '6px'
-                        }}>
-                          {pointEvents.map(event => {
-                            const setIndex = event.setIndex || 1
-                            const team = event.payload?.team
-                            const teamLabel = team === teamAKey ? 'A' : (team === teamBKey ? 'B' : '')
-
-                            // Calculate score at time of this point
-                            const setEvents = data.events.filter(e => e.setIndex === setIndex)
-                            const eventIndex = setEvents.findIndex(e => e.id === event.id)
-                            let homeScore = 0
-                            let awayScore = 0
-                            for (let i = 0; i <= eventIndex; i++) {
-                              const e = setEvents[i]
-                              if (e.type === 'point') {
-                                if (e.payload?.team === 'home') homeScore++
-                                else if (e.payload?.team === 'away') awayScore++
-                              }
-                            }
-
-                            return (
-                              <div key={event.id} style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                padding: '8px',
-                                background: 'var(--panel-2)',
-                                borderRadius: '4px',
-                                fontSize: '11px'
-                              }}>
-                                <span style={{ minWidth: '60px' }}>{t('common.setIndex', { index: setIndex })}</span>
-                                <select
-                                  value={team || 'home'}
-                                  onChange={async (e) => {
-                                    const oldTeam = team || 'home'
-                                    const newTeam = e.target.value
-                                    await db.events.update(event.id, {
-                                      payload: { ...event.payload, team: newTeam }
-                                    })
-                                    await resyncSetScoreFromEvents(setIndex)
-                                    logManualChangeWithRemark('Point', 'Team', oldTeam, newTeam,
-                                      `Point team changed from ${oldTeam} to ${newTeam}`,
-                                      { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                    notifyScoresheetUpdate('edit_point_team')
-                                  }}
-                                  style={{
-                                    padding: '4px 6px',
-                                    fontSize: '11px',
-                                    background: 'var(--panel)',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)',
-                                    minWidth: '80px'
-                                  }}
-                                >
-                                  <option value="home" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.home')}</option>
-                                  <option value="away" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.away')}</option>
-                                </select>
-                                <span style={{ minWidth: '50px' }}>Score: {homeScore}-{awayScore}</span>
-                                <button
-                                  className={SB_ROW_DELETE}
-                                  onClick={async () => {
-                                    if (await askConfirm({ title: t('scoreboard.actionLog.deletePointEvent'), confirmLabel: t('common.delete'), tone: 'danger' })) {
-                                      const deletedTeam = team || '?'
-                                      await discardEvents([event])
-                                      await resyncSetScoreFromEvents(setIndex)
-                                      logManualChangeWithRemark('Point', 'Delete',
-                                        `${deletedTeam} point at ${homeScore}-${awayScore}`, null,
-                                        `Deleted ${deletedTeam} point (Set ${setIndex}, ${homeScore}-${awayScore})`,
-                                        { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                      notifyScoresheetUpdate('delete_point_event')
-                                    }
-                                  }}
-                                  style={{ marginLeft: 'auto' }}
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )
-                  })()}
-
-                  {/* Edit Timeouts */}
-                  {data?.events && (() => {
-                    const timeoutEvents = data.events.filter(e => e.type === 'timeout').sort((a, b) => (b.seq || 0) - (a.seq || 0)).slice(0, 20)
-                    if (timeoutEvents.length === 0) return null
-
-                    return (
-                      <div
-                        className="manual-item"
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '8px',
-                          paddingTop: '16px',
-                          borderTop: '1px solid var(--border)'
-                        }}
-                      >
-                        <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Timeouts ({timeoutEvents.length} most recent)</div>
-                        <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
-                          Edit or delete timeout events. Score shown is at time of timeout.
-                        </div>
-                        <div style={{
-                          maxHeight: '300px',
-                          overflowY: 'auto',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '6px'
-                        }}>
-                          {timeoutEvents.map(event => {
-                            const setIndex = event.setIndex || 1
-                            const team = event.payload?.team
-                            const teamLabel = team === teamAKey ? 'A' : (team === teamBKey ? 'B' : '')
-
-                            // Calculate score at time of this timeout
-                            const setEvents = data.events.filter(e => e.setIndex === setIndex)
-                            const eventIndex = setEvents.findIndex(e => e.id === event.id)
-                            let homeScore = 0
-                            let awayScore = 0
-                            for (let i = 0; i < eventIndex; i++) {
-                              const e = setEvents[i]
-                              if (e.type === 'point') {
-                                if (e.payload?.team === 'home') homeScore++
-                                else if (e.payload?.team === 'away') awayScore++
-                              }
-                            }
-
-                            return (
-                              <div key={event.id} style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                padding: '8px',
-                                background: 'var(--panel-2)',
-                                borderRadius: '4px',
-                                fontSize: '11px',
-                                flexWrap: 'wrap'
-                              }}>
-                                <span style={{ minWidth: '40px' }}>{t('common.setIndex', { index: setIndex })}</span>
-                                <select
-                                  value={team || 'home'}
-                                  onChange={async (e) => {
-                                    const oldTeam = team || 'home'
-                                    const newTeam = e.target.value
-                                    await db.events.update(event.id, {
-                                      payload: { ...event.payload, team: newTeam }
-                                    })
-                                    logManualChangeWithRemark('Timeout', 'Team', oldTeam, newTeam,
-                                      `Timeout team changed from ${oldTeam} to ${newTeam}`,
-                                      { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                  }}
-                                  style={{
-                                    padding: '4px 6px',
-                                    fontSize: '11px',
-                                    background: 'var(--panel)',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)',
-                                    minWidth: '70px'
-                                  }}
-                                >
-                                  <option value="home" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.home')}</option>
-                                  <option value="away" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.away')}</option>
-                                </select>
-                                <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{homeScore}-{awayScore}</span>
-                                <button
-                                  className={SB_ROW_DELETE}
-                                  onClick={async () => {
-                                    if (await askConfirm({ title: t('scoreboard.actionLog.deleteTimeoutEvent'), confirmLabel: t('common.delete'), tone: 'danger' })) {
-                                      const deletedTeam = team || '?'
-                                      await discardEvents([event])
-                                      logManualChangeWithRemark('Timeout', 'Delete',
-                                        `${deletedTeam} timeout at ${homeScore}-${awayScore}`, null,
-                                        `Deleted ${deletedTeam} timeout (Set ${setIndex}, ${homeScore}-${awayScore})`,
-                                        { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                    }
-                                  }}
-                                  style={{ marginLeft: 'auto' }}
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )
-                  })()}
-
-                  {/* Edit Substitutions */}
-                  {data?.events && (() => {
-                    const substitutionEvents = data.events.filter(e => e.type === 'substitution').sort((a, b) => (b.seq || 0) - (a.seq || 0)).slice(0, 20)
-                    if (substitutionEvents.length === 0) return null
-
-                    return (
-                      <div
-                        className="manual-item"
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '8px',
-                          paddingTop: '16px',
-                          borderTop: '1px solid var(--border)'
-                        }}
-                      >
-                        <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Substitutions ({substitutionEvents.length} most recent)</div>
-                        <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
-                          Edit or delete substitution events. Score shown is at time of substitution.
-                        </div>
-                        <div style={{
-                          maxHeight: '300px',
-                          overflowY: 'auto',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '6px'
-                        }}>
-                          {substitutionEvents.map(event => {
-                            const setIndex = event.setIndex || 1
-                            const team = event.payload?.team
-                            const teamLabel = team === teamAKey ? 'A' : (team === teamBKey ? 'B' : '')
-                            const playerOut = event.payload?.playerOut
-                            const playerIn = event.payload?.playerIn
-                            const position = event.payload?.position
-
-                            // Calculate score at time of this substitution
-                            const setEvents = data.events.filter(e => e.setIndex === setIndex)
-                            const eventIndex = setEvents.findIndex(e => e.id === event.id)
-                            let homeScore = 0
-                            let awayScore = 0
-                            for (let i = 0; i < eventIndex; i++) {
-                              const e = setEvents[i]
-                              if (e.type === 'point') {
-                                if (e.payload?.team === 'home') homeScore++
-                                else if (e.payload?.team === 'away') awayScore++
-                              }
-                            }
-
-                            return (
-                              <div key={event.id} style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                padding: '8px',
-                                background: 'var(--panel-2)',
-                                borderRadius: '4px',
-                                fontSize: '11px',
-                                flexWrap: 'wrap'
-                              }}>
-                                <span style={{ minWidth: '40px' }}>{t('common.setIndex', { index: setIndex })}</span>
-                                <select
-                                  value={team || 'home'}
-                                  onChange={async (e) => {
-                                    const oldTeam = team || 'home'
-                                    const newTeam = e.target.value
-                                    await db.events.update(event.id, {
-                                      payload: { ...event.payload, team: newTeam }
-                                    })
-                                    logManualChangeWithRemark('Substitution', 'Team', oldTeam, newTeam,
-                                      `Sub team changed from ${oldTeam} to ${newTeam} (#${playerOut}->#${playerIn})`,
-                                      { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                  }}
-                                  style={{
-                                    padding: '4px 6px',
-                                    fontSize: '11px',
-                                    background: 'var(--panel)',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)',
-                                    minWidth: '70px'
-                                  }}
-                                >
-                                  <option value="home" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.home')}</option>
-                                  <option value="away" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.away')}</option>
-                                </select>
-                                <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{homeScore}-{awayScore}</span>
-                                <select
-                                  value={position || 'I'}
-                                  onChange={async (e) => {
-                                    const oldPos = position || 'I'
-                                    const newPos = e.target.value
-                                    await db.events.update(event.id, {
-                                      payload: { ...event.payload, position: newPos }
-                                    })
-                                    logManualChangeWithRemark('Substitution', 'Position', oldPos, newPos,
-                                      `Sub position changed from ${oldPos} to ${newPos} (Team ${teamLabel}, #${playerOut}->#${playerIn})`,
-                                      { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                  }}
-                                  style={{
-                                    padding: '4px 6px',
-                                    fontSize: '11px',
-                                    background: 'var(--panel)',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)',
-                                    width: '45px'
-                                  }}
-                                >
-                                  {['I', 'II', 'III', 'IV', 'V', 'VI'].map(pos => (
-                                    <option key={pos} value={pos} style={{ background: 'var(--panel)', color: 'var(--text)' }}>{pos}</option>
-                                  ))}
-                                </select>
-                                <span style={{ fontSize: '10px' }}>Out:</span>
-                                <input
-                                  type="number"
-                                  min="1"
-                                  max="99"
-                                  value={playerOut || ''}
-                                  onChange={async (e) => {
-                                    const oldVal = playerOut || null
-                                    const val = parseInt(e.target.value) || null
-                                    await db.events.update(event.id, {
-                                      payload: { ...event.payload, playerOut: val }
-                                    })
-                                    logManualChangeWithRemark('Substitution', 'PlayerOut', oldVal, val,
-                                      `Sub playerOut changed from #${oldVal ?? '?'} to #${val ?? '?'} (Team ${teamLabel})`,
-                                      { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                  }}
-                                  style={{
-                                    width: '40px',
-                                    padding: '4px',
-                                    fontSize: '11px',
-                                    background: 'var(--panel)',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)'
-                                  }}
-                                />
-                                <span style={{ fontSize: '10px' }}>In:</span>
-                                <input
-                                  type="number"
-                                  min="1"
-                                  max="99"
-                                  value={playerIn || ''}
-                                  onChange={async (e) => {
-                                    const oldVal = playerIn || null
-                                    const val = parseInt(e.target.value) || null
-                                    await db.events.update(event.id, {
-                                      payload: { ...event.payload, playerIn: val }
-                                    })
-                                    logManualChangeWithRemark('Substitution', 'PlayerIn', oldVal, val,
-                                      `Sub playerIn changed from #${oldVal ?? '?'} to #${val ?? '?'} (Team ${teamLabel})`,
-                                      { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                  }}
-                                  style={{
-                                    width: '40px',
-                                    padding: '4px',
-                                    fontSize: '11px',
-                                    background: 'var(--panel)',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)'
-                                  }}
-                                />
-                                <label style={{ fontSize: '9px', display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={event.payload?.isInjury || false}
-                                    onChange={async (e) => {
-                                      const oldVal = event.payload?.isInjury || false
-                                      const newVal = e.target.checked
-                                      await db.events.update(event.id, {
-                                        payload: { ...event.payload, isInjury: newVal }
-                                      })
-                                      logManualChangeWithRemark('Substitution', 'IsInjury', oldVal, newVal,
-                                        `Sub injury flag changed to ${newVal} (Team ${teamLabel}, #${playerOut}->#${playerIn})`,
-                                        { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                    }}
-                                    style={{ width: '12px', height: '12px', cursor: 'pointer' }}
-                                  />
-                                  Inj
-                                </label>
-                                <label style={{ fontSize: '9px', display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={event.payload?.isExceptional || false}
-                                    onChange={async (e) => {
-                                      const oldVal = event.payload?.isExceptional || false
-                                      const newVal = e.target.checked
-                                      await db.events.update(event.id, {
-                                        payload: { ...event.payload, isExceptional: newVal }
-                                      })
-                                      logManualChangeWithRemark('Substitution', 'IsExceptional', oldVal, newVal,
-                                        `Sub exceptional flag changed to ${newVal} (Team ${teamLabel}, #${playerOut}->#${playerIn})`,
-                                        { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                    }}
-                                    style={{ width: '12px', height: '12px', cursor: 'pointer' }}
-                                  />
-                                  Exc
-                                </label>
-                                <label style={{ fontSize: '9px', display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={event.payload?.isExpelled || false}
-                                    onChange={async (e) => {
-                                      const oldVal = event.payload?.isExpelled || false
-                                      const newVal = e.target.checked
-                                      await db.events.update(event.id, {
-                                        payload: { ...event.payload, isExpelled: newVal }
-                                      })
-                                      logManualChangeWithRemark('Substitution', 'IsExpelled', oldVal, newVal,
-                                        `Sub expelled flag changed to ${newVal} (Team ${teamLabel}, #${playerOut}->#${playerIn})`,
-                                        { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                    }}
-                                    style={{ width: '12px', height: '12px', cursor: 'pointer' }}
-                                  />
-                                  Exp
-                                </label>
-                                <label style={{ fontSize: '9px', display: 'flex', alignItems: 'center', gap: '2px' }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={event.payload?.isDisqualified || false}
-                                    onChange={async (e) => {
-                                      const oldVal = event.payload?.isDisqualified || false
-                                      const newVal = e.target.checked
-                                      await db.events.update(event.id, {
-                                        payload: { ...event.payload, isDisqualified: newVal }
-                                      })
-                                      logManualChangeWithRemark('Substitution', 'IsDisqualified', oldVal, newVal,
-                                        `Sub disqualified flag changed to ${newVal} (Team ${teamLabel}, #${playerOut}->#${playerIn})`,
-                                        { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                    }}
-                                    style={{ width: '12px', height: '12px', cursor: 'pointer' }}
-                                  />
-                                  Dsq
-                                </label>
-                                <button
-                                  className={SB_ROW_DELETE}
-                                  onClick={async () => {
-                                    if (await askConfirm({ title: t('scoreboard.actionLog.deleteSubstitutionEvent'), confirmLabel: t('common.delete'), tone: 'danger' })) {
-                                      const subSetIndex = event.setIndex
-
-                                      // Remove THIS substitution: its own lineup sub-event (seq N.x) is
-                                      // deleted and later lineups/libero records are corrected by player
-                                      // number (domain/substitutions, tested). Refused if a later
-                                      // substitution involves the same players.
-                                      const allEvents = await db.events.where('matchId').equals(matchId).toArray()
-                                      const plan = planSubstitutionDeletion(allEvents, event)
-                                      if (plan.blocked) {
-                                        showAlert(plan.reason, 'error')
-                                        return
-                                      }
-                                      await db.transaction('rw', db.events, async () => {
-                                        for (const u of plan.updates) {
-                                          await db.events.update(u.id, { payload: u.payload })
-                                        }
-                                      })
-                                      // Delete its events with their remark line and queued sync jobs
-                                      const deleteIdSet = new Set(plan.deleteIds)
-                                      await discardEvents(allEvents.filter(ev => deleteIdSet.has(ev.id)))
-                                      logManualChangeWithRemark('Substitution', 'Delete',
-                                        `Team ${teamLabel}, #${playerOut}->#${playerIn}, pos ${position}`, null,
-                                        `Deleted substitution (Team ${teamLabel}, #${playerOut}->#${playerIn}, pos ${position})`,
-                                        { setIndex: subSetIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                    }
-                                  }}
-                                  style={{ marginLeft: 'auto' }}
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )
-                  })()}
-
-                  {/* Edit Sanctions */}
-                  {data?.events && (() => {
-                    const sanctionEvents = data.events.filter(e => e.type === 'sanction').sort((a, b) => (b.seq || 0) - (a.seq || 0)).slice(0, 20)
-                    if (sanctionEvents.length === 0) return null
-
-                    return (
-                      <div
-                        className="manual-item"
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '8px',
-                          paddingTop: '16px',
-                          borderTop: '1px solid var(--border)'
-                        }}
-                      >
-                        <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Sanctions ({sanctionEvents.length} most recent)</div>
-                        <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
-                          Edit or delete sanction events. Score shown is at time of sanction.
-                        </div>
-                        <div style={{
-                          maxHeight: '300px',
-                          overflowY: 'auto',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '6px'
-                        }}>
-                          {sanctionEvents.map(event => {
-                            const setIndex = event.setIndex || 1
-                            const team = event.payload?.team
-                            const teamLabel = team === teamAKey ? 'A' : (team === teamBKey ? 'B' : '')
-                            const sanctionType = event.payload?.type
-                            const playerNumber = event.payload?.playerNumber
-                            const position = event.payload?.position
-                            const role = event.payload?.role
-
-                            // Calculate score at time of this sanction
-                            const setEvents = data.events.filter(e => e.setIndex === setIndex)
-                            const eventIndex = setEvents.findIndex(e => e.id === event.id)
-                            let homeScore = 0
-                            let awayScore = 0
-                            for (let i = 0; i < eventIndex; i++) {
-                              const e = setEvents[i]
-                              if (e.type === 'point') {
-                                if (e.payload?.team === 'home') homeScore++
-                                else if (e.payload?.team === 'away') awayScore++
-                              }
-                            }
-
-                            return (
-                              <div key={event.id} style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                padding: '8px',
-                                background: 'var(--panel-2)',
-                                borderRadius: '4px',
-                                fontSize: '11px',
-                                flexWrap: 'wrap'
-                              }}>
-                                <span style={{ minWidth: '40px' }}>{t('common.setIndex', { index: setIndex })}</span>
-                                <select
-                                  value={team || 'home'}
-                                  onChange={async (e) => {
-                                    const oldTeam = team || 'home'
-                                    const newTeam = e.target.value
-                                    await db.events.update(event.id, {
-                                      payload: { ...event.payload, team: newTeam }
-                                    })
-                                    await resyncTeamSanctionFlags()
-                                    logManualChangeWithRemark('Sanction', 'Team', oldTeam, newTeam,
-                                      `Sanction team changed from ${oldTeam} to ${newTeam} (${sanctionType}, #${playerNumber ?? '?'})`,
-                                      { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                  }}
-                                  style={{
-                                    padding: '4px 6px',
-                                    fontSize: '11px',
-                                    background: 'var(--panel)',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)',
-                                    minWidth: '70px'
-                                  }}
-                                >
-                                  <option value="home" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.home')}</option>
-                                  <option value="away" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.away')}</option>
-                                </select>
-                                <select
-                                  value={sanctionType || 'warning'}
-                                  onChange={async (e) => {
-                                    const oldType = sanctionType || 'warning'
-                                    const newType = e.target.value
-                                    await db.events.update(event.id, {
-                                      payload: { ...event.payload, type: newType }
-                                    })
-                                    await resyncTeamSanctionFlags()
-                                    logManualChangeWithRemark('Sanction', 'Type', oldType, newType,
-                                      `Sanction type changed from ${oldType} to ${newType} (Team ${teamLabel}, #${playerNumber ?? '?'})`,
-                                      { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                  }}
-                                  style={{
-                                    padding: '4px 6px',
-                                    fontSize: '11px',
-                                    background: 'var(--panel)',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)',
-                                    minWidth: '90px'
-                                  }}
-                                >
-                                  <option value="warning" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Warning</option>
-                                  <option value="penalty" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Penalty</option>
-                                  <option value="expulsion" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Expulsion</option>
-                                  <option value="disqualification" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Disqualif.</option>
-                                  <option value="improper_request" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Improper req</option>
-                                  <option value="delay_warning" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Delay warn</option>
-                                  <option value="delay_penalty" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Delay pen</option>
-                                </select>
-                                <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{homeScore}-{awayScore}</span>
-                                {playerNumber !== undefined && playerNumber !== null && (
-                                  <>
-                                    <span style={{ fontSize: '10px' }}>#</span>
-                                    <input
-                                      type="number"
-                                      min="1"
-                                      max="99"
-                                      value={playerNumber || ''}
-                                      onChange={async (e) => {
-                                        const oldNum = playerNumber || null
-                                        const val = parseInt(e.target.value) || null
-                                        await db.events.update(event.id, {
-                                          payload: { ...event.payload, playerNumber: val }
-                                        })
-                                        logManualChangeWithRemark('Sanction', 'PlayerNumber', oldNum, val,
-                                          `Sanction player changed from #${oldNum ?? '?'} to #${val ?? '?'} (Team ${teamLabel}, ${sanctionType})`,
-                                          { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                      }}
-                                      style={{
-                                        width: '40px',
-                                        padding: '4px',
-                                        fontSize: '11px',
-                                        background: 'var(--panel)',
-                                        border: '1px solid var(--border)',
-                                        borderRadius: '4px',
-                                        color: 'var(--text)'
-                                      }}
-                                    />
-                                  </>
-                                )}
-                                {position && (
-                                  <select
-                                    value={position || 'I'}
-                                    onChange={async (e) => {
-                                      const oldPos = position || 'I'
-                                      const newPos = e.target.value
-                                      await db.events.update(event.id, {
-                                        payload: { ...event.payload, position: newPos }
-                                      })
-                                      logManualChangeWithRemark('Sanction', 'Position', oldPos, newPos,
-                                        `Sanction position changed from ${oldPos} to ${newPos} (Team ${teamLabel}, ${sanctionType}, #${playerNumber ?? '?'})`,
-                                        { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                    }}
-                                    style={{
-                                      padding: '4px',
-                                      fontSize: '11px',
-                                      background: 'var(--panel)',
-                                      border: '1px solid var(--border)',
-                                      borderRadius: '4px',
-                                      color: 'var(--text)',
-                                      width: '45px'
-                                    }}
-                                  >
-                                    {['I', 'II', 'III', 'IV', 'V', 'VI'].map(pos => (
-                                      <option key={pos} value={pos} style={{ background: 'var(--panel)', color: 'var(--text)' }}>{pos}</option>
-                                    ))}
-                                  </select>
-                                )}
-                                {role && (
-                                  <select
-                                    value={role || 'Coach'}
-                                    onChange={async (e) => {
-                                      const oldRole = role || 'Coach'
-                                      const newRole = e.target.value
-                                      await db.events.update(event.id, {
-                                        payload: { ...event.payload, role: newRole }
-                                      })
-                                      logManualChangeWithRemark('Sanction', 'Role', oldRole, newRole,
-                                        `Sanction role changed from ${oldRole} to ${newRole} (Team ${teamLabel}, ${sanctionType})`,
-                                        { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                    }}
-                                    style={{
-                                      padding: '4px',
-                                      fontSize: '11px',
-                                      background: 'var(--panel)',
-                                      border: '1px solid var(--border)',
-                                      borderRadius: '4px',
-                                      color: 'var(--text)',
-                                      minWidth: '70px'
-                                    }}
-                                  >
-                                    <option value="Coach" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Coach</option>
-                                    <option value="Assistant Coach 1" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Asst 1</option>
-                                    <option value="Assistant Coach 2" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Asst 2</option>
-                                    <option value="Physiotherapist" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Physio</option>
-                                    <option value="Medic" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Medic</option>
-                                  </select>
-                                )}
-                                <button
-                                  className={SB_ROW_DELETE}
-                                  onClick={async () => {
-                                    if (await askConfirm({ title: t('scoreboard.actionLog.deleteSanctionEvent'), confirmLabel: t('common.delete'), tone: 'danger' })) {
-                                      // discardEvents re-derives the team-sanction flags
-                                      await discardEvents([event])
-                                      logManualChangeWithRemark('Sanction', 'Delete',
-                                        `${sanctionType} (Team ${teamLabel}, #${playerNumber ?? '?'})`, null,
-                                        `Deleted sanction ${sanctionType} (Team ${teamLabel}, #${playerNumber ?? '?'})`,
-                                        { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                    }
-                                  }}
-                                  style={{ marginLeft: 'auto' }}
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )
-                  })()}
-
-                  {/* Edit Libero Actions */}
-                  {data?.events && (() => {
-                    const liberoEvents = data.events.filter(e =>
-                      e.type === 'libero_entry' ||
-                      e.type === 'libero_exit' ||
-                      e.type === 'libero_exchange' ||
-                      e.type === 'libero_unable' ||
-                      e.type === 'libero_redesignation'
-                    ).sort((a, b) => (b.seq || 0) - (a.seq || 0)).slice(0, 20)
-                    if (liberoEvents.length === 0) return null
-
-                    return (
-                      <div
-                        className="manual-item"
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '8px',
-                          paddingTop: '16px',
-                          borderTop: '1px solid var(--border)'
-                        }}
-                      >
-                        <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Libero Actions ({liberoEvents.length} most recent)</div>
-                        <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
-                          Edit or delete libero-related events.
-                        </div>
-                        <div style={{
-                          maxHeight: '300px',
-                          overflowY: 'auto',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '6px'
-                        }}>
-                          {liberoEvents.map(event => {
-                            const setIndex = event.setIndex || 1
-                            const team = event.payload?.team
-                            const teamLabel = team === teamAKey ? 'A' : (team === teamBKey ? 'B' : '')
-                            const eventType = event.type
-
-                            // Calculate score at time of this event
-                            const setEvents = data.events.filter(e => e.setIndex === setIndex)
-                            const eventIndex = setEvents.findIndex(e => e.id === event.id)
-                            let homeScore = 0
-                            let awayScore = 0
-                            for (let i = 0; i < eventIndex; i++) {
-                              const e = setEvents[i]
-                              if (e.type === 'point') {
-                                if (e.payload?.team === 'home') homeScore++
-                                else if (e.payload?.team === 'away') awayScore++
-                              }
-                            }
-
-                            return (
-                              <div key={event.id} style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                padding: '8px',
-                                background: 'var(--panel-2)',
-                                borderRadius: '4px',
-                                fontSize: '11px',
-                                flexWrap: 'wrap'
-                              }}>
-                                <span style={{ minWidth: '40px' }}>{t('common.setIndex', { index: setIndex })}</span>
-                                <span style={{ fontSize: '9px', fontWeight: 600, minWidth: '70px' }}>
-                                  {eventType === 'libero_entry' ? 'Libero entry'
-                                    : eventType === 'libero_exit' ? 'Libero exit'
-                                      : eventType === 'libero_exchange' ? 'Libero exchange'
-                                        : eventType === 'libero_redesignation' ? 'Libero re-designation'
-                                          : 'Libero unable'}
-                                </span>
-                                <select
-                                  value={team || 'home'}
-                                  onChange={async (e) => {
-                                    const oldTeam = team || 'home'
-                                    const newTeam = e.target.value
-                                    await db.events.update(event.id, {
-                                      payload: { ...event.payload, team: newTeam }
-                                    })
-                                    logManualChangeWithRemark('Libero', 'Team', oldTeam, newTeam,
-                                      `${eventType} team changed from ${oldTeam} to ${newTeam}`,
-                                      { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                  }}
-                                  style={{
-                                    padding: '4px 6px',
-                                    fontSize: '11px',
-                                    background: 'var(--panel)',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)',
-                                    minWidth: '70px'
-                                  }}
-                                >
-                                  <option value="home" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.home')}</option>
-                                  <option value="away" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.away')}</option>
-                                </select>
-                                <span style={{ fontSize: '10px', color: 'var(--muted)' }}>{homeScore}-{awayScore}</span>
-                                {eventType === 'libero_entry' && (
-                                  <>
-                                    <span style={{ fontSize: '10px' }}>L#:</span>
-                                    <input
-                                      type="number"
-                                      min="1"
-                                      max="99"
-                                      value={event.payload?.liberoIn || ''}
-                                      onChange={async (e) => {
-                                        const oldVal = event.payload?.liberoIn || null
-                                        const val = parseInt(e.target.value) || null
-                                        await db.events.update(event.id, {
-                                          payload: { ...event.payload, liberoIn: val }
-                                        })
-                                        logManualChangeWithRemark('Libero', 'LiberoIn', oldVal, val,
-                                          `Libero entry liberoIn changed from #${oldVal ?? '?'} to #${val ?? '?'} (Team ${teamLabel})`,
-                                          { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                      }}
-                                      style={{
-                                        width: '40px',
-                                        padding: '4px',
-                                        fontSize: '11px',
-                                        background: 'var(--panel)',
-                                        border: '1px solid var(--border)',
-                                        borderRadius: '4px',
-                                        color: 'var(--text)'
-                                      }}
-                                    />
-                                    <span style={{ fontSize: '10px' }}>Out:</span>
-                                    <input
-                                      type="number"
-                                      min="1"
-                                      max="99"
-                                      value={event.payload?.playerOut || ''}
-                                      onChange={async (e) => {
-                                        const oldVal = event.payload?.playerOut || null
-                                        const val = parseInt(e.target.value) || null
-                                        await db.events.update(event.id, {
-                                          payload: { ...event.payload, playerOut: val }
-                                        })
-                                        logManualChangeWithRemark('Libero', 'PlayerOut', oldVal, val,
-                                          `Libero entry playerOut changed from #${oldVal ?? '?'} to #${val ?? '?'} (Team ${teamLabel})`,
-                                          { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                      }}
-                                      style={{
-                                        width: '40px',
-                                        padding: '4px',
-                                        fontSize: '11px',
-                                        background: 'var(--panel)',
-                                        border: '1px solid var(--border)',
-                                        borderRadius: '4px',
-                                        color: 'var(--text)'
-                                      }}
-                                    />
-                                    <select
-                                      value={event.payload?.liberoType || 'libero1'}
-                                      onChange={async (e) => {
-                                        const oldType = event.payload?.liberoType || 'libero1'
-                                        const newType = e.target.value
-                                        await db.events.update(event.id, {
-                                          payload: { ...event.payload, liberoType: newType }
-                                        })
-                                        logManualChangeWithRemark('Libero', 'LiberoType', oldType, newType,
-                                          `Libero type changed from ${oldType} to ${newType} (Team ${teamLabel})`,
-                                          { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                      }}
-                                      style={{
-                                        padding: '4px',
-                                        fontSize: '11px',
-                                        background: 'var(--panel)',
-                                        border: '1px solid var(--border)',
-                                        borderRadius: '4px',
-                                        color: 'var(--text)',
-                                        minWidth: '45px'
-                                      }}
-                                    >
-                                      <option value="libero1" style={{ background: 'var(--panel)', color: 'var(--text)' }}>L1</option>
-                                      <option value="libero2" style={{ background: 'var(--panel)', color: 'var(--text)' }}>L2</option>
-                                    </select>
-                                  </>
-                                )}
-                                {eventType === 'libero_exit' && (
-                                  <>
-                                    <span style={{ fontSize: '10px' }}>L out:</span>
-                                    <input
-                                      type="number"
-                                      min="1"
-                                      max="99"
-                                      value={event.payload?.liberoOut || ''}
-                                      onChange={async (e) => {
-                                        const oldVal = event.payload?.liberoOut || null
-                                        const val = parseInt(e.target.value) || null
-                                        await db.events.update(event.id, {
-                                          payload: { ...event.payload, liberoOut: val }
-                                        })
-                                        logManualChangeWithRemark('Libero', 'LiberoOut', oldVal, val,
-                                          `Libero exit liberoOut changed from #${oldVal ?? '?'} to #${val ?? '?'} (Team ${teamLabel})`,
-                                          { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                      }}
-                                      style={{
-                                        width: '40px',
-                                        padding: '4px',
-                                        fontSize: '11px',
-                                        background: 'var(--panel)',
-                                        border: '1px solid var(--border)',
-                                        borderRadius: '4px',
-                                        color: 'var(--text)'
-                                      }}
-                                    />
-                                    <span style={{ fontSize: '10px' }}>P in:</span>
-                                    <input
-                                      type="number"
-                                      min="1"
-                                      max="99"
-                                      value={event.payload?.playerIn || ''}
-                                      onChange={async (e) => {
-                                        const oldVal = event.payload?.playerIn || null
-                                        const val = parseInt(e.target.value) || null
-                                        await db.events.update(event.id, {
-                                          payload: { ...event.payload, playerIn: val }
-                                        })
-                                        logManualChangeWithRemark('Libero', 'PlayerIn', oldVal, val,
-                                          `Libero exit playerIn changed from #${oldVal ?? '?'} to #${val ?? '?'} (Team ${teamLabel})`,
-                                          { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                      }}
-                                      style={{
-                                        width: '40px',
-                                        padding: '4px',
-                                        fontSize: '11px',
-                                        background: 'var(--panel)',
-                                        border: '1px solid var(--border)',
-                                        borderRadius: '4px',
-                                        color: 'var(--text)'
-                                      }}
-                                    />
-                                  </>
-                                )}
-                                {eventType === 'libero_unable' && (
-                                  <>
-                                    <span style={{ fontSize: '10px' }}>L#:</span>
-                                    <input
-                                      type="number"
-                                      min="1"
-                                      max="99"
-                                      value={event.payload?.liberoNumber || ''}
-                                      onChange={async (e) => {
-                                        const oldVal = event.payload?.liberoNumber || null
-                                        const val = parseInt(e.target.value) || null
-                                        await db.events.update(event.id, {
-                                          payload: { ...event.payload, liberoNumber: val }
-                                        })
-                                        logManualChangeWithRemark('Libero', 'LiberoNumber', oldVal, val,
-                                          `Libero unable number changed from #${oldVal ?? '?'} to #${val ?? '?'} (Team ${teamLabel})`,
-                                          { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                      }}
-                                      style={{
-                                        width: '40px',
-                                        padding: '4px',
-                                        fontSize: '11px',
-                                        background: 'var(--panel)',
-                                        border: '1px solid var(--border)',
-                                        borderRadius: '4px',
-                                        color: 'var(--text)'
-                                      }}
-                                    />
-                                    <select
-                                      value={event.payload?.reason || 'injury'}
-                                      onChange={async (e) => {
-                                        const oldReason = event.payload?.reason || 'injury'
-                                        const newReason = e.target.value
-                                        await db.events.update(event.id, {
-                                          payload: { ...event.payload, reason: newReason }
-                                        })
-                                        logManualChangeWithRemark('Libero', 'Reason', oldReason, newReason,
-                                          `Libero unable reason changed from ${oldReason} to ${newReason} (Team ${teamLabel})`,
-                                          { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                      }}
-                                      style={{
-                                        padding: '4px 6px',
-                                        fontSize: '11px',
-                                        background: 'var(--panel)',
-                                        border: '1px solid var(--border)',
-                                        borderRadius: '4px',
-                                        color: 'var(--text)',
-                                        minWidth: '120px'
-                                      }}
-                                    >
-                                      <option value="injury" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Injury</option>
-                                      <option value="expulsion" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Expulsion</option>
-                                      <option value="disqualification" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Disqualification</option>
-                                    </select>
-                                  </>
-                                )}
-                                <button
-                                  className={SB_ROW_DELETE}
-                                  onClick={async () => {
-                                    if (await askConfirm({ title: t('scoreboard.actionLog.deleteEvent', { type: eventType }), confirmLabel: t('common.delete'), tone: 'danger' })) {
-                                      await discardEvents([event])
-                                      logManualChangeWithRemark('Libero', 'Delete',
-                                        `${eventType} (Team ${teamLabel})`, null,
-                                        `Deleted ${eventType} event (Team ${teamLabel})`,
-                                        { setIndex, scoreStr: `${homeScore}-${awayScore}` })
-                                    }
-                                  }}
-                                  style={{ marginLeft: 'auto' }}
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )
-                  })()}
-
-                  {/* Edit Lineups */}
-                  {data?.events && (() => {
-                    const lineupEvents = data.events.filter(e => e.type === 'lineup' && e.payload?.isInitial).sort((a, b) => (b.seq || 0) - (a.seq || 0)).slice(0, 10)
-                    if (lineupEvents.length === 0) return null
-
-                    return (
-                      <div
-                        className="manual-item"
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '8px',
-                          paddingTop: '16px',
-                          borderTop: '1px solid var(--border)'
-                        }}
-                      >
-                        <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit Initial Lineups ({lineupEvents.length} most recent)</div>
-                        <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
-                          Edit or delete initial lineup events.
-                        </div>
-                        <div style={{
-                          maxHeight: '300px',
-                          overflowY: 'auto',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '6px'
-                        }}>
-                          {lineupEvents.map(event => {
-                            const setIndex = event.setIndex || 1
-                            const team = event.payload?.team
-                            const teamLabel = team === teamAKey ? 'A' : (team === teamBKey ? 'B' : '')
-                            const lineup = event.payload?.lineup || {}
-
-                            return (
-                              <div key={event.id} style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                padding: '8px',
-                                background: 'var(--panel-2)',
-                                borderRadius: '4px',
-                                fontSize: '11px',
-                                flexWrap: 'wrap'
-                              }}>
-                                <span style={{ minWidth: '40px' }}>{t('common.setIndex', { index: setIndex })}</span>
-                                <select
-                                  value={team || 'home'}
-                                  onChange={async (e) => {
-                                    await db.events.update(event.id, {
-                                      payload: { ...event.payload, team: e.target.value }
-                                    })
-                                  }}
-                                  style={{
-                                    padding: '4px 6px',
-                                    fontSize: '11px',
-                                    background: 'var(--panel)',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)',
-                                    minWidth: '70px'
-                                  }}
-                                >
-                                  <option value="home" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.home')}</option>
-                                  <option value="away" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.away')}</option>
-                                </select>
-                                <span style={{ fontSize: '10px', color: 'var(--muted)' }}>
-                                  {lineup.I || '-'}/{lineup.II || '-'}/{lineup.III || '-'}/{lineup.IV || '-'}/{lineup.V || '-'}/{lineup.VI || '-'}
-                                </span>
-                                <button
-                                  className="secondary"
-                                  onClick={() => {
-                                    setLineupModal({ team, mode: 'manual', lineup })
-                                    setShowManualPanel(false)
-                                  }}
-                                  style={{
-                                    padding: '4px 8px',
-                                    fontSize: '10px'
-                                  }}
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  className={SB_ROW_DELETE}
-                                  onClick={async () => {
-                                    if (await askConfirm({ title: t('scoreboard.actionLog.deleteLineupEvent'), confirmLabel: t('common.delete'), tone: 'danger' })) {
-                                      await discardEvents([event])
-                                    }
-                                  }}
-                                  style={{ marginLeft: 'auto' }}
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )
-                  })()}
-                </div>
-              )}
-            </div>
-
-            {/* Collapsible Section: Advanced */}
-            <div className={cn(SB_BLOCK, 'mb-3 overflow-hidden')}>
-              <button
-                onClick={() => setManualPanelExpandedSections(prev => ({ ...prev, advanced: !prev.advanced }))}
-                className={SB_DISCLOSURE}
-              >
-                <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <WrenchIcon size={18} />
-                  Advanced
-                </span>
-                <span style={{ fontSize: '12px', transform: manualPanelExpandedSections.advanced ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-              </button>
-              {manualPanelExpandedSections.advanced && (
-                <div style={{ padding: '0 16px 16px 16px' }}>
-
-                  {/* Edit Set Times */}
-                  {data?.sets && data.sets.length > 0 && (
-                    <div
-                      className="manual-item"
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '8px',
-                        paddingBottom: '16px',
-                        borderBottom: '1px solid var(--border)'
-                      }}
-                    >
-                      <div style={{ fontWeight: 600, marginBottom: '8px' }}>Edit set times</div>
-                      <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
-                        Edit start and end times for sets.
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {[...data.sets].sort((a, b) => a.index - b.index).map(set => (
-                          <div key={set.id} style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '8px',
-                            padding: '8px',
-                            background: 'var(--panel-2)',
-                            borderRadius: '6px'
-                          }}>
-                            <div style={{ fontWeight: 600, fontSize: '12px' }}>{t('common.setIndex', { index: set.index })}</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <label style={{ fontSize: '11px', minWidth: '80px' }}>Start time:</label>
-                                <DateTimeField
-                                  size="bare"
-                                  defaultValue={(() => {
-                                    if (!set.startTime) return ''
-                                    const d = new Date(set.startTime)
-                                    // Local date + time, as the field shows and saves it
-                                    const year = d.getFullYear()
-                                    const month = String(d.getMonth() + 1).padStart(2, '0')
-                                    const day = String(d.getDate()).padStart(2, '0')
-                                    const hours = String(d.getHours()).padStart(2, '0')
-                                    const minutes = String(d.getMinutes()).padStart(2, '0')
-                                    return `${year}-${month}-${day}T${hours}:${minutes}`
-                                  })()}
-                                  onCommit={async (value) => {
-                                    const newTime = value ? new Date(value).toISOString() : null
-                                    await db.sets.update(set.id, { startTime: newTime })
-                                  }}
-                                  style={{
-                                    padding: '4px 6px',
-                                    fontSize: '11px',
-                                    background: 'var(--bg-secondary)',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)'
-                                  }}
-                                />
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <label style={{ fontSize: '11px', minWidth: '80px' }}>End time:</label>
-                                <DateTimeField
-                                  size="bare"
-                                  defaultValue={(() => {
-                                    if (!set.endTime) return ''
-                                    const d = new Date(set.endTime)
-                                    // Local date + time, as the field shows and saves it
-                                    const year = d.getFullYear()
-                                    const month = String(d.getMonth() + 1).padStart(2, '0')
-                                    const day = String(d.getDate()).padStart(2, '0')
-                                    const hours = String(d.getHours()).padStart(2, '0')
-                                    const minutes = String(d.getMinutes()).padStart(2, '0')
-                                    return `${year}-${month}-${day}T${hours}:${minutes}`
-                                  })()}
-                                  onCommit={async (value) => {
-                                    const newTime = value ? new Date(value).toISOString() : null
-                                    await db.sets.update(set.id, { endTime: newTime })
-                                  }}
-                                  style={{
-                                    padding: '4px 6px',
-                                    fontSize: '11px',
-                                    background: 'var(--bg-secondary)',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '4px',
-                                    color: 'var(--text)'
-                                  }}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Add New Event */}
-                  <div
-                    className="manual-item"
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px',
-                      paddingTop: '16px',
-                      borderTop: '1px solid var(--border)'
-                    }}
-                  >
-                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>Add new event</div>
-                    <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
-                      Manually add a new event to the match history.
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <label style={{ fontSize: '12px', minWidth: '100px' }}>Event type:</label>
-                        <select
-                          id="newEventType"
-                          style={{
-                            flex: 1,
-                            padding: '6px 8px',
-                            fontSize: '12px',
-                            background: 'var(--panel)',
-                            border: '1px solid var(--border)',
-                            borderRadius: '4px',
-                            color: 'var(--text)'
-                          }}
-                        >
-                          <option value="point" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Point</option>
-                          <option value="timeout" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Timeout</option>
-                          <option value="substitution" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Substitution</option>
-                          <option value="sanction" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Sanction</option>
-                          <option value="lineup" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Lineup</option>
-                          <option value="libero_entry" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Libero entry</option>
-                          <option value="libero_exit" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Libero exit</option>
-                          <option value="libero_exchange" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Libero exchange</option>
-                          <option value="libero_unable" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Libero unable</option>
-                          <option value="replay" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Replay</option>
-                          <option value="rally_start" style={{ background: 'var(--panel)', color: 'var(--text)' }}>Rally start</option>
-                          <option value="set_start" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.actionLog.setStart')}</option>
-                          <option value="set_end" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('scoreboard.actionLog.setEnd')}</option>
-                        </select>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <label style={{ fontSize: '12px', minWidth: '100px' }}>Set:</label>
-                        <select
-                          id="newEventSet"
-                          style={{
-                            flex: 1,
-                            padding: '6px 8px',
-                            fontSize: '12px',
-                            background: 'var(--panel)',
-                            border: '1px solid var(--border)',
-                            borderRadius: '4px',
-                            color: 'var(--text)'
-                          }}
-                        >
-                          {[...(data?.sets || [])].sort((a, b) => a.index - b.index).map(set => (
-                            <option key={set.id} value={set.index} style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.setIndex', { index: set.index })}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <label style={{ fontSize: '12px', minWidth: '100px' }}>Team:</label>
-                        <select
-                          id="newEventTeam"
-                          style={{
-                            flex: 1,
-                            padding: '6px 8px',
-                            fontSize: '12px',
-                            background: 'var(--panel)',
-                            border: '1px solid var(--border)',
-                            borderRadius: '4px',
-                            color: 'var(--text)'
-                          }}
-                        >
-                          <option value="home" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.home')}</option>
-                          <option value="away" style={{ background: 'var(--panel)', color: 'var(--text)' }}>{t('common.away')}</option>
-                        </select>
-                      </div>
-                      <button
-                        className="secondary"
-                        onClick={async () => {
-                          const eventType = document.getElementById('newEventType')?.value
-                          const setIndex = parseInt(document.getElementById('newEventSet')?.value || '1')
-                          const team = document.getElementById('newEventTeam')?.value
-
-                          if (!eventType || !setIndex || !team) {
-                            showAlert('Please fill in all fields', 'warning')
-                            return
-                          }
-
-                          // Get next sequence number
-                          const allEvents = await db.events.where('matchId').equals(matchId).toArray()
-                          const maxSeq = allEvents.reduce((max, e) => Math.max(max, e.seq || 0), 0)
-
-                          const payload = { team }
-
-                          // Add type-specific fields
-                          if (eventType === 'substitution') {
-                            payload.position = 'I'
-                            payload.playerOut = null
-                            payload.playerIn = null
-                          } else if (eventType === 'sanction') {
-                            payload.type = 'warning'
-                          } else if (eventType === 'lineup') {
-                            payload.lineup = { I: null, II: null, III: null, IV: null, V: null, VI: null }
-                            payload.isInitial = true
-                          } else if (eventType === 'libero_entry') {
-                            payload.liberoIn = null
-                            payload.playerOut = null
-                            payload.liberoType = 'libero1'
-                          } else if (eventType === 'libero_exit') {
-                            payload.liberoOut = null
-                            payload.playerIn = null
-                          } else if (eventType === 'libero_unable') {
-                            payload.liberoNumber = null
-                            payload.liberoType = 'libero1'
-                            payload.reason = 'injury'
-                          }
-
-                          const debugSeq = maxSeq + 1
-                          const debugEventId = await db.events.add({
-                            matchId,
-                            setIndex,
-                            type: eventType,
-                            payload,
-                            ts: new Date().toISOString(),
-                            seq: debugSeq
-                          })
-
-                          showAlert('Event added. You can now edit it in the sections above.', 'success')
-                        }}
-                        style={{
-                          padding: '8px 16px',
-                          fontSize: '12px'
-                        }}
-                      >
-                        Add event
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Delete Events (Simple List) */}
-                  {data?.events && data.events.length > 0 && (
-                    <div
-                      className="manual-item"
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '8px',
-                        paddingTop: '16px',
-                        borderTop: '1px solid var(--border)'
-                      }}
-                    >
-                      <div style={{ fontWeight: 600, marginBottom: '8px' }}>Delete events (quick)</div>
-                      <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '12px' }}>
-                        Quick delete for any event. Use with caution.
-                      </div>
-                      <div style={{
-                        maxHeight: '200px',
-                        overflowY: 'auto',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '4px'
-                      }}>
-                        {[...data.events] // copy: data.events is the shared seq-ascending live-query array
-                          .sort((a, b) => {
-                            const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-                            const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-                            return bTime - aTime
-                          })
-                          .slice(0, 30)
-                          .map(event => {
-                            const eventType = event.type
-                            const setIndex = event.setIndex || 1
-                            const team = event.payload?.team
-                            const teamLabel = team === teamAKey ? 'A' : (team === teamBKey ? 'B' : '')
-                            const description = eventType === 'point' ? `Point ${teamLabel}` :
-                              eventType === 'timeout' ? `Timeout ${teamLabel}` :
-                                eventType === 'substitution' ? `Substitution ${teamLabel}` :
-                                  eventType === 'lineup' ? `Lineup ${teamLabel}` :
-                                    eventType === 'sanction' ? `Sanction ${teamLabel}` :
-                                      eventType === 'libero_entry' ? `Libero Entry ${teamLabel}` :
-                                        eventType === 'libero_exit' ? `Libero Exit ${teamLabel}` :
-                                          eventType === 'libero_exchange' ? `Libero Exchange ${teamLabel}` :
-                                            eventType === 'libero_unable' ? `Libero Unable ${teamLabel}` :
-                                              eventType
-
-                            return (
-                              <div key={event.id} style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                padding: '6px 8px',
-                                background: 'var(--panel-2)',
-                                borderRadius: '4px',
-                                fontSize: '11px'
-                              }}>
-                                <span>
-                                  {t('common.setIndex', { index: setIndex })} - {description}
-                                </span>
-                                <button
-                                  className={SB_ROW_DELETE}
-                                  onClick={async () => {
-                                    if (await askConfirm({ title: t('scoreboard.actionLog.deleteEvent', { type: eventType }), confirmLabel: t('common.delete'), tone: 'danger' })) {
-                                      await discardEvents([event])
-                                      if (eventType === 'point') await resyncSetScoreFromEvents(setIndex)
-                                      logManualChangeWithRemark('Event', 'Quick Delete',
-                                        `${description} (Set ${setIndex})`, null,
-                                        `Quick deleted ${description} (Set ${setIndex})`,
-                                        { setIndex })
-                                    }
-                                  }}
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            )
-                          })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Collapsible Section: Manual Changes Summary */}
-            <div className={cn(SB_BLOCK, 'mb-3 overflow-hidden')}>
-              <button
-                onClick={() => setManualPanelExpandedSections(prev => ({ ...prev, summary: !prev.summary }))}
-                className={SB_DISCLOSURE}
-              >
-                <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <ClipboardIcon size={18} />
-                  Manual changes summary
-                  {manualChangesLog.length > 0 && (
-                    <span style={{
-                      background: 'var(--primary)',
-                      color: '#fff',
-                      fontSize: '11px',
-                      padding: '2px 8px',
-                      borderRadius: '10px',
-                      marginLeft: '4px'
-                    }}>
-                      {manualChangesLog.length}
-                    </span>
-                  )}
-                </span>
-                <span style={{ fontSize: '12px', transform: manualPanelExpandedSections.summary ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-              </button>
-              {manualPanelExpandedSections.summary && (
-                <div style={{ padding: '0 16px 16px 16px' }}>
-                  {manualChangesLog.length === 0 ? (
-                    <div style={{
-                      fontSize: '12px',
-                      color: 'var(--muted)',
-                      textAlign: 'center',
-                      padding: '24px 0'
-                    }}>
-                      No manual changes recorded yet.
-                      <br />
-                      <span style={{ fontSize: '11px' }}>
-                        Changes made via this panel will be logged here.
-                      </span>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '4px' }}>
-                        All manual modifications made during this match session:
-                      </div>
-                      <div style={{
-                        maxHeight: '400px',
-                        overflowY: 'auto',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '6px'
-                      }}>
-                        {manualChangesLog.slice().reverse().map((change, idx) => {
-                          const time = new Date(change.ts)
-                          const timeStr = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}:${String(time.getSeconds()).padStart(2, '0')}`
-
-                          return (
-                            <div key={idx} style={{
-                              padding: '10px 12px',
-                              background: 'var(--panel-2)',
-                              borderRadius: '6px',
-                              border: '1px solid var(--border)',
-                              fontSize: '12px'
-                            }}>
-                              <div style={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                marginBottom: '6px'
-                              }}>
-                                <span style={{
-                                  fontWeight: 600,
-                                  color: 'var(--primary)',
-                                  fontSize: '11px',
-                                  textTransform: 'uppercase'
-                                }}>
-                                  {change.category}
-                                </span>
-                                <span style={{
-                                  fontSize: '10px',
-                                  color: 'var(--muted)',
-                                  fontFamily: 'monospace'
-                                }}>
-                                  {timeStr}
-                                </span>
-                              </div>
-                              <div style={{ marginBottom: '4px', color: 'var(--text)' }}>
-                                {change.description}
-                              </div>
-                              <div style={{
-                                display: 'flex',
-                                gap: '12px',
-                                fontSize: '11px',
-                                color: 'var(--muted)'
-                              }}>
-                                <span>
-                                  <strong>Before:</strong> {String(change.before)}
-                                </span>
-                                <span>→</span>
-                                <span>
-                                  <strong>After:</strong> {String(change.after)}
-                                </span>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-
-                      {/* Export/Copy Log */}
-                      <div style={{
-                        marginTop: '8px',
-                        paddingTop: '12px',
-                        borderTop: '1px solid var(--border)'
-                      }}>
-                        <button
-                          className="secondary"
-                          onClick={() => {
-                            const logText = manualChangesLog.map(c => {
-                              const time = new Date(c.ts).toLocaleTimeString()
-                              return `[${time}] ${c.category} - ${c.field}: "${c.before}" → "${c.after}"`
-                            }).join('\n')
-                            navigator.clipboard.writeText(logText)
-                            showAlert('Manual changes log copied to clipboard!', 'success')
-                          }}
-                          style={{
-                            padding: '8px 16px',
-                            fontSize: '12px',
-                            width: '100%'
-                          }}
-                        >
-                          <ClipboardIcon size={12} /> Copy Log
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
+          {/* Corrections (components/corrections): the same panel as the match
+              end, in live mode. The live handlers keep their side effects
+              (undo, decision change, point, time-out countdown, line-up guard,
+              reopen set); the panel closes itself before opening them. */}
+          <div className="rounded-xl bg-stone-100/80 p-2 sm:p-3">
+            <CorrectionsPanel
+              mode="live"
+              matchId={matchId}
+              events={data?.events}
+              match={data?.match}
+              sets={data?.sets}
+              homeTeam={data?.homeTeam}
+              awayTeam={data?.awayTeam}
+              homePlayers={data?.homePlayers}
+              awayPlayers={data?.awayPlayers}
+              liveSetIndex={data?.set?.index ?? null}
+              hooks={{
+                canUndo,
+                undo: () => { setShowManualPanel(false); showUndoConfirm() },
+                wrongTeam: () => { setShowManualPanel(false); handleReplay() },
+                addPoint: (team) => handlePoint(mapTeamKeyToSide(team), true),
+                openTimeout: (team) => { setShowManualPanel(false); handleTimeout(mapTeamKeyToSide(team)) },
+                openManualLineup: (team) => { setShowManualPanel(false); openManualLineup(team) },
+                reopenSet: (set) => { setShowManualPanel(false); setReopenSetConfirm({ setId: set.id, setIndex: set.index }) },
+                notifyScoresheetUpdate: () => notifyScoresheetUpdate('correction'),
+                syncToReferee,
+                syncLiveState: () => syncLiveStateToSupabase('manual_correction', null, null)
+              }}
+            />
           </div>
         </Modal>
       )}
@@ -22473,522 +19773,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         </Modal>
       )}
 
-      {/* Sanctions and Results Modal */}
-      {showSanctions && (
-        <Modal
-          title={t('scoreboard.modals.sanctionsAndResults')}
-          open={true}
-          onClose={() => setShowSanctions(false)}
-          width={1000}
-        >
-          <div style={{ padding: '4px 0' }}>
-            <section className="panel">
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px', overflowX: 'auto' }}>
-                {/* Left half: Sanctions */}
-                <div>
-                  <SbSection as="h4" title={t('matchEnd.sanctions')} className="mb-3" />
-                  {/* Improper Request Row */}
-                  <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div style={{ fontWeight: 600, fontSize: '12px', minWidth: '100px' }}>Improper request:</div>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      {['A', 'B'].map(team => {
-                        const teamKey = team === 'A' ? teamAKey : teamBKey
-                        const teamKeyCapitalized = teamKey === 'home' ? 'Home' : 'Away'
-                        const hasImproperRequest = data?.match?.sanctions?.[`improperRequest${teamKeyCapitalized}`]
-
-                        return (
-                          <div key={team} style={{
-                            width: '28px',
-                            height: '28px',
-                            borderRadius: '50%',
-                            border: '2px solid var(--border)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '12px',
-                            fontWeight: 700,
-                            position: 'relative'
-                          }}>
-                            {team}
-                            {hasImproperRequest && (
-                              <div style={{
-                                position: 'absolute',
-                                inset: 0,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '20px',
-                                color: '#ef4444',
-                                fontWeight: 900
-                              }}>
-                                ✕
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Sanctions Table */}
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                        <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600 }}>Warn</th>
-                        <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600 }}>Pen</th>
-                        <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600 }}>Exp</th>
-                        <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600 }}>Disq</th>
-                        <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600 }}>Team</th>
-                        <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600 }}>Set</th>
-                        <th style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600 }}>Score</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(() => {
-                        // Get all sanction events except improper_request (already shown in box above)
-                        const sanctionEvents = (data?.events || []).filter(e =>
-                          e.type === 'sanction' && e.payload?.type !== 'improper_request'
-                        )
-
-                        if (sanctionEvents.length === 0) {
-                          return (
-                            <tr>
-                              <td colSpan="7" style={{ padding: '12px', textAlign: 'center', color: 'var(--muted)', fontSize: '11px' }}>
-                                No sanctions recorded
-                              </td>
-                            </tr>
-                          )
-                        }
-
-                        return sanctionEvents.map((event, idx) => {
-                          const sanctionType = event.payload?.type
-                          const team = event.payload?.team
-                          const teamLabel = team === teamAKey ? 'A' : 'B'
-                          const setIndex = event.setIndex || 1
-                          const playerType = event.payload?.playerType
-                          const playerNumber = event.payload?.playerNumber
-                          const role = event.payload?.role
-
-                          // Get the identifier to display (player number or role abbreviation)
-                          let identifier = null
-                          if (role) {
-                            identifier = role === 'Coach' ? 'C' :
-                              role === 'Assistant Coach 1' ? 'AC1' :
-                                role === 'Assistant Coach 2' ? 'AC2' :
-                                  role === 'Physiotherapist' ? 'P' :
-                                    role === 'Medic' ? 'M' : role
-                          } else if (playerNumber !== undefined && playerNumber !== null) {
-                            identifier = String(playerNumber)
-                          }
-
-                          // Calculate score at time of sanction
-                          const setEvents = (data?.events || []).filter(e => e.setIndex === setIndex)
-                          const eventIndex = setEvents.findIndex(e => e.id === event.id)
-                          let homeScore = 0
-                          let awayScore = 0
-                          for (let i = 0; i <= eventIndex; i++) {
-                            const e = setEvents[i]
-                            if (e.type === 'point') {
-                              if (e.payload?.team === 'home') homeScore++
-                              else if (e.payload?.team === 'away') awayScore++
-                            }
-                          }
-
-                          const sanctionedTeamScore = team === 'home' ? homeScore : awayScore
-                          const otherTeamScore = team === 'home' ? awayScore : homeScore
-                          const scoreDisplay = `${sanctionedTeamScore}:${otherTeamScore}`
-
-                          return (
-                            <tr key={event.id || idx} style={{ borderBottom: '1px solid var(--border)' }}>
-                              <td style={{ padding: '6px 4px', textAlign: 'center' }}>
-                                {sanctionType === 'warning' && identifier}
-                                {sanctionType === 'delay_warning' && !identifier && 'D'}
-                              </td>
-                              <td style={{ padding: '6px 4px', textAlign: 'center' }}>
-                                {sanctionType === 'penalty' && identifier}
-                                {sanctionType === 'delay_penalty' && !identifier && 'D'}
-                              </td>
-                              <td style={{ padding: '6px 4px', textAlign: 'center' }}>
-                                {sanctionType === 'expulsion' && identifier}
-                              </td>
-                              <td style={{ padding: '6px 4px', textAlign: 'center' }}>
-                                {sanctionType === 'disqualification' && identifier}
-                              </td>
-                              <td style={{ padding: '6px 4px', textAlign: 'center', fontWeight: 600 }}>{teamLabel}</td>
-                              <td style={{ padding: '6px 4px', textAlign: 'center' }}>{setIndex}</td>
-                              <td style={{ padding: '6px 4px', textAlign: 'center' }}>{scoreDisplay}</td>
-                            </tr>
-                          )
-                        })
-                      })()}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Right half: Results */}
-                <div>
-                  <SbSection as="h4" title={t('matchEnd.results')} className="mb-3" />
-                  {(() => {
-                    // Get current left and right teams
-                    const currentLeftTeamKey = leftIsHome ? 'home' : 'away'
-                    const currentRightTeamKey = leftIsHome ? 'away' : 'home'
-                    const leftTeamData = currentLeftTeamKey === 'home' ? data?.homeTeam : data?.awayTeam
-                    const rightTeamData = currentRightTeamKey === 'home' ? data?.homeTeam : data?.awayTeam
-                    const leftTeamColor = leftTeamData?.color || (currentLeftTeamKey === 'home' ? '#ef4444' : '#3b82f6')
-                    const rightTeamColor = rightTeamData?.color || (currentRightTeamKey === 'home' ? '#ef4444' : '#3b82f6')
-                    const leftTeamName = leftTeamData?.name || 'Left team'
-                    const rightTeamName = rightTeamData?.name || 'Right team'
-                    const leftTeamLabel = currentLeftTeamKey === teamAKey ? 'A' : 'B'
-                    const rightTeamLabel = currentRightTeamKey === teamAKey ? 'A' : 'B'
-
-                    // Get all sets including current (copy: never sort the live-query array in place)
-                    const allSets = [...(data?.sets || [])].sort((a, b) => a.index - b.index)
-                    const finishedSets = allSets.filter(s => s.finished)
-
-                    // Check if match is over (ended -> approved -> final)
-                    const isMatchFinal = isMatchOverStatus(data?.match?.status)
-
-                    // If match is final, show match results table
-                    if (isMatchFinal) {
-                      // Calculate totals for each team
-                      const leftTotalTimeouts = finishedSets.reduce((sum, set) => {
-                        return sum + (data?.events || []).filter(e =>
-                          e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
-                        ).length
-                      }, 0)
-                      const rightTotalTimeouts = finishedSets.reduce((sum, set) => {
-                        return sum + (data?.events || []).filter(e =>
-                          e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
-                        ).length
-                      }, 0)
-
-                      const leftTotalSubs = finishedSets.reduce((sum, set) => {
-                        return sum + (data?.events || []).filter(e =>
-                          e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
-                        ).length
-                      }, 0)
-                      const rightTotalSubs = finishedSets.reduce((sum, set) => {
-                        return sum + (data?.events || []).filter(e =>
-                          e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
-                        ).length
-                      }, 0)
-
-                      const leftTotalWins = finishedSets.filter(s => {
-                        const leftPoints = currentLeftTeamKey === 'home' ? s.homePoints : s.awayPoints
-                        const rightPoints = currentRightTeamKey === 'home' ? s.homePoints : s.awayPoints
-                        return leftPoints > rightPoints
-                      }).length
-                      const rightTotalWins = finishedSets.filter(s => {
-                        const leftPoints = currentLeftTeamKey === 'home' ? s.homePoints : s.awayPoints
-                        const rightPoints = currentRightTeamKey === 'home' ? s.homePoints : s.awayPoints
-                        return rightPoints > leftPoints
-                      }).length
-
-                      const leftTotalPoints = finishedSets.reduce((sum, set) => {
-                        return sum + (currentLeftTeamKey === 'home' ? set.homePoints : set.awayPoints)
-                      }, 0)
-                      const rightTotalPoints = finishedSets.reduce((sum, set) => {
-                        return sum + (currentRightTeamKey === 'home' ? set.homePoints : set.awayPoints)
-                      }, 0)
-
-                      // Calculate total match duration
-                      let totalDurationMin = 0
-                      finishedSets.forEach(set => {
-                        if (set.startTime && set.endTime) {
-                          const start = new Date(set.startTime)
-                          const end = new Date(set.endTime)
-                          const durationMs = end - start
-                          totalDurationMin += Math.floor(durationMs / 60000)
-                        }
-                      })
-
-                      // Find match start time (first set_start event or first set startTime)
-                      const firstSetStartEvent = (data?.events || []).find(e => e.type === 'set_start' && e.setIndex === 1)
-                      const matchStartTime = firstSetStartEvent ? new Date(firstSetStartEvent.ts) : (finishedSets[0]?.startTime ? new Date(finishedSets[0].startTime) : null)
-
-                      // Find match end time (last set endTime)
-                      const matchEndTime = finishedSets.length > 0 && finishedSets[finishedSets.length - 1]?.endTime
-                        ? new Date(finishedSets[finishedSets.length - 1].endTime)
-                        : null
-
-                      // Calculate match duration
-                      let matchDurationMin = 0
-                      if (matchStartTime && matchEndTime) {
-                        const durationMs = matchEndTime - matchStartTime
-                        matchDurationMin = Math.floor(durationMs / 60000)
-                      }
-
-                      // Determine winner (none for a match stopped with level sets)
-                      const winnerTeamKey = getMatchWinner(allSets, data?.match?.bestOf, { forfeitTeam: data?.match?.forfeitTeam })
-                      const winnerTeamData = winnerTeamKey === 'home' ? data?.homeTeam : data?.awayTeam
-                      const winnerTeamName = winnerTeamKey
-                        ? (winnerTeamData?.name || (winnerTeamKey === 'home' ? 'Home' : 'Away'))
-                        : t('matchEnd.noWinner', 'No winner (match stopped)')
-                      const winnerScore = `${leftTotalWins}-${rightTotalWins}`
-
-                      // Get captain signatures
-                      const homeCaptainSignature = data?.match?.homePostGameCaptainSignature || null
-                      const awayCaptainSignature = data?.match?.awayPostGameCaptainSignature || null
-
-                      return (
-                        <div>
-                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9px' }}>
-                            <thead>
-                              <tr>
-                                <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid var(--border)', width: '42%' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                    <span style={{ fontSize: '10px', wordBreak: 'break-word' }}>{leftTeamName}</span>
-                                    <span style={{
-                                      padding: '1px 6px',
-                                      borderRadius: '3px',
-                                      fontSize: '9px',
-                                      fontWeight: 700,
-                                      ...teamBoxStyle(leftTeamColor)
-                                    }}>{leftTeamLabel}</span>
-                                  </div>
-                                </th>
-                                <th style={{ padding: '4px', fontSize: '8px', width: '16%' }}>Dur</th>
-                                <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid var(--border)', width: '42%' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                    <span style={{ fontSize: '10px', wordBreak: 'break-word' }}>{rightTeamName}</span>
-                                    <span style={{
-                                      padding: '1px 6px',
-                                      borderRadius: '3px',
-                                      fontSize: '9px',
-                                      fontWeight: 700,
-                                      ...teamBoxStyle(rightTeamColor)
-                                    }}>{rightTeamLabel}</span>
-                                  </div>
-                                </th>
-                              </tr>
-                              <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                                <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>T</th>
-                                <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>S</th>
-                                <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>W</th>
-                                <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>P</th>
-                                <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}></th>
-                                <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>P</th>
-                                <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>W</th>
-                                <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>S</th>
-                                <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>T</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                                <td style={{ padding: '4px 2px', textAlign: 'center' }}>{leftTotalTimeouts}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center' }}>{leftTotalSubs}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center' }}>{leftTotalWins}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center' }}>{leftTotalPoints}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center', fontSize: '8px', color: 'var(--muted)' }}>{totalDurationMin}'</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center' }}>{rightTotalPoints}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center' }}>{rightTotalWins}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center' }}>{rightTotalSubs}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center' }}>{rightTotalTimeouts}</td>
-                              </tr>
-                            </tbody>
-                          </table>
-
-                          {/* Match time information */}
-                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9px', marginTop: '12px' }}>
-                            <tbody>
-                              <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                                <td style={{ padding: '4px 2px', textAlign: 'left', fontWeight: 600, fontSize: '8px' }}>Match start time:</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'left', fontSize: '8px' }}>
-                                  {matchStartTime ? `${String(matchStartTime.getUTCHours()).padStart(2, '0')}:${String(matchStartTime.getUTCMinutes()).padStart(2, '0')}:${String(matchStartTime.getUTCSeconds()).padStart(2, '0')}` : '—'}
-                                </td>
-                                <td style={{ padding: '4px 2px', textAlign: 'left', fontWeight: 600, fontSize: '8px' }}>Match end time:</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'left', fontSize: '8px' }}>
-                                  {matchEndTime ? `${String(matchEndTime.getUTCHours()).padStart(2, '0')}:${String(matchEndTime.getUTCMinutes()).padStart(2, '0')}:${String(matchEndTime.getUTCSeconds()).padStart(2, '0')}` : '—'}
-                                </td>
-                                <td style={{ padding: '4px 2px', textAlign: 'left', fontWeight: 600, fontSize: '8px' }}>{t('scoreboard.matchDuration')}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'left', fontSize: '8px' }}>
-                                  {matchDurationMin > 0 ? `${matchDurationMin} min` : '—'}
-                                </td>
-                              </tr>
-                              <tr>
-                                <td style={{ padding: '4px 2px', textAlign: 'left', fontWeight: 600, fontSize: '8px' }}>{t('scoreboard.winnerLabel')}</td>
-                                <td colSpan="5" style={{ padding: '4px 2px', textAlign: 'left', fontSize: '8px' }}>
-                                  {winnerTeamName} ({winnerScore})
-                                </td>
-                              </tr>
-                            </tbody>
-                          </table>
-
-                          {/* Post-match signatures */}
-                          <div style={{ marginTop: '16px', display: 'flex', gap: '16px', justifyContent: 'space-around' }}>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: '9px', fontWeight: 600, marginBottom: '4px' }}>
-                                {t('scoreboard.captainLabel', { team: data?.homeTeam?.name || t('common.home') })}
-                              </div>
-                              {homeCaptainSignature ? (
-                                <div style={{ border: '1px solid var(--border)', borderRadius: '4px', padding: '4px', minHeight: '40px', background: 'var(--panel-2)' }}>
-                                  <img src={homeCaptainSignature} alt={t('common.signature')} style={{ maxWidth: '100%', maxHeight: '40px', objectFit: 'contain' }} />
-                                </div>
-                              ) : (
-                                <SbButton variant="secondary"
-                                  onClick={() => setPostMatchSignature('home-captain')}
-                                  style={{ width: '100%' }}
-                                >
-                                  {t('scoreboard.sign')}
-                                </SbButton>
-                              )}
-                            </div>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: '9px', fontWeight: 600, marginBottom: '4px' }}>
-                                {t('scoreboard.captainLabel', { team: data?.awayTeam?.name || t('common.away') })}
-                              </div>
-                              {awayCaptainSignature ? (
-                                <div style={{ border: '1px solid var(--border)', borderRadius: '4px', padding: '4px', minHeight: '40px', background: 'var(--panel-2)' }}>
-                                  <img src={awayCaptainSignature} alt={t('common.signature')} style={{ maxWidth: '100%', maxHeight: '40px', objectFit: 'contain' }} />
-                                </div>
-                              ) : (
-                                <SbButton variant="secondary"
-                                  onClick={() => setPostMatchSignature('away-captain')}
-                                  style={{ width: '100%' }}
-                                >
-                                  {t('scoreboard.sign')}
-                                </SbButton>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    }
-
-                    // Otherwise show set breakdown
-                    // Helper to convert set number to Roman numeral
-                    const toRoman = (num) => {
-                      const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
-                      return romanNumerals[num - 1] || num.toString()
-                    }
-
-                    // Only show sets that have been played (started or have points)
-                    const playedSets = allSets.filter(s => s.homePoints > 0 || s.awayPoints > 0 || s.finished || s.startTime)
-
-                    return (
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9px' }}>
-                        <thead>
-                          <tr>
-                            <th style={{ padding: '4px 2px', textAlign: 'center', width: '8%' }}></th>
-                            <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid var(--border)', width: '38%' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                <span style={{ fontSize: '10px', wordBreak: 'break-word' }}>{leftTeamName}</span>
-                                <span style={{
-                                  padding: '1px 6px',
-                                  borderRadius: '3px',
-                                  fontSize: '9px',
-                                  fontWeight: 700,
-                                  ...teamBoxStyle(leftTeamColor)
-                                }}>{leftTeamLabel}</span>
-                              </div>
-                            </th>
-                            <th style={{ padding: '4px 2px', fontSize: '8px', width: '8%' }}>Dur</th>
-                            <th colSpan="4" style={{ padding: '4px', textAlign: 'center', borderBottom: '1px solid var(--border)', width: '38%' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                <span style={{ fontSize: '10px', wordBreak: 'break-word' }}>{rightTeamName}</span>
-                                <span style={{
-                                  padding: '1px 6px',
-                                  borderRadius: '3px',
-                                  fontSize: '9px',
-                                  fontWeight: 700,
-                                  ...teamBoxStyle(rightTeamColor)
-                                }}>{rightTeamLabel}</span>
-                              </div>
-                            </th>
-                          </tr>
-                          <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                            <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>Set</th>
-                            <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>T</th>
-                            <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>S</th>
-                            <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>W</th>
-                            <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>P</th>
-                            <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}></th>
-                            <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>P</th>
-                            <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>W</th>
-                            <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>S</th>
-                            <th style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>T</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {playedSets.map(set => {
-                            // Always show from CURRENT left/right perspective
-                            const leftPoints = currentLeftTeamKey === 'home' ? set.homePoints : set.awayPoints
-                            const rightPoints = currentRightTeamKey === 'home' ? set.homePoints : set.awayPoints
-
-                            // Calculate timeouts for current left/right teams
-                            const leftTimeouts = (data?.events || []).filter(e =>
-                              e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
-                            ).length
-                            const rightTimeouts = (data?.events || []).filter(e =>
-                              e.type === 'timeout' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
-                            ).length
-
-                            // Calculate substitutions for current left/right teams
-                            const leftSubs = (data?.events || []).filter(e =>
-                              e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentLeftTeamKey
-                            ).length
-                            const rightSubs = (data?.events || []).filter(e =>
-                              e.type === 'substitution' && e.setIndex === set.index && e.payload?.team === currentRightTeamKey
-                            ).length
-
-                            // Determine winner for current left/right teams
-                            const leftWon = leftPoints > rightPoints ? 1 : 0
-                            const rightWon = rightPoints > leftPoints ? 1 : 0
-
-                            // Calculate set duration
-                            let duration = ''
-                            if (set.startTime && set.endTime) {
-                              const start = new Date(set.startTime)
-                              const end = new Date(set.endTime)
-                              const durationMs = end - start
-                              const durationMin = Math.floor(durationMs / 60000)
-                              duration = `${durationMin}'`
-                            }
-
-                            return (
-                              <tr key={set.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                                <td style={{ padding: '4px 2px', textAlign: 'center', fontWeight: 600, fontSize: '8px' }}>{toRoman(set.index)}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center', fontSize: '8px' }}>{leftTimeouts || 0}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center', fontSize: '8px' }}>{leftSubs || 0}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center', fontSize: '8px' }}>{leftWon}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center', fontSize: '8px' }}>{leftPoints}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center', fontSize: '8px', color: 'var(--muted)' }}>{duration}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center', fontSize: '8px' }}>{rightPoints}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center', fontSize: '8px' }}>{rightWon}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center', fontSize: '8px' }}>{rightSubs || 0}</td>
-                                <td style={{ padding: '4px 2px', textAlign: 'center', fontSize: '8px' }}>{rightTimeouts || 0}</td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    )
-                  })()}
-                </div>
-              </div>
-
-              {/* Remarks section */}
-              {data?.match?.remarks && (
-                <div style={{ marginTop: '24px' }}>
-                  <SbSection as="h4" title={t('matchEnd.remarks')} className="mb-3" />
-                  <div style={{
-                    background: 'var(--panel-2)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '8px',
-                    padding: '12px',
-                    fontSize: '12px',
-                    whiteSpace: 'pre-wrap',
-                    maxHeight: '200px',
-                    overflowY: 'auto'
-                  }}>
-                    {data.match.remarks}
-                  </div>
-                </div>
-              )}
-            </section>
-          </div>
-        </Modal>
-      )}
+      {/* Sanctions and Results Modal (SanctionsResultsModal.jsx) */}
+      <SanctionsResultsModal
+        open={showSanctions}
+        onClose={() => setShowSanctions(false)}
+        data={data}
+        teamAKey={teamAKey}
+        leftIsHome={leftIsHome}
+        onSign={setPostMatchSignature}
+      />
 
       {/* Timeout confirmation modal - only show before timeout starts, not during countdown.
           Its wording comes from timeoutModal.ordinal / .consecutive, taken when it
@@ -23082,14 +19875,31 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         teamBKey={teamBKey}
         lfpTrackingEnabled={lfpTrackingEnabled}
         lfpMinimumOnCourt={lfpMinimumOnCourt}
+        courtCaptain={lineupModal.team === 'home' ? data?.match?.homeCourtCaptain : data?.match?.awayCourtCaptain}
+        rememberedCourtCaptain={lineupModal.team === 'home' ? data?.match?.homeRememberedCourtCaptain : data?.match?.awayRememberedCourtCaptain}
         onClose={() => setLineupModal(null)}
-        onSave={async () => {
+        onSave={async (gameCaptain, onCourt = null) => {
           const teamKey = lineupModal.team
           setLineupModal(null)
+          // Optional game captain chosen in the modal (FIVB 5.2), written the
+          // same way as the scoreboard's "Game captain" prompt
+          // (domain/lineupEntry.js lineupGameCaptainDecision)
+          // One action: the remembered captain and the designation event
+          // commit together (a failure saves neither and says so)
+          if (gameCaptain && matchId) {
+            try {
+              await runAction('gameCaptain', async () => {
+                if (Object.keys(gameCaptain.matchUpdate).length) await db.matches.update(matchId, gameCaptain.matchUpdate)
+                if (gameCaptain.event) await logEvent('court_captain_designation', gameCaptain.event)
+              })
+            } catch (err) {
+              console.error('[LineupModal] game captain not saved', err)
+            }
+          }
           // Check if captain is on court after lineup is saved
           // Use timeout to allow data to update from database (increased to 300ms for reliability)
           setTimeout(() => {
-            checkAndRequestCaptainOnCourtRef.current?.(teamKey)
+            checkAndRequestCaptainOnCourtRef.current?.(teamKey, onCourt)
           }, 300)
         }}
         onLineupSaved={() => {
@@ -24196,13 +21006,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     try {
                       const setIndex = data?.set?.index || 1
                       const teamLabel = team === teamAKey ? 'A' : 'B'
-                      const now = new Date()
-                      const timeStr = `${String(now.getUTCHours()).padStart(2, '0')}h${String(now.getUTCMinutes()).padStart(2, '0')}m`
                       const teamScore = team === 'home' ? (data?.set?.homePoints || 0) : (data?.set?.awayPoints || 0)
                       const opponentScore = team === 'home' ? (data?.set?.awayPoints || 0) : (data?.set?.homePoints || 0)
-                      const scoreStr = `${teamScore}:${opponentScore}`
-
-                      const remark = `Set ${setIndex}, Team ${teamLabel}, Time ${timeStr}, Score ${scoreStr}, Player #${playerNumber} injured on bench`
+                      // "Set 3, 14:28, B 15:5, #4 injured (bench)": the sheet's remark convention (owner 2026-10-07)
+                      const remark = eventRemark({ set: displaySetNumber(setIndex, data?.match?.bestOf), team: teamLabel, teamScore, oppScore: opponentScore, text: `#${playerNumber} injured (bench)` })
                       const currentRemarks = data?.match?.remarks || ''
                       const newRemarks = currentRemarks ? `${currentRemarks}\n${remark}` : remark
                       await db.matches.update(matchId, { remarks: newRemarks })
@@ -24217,7 +21024,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       }
 
                       setBenchPlayerActionMenu(null)
-                      setConfirmMessage(`Injury recorded for #${playerNumber} (bench)`)
+                      showAlert(t('scoreboard.benchInjuryRecorded', { number: playerNumber }), 'success')
                     } catch (err) {
                       console.error('Failed to record bench injury:', err)
                       setBenchPlayerActionMenu(null)
@@ -25285,7 +22092,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   // queued sync jobs and side effects such as remark lines)
                   const allSets = await db.sets.where('matchId').equals(matchId).toArray()
                   const setsToDelete = allSets.filter(s => s.index > reopenIndex)
-                  await discardEvents(removedEvents)
+                  await discardEvents(removedEvents, 'reopen_set')
                   for (const s of setsToDelete) {
                     await db.sets.delete(s.id)
                   }
@@ -26968,25 +23775,38 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
 
 
-      {postMatchSignature && (
-        <Modal
-          title={t('scoreboard.captainLabel', { team: postMatchSignature === 'home-captain' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')) }) + ' ' + t('common.signature')}
-          open={true}
-          onClose={() => setPostMatchSignature(null)}
-          width={500}
-        >
-          <div style={{ padding: '4px 0' }}>
-            <SignaturePad
-              onSave={async (signatureDataUrl) => {
-                const fieldName = postMatchSignature === 'home-captain' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature'
-                await db.matches.update(matchId, { [fieldName]: signatureDataUrl })
-                setPostMatchSignature(null)
-              }}
-              onCancel={() => setPostMatchSignature(null)}
-            />
-          </div>
-        </Modal>
-      )}
+      {/* Post-match captain signature. SignaturePad is the modal itself: wrapped
+          in another Modal without `open` it rendered nothing (B1). */}
+      <SignaturePad
+        open={!!postMatchSignature}
+        title={postMatchSignature
+          ? t('scoreboard.captainLabel', { team: postMatchSignature === 'home-captain' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')) }) + ' ' + t('common.signature')
+          : ''}
+        onClose={() => setPostMatchSignature(null)}
+        onSave={async (signatureDataUrl, meta) => {
+          const fieldName = postMatchSignature === 'home-captain' ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature'
+          // saved and queued for the cloud at once, as MatchEnd does, with the
+          // phone-signing record in the same update
+          await saveMatchSignature(db, matchId, fieldName, signatureDataUrl, signatureUpdate(fieldName, signatureDataUrl, meta))
+          setPostMatchSignature(null)
+        }}
+        phone={postMatchSignature && data?.match ? {
+          slot: postMatchSignature === 'home-captain' ? 'captain-post-home' : 'captain-post-away',
+          matchKey: data.match.seed_key || data.match.seedKey || null,
+          gamePin: data.match.gamePin || null,
+          context: phoneSignContext({
+            match: data.match,
+            slot: postMatchSignature === 'home-captain' ? 'captain-post-home' : 'captain-post-away',
+            homeTeam: data.homeTeam,
+            awayTeam: data.awayTeam,
+            homeCaptain: (data.homePlayers || []).find(p => p.isCaptain || p.captain) || null,
+            awayCaptain: (data.awayPlayers || []).find(p => p.isCaptain || p.captain) || null,
+            lang: i18n.language,
+            fallbackHome: t('common.home'),
+            fallbackAway: t('common.away')
+          })
+        } : null}
+      />
 
     </div>
   )
@@ -27056,7 +23876,7 @@ function ScoreboardCourtColumn({ children }) {
   return <section className="court-wrapper">{children}</section>
 }
 
-function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, teamAKey, teamBKey, lfpTrackingEnabled, lfpMinimumOnCourt, onClose, onSave, onLineupSaved, onPenaltyPointsOwed }) {
+function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, teamAKey, teamBKey, lfpTrackingEnabled, lfpMinimumOnCourt, courtCaptain = null, rememberedCourtCaptain = null, onClose, onSave, onLineupSaved, onPenaltyPointsOwed }) {
   const { t } = useTranslation()
   const [lineup, setLineup] = useState(() => {
     if (presetLineup) {
@@ -27097,6 +23917,26 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     () => lineupCandidates({ players, lineup, events, team, setIndex }),
     [players, lineup, events, team, setIndex]
   )
+
+  // Optional game captain (FIVB 5.2), among the valid entries other than the
+  // team captain. Opening on an existing line-up shows the current choice.
+  // A choice whose player has left the six is simply not shown (nor saved).
+  const [gameCaptainChoice, setGameCaptainChoice] = useState(() => (presetLineup
+    ? initialGameCaptainChoice({ lineup, players, team, currentCourtCaptain: courtCaptain, rememberedCourtCaptain })
+    : ''))
+  const gameCaptainChoices = useMemo(
+    () => gameCaptainOptions({ lineup, players, events, team }),
+    [lineup, players, events, team]
+  )
+  const gameCaptain = gameCaptainChoices.includes(gameCaptainChoice) ? gameCaptainChoice : ''
+  const captainStatus = lineupCaptainStatus({ lineup, players })
+  const captainNumber = teamCaptainNumber(players)
+  const gameCaptainNote = (() => {
+    if (captainStatus === 'noCaptain') return t('scoreboard.lineupModal.gameCaptain.noCaptain', 'No team captain on the roster')
+    if (gameCaptainChoices.length === 0) return t('scoreboard.lineupModal.gameCaptain.enterFirst', 'Choose once the players are entered')
+    if (captainStatus === 'onCourt') return t('scoreboard.lineupModal.gameCaptain.whenCaptainLeaves', { captain: captainNumber, defaultValue: 'Takes over when captain {{captain}} leaves the court' })
+    return t('scoreboard.lineupModal.gameCaptain.fromFirstRally', { captain: captainNumber, defaultValue: 'Captain {{captain}} is not in the line-up: game captain from the first rally' })
+  })()
 
   const errorText = (code) => ({
     required: t('scoreboard.lineupModal.errors.required', 'Required'),
@@ -27264,6 +24104,15 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
       lineupData[pos] = lineupNumbers[idx]
     })
 
+    // What the optional game-captain choice does (FIVB 5.2); its undo record
+    // goes on the line-up event
+    const gameCaptainDecision = lineupGameCaptainDecision({
+      lineup, players, events, team,
+      choice: gameCaptain,
+      currentCourtCaptain: courtCaptain,
+      rememberedCourtCaptain
+    })
+
     // Save lineup as an event (mark as initial lineup or manual override)
     if (matchId && setIndex) {
       // Save lineup with sequence number
@@ -27281,7 +24130,8 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
           payload: {
             team,
             lineup: lineupData,
-            isInitial: mode === 'initial'
+            isInitial: mode === 'initial',
+            ...gameCaptainDecision.undo
           },
           seq: manualLineupSeq
         }
@@ -27306,8 +24156,9 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
         // server for the rest of the set), no state snapshot and no live push
         if (owedPoints.length > 0 && onPenaltyPointsOwed) await onPenaltyPointsOwed(owedPoints)
 
-        // Auto-close modal after successful save (skip confirmation step)
-        onSave()
+        // Auto-close modal after successful save (skip confirmation step),
+        // with what to do about the optional game captain
+        onSave(gameCaptainDecision, lineupNumbers.filter(n => n != null))
       })().catch(() => {
         // Don't auto-close - let user close manually with close button
         setSaveFailed(true)
@@ -27382,6 +24233,11 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
               <span className="lineup-cap">C</span>
             </span>
           )}
+          {showDisc && !errors[idx] && gameCaptain && String(Number(value)) === gameCaptain && (
+            <span className="lineup-disc-anchor" aria-hidden="true">
+              <span className="lineup-cap lineup-cap--game">C</span>
+            </span>
+          )}
         </div>
         <div className="lineup-pos__msg" id={msgId} aria-live="polite">
           {error ? <span>{errorText(error)}</span> : null}
@@ -27427,6 +24283,39 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
             <div className="lineup-net" aria-hidden="true" />
             <div className="lineup-grid">
               {[0, 1, 2, 3, 4, 5].map(renderPosition)}
+            </div>
+            {/* Optional game captain (FIVB 5.2): always rendered, fixed height */}
+            <div className="lineup-gcapt" role="group" aria-labelledby={`lineup-gcapt-${team}`} aria-describedby={`lineup-gcapt-note-${team}`}>
+              <div className="lineup-gcapt__head">
+                <span className="lineup-gcapt__title" id={`lineup-gcapt-${team}`}>
+                  {t('scoreboard.lineupModal.gameCaptain.title', 'Game captain')}
+                </span>
+                <span className="lineup-gcapt__optional">{t('scoreboard.lineupModal.gameCaptain.optional', 'optional')}</span>
+              </div>
+              <div className="lineup-gcapt__choices">
+                <button
+                  type="button"
+                  aria-pressed={gameCaptain === ''}
+                  className="lineup-gcapt__choice lineup-gcapt__choice--none"
+                  disabled={gameCaptainChoices.length === 0}
+                  onClick={() => setGameCaptainChoice('')}
+                >
+                  {t('scoreboard.lineupModal.gameCaptain.none', 'None')}
+                </button>
+                {gameCaptainChoices.map(n => (
+                  <button
+                    key={n}
+                    type="button"
+                    aria-pressed={gameCaptain === n}
+                    aria-label={t('scoreboard.lineupModal.gameCaptain.player', { number: n, defaultValue: 'Game captain: player {{number}}' })}
+                    className="lineup-gcapt__choice"
+                    onClick={() => setGameCaptainChoice(gameCaptain === n ? '' : n)}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+              <p className="lineup-gcapt__note" id={`lineup-gcapt-note-${team}`}>{gameCaptainNote}</p>
             </div>
           </div>
 

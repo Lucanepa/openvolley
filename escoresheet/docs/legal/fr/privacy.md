@@ -115,6 +115,30 @@ sur le réseau local.
   lire. Ils sont conservés jusqu'à la suppression de votre compte ;
 - les **feuilles de match** comme fichiers (PDF et données), voir section 7.
 
+**Journal d'activité.** Pour la traçabilité de la feuille de match et pour
+le dépannage, l'application tient un journal d'activité de chaque match :
+points et autres événements, annulations et corrections (ce qui a été modifié,
+quand et pourquoi), sets, signatures et approbations (seulement le fait
+qu'elles ont eu lieu, jamais l'image de la signature ni un PIN), remarques
+(seulement leur longueur), résultats des envois et erreurs de l'application.
+Chaque entrée porte un identifiant aléatoire de l'appareil (créé par
+l'application, sans lien avec le matériel), la version de l'application, la
+plateforme et, si vous êtes connecté, votre compte. Il ne contient pas plus de
+données personnelles que la feuille de match elle-même (numéros des joueurs,
+noms des officiels lors d'une correction). Si vous êtes connecté, il est
+envoyé à mon serveur, où les marqueurs du match et les administrateurs
+peuvent le lire. Lorsqu'un point annulé avait déjà été envoyé, le serveur le
+conserve marqué comme annulé au lieu de le supprimer, afin que le déroulement
+du match reste traçable. Les applications de bureau et Android écrivent en
+plus le journal d'activité sous forme de fichiers quotidiens à côté des
+fichiers de sauvegarde (`OpenVolley/logs`, au plus 30 jours et 50 Mo). **Ce
+que vous cliquez ou tapez reste sur votre appareil :** ce journal local n'est
+jamais envoyé et n'enregistre jamais de mots de passe ni de PIN. Sur
+l'appareil, le journal d'activité est conservé jusqu'à 180 jours, le journal
+des clics 30 jours. Sur le serveur : 24 mois pour les entrées d'un match (ou
+jusqu'à la suppression du match), 90 jours pour les entrées sans match. Je le
+supprime plus tôt sur demande (section 19).
+
 **Application de bureau.** L'application de bureau enregistre en plus des
 fichiers de sauvegarde automatiques des matchs dans votre dossier utilisateur
 (Linux : `~/.local/share/OpenVolley/backups`, Windows :
@@ -435,6 +459,9 @@ prestataires. Vous pouvez me demander une copie de ces garanties.
 | Journal des modifications | Aussi longtemps que nécessaire pour la traçabilité ; effacement examiné sur demande |
 | Copies de sauvegarde téléversées | 30 jours |
 | Journaux de l'application téléversés | Jusqu'à la suppression de votre compte |
+| Journal d'activité d'un match (serveur) | 24 mois, ou jusqu'à la suppression du match ; plus tôt sur demande |
+| Journal d'activité sans match (serveur) | 90 jours |
+| Événements annulés et corrigés d'un match | Avec le match, comme partie du procès-verbal du match |
 | Journaux du serveur | Écrasés selon leur taille (quelques jours à quelques semaines) |
 | Données en direct (serveur et mode salle) | Uniquement en mémoire vive ; sur le serveur supprimées 24 heures après la dernière activité |
 | Sauvegardes | Jusqu'à environ 6 mois (section 18) |

@@ -105,6 +105,28 @@ Inoltre carica:
   alla cancellazione del suo account;
 - i **referti** come file (PDF e dati), vedi sezione 7.
 
+**Registro attività.** Per la tracciabilità del referto e per la diagnosi
+dei problemi, l'app tiene un registro attività di ogni partita: punti e altri
+eventi, annullamenti e correzioni (cosa è stato modificato, quando e perché),
+set, firme e approvazioni (solo il fatto che sono avvenute, mai l'immagine
+della firma né un PIN), osservazioni (solo la loro lunghezza), esiti degli
+invii ed errori dell'app. Ogni voce contiene un identificativo casuale del
+dispositivo (creato dall'app, non legato all'hardware), la versione dell'app,
+la piattaforma e, se ha effettuato l'accesso, il suo account. Non contiene più
+dati personali del referto stesso (numeri dei giocatori, nomi degli ufficiali
+in una correzione). Se ha effettuato l'accesso, viene caricato sul mio server,
+dove possono leggerlo i refertisti della partita e gli amministratori. Se un
+punto annullato era già stato caricato, il server lo conserva contrassegnato
+come annullato invece di cancellarlo, così lo svolgimento della partita resta
+tracciabile. Le app desktop e Android scrivono inoltre il registro attività
+come file giornalieri accanto ai file di sicurezza (`OpenVolley/logs`, al
+massimo 30 giorni e 50 MB). **Ciò che clicca o digita resta sul suo
+dispositivo:** quel registro locale non viene mai caricato e non registra mai
+password o PIN. Sul dispositivo il registro attività è conservato fino a
+180 giorni, il registro dei clic 30 giorni. Sul server: 24 mesi per le voci di
+una partita (o fino alla cancellazione della partita), 90 giorni per le voci
+senza partita. Su richiesta lo cancello prima (sezione 19).
+
 **App desktop.** L'app desktop salva inoltre copie di sicurezza automatiche
 delle partite nella sua cartella utente (Linux:
 `~/.local/share/OpenVolley/backups`, Windows: `%APPDATA%\OpenVolley\backups`).
@@ -417,6 +439,9 @@ riceve una copia di queste garanzie.
 | Registro delle modifiche | Per il tempo necessario alla tracciabilità; la cancellazione su richiesta viene esaminata |
 | Copie di sicurezza caricate | 30 giorni |
 | Registri dell'app caricati | Fino alla cancellazione del suo account |
+| Registro attività di una partita (server) | 24 mesi, o fino alla cancellazione della partita; prima su richiesta |
+| Registro attività senza partita (server) | 90 giorni |
+| Eventi annullati e corretti di una partita | Con la partita, come parte del verbale della partita |
 | Registri del server | Sovrascritti in base alla dimensione (alcuni giorni o poche settimane) |
 | Dati in diretta (server e modalità palestra) | Solo nella memoria di lavoro; sul server eliminati 24 ore dopo l'ultima attività |
 | Copie di sicurezza del server | Fino a circa 6 mesi (sezione 18) |

@@ -39,6 +39,10 @@
 //!     the game PIN. Everyone else gets the public summary (`access: "summary"`:
 //!     teams, status, set scores, live state). Wrong PINs are limited per
 //!     connection / IP.
+//!   - Sign on phone (`sign.rs`, docs/qr-signing-spec.md 4): POST /api/sign/start|
+//!     open|submit|wait|close and the phone page at /sign with its strict CSP.
+//!     `start` from the relay host itself, or with X-OV-Match-Pin = the game PIN of
+//!     the body's matchKey (wrong PINs counted with GET /api/match/:id's).
 
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
@@ -250,6 +254,8 @@ pub struct AppState {
     displaced: Mutex<HashMap<String, String>>,
     pending: Mutex<HashMap<String, Pending>>,
     next_id: AtomicU64,
+    /// Sign on phone sessions (memory only; the sweeper starts with the first one)
+    sign: Arc<crate::sign::SignSessions>,
     pub http_port: u16,
     pub ws_port: u16,
 }
@@ -267,6 +273,7 @@ pub fn new_state(http_port: u16, ws_port: u16) -> Arc<AppState> {
         displaced: Mutex::new(HashMap::new()),
         pending: Mutex::new(HashMap::new()),
         next_id: AtomicU64::new(1),
+        sign: crate::sign::SignSessions::lan(),
         http_port,
         ws_port,
     })
@@ -734,6 +741,11 @@ fn http_router(state: Arc<AppState>) -> Router {
         .route("/api/match/by-game-number", get(by_game_number))
         .route("/api/match/:id", get(match_get).patch(match_patch))
         .route("/api/server/connections", get(server_connections))
+        .route("/api/sign/start", post(sign_api))
+        .route("/api/sign/open", post(sign_api))
+        .route("/api/sign/submit", post(sign_api))
+        .route("/api/sign/wait", post(sign_api))
+        .route("/api/sign/close", post(sign_api))
         .fallback(static_handler)
         .layer(middleware::from_fn(add_headers))
         .with_state(state)
@@ -785,10 +797,13 @@ async fn add_headers(req: Request<Body>, next: Next) -> Response {
     let h = res.headers_mut();
     h.insert("X-Content-Type-Options", HeaderValue::from_static("nosniff"));
     h.insert("X-Frame-Options", HeaderValue::from_static("SAMEORIGIN"));
-    h.insert(
-        "Referrer-Policy",
-        HeaderValue::from_static("strict-origin-when-cross-origin"),
-    );
+    // The phone signing page sets its own (no-referrer)
+    if !h.contains_key("Referrer-Policy") {
+        h.insert(
+            "Referrer-Policy",
+            HeaderValue::from_static("strict-origin-when-cross-origin"),
+        );
+    }
     if let Some(o) = origin {
         if cors_origin_allowed(&o) {
             if let Ok(val) = HeaderValue::from_str(&o) {
@@ -1352,7 +1367,116 @@ async fn static_handler(
         }
     }
 
-    serve_asset(path)
+    let mut res = serve_asset(path);
+    if crate::sign::is_sign_page_path(path) {
+        // The phone signing page (spec 4.7): strict CSP, no referrer, no-cache
+        let h = res.headers_mut();
+        h.insert("Content-Security-Policy", HeaderValue::from_static(crate::sign::SIGN_PAGE_CSP));
+        h.insert("Referrer-Policy", HeaderValue::from_static("no-referrer"));
+        h.insert("Cache-Control", HeaderValue::from_static("no-cache"));
+    }
+    res
+}
+
+// ---------------------------------------------------------------------------
+// Sign on phone (sign.rs): POST /api/sign/*
+// ---------------------------------------------------------------------------
+
+fn sign_response(a: crate::sign::Answer) -> Response {
+    let status = StatusCode::from_u16(a.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let mut res = (status, [("content-type", "application/json"), ("cache-control", "no-store")], a.body.to_string()).into_response();
+    if let Some(secs) = a.retry_after {
+        if let Ok(v) = HeaderValue::from_str(&secs.to_string()) {
+            res.headers_mut().insert("Retry-After", v);
+        }
+    }
+    if a.status == 413 {
+        res.headers_mut().insert("Connection", HeaderValue::from_static("close"));
+    }
+    res
+}
+
+/// Who may start a session here (spec D3): the relay host itself ("local"), or
+/// a device that proves the game PIN of a match this relay holds
+/// ("pin:<matchKey>"). Wrong PINs count toward the per-IP wrong-PIN limit.
+async fn sign_owner(state: &Arc<AppState>, addr: &SocketAddr, headers: &HeaderMap, body: &Value) -> Result<String, crate::sign::Answer> {
+    use crate::sign::sign_error;
+    if is_local(addr) {
+        return Ok("local".into());
+    }
+    let pin: String = headers
+        .get("x-ov-match-pin")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().chars().take(32).collect())
+        .unwrap_or_default();
+    if pin.is_empty() {
+        return Err(sign_error(403, "OV_SIGN_FORBIDDEN"));
+    }
+    let fail_key = format!("pinfail:ip:{}", canonical_ip(addr.ip()));
+    if window_count(&*state.limits.lock().await, &fail_key) >= PIN_FAILURE_LIMIT {
+        return Err(crate::sign::Answer { retry_after: Some(60), ..sign_error(429, "OV_SIGN_RATE_LIMITED") });
+    }
+    let key = body.get("matchKey").filter(|v| v.is_string()).and_then(|v| norm_id(Some(v)));
+    let stored = match &key {
+        Some(k) => state.matches.lock().await.get(k).and_then(|b| game_pin_of(b.get("match"))),
+        None => None,
+    };
+    let Some(stored) = stored else { return Err(sign_error(403, "OV_SIGN_FORBIDDEN")) };
+    if !ct_eq(&stored, &pin) {
+        window_bump(&mut *state.limits.lock().await, &fail_key);
+        return Err(sign_error(403, "OV_SIGN_PIN_INVALID"));
+    }
+    Ok(format!("pin:{}", key.unwrap_or_default()))
+}
+
+async fn sign_api(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(state): State<Arc<AppState>>,
+    uri: Uri,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    use crate::sign::sign_error;
+    let Some(endpoint) = crate::sign::endpoint_of(uri.path()) else {
+        return sign_response(sign_error(404, "OV_SIGN_NOT_FOUND"));
+    };
+    let is_json = headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .map(|ct| {
+            let ct = ct.trim_start().to_ascii_lowercase();
+            ct.strip_prefix("application/json").map_or(false, |rest| !rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_'))
+        })
+        .unwrap_or(false);
+    if !is_json {
+        return sign_response(sign_error(400, "OV_SIGN_BAD_REQUEST"));
+    }
+    let limit = crate::sign::body_limit(endpoint);
+    let declared = headers.get("content-length").and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<usize>().ok());
+    if declared.map_or(false, |n| n > limit) {
+        return sign_response(sign_error(413, "OV_SIGN_TOO_LARGE"));
+    }
+    // Reads at most `limit` bytes and stops
+    let Ok(bytes) = axum::body::to_bytes(body, limit).await else {
+        return sign_response(sign_error(413, "OV_SIGN_TOO_LARGE"));
+    };
+    let Ok(body) = serde_json::from_slice::<Value>(&bytes) else {
+        return sign_response(sign_error(400, "OV_SIGN_BAD_REQUEST"));
+    };
+    let ip_key = canonical_ip(addr.ip()).to_string();
+    let sessions = state.sign.clone();
+    let answer = match endpoint {
+        "start" => match sign_owner(&state, &addr, &headers, &body).await {
+            Ok(owner) => sessions.start(&body, &owner),
+            Err(a) => a,
+        },
+        "open" => sessions.open(&body, &ip_key),
+        "submit" => sessions.submit(&body, &ip_key),
+        "close" => sessions.close(&body),
+        // A dropped request drops this future, and the waiter with it
+        _ => sessions.wait(&body).await,
+    };
+    sign_response(answer)
 }
 
 fn serve_asset(req_path: &str) -> Response {
@@ -2901,5 +3025,157 @@ mod tests {
         assert_eq!(canonical_ip("::ffff:127.0.0.1".parse().unwrap()), "127.0.0.1".parse::<IpAddr>().unwrap());
         assert!(is_local(&"127.0.0.1:1".parse().unwrap()));
         assert!(!is_local(&"203.0.113.9:1".parse().unwrap()));
+    }
+
+    // --- Sign on phone through the router (sign.rs; docs/qr-signing-spec.md 8.3) ---
+
+    async fn sign_call(state: &Arc<AppState>, path: &str, body: String, addr: &str, headers: &[(&str, &str)]) -> (StatusCode, HeaderMap, Value) {
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        let mut b = Request::builder().method("POST").uri(path);
+        if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("content-type")) {
+            b = b.header("content-type", "application/json");
+        }
+        for (k, v) in headers {
+            b = b.header(*k, *v);
+        }
+        let mut req = b.body(Body::from(body)).unwrap();
+        req.extensions_mut().insert(ConnectInfo(addr.parse::<SocketAddr>().unwrap()));
+        let res = http_router(state.clone()).oneshot(req).await.unwrap();
+        let (status, headers) = (res.status(), res.headers().clone());
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        (status, headers, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    }
+
+    fn sign_start_body(match_key: &str) -> String {
+        json!({ "slot": "captain-a", "matchKey": match_key, "context": { "home": "A", "away": "B" } }).to_string()
+    }
+
+    #[tokio::test]
+    async fn sign_start_from_the_relay_host_or_with_the_game_pin() {
+        let state = new_state(0, 0);
+        connect(&state, 1, "127.0.0.1").await;
+        sync(&state, 1, "seed-1", bundle(1, "987654", "live")).await.unwrap();
+        let start = |addr: &'static str, pin: Option<&'static str>, key: &'static str| {
+            let state = state.clone();
+            async move {
+                let h: Vec<(&str, &str)> = pin.map(|p| vec![("x-ov-match-pin", p)]).unwrap_or_default();
+                sign_call(&state, "/api/sign/start", sign_start_body(key), addr, &h).await
+            }
+        };
+        let (st, h, body) = start("127.0.0.1:50000", None, "seed-1").await;
+        assert_eq!(st, StatusCode::CREATED, "{body}");
+        assert_eq!(h.get("cache-control").unwrap(), "no-store");
+        // Another machine: needs the game PIN of a match this relay holds
+        assert_eq!(start("192.0.2.50:1", None, "seed-1").await.2["code"], "OV_SIGN_FORBIDDEN");
+        assert_eq!(start("192.0.2.50:1", Some("987654"), "other").await.2["code"], "OV_SIGN_FORBIDDEN");
+        // The referee PIN proves nothing here
+        assert_eq!(start("192.0.2.50:1", Some("314159"), "seed-1").await.2["code"], "OV_SIGN_PIN_INVALID");
+        let (st, _, body) = start("192.0.2.50:1", Some(" 987654 "), "seed-1").await;
+        assert_eq!(st, StatusCode::CREATED, "{body}");
+        for i in 0..(PIN_FAILURE_LIMIT - 1) {
+            let pin: &'static str = Box::leak(format!("{}", 100000 + i).into_boxed_str());
+            assert_eq!(start("192.0.2.50:1", Some(pin), "seed-1").await.2["code"], "OV_SIGN_PIN_INVALID");
+        }
+        let (st, h, body) = start("192.0.2.50:1", Some("987654"), "seed-1").await;
+        assert_eq!((st, body["code"].clone()), (StatusCode::TOO_MANY_REQUESTS, json!("OV_SIGN_RATE_LIMITED")));
+        assert_eq!(h.get("retry-after").unwrap(), "60");
+        // The same counter as GET /api/match/:id with a wrong PIN
+        let fail_key = "pinfail:ip:192.0.2.50";
+        assert!(window_count(&*state.limits.lock().await, fail_key) >= PIN_FAILURE_LIMIT);
+        // A test match without a game PIN cannot be proven
+        sync(&state, 1, "test-1", bundle(2, "", "live")).await.unwrap();
+        assert_eq!(start("192.0.2.51:1", Some("000000"), "test-1").await.2["code"], "OV_SIGN_FORBIDDEN");
+    }
+
+    #[tokio::test]
+    async fn sign_full_flow_and_body_caps_through_the_router() {
+        let state = new_state(0, 0);
+        let local = "127.0.0.1:1";
+        let (st, _, started) = sign_call(&state, "/api/sign/start", sign_start_body("m"), local, &[]).await;
+        assert_eq!(st, StatusCode::CREATED);
+        let (token, watch) = (started["token"].as_str().unwrap().to_string(), started["watch"].as_str().unwrap().to_string());
+        let phone = "192.0.2.77:1";
+        let (_, _, opened) = sign_call(&state, "/api/sign/open", json!({ "k": token }).to_string(), phone, &[]).await;
+        assert_eq!(opened["state"], "opened");
+        assert_eq!(opened["context"], json!({ "home": "A", "away": "B" }));
+        let ink = json!({ "k": token, "pad": { "w": 4000, "h": 2000 }, "strokes": [[0, 1000, 300, 1000]] }).to_string();
+        assert_eq!(sign_call(&state, "/api/sign/submit", ink.clone(), phone, &[]).await.0, StatusCode::OK);
+        assert_eq!(sign_call(&state, "/api/sign/submit", ink, phone, &[]).await.2["code"], "OV_SIGN_USED");
+        let (_, _, done) = sign_call(&state, "/api/sign/wait", json!({ "watch": watch, "known": "opened" }).to_string(), local, &[]).await;
+        assert_eq!(done["state"], "signed");
+        assert_eq!(done["strokes"], json!([[0, 1000, 300, 1000]]));
+        assert_eq!(sign_call(&state, "/api/sign/close", json!({ "watch": watch }).to_string(), local, &[]).await.0, StatusCode::OK);
+
+        // Bodies: 4 KB (64 KB for submit), JSON only
+        let big = json!({ "slot": "ref1", "context": { "home": "A", "away": "B", "name": "x".repeat(5000) } }).to_string();
+        let (st, h, body) = sign_call(&state, "/api/sign/start", big, local, &[]).await;
+        assert_eq!((st, body["code"].clone()), (StatusCode::PAYLOAD_TOO_LARGE, json!("OV_SIGN_TOO_LARGE")));
+        assert_eq!(h.get("connection").unwrap(), "close");
+        let huge = format!("{{\"k\":\"{token}\",\"x\":\"{}\"}}", "y".repeat(70_000));
+        assert_eq!(sign_call(&state, "/api/sign/submit", huge, phone, &[]).await.0, StatusCode::PAYLOAD_TOO_LARGE);
+        let (st, _, body) = sign_call(&state, "/api/sign/start", sign_start_body("m"), local, &[("content-type", "text/plain")]).await;
+        assert_eq!((st, body["code"].clone()), (StatusCode::BAD_REQUEST, json!("OV_SIGN_BAD_REQUEST")));
+        let (st, _, body) = sign_call(&state, "/api/sign/open", "{nope".into(), phone, &[]).await;
+        assert_eq!((st, body["code"].clone()), (StatusCode::BAD_REQUEST, json!("OV_SIGN_BAD_REQUEST")));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn sign_wait_long_polls_and_wakes_on_open() {
+        let state = new_state(0, 0);
+        let local = "127.0.0.1:1";
+        let started = sign_call(&state, "/api/sign/start", sign_start_body("m"), local, &[]).await.2;
+        let (token, watch) = (started["token"].as_str().unwrap().to_string(), started["watch"].as_str().unwrap().to_string());
+
+        // Nothing happens: the wait answers after 25 s with the same state
+        let t0 = tokio::time::Instant::now();
+        let r = sign_call(&state, "/api/sign/wait", json!({ "watch": watch, "known": "pending" }).to_string(), local, &[]).await.2;
+        assert_eq!(r["state"], "pending");
+        assert!(t0.elapsed() >= Duration::from_secs(25));
+
+        // The phone opens the link: the held wait answers at once
+        let t1 = tokio::time::Instant::now();
+        let (s2, w) = (state.clone(), watch.clone());
+        let held = tokio::spawn(async move {
+            sign_call(&s2, "/api/sign/wait", json!({ "watch": w, "known": "pending" }).to_string(), "127.0.0.1:1", &[]).await
+        });
+        for _ in 0..20 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(sign_call(&state, "/api/sign/open", json!({ "k": token }).to_string(), "192.0.2.77:1", &[]).await.0, StatusCode::OK);
+        let (_, _, woke) = held.await.unwrap();
+        assert_eq!(woke["state"], "opened");
+        assert!(t1.elapsed() < Duration::from_secs(1));
+    }
+
+    #[tokio::test]
+    async fn the_phone_page_is_served_with_its_csp() {
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        let state = new_state(0, 0);
+        let has_page = Assets::get("sign/index.html").is_some();
+        for path in ["/sign", "/sign/", "/sign/sign.js", "/sign/sign.css"] {
+            let mut req = Request::builder().uri(path).body(Body::empty()).unwrap();
+            req.extensions_mut().insert(ConnectInfo("192.0.2.77:1".parse::<SocketAddr>().unwrap()));
+            let res = http_router(state.clone()).oneshot(req).await.unwrap();
+            let h = res.headers().clone();
+            assert_eq!(h.get("content-security-policy").unwrap(), crate::sign::SIGN_PAGE_CSP, "{path}");
+            assert_eq!(h.get("referrer-policy").unwrap(), "no-referrer", "{path}");
+            assert_eq!(h.get("cache-control").unwrap(), "no-cache", "{path}");
+            assert_eq!(h.get("x-content-type-options").unwrap(), "nosniff", "{path}");
+            let body = res.into_body().collect().await.unwrap().to_bytes();
+            if has_page && path.starts_with("/sign/sign.") {
+                assert!(!String::from_utf8_lossy(&body).contains("<html"), "{path}: got HTML");
+            }
+            if has_page && (path == "/sign" || path == "/sign/") {
+                assert!(String::from_utf8_lossy(&body).contains("/sign/sign.js"), "{path}: not the phone page");
+            }
+        }
+        // Other pages keep the app's referrer policy and get no sign CSP
+        let mut req = Request::builder().uri("/referee").body(Body::empty()).unwrap();
+        req.extensions_mut().insert(ConnectInfo("192.0.2.77:1".parse::<SocketAddr>().unwrap()));
+        let res = http_router(state).oneshot(req).await.unwrap();
+        assert!(res.headers().get("content-security-policy").is_none());
+        assert_eq!(res.headers().get("referrer-policy").unwrap(), "strict-origin-when-cross-origin");
     }
 }

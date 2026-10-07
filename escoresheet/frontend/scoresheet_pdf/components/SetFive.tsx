@@ -3,6 +3,8 @@ import { SubRecord } from '../types_scoresheet';
 import { PointsColumn5, PointsColumn30 } from './PointsColumn';
 import { StrikeZ } from './StrikeZ';
 import { FitText } from './FitText';
+import { ServiceBox, SubstitutionCells } from './ServiceBox';
+import { MARK_STROKE } from './Marks';
 
 interface ServiceRound {
   position: number; // 0-5 for I-VI
@@ -71,8 +73,8 @@ const SRSelector: React.FC<{ initialSelection?: 'S' | 'R' | null }> = ({ initial
                     {item}
                     {initialSelection === item && (
                         <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
-                            <line x1="20" y1="20" x2="80" y2="80" stroke="black" strokeWidth="12" />
-                            <line x1="80" y1="20" x2="20" y2="80" stroke="black" strokeWidth="12" />
+                            <line x1="18" y1="18" x2="82" y2="82" stroke="black" strokeWidth={MARK_STROKE} vectorEffect="non-scaling-stroke" />
+                            <line x1="82" y1="18" x2="18" y2="82" stroke="black" strokeWidth={MARK_STROKE} vectorEffect="non-scaling-stroke" />
                         </svg>
                     )}
                 </div>
@@ -92,13 +94,13 @@ const TeamServiceGridSet5: React.FC<{
     const positions = [0, 1, 2, 3, 4, 5];
 
     // Set 5: 6 rotation boxes arranged in 2 columns × 3 rows
-    const rotationHeight = '1.5cm';
-    const totalHeight = '3.5cm'; // 0.5cm header + 0.5cm players + 1.5cm subs + 1.5cm rotation = 4.0cm
+    const rotationHeight = '15mm';
+    const totalHeight = '40mm'; // 5 mm numerals + 5 mm line-up + 15 mm substitutions + 15 mm service rounds
 
     return (
         <div className="flex flex-col shrink-0" style={{ width: '60mm', height: totalHeight }}>
             {/* Roman Numerals Header */}
-            <div className="flex border-b border-black shrink-0" style={{ height: '5mm' }}>
+            <div className="flex shrink-0" style={{ height: '5mm' }}>
                 {['I', 'II', 'III', 'IV', 'V', 'VI'].map((roman, idx, arr) => {
                     const isLast = idx === arr.length - 1;
                     return (
@@ -127,160 +129,32 @@ const TeamServiceGridSet5: React.FC<{
             </div>
 
             {/* Substitutions Area */}
-            <div className="flex shrink-0" style={{ height: '1.5cm' }}>
-                {positions.map((colIdx, colArrIdx) => {
-                    const posSubs = subs[colIdx] || [];
-                    const sub1 = posSubs[0];
-                    const sub2 = posSubs[1];
-                    const isLastCol = colArrIdx === positions.length - 1;
-
-                    return (
-                        <div key={colIdx} className="flex flex-col h-full" style={{ width: '10mm' }}>
-                            {/* Substitution Row - Only PlayerIn (PlayerOut is already in lineup row) */}
-                            <div className={`shrink-0 p-0.5 flex items-center justify-center relative border-b border-black ${isLastCol ? 'border-r-0' : 'border-r'}`} style={{ height: '0.5cm' }}>
-                                {sub1 ? (
-                                    <>
-                                        <div className="text-[14px] text-center font-bold">
-                                            {sub1.playerIn}
-                                        </div>
-                                        {/* Circle around playerIn if substitution is closed (can't re-enter) */}
-                                        {sub1.isCircled && (
-                                            <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" style={{ overflow: 'visible' }}>
-                                                <circle cx="50" cy="50" r="42" fill="none" stroke="black" strokeWidth="2" />
-                                            </svg>
-                                        )}
-                                    </>
-                                ) : sub2 ? (
-                                    <>
-                                        <div className="text-[14px] text-center font-bold">
-                                            {sub2.playerIn}
-                                        </div>
-                                        {/* Circle around playerIn if substitution is closed (can't re-enter) */}
-                                        {sub2.isCircled && (
-                                            <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" style={{ overflow: 'visible' }}>
-                                                <circle cx="50" cy="50" r="42" fill="none" stroke="black" strokeWidth="2" />
-                                            </svg>
-                                        )}
-                                    </>
-                                ) : (
-                                    <div className="text-[14px] text-center"></div>
-                                )}
-                            </div>
-                            {/* Sub 1 Score - upper box */}
-                            <div className={`flex items-center justify-center border-b border-black ${isLastCol ? 'border-r-0' : 'border-r'}`} style={{ height: '0.5cm' }}>
-                                {sub1 && sub1.score ? (
-                                    <div className="text-[12px] text-center leading-tight flex items-center gap-0.5">
-                                        <span>{sub1.score.split(':')[0]}</span>
-                                        <span>:</span>
-                                        <span>{sub1.score.split(':')[1]}</span>
-                                    </div>
-                                ) : (
-                                    <div className="text-[12px] text-center leading-tight">:</div>
-                                )}
-                            </div>
-
-                            {/* Sub 2 Score - lower box (for return substitution) - no bottom border (parent has it) */}
-                            <div className={`flex items-center justify-center bg-white border-b border-black ${isLastCol ? 'border-r-0' : 'border-r'}`} style={{ height: '0.5cm' }}>
-                                {sub2 && sub2.score ? (
-                                    <div className="text-[12px] text-center leading-tight flex items-center gap-0.5">
-                                        <span>{sub2.score.split(':')[0]}</span>
-                                        <span>:</span>
-                                        <span>{sub2.score.split(':')[1]}</span>
-                                    </div>
-                                ) : (
-                                    <div className="text-[12px] text-center leading-tight">:</div>
-                                )}
-                            </div>
-                        </div>
-                    );
-                })}
+            <div className="flex shrink-0" style={{ height: '15mm' }}>
+                {positions.map((colIdx, colArrIdx) => (
+                    <SubstitutionCells key={colIdx} subs={subs[colIdx] || []} lastCol={colArrIdx === positions.length - 1} />
+                ))}
             </div>
 
-            {/* Service Rotation Area - 6 boxes (2 cols × 3 rows) */}
+            {/* Service Rotation Area - per position two columns of round boxes (1-3 | 4-6) */}
             <div className="flex shrink-0" style={{ height: rotationHeight }}>
                 {positions.map((colIdx, colArrIdx) => {
                     const isLastPosition = colArrIdx === positions.length - 1;
                     return (
                         <div
                             key={colIdx}
-                            className={`flex flex-col h-full ${isLastPosition ? '' : 'border-r border-black'}`}
-                            style={{ width: '10mm' }}
+                            className={`grid h-full ${isLastPosition ? '' : 'border-r border-black'}`}
+                            style={{ width: '10mm', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gridTemplateRows: 'repeat(3, 5mm)', gridAutoFlow: 'column' }}
                         >
-                            {/* 2×3 Grid with rotation boxes 1-6 */}
-                            <div
-                                className="grid h-full relative"
-                                style={{
-                                    display: 'grid',
-                                    gridTemplateColumns: 'repeat(2, 1fr)',
-                                    gridTemplateRows: 'repeat(3, 1fr)',
-                                    gridAutoFlow: 'column'
-                                }}
-                            >
-                                {/* Vertical divider between columns */}
-                                <div
-                                    className="absolute top-0 bottom-0 border-l border-black pointer-events-none"
-                                    style={{ left: '50%', transform: 'translateX(-0.5px)' }}
-                                />
-
-                                {/* Horizontal divider after row 1 */}
-                                <div
-                                    className="absolute left-0 right-0 border-t border-black pointer-events-none"
-                                    style={{ top: 'calc(100% / 3)', transform: 'translateY(-0.5px)' }}
-                                />
-
-                                {/* Horizontal divider after row 2 */}
-                                <div
-                                    className="absolute left-0 right-0 border-t border-black pointer-events-none"
-                                    style={{ top: 'calc(100% / 3 * 2)', transform: 'translateY(-0.5px)' }}
-                                />
-
-                                {/* Rotation boxes 1-6 */}
-                                {[1, 2, 3, 4, 5, 6].map((num) => {
-                                    const showX = startsReceiving && colIdx === 0 && num === 1;
-
-                                    // Find service round data for this position and box
-                                    const serviceRound = serviceRounds.find(sr => sr.position === colIdx && sr.box === num);
-                                    const hasPoints = serviceRound && serviceRound.points !== null && serviceRound.points !== undefined;
-                                    const isTicked = serviceRound?.ticked || false;
-                                    const isCircled = serviceRound?.circled || false;
-
-                                    return (
-                                        <div
-                                            key={num}
-                                            className="relative flex items-center justify-center"
-                                            style={{ height: '5mm' }}
-                                        >
-                                            <span className="absolute top-[0.5px] right-[1px] text-[6px] leading-none text-black font-medium pointer-events-none">
-                                                {num}
-                                            </span>
-                                            {/* Tick/slash through the box number when this position served */}
-                                            {isTicked && !showX && (
-                                                <svg className="absolute top-0 right-0 w-[1.5mm] h-[1.5mm] pointer-events-none" viewBox="0 0 100 100">
-                                                    <line x1="15" y1="85" x2="85" y2="15" stroke="black" strokeWidth="10" />
-                                                </svg>
-                                            )}
-                                            {showX && (
-                                                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
-                                                    <line x1="20" y1="20" x2="80" y2="80" stroke="black" strokeWidth="8" />
-                                                    <line x1="80" y1="20" x2="20" y2="80" stroke="black" strokeWidth="8" />
-                                                </svg>
-                                            )}
-                                            {/* Points scored when service lost - but not if this is the initial X box */}
-                                            {hasPoints && serviceRound && !showX && (
-                                                <span className="absolute inset-0 flex items-center justify-center text-[10.5px] font-bold text-black pointer-events-none">
-                                                    {serviceRound.points}
-                                                </span>
-                                            )}
-                                            {/* Circle for last point at end of set */}
-                                            {isCircled && (
-                                                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
-                                                    <circle cx="50" cy="50" r="45" fill="none" stroke="black" strokeWidth="3" />
-                                                </svg>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
+                            {[1, 2, 3, 4, 5, 6].map((num) => (
+                                <div key={num} className={num <= 3 ? 'border-r ss-rule' : ''}>
+                                    <ServiceBox
+                                        num={num}
+                                        showX={startsReceiving && colIdx === 0 && num === 1}
+                                        round={serviceRounds.find(sr => sr.position === colIdx && sr.box === num)}
+                                        lastRow={num % 3 === 0}
+                                    />
+                                </div>
+                            ))}
                         </div>
                     );
                 })}
@@ -330,9 +204,9 @@ export const SetFive: React.FC<SetFiveProps> = ({
   const maxScore = Math.max(finalScoreB, finalScoreA);
 
   return (
-    <div className="border border-black bg-white flex flex-col overflow-hidden shadow-sm shrink-0 relative" style={{ width: '229mm' }}>
+    <div className="border border-black bg-white flex flex-col overflow-hidden shadow-sm shrink-0 relative" style={{ width: 'calc(229mm + 2px)' }} data-testid="set5-box">
        {/* Header Strip */}
-       <div className="flex bg-gray-100 text-xs shrink-0k" style={{ height: '0.8cm', width: '229mm' }}>
+       <div className="flex bg-gray-100 text-xs shrink-0" style={{ height: '0.8cm', width: '229mm' }}>
            {/* Start Time */}
            <div className="border-r border-black flex items-center pr-2 gap-2 bg-white shrink-0" style={{ width: '20mm', paddingLeft: '3px' }}>
                 <span className="font-bold text-[9px]">Start:</span>
@@ -340,7 +214,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
            </div>
 
            {/* Panel 1 Header: Team A (Left) */}
-           <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '40.3mm' }}>
+           <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '40mm' }}>
                 <div className="flex items-center gap-1 w-full">
                     <div className="flex items-center gap-1">
                         <div className="w-6 h-6 rounded-full border border-black text-center bg-gray-200 text-black font-bold text-sm shrink-0 flex items-center justify-center">{teamALabel}</div>
@@ -349,10 +223,10 @@ export const SetFive: React.FC<SetFiveProps> = ({
                     <FitText max={12} min={5} multiline style={{ height: '0.7cm' }} className="w-full uppercase leading-none flex items-center justify-center text-center font-bold bg-white ml-1">{teamNameA || ''}</FitText>
                 </div>
            </div>
-           <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '14.9mm' }}>Points</div>
+           <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '15mm' }}>Points</div>
 
            {/* Panel 2 Header: Team RIGHT */}
-           <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '40.1mm' }}>
+           <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '40mm' }}>
                 <div className="flex items-center gap-1 w-full justify-end">
                     <FitText max={12} min={5} multiline style={{ height: '0.7cm' }} className="w-full uppercase leading-none flex items-center justify-center text-center font-bold bg-white mr-1">{teamNameB || ''}</FitText>
                     <div className="flex items-center gap-1">
@@ -362,13 +236,13 @@ export const SetFive: React.FC<SetFiveProps> = ({
                 </div>
            </div>
            {/* End Time */}
-           <div className="flex items-center border-r border-black px-2 gap-2 justify-start bg-white shrink-0" style={{ width: '20.2mm' }}>
+           <div className="flex items-center border-r border-black pl-1 pr-1 gap-1 justify-start bg-white shrink-0" style={{ width: '20mm' }}>
                 <span className="font-bold text-[9px]">End:</span>
                 <div className="bg-transparent text-center font-mono text-xs">{endTime}</div>
            </div>
            <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '15mm' }}>Points</div>
            {/* Panel 3 Header: Team LEFT (Swapped) */}
-           <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '30mm', marginLeft: '3mm' }}>
+           <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '30mm', marginLeft: '3.5mm' }}>
                 <div className="flex items-center gap-1 w-full">
                     <div className="flex items-center gap-1">
                         <div className="w-6 h-6 rounded-full border border-black text-center bg-gray-200 text-black font-bold text-sm shrink-0 flex items-center justify-center">{teamALabel}</div>
@@ -378,13 +252,13 @@ export const SetFive: React.FC<SetFiveProps> = ({
            </div>
 
            {/* Points at Change */}
-           <div className="border-r border-black flex items-center px-1 gap-2 bg-white shrink-0" style={{ width: '30.2mm' }}>
+           <div className="border-r border-black flex items-center px-1 gap-2 bg-white shrink-0" style={{ width: '30mm' }}>
                 <div className="h-6 border border-black flex items-center justify-center bg-white font-bold text-sm relative" style={{ width: '35px' }} data-testid="set5-points-at-change">
                     {pointsAtChangeA !== null && pointsAtChangeA !== undefined ? pointsAtChangeA : ''}
                 </div>
                 <span className="text-[8px] font-bold leading-none text-center">Points at change</span>
            </div>
-           <div className="flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '16mm' }}>Points</div>
+           <div className="flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '15.5mm' }}>Points</div>
        </div>
 
        {/* Court Change Box - spans full height of Set 5 (positioned at container level) */}
@@ -409,7 +283,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
             </div>
 
             {/* Panel 3: Team A (Swapped) */}
-            <div className="flex shrink-0" style={{ width: '76mm', marginLeft: '3.5mm' }}>
+            <div className="flex shrink-0" style={{ width: '75.5mm', marginLeft: '3.5mm' }}>
                  <TeamServiceGridSet5 lineup={lineupA} subs={subsA_Right || subsA} startsReceiving={false} serviceRounds={serviceRoundsA_Right} />
                  <PointsColumn30 isLast={true} isPanel3={true} timeouts={timeoutsA_Right || timeoutsA || ["", ""]} markedPoints={markedPointsA_Right || []} circledPoints={circledPointsA_Right || []} preChangePoints={pointsAtChangeA ?? null} maxScore={maxScore} setFinished={setFinished} finalScore={finalScoreA} />
             </div>

@@ -1,6 +1,7 @@
 // Prevents an extra console window on Windows in release.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod activity;
 mod backup;
 mod firewall;
 mod flavour;
@@ -9,6 +10,7 @@ mod netifs;
 mod netshare;
 mod popups;
 mod relay;
+mod sign;
 mod updater;
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
@@ -54,14 +56,16 @@ fn main() {
     // after they asked the user): the running app quits cleanly, so the
     // tablets' Wi-Fi is switched off and the user's hotspot settings come
     // back. Without it the installer ended the app with TerminateProcess.
-    let mut builder = tauri::Builder::default();
+    // The desktop log first (<data dir>/OpenVolley/logs/desktop.log, rotated;
+    // activity.rs keeps the activity log's daily files in the same folder).
+    let mut builder = tauri::Builder::default().plugin(log_plugin());
     if single_instance_available() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             if argv.iter().any(|a| a == lifecycle::QUIT_ARG) {
                 lifecycle::os_exit(app, "the installer asked (--quit)");
                 return;
             }
-            eprintln!("[app] started again: showing the running app");
+            log::info!("[app] started again: showing the running app");
             lifecycle::show_windows(app);
         }));
     }
@@ -77,7 +81,7 @@ fn main() {
             // Wi-Fi a crashed run left on (Windows), then exit, before the
             // ports are bound or a window opens.
             if std::env::args().any(|a| a == lifecycle::QUIT_ARG) {
-                eprintln!("[app] --quit: {} is not running", flavour::CURRENT.name);
+                log::info!("[app] --quit: {} is not running", flavour::CURRENT.name);
                 netshare::recover_now();
                 std::process::exit(0);
             }
@@ -87,13 +91,18 @@ fn main() {
             // blank the window). Here, after the single-instance check: a
             // second launch never gets this far.
             let http_listener = std::net::TcpListener::bind(("0.0.0.0", http)).unwrap_or_else(|e| {
-                eprintln!("Cannot bind HTTP port {http}: {e}");
+                log::error!("Cannot bind HTTP port {http}: {e}");
                 std::process::exit(1);
             });
             let ws_listener = std::net::TcpListener::bind(("0.0.0.0", ws)).unwrap_or_else(|e| {
-                eprintln!("Cannot bind WebSocket port {ws}: {e}");
+                log::error!("Cannot bind WebSocket port {ws}: {e}");
                 std::process::exit(1);
             });
+
+            log::info!("[app] OpenVolley {} starting (http :{http}, ws :{ws})", app.package_info().version);
+            if http != DEFAULT_HTTP_PORT {
+                log::warn!("[app] OPENVOLLEY_HTTP_PORT={http}: cloud sync needs port {DEFAULT_HTTP_PORT}");
+            }
 
             #[cfg(target_os = "linux")]
             force_light_gtk_theme();
@@ -116,8 +125,16 @@ fn main() {
                 let st = state.clone();
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
+                    // The log gets the tablet count when it changes (a summary
+                    // of the relay's connections, never a line per message)
+                    let mut logged = 0;
                     loop {
-                        lifecycle::set_tablet_count(&handle, relay::tablet_count(&st).await);
+                        let tablets = relay::tablet_count(&st).await;
+                        if tablets != logged {
+                            log::info!("[relay] {tablets} tablet(s) connected (was {logged})");
+                            logged = tablets;
+                        }
+                        lifecycle::set_tablet_count(&handle, tablets);
                         // the tray's "Restart to update" follows the gate
                         updater::push(&handle);
                         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
@@ -256,7 +273,7 @@ fn apply_light_gtk_settings(settings: &gtk::Settings) {
     }
     if let Some(dark) = settings.gtk_theme_name() {
         if let Some(light) = light_gtk_theme_name(dark.as_str()) {
-            eprintln!("[theme] GTK theme {dark} -> {light} (the scoretable is light only)");
+            log::info!("[theme] GTK theme {dark} -> {light} (the scoretable is light only)");
             settings.set_gtk_theme_name(Some(&light));
         }
     }
@@ -285,6 +302,8 @@ fn with_app_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Bu
         backup::backup_remove,
         backup::backup_open_dir,
         backup::backup_pick_file,
+        activity::activity_append,
+        activity::activity_open_dir,
         netshare::hotspot_status,
         netshare::hotspot_start,
         netshare::hotspot_stop,
@@ -306,6 +325,39 @@ fn with_app_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Bu
         popups::download_open,
         popups::download_reveal
     ])
+}
+
+/// tauri-plugin-log: stdout and `desktop.log` in the log folder, 5 MB per
+/// file, the last 5 kept, local time; this app's lines from Info (Debug with
+/// OV_DEBUG=1), other crates' only from Warn: their Info lines (zbus logs
+/// every D-Bus handshake, with raw bytes) are noise in the file and could
+/// carry what the app hands them (NetworkManager calls carry the tablet
+/// Wi-Fi password). None of
+/// the plugin's JS commands is granted to a window (no capability names
+/// `log:`), so the page cannot write to it. Never log a PIN, token or the
+/// tablet Wi-Fi password: URLs are logged without their query (popups.rs).
+fn log_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    use tauri_plugin_log::{Builder, RotationStrategy, Target, TargetKind, TimezoneStrategy};
+    let level = if std::env::var("OV_DEBUG").ok().as_deref() == Some("1") {
+        log::LevelFilter::Debug
+    } else {
+        log::LevelFilter::Info
+    };
+    let mut targets = vec![Target::new(TargetKind::Stdout)];
+    if let Some(dir) = activity::default_log_root() {
+        // created private (0700 on unix), like the backups
+        if backup::create_private_dir(&dir).is_ok() {
+            targets.push(Target::new(TargetKind::Folder { path: dir, file_name: Some("desktop".into()) }));
+        }
+    }
+    Builder::new()
+        .targets(targets)
+        .max_file_size(5_000_000)
+        .rotation_strategy(RotationStrategy::KeepSome(5))
+        .timezone_strategy(TimezoneStrategy::UseLocal)
+        .level(log::LevelFilter::Warn)
+        .level_for(env!("CARGO_CRATE_NAME"), level)
+        .build()
 }
 
 fn run_server_only(http: u16, ws: u16) {
@@ -331,6 +383,18 @@ mod tests {
         assert_eq!(light_gtk_theme_name("Adwaita-dark").as_deref(), Some("Adwaita"));
         assert_eq!(light_gtk_theme_name("Pop-Dark").as_deref(), Some("Pop"));
         assert_eq!(light_gtk_theme_name("Adwaita:dark").as_deref(), Some("Adwaita"));
+    }
+
+    /// The log plugin's JS command (plugin:log|log) is granted to no window:
+    /// the page cannot write into desktop.log.
+    #[test]
+    fn no_capability_grants_the_log_plugin() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("capabilities");
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            let text = std::fs::read_to_string(&path).unwrap();
+            assert!(!text.contains("\"log:"), "{} grants the log plugin", path.display());
+        }
     }
 
     #[test]
@@ -407,6 +471,39 @@ mod ipc_acl_tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// The activity log files: the scoretable page appends JSON lines to
+    /// today's file in the log folder; other origins may not.
+    #[test]
+    fn scoretable_page_may_append_activity_other_origins_may_not() {
+        let root = std::env::temp_dir().join(format!("ov-activity-ipc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::env::set_var("OPENVOLLEY_LOG_DIR", &root);
+
+        let app = super::with_app_commands(mock_builder())
+            .build(tauri::generate_context!())
+            .expect("mock app");
+        let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::External("http://localhost:5173/".parse().unwrap()))
+            .build()
+            .unwrap();
+        let body = serde_json::json!({ "lines": ["{\"kind\":\"app.start\"}"] });
+        let res = get_ipc_response(&window, request("activity_append", "http://localhost:5173/", body.clone()));
+        assert!(res.is_ok(), "localhost refused: {res:?}");
+        let files: Vec<_> = std::fs::read_dir(&root).unwrap().filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).collect();
+        assert_eq!(files.len(), 1);
+        assert!(files[0].starts_with("activity-") && files[0].ends_with(".jsonl"), "{files:?}");
+        let bad = get_ipc_response(&window, request("activity_append", "http://localhost:5173/", serde_json::json!({ "lines": ["not json"] })));
+        assert!(bad.is_err(), "an invalid line is refused");
+
+        for url in ["http://192.168.1.20:5173/", "https://example.com/", "http://localhost.evil.com:5173/"] {
+            for cmd in ["activity_append", "activity_open_dir"] {
+                let err = get_ipc_response(&window, request(cmd, url, body.clone()))
+                    .expect_err(&format!("{cmd} from {url} must be refused"));
+                assert!(err.to_string().contains("not allowed"), "{cmd} from {url}: refused by the ACL, got {err}");
+            }
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// A scoresheet window (window.open of /scoresheet/, label "popup-<n>",
     /// popups.rs) loads the same http://localhost origin as the scoretable,
     /// so only the capabilities naming "main" keep the backup and tablet-network
@@ -427,6 +524,7 @@ mod ipc_acl_tests {
             "latest": true
         });
         for cmd in ["backup_info", "backup_write", "backup_list", "backup_remove", "backup_open_dir", "backup_pick_file",
+                    "activity_append", "activity_open_dir",
                     "hotspot_status", "hotspot_start", "hotspot_stop", "bluetooth_status", "bluetooth_start", "bluetooth_stop",
                     "firewall_status",
                     "app_page_state", "app_page_gone", "app_hide", "app_quit", "app_quit_ack",

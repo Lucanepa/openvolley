@@ -29,9 +29,12 @@ export const LeftInfoBox: React.FC<LeftInfoBoxProps> = ({
   return (
     <div
       className={`border border-black bg-white flex flex-col ${isSet5 ? "mr-1" : "mr-2"}`}
-      style={{ width: isSet5 ? '39.7mm' : '40mm', height: isSet5 ? '4.8cm' : '5.3cm' }}
+      // exactly as tall as the set box beside it (its 0.8 cm header + body + its two
+      // 1px borders), so every legend line meets its grid line (audit 2026-10)
+      style={{ width: isSet5 ? '39.7mm' : '40mm', height: isSet5 ? 'calc(4.8cm + 2px)' : 'calc(5.3cm + 2px)' }}
+      data-testid="legend-box"
     >
-        <div className="flex flex-col items-center justify-center min-w-[30px] border-b border-black p-1" style={{height:'0.8cm'}}>
+        <div className="flex flex-col items-center justify-center min-w-[30px] border-b border-black p-1 shrink-0" style={{height:'0.8cm'}}>
 
         </div>
       {/* Rotation Header */}

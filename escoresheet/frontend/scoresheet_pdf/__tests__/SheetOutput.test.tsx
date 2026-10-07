@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest
 import { render, cleanup, act, waitFor } from '@testing-library/react'
 import App from '../App_Scoresheet'
 import { BRAND } from '../../src/brand.js'
+import { NUMBER_CIRCLE_MM, CIRCLED_NUMBER_PX, MARK_STROKE } from '../components/Marks'
 
 // The owner's request of 2026-10-07 on the printed sheet and its PDF:
 // OpenVolley instead of Swiss Volley, the new ball, "DoB" in APPROVAL, a file
@@ -138,7 +139,7 @@ describe('the generated sheet', () => {
     // 1, 3, 7, 12 in shirt-number order, ISO dates as DD.MM.YYYY
     expect(home).toMatch(/01\.03\.19981Home1, A\.03\.03\.19983Home3, A\.07\.03\.19987Home7, A\.03\.03\.199812Home12, A\./)
     // the away short name was empty: the team name
-    expect(text).toContain('Volley Spada Academica H1BDoBNoName')
+    expect(text).toContain('BVolley Spada Academica H1DoBNoName')
     expect(text).toContain('02.03.19982Away2, X.')
     expect(text).not.toContain('Lic.')
   })
@@ -249,11 +250,20 @@ describe('set 5, defaults and sanctions on the sheet', () => {
     expect(container.querySelectorAll('[data-mark="reverseT"]')).toHaveLength(0)
   })
 
-  it('at the change: the left team\'s points only in the box, an inverted T over them in panel 3', () => {
+  it('at the change: the left team\'s points only in the box, no T / reverse T in the points columns (owner 2026-10-07)', () => {
     // home (left) 5, then away reaches 8: the change at 5:8
     const { getByTestId, container } = render(<App matchData={set5('hhhhh' + 'aaaaaaaa' + 'h')} autoAction="preview" />)
     expect(getByTestId('set5-points-at-change').textContent).toBe('5')
-    expect(container.querySelectorAll('[data-mark="reverseT"]')).toHaveLength(5)
+    expect(container.querySelectorAll('[data-mark="reverseT"], [data-mark="T"]')).toHaveLength(0)
+    // panel 3 (the last points grid): 1-5 stay plain, the 6th point is ticked
+    const grids = container.querySelectorAll('[data-testid="points-grid"]')
+    const panel3 = grids[grids.length - 1]
+    const mark = (n: number) => panel3.querySelector(`[data-point="${n}"]`)?.getAttribute('data-mark')
+    expect([1, 2, 3, 4, 5].map(mark)).toEqual(['', '', '', '', ''])
+    expect(mark(6)).toBe('tick')
+    // panels 2 and 3 print 1-30 (3 x 10), sets 1-4 print 1-48
+    expect(panel3.querySelectorAll('[data-point]')).toHaveLength(30)
+    expect(grids[0].querySelectorAll('[data-point]')).toHaveLength(48)
   })
 
   it('a default before the start: the grids struck off, the result and the remark written', () => {
@@ -302,5 +312,61 @@ describe('set 5, defaults and sanctions on the sheet', () => {
     const { getAllByTestId, getByTestId } = render(<App matchData={{ ...base, events }} autoAction="preview" />)
     expect(getAllByTestId('sanction-row')).toHaveLength(9)
     expect(getByTestId('remarks-text').textContent).toContain('Sanctions (overflow):\nTeam A, Set 1, Score 0:0, Warning, (13)')
+  })
+})
+
+describe('round 2 (owner review 2026-10-07)', () => {
+  it('both roster headers centre the short name, the A/B circle at the outer side', () => {
+    const { getAllByTestId } = render(<App matchData={fixture()} autoAction="preview" />)
+    const names = getAllByTestId('roster-team-name')
+    expect(names).toHaveLength(2)
+    for (const n of names) expect(n.className).toContain('text-center')
+  })
+
+  it('the coin-toss signatures are in the roster boxes as soon as the match record has them', () => {
+    const sig = 'data:image/png;base64,iVBORw0KGgo='
+    const data = fixture({ match: { status: 'setup', homeCaptainSignature: sig, awayCoachSignature: sig, coinTossTeamA: undefined } })
+    const { getAllByTestId, queryAllByTestId, rerender } = render(<App matchData={data} autoAction="preview" />)
+    expect(getAllByTestId('roster-captain-signature')).toHaveLength(1)
+    expect(getAllByTestId('roster-coach-signature')).toHaveLength(1)
+    // removed from the record (re-sign / clear): gone from the sheet too
+    rerender(<App matchData={fixture({ match: { status: 'setup' } })} autoAction="preview" />)
+    expect(queryAllByTestId('roster-captain-signature')).toHaveLength(0)
+  })
+
+  it('Match Start is the actual start of set 1 (its first rally), not the scheduled time', () => {
+    const base = fixture()
+    const data = {
+      ...base,
+      // the start dialog kept the schedule (20:00); the first rally really started at 20:11
+      sets: [{ index: 1, homePoints: 1, awayPoints: 0, finished: false, startTime: local(2026, 10, 7, 20, 0) }],
+      events: [
+        ...base.events,
+        { type: 'rally_start', setIndex: 1, seq: 50, ts: local(2026, 10, 7, 20, 11), payload: {} },
+        { type: 'point', setIndex: 1, seq: 51, ts: local(2026, 10, 7, 20, 12), payload: { team: 'home' } }
+      ]
+    }
+    const { container } = render(<App matchData={data} autoAction="preview" />)
+    const text = sheetText(container)
+    expect(text).toContain('Start:20:11')
+    expect(text).toContain('20 h 11 min')
+    expect(text).not.toContain('20 h 00 min')
+  })
+
+  it('every roster player row is ruled, the remarks box has its writing lines', () => {
+    const { getAllByTestId } = render(<App matchData={fixture()} autoAction="preview" />)
+    expect(getAllByTestId('roster-row')).toHaveLength(28)
+    for (const r of getAllByTestId('roster-row').slice(0, 13)) expect(r.className).toContain('border-b')
+    expect(getAllByTestId('remarks-rule')).toHaveLength(3)
+  })
+
+  it('a number circle fits inside the narrowest 5 mm cell with a visible gap, its number clear of the ring', () => {
+    // service-box cells are ~4.6 mm wide inside their rules, rows ~4.74 mm high;
+    // ring + stroke (CSS px at 96 dpi) must leave >= 0.1 mm on each side (owner item 7)
+    const strokeMm = MARK_STROKE * 25.4 / 96
+    expect((4.6 - (NUMBER_CIRCLE_MM + strokeMm)) / 2).toBeGreaterThanOrEqual(0.1)
+    // a two-digit circled number (~0.6 em per bold digit) stays inside the ring
+    const digitsMm = 2 * 0.6 * CIRCLED_NUMBER_PX * 25.4 / 96
+    expect(digitsMm).toBeLessThan(NUMBER_CIRCLE_MM - strokeMm - 0.6)
   })
 })

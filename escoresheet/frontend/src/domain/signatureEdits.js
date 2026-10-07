@@ -31,6 +31,18 @@ const PRE_MATCH_SIGNATURE_KEYS = Object.freeze({
   awayCaptainSignature: 'away_captain'
 })
 
+/** The match-row field of a signature pad's role ('home-captain', 'away-coach', ...), or null. */
+export function signatureFieldOfRole(role) {
+  return ({
+    'home-coach': 'homeCoachSignature',
+    'home-captain': 'homeCaptainSignature',
+    'away-coach': 'awayCoachSignature',
+    'away-captain': 'awayCaptainSignature',
+    'home-captain-post': 'homePostGameCaptainSignature',
+    'away-captain-post': 'awayPostGameCaptainSignature'
+  })[role] ?? null
+}
+
 /**
  * Re-sign and Clear are closed once the result is approved or the match is
  * closed: the signatures then belong to an approved sheet. "Reopen match"
