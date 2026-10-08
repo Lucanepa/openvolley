@@ -30,13 +30,13 @@ Other design decisions made in this spec. Each one is flagged so the owner can o
 
 - **D1** PIN storage uses HMAC-SHA256 with a key derived from `OV_PIN_SECRET`, plus a per-row salt. bcrypt is not used (justified in 1.1). Without `OV_PIN_SECRET` the feature is off (503) and never falls back to plaintext.
 - **D2** The scorer slot needs the literal `scorer` role in `profiles.roles`. `admin` alone does not qualify, so an admin who scores adds the scorer role to their own account. The approver must also be the match's creator or an editor of it.
-- **D3** Approvals are indoor only for now. A beach match answers 409 `OV_APPROVAL_UNSUPPORTED`.
+- **D3** ~~Approvals are indoor only for now.~~ Lifted for OpenBeach: `server.js` creates `lib/approvals.js` with `beachApprovals: true`, so beach matches are approved with beach accounts. (A module created without it still answers 409 `OV_APPROVAL_UNSUPPORTED` on a beach match.)
   - Every role check already uses the **sport of the match** (OpenBeach separation, db/012, plan 1.3):
     - a referee slot needs `referee` on an indoor match and `beach:referee` on a beach match;
     - the scorer slot needs `scorer` or `beach:scorer`;
     - the scoring table that sends the approval needs a scorer or referee role of that sport, or `admin`.
   - The audit entries of approvals, undos, PIN lockouts on a match and voids carry the match's app (`audit_log.app`).
-  - Lifting D3 means creating `lib/approvals.js` with `beachApprovals: true` in `server.js`. Then the beach roles also make an account eligible for an approval PIN. The tests already run that mode.
+  - With `beachApprovals: true` (the server's setting) the beach roles also make an account eligible for an approval PIN. A beach match's result key reads `team1_points` / `team2_points` (1.4).
 - **D4** An approval is bound to the result it approved. A reopen voids it, and so does any change of the finished sets. The official approves again.
 - **D5** The official is identified by **email** typed on the scoring device. There is no server-side list of referee accounts to pick from, because that list would expose every referee's address to every scorer.
 - **D6** Test matches may be approved too, so officials can practise. A test match never closes, so its approvals stay undoable.
@@ -362,7 +362,7 @@ The order of the checks is part of the contract:
    Failure: 400 `OV_INVALID_REQUEST`.
 2. No secret: 503 `OV_APPROVAL_UNAVAILABLE`.
 3. In one transaction, run `SELECT … FROM public.matches WHERE external_id = $1 FOR UPDATE`. This serialises all approvals of a match. No row: 404 `OV_NOT_FOUND`.
-4. `sport_type = 'beach'`: 409 `OV_APPROVAL_UNSUPPORTED`.
+4. `sport_type = 'beach'` on a module without `beachApprovals`: 409 `OV_APPROVAL_UNSUPPORTED` (the server enables beach approvals; then the checks below use the beach roles).
 5. The caller may write the match (`created_by = caller`, a `match_editors` row, or `access.isAdmin`). If not: 403 `OV_NOT_MATCH_OWNER`.
 5b. The caller holds `scorer` or `referee`, or is an admin. Otherwise 403 `OV_APPROVAL_CALLER_ROLE` `{ details: { roles: ['scorer','referee'] } }` (R2).
 6. `closed_at IS NOT NULL`: 409 `OV_MATCH_CLOSED`.
@@ -441,7 +441,7 @@ These are active approvals only, fetched in one extra query per page, with `WHER
 | 409 | **`OV_APPROVAL_NAME_REQUIRED`** | The approver's profile has no name |
 | 409 | **`OV_APPROVAL_ONE_SLOT`** | The approver already holds another slot of this match |
 | 409 | **`OV_APPROVAL_SLOT_TAKEN`** | The slot already has a valid approval by someone else |
-| 409 | **`OV_APPROVAL_UNSUPPORTED`** | Beach match |
+| 409 | **`OV_APPROVAL_UNSUPPORTED`** | Beach match, on a module without `beachApprovals` (not the server) |
 | 423 | ~~`OV_APPROVAL_PIN_LOCKED`~~ | No longer sent (R5) |
 | 429 | `OV_TOO_MANY_ATTEMPTS` | Limiter or password lockout |
 | 503 | **`OV_APPROVAL_UNAVAILABLE`** | No `OV_PIN_SECRET` |

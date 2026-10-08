@@ -326,8 +326,11 @@ function getDataLayer() {
     // Roles from public.profiles (never the request), 30 s per process (lib/access.js)
     const access = ac.createAccessResolver({ pool: db.pool })
     // Account approvals (lib/approvals.js): the approval PINs need OV_PIN_SECRET
-    // (never plaintext); without it every endpoint answers 503.
-    const approvals = apv.createApprovals({ pool: db.pool, auth, mailer, secret: pins.enabled ? String(process.env.OV_PIN_SECRET) : null })
+    // (never plaintext); without it every endpoint answers 503. OpenBeach
+    // approves with accounts too (beachApprovals): a beach match needs the
+    // beach roles (beach:referee / beach:scorer), an indoor match the indoor
+    // ones, and either kind makes an account eligible for an approval PIN.
+    const approvals = apv.createApprovals({ pool: db.pool, auth, mailer, secret: pins.enabled ? String(process.env.OV_PIN_SECRET) : null, beachApprovals: true })
     if (!approvals.enabled) console.warn('⚠️  [Config] OV_PIN_SECRET is not set: approval with an account is off (503 OV_APPROVAL_UNAVAILABLE).')
     const accounts = acc.createAccounts({ pool: db.pool, db, restore, access, approvalsForMatches: approvals.approvalsForMatches })
     const savedTeams = svt.createSavedTeams({ pool: db.pool })

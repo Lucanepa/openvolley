@@ -74,6 +74,18 @@ describe('account approvals end to end', { skip: SKIP }, () => {
     return { id: m.id, ext }
   }
   const approveBody = (m, slot, official, pin) => ({ external_id: m.ext, slot, email: official.email, pin, result: { sets: SETS } })
+  // An OpenBeach match as OpenBeach syncs it: team1_points / team2_points on beach sets
+  const BEACH_SETS = [[1, 21, 19], [2, 18, 21], [3, 15, 12]]
+  async function endedBeachMatch (owner) {
+    const ext = `e2e_appr_beach_${randomBytes(4).toString('hex')}`
+    const { rows: [m] } = await sql.query(
+      "INSERT INTO public.matches (external_id, status, created_by, game_n, sport_type) VALUES ($1, 'ended', $2, $3, 'beach') RETURNING id",
+      [ext, owner.id, gameSeq++])
+    for (const [i, t1, t2] of BEACH_SETS) {
+      await sql.query("INSERT INTO public.sets (match_id, index, team1_points, team2_points, finished, sport_type) VALUES ($1, $2, $3, $4, true, 'beach')", [m.id, i, t1, t2])
+    }
+    return { id: m.id, ext }
+  }
 
   before(async () => {
     db = await provisionDatabase()
@@ -169,6 +181,49 @@ describe('account approvals end to end', { skip: SKIP }, () => {
     assert.equal(rec.requested_by_name, 'Anna Muster', 'the sender as their profile says now')
     assert.equal(rec.match.external_id, m.ext)
     expectCode(await call(users.ref1, 'POST', '/api/account/approvals', {}), 405, 'OV_METHOD_NOT_ALLOWED')
+  })
+
+  it('OpenBeach: beach accounts hold a PIN and approve a beach match; the roles never cross sports', async () => {
+    const bea = await account('beaE2e', { first: 'Bea', last: 'Strand', roles: ['beach:scorer'] })
+    const bref = await account('brefE2e', { first: 'Rita', last: 'Sand', roles: ['beach:referee'] })
+    // a beach role makes the account eligible for an approval PIN
+    const st = await call(bref, 'GET', '/api/account/approval-pin')
+    assert.equal(st.json.data.eligible, true, st.text)
+    assert.equal((await call(bref, 'POST', '/api/account/approval-pin', { password: PASSWORD, pin: '307519' })).status, 200)
+    assert.equal((await call(bea, 'POST', '/api/account/approval-pin', { password: PASSWORD, pin: '640281' })).status, 200)
+    const beach = await endedBeachMatch(bea)
+    const body = (slot, official, pin) => ({ external_id: beach.ext, slot, email: official.email, pin, result: { sets: BEACH_SETS } })
+
+    // an indoor referee cannot approve a beach match (after a correct PIN: the role)
+    const indoorRef = await call(bea, 'POST', '/api/approvals', body('referee1', users.ref1, MARKER_PIN))
+    expectCode(indoorRef, 403, 'OV_APPROVAL_ROLE_REQUIRED')
+    assert.deepEqual(indoorRef.json.error.details, { role: 'beach:referee' })
+    // the beach referee and the beach scorer approve, bound to team 1 / team 2's points
+    const ok = await call(bea, 'POST', '/api/approvals', body('referee1', bref, '307519'))
+    assert.equal(ok.status, 200, ok.text)
+    assert.equal(ok.json.data.approval.result_key, 'ov-result-v1|1:21:19,2:18:21,3:15:12')
+    assert.equal(ok.json.data.approval.result_matches, true)
+    assert.equal((await call(bea, 'POST', '/api/approvals', body('scorer', bea, '640281'))).status, 200)
+    const list = await call(bea, 'GET', `/api/approvals?external_id=${encodeURIComponent(beach.ext)}`)
+    assert.deepEqual(list.json.data.approvals.map((a) => [a.slot, a.result_matches]), [['referee1', true], ['scorer', true]])
+    const { rows: audit } = await sql.query("SELECT app FROM public.audit_log WHERE action = 'match.approve' AND match_id = $1", [beach.id])
+    assert.deepEqual(audit.map((r) => r.app), ['beach', 'beach'])
+
+    // the beach referee cannot approve an indoor match ...
+    const indoor = await endedMatch(users.owner)
+    const beachRefIndoor = await call(users.owner, 'POST', '/api/approvals', approveBody(indoor, 'referee1', bref, '307519'))
+    expectCode(beachRefIndoor, 403, 'OV_APPROVAL_ROLE_REQUIRED')
+    assert.deepEqual(beachRefIndoor.json.error.details, { role: 'referee' })
+    // ... and a beach-only scorer is not a scoring table for an indoor match
+    const beasIndoor = await endedMatch(bea)
+    const table = await call(bea, 'POST', '/api/approvals', approveBody(beasIndoor, 'referee1', users.ref1, MARKER_PIN))
+    expectCode(table, 403, 'OV_APPROVAL_CALLER_ROLE')
+    assert.deepEqual(table.json.error.details, { roles: ['scorer', 'referee'] })
+    // nor an indoor scorer (made an editor) one for a beach match
+    await sql.query('INSERT INTO public.match_editors (match_id, user_id) VALUES ($1, $2)', [beach.id, users.owner.id])
+    const indoorTable = await call(users.owner, 'POST', '/api/approvals', body('referee2', bref, '307519'))
+    expectCode(indoorTable, 403, 'OV_APPROVAL_CALLER_ROLE')
+    assert.deepEqual(indoorTable.json.error.details, { roles: ['beach:scorer', 'beach:referee'] })
   })
 
   it('/api/db cannot read match_approvals and live sockets never carry it', async () => {
