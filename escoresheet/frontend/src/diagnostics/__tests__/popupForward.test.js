@@ -35,7 +35,7 @@ function desktopWindow(label, path, { env = true, metadataLabel = label } = {}) 
       if (cmd === 'diagnostics_append') {
         for (const l of args.lines) {
           // what activity.rs valid_line accepts, or the whole call fails
-          if (l.length > 16 * 1024 || /[\r\n]/.test(l)) throw new Error('line is not one JSON object')
+          if (Buffer.byteLength(l, 'utf8') > 16 * 1024 || /[\r\n]/.test(l)) throw 'line is not one JSON object of at most 16384 bytes'
           const o = JSON.parse(l)
           if (!o || typeof o !== 'object' || Array.isArray(o)) throw new Error('line is not one JSON object')
         }
@@ -225,6 +225,29 @@ describe('forwarded lines are redacted again by the main window', () => {
     expect(forwarded[2].d.a.length).toBeLessThanOrEqual(20)
     expect(forwarded[3]).not.toHaveProperty('extra')
     expect(main.file.every(l => l.length <= 16 * 1024)).toBe(true)
+  })
+})
+
+describe('a forwarded line the file would refuse', () => {
+  it('a line over 16 KB in UTF-8 (but not in characters) is dropped, and the rest of the batch is written', async () => {
+    const main = await openMain()
+    const { DIAG_CHANNEL } = await import('../popupForward')
+    const ch = new globalThis.BroadcastChannel(DIAG_CHANNEL)
+    const line = (o) => JSON.stringify({ ts: '2026-10-08T12:00:00.000Z', m: 1, sid: 'abc123', seq: 1, src: 'page', a: 0, ...o })
+    // 3 bytes per character: 3 x 20 x 120 characters = about 7,300 characters, 21,600 bytes
+    const wide = Array.from({ length: 20 }, () => '\u65e5'.repeat(120))
+    const big = line({ seq: 2, k: 'ui.wide', d: { a: wide, b: wide, c: wide } })
+    expect(big.length).toBeLessThan(16 * 1024)
+    expect(Buffer.byteLength(big, 'utf8')).toBeGreaterThan(16 * 1024)
+    ch.postMessage({ t: 'diag-lines', from: 'x2', id: 1, win: 'popup-1', page: 'referee', lines: [line({ seq: 1, k: 'ui.click' }), big, line({ seq: 3, k: 'ui.key' })] })
+    await settle(60)
+    ch.close()
+    main.diag.recorder.diag('ui.click', { text: 'main window' })
+    await main.diag.recorder.flushDiagnostics()
+    const lines = parsedFile(main)
+    expect(lines.filter(l => l.win === 'popup-1').map(l => l.k)).toEqual(['ui.click', 'ui.key'])
+    // the scoretable's own lines of that write are there too
+    expect(lines.some(l => !l.win && l.d?.text === 'main window')).toBe(true)
   })
 })
 

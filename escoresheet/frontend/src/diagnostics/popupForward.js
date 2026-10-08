@@ -39,7 +39,10 @@ export const POPUP_BUFFER_MAX = 2000
 export const ACCEPT_LINES_MAX = 500
 /** A forwarded line longer than this is not even parsed. */
 const RAW_LINE_MAX = 64 * 1024
-/** The diagnostics file refuses a whole call with a line above 16 KB (activity.rs valid_line). */
+/**
+ * The diagnostics file refuses a whole call (the scoretable's own lines in it
+ * too) with a line above 16 KB in UTF-8 (activity.rs valid_line, bytes).
+ */
 const FILE_LINE_MAX = 16 * 1024 - 1
 /** Batch ids the main window remembers per pop-up (a batch sent again is taken once). */
 const SEEN_MAX = 1000
@@ -50,6 +53,10 @@ const KIND = /^[a-z][a-z0-9_.-]{0,47}$/i
 const SID = /^[a-z0-9]{1,12}$/i
 const SENDER = /^[a-z0-9]{1,16}$/
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/
+
+const encoder = typeof TextEncoder === 'function' ? new TextEncoder() : null
+// at most 3 bytes per UTF-16 unit: without an encoder, count the worst case
+const utf8Length = (text) => (encoder ? encoder.encode(text).length : text.length * 3)
 
 const randomId = () => Math.random().toString(36).slice(2, 10).padEnd(8, '0')
 
@@ -265,7 +272,7 @@ export function sanitizeForwardedLine(raw, { win = null, page = null } = {}) {
     if (d !== undefined) line.d = d
   }
   const text = JSON.stringify(line)
-  return text.length > FILE_LINE_MAX ? null : text
+  return utf8Length(text) > FILE_LINE_MAX ? null : text
 }
 
 /**
