@@ -32,7 +32,7 @@ const ballImage = ballFallback
 import { sanitizeForFilename } from '../utils/stringUtils'
 import { formatTimeLocal } from '../utils/timeUtils'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
-import { waitForScoresheetPdf, PDF_FAIL } from '../utils/scoresheetPdfRequest'
+import { waitForScoresheetPdf, PDF_FAIL, PDF_REQUEST_PARAM } from '../utils/scoresheetPdfRequest'
 import { getMatchWinner, clearedPostMatchSignatures, planForfeitReversal } from '../domain/matchEnd'
 import {
   ROLE_TO_SLOT, approvalFor, isApprovalValid, slotComplete, approvalLine, approvalsBySlot, approvalSummary,
@@ -1155,7 +1155,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         exportAbortRef.current = abort
         try {
           pdfResult = await waitForScoresheetPdf(
-            () => openAppWindow(`/scoresheet/?matchId=${matchId}&action=getBlob`, { features: 'width=1600,height=1200', title: t('header.scoresheet') }),
+            // pdfReq: the page's answers name this attempt (a window of an
+            // earlier one, closed by Cancel or a stall, is ignored)
+            (req) => openAppWindow(`/scoresheet/?matchId=${matchId}&action=getBlob&${PDF_REQUEST_PARAM}=${encodeURIComponent(req)}`, { features: 'width=1600,height=1200', title: t('header.scoresheet') }),
             { signal: abort.signal }
           )
           setDownloadProgress(prev => ({ ...prev, pdf: true }))

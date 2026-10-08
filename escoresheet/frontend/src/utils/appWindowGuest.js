@@ -52,13 +52,27 @@ export const MSG_PDF_BLOB = 'pdfBlob'
 export const MSG_PDF_BLOB_FAILED = 'pdfBlobFailed'
 /** The heartbeat while the PDF is made (scoresheetPdfRequest.js): { step }. */
 export const MSG_PDF_PROGRESS = 'pdfProgress'
+/**
+ * The approval's request id in this page's URL (`pdfReq`, scoresheetPdfRequest.js).
+ * Every answer carries it, so the approval ignores a window of an earlier
+ * attempt (its late "closed" ended the new wait).
+ */
+export const PDF_REQUEST_PARAM = 'pdfReq'
+
+function withRequestId(message, win) {
+  let req = null
+  try {
+    req = new URLSearchParams(win.location?.search || '').get(PDF_REQUEST_PARAM)
+  } catch { /* no URL: no id */ }
+  return req ? { ...message, req } : message
+}
 
 /** Tells the opener the PDF is still being made. */
 export function reportPdfProgress(progress = {}, win = window) {
   const opener = getOpenerWindow(win)
   if (!opener) return false
   try {
-    opener.postMessage({ type: MSG_PDF_PROGRESS, step: progress.step ?? null }, win.location.origin)
+    opener.postMessage(withRequestId({ type: MSG_PDF_PROGRESS, step: progress.step ?? null }, win), win.location.origin)
     return true
   } catch {
     return false
@@ -78,7 +92,7 @@ export function watchPdfWindowClose(isBusy, win = window) {
     if (!opener) return
     sent = true
     try {
-      opener.postMessage({ type: MSG_PDF_BLOB_FAILED, reason: 'closed' }, win.location.origin)
+      opener.postMessage(withRequestId({ type: MSG_PDF_BLOB_FAILED, reason: 'closed' }, win), win.location.origin)
     } catch { /* opener gone */ }
   }
   win.addEventListener('pagehide', onLeave)
@@ -103,10 +117,10 @@ export async function deliverPdfToOpener(result, win = window) {
   try {
     if (!result) throw new Error('no PDF')
     const arrayBuffer = await result.blob.arrayBuffer()
-    opener.postMessage({ type: MSG_PDF_BLOB, arrayBuffer, filename: result.filename }, origin)
+    opener.postMessage(withRequestId({ type: MSG_PDF_BLOB, arrayBuffer, filename: result.filename }, win), origin)
   } catch {
     // capture failed (e.g. the WebKitGTK data-URL limit of the desktop app)
-    try { opener.postMessage({ type: MSG_PDF_BLOB_FAILED }, origin) } catch { /* opener gone */ }
+    try { opener.postMessage(withRequestId({ type: MSG_PDF_BLOB_FAILED }, win), origin) } catch { /* opener gone */ }
   }
   closeAppWindow(win)
   return true

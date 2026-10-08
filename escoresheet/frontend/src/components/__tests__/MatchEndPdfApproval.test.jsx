@@ -50,8 +50,8 @@ vi.mock('../../lib/apiClient', () => {
 const opened = vi.hoisted(() => [])
 vi.mock('../../utils/openAppWindow', async (orig) => ({
   ...(await orig()),
-  openAppWindow: vi.fn(() => {
-    const w = { closed: false, close() { this.closed = true } }
+  openAppWindow: vi.fn((url) => {
+    const w = { url, closed: false, close() { this.closed = true } }
     opened.push(w)
     return { ok: true, mode: 'window', platform: 'tauri', window: w }
   })
@@ -230,6 +230,29 @@ describe('MatchEnd: the approval PDF', () => {
     expect(opened[0].closed).toBe(true) // the window is not left behind
     expect(store.tables.matches.get(1).approved).toBeFalsy()
     expect(approvedJobs()).toHaveLength(0)
+  })
+
+  it('a late "closed" from the window of an earlier attempt does not end the next one', async () => {
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    const reqOf = (w) => new URL(w.url, 'http://x').searchParams.get('pdfReq')
+    const firstReq = reqOf(opened[0])
+    expect(firstReq).toBeTruthy()
+    fireEvent.click(await screen.findByTestId('export-cancel'))
+    await waitFor(() => expect(approveButton()).toBeEnabled())
+    fireEvent.click(approveButton())
+    await waitFor(() => expect(opened).toHaveLength(2))
+    const secondReq = reqOf(opened[1])
+    expect(secondReq).toBeTruthy()
+    expect(secondReq).not.toBe(firstReq)
+    // the first window's pagehide arrives only now (it was busy capturing)
+    await postFromSheet({ type: 'pdfBlobFailed', reason: 'closed', req: firstReq })
+    await new Promise(r => setTimeout(r, 50))
+    expect(screen.queryByTestId('export-pdf-failed')).toBeNull()
+    expect(opened[1].closed).toBe(false)
+    await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf', req: secondReq })
+    await findButton(en.matchEnd.closeMatch, { timeout: 3000 })
+    expect(store.tables.matches.get(1).approved).toBe(true)
   })
 
   it('the export modal sits above the header (z 1000) and its open menu', async () => {
