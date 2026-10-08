@@ -410,4 +410,51 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
     await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
     cleanup()
   }, 60000)
+
+  // Undo of a decision change: it was undone with no regard to the courts.
+  // The swap that gave a team its 8th point led to the change of courts;
+  // undone, the change goes with it (as for the point that reached 8).
+  it('undo of a decision change that gave a team its 8th point (7:7 to 8:6) takes the change of courts back', async () => {
+    const matchId = await setUpSet5(level(6, 'home', 'away'))
+    mount(matchId)
+    await ready()
+    await screenDecisionChange()
+    await confirmDecision()
+    expect(await score()).toEqual([8, 6])
+    await switchCourts(matchId)
+    await waitFor(() => expect(teamAOnLeft()).toBe(false))
+
+    await undoLast()
+    expect(await score()).toEqual([7, 7])
+    expect(await switched(matchId)).toBe(false)
+    await waitFor(() => expect(teamAOnLeft()).toBe(true))
+
+    // the next 8th point asks for it again
+    await point('Point B')
+    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+    cleanup()
+  }, 60000)
+
+  // ... and an undo that puts a team back on 8 without the change (8:6
+  // swapped to 7:7 from the change-of-courts dialog, then undone) asks for it
+  it('undo of a decision change that puts a team back on 8 (7:7 to 8:6) opens the change of courts', async () => {
+    const matchId = await setUpSet5(level(6, 'home'))
+    mount(matchId)
+    await ready()
+    await point('Point A')
+    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+    await dialogDecisionChange('Switch courts')
+    await confirmDecision()
+    expect(await score()).toEqual([7, 7])
+    await settle()
+    expect(switchOpen()).toBe(false)
+
+    await undoLast()
+    expect(await score()).toEqual([8, 6])
+    expect(await switched(matchId)).toBe(false)
+    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+    await switchCourts(matchId)
+    await waitFor(() => expect(teamAOnLeft()).toBe(false))
+    cleanup()
+  }, 60000)
 })

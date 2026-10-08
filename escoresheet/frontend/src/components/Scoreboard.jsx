@@ -1510,7 +1510,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [matchId, data?.match?.seed_key, data?.match?.test]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Restore match state from a snapshot (used by undo)
-  const restoreStateFromSnapshot = useCallback(async (snapshot) => {
+  // `scoreAfter` ({ homePoints, awayPoints }): the set score the undo leaves,
+  // from the point events (the snapshot's own score can be stale)
+  const restoreStateFromSnapshot = useCallback(async (snapshot, scoreAfter = null) => {
     if (!snapshot || !matchId) return
 
     try {
@@ -1539,7 +1541,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // and the next point asked for the change again. The change stays while
       // a team still has 8; it goes with the point that reached 8.
       if (snapshot.currentSetIndex === 5 && match) {
-        const leaderPoints = Math.max(snapshot.pointsA || 0, snapshot.pointsB || 0)
+        const leaderPoints = scoreAfter
+          ? Math.max(scoreAfter.homePoints || 0, scoreAfter.awayPoints || 0)
+          : Math.max(snapshot.pointsA || 0, snapshot.pointsB || 0)
         await db.matches.update(matchId, {
           set5CourtSwitched: !!snapshot.set5CourtSwitched || (!!match.set5CourtSwitched && leaderPoints >= 8)
         })
@@ -4754,6 +4758,28 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     await checkSetEnd(set, homePoints, awayPoints)
   }, [matchId, checkSetEnd, deferUi])
 
+  // After an undo in the deciding set, the change of courts follows the score
+  // it leaves. Undoing a decision change that gave a team its 8th point (7:7
+  // swapped to 8:6, the courts then changed) takes the change back with it,
+  // as undoing the point that reached 8 does (`switchedBefore`: the courts
+  // when that decision change was made, in its payload). An undo that puts a
+  // team back on 8 without the change (8:6 swapped to 7:7 from the
+  // change-of-courts dialog, then undone) opens the dialog again: it was
+  // made at no point. Inside the undo's action: Dexie reads and writes only.
+  const settleCourtSwitchAfterUndo = useCallback(async (setIndex, { switchedBefore } = {}) => {
+    if (setIndex !== 5) return
+    const set = await db.sets.where({ matchId }).and(s => s.index === 5).first()
+    if (!set || set.finished) return
+    const homePoints = set.homePoints || 0
+    const awayPoints = set.awayPoints || 0
+    const match = await db.matches.get(matchId)
+    if (Math.max(homePoints, awayPoints) < 8) {
+      if (switchedBefore === false && match?.set5CourtSwitched) await db.matches.update(matchId, { set5CourtSwitched: false })
+      return
+    }
+    if (!match?.set5CourtSwitched) deferUi(() => setCourtSwitchModal({ set, homePoints, awayPoints, teamThatScored: null }))
+  }, [matchId, deferUi])
+
   // Determine who has serve based on events
   const getCurrentServe = useCallback(() => {
     if (!data?.set || !data?.match) {
@@ -6775,6 +6801,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         await db.events.update(plan.pointEventId, { payload: plan.pointPayload })
         // The set score follows the point events again (and is synced)
         await resyncSetScoreFromEvents(plan.setIndex)
+        // The set-5 change of courts follows the score it leaves; a decision
+        // change logged without the flag (before 2026-10) keeps the courts
+        await settleCourtSwitchAfterUndo(plan.setIndex, { switchedBefore: lastEvent.payload?.set5CourtSwitchedBefore })
         return
       }
 
@@ -6839,11 +6868,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // 3. Restore state from the previous event's snapshot
       if (previousEvent?.stateSnapshot) {
         console.log('[handleUndo] Restoring from snapshot, points:', previousEvent.stateSnapshot.pointsA, '-', previousEvent.stateSnapshot.pointsB)
-        await restoreStateFromSnapshot(previousEvent.stateSnapshot)
         // The score follows the point events, not the snapshot: a snapshot is
-        // stale once a correction added or removed events before it
+        // stale once a correction added or removed events before it (the
+        // set-5 change of courts is restored against this score too)
+        const scoreAfter = scoreAfterUndo(await db.events.where('matchId').equals(matchId).toArray(), undoneSetIndex)
+        await restoreStateFromSnapshot(previousEvent.stateSnapshot, scoreAfter)
         const undoneSet = await db.sets.where({ matchId }).and(s => s.index === undoneSetIndex).first()
-        if (undoneSet) await db.sets.update(undoneSet.id, scoreAfterUndo(await db.events.where('matchId').equals(matchId).toArray(), undoneSetIndex))
+        if (undoneSet) await db.sets.update(undoneSet.id, scoreAfter)
       } else {
         // No previous event with snapshot - calculate state from remaining events
         console.log('[handleUndo] No previous snapshot, calculating state from remaining events')
@@ -6913,6 +6944,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         await queueSetScoreSync(db, { matchId, setIndex: undoneSetIndex })
       }
 
+      // A team back on 8 in the deciding set without the change of courts
+      // gets its dialog
+      await settleCourtSwitchAfterUndo(undoneSetIndex)
     } catch (error) {
       console.error('[handleUndo] Error:', error)
       // Rethrown: the whole undo rolls back (a swallowed failure committed
@@ -6924,7 +6958,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       syncLiveStateToSupabase('undo', null, null)
       notifyScoresheetUpdate('undo')
     }
-  }, { reason: 'undo' })), [runUndoConfirm, undoConfirm, data?.set, matchId, restoreStateFromSnapshot, discardEvents, applyForfeitReversal, resyncSetScoreFromEvents, showAlert, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, runAction, deferUi])
+  }, { reason: 'undo' })), [runUndoConfirm, undoConfirm, data?.set, matchId, restoreStateFromSnapshot, discardEvents, applyForfeitReversal, resyncSetScoreFromEvents, settleCourtSwitchAfterUndo, showAlert, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, runAction, deferUi])
 
   // OLD UNDO LOGIC REMOVED - The following complex per-event-type logic has been replaced
   // by the snapshot-based undo system above. Keeping this comment for reference.
@@ -7095,7 +7129,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             oldHomePoints: data.set.homePoints,
             oldAwayPoints: data.set.awayPoints,
             newHomePoints: oldTeam === 'home' ? data.set.homePoints - 1 : data.set.homePoints + 1,
-            newAwayPoints: oldTeam === 'away' ? data.set.awayPoints - 1 : data.set.awayPoints + 1
+            newAwayPoints: oldTeam === 'away' ? data.set.awayPoints - 1 : data.set.awayPoints + 1,
+            // The deciding set's courts before this swap: its undo takes back a
+            // change of courts the swap led to (settleCourtSwitchAfterUndo)
+            ...(data.set.index === 5 ? { set5CourtSwitchedBefore: !!(await db.matches.get(matchId))?.set5CourtSwitched } : {})
           },
           ts: new Date().toISOString(),
           seq: nextSeq
