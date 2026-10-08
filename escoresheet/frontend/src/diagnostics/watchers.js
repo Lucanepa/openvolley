@@ -44,7 +44,7 @@ const CONTENT_EARLY_MS = 1500
 
 const r1 = (n) => Math.round(n * 10) / 10
 
-/** FNV-1a of a string, 8 hex digits: tells contents apart without logging them. */
+/** FNV-1a of a string, 8 letters: tells contents apart without logging them. */
 export function textHash(text) {
   let h = 0x811c9dc5
   const s = String(text || '')
@@ -52,7 +52,9 @@ export function textHash(text) {
     h ^= s.charCodeAt(i)
     h = Math.imul(h, 0x01000193)
   }
-  return (h >>> 0).toString(16).padStart(8, '0')
+  // 8 letters a-p (one per hex digit), never digits: a hex hash with a run of
+  // digits looked like a PIN to the redaction ("[redacted]ba")
+  return (h >>> 0).toString(16).padStart(8, '0').replace(/[0-9a-f]/g, (c) => String.fromCharCode(97 + parseInt(c, 16)))
 }
 
 /** A dialog's title key: aria-label, its labelling element or first heading (redacted, short). */
