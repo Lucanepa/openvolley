@@ -91,27 +91,31 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   const scoreCard = (team) => {
     const isServing = serving === team.side
     const p = paint[team.side]
+    // Beside a two-digit score a 360px card leaves about 79px: the score is a
+    // touch smaller on a narrow phone, the pill tight, and what still does not
+    // fit is clipped rather than running into the score
+    const line = { maxWidth: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
     const info = (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, alignItems: team.side === 'left' ? 'flex-start' : 'flex-end' }}>
-        <span style={{ maxWidth: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 12, fontWeight: 700, color: p.ink }}>{teamTitle(team)}</span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, overflow: 'hidden', alignItems: team.side === 'left' ? 'flex-start' : 'flex-end' }}>
+        <span style={{ ...line, fontSize: 12, fontWeight: 700, color: p.ink }}>{teamTitle(team)}</span>
         <span
           aria-hidden={!isServing}
-          style={{ visibility: isServing ? 'visible' : 'hidden', padding: '2px 8px', borderRadius: 999, background: 'var(--ov-text)', color: 'var(--ov-card)', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', lineHeight: 1.3, whiteSpace: 'nowrap' }}
+          style={{ ...line, visibility: isServing ? 'visible' : 'hidden', boxSizing: 'border-box', padding: '2px 5px', borderRadius: 999, background: 'var(--ov-text)', color: 'var(--ov-card)', fontSize: 10, fontWeight: 800, letterSpacing: '0.02em', lineHeight: 1.3 }}
         >
           {t('scoreboard.labels.serveLabel')}
         </span>
-        <span style={{ whiteSpace: 'nowrap', fontSize: 11, fontWeight: 600, color: 'var(--ov-text-muted)' }}>
+        <span style={{ ...line, fontSize: 11, fontWeight: 600, color: 'var(--ov-text-muted)' }}>
           {t('scoreboard.phone.setsWon', { count: team.setsWon })}
         </span>
       </div>
     )
     const score = (
-      <span data-testid={`phone-score-${team.side}`} style={{ flex: 'none', fontSize: 52, lineHeight: 1, fontWeight: 800, fontVariantNumeric: 'tabular-nums', fontFamily: scoreFont }}>
+      <span data-testid={`phone-score-${team.side}`} style={{ flex: 'none', fontSize: 'clamp(40px, 12cqw, 52px)', lineHeight: 1, letterSpacing: '-0.02em', fontWeight: 800, fontVariantNumeric: 'tabular-nums', fontFamily: scoreFont }}>
         {team.points}
       </span>
     )
     return (
-      <div key={team.side} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '6px 12px', minWidth: 0, borderRadius: 14, background: isServing ? p.tint : 'var(--ov-card)', border: '1px solid var(--ov-hairline)' }}>
+      <div key={team.side} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, padding: '6px 10px', minWidth: 0, borderRadius: 14, background: isServing ? p.tint : 'var(--ov-card)', border: '1px solid var(--ov-hairline)' }}>
         {team.side === 'left' ? <>{info}{score}</> : <>{score}{info}</>}
       </div>
     )
