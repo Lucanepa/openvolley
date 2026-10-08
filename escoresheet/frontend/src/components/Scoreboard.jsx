@@ -88,6 +88,11 @@ import { ArrowUpDown, ChevronDown, Cross } from 'lucide-react'
 import { useDiagCommits } from '../diagnostics/commits'
 import { preload, usePreloaded } from '../utils/preload'
 
+// Live-state pushes that start or end the break between sets: the set end
+// (its own push opens it), "End set interval", the set's start, the set 5
+// setup's (they say whether it goes on: duringInterval)
+const BREAK_ENDING_PUSHES = new Set(['set_end', 'end_interval', 'set_start', 'manual_set5_setup'])
+
 // ── volleyui chrome for the scoreboard (RESTYLE-SPEC P5) ──────────────────────
 // Only the chrome around the court takes these: the toolbar, the side-column
 // surfaces, menus, dialogs and the lineup panel. The court, score digits, serve
@@ -531,6 +536,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   useEffect(() => { timeoutModalRef.current = timeoutModal }, [timeoutModal])
   useEffect(() => { scorerAttentionTriggerRef.current = scorerAttentionTrigger }, [scorerAttentionTrigger])
   const [betweenSetsCountdown, setBetweenSetsCountdown] = useState(null) // { countdown: number, started: boolean, finished?: boolean } | null
+  // The break between two sets runs on this screen (set by the effect after
+  // isBetweenSets): every live-state push in it keeps the break
+  const breakRunningRef = useRef(false)
   const countdownDismissedRef = useRef(false) // Track if countdown was manually dismissed
   const setEndModalDismissedRef = useRef(null) // Track setIndex where set end modal was dismissed via undo
   const confirmedSetEndRef = useRef(new Set()) // Track which sets have been confirmed to prevent double-processing
@@ -2076,8 +2084,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         supabaseMatchId = externalId
       }
 
-      // Use cached snapshot if provided, otherwise fetch/compute
+      // A push in the break between sets keeps it (below): the set 5
+      // setup's pushes say so (duringInterval), any other push while the
+      // screen's interval runs too (a line-up entered for the next set, a
+      // sanction, an undo). Before, only the set end's own push and the set 5
+      // setup's had it: the next push ended the break on the livescore.
+      // Not the pushes that end it (the set 5 setup's say so themselves).
+      const inBreak = breakRunningRef.current && !BREAK_ENDING_PUSHES.has(eventType)
+
+      // Use cached snapshot if provided, otherwise fetch/compute (in the
+      // break: fresh, the coming set's; the last event's can be the set end's)
       let snapshot = cachedSnapshot
+      if (!snapshot && inBreak) snapshot = (await captureFullStateSnapshot())?.snapshot || null
       if (!snapshot) {
         if (liveStateNeedsFreshSnapshot(eventType)) {
           // Manual change or court switch - must capture fresh to reflect the change
@@ -2106,7 +2124,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const isSetInterval = !isMatchEnd && (eventType === 'set_end' || match?.status === 'interval')
       // Set 5 coin toss changed while the interval runs: the fresh snapshot
       // already is the set 5 state, and the tablets keep the interval
-      const keepInterval = !isMatchEnd && !isSetInterval && eventData?.duringInterval === true
+      const keepInterval = !isMatchEnd && !isSetInterval && (eventData?.duringInterval === true || inBreak)
+      // The break's start (the set end's push of this session, else the
+      // set end's confirmation: its set_end event or the set's end time), so
+      // the tablets' countdown runs on instead of starting again
+      let keptIntervalStartedAt = keepInterval ? (intervalStartedAtRef.current || eventData?.intervalStartedAt || null) : null
+      if (keepInterval && !keptIntervalStartedAt) {
+        const previousSet = findPreviousSet(await db.sets.where({ matchId }).toArray(), snapshot.currentSetIndex)
+        const setEndEvent = previousSet && (await db.events.where({ matchId }).toArray())
+          .filter(e => e.type === 'set_end' && e.setIndex === previousSet.index)
+          .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0]
+        keptIntervalStartedAt = setEndEvent?.ts || previousSet?.endTime || null
+      }
       const activeTimeout = timeoutModalRef.current
       const isTimeout = eventType === 'timeout' || (eventType !== 'end_timeout' && !!activeTimeout?.started)
 
@@ -2273,7 +2302,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         set_interval_active: isSetInterval || keepInterval,
         set_interval_started_at: isSetInterval
           ? (match?.intervalStartedAt || intervalStartedAt)
-          : (keepInterval ? (intervalStartedAtRef.current || eventData?.intervalStartedAt || null) : null),
+          : keptIntervalStartedAt,
         match_status: matchStatus,
         scorer_attention_trigger: scorerAttentionTriggerRef.current,
         // Match metadata (from IndexedDB match record)
@@ -3007,6 +3036,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     return !hasSetStarted
   }, [data?.sets, data?.set, data?.events])
+
+  // The break runs while the screen is between sets with its countdown on
+  // (ended by "End set interval", the set 5 setup's confirmation or the
+  // clock: null)
+  useEffect(() => {
+    breakRunningRef.current = isBetweenSets && betweenSetsCountdown !== null
+  }, [isBetweenSets, betweenSetsCountdown])
 
   // Start between-sets countdown when we detect we're between sets
   useEffect(() => {

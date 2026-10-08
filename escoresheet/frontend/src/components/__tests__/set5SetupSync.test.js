@@ -76,7 +76,9 @@ describe('scorer: set 5 setup pushes a live state', () => {
 
   it('a push during the interval keeps the interval on the tablets', () => {
     const sync = slice(scoreboard, 'const syncLiveStateToSupabase = useCallback(', 14000)
-    expect(sync).toMatch(/const keepInterval = !isMatchEnd && !isSetInterval && eventData\?\.duringInterval === true/)
+    // the set 5 setup's pushes say so (duringInterval); any other push while
+    // the screen's interval runs too (ScoreboardIntervalLiveState)
+    expect(sync).toMatch(/const keepInterval = !isMatchEnd && !isSetInterval && \(eventData\?\.duringInterval === true \|\| inBreak\)/)
     expect(sync).toMatch(/else if \(isSetInterval \|\| keepInterval\) matchStatus = 'interval'/)
     expect(sync).toMatch(/set_interval_active: isSetInterval \|\| keepInterval/)
   })
