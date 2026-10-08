@@ -3965,37 +3965,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       }
 
-      // Function to generate fillable PDF (simple form filling)
-      window.debugGenerateFillablePDF = async () => {
-        try {
-          const match = data?.match
-          if (!match) {
-            console.error('No match data available')
-            return
-          }
-
-          // Prepare match data in the format expected by fillPdfForm
-          const fillableData = {
-            match_type_1: match.matchType || match.match_type_1 || 'championship',
-            match_type_2: match.gender || match.match_type_2 || '',
-            league: match.league || '',
-            gameNumber: match.gameNumber || match.externalId || '',
-            homeTeam: data?.homeTeam?.name || '',
-            awayTeam: data?.awayTeam?.name || '',
-            city: match.city || '',
-            hall: match.venue || match.hall || '',
-            scheduledAt: match.scheduledAt,
-            bench_home: match.bench_home || [],
-            bench_away: match.bench_away || [],
-            officials: match.officials || []
-          }
-
-          await generateFillablePdf(fillableData)
-        } catch (error) {
-          console.error('Error generating fillable PDF:', error)
-        }
-      }
-
       // Debug function to check games in progress
       window.debugCheckGamesInProgress = async () => {
         try {
@@ -4119,7 +4088,6 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return () => {
       if (typeof window !== 'undefined') {
         if (window.debugExportMatchData) delete window.debugExportMatchData
-        if (window.debugGenerateFillablePDF) delete window.debugGenerateFillablePDF
         if (window.debugCheckGamesInProgress) delete window.debugCheckGamesInProgress
       }
     }
