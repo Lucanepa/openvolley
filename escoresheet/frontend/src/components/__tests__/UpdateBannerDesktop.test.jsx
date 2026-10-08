@@ -5,6 +5,7 @@ import { initReactI18next } from 'react-i18next'
 import en from '../../i18n/locales/en.json'
 import UpdateBanner from '../UpdateBanner'
 import { AUTO_UPDATE_KEY } from '../../hooks/useServiceWorker'
+import { forgetDesktopWindowRole } from '../../diagnostics/popupForward'
 
 // On the desktop app the binary IS the update: its first start still runs the
 // previous build from the service worker, with the new one waiting. The app
@@ -36,6 +37,7 @@ beforeAll(async () => {
 afterEach(() => {
   cleanup()
   sessionStorage.clear()
+  forgetDesktopWindowRole(window)
   delete window.__TAURI_INTERNALS__
   Object.defineProperty(window, 'location', { value: originalLocation, configurable: true, writable: true })
   if (originalSW) Object.defineProperty(navigator, 'serviceWorker', originalSW)
@@ -68,6 +70,20 @@ describe('UpdateBanner', () => {
     const { waiting, replace } = withWaitingWorker()
     render(<UpdateBanner />)
     expect(await screen.findByRole('dialog')).toHaveTextContent('Update available!')
+    expect(waiting.postMessage).not.toHaveBeenCalled()
+    expect(replace).not.toHaveBeenCalled()
+  })
+
+  it('a desktop pop-up (Linux: its metadata says "main"; the app refuses it): asks, never applies on its own', async () => {
+    const invoke = vi.fn(async (cmd) => {
+      if (cmd === 'diagnostics_append') throw 'diagnostics_append not allowed on window "popup-1", webview "popup-1", URL: http://127.0.0.1:1/referee/'
+      return null
+    })
+    window.__TAURI_INTERNALS__ = { invoke, metadata: { currentWindow: { label: 'main' } } }
+    const { waiting, replace } = withWaitingWorker()
+    render(<UpdateBanner />)
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Update available!')
+    expect(invoke).toHaveBeenCalledWith('diagnostics_append', { lines: [] })
     expect(waiting.postMessage).not.toHaveBeenCalled()
     expect(replace).not.toHaveBeenCalled()
   })

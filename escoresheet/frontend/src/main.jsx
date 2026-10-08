@@ -11,7 +11,7 @@ import { ScaleProvider } from './contexts/ScaleContext'
 import ErrorBoundary from './components/ErrorBoundary'
 import { UiHost } from './ui/UiHost.jsx'
 import { stripCacheBustParam, applyUpdateAtStart } from './hooks/useServiceWorker'
-import { isDesktopScoretable } from './utils/appLifecycle'
+import { isDesktopScoretable, resolveDesktopWindow } from './utils/appLifecycle'
 import { setAppEntry } from './utils/appEntry'
 import { watchFormStack } from './utils/formLayout'
 import { db } from './db/db'
@@ -30,8 +30,12 @@ installDiagnostics({ db })
 stripCacheBustParam()
 
 // The desktop app: a new build waiting at start is applied before the scorer
-// touches anything (the binary is the update; see applyUpdateAtStart)
-if (isDesktopScoretable()) applyUpdateAtStart()
+// touches anything (the binary is the update; see applyUpdateAtStart). In the
+// scoretable only: the app says which window this is (a Linux pop-up's own
+// metadata says "main"), asked once and kept for isDesktopScoretable
+if (isDesktopScoretable()) {
+  resolveDesktopWindow().then((scoretable) => { if (scoretable) applyUpdateAtStart() }).catch(() => {})
+}
 
 // Initialize logger to capture console output
 initLogger()
