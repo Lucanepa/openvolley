@@ -11,6 +11,7 @@ import { apiStorage, apiMatchRestoreByPin } from '../lib/apiClient'
 import { sanitizeSimple } from './stringUtils'
 import { getCloudApiUrl } from './backendConfig'
 import { filterMatchPayload, remarksForServer } from '../db/matchRepository'
+import { getSideAForSet, getLeftTeamLabelForSet } from '../domain/rules'
 import { setExtId, eventExtId, jobMatchKey } from './syncIds'
 import { buildConnectionPins } from './connectionPins'
 import { missingConnectionPins } from './remoteRoster'
@@ -754,6 +755,76 @@ export async function restoreMatchInPlace(matchId, jsonData) {
   return matchId
 }
 
+const isAB = (v) => v === 'A' || v === 'B'
+const flipAB = (v) => (v === 'A' ? 'B' : 'A')
+const isSide = (v) => v === 'left' || v === 'right'
+
+/**
+ * The court sides the scorer last saved, for a restore by PIN, as the match
+ * fields the court reads (domain/rules getSideAForSet): setLeftTeamOverrides
+ * and set5LeftTeam ('A' / 'B', the LEFT team) and set5CourtSwitched.
+ *  - The latest synced event's state snapshot: its set 5 coin toss and change
+ *    of courts, and its set's side (sideA) as an override when it is not the
+ *    set number's side. Its labels are by its own Team A (teamAKey), flipped
+ *    when A and B were swapped since.
+ *  - Then the live state (the latest side): sets 1-4 its side_a as an
+ *    override when not the set number's side. Set 5 as its coin toss side
+ *    (set5LeftTeam, what the set 5 toss and its corrections write), never an
+ *    override [5], with the change of courts at 8 apart (set5CourtSwitched):
+ *    the live side is after the change, so saved as the toss side the change
+ *    at 8 would flip it once more. Switched when the snapshot's toss side is
+ *    not the live side; without a toss side, when a team has 8.
+ * {} when neither says.
+ * @param {Array} events  server event rows (seq, state_snapshot)
+ * @param {object|null} liveState  match_live_state row
+ * @param {'home'|'away'} teamAKey  the match's Team A
+ * @returns {{ setLeftTeamOverrides?: object, set5LeftTeam?: 'A'|'B', set5CourtSwitched?: boolean }}
+ */
+export function savedCourtSides(events, liveState, teamAKey = 'home') {
+  const out = {}
+  const overrides = {}
+  const leftLabel = (set) => getLeftTeamLabelForSet(set, { setLeftTeamOverrides: overrides })
+
+  const snap = [...(events || [])]
+    .sort((a, b) => (b.seq || 0) - (a.seq || 0))
+    .map(e => e.state_snapshot)
+    .find(s => s && typeof s === 'object' &&
+      (s.setLeftTeamOverrides || isAB(s.set5LeftTeam) || isSide(s.sideA)))
+  if (snap) {
+    const swapped = (snap.teamAKey === 'home' || snap.teamAKey === 'away') && snap.teamAKey !== teamAKey
+    const label = (v) => (swapped ? flipAB(v) : v)
+    for (const [set, v] of Object.entries(snap.setLeftTeamOverrides || {})) {
+      if (isAB(v)) overrides[set] = label(v)
+    }
+    if (isAB(snap.set5LeftTeam)) out.set5LeftTeam = label(snap.set5LeftTeam)
+    if (snap.set5CourtSwitched === true) out.set5CourtSwitched = true
+    const set = Number(snap.currentSetIndex)
+    if (set >= 1 && set <= 4 && isSide(snap.sideA)) {
+      const left = label(snap.sideA === 'left' ? 'A' : 'B')
+      if (left !== leftLabel(set)) overrides[set] = left
+    }
+  }
+
+  const set = Number(liveState?.current_set)
+  if (set >= 1 && isSide(liveState.side_a)) {
+    const left = liveState.side_a === 'left' ? 'A' : 'B'
+    if (set === 5) {
+      if (isAB(out.set5LeftTeam)) {
+        out.set5CourtSwitched = left !== out.set5LeftTeam
+      } else {
+        const switched = Math.max(Number(liveState.points_a) || 0, Number(liveState.points_b) || 0) >= 8
+        out.set5LeftTeam = switched ? flipAB(left) : left
+        out.set5CourtSwitched = switched
+      }
+    } else if (left !== leftLabel(set)) {
+      overrides[set] = left
+    }
+  }
+
+  if (Object.keys(overrides).length) out.setLeftTeamOverrides = overrides
+  return out
+}
+
 /**
  * Fetch a match from the cloud by Game N and Game PIN.
  * POST /api/match/restore-by-pin: exact match on both, attempt-limited on the
@@ -829,10 +900,17 @@ export async function fetchMatchByPin(gamePin, gameN) {
   // Check if events already have lineup type events
   const hasLineupTypeEvents = events.some(e => e.type === 'lineup')
 
+  // Team A from the coin toss: the matches table has the coin_toss JSON, no
+  // coin_toss_team_a column (reading only that put Team A on away always)
+  const teamAKey = matchData.coin_toss?.team_a || matchData.coin_toss_team_a || 'home'
+  const teamAIsHome = teamAKey === 'home'
+  // The match's court sides as the scorer last saved them: the imported
+  // match keeps them, and they place a row's court-side lineups below
+  const courtSides = savedCourtSides(events, liveState, teamAKey)
+
   // If no lineup type events, create them from event lineup_left/lineup_right columns
   // or from match_live_state
   if (!hasLineupTypeEvents) {
-    const teamAIsHome = matchData.coin_toss_team_a === 'home'
 
     // First try: get lineup from the latest event that has lineup_left/lineup_right
     const eventWithLineup = [...events]
@@ -845,13 +923,15 @@ export async function fetchMatchByPin(gamePin, gameN) {
       // snapshot has the lineups by team (A / B), so no side is guessed: the
       // set number (odd: A left) is wrong in set 5 whenever its coin toss put
       // B on the left, and after its change of courts at 8. Without a
-      // snapshot (an older row), the set number as before.
+      // snapshot (an older row), the court's rule (getSideAForSet) with the
+      // match's saved sides (set 5's coin toss and change of courts included).
       const snap = eventWithLineup.state_snapshot
       // (the snapshot's own set only: one taken in another set has that set's lineups)
       const bySnapshot = !!(snap && (snap.lineupA || snap.lineupB) &&
         (snap.currentSetIndex == null || Number(snap.currentSetIndex) === Number(setIndex)))
-      const snapAIsHome = (snap?.teamAKey || matchData.coin_toss_team_a || 'home') === 'home'
-      const leftIsHome = (setIndex % 2 === 1) ? (teamAIsHome) : (!teamAIsHome)
+      const snapAIsHome = (snap?.teamAKey || teamAKey) === 'home'
+      const aLeft = getSideAForSet(Number(setIndex), courtSides) === 'left'
+      const leftIsHome = aLeft === teamAIsHome
 
       const homeRawLineup = bySnapshot
         ? (snapAIsHome ? snap.lineupA : snap.lineupB)
@@ -972,7 +1052,10 @@ export async function fetchMatchByPin(gamePin, gameN) {
     // JSONB data is already in matchData: home_team, away_team, players_home, players_away, bench_home, bench_away, officials
     sets: setsResult.data || [],
     events,
-    liveState // Include live state for additional data
+    liveState, // Include live state for additional data
+    // The court sides the scorer last saved (setLeftTeamOverrides /
+    // set5LeftTeam / set5CourtSwitched): the imported match keeps them
+    courtSides
   }
 }
 
@@ -982,6 +1065,7 @@ export async function fetchMatchByPin(gamePin, gameN) {
  */
 export async function importMatchFromSupabase(cloudData) {
   const { match, sets, events } = cloudData
+  const courtSides = cloudData.courtSides || {}
 
   let importedMatchId = null
 
@@ -1064,6 +1148,11 @@ export async function importMatchFromSupabase(cloudData) {
       coinTossTeamB: coinToss.team_b || match.coin_toss_team_b,
       coinTossServeA: coinToss.serve_a !== undefined ? coinToss.serve_a : match.coin_toss_serve_a,
       firstServe: coinToss.first_serve || match.first_serve,
+      // Court sides (domain/rules getSideAForSet): without them the court
+      // showed the set number's sides whatever the court was
+      ...(courtSides.setLeftTeamOverrides ? { setLeftTeamOverrides: { ...courtSides.setLeftTeamOverrides } } : {}),
+      ...(isAB(courtSides.set5LeftTeam) ? { set5LeftTeam: courtSides.set5LeftTeam } : {}),
+      ...(typeof courtSides.set5CourtSwitched === 'boolean' ? { set5CourtSwitched: courtSides.set5CourtSwitched } : {}),
       // Match result: prefer JSONB, fallback to legacy
       setResults: results.set_results || match.set_results,
       winner: results.winner || match.winner,
