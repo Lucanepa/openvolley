@@ -49,6 +49,32 @@ describe('referee player disc sizing', () => {
     expect(big.ball).toBeLessThanOrEqual(big.disc * DISC.ballMax)
   })
 
+  it('the serve ball is clearly smaller than a player disc (55-65 %) on tablet courts, and stays inside the court', () => {
+    // Court boxes of the current layout, measured in Chromium (content box),
+    // 1st and 2nd referee view alike: landscape uses the side panel layout.
+    const TABLET_COURTS = [
+      // [viewport w, viewport h, court w, court h]
+      [1280, 800, 974, 463], [1024, 768, 749, 439], [800, 1280, 780, 457], [1366, 1024, 1040, 629],
+      [768, 1024, 749, 356], [1180, 820, 898, 478], [820, 1180, 800, 417]
+    ]
+    expect(DISC.ballMax).toBeGreaterThanOrEqual(0.55)
+    expect(DISC.ballMax).toBeLessThanOrEqual(0.65)
+    for (const [vw, vh, courtWidth, courtHeight] of TABLET_COURTS) {
+      const m = discMetrics({ courtWidth, courtHeight, capPx: cap(vw, vh, 1) })
+      const label = `${vw}x${vh} court ${courtWidth}x${courtHeight}`
+      expect(m.ball / m.disc, label).toBeGreaterThanOrEqual(0.55)
+      expect(m.ball / m.disc, label).toBeLessThanOrEqual(0.65)
+      for (const scale of SCALES) {
+        expect(discFitProblems({ courtWidth, courtHeight, viewportWidth: vw, capPx: cap(vw, vh, scale) }), `${label} scale ${scale}`).toEqual([])
+      }
+    }
+    // never larger than that share, on any court
+    for (const [, , courtWidth, courtHeight] of MEASURED) {
+      const m = discMetrics({ courtWidth, courtHeight, capPx: 400 })
+      expect(m.ball).toBeLessThanOrEqual(m.disc * 0.65 + 0.001)
+    }
+  })
+
   it('the display scale never shrinks a disc below the floor, a small court does', () => {
     expect(discMetrics({ courtWidth: 784, courtHeight: 461, capPx: 20 }).disc).toBe(DISC.minPx)
     expect(discMetrics({ courtWidth: 784, courtHeight: 120, capPx: 200 }).disc).toBeCloseTo(0.26 * 120)
