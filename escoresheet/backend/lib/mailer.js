@@ -92,8 +92,9 @@ export function mailApp(raw) {
 }
 
 // The account mails come in both brands. The approval notices (lib/approvals.js)
-// are OpenVolley's only: the approval PIN lives in the OpenVolley profile and
-// beach matches are not approved with an account (account-approval-spec D3).
+// are OpenVolley's only, for now also for a beach match's approval (their
+// text names OpenVolley's profile; one approval PIN per account, which either
+// app's profile sets).
 const BRANDED_KINDS = new Set(['reset', 'confirm', 'password_changed'])
 
 /** The brand of one mail: mailApp(app) for the account mails, 'indoor' for the approval notices. */
