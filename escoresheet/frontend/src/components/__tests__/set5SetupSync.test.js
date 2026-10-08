@@ -40,13 +40,23 @@ const homeOnLeftFromLiveState = (sideA, teamAKey) => (sideA === 'left' ? teamAKe
 describe('scorer: set 5 setup pushes a live state', () => {
   const inline = slice(scoreboard, "data?.set?.index === 5 && !set5SetupConfirmed) ? (", 7000)
 
+  // The three buttons' handlers are shared with the phone layout (PhoneScoreboard)
+  const handlers = slice(scoreboard, 'const set5SwitchSides = async () => {', 1200)
+
+  it('the inline setup (desktop and phone layout) uses the shared handlers', () => {
+    expect(inline).toMatch(/onClick=\{set5SwitchSides\}/)
+    expect(inline).toMatch(/onClick=\{set5SwitchServe\}/)
+    expect(inline).toMatch(/onClick=\{set5ConfirmSetup\}/)
+    expect(scoreboard).toMatch(/set5SwitchSides,\s*\n\s*set5SwitchServe,\s*\n\s*set5Confirm: set5ConfirmSetup/)
+  })
+
   it('Switch sides and Switch serve push after writing Dexie', () => {
-    expect(inline).toMatch(/set5LeftTeam: newLeftTeam \}\)\s*\n\s*syncSet5Setup\(\{ duringInterval: !!betweenSetsCountdown \}\)/)
-    expect(inline).toMatch(/set5FirstServe: newFirstServe \}\)\s*\n\s*syncSet5Setup\(\{ duringInterval: !!betweenSetsCountdown \}\)/)
+    expect(handlers).toMatch(/set5LeftTeam: newLeftTeam \}\)\s*\n\s*syncSet5Setup\(\{ duringInterval: !!betweenSetsCountdown \}\)/)
+    expect(handlers).toMatch(/set5FirstServe: newFirstServe \}\)\s*\n\s*syncSet5Setup\(\{ duringInterval: !!betweenSetsCountdown \}\)/)
   })
 
   it('Confirm records the coin toss, then ends the interval on the tablets too', () => {
-    expect(inline).toMatch(/await confirmSet5SideService\([^\n]*\)\s*\n[^\n]*\n\s*await syncSet5Setup\(\{ endInterval: true \}\)/)
+    expect(handlers).toMatch(/await confirmSet5SideService\([^\n]*\)\s*\n[^\n]*\n\s*await syncSet5Setup\(\{ endInterval: true \}\)/)
   })
 
   it('the push is a fresh snapshot to relay + cloud, plus the match bundle', () => {

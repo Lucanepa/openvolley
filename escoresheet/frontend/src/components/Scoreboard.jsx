@@ -72,6 +72,8 @@ import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
 import { isNativeApp } from '../utils/backendConfig'
+import PhoneScoreboard from './scoreboard/PhoneScoreboard.jsx'
+import { detectDisplayMode, isPhoneScreen, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
 import { WarningIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon } from './icons'
 import { cn } from '../ui/cn.js'
@@ -347,12 +349,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const saved = localStorage.getItem('scoreFont')
     return saved || 'default'
   })
-  // Display mode: 'desktop' | 'tablet' | 'auto'
+  // Display mode: 'desktop' | 'tablet' | 'phone' | 'auto'
   const [displayMode, setDisplayMode] = useState(() => {
     const saved = localStorage.getItem('displayMode')
     return saved || 'auto' // default to auto-detect
   })
-  const [detectedDisplayMode, setDetectedDisplayMode] = useState('desktop') // What mode was auto-detected
+  // What mode was auto-detected (taken at once, so a phone opens on the phone layout)
+  const [detectedDisplayMode, setDetectedDisplayMode] = useState(() => (
+    typeof window !== 'undefined'
+      ? detectDisplayMode({ width: window.innerWidth, height: window.innerHeight, hasTouch: ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) })
+      : 'desktop'
+  ))
   const [displayModeSuggestion, setDisplayModeSuggestion] = useState(null) // null | 'tablet'
   const [showDisplayModeSuggestion, setShowDisplayModeSuggestion] = useState(false)
   const [currentDateTime, setCurrentDateTime] = useState(() => new Date())
@@ -838,16 +845,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const width = window.innerWidth
       const height = window.innerHeight
       const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0)
-      let detected = 'desktop'
-      let suggestion = null
-
-      // Tablet: medium screen (<= 900px) with touch
-      if (width <= 900 && hasTouch) {
-        detected = 'tablet'
-        suggestion = 'tablet'
-      }
+      // Phone: a portrait viewport under 600px (the phone layout, no banner).
+      // Tablet: medium screen (<= 900px) with touch.
       // Desktop: > 900px OR no touch capability
       // This ensures laptops are always desktop even if screen is narrower
+      const detected = detectDisplayMode({ width, height, hasTouch })
+      // No tablet banner on a phone turned sideways: it keeps the phone layout
+      const suggestion = detected === 'tablet' && !isPhoneScreen() ? 'tablet' : null
 
       setDetectedDisplayMode(detected)
 
@@ -880,10 +884,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
+  // A phone in the automatic mode, or the Phone mode, is not locked: held
+  // upright it gets the phone layout (PhoneScoreboard); turned sideways it
+  // keeps it, under a notice to hold it upright. Tablets and computers are
+  // locked as before.
+  const keepOrientationFree = displayMode === 'phone' || (displayMode === 'auto' && isPhoneScreen())
+
   // Auto-lock orientation to landscape for scoreboard on mount. The Android
   // app rotates freely everywhere else, so it locks natively here and unlocks
   // when the scoreboard is left (its WebView ignores screen.orientation.lock).
   useEffect(() => {
+    if (keepOrientationFree) {
+      if (isNativeApp()) unlockOrientation()
+      return
+    }
     if (isNativeApp()) {
       lockLandscape()
       return () => { unlockOrientation() }
@@ -909,10 +923,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       }
     }
-  }, [])
+  }, [keepOrientationFree])
 
   // Get the active display mode (either forced or auto-detected)
   const activeDisplayMode = displayMode === 'auto' ? detectedDisplayMode : displayMode
+  // The phone layout (PhoneScoreboard) replaces the desktop / tablet body.
+  // A phone in the automatic mode keeps it when turned sideways (the screen
+  // stays mounted, dialogs and countdowns included), under a notice to hold
+  // it upright, rather than falling back to the landscape layout.
+  const isPhoneSideways = phoneHeldSideways(displayMode, { width: viewportWidth, height: viewportHeight })
+  const isPhoneView = activeDisplayMode === 'phone' || isPhoneSideways
 
   // Update current datetime every second for fullscreen header display
   useEffect(() => {
@@ -3128,22 +3148,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // The change of courts in the deciding set on page load/refresh: the
   // scoring screen opened with a team on 8 and the courts not changed (the
   // app was closed or reloaded with the change-of-courts dialog, or a
-  // decision change asked from it, open) asks for it. The dialog lived only
-  // in the screen's state, so the change waited for the next point. Checked
-  // once per set when it is first shown: later, every way a point gets on the
-  // score opens it (afterPointScored), and a check on every render would
-  // reopen it under the decision change asked from it.
+  // decision change asked from it, open) asks for it; opened with the courts
+  // changed and no team on 8 (the change back pending) asks to change back.
+  // The dialog lived only in the screen's state, so the change waited for
+  // the next point. Checked once per set when it is first shown: later,
+  // every way the score changes asks (askCourtSwitchIfDue), and a check on
+  // every render would reopen it under the decision change asked from it.
   const courtSwitchLoadCheckedRef = useRef(null)
   useEffect(() => {
     const set = data?.set
     if (!set || !data?.match) return
     if (courtSwitchLoadCheckedRef.current === set.id) return
     courtSwitchLoadCheckedRef.current = set.id
-    if (set.index !== 5 || set.finished || data.match.set5CourtSwitched) return
+    if (set.index !== 5 || set.finished) return
     const homePoints = set.homePoints || 0
     const awayPoints = set.awayPoints || 0
-    if (Math.max(homePoints, awayPoints) < 8) return
-    setCourtSwitchModal(prev => prev || { set, homePoints, awayPoints, teamThatScored: null })
+    const switched = !!data.match.set5CourtSwitched
+    if ((Math.max(homePoints, awayPoints) >= 8) === switched) return
+    setCourtSwitchModal(prev => prev || { set, homePoints, awayPoints, teamThatScored: null, back: switched })
   }, [data?.set, data?.match])
 
   // Check if set has ended on page load/refresh (score indicates set over but modal not shown)
@@ -4766,6 +4788,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return true
   }, [matchId, setEndTimeModal, deferUi])
 
+  // The courts of the deciding set follow its score (owner's decision,
+  // 2026-10-08): a team on 8 with the courts not changed asks for the change
+  // (FIVB 18.2.2); the courts changed with no team on 8 any more (a replay or
+  // a decision change after the change, 8:6 to 7:7) asks to change them back,
+  // so the change is asked again when a team reaches 8. One dialog (`back`
+  // says which way); confirmed, it sets or clears set5CourtSwitched, and the
+  // scoring screen, the tablets and livescore follow. True when it asked.
+  // Inside the caller's action: Dexie reads only.
+  const askCourtSwitchIfDue = useCallback(async ({ set, homePoints, awayPoints, teamKey = null }) => {
+    if (!set || set.index !== 5 || set.finished) return false
+    const match = await db.matches.get(matchId)
+    const switched = !!match?.set5CourtSwitched
+    if ((Math.max(homePoints, awayPoints) >= 8) === switched) return false
+    deferUi(() => setCourtSwitchModal({ set, homePoints, awayPoints, teamThatScored: teamKey, back: switched }))
+    return true
+  }, [matchId, deferUi])
+
   // What a point on the score opens, whatever put it there: the Point
   // buttons (and the penalty points, which go through them), a decision
   // change that gives the point to the other team, and a decision change
@@ -4776,27 +4815,35 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // In order: the change of courts in the deciding set when a team reaches 8
   // (FIVB 18.2.2), made once a set (the match's set5CourtSwitched; >= 8, so a
   // score past 8 that missed it is changed as soon as noticed, 18.2.3), else
-  // the set end. Called inside the point's action: Dexie reads only.
+  // the set end. A decision change that takes the leader back below 8 after
+  // the change (8:6 swapped to 7:7) asks to change the courts back
+  // (askCourtSwitchIfDue). Called inside the point's action: Dexie reads only.
   const afterPointScored = useCallback(async ({ set, homePoints, awayPoints, teamKey }) => {
     if (!set) return
-    if (set.index === 5 && Math.max(homePoints, awayPoints) >= 8) {
-      const match = await db.matches.get(matchId)
-      if (!match?.set5CourtSwitched) {
-        deferUi(() => setCourtSwitchModal({ set, homePoints, awayPoints, teamThatScored: teamKey }))
-        return // the set end waits for the change of courts
-      }
-    }
+    if (await askCourtSwitchIfDue({ set, homePoints, awayPoints, teamKey })) return // the set end waits for it
     await checkSetEnd(set, homePoints, awayPoints)
-  }, [matchId, checkSetEnd, deferUi])
+  }, [askCourtSwitchIfDue, checkSetEnd])
+
+  // The deciding set's courts against its stored score, after a correction
+  // that changed it (a replay; an undo): asks for the change, or the change
+  // back, when they no longer match. Inside the caller's action.
+  const askCourtSwitchForSet5Score = useCallback(async () => {
+    const set = await db.sets.where({ matchId }).and(s => s.index === 5).first()
+    if (!set) return false
+    return askCourtSwitchIfDue({ set, homePoints: set.homePoints || 0, awayPoints: set.awayPoints || 0 })
+  }, [matchId, askCourtSwitchIfDue])
 
   // After an undo in the deciding set, the change of courts follows the score
-  // it leaves. Undoing a decision change that gave a team its 8th point (7:7
-  // swapped to 8:6, the courts then changed) takes the change back with it,
-  // as undoing the point that reached 8 does (`switchedBefore`: the courts
-  // when that decision change was made, in its payload). An undo that puts a
-  // team back on 8 without the change (8:6 swapped to 7:7 from the
-  // change-of-courts dialog, then undone) opens the dialog again: it was
-  // made at no point. Inside the undo's action: Dexie reads and writes only.
+  // it leaves. Undoing a decision change takes back what it led to
+  // (`switchedBefore`: the courts when it was made, in its payload): the
+  // change of courts it gave (7:7 swapped to 8:6, the courts then changed;
+  // undone, they go back with no dialog, as with the point that reached 8),
+  // or the change back (8:6 swapped to 7:7 after the change, the courts
+  // changed back; undone, 8:6 has the courts changed again). Any other
+  // mismatch asks: a team back on 8 without the change (8:6 swapped to 7:7
+  // from the change-of-courts dialog, then undone; it was made at no point)
+  // asks for it, the courts changed with no team on 8 ask to change back.
+  // Inside the undo's action: Dexie reads and writes only.
   const settleCourtSwitchAfterUndo = useCallback(async (setIndex, { switchedBefore } = {}) => {
     if (setIndex !== 5) return
     const set = await db.sets.where({ matchId }).and(s => s.index === 5).first()
@@ -4804,12 +4851,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const homePoints = set.homePoints || 0
     const awayPoints = set.awayPoints || 0
     const match = await db.matches.get(matchId)
-    if (Math.max(homePoints, awayPoints) < 8) {
-      if (switchedBefore === false && match?.set5CourtSwitched) await db.matches.update(matchId, { set5CourtSwitched: false })
+    const switched = !!match?.set5CourtSwitched
+    const reached8 = Math.max(homePoints, awayPoints) >= 8
+    // The undone decision change's own courts, when they fit the score
+    if (typeof switchedBefore === 'boolean' && switchedBefore !== switched && switchedBefore === reached8) {
+      await db.matches.update(matchId, { set5CourtSwitched: switchedBefore })
       return
     }
-    if (!match?.set5CourtSwitched) deferUi(() => setCourtSwitchModal({ set, homePoints, awayPoints, teamThatScored: null }))
-  }, [matchId, deferUi])
+    await askCourtSwitchIfDue({ set, homePoints, awayPoints })
+  }, [matchId, askCourtSwitchIfDue])
 
   // Determine who has serve based on events
   const getCurrentServe = useCallback(() => {
@@ -7067,6 +7117,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Go back to idle state - user can then click "Start rally" or "Undo"
       // No automatic rally start
 
+      // A replay after the deciding set's change of courts that leaves no team
+      // on 8 (8:7 back to 7:7) asks to change the courts back
+      if (plan.setIndex === 5) await askCourtSwitchForSet5Score()
+
       // Tablets, livescore (fresh snapshot: data has changed) and scoresheet
       syncToReferee()
       syncLiveStateToSupabase('replay', null, { reason: 'point_replay', undoneTeam }, null)
@@ -7077,7 +7131,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Rethrown: the replay rolls back as a whole (see handleUndo)
       throw error
     }
-  }, { reason: 'decision_change' }), [replayRallyConfirm, data?.set, matchId, getNextSeq, discardEvents, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, runAction, deferUi])
+  }, { reason: 'decision_change' }), [replayRallyConfirm, data?.set, matchId, getNextSeq, discardEvents, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, askCourtSwitchForSet5Score, runAction, deferUi])
 
   // Cancelled: nothing changed. Asked from the change-of-courts or the
   // set-end dialog (which it closed), that dialog comes back: the change of
@@ -11997,9 +12051,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Check for modal confirmations first (Enter/Escape)
       // These modals need a decision - don't allow Escape to close them
+      // The set-5 change of courts (or the change back) too: no rally and no
+      // point under it (a point at 7:7 under the change back made it stale)
       const hasDecisionModal = substitutionConfirm || liberoConfirm || sanctionConfirmModal ||
         accidentalRallyConfirmModal || accidentalPointConfirmModal || undoConfirm || replayConfirm ||
-        replayRallyConfirm || liberoRotationModal || liberoReentryModal || sanctionSubstitutionModal
+        replayRallyConfirm || liberoRotationModal || liberoReentryModal || sanctionSubstitutionModal ||
+        courtSwitchModal
 
       // Confirm key (Enter)
       if (key === keyBindings.confirm) {
@@ -12140,7 +12197,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     timeoutModal, lineupModal, menuModal,
     substitutionConfirm, liberoConfirm, sanctionConfirmModal, accidentalRallyConfirmModal,
     accidentalPointConfirmModal, undoConfirm, replayConfirm, replayRallyConfirm, liberoRotationModal, liberoReentryModal,
-    confirmSubstitution, confirmLibero, confirmReplay, handleReplayRally, handleDecisionChange
+    courtSwitchModal, confirmSubstitution, confirmLibero, confirmReplay, handleReplayRally, handleDecisionChange
   ])
 
   // Courtside chips: px floors on the cqw sizes so a 200 px side column still
@@ -12444,11 +12501,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // never shows over the switched court
     deferUi(() => setCourtSwitchModal(null))
 
-    // Mark that courts have been switched for set 5
-    await db.matches.update(matchId, { set5CourtSwitched: true })
+    // Set 5 courts changed at 8, or changed back (no team on 8 any more: the
+    // change is asked again when a team reaches 8). Set from the stored score,
+    // not from the dialog: a point scored while it was open (keyboard
+    // shortcuts) made a change back confirmed at 7:8 leave a team on 8 with
+    // the courts not changed and nothing asked
+    const set5 = await db.sets.where({ matchId }).and(s => s.index === 5).first()
+    const changed = set5
+      ? Math.max(set5.homePoints || 0, set5.awayPoints || 0) >= 8
+      : !courtSwitchModal.back
+    const back = !changed
+    await db.matches.update(matchId, { set5CourtSwitched: changed })
 
-    // Sync to Supabase with fresh snapshot to update side_a and serving_team after court switch
-    syncLiveStateToSupabase('court_switch', null, { reason: 'set5_8points' }, null)
+    // Tablets and livescore: a fresh snapshot with the new side_a and serving_team
+    syncLiveStateToSupabase('court_switch', null, { reason: back ? 'set5_switch_back' : 'set5_8points' }, null)
   })), [runAction, deferUi, runCourtSwitchConfirm, courtSwitchModal, matchId, syncLiveStateToSupabase])
 
   const runCourtSwitchCancel = useConfirmAction(onConfirmFailed)
@@ -12592,6 +12658,73 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }
 
+  // The deciding set's inline setup (desktop centre column, phone layout)
+  const set5SwitchSides = async () => {
+    const newLeftTeam = data?.match?.set5LeftTeam === 'A' ? 'B' : 'A'
+    await db.matches.update(matchId, { set5LeftTeam: newLeftTeam })
+    syncSet5Setup({ duringInterval: !!betweenSetsCountdown })
+  }
+  const set5SwitchServe = async () => {
+    const newFirstServe = data?.match?.set5FirstServe === 'A' ? 'B' : 'A'
+    await db.matches.update(matchId, { set5FirstServe: newFirstServe })
+    syncSet5Setup({ duringInterval: !!betweenSetsCountdown })
+  }
+  const set5ConfirmSetup = async () => {
+    await confirmSet5SideService(data?.match?.set5LeftTeam || 'A', data?.match?.set5FirstServe || 'A', true)
+    // Ends the interval here and on the tablets, with the confirmed sides / serve
+    await syncSet5Setup({ endInterval: true })
+  }
+
+  // Preview, print or save the scoresheet in its own window (the toolbar's
+  // Scoresheet menu, and the Scoresheet button of the phone layout)
+  const openScoresheet = (action = null) => {
+    const failure = {
+      print: ['printing', 'Failed to print scoresheet'],
+      save: ['saving', 'Failed to save scoresheet']
+    }[action] || ['opening', 'Failed to open scoresheet']
+    try {
+      const match = data?.match
+      if (!match) {
+        showAlert('No match data available', 'error')
+        return
+      }
+
+      const scoresheetData = {
+        match,
+        homeTeam: data?.homeTeam,
+        awayTeam: data?.awayTeam,
+        homePlayers: data?.homePlayers || [],
+        awayPlayers: data?.awayPlayers || [],
+        sets: data?.sets || [],
+        events: data?.events || [],
+        sanctions: []
+      }
+
+      sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
+      const opened = openAppWindow(`/scoresheet/?matchId=${match.id}${action ? `&action=${action}` : ''}`, { features: 'width=1200,height=900', title: t('header.scoresheet') })
+
+      if (!opened.ok) {
+        showAlert(t(openFailedMessageKey(opened, 'header.allowPopups')), 'warning')
+        return
+      }
+
+      const errorListener = (event) => {
+        if (event.data && event.data.type === 'SCORESHEET_ERROR') {
+          setScoresheetErrorModal({
+            error: event.data.error || 'Unknown error',
+            details: event.data.details || event.data.stack || ''
+          })
+          window.removeEventListener('message', errorListener)
+        }
+      }
+      window.addEventListener('message', errorListener)
+      setTimeout(() => window.removeEventListener('message', errorListener), 30000)
+    } catch (error) {
+      console.error(`Error ${failure[0]} scoresheet:`, error)
+      setScoresheetErrorModal({ error: failure[1], details: error.message || '' })
+    }
+  }
+
   // The "Match" menu, grouped (toolbar dropdown and the phone action sheet)
   const matchMenu = matchMenuSections(t, {
     showRosters: () => setShowRosters(true),
@@ -12607,6 +12740,146 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     options: () => setShowOptionsInMenu(true),
     stopMatch: () => setStopMatchModal('select')
   })
+
+  // The phone layout's props (PhoneScoreboard): what this screen already
+  // computes, per court side, and its own handlers. Built only when shown.
+  const buildPhoneView = () => {
+    const phoneTeam = (side) => {
+      const teamKey = mapSideToTeamKey(side)
+      const isLeft = side === 'left'
+      const team = isLeft ? leftTeam : rightTeam
+      const bench = isLeft ? leftTeamBench : rightTeamBench
+      const teamPlayers = (teamKey === 'home' ? data?.homePlayers : data?.awayPlayers) || []
+      const court = (team.playersOnCourt || []).map(pl => ({ position: pl.position, number: pl.isPlaceholder ? '' : pl.number, isLibero: !!pl.isLibero }))
+      const allLiberos = teamPlayers.filter(p => p.libero && p.libero !== '')
+      const liberos = allLiberos
+        .slice()
+        .sort((a, b) => (Number(a.number) || 0) - (Number(b.number) || 0))
+        .map(p => {
+          const onCourt = court.find(pl => pl.isLibero && String(pl.number) === String(p.number))
+          return { number: p.number, libero: p.libero, unable: isLiberoUnable(teamKey, p.number), onCourt: !!onCourt, position: onCourt?.position || null }
+        })
+      // As the side column: a redesignation once the team has no libero left
+      const designated = allLiberos.filter(p => p.libero !== 'unable')
+      const needsRedesignation = designated.length > 0 && designated.every(p => isLiberoUnable(teamKey, p.number))
+      const sanctionFlag = (name) => !!data?.match?.sanctions?.[`${name}${teamKey === 'home' ? 'Home' : 'Away'}`]
+      return {
+        side,
+        teamKey,
+        label: isLeft ? teamALabel : teamBLabel,
+        name: team.name,
+        shortName: isLeft ? teamAShortName : teamBShortName,
+        color: team.color,
+        setsWon: setsWon?.[side] || 0,
+        points: pointsBySide[side] || 0,
+        timeouts: getTimeoutsUsed(side),
+        subs: getSubstitutionsUsed(side),
+        lineupSet: isLeft ? leftTeamLineupSet : rightTeamLineupSet,
+        court,
+        liberos,
+        benchPlayers: (bench.benchPlayers || []).map(p => ({ number: p.number })),
+        officials: (bench.benchOfficials || []).filter(o => o?.role).map(o => ({ role: o.role })),
+        improperRequestDone: sanctionFlag('improperRequest'),
+        delayWarned: sanctionFlag('delayWarning'),
+        needsRedesignation
+      }
+    }
+
+    let centre = null
+    if (timeoutModal && timeoutModal.started) {
+      centre = {
+        kind: 'timeout',
+        teamName: timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away')),
+        countdown: timeoutModal.countdown,
+        countdownText: formatTimeout(timeoutModal.countdown),
+        total: 30
+      }
+    } else if (data?.set?.index === 5 && !set5SetupConfirmed) {
+      centre = {
+        kind: 'set5',
+        confirmLabel: t('scoreboard.buttons.confirmSet5Setup', { number: displaySetNumber(5, data?.match?.bestOf) }),
+        ...(betweenSetsCountdown ? {
+          countdown: betweenSetsCountdown.countdown,
+          countdownText: betweenSetsCountdown.countdown <= 0 ? '0' : formatCountdown(betweenSetsCountdown.countdown),
+          total: setIntervalDuration
+        } : {})
+      }
+    } else if (betweenSetsCountdown) {
+      centre = {
+        kind: 'interval',
+        countdown: betweenSetsCountdown.countdown,
+        countdownText: betweenSetsCountdown.countdown <= 0 ? '0' : formatCountdown(betweenSetsCountdown.countdown),
+        total: setIntervalDuration
+      }
+    }
+
+    const anchorOf = (e) => {
+      const el = e?.currentTarget
+      const rect = el?.getBoundingClientRect?.()
+      return rect ? { element: el, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : { element: el }
+    }
+
+    return {
+      setNumber: displaySetNumber(data?.set?.index || 1, data?.match?.bestOf),
+      teams: { left: phoneTeam('left'), right: phoneTeam('right') },
+      serving: currentServeTeam ? mapTeamKeyToSide(currentServeTeam) : null,
+      rally: {
+        status: rallyStatus,
+        isFirstRally,
+        startDisabled: isFirstRally && (!leftTeamLineupSet || !rightTeamLineupSet),
+        canReplayRally,
+        isRallyReplayed
+      },
+      centre,
+      recent: recentActions(data?.events, data?.set?.index, getActionDescription, 3),
+      canUndo,
+      scoreFont: getScoreFont(),
+      actions: {
+        undo: showUndoConfirm,
+        menu: () => setMenuModal(true),
+        point: (side) => handlePoint(side),
+        startRally: handleStartRally,
+        timeout: (side) => handleTimeout(side),
+        openLineup: (side) => setLineupModal({ team: mapSideToTeamKey(side), mode: 'initial' }),
+        playerClick: handlePlayerClick,
+        canSubstituteOut: (teamKey, number) => canPlayerBeSubstituted(teamKey, number),
+        substituteCandidates: (teamKey, number) => getAvailableSubstitutes(teamKey, number),
+        // The court action menu's substitution: its confirmation dialog
+        substitute: ({ teamKey, position, playerOut, playerIn }) => setSubstitutionConfirm({ team: teamKey, position, playerOut, playerIn }),
+        improperRequest: handleImproperRequest,
+        delayWarning: handleDelayWarning,
+        delayPenalty: handleDelayPenalty,
+        sanctionPerson: ({ team, side, type, playerNumber, position, role }, e) => {
+          if (rallyStatus !== 'idle') return
+          setSanctionDropdown({ team, type, playerNumber, position, role, side, ...anchorOf(e) })
+        },
+        liberoClick: (teamKey, libero, e) => {
+          if (libero.onCourt) {
+            handlePlayerClick(teamKey, libero.position, libero.number, e)
+            return
+          }
+          if (rallyStatus !== 'idle' || libero.unable) return
+          setLiberoBenchActionMenu({ team: teamKey, liberoNumber: libero.number, liberoType: libero.libero, side: mapTeamKeyToSide(teamKey), ...anchorOf(e) })
+        },
+        redesignateLibero: (teamKey) => {
+          const teamPlayers = (teamKey === 'home' ? data?.homePlayers : data?.awayPlayers) || []
+          const unable = teamPlayers.filter(p => p.libero && p.libero !== '' && p.libero !== 'unable' && isLiberoUnable(teamKey, p.number))
+          const lastUnable = unable[unable.length - 1]
+          if (!lastUnable) return
+          setLiberoRedesignationModal({ team: teamKey, unableLiberoNumber: lastUnable.number, unableLiberoType: lastUnable.libero })
+        },
+        replay: handleReplay,
+        rosters: () => setShowRosters(true),
+        scoresheet: () => openScoresheet(),
+        remarks: () => setShowRemarks(true),
+        stopTimeout,
+        endInterval: endSetInterval,
+        set5SwitchSides,
+        set5SwitchServe,
+        set5Confirm: set5ConfirmSetup
+      }
+    }
+  }
 
   // Show duplicate tab error if scoresheet is already open in another tab
   if (duplicateTabError) {
@@ -12657,7 +12930,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }
 
   return (
-    <div className="match-record">
+    <div className={isPhoneView ? 'match-record phone-layout' : 'match-record'}>
       {relayRejection && now - relayRejection.at < 45000 && (
         <div role="alert" className="no-print rounded-xl border border-red-200 bg-red-50 text-red-800 font-medium leading-snug shadow-lg" style={{
           position: 'fixed',
@@ -12676,8 +12949,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               : t('scoreboard.relayRejected.rateLimited', 'Referee/bench link: the server refused this scoresheet for a minute (too many failed attempts).')}
         </div>
       )}
-      {/* Portrait mode warning overlay for devices that don't support orientation lock (iOS) */}
-      {!isLandscape && (
+      {/* Portrait mode warning overlay for devices that don't support orientation lock (iOS).
+          Not over the phone layout, which is made for portrait. */}
+      {!isLandscape && !isPhoneView && (
         <div style={{
           position: 'fixed',
           top: 0,
@@ -12759,7 +13033,39 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           </p>
         </div>
       )}
-      <ScoreboardToolbar collapsed={headerCollapsed} onToggle={() => setHeaderCollapsed(!headerCollapsed)}>
+      {/* A phone turned sideways: the phone layout stays underneath (its
+          dialogs and countdowns keep going), this asks to turn it back */}
+      {isPhoneSideways && (
+        <div
+          role="alert"
+          data-testid="phone-sideways-notice"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgb(28 25 23 / 0.6)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 99999,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+            textAlign: 'center'
+          }}
+        >
+          <div style={{ marginBottom: '16px', color: '#ffffff' }}>
+            <PhoneIcon size={56} />
+          </div>
+          <h2 style={{ fontSize: '22px', fontWeight: 700, color: '#ffffff', margin: '0 0 8px' }}>
+            {t('scoreboard.phone.sidewaysTitle')}
+          </h2>
+          <p style={{ fontSize: '15px', color: '#e7e5e4', maxWidth: '420px', lineHeight: 1.5, margin: 0 }}>
+            {t('scoreboard.phone.sidewaysBody')}
+          </p>
+        </div>
+      )}
+      {/* The phone layout has its own header (undo, match menu) */}
+      {!isPhoneView && <ScoreboardToolbar collapsed={headerCollapsed} onToggle={() => setHeaderCollapsed(!headerCollapsed)}>
         {/* Column 1: Date/Time */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
           <span className="toolbar-clock" style={{ fontSize: '1.28cqw' }}>{formatTimestamp(now)}</span>
@@ -13016,150 +13322,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             showArrow={true}
             position="right"
             items={[
-              {
-                key: 'scoresheet-preview',
-                icon: <SearchIcon />,
-                label: t('header.preview'),
-                onClick: async () => {
-                  try {
-                    const match = data?.match
-                    if (!match) {
-                      showAlert('No match data available', 'error')
-                      return
-                    }
-
-                    const scoresheetData = {
-                      match,
-                      homeTeam: data?.homeTeam,
-                      awayTeam: data?.awayTeam,
-                      homePlayers: data?.homePlayers || [],
-                      awayPlayers: data?.awayPlayers || [],
-                      sets: data?.sets || [],
-                      events: data?.events || [],
-                      sanctions: []
-                    }
-
-                    sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-                    const opened = openAppWindow(`/scoresheet/?matchId=${match.id}`, { features: 'width=1200,height=900', title: t('header.scoresheet') })
-
-                    if (!opened.ok) {
-                      showAlert(t(openFailedMessageKey(opened, 'header.allowPopups')), 'warning')
-                      return
-                    }
-
-                    const errorListener = (event) => {
-                      if (event.data && event.data.type === 'SCORESHEET_ERROR') {
-                        setScoresheetErrorModal({
-                          error: event.data.error || 'Unknown error',
-                          details: event.data.details || event.data.stack || ''
-                        })
-                        window.removeEventListener('message', errorListener)
-                      }
-                    }
-                    window.addEventListener('message', errorListener)
-                    setTimeout(() => window.removeEventListener('message', errorListener), 30000)
-                  } catch (error) {
-                    console.error('Error opening scoresheet:', error)
-                    setScoresheetErrorModal({ error: 'Failed to open scoresheet', details: error.message || '' })
-                  }
-                }
-              },
-              {
-                key: 'scoresheet-print',
-                icon: <PrinterIcon />,
-                label: t('header.print'),
-                onClick: async () => {
-                  try {
-                    const match = data?.match
-                    if (!match) {
-                      showAlert('No match data available', 'error')
-                      return
-                    }
-
-                    const scoresheetData = {
-                      match,
-                      homeTeam: data?.homeTeam,
-                      awayTeam: data?.awayTeam,
-                      homePlayers: data?.homePlayers || [],
-                      awayPlayers: data?.awayPlayers || [],
-                      sets: data?.sets || [],
-                      events: data?.events || [],
-                      sanctions: []
-                    }
-
-                    sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-                    const opened = openAppWindow(`/scoresheet/?matchId=${match.id}&action=print`, { features: 'width=1200,height=900', title: t('header.scoresheet') })
-
-                    if (!opened.ok) {
-                      showAlert(t(openFailedMessageKey(opened, 'header.allowPopups')), 'warning')
-                      return
-                    }
-
-                    const errorListener = (event) => {
-                      if (event.data && event.data.type === 'SCORESHEET_ERROR') {
-                        setScoresheetErrorModal({
-                          error: event.data.error || 'Unknown error',
-                          details: event.data.details || event.data.stack || ''
-                        })
-                        window.removeEventListener('message', errorListener)
-                      }
-                    }
-                    window.addEventListener('message', errorListener)
-                    setTimeout(() => window.removeEventListener('message', errorListener), 30000)
-                  } catch (error) {
-                    console.error('Error printing scoresheet:', error)
-                    setScoresheetErrorModal({ error: 'Failed to print scoresheet', details: error.message || '' })
-                  }
-                }
-              },
-              {
-                key: 'scoresheet-save',
-                icon: <SaveIcon />,
-                label: t('header.savePdf'),
-                onClick: async () => {
-                  try {
-                    const match = data?.match
-                    if (!match) {
-                      showAlert('No match data available', 'error')
-                      return
-                    }
-
-                    const scoresheetData = {
-                      match,
-                      homeTeam: data?.homeTeam,
-                      awayTeam: data?.awayTeam,
-                      homePlayers: data?.homePlayers || [],
-                      awayPlayers: data?.awayPlayers || [],
-                      sets: data?.sets || [],
-                      events: data?.events || [],
-                      sanctions: []
-                    }
-
-                    sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
-                    const opened = openAppWindow(`/scoresheet/?matchId=${match.id}&action=save`, { features: 'width=1200,height=900', title: t('header.scoresheet') })
-
-                    if (!opened.ok) {
-                      showAlert(t(openFailedMessageKey(opened, 'header.allowPopups')), 'warning')
-                      return
-                    }
-
-                    const errorListener = (event) => {
-                      if (event.data && event.data.type === 'SCORESHEET_ERROR') {
-                        setScoresheetErrorModal({
-                          error: event.data.error || 'Unknown error',
-                          details: event.data.details || event.data.stack || ''
-                        })
-                        window.removeEventListener('message', errorListener)
-                      }
-                    }
-                    window.addEventListener('message', errorListener)
-                    setTimeout(() => window.removeEventListener('message', errorListener), 30000)
-                  } catch (error) {
-                    console.error('Error saving scoresheet:', error)
-                    setScoresheetErrorModal({ error: 'Failed to save scoresheet', details: error.message || '' })
-                  }
-                }
-              }
+              { key: 'scoresheet-preview', icon: <SearchIcon />, label: t('header.preview'), onClick: () => openScoresheet() },
+              { key: 'scoresheet-print', icon: <PrinterIcon />, label: t('header.print'), onClick: () => openScoresheet('print') },
+              { key: 'scoresheet-save', icon: <SaveIcon />, label: t('header.savePdf'), onClick: () => openScoresheet('save') }
             ]}
           />
           {/* The match's own menu, grouped (matchMenu.jsx): labelled "Match"
@@ -13180,7 +13345,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             sections={toMenuListSections(matchMenu)}
           />
         </div>
-      </ScoreboardToolbar>
+      </ScoreboardToolbar>}
 
       {/* Scoresheet Error Modal */}
       {scoresheetErrorModal && (
@@ -14388,7 +14553,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             </div>
           </div>
         )
-      })() : (
+      })() : isPhoneView ? (
+        <PhoneScoreboard {...buildPhoneView()} />
+      ) : (
         <>
           {/* Tablet Mode Header Bar with DateTime */}
           {activeDisplayMode === 'tablet' && (
@@ -17255,11 +17422,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       marginTop: vmin(10)
                     }}>
                       <button
-                        onClick={async () => {
-                          const newLeftTeam = data?.match?.set5LeftTeam === 'A' ? 'B' : 'A'
-                          await db.matches.update(matchId, { set5LeftTeam: newLeftTeam })
-                          syncSet5Setup({ duringInterval: !!betweenSetsCountdown })
-                        }}
+                        onClick={set5SwitchSides}
                         style={{
                           display: 'flex',
                           alignItems: 'center',
@@ -17281,11 +17444,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         {t('scoreboard.buttons.switchSides')}
                       </button>
                       <button
-                        onClick={async () => {
-                          const newFirstServe = data?.match?.set5FirstServe === 'A' ? 'B' : 'A'
-                          await db.matches.update(matchId, { set5FirstServe: newFirstServe })
-                          syncSet5Setup({ duringInterval: !!betweenSetsCountdown })
-                        }}
+                        onClick={set5SwitchServe}
                         style={{
                           display: 'flex',
                           alignItems: 'center',
@@ -17307,11 +17466,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         {t('scoreboard.buttons.switchServe')}
                       </button>
                       <button
-                        onClick={async () => {
-                          await confirmSet5SideService(data?.match?.set5LeftTeam || 'A', data?.match?.set5FirstServe || 'A', true)
-                          // Ends the interval here and on the tablets, with the confirmed sides / serve
-                          await syncSet5Setup({ endInterval: true })
-                        }}
+                        onClick={set5ConfirmSetup}
                         style={{
                           display: 'flex',
                           alignItems: 'center',
@@ -22330,7 +22485,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               }}
               {...backdropDismiss(() => { setLiberoBenchActionMenu(null); setLiberoBenchReplaceExpanded(false); setLiberoBenchUnableExpanded(false) })}
             />
-            <div style={menuStyle}>
+            <div style={menuStyle} className="sb-anchored-popover">
               {/* Same scale(1.5) as the other player menus, so its rows match them on screen */}
               <div data-libero-bench-action-menu className={SB_POPOVER} style={{
                 padding: '8px',
@@ -23110,10 +23265,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         </Modal>
       )}
 
-      {/* Court Switch Modal (5th Set at 8 points) - highest priority, blocks everything */}
+      {/* Court Switch Modal (5th Set at 8 points, or the change back when no
+          team has 8 any more) - highest priority, blocks everything */}
       {courtSwitchModal && (
         <Modal
-          title={t('scoreboard.modals.courtSwitchRequired')}
+          title={t(courtSwitchModal.back ? 'scoreboard.modals.courtSwitchBackRequired' : 'scoreboard.modals.courtSwitchRequired')}
           open={true}
           onClose={() => { }}
           width={450}
@@ -23122,7 +23278,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         >
           <div style={{ padding: '4px 0', textAlign: 'center' }}>
             <p style={{ marginBottom: '16px', fontSize: '18px', fontWeight: 700, color: 'var(--accent)' }}>
-              {t('scoreboard.modals.teamsMustSwitchCourts')}
+              {t(courtSwitchModal.back ? 'scoreboard.modals.teamsMustSwitchCourtsBack' : 'scoreboard.modals.teamsMustSwitchCourts')}
             </p>
             <div style={{ marginBottom: '16px', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
               <span style={{ ...teamBoxStyle(data?.homeTeam?.color || '#ef4444'), padding: '2px 6px', borderRadius: '4px', fontSize: '12px', fontWeight: 700 }}>{teamAKey === 'home' ? 'A' : 'B'}</span>
@@ -23136,7 +23292,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 onClick={confirmCourtSwitch}
                 style={{ flex: '1 1 0' }}
               >
-                {t('scoreboard.buttons.switchCourts')}
+                {t(courtSwitchModal.back ? 'scoreboard.buttons.switchCourtsBack' : 'scoreboard.buttons.switchCourts')}
               </SbButton>
               <SbButton
                 className="border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
