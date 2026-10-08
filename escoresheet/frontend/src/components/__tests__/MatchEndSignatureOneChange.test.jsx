@@ -89,4 +89,55 @@ describe('MatchEnd: saving a signature drawn on the pad', () => {
     expect(states.filter(st => !st.pad && !st.signed)).toEqual([])
     cleanup()
   }, 30000)
+
+  it('an official match: one change, and a second tap on Save saves once', async () => {
+    // the pad stays open until the signature shows (a frame or two): a quick
+    // second tap on its Save wrote the signature and queued its upload again
+    const home = await db.teams.add({ name: 'Home VC' })
+    const away = await db.teams.add({ name: 'Away VC' })
+    await db.players.bulkAdd([
+      { teamId: home, number: 7, firstName: 'Lea', lastName: 'Muster', isCaptain: true },
+      { teamId: away, number: 9, firstName: 'Mia', lastName: 'Meier', isCaptain: true }
+    ])
+    const matchId = await db.matches.add({
+      homeTeamId: home, awayTeamId: away, status: 'ended', test: false, seed_key: 'sig-twice',
+      coinTossTeamA: 'home', coinTossTeamB: 'away'
+    })
+    for (const index of [1, 2, 3]) {
+      await db.sets.add({ matchId, index, homePoints: 25, awayPoints: 20, finished: true })
+    }
+
+    render(<ScaleProvider><AlertProvider><LoggingProvider><MatchEnd matchId={matchId} onGoHome={() => {}} /></LoggingProvider></AlertProvider></ScaleProvider>)
+    const box = () => document.querySelector('[data-testid="signature-slot-captain-a"]')
+    await waitFor(() => expect(box()).toBeTruthy(), { timeout: 10000 })
+    fireEvent.click(within(box()).getByText('Tap to sign'))
+    const pad = () => document.querySelector('[role=dialog] canvas')
+    await waitFor(() => expect(pad()).toBeTruthy())
+    await sleep(150)
+    fireEvent.mouseDown(pad(), { clientX: 10, clientY: 10 })
+    fireEvent.mouseMove(pad(), { clientX: 40, clientY: 30 })
+    fireEvent.mouseUp(pad(), { clientX: 40, clientY: 30 })
+    const saveButton = () => [...document.querySelectorAll('[role=dialog] button')].find(b => b.textContent.trim() === 'Save' && !b.disabled)
+    await waitFor(() => expect(saveButton()).toBeTruthy())
+
+    // an official match: the save also queues the upload (a second write)
+    const states = []
+    const observer = new MutationObserver(() => {
+      states.push({ pad: !!pad(), signed: !!box()?.querySelector(`img[src="${SIG}"]`) })
+    })
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true })
+    const save = saveButton()
+    fireEvent.click(save)
+    fireEvent.click(save)
+    await waitFor(() => expect(pad()).toBeFalsy(), { timeout: 5000 })
+    await sleep(300)
+    observer.disconnect()
+    // the pad closed in the change that showed the signature, also here: not
+    // after the upload was queued, a change later
+    expect(states.filter(st => st.pad && st.signed)).toEqual([])
+    expect(states.filter(st => !st.pad && !st.signed)).toEqual([])
+    const jobs = (await db.sync_queue.toArray()).filter(j => j.payload?.id === 'sig-twice' && j.payload?.signatures)
+    expect(jobs).toHaveLength(1)
+    cleanup()
+  }, 30000)
 })

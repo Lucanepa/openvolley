@@ -778,9 +778,14 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       setOpenSignature(null)
       return
     }
+    // The pad closes with the signature on screen (closePadWhenShown). Armed
+    // before the write: the screen can show the signature before the write
+    // returns (an official match queues its upload after it), and the pad then
+    // stayed open a change longer
+    const field = signatureFieldOf(role)
+    if (field) setClosePadWhenShown({ role, field, value: signatureData ?? null })
     const written = await writeSignature(role, signatureData, meta)
-    // The pad closes with the signature on screen (closePadWhenShown)
-    if (written) setClosePadWhenShown({ role, field: signatureFieldOf(role), value: signatureData ?? null })
+    if (!written) setClosePadWhenShown(null)
     // A new signature (drawn here or from a phone) completes the slot: a stale
     // account approval of it (the result changed since) is dropped from the local copy
     const slot = ROLE_TO_SLOT[role]

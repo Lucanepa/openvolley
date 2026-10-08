@@ -45,6 +45,13 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign', ex
     if (!open || phoneLocked) setMode('draw')
   }, [open, phoneLocked])
 
+  // closeOnSave false: the pad stays open after Save until the caller closes
+  // it; a second tap meanwhile must not save (and upload) the signature again
+  const savedRef = useRef(false)
+  useEffect(() => {
+    if (open) savedRef.current = false
+  }, [open])
+
   useEffect(() => {
     if (!open || mode !== 'draw') {
       setHasSignature(false)
@@ -208,13 +215,16 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign', ex
 
   function save() {
     const canvas = canvasRef.current
-    if (!canvas || !hasSignature) return
+    if (!canvas || !hasSignature || savedRef.current) return
     const dataURL = canvas.toDataURL('image/png')
+    if (!closeOnSave) savedRef.current = true
     onSave(dataURL, { source: 'device' })
     if (closeOnSave) onClose()
   }
 
   function acceptPhoneSignature(dataUrl, meta) {
+    if (savedRef.current) return
+    if (!closeOnSave) savedRef.current = true
     onSave(dataUrl, meta)
     if (closeOnSave) onClose()
   }
