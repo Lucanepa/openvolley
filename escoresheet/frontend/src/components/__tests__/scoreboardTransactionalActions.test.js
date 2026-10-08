@@ -74,10 +74,14 @@ describe('Scoreboard: one transaction and one screen change per scorer action', 
     const body = handler('handlePoint')
     expect(body).toContain("await logEvent('libero_exit'")
     expect(body).toContain("type: 'lineup',")
-    expect(body).toContain('await checkSetEnd(freshCurrentSet, homePoints, awayPoints)')
+    // the set-5 change of courts and the set end: one step that every point
+    // path awaits (afterPointScored)
+    expect(body).toContain('await afterPointScored({ set: freshCurrentSet, homePoints, awayPoints, teamKey })')
     expect(body).toContain('deferUi(() => setLiberoRotationModal({')
     expect(body).toContain('deferUi(() => setLiberoReentryModal({')
-    expect(body).toContain('deferUi(() => setCourtSwitchModal({')
+    const after = handler('afterPointScored')
+    expect(after).toContain('deferUi(() => setCourtSwitchModal({')
+    expect(after).toContain('await checkSetEnd(set, homePoints, awayPoints)')
   })
 
   it('the serve ball is no longer hidden while a rotation is pending (no render shows one)', () => {
