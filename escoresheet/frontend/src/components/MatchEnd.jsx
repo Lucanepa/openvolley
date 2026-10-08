@@ -799,7 +799,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     const field = signatureFieldOf(role)
     if (field) setClosePadWhenShown({ role, field, value: signatureData ?? null })
     const written = await writeSignature(role, signatureData, meta)
-    if (!written) setClosePadWhenShown(null)
+    if (!written) setClosePadWhenShown(cur => (cur?.role === role ? null : cur))
     // A new signature (drawn here or from a phone) completes the slot: a stale
     // account approval of it (the result changed since) is dropped from the local copy
     const slot = ROLE_TO_SLOT[role]
@@ -807,7 +807,10 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       const stale = approvalFor(match, role)
       if (stale && !isApprovalValid(stale, sets)) await removeLocalApproval(slot, stale.id)
     }
-    if (!written) setOpenSignature(null)
+    // A failed save closes this slot's pad only: the image can be on the match
+    // row (the next box open) when queueing its upload fails, and a pad tapped
+    // open for the next box in between stays open (OpenBeach f573c46, 2026-10-08)
+    if (!written) setOpenSignature(cur => (cur === role ? null : cur))
   }
 
   // "Clear": the signature goes at once (saved and synced), then the pad opens
