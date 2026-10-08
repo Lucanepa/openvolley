@@ -1294,7 +1294,22 @@
     "resign": "Signer à nouveau",
     "clearSignature": "Effacer",
     "signatureLocked": "Match approuvé ou clôturé : les signatures ne changent plus",
-    "signatureSaveFailed": "La signature n’a pas pu être enregistrée. Réessayez."
+    "signatureSaveFailed": "La signature n’a pas pu être enregistrée. Réessayez.",
+    "export": {
+      "cancel": "Annuler",
+      "retry": "Réessayer",
+      "approveWithoutPdf": "Approuver sans PDF",
+      "noPdfTitle": "Le PDF n’est pas prêt",
+      "reason": {
+        "closed": "La fenêtre de l’eScoresheet a été fermée avant que le PDF soit prêt.",
+        "stalled": "La fenêtre de l’eScoresheet ne répond plus.",
+        "timeout": "Le PDF a pris trop de temps.",
+        "blocked": "La fenêtre de l’eScoresheet n’a pas pu s’ouvrir.",
+        "failed": "L’eScoresheet n’a pas pu créer le PDF."
+      },
+      "cancelKeepsUnapproved": "Annuler laisse le match non approuvé. Approuver sans PDF l’approuve maintenant : enregistrez le PDF depuis l’eScoresheet plus tard.",
+      "keepWindowOpen": "Laissez la fenêtre de l’eScoresheet ouverte jusqu’à ce que le PDF soit prêt."
+    }
   },
   "scoresheetPdf": {
     "zoomOut": "Réduire",

@@ -2240,7 +2240,22 @@
     "resign": "Neu unterschreiben",
     "clearSignature": "Löschen",
     "signatureLocked": "Spiel genehmigt oder abgeschlossen: die Unterschriften sind fix",
-    "signatureSaveFailed": "Die Unterschrift konnte nicht gespeichert werden. Versuche es noch einmal."
+    "signatureSaveFailed": "Die Unterschrift konnte nicht gespeichert werden. Versuche es noch einmal.",
+    "export": {
+      "cancel": "Abbrechen",
+      "retry": "Erneut versuchen",
+      "approveWithoutPdf": "Ohne PDF genehmigen",
+      "noPdfTitle": "Das PDF ist nicht fertig",
+      "reason": {
+        "closed": "Das eMatchblatt-Fenster wurde geschlossen, bevor das PDF fertig war.",
+        "stalled": "Das eMatchblatt-Fenster antwortet nicht mehr.",
+        "timeout": "Das PDF hat zu lange gedauert.",
+        "blocked": "Das eMatchblatt-Fenster konnte nicht geöffnet werden.",
+        "failed": "Das eMatchblatt konnte das PDF nicht erstellen."
+      },
+      "cancelKeepsUnapproved": "Abbrechen lässt das Spiel ungenehmigt. Ohne PDF genehmigen genehmigt es jetzt: Speichern Sie das PDF später aus dem eMatchblatt.",
+      "keepWindowOpen": "Lassen Sie das eMatchblatt-Fenster offen, bis das PDF fertig ist."
+    }
   },
   "scoresheetPdf": {
     "backToScoresheet": "Zurück zum eMatchblatt",

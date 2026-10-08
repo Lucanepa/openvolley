@@ -1296,7 +1296,22 @@
     "resign": "Re-sign",
     "clearSignature": "Clear",
     "signatureLocked": "Match approved or closed: signatures can no longer change",
-    "signatureSaveFailed": "The signature could not be saved. Try again."
+    "signatureSaveFailed": "The signature could not be saved. Try again.",
+    "export": {
+      "cancel": "Cancel",
+      "retry": "Retry",
+      "approveWithoutPdf": "Approve without PDF",
+      "noPdfTitle": "The PDF is not ready",
+      "reason": {
+        "closed": "The scoresheet window was closed before the PDF was ready.",
+        "stalled": "The scoresheet window stopped answering.",
+        "timeout": "The PDF took too long.",
+        "blocked": "The scoresheet window could not be opened.",
+        "failed": "The scoresheet could not create the PDF."
+      },
+      "cancelKeepsUnapproved": "Cancel leaves the match not approved. Approve without PDF approves it now: save the PDF from the scoresheet later.",
+      "keepWindowOpen": "Keep the scoresheet window open until the PDF is ready."
+    }
   },
   "scoresheetPdf": {
     "zoomOut": "Zoom out",

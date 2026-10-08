@@ -1295,7 +1295,22 @@
     "resign": "Firma di nuovo",
     "clearSignature": "Cancella",
     "signatureLocked": "Partita approvata o chiusa: le firme non cambiano più",
-    "signatureSaveFailed": "Non è stato possibile salvare la firma. Riprova."
+    "signatureSaveFailed": "Non è stato possibile salvare la firma. Riprova.",
+    "export": {
+      "cancel": "Annulla",
+      "retry": "Riprova",
+      "approveWithoutPdf": "Approva senza PDF",
+      "noPdfTitle": "Il PDF non è pronto",
+      "reason": {
+        "closed": "La finestra dell’eScoresheet è stata chiusa prima che il PDF fosse pronto.",
+        "stalled": "La finestra dell’eScoresheet non risponde più.",
+        "timeout": "Il PDF ha richiesto troppo tempo.",
+        "blocked": "Non è stato possibile aprire la finestra dell’eScoresheet.",
+        "failed": "L’eScoresheet non ha potuto creare il PDF."
+      },
+      "cancelKeepsUnapproved": "Annulla lascia la partita non approvata. Approva senza PDF la approva ora: salva il PDF dall’eScoresheet più tardi.",
+      "keepWindowOpen": "Tieni aperta la finestra dell’eScoresheet finché il PDF è pronto."
+    }
   },
   "scoresheetPdf": {
     "zoomOut": "Riduci",

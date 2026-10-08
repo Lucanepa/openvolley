@@ -331,8 +331,16 @@ describe('MatchEnd: Sign on phone with Re-sign and Clear', () => {
     expect(within(slot('scorer')).queryByTestId('signed-on-phone-scorer')).toBeNull()
   })
 
-  it('a locked match (approved, closed or final) opens no pad, so no phone session', async () => {
-    for (const lock of [{ approved: true }, { closed_at: '2026-10-07T20:00:00Z' }, { status: 'final' }]) {
+  it('a locked match (closed or final) opens no pad, so no phone session; an approved one shows no boxes', async () => {
+    // approved: the approved view (from the match row), no signature boxes at all
+    seed({ ...BEFORE_SCORER, approved: true })
+    const approvedView = render(<MatchEnd matchId={1} />)
+    await screen.findByRole('button', { name: en.matchEnd.closeMatch })
+    expect(screen.queryByTestId('signature-slot-scorer')).toBeNull()
+    expect(screen.queryByTestId('signature-resign-captain-a')).toBeNull()
+    approvedView.unmount()
+
+    for (const lock of [{ closed_at: '2026-10-07T20:00:00Z' }, { status: 'final' }]) {
       seed({ ...BEFORE_SCORER, ...lock })
       const view = render(<MatchEnd matchId={1} />)
       await settle()
