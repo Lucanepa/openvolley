@@ -173,8 +173,11 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   }
 
   // ---- team actions -------------------------------------------------------
-  const toDisabled = (team) => !idle || team.timeouts >= 2 || !!centre
-  const subDisabled = (team) => !idle || team.subs >= 6 || !team.lineupSet || !!centre
+  // As the desktop counters: open between rallies, also while a time-out or
+  // the interval runs (a consecutive time-out, a substitution right after a
+  // time-out); greyed once used up
+  const toDisabled = (team) => !idle || team.timeouts >= 2
+  const subDisabled = (team) => !idle || team.subs >= 6 || !team.lineupSet
   const counter = (team, { label, value, disabled, onClick, testId }) => {
     const p = paint[team.side]
     return (
@@ -345,7 +348,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
       </section>
 
       <section aria-label={t('scoreboard.phone.moreActions')} style={{ flex: 'none', display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6, padding: '0 12px 14px' }}>
-        {gridButton('libero', t('scoreboard.phone.libero'), () => setSheet({ kind: 'libero' }), { disabled: !idle || !!centre })}
+        {gridButton('libero', t('scoreboard.phone.libero'), () => setSheet({ kind: 'libero' }), { disabled: !idle })}
         {gridButton('sanction', t('scoreboard.sanction'), () => setSheet({ kind: 'sanction' }), { disabled: rally.status !== 'idle' })}
         {gridButton('replay', t('scoreboard.phone.replay'), () => actions.replay(), { disabled: !inPlay })}
         {gridButton('decision', t('scoreboard.phone.decision'), () => actions.replay(), { disabled: !(rally.status === 'idle' && rally.canReplayRally) })}
