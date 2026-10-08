@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
+import { remarksSnapshotJob } from '../db/remarksSync'
 import { withActivityContext, wipeMatchEvents } from '../db/eventHistory'
 import { useAlert } from '../contexts/AlertContext'
 import { useScaledLayout } from '../hooks/useScaledLayout'
@@ -1277,6 +1278,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             accounts: approvalSummary(match, allSets)
           }
 
+          // The remarks as approved, just before the approval (db/017)
+          const remarksJob = remarksSnapshotJob((await db.matches.get(matchId)) || match)
+          if (remarksJob) await db.sync_queue.add(remarksJob)
           await db.sync_queue.add({
             resource: 'match',
             action: 'update',

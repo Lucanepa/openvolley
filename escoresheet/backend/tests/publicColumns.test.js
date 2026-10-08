@@ -60,7 +60,9 @@ function fullMatchRow() {
     approval: { approved_by: 'Rita Ref', signature: SIGNATURE },
     manual_changes: [{ field: 'x' }],
     sanctions: [{ player: 1 }],
-    results: { note: 'x' }
+    results: { note: 'x' },
+    // db/017: the scorer's remarks (free text: names, injuries) are not public
+    remarks: 'Team A, Set 2, Result 3:5: player no. 4 Muster injured, call 079'
   }
 }
 
@@ -73,7 +75,7 @@ describe('publicColumns: live projection', () => {
     const live = projectLiveRow('matches', redactSecrets('matches', fullMatchRow()))
     assert.equal(leaksPersonalData(json(live)), false, json(live))
     for (const col of ['players_home', 'players_away', 'bench_home', 'bench_away', 'officials', 'signatures',
-      'approval', 'connections', 'connection_pins', 'game_pin', 'manual_changes', 'sanctions', 'results']) {
+      'approval', 'connections', 'connection_pins', 'game_pin', 'manual_changes', 'sanctions', 'results', 'remarks']) {
       assert.equal(col in live, false, col)
     }
     assert.equal(live.id, MATCH)
@@ -131,7 +133,9 @@ describe('publicColumns: anonymous /api/db reads', () => {
     assert.deepEqual(anon.players_away, [{ number: 7, firstName: 'Bea', lastName: 'Beispiel', libero: 'libero1' }])
     assert.deepEqual(anon.bench_home, [{ role: 'Coach', firstName: 'Carl', lastName: 'Coach' }])
     assert.deepEqual(anon.connections, { referee_enabled: true, home_bench_enabled: true, away_bench_enabled: false })
-    for (const col of ['officials', 'signatures', 'approval', 'manual_changes', 'sanctions', 'results']) assert.equal(col in anon, false, col)
+    for (const col of ['officials', 'signatures', 'approval', 'manual_changes', 'sanctions', 'results', 'remarks']) assert.equal(col in anon, false, col)
+    assert.equal(anonSelectCheck('matches', { columns: 'id, remarks' }).needsMore, true, 'remarks need a session')
+    assert.equal(anonSelectCheck('matches', { columns: 'id', filters: [{ type: 'eq', column: 'remarks', value: 'x' }] }).badFilter, 'remarks')
     // single / maybeSingle answers are one object
     assert.equal(projectRows(ANON_DB_COLUMNS, 'matches', fullMatchRow()).officials, undefined)
     assert.equal(hasAnonPolicy('matches'), true)

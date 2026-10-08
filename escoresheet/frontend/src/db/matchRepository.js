@@ -16,8 +16,28 @@ export const VALID_MATCH_COLUMNS = [
   'scheduled_at', 'match_info', 'officials', 'home_team', 'players_home', 'bench_home',
   'away_team', 'players_away', 'bench_away', 'coin_toss', 'results', 'signatures',
   'approval', 'test', 'created_at', 'updated_at', 'manual_changes', 'current_set',
-  'set_results', 'final_score', 'sanctions', 'winner', 'sport_type'
+  'set_results', 'final_score', 'sanctions', 'winner', 'sport_type',
+  // db/017: the scoresheet REMARKS box (text). Not public on the server.
+  'remarks'
 ]
+
+// db/017's CHECK on matches.remarks (characters, not bytes)
+export const REMARKS_MAX = 8000
+
+/**
+ * The remarks text as the server takes it: a string ('' when there are none),
+ * at most REMARKS_MAX characters (code points, like Postgres length()). The
+ * local text is never shortened; only what is sent is. The box on the sheet
+ * holds far less, so this only stops a runaway text from failing its job.
+ * @param {unknown} remarks
+ * @returns {string}
+ */
+export function remarksForServer(remarks) {
+  const text = typeof remarks === 'string' ? remarks : ''
+  if (text.length <= REMARKS_MAX) return text
+  const chars = Array.from(text)
+  return chars.length <= REMARKS_MAX ? text : chars.slice(0, REMARKS_MAX).join('')
+}
 
 // JSONB columns that must be MERGED with existing values on update (not replaced),
 // so concurrent writers of different fields don't clobber each other.

@@ -26,12 +26,16 @@ import { NarrowScreenOverlay } from './dashboards/EntryKit.jsx'
 import { lastEventFromLiveState, lastEventFromMatchData, pickNewerLastEvent, refereeEventLabel } from '../utils/refereeLastEvent.js'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
 import PlayerDisc from './referee/PlayerDisc.jsx'
+import ScoreServeRow from './referee/ScoreServeRow.jsx'
 import { matchDiscPaint, teamLiberoColour, teamBoxStyle } from '../utils/teamColours.js'
 import { discCapPx, discMetrics } from './referee/discSizing.js'
 import { isWideLayout, screenFit, SIDE_PANEL_CSS, REFEREE_LAYOUT } from './referee/refereeLayout.js'
 import { layoutReception, pointToFormation } from './referee/receptionLayout.js'
 import { getSideAForSet } from '../domain/rules'
 import { BRAND } from '../brand'
+
+// A lineup position: the rich format's { number, ... } or the legacy plain number
+const lineupNumber = (pos) => (pos && typeof pos === 'object') ? pos.number : (pos || '')
 
 // Get current version from package.json (injected by Vite at build time)
 const currentVersion = __APP_VERSION__
@@ -2856,124 +2860,17 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           minHeight: wide ? 0 : '15%',
           height: wide ? '100%' : 'auto'
         }}>
-          {/* Score row: SERVE indicator left | Score left | : | Score right | SERVE indicator right */}
-          <div style={{
-            // 1fr auto 1fr keeps the score centred; the side columns grow to
-            // the SERVE box when it is wider than their share, and the row's
-            // padding keeps it off the screen edge (it touched it at 800 px).
-            display: 'grid',
-            gridTemplateColumns: 'minmax(max-content, 1fr) auto minmax(max-content, 1fr)',
-            alignItems: 'center',
-            columnGap: 'clamp(8px, 2vw, 16px)',
-            width: '100%',
-            maxWidth: '100%',
-            padding: '0 clamp(10px, 2.5vw, 24px)',
-            boxSizing: 'border-box'
-          }}>
-            {/* LEFT SERVE indicator */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'flex-start',
-              minWidth: 0
-            }}>
-              {leftServing && (
-                <div style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '2px'
-                }}>
-                  <span style={{ fontSize: vmin(3), color: 'var(--accent)', fontWeight: 700 }}>SERVE</span>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: vmin(1),
-                    background: 'rgba(34, 197, 94, 0.15)',
-                    border: '2px solid var(--accent)',
-                    borderRadius: '8px',
-                    aspectRatio: '1/1',
-                    minWidth: vmin(6)
-                  }}>
-                    <span style={{ fontSize: vmin(7), paddingBottom: vmin(0.5), fontWeight: 700, color: 'var(--accent)', lineHeight: 0.8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      {typeof leftLineup?.I === 'object' ? leftLineup?.I?.number : leftLineup?.I || ''}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Score section - takes remaining space */}
-            <div style={{
-              flex: '1 1 auto',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 'clamp(4px, 1vw, 12px)'
-            }}>
-              {/* Left Score */}
-              <span style={{
-                fontFamily: getScoreFont(),
-                fontSize: vmin(15),
-                fontWeight: 600,
-                lineHeight: 1,
-                textAlign: 'right'
-              }}>
-                {leftDisplayScore}
-              </span>
-
-              {/* Colon */}
-              <span style={{
-                fontFamily: getScoreFont(), fontSize: vmin(11), fontWeight: 800, color: 'var(--accent)', lineHeight: 1, marginTop: vmin(-0.5)
-              }}>:</span>
-
-              {/* Right Score */}
-              < span style={{
-                fontFamily: getScoreFont(),
-                fontSize: vmin(15),
-                fontWeight: 600,
-                lineHeight: 1,
-                textAlign: 'left'
-              }}>
-                {rightDisplayScore}
-              </span>
-            </div>
-
-            {/* RIGHT SERVE indicator */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'flex-end',
-              minWidth: 0
-            }}>
-              {rightServing && (
-                <div style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '2px'
-                }}>
-                  <span style={{ fontSize: vmin(3), color: 'var(--accent)', fontWeight: 700 }}>SERVE</span>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: vmin(0.5),
-                    background: 'rgba(34, 197, 94, 0.15)',
-                    border: '2px solid var(--accent)',
-                    borderRadius: '8px',
-                    aspectRatio: '1/1',
-                    minWidth: vmin(6)
-                  }}>
-                    <span style={{ fontSize: vmin(8), fontWeight: 700, color: 'var(--accent)', lineHeight: '1', textAlign: 'center' }}>
-                      {typeof rightLineup?.I === 'object' ? rightLineup?.I?.number : rightLineup?.I || ''}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+          {/* Score row: SERVE block on the serving side | left : right | (room for it on the other side) */}
+          <ScoreServeRow
+            leftScore={leftDisplayScore}
+            rightScore={rightDisplayScore}
+            servingSide={leftServing ? 'left' : rightServing ? 'right' : null}
+            serverNumber={leftServing ? lineupNumber(leftLineup?.I) : rightServing ? lineupNumber(rightLineup?.I) : null}
+            servingColour={leftServing ? leftColor : rightServing ? rightColor : undefined}
+            serveLabel={t('scoreboard.labels.serveLabel', 'SERVE')}
+            vmin={vmin}
+            scoreFont={getScoreFont()}
+          />
         </div>
 
         {/* SECTION 3: Court Area - 40% (includes advanced mode buttons) */}
