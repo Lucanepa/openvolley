@@ -439,6 +439,28 @@ describe('ConnectTabletsModal', () => {
     expect(screen.getByTestId('isolation-tip')).toHaveTextContent('Some hall Wi-Fis keep devices apart')
   })
 
+  // The hall panel's text came in three steps within 83 ms on opening:
+  // "Reading the local server…", the addresses (server answered), then the
+  // Wi-Fi to join (the system answered). It now waits for both.
+  it('hall Wi-Fi: the addresses and the Wi-Fi name come in one change', async () => {
+    let answer
+    const win = tauri({
+      hotspot_status: () => new Promise(resolve => { answer = resolve }),
+      bluetooth_status: () => ({ supported: false })
+    })
+    const fetchImpl = okFetch()
+    renderModal({ match: MATCH, fetchImpl, win })
+    await waitFor(() => expect(answer).toBeTypeOf('function'))
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalled())
+    await new Promise(r => setTimeout(r, 20))
+    // the server has answered, the system not yet: still reading
+    expect(screen.getByTestId('hall-panel')).toHaveTextContent('Reading the local server…')
+    expect(screen.queryByText(/Tablets join/)).toBeNull()
+    answer({ supported: true, active: false, platform: 'linux', ssid: 'a', password: 'b', takesOverWifi: true, leavesNetwork: 'Halle-WLAN' })
+    await waitFor(() => expect(screen.getByText('Tablets join the Wi-Fi “Halle-WLAN”.')).toBeInTheDocument())
+    expect(screen.getByTestId('hall-panel')).not.toHaveTextContent('Reading the local server…')
+  })
+
   it('create Wi-Fi: a hotspot the system runs shows its codes, and cannot be stopped here', async () => {
     const win = tauri({
       hotspot_status: () => ({ supported: true, active: true, external: true, platform: 'windows', method: 'mobile-hotspot', ssid: 'Luca-PC', password: 'home-secret', gatewayIp: '192.168.137.1', clients: 2, maxClients: 8 }),

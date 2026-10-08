@@ -422,7 +422,9 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
               {transport === 'hall' && (
                 <HallPanel
                   served={served}
-                  loading={relay.loading}
+                  // the desktop app also names the Wi-Fi to join (hotspot
+                  // status): wait for it, so the panel fills in one change
+                  loading={relay.loading || (desktop && hs.loading)}
                   interfaces={halls}
                   selectedIp={hallAddress}
                   onSelectIp={setHallIp}
