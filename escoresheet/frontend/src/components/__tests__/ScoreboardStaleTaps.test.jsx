@@ -112,8 +112,9 @@ function release() {
   for (const deliver of queue) deliver()
 }
 
-// Set 1 under way at 1:1, team A (home) on the left, both line-ups entered
-async function setUpMatch() {
+// Set 1 under way at 1:1 (`started`: else not started yet), team A (home)
+// on the left, both line-ups entered
+async function setUpMatch({ started = true } = {}) {
   const home = await db.teams.add({ name: 'Home VC', shortName: 'HOM' })
   const away = await db.teams.add({ name: 'Away VC', shortName: 'AWY' })
   const players = []
@@ -124,13 +125,14 @@ async function setUpMatch() {
     firstServe: 'home', coinTossTeamA: 'home', coinTossTeamB: 'away'
   })
   const t = new Date(Date.now() - 30 * 60 * 1000).toISOString()
-  await db.sets.add({ matchId, index: 1, homePoints: 1, awayPoints: 1, finished: false, startTime: t })
+  await db.sets.add({ matchId, index: 1, homePoints: started ? 1 : 0, awayPoints: started ? 1 : 0, finished: false, startTime: started ? t : null })
   let seq = 1
   await db.events.add({ matchId, setIndex: 1, type: 'coin_toss', payload: {}, seq: seq++, ts: t })
   const lineup = { I: '1', II: '2', III: '3', IV: '4', V: '5', VI: '6' }
   for (const team of ['home', 'away']) {
     await db.events.add({ matchId, setIndex: 1, type: 'lineup', payload: { team, lineup, isInitial: true }, seq: seq++, ts: t })
   }
+  if (!started) return matchId
   await db.events.add({ matchId, setIndex: 1, type: 'set_start', payload: {}, seq: seq++, ts: t })
   const at = (i) => new Date(Date.parse(t) + (i + 1) * 5000).toISOString()
   for (const [i, team] of ['home', 'away'].entries()) {
@@ -145,12 +147,12 @@ const mount = (matchId) => render(<ScaleProvider><AlertProvider><LoggingProvider
 // The screen behind the database: `tap` is written, the action has let go
 // of its key (no live query result for COMMIT_FLUSH_MAX_WAIT_MS), the screen
 // still shows what it showed before the tap
-async function tapWhileScreenBehind(el, type, count) {
+async function tapWhileScreenBehind(el, type, count, { staysOnScreen = true } = {}) {
   held.on = true
   fireEvent.click(el)
   await waitFor(async () => expect((await ofType(type)).length).toBe(count + 1), { timeout: 5000 })
   await wait(COMMIT_FLUSH_MAX_WAIT_MS + 300)
-  expect(el.isConnected).toBe(true)
+  if (staysOnScreen) expect(el.isConnected).toBe(true)
 }
 
 describe('Scoreboard: a tap on a screen that has not caught up', () => {
@@ -168,6 +170,33 @@ describe('Scoreboard: a tap on a screen that has not caught up', () => {
     await waitFor(() => expect(button('Point A')).toBeTruthy(), { timeout: 5000 })
     await settle()
     expect((await ofType('rally_start')).length).toBe(rallies + 1)
+  }, 60000)
+
+  it('a second tap on Start set starts the set once', async () => {
+    setViewport(1280, 800)
+    mount(await setUpMatch({ started: false }))
+    await waitFor(() => expect(button('Start set')).toBeTruthy(), { timeout: 10000 })
+    await settle()
+    const startSet = button('Start set')
+    fireEvent.click(startSet)
+    await waitFor(() => expect(button('Confirm')).toBeTruthy(), { timeout: 5000 })
+    await settle()
+    // the set start is written, the dialog closed, the screen still says Start set
+    await tapWhileScreenBehind(button('Confirm'), 'set_start', 0, { staysOnScreen: false })
+    expect(startSet.isConnected).toBe(true)
+    fireEvent.click(startSet)
+    await wait(1000)
+    // a second set start dialog, if one opened, confirmed as the first
+    if (button('Confirm')) {
+      await settle()
+      fireEvent.click(button('Confirm'))
+      await wait(1000)
+    }
+    release()
+    await waitFor(() => expect(button('Point A')).toBeTruthy(), { timeout: 5000 })
+    await settle()
+    expect((await ofType('set_start')).length).toBe(1)
+    expect((await ofType('rally_start')).length).toBe(1)
   }, 60000)
 
   it('desktop: a second tap on a point button gives no second point for the rally', async () => {
