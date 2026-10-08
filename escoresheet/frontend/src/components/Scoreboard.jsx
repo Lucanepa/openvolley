@@ -6816,6 +6816,43 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return plan
   }, [matchId, discardEvents])
 
+  // The interval before set 5 when its setup's confirmation is undone: from
+  // the set end's confirmation (its set_end event; else the set's end time),
+  // as the screen's countdown is worked out on a reload. null once it is over.
+  const set5IntervalAfterUndo = useCallback(async () => {
+    const sets = await db.sets.where({ matchId }).toArray()
+    const previousSet = findPreviousSet(sets, 5)
+    if (!previousSet?.finished) return null
+    const setEndEvent = (await db.events.where({ matchId }).toArray())
+      .filter(e => e.type === 'set_end' && e.setIndex === previousSet.index)
+      .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0]
+    const startMs = Date.parse(setEndEvent?.ts || previousSet.endTime || '')
+    if (Number.isNaN(startMs)) return null
+    const remaining = Math.max(0, setIntervalDuration - Math.floor((Date.now() - startMs) / 1000))
+    if (remaining <= 0) return null
+    const winner = previousSet.homePoints > previousSet.awayPoints ? 'home' : 'away'
+    const finished = sets.filter(s => s.finished)
+    return {
+      remaining,
+      refereeAction: {
+        setIndex: previousSet.index,
+        winner,
+        homePoints: previousSet.homePoints,
+        awayPoints: previousSet.awayPoints,
+        countdown: setIntervalDuration,
+        startTimestamp: startMs,
+        homeSetsWon: finished.filter(s => s.homePoints > s.awayPoints).length,
+        awaySetsWon: finished.filter(s => s.awayPoints > s.homePoints).length
+      },
+      liveData: {
+        duringInterval: true,
+        intervalStartedAt: new Date(startMs).toISOString(),
+        setIndex: previousSet.index,
+        winner
+      }
+    }
+  }, [matchId, setIntervalDuration])
+
   const runUndoConfirm = useConfirmAction(onConfirmFailed)
   // One action: every write of the undo, its event history (the voids and
   // their sync jobs, reason 'undo') and the dialog closing appear together
@@ -6832,6 +6869,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     deferUi(() => setUndoConfirm(null))
     const lastEventSeq = lastEvent.seq || 0
     const baseSeq = Math.floor(lastEventSeq)
+    // The undo's live state: the interval again when the set 5 setup's
+    // confirmation (which ended it) is undone while it still runs
+    let undoLiveData = null
 
     console.log('[handleUndo] Starting snapshot-based undo for event:', lastEvent.type, 'seq:', lastEventSeq)
 
@@ -6996,6 +7036,28 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         await queueSetScoreSync(db, { matchId, setIndex: undoneSetIndex })
       }
 
+      // The set 5 setup's confirmation undone: its panel is shown again, and
+      // the interval it ended runs on from the set end (it was only reset at
+      // the set end before set 5, so the panel stayed hidden until a reload
+      // and the countdown and the tablets stayed "interval over")
+      if (lastEvent.type === 'set5_coin_toss') {
+        const interval = await set5IntervalAfterUndo()
+        deferUi(() => {
+          setSet5SetupConfirmed(false)
+          if (interval) {
+            countdownDismissedRef.current = false
+            betweenSetsStartTimestampRef.current = null
+            setBetweenSetsCountdown({ countdown: interval.remaining, started: true })
+          }
+        })
+        if (interval) {
+          // The referee and the bench reopen their countdown (end_interval
+          // closed it), the livescore keeps the break (this undo's push)
+          sendActionToReferee('set_end', interval.refereeAction)
+          undoLiveData = interval.liveData
+        }
+      }
+
       // A team back on 8 in the deciding set without the change of courts
       // gets its dialog
       await settleCourtSwitchAfterUndo(undoneSetIndex)
@@ -7007,10 +7069,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     } finally {
       // Sync to Referee and Supabase after undo (after the commit)
       syncToReferee()
-      syncLiveStateToSupabase('undo', null, null)
+      syncLiveStateToSupabase('undo', null, undoLiveData)
       notifyScoresheetUpdate('undo')
     }
-  }, { reason: 'undo' })), [runUndoConfirm, undoConfirm, data?.set, matchId, restoreStateFromSnapshot, discardEvents, applyForfeitReversal, resyncSetScoreFromEvents, settleCourtSwitchAfterUndo, showAlert, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, runAction, deferUi])
+  }, { reason: 'undo' })), [runUndoConfirm, undoConfirm, data?.set, matchId, restoreStateFromSnapshot, discardEvents, applyForfeitReversal, resyncSetScoreFromEvents, settleCourtSwitchAfterUndo, set5IntervalAfterUndo, showAlert, syncToReferee, sendActionToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, runAction, deferUi])
 
   // OLD UNDO LOGIC REMOVED - The following complex per-event-type logic has been replaced
   // by the snapshot-based undo system above. Keeping this comment for reference.
