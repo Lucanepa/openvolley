@@ -1416,6 +1416,8 @@ const syncStatusListeners = new Set()
 // syncing <-> synced all the time)
 const SYNC_STATE_GROUP = { synced: 'ok', syncing: 'ok', connecting: 'ok' }
 const syncGroup = (s) => SYNC_STATE_GROUP[s] || s
+// Statuses that say the cloud answered
+const CLOUD_REACHED = new Set(['synced', 'syncing', 'auth_required'])
 function publishSyncStatus(status) {
   if (syncGroup(status) !== syncGroup(currentSyncStatus)) {
     emitActivity('sync.state', { from: currentSyncStatus, to: status }, { level: status === 'error' ? 'warn' : 'info' })
@@ -1485,8 +1487,11 @@ export function useSyncQueue() {
     }
 
     try {
-      // Only show 'connecting' on initial check, not during regular syncs
-      if (!connectionVerified.current && probeFailures.current === 0) {
+      // Only show 'connecting' on initial check, not during regular syncs,
+      // and never over a cloud another instance already reaches: the
+      // scoreboard's own queue turned the header's chip for one frame
+      // (laptop run 2026-10-08, OB-3)
+      if (!connectionVerified.current && probeFailures.current === 0 && !CLOUD_REACHED.has(currentSyncStatus)) {
         setSyncStatus('connecting')
       }
       // Try a simple query to check connection - use matches table

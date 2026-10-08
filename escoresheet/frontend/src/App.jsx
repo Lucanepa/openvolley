@@ -4,7 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import { wipeMatchEvents } from './db/eventHistory'
 import MatchSetup, { preloadMatchSetup } from './components/MatchSetup'
-import Scoreboard from './components/Scoreboard'
+import Scoreboard, { preloadScoreboard } from './components/Scoreboard'
 import CoinToss from './components/CoinToss'
 import MatchEnd, { preloadMatchEnd } from './components/MatchEnd'
 import ManualAdjustments from './components/ManualAdjustments'
@@ -2979,7 +2979,10 @@ export default function App() {
               {showCoinToss && matchId ? (
                 <CoinToss
                   matchId={matchId}
-                  onConfirm={() => {
+                  onConfirm={async () => {
+                    // The scoreboard opens with the match on it: the coin
+                    // toss stays until it has read it (OB-3 in OpenVolley)
+                    await preloadScoreboard(matchId)
                     setShowCoinToss(false)
                     // Match status is set to 'live' by CoinToss component
                   }}

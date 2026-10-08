@@ -34,10 +34,12 @@ export const COMMIT_FLUSH_MAX_WAIT_MS = 3000
  *
  * @param {() => Promise<any>} querier
  * @param {any[]} deps
+ * @param {any} [initialValue] the result until the first emit (e.g. read
+ *   before the screen opened: utils/preload)
  * @returns {[any, { nextGen: () => number, afterCommit: (gen: number, apply: () => void) => void }]}
  */
-export function useActionLiveQuery(querier, deps) {
-  const [state, setState] = useState({ value: undefined, error: null })
+export function useActionLiveQuery(querier, deps, initialValue) {
+  const [state, setState] = useState(() => ({ value: initialValue, error: null }))
   const querierRef = useRef(querier)
   querierRef.current = querier
   const genRef = useRef(0) // last generation taken by an action

@@ -51,7 +51,8 @@ function handler(name) {
 
 describe('Scoreboard: one transaction and one screen change per scorer action', () => {
   it('reads the match in one read transaction through useActionLiveQuery', () => {
-    expect(src).toMatch(/const \[data, liveCommits\] = useActionLiveQuery\(\(\) => db\.transaction\('r', \[db\.matches, db\.teams, db\.sets, db\.players, db\.events\], async \(\) => \{/)
+    expect(src).toMatch(/function readScoreboard\(matchId\) \{\n  return db\.transaction\('r', \[db\.matches, db\.teams, db\.sets, db\.players, db\.events\], async \(\) => \{/)
+    expect(src).toMatch(/const \[data, liveCommits\] = useActionLiveQuery\(\(\) => readScoreboard\(matchId\), \[matchId\], preloaded\)/)
     expect(src).not.toMatch(/const data = useLiveQuery\(/)
     expect(src).toMatch(/useScorerActions\(\{\s*db,\s*commits: liveCommits,\s*mutexRef: eventInProgressRef,/)
   })
