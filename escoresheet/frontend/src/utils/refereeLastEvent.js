@@ -77,3 +77,70 @@ export function pickNewerLastEvent(current, candidate) {
   if (!current) return candidate
   return candidate.timestamp >= current.timestamp ? candidate : current
 }
+
+/**
+ * The score as the referee sees the court: the left team first, each side
+ * with its letter ("A 20 : 16 B"), as on the scorer screen. It was printed
+ * "(20-16)", left-right with no letters (parity with OpenBeach a237c69).
+ */
+export function courtScore({ leftLabel, rightLabel, leftPoints, rightPoints }) {
+  return `${leftLabel || ''} ${leftPoints ?? 0} : ${rightPoints ?? 0} ${rightLabel || ''}`.trim()
+}
+
+const SANCTION_SHORT = {
+  improper_request: 'IR',
+  delay_warning: 'DW',
+  delay_penalty: 'DP',
+  warning: 'W',
+  penalty: 'P',
+  expulsion: 'EXP',
+  disqualification: 'DQ'
+}
+
+/**
+ * The footer's "Last action" text.
+ * @param {{ type: string, team?: 'home'|'away'|null, data?: object }|null} lastEvent
+ * @param {{ homeLabel: string, awayLabel: string, homeShort: string, awayShort: string,
+ *   leftLabel: string, rightLabel: string, leftPoints: number, rightPoints: number,
+ *   setLabel?: (setIndex: number) => (number|string), t: Function }} ctx
+ */
+export function refereeEventLabel(lastEvent, ctx) {
+  if (!lastEvent) return ''
+  const t = typeof ctx.t === 'function' ? ctx.t : (key) => key
+  const team = lastEvent.team
+  const teamLbl = team === 'home' ? ctx.homeLabel : team === 'away' ? ctx.awayLabel : ''
+  const teamShort = team === 'home' ? ctx.homeShort : team === 'away' ? ctx.awayShort : ''
+  const teamInfo = teamLbl ? [teamLbl, teamShort, `(${courtScore(ctx)})`].filter(Boolean).join(' ') : ''
+  const data = lastEvent.data || {}
+  const withTeam = (text) => [text, teamInfo].filter(Boolean).join(' ')
+
+  switch (lastEvent.type) {
+    case 'point': return withTeam(t('refereeDashboard.events.point'))
+    case 'timeout': return withTeam(t('refereeDashboard.events.timeout'))
+    case 'substitution': return `${withTeam(t('refereeDashboard.events.substitution'))}: #${data.playerOut} → #${data.playerIn}`
+    case 'libero_entry': return withTeam(t('refereeDashboard.events.liberoIn'))
+    case 'libero_exit': return withTeam(t('refereeDashboard.events.liberoOut'))
+    case 'libero_exchange': return withTeam(t('refereeDashboard.events.liberoExchange'))
+    case 'libero_redesignation': return withTeam(t('refereeDashboard.events.liberoRedesignation'))
+    case 'set_end': {
+      const set = data.setIndex ? (typeof ctx.setLabel === 'function' ? ctx.setLabel(data.setIndex) : data.setIndex) : ''
+      return t('refereeDashboard.events.setEnd', { set })
+    }
+    case 'sanction': {
+      const short = SANCTION_SHORT[data.type] || data.type || ''
+      // delay and improper request: no member
+      const isDelayOrIR = ['delay_warning', 'delay_penalty', 'improper_request'].includes(data.type)
+      let memberInfo = ''
+      if (!isDelayOrIR) {
+        if (data.playerNumber) memberInfo = `#${data.playerNumber}`
+        else if (data.role) memberInfo = data.role // officials: coach, assistant coach ...
+        else if (data.playerType) memberInfo = data.playerType
+      }
+      return [short, teamInfo, memberInfo].filter(Boolean).join(' ')
+    }
+    case 'court_captain_designation':
+      return `${withTeam(t('refereeDashboard.events.courtCaptainDesignation'))} #${data.playerNumber || '?'}`
+    default:
+      return ''
+  }
+}

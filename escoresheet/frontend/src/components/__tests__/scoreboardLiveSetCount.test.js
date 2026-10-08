@@ -43,6 +43,8 @@ describe('set number display', () => {
   })
 
   it('the referee\'s last-event text shows the set end as the displayed set number', () => {
-    expect(referee).toMatch(/refereeDashboard\.events\.setEnd', \{ set: lastEvent\.data\?\.setIndex \? displaySetNumber\(lastEvent\.data\.setIndex, refBestOf\)/)
+    // the text is built by refereeEventLabel (utils/refereeLastEvent.js), which
+    // names the set through setLabel (tested there)
+    expect(referee).toMatch(/setLabel: \(setIndex\) => displaySetNumber\(setIndex, refBestOf\)/)
   })
 })
