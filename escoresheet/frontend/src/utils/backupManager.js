@@ -772,8 +772,9 @@ const isSide = (v) => v === 'left' || v === 'right'
  *    (set5LeftTeam, what the set 5 toss and its corrections write), never an
  *    override [5], with the change of courts at 8 apart (set5CourtSwitched):
  *    the live side is after the change, so saved as the toss side the change
- *    at 8 would flip it once more. Switched when the snapshot's toss side is
- *    not the live side; without a toss side, when a team has 8.
+ *    at 8 would flip it once more. Switched when a team has 8; only a
+ *    snapshot whose courts did not follow its score keeps its toss side, and
+ *    is switched when that is not the live side.
  * {} when neither says.
  * @param {Array} events  server event rows (seq, state_snapshot)
  * @param {object|null} liveState  match_live_state row
@@ -798,10 +799,16 @@ export function savedCourtSides(events, liveState, teamAKey = 'home') {
     }
     if (isAB(snap.set5LeftTeam)) out.set5LeftTeam = label(snap.set5LeftTeam)
     if (snap.set5CourtSwitched === true) out.set5CourtSwitched = true
+    // Off the set number's side in the snapshot's OWN labels only, then
+    // relabelled: a swap of A and B ("Switch sides" in sets 1-4) moves the
+    // teams by the set number's rule, so a snapshot on that side taken before
+    // the swap is no override (flipped first, it pinned one, and the restored
+    // match's "Switch sides" then flipped the override with the labels and
+    // moved no team)
     const set = Number(snap.currentSetIndex)
     if (set >= 1 && set <= 4 && isSide(snap.sideA)) {
-      const left = label(snap.sideA === 'left' ? 'A' : 'B')
-      if (left !== leftLabel(set)) overrides[set] = left
+      const own = snap.sideA === 'left' ? 'A' : 'B'
+      if (own !== getLeftTeamLabelForSet(set)) overrides[set] = label(own)
     }
   }
 
@@ -809,12 +816,20 @@ export function savedCourtSides(events, liveState, teamAKey = 'home') {
   if (set >= 1 && isSide(liveState.side_a)) {
     const left = liveState.side_a === 'left' ? 'A' : 'B'
     if (set === 5) {
-      if (isAB(out.set5LeftTeam)) {
+      // The courts follow the score (FIVB 18.2.2: changed once a team has 8,
+      // Scoreboard askCourtSwitchIfDue): the toss side is the live side, or
+      // the other one after the change. A toss side corrected since the
+      // snapshot ("Switch sides", no event) included: kept as the snapshot's
+      // with the courts "changed" at 5:3, the next point asked to change back.
+      // Only a snapshot whose courts do not follow its score (a change at 8,
+      // or back, not confirmed when it was taken, or still not) keeps its
+      // toss side, the live side telling whether the change was made since.
+      const reached8 = Math.max(Number(liveState.points_a) || 0, Number(liveState.points_b) || 0) >= 8
+      if (isAB(out.set5LeftTeam) && reached8 !== (out.set5CourtSwitched === true)) {
         out.set5CourtSwitched = left !== out.set5LeftTeam
       } else {
-        const switched = Math.max(Number(liveState.points_a) || 0, Number(liveState.points_b) || 0) >= 8
-        out.set5LeftTeam = switched ? flipAB(left) : left
-        out.set5CourtSwitched = switched
+        out.set5LeftTeam = reached8 ? flipAB(left) : left
+        out.set5CourtSwitched = reached8
       }
     } else if (left !== leftLabel(set)) {
       overrides[set] = left
@@ -823,6 +838,26 @@ export function savedCourtSides(events, liveState, teamAKey = 'home') {
 
   if (Object.keys(overrides).length) out.setLeftTeamOverrides = overrides
   return out
+}
+
+/**
+ * Which team a synced event row put on the left, from the row itself: the
+ * row writer marks the serving team's lineup (position I isServing) and names
+ * that team (serve_team). Rows written before 8df87d4e placed set 5 by the
+ * set number (A left before the change of courts), not by its coin toss, so
+ * no rule replays them. null when the row cannot tell (no serve_team, no
+ * lineup, or both lineups or neither marked).
+ * @param {object} row  server event row
+ * @returns {boolean|null}
+ */
+function rowLeftIsHome(row) {
+  const serving = row?.serve_team
+  if (serving !== 'home' && serving !== 'away') return null
+  const marked = (lineup) => !!lineup && typeof lineup === 'object' &&
+    Object.values(lineup).some(p => p && typeof p === 'object' && p.isServing === true)
+  const left = marked(row.lineup_left)
+  if (left === marked(row.lineup_right)) return null
+  return left === (serving === 'home')
 }
 
 /**
@@ -923,15 +958,18 @@ export async function fetchMatchByPin(gamePin, gameN) {
       // snapshot has the lineups by team (A / B), so no side is guessed: the
       // set number (odd: A left) is wrong in set 5 whenever its coin toss put
       // B on the left, and after its change of courts at 8. Without a
-      // snapshot (an older row), the court's rule (getSideAForSet) with the
+      // snapshot (an older row), the side the row itself marks (the serving
+      // team's lineup), else the court's rule (getSideAForSet) with the
       // match's saved sides (set 5's coin toss and change of courts included).
       const snap = eventWithLineup.state_snapshot
       // (the snapshot's own set only: one taken in another set has that set's lineups)
       const bySnapshot = !!(snap && (snap.lineupA || snap.lineupB) &&
         (snap.currentSetIndex == null || Number(snap.currentSetIndex) === Number(setIndex)))
       const snapAIsHome = (snap?.teamAKey || teamAKey) === 'home'
-      const aLeft = getSideAForSet(Number(setIndex), courtSides) === 'left'
-      const leftIsHome = aLeft === teamAIsHome
+      const markedLeft = rowLeftIsHome(eventWithLineup)
+      const leftIsHome = markedLeft !== null
+        ? markedLeft
+        : (getSideAForSet(Number(setIndex), courtSides) === 'left') === teamAIsHome
 
       const homeRawLineup = bySnapshot
         ? (snapAIsHome ? snap.lineupA : snap.lineupB)
