@@ -248,10 +248,13 @@ const joinedMatch = (game) => (Array.isArray(game?.matches) ? game.matches[0] : 
 /**
  * Is Team A (the live state's A/B model) the home team? set_results are
  * stored as {home, away}. Known from the match row (coin toss, else the home
- * team name against team_a_name); for a finished match without either, from
- * the set results themselves: the live row's own Team A count matches the
- * home or the away wins (older scoreboards only ever undercounted Team B).
- * Defaults to true.
+ * team name against team_a_name); without either, from the set results
+ * themselves: the live row's own Team A count matches the home or the away
+ * wins (older scoreboards only ever undercounted Team B). A finished match
+ * always; one in play (the cloud list's join has only set_results, so a page
+ * opened mid-match has no coin toss until the next set end) only when the
+ * results count the sets the live row counts (both from the same set end).
+ * A match stopped with the sets level tells nothing. Defaults to true.
  * @param {object} game
  * @returns {boolean}
  */
@@ -261,8 +264,10 @@ export function teamAIsHome(game) {
   if (tossA === 'home' || tossA === 'away') return tossA === 'home'
   const homeName = match?.home_team?.name
   if (homeName && game?.team_a_name && game.team_a_name !== game.team_b_name) return game.team_a_name === homeName
-  if (isEndedStatus(game?.match_status)) {
-    const wins = setWinsByTeam(getSetResults(game))
+  const results = getSetResults(game)
+  if (isEndedStatus(game?.match_status) ||
+      results.length === num(game?.sets_won_a) + num(game?.sets_won_b)) {
+    const wins = setWinsByTeam(results)
     if (wins && wins.home !== wins.away) {
       const a = num(game.sets_won_a)
       if (a === wins.home) return true
