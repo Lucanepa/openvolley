@@ -55,8 +55,11 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       `INSERT INTO public.matches (external_id, status, created_by, sport_type, game_n, test, home_team, away_team)
        VALUES ($1, $2, $3, $4, $5, $6, '{"name":"Home"}', '{"name":"Away"}') RETURNING id`,
       [ext, status, U[owner].id, sport, gameN, test])
+    // as each app stores them: indoor home_points / away_points, OpenBeach
+    // team1_points / team2_points (its home / away columns keep their default 0)
+    const cols = sport === 'beach' ? 'team1_points, team2_points, sport_type' : 'home_points, away_points, sport_type'
     for (const [index, h, a] of sets) {
-      await pool.query('INSERT INTO public.sets (match_id, index, home_points, away_points, finished) VALUES ($1, $2, $3, $4, true)', [m.id, index, h, a])
+      await pool.query(`INSERT INTO public.sets (match_id, index, ${cols}, finished) VALUES ($1, $2, $3, $4, $5, true)`, [m.id, index, h, a, sport])
     }
     return { id: m.id, ext, gameN }
   }
@@ -897,6 +900,55 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       // the account's own PIN entries stay app NULL (one PIN for the account)
       const pinSet = (await auditOf('approval_pin.set')).filter((r) => r.target_user_id === B.bRef1.id)
       assert.deepEqual(pinSet.map((r) => r.app), [null])
+    })
+
+    it('a beach match: the result is its sets\' team1 / team2 points (OpenBeach\'s resultKey), never home / away', async () => {
+      const m = await newMatch('bOwner', { sport: 'beach', sets: [[1, 21, 19], [2, 18, 21], [3, 15, 12]] })
+      const BEACH_KEY = 'ov-result-v1|1:21:19,2:18:21,3:15:12'
+      // the beach sets' home_points / away_points are the column default 0
+      const { rows: stored } = await pool.query('SELECT home_points, away_points FROM public.sets WHERE match_id = $1', [m.id])
+      assert.ok(stored.every((r) => r.home_points === 0 && r.away_points === 0))
+      // OpenBeach sends [index, team1, team2] (accountApproval_beach.js resultKey)
+      const asCaller = async (sets) => beachApp.approve({
+        callerId: U.bOwner.id,
+        access: await access.get(U.bOwner.id),
+        body: { external_id: m.ext, slot: 'referee1', email: U.bRef1.email, pin: U.bRef1.pin, result: { sets } },
+        ip: '203.0.113.23'
+      })
+      // the old reading (home / away = 0:0) is refused, and says what the server has
+      const zeros = await asCaller([[1, 0, 0], [2, 0, 0], [3, 0, 0]])
+      expectErr(zeros, 409, 'OV_RESULT_NOT_SYNCED')
+      assert.deepEqual(zeros.body.error.details, { server: [[1, 21, 19], [2, 18, 21], [3, 15, 12]] })
+      const a = await asCaller([[1, 21, 19], [2, 18, 21], [3, 15, 12]])
+      assert.equal(a.status, 200, JSON.stringify(a.body))
+      assert.equal(a.body.data.approval.result_key, BEACH_KEY)
+      assert.equal(a.body.data.approval.result_matches, true)
+      // every list reads the same key: the match's list, the official's own, the admin's, the admin match lists
+      const l = await beachApp.listForMatch({ callerId: B.bOwner.id, access: await access.get(B.bOwner.id), externalId: m.ext })
+      assert.deepEqual(l.body.data.approvals.map((x) => [x.slot, x.result_matches]), [['referee1', true]])
+      const mine = await beachApp.listMine({ callerId: B.bRef1.id })
+      assert.equal(mine.body.data.approvals.find((x) => x.id === a.body.data.approval.id).result_matches, true)
+      const admin = await beachApp.adminSearch({ q: m.ext })
+      assert.deepEqual(admin.body.data.approvals.map((x) => x.result_matches), [true])
+      assert.deepEqual((await beachApp.approvalsForMatches([m.id])).get(m.id).map((x) => x.result_matches), [true])
+      // a later change of a beach set's team 2 points makes it stale everywhere
+      await pool.query('UPDATE public.sets SET team2_points = 17 WHERE match_id = $1 AND index = 3', [m.id])
+      const after = await beachApp.listForMatch({ callerId: B.bOwner.id, access: await access.get(B.bOwner.id), externalId: m.ext })
+      assert.equal(after.body.data.approvals[0].result_matches, false)
+      assert.equal((await beachApp.adminSearch({ q: m.ext })).body.data.approvals[0].result_matches, false)
+      assert.equal((await beachApp.approvalsForMatches([m.id])).get(m.id)[0].result_matches, false)
+      // ... and a change of home_points alone (not a beach column) does not
+      await pool.query('UPDATE public.sets SET team2_points = 12, home_points = 9 WHERE match_id = $1 AND index = 3', [m.id])
+      assert.equal((await beachApp.approvalsForMatches([m.id])).get(m.id)[0].result_matches, true)
+    })
+
+    it('an indoor match still reads home / away, whatever its sets\' team1 / team2 columns hold', async () => {
+      const m = await newMatch('owner')
+      await pool.query('UPDATE public.sets SET team1_points = 1, team2_points = 2 WHERE match_id = $1', [m.id])
+      const r = await beachApprove('owner', m, 'referee1', 'both')
+      assert.equal(r.status, 200, JSON.stringify(r.body))
+      assert.equal(r.body.data.approval.result_key, KEY)
+      assert.deepEqual((await beachApp.approvalsForMatches([m.id])).get(m.id).map((x) => x.result_matches), [true])
     })
 
     it('the admin search takes ?app=', async () => {

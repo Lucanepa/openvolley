@@ -41,10 +41,13 @@
  * scorer slot `scorer` / `beach:scorer`, and the scoring table sending the
  * approval one of the two of that sport (or admin). The audit entries of
  * approvals, undos, PIN lockouts on a match and voids (db/012's trigger)
- * carry the match's app. Beach matches still answer 409
- * OV_APPROVAL_UNSUPPORTED (account-approval-spec D3) unless the module is
- * created with `beachApprovals: true`; then the beach roles above apply and
- * also make an account eligible for an approval PIN.
+ * carry the match's app. Beach matches answer 409 OV_APPROVAL_UNSUPPORTED
+ * (account-approval-spec D3) unless the module is created with
+ * `beachApprovals: true` (server.js does since OpenBeach approves with
+ * accounts); then the beach roles above apply and also make an account
+ * eligible for an approval PIN. A beach match's result key reads its sets'
+ * team1_points / team2_points (team 1 in the "home" place), as OpenBeach's
+ * resultKey does; an indoor match's home_points / away_points.
  */
 
 import { randomBytes } from 'node:crypto'
@@ -108,10 +111,21 @@ function formatZurich (value) {
 }
 const hex8 = (b) => (Buffer.isBuffer(b) ? b.toString('hex').slice(0, 8) : null)
 const nameSql = (alias) => `nullif(trim(coalesce(${alias}.first_name, '') || ' ' || coalesce(${alias}.last_name, '')), '')`
+// The points of a set in the result key, by the sport of its MATCH: an indoor
+// set stores home_points / away_points, a beach set (OpenBeach) team1_points /
+// team2_points (team 1 first, as OpenBeach's resultKey). The other pair keeps
+// its column default (0), so a coalesce of the two would read the 0s.
+const IS_BEACH_SQL = (matchAlias) => `${matchAlias}.sport_type IS NOT DISTINCT FROM 'beach'`
+const pointsSql = (setAlias, matchAlias) => ({
+  home: `CASE WHEN ${IS_BEACH_SQL(matchAlias)} THEN ${setAlias}.team1_points ELSE ${setAlias}.home_points END`,
+  away: `CASE WHEN ${IS_BEACH_SQL(matchAlias)} THEN ${setAlias}.team2_points ELSE ${setAlias}.away_points END`
+})
+const SET_POINTS = pointsSql('s', 'sm')
 // lib/approvalPin.js resultKey() in SQL (the admin lists, many matches at once)
 const currentKeySql = (matchIdExpr) => `('${RESULT_KEY_PREFIX}' || coalesce((
-    SELECT string_agg(coalesce(s.index, 0) || ':' || coalesce(s.home_points, 0) || ':' || coalesce(s.away_points, 0), ',' ORDER BY s.index)
-      FROM public.sets s WHERE s.match_id = ${matchIdExpr} AND s.finished IS TRUE), ''))`
+    SELECT string_agg(coalesce(s.index, 0) || ':' || coalesce(${SET_POINTS.home}, 0) || ':' || coalesce(${SET_POINTS.away}, 0), ',' ORDER BY s.index)
+      FROM public.sets s JOIN public.matches sm ON sm.id = s.match_id
+     WHERE s.match_id = ${matchIdExpr} AND s.finished IS TRUE), ''))`
 const SLOT_ORDER_SQL = (alias) => `array_position(ARRAY['referee1', 'referee2', 'scorer']::text[], ${alias}.slot)`
 // An address is unconfirmed when the users table tracks confirmation and it is NULL.
 const UNCONFIRMED_SQL = `((to_jsonb(u) ? 'email_confirmed_at') AND (to_jsonb(u) ->> 'email_confirmed_at') IS NULL)`
@@ -242,10 +256,12 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
   /** Who may write the match (as pgQuery's ownership): owner, editor or admin. */
   const mayWrite = async (q, m, userId, access) => access?.isAdmin === true || isOwnerOrEditor(q, m, userId)
 
-  /** The canonical result of the stored finished sets. */
+  /** The canonical result of the stored finished sets (a beach match's team1 / team2 points). */
   async function serverResultKey (q, matchId) {
     const { rows } = await q.query(
-      'SELECT index, home_points, away_points, finished FROM public.sets WHERE match_id = $1 AND finished IS TRUE', [matchId])
+      `SELECT s.index, ${SET_POINTS.home} AS home_points, ${SET_POINTS.away} AS away_points, s.finished
+         FROM public.sets s JOIN public.matches sm ON sm.id = s.match_id
+        WHERE s.match_id = $1 AND s.finished IS TRUE`, [matchId])
     return resultKey(rows)
   }
 
