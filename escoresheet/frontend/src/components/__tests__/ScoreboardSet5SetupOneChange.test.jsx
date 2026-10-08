@@ -68,7 +68,7 @@ describe('Scoreboard: confirming the set 5 setup during the interval', () => {
 
     render(<ScaleProvider><AlertProvider><LoggingProvider><Scoreboard matchId={matchId} /></LoggingProvider></AlertProvider></ScaleProvider>)
     await waitFor(() => expect(button('Confirm set 5 setup')).toBeTruthy(), { timeout: 10000 })
-    await waitFor(() => expect(countdown()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(countdown()).toBe(true))
 
     // what each committed change shows: the setup buttons, the countdown
     const states = []
@@ -85,5 +85,5 @@ describe('Scoreboard: confirming the set 5 setup during the interval', () => {
     // never the setup without its countdown (or the other way round)
     expect(states.filter(st => st.setup !== st.countdown)).toEqual([])
     cleanup()
-  }, 30000)
+  })
 })

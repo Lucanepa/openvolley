@@ -136,7 +136,7 @@ describe('Scoreboard: the phone layout', () => {
     // ---- rally: Start rally, then the point buttons (as the desktop) ----
     expect(view.queryByRole('button', { name: 'Point A' })).toBeNull()
     fireEvent.click(view.getByRole('button', { name: 'Start rally' }))
-    await waitFor(() => expect(view.getByRole('button', { name: 'Point A' })).toBeTruthy(), { timeout: 5000 })
+    await waitFor(() => expect(view.getByRole('button', { name: 'Point A' })).toBeTruthy())
     await settle()
     // square, as wide as their column; lower (not narrower) on a short screen (styles.css)
     expect(view.getByRole('button', { name: 'Point A' }).classList.contains('phone-square')).toBe(true)
@@ -151,12 +151,12 @@ describe('Scoreboard: the phone layout', () => {
 
     // ---- time-out A: the screen's own request dialog, then its countdown ----
     fireEvent.click(view.getByTestId('phone-timeout-left'))
-    await waitFor(() => expect(button('Confirm time-out')).toBeTruthy(), { timeout: 5000 })
+    await waitFor(() => expect(button('Confirm time-out')).toBeTruthy())
     await settle()
     fireEvent.click(button('Confirm time-out'))
     await waitFor(async () => expect((await ofType('timeout')).length).toBe(1))
     expect((await ofType('timeout'))[0].payload.team).toBe('home')
-    await waitFor(() => expect(view.getByTestId('phone-countdown')).toBeTruthy(), { timeout: 5000 })
+    await waitFor(() => expect(view.getByTestId('phone-countdown')).toBeTruthy())
     expect(view.getByTestId('phone-timeout-left').textContent).toMatch('1/2')
     // as on the desktop, the counters stay open while the time-out runs
     // (a consecutive time-out, a substitution right after it)
@@ -165,7 +165,7 @@ describe('Scoreboard: the phone layout', () => {
     expect(view.getByTestId('phone-action-libero').disabled).toBe(false)
     await settle()
     fireEvent.click(view.getByRole('button', { name: 'Stop timeout' }))
-    await waitFor(() => expect(view.queryByTestId('phone-countdown')).toBeNull(), { timeout: 5000 })
+    await waitFor(() => expect(view.queryByTestId('phone-countdown')).toBeNull())
     await settle()
 
     // ---- substitution B: out (on court), in (bench), the screen's confirmation ----
@@ -175,7 +175,7 @@ describe('Scoreboard: the phone layout', () => {
     await waitFor(() => expect(screen.getByTestId('phone-sub-in-7')).toBeTruthy())
     fireEvent.click(screen.getByTestId('phone-sub-in-7'))
     await waitFor(() => expect(screen.queryByTestId('phone-sub-sheet')).toBeNull())
-    await waitFor(() => expect(button('Yes')).toBeTruthy(), { timeout: 5000 })
+    await waitFor(() => expect(button('Yes')).toBeTruthy())
     await settle()
     fireEvent.click(button('Yes'))
     await waitFor(async () => expect((await ofType('substitution')).length).toBe(1))
@@ -188,7 +188,7 @@ describe('Scoreboard: the phone layout', () => {
 
     // ---- undo: the screen's undo confirmation takes the substitution back ----
     fireEvent.click(view.getByRole('button', { name: 'Undo' }))
-    await waitFor(() => expect(button('Yes')).toBeTruthy(), { timeout: 5000 })
+    await waitFor(() => expect(button('Yes')).toBeTruthy())
     await settle()
     fireEvent.click(button('Yes'))
     await waitFor(async () => expect((await ofType('substitution')).length).toBe(0))
@@ -209,10 +209,10 @@ describe('Scoreboard: the phone layout', () => {
       await settle()
       // a running time-out (the screen's own state)
       fireEvent.click(view.getByTestId('phone-timeout-left'))
-      await waitFor(() => expect(button('Confirm time-out')).toBeTruthy(), { timeout: 5000 })
+      await waitFor(() => expect(button('Confirm time-out')).toBeTruthy())
       await settle()
       fireEvent.click(button('Confirm time-out'))
-      await waitFor(() => expect(view.getByTestId('phone-countdown')).toBeTruthy(), { timeout: 5000 })
+      await waitFor(() => expect(view.getByTestId('phone-countdown')).toBeTruthy())
       const scoreboardRoot = document.querySelector('.match-record')
 
       // turned sideways: same screen (not remounted), the notice over it
@@ -236,7 +236,7 @@ describe('Scoreboard: the phone layout', () => {
       Object.defineProperty(window.screen, 'width', { value: screenSize.width, configurable: true })
       Object.defineProperty(window.screen, 'height', { value: screenSize.height, configurable: true })
     }
-  }, 30000)
+  })
 
   it('the Phone display mode shows the phone layout on a landscape screen too', async () => {
     setViewport(1280, 800)

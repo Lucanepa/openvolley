@@ -48,5 +48,5 @@ describe('Scoresheet window: a point is one consistent sheet', () => {
     }
     const torn = seen.filter(s => s.score !== null && s.score !== s.points)
     expect(torn).toEqual([])
-  }, 20000)
+  })
 })

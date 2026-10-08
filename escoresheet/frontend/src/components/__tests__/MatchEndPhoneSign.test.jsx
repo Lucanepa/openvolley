@@ -236,7 +236,7 @@ describe('MatchEnd: Sign on phone', () => {
     for (const role of Object.keys(FIELDS)) {
       expect(within(slot(role)).getByTestId(`signed-on-phone-${role}`)).toHaveAttribute('title', en.phoneSign.signedOnPhone)
     }
-  }, 30000)
+  })
 
   it('captain A / B follow the coin toss', async () => {
     seed({ coinTossTeamA: 'away' })
