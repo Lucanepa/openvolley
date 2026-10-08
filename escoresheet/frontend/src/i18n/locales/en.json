@@ -1639,6 +1639,7 @@
     "time": "Time",
     "homeVsAway": "Home vs away",
     "noUpcomingMatches": "No upcoming matches found",
+    "noUpcomingGames": "No upcoming games",
     "fetchError": "Failed to load matches. Check your connection.",
     "backendNotAvailable": "Backend server not available",
     "reminderAlert": "Set teams colours and team short names",

@@ -1638,6 +1638,7 @@
     "time": "Ora",
     "homeVsAway": "Casa vs ospiti",
     "noUpcomingMatches": "Nessuna partita in programma trovata",
+    "noUpcomingGames": "Nessuna partita in programma",
     "fetchError": "Impossibile caricare le partite. Verifica la connessione.",
     "backendNotAvailable": "Server backend non disponibile",
     "reminderAlert": "Seleziona i colori e i nomi brevi delle squadre",

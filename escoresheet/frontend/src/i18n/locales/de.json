@@ -1507,6 +1507,7 @@
     "time": "Zeit",
     "homeVsAway": "Heim vs Gast",
     "noUpcomingMatches": "Keine anstehenden Spiele gefunden",
+    "noUpcomingGames": "Keine anstehenden Spiele",
     "fetchError": "Spiele konnten nicht geladen werden. Verbindung prüfen.",
     "backendNotAvailable": "Backend-Server nicht verfügbar",
     "reminderAlert": "Teamfarben und Kurznamen einstellen",

@@ -108,6 +108,24 @@ function isTomorrow(isoString) {
 }
 
 /**
+ * Start of today (local) as an ISO string: the cutoff for "upcoming" games,
+ * shared by the league list and the match list.
+ */
+function upcomingCutoffIso() {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return today.toISOString()
+}
+
+/**
+ * A league can be picked unless it is known to have no upcoming game.
+ * ICAL leagues carry no count (no dates), so they always stay pickable.
+ */
+function isLeagueActive(l) {
+  return l.upcoming == null || l.upcoming > 0
+}
+
+/**
  * Map a svrz_games row to the internal match format
  */
 function mapSupabaseToMatchFormat(row) {
@@ -186,18 +204,24 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
 
   const fetchLeaguesFromSupabase = async () => {
     const { data, error } = await apiFrom('svrz_games')
-      .select('gender, league')
+      .select('gender, league, datetime')
     if (error) throw error
     if (!data || data.length === 0) return null
-    // Deduplicate gender+league pairs
-    const seen = new Set()
+    // datetime is TEXT in ISO form: compare it as a string, like the match
+    // query's .gte on the server does
+    const cutoff = upcomingCutoffIso()
+    // Deduplicate gender+league pairs, counting their upcoming games
+    const byKey = new Map()
     const leagues = []
     for (const row of data) {
       const key = `${row.gender}-${row.league}`
-      if (!seen.has(key)) {
-        seen.add(key)
-        leagues.push({ code: row.league, gender: row.gender, federation: 'SVRZ' })
+      let entry = byKey.get(key)
+      if (!entry) {
+        entry = { code: row.league, gender: row.gender, federation: 'SVRZ', upcoming: 0 }
+        byKey.set(key, entry)
+        leagues.push(entry)
       }
+      if (typeof row.datetime === 'string' && row.datetime >= cutoff) entry.upcoming++
     }
     // Sort: men first, then alphabetical by code
     leagues.sort((a, b) => {
@@ -255,6 +279,10 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
     return allLeagues.filter(l => l.gender === gender)
   }, [allLeagues, gender])
 
+  // Leagues with no upcoming game are listed after the others, greyed out
+  const activeLeagues = useMemo(() => availableLeagues.filter(isLeagueActive), [availableLeagues])
+  const inactiveLeagues = useMemo(() => availableLeagues.filter(l => !isLeagueActive(l)), [availableLeagues])
+
   // Reset league when gender changes
   useEffect(() => {
     setLeague('')
@@ -269,13 +297,11 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
   }, [league])
 
   const fetchMatchesFromSupabase = async () => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
     const { data, error } = await apiFrom('svrz_games')
       .select('*')
       .eq('gender', gender)
       .eq('league', league)
-      .gte('datetime', today.toISOString())
+      .gte('datetime', upcomingCutoffIso())
       .order('datetime', { ascending: true })
     if (error) throw error
     // An empty answer is a real answer: this league has no upcoming games
@@ -464,15 +490,26 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
                 <Select
                   size="lg"
                   value={league}
-                  onChange={e => setLeague(e.target.value)}
+                  onChange={e => {
+                    // Only the placeholder or a league with upcoming games can be picked
+                    const v = e.target.value
+                    if (!v || activeLeagues.some(l => l.code === v)) setLeague(v)
+                  }}
                   aria-label={t('loadOfficialMatch.league', 'League')}
                   className={cn(SELECT_CLS, 'stack:min-w-0 stack:flex-1')}
                   disabled={!gender}
                 >
                   <option value="">{t('loadOfficialMatch.selectLeague', 'Select...')}</option>
-                  {availableLeagues.map(l => (
+                  {activeLeagues.map(l => (
                     <option key={l.code} value={l.code}>{formatLeagueDisplay(l.code, l.gender)}</option>
                   ))}
+                  {inactiveLeagues.length > 0 && (
+                    <optgroup label={t('loadOfficialMatch.noUpcomingGames', 'No upcoming games')}>
+                      {inactiveLeagues.map(l => (
+                        <option key={l.code} value={l.code} disabled>{formatLeagueDisplay(l.code, l.gender)}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </Select>
                 {!gender && (
                   <span
