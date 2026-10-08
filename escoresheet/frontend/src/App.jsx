@@ -6,7 +6,7 @@ import { wipeMatchEvents } from './db/eventHistory'
 import MatchSetup, { preloadMatchSetup } from './components/MatchSetup'
 import Scoreboard from './components/Scoreboard'
 import CoinToss from './components/CoinToss'
-import MatchEnd from './components/MatchEnd'
+import MatchEnd, { preloadMatchEnd } from './components/MatchEnd'
 import ManualAdjustments from './components/ManualAdjustments'
 import Modal from './components/Modal'
 import ContextualHelpPanel from './components/help/ContextualHelpPanel'
@@ -1426,7 +1426,9 @@ export default function App() {
       // result. (The 'delete-match' sent here named the Dexie id, which is no
       // relay key: the relay refused it as not this socket's match.)
 
-      // Show match end screen
+      // Show match end screen, filled at once: the scoreboard's set-end
+      // screen stays until it has read the match (OV-14)
+      await preloadMatchEnd(cur.matchId)
       setShowMatchEnd(true)
       return
     }
