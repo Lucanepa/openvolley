@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import useServiceWorker from '../hooks/useServiceWorker'
+import useServiceWorker, { autoApplyAllowed, noteAutoApply } from '../hooks/useServiceWorker'
 import { Download, RefreshCw } from 'lucide-react'
 import { Button } from '../ui/Button.jsx'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
@@ -18,11 +18,15 @@ export default function UpdateBanner() {
   const [newVersion, setNewVersion] = useState(null)
   // The desktop app's binary IS the update: its first start still runs the
   // previous build from the service worker, with the new one waiting. Apply it
-  // at once (this banner is on the home screen only, never mid-match).
-  const applyAtOnce = isDesktopScoretable()
+  // at once (this banner is on the home screen only, never mid-match). Not a
+  // second time within a short while (autoApplyAllowed): an update that did
+  // not take reloaded into itself every few seconds; then the banner asks.
+  const [applyAtOnce] = useState(() => isDesktopScoretable() && autoApplyAllowed())
 
   useEffect(() => {
-    if (needRefresh && applyAtOnce) updateServiceWorker()
+    if (!needRefresh || !applyAtOnce) return
+    noteAutoApply()
+    updateServiceWorker()
   }, [needRefresh, applyAtOnce, updateServiceWorker])
 
   // Fetch the new version from server when update is detected (label only).

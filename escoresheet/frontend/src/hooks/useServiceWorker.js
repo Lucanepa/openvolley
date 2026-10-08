@@ -160,6 +160,46 @@ export async function applyServiceWorkerUpdate({ clearIndexedDB = false, checkFo
   reload()
 }
 
+// When this tab last applied an update on its own (applyUpdateAtStart, the
+// desktop UpdateBanner): sessionStorage, so it survives the reload it causes
+export const AUTO_UPDATE_KEY = 'ov.autoUpdateAt'
+export const AUTO_UPDATE_WINDOW_MS = 120000
+
+function sessionStore() {
+  try {
+    return typeof sessionStorage !== 'undefined' ? sessionStorage : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * May this tab apply an update on its own now? Not within
+ * AUTO_UPDATE_WINDOW_MS of its last try: applyServiceWorkerUpdate reloads
+ * after its timeout even when the new worker never took control, and the
+ * reloaded page, still on the old build with the new one waiting, would try
+ * again every few seconds. A second try falls back to the "Update available"
+ * banner. Without sessionStorage it never does it on its own.
+ */
+export function autoApplyAllowed({ storage = sessionStore(), now = Date.now() } = {}) {
+  if (!storage) return false
+  try {
+    const last = Number(storage.getItem(AUTO_UPDATE_KEY))
+    return !(last > 0 && now - last >= 0 && now - last < AUTO_UPDATE_WINDOW_MS)
+  } catch {
+    return false
+  }
+}
+
+/** This tab applies an update on its own now (see autoApplyAllowed). */
+export function noteAutoApply({ storage = sessionStore(), now = Date.now() } = {}) {
+  try {
+    storage?.setItem(AUTO_UPDATE_KEY, String(now))
+  } catch {
+    // never block the update on storage
+  }
+}
+
 /**
  * The desktop app at start (main.jsx calls this in its scoretable
  * window only). Its binary IS the update, but the page that just loaded is the
@@ -173,7 +213,9 @@ export function applyUpdateAtStart({
   win = window,
   sw = typeof navigator !== 'undefined' ? navigator.serviceWorker : null,
   apply = () => applyServiceWorkerUpdate(),
-  graceMs = 20000
+  graceMs = 20000,
+  allowed = () => autoApplyAllowed(),
+  note = () => noteAutoApply()
 } = {}) {
   if (!sw) return
   let open = true
@@ -186,10 +228,19 @@ export function applyUpdateAtStart({
   const timer = setTimeout(close, graceMs)
   win.addEventListener('pointerdown', close, true)
   win.addEventListener('keydown', close, true)
-  // a first install (no controller yet) is no update
+  // a first install (no controller yet) is no update; a second try within
+  // a short time is a reload loop (autoApplyAllowed): the banner then asks
   const go = () => {
-    if (!open || !sw.controller) return
+    if (!open || !sw.controller || !allowed()) return
     close()
+    note()
+    // The page is about to reload: no tap may start anything on it now (a
+    // point half written when the reload comes)
+    try {
+      if (win.document?.body) win.document.body.inert = true
+    } catch {
+      // never block the update
+    }
     apply()
   }
   const watch = (worker) => worker?.addEventListener('statechange', () => {

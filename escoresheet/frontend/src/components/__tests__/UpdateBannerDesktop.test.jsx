@@ -1,9 +1,10 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, cleanup } from '@testing-library/react'
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 import en from '../../i18n/locales/en.json'
 import UpdateBanner from '../UpdateBanner'
+import { AUTO_UPDATE_KEY } from '../../hooks/useServiceWorker'
 
 // On the desktop app the binary IS the update: its first start still runs the
 // previous build from the service worker, with the new one waiting. The app
@@ -33,6 +34,8 @@ beforeAll(async () => {
 })
 
 afterEach(() => {
+  cleanup()
+  sessionStorage.clear()
   delete window.__TAURI_INTERNALS__
   Object.defineProperty(window, 'location', { value: originalLocation, configurable: true, writable: true })
   if (originalSW) Object.defineProperty(navigator, 'serviceWorker', originalSW)
@@ -52,6 +55,16 @@ describe('UpdateBanner', () => {
   })
 
   it('browser: still asks', async () => {
+    const { waiting, replace } = withWaitingWorker()
+    render(<UpdateBanner />)
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Update available!')
+    expect(waiting.postMessage).not.toHaveBeenCalled()
+    expect(replace).not.toHaveBeenCalled()
+  })
+
+  it('desktop app, a second time right after its own try: asks instead (no reload loop)', async () => {
+    window.__TAURI_INTERNALS__ = { invoke: vi.fn(), metadata: { currentWindow: { label: 'main' } } }
+    sessionStorage.setItem(AUTO_UPDATE_KEY, String(Date.now() - 4000))
     const { waiting, replace } = withWaitingWorker()
     render(<UpdateBanner />)
     expect(await screen.findByRole('dialog')).toHaveTextContent('Update available!')
