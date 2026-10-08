@@ -3471,7 +3471,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <Field tone="compact" className={FIELD} label={t('matchSetup.city')}>
                 <Input
                   aria-label={t('matchSetup.city')}
-                  className="capitalize"
                   value={city}
                   onChange={e => setCity(e.target.value)}
                   list="cities-zurich"
@@ -3481,7 +3480,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <datalist id="cities-zurich">
                 {citiesZurich.map(c => <option key={c} value={c} />)}
               </datalist>
-              <Field tone="compact" className={FIELD} label={t('matchSetup.hall')}><Input aria-label={t('matchSetup.hall')} className="capitalize" value={hall} onChange={e => setHall(e.target.value)} /></Field>
+              <Field tone="compact" className={FIELD} label={t('matchSetup.hall')}><Input aria-label={t('matchSetup.hall')} value={hall} onChange={e => setHall(e.target.value)} /></Field>
             </div>
           </div>
 
@@ -3556,7 +3555,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div className="flex flex-col gap-3 p-4">
               <div className="grid grid-cols-1 gap-2 xl:grid-cols-2 stack:grid-cols-1">
                 <Field tone="compact" className={FIELD} label={t('matchSetup.gameNumber')}><Input aria-label={t('matchSetup.gameNumber')} className="tabular-nums" type="number" inputMode="numeric" value={gameN} onChange={e => setGameN(e.target.value)} /></Field>
-                <Field tone="compact" className={FIELD} label={t('matchSetup.league')}><Input aria-label={t('matchSetup.league')} className="capitalize" value={league} onChange={e => setLeague(e.target.value)} /></Field>
+                <Field tone="compact" className={FIELD} label={t('matchSetup.league')}><Input aria-label={t('matchSetup.league')} value={league} onChange={e => setLeague(e.target.value)} /></Field>
               </div>
               <Field tone="compact" className={FIELD} label={t('matchSetup.matchFormat')}>
                 <Select aria-label={t('matchSetup.matchFormat')} block value={bestOf} onChange={e => setBestOf(Number(e.target.value))}>

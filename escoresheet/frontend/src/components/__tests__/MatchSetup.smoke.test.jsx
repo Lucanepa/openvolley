@@ -5,7 +5,7 @@
  * once-per-match connection-PIN sync is queued only when it is needed.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -123,6 +123,23 @@ describe('MatchSetup smoke render', () => {
     expect(await screen.findAllByText('matchSetup.date')).not.toHaveLength(0) // the match info card rendered
     expect(screen.queryByText(/Something went wrong/i)).toBeNull()
     expect(pinJobs()).toHaveLength(0) // not created yet: nothing on the server to update
+  })
+
+  // City, hall and league (the competition) showed CSS-capitalized text
+  // while the match stored it as typed ("zürich" shown "Zürich"), and Title
+  // Case placeholders ("Enter City"). Values are shown as typed (parity with
+  // OpenBeach 872eb48).
+  it('city, hall and league are shown as typed (no CSS capitalize)', async () => {
+    store.tables.matches = new Map([[1, { id: 1, status: 'setup', seed_key: 'match_1_new', ...PINS }]])
+    render(<Setup matchId={1} />)
+    // the match info form (opened from the info card)
+    fireEvent.click(await screen.findByRole('button', { name: 'matchSetup.createMatch' }))
+    for (const label of ['matchSetup.city', 'matchSetup.hall', 'matchSetup.league']) {
+      const input = await screen.findByLabelText(label)
+      expect(input.className).not.toMatch(/capitalize/)
+      // nor on a wrapper of the field
+      expect(input.closest('.capitalize')).toBeNull()
+    }
   })
 
   it('renders a created match and queues its connection PINs once', async () => {
