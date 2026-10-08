@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-diagnostics-native"
+description = "Enables the diagnostics_native command without any pre-configured scope."
+commands.allow = ["diagnostics_native"]
+
+[[permission]]
+identifier = "deny-diagnostics-native"
+description = "Denies the diagnostics_native command without any pre-configured scope."
+commands.deny = ["diagnostics_native"]

@@ -1204,7 +1204,14 @@
     "exportDiagnosticLog": "Esporta il registro diagnostico (.ndjson)",
     "diagnosticLogFailed": "Non è stato possibile esportare il registro diagnostico.",
     "openLogFolder": "Apri la cartella dei registri",
-    "logFolderOpenFailed": "Non è stato possibile aprire la cartella dei registri."
+    "logFolderOpenFailed": "Non è stato possibile aprire la cartella dei registri.",
+    "diagnosticsMode": "Modalità diagnostica",
+    "diagnosticsModeInfo": "Per diagnosticare un problema di visualizzazione: registra le dimensioni della finestra e del layout, i dialoghi, i ricaricamenti e i tempi. Disattivata per impostazione predefinita. PIN, password e testo digitato non vengono mai registrati. App desktop: file diagnostici nella cartella dei registri; altrove conservati su questo dispositivo fino all’esportazione.",
+    "diagnosticsOnByLink": "Attivata dal link (?diag=1) per questa scheda.",
+    "diagnosticsOnByEnv": "Attivata da OPENVOLLEY_DIAGNOSTICS=1 per questo avvio.",
+    "exportDiagnostics": "Esporta la diagnostica (.jsonl)",
+    "diagnosticsEmpty": "Ancora nulla di registrato.",
+    "diagnosticsExportFailed": "Non è stato possibile esportare la diagnostica."
   },
   "matchEnd": {
     "title": "Partita terminata",

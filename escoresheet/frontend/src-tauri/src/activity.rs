@@ -52,10 +52,15 @@ pub fn file_name_for(date: &str) -> String {
 }
 
 fn is_activity_file(name: &str) -> bool {
-    name.len() == PREFIX.len() + 10 + SUFFIX.len()
-        && name.starts_with(PREFIX)
+    is_daily_file(name, PREFIX)
+}
+
+/// `<prefix>YYYY-MM-DD.jsonl` (the activity files, diagnostics.rs's too).
+pub(crate) fn is_daily_file(name: &str, prefix: &str) -> bool {
+    name.len() == prefix.len() + 10 + SUFFIX.len()
+        && name.starts_with(prefix)
         && name.ends_with(SUFFIX)
-        && name[PREFIX.len()..PREFIX.len() + 10].chars().all(|c| c.is_ascii_digit() || c == '-')
+        && name[prefix.len()..prefix.len() + 10].chars().all(|c| c.is_ascii_digit() || c == '-')
 }
 
 /// One line the page may write: a single JSON object, no line break, <= 16 KB.
@@ -66,7 +71,7 @@ pub fn valid_line(line: &str) -> bool {
     matches!(serde_json::from_str::<serde_json::Value>(line), Ok(serde_json::Value::Object(_)))
 }
 
-fn open_append(path: &Path) -> std::io::Result<fs::File> {
+pub(crate) fn open_append(path: &Path) -> std::io::Result<fs::File> {
     let mut opts = fs::OpenOptions::new();
     opts.create(true).append(true);
     #[cfg(unix)]
@@ -105,13 +110,18 @@ pub fn append_lines(root: &Path, lines: &[String], date: &str) -> Result<u32, St
 /// in all (the newest file always stays). Other files are never touched.
 /// Returns the names removed.
 pub fn prune(root: &Path, keep_files: usize, keep_bytes: u64) -> Vec<String> {
+    prune_daily(root, is_activity_file, keep_files, keep_bytes)
+}
+
+/// `prune` for the daily files `is_ours` names (diagnostics.rs).
+pub(crate) fn prune_daily(root: &Path, is_ours: impl Fn(&str) -> bool, keep_files: usize, keep_bytes: u64) -> Vec<String> {
     let Ok(entries) = fs::read_dir(root) else { return Vec::new() };
     let mut files: Vec<(String, u64)> = entries
         .filter_map(|e| e.ok())
         .filter_map(|e| {
             let name = e.file_name().to_string_lossy().to_string();
             let meta = e.metadata().ok()?;
-            (meta.is_file() && is_activity_file(&name)).then_some((name, meta.len()))
+            (meta.is_file() && is_ours(&name)).then_some((name, meta.len()))
         })
         .collect();
     // newest first (the date is in the name)
@@ -173,7 +183,7 @@ fn mac_log_root(home: PathBuf) -> PathBuf {
     home.join("Library").join("Logs").join(crate::flavour::CURRENT.data_folder)
 }
 
-fn today() -> String {
+pub(crate) fn today() -> String {
     let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
     utc_date(secs)
 }

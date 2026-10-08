@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { db } from '../db/db'
 import { askConfirm } from '../utils/askConfirm.js'
 import { CONNECTION_TYPES, CONNECTION_STATUS } from '../hooks/useRealtimeConnection'
+import { reloadWithReason } from '../diagnostics/reload'
 
 // Available languages with flag image URLs (using flagcdn.com)
 const LANGUAGES = [
@@ -158,7 +159,7 @@ export function DashboardOptionsMenu({
       if (result.success) {
         // Reload the page after a short delay
         setTimeout(() => {
-          window.location.reload()
+          reloadWithReason('dashboard-clear-cache')
         }, 500)
       }
     } catch (err) {

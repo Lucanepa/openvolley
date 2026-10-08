@@ -5,6 +5,7 @@ import { X } from 'lucide-react'
 import ServerConnectionScreen from '../ServerConnectionScreen'
 import { getBackendOverride, isNativeApp } from '../../utils/backendConfig'
 import { Button, IconButton } from '../../ui'
+import { reloadWithReason } from '../../diagnostics/reload'
 
 /**
  * Android app only (Capacitor): the bundled app has no server of its own and
@@ -31,7 +32,7 @@ export default function NativeServerSection() {
     try { current = new URL(override).host } catch { current = override }
   }
 
-  const openView = (path) => { window.location.assign(path) }
+  const openView = (path) => { reloadWithReason('open-view', { how: 'assign', url: path }) }
 
   return (
     <section className="mb-6">
@@ -86,7 +87,7 @@ export default function NativeServerSection() {
           </div>
           <ServerConnectionScreen
             skipIfAutoConnect={false}
-            onConnected={() => window.location.reload()}
+            onConnected={() => reloadWithReason('server-connected')}
           />
         </div>,
         document.body

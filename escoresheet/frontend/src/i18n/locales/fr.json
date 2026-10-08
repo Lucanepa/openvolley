@@ -1203,7 +1203,14 @@
     "exportDiagnosticLog": "Exporter le journal de diagnostic (.ndjson)",
     "diagnosticLogFailed": "Le journal de diagnostic n’a pas pu être exporté.",
     "openLogFolder": "Ouvrir le dossier des journaux",
-    "logFolderOpenFailed": "Le dossier des journaux n’a pas pu être ouvert."
+    "logFolderOpenFailed": "Le dossier des journaux n’a pas pu être ouvert.",
+    "diagnosticsMode": "Mode diagnostic",
+    "diagnosticsModeInfo": "Pour diagnostiquer un problème d’affichage : enregistre les tailles de la fenêtre et de la mise en page, les dialogues, les rechargements et les temps. Désactivé par défaut. Les PIN, mots de passe et saisies ne sont jamais enregistrés. Application de bureau : fichiers de diagnostic dans le dossier des journaux ; ailleurs conservés sur cet appareil jusqu’à l’export.",
+    "diagnosticsOnByLink": "Activé par le lien (?diag=1) pour cet onglet.",
+    "diagnosticsOnByEnv": "Activé par OPENVOLLEY_DIAGNOSTICS=1 pour ce démarrage.",
+    "exportDiagnostics": "Exporter le diagnostic (.jsonl)",
+    "diagnosticsEmpty": "Rien n’a encore été enregistré.",
+    "diagnosticsExportFailed": "Le diagnostic n’a pas pu être exporté."
   },
   "matchEnd": {
     "title": "Match terminé",

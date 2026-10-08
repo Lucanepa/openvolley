@@ -1196,7 +1196,14 @@
     "exportDiagnosticLog": "Diagnoseprotokoll exportieren (.ndjson)",
     "diagnosticLogFailed": "Das Diagnoseprotokoll konnte nicht exportiert werden.",
     "openLogFolder": "Protokollordner öffnen",
-    "logFolderOpenFailed": "Der Protokollordner konnte nicht geöffnet werden."
+    "logFolderOpenFailed": "Der Protokollordner konnte nicht geöffnet werden.",
+    "diagnosticsMode": "Diagnosemodus",
+    "diagnosticsModeInfo": "Zur Fehlersuche bei Anzeigeproblemen: zeichnet Fenster- und Layoutgrössen, Dialoge, Neuladen und Zeitabläufe auf. Standardmässig aus. PINs, Passwörter und Eingaben werden nie aufgezeichnet. Desktop-App: Diagnosedateien im Protokollordner; sonst auf diesem Gerät gespeichert, bis sie exportiert werden.",
+    "diagnosticsOnByLink": "Für diesen Tab durch den Link (?diag=1) eingeschaltet.",
+    "diagnosticsOnByEnv": "Für diesen Start durch OPENVOLLEY_DIAGNOSTICS=1 eingeschaltet.",
+    "exportDiagnostics": "Diagnose exportieren (.jsonl)",
+    "diagnosticsEmpty": "Noch nichts aufgezeichnet.",
+    "diagnosticsExportFailed": "Die Diagnose konnte nicht exportiert werden."
   },
   "supportFeedback": {
     "title": "Support & Feedback",
