@@ -21,8 +21,12 @@ import { REASON_KEYS } from '../utils/phoneSignTransport'
  *
  * `phone.locked` (MatchEnd: the match is approved, closed or final) keeps the
  * button but disables it, and no phone session is started or kept open.
+ *
+ * `closeOnSave` (default true): the pad calls onClose right after onSave.
+ * False when the caller closes it with the saved signature on screen
+ * (MatchEnd: the pad went a frame before the signature showed in its box).
  */
-export default function SignaturePad({ open, onClose, onSave, title = 'Sign', existingSignature = null, readOnly = false, zIndex, phone = null }) {
+export default function SignaturePad({ open, onClose, onSave, title = 'Sign', existingSignature = null, readOnly = false, zIndex, phone = null, closeOnSave = true }) {
   const { t } = useTranslation()
   const canvasRef = useRef(null)
   const isDrawingRef = useRef(false)
@@ -207,12 +211,12 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign', ex
     if (!canvas || !hasSignature) return
     const dataURL = canvas.toDataURL('image/png')
     onSave(dataURL, { source: 'device' })
-    onClose()
+    if (closeOnSave) onClose()
   }
 
   function acceptPhoneSignature(dataUrl, meta) {
     onSave(dataUrl, meta)
-    onClose()
+    if (closeOnSave) onClose()
   }
 
   function handleCancel() {
