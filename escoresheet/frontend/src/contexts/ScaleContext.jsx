@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { flushSync } from 'react-dom'
 
 // Context for sharing scale state across all components
 const ScaleContext = createContext(null)
@@ -23,17 +24,20 @@ export function ScaleProvider({ children }) {
 
   // Throttle resize to one update per animation frame so rapid resize/scroll
   // (mobile browser chrome, orientation) doesn't trigger a re-render storm
-  // across every scaled consumer (Scoreboard, MatchSetup).
+  // across every scaled consumer (Scoreboard, MatchSetup). The frame commits
+  // the size it read (flushSync): a plain state update rendered a task later,
+  // after the browser had painted the new window size with the old scaled
+  // sizes (the court in up to three steps on a maximize).
   const rafRef = useRef(0)
   useEffect(() => {
     const handleResize = () => {
       if (rafRef.current) return
       rafRef.current = requestAnimationFrame(() => {
         rafRef.current = 0
-        setViewport((prev) => {
+        flushSync(() => setViewport((prev) => {
           const next = getViewportSize()
           return (prev.width === next.width && prev.height === next.height) ? prev : next
-        })
+        }))
       })
     }
     window.addEventListener('resize', handleResize)
@@ -56,8 +60,9 @@ export function ScaleProvider({ children }) {
   const rawScale = userScaleOverride ?? 1.0
   const scaleFactor = Math.min(Math.max(rawScale, 0.5), 1.5)
 
-  // Update CSS custom properties on the root element for CSS-based scaling
-  useEffect(() => {
+  // Update CSS custom properties on the root element for CSS-based scaling,
+  // before the paint (useLayoutEffect): with the inline sizes, not a frame after
+  useLayoutEffect(() => {
     const root = document.documentElement
     root.style.setProperty('--scale-factor', scaleFactor.toString())
     root.style.setProperty('--vmin-base', `${viewportVmin}px`)
