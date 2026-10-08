@@ -191,6 +191,19 @@ export function autoApplyAllowed({ storage = sessionStore(), now = Date.now() } 
   }
 }
 
+/**
+ * The page is about to reload into an update it applies on its own: no tap
+ * may start anything on it now (a point or a new match half written when the
+ * reload comes, up to applyServiceWorkerUpdate's timeout later).
+ */
+export function holdTapsUntilReload(win = typeof window !== 'undefined' ? window : undefined) {
+  try {
+    if (win?.document?.body) win.document.body.inert = true
+  } catch {
+    // never block the update
+  }
+}
+
 /** This tab applies an update on its own now (see autoApplyAllowed). */
 export function noteAutoApply({ storage = sessionStore(), now = Date.now() } = {}) {
   try {
@@ -234,13 +247,7 @@ export function applyUpdateAtStart({
     if (!open || !sw.controller || !allowed()) return
     close()
     note()
-    // The page is about to reload: no tap may start anything on it now (a
-    // point half written when the reload comes)
-    try {
-      if (win.document?.body) win.document.body.inert = true
-    } catch {
-      // never block the update
-    }
+    holdTapsUntilReload(win)
     apply()
   }
   const watch = (worker) => worker?.addEventListener('statechange', () => {

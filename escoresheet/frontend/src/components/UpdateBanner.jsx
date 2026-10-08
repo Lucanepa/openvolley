@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import useServiceWorker, { autoApplyAllowed, noteAutoApply } from '../hooks/useServiceWorker'
+import useServiceWorker, { autoApplyAllowed, noteAutoApply, holdTapsUntilReload } from '../hooks/useServiceWorker'
 import { Download, RefreshCw } from 'lucide-react'
 import { Button } from '../ui/Button.jsx'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
@@ -37,6 +37,9 @@ export default function UpdateBanner() {
       }
       appliedRef.current = true
       noteAutoApply()
+      // the scorer may be tapping (a tap closed applyUpdateAtStart's grace):
+      // nothing they start may be cut by the reload
+      holdTapsUntilReload()
       updateServiceWorker()
     }).catch(() => { if (live) setApplyAtOnce(false) })
     return () => { live = false }
