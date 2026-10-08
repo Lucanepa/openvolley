@@ -896,7 +896,9 @@
       "sanctionPeople": "Player or official",
       "noLibero": "No libero",
       "onCourt": "on court",
-      "redesignate": "Redesignate libero"
+      "redesignate": "Redesignate libero",
+      "sidewaysTitle": "Hold the phone upright",
+      "sidewaysBody": "The scoring screen on a phone is made for portrait. Turn the phone back: the match, its dialogs and countdowns are kept."
     }
   },
   "settings": {

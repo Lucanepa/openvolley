@@ -187,6 +187,49 @@ describe('Scoreboard: the phone layout', () => {
     await waitFor(() => expect(view.getByTestId('phone-sub-right').textContent).toMatch('0/6'))
   }, 60000)
 
+  it('a phone turned sideways keeps the phone layout, its dialogs and countdown, under a notice', async () => {
+    const screenSize = { width: window.screen.width, height: window.screen.height }
+    Object.defineProperty(window.screen, 'width', { value: 390, configurable: true })
+    Object.defineProperty(window.screen, 'height', { value: 844, configurable: true })
+    try {
+      setViewport(390, 844)
+      const matchId = await setUpMatch()
+      mount(matchId)
+      await waitFor(() => expect(phone()).toBeTruthy(), { timeout: 10000 })
+      const view = within(phone())
+      await waitFor(() => expect(view.getByTestId('phone-score-left').textContent).toBe('1'))
+      await settle()
+      // a running time-out (the screen's own state)
+      fireEvent.click(view.getByTestId('phone-timeout-left'))
+      await waitFor(() => expect(button('Confirm time-out')).toBeTruthy(), { timeout: 5000 })
+      await settle()
+      fireEvent.click(button('Confirm time-out'))
+      await waitFor(() => expect(view.getByTestId('phone-countdown')).toBeTruthy(), { timeout: 5000 })
+      const scoreboardRoot = document.querySelector('.match-record')
+
+      // turned sideways: same screen (not remounted), the notice over it
+      setViewport(844, 390)
+      fireEvent(window, new Event('resize'))
+      await waitFor(() => expect(screen.getByTestId('phone-sideways-notice')).toBeTruthy())
+      expect(phone()).toBeTruthy()
+      expect(document.querySelector('.match-record')).toBe(scoreboardRoot)
+      expect(document.querySelector('.rally-controls')).toBeNull()
+      // no "enable tablet mode" banner on a phone
+      expect(screen.queryByText(/Small screen detected/)).toBeNull()
+      expect(screen.getByTestId('phone-countdown')).toBeTruthy()
+
+      // upright again: the notice goes, the countdown is still running
+      setViewport(390, 844)
+      fireEvent(window, new Event('resize'))
+      await waitFor(() => expect(screen.queryByTestId('phone-sideways-notice')).toBeNull())
+      expect(screen.getByTestId('phone-countdown')).toBeTruthy()
+      expect(document.querySelector('.match-record')).toBe(scoreboardRoot)
+    } finally {
+      Object.defineProperty(window.screen, 'width', { value: screenSize.width, configurable: true })
+      Object.defineProperty(window.screen, 'height', { value: screenSize.height, configurable: true })
+    }
+  }, 30000)
+
   it('the Phone display mode shows the phone layout on a landscape screen too', async () => {
     setViewport(1280, 800)
     localStorage.setItem('displayMode', 'phone')

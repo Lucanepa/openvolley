@@ -73,7 +73,7 @@ import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
 import { isNativeApp } from '../utils/backendConfig'
 import PhoneScoreboard from './scoreboard/PhoneScoreboard.jsx'
-import { detectDisplayMode, isPhoneScreen, recentActions } from './scoreboard/phoneLayout'
+import { detectDisplayMode, isPhoneScreen, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
 import { WarningIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon } from './icons'
 import { cn } from '../ui/cn.js'
@@ -850,7 +850,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Desktop: > 900px OR no touch capability
       // This ensures laptops are always desktop even if screen is narrower
       const detected = detectDisplayMode({ width, height, hasTouch })
-      const suggestion = detected === 'tablet' ? 'tablet' : null
+      // No tablet banner on a phone turned sideways: it keeps the phone layout
+      const suggestion = detected === 'tablet' && !isPhoneScreen() ? 'tablet' : null
 
       setDetectedDisplayMode(detected)
 
@@ -884,8 +885,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [])
 
   // A phone in the automatic mode, or the Phone mode, is not locked: held
-  // upright it gets the phone layout (PhoneScoreboard), turned it gets the
-  // landscape layout as before. Tablets and computers are locked as before.
+  // upright it gets the phone layout (PhoneScoreboard); turned sideways it
+  // keeps it, under a notice to hold it upright. Tablets and computers are
+  // locked as before.
   const keepOrientationFree = displayMode === 'phone' || (displayMode === 'auto' && isPhoneScreen())
 
   // Auto-lock orientation to landscape for scoreboard on mount. The Android
@@ -925,8 +927,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Get the active display mode (either forced or auto-detected)
   const activeDisplayMode = displayMode === 'auto' ? detectedDisplayMode : displayMode
-  // The phone layout (PhoneScoreboard) replaces the desktop / tablet body
-  const isPhoneView = activeDisplayMode === 'phone'
+  // The phone layout (PhoneScoreboard) replaces the desktop / tablet body.
+  // A phone in the automatic mode keeps it when turned sideways (the screen
+  // stays mounted, dialogs and countdowns included), under a notice to hold
+  // it upright, rather than falling back to the landscape layout.
+  const isPhoneSideways = phoneHeldSideways(displayMode, { width: viewportWidth, height: viewportHeight })
+  const isPhoneView = activeDisplayMode === 'phone' || isPhoneSideways
 
   // Update current datetime every second for fullscreen header display
   useEffect(() => {
@@ -12968,6 +12974,37 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             marginTop: '12px'
           }}>
             {t('scoreboard.buttons.fullscreenHint')}
+          </p>
+        </div>
+      )}
+      {/* A phone turned sideways: the phone layout stays underneath (its
+          dialogs and countdowns keep going), this asks to turn it back */}
+      {isPhoneSideways && (
+        <div
+          role="alert"
+          data-testid="phone-sideways-notice"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgb(28 25 23 / 0.6)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 99999,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+            textAlign: 'center'
+          }}
+        >
+          <div style={{ marginBottom: '16px', color: '#ffffff' }}>
+            <PhoneIcon size={56} />
+          </div>
+          <h2 style={{ fontSize: '22px', fontWeight: 700, color: '#ffffff', margin: '0 0 8px' }}>
+            {t('scoreboard.phone.sidewaysTitle')}
+          </h2>
+          <p style={{ fontSize: '15px', color: '#e7e5e4', maxWidth: '420px', lineHeight: 1.5, margin: 0 }}>
+            {t('scoreboard.phone.sidewaysBody')}
           </p>
         </div>
       )}
