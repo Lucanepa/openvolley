@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "activity",
-  "description": "The match activity log as daily files: the scoretable window (loaded from the built-in server on http://localhost) may append JSON lines to <data dir>/OpenVolley/logs/activity-<date>.jsonl and open that folder, nothing else. LAN tablets are plain browsers and never get these commands.",
+  "description": "The match activity log as daily files: the scoretable window (loaded from the built-in server on http://localhost) may append JSON lines to <data dir>/<OpenVolley|OpenBeach>/logs/activity-<date>.jsonl and open that folder, nothing else. LAN tablets are plain browsers and never get these commands.",
   "windows": ["main"],
   "remote": {
     "urls": ["http://localhost:*"]

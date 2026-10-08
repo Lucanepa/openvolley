@@ -57,7 +57,7 @@ fn main() {
     // after they asked the user): the running app quits cleanly, so the
     // tablets' Wi-Fi is switched off and the user's hotspot settings come
     // back. Without it the installer ended the app with TerminateProcess.
-    // The desktop log first (<data dir>/OpenVolley/logs/desktop.log, rotated;
+    // The desktop log first (<data dir>/<OpenVolley|OpenBeach>/logs/desktop.log, rotated;
     // activity.rs keeps the activity log's daily files in the same folder).
     let mut builder = tauri::Builder::default().plugin(log_plugin());
     if single_instance_available() {
