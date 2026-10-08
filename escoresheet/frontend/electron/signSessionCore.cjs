@@ -16,7 +16,7 @@
  *
  * Endpoints (all POST + JSON; the relay adapters read the body and do the auth):
  *   start  { slot, matchKey?, context }   -> 201 { ok, token, watch, expiresAt, ttlSeconds, path }
- *   open   { k }                          -> 200 { ok, state:'opened', slot, context, expiresAt }
+ *   open   { k }                          -> 200 { ok, state:'opened', slot, context, expiresAt, app? }
  *   submit { k, pad, strokes }            -> 200 { ok }                (single use)
  *   wait   { watch, known? }              -> 200 { ok, state, ... }     (long-poll, <= 25 s)
  *   close  { watch }                      -> 200 { ok }                 (idempotent)
@@ -24,6 +24,12 @@
  *
  * Only SHA-256 hashes of the token and the watch secret are kept. Nothing is
  * persisted, and no secret, context or stroke is ever logged.
+ *
+ * `app`: the relay adapter (never the request body) may name the session's app
+ * at start, start(body, { owner, app: 'beach' }); open then answers
+ * `app: 'beach'` and the phone page shows OpenBeach's name and mark. Only the
+ * cloud backend does (by the match's sport_type); every other session has no
+ * `app` and the page stays as its relay serves it.
  */
 
 const SIGN_TTL_MS = 10 * 60 * 1000 // an unsigned session
@@ -432,7 +438,7 @@ function createSignSessions(options = {}) {
    * @param {any} body
    * @param {{ owner: string }} who
    */
-  function start(body, { owner }) {
+  function start(body, { owner, app = null }) {
     const retry = limited(`start:${owner}`, caps.startPerOwner)
     if (retry) return rateLimited(retry)
     if (!isPlainObject(body)) return signError(400, 'OV_SIGN_BAD_REQUEST')
@@ -462,6 +468,7 @@ function createSignSessions(options = {}) {
       slot: body.slot,
       matchKey,
       context: ctx.context,
+      app: app === 'beach' ? 'beach' : null,
       owner,
       createdAt: t,
       expiresAt: t + SIGN_TTL_MS,
@@ -509,7 +516,9 @@ function createSignSessions(options = {}) {
       line('open', s)
       wake(s)
     }
-    return { status: 200, body: { ok: true, state: s.state, slot: s.slot, context: s.context, expiresAt: s.expiresAt } }
+    const out = { ok: true, state: s.state, slot: s.slot, context: s.context, expiresAt: s.expiresAt }
+    if (s.app) out.app = s.app
+    return { status: 200, body: out }
   }
 
   /** POST /api/sign/submit (the phone page): single use. */

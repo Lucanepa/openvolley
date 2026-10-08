@@ -138,6 +138,52 @@ describe('Sign on phone, cloud backend', { skip: SKIP }, () => {
     code(await phone('close', { watch: r.json.watch }), 200)
   })
 
+  it('OpenBeach: a session of a beach match opens with app beach (the page shows OpenBeach), indoor and unknown ones without', async () => {
+    const insertMatch = async (sport) => {
+      const ext = `sign_${sport}_${randomBytes(4).toString('hex')}`
+      await sql.query('INSERT INTO public.matches (external_id, status, created_by, sport_type) VALUES ($1, $2, $3, $4)', [ext, 'live', users.admin.id, sport])
+      return ext
+    }
+    const beachExt = await insertMatch('beach')
+    const indoorExt = await insertMatch('indoor')
+    const both = await account('bothSigner', ['scorer', 'beach:scorer'])
+    const appOf = async (user, body) => {
+      const r = await start(user, { slot: 'ref1', context: CTX, ...body })
+      code(r, 201)
+      tokensSeen.push(r.json.token, r.json.watch)
+      // the starter learns nothing new (the same answer as before)
+      assert.deepEqual(Object.keys(r.json).sort(), ['expiresAt', 'ok', 'path', 'token', 'ttlSeconds', 'watch'])
+      const open = await phone('open', { k: r.json.token })
+      code(open, 200)
+      await phone('close', { watch: r.json.watch })
+      return open.json.app ?? null
+    }
+    // by the match's sport, whoever starts it
+    assert.equal(await appOf(users.beachScorer, { matchKey: beachExt }), 'beach')
+    assert.equal(await appOf(both, { matchKey: beachExt }), 'beach')
+    assert.equal(await appOf(users.admin, { matchKey: beachExt }), 'beach')
+    assert.equal(await appOf(both, { matchKey: indoorExt }), null)
+    assert.equal(await appOf(users.scorer, { matchKey: indoorExt }), null)
+    // the body cannot choose it
+    assert.equal(await appOf(users.scorer, { matchKey: indoorExt, app: 'beach' }), null)
+    // a match the server does not have yet: a beach-only account is OpenBeach's
+    assert.equal(await appOf(users.beachScorer, { matchKey: 'not-synced-yet' }), 'beach')
+    assert.equal(await appOf(users.beachScorer, {}), 'beach')
+    assert.equal(await appOf(both, { matchKey: 'not-synced-yet' }), null)
+    assert.equal(await appOf(users.referee, {}), null)
+    // the token checks are as before: a wrong token is 404 and names no app
+    const bad = await phone('open', { k: 'B'.repeat(43) })
+    code(bad, 404, 'OV_SIGN_NOT_FOUND')
+    assert.equal(bad.json.app, undefined)
+    // the one page carries both marks; sign.js shows the one open names
+    const page = await fetch(`${srv.base}/sign`)
+    const html = await page.text()
+    assert.ok(html.includes('<header class="brand" data-app="openvolley">'))
+    assert.ok(html.includes('<header class="brand" data-app="beach" hidden>'))
+    assert.ok(html.includes('<span>OpenBeach</span>'))
+    assert.ok((await (await fetch(`${srv.base}/sign/sign.js`)).text()).includes("APP_NAMES = { beach: 'OpenBeach' }"))
+  })
+
   it('submit over 64 KB: 413', async () => {
     const r = await start(users.scorer)
     code(r, 201)

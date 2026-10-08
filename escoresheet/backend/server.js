@@ -1250,6 +1250,28 @@ function mayStartPhoneSign(access) {
   return SIGN_STARTER_ROLES.some((r) => roles.includes(r))
 }
 
+/**
+ * The app of a cloud signing session, for the phone page's name and mark
+ * (open answers app: 'beach'): the sport of the match the scoring device names
+ * (matchKey = matches.external_id, OpenBeach's seed_key); a match the server
+ * does not have yet: 'beach' for an account with beach roles only. Branding
+ * only: it never decides who may start, open or submit.
+ */
+async function signAppOf(layer, matchKey, access) {
+  if (typeof matchKey === 'string' && matchKey.trim() && matchKey.length <= 128) {
+    try {
+      const { rows: [m] } = await layer.db.pool.query(
+        'SELECT sport_type::text AS sport FROM public.matches WHERE external_id = $1 LIMIT 1', [matchKey.trim()])
+      if (m) return m.sport === 'beach' ? 'beach' : null
+    } catch (err) {
+      console.warn('[Sign] match sport lookup failed:', err?.message)
+    }
+  }
+  const roles = Array.isArray(access?.roles) ? access.roles : []
+  const beachOnly = roles.some((r) => String(r).startsWith('beach:')) && !roles.some((r) => r === 'scorer' || r === 'referee')
+  return beachOnly && access?.isAdmin !== true ? 'beach' : null
+}
+
 /** The request comes from this machine itself: loopback or one of its own addresses. */
 function isLocalCaller(req) {
   const addr = String(req.socket?.remoteAddress || '').replace(/^::ffff:/, '')
@@ -1274,14 +1296,15 @@ async function handleSignRequest(req, res, endpoint) {
   if (!/^application\/json\b/i.test(String(req.headers['content-type'] || ''))) return refuse(signError(400, 'OV_SIGN_BAD_REQUEST'))
   const ipKey = ipBucketKey(getClientIp(req))
   let owner = null
+  let layer = null
+  let access = null
   if (endpoint === 'start' && DB_MODE) {
     // The account first, before the body is read
     const token = bearerFromHeaders(req.headers)
     if (!token) return refuse(signError(401, 'OV_AUTH_REQUIRED'))
     let user = null
-    let access = null
     try {
-      const layer = await getDataLayer()
+      layer = await getDataLayer()
       const v = await layer.auth.verifyAccessToken(token)
       user = v?.user || null
       if (user) access = await layer.access.get(user.id)
@@ -1316,7 +1339,11 @@ async function handleSignRequest(req, res, endpoint) {
     }
   }
   const sessions = getSignSessions()
-  if (endpoint === 'start') return send(sessions.start(body, { owner }))
+  if (endpoint === 'start') {
+    // the app of the phone page (cloud): only after the account check, never from the body
+    const app = DB_MODE && layer && body && typeof body === 'object' ? await signAppOf(layer, body.matchKey, access) : null
+    return send(sessions.start(body, { owner, app }))
+  }
   if (endpoint === 'open') return send(sessions.open(body, { ipKey }))
   if (endpoint === 'submit') return send(sessions.submit(body, { ipKey }))
   if (endpoint === 'close') return send(sessions.close(body))

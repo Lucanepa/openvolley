@@ -52,6 +52,22 @@ describe('signSessionCore', () => {
     s.dispose()
   })
 
+  it('the app comes from the relay adapter only: open names it for beach, never from the body', () => {
+    const s = core.createSignSessions({ log: () => {} })
+    const open = (start) => s.open({ k: start.body.token }, { ipKey: 'ip' }).body
+    // no app (every LAN relay, an indoor match): open answers as before
+    expect(open(s.start({ slot: 'ref1', context: ctx }, { owner: 'local' }))).not.toHaveProperty('app')
+    // a body cannot choose it
+    expect(open(s.start({ slot: 'ref1', context: ctx, app: 'beach' }, { owner: 'local' }))).not.toHaveProperty('app')
+    // the adapter can: beach only, anything else is dropped
+    expect(open(s.start({ slot: 'ref1', context: ctx }, { owner: 'u:1', app: 'beach' })).app).toBe('beach')
+    expect(open(s.start({ slot: 'ref1', context: ctx }, { owner: 'u:1', app: 'indoor' }))).not.toHaveProperty('app')
+    expect(open(s.start({ slot: 'ref1', context: ctx }, { owner: 'u:1', app: '<b>' }))).not.toHaveProperty('app')
+    // a wrong token still learns nothing
+    expect(s.open({ k: 'x'.repeat(43) }, { ipKey: 'ip' }).body).not.toHaveProperty('app')
+    s.dispose()
+  })
+
   it('injected randomness and hashing are used', () => {
     let n = 0
     const s = core.createSignSessions({

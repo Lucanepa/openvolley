@@ -90,6 +90,33 @@ describe('the phone signing page', () => {
     expect(page().state).toBe('ready')
   })
 
+  it('the mark: OpenVolley by default, OpenBeach when the session names app beach, nothing while loading', async () => {
+    const shown = () => [...document.querySelectorAll('.brand')].filter((h) => !h.hidden).map((h) => h.getAttribute('data-app'))
+    const css = readFileSync(join(DIR, 'sign.css'), 'utf8')
+    expect(css).toContain('.page[data-state="loading"] .brand { visibility: hidden; }')
+    expect(css).toContain('.brand[hidden] { display: none; }')
+    document.title = 'OpenVolley'
+    await load()
+    expect(shown()).toEqual(['openvolley'])
+    expect(page().app).toBe(null)
+    expect(document.title).toBe('OpenVolley')
+
+    answers.open.json = { ...answers.open.json, app: 'beach' }
+    await load()
+    expect(page().state).toBe('ready')
+    expect(page().app).toBe('beach')
+    expect(shown()).toEqual(['beach'])
+    expect(document.querySelector('.brand[data-app="beach"]').textContent).toBe('OpenBeach')
+    expect(document.title).toBe('OpenBeach')
+
+    // an unknown name changes nothing
+    document.title = 'OpenVolley'
+    answers.open.json = { ...answers.open.json, app: 'constructor' }
+    await load()
+    expect(shown()).toEqual(['openvolley'])
+    expect(document.title).toBe('OpenVolley')
+  })
+
   it('a reload keeps working from sessionStorage', async () => {
     window.sessionStorage.setItem('ov_sign_k', TOKEN)
     await load('/sign')
@@ -326,6 +353,7 @@ describe('the phone page files', () => {
 
   it('stays small', () => {
     const total = HTML.length + JS.length + readFileSync(join(DIR, 'sign.css'), 'utf8').length
-    expect(total).toBeLessThan(25 * 1024)
+    // 25 KB plus OpenBeach's mark (the second header, about 1.3 KB)
+    expect(total).toBeLessThan(27 * 1024)
   })
 })

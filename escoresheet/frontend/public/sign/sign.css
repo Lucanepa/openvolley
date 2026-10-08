@@ -12,6 +12,9 @@ body { font: 16px/1.4 var(--font); -webkit-text-size-adjust: 100%; }
 .page { max-width: 720px; margin: 0 auto; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 12px; }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; color: var(--stone-900); }
 .mark { flex: none; }
+.brand[hidden] { display: none; }
+/* No mark until open names the app: never OpenVolley's flashing before OpenBeach's */
+.page[data-state="loading"] .brand { visibility: hidden; }
 .who { min-height: 64px; }
 h1 { margin: 0 0 2px; font-size: 20px; line-height: 1.25; font-weight: 600; color: var(--stone-900); }
 .sub { margin: 0; font-size: 14px; color: var(--stone-600); overflow-wrap: anywhere; }
