@@ -215,6 +215,65 @@ describe('savedCourtSides: corrections made after the latest snapshot', () => {
   })
 })
 
+describe('savedCourtSides: a live row older than the latest snapshot', () => {
+  // The scorer's last live state write failed (offline) while the queued
+  // events synced later: the live row's side is stale, the snapshot's event
+  // newer (both times the scorer device's clock: event created_at from its
+  // ts, the live row's last_event_ts). The live side wins over the snapshot
+  // only when not older than the snapshot's event (OpenBeach b6ceb0e).
+  const at = (m) => `2026-10-08T10:${String(m).padStart(2, '0')}:00.000Z`
+
+  it('sets 1-4: the snapshot\'s side, no override from the stale live side', () => {
+    // set 2: snapshot at 10:05 with A on the left (an override); the live row
+    // from 10:01 still has A on the right
+    const events = [{ seq: 9, created_at: at(5), state_snapshot: { teamAKey: 'home', currentSetIndex: 2, sideA: 'left', setLeftTeamOverrides: { 2: 'A' } } }]
+    const sides = savedCourtSides(events, { current_set: 2, side_a: 'right', points_a: 6, points_b: 4, last_event_ts: at(1) }, 'home')
+    expect(sides).toEqual({ setLeftTeamOverrides: { 2: 'A' } })
+    expect(getSideAForSet(2, sides)).toBe('left')
+  })
+
+  it('set 5, a toss side corrected before the stale live row\'s point: the snapshot\'s toss side', () => {
+    // live 10:01 B left; the set 5 "Switch sides" (A left) and the point at
+    // 10:05 synced, their live writes failed
+    const events = [{ seq: 9, created_at: at(5), state_snapshot: { teamAKey: 'home', currentSetIndex: 5, sideA: 'left', set5LeftTeam: 'A', set5CourtSwitched: false } }]
+    const sides = savedCourtSides(events, { current_set: 5, side_a: 'right', points_a: 5, points_b: 3, last_event_ts: at(1) }, 'home')
+    expect(sides.set5LeftTeam).toBe('A')
+    expect(sides.set5CourtSwitched).not.toBe(true)
+    expect(getSideAForSet(5, sides)).toBe('left')
+  })
+
+  it('set 5, the change at 8 made after the stale live row: still made', () => {
+    // live 10:01 at 7:5, A left, not changed; the snapshot at 10:05 has the change
+    const events = [{ seq: 12, created_at: at(5), state_snapshot: { teamAKey: 'home', currentSetIndex: 5, sideA: 'right', set5LeftTeam: 'A', set5CourtSwitched: true } }]
+    const sides = savedCourtSides(events, { current_set: 5, side_a: 'left', points_a: 7, points_b: 5, last_event_ts: at(1) }, 'home')
+    expect(sides).toEqual({ set5LeftTeam: 'A', set5CourtSwitched: true })
+    expect(getSideAForSet(5, sides)).toBe('right')
+  })
+
+  it('a live row not older than the snapshot (later, or the same time): the live side still wins', () => {
+    const events = [{ seq: 9, created_at: at(1), state_snapshot: { teamAKey: 'home', currentSetIndex: 5, sideA: 'left', set5LeftTeam: 'A', set5CourtSwitched: false } }]
+    const live = { current_set: 5, side_a: 'right', points_a: 5, points_b: 3 }
+    expect(savedCourtSides(events, { ...live, last_event_ts: at(3) }, 'home')).toEqual({ set5LeftTeam: 'B', set5CourtSwitched: false })
+    expect(savedCourtSides(events, { ...live, last_event_ts: at(1) }, 'home')).toEqual({ set5LeftTeam: 'B', set5CourtSwitched: false })
+  })
+
+  it('a time unknown on either side: the live side wins (as before)', () => {
+    const events = [{ seq: 9, state_snapshot: { teamAKey: 'home', currentSetIndex: 5, sideA: 'left', set5LeftTeam: 'A', set5CourtSwitched: false } }]
+    expect(savedCourtSides(events, { current_set: 5, side_a: 'right', points_a: 5, points_b: 3, last_event_ts: at(1) }, 'home'))
+      .toEqual({ set5LeftTeam: 'B', set5CourtSwitched: false })
+  })
+
+  it('the snapshot\'s own event decides, not a newer event without a snapshot', () => {
+    // live 10:03 after the snapshot (10:01); a timeout row at 10:05 has no snapshot
+    const events = [
+      { seq: 10, created_at: at(5), type: 'timeout' },
+      { seq: 9, created_at: at(1), state_snapshot: { teamAKey: 'home', currentSetIndex: 5, sideA: 'left', set5LeftTeam: 'A', set5CourtSwitched: false } }
+    ]
+    expect(savedCourtSides(events, { current_set: 5, side_a: 'right', points_a: 5, points_b: 3, last_event_ts: at(3) }, 'home'))
+      .toEqual({ set5LeftTeam: 'B', set5CourtSwitched: false })
+  })
+})
+
 describe('fetchMatchByPin: a row without a snapshot says its own left team', () => {
   // The row writer marks the serving team's lineup (position I isServing) and
   // names it (serve_team): rows written before 8df87d4e put set 5's sides by
@@ -332,6 +391,23 @@ describe('fetchMatchByPin: the live row\'s own Team A', () => {
     await importMatchFromSupabase(cloud)
     const m = store.matches[0]
     expect(m.coinTossTeamA).toBe('home')
+    expect(homeLeft(m, 2)).toBe(true)
+  })
+
+  it('a "Switch sides" synced while its live write failed: the snapshot\'s sides, not the stale live row\'s', async () => {
+    // live row 10:01: set 2, A = home on the right. The scorer switched sides
+    // (A = away, still on the right: home on the left) offline; the coin toss
+    // and the next point (10:05, its snapshot) synced later, the live writes
+    // did not
+    const cloud = await restoreWith({
+      match: { ...NAMES, coin_toss: { team_a: 'away', team_b: 'home', serve_a: false, first_serve: 'home', confirmed: true } },
+      events: [{ seq: 9, type: 'point', set_index: 2, payload: { team: 'home' }, created_at: '2026-10-08T10:05:00.000Z', lineup_left: HOME, lineup_right: AWAY, state_snapshot: { teamAKey: 'away', currentSetIndex: 2, sideA: 'right', lineupA: AWAY, lineupB: HOME } }],
+      liveState: swappedLive({ side_a: 'right', lineup_a: HOME, lineup_b: AWAY, team_a_name: 'Volley Näfels', team_b_name: 'Chênois Genève', last_event_type: 'point', last_event_ts: '2026-10-08T10:01:00.000Z' })
+    })
+    await importMatchFromSupabase(cloud)
+    const m = store.matches[0]
+    expect(m.coinTossTeamA).toBe('away')
+    expect(m.setLeftTeamOverrides).toBeUndefined()
     expect(homeLeft(m, 2)).toBe(true)
   })
 

@@ -758,6 +758,10 @@ export async function restoreMatchInPlace(matchId, jsonData) {
 const isAB = (v) => v === 'A' || v === 'B'
 const flipAB = (v) => (v === 'A' ? 'B' : 'A')
 const isSide = (v) => v === 'left' || v === 'right'
+const timeOf = (v) => {
+  const t = Date.parse(v)
+  return Number.isNaN(t) ? null : t
+}
 
 /**
  * The court sides the scorer last saved, for a restore by PIN, as the match
@@ -767,17 +771,19 @@ const isSide = (v) => v === 'left' || v === 'right'
  *    of courts, and its set's side (sideA) as an override when it is not the
  *    set number's side. Its labels are by its own Team A (teamAKey), flipped
  *    when A and B were swapped since.
- *  - Then the live state (the latest side): sets 1-4 its side_a as an
- *    override when not the set number's side. Set 5 as its coin toss side
- *    (set5LeftTeam, what the set 5 toss and its corrections write), never an
+ *  - Then the live state (the latest side), unless it is older than the
+ *    snapshot's event (its write failed while the queued events synced
+ *    later): sets 1-4 its side_a as an override when not the set number's
+ *    side. Set 5 as its coin toss side (set5LeftTeam, what the set 5 toss and
+ *    its corrections write), never an
  *    override [5], with the change of courts at 8 apart (set5CourtSwitched):
  *    the live side is after the change, so saved as the toss side the change
  *    at 8 would flip it once more. Switched when a team has 8; only a
  *    snapshot whose courts did not follow its score keeps its toss side, and
  *    is switched when that is not the live side.
  * {} when neither says.
- * @param {Array} events  server event rows (seq, state_snapshot)
- * @param {object|null} liveState  match_live_state row
+ * @param {Array} events  server event rows (seq, created_at, state_snapshot)
+ * @param {object|null} liveState  match_live_state row (last_event_ts)
  * @param {'home'|'away'} teamAKey  the match's Team A
  * @param {'home'|'away'} [liveTeamAKey]  the live row's own Team A (its side_a is that team's)
  * @returns {{ setLeftTeamOverrides?: object, set5LeftTeam?: 'A'|'B', set5CourtSwitched?: boolean }}
@@ -787,11 +793,14 @@ export function savedCourtSides(events, liveState, teamAKey = 'home', liveTeamAK
   const overrides = {}
   const leftLabel = (set) => getLeftTeamLabelForSet(set, { setLeftTeamOverrides: overrides })
 
-  const snap = [...(events || [])]
+  const snapEvent = [...(events || [])]
     .sort((a, b) => (b.seq || 0) - (a.seq || 0))
-    .map(e => e.state_snapshot)
-    .find(s => s && typeof s === 'object' &&
-      (s.setLeftTeamOverrides || isAB(s.set5LeftTeam) || isSide(s.sideA)))
+    .find(e => {
+      const s = e?.state_snapshot
+      return s && typeof s === 'object' &&
+        (s.setLeftTeamOverrides || isAB(s.set5LeftTeam) || isSide(s.sideA))
+    })
+  const snap = snapEvent?.state_snapshot
   if (snap) {
     const swapped = (snap.teamAKey === 'home' || snap.teamAKey === 'away') && snap.teamAKey !== teamAKey
     const label = (v) => (swapped ? flipAB(v) : v)
@@ -813,8 +822,17 @@ export function savedCourtSides(events, liveState, teamAKey = 'home', liveTeamAK
     }
   }
 
+  // The live side only when not older than the snapshot's event: the
+  // scorer's last live state write may have failed (offline) while the
+  // queued events synced later, and its stale side would undo what the
+  // snapshot saved since. Both times are the scorer device's clock (event
+  // created_at from its ts, last_event_ts); a time unknown keeps the live side.
+  const liveAt = timeOf(liveState?.last_event_ts || liveState?.updated_at)
+  const snapAt = snapEvent ? timeOf(snapEvent.created_at || snapEvent.ts) : null
+  const liveIsStale = liveAt != null && snapAt != null && liveAt < snapAt
+
   const set = Number(liveState?.current_set)
-  if (set >= 1 && isSide(liveState.side_a)) {
+  if (!liveIsStale && set >= 1 && isSide(liveState.side_a)) {
     // side_a is the live row's own Team A's (liveRowTeamAKey): the other team
     // than the match's while a swap of A and B is still in the sync queue
     const left = (liveState.side_a === 'left') === (liveTeamAKey === teamAKey) ? 'A' : 'B'
@@ -856,11 +874,6 @@ function relabelCourtSides(sides) {
   }
   if (isAB(sides.set5LeftTeam)) out.set5LeftTeam = flipAB(sides.set5LeftTeam)
   return out
-}
-
-const timeOf = (v) => {
-  const t = Date.parse(v)
-  return Number.isNaN(t) ? null : t
 }
 
 /**
