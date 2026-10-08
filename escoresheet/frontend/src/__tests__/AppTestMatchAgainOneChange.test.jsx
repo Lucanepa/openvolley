@@ -26,8 +26,8 @@ describe('App: a new test match over an older one', () => {
     await db.matches.add({ homeTeamId: home, awayTeamId: away, status: 'scheduled', test: true, createdAt: new Date().toISOString() })
 
     mountApp()
-    await waitFor(() => expect(button('Continue match')).toBeTruthy(), { timeout: 8000 })
-    await waitFor(() => expect(chip()).toBe('Test match'), { timeout: 8000 })
+    await waitFor(() => expect(button('Continue match')).toBeTruthy())
+    await waitFor(() => expect(chip()).toBe('Test match'))
     fireEvent.click(button('New match'))
     await waitFor(() => expect(menuTestMatch()).toBeTruthy())
 
@@ -42,7 +42,7 @@ describe('App: a new test match over an older one', () => {
       }
     })
     fireEvent.click(menuTestMatch())
-    await waitFor(() => expect(states.at(-1)).toMatchObject({ home: false, setup: true, notSet: 0 }), { timeout: 8000 })
+    await waitFor(() => expect(states.at(-1)).toMatchObject({ home: false, setup: true, notSet: 0 }))
     await sleep(500)
     stop()
 
@@ -51,5 +51,5 @@ describe('App: a new test match over an older one', () => {
     expect(states.filter(s => s.home && !(s.match && s.chip === 'Test match'))).toEqual([])
     // then only the filled setup
     expect(states.filter(s => !s.home && !(s.setup && s.notSet === 0 && s.chip === 'Test match'))).toEqual([])
-  }, 30000)
+  })
 })

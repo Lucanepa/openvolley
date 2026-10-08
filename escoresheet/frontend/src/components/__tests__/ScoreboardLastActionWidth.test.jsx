@@ -67,7 +67,7 @@ describe('Scoreboard: the last action line', () => {
 
     render(<ScaleProvider><AlertProvider><LoggingProvider><Scoreboard matchId={matchId} /></LoggingProvider></AlertProvider></ScaleProvider>)
     const line = () => [...document.querySelectorAll('.rally-controls div[title]')].find(e => e.textContent.startsWith('Last action:'))
-    await waitFor(() => expect(line()).toBeTruthy(), { timeout: 8000 })
+    await waitFor(() => expect(line()).toBeTruthy())
     expect(line().textContent).toContain('Wiedikon-Zürich')
     expect(line().style.whiteSpace).toBe('nowrap')
     expect(line().style.textOverflow).toBe('ellipsis')
@@ -76,5 +76,5 @@ describe('Scoreboard: the last action line', () => {
     expect(line().parentElement.style.width).toBe('100%')
     expect(line().parentElement.style.minWidth).toBe('0px')
     cleanup()
-  }, 30000)
+  })
 })

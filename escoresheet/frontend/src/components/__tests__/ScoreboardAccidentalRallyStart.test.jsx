@@ -128,12 +128,12 @@ async function playRally(scope) {
   await waitFor(() => expect(startButton(scope)).toBeTruthy(), { timeout: 10000 })
   await settle()
   fireEvent.click(startButton(scope))
-  await waitFor(() => expect(pointA(scope)).toBeTruthy(), { timeout: 5000 })
+  await waitFor(() => expect(pointA(scope)).toBeTruthy())
   await settle()
   const points = (await ofType('point')).length
   fireEvent.click(pointA(scope))
-  await waitFor(async () => expect((await ofType('point')).length).toBe(points + 1), { timeout: 5000 })
-  await waitFor(() => expect(startButton(scope)).toBeTruthy(), { timeout: 5000 })
+  await waitFor(async () => expect((await ofType('point')).length).toBe(points + 1))
+  await waitFor(() => expect(startButton(scope)).toBeTruthy())
   await settle()
 }
 
@@ -142,14 +142,14 @@ async function playRally(scope) {
 async function expectAskThenStart(press, scope) {
   const rallies = (await ofType('rally_start')).length
   press()
-  await waitFor(() => expect(askOpen()).toBe(true), { timeout: 5000 })
+  await waitFor(() => expect(askOpen()).toBe(true))
   await settle()
   expect((await ofType('rally_start')).length).toBe(rallies)
   expect(pointA(scope)).toBeFalsy()
   fireEvent.click(button('Yes, start rally'))
-  await waitFor(async () => expect((await ofType('rally_start')).length).toBe(rallies + 1), { timeout: 5000 })
+  await waitFor(async () => expect((await ofType('rally_start')).length).toBe(rallies + 1))
   await waitFor(() => expect(askOpen()).toBe(false))
-  await waitFor(() => expect(pointA(scope)).toBeTruthy(), { timeout: 5000 })
+  await waitFor(() => expect(pointA(scope)).toBeTruthy())
 }
 
 describe('Scoreboard: the accidental rally start check', () => {
@@ -182,11 +182,11 @@ describe('Scoreboard: the accidental rally start check', () => {
     await playRally()
     const rallies = (await ofType('rally_start')).length
     fireEvent.keyDown(window, { key: 'Enter' })
-    await waitFor(() => expect(askOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(askOpen()).toBe(true))
     await settle()
     expect((await ofType('rally_start')).length).toBe(rallies)
     fireEvent.keyDown(window, { key: 'Enter' })
-    await waitFor(async () => expect((await ofType('rally_start')).length).toBe(rallies + 1), { timeout: 5000 })
+    await waitFor(async () => expect((await ofType('rally_start')).length).toBe(rallies + 1))
     await waitFor(() => expect(askOpen()).toBe(false))
   }, 60000)
 
@@ -198,7 +198,7 @@ describe('Scoreboard: the accidental rally start check', () => {
     await playRally()
     const rallies = (await ofType('rally_start')).length
     fireEvent.click(startButton())
-    await waitFor(() => expect(askOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(askOpen()).toBe(true))
     await settle()
     fireEvent.click(button('Cancel'))
     await waitFor(() => expect(askOpen()).toBe(false))
@@ -216,7 +216,7 @@ describe('Scoreboard: the accidental rally start check', () => {
     await wait(1100)
     const rallies = (await ofType('rally_start')).length
     fireEvent.click(startButton())
-    await waitFor(async () => expect((await ofType('rally_start')).length).toBe(rallies + 1), { timeout: 5000 })
+    await waitFor(async () => expect((await ofType('rally_start')).length).toBe(rallies + 1))
     expect(askOpen()).toBe(false)
   }, 60000)
 
@@ -226,7 +226,7 @@ describe('Scoreboard: the accidental rally start check', () => {
     await playRally()
     const rallies = (await ofType('rally_start')).length
     fireEvent.click(startButton())
-    await waitFor(async () => expect((await ofType('rally_start')).length).toBe(rallies + 1), { timeout: 5000 })
+    await waitFor(async () => expect((await ofType('rally_start')).length).toBe(rallies + 1))
     expect(askOpen()).toBe(false)
   }, 60000)
 })

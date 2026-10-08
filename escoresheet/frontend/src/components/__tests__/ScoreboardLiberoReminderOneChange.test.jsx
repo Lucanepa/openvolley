@@ -63,9 +63,9 @@ describe('Scoreboard: the libero reminder before the first rally', () => {
     ])
 
     render(<ScaleProvider><AlertProvider><LoggingProvider><Scoreboard matchId={matchId} /></LoggingProvider></AlertProvider></ScaleProvider>)
-    await waitFor(() => expect(button('Start set')).toBeTruthy(), { timeout: 8000 })
+    await waitFor(() => expect(button('Start set')).toBeTruthy())
     fireEvent.click(button('Start set'))
-    await waitFor(() => expect(button('Continue')).toBeTruthy(), { timeout: 5000 })
+    await waitFor(() => expect(button('Continue')).toBeTruthy())
     expect(dialogs()).toHaveLength(1)
 
     // what each committed change shows: how many dialogs are open
@@ -73,7 +73,7 @@ describe('Scoreboard: the libero reminder before the first rally', () => {
     const observer = new MutationObserver(() => { states.push(dialogs().length) })
     observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true })
     fireEvent.click(button('Continue'))
-    await waitFor(() => expect(document.body.textContent).toMatch(/start time/i), { timeout: 5000 })
+    await waitFor(() => expect(document.body.textContent).toMatch(/start time/i))
     await new Promise(r => setTimeout(r, 300))
     observer.disconnect()
 
@@ -81,5 +81,5 @@ describe('Scoreboard: the libero reminder before the first rally', () => {
     // never a change with no dialog between the reminder and the start time
     expect(states.filter(n => n === 0)).toEqual([])
     cleanup()
-  }, 30000)
+  })
 })

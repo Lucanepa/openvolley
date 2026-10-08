@@ -18,7 +18,7 @@ describe('translation keys used in the code', () => {
     const byLocale = findMissingKeysByLocale()
     const missing = Object.fromEntries(Object.entries(byLocale).map(([lng, m]) => [lng, [...m.keys()].sort()]))
     expect(missing).toEqual({})
-  }, 30000)
+  })
 
   it('reports the missing keys per locale, a template parent only when the object is missing', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ov-i18n-'))

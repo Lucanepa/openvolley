@@ -249,7 +249,7 @@ describe('every Node relay runtime and the Rust relay speak Sign on phone', () =
     } finally {
       child.kill('SIGKILL')
     }
-  }, 30000)
+  })
 
   it('Electron in-process relay', async () => {
     const relayServer = require('../../../electron/relayServer.js')
@@ -261,7 +261,7 @@ describe('every Node relay runtime and the Rust relay speak Sign on phone', () =
     } finally {
       await relayServer.stop()
     }
-  }, 30000)
+  })
 
   it('Vite dev plugin', async () => {
     // Port 0: bound at once on a port the system picks (a freePort() port can
@@ -291,7 +291,7 @@ describe('every Node relay runtime and the Rust relay speak Sign on phone', () =
       plugin.closeBundle()
       await new Promise((r) => httpServer.close(r))
     }
-  }, 30000)
+  })
 
   // The Rust port needs a built binary (its dist/ embedded):
   //   OV_TAURI_RELAY_BIN=<target>/debug/openvolley-escoresheet npx vitest run lanRelaySign
