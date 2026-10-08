@@ -568,62 +568,29 @@ const MatchIdViewer = ({ matchId, action }) => {
   // Convert matchId to number if it's a numeric string
   const numericMatchId = !isNaN(matchId) ? parseInt(matchId, 10) : matchId
 
-  // Use live queries to get real-time data from IndexedDB
-  const match = useLiveQuery(
-    async () => {
+  // One live query, one read transaction: the sheet never pairs the sets of
+  // one moment with the events of another (after a point: "the points
+  // recorded (2:2) do not match the set score (3:2)", and the page jumps)
+  const live = useLiveQuery(
+    () => {
       if (!numericMatchId) return null
-      return await db.matches.get(numericMatchId)
+      return db.transaction('r', [db.matches, db.teams, db.players, db.sets, db.events], async () => {
+        const match = await db.matches.get(numericMatchId)
+        if (!match) return null
+        const [homeTeam, awayTeam, homePlayers, awayPlayers, sets, events] = await Promise.all([
+          match.homeTeamId ? db.teams.get(match.homeTeamId) : null,
+          match.awayTeamId ? db.teams.get(match.awayTeamId) : null,
+          match.homeTeamId ? db.players.where('teamId').equals(match.homeTeamId).toArray() : [],
+          match.awayTeamId ? db.players.where('teamId').equals(match.awayTeamId).toArray() : [],
+          db.sets.where('matchId').equals(numericMatchId).sortBy('index'),
+          db.events.where('matchId').equals(numericMatchId).sortBy('seq')
+        ])
+        return { match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events }
+      })
     },
     [numericMatchId]
   )
-
-  const homeTeam = useLiveQuery(
-    async () => {
-      if (!match?.homeTeamId) return null
-      return await db.teams.get(match.homeTeamId)
-    },
-    [match]
-  )
-
-  const awayTeam = useLiveQuery(
-    async () => {
-      if (!match?.awayTeamId) return null
-      return await db.teams.get(match.awayTeamId)
-    },
-    [match]
-  )
-
-  const homePlayers = useLiveQuery(
-    async () => {
-      if (!match?.homeTeamId) return []
-      return await db.players.where('teamId').equals(match.homeTeamId).toArray()
-    },
-    [match]
-  )
-
-  const awayPlayers = useLiveQuery(
-    async () => {
-      if (!match?.awayTeamId) return []
-      return await db.players.where('teamId').equals(match.awayTeamId).toArray()
-    },
-    [match]
-  )
-
-  const sets = useLiveQuery(
-    async () => {
-      if (!numericMatchId) return []
-      return await db.sets.where('matchId').equals(numericMatchId).sortBy('index')
-    },
-    [numericMatchId]
-  )
-
-  const events = useLiveQuery(
-    async () => {
-      if (!numericMatchId) return []
-      return await db.events.where('matchId').equals(numericMatchId).sortBy('seq')
-    },
-    [numericMatchId]
-  )
+  const match = live === undefined ? undefined : (live?.match ?? null)
 
   // Show loading state while initial data is being fetched
   if (match === undefined) {
@@ -645,13 +612,13 @@ const MatchIdViewer = ({ matchId, action }) => {
 
   // Build match data from live queries
   const matchData = {
-    match: match || {},
-    homeTeam: homeTeam || null,
-    awayTeam: awayTeam || null,
-    homePlayers: homePlayers || [],
-    awayPlayers: awayPlayers || [],
-    sets: sets || [],
-    events: events || [],
+    match,
+    homeTeam: live.homeTeam || null,
+    awayTeam: live.awayTeam || null,
+    homePlayers: live.homePlayers,
+    awayPlayers: live.awayPlayers,
+    sets: live.sets,
+    events: live.events,
     sanctions: []
   }
 
