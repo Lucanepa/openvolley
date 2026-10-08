@@ -573,6 +573,7 @@
       "decisionChange": "Entscheidsänderig",
       "switchSides": "Siite wächsle",
       "switchCourts": "Fäld wächsle",
+      "switchCourtsBack": "Siite zrugg wächsle",
       "switchServe": "Ufschlag wächsle",
       "confirmSet5Setup": "Satz {{number}} Iirichtig bestätige"
     },
@@ -601,6 +602,8 @@
       "liberoRedesignation": "Libero-Neubezeichnig",
       "courtSwitchRequired": "Sitewechsel erforderlich",
       "teamsMustSwitchCourts": "Teams müend d Siite wächsle",
+      "courtSwitchBackRequired": "Sitewechsel zrugg erforderlich",
+      "teamsMustSwitchCourtsBack": "Kei Team het meh 8 Pünkt: D Teams wächsle d Siite zrugg",
       "set5ChooseSideService": "Satz {{number}} - Site und Ufschlag wähle",
       "noLegalSubstitution": "Kei regelkonformi Uswächslig verfüegbar",
       "liberoReminder": "Libero-Erinnerig",
