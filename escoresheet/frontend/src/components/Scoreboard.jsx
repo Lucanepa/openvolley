@@ -1533,10 +1533,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         await db.matches.update(matchId, { status: snapshot.matchStatus })
       }
 
-      // Restore set5 court switch flag
+      // Restore set5 court switch flag. A point's snapshot is taken before
+      // its change of courts is confirmed: undoing a point made after the
+      // change (8:7 back to 8:6) restored "not changed", the courts went back
+      // and the next point asked for the change again. The change stays while
+      // a team still has 8; it goes with the point that reached 8.
       if (snapshot.currentSetIndex === 5 && match) {
+        const leaderPoints = Math.max(snapshot.pointsA || 0, snapshot.pointsB || 0)
         await db.matches.update(matchId, {
-          set5CourtSwitched: snapshot.set5CourtSwitched || false
+          set5CourtSwitched: !!snapshot.set5CourtSwitched || (!!match.set5CourtSwitched && leaderPoints >= 8)
         })
       }
     } catch (err) {

@@ -183,6 +183,15 @@ async function cancelDecision() {
   await settle()
 }
 
+async function undoLast() {
+  const before = (await events()).length
+  fireEvent.click(button('Undo'))
+  await waitFor(() => expect(button('Yes')).toBeTruthy())
+  fireEvent.click(button('Yes'))
+  await waitFor(async () => expect((await events()).length).toBeLessThan(before))
+  await settle()
+}
+
 describe('Scoreboard: the set-5 change of courts and the set end on every point path', () => {
   it('a decision change on the scoring screen that gives a team its 8th point (7:7 to 8:6) opens the change of courts, once', async () => {
     const matchId = await setUpSet5(level(6, 'home', 'away'))
@@ -354,6 +363,51 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
     await settle()
     expect(switchOpen()).toBe(false)
     expect(teamAOnLeft()).toBe(false)
+    cleanup()
+  }, 60000)
+
+  // Undo takes back what the point it undoes made: a point made after the
+  // change of courts leaves the courts changed (its snapshot was taken before
+  // the change was confirmed: undo put the courts back and the next point
+  // asked for a second change); the point that reached 8 takes it back.
+  it('undo of a point made after the change of courts keeps the courts, and no second change follows', async () => {
+    const matchId = await setUpSet5(level(6, 'home'))
+    mount(matchId)
+    await ready()
+    await point('Point A')
+    await switchCourts(matchId)
+    await waitFor(() => expect(teamAOnLeft()).toBe(false))
+    await point('Point B')
+    expect(await score()).toEqual([8, 7])
+
+    await undoLast()
+    expect(await score()).toEqual([8, 6])
+    expect(await switched(matchId)).toBe(true)
+    await waitFor(() => expect(teamAOnLeft()).toBe(false))
+
+    await point('Point B')
+    expect(await score()).toEqual([8, 7])
+    await settle()
+    expect(switchOpen()).toBe(false)
+    expect(teamAOnLeft()).toBe(false)
+    cleanup()
+  }, 60000)
+
+  it('undo of the point that reached 8 takes the change of courts back with it', async () => {
+    const matchId = await setUpSet5(level(6, 'home'))
+    mount(matchId)
+    await ready()
+    await point('Point A')
+    await switchCourts(matchId)
+    await waitFor(() => expect(teamAOnLeft()).toBe(false))
+
+    await undoLast()
+    expect(await score()).toEqual([7, 6])
+    expect(await switched(matchId)).toBe(false)
+    await waitFor(() => expect(teamAOnLeft()).toBe(true))
+
+    await point('Point A')
+    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
     cleanup()
   }, 60000)
 })
