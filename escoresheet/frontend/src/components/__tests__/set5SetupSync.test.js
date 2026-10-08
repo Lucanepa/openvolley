@@ -38,7 +38,7 @@ function set5LiveSides(match) {
 const homeOnLeftFromLiveState = (sideA, teamAKey) => (sideA === 'left' ? teamAKey === 'home' : teamAKey !== 'home')
 
 describe('scorer: set 5 setup pushes a live state', () => {
-  const inline = slice(scoreboard, "data?.set?.index === 5 && !set5SetupConfirmed) ? (", 7000)
+  const inline = slice(scoreboard, "data?.set?.index === 5 && !set5SetupConfirmed && !timeoutModal?.started) ? (", 7000)
 
   // The three buttons' handlers are shared with the phone layout (PhoneScoreboard)
   const handlers = slice(scoreboard, 'const set5SwitchSides = async () => {', 1200)
@@ -56,7 +56,12 @@ describe('scorer: set 5 setup pushes a live state', () => {
   })
 
   it('Confirm records the coin toss, then ends the interval on the tablets too', () => {
-    expect(handlers).toMatch(/await confirmSet5SideService\([^\n]*\)\s*\n[^\n]*\n\s*await syncSet5Setup\(\{ endInterval: true \}\)/)
+    expect(handlers).toMatch(/await confirmSet5SideService\([^\n]*, true\)/)
+    // inside the action: the countdown goes with the setup, the tablets are
+    // told after the commit (ScoreboardSet5SetupOneChange)
+    const action = slice(scoreboard, 'const confirmSet5SideService = useCallback(', 1500)
+    expect(action).toMatch(/setBetweenSetsCountdown\(null\)/)
+    expect(action).toMatch(/deferEffect\(\{ run: \(\) => syncSet5Setup\(\{ endInterval: true \}\) \}\)/)
   })
 
   it('the push is a fresh snapshot to relay + cloud, plus the match bundle', () => {

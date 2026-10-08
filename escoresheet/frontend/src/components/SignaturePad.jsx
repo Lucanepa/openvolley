@@ -21,8 +21,12 @@ import { REASON_KEYS } from '../utils/phoneSignTransport'
  *
  * `phone.locked` (MatchEnd: the match is approved, closed or final) keeps the
  * button but disables it, and no phone session is started or kept open.
+ *
+ * `closeOnSave` (default true): the pad calls onClose right after onSave.
+ * False when the caller closes it with the saved signature on screen
+ * (MatchEnd: the pad went a frame before the signature showed in its box).
  */
-export default function SignaturePad({ open, onClose, onSave, title = 'Sign', existingSignature = null, readOnly = false, zIndex, phone = null }) {
+export default function SignaturePad({ open, onClose, onSave, title = 'Sign', existingSignature = null, readOnly = false, zIndex, phone = null, closeOnSave = true }) {
   const { t } = useTranslation()
   const canvasRef = useRef(null)
   const isDrawingRef = useRef(false)
@@ -40,6 +44,13 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign', ex
   useEffect(() => {
     if (!open || phoneLocked) setMode('draw')
   }, [open, phoneLocked])
+
+  // closeOnSave false: the pad stays open after Save until the caller closes
+  // it; a second tap meanwhile must not save (and upload) the signature again
+  const savedRef = useRef(false)
+  useEffect(() => {
+    if (open) savedRef.current = false
+  }, [open])
 
   useEffect(() => {
     if (!open || mode !== 'draw') {
@@ -204,15 +215,18 @@ export default function SignaturePad({ open, onClose, onSave, title = 'Sign', ex
 
   function save() {
     const canvas = canvasRef.current
-    if (!canvas || !hasSignature) return
+    if (!canvas || !hasSignature || savedRef.current) return
     const dataURL = canvas.toDataURL('image/png')
+    if (!closeOnSave) savedRef.current = true
     onSave(dataURL, { source: 'device' })
-    onClose()
+    if (closeOnSave) onClose()
   }
 
   function acceptPhoneSignature(dataUrl, meta) {
+    if (savedRef.current) return
+    if (!closeOnSave) savedRef.current = true
     onSave(dataUrl, meta)
-    onClose()
+    if (closeOnSave) onClose()
   }
 
   function handleCancel() {
