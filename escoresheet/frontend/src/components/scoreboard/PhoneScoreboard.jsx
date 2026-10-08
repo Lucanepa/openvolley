@@ -184,7 +184,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
         onClick={onClick}
         disabled={disabled}
         style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, minHeight: 56, minWidth: 0,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, minHeight: 56, minWidth: 0, padding: '0 4px',
           borderRadius: 14,
           border: `2px solid ${disabled ? 'var(--ov-hairline-strong)' : p.ink}`,
           background: disabled ? 'var(--ov-sunken-strong)' : p.soft,
@@ -192,7 +192,10 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
           cursor: disabled ? 'default' : 'pointer'
         }}
       >
-        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: disabled ? 'var(--ov-text-faint)' : p.ink, whiteSpace: 'nowrap' }}>{label}</span>
+        {/* One line as the mockup (a touch smaller on a 360px phone); a label
+            longer than the button ("TEMPS MORT") goes on two lines rather than
+            out of it */}
+        <span style={{ maxWidth: '100%', fontSize: 'clamp(10px, 2.85vw, 11px)', lineHeight: 1.15, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', textAlign: 'center', textWrap: 'balance', overflowWrap: 'anywhere', color: disabled ? 'var(--ov-text-faint)' : p.ink }}>{label}</span>
         <span style={{ fontSize: 22, lineHeight: 1.1, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
       </button>
     )
@@ -285,7 +288,9 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
         borderRadius: 12, border: '1px solid var(--ov-hairline-strong)',
         background: disabled ? 'var(--ov-sunken-strong)' : muted ? 'var(--ov-sunken)' : 'var(--ov-card)',
         color: disabled ? 'var(--ov-text-faint)' : 'var(--ov-text)',
-        fontSize: 12, lineHeight: 1.15, fontWeight: 600, overflow: 'hidden', overflowWrap: 'anywhere', hyphens: 'auto'
+        // Long words break only at their soft hyphens (Score-sheet, Wieder-holen),
+        // not anywhere mid-word; overflowWrap is the last resort
+        fontSize: 12, lineHeight: 1.15, fontWeight: 600, overflow: 'hidden', overflowWrap: 'anywhere', hyphens: 'manual'
       }}
     >
       {label}
@@ -345,7 +350,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
         {gridButton('replay', t('scoreboard.phone.replay'), () => actions.replay(), { disabled: !inPlay })}
         {gridButton('decision', t('scoreboard.phone.decision'), () => actions.replay(), { disabled: !(rally.status === 'idle' && rally.canReplayRally) })}
         {gridButton('rosters', t('scoreboard.rosters'), () => actions.rosters(), { muted: true })}
-        {gridButton('scoresheet', t('header.scoresheet'), () => actions.scoresheet(), { muted: true })}
+        {gridButton('scoresheet', t('scoreboard.phone.scoresheet'), () => actions.scoresheet(), { muted: true })}
         {gridButton('remarks', t('scoreboard.phone.remarks'), () => actions.remarks(), { muted: true, span: 2 })}
       </section>
 
