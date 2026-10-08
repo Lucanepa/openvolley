@@ -457,4 +457,56 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
     await waitFor(() => expect(teamAOnLeft()).toBe(false))
     cleanup()
   }, 60000)
+
+  // Reload: the dialog lived only in the screen's state, so a scoring screen
+  // opened again with a team on 8 and the courts not changed left the change
+  // until the next point
+  it('the scoring screen reloaded with the change-of-courts dialog open asks for it again', async () => {
+    const matchId = await setUpSet5(level(7))
+    mount(matchId)
+    await ready()
+    await point('Point A')
+    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+
+    cleanup()
+    mount(matchId)
+    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 10000 })
+    expect(document.body.textContent).toContain('8 : 7')
+    await switchCourts(matchId)
+    await waitFor(() => expect(teamAOnLeft()).toBe(false))
+    await point('Point B')
+    await settle()
+    expect(switchOpen()).toBe(false)
+    cleanup()
+  }, 60000)
+
+  it('the scoring screen reloaded with a decision change asked from the change-of-courts dialog asks for the change', async () => {
+    const matchId = await setUpSet5(level(7))
+    mount(matchId)
+    await ready()
+    await point('Point A')
+    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+    await dialogDecisionChange('Switch courts')
+
+    cleanup()
+    mount(matchId)
+    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 10000 })
+    expect(decisionOpen()).toBe(false)
+    cleanup()
+  }, 60000)
+
+  it('the scoring screen opened at 8 with the courts changed, or below 8, asks for nothing', async () => {
+    const switchedId = await setUpSet5(level(7, 'home'), { courtsSwitched: true })
+    mount(switchedId)
+    await ready()
+    expect(switchOpen()).toBe(false)
+    cleanup()
+
+    await Promise.all(db.tables.map(t => t.clear()))
+    const belowId = await setUpSet5(level(7))
+    mount(belowId)
+    await ready()
+    expect(switchOpen()).toBe(false)
+    cleanup()
+  }, 60000)
 })
