@@ -3071,7 +3071,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Handle between-sets countdown timer
   useEffect(() => {
-    if (!betweenSetsCountdown || !betweenSetsCountdown.started) return
+    // No interval running (ran out, ended early, or never started): the next
+    // interval starts its own clock, not this one's
+    if (!betweenSetsCountdown) {
+      betweenSetsStartTimestampRef.current = null
+      return
+    }
+    if (!betweenSetsCountdown.started) return
 
     // Initialize refs when interval starts
     if (!betweenSetsStartTimestampRef.current) {
