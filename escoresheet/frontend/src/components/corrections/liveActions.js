@@ -9,20 +9,23 @@
  * correction log; the caller records it and pushes the live state.
  */
 import { swapTeamDesignation } from '../../domain/coinToss'
+import { getSideAForSet, getLeftTeamLabelForSet } from '../../domain/rules'
 
-/** Which side Team A plays on in a set ('left' | 'right'), as the scoreboard draws it. */
+/**
+ * Which side Team A plays on in a set ('left' | 'right'), as the scoreboard
+ * draws it: its own rule (getSideAForSet), set 5's change of courts at 8 and
+ * its sides before the coin toss included.
+ */
 export function teamASide(match, setIndex) {
-  const overrides = match?.setLeftTeamOverrides || {}
-  if (overrides[setIndex] !== undefined) return overrides[setIndex] === 'A' ? 'left' : 'right'
-  if (setIndex === 5 && match?.set5LeftTeam) return match.set5LeftTeam === 'A' ? 'left' : 'right'
-  return setIndex % 2 === 1 ? 'left' : 'right'
+  return getSideAForSet(setIndex, match || {})
 }
 
 export async function switchSides({ db, matchId, match, setIndex }) {
   const teamAKey = match?.coinTossTeamA || 'home'
   if (setIndex === 5) {
-    const automatic5 = teamAKey === 'home' ? 'A' : 'B'
-    const currentLeft = match.set5LeftTeam || automatic5
+    // The coin toss's left team; without one, the left team the court shows
+    // before the change of courts (set 4's sides), not the home team
+    const currentLeft = match.set5LeftTeam || getLeftTeamLabelForSet(5, { ...match, set5CourtSwitched: false })
     const newLeft = currentLeft === 'A' ? 'B' : 'A'
     await db.matches.update(matchId, { set5LeftTeam: newLeft })
     if (match?.seed_key && !match.test) {
