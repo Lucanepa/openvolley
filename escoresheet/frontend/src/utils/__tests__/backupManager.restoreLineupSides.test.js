@@ -70,6 +70,17 @@ describe('fetchMatchByPin: lineups from the latest event go to the right team', 
     expect(lineupOf(out, 'away')).toEqual(numbers(11))
   })
 
+  it('a snapshot of another set is not used for this set\'s lineups', async () => {
+    const out = await restoreWith({
+      set_index: 2,
+      lineup_left: AWAY,
+      lineup_right: HOME,
+      state_snapshot: { teamAKey: 'home', currentSetIndex: 3, sideA: 'left', lineupA: lineup(21), lineupB: lineup(31) }
+    })
+    expect(lineupOf(out, 'home')).toEqual(numbers(1))
+    expect(lineupOf(out, 'away')).toEqual(numbers(11))
+  })
+
   it('an event without a snapshot: by the set number as before (set 2: A right)', async () => {
     const out = await restoreWith({ set_index: 2, lineup_left: AWAY, lineup_right: HOME })
     expect(lineupOf(out, 'home')).toEqual(numbers(1))

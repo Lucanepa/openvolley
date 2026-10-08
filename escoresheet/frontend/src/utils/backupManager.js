@@ -847,7 +847,9 @@ export async function fetchMatchByPin(gamePin, gameN) {
       // B on the left, and after its change of courts at 8. Without a
       // snapshot (an older row), the set number as before.
       const snap = eventWithLineup.state_snapshot
-      const bySnapshot = !!(snap && (snap.lineupA || snap.lineupB))
+      // (the snapshot's own set only: one taken in another set has that set's lineups)
+      const bySnapshot = !!(snap && (snap.lineupA || snap.lineupB) &&
+        (snap.currentSetIndex == null || Number(snap.currentSetIndex) === Number(setIndex)))
       const snapAIsHome = (snap?.teamAKey || matchData.coin_toss_team_a || 'home') === 'home'
       const leftIsHome = (setIndex % 2 === 1) ? (teamAIsHome) : (!teamAIsHome)
 
