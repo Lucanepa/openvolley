@@ -4726,6 +4726,29 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return true
   }, [matchId, setEndTimeModal, deferUi])
 
+  // What a point on the score opens, whatever put it there: the Point
+  // buttons (and the penalty points, which go through them), a decision
+  // change that gives the point to the other team, and a decision change
+  // cancelled from the dialog it was asked from (which it had closed). Only
+  // the Point buttons used to check: a decision change that gave a team its
+  // 8th point in the deciding set (7:7 swapped to 8:6, or 8:7 to 7:8 from the
+  // change-of-courts dialog) left the courts unchanged until the next point.
+  // In order: the change of courts in the deciding set when a team reaches 8
+  // (FIVB 18.2.2), made once a set (the match's set5CourtSwitched; >= 8, so a
+  // score past 8 that missed it is changed as soon as noticed, 18.2.3), else
+  // the set end. Called inside the point's action: Dexie reads only.
+  const afterPointScored = useCallback(async ({ set, homePoints, awayPoints, teamKey }) => {
+    if (!set) return
+    if (set.index === 5 && Math.max(homePoints, awayPoints) >= 8) {
+      const match = await db.matches.get(matchId)
+      if (!match?.set5CourtSwitched) {
+        deferUi(() => setCourtSwitchModal({ set, homePoints, awayPoints, teamThatScored: teamKey }))
+        return // the set end waits for the change of courts
+      }
+    }
+    await checkSetEnd(set, homePoints, awayPoints)
+  }, [matchId, checkSetEnd, deferUi])
+
   // Determine who has serve based on events
   const getCurrentServe = useCallback(() => {
     if (!data?.set || !data?.match) {
@@ -5347,33 +5370,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       }
 
-      // Check for 5th set court switch at 8 points (FIVB 18.2.2). Use >= 8 (not
-      // === 8) so a score that lands past 8 — via a penalty point or a manual
-      // adjustment — still triggers the change "as soon as noticed"; the
-      // hasSwitchedCourts guard below keeps it a one-time switch.
-      const is5thSet = data.set.index === 5
-      const scoringTeamPoints = teamKey === 'home' ? homePoints : awayPoints
-      if (is5thSet && scoringTeamPoints >= 8) {
-        // Check if we've already switched courts in this set
-        const hasSwitchedCourts = await db.matches.get(matchId).then(m => m?.set5CourtSwitched || false)
-
-        if (!hasSwitchedCourts) {
-          // Show court switch modal
-          deferUi(() => setCourtSwitchModal({
-            set: data.set,
-            homePoints,
-            awayPoints,
-            teamThatScored: teamKey
-          }))
-          return // Don't check for set end yet, wait for court switch confirmation
-        }
-      }
-
-      // Awaited (Dexie reads only): the set-end dialog opens with the point
-      await checkSetEnd(freshCurrentSet, homePoints, awayPoints)
-      // If set didn't end, we're done. If it did, checkSetEnd will show the confirmation modal
+      // The change of courts in the deciding set or the set end this point
+      // reaches. Awaited (Dexie reads only): its dialog opens with the point
+      await afterPointScored({ set: freshCurrentSet, homePoints, awayPoints, teamKey })
     }),
-    [data?.set, data?.events, logEvent, mapSideToTeamKey, checkSetEnd, getCurrentServe, rotateLineup, matchId, syncToReferee, runAction, deferUi]
+    [data?.set, data?.events, logEvent, mapSideToTeamKey, afterPointScored, getCurrentServe, rotateLineup, matchId, syncToReferee, runAction, deferUi]
   )
 
   // One action (runAction): a second tap while it is written is dropped
@@ -7008,9 +7009,27 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }, { reason: 'decision_change' }), [replayRallyConfirm, data?.set, matchId, getNextSeq, discardEvents, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, runAction, deferUi])
 
-  const cancelReplayRally = useCallback(() => {
+  // Cancelled: nothing changed. Asked from the change-of-courts or the
+  // set-end dialog (which it closed), that dialog comes back: the change of
+  // courts is mandatory, and the set end was left without its dialog (the
+  // set-end check skips a set whose dialog went to a decision change).
+  const cancelReplayRally = useCallback(async () => {
+    const pending = replayRallyConfirm
     setReplayRallyConfirm(null)
-  }, [])
+    if (!pending?.fromDialog || !data?.set) return
+    if (pending.fromDialog === 'setEnd') setEndModalDismissedRef.current = null
+    try {
+      const setRow = (await db.sets.get(data.set.id)) || data.set
+      await afterPointScored({
+        set: setRow,
+        homePoints: setRow.homePoints || 0,
+        awayPoints: setRow.awayPoints || 0,
+        teamKey: pending.event?.payload?.team
+      })
+    } catch (error) {
+      console.error('[cancelReplayRally] Could not open the dialog again:', error)
+    }
+  }, [replayRallyConfirm, data?.set, afterPointScored])
 
   // Handle decision change - either swap point to other team or replay rally
   const runDecisionChange = useConfirmAction(onConfirmFailed)
@@ -7247,6 +7266,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           })
         }
 
+        // What the swapped point reaches, as for a point from the buttons: the
+        // change of courts in the deciding set (7:7 swapped to 8:6; 8:7 to 7:8
+        // from the change-of-courts dialog, which the decision change closed;
+        // not again once made) or the set end (14:14 swapped to 15:13)
+        const swappedSet = await db.sets.get(data.set.id)
+        if (swappedSet) {
+          await afterPointScored({ set: swappedSet, homePoints: swappedSet.homePoints || 0, awayPoints: swappedSet.awayPoints || 0, teamKey: newTeam })
+        }
+
         // The tablets get the swapped point and its sub-events (they kept the
         // old team's point: only the live state was pushed), the live state
         // its fresh snapshot (data has changed)
@@ -7265,7 +7293,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       await handleReplayRally()
       return // handleReplayRally closes the modal and syncs
     }
-  }, { reason: 'decision_change' })), [runAction, deferUi, runDecisionChange, replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, syncToReferee, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents])
+  }, { reason: 'decision_change' })), [runAction, deferUi, runDecisionChange, replayRallyConfirm, data?.set, data?.events, data?.match, data?.homePlayers, data?.awayPlayers, matchId, getNextSeq, getNextSubSeq, handleReplayRally, afterPointScored, syncToReferee, syncLiveStateToSupabase, rotateLineup, notifyScoresheetUpdate, discardEvents])
 
 
 
@@ -22657,8 +22685,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               const pointEvent = currentSetEvents.find(e => e.type === 'point')
 
               if (pointEvent) {
-                // Open decision modal (no selectedOption forces choice)
-                setReplayRallyConfirm({ event: pointEvent, description: 'Decision Change', selectedOption: null })
+                // Open decision modal (no selectedOption forces choice);
+                // cancelled, the set end comes back
+                setReplayRallyConfirm({ event: pointEvent, description: 'Decision Change', selectedOption: null, fromDialog: 'setEnd' })
               }
             }
 
@@ -23043,7 +23072,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                     const pointEvent = currentSetEvents.find(e => e.type === 'point')
                     if (pointEvent) {
-                      setReplayRallyConfirm({ event: pointEvent, description: 'Decision Change', selectedOption: null })
+                      // Cancelled, or confirmed with a team still at 8,
+                      // the change of courts comes back
+                      setReplayRallyConfirm({ event: pointEvent, description: 'Decision Change', selectedOption: null, fromDialog: 'courtSwitch' })
                     }
                   }
                   // Close court switch modal
