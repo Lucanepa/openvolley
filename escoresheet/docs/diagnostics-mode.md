@@ -26,7 +26,9 @@ page loads. Switching it on in Options starts everything else at once.
   `<log dir>/diagnostics-YYYY-MM-DD.jsonl` (UTC date), next to `desktop.log`
   and `activity-*.jsonl`. On Linux the log dir is `~/.local/share/OpenVolley/logs`,
   on Windows `%APPDATA%\OpenVolley\logs`, on macOS `~/Library/Logs/OpenVolley`
-  (OpenBeach: `~/Library/Logs/OpenBeach`). `OPENVOLLEY_LOG_DIR` overrides it.
+  (OpenBeach: the same with `OpenBeach`, e.g. `~/.local/share/OpenBeach/logs`;
+  OpenBeach 2.0.1 and older wrote into OpenVolley's folder on Linux and Windows,
+  and those older files stay there). `OPENVOLLEY_LOG_DIR` overrides it.
   A day's file stops at 20 MB, and a `diag.capped` line marks the cut. 7 files are kept.
   "Open log folder" in Options opens it.
 - **Browser and Android:** an IndexedDB ring buffer (`openvolley-diagnostics`,

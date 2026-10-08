@@ -1,9 +1,13 @@
 //! The match activity log as daily files, next to the native backups:
 //!
-//!   <data dir>/OpenVolley/logs/activity-YYYY-MM-DD.jsonl
+//!   <data dir>/<app>/logs/activity-YYYY-MM-DD.jsonl
 //!
-//! (Linux `~/.local/share/OpenVolley/logs`, Windows `%APPDATA%\OpenVolley\logs`;
-//! `OPENVOLLEY_LOG_DIR` overrides it.) The web app (src/utils/activity) hands
+//! where <app> is the flavour's data folder, OpenVolley or OpenBeach (Linux
+//! `~/.local/share/OpenVolley/logs`, Windows `%APPDATA%\OpenVolley\logs`;
+//! OpenBeach `.../OpenBeach/logs`; `OPENVOLLEY_LOG_DIR` overrides it). OpenBeach
+//! 2.0.1 and older wrote into OpenVolley's folder; those files stay where they
+//! are (nothing is moved or removed there), new ones go to OpenBeach's. The
+//! web app (src/utils/activity) hands
 //! over the entries it stored, one JSON object per line; the desktop log
 //! (tauri-plugin-log, main.rs) writes `desktop.log` into the same folder.
 //!
@@ -171,10 +175,16 @@ pub fn log_root<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     }
 }
 
-/// Windows, Linux: <data dir>/OpenVolley/logs.
+/// Windows, Linux: <data dir>/<app>/logs (OpenVolley or OpenBeach), next to
+/// the backups (backup.rs) in the flavour's data folder.
 #[cfg_attr(target_os = "macos", allow(dead_code))]
 fn data_log_root(data: PathBuf) -> PathBuf {
-    data.join("OpenVolley").join("logs")
+    data_log_root_of(data, &crate::flavour::CURRENT)
+}
+
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn data_log_root_of(data: PathBuf, flavour: &crate::flavour::Flavour) -> PathBuf {
+    data.join(flavour.data_folder).join("logs")
 }
 
 /// macOS: ~/Library/Logs/OpenVolley (OpenBeach: ~/Library/Logs/OpenBeach).
@@ -230,9 +240,42 @@ mod tests {
 
     #[test]
     fn log_folders_per_platform() {
-        assert_eq!(data_log_root(PathBuf::from("/home/s/.local/share")), PathBuf::from("/home/s/.local/share/OpenVolley/logs"));
+        let data = PathBuf::from("/home/s/.local/share");
+        assert_eq!(data_log_root(data.clone()), data.join(crate::flavour::CURRENT.data_folder).join("logs"));
         let mac = mac_log_root(PathBuf::from("/Users/s"));
         assert_eq!(mac, PathBuf::from("/Users/s/Library/Logs").join(crate::flavour::CURRENT.data_folder));
+    }
+
+    #[test]
+    fn log_folder_per_app_openvolley_unchanged() {
+        use crate::flavour::{BEACH, OPENVOLLEY};
+        let data = PathBuf::from("/home/s/.local/share");
+        // OpenVolley's folder never moves (existing installs, support scripts)
+        assert_eq!(data_log_root_of(data.clone(), &OPENVOLLEY), PathBuf::from("/home/s/.local/share/OpenVolley/logs"));
+        // OpenBeach's logs (desktop.log, activity-*, diagnostics-*) in its own folder
+        assert_eq!(data_log_root_of(data.clone(), &BEACH), PathBuf::from("/home/s/.local/share/OpenBeach/logs"));
+        let appdata = PathBuf::from(r"C:\Users\s\AppData\Roaming");
+        assert_eq!(data_log_root_of(appdata.clone(), &BEACH), appdata.join("OpenBeach").join("logs"));
+        // the same folder as the flavour's backups (backup.rs)
+        assert_eq!(data_log_root_of(data.clone(), &BEACH).parent(), Some(data.join(BEACH.data_folder).as_path()));
+    }
+
+    #[test]
+    fn the_scoretable_window_may_write_its_logs_in_either_app() {
+        // capabilities/activity.json and diagnostics.json name the window
+        // main.rs creates (lifecycle::MAIN, both flavours) and its page
+        // http://localhost:<the flavour's port>/
+        for cap in [include_str!("../capabilities/activity.json"), include_str!("../capabilities/diagnostics.json")] {
+            let cap: serde_json::Value = serde_json::from_str(cap).unwrap();
+            assert_eq!(cap["windows"], serde_json::json!([crate::lifecycle::MAIN]));
+            let patterns: Vec<tauri::utils::acl::RemoteUrlPattern> =
+                cap["remote"]["urls"].as_array().unwrap().iter().map(|u| u.as_str().unwrap().parse().unwrap()).collect();
+            let allowed = |u: &str| patterns.iter().any(|p| p.test(&u.parse().unwrap()));
+            for f in [&crate::flavour::OPENVOLLEY, &crate::flavour::BEACH] {
+                assert!(allowed(&format!("http://localhost:{}/", f.http_port)), "{} {}", cap["identifier"], f.key);
+            }
+            assert!(!allowed("http://192.168.1.20:5174/"));
+        }
     }
 
     #[test]

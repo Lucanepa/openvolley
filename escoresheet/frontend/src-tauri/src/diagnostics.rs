@@ -4,8 +4,9 @@
 //!   <log dir>/diagnostics-YYYY-MM-DD.jsonl
 //!
 //! next to desktop.log and the activity files (activity.rs: Linux
-//! `~/.local/share/OpenVolley/logs`, Windows `%APPDATA%\OpenVolley\logs`,
-//! macOS `~/Library/Logs/<app>`; `OPENVOLLEY_LOG_DIR` overrides it).
+//! `~/.local/share/<app>/logs`, Windows `%APPDATA%\<app>\logs`, macOS
+//! `~/Library/Logs/<app>`, <app> OpenVolley or OpenBeach; `OPENVOLLEY_LOG_DIR`
+//! overrides it).
 //!
 //! On when `OPENVOLLEY_DIAGNOSTICS=1` is set (the page learns it from an
 //! initialization script, `window.__OV_DIAGNOSTICS__ = "env"`), or when the

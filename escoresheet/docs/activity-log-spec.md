@@ -11,7 +11,7 @@ Privacy texts: `docs/legal/*/privacy.md` (section 5 and the retention table),
 | **Event history** | Dexie `event_history`; server `events.voided_*` + `event_revisions` | yes (sync queue) | Every undo, delete, edit and restore of a match event, with the reason. Part of the match record. |
 | **Activity log** | Dexie `activity_log`; server `activity_log`; daily JSONL files in the apps | yes (sync queue) | What happened on the device: scoring, corrections, sets, match status, signatures, approvals, sync results, app start, update, quit and errors. |
 | **Interaction log** | Dexie `interaction_logs` | **never** | Every click and key press, for troubleshooting. Local, exportable. Also holds the scoreboard's debug lines (category `debug`). |
-| **Desktop log** | `<data dir>/OpenVolley/logs/desktop.log` | no | The Rust side: start, updates, popups, tablet count. |
+| **Desktop log** | `<data dir>/OpenVolley/logs/desktop.log` (OpenBeach: `<data dir>/OpenBeach/logs`) | no | The Rust side: start, updates, popups, tablet count. |
 | Console upload (`utils/logger.js`) | storage bucket | when signed in | Unchanged (deferred, see below). |
 
 ## 1. Event history
