@@ -1141,6 +1141,42 @@ describe('closing order (approval waits for the match\'s older sets and events)'
     await runQueuePass()
     expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
   })
+
+  // db/017: the remarks as approved go just before the approval. Once the
+  // approval has closed the match, the server refuses them (OV_MATCH_CLOSED).
+  const remarksJob = (id, status = 'queued') => ({ id, resource: 'match', action: 'update', status, retry_count: 0, payload: { id: 'match_100_aaa', remarks: 'Actual start time: 20:05' } })
+
+  it('holds the approval while an older remarks job is waiting out a backoff', async () => {
+    fakeDb.sync_queue.reset([remarksJob(1), close(2)])
+    let remarksCalls = 0
+    api.respond = (call) => {
+      if (call.table === 'matches' && call.action === 'update' && 'remarks' in (call.data || {})) {
+        remarksCalls++
+        // a proxy page (4xx without a backend code): the job backs off as 'error'
+        if (remarksCalls === 1) return { data: null, error: { message: 'Bad gateway page', status: 403 } }
+      }
+      return defaultRespond(call)
+    }
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('error')
+    // A later pass while the remarks job still waits: the approval must not overtake it
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('queued')
+
+    fakeDb.sync_queue.update(1, { status: 'queued', next_attempt_at: 0 })
+    await runQueuePass()
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+    const updates = api.calls.filter(c => c.table === 'matches' && c.action === 'update')
+    expect(updates.at(-1).data.status).toBe('approved')
+  })
+
+  it('a refused (failed) remarks job, e.g. a server without db/017, does not hold the approval', async () => {
+    fakeDb.sync_queue.reset([remarksJob(1, 'failed'), close(2)])
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+  })
 })
 
 describe('cloud blocks (OV_SCORER_REQUIRED, OV_GAME_TAKEN, OV_MATCH_CLOSED)', () => {
