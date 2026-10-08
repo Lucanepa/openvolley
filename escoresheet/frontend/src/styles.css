@@ -3050,22 +3050,33 @@ button.start-rally-button {
 }
 
 /* Phone layout (PhoneScoreboard): the two point buttons (and the slots that
-   keep their place between rallies) are squares as wide as their column, as
-   the mockup. When the screen is too short for the whole layout (browser
-   bars, the Android app's system bars) they get lower, not narrower: the
-   height left in the phone view (its root is the size container) less the
-   rest of the layout (--phone-square-reserve) and the 2:1 court, never
-   below --phone-square-min (then the view scrolls). Without container units
-   they stay square. */
+   keep their place between rallies) are squares as wide as their column, and
+   the court is 2:1, as the mockup. When the screen is too short for the whole
+   layout (browser bars, the Android app's system bars: 360x640) they get
+   lower, not narrower: first the point buttons, to the height left in the
+   phone view (its root is the size container) less the rest of the layout
+   (--phone-square-reserve) and the court, down to --phone-square-min; then
+   the court, down to --phone-court-min; then the view scrolls. Without
+   container units both keep their shape. */
 .phone-scoreboard .phone-square {
   width: 100%;
   aspect-ratio: 1 / 1;
 }
 
+.phone-scoreboard .phone-court {
+  width: 100%;
+  aspect-ratio: 2 / 1;
+}
+
 @supports (height: 1cqh) {
+  .phone-scoreboard .phone-court {
+    aspect-ratio: auto;
+    height: min((100cqw - 24px) / 2, max(var(--phone-court-min), 100cqh - var(--phone-square-reserve) - var(--phone-square-min)));
+  }
+
   .phone-scoreboard .phone-square {
     aspect-ratio: auto;
-    height: min((100cqw - 34px) / 2, max(var(--phone-square-min), 100cqh - var(--phone-square-reserve) - (100cqw - 24px) / 2));
+    height: min((100cqw - 34px) / 2, max(var(--phone-square-min), 100cqh - var(--phone-square-reserve) - min((100cqw - 24px) / 2, max(var(--phone-court-min), 100cqh - var(--phone-square-reserve) - var(--phone-square-min)))));
   }
 }
 
