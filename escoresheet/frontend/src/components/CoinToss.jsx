@@ -241,6 +241,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
   const [deletePlayerModal, setDeletePlayerModal] = useState(null)
   const [noticeModal, setNoticeModal] = useState(null)
   const [initModal, setInitModal] = useState(null) // { status: 'syncing' | 'verifying' | 'success' | 'error', message: string }
+  const [starting, setStarting] = useState(false) // the confirmed coin toss is starting the match
   const [openSignature, setOpenSignature] = useState(null)
   const [birthdateConfirmModal, setBirthdateConfirmModal] = useState(null) // { suspiciousDates: [], onConfirm: fn }
   const [rosterModalSignature, setRosterModalSignature] = useState(null) // 'coach' | 'captain' | null - for signing within roster modal
@@ -1227,10 +1228,12 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
     // Short delay to show success message
     await new Promise(resolve => setTimeout(resolve, 1000))
 
-    setInitModal(null)
     console.log('[CoinToss] Coin toss complete, navigating to scoreboard')
-    // Navigate to scoreboard
-    onConfirm(matchId)
+    // Navigate to scoreboard: the dialog closes with the page (App opens the
+    // scoreboard once it has read the match), not before it
+    await onConfirm(matchId)
+    setInitModal(null)
+    return true
   }
 
   async function confirmCoinToss() {
@@ -1392,7 +1395,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           onConfirm: () => {
             setBirthdateConfirmModal(null)
             // Continue with coin toss after confirmation
-            proceedWithCoinToss()
+            proceedWithStartButton()
           }
         })
         return
@@ -1406,7 +1409,21 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
     }
 
     // All validations passed, proceed
-    proceedWithCoinToss()
+    await proceedWithStartButton()
+  }
+
+  // The page keeps its 'Confirm coin toss result' button while the match
+  // starts: the match row says confirmed long before the page goes, and the
+  // button swapped to 'Return to match' (another width: the layout moved;
+  // laptop run 2026-10-08, OB-3)
+  async function proceedWithStartButton() {
+    setStarting(true)
+    let started = false
+    try {
+      started = (await proceedWithCoinToss()) === true
+    } finally {
+      if (!started) setStarting(false)
+    }
   }
 
   async function handleReturnToMatch() {
@@ -1792,12 +1809,12 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
       {/* The page's commit: emerald confirm (saves the toss); once confirmed,
           going back to the match is the neutral dark action. */}
       <div className="ov-kit" data-help-id="cointoss-confirm-button" style={{ display: 'flex', justifyContent: 'center', marginTop: isCompact ? 8 : 12, paddingBottom: isCompact ? 12 : 20, flexShrink: 0 }}>
-        {isCoinTossConfirmed ? (
+        {isCoinTossConfirmed && !starting ? (
           <Button variant="dark" size="xl" onClick={handleReturnToMatch} style={{ padding: sizes.confirmButtonPadding, fontSize: sizes.confirmButtonFont, height: 'auto' }}>
             {t('coinToss.returnToMatch')}
           </Button>
         ) : (
-          <Button variant="positive" size="xl" onClick={confirmCoinToss} style={{ padding: sizes.confirmButtonPadding, fontSize: sizes.confirmButtonFont, height: 'auto' }}>
+          <Button variant="positive" size="xl" onClick={confirmCoinToss} disabled={starting} style={{ padding: sizes.confirmButtonPadding, fontSize: sizes.confirmButtonFont, height: 'auto' }}>
             {t('coinToss.confirmResult')}
           </Button>
         )}

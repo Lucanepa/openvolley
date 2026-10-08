@@ -83,6 +83,7 @@ import { askConfirm } from '../utils/askConfirm.js'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
 import { ArrowUpDown, ChevronDown, Cross } from 'lucide-react'
 import { useDiagCommits } from '../diagnostics/commits'
+import { preload, usePreloaded } from '../utils/preload'
 
 // ── volleyui chrome for the scoreboard (RESTYLE-SPEC P5) ──────────────────────
 // Only the chrome around the court takes these: the toolbar, the side-column
@@ -247,6 +248,100 @@ const SB_INJURY_ICON = <Cross size={16} fill="currentColor" strokeWidth={1.5} />
  * the livescore see each action once, complete (a side-out's point never
  * without its rotation), and a failed action writes nothing.
  */
+
+// One explicit read transaction: a result never mixes data from before and
+// after an action's commit, and it tells useActionLiveQuery which actions
+// it already shows (their dialogs are applied in the same render)
+function readScoreboard(matchId) {
+  return db.transaction('r', [db.matches, db.teams, db.sets, db.players, db.events], async () => {
+    const match = await db.matches.get(matchId)
+    if (!match) return null
+
+    const [homeTeam, awayTeam] = await Promise.all([
+      match?.homeTeamId ? db.teams.get(match.homeTeamId) : null,
+      match?.awayTeamId ? db.teams.get(match.awayTeamId) : null
+    ])
+
+    const sets = await db.sets
+      .where('matchId')
+      .equals(matchId)
+      .sortBy('index')
+
+    // Find the current set: first unfinished set, preferring highest id if duplicates exist
+    // Also filter out any duplicate indices, keeping the latest one (highest id)
+    const setsByIndex = new Map()
+    for (const set of sets) {
+      const existing = setsByIndex.get(set.index)
+      if (!existing || set.id > existing.id) {
+        setsByIndex.set(set.index, set)
+      }
+    }
+    const dedupedSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
+    const currentSet = dedupedSets.find(s => !s.finished) ?? null
+
+    const [homePlayers, awayPlayers] = await Promise.all([
+      match?.homeTeamId
+        ? db.players.where('teamId').equals(match.homeTeamId).sortBy('number')
+        : [],
+      match?.awayTeamId
+        ? db.players.where('teamId').equals(match.awayTeamId).sortBy('number')
+        : []
+    ])
+
+    // Get all events for the match (keep logs across sets)
+    // Sort by seq if available, otherwise by ts
+    const eventsRaw = await db.events
+      .where('matchId')
+      .equals(matchId)
+      .toArray()
+
+    const events = eventsRaw.sort((a, b) => {
+      // Sort by sequence number if available
+      const aSeq = a.seq || 0
+      const bSeq = b.seq || 0
+      if (aSeq !== 0 || bSeq !== 0) {
+        return aSeq - bSeq // Ascending
+      }
+      // Fallback to timestamp for legacy events
+      const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
+      const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
+      return aTime - bTime
+    })
+
+    // Log all action IDs to track sequence numbers (show only base integer IDs, not decimals)
+    const baseActionIds = events
+      .map(e => {
+        const seq = e.seq || 0
+        return Math.floor(seq) // Get integer part only
+      })
+      .filter(id => id > 0)
+      .filter((id, index, self) => self.indexOf(id) === index) // Remove duplicates
+
+    // Action IDs tracked internally
+
+    const result = {
+      set: currentSet,
+      match,
+      homeTeam,
+      awayTeam,
+      homePlayers,
+      awayPlayers,
+      events,
+      sets
+    }
+
+    return result
+  })
+}
+
+const scoreboardKey = (matchId) => `scoreboard:${matchId}`
+
+/**
+ * Read by App before it opens the scoreboard: its first paint shows the
+ * match, never 'Loading...' first (laptop run 2026-10-08, OB-3), and the
+ * screen before it stays until then.
+ */
+export const preloadScoreboard = (matchId) => preload(scoreboardKey(matchId), () => readScoreboard(matchId))
 
 export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, onTriggerEventBackup }) {
   // diagnostics mode: React commits per user action (nothing while it is off)
@@ -973,88 +1068,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     localStorage.setItem('displayMode', 'desktop')
   }, [])
 
-  // One explicit read transaction: a result never mixes data from before and
-  // after an action's commit, and it tells useActionLiveQuery which actions
-  // it already shows (their dialogs are applied in the same render)
-  const [data, liveCommits] = useActionLiveQuery(() => db.transaction('r', [db.matches, db.teams, db.sets, db.players, db.events], async () => {
-    const match = await db.matches.get(matchId)
-    if (!match) return null
-
-    const [homeTeam, awayTeam] = await Promise.all([
-      match?.homeTeamId ? db.teams.get(match.homeTeamId) : null,
-      match?.awayTeamId ? db.teams.get(match.awayTeamId) : null
-    ])
-
-    const sets = await db.sets
-      .where('matchId')
-      .equals(matchId)
-      .sortBy('index')
-
-    // Find the current set: first unfinished set, preferring highest id if duplicates exist
-    // Also filter out any duplicate indices, keeping the latest one (highest id)
-    const setsByIndex = new Map()
-    for (const set of sets) {
-      const existing = setsByIndex.get(set.index)
-      if (!existing || set.id > existing.id) {
-        setsByIndex.set(set.index, set)
-      }
-    }
-    const dedupedSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
-    const currentSet = dedupedSets.find(s => !s.finished) ?? null
-
-    const [homePlayers, awayPlayers] = await Promise.all([
-      match?.homeTeamId
-        ? db.players.where('teamId').equals(match.homeTeamId).sortBy('number')
-        : [],
-      match?.awayTeamId
-        ? db.players.where('teamId').equals(match.awayTeamId).sortBy('number')
-        : []
-    ])
-
-    // Get all events for the match (keep logs across sets)
-    // Sort by seq if available, otherwise by ts
-    const eventsRaw = await db.events
-      .where('matchId')
-      .equals(matchId)
-      .toArray()
-
-    const events = eventsRaw.sort((a, b) => {
-      // Sort by sequence number if available
-      const aSeq = a.seq || 0
-      const bSeq = b.seq || 0
-      if (aSeq !== 0 || bSeq !== 0) {
-        return aSeq - bSeq // Ascending
-      }
-      // Fallback to timestamp for legacy events
-      const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-      const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-      return aTime - bTime
-    })
-
-    // Log all action IDs to track sequence numbers (show only base integer IDs, not decimals)
-    const baseActionIds = events
-      .map(e => {
-        const seq = e.seq || 0
-        return Math.floor(seq) // Get integer part only
-      })
-      .filter(id => id > 0)
-      .filter((id, index, self) => self.indexOf(id) === index) // Remove duplicates
-
-    // Action IDs tracked internally
-
-    const result = {
-      set: currentSet,
-      match,
-      homeTeam,
-      awayTeam,
-      homePlayers,
-      awayPlayers,
-      events,
-      sets
-    }
-
-    return result
-  }), [matchId])
+  // App's read when it opened the scoreboard (preloadScoreboard): the first
+  // paint shows the match, not 'Loading...' first
+  const preloaded = usePreloaded(matchId != null ? scoreboardKey(matchId) : null)
+  const [data, liveCommits] = useActionLiveQuery(() => readScoreboard(matchId), [matchId], preloaded)
 
   // Monitor tablet connection health — notify when a device drops
   const handleDeviceDisconnected = useCallback(({ label }) => {

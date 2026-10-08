@@ -26,6 +26,10 @@ export function offline() {
   globalThis.IS_REACT_ACT_ENVIRONMENT = false
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve())
   vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+  // jsdom has no canvas: a 2D context that draws nothing (placeholder signatures)
+  const ctx = new Proxy({}, { get: (t, k) => (k in t ? t[k] : () => ({})), set: (t, k, v) => { t[k] = v; return true } })
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ctx)
+  vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockImplementation(() => 'data:image/png;base64,')
 }
 
 export function online() {
