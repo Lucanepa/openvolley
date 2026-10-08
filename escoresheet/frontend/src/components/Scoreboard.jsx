@@ -49,7 +49,7 @@ import { ACCESS_CHANGED_EVENT } from '../lib/access'
 import { queueEventSync, queueSetScoreSync, queueSetReopenSync, buildSetEndMatchPayload, setLiveStateDirty, isLiveStateDirty, isLiveStateErrorWorthAlert, isLiveStateRefusal, isLiveStateRefused, markLiveStateRefused, clearLiveStateRefused } from '../utils/eventSync'
 import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from '../utils/logger'
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
-import { defaultSetStartTime, actualStartRemark, startsFromSchedule, startScheduleOf } from '../utils/setStartTime'
+import { defaultSetStartTime, actualStartRemark, startsFromSchedule, startScheduleOf, typedStartNear } from '../utils/setStartTime'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet } from '../domain/rules'
 import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags, deferredPenaltyPoints } from '../domain/sanctions'
@@ -24461,10 +24461,10 @@ function SetStartTimeModal({ setIndex, defaultTime, fromSchedule = false, onConf
   const scheduledClock = fromSchedule ? splitLocalDateTime(defaultTime).time : null
 
   const handleConfirm = () => {
-    // Get the date component from defaultTime and combine with entered time
+    // The entered time on the day nearest to the proposed time (a 00:12
+    // typed under a proposed 23:30 of the day before is today)
     const { date } = splitLocalDateTime(defaultTime)
-    // Convert local time to UTC ISO string
-    const isoString = parseLocalDateTimeToISO(date, time)
+    const isoString = typedStartNear(defaultTime, time) ?? parseLocalDateTimeToISO(date, time)
     onConfirm(isoString)
   }
 
