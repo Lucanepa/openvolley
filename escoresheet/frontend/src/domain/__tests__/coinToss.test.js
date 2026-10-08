@@ -16,12 +16,29 @@ describe('swapTeamDesignation', () => {
     expect(patch.coinTossServeB).toBe(true)
   })
 
-  it('derives the first server from the old serve flag when firstServe is missing', () => {
+  // Without firstServe the device plays home first (firstServe || 'home'),
+  // whatever the old A/B flag says: the swap keeps that team and writes it.
+  // It derived the first server from the old serve flag, so the cloud got
+  // the other team than the device plays (found by a check, 2026-10-09).
+  it('without firstServe keeps the team the device plays first (home), not the one the old serve flag names', () => {
+    const patch = swapTeamDesignation({ coinTossTeamA: 'home', coinTossServeA: false })
+    expect(patch.coinTossTeamA).toBe('away')
+    expect(patch.firstServe).toBe('home')
+    // home is now B and serves
+    expect(patch.coinTossServeA).toBe(false)
+    expect(patch.coinTossServeB).toBe(true)
+  })
+
+  it('without firstServe, home was B: home becomes A and serves', () => {
     const patch = swapTeamDesignation({ coinTossTeamA: 'away', coinTossTeamB: 'home', coinTossServeA: false })
-    // old B (home) served; home becomes A
     expect(patch.coinTossTeamA).toBe('home')
+    expect(patch.firstServe).toBe('home')
     expect(patch.coinTossServeA).toBe(true)
     expect(patch.coinTossServeB).toBe(false)
+  })
+
+  it('writes the first server it keeps', () => {
+    expect(swapTeamDesignation({ coinTossTeamA: 'home', firstServe: 'away', coinTossServeA: false }).firstServe).toBe('away')
   })
 
   it('flips A/B-labelled fields so they keep pointing at the same team', () => {

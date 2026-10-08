@@ -401,6 +401,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           coinTossTeamB: editedMatch.coinTossTeamB,
           // A/B-labelled fields move together with the designation (Swap A/B)
           ...(editedMatch._designationSwapped ? {
+            firstServe: editedMatch.firstServe,
             coinTossServeA: editedMatch.coinTossServeA,
             coinTossServeB: editedMatch.coinTossServeB,
             set5LeftTeam: editedMatch.set5LeftTeam,
@@ -545,7 +546,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
             team_b: editedMatch.coinTossTeamB,
             serve_a: editedMatch.coinTossServeA,
             confirmed: true,
-            first_serve: editedMatch.firstServe || (editedMatch.coinTossServeA ? editedMatch.coinTossTeamA : editedMatch.coinTossTeamB)
+            // the first server the swap kept (swapTeamDesignation writes it)
+            first_serve: editedMatch.firstServe
           }
         } : {}),
         // stored first (with this save's entries), then sent as stored
