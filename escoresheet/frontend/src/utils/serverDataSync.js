@@ -377,6 +377,16 @@ export function applyNewerLiveState(bundle, liveState = bundle?.liveState) {
 }
 
 /**
+ * How long a live-state push newer than the shown bundle waits for the
+ * scorer's sync. A point sends both: the push carries the score, the sync
+ * the server, the rotation, the substitutions. Shown apart (the sync lands
+ * ~200 ms later on the desktop app) the referee saw the score change, then
+ * the ball and the teams move. Within this time the sync arrives and both
+ * are shown in one update; without it the push's score is shown alone.
+ */
+export const LIVE_STATE_HOLD_MS = 400
+
+/**
  * The newest live state a tablet has seen from any source (relay push, relay
  * bundle, match_live_state row) and the last relay bundle as received, so a
  * newer live state wins over an older bundle's score (applyNewerLiveState):
@@ -391,15 +401,35 @@ export function applyNewerLiveState(bundle, liveState = bundle?.liveState) {
 export function createLiveStateTracker() {
   let newest = null
   let lastBundle = null
+  let holdTimer = null
+  const dropHold = () => {
+    clearTimeout(holdTimer)
+    holdTimer = null
+  }
   return {
     get newest() { return newest },
     get lastBundle() { return lastBundle },
     reset() {
       newest = null
       lastBundle = null
+      dropHold()
+    },
+    /**
+     * Show a newer live state's score (`apply`) only if no bundle comes
+     * within LIVE_STATE_HOLD_MS: the bundle the scorer sends with it has the
+     * server and the rotation too, and shows them all in one update. A second
+     * hold replaces the first.
+     */
+    hold(apply) {
+      dropHold()
+      holdTimer = setTimeout(() => {
+        holdTimer = null
+        apply()
+      }, LIVE_STATE_HOLD_MS)
     },
     bundle(result) {
       if (!result?.success || result.source === 'live_state' || !Array.isArray(result.sets)) return result
+      dropHold()
       lastBundle = result
       const m = result.match
       if (newest && (m?._syncedSeq != null || m?._syncedAt != null) && !isLiveStateNewerThanBundle(newest, result)) {
@@ -738,6 +768,7 @@ const wsConnections = new Map() // Map<matchId, { ws, subscribers, reconnectTime
 
 // Ping interval in ms - keeps connection alive on mobile networks (NAT timeout is usually 30-60s)
 const PING_INTERVAL = 25000
+
 // A socket that answers nothing (not even the pong) this long after a ping is
 // dead — e.g. the tablet's Wi-Fi dropped without a close frame — and is replaced.
 // The resubscribe brings a fresh match-full-data snapshot.
@@ -1072,6 +1103,9 @@ export function subscribeToMatchData(matchId, onUpdate) {
               const payload = applyNewerLiveState(bundle)
               connection.lastLiveState = payload.liveState
               connection.lastPayload = payload
+              // it brings everything a held push had: one update
+              clearTimeout(connection.liveHoldTimer)
+              connection.liveHoldTimer = null
               notify(payload)
             }
           } else if (message.type === 'live-state-update' && String(message.matchId) === matchIdStr) {
@@ -1084,13 +1118,20 @@ export function subscribeToMatchData(matchId, onUpdate) {
               connection.lastLiveState = liveState
               if (connection.lastPayload) {
                 connection.lastPayload = applyNewerLiveState({ ...connection.lastPayload, liveState }, liveState)
-                notify(connection.lastPayload)
+                // Shown with the scorer's sync that follows it (LIVE_STATE_HOLD_MS)
+                clearTimeout(connection.liveHoldTimer)
+                connection.liveHoldTimer = setTimeout(() => {
+                  connection.liveHoldTimer = null
+                  if (!connection.isIntentionallyClosed && connection.lastPayload) notify(connection.lastPayload)
+                }, LIVE_STATE_HOLD_MS)
               }
             }
           } else if (message.type === 'match-deleted' && String(message.matchId) === matchIdStr) {
             // Match removed from the relay (match end / scorer deleted it)
             connection.lastPayload = null
             connection.lastLiveState = undefined
+            clearTimeout(connection.liveHoldTimer)
+            connection.liveHoldTimer = null
             notify({ _deleted: true, matchId: matchIdStr })
           } else if (message.type === 'error') {
             // Relay refused something (rate limit, not the match's scoreboard, ...)
@@ -1208,6 +1249,8 @@ export function subscribeToMatchData(matchId, onUpdate) {
         clearTimeout(connection.pongTimer)
         connection.pongTimer = null
       }
+      clearTimeout(connection.liveHoldTimer)
+      connection.liveHoldTimer = null
       if (connection.onWake) {
         window.removeEventListener('online', connection.onWake)
         if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', connection.onWake)

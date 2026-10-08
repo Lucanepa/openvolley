@@ -1016,7 +1016,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           // Store last event for footer display (only specific event types),
           // stamped with the scorer's time of the action
           const pushedLastEvent = lastEventFromLiveState(state, { fallbackTs: Date.now() })
-          if (pushedLastEvent) setLastEvent(prev => pickNewerLastEvent(prev, pushedLastEvent))
+          const showPushedLastEvent = () => {
+            if (pushedLastEvent) setLastEvent(prev => pickNewerLastEvent(prev, pushedLastEvent))
+          }
 
           // Shown data was built from match_live_state (no relay bundle): apply
           // the pushed row itself. Re-reading the database here raced the
@@ -1027,17 +1029,27 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               console.log('[Referee] 📡 Skipping older live state row')
               return
             }
+            showPushedLastEvent()
             updateMatchDataState(buildLiveStateMatchData(liveStateBaseRef.current, state, matchId))
             return
           }
 
-          // Relay data: show this row's score now when it is newer than the
-          // relay copy shown (that copy may lag: the scorer's sync can land
-          // after its live state), then refetch the relay's bundle (points,
-          // lineups, subs, libero, sanctions, undoes, replays, ...); an older
-          // copy read back never rolls the score back (updateMatchDataState).
+          // Relay data: refetch the relay's bundle (points, lineups, subs,
+          // libero, sanctions, undoes, replays, ...). This row's score, when it
+          // is newer than the relay copy shown (that copy may lag: the
+          // scorer's sync can land after its live state), and its last action
+          // are held for that bundle (tracker.hold): shown alone, the score
+          // changed first and the server and the rotation ~200 ms later. An
+          // older copy read back never rolls the score back (updateMatchDataState).
           const tracker = liveTrackerRef.current
-          if (tracker.liveState(state) && tracker.lastBundle) updateMatchDataState(tracker.lastBundle)
+          if (tracker.liveState(state) && tracker.lastBundle) {
+            tracker.hold(() => {
+              showPushedLastEvent()
+              updateMatchDataState(tracker.lastBundle)
+            })
+          } else {
+            showPushedLastEvent()
+          }
           console.log('[Referee] 📡 Realtime change detected, refetching data...')
           fetchFreshData()
         }
