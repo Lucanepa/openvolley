@@ -19,8 +19,15 @@
  * POPUP_BUFFER_MAX lines (the oldest go first; a diag.dropped line says how
  * many), and is sent again when the main window says it is ready.
  *
+ * Which window a page is in comes from the app, not from the page: in a
+ * pop-up on Linux (WebKitGTK) the page's own __TAURI_INTERNALS__.metadata
+ * names the opener, "main" (measured in the real app, 2026-10-08), while the
+ * app refuses that window's diagnostics_append as "popup-<n>". So a desktop
+ * page asks once (diagnostics_append with no lines, desktopWindowRole):
+ * accepted, it is the scoretable; refused by the ACL, a pop-up.
+ *
  * Off (diagnostics mode off in that window), nothing here runs. In a browser
- * or the Android app there is no Tauri window label: nothing here runs either.
+ * or the Android app there is no Tauri IPC: nothing here runs either.
  */
 import { sanitizeDiagData } from './redact'
 
@@ -58,10 +65,78 @@ export function desktopWindowLabel(win = typeof window !== 'undefined' ? window 
   }
 }
 
-/** Is this page one of the desktop app's pop-up windows (not the scoretable)? */
+/** Is this page in the desktop app (Tauri IPC)? */
+export function isDesktopApp(win = typeof window !== 'undefined' ? window : undefined) {
+  try {
+    return typeof win?.__TAURI_INTERNALS__?.invoke === 'function'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Does this page's own metadata name a pop-up window? Only a hint: in a
+ * Linux pop-up it names "main" (see above), so false proves nothing.
+ */
 export function isDesktopPopup(win = typeof window !== 'undefined' ? window : undefined) {
   const label = desktopWindowLabel(win)
   return !!label && label !== MAIN_WINDOW
+}
+
+const REFUSED = /not allowed/i
+const REFUSED_LABEL = /window "(popup-\d{1,6})"/
+
+/**
+ * Which desktop window this page is in, as the app sees it:
+ * { popup: false, label: 'main' } or { popup: true, label: 'popup-<n>' }.
+ * Asks with diagnostics_append and no lines (writes nothing); only a refusal
+ * by the ACL ("... not allowed on window "popup-1" ...") makes it a pop-up.
+ */
+export async function desktopWindowRole(win = typeof window !== 'undefined' ? window : undefined) {
+  if (isDesktopPopup(win)) return { popup: true, label: desktopWindowLabel(win) }
+  try {
+    await win.__TAURI_INTERNALS__.invoke('diagnostics_append', { lines: [] })
+    return { popup: false, label: MAIN_WINDOW }
+  } catch (e) {
+    const msg = String(e?.message ?? e)
+    if (!REFUSED.test(msg)) return { popup: false, label: MAIN_WINDOW }
+    return { popup: true, label: REFUSED_LABEL.exec(msg)?.[1] || 'popup' }
+  }
+}
+
+/**
+ * The recorder's sink in a desktop window: the file's (`fileSink`) in the
+ * scoretable, which then also takes the pop-ups' lines (`onMain`), or
+ * popupForwardSink in a pop-up. Lines wait until desktopWindowRole answers.
+ * @param {{ win?: Window, fileSink: object, page?: string|null, sessionId?: () => string, onMain?: () => void, Channel?: typeof BroadcastChannel }} opts
+ */
+export function desktopDiagnosticsSink({ win = typeof window !== 'undefined' ? window : undefined, fileSink, page = null, sessionId, onMain, Channel } = {}) {
+  let target = null
+  let closed = false
+  const ready = desktopWindowRole(win).then(({ popup, label }) => {
+    target = popup ? popupForwardSink({ win, label, page, sessionId, Channel }) : fileSink
+    if (closed) {
+      try { target.close?.() } catch { /* ignore */ }
+    } else if (!popup) {
+      try { onMain?.() } catch { /* diagnostics never breaks the app */ }
+    }
+    return target
+  })
+  return {
+    /** 'file' until the app has answered, then 'file' or 'forward'. */
+    get kind() { return target?.kind || 'file' },
+    ready,
+    write: async (batch) => (await ready).write(batch),
+    setNative: async (on) => (await ready).setNative?.(on),
+    openFolder: async () => !!(await (await ready).openFolder?.()),
+    exportText: null,
+    clear: null,
+    pending: () => target?.pending?.() || 0,
+    close() {
+      closed = true
+      try { target?.close?.() } catch { /* ignore */ }
+    }
+  }
 }
 
 function openChannel(win, Channel) {

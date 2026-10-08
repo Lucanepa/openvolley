@@ -37,7 +37,9 @@ page loads. Switching it on in Options starts everything else at once.
   redacted again and tagged `"win":"popup-<n>"` and `"page":"scoresheet"` (or
   `referee`). A pop-up keeps up to 2,000 lines while the scoretable is not
   recording, and a `diag.dropped` line (`d.where: "popup"`) counts what it had to drop
-  (`src/diagnostics/popupForward.js`).
+  (`src/diagnostics/popupForward.js`). A page asks the app which window it is
+  in (an empty `diagnostics_append`: refused means a pop-up), because on Linux
+  a pop-up's own Tauri metadata names the scoretable's window, `main`.
 - **Browser and Android:** an IndexedDB ring buffer (`openvolley-diagnostics`,
   50,000 lines, 7 days). Use Options > Logs > Export diagnostics to save it as a `.jsonl` file.
 
