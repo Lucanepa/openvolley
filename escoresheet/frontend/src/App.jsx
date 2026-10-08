@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import { wipeMatchEvents } from './db/eventHistory'
-import MatchSetup from './components/MatchSetup'
+import MatchSetup, { preloadMatchSetup } from './components/MatchSetup'
 import Scoreboard from './components/Scoreboard'
 import CoinToss from './components/CoinToss'
 import MatchEnd from './components/MatchEnd'
@@ -1463,7 +1463,11 @@ export default function App() {
     setShowManualAdjustments(false)
   }
 
-  const openMatchSetupView = () => setShowMatchSetup(true)
+  // Match Setup opens filled (OV-18): the scoreboard stays until it has read the match
+  const openMatchSetupView = async () => {
+    if (matchId) await preloadMatchSetup(matchId)
+    setShowMatchSetup(true)
+  }
 
   const openCoinTossView = () => {
     setShowMatchSetup(false)
@@ -2534,6 +2538,9 @@ export default function App() {
     })
 
     if (createdMatchId) {
+      // Match Setup opens filled: the home screen stays until it has read
+      // the test match (utils/preload), never 'Not set' first (OV-18)
+      await preloadMatchSetup(createdMatchId)
       setMatchId(createdMatchId)
       setShowMatchSetup(true)
       setShowCoinToss(false)
@@ -2608,6 +2615,10 @@ export default function App() {
         existing.awayCoachSignature &&
         existing.awayCaptainSignature
 
+      // Match Setup opens filled (OV-18): read before the home screen goes
+      if (!['live', 'ended', 'final'].includes(existing.status) && !isMatchSetupComplete) {
+        await preloadMatchSetup(existing.id)
+      }
       setMatchId(existing.id)
 
       // Determine where to continue based on status
@@ -2768,7 +2779,8 @@ export default function App() {
           setShowMatchEnd(false)
         }
       } else {
-        // Go to match setup
+        // Go to match setup (filled at once: OV-18)
+        await preloadMatchSetup(targetMatchId)
         setMatchId(targetMatchId)
         setShowMatchSetup(true)
       }
@@ -2957,7 +2969,8 @@ export default function App() {
                     setShowCoinToss(false)
                     // Match status is set to 'live' by CoinToss component
                   }}
-                  onBack={() => {
+                  onBack={async () => {
+                    await preloadMatchSetup(matchId) // filled at once (OV-18)
                     setShowCoinToss(false)
                     setShowMatchSetup(true)
                   }}
