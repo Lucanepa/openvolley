@@ -144,7 +144,8 @@ export default function MainHeader({
     const saved = localStorage.getItem('showViewportSize')
     return saved === 'true' // Default to hidden
   })
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  // Folded from the first frame on the phone scoring layout (no fold animation, no jump)
+  const [isCollapsed, setIsCollapsed] = useState(() => !!startCollapsed)
   const [actionsMenuOpen, setActionsMenuOpen] = useState(false)
   // Connect tablets: every role's link, QR code and PIN over the hall Wi-Fi,
   // the laptop's own Wi-Fi, the cloud or Bluetooth (the desktop app replaces
