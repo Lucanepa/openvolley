@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
+import { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
@@ -365,6 +365,25 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
   const { showAlert } = useAlert()
   const [openSignature, setOpenSignature] = useState(null)
+  // A saved signature's pad closes in the render that shows it in its box
+  // ({ role, field, value }: the pad's slot, the match field and the saved
+  // image; only that slot's pad is closed). The pad went a
+  // frame before the signature (laptop run OV-16). A layout effect, so the
+  // close is in the same paint; a write that never shows closes it anyway.
+  const [closePadWhenShown, setClosePadWhenShown] = useState(null)
+  useLayoutEffect(() => {
+    if (!closePadWhenShown) return undefined
+    if ((data?.match?.[closePadWhenShown.field] ?? null) === closePadWhenShown.value) {
+      setOpenSignature(cur => (cur === closePadWhenShown.role ? null : cur))
+      setClosePadWhenShown(null)
+      return undefined
+    }
+    const timer = setTimeout(() => {
+      setOpenSignature(cur => (cur === closePadWhenShown.role ? null : cur))
+      setClosePadWhenShown(null)
+    }, 1500)
+    return () => clearTimeout(timer)
+  }, [data, closePadWhenShown])
   // The approval is in the match row: a remount of this page (or a reload)
   // keeps the approved view instead of falling back to "Confirm and approve"
   // (OpenBeach video 2026-10-08). The local flag covers the moment between
@@ -769,8 +788,18 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   // A signature drawn here or received from a phone (the pad's onSave)
   const handleSaveSignature = async (role, signatureData, meta) => {
     cLogger.logHandler('handleSaveSignature', { role, source: meta?.source || 'device' })
-    if (signaturesLocked) return
-    await writeSignature(role, signatureData, meta)
+    if (signaturesLocked) {
+      setOpenSignature(null)
+      return
+    }
+    // The pad closes with the signature on screen (closePadWhenShown). Armed
+    // before the write: the screen can show the signature before the write
+    // returns (an official match queues its upload after it), and the pad then
+    // stayed open a change longer
+    const field = signatureFieldOf(role)
+    if (field) setClosePadWhenShown({ role, field, value: signatureData ?? null })
+    const written = await writeSignature(role, signatureData, meta)
+    if (!written) setClosePadWhenShown(null)
     // A new signature (drawn here or from a phone) completes the slot: a stale
     // account approval of it (the result changed since) is dropped from the local copy
     const slot = ROLE_TO_SLOT[role]
@@ -778,7 +807,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       const stale = approvalFor(match, role)
       if (stale && !isApprovalValid(stale, sets)) await removeLocalApproval(slot, stale.id)
     }
-    setOpenSignature(null)
+    if (!written) setOpenSignature(null)
   }
 
   // "Clear": the signature goes at once (saved and synced), then the pad opens
@@ -2065,6 +2094,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         title={openSignature ? getSignatureLabel(openSignature) : ''}
         existingSignature={openSignature ? getSignatureData(openSignature) : null}
         onSave={(signatureData, meta) => handleSaveSignature(openSignature, signatureData, meta)}
+        closeOnSave={false}
         onClose={() => setOpenSignature(null)}
         phone={openSignature ? {
           // Approved, closed or final: no phone session can start
