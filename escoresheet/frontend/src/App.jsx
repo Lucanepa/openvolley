@@ -101,6 +101,11 @@ export default function App() {
   // a moment (laptop run 2026-10-08, OV-17: one frame of its 'Continue match
   // / Delete match' and 'Test match')
   const [closedMatchId, setClosedMatchId] = useState(null)
+  // The home screen's matches as they were when a new test match was asked
+  // for, until its Match Setup opens: the new match's 'Continue match /
+  // Delete match' showed for a frame first (OpenBeach OB-2, laptop run
+  // 2026-10-08)
+  const [homeWhilePreparing, setHomeWhilePreparing] = useState(null)
   const [deleteMatchModal, setDeleteMatchModal] = useState(null)
   const [deletePinInput, setDeletePinInput] = useState('')
   const [deletePinError, setDeletePinError] = useState('')
@@ -2564,6 +2569,7 @@ export default function App() {
         onConfirm: async () => {
           setConfirmModal(null)
           setTestMatchLoading(true)
+          setHomeWhilePreparing({ official: shownOfficialMatch, test: shownTestMatch })
           try {
             await clearLocalTestData()
             await createTestMatchData()
@@ -2572,6 +2578,7 @@ export default function App() {
             setAlertModal(t('home.modals.unableToPrepareTestMatch', { error: error.message || error }))
           } finally {
             setTestMatchLoading(false)
+            setHomeWhilePreparing(null)
           }
         },
         onCancel: () => {
@@ -2582,6 +2589,7 @@ export default function App() {
     }
 
     setTestMatchLoading(true)
+    setHomeWhilePreparing({ official: shownOfficialMatch, test: shownTestMatch })
 
     try {
       // Clear previous test match locally
@@ -2594,6 +2602,7 @@ export default function App() {
       setAlertModal(t('home.modals.unableToPrepareTestMatch', { error: error.message || error }))
     } finally {
       setTestMatchLoading(false)
+      setHomeWhilePreparing(null)
     }
   }
 
@@ -2801,6 +2810,8 @@ export default function App() {
   const shownCurrentMatch = notClosed(currentMatch)
   const shownOfficialMatch = notClosed(currentOfficialMatch)
   const shownTestMatch = notClosed(currentTestMatch)
+  const homeOfficialMatch = homeWhilePreparing ? homeWhilePreparing.official : shownOfficialMatch
+  const homeTestMatch = homeWhilePreparing ? homeWhilePreparing.test : shownTestMatch
   const shownMatchStatus = notClosed(matchStatus?.match) === null ? null : matchStatus
   const shownMatchInfoData = notClosed(matchInfoData?.match) === null ? null : matchInfoData
 
@@ -2858,8 +2869,8 @@ export default function App() {
             setMatchInfoMenuOpen={setMatchInfoMenuOpen}
             matchInfoData={shownMatchInfoData}
             matchStatus={shownMatchStatus}
-            currentOfficialMatch={shownOfficialMatch}
-            currentTestMatch={shownTestMatch}
+            currentOfficialMatch={homeOfficialMatch}
+            currentTestMatch={homeTestMatch}
             isFullscreen={isFullscreen}
             toggleFullscreen={toggleFullscreen}
             offlineMode={offlineMode}
@@ -3050,8 +3061,8 @@ export default function App() {
                     createNewOfficialMatch={createNewOfficialMatch}
                     createNewTestMatch={createNewTestMatch}
                     testMatchLoading={testMatchLoading}
-                    currentOfficialMatch={shownOfficialMatch}
-                    currentTestMatch={shownTestMatch}
+                    currentOfficialMatch={homeOfficialMatch}
+                    currentTestMatch={homeTestMatch}
                     continueMatch={continueMatch}
                     continueTestMatch={continueTestMatch}
                     showDeleteMatchModal={showDeleteMatchModal}

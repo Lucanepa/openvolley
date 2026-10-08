@@ -23,6 +23,7 @@ describe('App: a new test match', () => {
       const text = document.body.textContent
       return {
         home: !!button('Restore match'),
+        match: !!button('Continue match') || !!button('Delete match'),
         setup: /Players: \d+/.test(text),
         notSet: (text.match(/Not set/g) || []).length,
         players: (text.match(/Players: \d+/g) || []).join(' ')
@@ -33,8 +34,10 @@ describe('App: a new test match', () => {
     await sleep(500)
     stop()
 
-    expect(states.at(-1)).toEqual({ home: false, setup: true, notSet: 0, players: 'Players: 12 Players: 12' })
-    // once the home screen is gone: only the filled setup
+    expect(states.at(-1)).toEqual({ home: false, match: false, setup: true, notSet: 0, players: 'Players: 12 Players: 12' })
+    // the home screen as it was (never the new match's 'Continue match /
+    // Delete match', OB-2); once it is gone: only the filled setup
+    expect(states.filter(s => s.home && s.match)).toEqual([])
     expect(states.filter(s => !s.home && !(s.setup && s.notSet === 0 && s.players === 'Players: 12 Players: 12'))).toEqual([])
   }, 30000)
 })
