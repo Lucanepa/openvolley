@@ -38,7 +38,7 @@ function set5LiveSides(match) {
 const homeOnLeftFromLiveState = (sideA, teamAKey) => (sideA === 'left' ? teamAKey === 'home' : teamAKey !== 'home')
 
 describe('scorer: set 5 setup pushes a live state', () => {
-  const inline = slice(scoreboard, "data?.set?.index === 5 && !set5SetupConfirmed) ? (", 7000)
+  const inline = slice(scoreboard, "data?.set?.index === 5 && !set5SetupConfirmed && !timeoutModal?.started) ? (", 7000)
 
   it('Switch sides and Switch serve push after writing Dexie', () => {
     expect(inline).toMatch(/set5LeftTeam: newLeftTeam \}\)\s*\n\s*syncSet5Setup\(\{ duringInterval: !!betweenSetsCountdown \}\)/)
