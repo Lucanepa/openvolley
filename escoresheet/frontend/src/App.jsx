@@ -71,7 +71,7 @@ import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, restorePrefill } from './utils/m
 import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
 import { needsEventCheck, pickCurrentMatch } from './utils/currentMatch'
 import { isRelayErrorFor, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
-import { PHONE_MAX_WIDTH, phoneLayoutActive } from './components/scoreboard/phoneLayout'
+import { PHONE_MAX_WIDTH, phoneLayoutKept } from './components/scoreboard/phoneLayout'
 
 function readStoredDisplayMode() {
   try {
@@ -2792,7 +2792,9 @@ export default function App() {
   // The scoring screen in its phone layout (the display mode as the
   // Scoreboard reads it: its options write localStorage), and the match end
   // it leads to (signatures, approval): both get past the size gate on a phone
-  const phoneLayoutOn = phoneLayoutActive(readStoredDisplayMode(), viewportSize)
+  // It is kept on a phone turned sideways: the scoring screen stays mounted
+  // under its "hold the phone upright" notice, with its dialogs and countdowns
+  const phoneLayoutOn = phoneLayoutKept(readStoredDisplayMode(), viewportSize)
   const phoneScoringShown = phoneLayoutOn && !!matchId && !showCoinToss && !showMatchSetup && !showMatchEnd && !showManualAdjustments
   const phoneMatchEndShown = phoneLayoutOn && !!matchId && showMatchEnd && !showManualAdjustments
 

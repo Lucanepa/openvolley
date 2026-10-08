@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { COURT_CELLS, POSITIONS, detectDisplayMode, isPhoneScreen, officialRoleShort, phoneLayoutActive, recentActions, tintOf } from '../phoneLayout'
+import { COURT_CELLS, POSITIONS, detectDisplayMode, isPhoneScreen, officialRoleShort, phoneHeldSideways, phoneLayoutActive, phoneLayoutKept, recentActions, tintOf } from '../phoneLayout'
 
 describe('detectDisplayMode (the automatic display mode)', () => {
   it.each([[390, 844], [360, 740], [412, 915], [599, 1000]])('a %ix%i portrait phone gets the phone layout', (w, h) => {
@@ -42,6 +42,31 @@ describe('isPhoneScreen (not locked to landscape)', () => {
     expect(isPhoneScreen({ width: 800, height: 1280 })).toBe(false)
     expect(isPhoneScreen({ width: 1920, height: 1080 })).toBe(false)
     expect(isPhoneScreen(null)).toBe(false)
+  })
+})
+
+describe('phoneLayoutKept / phoneHeldSideways (a phone turned sideways)', () => {
+  const phone = { width: 390, height: 844 }
+  const laptop = { width: 1920, height: 1080 }
+  const tablet = { width: 800, height: 1280 }
+
+  it('a phone in the automatic mode keeps the phone layout either way up', () => {
+    expect(phoneLayoutKept('auto', { width: 390, height: 844 }, phone)).toBe(true)
+    expect(phoneLayoutKept('auto', { width: 844, height: 390 }, phone)).toBe(true)
+    expect(phoneHeldSideways('auto', { width: 390, height: 844 }, phone)).toBe(false)
+    expect(phoneHeldSideways('auto', { width: 844, height: 390 }, phone)).toBe(true)
+    expect(phoneHeldSideways(null, { width: 844, height: 390 }, { width: 844, height: 390 })).toBe(true)
+  })
+
+  it('tablets and computers are untouched, and so are forced modes', () => {
+    expect(phoneLayoutKept('auto', { width: 1280, height: 800 }, tablet)).toBe(false)
+    expect(phoneLayoutKept('auto', { width: 900, height: 500 }, laptop)).toBe(false)
+    expect(phoneHeldSideways('auto', { width: 1366, height: 768 }, laptop)).toBe(false)
+    expect(phoneLayoutKept('desktop', { width: 844, height: 390 }, phone)).toBe(false)
+    expect(phoneLayoutKept('tablet', { width: 844, height: 390 }, phone)).toBe(false)
+    // the Phone mode shows the phone layout itself, sideways too (no notice)
+    expect(phoneLayoutKept('phone', { width: 844, height: 390 }, phone)).toBe(true)
+    expect(phoneHeldSideways('phone', { width: 844, height: 390 }, phone)).toBe(false)
   })
 })
 

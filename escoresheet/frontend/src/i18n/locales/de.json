@@ -888,7 +888,9 @@
       "sanctionPeople": "Spieler oder Offizieller",
       "noLibero": "Kein Libero",
       "onCourt": "auf dem Feld",
-      "redesignate": "Libero neu bestimmen"
+      "redesignate": "Libero neu bestimmen",
+      "sidewaysTitle": "Halte das Handy aufrecht",
+      "sidewaysBody": "Die Erfassung auf dem Handy ist für das Hochformat gemacht. Dreh das Handy zurück: Spiel, Dialoge und Countdowns bleiben erhalten."
     }
   },
   "settings": {

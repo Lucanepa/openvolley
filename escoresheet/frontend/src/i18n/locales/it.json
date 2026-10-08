@@ -895,7 +895,9 @@
       "sanctionPeople": "Giocatore o ufficiale",
       "noLibero": "Nessun libero",
       "onCourt": "in campo",
-      "redesignate": "Ridesigna libero"
+      "redesignate": "Ridesigna libero",
+      "sidewaysTitle": "Tieni il telefono in verticale",
+      "sidewaysBody": "La schermata di punteggio sul telefono è pensata per il formato verticale. Ruota di nuovo il telefono: la partita, i dialoghi e i conti alla rovescia restano."
     }
   },
   "settings": {

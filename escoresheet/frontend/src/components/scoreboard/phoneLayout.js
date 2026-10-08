@@ -50,6 +50,32 @@ export function isPhoneScreen(screenSize = (typeof window !== 'undefined' ? wind
 }
 
 /**
+ * True while the scoring screen keeps its phone layout: whenever it shows it
+ * (phoneLayoutActive), and on a phone in the automatic mode turned sideways.
+ * Turning the phone must not take the scoring screen down (it would lose a
+ * running time-out countdown or an open dialog): it stays, under a notice to
+ * hold the phone upright.
+ * @param {string|null} displayMode 'auto' | 'desktop' | 'tablet' | 'phone' (null: 'auto')
+ * @param {{ width: number, height: number }} size the viewport (CSS px)
+ * @param {{ width?: number, height?: number }} [screenSize] window.screen
+ */
+export function phoneLayoutKept(displayMode, size, screenSize) {
+  if (phoneLayoutActive(displayMode, size)) return true
+  return (displayMode || 'auto') === 'auto' && isPhoneScreen(screenSize)
+}
+
+/**
+ * True when the phone layout is kept but the phone is held sideways: the
+ * scoring screen shows a notice to turn it upright over the phone layout.
+ * @param {string|null} displayMode
+ * @param {{ width: number, height: number }} size the viewport (CSS px)
+ * @param {{ width?: number, height?: number }} [screenSize] window.screen
+ */
+export function phoneHeldSideways(displayMode, size, screenSize) {
+  return !phoneLayoutActive(displayMode, size) && phoneLayoutKept(displayMode, size, screenSize)
+}
+
+/**
  * The rotation positions of one half of the court in reading order of its
  * 2 x 3 grid (row by row, top to bottom). The left team faces right: its
  * back row is the outer (left) column, position IV top front, II bottom
