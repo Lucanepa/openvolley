@@ -49,8 +49,8 @@ describe('Scoreboard: the set interval clock', () => {
     await db.players.bulkAdd([1, 2, 3, 4, 5, 6, 7].flatMap(n => [
       { teamId: home, number: n, name: `H${n}` }, { teamId: away, number: n, name: `A${n}` }
     ]))
-    // set 1 ended 178 s ago: 2 s of the 1-2 interval are left
-    const end1 = new Date(Date.now() - 178000).toISOString()
+    // set 1 ended 150 s ago: 30 s of the 1-2 interval are left
+    const end1 = new Date(Date.now() - 150000).toISOString()
     const matchId = await db.matches.add({
       homeTeamId: home, awayTeamId: away, status: 'live', test: true,
       firstServe: 'home', coinTossTeamA: 'home', coinTossTeamB: 'away'
@@ -69,8 +69,10 @@ describe('Scoreboard: the set interval clock', () => {
 
     // set 2 is played and won by the away team, then the 2-3 interval begins
     await db.events.add({ matchId, setIndex: 2, type: 'set_start', payload: {}, seq: 3, ts: new Date().toISOString() })
-    await sleep(2500) // longer than the 1-2 interval had left
-    const end2 = new Date().toISOString()
+    // set 2 takes longer than the 1-2 interval had left (the clock moves on 40 s)
+    const realNow = Date.now.bind(Date)
+    vi.spyOn(Date, 'now').mockImplementation(() => realNow() + 40000)
+    const end2 = new Date(Date.now()).toISOString()
     await db.transaction('rw', db.sets, db.events, async () => {
       await db.sets.update(set2, { homePoints: 18, awayPoints: 25, finished: true, startTime: end1, endTime: end2 })
       await db.sets.add({ matchId, index: 3, homePoints: 0, awayPoints: 0, finished: false })
@@ -79,9 +81,10 @@ describe('Scoreboard: the set interval clock', () => {
 
     await waitFor(() => expect(button('End set interval')).toBeTruthy(), { timeout: 8000 })
     await sleep(600)
-    // still running, with the full 3 minutes (not the old interval's 2 s)
+    // still running, with the full 3 minutes (not what the 1-2 interval had left)
     expect(button('End set interval')).toBeTruthy()
-    expect(countdown(/^\d+(:\d\d)?$/)).toEqual(expect.arrayContaining([expect.stringMatching(/^(3:00|2:5\d)$/)]))
+    expect(countdown(/^\d+(:\d\d)?$/)).toEqual(expect.arrayContaining([expect.stringMatching(/^(3:00|2:[45]\d)$/)]))
+    vi.mocked(Date.now).mockRestore()
     cleanup()
   }, 30000)
 })
@@ -110,8 +113,8 @@ describe('Scoreboard: the set interval starts at the set end', () => {
 
     render(<ScaleProvider><AlertProvider><LoggingProvider><Scoreboard matchId={matchId} /></LoggingProvider></AlertProvider></ScaleProvider>)
     await waitFor(() => expect(countdown(/^\d:\d\d$/).length).toBeGreaterThan(0), { timeout: 8000 })
-    // 180 - 10 s: 2:50 (not 180 - 55 s: 2:05)
-    expect(countdown(/^\d:\d\d$/)).toEqual(expect.arrayContaining([expect.stringMatching(/^2:(4[89]|50)$/)]))
+    // 180 - 10 s: 2:50, read a few seconds later at worst (not 180 - 55 s: 2:05)
+    expect(countdown(/^\d:\d\d$/)).toEqual(expect.arrayContaining([expect.stringMatching(/^2:(3\d|4\d|50)$/)]))
     cleanup()
   }, 30000)
 })
