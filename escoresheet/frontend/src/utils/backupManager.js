@@ -10,7 +10,7 @@ import { wipeMatchEvents } from '../db/eventHistory'
 import { apiStorage, apiMatchRestoreByPin } from '../lib/apiClient'
 import { sanitizeSimple } from './stringUtils'
 import { getCloudApiUrl } from './backendConfig'
-import { filterMatchPayload } from '../db/matchRepository'
+import { filterMatchPayload, remarksForServer } from '../db/matchRepository'
 import { setExtId, eventExtId, jobMatchKey } from './syncIds'
 import { buildConnectionPins } from './connectionPins'
 import { missingConnectionPins } from './remoteRoster'
@@ -26,6 +26,12 @@ const BACKUP_DIR_HANDLE_KEY = 'backup_directory_handle'
 
 // Roster in the same snake_case shape as the normal match sync (CoinToss), so a
 // restored match reads back with names (importMatchFromSupabase reads first_name).
+// The backup's remarks for the restore job (db/017). A backup without the
+// field (an app before 017) sends none, so the server keeps what it has.
+function restoreRemarks(match) {
+  return typeof match?.remarks === 'string' ? { remarks: remarksForServer(match.remarks) } : {}
+}
+
 function toCloudPlayers(players) {
   return (players || []).map(p => ({
     number: p.number,
@@ -477,6 +483,7 @@ export async function restoreMatchFromJson(jsonData) {
         } : null,
         players_home: toCloudPlayers(homePlayers),
         players_away: toCloudPlayers(awayPlayers),
+        ...restoreRemarks(match),
         // Include match_info fields (stored as JSONB)
         match_info: {
           hall: match.hall,
@@ -664,6 +671,7 @@ export async function restoreMatchInPlace(matchId, jsonData) {
         } : (match.away_team || null),
         players_home: toCloudPlayers(homePlayers || match.players_home),
         players_away: toCloudPlayers(awayPlayers || match.players_away),
+        ...restoreRemarks(match),
         // Include match_info fields (stored as JSONB)
         match_info: {
           hall: match.hall,
@@ -1049,6 +1057,8 @@ export async function importMatchFromSupabase(cloudData) {
       winner: results.winner || match.winner,
       finalScore: results.final_score || match.final_score,
       sanctions: results.sanctions || match.sanctions,
+      // Scoresheet remarks (db/017; '' when the server has none)
+      remarks: typeof match.remarks === 'string' ? match.remarks : '',
       // Approval: prefer JSONB, fallback to legacy
       approved: approval.approved !== undefined ? approval.approved : match.approved,
       approvedAt: approval.approved_at || match.approved_at,

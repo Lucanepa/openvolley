@@ -43,7 +43,7 @@ vi.mock('../../db/db', () => ({ db: fakeDb }))
 vi.mock('../backendConfig', () => ({ getApiUrl: (p) => `http://backend.test${p}`, getCloudApiUrl: (p) => `http://backend.test${p}` }))
 vi.mock('../../lib/apiClient', () => ({ apiFrom: vi.fn(), apiStorage: { from: vi.fn() } }))
 
-import { restoreMatchFromJson, restoreMatchInPlace } from '../backupManager'
+import { restoreMatchFromJson, restoreMatchInPlace, importMatchFromSupabase } from '../backupManager'
 
 const SEED = 'match_100_aaa'
 const OTHER = 'match_200_bbb'
@@ -181,5 +181,41 @@ describe('restoreMatchInPlace', () => {
     await restoreMatchInPlace(2, backup({ refereePin: undefined, homeTeamPin: undefined }))
     const restore = [...fakeDb.sync_queue.map.values()].find(j => j.action === 'restore')
     expect('connection_pins' in restore.payload.match).toBe(false)
+  })
+})
+
+describe('remarks (db/017)', () => {
+  const REMARKS = 'Actual start time: 18:05\nTeam A, Set 1, Result 3:2: player no. 4 injured'
+  const restoreJob = () => [...fakeDb.sync_queue.map.values()].find(j => j.action === 'restore')
+
+  it('restoreMatchFromJson: the backup\'s remarks are restored here and sent to the server', async () => {
+    const newId = await restoreMatchFromJson(backup({ remarks: REMARKS }))
+    expect(fakeDb.matches.map.get(newId).remarks).toBe(REMARKS)
+    expect(restoreJob().payload.match.remarks).toBe(REMARKS)
+  })
+
+  it('restoreMatchInPlace: the same', async () => {
+    await restoreMatchInPlace(2, backup({ remarks: REMARKS }))
+    expect(fakeDb.matches.map.get(2).remarks).toBe(REMARKS)
+    expect(restoreJob().payload.match.remarks).toBe(REMARKS)
+  })
+
+  it('a backup without remarks (an app before db/017) does not clear the server\'s', async () => {
+    await restoreMatchFromJson(backup())
+    expect('remarks' in restoreJob().payload.match).toBe(false)
+    fakeDb.sync_queue.map.clear()
+    await restoreMatchInPlace(fakeDb.matches.map.size ? [...fakeDb.matches.map.values()].find(m => m.seed_key === SEED).id : 2, backup())
+    expect('remarks' in restoreJob().payload.match).toBe(false)
+  })
+
+  it('importMatchFromSupabase: the server\'s remarks become the local match\'s', async () => {
+    const id = await importMatchFromSupabase({
+      match: { external_id: SEED, status: 'live', game_n: 7, home_team: { name: 'H' }, away_team: { name: 'A' }, remarks: REMARKS },
+      sets: [],
+      events: []
+    })
+    expect(fakeDb.matches.map.get(id).remarks).toBe(REMARKS)
+    const none = await importMatchFromSupabase({ match: { external_id: OTHER, status: 'live' }, sets: [], events: [] })
+    expect(fakeDb.matches.map.get(none).remarks).toBe('')
   })
 })
