@@ -2932,11 +2932,13 @@ export default function App() {
               width: (showMatchSetup || (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd)) ? '100%' : 'auto',
               maxWidth: '100%',
               padding: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? '10px' : '10px',
-              // Vertical centering for CoinToss, MatchEnd, and HomePage screens (not MatchSetup - it fills the space)
+              // Vertical centering for CoinToss, MatchEnd, and HomePage screens (not MatchSetup - it fills the space).
+              // 'safe': a screen taller than the window starts at the top and
+              // scrolls; plain 'center' pushed its top out of reach
               ...(!matchId || showCoinToss || showMatchEnd ? {
                 display: 'flex',
                 justifyContent: 'center',
-                alignItems: 'center'
+                alignItems: 'safe center'
               } : {}),
               // MatchSetup fills available space
               ...(showMatchSetup ? {
