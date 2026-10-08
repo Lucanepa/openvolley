@@ -2272,6 +2272,25 @@ button:disabled {
   overflow: visible;
 }
 
+/* The rally buttons and, during a time-out, its countdown in one grid cell:
+   the countdown is drawn over the (hidden) buttons, so the box keeps their
+   size and the court does not move for the time-out */
+.rally-stack {
+  display: grid;
+  width: 100%;
+  gap: inherit;
+}
+
+.rally-stack-layer {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: inherit;
+  min-width: 0;
+}
+
 .rally-controls-row {
   display: flex;
   align-items: center;

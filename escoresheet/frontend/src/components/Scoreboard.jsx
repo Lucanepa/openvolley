@@ -17179,58 +17179,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
               {/* Rally Controls - Center */}
               <div className="rally-controls" style={{ flex: (data?.set?.index === 5 && !set5SetupConfirmed) ? '1 1 auto' : '2 1 0', width: (data?.set?.index === 5 && !set5SetupConfirmed) ? '100%' : undefined, display: 'flex', flexDirection: 'column', justifyContent: 'center', marginTop: 'calc(12px * var(--scale-factor))', minWidth: 0 }}>
-                {/* Show timeout countdown if timeout is active */}
-                {timeoutModal && timeoutModal.started ? (
-                  <>
-                    <div style={{
-                      fontSize: '16px',
-                      fontWeight: 600,
-                      color: 'var(--muted)',
-                      textAlign: 'center',
-                      marginBottom: '4px'
-                    }}>
-                      Time-out — {timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))}
-                    </div>
-                    <div style={{
-                      fontSize: '48px',
-                      lineHeight: 1.1,
-                      fontWeight: 700,
-                      color: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)',
-                      textAlign: 'center',
-                      fontFamily: getScoreFont()
-                    }}>
-                      {formatTimeout(timeoutModal.countdown)}
-                    </div>
-                    {/* Progress bar */}
-                    <div style={{
-                      width: '60%',
-                      height: '8px',
-                      background: 'var(--panel)',
-                      borderRadius: '4px',
-                      overflow: 'hidden',
-                      marginTop: '6px',
-                      marginBottom: '10px',
-                      marginLeft: 'auto',
-                      marginRight: 'auto'
-                    }}>
-                      <div style={{
-                        width: `${(timeoutModal.countdown / 30) * 100}%`,
-                        height: '100%',
-                        background: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)',
-                        borderRadius: '4px',
-                        transition: 'width 1s linear, background 0.3s',
-                        marginLeft: 'auto'
-                      }} />
-                    </div>
-                    <button
-                      className="secondary"
-                      onClick={stopTimeout}
-                      style={{ width: 'auto', minHeight: '44px', minWidth: '140px', alignSelf: 'center', fontSize: '15px' }}
-                    >
-                      {t('scoreboard.buttons.stopTimeout')}
-                    </button>
-                  </>
-                ) : (data?.set?.index === 5 && !set5SetupConfirmed) ? (
+                {/* Set 5 setup and the set interval show their own content; a time-out
+                    is drawn over the rally buttons (rally-stack) */}
+                {(data?.set?.index === 5 && !set5SetupConfirmed && !timeoutModal?.started) ? (
                   <>
                     {/* Set 5 inline setup UI - buttons first, countdown beneath */}
                     <div style={{
@@ -17356,7 +17307,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       </div>
                     )}
                   </>
-                ) : betweenSetsCountdown ? (
+                ) : (betweenSetsCountdown && !timeoutModal?.started) ? (
                   <>
                     <div style={{
                       fontSize: '49px',
@@ -17397,7 +17348,62 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     </button>
                   </>
                 ) : (
-                  <>
+                  // The rally buttons stay in the box under a time-out countdown, hidden
+                  // and out of reach, so the box keeps their size: the countdown block is
+                  // a few px shorter, and the court moved for the whole time-out
+                  <div className="rally-stack">
+                    {timeoutModal?.started && (
+                  <div className="rally-stack-layer">
+                    <div style={{
+                      fontSize: '16px',
+                      fontWeight: 600,
+                      color: 'var(--muted)',
+                      textAlign: 'center',
+                      marginBottom: '4px'
+                    }}>
+                      Time-out — {timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))}
+                    </div>
+                    <div style={{
+                      fontSize: '48px',
+                      lineHeight: 1.1,
+                      fontWeight: 700,
+                      color: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)',
+                      textAlign: 'center',
+                      fontFamily: getScoreFont()
+                    }}>
+                      {formatTimeout(timeoutModal.countdown)}
+                    </div>
+                    {/* Progress bar */}
+                    <div style={{
+                      width: '60%',
+                      height: '8px',
+                      background: 'var(--panel)',
+                      borderRadius: '4px',
+                      overflow: 'hidden',
+                      marginTop: '6px',
+                      marginBottom: '10px',
+                      marginLeft: 'auto',
+                      marginRight: 'auto'
+                    }}>
+                      <div style={{
+                        width: `${(timeoutModal.countdown / 30) * 100}%`,
+                        height: '100%',
+                        background: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)',
+                        borderRadius: '4px',
+                        transition: 'width 1s linear, background 0.3s',
+                        marginLeft: 'auto'
+                      }} />
+                    </div>
+                    <button
+                      className="secondary"
+                      onClick={stopTimeout}
+                      style={{ width: 'auto', minHeight: '44px', minWidth: '140px', alignSelf: 'center', fontSize: '15px' }}
+                    >
+                      {t('scoreboard.buttons.stopTimeout')}
+                    </button>
+                  </div>
+                    )}
+                  <div className="rally-stack-layer" aria-hidden={timeoutModal?.started || undefined} inert={timeoutModal?.started || undefined} style={timeoutModal?.started ? { visibility: 'hidden' } : undefined}>
                     {rallyStatus === 'idle' ? (
                       <button
                         data-help-id="scoreboard-start-rally"
@@ -17530,7 +17536,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         })()}
                       </div>
                     )}
-                  </>
+                  </div>
+                  </div>
                 )}
               </div>
 
