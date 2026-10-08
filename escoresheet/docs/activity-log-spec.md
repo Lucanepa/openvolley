@@ -224,8 +224,9 @@ every 2 s or 50 lines and on quit, and keep 30 files and 50 MB.
   until restore-by-pin keeps the cloud external ids.
 - `utils/logger.js` console uploads: limit them to debug mode and add an
   admin viewer.
-- Activity from the referee, bench and livescore apps and from OpenBeach. The
-  server already accepts `app='beach'`.
+- Activity from the referee, bench and livescore apps. (OpenBeach uploads
+  with `app='beach'` and the same catalog; its set entries carry team 1 as
+  `home` and team 2 as `away`, see `lib/activitySanitize.js`.)
 - Electron logging, logcat, the Windows event log.
 - A self-service "delete my activity". Admin delete covers requests for now.
 - Undone points struck through on the scoresheet or PDF.
