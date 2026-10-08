@@ -81,8 +81,17 @@ Many `d` objects carry `after: {a, ms}`, which is the last user action and how l
 
 ## Reading it
 
+Page lines are written about once a second, so in the file they can come after
+native lines that happened later: sort by `ts`. The lines a page had not
+written yet when it went away (a reload) are also kept in the tab's
+sessionStorage and written again by the next load, so a few lines around a
+reload can appear twice: the same `sid` and `seq`. The first recipe gives one
+time-ordered copy of everything.
+
 ```sh
 cd ~/.local/share/OpenVolley/logs
+# everything once, in time order (page lines by sid + seq, native lines as they are)
+jq -cs 'unique_by(if .sid then [.sid, .seq] else [.ts, .k, .m] end) | sort_by(.ts) | .[]' diagnostics-*.jsonl > all.jsonl
 # loads and why
 jq -c 'select(.k=="page.load" or .k=="page.reload_request" or (.k|startswith("native.page_load")))' diagnostics-*.jsonl
 # every jump, with what came before it
