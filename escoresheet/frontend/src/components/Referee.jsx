@@ -40,6 +40,11 @@ const lineupNumber = (pos) => (pos && typeof pos === 'object') ? pos.number : (p
 // Get current version from package.json (injected by Vite at build time)
 const currentVersion = __APP_VERSION__
 
+// The scorer's pushes that end the break between sets ahead of time (a row
+// with set_interval_active false): "End interval" and the set 5 setup's
+// confirmation (Scoreboard endSetInterval / syncSet5Setup)
+const BREAK_END_EVENTS = new Set(['end_interval', 'manual_set5_setup'])
+
 // Flag SVG components for language selector
 const FlagGB = () => (
   <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
@@ -267,6 +272,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const [showIntervalModal, setShowIntervalModal] = useState(false) // Modal visibility (separate from countdown state)
   const [lastEvent, setLastEvent] = useState(null) // { type, team, data, timestamp }
   const intervalDismissedRef = useRef(false) // Track when interval was manually dismissed
+  // The newest match_live_state row read for the break (updated_at): an older
+  // row arriving late never closes or reopens the countdown
+  const intervalRowTsRef = useRef(null)
   const setIntervalDuration = useMemo(() => {
     const saved = localStorage.getItem('setIntervalDuration')
     return saved ? parseInt(saved, 10) : 180 // default 3 minutes = 180 seconds
@@ -697,6 +705,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         setBetweenSetsCountdown(null)
         setShowIntervalModal(false)
       } else {
+        // The scorer's break runs (again: an undo of the set 5 setup's
+        // confirmation reopens it): no longer dismissed
+        intervalDismissedRef.current = false
         setBetweenSetsCountdown({
           countdown: actionData.countdown || 180,
           startTimestamp: actionData.startTimestamp || Date.now(), // Fallback for backward compat
@@ -967,6 +978,22 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
               if (recentSubFlashTimeoutRef.current) clearTimeout(recentSubFlashTimeoutRef.current)
               recentSubFlashTimeoutRef.current = setTimeout(() => setRecentlySubstitutedPlayers([]), 5000)
             }
+          }
+
+          // The scorer's break, from the row as from the relay's actions (a
+          // referee on the database alone had only the opening): ended
+          // (end_interval, the set 5 setup's confirmation) it closes here as
+          // on end_interval, and a row in the break after that (an undo of the
+          // confirmation) opens it again. Rows older than the newest one read
+          // change nothing.
+          const intervalRowCurrent = isNewerLiveState(state, intervalRowTsRef.current, { allowEqual: true })
+          if (intervalRowCurrent && state.updated_at) intervalRowTsRef.current = state.updated_at
+          if (intervalRowCurrent && state.set_interval_active === false && BREAK_END_EVENTS.has(state.last_event_type)) {
+            intervalDismissedRef.current = true
+            setBetweenSetsCountdown(null)
+            setShowIntervalModal(false)
+          } else if (intervalRowCurrent && state.set_interval_active === true) {
+            intervalDismissedRef.current = false
           }
 
           // Handle set end (3-minute interval)
