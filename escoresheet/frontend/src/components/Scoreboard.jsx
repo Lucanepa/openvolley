@@ -22546,63 +22546,54 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 Last point was assigned to <strong><span style={{ ...teamBoxStyle(oldTeamColor), padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, marginRight: '4px' }}>{oldTeamLabel}</span>{oldTeamName}</strong>
               </p>
 
-              {/* Horizontal radio buttons */}
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-                {/* Option 1: Swap */}
-                <div
-                  onClick={() => setReplayRallyConfirm({ ...replayRallyConfirm, selectedOption: 'swap' })}
-                  style={{
-                    flex: 1,
-                    padding: '12px 16px',
-                    background: selectedOption === 'swap' ? 'rgba(234, 179, 8, 0.2)' : 'var(--panel-2)',
-                    border: selectedOption === 'swap' ? '2px solid #eab308' : '1px solid var(--border)',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '10px'
-                  }}
-                >
-                  <div style={{
-                    width: '18px',
-                    height: '18px',
-                    borderRadius: '50%',
-                    border: selectedOption === 'swap' ? '5px solid #eab308' : '2px solid var(--border)',
-                    background: selectedOption === 'swap' ? '#eab308' : 'transparent',
-                    flexShrink: 0
-                  }} />
-                  <span style={{ fontSize: '13px', fontWeight: 600 }}>Assign to other team</span>
-                </div>
-
-                {/* Option 2: Replay */}
-                <div
-                  onClick={() => setReplayRallyConfirm({ ...replayRallyConfirm, selectedOption: 'replay' })}
-                  style={{
-                    flex: 1,
-                    padding: '12px 16px',
-                    background: selectedOption === 'replay' ? 'rgba(234, 179, 8, 0.2)' : 'var(--panel-2)',
-                    border: selectedOption === 'replay' ? '2px solid #eab308' : '1px solid var(--border)',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '10px'
-                  }}
-                >
-                  <div style={{
-                    width: '18px',
-                    height: '18px',
-                    borderRadius: '50%',
-                    border: selectedOption === 'replay' ? '5px solid #eab308' : '2px solid var(--border)',
-                    background: selectedOption === 'replay' ? '#eab308' : 'transparent',
-                    flexShrink: 0
-                  }} />
-                  <span style={{ fontSize: '13px', fontWeight: 600 }}>Replay the rally</span>
-                </div>
+              {/* The two choices, as radio buttons. The chosen one's ring is a
+                  shadow over the same 1 px border, so a choice never changes
+                  the dialog's size; only the colours fade. */}
+              <div role="radiogroup" aria-label={t('scoreboard.modals.decisionChange')} style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                {[
+                  { option: 'swap', label: 'Assign to other team' },
+                  { option: 'replay', label: 'Replay the rally' }
+                ].map(({ option, label }) => {
+                  const checked = selectedOption === option
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      role="radio"
+                      aria-checked={checked}
+                      onClick={() => setReplayRallyConfirm({ ...replayRallyConfirm, selectedOption: option })}
+                      style={{
+                        flex: 1,
+                        padding: '12px 16px',
+                        background: checked ? 'rgba(234, 179, 8, 0.2)' : 'var(--panel-2)',
+                        borderStyle: 'solid',
+                        borderWidth: '1px',
+                        borderColor: checked ? '#eab308' : 'var(--border)',
+                        boxShadow: checked ? '0 0 0 1px #eab308' : 'none',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        transition: 'background-color 0.2s, border-color 0.2s, box-shadow 0.2s',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '10px',
+                        font: 'inherit',
+                        color: 'inherit'
+                      }}
+                    >
+                      <span aria-hidden="true" style={{
+                        width: '18px',
+                        height: '18px',
+                        boxSizing: 'border-box',
+                        borderRadius: '50%',
+                        border: checked ? '5px solid #eab308' : '2px solid var(--border)',
+                        background: checked ? '#eab308' : 'transparent',
+                        flexShrink: 0
+                      }} />
+                      <span style={{ fontSize: '13px', fontWeight: 600 }}>{label}</span>
+                    </button>
+                  )
+                })}
               </div>
 
               {/* Expanded details panel */}
