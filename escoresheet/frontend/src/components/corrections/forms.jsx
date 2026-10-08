@@ -496,10 +496,11 @@ export function SetTimesForm({ ctx, events, sets, setRow, match, busy, onCancel,
     if (startIso && start !== toClock(setRow?.startTime)) changes.startTime = startIso
     if (endIso && end !== toClock(setRow?.endTime)) changes.endTime = endIso
     if (!Object.keys(changes).length) return null
-    return planSetTimes(events, sets, { setIndex: setRow.index, ...changes, scheduledAt: match?.scheduledAt }, ctx)
-  }, [start, end, startIso, endIso, setRow, events, sets, match?.scheduledAt, ctx])
+    return planSetTimes(events, sets, { setIndex: setRow.index, ...changes, scheduledAt: match?.scheduledAt, remarks: match?.remarks || '' }, ctx)
+  }, [start, end, startIso, endIso, setRow, events, sets, match?.scheduledAt, match?.remarks, ctx])
   const suggestion = base && !base.error ? base.suggestedRemark : null
-  const plan = base && !base.error && addRemark && suggestion ? { ...base, remarkAdd: [(remark ?? suggestion).trim()].filter(Boolean) } : base
+  // the set 1 "Actual start time" line (base.remarkAdd) stays next to the delay remark
+  const plan = base && !base.error && addRemark && suggestion ? { ...base, remarkAdd: [...(base.remarkAdd || []), (remark ?? suggestion).trim()].filter(Boolean) } : base
   const set = displaySetNumber(setRow?.index, ctx.match)
   return (
     <CorrectionForm
@@ -512,6 +513,9 @@ export function SetTimesForm({ ctx, events, sets, setRow, match, busy, onCancel,
       preview={plan && !plan.error && (
         <div className="space-y-2">
           <p className="text-sm text-stone-700">{setTimesText(startIso ?? setRow?.startTime, endIso ?? setRow?.endTime, t)}</p>
+          {base?.remarkAdd?.length > 0 && (
+            <p className="text-sm text-stone-600">{tr(t, 'corrections.preview.remark', 'Remark added to the scoresheet')}: {base.remarkAdd.join(' · ')}</p>
+          )}
           {suggestion && (
             <Checkbox
               checked={addRemark}

@@ -812,6 +812,9 @@
     "readyToConfirm": "Pronto per la conferma",
     "incomplete": "Incompleto",
     "confirmStartTimeForSet": "Conferma l'orario di inizio per {{set}}:",
+    "actualStartTime": "Ora di inizio effettiva",
+    "scheduledStartHint": "Orario previsto. Se la partita è iniziata a un altro orario, inserisci quell'orario.",
+    "actualStartRemarkHint": "{{label}}: {{time}}, aggiunta alle note",
     "actionLog": {
       "deletePointEvent": "Eliminare questo evento punto?",
       "deleteTimeoutEvent": "Eliminare questo evento time-out?",

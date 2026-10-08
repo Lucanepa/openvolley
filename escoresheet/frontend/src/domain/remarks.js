@@ -45,3 +45,37 @@ export function remarkClock(at = new Date()) {
 export function eventRemark({ set, at = new Date(), team, teamScore = 0, oppScore = 0, text }) {
   return `Set ${set}, ${remarkClock(at)}, ${team} ${teamScore}:${oppScore}, ${text}`
 }
+
+/**
+ * Set 1's actual start, when the scorer confirmed a time other than the
+ * scheduled one (owner 2026-10-08): "Actual start time: 12:45". Always in
+ * English, like the other automatic remarks the match writes, so the line is
+ * found again (replaced / removed) whatever the app language.
+ */
+export const ACTUAL_START_LABEL = 'Actual start time'
+const ACTUAL_START_RE = /^Actual start time: \d{1,2}:\d{2}$/
+
+/** The remark line for a set 1 that started at `at` (local HH:MM). */
+export function actualStartLine(at) {
+  const clock = remarkClock(at)
+  return clock ? `${ACTUAL_START_LABEL}: ${clock}` : ''
+}
+
+/** The "Actual start time: HH:MM" lines of the remarks text. */
+export function actualStartLines(remarks) {
+  if (!remarks) return []
+  return remarks.split('\n').filter(l => ACTUAL_START_RE.test(l.trim()))
+}
+
+/**
+ * The remarks text with exactly one actual-start line: `line`, or none when
+ * `line` is empty (set 1 started at the scheduled time). The other lines stay
+ * as they are; an existing identical single line stays where it is.
+ */
+export function setActualStartRemark(remarks, line) {
+  const text = remarks || ''
+  const existing = actualStartLines(text)
+  if (line && existing.length === 1 && existing[0] === line) return text
+  const kept = text ? text.split('\n').filter(l => !ACTUAL_START_RE.test(l.trim())).join('\n') : ''
+  return appendRemark(kept, line || '')
+}

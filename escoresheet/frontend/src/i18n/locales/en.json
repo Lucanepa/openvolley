@@ -813,6 +813,9 @@
     "readyToConfirm": "Ready to confirm",
     "incomplete": "Incomplete",
     "confirmStartTimeForSet": "Confirm the start time for {{set}}:",
+    "actualStartTime": "Actual start time",
+    "scheduledStartHint": "Scheduled time. If the match started at another time, enter that time.",
+    "actualStartRemarkHint": "{{label}}: {{time}}, added to the remarks",
     "actionLog": {
       "deletePointEvent": "Delete this point event?",
       "deleteTimeoutEvent": "Delete this timeout event?",

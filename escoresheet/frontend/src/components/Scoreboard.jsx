@@ -49,7 +49,7 @@ import { ACCESS_CHANGED_EVENT } from '../lib/access'
 import { queueEventSync, queueSetScoreSync, queueSetReopenSync, buildSetEndMatchPayload, setLiveStateDirty, isLiveStateDirty, isLiveStateErrorWorthAlert, isLiveStateRefusal, isLiveStateRefused, markLiveStateRefused, clearLiveStateRefused } from '../utils/eventSync'
 import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from '../utils/logger'
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
-import { defaultSetStartTime } from '../utils/setStartTime'
+import { defaultSetStartTime, actualStartRemark, startsFromSchedule } from '../utils/setStartTime'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet } from '../domain/rules'
 import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags, deferredPenaltyPoints } from '../domain/sanctions'
@@ -60,7 +60,7 @@ import { playerReplacedByLibero } from '../domain/liberos'
 import { planSubstitutionDeletion, countRegularSubstitutions, classifySubstitutionRequest, MAX_SUBSTITUTIONS_PER_SET } from '../domain/substitutions'
 import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, syncJobsForSets, scoreAfterUndo } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, renumberPlayerInEvents } from '../domain/roster'
-import { appendRemark, removeRemarkLine, eventRemark, remarkClock } from '../domain/remarks'
+import { appendRemark, removeRemarkLine, eventRemark, remarkClock, setActualStartRemark } from '../domain/remarks'
 import { LINEUP_POSITIONS, lineupEntryErrors, lineupCandidates, lineupCaptainStatus, teamCaptainNumber, gameCaptainOptions, initialGameCaptainChoice, lineupGameCaptainDecision } from '../domain/lineupEntry'
 import { describeEventText } from '../domain/describe'
 import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
@@ -5434,11 +5434,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         return
       }
 
-      // Show set start time confirmation: the set starts now (its first rally)
+      // Show set start time confirmation: set 1 the scheduled time (on the day
+      // played), any other set now (its first rally)
       const allSets = await db.sets.where('matchId').equals(matchId).toArray()
-      const defaultTime = defaultSetStartTime({ setIndex: data?.set?.index, sets: allSets })
+      const scheduledAt = data?.match?.scheduledAt
+      const defaultTime = defaultSetStartTime({ setIndex: data?.set?.index, sets: allSets, scheduledAt })
+      const fromSchedule = startsFromSchedule({ setIndex: data?.set?.index, scheduledAt })
 
-      deferUi(() => setSetStartTimeModal({ setIndex: data?.set?.index, defaultTime }))
+      deferUi(() => setSetStartTimeModal({ setIndex: data?.set?.index, defaultTime, fromSchedule }))
       return
     }
 
@@ -5633,6 +5636,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const confirmedMinutes = confirmedDate.getUTCHours() * 60 + confirmedDate.getUTCMinutes()
     const timeDifferent = expectedMinutes !== confirmedMinutes
 
+    // Set 1 proposed from the schedule: another time is the actual start, in
+    // the remarks as "Actual start time: HH:MM" (one line, replaced or removed
+    // when the start is confirmed again); undo takes it out (autoRemark)
+    const fromSchedule = !!setStartTimeModal.fromSchedule
+    const autoRemark = fromSchedule
+      ? actualStartRemark({ setIndex: setStartTimeModal.setIndex, scheduledAt: data.match?.scheduledAt, startTime: roundToMinute(time) })
+      : null
+    if (fromSchedule) {
+      const freshMatch = await db.matches.get(matchId)
+      const remarks = setActualStartRemark(freshMatch?.remarks || '', autoRemark)
+      if (remarks !== (freshMatch?.remarks || '')) await db.matches.update(matchId, { remarks })
+    }
+
     // Update set with start time (absolute timestamp)
     await db.sets.update(data.set.id, { startTime: roundToMinute(time) })
     // ...and the cloud sets row (it holds the row's creation time until now)
@@ -5650,7 +5666,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       type: 'set_start',
       payload: {
         setIndex: setStartTimeModal.setIndex,
-        startTime: roundToMinute(time)
+        startTime: roundToMinute(time),
+        ...(autoRemark ? { autoRemark } : {})
       },
       ts: roundToMinute(time),
       seq: nextSeq1,
@@ -5691,10 +5708,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     syncToReferee()
 
     // If the start time differs from expected, automatically open remarks
-    if (timeDifferent) {
+    // (set 1 from the schedule wrote its remark itself)
+    if (timeDifferent && !fromSchedule) {
       deferUi(() => setShowRemarks(true))
     }
-  }), [setStartTimeModal, data?.set, matchId, onTriggerEventBackup, syncToReferee, syncLiveStateToSupabase, runAction, deferUi, deferEffect])
+  }), [setStartTimeModal, data?.set, data?.match?.scheduledAt, matchId, onTriggerEventBackup, syncToReferee, syncLiveStateToSupabase, runAction, deferUi, deferEffect])
 
   // Confirm set end time
   const confirmSetEndTime = useCallback(async (time) => {
@@ -22580,10 +22598,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <SbButton variant="positive"
                 onClick={async () => {
                   setLiberoReminder(null)
-                  // Show set start time confirmation: the set starts now (its first rally)
+                  // Show set start time confirmation: set 1 the scheduled time (on the
+                  // day played), any other set now (its first rally)
                   const allSets = await db.sets.where('matchId').equals(matchId).toArray()
-                  const defaultTime = defaultSetStartTime({ setIndex: data?.set?.index, sets: allSets })
-                  setSetStartTimeModal({ setIndex: data?.set?.index, defaultTime })
+                  const scheduledAt = data?.match?.scheduledAt
+                  const defaultTime = defaultSetStartTime({ setIndex: data?.set?.index, sets: allSets, scheduledAt })
+                  const fromSchedule = startsFromSchedule({ setIndex: data?.set?.index, scheduledAt })
+                  setSetStartTimeModal({ setIndex: data?.set?.index, defaultTime, fromSchedule })
                 }}
               >
                 Continue
@@ -22597,6 +22618,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         <SetStartTimeModal
           setIndex={setStartTimeModal.setIndex}
           defaultTime={setStartTimeModal.defaultTime}
+          fromSchedule={!!setStartTimeModal.fromSchedule}
           onConfirm={confirmSetStartTime}
           onCancel={() => setSetStartTimeModal(null)}
         />
@@ -24428,13 +24450,15 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
   )
 }
 
-function SetStartTimeModal({ setIndex, defaultTime, onConfirm, onCancel }) {
+function SetStartTimeModal({ setIndex, defaultTime, fromSchedule = false, onConfirm, onCancel }) {
   const { t } = useTranslation()
   const [time, setTime] = useState(() => {
     // Extract local time from UTC ISO string
     const { time: localTime } = splitLocalDateTime(defaultTime)
     return localTime
   })
+  // Set 1 proposed from the schedule: another time goes to the remarks
+  const scheduledClock = fromSchedule ? splitLocalDateTime(defaultTime).time : null
 
   const handleConfirm = () => {
     // Get the date component from defaultTime and combine with entered time
@@ -24467,6 +24491,13 @@ function SetStartTimeModal({ setIndex, defaultTime, onConfirm, onCancel }) {
         >
           <TimeInput24 value={time} onChange={setTime} style={{ fontSize: '18px', fontWeight: 600 }} />
         </div>
+        {fromSchedule && (
+          <p className="text-sm text-stone-600" style={{ marginTop: '-12px', marginBottom: '20px' }} aria-live="polite">
+            {time && time !== scheduledClock
+              ? t('scoreboard.actualStartRemarkHint', { label: t('scoreboard.actualStartTime'), time })
+              : t('scoreboard.scheduledStartHint')}
+          </p>
+        )}
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
           <SbButton variant="positive" onClick={handleConfirm}>
             Confirm
