@@ -5,6 +5,7 @@ import {
   teamAIsHome,
   liveSetsWon,
   liveSetResults,
+  liveScoreboard,
   isStaleGame,
   listedGames,
   countLiveGames,
@@ -90,6 +91,50 @@ describe('liveSetResults', () => {
     expect(liveSetResults(game)).toEqual([{ set: 1, a: 25, b: 2 }, { set: 2, a: 18, b: 25 }, { set: 3, a: 10, b: 15 }])
     const awayA = { ...game, matches: { ...game.matches, coin_toss: { team_a: 'away' } } }
     expect(liveSetResults(awayA)[0]).toEqual({ set: 1, a: 2, b: 25 })
+  })
+})
+
+// The set chips during play put each set's points under the team on that
+// side. set_results are stored by home / away, the sides by Team A; the cloud
+// list's join has only matches.set_results (no coin toss, no home name), so a
+// page opened mid-match took home for Team A: with Team A away every chip was
+// reversed until the next set end brought the match row (as OpenBeach
+// 8d40d6f at FINAL). The live row's own set counts tell, when they count the
+// same sets.
+describe('the set chips during play: Team A from the live row\'s set counts', () => {
+  const inPlay = (over) => ({ match_status: 'in_progress', current_set: 2, side_a: 'left', points_a: 3, points_b: 1, team_a_name: 'Away VC', team_b_name: 'Home VC', ...over })
+
+  it('Team A away won set 1 25-20, on the left: 25–20', () => {
+    const game = inPlay({ sets_won_a: 1, sets_won_b: 0, matches: { set_results: [{ set: 1, home: 20, away: 25 }] } })
+    expect(teamAIsHome(game)).toBe(false)
+    expect(liveScoreboard(game).setResults).toEqual([{ set: 1, left: 25, right: 20 }])
+  })
+
+  it('Team A home won set 1: as before', () => {
+    const game = inPlay({ team_a_name: 'Home VC', team_b_name: 'Away VC', sets_won_a: 1, sets_won_b: 0, matches: { set_results: [{ set: 1, home: 25, away: 20 }] } })
+    expect(teamAIsHome(game)).toBe(true)
+  })
+
+  it('set results of another set end than the live row\'s counts: not used (default)', () => {
+    // live row after set 2 (1:1), set_results still of set 1 only
+    const game = inPlay({ current_set: 3, sets_won_a: 1, sets_won_b: 1, matches: { set_results: [{ set: 1, home: 25, away: 20 }] } })
+    expect(teamAIsHome(game)).toBe(true)
+  })
+
+  it('the coin toss still wins over the counts', () => {
+    const game = inPlay({ sets_won_a: 1, sets_won_b: 0, matches: { set_results: [{ set: 1, home: 20, away: 25 }], coin_toss: { team_a: 'home' } } })
+    expect(teamAIsHome(game)).toBe(true)
+  })
+
+  it('a forfeit (ended, the forfeited sets completed to the opponent): the counts tell', () => {
+    // Team A away; home forfeited in set 2 at 10:12 (away's points completed to 25)
+    const game = inPlay({ match_status: 'ended', sets_won_a: 3, sets_won_b: 0, matches: { set_results: [{ set: 1, home: 20, away: 25 }, { set: 2, home: 10, away: 25 }, { set: 3, home: 0, away: 25 }] } })
+    expect(teamAIsHome(game)).toBe(false)
+  })
+
+  it('a match stopped at 1:1 (no winner): nothing tells, the default', () => {
+    const game = inPlay({ match_status: 'ended', sets_won_a: 1, sets_won_b: 1, matches: { set_results: [{ set: 1, home: 20, away: 25 }, { set: 2, home: 12, away: 10 }] } })
+    expect(teamAIsHome(game)).toBe(true)
   })
 })
 
