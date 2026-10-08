@@ -6122,12 +6122,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           setId: data.set.id,
           setIndex: data.set.index
         }))
-        if (onFinishSet) onFinishSet(data.set)
+        // The set-end screen stays until Match End replaces it (App opens it
+        // once it has read the match): cleared first, it showed 'Loading...'
+        // and then an empty page (laptop run 2026-10-08, OV-14). Cleared only
+        // when App could not open Match End.
+        let matchEndOpened = true
+        if (onFinishSet) {
+          try {
+            await onFinishSet(data.set)
+          } catch (err) {
+            matchEndOpened = false
+            console.error('[SET_END] Opening Match End failed:', err)
+          }
+        }
         console.log('[SET_END_DEBUG] STEP 11: onFinishSet callback completed')
 
         // Release lock for match end path (no new set to create)
         setCreationInProgressRef.current = false
-        setSetTransitionLoading(null) // Clear loading overlay
+        if (!matchEndOpened) setSetTransitionLoading(null)
         console.log('[SET_END] Lock released (match end - no new set needed)')
 
         console.log('═══════════════════════════════════════════════════════════════')
