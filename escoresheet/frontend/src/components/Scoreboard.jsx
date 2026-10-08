@@ -11795,6 +11795,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Get current score: left = team involved, right = other team
     const teamPoints = team === 'home' ? data.set.homePoints : data.set.awayPoints
     const otherPoints = team === 'home' ? data.set.awayPoints : data.set.homePoints
+    const scoreStr = `${teamPoints}:${otherPoints}`
 
     // The sheet's remark convention: "Set 3, 14:28, B 15:5, ..." (local time, concerned team first)
     const remark = eventRemark({ set: displaySetNumber(setIndex, data?.match?.bestOf), team: teamLabel, teamScore: teamPoints, oppScore: otherPoints, text: `#${newLiberoNumber} re-designated as Libero (replacing #${unableLiberoNumber})` })
@@ -11899,6 +11900,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // The sheet's remark convention: "Set 3, 14:28, B 15:5, ..." (local time, concerned team first)
       const teamScore = team === 'home' ? data.set.homePoints : data.set.awayPoints
       const opponentScore = team === 'home' ? data.set.awayPoints : data.set.homePoints
+      const scoreStr = `${teamScore}:${opponentScore}`
 
       const reasonText = reason === 'injury' ? 'becomes unable to play (injury)' : 'declared unable to play'
       const remark = eventRemark({ set: displaySetNumber(setIndex, data?.match?.bestOf), team: teamLabel, teamScore, oppScore: opponentScore, text: `Libero #${liberoNumber} ${reasonText}` })
