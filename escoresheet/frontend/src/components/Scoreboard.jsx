@@ -3115,6 +3115,27 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return () => clearInterval(timer)
   }, [betweenSetsCountdown])
 
+  // The change of courts in the deciding set on page load/refresh: the
+  // scoring screen opened with a team on 8 and the courts not changed (the
+  // app was closed or reloaded with the change-of-courts dialog, or a
+  // decision change asked from it, open) asks for it. The dialog lived only
+  // in the screen's state, so the change waited for the next point. Checked
+  // once per set when it is first shown: later, every way a point gets on the
+  // score opens it (afterPointScored), and a check on every render would
+  // reopen it under the decision change asked from it.
+  const courtSwitchLoadCheckedRef = useRef(null)
+  useEffect(() => {
+    const set = data?.set
+    if (!set || !data?.match) return
+    if (courtSwitchLoadCheckedRef.current === set.id) return
+    courtSwitchLoadCheckedRef.current = set.id
+    if (set.index !== 5 || set.finished || data.match.set5CourtSwitched) return
+    const homePoints = set.homePoints || 0
+    const awayPoints = set.awayPoints || 0
+    if (Math.max(homePoints, awayPoints) < 8) return
+    setCourtSwitchModal(prev => prev || { set, homePoints, awayPoints, teamThatScored: null })
+  }, [data?.set, data?.match])
+
   // Check if set has ended on page load/refresh (score indicates set over but modal not shown)
   useEffect(() => {
     // Don't run if set creation is in progress (prevents race condition)
