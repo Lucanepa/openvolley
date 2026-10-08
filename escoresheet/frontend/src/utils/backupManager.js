@@ -841,13 +841,22 @@ export async function fetchMatchByPin(gamePin, gameN) {
 
     if (eventWithLineup) {
       const setIndex = eventWithLineup.set_index || 1
-      // Determine left/right to home/away mapping from the event
-      // lineup_left/lineup_right are stored by court position, need to map to team
-      // For now, use coin_toss_team_a to determine
+      // lineup_left / lineup_right are by court side. The event's state
+      // snapshot has the lineups by team (A / B), so no side is guessed: the
+      // set number (odd: A left) is wrong in set 5 whenever its coin toss put
+      // B on the left, and after its change of courts at 8. Without a
+      // snapshot (an older row), the set number as before.
+      const snap = eventWithLineup.state_snapshot
+      const bySnapshot = !!(snap && (snap.lineupA || snap.lineupB))
+      const snapAIsHome = (snap?.teamAKey || matchData.coin_toss_team_a || 'home') === 'home'
       const leftIsHome = (setIndex % 2 === 1) ? (teamAIsHome) : (!teamAIsHome)
 
-      const homeRawLineup = leftIsHome ? eventWithLineup.lineup_left : eventWithLineup.lineup_right
-      const awayRawLineup = leftIsHome ? eventWithLineup.lineup_right : eventWithLineup.lineup_left
+      const homeRawLineup = bySnapshot
+        ? (snapAIsHome ? snap.lineupA : snap.lineupB)
+        : (leftIsHome ? eventWithLineup.lineup_left : eventWithLineup.lineup_right)
+      const awayRawLineup = bySnapshot
+        ? (snapAIsHome ? snap.lineupB : snap.lineupA)
+        : (leftIsHome ? eventWithLineup.lineup_right : eventWithLineup.lineup_left)
       const homeLineup = extractLineupNumbers(homeRawLineup)
       const awayLineup = extractLineupNumbers(awayRawLineup)
       const homeLiberoSub = extractLiberoSubstitution(homeRawLineup)
@@ -856,6 +865,7 @@ export async function fetchMatchByPin(gamePin, gameN) {
       console.log('[Restore] Creating lineup from event lineup_left/lineup_right:', {
         eventSeq: eventWithLineup.seq,
         setIndex,
+        bySnapshot,
         leftIsHome,
         homeLineup,
         awayLineup,
