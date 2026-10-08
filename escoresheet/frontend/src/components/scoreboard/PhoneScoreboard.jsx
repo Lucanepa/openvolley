@@ -217,40 +217,50 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   const bigButton = { width: '100%', minHeight: 52, borderRadius: 14, fontSize: 16, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }
   const darkButton = { ...bigButton, background: 'var(--ov-selected)', color: 'var(--ov-on-dark)' }
   const outlineButton = { ...bigButton, background: 'var(--ov-card)', color: 'var(--ov-text)', border: '1px solid var(--ov-hairline-strong)' }
-  const countdown = ({ countdown: value, countdownText, total }, warnAt) => (
+  const countdown = ({ countdown: value, countdownText, total }, warnAt, size = 48) => (
     <>
-      <div data-testid="phone-countdown" style={{ flex: 'none', fontSize: 48, lineHeight: 1, fontWeight: 800, fontFamily: scoreFont, fontVariantNumeric: 'tabular-nums', color: value <= warnAt ? 'var(--danger)' : 'var(--ov-text)' }}>{countdownText ?? value}</div>
+      <div data-testid="phone-countdown" style={{ flex: 'none', fontSize: size, lineHeight: 1, fontWeight: 800, fontFamily: scoreFont, fontVariantNumeric: 'tabular-nums', color: value <= warnAt ? 'var(--danger)' : 'var(--ov-text)' }}>{countdownText ?? value}</div>
       <div style={{ flex: 'none', width: '70%', height: 8, borderRadius: 4, overflow: 'hidden', background: 'var(--ov-hairline)' }}>
         <div style={{ width: `${total > 0 ? Math.max(0, Math.min(1, value / total)) * 100 : 0}%`, height: '100%', marginLeft: 'auto', borderRadius: 4, background: value <= warnAt ? 'var(--danger)' : 'var(--accent)', transition: 'width 1s linear' }} />
       </div>
     </>
   )
   let overlay = null
+  // The time-out, the interval and the deciding set's setup are each under
+  // 163px high (the point buttons at 360x780), so they never make the view
+  // scroll where the point buttons are square; on a shorter screen their row
+  // grows to them (the view scrolls) rather than them running over the rest
+  const countdownCard = { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, flex: 1, padding: 10, boxSizing: 'border-box', borderRadius: 16, background: 'var(--ov-card)', border: '1px solid var(--ov-hairline)' }
+  const cardButton = { ...outlineButton, minHeight: 44, width: 'auto', padding: '0 24px' }
   if (centre?.kind === 'timeout') {
     overlay = (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, height: '100%', padding: 10, borderRadius: 16, background: 'var(--ov-card)', border: '1px solid var(--ov-hairline)' }}>
+      <div style={countdownCard}>
         <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ov-text-secondary)', textAlign: 'center' }}>{t('scoreboard.phone.timeoutRunning', { team: centre.teamName })}</div>
-        {countdown(centre, 10)}
-        <button type="button" style={{ ...outlineButton, width: 'auto', padding: '0 24px' }} onClick={() => actions.stopTimeout()}>{t('scoreboard.buttons.stopTimeout')}</button>
+        {countdown(centre, 10, 44)}
+        <button type="button" style={cardButton} onClick={() => actions.stopTimeout()}>{t('scoreboard.buttons.stopTimeout')}</button>
       </div>
     )
   } else if (centre?.kind === 'set5') {
+    // The two switches side by side, as the two point buttons they stand for
+    const switchButton = { ...darkButton, minHeight: 44, padding: '2px 6px', fontSize: 14, lineHeight: 1.15, textAlign: 'center', gap: 6 }
     overlay = (
-      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 8, height: '100%' }}>
-        <button type="button" style={darkButton} onClick={() => actions.set5SwitchSides()}><span aria-hidden="true">⇄</span>{t('scoreboard.buttons.switchSides')}</button>
-        <button type="button" style={darkButton} onClick={() => actions.set5SwitchServe()}>{t('scoreboard.buttons.switchServe')}</button>
+      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 8, flex: 1 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+          <button type="button" style={switchButton} onClick={() => actions.set5SwitchSides()}><span aria-hidden="true">⇄</span>{t('scoreboard.buttons.switchSides')}</button>
+          <button type="button" style={switchButton} onClick={() => actions.set5SwitchServe()}>{t('scoreboard.buttons.switchServe')}</button>
+        </div>
         <button type="button" style={{ ...bigButton, background: 'var(--ov-success)', color: '#ffffff' }} onClick={() => actions.set5Confirm()}>{centre.confirmLabel}</button>
         {typeof centre.countdown === 'number' && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>{countdown(centre, 30)}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>{countdown(centre, 30, 32)}</div>
         )}
       </div>
     )
   } else if (centre?.kind === 'interval') {
     overlay = (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, height: '100%', padding: 10, borderRadius: 16, background: 'var(--ov-card)', border: '1px solid var(--ov-hairline)' }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ov-text-secondary)' }}>{t('scoreboard.phone.interval')}</div>
-        {countdown(centre, 30)}
-        <button type="button" style={{ ...outlineButton, width: 'auto', padding: '0 24px' }} onClick={() => actions.endInterval()}>{t('scoreboard.buttons.endSetInterval')}</button>
+      <div style={countdownCard}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ov-text-secondary)', textAlign: 'center' }}>{t('scoreboard.phone.interval')}</div>
+        {countdown(centre, 30, 44)}
+        <button type="button" style={cardButton} onClick={() => actions.endInterval()}>{t('scoreboard.buttons.endSetInterval')}</button>
       </div>
     )
   } else if (!inPlay) {
@@ -262,7 +272,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
         // No click event in: the screen's handler asks first when a point was
         // just awarded (accidental rally start check), as the desktop does
         onClick={() => actions.startRally()}
-        style={{ ...bigButton, height: '100%', fontSize: 24, fontWeight: 800, borderRadius: 16, background: rally.startDisabled ? 'var(--ov-sunken-strong)' : 'var(--ov-selected)', color: rally.startDisabled ? 'var(--ov-text-faint)' : 'var(--ov-on-dark)' }}
+        style={{ ...bigButton, flex: 1, fontSize: 24, fontWeight: 800, borderRadius: 16, background: rally.startDisabled ? 'var(--ov-sunken-strong)' : 'var(--ov-selected)', color: rally.startDisabled ? 'var(--ov-text-faint)' : 'var(--ov-on-dark)' }}
       >
         {rally.isFirstRally ? t('scoreboard.buttons.startSet') : t('scoreboard.buttons.startRally')}
       </button>
@@ -347,15 +357,19 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
         {teamActions(right)}
       </section>
 
-      <section aria-label={t('scoreboard.phone.pointButtons')} style={{ flex: 'none', position: 'relative', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, padding: '0 12px 8px' }}>
+      <section aria-label={t('scoreboard.phone.pointButtons')} style={{ flex: 'none', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, padding: '0 12px 8px' }}>
         {inPlay && !centre ? (
           <>{pointButton(left)}{pointButton(right)}</>
         ) : (
           <>
-            {/* Two square slots keep the height of the point buttons */}
-            <div aria-hidden="true" className={squareClass} />
-            <div aria-hidden="true" className={squareClass} />
-            <div style={{ position: 'absolute', top: 0, left: 12, right: 12, bottom: 8 }}>{overlay}</div>
+            {/* Two square slots keep the height of the point buttons; the
+                centre shares their row, in the flow: on a short screen, where
+                the point buttons are low, the row grows to the centre's
+                height (the view scrolls) rather than a countdown or the
+                deciding set's setup running over the actions */}
+            <div aria-hidden="true" className={squareClass} style={{ gridRow: 1, gridColumn: 1 }} />
+            <div aria-hidden="true" className={squareClass} style={{ gridRow: 1, gridColumn: 2 }} />
+            <div data-testid="phone-centre" style={{ gridRow: 1, gridColumn: '1 / -1', minWidth: 0, display: 'flex', flexDirection: 'column' }}>{overlay}</div>
           </>
         )}
       </section>
