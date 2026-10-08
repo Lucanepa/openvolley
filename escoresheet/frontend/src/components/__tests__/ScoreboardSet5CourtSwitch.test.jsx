@@ -6,7 +6,9 @@
 // (7:7 swapped to 8:6) or from the change-of-courts dialog (8:7 swapped to
 // 7:8) left a team at 8 with no change of courts, and a decision change
 // cancelled from the change-of-courts / set-end dialog dropped that dialog,
-// all until the next point. The change is made once a set.
+// all until the next point. The change is made once a set, and taken back
+// when a replay or a decision change leaves no team on 8 (owner's decision,
+// 2026-10-08: the courts are changed back, and changed again at 8).
 //
 // On the real scoring screen over the app's real Dexie database (fake
 // IndexedDB), driven with taps. Network is off: no relay socket, no fetch.
@@ -78,6 +80,7 @@ const set5 = async () => (await db.sets.toArray()).find(s => s.index === 5)
 const score = async () => { const s = await set5(); return [s.homePoints, s.awayPoints] }
 const switched = async (matchId) => !!(await db.matches.get(matchId)).set5CourtSwitched
 const switchOpen = () => !!button('Switch courts')
+const switchBackOpen = () => !!button('Switch courts back')
 const setEndOpen = () => document.body.textContent.includes('Set 5 end') || document.body.textContent.includes('Match end')
 const decisionOpen = () => document.body.textContent.includes('Replay the rally')
 // Team A (home) is on the left before the change of courts, on the right
@@ -150,6 +153,15 @@ async function switchCourts(matchId) {
   fireEvent.click(button('Switch courts'))
   await waitFor(async () => expect(await switched(matchId)).toBe(true))
   await waitFor(() => expect(switchOpen()).toBe(false))
+  await settle()
+}
+// The change back: the dialog says so, and confirming clears the change
+async function switchCourtsBack(matchId) {
+  await waitFor(() => expect(switchBackOpen()).toBe(true), { timeout: 5000 })
+  expect(document.body.textContent).toContain('the teams switch courts back')
+  fireEvent.click(button('Switch courts back'))
+  await waitFor(async () => expect(await switched(matchId)).toBe(false))
+  await waitFor(() => expect(switchBackOpen()).toBe(false))
   await settle()
 }
 // "Decision change" on the scoring screen (the rally button)
@@ -312,10 +324,12 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
     cleanup()
   }, 60000)
 
-  // The open rules question (left to the owner): after the change of courts,
-  // a decision that takes the leader back below 8 leaves the courts as they
-  // are. Nothing crashes and no second change is made.
-  it('after the change of courts, a decision change back below 8 (8:6 to 7:7) keeps the courts; no second change at 8', async () => {
+  // The owner's decision (2026-10-08): the courts follow the score. After the
+  // change of courts, a replay or a decision change that leaves no team on 8
+  // asks to change the courts back (they used to stay changed, and no change
+  // was asked when a team reached 8 again); confirmed, the change is asked
+  // again when a team reaches 8.
+  it('after the change of courts, a decision change back below 8 (8:6 to 7:7) asks to change back; at 8 again the change is asked again', async () => {
     const matchId = await setUpSet5(level(6, 'home'))
     mount(matchId)
     await ready()
@@ -327,20 +341,26 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
     await screenDecisionChange()
     await confirmDecision()
     expect(await score()).toEqual([7, 7])
-    await settle()
+    await waitFor(() => expect(switchBackOpen()).toBe(true), { timeout: 5000 })
     expect(switchOpen()).toBe(false)
+    expect(document.body.textContent).toContain('Court switch back required')
+    expect(document.body.textContent).toContain('7 : 7')
+    // not changed back before it is confirmed
     expect(await switched(matchId)).toBe(true)
-    expect(teamAOnLeft()).toBe(false)
+
+    await switchCourtsBack(matchId)
+    await waitFor(() => expect(teamAOnLeft()).toBe(true))
 
     await point('Point B')
     expect(await score()).toEqual([7, 8])
-    await settle()
-    expect(switchOpen()).toBe(false)
-    expect(teamAOnLeft()).toBe(false)
+    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+    expect(document.body.textContent).toContain('7 : 8')
+    await switchCourts(matchId)
+    await waitFor(() => expect(teamAOnLeft()).toBe(false))
     cleanup()
   }, 60000)
 
-  it('after the change of courts, a replay back below 8 (8:7 to 7:7) keeps the courts; no second change at 8', async () => {
+  it('after the change of courts, a replay back below 8 (8:7 to 7:7) asks to change back; at 8 again the change is asked again', async () => {
     const matchId = await setUpSet5(level(7))
     mount(matchId)
     await ready()
@@ -353,16 +373,98 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
     chooseReplay()
     await confirmDecision()
     expect(await score()).toEqual([7, 7])
-    await settle()
-    expect(switchOpen()).toBe(false)
-    expect(await switched(matchId)).toBe(true)
-    expect(teamAOnLeft()).toBe(false)
+    await switchCourtsBack(matchId)
+    await waitFor(() => expect(teamAOnLeft()).toBe(true))
 
     await point('Point A')
     expect(await score()).toEqual([8, 7])
+    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+    await switchCourts(matchId)
+    await waitFor(() => expect(teamAOnLeft()).toBe(false))
+    cleanup()
+  }, 60000)
+
+  it('a decision change that keeps a team on 8 after the change of courts (9:7 to 8:8) asks nothing', async () => {
+    const matchId = await setUpSet5(level(7, 'home', 'home'), { courtsSwitched: true })
+    mount(matchId)
+    await ready()
+    expect(await score()).toEqual([9, 7])
+    await screenDecisionChange()
+    await confirmDecision()
+    expect(await score()).toEqual([8, 8])
     await settle()
     expect(switchOpen()).toBe(false)
+    expect(switchBackOpen()).toBe(false)
+    expect(await switched(matchId)).toBe(true)
+    cleanup()
+  }, 60000)
+
+  it('a decision change asked from the change-back dialog and cancelled brings it back', async () => {
+    const matchId = await setUpSet5(level(6, 'home'))
+    mount(matchId)
+    await ready()
+    await point('Point A')
+    await switchCourts(matchId)
+    await screenDecisionChange()
+    await confirmDecision()
+    await waitFor(() => expect(switchBackOpen()).toBe(true), { timeout: 5000 })
+
+    await dialogDecisionChange('Switch courts back')
+    expect(switchBackOpen()).toBe(false)
+    await cancelDecision()
+    expect(await score()).toEqual([7, 7])
+    await switchCourtsBack(matchId)
+    await waitFor(() => expect(teamAOnLeft()).toBe(true))
+    cleanup()
+  }, 60000)
+
+  // Undo of the decision change that led to the change back: 8:6 again, with
+  // the courts changed as they were (no dialog, as undo of the point that
+  // reached 8 takes the change back with none), and no second change
+  it('undo of the decision change that led to the change back restores 8:6 with the courts changed', async () => {
+    const matchId = await setUpSet5(level(6, 'home'))
+    mount(matchId)
+    await ready()
+    await point('Point A')
+    await switchCourts(matchId)
+    await screenDecisionChange()
+    await confirmDecision()
+    await switchCourtsBack(matchId)
+    await waitFor(() => expect(teamAOnLeft()).toBe(true))
+
+    await undoLast()
+    expect(await score()).toEqual([8, 6])
+    expect(await switched(matchId)).toBe(true)
+    await waitFor(() => expect(teamAOnLeft()).toBe(false))
+    await settle()
+    expect(switchOpen()).toBe(false)
+    expect(switchBackOpen()).toBe(false)
+
+    await point('Point B')
+    expect(await score()).toEqual([8, 7])
+    await settle()
+    expect(switchOpen()).toBe(false)
+    expect(switchBackOpen()).toBe(false)
     expect(teamAOnLeft()).toBe(false)
+    cleanup()
+  }, 60000)
+
+  it('the scoring screen reloaded with the change back pending asks for it again', async () => {
+    const matchId = await setUpSet5(level(6, 'home'))
+    mount(matchId)
+    await ready()
+    await point('Point A')
+    await switchCourts(matchId)
+    await screenDecisionChange()
+    await confirmDecision()
+    await waitFor(() => expect(switchBackOpen()).toBe(true), { timeout: 5000 })
+
+    cleanup()
+    mount(matchId)
+    await waitFor(() => expect(switchBackOpen()).toBe(true), { timeout: 10000 })
+    expect(await score()).toEqual([7, 7])
+    await switchCourtsBack(matchId)
+    await waitFor(() => expect(teamAOnLeft()).toBe(true))
     cleanup()
   }, 60000)
 

@@ -574,6 +574,7 @@
       "decisionChange": "Decision change",
       "switchSides": "Switch sides",
       "switchCourts": "Switch courts",
+      "switchCourtsBack": "Switch courts back",
       "switchServe": "Switch serve",
       "confirmSet5Setup": "Confirm set {{number}} setup"
     },
@@ -602,6 +603,8 @@
       "liberoRedesignation": "Libero re-designation",
       "courtSwitchRequired": "Court switch required",
       "teamsMustSwitchCourts": "Teams must switch courts",
+      "courtSwitchBackRequired": "Court switch back required",
+      "teamsMustSwitchCourtsBack": "No team has 8 points any more: the teams switch courts back",
       "set5ChooseSideService": "Set {{number}} - choose side and service",
       "noLegalSubstitution": "No legal substitution available",
       "liberoReminder": "Libero reminder",
