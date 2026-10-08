@@ -82,7 +82,8 @@ const button = (text, root) => root
   : all(text).find(b => !b.disabled)
 
 // Set 1 under way at 1:1, team A (home) on the left, both line-ups entered
-async function setUpMatch() {
+// (matchFields: e.g. both teams' delay warning given, so Delay penalty shows)
+async function setUpMatch(matchFields = {}) {
   const home = await db.teams.add({ name: 'Home VC', shortName: 'HOM' })
   const away = await db.teams.add({ name: 'Away VC', shortName: 'AWY' })
   const players = []
@@ -90,7 +91,7 @@ async function setUpMatch() {
   await db.players.bulkAdd(players)
   const matchId = await db.matches.add({
     homeTeamId: home, awayTeamId: away, status: 'live', test: false, bestOf: 5,
-    firstServe: 'home', coinTossTeamA: 'home', coinTossTeamB: 'away'
+    firstServe: 'home', coinTossTeamA: 'home', coinTossTeamB: 'away', ...matchFields
   })
   const t = new Date(Date.now() - 30 * 60 * 1000).toISOString()
   await db.sets.add({ matchId, index: 1, homePoints: 1, awayPoints: 1, finished: false, startTime: t })
@@ -146,6 +147,18 @@ describe('Scoreboard: the team sanctions while the rally is in play', () => {
     for (const text of ['Improper request', 'Delay warning']) {
       expect(all(text).every(b => !b.disabled)).toBe(true)
     }
+  }, 60000)
+
+  it('desktop: every Delay penalty button (a delay warning given) is disabled during the rally, enabled after it', async () => {
+    setViewport(1280, 800)
+    mount(await setUpMatch({ sanctions: { delayWarningHome: true, delayWarningAway: true } }))
+    await startRally()
+    expect(all('Delay warning')).toHaveLength(0)
+    expect(all('Delay penalty').length).toBeGreaterThanOrEqual(2)
+    expect(all('Delay penalty').every(b => b.disabled)).toBe(true)
+
+    await pointA()
+    expect(all('Delay penalty').every(b => !b.disabled)).toBe(true)
   }, 60000)
 
   it('phone: the Sanction entry is disabled during the rally, and opens the team sanctions after it', async () => {
