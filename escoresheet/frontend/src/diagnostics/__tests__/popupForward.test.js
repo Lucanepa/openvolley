@@ -11,18 +11,26 @@ import { JSDOM } from 'jsdom'
 
 const ORIGIN = 'http://localhost:5173'
 
-/** A desktop app window: Tauri's IPC with the ACL of capabilities/diagnostics.json. */
-function desktopWindow(label, path, { env = true } = {}) {
+/**
+ * A desktop app window: Tauri's IPC with the ACL of capabilities/diagnostics.json.
+ * `metadataLabel`: the label the page itself reads (__TAURI_INTERNALS__.metadata).
+ * In the real Linux app (WebKitGTK) a pop-up reads the opener's, "main", while
+ * the app refuses its commands as "popup-<n>" (measured 2026-10-08, debug build
+ * under Xvfb: metadata "main", refusal 'diagnostics_append not allowed on window
+ * "popup-1", webview "popup-1", URL: ...').
+ */
+function desktopWindow(label, path, { env = true, metadataLabel = label } = {}) {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: `${ORIGIN}${path}`, pretendToBeVisual: true })
   const win = dom.window
   const file = []
   const calls = []
   win.__TAURI_INTERNALS__ = {
-    metadata: { currentWindow: { label }, currentWebview: { label } },
+    metadata: { currentWindow: { label: metadataLabel }, currentWebview: { label: metadataLabel } },
     invoke: vi.fn(async (cmd, args) => {
       calls.push(cmd)
       if (label !== 'main' && cmd.startsWith('diagnostics_')) {
-        throw new Error(`${cmd} not allowed on window "${label}"`)
+        // Tauri rejects with a string
+        throw `${cmd} not allowed on window "${label}", webview "${label}", URL: ${ORIGIN}${path}`
       }
       if (cmd === 'diagnostics_append') {
         for (const l of args.lines) {
@@ -120,6 +128,38 @@ describe('desktop pop-up windows: diagnostics reach the main window', () => {
     // each line once
     const seqs = fromPopup.map(l => l.seq)
     expect(new Set(seqs).size).toBe(seqs.length)
+  })
+
+  it('a pop-up whose page reads "main" as its label (Linux) still sends its lines, and takes no one else\'s', async () => {
+    const heard = []
+    const spy = new globalThis.BroadcastChannel('ov-diagnostics')
+    spy.onmessage = (e) => heard.push(e.data)
+    const main = await openMain()
+    const popup = await openPopup('popup-1', '/scoresheet/?matchId=7', { app: 'scoresheet', metadataLabel: 'main' })
+    const other = await openPopup('popup-2', '/referee/?match=7', { app: 'referee', metadataLabel: 'main' })
+    await settle()
+    popup.diag.recorder.diag('ui.click', { text: 'Save PDF' })
+    other.diag.recorder.diag('ui.click', { text: 'Menu' })
+    await popup.diag.recorder.flushDiagnostics()
+    await other.diag.recorder.flushDiagnostics()
+    await settle()
+    await main.diag.recorder.flushDiagnostics()
+    spy.close()
+    const lines = parsedFile(main)
+    const clicks = lines.filter(l => l.k === 'ui.click')
+    expect(clicks.map(l => [l.win, l.page, l.d.text])).toEqual(expect.arrayContaining([
+      ['popup-1', 'scoresheet', 'Save PDF'],
+      ['popup-2', 'referee', 'Menu']
+    ]))
+    expect(clicks).toHaveLength(2)
+    expect(popup.diag.index.diagnosticsState().sink).toBe('forward')
+    // only the main window answers: a pop-up never acknowledges another's lines
+    expect(heard.filter(m => m.t === 'diag-ack')).toHaveLength(new Set(heard.filter(m => m.t === 'diag-lines').map(m => `${m.from}:${m.id}`)).size)
+    // the pop-ups asked once whether they may write, and never switched native events
+    for (const w of [popup, other]) {
+      expect(w.calls.filter(c => c === 'diagnostics_append')).toHaveLength(1)
+      expect(w.calls).not.toContain('diagnostics_native')
+    }
   })
 
   it('a pop-up has no export of its own (its lines are in the scoretable\'s file)', async () => {
