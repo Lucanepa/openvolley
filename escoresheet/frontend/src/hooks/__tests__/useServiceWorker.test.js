@@ -78,6 +78,30 @@ describe('applyServiceWorkerUpdate', () => {
     return replace
   }
 
+  // The desktop app at start: the home screen's banner and applyUpdateAtStart
+  // both applied the same waiting build 1 ms apart (two page.reload_request
+  // lines, two SKIP_WAITING). A second call joins the one under way.
+  it('a second call while one is under way joins it: one SKIP_WAITING, one reload', async () => {
+    const replace = mockLocation('https://host/')
+    let onControllerChange = null
+    const waiting = { postMessage: vi.fn(() => setTimeout(() => onControllerChange?.(), 5)) }
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: {
+        getRegistration: vi.fn().mockResolvedValue({ waiting }),
+        addEventListener: vi.fn((type, cb) => { if (type === 'controllerchange') onControllerChange = cb })
+      }
+    })
+    const first = applyServiceWorkerUpdate()
+    const second = applyServiceWorkerUpdate()
+    await Promise.all([first, second])
+    expect(waiting.postMessage).toHaveBeenCalledTimes(1)
+    expect(replace).toHaveBeenCalledTimes(1)
+    // once done, a later call works again
+    await applyServiceWorkerUpdate()
+    expect(replace).toHaveBeenCalledTimes(2)
+  })
+
   it('posts SKIP_WAITING, never wipes caches or unregisters, and reloads with the query kept', async () => {
     const replace = mockLocation('https://host/referee/?match=42&team=home')
     let onControllerChange
