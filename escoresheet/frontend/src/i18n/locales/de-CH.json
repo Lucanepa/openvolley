@@ -874,7 +874,7 @@
     },
     "phone": {
       "setInfo": "Satz {{set}} · Sätz {{left}} : {{right}}",
-      "setsWon": "Gwunnigi Sätz: {{count}}",
+      "setsWon": "Sätz: {{count}}",
       "timeOut": "Timeout",
       "courtPlayer": "Spieler {{number}}, Team {{team}}",
       "score": "Spielstand",

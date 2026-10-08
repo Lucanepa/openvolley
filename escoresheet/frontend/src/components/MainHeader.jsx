@@ -10,6 +10,7 @@ import { BellIcon, SatelliteDishIcon, ClipboardIcon, ZoomInIcon, HomeIcon } from
 import { ChevronDown, ChevronUp, Maximize, Menu, Minimize, Power, Tablet, X } from 'lucide-react'
 import { isDesktopScoretable, requestDesktopQuit } from '../utils/appLifecycle'
 import { cn } from '../ui/cn.js'
+import { useCollapseTransition } from '../hooks/useCollapseTransition'
 import { SwitchTrack } from '../ui/Switch.jsx'
 import {
   FOCUS_RING, KIT_SCOPE, HEADER_BAR, HEADER_BTN, HEADER_BTN_ON, POPOVER_PANEL, MENU_PANEL, MENU_ROW, MENU_SUBROW, MENU_ROW_ON,
@@ -162,6 +163,8 @@ export default function MainHeader({
 
   // Effective collapsed state - only collapse when collapsible is true
   const effectivelyCollapsed = collapsible && isCollapsed
+  // Animated only while it collapses or expands, not on an app scale change
+  const headerTransition = useCollapseTransition(effectivelyCollapsed)
 
   // The phone scoring layout fills the screen: the header starts folded
   // away (its thin bar opens it again)
@@ -592,7 +595,7 @@ export default function MainHeader({
           flexShrink: 0,
           gap: `${Math.round(10 * scaleFactor)}px`,
           overflow: effectivelyCollapsed ? 'hidden' : 'visible',
-          transition: 'all 0.3s ease-in-out',
+          transition: headerTransition,
           fontSize: `${Math.round(14 * scaleFactor)}px`
         }}>
         {/* Left: Online/Offline Toggle + Connection Status */}

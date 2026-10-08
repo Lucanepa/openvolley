@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Undo2, Menu } from 'lucide-react'
 import { ActionSheet } from '../../ui/Modal.jsx'
 import { COURT_SURFACE, HEADER_SURFACE, normaliseColour, teamBoxStyle, teamTextPaint } from '../../utils/teamColours'
-import { COURT_CELLS, POSITIONS, officialRoleShort, tintOf } from './phoneLayout'
+import { COURT_CELLS, PHONE_COURT_MIN_PX, PHONE_RECENT_HEIGHT_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, POSITIONS, officialRoleShort, tintOf } from './phoneLayout'
 
 /**
  * The scoring screen on a phone held upright (owner-approved mockup, 390x844).
@@ -44,16 +44,6 @@ import { COURT_CELLS, POSITIONS, officialRoleShort, tintOf } from './phoneLayout
  *   [{ number }], officials: [{ role }], improperRequestDone, delayWarned,
  *   needsRedesignation }
  */
-// Three 15px lines, two 3px gaps, 6px padding top and bottom: the last
-// actions keep one height whether they show none or three
-const RECENT_HEIGHT_PX = 63
-// Everything but the court and the point buttons, top to bottom: header 52,
-// score cards 89, court padding 10, last actions 63 + 12, team actions at
-// their smallest 56 + 8, point-button padding 8, action grid 108
-const SQUARE_RESERVE_PX = 52 + 89 + 10 + RECENT_HEIGHT_PX + 12 + 64 + 8 + 108
-// Below this height the point buttons stop shrinking and the view scrolls
-const SQUARE_MIN_PX = 56
-
 export default function PhoneScoreboard({ setNumber, teams, serving, rally, centre, recent, canUndo, scoreFont = 'inherit', actions }) {
   const { t } = useTranslation()
   // The phone's own pickers: { kind: 'sub', side, out?: { position, number } } | { kind: 'sanction' } | { kind: 'libero' }
@@ -101,27 +91,31 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   const scoreCard = (team) => {
     const isServing = serving === team.side
     const p = paint[team.side]
+    // Beside a two-digit score a 360px card leaves about 79px: the score is a
+    // touch smaller on a narrow phone, the pill tight, and what still does not
+    // fit is clipped rather than running into the score
+    const line = { maxWidth: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
     const info = (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, alignItems: team.side === 'left' ? 'flex-start' : 'flex-end' }}>
-        <span style={{ maxWidth: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 12, fontWeight: 700, color: p.ink }}>{teamTitle(team)}</span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, overflow: 'hidden', alignItems: team.side === 'left' ? 'flex-start' : 'flex-end' }}>
+        <span style={{ ...line, fontSize: 12, fontWeight: 700, color: p.ink }}>{teamTitle(team)}</span>
         <span
           aria-hidden={!isServing}
-          style={{ visibility: isServing ? 'visible' : 'hidden', padding: '2px 8px', borderRadius: 999, background: 'var(--ov-text)', color: 'var(--ov-card)', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', lineHeight: 1.3, whiteSpace: 'nowrap' }}
+          style={{ ...line, visibility: isServing ? 'visible' : 'hidden', boxSizing: 'border-box', padding: '2px 5px', borderRadius: 999, background: 'var(--ov-text)', color: 'var(--ov-card)', fontSize: 10, fontWeight: 800, letterSpacing: '0.02em', lineHeight: 1.3 }}
         >
           {t('scoreboard.labels.serveLabel')}
         </span>
-        <span style={{ whiteSpace: 'nowrap', fontSize: 11, fontWeight: 600, color: 'var(--ov-text-muted)' }}>
+        <span style={{ ...line, fontSize: 11, fontWeight: 600, color: 'var(--ov-text-muted)' }}>
           {t('scoreboard.phone.setsWon', { count: team.setsWon })}
         </span>
       </div>
     )
     const score = (
-      <span data-testid={`phone-score-${team.side}`} style={{ flex: 'none', fontSize: 52, lineHeight: 1, fontWeight: 800, fontVariantNumeric: 'tabular-nums', fontFamily: scoreFont }}>
+      <span data-testid={`phone-score-${team.side}`} style={{ flex: 'none', fontSize: 'clamp(40px, 12cqw, 52px)', lineHeight: 1, letterSpacing: '-0.02em', fontWeight: 800, fontVariantNumeric: 'tabular-nums', fontFamily: scoreFont }}>
         {team.points}
       </span>
     )
     return (
-      <div key={team.side} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '6px 12px', minWidth: 0, borderRadius: 14, background: isServing ? p.tint : 'var(--ov-card)', border: '1px solid var(--ov-hairline)' }}>
+      <div key={team.side} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, padding: '6px 10px', minWidth: 0, borderRadius: 14, background: isServing ? p.tint : 'var(--ov-card)', border: '1px solid var(--ov-hairline)' }}>
         {team.side === 'left' ? <>{info}{score}</> : <>{score}{info}</>}
       </div>
     )
@@ -227,40 +221,50 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   const bigButton = { width: '100%', minHeight: 52, borderRadius: 14, fontSize: 16, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }
   const darkButton = { ...bigButton, background: 'var(--ov-selected)', color: 'var(--ov-on-dark)' }
   const outlineButton = { ...bigButton, background: 'var(--ov-card)', color: 'var(--ov-text)', border: '1px solid var(--ov-hairline-strong)' }
-  const countdown = ({ countdown: value, countdownText, total }, warnAt) => (
+  const countdown = ({ countdown: value, countdownText, total }, warnAt, size = 48) => (
     <>
-      <div data-testid="phone-countdown" style={{ flex: 'none', fontSize: 48, lineHeight: 1, fontWeight: 800, fontFamily: scoreFont, fontVariantNumeric: 'tabular-nums', color: value <= warnAt ? 'var(--danger)' : 'var(--ov-text)' }}>{countdownText ?? value}</div>
+      <div data-testid="phone-countdown" style={{ flex: 'none', fontSize: size, lineHeight: 1, fontWeight: 800, fontFamily: scoreFont, fontVariantNumeric: 'tabular-nums', color: value <= warnAt ? 'var(--danger)' : 'var(--ov-text)' }}>{countdownText ?? value}</div>
       <div style={{ flex: 'none', width: '70%', height: 8, borderRadius: 4, overflow: 'hidden', background: 'var(--ov-hairline)' }}>
         <div style={{ width: `${total > 0 ? Math.max(0, Math.min(1, value / total)) * 100 : 0}%`, height: '100%', marginLeft: 'auto', borderRadius: 4, background: value <= warnAt ? 'var(--danger)' : 'var(--accent)', transition: 'width 1s linear' }} />
       </div>
     </>
   )
   let overlay = null
+  // The time-out, the interval and the deciding set's setup are each under
+  // 163px high (the point buttons at 360x780), so they never make the view
+  // scroll where the point buttons are square; on a shorter screen their row
+  // grows to them (the view scrolls) rather than them running over the rest
+  const countdownCard = { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, flex: 1, padding: 10, boxSizing: 'border-box', borderRadius: 16, background: 'var(--ov-card)', border: '1px solid var(--ov-hairline)' }
+  const cardButton = { ...outlineButton, minHeight: 44, width: 'auto', padding: '0 24px' }
   if (centre?.kind === 'timeout') {
     overlay = (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, height: '100%', padding: 10, borderRadius: 16, background: 'var(--ov-card)', border: '1px solid var(--ov-hairline)' }}>
+      <div style={countdownCard}>
         <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ov-text-secondary)', textAlign: 'center' }}>{t('scoreboard.phone.timeoutRunning', { team: centre.teamName })}</div>
-        {countdown(centre, 10)}
-        <button type="button" style={{ ...outlineButton, width: 'auto', padding: '0 24px' }} onClick={() => actions.stopTimeout()}>{t('scoreboard.buttons.stopTimeout')}</button>
+        {countdown(centre, 10, 44)}
+        <button type="button" style={cardButton} onClick={() => actions.stopTimeout()}>{t('scoreboard.buttons.stopTimeout')}</button>
       </div>
     )
   } else if (centre?.kind === 'set5') {
+    // The two switches side by side, as the two point buttons they stand for
+    const switchButton = { ...darkButton, minHeight: 44, padding: '2px 6px', fontSize: 14, lineHeight: 1.15, textAlign: 'center', gap: 6 }
     overlay = (
-      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 8, height: '100%' }}>
-        <button type="button" style={darkButton} onClick={() => actions.set5SwitchSides()}><span aria-hidden="true">⇄</span>{t('scoreboard.buttons.switchSides')}</button>
-        <button type="button" style={darkButton} onClick={() => actions.set5SwitchServe()}>{t('scoreboard.buttons.switchServe')}</button>
+      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 8, flex: 1 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+          <button type="button" style={switchButton} onClick={() => actions.set5SwitchSides()}><span aria-hidden="true">⇄</span>{t('scoreboard.buttons.switchSides')}</button>
+          <button type="button" style={switchButton} onClick={() => actions.set5SwitchServe()}>{t('scoreboard.buttons.switchServe')}</button>
+        </div>
         <button type="button" style={{ ...bigButton, background: 'var(--ov-success)', color: '#ffffff' }} onClick={() => actions.set5Confirm()}>{centre.confirmLabel}</button>
         {typeof centre.countdown === 'number' && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>{countdown(centre, 30)}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>{countdown(centre, 30, 32)}</div>
         )}
       </div>
     )
   } else if (centre?.kind === 'interval') {
     overlay = (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, height: '100%', padding: 10, borderRadius: 16, background: 'var(--ov-card)', border: '1px solid var(--ov-hairline)' }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ov-text-secondary)' }}>{t('scoreboard.phone.interval')}</div>
-        {countdown(centre, 30)}
-        <button type="button" style={{ ...outlineButton, width: 'auto', padding: '0 24px' }} onClick={() => actions.endInterval()}>{t('scoreboard.buttons.endSetInterval')}</button>
+      <div style={countdownCard}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ov-text-secondary)', textAlign: 'center' }}>{t('scoreboard.phone.interval')}</div>
+        {countdown(centre, 30, 44)}
+        <button type="button" style={cardButton} onClick={() => actions.endInterval()}>{t('scoreboard.buttons.endSetInterval')}</button>
       </div>
     )
   } else if (!inPlay) {
@@ -272,7 +276,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
         // No click event in: the screen's handler asks first when a point was
         // just awarded (accidental rally start check), as the desktop does
         onClick={() => actions.startRally()}
-        style={{ ...bigButton, height: '100%', fontSize: 24, fontWeight: 800, borderRadius: 16, background: rally.startDisabled ? 'var(--ov-sunken-strong)' : 'var(--ov-selected)', color: rally.startDisabled ? 'var(--ov-text-faint)' : 'var(--ov-on-dark)' }}
+        style={{ ...bigButton, flex: 1, fontSize: 24, fontWeight: 800, borderRadius: 16, background: rally.startDisabled ? 'var(--ov-sunken-strong)' : 'var(--ov-selected)', color: rally.startDisabled ? 'var(--ov-text-faint)' : 'var(--ov-on-dark)' }}
       >
         {rally.isFirstRally ? t('scoreboard.buttons.startSet') : t('scoreboard.buttons.startRally')}
       </button>
@@ -281,8 +285,9 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   // The point buttons: squares as wide as their column (.phone-square in
   // styles.css). On a screen too short for the whole layout (a browser's
   // address and tool bars, the Android app's system bars) they get lower,
-  // not narrower, so they and the action grid stay on screen without
-  // scrolling; the root is the size container that measures what is left.
+  // not narrower, then the court gets lower, so they and the action grid stay
+  // on screen without scrolling; the root is the size container that
+  // measures what is left (phoneLayout.js has the heights).
   const squareClass = 'phone-square'
   const pointButton = (team) => (
     <button
@@ -325,7 +330,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
     <div
       className="ov-kit phone-scoreboard"
       data-testid="phone-scoreboard"
-      style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, height: '100%', width: '100%', maxWidth: 600, margin: '0 auto', containerType: 'size', '--phone-square-reserve': `${SQUARE_RESERVE_PX}px`, '--phone-square-min': `${SQUARE_MIN_PX}px`, overflowY: 'auto', overflowX: 'hidden', background: 'var(--ov-page-top)', color: 'var(--ov-text)', fontFamily: 'var(--font-sans)' }}
+      style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, height: '100%', width: '100%', maxWidth: 600, margin: '0 auto', containerType: 'size', '--phone-square-reserve': `${PHONE_SQUARE_RESERVE_PX}px`, '--phone-square-min': `${PHONE_SQUARE_MIN_PX}px`, '--phone-court-min': `${PHONE_COURT_MIN_PX}px`, overflowY: 'auto', overflowX: 'hidden', background: 'var(--ov-page-top)', color: 'var(--ov-text)', fontFamily: 'var(--font-sans)' }}
     >
       {header}
 
@@ -335,13 +340,14 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
       </section>
 
       <section aria-label={t('scoreboard.phone.court')} style={{ flex: 'none', padding: '6px 12px 4px' }}>
-        <div style={{ width: '100%', aspectRatio: '2 / 1', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', borderRadius: 16, background: COURT_SURFACE, border: '2px solid var(--ov-hairline-strong)', overflow: 'hidden' }}>
+        {/* 2:1, lower on a short screen (.phone-court in styles.css) */}
+        <div className="phone-court" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', borderRadius: 16, background: COURT_SURFACE, border: '2px solid var(--ov-hairline-strong)', overflow: 'hidden' }}>
           {courtHalf(left)}
           {courtHalf(right)}
         </div>
       </section>
 
-      <section aria-label={t('scoreboard.phone.recentActions')} data-testid="phone-recent" style={{ flex: 'none', margin: '4px 14px 8px', padding: '6px 10px', height: RECENT_HEIGHT_PX, boxSizing: 'border-box', overflow: 'hidden', borderRadius: 10, background: 'var(--ov-sunken-strong)', display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <section aria-label={t('scoreboard.phone.recentActions')} data-testid="phone-recent" style={{ flex: 'none', margin: '4px 14px 8px', padding: '6px 10px', height: PHONE_RECENT_HEIGHT_PX, boxSizing: 'border-box', overflow: 'hidden', borderRadius: 10, background: 'var(--ov-sunken-strong)', display: 'flex', flexDirection: 'column', gap: 3 }}>
         {recent.length === 0 ? (
           <span style={{ fontSize: 12, color: 'var(--ov-text-muted)' }}>{t('scoreboard.phone.noActions')}</span>
         ) : recent.map((r, i) => (
@@ -355,15 +361,19 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
         {teamActions(right)}
       </section>
 
-      <section aria-label={t('scoreboard.phone.pointButtons')} style={{ flex: 'none', position: 'relative', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, padding: '0 12px 8px' }}>
+      <section aria-label={t('scoreboard.phone.pointButtons')} style={{ flex: 'none', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, padding: '0 12px 8px' }}>
         {inPlay && !centre ? (
           <>{pointButton(left)}{pointButton(right)}</>
         ) : (
           <>
-            {/* Two square slots keep the height of the point buttons */}
-            <div aria-hidden="true" className={squareClass} />
-            <div aria-hidden="true" className={squareClass} />
-            <div style={{ position: 'absolute', top: 0, left: 12, right: 12, bottom: 8 }}>{overlay}</div>
+            {/* Two square slots keep the height of the point buttons; the
+                centre shares their row, in the flow: on a short screen, where
+                the point buttons are low, the row grows to the centre's
+                height (the view scrolls) rather than a countdown or the
+                deciding set's setup running over the actions */}
+            <div aria-hidden="true" className={squareClass} style={{ gridRow: 1, gridColumn: 1 }} />
+            <div aria-hidden="true" className={squareClass} style={{ gridRow: 1, gridColumn: 2 }} />
+            <div data-testid="phone-centre" style={{ gridRow: 1, gridColumn: '1 / -1', minWidth: 0, display: 'flex', flexDirection: 'column' }}>{overlay}</div>
           </>
         )}
       </section>

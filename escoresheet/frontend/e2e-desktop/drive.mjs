@@ -95,11 +95,13 @@ async function appPortBusy(port) {
   try { await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(1000) }); return true } catch { return false }
 }
 
-function logDir() {
+const sessionIsBeach = () => { const st = readState(); return !!(st?.beach || /openbeach/.test(st?.app || '')) }
+// The app's log folder (activity.rs data_log_root: the flavour's data folder,
+// OpenBeach in its own since 53665cc2). `beach`: from the session when omitted.
+function logDir(beach = sessionIsBeach()) {
   if (process.env.OPENVOLLEY_LOG_DIR) return process.env.OPENVOLLEY_LOG_DIR
-  // OpenBeach on Linux writes into OpenVolley's folder too (activity.rs data_log_root)
   const data = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share')
-  return path.join(data, 'OpenVolley', 'logs')
+  return path.join(data, beach ? 'OpenBeach' : 'OpenVolley', 'logs')
 }
 
 async function start(o) {
@@ -126,7 +128,7 @@ async function start(o) {
 
   const startedAt = new Date().toISOString()
   const s = await wd('POST', '/session', { capabilities: { alwaysMatch: { browserName: 'wry', 'tauri:options': { application: app } } } }, 120000)
-  fs.writeFileSync(STATE, JSON.stringify({ sessionId: s.sessionId, driverPid: drv.pid, app, port, startedAt, driverLog: logFile }, null, 2))
+  fs.writeFileSync(STATE, JSON.stringify({ sessionId: s.sessionId, driverPid: drv.pid, app, beach, port, startedAt, driverLog: logFile }, null, 2))
   // the page: the relay serves it, the scoretable mounts
   let ready = false
   for (let i = 0; i < 120 && !ready; i++) {
@@ -134,7 +136,7 @@ async function start(o) {
     try { ready = await exec('return document.readyState === "complete" && !!document.querySelector("#root")?.children.length') } catch { /* page still loading */ }
   }
   const info = await exec('return { url: location.href, title: document.title, diag: String(window.__OV_DIAGNOSTICS__ ?? null), w: innerWidth, h: innerHeight, dpr: devicePixelRatio }')
-  console.log(JSON.stringify({ started: ready, app, ...info, logs: logDir(), driverLog: logFile }))
+  console.log(JSON.stringify({ started: ready, app, ...info, logs: logDir(beach), driverLog: logFile }))
 }
 
 async function stop() {

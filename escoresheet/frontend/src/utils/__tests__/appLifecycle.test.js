@@ -13,6 +13,7 @@ import {
   quitQuestion,
   requestDesktopQuit,
   resetAppLifecycleForTests,
+  resolveDesktopWindow,
   setLiveMatch,
   trayLabels,
   windowsLine,
@@ -174,6 +175,49 @@ describe('desktop app', () => {
     expect(isDesktopScoretable(desktopWin().win)).toBe(true)
     expect(isDesktopScoretable(desktopWin({ label: 'popup-1' }).win)).toBe(false)
     expect(isDesktopScoretable({})).toBe(false)
+  })
+
+  // A pop-up window in the real Linux app (WebKitGTK): its own metadata names
+  // the opener, "main", while the app refuses it the scoretable's commands
+  // as "popup-<n>" (measured 2026-10-08; diagnostics/popupForward.js)
+  function linuxPopupWin({ opener = {} } = {}) {
+    const win = new EventTarget()
+    win.opener = opener
+    const invoke = vi.fn(async (cmd) => {
+      if (cmd === 'diagnostics_append') throw `diagnostics_append not allowed on window "popup-1", webview "popup-1", URL: http://localhost:5173/scoresheet/`
+      return null
+    })
+    win.__TAURI_INTERNALS__ = { invoke, metadata: { currentWindow: { label: 'main' } } }
+    return { win, invoke }
+  }
+
+  it('a Linux pop-up whose metadata says "main" is no scoretable: its opener says so at once', async () => {
+    const { win, invoke } = linuxPopupWin()
+    expect(isDesktopScoretable(win)).toBe(false)
+    expect(await resolveDesktopWindow(win)).toBe(false)
+    expect(isDesktopScoretable(win)).toBe(false)
+    expect(invoke).toHaveBeenCalledWith('diagnostics_append', { lines: [] })
+  })
+
+  it('a pop-up opened without an opener is known once the app has said which window it is', async () => {
+    const { win } = linuxPopupWin({ opener: null })
+    expect(isDesktopScoretable(win)).toBe(true) // the metadata's guess until the app answers
+    expect(await resolveDesktopWindow(win)).toBe(false)
+    expect(isDesktopScoretable(win)).toBe(false)
+  })
+
+  it('the scoretable: the app takes its (empty) diagnostics line; asked once', async () => {
+    const { win, invoke } = desktopWin()
+    expect(isDesktopScoretable(win)).toBe(true)
+    expect(await resolveDesktopWindow(win)).toBe(true)
+    expect(await resolveDesktopWindow(win)).toBe(true)
+    expect(isDesktopScoretable(win)).toBe(true)
+    expect(invoke.mock.calls.filter(([cmd]) => cmd === 'diagnostics_append')).toHaveLength(1)
+  })
+
+  it('outside the desktop app nothing is asked', async () => {
+    expect(await resolveDesktopWindow({})).toBe(false)
+    expect(await resolveDesktopWindow(undefined)).toBe(false)
   })
 
   it('reports its tray texts and the live match, again when either changes', async () => {

@@ -85,6 +85,7 @@ import { askConfirm } from '../utils/askConfirm.js'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
 import { ArrowUpDown, ChevronDown, Cross } from 'lucide-react'
 import { useDiagCommits } from '../diagnostics/commits'
+import { preload, usePreloaded } from '../utils/preload'
 
 // ── volleyui chrome for the scoreboard (RESTYLE-SPEC P5) ──────────────────────
 // Only the chrome around the court takes these: the toolbar, the side-column
@@ -249,6 +250,100 @@ const SB_INJURY_ICON = <Cross size={16} fill="currentColor" strokeWidth={1.5} />
  * the livescore see each action once, complete (a side-out's point never
  * without its rotation), and a failed action writes nothing.
  */
+
+// One explicit read transaction: a result never mixes data from before and
+// after an action's commit, and it tells useActionLiveQuery which actions
+// it already shows (their dialogs are applied in the same render)
+function readScoreboard(matchId) {
+  return db.transaction('r', [db.matches, db.teams, db.sets, db.players, db.events], async () => {
+    const match = await db.matches.get(matchId)
+    if (!match) return null
+
+    const [homeTeam, awayTeam] = await Promise.all([
+      match?.homeTeamId ? db.teams.get(match.homeTeamId) : null,
+      match?.awayTeamId ? db.teams.get(match.awayTeamId) : null
+    ])
+
+    const sets = await db.sets
+      .where('matchId')
+      .equals(matchId)
+      .sortBy('index')
+
+    // Find the current set: first unfinished set, preferring highest id if duplicates exist
+    // Also filter out any duplicate indices, keeping the latest one (highest id)
+    const setsByIndex = new Map()
+    for (const set of sets) {
+      const existing = setsByIndex.get(set.index)
+      if (!existing || set.id > existing.id) {
+        setsByIndex.set(set.index, set)
+      }
+    }
+    const dedupedSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
+    const currentSet = dedupedSets.find(s => !s.finished) ?? null
+
+    const [homePlayers, awayPlayers] = await Promise.all([
+      match?.homeTeamId
+        ? db.players.where('teamId').equals(match.homeTeamId).sortBy('number')
+        : [],
+      match?.awayTeamId
+        ? db.players.where('teamId').equals(match.awayTeamId).sortBy('number')
+        : []
+    ])
+
+    // Get all events for the match (keep logs across sets)
+    // Sort by seq if available, otherwise by ts
+    const eventsRaw = await db.events
+      .where('matchId')
+      .equals(matchId)
+      .toArray()
+
+    const events = eventsRaw.sort((a, b) => {
+      // Sort by sequence number if available
+      const aSeq = a.seq || 0
+      const bSeq = b.seq || 0
+      if (aSeq !== 0 || bSeq !== 0) {
+        return aSeq - bSeq // Ascending
+      }
+      // Fallback to timestamp for legacy events
+      const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
+      const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
+      return aTime - bTime
+    })
+
+    // Log all action IDs to track sequence numbers (show only base integer IDs, not decimals)
+    const baseActionIds = events
+      .map(e => {
+        const seq = e.seq || 0
+        return Math.floor(seq) // Get integer part only
+      })
+      .filter(id => id > 0)
+      .filter((id, index, self) => self.indexOf(id) === index) // Remove duplicates
+
+    // Action IDs tracked internally
+
+    const result = {
+      set: currentSet,
+      match,
+      homeTeam,
+      awayTeam,
+      homePlayers,
+      awayPlayers,
+      events,
+      sets
+    }
+
+    return result
+  })
+}
+
+const scoreboardKey = (matchId) => `scoreboard:${matchId}`
+
+/**
+ * Read by App before it opens the scoreboard: its first paint shows the
+ * match, never 'Loading...' first (laptop run 2026-10-08, OB-3), and the
+ * screen before it stays until then.
+ */
+export const preloadScoreboard = (matchId) => preload(scoreboardKey(matchId), () => readScoreboard(matchId))
 
 export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, onTriggerEventBackup }) {
   // diagnostics mode: React commits per user action (nothing while it is off)
@@ -993,88 +1088,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     localStorage.setItem('displayMode', 'desktop')
   }, [])
 
-  // One explicit read transaction: a result never mixes data from before and
-  // after an action's commit, and it tells useActionLiveQuery which actions
-  // it already shows (their dialogs are applied in the same render)
-  const [data, liveCommits] = useActionLiveQuery(() => db.transaction('r', [db.matches, db.teams, db.sets, db.players, db.events], async () => {
-    const match = await db.matches.get(matchId)
-    if (!match) return null
-
-    const [homeTeam, awayTeam] = await Promise.all([
-      match?.homeTeamId ? db.teams.get(match.homeTeamId) : null,
-      match?.awayTeamId ? db.teams.get(match.awayTeamId) : null
-    ])
-
-    const sets = await db.sets
-      .where('matchId')
-      .equals(matchId)
-      .sortBy('index')
-
-    // Find the current set: first unfinished set, preferring highest id if duplicates exist
-    // Also filter out any duplicate indices, keeping the latest one (highest id)
-    const setsByIndex = new Map()
-    for (const set of sets) {
-      const existing = setsByIndex.get(set.index)
-      if (!existing || set.id > existing.id) {
-        setsByIndex.set(set.index, set)
-      }
-    }
-    const dedupedSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
-    const currentSet = dedupedSets.find(s => !s.finished) ?? null
-
-    const [homePlayers, awayPlayers] = await Promise.all([
-      match?.homeTeamId
-        ? db.players.where('teamId').equals(match.homeTeamId).sortBy('number')
-        : [],
-      match?.awayTeamId
-        ? db.players.where('teamId').equals(match.awayTeamId).sortBy('number')
-        : []
-    ])
-
-    // Get all events for the match (keep logs across sets)
-    // Sort by seq if available, otherwise by ts
-    const eventsRaw = await db.events
-      .where('matchId')
-      .equals(matchId)
-      .toArray()
-
-    const events = eventsRaw.sort((a, b) => {
-      // Sort by sequence number if available
-      const aSeq = a.seq || 0
-      const bSeq = b.seq || 0
-      if (aSeq !== 0 || bSeq !== 0) {
-        return aSeq - bSeq // Ascending
-      }
-      // Fallback to timestamp for legacy events
-      const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-      const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-      return aTime - bTime
-    })
-
-    // Log all action IDs to track sequence numbers (show only base integer IDs, not decimals)
-    const baseActionIds = events
-      .map(e => {
-        const seq = e.seq || 0
-        return Math.floor(seq) // Get integer part only
-      })
-      .filter(id => id > 0)
-      .filter((id, index, self) => self.indexOf(id) === index) // Remove duplicates
-
-    // Action IDs tracked internally
-
-    const result = {
-      set: currentSet,
-      match,
-      homeTeam,
-      awayTeam,
-      homePlayers,
-      awayPlayers,
-      events,
-      sets
-    }
-
-    return result
-  }), [matchId])
+  // App's read when it opened the scoreboard (preloadScoreboard): the first
+  // paint shows the match, not 'Loading...' first
+  const preloaded = usePreloaded(matchId != null ? scoreboardKey(matchId) : null)
+  const [data, liveCommits] = useActionLiveQuery(() => readScoreboard(matchId), [matchId], preloaded)
 
   // Monitor tablet connection health — notify when a device drops
   const handleDeviceDisconnected = useCallback(({ label }) => {
@@ -3024,8 +3041,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const previousSet = findPreviousSet(data?.sets, currentSetIndex)
       let remainingTime = setIntervalDuration
 
-      if (previousSet?.endTime) {
-        const endTime = new Date(previousSet.endTime).getTime()
+      // The interval runs from the set end's confirmation: its set_end event
+      // (the set's endTime is rounded down to the minute, up to 59 s early)
+      const setEndEvent = previousSet && [...(data?.events || [])].reverse().find(e => e.type === 'set_end' && e.setIndex === previousSet.index)
+      const intervalStart = setEndEvent?.ts || previousSet?.endTime
+      if (intervalStart) {
+        const endTime = new Date(intervalStart).getTime()
         const now = Date.now()
         const elapsedSeconds = Math.floor((now - endTime) / 1000)
         remainingTime = Math.max(0, setIntervalDuration - elapsedSeconds)
@@ -3046,7 +3067,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Handle between-sets countdown timer
   useEffect(() => {
-    if (!betweenSetsCountdown || !betweenSetsCountdown.started) return
+    // No interval running (ran out, ended early, or never started): the next
+    // interval starts its own clock, not this one's
+    if (!betweenSetsCountdown) {
+      betweenSetsStartTimestampRef.current = null
+      return
+    }
+    if (!betweenSetsCountdown.started) return
 
     // Initialize refs when interval starts
     if (!betweenSetsStartTimestampRef.current) {
@@ -6114,12 +6141,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           setId: data.set.id,
           setIndex: data.set.index
         }))
-        if (onFinishSet) onFinishSet(data.set)
+        // The set-end screen stays until Match End replaces it (App opens it
+        // once it has read the match): cleared first, it showed 'Loading...'
+        // and then an empty page (laptop run 2026-10-08, OV-14). Cleared only
+        // when App could not open Match End.
+        let matchEndOpened = true
+        if (onFinishSet) {
+          try {
+            await onFinishSet(data.set)
+          } catch (err) {
+            matchEndOpened = false
+            console.error('[SET_END] Opening Match End failed:', err)
+          }
+        }
         console.log('[SET_END_DEBUG] STEP 11: onFinishSet callback completed')
 
         // Release lock for match end path (no new set to create)
         setCreationInProgressRef.current = false
-        setSetTransitionLoading(null) // Clear loading overlay
+        if (!matchEndOpened) setSetTransitionLoading(null)
         console.log('[SET_END] Lock released (match end - no new set needed)')
 
         console.log('═══════════════════════════════════════════════════════════════')
@@ -6368,7 +6407,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Closed (or the inline setup confirmed) with the written choice (deferUi)
     if (inlineMode) {
-      deferUi(() => setSet5SetupConfirmed(true))
+      // The inline setup ends the interval: its countdown goes in the same
+      // change as the setup, and the tablets are told after the commit, with
+      // the confirmed sides / serve (it went one frame before the court)
+      deferUi(() => {
+        setSet5SetupConfirmed(true)
+        setBetweenSetsCountdown(null)
+        countdownDismissedRef.current = true
+      })
+      deferEffect({ run: () => syncSet5Setup({ endInterval: true }) })
     } else {
       deferUi(() => setSet5SideServiceModal(null))
     }
@@ -6450,7 +6497,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       seq: nextSeq,
       stateBefore: set5CoinTossStateBefore
     })
-  })), [runAction, deferUi, runSet5SideService, set5SideServiceModal, data?.match, matchId, getNextSeq, getStateSnapshot])
+  })), [runAction, deferUi, deferEffect, runSet5SideService, set5SideServiceModal, data?.match, matchId, getNextSeq, getStateSnapshot, syncSet5Setup])
 
   // Get action description for an event: the paper-scoresheet wording of
   // domain/describe (localized, concerned team first, no raw event types)
@@ -12601,9 +12648,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     syncSet5Setup({ duringInterval: !!betweenSetsCountdown })
   }
   const set5ConfirmSetup = async () => {
+    // Ends the interval here and on the tablets, with the confirmed sides /
+    // serve: the action tells the tablets itself, after its commit
+    // (ScoreboardSet5SetupOneChange)
     await confirmSet5SideService(data?.match?.set5LeftTeam || 'A', data?.match?.set5FirstServe || 'A', true)
-    // Ends the interval here and on the tablets, with the confirmed sides / serve
-    await syncSet5Setup({ endInterval: true })
   }
 
   // Preview, print or save the scoresheet in its own window (the toolbar's
@@ -17288,58 +17336,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
               {/* Rally Controls - Center */}
               <div className="rally-controls" style={{ flex: (data?.set?.index === 5 && !set5SetupConfirmed) ? '1 1 auto' : '2 1 0', width: (data?.set?.index === 5 && !set5SetupConfirmed) ? '100%' : undefined, display: 'flex', flexDirection: 'column', justifyContent: 'center', marginTop: 'calc(12px * var(--scale-factor))', minWidth: 0 }}>
-                {/* Show timeout countdown if timeout is active */}
-                {timeoutModal && timeoutModal.started ? (
-                  <>
-                    <div style={{
-                      fontSize: '16px',
-                      fontWeight: 600,
-                      color: 'var(--muted)',
-                      textAlign: 'center',
-                      marginBottom: '4px'
-                    }}>
-                      Time-out — {timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))}
-                    </div>
-                    <div style={{
-                      fontSize: '48px',
-                      lineHeight: 1.1,
-                      fontWeight: 700,
-                      color: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)',
-                      textAlign: 'center',
-                      fontFamily: getScoreFont()
-                    }}>
-                      {formatTimeout(timeoutModal.countdown)}
-                    </div>
-                    {/* Progress bar */}
-                    <div style={{
-                      width: '60%',
-                      height: '8px',
-                      background: 'var(--panel)',
-                      borderRadius: '4px',
-                      overflow: 'hidden',
-                      marginTop: '6px',
-                      marginBottom: '10px',
-                      marginLeft: 'auto',
-                      marginRight: 'auto'
-                    }}>
-                      <div style={{
-                        width: `${(timeoutModal.countdown / 30) * 100}%`,
-                        height: '100%',
-                        background: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)',
-                        borderRadius: '4px',
-                        transition: 'width 1s linear, background 0.3s',
-                        marginLeft: 'auto'
-                      }} />
-                    </div>
-                    <button
-                      className="secondary"
-                      onClick={stopTimeout}
-                      style={{ width: 'auto', minHeight: '44px', minWidth: '140px', alignSelf: 'center', fontSize: '15px' }}
-                    >
-                      {t('scoreboard.buttons.stopTimeout')}
-                    </button>
-                  </>
-                ) : (data?.set?.index === 5 && !set5SetupConfirmed) ? (
+                {/* Set 5 setup and the set interval show their own content; a time-out
+                    is drawn over the rally buttons (rally-stack) */}
+                {(data?.set?.index === 5 && !set5SetupConfirmed && !timeoutModal?.started) ? (
                   <>
                     {/* Set 5 inline setup UI - buttons first, countdown beneath */}
                     <div style={{
@@ -17453,7 +17452,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       </div>
                     )}
                   </>
-                ) : betweenSetsCountdown ? (
+                ) : (betweenSetsCountdown && !timeoutModal?.started) ? (
                   <>
                     <div style={{
                       fontSize: '49px',
@@ -17494,7 +17493,62 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     </button>
                   </>
                 ) : (
-                  <>
+                  // The rally buttons stay in the box under a time-out countdown, hidden
+                  // and out of reach, so the box keeps their size: the countdown block is
+                  // a few px shorter, and the court moved for the whole time-out
+                  <div className="rally-stack">
+                    {timeoutModal?.started && (
+                  <div className="rally-stack-layer">
+                    <div style={{
+                      fontSize: '16px',
+                      fontWeight: 600,
+                      color: 'var(--muted)',
+                      textAlign: 'center',
+                      marginBottom: '4px'
+                    }}>
+                      Time-out — {timeoutModal.team === 'home' ? (data?.homeTeam?.name || t('common.home')) : (data?.awayTeam?.name || t('common.away'))}
+                    </div>
+                    <div style={{
+                      fontSize: '48px',
+                      lineHeight: 1.1,
+                      fontWeight: 700,
+                      color: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)',
+                      textAlign: 'center',
+                      fontFamily: getScoreFont()
+                    }}>
+                      {formatTimeout(timeoutModal.countdown)}
+                    </div>
+                    {/* Progress bar */}
+                    <div style={{
+                      width: '60%',
+                      height: '8px',
+                      background: 'var(--panel)',
+                      borderRadius: '4px',
+                      overflow: 'hidden',
+                      marginTop: '6px',
+                      marginBottom: '10px',
+                      marginLeft: 'auto',
+                      marginRight: 'auto'
+                    }}>
+                      <div style={{
+                        width: `${(timeoutModal.countdown / 30) * 100}%`,
+                        height: '100%',
+                        background: timeoutModal.countdown <= 10 ? '#ef4444' : 'var(--accent)',
+                        borderRadius: '4px',
+                        transition: 'width 1s linear, background 0.3s',
+                        marginLeft: 'auto'
+                      }} />
+                    </div>
+                    <button
+                      className="secondary"
+                      onClick={stopTimeout}
+                      style={{ width: 'auto', minHeight: '44px', minWidth: '140px', alignSelf: 'center', fontSize: '15px' }}
+                    >
+                      {t('scoreboard.buttons.stopTimeout')}
+                    </button>
+                  </div>
+                    )}
+                  <div className="rally-stack-layer" aria-hidden={timeoutModal?.started || undefined} inert={timeoutModal?.started || undefined} style={timeoutModal?.started ? { visibility: 'hidden' } : undefined}>
                     {rallyStatus === 'idle' ? (
                       <button
                         data-help-id="scoreboard-start-rally"
@@ -17553,10 +17607,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     </div>
                     {/* Rally status and last action - only show beneath rally controls in full desktop mode (compact and laptop show in header) */}
                     {!isCompactMode && !isLaptopMode && (
+                      // As wide as the rally column (not as its text): the
+                      // line's ellipsis then cuts a long team name, which ran
+                      // past both window edges
                       <div
                         style={{
                           marginTop: '8px',
-                          textAlign: 'center'
+                          textAlign: 'center',
+                          width: '100%',
+                          minWidth: 0
                         }}
                       >
                         {/* Last action - filtered to current set */}
@@ -17627,7 +17686,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         })()}
                       </div>
                     )}
-                  </>
+                  </div>
+                  </div>
                 )}
               </div>
 
@@ -20087,9 +20147,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         courtCaptain={lineupModal.team === 'home' ? data?.match?.homeCourtCaptain : data?.match?.awayCourtCaptain}
         rememberedCourtCaptain={lineupModal.team === 'home' ? data?.match?.homeRememberedCourtCaptain : data?.match?.awayRememberedCourtCaptain}
         onClose={() => setLineupModal(null)}
+        // One action: the line-up, its owed penalty points and the game
+        // captain commit together, and the dialog closes with them on the
+        // court (it closed a frame before the court filled)
+        runSave={(body) => runAction('lineup', body)}
         onSave={async (gameCaptain, onCourt = null) => {
           const teamKey = lineupModal.team
-          setLineupModal(null)
+          deferUi(() => setLineupModal(null))
           // Optional game captain chosen in the modal (FIVB 5.2), written the
           // same way as the scoreboard's "Game captain" prompt
           // (domain/lineupEntry.js lineupGameCaptainDecision)
@@ -22785,13 +22849,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               </SbButton>
               <SbButton variant="positive"
                 onClick={async () => {
-                  setLiberoReminder(null)
                   // Show set start time confirmation: set 1 the scheduled time (on the
-                  // day played), any other set now (its first rally)
+                  // day played), any other set now (its first rally). The reminder
+                  // closes in the change that opens it (no frame without a dialog).
                   const allSets = await db.sets.where('matchId').equals(matchId).toArray()
                   const scheduledAt = startScheduleOf(data?.match)
                   const defaultTime = defaultSetStartTime({ setIndex: data?.set?.index, sets: allSets, scheduledAt })
                   const fromSchedule = startsFromSchedule({ setIndex: data?.set?.index, scheduledAt })
+                  setLiberoReminder(null)
                   setSetStartTimeModal({ setIndex: data?.set?.index, defaultTime, fromSchedule })
                 }}
               >
@@ -24093,7 +24158,7 @@ function ScoreboardCourtColumn({ children }) {
   return <section className="court-wrapper">{children}</section>
 }
 
-function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, teamAKey, teamBKey, lfpTrackingEnabled, lfpMinimumOnCourt, courtCaptain = null, rememberedCourtCaptain = null, onClose, onSave, onLineupSaved, onPenaltyPointsOwed }) {
+function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, teamAKey, teamBKey, lfpTrackingEnabled, lfpMinimumOnCourt, courtCaptain = null, rememberedCourtCaptain = null, onClose, onSave, onLineupSaved, onPenaltyPointsOwed, runSave = (body) => body() }) {
   const { t } = useTranslation()
   const [lineup, setLineup] = useState(() => {
     if (presetLineup) {
@@ -24332,8 +24397,8 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
 
     // Save lineup as an event (mark as initial lineup or manual override)
     if (matchId && setIndex) {
-      // Save lineup with sequence number
-      (async () => {
+      // Save lineup with sequence number (runSave: one scorer action)
+      runSave(async () => {
         // Get next sequence number
         const allEvents = await db.events.where('matchId').equals(matchId).toArray()
         // An undone or deleted event's seq is never given out again (event
@@ -24359,8 +24424,9 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
           seq: manualLineupSeq
         }
         const manualLineupEventId = await db.events.add(savedLineupEvent)
-        // Cloud copy of the starting (or corrected) lineup
-        queueEventSync(db, manualLineupEventId)
+        // Cloud copy of the starting (or corrected) lineup (awaited: part of
+        // the action's transaction)
+        await queueEventSync(db, manualLineupEventId)
 
         // Sync to referee immediately after lineup is saved
         if (onLineupSaved) {
@@ -24381,8 +24447,8 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
 
         // Auto-close modal after successful save (skip confirmation step),
         // with what to do about the optional game captain
-        onSave(gameCaptainDecision, lineupNumbers.filter(n => n != null))
-      })().catch(() => {
+        await onSave(gameCaptainDecision, lineupNumbers.filter(n => n != null))
+      }).catch(() => {
         // Don't auto-close - let user close manually with close button
         setSaveFailed(true)
       })

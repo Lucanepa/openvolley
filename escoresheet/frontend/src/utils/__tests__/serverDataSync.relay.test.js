@@ -21,7 +21,8 @@ import {
   matchAccessHeaders,
   validatePinSupabase,
   getMatchData,
-  uploadRosterToCloud
+  uploadRosterToCloud,
+  LIVE_STATE_HOLD_MS
 } from '../serverDataSync'
 
 const SEED = 'match_1791215210058_yxkc82'
@@ -334,8 +335,10 @@ describe('relay subscription (tablets)', () => {
       match: { id: 1, coinTossTeamA: 'away', _syncedAt: syncedAt },
       sets: [{ index: 1, homePoints: 0, awayPoints: 0, finished: false }]
     })
-    // Point for team A (= away): pushed before the scorer's sync landed
+    // Point for team A (= away): pushed before the scorer's sync landed. No
+    // sync comes: the score is shown once the hold is over
     ws.receive({ type: 'live-state-update', matchId: 'match_newest', liveState: { current_set: 1, points_a: 1, points_b: 0, updated_at: at(800) } })
+    vi.advanceTimersByTime(LIVE_STATE_HOLD_MS)
     expect(updates.at(-1).sets[0]).toMatchObject({ homePoints: 0, awayPoints: 1 })
     expect(updates.at(-1).liveState.points_a).toBe(1)
     // An older push arriving late changes nothing
@@ -350,6 +353,41 @@ describe('relay subscription (tablets)', () => {
       liveState: { current_set: 1, points_a: 1, points_b: 0, updated_at: at(800) }
     })
     expect(updates.at(-1).sets[0]).toMatchObject({ homePoints: 0, awayPoints: 1 })
+    unsubscribe()
+  })
+
+  // A side-out on the referee: the new score first, the new server and the
+  // rotation one sync later (~200 ms on the desktop app) looked like the ball
+  // and the teams moving on their own. The push waits for the sync.
+  it('a point is one update: the push waits for the scorer\'s sync with the server and rotation', () => {
+    const updates = []
+    const unsubscribe = subscribeToMatchData('match_together', (p) => updates.push(p))
+    const ws = FakeWebSocket.instances.at(-1)
+    ws.open()
+    const at = (ms) => new Date(Date.UTC(2026, 9, 5, 18, 6, 0) + ms).toISOString()
+    ws.receive({
+      type: 'match-full-data', matchId: 'match_together',
+      match: { id: 1, coinTossTeamA: 'home', _syncedAt: Date.parse(at(0)) },
+      sets: [{ index: 1, homePoints: 3, awayPoints: 3, finished: false }],
+      events: [{ seq: 1, type: 'point', setIndex: 1, payload: { team: 'away' } }]
+    })
+    const before = updates.length
+    ws.receive({ type: 'live-state-update', matchId: 'match_together', liveState: { current_set: 1, points_a: 4, points_b: 3, updated_at: at(800) } })
+    expect(updates).toHaveLength(before) // not the score alone
+    vi.advanceTimersByTime(150)
+    ws.receive({
+      type: 'match-data-update', matchId: 'match_together',
+      match: { id: 1, coinTossTeamA: 'home', _syncedAt: Date.parse(at(900)) },
+      sets: [{ index: 1, homePoints: 4, awayPoints: 3, finished: false }],
+      events: [{ seq: 1, type: 'point', setIndex: 1, payload: { team: 'away' } }, { seq: 2, type: 'point', setIndex: 1, payload: { team: 'home' } }, { seq: 3, type: 'rotation', setIndex: 1, payload: { team: 'home' } }],
+      liveState: { current_set: 1, points_a: 4, points_b: 3, updated_at: at(800) }
+    })
+    expect(updates).toHaveLength(before + 1)
+    expect(updates.at(-1).sets[0]).toMatchObject({ homePoints: 4, awayPoints: 3 })
+    expect(updates.at(-1).events.map(e => e.type)).toEqual(['point', 'point', 'rotation'])
+    // the held push is not delivered on top
+    vi.advanceTimersByTime(LIVE_STATE_HOLD_MS)
+    expect(updates).toHaveLength(before + 1)
     unsubscribe()
   })
 })
@@ -487,6 +525,55 @@ describe('newest live state wins over an older relay copy (referee / bench)', ()
     expect(applyNewerLiveState(b, { current_set: 1, points_a: 0, points_b: 0, updated_at: iso(500) }).sets[0]).toMatchObject({ homePoints: 25 })
     // The bundle's own live state by default
     expect(applyNewerLiveState(bundle({ liveState: { current_set: 2, points_a: 4, points_b: 4, updated_at: iso(1) } })).sets[1]).toMatchObject({ homePoints: 4, awayPoints: 4 })
+  })
+
+  // The referee's match_live_state row: its score alone, then the refetched
+  // bundle with the server and the rotation ~200 ms later, was two changes
+  describe('tracker.hold: a newer live state waits for the bundle', () => {
+    beforeEach(() => { vi.useFakeTimers() })
+    afterEach(() => { vi.useRealTimers() })
+
+    it('a bundle within the hold shows everything at once; the held score is dropped', () => {
+      const tracker = createLiveStateTracker()
+      tracker.bundle(bundle())
+      expect(tracker.liveState({ current_set: 2, points_a: 4, points_b: 4, updated_at: iso(500) })).toBe(true)
+      const shown = vi.fn()
+      tracker.hold(shown)
+      vi.advanceTimersByTime(LIVE_STATE_HOLD_MS - 50)
+      tracker.bundle(bundle({ match: { id: 1, coinTossTeamA: 'home', _syncedAt: T0 + 600 }, sets: [{ index: 2, homePoints: 4, awayPoints: 4, finished: false }] }))
+      vi.advanceTimersByTime(LIVE_STATE_HOLD_MS)
+      expect(shown).not.toHaveBeenCalled()
+    })
+
+    it('no bundle: the score is shown once the hold is over', () => {
+      const tracker = createLiveStateTracker()
+      tracker.bundle(bundle())
+      tracker.liveState({ current_set: 2, points_a: 4, points_b: 4, updated_at: iso(500) })
+      const shown = vi.fn()
+      tracker.hold(shown)
+      vi.advanceTimersByTime(LIVE_STATE_HOLD_MS - 1)
+      expect(shown).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(1)
+      expect(shown).toHaveBeenCalledTimes(1)
+    })
+
+    it('a second push restarts the hold (one update for the newest); reset drops it', () => {
+      const tracker = createLiveStateTracker()
+      tracker.bundle(bundle())
+      const first = vi.fn()
+      const second = vi.fn()
+      tracker.hold(first)
+      vi.advanceTimersByTime(200)
+      tracker.hold(second)
+      vi.advanceTimersByTime(LIVE_STATE_HOLD_MS)
+      expect(first).not.toHaveBeenCalled()
+      expect(second).toHaveBeenCalledTimes(1)
+      const third = vi.fn()
+      tracker.hold(third)
+      tracker.reset()
+      vi.advanceTimersByTime(LIVE_STATE_HOLD_MS)
+      expect(third).not.toHaveBeenCalled()
+    })
   })
 })
 

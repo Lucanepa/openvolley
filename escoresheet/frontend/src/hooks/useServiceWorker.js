@@ -160,6 +160,107 @@ export async function applyServiceWorkerUpdate({ clearIndexedDB = false, checkFo
   reload()
 }
 
+// When this tab last applied an update on its own (applyUpdateAtStart, the
+// desktop UpdateBanner): sessionStorage, so it survives the reload it causes
+export const AUTO_UPDATE_KEY = 'ov.autoUpdateAt'
+export const AUTO_UPDATE_WINDOW_MS = 120000
+
+function sessionStore() {
+  try {
+    return typeof sessionStorage !== 'undefined' ? sessionStorage : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * May this tab apply an update on its own now? Not within
+ * AUTO_UPDATE_WINDOW_MS of its last try: applyServiceWorkerUpdate reloads
+ * after its timeout even when the new worker never took control, and the
+ * reloaded page, still on the old build with the new one waiting, would try
+ * again every few seconds. A second try falls back to the "Update available"
+ * banner. Without sessionStorage it never does it on its own.
+ */
+export function autoApplyAllowed({ storage = sessionStore(), now = Date.now() } = {}) {
+  if (!storage) return false
+  try {
+    const last = Number(storage.getItem(AUTO_UPDATE_KEY))
+    return !(last > 0 && now - last >= 0 && now - last < AUTO_UPDATE_WINDOW_MS)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The page is about to reload into an update it applies on its own: no tap
+ * may start anything on it now (a point or a new match half written when the
+ * reload comes, up to applyServiceWorkerUpdate's timeout later).
+ */
+export function holdTapsUntilReload(win = typeof window !== 'undefined' ? window : undefined) {
+  try {
+    if (win?.document?.body) win.document.body.inert = true
+  } catch {
+    // never block the update
+  }
+}
+
+/** This tab applies an update on its own now (see autoApplyAllowed). */
+export function noteAutoApply({ storage = sessionStore(), now = Date.now() } = {}) {
+  try {
+    storage?.setItem(AUTO_UPDATE_KEY, String(now))
+  } catch {
+    // never block the update on storage
+  }
+}
+
+/**
+ * The desktop app at start (main.jsx calls this in its scoretable
+ * window only). Its binary IS the update, but the page that just loaded is the
+ * previous build, served by the service worker, with the new one installing
+ * next to it (about a second). Until the scorer touches anything, the new
+ * build is applied at once on whatever screen opened: a restored match reloads
+ * into itself, where no update banner is ever shown. After a touch, or after
+ * the grace time, the home screen's banner applies it instead.
+ */
+export function applyUpdateAtStart({
+  win = window,
+  sw = typeof navigator !== 'undefined' ? navigator.serviceWorker : null,
+  apply = () => applyServiceWorkerUpdate(),
+  graceMs = 20000,
+  allowed = () => autoApplyAllowed(),
+  note = () => noteAutoApply()
+} = {}) {
+  if (!sw) return
+  let open = true
+  const close = () => {
+    open = false
+    clearTimeout(timer)
+    win.removeEventListener('pointerdown', close, true)
+    win.removeEventListener('keydown', close, true)
+  }
+  const timer = setTimeout(close, graceMs)
+  win.addEventListener('pointerdown', close, true)
+  win.addEventListener('keydown', close, true)
+  // a first install (no controller yet) is no update; a second try within
+  // a short time is a reload loop (autoApplyAllowed): the banner then asks
+  const go = () => {
+    if (!open || !sw.controller || !allowed()) return
+    close()
+    note()
+    holdTapsUntilReload(win)
+    apply()
+  }
+  const watch = (worker) => worker?.addEventListener('statechange', () => {
+    if (worker.state === 'installed') go()
+  })
+  sw.getRegistration().then((reg) => {
+    if (!reg || !open) return
+    if (reg.waiting) return go()
+    watch(reg.installing)
+    reg.addEventListener('updatefound', () => watch(reg.installing))
+  }).catch(() => {})
+}
+
 /**
  * Hook to detect service worker updates and provide update functionality
  * Works with vite-plugin-pwa in 'prompt' mode: a new worker stays waiting until
