@@ -264,3 +264,72 @@ describe('importMatchFromSupabase: the restored match keeps its court sides', ()
     expect(m.coinTossTeamA).toBe('home')
   })
 })
+
+describe('fetchMatchByPin: the live row\'s own Team A', () => {
+  // "Switch sides" in sets 1-4 swaps A and B: the coin toss is queued (sync
+  // queue), the live state written at once. With the swap still in the
+  // queue the cloud coin toss names the other team, and the live row's
+  // side_a and lineup_a were read for it. The live row's team names tell
+  // its own Team A; a live row not older than the latest event gives the
+  // restored match its Team A (the swap as the scorer's match has it).
+  const NAMES = { home_team: { name: 'Volley Näfels' }, away_team: { name: 'Chênois Genève' } }
+  const homeLeft = (m, set) => (getSideAForSet(set, m) === 'left') === (m.coinTossTeamA === 'home')
+  // set 2, A = home on the right; swapped: A = away, on the right (home left)
+  const swappedLive = (over) => ({
+    current_set: 2, side_a: 'right', points_a: 10, points_b: 8, lineup_a: AWAY, lineup_b: HOME,
+    team_a_name: 'Chênois Genève', team_b_name: 'Volley Näfels',
+    last_event_type: 'manual_switch_sides', last_event_ts: '2026-10-08T10:01:00.000Z', ...over
+  })
+  const pre = { seq: 7, type: 'point', set_index: 2, payload: { team: 'home' }, created_at: '2026-10-08T10:00:00.000Z', lineup_left: AWAY, lineup_right: HOME, state_snapshot: { teamAKey: 'home', currentSetIndex: 2, sideA: 'right', lineupA: HOME, lineupB: AWAY } }
+
+  it('the swap still in the sync queue: the live row\'s Team A, home on the left, and "Switch sides" moves the teams', async () => {
+    const cloud = await restoreWith({
+      match: { ...NAMES, coin_toss: { team_a: 'home', team_b: 'away', serve_a: true, first_serve: 'home', confirmed: true } },
+      events: [pre],
+      liveState: swappedLive()
+    })
+    await importMatchFromSupabase(cloud)
+    const m = store.matches[0]
+    expect(m.coinTossTeamA).toBe('away')
+    expect(m.coinTossTeamB).toBe('home')
+    // the first server stays home
+    expect(m.firstServe).toBe('home')
+    expect(m.coinTossServeA).toBe(false)
+    expect(m.setLeftTeamOverrides).toBeUndefined()
+    expect(homeLeft(m, 2)).toBe(true)
+    const { swapTeamDesignation } = await import('../../domain/coinToss')
+    expect(homeLeft({ ...m, ...swapTeamDesignation(m) }, 2)).toBe(false)
+  })
+
+  it('without a snapshot: the live row\'s lineup_a is its own Team A\'s', async () => {
+    const out = await restoreWith({
+      match: { ...NAMES, coin_toss: { team_a: 'home', team_b: 'away', serve_a: true, first_serve: 'home', confirmed: true } },
+      liveState: swappedLive()
+    })
+    expect(lineupOf(out, 'home')).toEqual(numbers(1))
+    expect(lineupOf(out, 'away')).toEqual(numbers(11))
+  })
+
+  it('a live row older than the latest synced event: the cloud coin toss, the live side still read for its own Team A', async () => {
+    const cloud = await restoreWith({
+      match: { ...NAMES, coin_toss: { team_a: 'home', team_b: 'away', serve_a: true, first_serve: 'home', confirmed: true } },
+      events: [{ seq: 9, type: 'timeout', set_index: 2, payload: { team: 'home' }, created_at: '2026-10-08T10:05:00.000Z' }],
+      liveState: swappedLive()
+    })
+    await importMatchFromSupabase(cloud)
+    const m = store.matches[0]
+    expect(m.coinTossTeamA).toBe('home')
+    expect(homeLeft(m, 2)).toBe(true)
+  })
+
+  it('names that do not tell (the same on both teams, or missing): the cloud coin toss\'s Team A', async () => {
+    const cloud = await restoreWith({
+      match: { home_team: { name: 'X' }, away_team: { name: 'X' } },
+      liveState: swappedLive({ team_a_name: 'X', team_b_name: 'X' })
+    })
+    await importMatchFromSupabase(cloud)
+    expect(store.matches[0].coinTossTeamA).toBe('home')
+    // side_a read for home (A): home on the right
+    expect(homeLeft(store.matches[0], 2)).toBe(false)
+  })
+})

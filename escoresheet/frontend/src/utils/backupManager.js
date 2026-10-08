@@ -779,9 +779,10 @@ const isSide = (v) => v === 'left' || v === 'right'
  * @param {Array} events  server event rows (seq, state_snapshot)
  * @param {object|null} liveState  match_live_state row
  * @param {'home'|'away'} teamAKey  the match's Team A
+ * @param {'home'|'away'} [liveTeamAKey]  the live row's own Team A (its side_a is that team's)
  * @returns {{ setLeftTeamOverrides?: object, set5LeftTeam?: 'A'|'B', set5CourtSwitched?: boolean }}
  */
-export function savedCourtSides(events, liveState, teamAKey = 'home') {
+export function savedCourtSides(events, liveState, teamAKey = 'home', liveTeamAKey = teamAKey) {
   const out = {}
   const overrides = {}
   const leftLabel = (set) => getLeftTeamLabelForSet(set, { setLeftTeamOverrides: overrides })
@@ -814,7 +815,9 @@ export function savedCourtSides(events, liveState, teamAKey = 'home') {
 
   const set = Number(liveState?.current_set)
   if (set >= 1 && isSide(liveState.side_a)) {
-    const left = liveState.side_a === 'left' ? 'A' : 'B'
+    // side_a is the live row's own Team A's (liveRowTeamAKey): the other team
+    // than the match's while a swap of A and B is still in the sync queue
+    const left = (liveState.side_a === 'left') === (liveTeamAKey === teamAKey) ? 'A' : 'B'
     if (set === 5) {
       // The courts follow the score (FIVB 18.2.2: changed once a team has 8,
       // Scoreboard askCourtSwitchIfDue): the toss side is the live side, or
@@ -838,6 +841,47 @@ export function savedCourtSides(events, liveState, teamAKey = 'home') {
 
   if (Object.keys(overrides).length) out.setLeftTeamOverrides = overrides
   return out
+}
+
+const timeOf = (v) => {
+  const t = Date.parse(v)
+  return Number.isNaN(t) ? null : t
+}
+
+/**
+ * The live row's own Team A ('home' / 'away'), from its team names against
+ * the match's: "Switch sides" in sets 1-4 swaps A and B, the coin toss queued
+ * (sync queue) and the live state written at once, so until the queue has
+ * run the cloud coin toss names the other team. null when the names do not
+ * tell (missing, or the same on both teams).
+ * @param {object|null} liveState
+ * @param {object} matchData  the cloud match row (home_team / away_team)
+ * @returns {'home'|'away'|null}
+ */
+export function liveRowTeamAKey(liveState, matchData) {
+  const home = matchData?.home_team?.name
+  const away = matchData?.away_team?.name
+  const a = liveState?.team_a_name
+  const b = liveState?.team_b_name
+  if (!home || !away || home === away || !a || !b) return null
+  if (a === home && b === away) return 'home'
+  if (a === away && b === home) return 'away'
+  return null
+}
+
+/**
+ * Is the live row older than the latest synced event (its last write failed
+ * and the queue synced events after it)? false when a time is unknown.
+ * @param {object|null} liveState
+ * @param {Array} events  server event rows (created_at / ts)
+ */
+function liveOlderThanEvents(liveState, events) {
+  const liveAt = timeOf(liveState?.last_event_ts || liveState?.updated_at)
+  if (liveAt == null) return false
+  return (events || []).some(e => {
+    const at = timeOf(e?.created_at || e?.ts)
+    return at != null && at > liveAt
+  })
 }
 
 /**
@@ -883,7 +927,7 @@ export async function fetchMatchByPin(gamePin, gameN) {
   if (!data?.match) throw new Error('Match not found with this ID and PIN')
 
   // The server never returns the PINs; the caller just proved the game PIN.
-  const matchData = { ...data.match, game_pin: pin }
+  let matchData = { ...data.match, game_pin: pin }
   const setsResult = { data: data.sets || [] }
   let events = data.events || []
   const liveState = data.liveState || null
@@ -937,11 +981,40 @@ export async function fetchMatchByPin(gamePin, gameN) {
 
   // Team A from the coin toss: the matches table has the coin_toss JSON, no
   // coin_toss_team_a column (reading only that put Team A on away always)
-  const teamAKey = matchData.coin_toss?.team_a || matchData.coin_toss_team_a || 'home'
+  let teamAKey = matchData.coin_toss?.team_a || matchData.coin_toss_team_a || 'home'
+  // The live row's own Team A (its team names): "Switch sides" in sets 1-4
+  // swaps A and B, the coin toss queued and the live state written at once,
+  // so with the swap still in the sync queue the cloud coin toss names the
+  // other team. A live row not older than the latest event is the scorer's
+  // latest: its Team A is the restored match's (the swap as swapTeamDesignation
+  // made it: the first server kept, the A / B serve flag follows), so the
+  // court has no override a later "Switch sides" would flip with the labels.
+  // Its side_a and lineup_a are always read for its own Team A.
+  const liveTeamAKey = liveRowTeamAKey(liveState, matchData) || teamAKey
+  const cloudTeamA = matchData.coin_toss?.team_a
+  if ((cloudTeamA === 'home' || cloudTeamA === 'away') && liveTeamAKey !== cloudTeamA &&
+      !liveOlderThanEvents(liveState, events)) {
+    const toss = matchData.coin_toss
+    const firstServe = toss.first_serve === 'home' || toss.first_serve === 'away'
+      ? toss.first_serve
+      : (typeof toss.serve_a === 'boolean' ? (toss.serve_a ? cloudTeamA : liveTeamAKey) : null)
+    teamAKey = liveTeamAKey
+    matchData = {
+      ...matchData,
+      coin_toss: {
+        ...toss,
+        team_a: liveTeamAKey,
+        team_b: cloudTeamA,
+        ...(firstServe ? { serve_a: firstServe === liveTeamAKey, first_serve: firstServe } : {}),
+        ...(firstServe && 'serve_b' in toss ? { serve_b: firstServe === cloudTeamA } : {})
+      }
+    }
+  }
   const teamAIsHome = teamAKey === 'home'
+  const liveAIsHome = liveTeamAKey === 'home'
   // The match's court sides as the scorer last saved them: the imported
   // match keeps them, and they place a row's court-side lineups below
-  const courtSides = savedCourtSides(events, liveState, teamAKey)
+  const courtSides = savedCourtSides(events, liveState, teamAKey, liveTeamAKey)
 
   // If no lineup type events, create them from event lineup_left/lineup_right columns
   // or from match_live_state
@@ -1027,7 +1100,7 @@ export async function fetchMatchByPin(gamePin, gameN) {
 
       console.log('[Restore] Creating lineup from match_live_state:', {
         currentSet,
-        teamAIsHome,
+        liveAIsHome,
         lineupANumbers,
         lineupBNumbers,
         liberoSubA,
@@ -1038,7 +1111,7 @@ export async function fetchMatchByPin(gamePin, gameN) {
 
       if (lineupANumbers) {
         const payload = {
-          team: teamAIsHome ? 'home' : 'away',
+          team: liveAIsHome ? 'home' : 'away',
           lineup: lineupANumbers,
           isInitial: true
         }
@@ -1054,7 +1127,7 @@ export async function fetchMatchByPin(gamePin, gameN) {
 
       if (lineupBNumbers) {
         const payload = {
-          team: teamAIsHome ? 'away' : 'home',
+          team: liveAIsHome ? 'away' : 'home',
           lineup: lineupBNumbers,
           isInitial: true
         }
