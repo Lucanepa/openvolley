@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { buildReloadUrl, stripCacheBustParam, applyServiceWorkerUpdate, clearCachesAndReload } from '../useServiceWorker'
+import { buildReloadUrl, stripCacheBustParam, applyServiceWorkerUpdate, clearCachesAndReload, resetServiceWorkerUpdateForTests } from '../useServiceWorker'
 
 // Shared stubs for the browser APIs the update / clear-cache paths touch
 const originalLocation = window.location
@@ -22,6 +22,9 @@ function stubLocation(href) {
 function stubServiceWorker(value) {
   Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value })
 }
+
+// every test is a fresh page (applyServiceWorkerUpdate remembers its reload)
+afterEach(() => resetServiceWorkerUpdateForTests())
 
 describe('buildReloadUrl', () => {
   it('keeps match/team/server params and the hash, adds cache_bust', () => {
@@ -79,8 +82,9 @@ describe('applyServiceWorkerUpdate', () => {
   }
 
   // The desktop app at start: the home screen's banner and applyUpdateAtStart
-  // both applied the same waiting build 1 ms apart (two page.reload_request
-  // lines, two SKIP_WAITING). A second call joins the one under way.
+  // both applied the same waiting build 2 ms apart (two page.reload_request
+  // lines, two SKIP_WAITING). A second call joins the one under way, and one
+  // just after the reload was asked for does nothing.
   it('a second call while one is under way joins it: one SKIP_WAITING, one reload', async () => {
     const replace = mockLocation('https://host/')
     let onControllerChange = null
@@ -97,7 +101,12 @@ describe('applyServiceWorkerUpdate', () => {
     await Promise.all([first, second])
     expect(waiting.postMessage).toHaveBeenCalledTimes(1)
     expect(replace).toHaveBeenCalledTimes(1)
-    // once done, a later call works again
+    // just after: the page is reloading, nothing more to do
+    await applyServiceWorkerUpdate()
+    expect(replace).toHaveBeenCalledTimes(1)
+    // a reload that never came: after a while an update applies again
+    const later = Date.now() + 11000
+    vi.spyOn(Date, 'now').mockReturnValue(later)
     await applyServiceWorkerUpdate()
     expect(replace).toHaveBeenCalledTimes(2)
   })
