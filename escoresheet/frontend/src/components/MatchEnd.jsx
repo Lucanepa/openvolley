@@ -32,7 +32,7 @@ const ballImage = ballFallback
 import { sanitizeForFilename } from '../utils/stringUtils'
 import { formatTimeLocal } from '../utils/timeUtils'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
-import { waitForScoresheetPdf } from '../utils/scoresheetPdfRequest'
+import { waitForScoresheetPdf, PDF_FAIL } from '../utils/scoresheetPdfRequest'
 import { getMatchWinner, clearedPostMatchSignatures, planForfeitReversal } from '../domain/matchEnd'
 import {
   ROLE_TO_SLOT, approvalFor, isApprovalValid, slotComplete, approvalLine, approvalsBySlot, approvalSummary,
@@ -350,7 +350,12 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
   const { showAlert } = useAlert()
   const [openSignature, setOpenSignature] = useState(null)
-  const [isApproved, setIsApproved] = useState(false)
+  // The approval is in the match row: a remount of this page (or a reload)
+  // keeps the approved view instead of falling back to "Confirm and approve"
+  // (OpenBeach video 2026-10-08). The local flag covers the moment between
+  // the write and the live query's next answer.
+  const [approvedHere, setIsApproved] = useState(false)
+  const isApproved = approvedHere || data?.match?.approved === true
   const [isSaving, setIsSaving] = useState(false)
   // showCloseConfirm modal removed - now using direct post-approval buttons
   const [showReopenConfirm, setShowReopenConfirm] = useState(false)
@@ -359,6 +364,22 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   const [showRemarksModal, setShowRemarksModal] = useState(false)
   const [remarksText, setRemarksText] = useState('')
   const remarksTextareaRef = useRef(null)
+  // The approval's PDF: Cancel during the wait, and the scorer's choice when
+  // no PDF came (Retry / Approve without PDF / Cancel)
+  const exportAbortRef = useRef(null)
+  const pdfChoiceRef = useRef(null)
+  const [pdfFailure, setPdfFailure] = useState(null) // { reason }
+  const [isClosing, setIsClosing] = useState(false)
+  const askPdfFailure = (err) => new Promise((resolve) => {
+    pdfChoiceRef.current = resolve
+    setPdfFailure({ reason: err?.reason || PDF_FAIL.FAILED })
+  })
+  const choosePdfFailure = (choice) => {
+    const resolve = pdfChoiceRef.current
+    pdfChoiceRef.current = null
+    setPdfFailure(null)
+    resolve?.(choice)
+  }
 
   // Reopen after approval: closing is locked on the server, so a match the
   // server has closed is reopened by an admin (spec 6.8). null | { kind:
@@ -1122,19 +1143,35 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       sessionStorage.setItem('scoresheetData', JSON.stringify(scoresheetData))
 
       // Open the scoresheet with the getBlob action and wait for its PDF
-      // (or its word that the capture failed: no 30 s wait for nothing)
-      const pdfPromise = waitForScoresheetPdf(() =>
-        openAppWindow(`/scoresheet/?matchId=${matchId}&action=getBlob`, { features: 'width=1600,height=1200', title: t('header.scoresheet') })
-      )
-
-      // Wait for PDF blob - but don't let failures block approval
+      // (scoresheetPdfRequest.js). The wait ends at once when that window is
+      // closed, stops answering, says the capture failed or the scorer
+      // presses Cancel; the scorer then chooses: Retry, Approve without PDF
+      // (the JSON, the approval and the ZIP go ahead, the PDF is saved from
+      // the scoresheet later) or Cancel (nothing is approved).
+      // OpenBeach video 2026-10-08: closing the window hung the approval.
       let pdfResult = null
-      try {
-        pdfResult = await pdfPromise
-        setDownloadProgress(prev => ({ ...prev, pdf: true }))
-      } catch (pdfError) {
-        console.warn('[MatchEnd] PDF generation failed, continuing with approval:', pdfError)
-        // Don't block approval if PDF fails - just skip PDF in ZIP
+      for (;;) {
+        const abort = new AbortController()
+        exportAbortRef.current = abort
+        try {
+          pdfResult = await waitForScoresheetPdf(
+            () => openAppWindow(`/scoresheet/?matchId=${matchId}&action=getBlob`, { features: 'width=1600,height=1200', title: t('header.scoresheet') }),
+            { signal: abort.signal }
+          )
+          setDownloadProgress(prev => ({ ...prev, pdf: true }))
+          break
+        } catch (pdfError) {
+          console.warn('[MatchEnd] No PDF:', pdfError)
+          // Cancel during the wait: stop here, nothing approved
+          const choice = pdfError?.reason === PDF_FAIL.CANCELLED ? 'cancel' : await askPdfFailure(pdfError)
+          if (choice === 'retry') continue
+          if (choice === 'skip') break
+          setDownloadProgress(null)
+          setIsSaving(false)
+          return
+        } finally {
+          exportAbortRef.current = null
+        }
       }
 
       // Create ZIP with both files (PDF is optional)
@@ -1216,44 +1253,48 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       zipLink.href = URL.createObjectURL(zipBlob)
       zipLink.click()
 
-      // Save to sync queue if official match with seed_key
-      if (!match.test && match?.seed_key) {
-        // Collect all signatures for the approval JSONB field
-        const approvalData = {
-          approvedAt: new Date().toISOString(),
-          signatures: {
-            captainA: homeLabel === 'A' ? match.homePostGameCaptainSignature : match.awayPostGameCaptainSignature,
-            captainB: homeLabel === 'B' ? match.homePostGameCaptainSignature : match.awayPostGameCaptainSignature,
-            scorer: match.scorerSignature || null,
-            asstScorer: match.asstScorerSignature || null,
-            ref1: match.ref1Signature || null,
-            ref2: match.ref2Signature || null
-          },
-          // Signed on a phone or on this device (docs/qr-signing-spec.md 5.6)
-          signatureSources: approvalSignatureSources(match),
-          // Approved with an account: names and short IDs only (no user ids, no emails)
-          accounts: approvalSummary(match, allSets)
+      // The approval and its sync job in one transaction: approved and
+      // queued, or neither
+      await db.transaction('rw', db.sync_queue, db.matches, async () => {
+        // Save to sync queue if official match with seed_key
+        if (!match.test && match?.seed_key) {
+          // Collect all signatures for the approval JSONB field
+          const approvalData = {
+            approvedAt: new Date().toISOString(),
+            signatures: {
+              captainA: homeLabel === 'A' ? match.homePostGameCaptainSignature : match.awayPostGameCaptainSignature,
+              captainB: homeLabel === 'B' ? match.homePostGameCaptainSignature : match.awayPostGameCaptainSignature,
+              scorer: match.scorerSignature || null,
+              asstScorer: match.asstScorerSignature || null,
+              ref1: match.ref1Signature || null,
+              ref2: match.ref2Signature || null
+            },
+            // Signed on a phone or on this device (docs/qr-signing-spec.md 5.6)
+            signatureSources: approvalSignatureSources(match),
+            // Approved with an account: names and short IDs only (no user ids, no emails)
+            accounts: approvalSummary(match, allSets)
+          }
+
+          await db.sync_queue.add({
+            resource: 'match',
+            action: 'update',
+            payload: {
+              id: match.seed_key,
+              status: 'approved',
+              current_set: null,
+              approval: approvalData
+            },
+            ts: new Date().toISOString(),
+            status: 'queued'
+          })
         }
 
-        await db.sync_queue.add({
-          resource: 'match',
-          action: 'update',
-          payload: {
-            id: match.seed_key,
-            status: 'approved',
-            current_set: null,
-            approval: approvalData
-          },
-          ts: new Date().toISOString(),
-          status: 'queued'
+        // Mark as approved in local database (status stays 'ended' until Close Match)
+        await db.matches.update(matchId, {
+          approved: true,
+          approvedAt: new Date().toISOString(),
+          current_set: null
         })
-      }
-
-      // Mark as approved in local database (status stays 'ended' until Close Match)
-      await db.matches.update(matchId, {
-        approved: true,
-        approvedAt: new Date().toISOString(),
-        current_set: null
       })
 
       // Update UI state to show post-approval buttons
@@ -1276,6 +1317,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   // Handle closing match after approval - deletes local data and navigates home
   const handleCloseMatch = async () => {
     cLogger.logHandler('handleCloseMatch', { matchId })
+    if (isClosing) return
+    setIsClosing(true)
 
     try {
       // Update match to final status in Supabase first (before deleting local data)
@@ -1323,6 +1366,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     } catch (error) {
       console.error('[MatchEnd] Error closing match:', error)
       showAlert(t('matchEnd.errorClosing', 'Error closing match: ') + error.message, 'error')
+      setIsClosing(false)
     }
   }
 
@@ -1747,6 +1791,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               variant="positive"
               size="xl"
               onClick={handleCloseMatch}
+              disabled={isClosing}
+              loading={isClosing}
               style={{ flex: 1, minWidth: '150px' }}
             >
               {t('matchEnd.closeMatch', 'Close match')}
@@ -1755,6 +1801,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               variant="danger-soft"
               size="xl"
               onClick={handleReopenMatchClick}
+              disabled={isClosing}
               className="px-5"
             >
               {t('matchEnd.reopenMatch', 'Reopen match')}
@@ -1811,9 +1858,11 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         )}
       </div>
 
-      {/* Download Progress Modal */}
+      {/* Download Progress Modal. Above the header and its open menu (the
+          header is z 1000): nothing behind it can be pressed. Cancel while
+          the PDF is made; when no PDF came, the scorer chooses. */}
       {downloadProgress && (
-        <div className={DIALOG_OVERLAY} style={{
+        <div data-testid="export-modal" className={DIALOG_OVERLAY} style={{
           position: 'fixed',
           top: 0,
           left: 0,
@@ -1822,31 +1871,55 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 9999
+          zIndex: 10000
         }}>
-          <div className={DIALOG_PANEL} style={{
-            padding: '24px',
-            maxWidth: '400px',
-            width: '90%',
-            textAlign: 'center'
-          }}>
-            <h3 className={DIALOG_TITLE} style={{ margin: '0 0 16px 0' }}>{t('matchEnd.preparingExport', 'Preparing match export...')}</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
-              <div className="text-sm" style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
-                <span className={downloadProgress.json ? 'text-emerald-600' : 'text-stone-400'} style={{ fontSize: '20px' }}>{downloadProgress.json ? '✓' : '⏳'}</span>
-                <span className={downloadProgress.json ? 'font-medium text-emerald-700' : 'text-stone-500'}>Match Data (JSON)</span>
-              </div>
-              <div className="text-sm" style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
-                <span className={downloadProgress.pdf ? 'text-emerald-600' : 'text-stone-400'} style={{ fontSize: '20px' }}>{downloadProgress.pdf ? '✓' : '⏳'}</span>
-                <span className={downloadProgress.pdf ? 'font-medium text-emerald-700' : 'text-stone-500'}>{t('matchEnd.generatingPdf', 'Generating scoresheet (PDF)')}</span>
+          {pdfFailure ? (
+            <div role="alertdialog" aria-modal="true" aria-labelledby="ov-export-failed-title" data-testid="export-pdf-failed" className={`ov-kit ${DIALOG_PANEL}`} style={{
+              padding: '24px',
+              maxWidth: '460px',
+              width: '90%'
+            }}>
+              <h3 id="ov-export-failed-title" className={DIALOG_TITLE} style={{ margin: '0 0 8px 0' }}>{t('matchEnd.export.noPdfTitle')}</h3>
+              <p className="text-sm text-stone-700" style={{ margin: '0 0 4px 0' }}>
+                {t(`matchEnd.export.reason.${['closed', 'stalled', 'timeout', 'blocked'].includes(pdfFailure.reason) ? pdfFailure.reason : 'failed'}`)}
+              </p>
+              <p className="text-xs text-stone-500" style={{ margin: '0 0 20px 0' }}>{t('matchEnd.export.cancelKeepsUnapproved')}</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '8px' }}>
+                <Button variant="secondary" size="md" onClick={() => choosePdfFailure('cancel')}>{t('matchEnd.export.cancel')}</Button>
+                <Button variant="secondary" size="md" onClick={() => choosePdfFailure('skip')}>{t('matchEnd.export.approveWithoutPdf')}</Button>
+                <Button variant="positive" size="md" onClick={() => choosePdfFailure('retry')} autoFocus>{t('matchEnd.export.retry')}</Button>
               </div>
             </div>
-            <p className="text-xs text-stone-500" style={{ margin: 0 }}>
-              {downloadProgress.json && downloadProgress.pdf
-                ? t('matchEnd.creatingZip', 'Creating ZIP and uploading to cloud...')
-                : t('matchEnd.waitCheck', 'Please wait while files are being prepared...')}
-            </p>
-          </div>
+          ) : (
+            <div role="status" aria-live="polite" className={`ov-kit ${DIALOG_PANEL}`} style={{
+              padding: '24px',
+              maxWidth: '400px',
+              width: '90%',
+              textAlign: 'center'
+            }}>
+              <h3 className={DIALOG_TITLE} style={{ margin: '0 0 16px 0' }}>{t('matchEnd.preparingExport', 'Preparing match export...')}</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
+                <div className="text-sm" style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
+                  <span className={downloadProgress.json ? 'text-emerald-600' : 'text-stone-400'} style={{ fontSize: '20px' }}>{downloadProgress.json ? '✓' : '⏳'}</span>
+                  <span className={downloadProgress.json ? 'font-medium text-emerald-700' : 'text-stone-500'}>Match Data (JSON)</span>
+                </div>
+                <div className="text-sm" style={{ display: 'flex', alignItems: 'center', gap: '12px', justifyContent: 'center' }}>
+                  <span className={downloadProgress.pdf ? 'text-emerald-600' : 'text-stone-400'} style={{ fontSize: '20px' }}>{downloadProgress.pdf ? '✓' : '⏳'}</span>
+                  <span className={downloadProgress.pdf ? 'font-medium text-emerald-700' : 'text-stone-500'}>{t('matchEnd.generatingPdf', 'Generating scoresheet (PDF)')}</span>
+                </div>
+              </div>
+              <p className="text-xs text-stone-500" style={{ margin: 0 }}>
+                {downloadProgress.json && downloadProgress.pdf
+                  ? t('matchEnd.creatingZip', 'Creating ZIP and uploading to cloud...')
+                  : t('matchEnd.export.keepWindowOpen')}
+              </p>
+              {!downloadProgress.pdf && (
+                <div style={{ display: 'flex', justifyContent: 'center', marginTop: '16px' }}>
+                  <Button variant="secondary" size="md" onClick={() => exportAbortRef.current?.abort()} data-testid="export-cancel">{t('matchEnd.export.cancel')}</Button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

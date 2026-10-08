@@ -1295,7 +1295,22 @@
     "resign": "Neu underschriibe",
     "clearSignature": "Lösche",
     "signatureLocked": "Spiil genehmigt oder abgschlosse: d Underschrifte sind fix",
-    "signatureSaveFailed": "D Underschrift het nöd chöne gspeicheret werde. Probiered Sie s nomal."
+    "signatureSaveFailed": "D Underschrift het nöd chöne gspeicheret werde. Probiered Sie s nomal.",
+    "export": {
+      "cancel": "Abbräche",
+      "retry": "Nomal probiere",
+      "approveWithoutPdf": "Ohni PDF genehmige",
+      "noPdfTitle": "S PDF isch nöd fertig",
+      "reason": {
+        "closed": "S eMatchblatt-Fänschter isch zuegmacht worde, bevor s PDF fertig gsii isch.",
+        "stalled": "S eMatchblatt-Fänschter git kei Antwort meh.",
+        "timeout": "S PDF hät z lang gha.",
+        "blocked": "S eMatchblatt-Fänschter hät nöd chöne ufgah.",
+        "failed": "S eMatchblatt hät s PDF nöd chöne erstelle."
+      },
+      "cancelKeepsUnapproved": "Abbräche laht s Spiil ungnehmigt. Ohni PDF genehmige gnehmigt s jetzt: Sie chönd s PDF spöter us em eMatchblatt speichere.",
+      "keepWindowOpen": "Bitte s eMatchblatt-Fänschter offe la, bis s PDF fertig isch."
+    }
   },
   "scoresheetPdf": {
     "zoomOut": "Verchliinere",

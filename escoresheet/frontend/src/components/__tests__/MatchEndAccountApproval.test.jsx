@@ -403,6 +403,8 @@ describe('MatchEnd: approve with an account', () => {
     render(<MatchEnd matchId={1} />)
     await waitFor(() => expect(confirmButton()).toBeEnabled())
     fireEvent.click(confirmButton())
+    // no scoresheet window: the scorer approves without the PDF
+    fireEvent.click(await findButton(en.matchEnd.export.approveWithoutPdf, { timeout: 3000 }))
     await waitFor(() => {
       const jobs = [...store.tables.sync_queue.values()]
       expect(jobs.some(j => j.payload?.status === 'approved')).toBe(true)
@@ -441,6 +443,8 @@ describe('MatchEnd: approve with an account', () => {
     await refreshed()
     await waitFor(() => expect(confirmButton()).toBeEnabled())
     fireEvent.click(confirmButton())
+    // no scoresheet window: the scorer approves without the PDF
+    fireEvent.click(await findButton(en.matchEnd.export.approveWithoutPdf, { timeout: 3000 }))
     await waitFor(() => {
       expect([...store.tables.sync_queue.values()].some(j => j.payload?.status === 'approved')).toBe(true)
     }, { timeout: 5000 })
@@ -468,6 +472,7 @@ describe('MatchEnd: approve with an account', () => {
     render(<MatchEnd matchId={1} />)
     await waitFor(() => expect(confirmButton()).toBeEnabled())
     fireEvent.click(confirmButton())
+    fireEvent.click(await findButton(en.matchEnd.export.approveWithoutPdf, { timeout: 3000 }))
     const reopen = await findButton(en.matchEnd.reopenMatch, { timeout: 5000 })
     fireEvent.click(reopen)
     await waitFor(() => expect(store.tables.matches.get(1).approved).toBe(false))
@@ -569,17 +574,22 @@ describe('MatchEnd: Re-sign and Clear', () => {
   })
 
   it('disabled once the match is approved or closed', async () => {
+    // approved: the page opens on the approved view (from the match row), no
+    // signature boxes to change
     seed({ scorerSignature: 'data:s', approved: true })
     const first = render(<MatchEnd matchId={1} />)
+    await findButton(en.matchEnd.closeMatch, { timeout: 3000 })
+    expect(screen.queryByTestId('signature-resign-scorer')).toBeNull()
+    expect(screen.queryByTestId('account-approval-open-ref1')).toBeNull()
+    first.unmount()
+
+    // closed (not approved here): the boxes are shown, locked
+    seed({ scorerSignature: 'data:s', closed_at: '2026-10-07T20:00:00Z' })
+    render(<MatchEnd matchId={1} />)
     expect(await screen.findByTestId('signature-resign-scorer')).toBeDisabled()
     expect(screen.getByTestId('signature-clear-scorer')).toBeDisabled()
     expect(screen.getByTestId('signature-clear-captain-a')).toBeDisabled()
     expect(screen.getByTestId('account-approval-why-ref1')).toHaveTextContent(en.approval.why.locked)
-    first.unmount()
-
-    seed({ scorerSignature: 'data:s', closed_at: '2026-10-07T20:00:00Z' })
-    render(<MatchEnd matchId={1} />)
-    expect(await screen.findByTestId('signature-resign-scorer')).toBeDisabled()
   })
 })
 
