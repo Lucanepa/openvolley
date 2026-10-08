@@ -54,6 +54,7 @@ import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../util
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet } from '../domain/rules'
 import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags, deferredPenaltyPoints } from '../domain/sanctions'
 import { classifyTimeoutRequest } from '../domain/timeouts'
+import { rallyStatusOf, currentSetOf } from '../domain/rally'
 import { useConfirmAction } from '../hooks/useConfirmAction'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
 import { playerReplacedByLibero } from '../domain/liberos'
@@ -2937,46 +2938,22 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
   }, [data?.events, data?.set])
 
-  const rallyStatus = useMemo(() => {
-    if (!data?.events || !data?.set || data.events.length === 0) return 'idle'
+  // In play when the set's last event is a rally_start (domain/rally: the
+  // point and rally-start taps check the same rule against the database)
+  const rallyStatus = useMemo(
+    () => (data?.set ? rallyStatusOf(data.events, data.set.index) : 'idle'),
+    [data?.events, data?.set]
+  )
 
-    // Get events for current set only and sort by sequence number (most recent first)
-    const currentSetEvents = data.events
-      .filter(e => e.setIndex === data.set.index)
-      .sort((a, b) => {
-        // Sort by sequence number if available, otherwise by timestamp
-        const aSeq = a.seq || 0
-        const bSeq = b.seq || 0
-        if (aSeq !== 0 || bSeq !== 0) {
-          return bSeq - aSeq // Descending by sequence (most recent first)
-        }
-        // Fallback to timestamp for legacy events
-        const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-        const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-        return bTime - aTime
-      })
-
-    if (currentSetEvents.length === 0) return 'idle'
-
-    const lastEvent = currentSetEvents[0] // Most recent event is now first
-
-    // Check if last event is point or replay first (these end the rally)
-    if (lastEvent.type === 'point' || lastEvent.type === 'replay') {
-      return 'idle'
-    }
-
-    if (lastEvent.type === 'rally_start') {
-      return 'in_play'
-    }
-
-    // set_start means set is ready but rally hasn't started yet
-    if (lastEvent.type === 'set_start') {
-      return 'idle'
-    }
-
-    // For lineup events after points, the rally is idle (waiting for next rally_start)
-    return 'idle'
-  }, [data?.events, data?.set])
+  // The rally of the set being played, read from the database (inside an
+  // action: its transaction). A tap is checked against it, not against the
+  // screen, which on a slow tablet can be seconds behind
+  const readRallyStatus = useCallback(async () => {
+    const set = currentSetOf(await db.sets.where('matchId').equals(matchId).toArray())
+    if (!set) return 'idle'
+    const events = await db.events.where('matchId').equals(matchId).toArray()
+    return rallyStatusOf(events, set.index)
+  }, [matchId])
 
   substitutionGuardRef.current = {
     events: data?.events,
@@ -5019,10 +4996,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // One action (runAction): the score, the point event, the side-out rotation,
   // an automatic libero exit and the dialogs it opens appear together. A second
   // tap while it is written is dropped ('point').
+  // `tap`: a point button, its key or the accidental-point question. Written
+  // only while the rally is in play in the database: the second tap of a
+  // double tap on a screen that has not caught up (the key below lets go
+  // once the live query has been waited for long enough, the old buttons
+  // still showing) gave a second point for the same rally. A penalty point
+  // or a correction is no tap.
   const handlePoint = useCallback(
-    (side, skipConfirmation = false) => runAction('point', async () => {
-      cLogger.logHandler('handlePoint', { side, skipConfirmation })
+    (side, skipConfirmation = false, { tap = false } = {}) => runAction('point', async () => {
+      cLogger.logHandler('handlePoint', { side, skipConfirmation, tap })
       if (!data?.set) return
+      if (tap && await readRallyStatus() !== 'in_play') {
+        console.warn('[Scoreboard] Point tap without a rally in play (the screen was behind): ignored')
+        return
+      }
       const teamKey = mapSideToTeamKey(side)
 
       // Check for accidental point award (if enabled and rally just started)
@@ -5033,7 +5020,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             team: teamKey,
             onConfirm: () => {
               setAccidentalPointConfirmModal(null)
-              handlePoint(side, true) // Call with skipConfirmation = true
+              handlePoint(side, true, { tap: true }) // Call with skipConfirmation = true
             }
           }))
           return
@@ -5503,7 +5490,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // reaches. Awaited (Dexie reads only): its dialog opens with the point
       await afterPointScored({ set: freshCurrentSet, homePoints, awayPoints, teamKey })
     }),
-    [data?.set, data?.events, logEvent, mapSideToTeamKey, afterPointScored, getCurrentServe, rotateLineup, matchId, syncToReferee, runAction, deferUi]
+    [data?.set, data?.events, logEvent, mapSideToTeamKey, afterPointScored, getCurrentServe, rotateLineup, matchId, syncToReferee, runAction, deferUi, readRallyStatus]
   )
 
   // One action (runAction): a second tap while it is written is dropped
@@ -5519,9 +5506,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // Only the literal true skips the accidental rally start check (its own
   // "Yes, start rally"): a button handing its click event in must not, or a
   // tap on Start rally never asks (it did, desktop and phone, until 2026-10)
+  // A rally already in play in the database (the screen has not caught up
+  // yet) is not started again: one rally_start per rally
   const handleStartRally = useCallback((skipConfirmation = false) => runAction('rally', async () => {
     const skipCheck = skipConfirmation === true
     cLogger.logHandler('handleStartRally', { skipConfirmation: skipCheck })
+    if (await readRallyStatus() === 'in_play') {
+      console.warn('[Scoreboard] Start rally with a rally in play (the screen was behind): ignored')
+      return
+    }
     // Check for accidental rally start (if enabled and point was just awarded)
     if (checkAccidentalRallyStart && !skipCheck && lastPointAwardedTimeRef.current) {
       const timeSinceLastPoint = (Date.now() - lastPointAwardedTimeRef.current) / 1000
@@ -5589,7 +5582,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       clearTimeout(recentSubFlashTimeoutRef.current)
     }
     deferUi(() => setRecentlySubstitutedPlayers([]))
-  }), [logEvent, isFirstRally, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration, runAction, deferUi])
+  }), [logEvent, isFirstRally, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration, runAction, deferUi, readRallyStatus])
 
   const handleReplay = useCallback(async () => {
     // During rally: ask first, confirmReplay logs the replay event (no point to undo)
@@ -12188,12 +12181,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Point keys
       if (key === keyBindings.pointLeft && rallyStatus === 'in_play') {
         e.preventDefault()
-        handlePoint('left')
+        handlePoint('left', false, { tap: true })
         return
       }
       if (key === keyBindings.pointRight && rallyStatus === 'in_play') {
         e.preventDefault()
-        handlePoint('right')
+        handlePoint('right', false, { tap: true })
         return
       }
 
@@ -12879,7 +12872,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       actions: {
         undo: showUndoConfirm,
         menu: () => setMenuModal(true),
-        point: (side) => handlePoint(side),
+        point: (side) => handlePoint(side, false, { tap: true }),
         startRally: () => handleStartRally(),
         timeout: (side) => handleTimeout(side),
         openLineup: (side) => setLineupModal({ team: mapSideToTeamKey(side), mode: 'initial' }),
@@ -17623,10 +17616,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     ) : (
                       <>
                         <div className="rally-controls-row">
-                          <button data-help-id="scoreboard-point-left" className="rally-point-button" onClick={() => handlePoint('left')}>
+                          <button data-help-id="scoreboard-point-left" className="rally-point-button" onClick={() => handlePoint('left', false, { tap: true })}>
                             {t('scoreboard.buttons.pointTeam', { team: teamALabel })}
                           </button>
-                          <button data-help-id="scoreboard-point-right" className="rally-point-button" onClick={() => handlePoint('right')}>
+                          <button data-help-id="scoreboard-point-right" className="rally-point-button" onClick={() => handlePoint('right', false, { tap: true })}>
                             {t('scoreboard.buttons.pointTeam', { team: teamBLabel })}
                           </button>
                         </div>
