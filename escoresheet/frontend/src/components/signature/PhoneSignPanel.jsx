@@ -32,7 +32,8 @@ export function usePhoneSignTransports(active, { fetchImpl = typeof fetch === 'f
   let auth = null
   try { auth = useAuth() || null } catch { auth = null }
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine !== false)
-  const [relay, setRelay] = useState({ loading: false, status: null })
+  // checked: the status URL the last answer was for (the reason waits for it)
+  const [relay, setRelay] = useState({ loading: false, status: null, checked: null })
   const [hs, setHs] = useState(null)
   const [fw, setFw] = useState(undefined)
   const statusUrl = getLocalServerStatusUrl()
@@ -53,8 +54,8 @@ export function usePhoneSignTransports(active, { fetchImpl = typeof fetch === 'f
     setRelay((r) => ({ ...r, loading: true }))
     fetchImpl(statusUrl, { headers: { Accept: 'application/json' } })
       .then((r) => (r.ok ? r.json() : null))
-      .then((status) => { if (!cancelled) setRelay({ loading: false, status: status && typeof status === 'object' ? status : null }) })
-      .catch(() => { if (!cancelled) setRelay({ loading: false, status: null }) })
+      .then((status) => { if (!cancelled) setRelay({ loading: false, status: status && typeof status === 'object' ? status : null, checked: statusUrl }) })
+      .catch(() => { if (!cancelled) setRelay({ loading: false, status: null, checked: statusUrl }) })
     return () => { cancelled = true }
   }, [active, statusUrl, fetchImpl])
 
@@ -92,7 +93,12 @@ export function usePhoneSignTransports(active, { fetchImpl = typeof fetch === 'f
     return t
   }, [online, auth?.user, auth?.access, statusUrl, relay.status, hs, fw, desktop, hallIp])
 
-  return { loading: relay.loading, transports }
+  // Loading from the first render until the local server first answered: the
+  // fetch starts in an effect, so relay.loading alone is false on the first
+  // render (the pad flashed "Sign in to sign on a phone" before the hall
+  // network was offered). A later re-check keeps the last answer shown.
+  const loading = !!(active && statusUrl && fetchImpl) && relay.checked !== statusUrl
+  return { loading, transports }
 }
 
 function formatLeft(ms) {
