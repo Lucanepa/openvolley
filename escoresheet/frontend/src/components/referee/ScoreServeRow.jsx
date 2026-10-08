@@ -25,12 +25,28 @@ export const SERVE_BLOCK = {
   heightVmin: SCORE_ROW.scoreVmin,
   /** at most this wide; never wider than its slot */
   widthVmin: 26,
-  /** SERVE label, vmin, and at most this share of the block width (AUFSCHLAG, SERVIZIO fit) */
+  /**
+   * SERVE label, vmin, and at most the block width over its length: an
+   * upper-case letter in bold with the letter spacing is up to ~0.76 em, so
+   * 0.85 em a letter leaves a margin. A fixed share for the longest label
+   * (AUFSCHLAG) made SERVE as small as AUFSCHLAG in a narrow slot.
+   */
   labelVmin: 3.4,
-  labelCqi: 13,
-  /** server's number, vmin, and at most this share of the block width (two digits) */
+  labelEmPerChar: 0.85,
+  /**
+   * server's number, vmin, and at most this share of the block width: two
+   * digits are ~1.11 em, 80cqi leaves them ~11 % of the width. At 55cqi the
+   * number in a narrow portrait slot (150 % display scale) came out smaller
+   * than the old corner box's.
+   */
   numberVmin: 9.5,
-  numberCqi: 55
+  numberCqi: 80
+}
+
+/** The label's largest font size as a share (cqi) of the block width. */
+export function serveLabelCqi(label) {
+  const chars = Math.max(1, String(label ?? '').length)
+  return Number((100 / (chars * SERVE_BLOCK.labelEmPerChar)).toFixed(2))
 }
 
 /**
@@ -105,7 +121,9 @@ function ServeBlock({ side, label, number, colour, vmin }) {
         width: `min(100%, ${vmin(B.widthVmin)}px)`,
         height: vmin(B.heightVmin),
         borderRadius: 'clamp(8px, 1.4vw, 16px)',
-        padding: `${vmin(0.8)}px ${vmin(1)}px`,
+        // side padding: at most 3 % of the slot, so a narrow slot keeps its
+        // width for the number
+        padding: `${vmin(0.8)}px min(${vmin(1)}px, 3%)`,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -116,7 +134,7 @@ function ServeBlock({ side, label, number, colour, vmin }) {
       <span
         data-serve-label=""
         style={{
-          fontSize: `min(${vmin(B.labelVmin)}px, ${B.labelCqi}cqi)`,
+          fontSize: `min(${vmin(B.labelVmin)}px, ${serveLabelCqi(label)}cqi)`,
           fontWeight: 800,
           letterSpacing: '0.06em',
           lineHeight: 1.1,
