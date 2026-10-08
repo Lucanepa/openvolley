@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { COURT_CELLS, POSITIONS, detectDisplayMode, isPhoneScreen, officialRoleShort, phoneHeldSideways, phoneLayoutActive, phoneLayoutKept, recentActions, tintOf } from '../phoneLayout'
+import { COURT_CELLS, PHONE_COURT_MIN_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, POSITIONS, detectDisplayMode, isPhoneScreen, officialRoleShort, phoneHeldSideways, phoneLayoutActive, phoneLayoutKept, recentActions, tintOf } from '../phoneLayout'
 
 describe('detectDisplayMode (the automatic display mode)', () => {
   it.each([[390, 844], [360, 740], [412, 915], [599, 1000]])('a %ix%i portrait phone gets the phone layout', (w, h) => {
@@ -162,7 +162,36 @@ describe('phone point buttons on a short screen (styles.css)', () => {
     const css = readFileSync(resolve(__dirname, '../../../styles.css'), 'utf8')
     const base = css.match(/\.phone-scoreboard \.phone-square \{([^}]*)\}/)
     expect(base?.[1]).toMatch(/aspect-ratio: 1 \/ 1/)
-    const supports = css.match(/@supports \(height: 1cqh\) \{\s*\.phone-scoreboard \.phone-square \{([^}]*)\}/)
-    expect(supports?.[1]).toMatch(/height: min\(\(100cqw - 34px\) \/ 2, max\(var\(--phone-square-min\), 100cqh - var\(--phone-square-reserve\)/)
+    const supports = css.match(/@supports \(height: 1cqh\) \{([\s\S]*?)\n\}/)?.[1] || ''
+    expect(supports).toMatch(/\.phone-scoreboard \.phone-square \{[^}]*height: min\(\(100cqw - 34px\) \/ 2, max\(var\(--phone-square-min\), 100cqh - var\(--phone-square-reserve\)/)
+  })
+})
+
+describe('phone layout on a short screen (styles.css)', () => {
+  // The heights a phone page really gets (browser bars, the Android app's
+  // system bars), less the folded app header's 16px bar. At 360x640 the
+  // action grid ran 6px below the screen: the point buttons were at their
+  // lowest and the 2:1 court did not give way. The point buttons get lower
+  // down to their minimum, then the court gets lower down to its minimum.
+  it.each([[360, 640], [390, 664], [360, 708]])('everything fits a %ix%i page without scrolling', (width, height) => {
+    expect(PHONE_COURT_MIN_PX).toBeGreaterThan(0)
+    expect(PHONE_SQUARE_RESERVE_PX + PHONE_COURT_MIN_PX + PHONE_SQUARE_MIN_PX).toBeLessThanOrEqual(height - 16)
+    // the court is never taller than half its width (the 2:1 court)
+    expect(PHONE_COURT_MIN_PX).toBeLessThanOrEqual((width - 24) / 2)
+    // three rows of 28px shirt numbers still fit a court at its lowest
+    // (2px borders, 6px padding top and bottom, two 2px gaps)
+    expect((PHONE_COURT_MIN_PX - 4 - 12 - 4) / 3).toBeGreaterThanOrEqual(28)
+  })
+
+  it('the court gets lower before the point buttons scroll; square buttons and a 2:1 court otherwise', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    const css = readFileSync(resolve(__dirname, '../../../styles.css'), 'utf8')
+    expect(css).toMatch(/\.phone-scoreboard \.phone-court \{[^}]*aspect-ratio: 2 \/ 1/)
+    expect(css).toMatch(/\.phone-scoreboard \.phone-square \{[^}]*aspect-ratio: 1 \/ 1/)
+    const supports = css.match(/@supports \(height: 1cqh\) \{([\s\S]*?)\n\}/)?.[1] || ''
+    const court = '(100cqw - 24px) / 2, max(var(--phone-court-min), 100cqh - var(--phone-square-reserve) - var(--phone-square-min))'
+    expect(supports).toContain(`height: min(${court});`)
+    expect(supports).toContain(`height: min((100cqw - 34px) / 2, max(var(--phone-square-min), 100cqh - var(--phone-square-reserve) - min(${court})));`)
   })
 })
