@@ -50,6 +50,9 @@ beforeEach(() => {
   Object.defineProperty(window.navigator, 'onLine', { configurable: true, get: () => true })
   // the local server's status: answered when the test says so
   globalThis.fetch = vi.fn(() => new Promise((resolve) => { answer = resolve }))
+  // jsdom has no 2D canvas: the pad sets its canvas up in a timer
+  const ctx = { scale() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, clearRect() {}, fillRect() {} }
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx)
 })
 afterEach(() => {
   cleanup()
