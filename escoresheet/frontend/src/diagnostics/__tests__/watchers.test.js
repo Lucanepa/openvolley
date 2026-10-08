@@ -1,7 +1,7 @@
 // Diagnostics watchers in jsdom: the page.load line, dialogs (open, content
 // change, close / flash), clicks without their text, and box sizes with jumps
 // from a stand-in ResizeObserver (jsdom has none).
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { installWatchers, elementId, textHash, engineInfo } from '../watchers'
 import { startRecorder, stopRecorder, flushDiagnostics } from '../recorder'
 
@@ -27,6 +27,7 @@ describe('diagnostics watchers', () => {
     await stopRecorder()
     delete window.ResizeObserver
     document.body.innerHTML = ''
+    vi.restoreAllMocks()
   })
   const kinds = (k) => sink.lines.filter(l => l.k === k)
 
@@ -58,6 +59,9 @@ describe('diagnostics watchers', () => {
   })
 
   it('records clicks by id, never by text, and keys outside fields only', async () => {
+    // The clock reads 771 (time and page-load ms), as it can in any run
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-08T12:34:56.771Z'))
+    vi.spyOn(performance, 'now').mockReturnValue(1771.2)
     document.body.insertAdjacentHTML('beforeend', '<button data-testid="show-pin">771 234</button><button aria-label="7">7</button><input id="pin-field" type="password">')
     document.querySelector('[data-testid="show-pin"]').click()
     document.querySelector('[aria-label="7"]').click()
@@ -65,8 +69,10 @@ describe('diagnostics watchers', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: '1', bubbles: true }))
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await flushDiagnostics()
-    const text = JSON.stringify(sink.lines)
-    expect(text).not.toMatch(/771/)
+    // The button's text may appear in no text field of any line (the clock,
+    // sizes and other numbers can read 771 by chance)
+    const texts = (v) => typeof v === 'string' ? [v] : v && typeof v === 'object' ? Object.values(v).flatMap(texts) : []
+    expect(sink.lines.flatMap(l => texts(l.d)).filter(t => /771/.test(t))).toEqual([])
     const clicks = kinds('ui.click').map(l => l.d.id)
     expect(clicks[0]).toBe('show-pin')
     expect(clicks[1]).not.toBe('7')
