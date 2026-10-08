@@ -203,8 +203,12 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
   }, [open])
 
   const fetchLeaguesFromSupabase = async () => {
+    // The backend caps a select at 1000 rows and svrz_games holds more. Newest
+    // first keeps every upcoming game inside the cap, so a league is never
+    // greyed out because its games were cut off; only old leagues drop out.
     const { data, error } = await apiFrom('svrz_games')
       .select('gender, league, datetime')
+      .order('datetime', { ascending: false })
     if (error) throw error
     if (!data || data.length === 0) return null
     // datetime is TEXT in ISO form: compare it as a string, like the match
