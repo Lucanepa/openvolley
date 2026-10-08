@@ -64,4 +64,10 @@ describe('Set 1 start from the schedule (owner 2026-10-08)', () => {
     // the remarks dialog does not pop up over the remark it wrote itself
     expect(body).toMatch(/timeDifferent && !fromSchedule/)
   })
+
+  it('the dialog puts the typed time on the day nearest to the proposal (typedStartNear)', () => {
+    const start = src.indexOf('function SetStartTimeModal(')
+    const modal = src.slice(start, src.indexOf('onConfirm(isoString)', start))
+    expect(modal).toContain('typedStartNear(defaultTime, time)')
+  })
 })

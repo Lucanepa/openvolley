@@ -97,3 +97,27 @@ export function actualStartRemark({ setIndex, scheduledAt, startTime }) {
   if (remarkClock(confirmed) === remarkClock(new Date(scheduledAt))) return null
   return actualStartLine(confirmed) || null
 }
+
+/**
+ * The start the "Set N start time" dialog confirms: the typed local HH:MM on
+ * the day nearest to the proposed time (within 12 hours of it). The dialog
+ * shows only HH:MM; taking the proposal's date put a typed time a day off
+ * whenever the proposal is on the day before (a 23:30 match confirmed at
+ * 00:10 is proposed yesterday 23:30: a typed 00:12 became yesterday 00:12, a
+ * set of over 24 hours) or the typed time is across midnight from it.
+ *
+ * @param {string} proposedIso the dialog's default (ISO)
+ * @param {string} clock typed "HH:MM"
+ * @returns {string|null} ISO, or null for an invalid time
+ */
+export function typedStartNear(proposedIso, clock) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(clock || '').trim())
+  const ref = new Date(proposedIso)
+  if (!m || Number.isNaN(ref.getTime()) || Number(m[1]) > 23 || Number(m[2]) > 59) return null
+  const d = new Date(ref.getTime())
+  d.setHours(Number(m[1]), Number(m[2]), 0, 0)
+  const diff = d.getTime() - ref.getTime()
+  if (diff > 12 * 3600 * 1000) d.setDate(d.getDate() - 1)
+  else if (diff < -12 * 3600 * 1000) d.setDate(d.getDate() + 1)
+  return d.toISOString()
+}

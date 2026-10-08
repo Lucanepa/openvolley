@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { defaultSetStartTime, scheduledStartOnDay, actualStartRemark, startsFromSchedule, startScheduleOf } from '../setStartTime'
+import { defaultSetStartTime, scheduledStartOnDay, actualStartRemark, startsFromSchedule, startScheduleOf, typedStartNear } from '../setStartTime'
 import { setActualStartRemark } from '../../domain/remarks'
 import { setDurationMinutes, matchTimes } from '../../../scoresheet_pdf/utils/matchTimes'
 
@@ -128,5 +128,28 @@ describe('set 1 start from the schedule (owner 2026-10-08)', () => {
     expect(m.durationMinutes).toBe(24)
     // a set start without a rally (older record) still gives a duration of minutes, not years
     expect(setDurationMinutes(set1, [])).toBe(25)
+  })
+})
+
+describe('the typed start time is on the day nearest to the proposal (typedStartNear)', () => {
+  it('a 23:30 match confirmed at 00:10: kept 23:30 is the evening before, a typed 00:12 is today', () => {
+    const proposed = defaultSetStartTime({ setIndex: 1, now: local(2026, 10, 9, 0, 10), scheduledAt: iso(2026, 10, 1, 23, 30) })
+    expect(proposed).toBe(iso(2026, 10, 8, 23, 30))
+    expect(typedStartNear(proposed, '23:30')).toBe(iso(2026, 10, 8, 23, 30))
+    // the proposal's date would give 08.10 00:12, a set 1 of over 24 hours
+    expect(typedStartNear(proposed, '00:12')).toBe(iso(2026, 10, 9, 0, 12))
+  })
+
+  it('a 20:00 match played the next morning: a typed 07:05 is the morning, not the day before', () => {
+    const proposed = defaultSetStartTime({ setIndex: 1, now: local(2026, 10, 9, 7, 3), scheduledAt: iso(2026, 10, 8, 20, 0) })
+    expect(typedStartNear(proposed, '07:05')).toBe(iso(2026, 10, 9, 7, 5))
+  })
+
+  it('the same day otherwise; invalid input is null', () => {
+    const proposed = iso(2026, 10, 8, 12, 30)
+    expect(typedStartNear(proposed, '12:45')).toBe(iso(2026, 10, 8, 12, 45))
+    expect(typedStartNear(proposed, '9:05')).toBe(iso(2026, 10, 8, 9, 5))
+    expect(typedStartNear(proposed, '')).toBeNull()
+    expect(typedStartNear(proposed, '25:00')).toBeNull()
   })
 })
