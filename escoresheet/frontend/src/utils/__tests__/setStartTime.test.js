@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { defaultSetStartTime, scheduledStartOnDay, actualStartRemark, startsFromSchedule } from '../setStartTime'
+import { defaultSetStartTime, scheduledStartOnDay, actualStartRemark, startsFromSchedule, startScheduleOf } from '../setStartTime'
 import { setActualStartRemark } from '../../domain/remarks'
 import { setDurationMinutes, matchTimes } from '../../../scoresheet_pdf/utils/matchTimes'
 
@@ -75,6 +75,17 @@ describe('set 1 start from the schedule (owner 2026-10-08)', () => {
       expect(startsFromSchedule({ setIndex: 1, scheduledAt: dateOnly })).toBe(false)
       expect(actualStartRemark({ setIndex: 1, scheduledAt: dateOnly, startTime: iso(2026, 10, 8, 12, 41) })).toBeNull()
     }
+  })
+
+  it('a test match (made-up 20:00 kickoff) has no schedule: set 1 now, no remark', () => {
+    const testMatch = { test: true, scheduledAt: iso(2026, 10, 8, 20, 0) }
+    expect(startScheduleOf(testMatch)).toBeNull()
+    expect(defaultSetStartTime({ setIndex: 1, now: today, scheduledAt: startScheduleOf(testMatch) })).toBe(iso(2026, 10, 8, 12, 41))
+    expect(startsFromSchedule({ setIndex: 1, scheduledAt: startScheduleOf(testMatch) })).toBe(false)
+    expect(actualStartRemark({ setIndex: 1, scheduledAt: startScheduleOf(testMatch), startTime: iso(2026, 10, 8, 12, 41) })).toBeNull()
+    expect(startScheduleOf({ scheduledAt })).toBe(scheduledAt)
+    expect(startScheduleOf({ test: false, scheduledAt })).toBe(scheduledAt)
+    expect(startScheduleOf(null)).toBeNull()
   })
 
   it('later sets keep "now, never before the previous end", without a remark', () => {

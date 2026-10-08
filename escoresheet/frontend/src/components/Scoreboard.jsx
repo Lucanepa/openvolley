@@ -49,7 +49,7 @@ import { ACCESS_CHANGED_EVENT } from '../lib/access'
 import { queueEventSync, queueSetScoreSync, queueSetReopenSync, buildSetEndMatchPayload, setLiveStateDirty, isLiveStateDirty, isLiveStateErrorWorthAlert, isLiveStateRefusal, isLiveStateRefused, markLiveStateRefused, clearLiveStateRefused } from '../utils/eventSync'
 import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from '../utils/logger'
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
-import { defaultSetStartTime, actualStartRemark, startsFromSchedule } from '../utils/setStartTime'
+import { defaultSetStartTime, actualStartRemark, startsFromSchedule, startScheduleOf } from '../utils/setStartTime'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet } from '../domain/rules'
 import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags, deferredPenaltyPoints } from '../domain/sanctions'
@@ -5437,7 +5437,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Show set start time confirmation: set 1 the scheduled time (on the day
       // played), any other set now (its first rally)
       const allSets = await db.sets.where('matchId').equals(matchId).toArray()
-      const scheduledAt = data?.match?.scheduledAt
+      const scheduledAt = startScheduleOf(data?.match)
       const defaultTime = defaultSetStartTime({ setIndex: data?.set?.index, sets: allSets, scheduledAt })
       const fromSchedule = startsFromSchedule({ setIndex: data?.set?.index, scheduledAt })
 
@@ -5641,7 +5641,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // when the start is confirmed again); undo takes it out (autoRemark)
     const fromSchedule = !!setStartTimeModal.fromSchedule
     const autoRemark = fromSchedule
-      ? actualStartRemark({ setIndex: setStartTimeModal.setIndex, scheduledAt: data.match?.scheduledAt, startTime: roundToMinute(time) })
+      ? actualStartRemark({ setIndex: setStartTimeModal.setIndex, scheduledAt: startScheduleOf(data.match), startTime: roundToMinute(time) })
       : null
     if (fromSchedule) {
       const freshMatch = await db.matches.get(matchId)
@@ -5712,7 +5712,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (timeDifferent && !fromSchedule) {
       deferUi(() => setShowRemarks(true))
     }
-  }), [setStartTimeModal, data?.set, data?.match?.scheduledAt, matchId, onTriggerEventBackup, syncToReferee, syncLiveStateToSupabase, runAction, deferUi, deferEffect])
+  }), [setStartTimeModal, data?.set, data?.match?.scheduledAt, data?.match?.test, matchId, onTriggerEventBackup, syncToReferee, syncLiveStateToSupabase, runAction, deferUi, deferEffect])
 
   // Confirm set end time
   const confirmSetEndTime = useCallback(async (time) => {
@@ -22601,7 +22601,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   // Show set start time confirmation: set 1 the scheduled time (on the
                   // day played), any other set now (its first rally)
                   const allSets = await db.sets.where('matchId').equals(matchId).toArray()
-                  const scheduledAt = data?.match?.scheduledAt
+                  const scheduledAt = startScheduleOf(data?.match)
                   const defaultTime = defaultSetStartTime({ setIndex: data?.set?.index, sets: allSets, scheduledAt })
                   const fromSchedule = startsFromSchedule({ setIndex: data?.set?.index, scheduledAt })
                   setSetStartTimeModal({ setIndex: data?.set?.index, defaultTime, fromSchedule })

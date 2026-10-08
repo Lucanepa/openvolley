@@ -18,6 +18,7 @@ import {
   displaySetNumber, remarkText, remarkPrefix, setTimesText, isTeamSanctionType
 } from '../../domain/describe'
 import { awardsPoint } from '../../domain/sanctions'
+import { startScheduleOf } from '../../utils/setStartTime'
 import { scoreFromPointEvents } from '../../domain/rules'
 import {
   CorrectionForm, SetPicker, TeamPicker, ScoreAtPicker, PlayerPicker, FieldGroup, CourtMini, withRemark
@@ -496,8 +497,8 @@ export function SetTimesForm({ ctx, events, sets, setRow, match, busy, onCancel,
     if (startIso && start !== toClock(setRow?.startTime)) changes.startTime = startIso
     if (endIso && end !== toClock(setRow?.endTime)) changes.endTime = endIso
     if (!Object.keys(changes).length) return null
-    return planSetTimes(events, sets, { setIndex: setRow.index, ...changes, scheduledAt: match?.scheduledAt, remarks: match?.remarks || '' }, ctx)
-  }, [start, end, startIso, endIso, setRow, events, sets, match?.scheduledAt, match?.remarks, ctx])
+    return planSetTimes(events, sets, { setIndex: setRow.index, ...changes, scheduledAt: startScheduleOf(match), remarks: match?.remarks || '' }, ctx)
+  }, [start, end, startIso, endIso, setRow, events, sets, match?.scheduledAt, match?.test, match?.remarks, ctx])
   const suggestion = base && !base.error ? base.suggestedRemark : null
   // the set 1 "Actual start time" line (base.remarkAdd) stays next to the delay remark
   const plan = base && !base.error && addRemark && suggestion ? { ...base, remarkAdd: [...(base.remarkAdd || []), (remark ?? suggestion).trim()].filter(Boolean) } : base
