@@ -85,3 +85,33 @@ describe('Scoreboard: the set interval clock', () => {
     cleanup()
   }, 30000)
 })
+
+describe('Scoreboard: the set interval starts at the set end', () => {
+  it('counts from the set end event, not from the set end time rounded down to the minute', async () => {
+    cleanup()
+    const home = await db.teams.add({ name: 'Home' })
+    const away = await db.teams.add({ name: 'Away' })
+    await db.players.bulkAdd([1, 2, 3, 4, 5, 6, 7].flatMap(n => [
+      { teamId: home, number: n, name: `H${n}` }, { teamId: away, number: n, name: `A${n}` }
+    ]))
+    // confirmed 10 s ago; the set row keeps the minute (here 55 s earlier)
+    const confirmedAt = new Date(Date.now() - 10000).toISOString()
+    const roundedEnd = new Date(Date.now() - 55000).toISOString()
+    const matchId = await db.matches.add({
+      homeTeamId: home, awayTeamId: away, status: 'live', test: true,
+      firstServe: 'home', coinTossTeamA: 'home', coinTossTeamB: 'away'
+    })
+    await db.sets.add({ matchId, index: 1, homePoints: 25, awayPoints: 15, finished: true, startTime: roundedEnd, endTime: roundedEnd })
+    await db.sets.add({ matchId, index: 2, homePoints: 0, awayPoints: 0, finished: false })
+    await db.events.bulkAdd([
+      { matchId, setIndex: 1, type: 'set_start', payload: {}, seq: 1, ts: roundedEnd },
+      { matchId, setIndex: 1, type: 'set_end', payload: { endTime: roundedEnd }, seq: 2, ts: confirmedAt }
+    ])
+
+    render(<ScaleProvider><AlertProvider><LoggingProvider><Scoreboard matchId={matchId} /></LoggingProvider></AlertProvider></ScaleProvider>)
+    await waitFor(() => expect(countdown(/^\d:\d\d$/).length).toBeGreaterThan(0), { timeout: 8000 })
+    // 180 - 10 s: 2:50 (not 180 - 55 s: 2:05)
+    expect(countdown(/^\d:\d\d$/)).toEqual(expect.arrayContaining([expect.stringMatching(/^2:(4[89]|50)$/)]))
+    cleanup()
+  }, 30000)
+})

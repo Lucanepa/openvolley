@@ -3058,8 +3058,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const previousSet = findPreviousSet(data?.sets, currentSetIndex)
       let remainingTime = setIntervalDuration
 
-      if (previousSet?.endTime) {
-        const endTime = new Date(previousSet.endTime).getTime()
+      // The interval runs from the set end's confirmation: its set_end event
+      // (the set's endTime is rounded down to the minute, up to 59 s early)
+      const setEndEvent = previousSet && [...(data?.events || [])].reverse().find(e => e.type === 'set_end' && e.setIndex === previousSet.index)
+      const intervalStart = setEndEvent?.ts || previousSet?.endTime
+      if (intervalStart) {
+        const endTime = new Date(intervalStart).getTime()
         const now = Date.now()
         const elapsedSeconds = Math.floor((now - endTime) / 1000)
         remainingTime = Math.max(0, setIntervalDuration - elapsedSeconds)
