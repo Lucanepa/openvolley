@@ -19881,9 +19881,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         courtCaptain={lineupModal.team === 'home' ? data?.match?.homeCourtCaptain : data?.match?.awayCourtCaptain}
         rememberedCourtCaptain={lineupModal.team === 'home' ? data?.match?.homeRememberedCourtCaptain : data?.match?.awayRememberedCourtCaptain}
         onClose={() => setLineupModal(null)}
+        // One action: the line-up, its owed penalty points and the game
+        // captain commit together, and the dialog closes with them on the
+        // court (it closed a frame before the court filled)
+        runSave={(body) => runAction('lineup', body)}
         onSave={async (gameCaptain, onCourt = null) => {
           const teamKey = lineupModal.team
-          setLineupModal(null)
+          deferUi(() => setLineupModal(null))
           // Optional game captain chosen in the modal (FIVB 5.2), written the
           // same way as the scoreboard's "Game captain" prompt
           // (domain/lineupEntry.js lineupGameCaptainDecision)
@@ -23879,7 +23883,7 @@ function ScoreboardCourtColumn({ children }) {
   return <section className="court-wrapper">{children}</section>
 }
 
-function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, teamAKey, teamBKey, lfpTrackingEnabled, lfpMinimumOnCourt, courtCaptain = null, rememberedCourtCaptain = null, onClose, onSave, onLineupSaved, onPenaltyPointsOwed }) {
+function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, teamAKey, teamBKey, lfpTrackingEnabled, lfpMinimumOnCourt, courtCaptain = null, rememberedCourtCaptain = null, onClose, onSave, onLineupSaved, onPenaltyPointsOwed, runSave = (body) => body() }) {
   const { t } = useTranslation()
   const [lineup, setLineup] = useState(() => {
     if (presetLineup) {
@@ -24118,8 +24122,8 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
 
     // Save lineup as an event (mark as initial lineup or manual override)
     if (matchId && setIndex) {
-      // Save lineup with sequence number
-      (async () => {
+      // Save lineup with sequence number (runSave: one scorer action)
+      runSave(async () => {
         // Get next sequence number
         const allEvents = await db.events.where('matchId').equals(matchId).toArray()
         // An undone or deleted event's seq is never given out again (event
@@ -24145,8 +24149,9 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
           seq: manualLineupSeq
         }
         const manualLineupEventId = await db.events.add(savedLineupEvent)
-        // Cloud copy of the starting (or corrected) lineup
-        queueEventSync(db, manualLineupEventId)
+        // Cloud copy of the starting (or corrected) lineup (awaited: part of
+        // the action's transaction)
+        await queueEventSync(db, manualLineupEventId)
 
         // Sync to referee immediately after lineup is saved
         if (onLineupSaved) {
@@ -24167,8 +24172,8 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
 
         // Auto-close modal after successful save (skip confirmation step),
         // with what to do about the optional game captain
-        onSave(gameCaptainDecision, lineupNumbers.filter(n => n != null))
-      })().catch(() => {
+        await onSave(gameCaptainDecision, lineupNumbers.filter(n => n != null))
+      }).catch(() => {
         // Don't auto-close - let user close manually with close button
         setSaveFailed(true)
       })
