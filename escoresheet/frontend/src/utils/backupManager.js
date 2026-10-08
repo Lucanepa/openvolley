@@ -1204,6 +1204,27 @@ export async function fetchMatchByPin(gamePin, gameN) {
 }
 
 /**
+ * Set 5's first server for a restored match, from its coin toss: the latest
+ * set5_coin_toss event (the set 5 setup's confirmation; a restore by PIN
+ * leaves undone ones out). Its team key, as the label of the restored Team A
+ * (A and B may have been swapped since). No snapshot or live field carries
+ * set5FirstServe, and the event, restored, hides the set 5 setup panel: set 5
+ * was then served by set 1's first server (domain/rules getFirstServeForSet).
+ * @param {Array} events  server event rows
+ * @param {'home'|'away'} teamAKey  the restored match's Team A
+ * @returns {{ set5FirstServe?: 'A'|'B' }}
+ */
+export function set5TossFromEvents(events, teamAKey) {
+  const toss = [...(events || [])]
+    .filter(e => e?.type === 'set5_coin_toss')
+    .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0]
+  const key = toss?.payload?.firstServeTeamKey
+  const isTeam = (v) => v === 'home' || v === 'away'
+  if (!isTeam(key) || !isTeam(teamAKey)) return {}
+  return { set5FirstServe: key === teamAKey ? 'A' : 'B' }
+}
+
+/**
  * Import match data from Supabase to local Dexie
  * Uses JSONB columns for team/player data (teams/players tables were dropped)
  */
@@ -1297,6 +1318,10 @@ export async function importMatchFromSupabase(cloudData) {
       ...(courtSides.setLeftTeamOverrides ? { setLeftTeamOverrides: { ...courtSides.setLeftTeamOverrides } } : {}),
       ...(isAB(courtSides.set5LeftTeam) ? { set5LeftTeam: courtSides.set5LeftTeam } : {}),
       ...(typeof courtSides.set5CourtSwitched === 'boolean' ? { set5CourtSwitched: courtSides.set5CourtSwitched } : {}),
+      // Set 5's first server (its coin toss, the set 5 setup's confirmation):
+      // that event hides the setup panel, so without it set 5 was served
+      // by set 1's first server
+      ...set5TossFromEvents(events, coinToss.team_a || match.coin_toss_team_a),
       // Match result: prefer JSONB, fallback to legacy
       setResults: results.set_results || match.set_results,
       winner: results.winner || match.winner,
