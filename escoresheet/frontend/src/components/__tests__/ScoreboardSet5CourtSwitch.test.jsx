@@ -449,6 +449,59 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
     cleanup()
   }, 60000)
 
+  // With the keyboard shortcuts on, Enter and the point keys went through
+  // the change-of-courts dialog: a point at 7:7 under the change back made it
+  // stale, and confirming it left 7:8 with the courts not changed and nothing
+  // asked. No rally and no point under the dialog; and the dialog's confirm
+  // sets the courts from the stored score, whatever it showed.
+  it('the keyboard shortcuts score no point under the change-back dialog', async () => {
+    localStorage.setItem('keybindingsEnabled', 'true')
+    try {
+      const matchId = await setUpSet5(level(6, 'home'))
+      mount(matchId)
+      await ready()
+      await point('Point A')
+      await switchCourts(matchId)
+      await screenDecisionChange()
+      await confirmDecision()
+      await waitFor(() => expect(switchBackOpen()).toBe(true), { timeout: 5000 })
+
+      fireEvent.keyDown(window, { key: 'Enter' })
+      await settle()
+      fireEvent.keyDown(window, { key: 'a' })
+      await settle()
+      expect(await score()).toEqual([7, 7])
+      expect(button('Point A')).toBeFalsy()
+      await switchCourtsBack(matchId)
+      await waitFor(() => expect(teamAOnLeft()).toBe(true))
+    } finally {
+      localStorage.removeItem('keybindingsEnabled')
+    }
+    cleanup()
+  }, 60000)
+
+  it('a change-back dialog confirmed after a team reached 8 again leaves the courts changed', async () => {
+    const matchId = await setUpSet5(level(6, 'home'))
+    mount(matchId)
+    await ready()
+    await point('Point A')
+    await switchCourts(matchId)
+    await screenDecisionChange()
+    await confirmDecision()
+    await waitFor(() => expect(switchBackOpen()).toBe(true), { timeout: 5000 })
+
+    // a point gets on the score while the dialog is still open (taps under it)
+    await point('Point B')
+    expect(await score()).toEqual([7, 8])
+    expect(switchBackOpen()).toBe(true)
+    fireEvent.click(button('Switch courts back'))
+    await waitFor(() => expect(switchBackOpen()).toBe(false))
+    await settle()
+    expect(await switched(matchId)).toBe(true)
+    expect(teamAOnLeft()).toBe(false)
+    cleanup()
+  }, 60000)
+
   it('the scoring screen reloaded with the change back pending asks for it again', async () => {
     const matchId = await setUpSet5(level(6, 'home'))
     mount(matchId)
