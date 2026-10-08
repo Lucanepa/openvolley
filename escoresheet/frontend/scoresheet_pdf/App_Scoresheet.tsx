@@ -28,7 +28,7 @@ import { generatedRemarks } from './utils/sheetRemarks';
 import { isoOf, setDurationMinutes, setEndMs, setStartMs } from './utils/matchTimes';
 import { BRAND } from '../src/brand.js';
 import { PhoneIcon } from '../src/components/icons';
-import { deliverPdfToOpener, getOpenerWindow, isOwnDownload, savePdfThroughApp, setPdfBusy } from '../src/utils/appWindowGuest';
+import { deliverPdfToOpener, getOpenerWindow, isOwnDownload, reportPdfProgress, savePdfThroughApp, setPdfBusy, watchPdfWindowClose } from '../src/utils/appWindowGuest';
 import { detectAppPlatform } from '../src/utils/openAppWindow';
 import { assertCanvas, assertJpegDataUrl, assertValidPdf, assertVisibleSheet, downloadBlob, PdfCheckError, SHEET_MM, SHEET_OFFSET_MM, type SaveOutcome } from './utils/pdfOutput';
 
@@ -1491,6 +1491,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   // Automatic action (?action=print|save|getBlob): once every query has answered
   // (dataReady), never on the first render with half the data; once only.
   const autoActionDone = useRef(false);
+  // true while the approval (getBlob) still waits for this window's PDF
+  const approvalBusyRef = useRef(autoAction === 'getBlob');
   useEffect(() => {
     if (!autoAction || autoAction === 'preview' || !dataReady || autoActionDone.current) return;
     autoActionDone.current = true;
@@ -1504,6 +1506,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         // or tell it the capture failed so it does not wait for its timeout;
         // then close this window / the in-app view either way.
         const out = matchMissing ? null : await handleSavePdfRef.current(true);
+        // delivered (or failed): closing this window from now on cancels nothing
+        approvalBusyRef.current = false;
         await deliverPdfToOpener(out || null);
       }
     }, 500);
@@ -1511,6 +1515,18 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     return () => { clearTimeout(timer); autoActionDone.current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoAction, dataReady]);
+
+  // The approval (getBlob) waits for this window: a heartbeat once a second
+  // while it works, and closing the window tells MatchEnd at once
+  // (scoresheetPdfRequest.js), which then asks the scorer what to do.
+  useEffect(() => {
+    if (autoAction !== 'getBlob') return undefined;
+    const stopWatch = watchPdfWindowClose(() => approvalBusyRef.current);
+    const beat = () => { if (approvalBusyRef.current) reportPdfProgress({ step: generatingRef.current ? 'capture' : 'loading' }); };
+    beat();
+    const timer = setInterval(beat, 1000);
+    return () => { clearInterval(timer); stopWatch(); };
+  }, [autoAction]);
 
 
   return (

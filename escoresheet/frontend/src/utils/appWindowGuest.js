@@ -50,6 +50,44 @@ export async function savePdfThroughApp(blob, filename, win = window) {
 /** Messages to the window that asked for the PDF (MatchEnd's approval). */
 export const MSG_PDF_BLOB = 'pdfBlob'
 export const MSG_PDF_BLOB_FAILED = 'pdfBlobFailed'
+/** The heartbeat while the PDF is made (scoresheetPdfRequest.js): { step }. */
+export const MSG_PDF_PROGRESS = 'pdfProgress'
+
+/** Tells the opener the PDF is still being made. */
+export function reportPdfProgress(progress = {}, win = window) {
+  const opener = getOpenerWindow(win)
+  if (!opener) return false
+  try {
+    opener.postMessage({ type: MSG_PDF_PROGRESS, step: progress.step ?? null }, win.location.origin)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * While `isBusy()` (the approval's PDF is being made), closing this window
+ * tells the opener at once ('pdfBlobFailed', reason 'closed'), so the
+ * approval does not wait for a PDF that will never come. Returns the cleanup.
+ */
+export function watchPdfWindowClose(isBusy, win = window) {
+  let sent = false
+  const onLeave = () => {
+    if (sent || !isBusy()) return
+    const opener = getOpenerWindow(win)
+    if (!opener) return
+    sent = true
+    try {
+      opener.postMessage({ type: MSG_PDF_BLOB_FAILED, reason: 'closed' }, win.location.origin)
+    } catch { /* opener gone */ }
+  }
+  win.addEventListener('pagehide', onLeave)
+  win.addEventListener('beforeunload', onLeave)
+  return () => {
+    win.removeEventListener('pagehide', onLeave)
+    win.removeEventListener('beforeunload', onLeave)
+  }
+}
 
 /**
  * The end of a getBlob scoresheet (the match-end approval): hands the PDF to

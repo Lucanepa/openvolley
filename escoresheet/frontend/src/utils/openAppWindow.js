@@ -83,7 +83,7 @@ export function resolveAppUrl(url, win = window) {
 /**
  * @param {string} url  e.g. `/scoresheet/?matchId=7`
  * @param {{ features?: string, title?: string, win?: Window, platform?: string }} [opts]
- * @returns {{ ok: boolean, mode: 'popup'|'window'|'in-app'|'external'|'blocked', platform: string, window: Window|null, close?: () => void }}
+ * @returns {{ ok: boolean, mode: 'popup'|'window'|'in-app'|'external'|'blocked', platform: string, window: Window|null, close?: () => void, isClosed?: () => boolean }}
  */
 export function openAppWindow(url, { features = 'width=1200,height=900', title, win = window, platform } = {}) {
   if (!platform && isInAppView(win)) {
@@ -129,7 +129,8 @@ function openOn(platform, url, { features, title, win }) {
       return { ok: true, mode: 'external', window: null }
     }
     const view = showInAppView(capacitorPageUrl(href), { title, win })
-    return { ok: true, mode: 'in-app', window: view.frame.contentWindow, close: view.close }
+    // isClosed: the view's iframe window does not report `closed` once removed
+    return { ok: true, mode: 'in-app', window: view.frame.contentWindow, close: view.close, isClosed: () => current !== view }
   }
 
   if (platform === 'tauri') {
