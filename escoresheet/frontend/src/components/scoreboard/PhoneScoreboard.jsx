@@ -159,12 +159,15 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
               aria-label={number !== null ? t('scoreboard.phone.courtPlayer', { number, team: team.label }) : undefined}
               disabled={number === null}
               onClick={(e) => number !== null && actions.playerClick(team.teamKey, position, number, e)}
-              style={{ display: 'flex', flexDirection: team.side === 'left' ? 'row-reverse' : 'row', alignItems: 'center', justifyContent: 'center', gap: 4, minWidth: 0, minHeight: 0, background: 'transparent', borderRadius: 8, cursor: number !== null ? 'pointer' : 'default' }}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 0, minHeight: 0, background: 'transparent', borderRadius: 8, cursor: number !== null ? 'pointer' : 'default' }}
             >
-              <span style={{ fontSize: 28, lineHeight: 1, fontWeight: 800, color: p.courtInk, fontVariantNumeric: 'tabular-nums' }}>{number ?? '–'}</span>
-              {hasBall && (
-                <span data-testid="phone-serve-ball" aria-label={t('scoreboard.labels.serveLabel')} style={{ flex: 'none', width: 12, height: 12, borderRadius: '50%', background: '#facc15', border: '2px solid #1c1917' }} />
-              )}
+              {/* The ball hangs outside the number, so every number keeps its place */}
+              <span style={{ position: 'relative', fontSize: 28, lineHeight: 1, fontWeight: 800, color: p.courtInk, fontVariantNumeric: 'tabular-nums' }}>
+                {number ?? '–'}
+                {hasBall && (
+                  <span data-testid="phone-serve-ball" aria-label={t('scoreboard.labels.serveLabel')} style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', ...(team.side === 'left' ? { right: '100%', marginRight: 5 } : { left: '100%', marginLeft: 5 }), width: 12, height: 12, borderRadius: '50%', background: '#facc15', border: '2px solid #1c1917' }} />
+                )}
+              </span>
             </button>
           )
         })}
