@@ -155,6 +155,11 @@ describe('Scoreboard: the phone layout', () => {
     expect((await ofType('timeout'))[0].payload.team).toBe('home')
     await waitFor(() => expect(view.getByTestId('phone-countdown')).toBeTruthy(), { timeout: 5000 })
     expect(view.getByTestId('phone-timeout-left').textContent).toMatch('1/2')
+    // as on the desktop, the counters stay open while the time-out runs
+    // (a consecutive time-out, a substitution right after it)
+    expect(view.getByTestId('phone-timeout-right').disabled).toBe(false)
+    expect(view.getByTestId('phone-sub-right').disabled).toBe(false)
+    expect(view.getByTestId('phone-action-libero').disabled).toBe(false)
     await settle()
     fireEvent.click(view.getByRole('button', { name: 'Stop timeout' }))
     await waitFor(() => expect(view.queryByTestId('phone-countdown')).toBeNull(), { timeout: 5000 })
