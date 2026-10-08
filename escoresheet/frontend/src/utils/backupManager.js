@@ -24,14 +24,14 @@ const BACKUP_DIR_HANDLE_KEY = 'backup_directory_handle'
 // filterMatchPayload now imported from ../db/matchRepository (shared). The local
 // copy here was missing `sport_type`, silently dropping it from restore payloads.
 
-// Roster in the same snake_case shape as the normal match sync (CoinToss), so a
-// restored match reads back with names (importMatchFromSupabase reads first_name).
 // The backup's remarks for the restore job (db/017). A backup without the
 // field (an app before 017) sends none, so the server keeps what it has.
 function restoreRemarks(match) {
   return typeof match?.remarks === 'string' ? { remarks: remarksForServer(match.remarks) } : {}
 }
 
+// Roster in the same snake_case shape as the normal match sync (CoinToss), so a
+// restored match reads back with names (importMatchFromSupabase reads first_name).
 function toCloudPlayers(players) {
   return (players || []).map(p => ({
     number: p.number,
