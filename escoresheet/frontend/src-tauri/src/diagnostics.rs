@@ -93,9 +93,26 @@ pub struct Appended {
     pub dropped: u32,
 }
 
+/// Does the file's last line say the day is capped?
+fn ends_with_cap_marker(path: &Path) -> bool {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut f) = fs::File::open(path) else { return false };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    let tail = len.min(512);
+    if f.seek(SeekFrom::Start(len - tail)).is_err() {
+        return false;
+    }
+    let mut buf = Vec::with_capacity(tail as usize);
+    if f.take(tail).read_to_end(&mut buf).is_err() {
+        return false;
+    }
+    let text = String::from_utf8_lossy(&buf);
+    text.trim_end().rsplit('\n').next().is_some_and(|last| last.contains("\"k\":\"diag.capped\""))
+}
+
 /// Appends the lines to the day's file while it stays under `cap` bytes (the
-/// rest is dropped, and a `diag.capped` line says how many while the file is
-/// still under the cap). Refuses the whole call when one line is not one JSON
+/// rest is dropped, and one `diag.capped` line says how many; after it the
+/// day's file takes nothing more). Refuses the whole call when one line is not one JSON
 /// object of at most 16 KB, or when there are more than 500.
 pub fn append_capped(root: &Path, lines: &[String], date: &str, cap: u64, now_ms: u128) -> Result<Appended, String> {
     if lines.len() > MAX_LINES {
@@ -112,6 +129,13 @@ pub fn append_capped(root: &Path, lines: &[String], date: &str, cap: u64, now_ms
     let path = root.join(file_name_for(date));
     let size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
     let room = cap.saturating_sub(MARKER_ROOM);
+    // The day is capped once its marker is written: nothing more (the page
+    // flushes every second, which would otherwise add a marker each time).
+    // A marker follows a line that did not fit, so only a nearly full file
+    // can end with one.
+    if size + MAX_LINE_BYTES as u64 + 1 > room && ends_with_cap_marker(&path) {
+        return Ok(Appended { written: 0, dropped: lines.len() as u32 });
+    }
     let mut buf = String::new();
     let mut used = size;
     let mut written = 0u32;
@@ -421,6 +445,29 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
         }
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// The page flushes every second: once the day is capped, later calls add
+    /// nothing, not one more `diag.capped` line each.
+    #[test]
+    fn a_capped_day_takes_no_further_lines_or_markers() {
+        let root = temp_root("cap-once");
+        let big = format!("{{\"k\":\"geo.box\",\"d\":\"{}\"}}", "x".repeat(2000));
+        let small = "{\"k\":\"ui.click\"}".to_string();
+        let cap = MARKER_ROOM + 10 * 1024;
+        let path = root.join("diagnostics-2026-10-08.jsonl");
+        let first = append_capped(&root, &vec![big.clone(); 10], "2026-10-08", cap, 0).unwrap();
+        assert!(first.dropped > 0, "{first:?}");
+        let size = fs::metadata(&path).unwrap().len();
+        for _ in 0..100 {
+            let out = append_capped(&root, &[big.clone(), small.clone()], "2026-10-08", cap, 0).unwrap();
+            assert_eq!(out, Appended { written: 0, dropped: 2 });
+        }
+        let text = fs::read_to_string(&path).unwrap();
+        assert_eq!(text.matches("diag.capped").count(), 1, "one marker for the day");
+        assert_eq!(fs::metadata(&path).unwrap().len(), size);
+        assert!(size <= cap);
         let _ = fs::remove_dir_all(&root);
     }
 
