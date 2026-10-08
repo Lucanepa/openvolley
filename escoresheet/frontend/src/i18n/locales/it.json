@@ -887,6 +887,7 @@
       "replay": "Ripeti",
       "decision": "Decisione",
       "remarks": "Osservazioni",
+      "scoresheet": "eScore\u00adsheet",
       "subTitle": "Sostituzione {{team}}",
       "subOut": "Giocatore in uscita (in campo)",
       "subIn": "Giocatore in entrata per il {{number}}",

@@ -888,6 +888,7 @@
       "replay": "Replay",
       "decision": "Decision",
       "remarks": "Remarks",
+      "scoresheet": "Score\u00adsheet",
       "subTitle": "Substitution {{team}}",
       "subOut": "Player out (on court)",
       "subIn": "Player in for {{number}}",

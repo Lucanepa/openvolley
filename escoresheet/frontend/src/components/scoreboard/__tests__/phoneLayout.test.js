@@ -132,3 +132,22 @@ describe('small helpers', () => {
     expect(tintOf('red')).toBeNull()
   })
 })
+
+describe('phone action grid labels (a 4-column grid on a 360px phone)', () => {
+  // A word longer than its button broke anywhere ("eScoresh|eet",
+  // "Wiederhole|n"): those labels carry a soft hyphen where they may break
+  it('long labels break only at their soft hyphen, in every locale', async () => {
+    const SHY = '­'
+    for (const lang of ['en', 'de', 'de-CH', 'fr', 'it']) {
+      const { default: locale } = await import(`../../../i18n/locales/${lang}.json`)
+      const phone = locale.scoreboard.phone
+      expect(phone.scoresheet, lang).toContain(SHY)
+      // every word of 10+ letters among the grid labels has a break point
+      for (const label of [phone.libero, locale.scoreboard.sanction, phone.replay, phone.decision, locale.scoreboard.rosters, phone.scoresheet]) {
+        for (const word of label.split(/\s+/)) {
+          if (word.replaceAll(SHY, '').length >= 10) expect(word, `${lang}: ${label}`).toContain(SHY)
+        }
+      }
+    }
+  })
+})
