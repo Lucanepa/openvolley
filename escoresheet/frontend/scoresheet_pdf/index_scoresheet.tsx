@@ -12,6 +12,12 @@ import { db } from '../src/db/db';
 import { ClipboardIcon } from '../src/components/icons';
 import { closeAppWindow, deliverPdfToOpener, getOpenerWindow, isInAppView } from '../src/utils/appWindowGuest';
 import { openAppWindow } from '../src/utils/openAppWindow';
+import { installPopupDiagnostics } from '../src/diagnostics';
+
+// Diagnostics mode, in the desktop app's pop-up window only (opened from the
+// scoretable): its lines go into the scoretable's diagnostics file
+// (src/diagnostics/popupForward.js). Elsewhere this does nothing.
+installPopupDiagnostics({ db, app: 'scoresheet' });
 
 // Opened by the scorer app (a popup / app window, or the Android in-app view)?
 const openedByTheApp = () => !!getOpenerWindow() || isInAppView();

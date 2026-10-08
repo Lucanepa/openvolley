@@ -64,6 +64,24 @@ export function diag(kind, data) {
   } catch { /* diagnostics never breaks the app */ }
 }
 
+/**
+ * Lines built elsewhere (a desktop pop-up window's, popupForward.js), already
+ * redacted, written with this page's: same buffer, cap and writer.
+ */
+export function appendLines(lines) {
+  if (!active || !Array.isArray(lines)) return
+  for (const line of lines) {
+    if (typeof line !== 'string') continue
+    if (buffer.length >= MAX_BUFFER) {
+      dropped++
+      continue
+    }
+    buffer.push(line)
+  }
+  if (buffer.length >= FLUSH_LINES) flushDiagnostics()
+  else if (buffer.length && !timer) timer = setTimeout(flushDiagnostics, FLUSH_MS)
+}
+
 /** A user action (click, key): later lines carry its number. Returns it. */
 export function noteAction(kind, data) {
   if (!active) return 0
