@@ -19,12 +19,9 @@ Builds:
     commit: c420036f631256a274a13b46ed2d5722f5fed29b
     subdir: escoresheet/frontend/android/app
     sudo:
+      - echo "deb https://deb.debian.org/debian forky main" > /etc/apt/sources.list.d/forky.list
       - apt-get update
-      - apt-get install -y xz-utils
-      - curl -Lo node.tar.xz https://nodejs.org/dist/v22.23.3/node-v22.23.3-linux-x64.tar.xz
-      - echo "df450af89261115ef9f9e3830c3eeb2cc9213b63c720b1af623cb5dcbe2e02de node.tar.xz"
-        | sha256sum -c -
-      - tar xJf node.tar.xz --strip-components=1 -C /usr/local/
+      - apt-get install -y -t forky nodejs npm
     init:
       - cd ../..
       - npm ci --ignore-scripts
