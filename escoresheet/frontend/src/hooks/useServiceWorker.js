@@ -116,6 +116,11 @@ export async function clearCachesAndReload({ includeLocalStorage = false } = {})
   return true
 }
 
+// The update under way, if any: a second caller joins it (the desktop app's
+// home-screen banner and applyUpdateAtStart both applied the same waiting
+// build 1 ms apart: two SKIP_WAITING, two reloads)
+let applying = null
+
 /**
  * Activate the waiting service worker and reload this tab with it.
  *
@@ -125,7 +130,12 @@ export async function clearCachesAndReload({ includeLocalStorage = false } = {})
  * fully precached, and Workbox drops outdated precache entries on activate, so
  * the app still loads offline right after the update.
  */
-export async function applyServiceWorkerUpdate({ clearIndexedDB = false, checkForUpdate = false, timeoutMs = 4000 } = {}) {
+export function applyServiceWorkerUpdate(opts) {
+  if (!applying) applying = runServiceWorkerUpdate(opts).finally(() => { applying = null })
+  return applying
+}
+
+async function runServiceWorkerUpdate({ clearIndexedDB = false, checkForUpdate = false, timeoutMs = 4000 } = {}) {
   const reload = () => {
     allowLeaving()
     reloadWithReason(clearIndexedDB ? 'sw-update-clear-db' : 'sw-update', { how: 'replace', url: buildReloadUrl() })
