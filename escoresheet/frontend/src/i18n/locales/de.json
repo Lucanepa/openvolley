@@ -566,6 +566,7 @@
       "decisionChange": "Entscheidungs\u00adänderung",
       "switchSides": "Seiten wechseln",
       "switchCourts": "Feld wechseln",
+      "switchCourtsBack": "Seiten zurückwechseln",
       "switchServe": "Aufschlag wechseln",
       "confirmSet5Setup": "Satz {{number}} Einrichtung bestätigen"
     },
@@ -594,6 +595,8 @@
       "liberoRedesignation": "Libero-Neubezeichnung",
       "courtSwitchRequired": "Seitenwechsel erforderlich",
       "teamsMustSwitchCourts": "Teams müssen die Seiten wechseln",
+      "courtSwitchBackRequired": "Seitenwechsel zurück erforderlich",
+      "teamsMustSwitchCourtsBack": "Kein Team hat mehr 8 Punkte: Die Teams wechseln die Seiten zurück",
       "set5ChooseSideService": "Satz {{number}} - Seite und Aufschlag wählen",
       "noLegalSubstitution": "Keine regelkonforme Auswechslung verfügbar",
       "liberoReminder": "Libero-Erinnerung",

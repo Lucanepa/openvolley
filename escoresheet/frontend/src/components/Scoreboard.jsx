@@ -3118,22 +3118,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // The change of courts in the deciding set on page load/refresh: the
   // scoring screen opened with a team on 8 and the courts not changed (the
   // app was closed or reloaded with the change-of-courts dialog, or a
-  // decision change asked from it, open) asks for it. The dialog lived only
-  // in the screen's state, so the change waited for the next point. Checked
-  // once per set when it is first shown: later, every way a point gets on the
-  // score opens it (afterPointScored), and a check on every render would
-  // reopen it under the decision change asked from it.
+  // decision change asked from it, open) asks for it; opened with the courts
+  // changed and no team on 8 (the change back pending) asks to change back.
+  // The dialog lived only in the screen's state, so the change waited for
+  // the next point. Checked once per set when it is first shown: later,
+  // every way the score changes asks (askCourtSwitchIfDue), and a check on
+  // every render would reopen it under the decision change asked from it.
   const courtSwitchLoadCheckedRef = useRef(null)
   useEffect(() => {
     const set = data?.set
     if (!set || !data?.match) return
     if (courtSwitchLoadCheckedRef.current === set.id) return
     courtSwitchLoadCheckedRef.current = set.id
-    if (set.index !== 5 || set.finished || data.match.set5CourtSwitched) return
+    if (set.index !== 5 || set.finished) return
     const homePoints = set.homePoints || 0
     const awayPoints = set.awayPoints || 0
-    if (Math.max(homePoints, awayPoints) < 8) return
-    setCourtSwitchModal(prev => prev || { set, homePoints, awayPoints, teamThatScored: null })
+    const switched = !!data.match.set5CourtSwitched
+    if ((Math.max(homePoints, awayPoints) >= 8) === switched) return
+    setCourtSwitchModal(prev => prev || { set, homePoints, awayPoints, teamThatScored: null, back: switched })
   }, [data?.set, data?.match])
 
   // Check if set has ended on page load/refresh (score indicates set over but modal not shown)
@@ -4756,6 +4758,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return true
   }, [matchId, setEndTimeModal, deferUi])
 
+  // The courts of the deciding set follow its score (owner's decision,
+  // 2026-10-08): a team on 8 with the courts not changed asks for the change
+  // (FIVB 18.2.2); the courts changed with no team on 8 any more (a replay or
+  // a decision change after the change, 8:6 to 7:7) asks to change them back,
+  // so the change is asked again when a team reaches 8. One dialog (`back`
+  // says which way); confirmed, it sets or clears set5CourtSwitched, and the
+  // scoring screen, the tablets and livescore follow. True when it asked.
+  // Inside the caller's action: Dexie reads only.
+  const askCourtSwitchIfDue = useCallback(async ({ set, homePoints, awayPoints, teamKey = null }) => {
+    if (!set || set.index !== 5 || set.finished) return false
+    const match = await db.matches.get(matchId)
+    const switched = !!match?.set5CourtSwitched
+    if ((Math.max(homePoints, awayPoints) >= 8) === switched) return false
+    deferUi(() => setCourtSwitchModal({ set, homePoints, awayPoints, teamThatScored: teamKey, back: switched }))
+    return true
+  }, [matchId, deferUi])
+
   // What a point on the score opens, whatever put it there: the Point
   // buttons (and the penalty points, which go through them), a decision
   // change that gives the point to the other team, and a decision change
@@ -4766,27 +4785,35 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // In order: the change of courts in the deciding set when a team reaches 8
   // (FIVB 18.2.2), made once a set (the match's set5CourtSwitched; >= 8, so a
   // score past 8 that missed it is changed as soon as noticed, 18.2.3), else
-  // the set end. Called inside the point's action: Dexie reads only.
+  // the set end. A decision change that takes the leader back below 8 after
+  // the change (8:6 swapped to 7:7) asks to change the courts back
+  // (askCourtSwitchIfDue). Called inside the point's action: Dexie reads only.
   const afterPointScored = useCallback(async ({ set, homePoints, awayPoints, teamKey }) => {
     if (!set) return
-    if (set.index === 5 && Math.max(homePoints, awayPoints) >= 8) {
-      const match = await db.matches.get(matchId)
-      if (!match?.set5CourtSwitched) {
-        deferUi(() => setCourtSwitchModal({ set, homePoints, awayPoints, teamThatScored: teamKey }))
-        return // the set end waits for the change of courts
-      }
-    }
+    if (await askCourtSwitchIfDue({ set, homePoints, awayPoints, teamKey })) return // the set end waits for it
     await checkSetEnd(set, homePoints, awayPoints)
-  }, [matchId, checkSetEnd, deferUi])
+  }, [askCourtSwitchIfDue, checkSetEnd])
+
+  // The deciding set's courts against its stored score, after a correction
+  // that changed it (a replay; an undo): asks for the change, or the change
+  // back, when they no longer match. Inside the caller's action.
+  const askCourtSwitchForSet5Score = useCallback(async () => {
+    const set = await db.sets.where({ matchId }).and(s => s.index === 5).first()
+    if (!set) return false
+    return askCourtSwitchIfDue({ set, homePoints: set.homePoints || 0, awayPoints: set.awayPoints || 0 })
+  }, [matchId, askCourtSwitchIfDue])
 
   // After an undo in the deciding set, the change of courts follows the score
-  // it leaves. Undoing a decision change that gave a team its 8th point (7:7
-  // swapped to 8:6, the courts then changed) takes the change back with it,
-  // as undoing the point that reached 8 does (`switchedBefore`: the courts
-  // when that decision change was made, in its payload). An undo that puts a
-  // team back on 8 without the change (8:6 swapped to 7:7 from the
-  // change-of-courts dialog, then undone) opens the dialog again: it was
-  // made at no point. Inside the undo's action: Dexie reads and writes only.
+  // it leaves. Undoing a decision change takes back what it led to
+  // (`switchedBefore`: the courts when it was made, in its payload): the
+  // change of courts it gave (7:7 swapped to 8:6, the courts then changed;
+  // undone, they go back with no dialog, as with the point that reached 8),
+  // or the change back (8:6 swapped to 7:7 after the change, the courts
+  // changed back; undone, 8:6 has the courts changed again). Any other
+  // mismatch asks: a team back on 8 without the change (8:6 swapped to 7:7
+  // from the change-of-courts dialog, then undone; it was made at no point)
+  // asks for it, the courts changed with no team on 8 ask to change back.
+  // Inside the undo's action: Dexie reads and writes only.
   const settleCourtSwitchAfterUndo = useCallback(async (setIndex, { switchedBefore } = {}) => {
     if (setIndex !== 5) return
     const set = await db.sets.where({ matchId }).and(s => s.index === 5).first()
@@ -4794,12 +4821,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const homePoints = set.homePoints || 0
     const awayPoints = set.awayPoints || 0
     const match = await db.matches.get(matchId)
-    if (Math.max(homePoints, awayPoints) < 8) {
-      if (switchedBefore === false && match?.set5CourtSwitched) await db.matches.update(matchId, { set5CourtSwitched: false })
+    const switched = !!match?.set5CourtSwitched
+    const reached8 = Math.max(homePoints, awayPoints) >= 8
+    // The undone decision change's own courts, when they fit the score
+    if (typeof switchedBefore === 'boolean' && switchedBefore !== switched && switchedBefore === reached8) {
+      await db.matches.update(matchId, { set5CourtSwitched: switchedBefore })
       return
     }
-    if (!match?.set5CourtSwitched) deferUi(() => setCourtSwitchModal({ set, homePoints, awayPoints, teamThatScored: null }))
-  }, [matchId, deferUi])
+    await askCourtSwitchIfDue({ set, homePoints, awayPoints })
+  }, [matchId, askCourtSwitchIfDue])
 
   // Determine who has serve based on events
   const getCurrentServe = useCallback(() => {
@@ -7057,6 +7087,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Go back to idle state - user can then click "Start rally" or "Undo"
       // No automatic rally start
 
+      // A replay after the deciding set's change of courts that leaves no team
+      // on 8 (8:7 back to 7:7) asks to change the courts back
+      if (plan.setIndex === 5) await askCourtSwitchForSet5Score()
+
       // Tablets, livescore (fresh snapshot: data has changed) and scoresheet
       syncToReferee()
       syncLiveStateToSupabase('replay', null, { reason: 'point_replay', undoneTeam }, null)
@@ -7067,7 +7101,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Rethrown: the replay rolls back as a whole (see handleUndo)
       throw error
     }
-  }, { reason: 'decision_change' }), [replayRallyConfirm, data?.set, matchId, getNextSeq, discardEvents, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, runAction, deferUi])
+  }, { reason: 'decision_change' }), [replayRallyConfirm, data?.set, matchId, getNextSeq, discardEvents, syncToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, askCourtSwitchForSet5Score, runAction, deferUi])
 
   // Cancelled: nothing changed. Asked from the change-of-courts or the
   // set-end dialog (which it closed), that dialog comes back: the change of
@@ -12434,11 +12468,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // never shows over the switched court
     deferUi(() => setCourtSwitchModal(null))
 
-    // Mark that courts have been switched for set 5
-    await db.matches.update(matchId, { set5CourtSwitched: true })
+    // Set 5 courts changed at 8, or changed back (no team on 8 any more: the
+    // change is asked again when a team reaches 8)
+    const back = !!courtSwitchModal.back
+    await db.matches.update(matchId, { set5CourtSwitched: !back })
 
-    // Sync to Supabase with fresh snapshot to update side_a and serving_team after court switch
-    syncLiveStateToSupabase('court_switch', null, { reason: 'set5_8points' }, null)
+    // Tablets and livescore: a fresh snapshot with the new side_a and serving_team
+    syncLiveStateToSupabase('court_switch', null, { reason: back ? 'set5_switch_back' : 'set5_8points' }, null)
   })), [runAction, deferUi, runCourtSwitchConfirm, courtSwitchModal, matchId, syncLiveStateToSupabase])
 
   const runCourtSwitchCancel = useConfirmAction(onConfirmFailed)
@@ -23096,10 +23132,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         </Modal>
       )}
 
-      {/* Court Switch Modal (5th Set at 8 points) - highest priority, blocks everything */}
+      {/* Court Switch Modal (5th Set at 8 points, or the change back when no
+          team has 8 any more) - highest priority, blocks everything */}
       {courtSwitchModal && (
         <Modal
-          title={t('scoreboard.modals.courtSwitchRequired')}
+          title={t(courtSwitchModal.back ? 'scoreboard.modals.courtSwitchBackRequired' : 'scoreboard.modals.courtSwitchRequired')}
           open={true}
           onClose={() => { }}
           width={450}
@@ -23108,7 +23145,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         >
           <div style={{ padding: '4px 0', textAlign: 'center' }}>
             <p style={{ marginBottom: '16px', fontSize: '18px', fontWeight: 700, color: 'var(--accent)' }}>
-              {t('scoreboard.modals.teamsMustSwitchCourts')}
+              {t(courtSwitchModal.back ? 'scoreboard.modals.teamsMustSwitchCourtsBack' : 'scoreboard.modals.teamsMustSwitchCourts')}
             </p>
             <div style={{ marginBottom: '16px', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
               <span style={{ ...teamBoxStyle(data?.homeTeam?.color || '#ef4444'), padding: '2px 6px', borderRadius: '4px', fontSize: '12px', fontWeight: 700 }}>{teamAKey === 'home' ? 'A' : 'B'}</span>
@@ -23122,7 +23159,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 onClick={confirmCourtSwitch}
                 style={{ flex: '1 1 0' }}
               >
-                {t('scoreboard.buttons.switchCourts')}
+                {t(courtSwitchModal.back ? 'scoreboard.buttons.switchCourtsBack' : 'scoreboard.buttons.switchCourts')}
               </SbButton>
               <SbButton
                 className="border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
