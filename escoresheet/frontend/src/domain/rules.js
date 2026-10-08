@@ -41,11 +41,21 @@ export function getFirstServeForSet(setIndex, match = {}) {
   return setIndex % 2 === 1 ? firstServe : (firstServe === 'home' ? 'away' : 'home')
 }
 
+const sideOfLabel = (label) => (label === 'A' ? 'left' : 'right')
+const isLabel = (v) => v === 'A' || v === 'B'
+
 /**
- * Which side Team A (coin-toss winner) is on in a set, as the scorer's state
- * snapshot computes it. setLeftTeamOverrides[setIndex] and set5LeftTeam store
- * the LEFT team as 'A'/'B'; otherwise odd sets A left, even sets A right. In
- * set 5 the 8-point court switch (set5CourtSwitched) flips it.
+ * Which side Team A (coin-toss winner) is on in a set: the one rule of the
+ * scorer's court (Scoreboard leftIsHome), also used by the state snapshot
+ * (the live state's side_a), the set end's live state, the referee without a
+ * live state, the bench tablet and the corrections card.
+ * setLeftTeamOverrides[setIndex] and set5LeftTeam store the LEFT team as 'A'/'B'.
+ *  - Sets 1-4: the set's override, else odd sets A left, even sets A right
+ *    (A is on the left in set 1; the teams change sides after every set).
+ *  - Deciding set (index 5, both formats): its coin toss (set5LeftTeam, which
+ *    every set 5 setup writes), else an older match's override [5], else the
+ *    side the set before ended on (4; best-of-3: 2), the default the set end
+ *    proposes; the change of courts at 8 (set5CourtSwitched) flips it.
  *
  * @param {number} setIndex 1-based
  * @param {object} match
@@ -53,12 +63,21 @@ export function getFirstServeForSet(setIndex, match = {}) {
  */
 export function getSideAForSet(setIndex, match = {}) {
   const override = (match.setLeftTeamOverrides || {})[setIndex]
+  if (setIndex !== 5) {
+    if (isLabel(override)) return sideOfLabel(override)
+    return setIndex % 2 === 1 ? 'left' : 'right'
+  }
   let sideA
-  if (override !== undefined && override !== null) sideA = override === 'A' ? 'left' : 'right'
-  else if (setIndex === 5 && match.set5LeftTeam) sideA = match.set5LeftTeam === 'A' ? 'left' : 'right'
-  else sideA = setIndex % 2 === 1 ? 'left' : 'right'
-  if (setIndex === 5 && match.set5CourtSwitched) sideA = sideA === 'left' ? 'right' : 'left'
+  if (isLabel(match.set5LeftTeam)) sideA = sideOfLabel(match.set5LeftTeam)
+  else if (isLabel(override)) sideA = sideOfLabel(override)
+  else sideA = getSideAForSet(Number(match.bestOf) === 3 ? 2 : 4, match)
+  if (match.set5CourtSwitched) sideA = sideA === 'left' ? 'right' : 'left'
   return sideA
+}
+
+/** The LEFT team of a set as the label the match's side fields store ('A' | 'B'). */
+export function getLeftTeamLabelForSet(setIndex, match = {}) {
+  return getSideAForSet(setIndex, match) === 'left' ? 'A' : 'B'
 }
 
 /**
