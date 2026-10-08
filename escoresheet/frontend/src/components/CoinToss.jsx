@@ -1741,6 +1741,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           buttonClassName={TOOLBAR_TRIGGER}
           showArrow={true}
           position="center"
+          // upward: "Confirm the coin toss" sits right under this menu
+          vertical="top"
           items={[
             {
               key: 'scoresheet-preview',
