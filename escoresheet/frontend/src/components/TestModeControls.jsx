@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { db } from '../db/db'
+import { switchSides } from './corrections/liveActions'
 import { Button } from '../ui/Button.jsx'
 
 /**
@@ -137,13 +138,18 @@ export default function TestModeControls({ matchId, onRefresh }) {
 
   const handleSwitchSide = async () => {
     try {
-      const { match } = await getMatchState()
+      const { match, currentSet } = await getMatchState()
+      if (!match || !currentSet) {
+        setLastAction('No active set')
+        return
+      }
 
-      // Toggle left/right team positions
-      const newLeftTeam = match.leftTeam === 'home' ? 'away' : 'home'
-      await db.matches.update(matchId, { leftTeam: newLeftTeam })
+      // The change of sides the corrections card makes (sets 1-4 swap A and
+      // B, set 5 flips its coin toss side): it wrote match.leftTeam, which no
+      // screen reads
+      const { after } = await switchSides({ db, matchId, match, setIndex: currentSet.index })
 
-      setLastAction(`Side: ${newLeftTeam} now left`)
+      setLastAction(`Side: ${after}`)
       onRefresh?.()
     } catch (err) {
       setLastAction(`Error: ${err.message}`)
