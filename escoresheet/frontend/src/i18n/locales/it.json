@@ -573,6 +573,7 @@
       "decisionChange": "Cambio decisione",
       "switchSides": "Inverti lati",
       "switchCourts": "Inverti campo",
+      "switchCourtsBack": "Ritorna al campo",
       "switchServe": "Inverti servizio",
       "confirmSet5Setup": "Conferma set {{number}}"
     },
@@ -601,6 +602,8 @@
       "liberoRedesignation": "Nuova designazione libero",
       "courtSwitchRequired": "Cambio campo richiesto",
       "teamsMustSwitchCourts": "Le squadre devono cambiare campo",
+      "courtSwitchBackRequired": "Ritorno al campo precedente richiesto",
+      "teamsMustSwitchCourtsBack": "Nessuna squadra ha più 8 punti: le squadre tornano al campo precedente",
       "set5ChooseSideService": "Set {{number}} - scegli campo e servizio",
       "noLegalSubstitution": "Nessuna sostituzione legale disponibile",
       "liberoReminder": "Promemoria libero",
