@@ -69,6 +69,14 @@ describe('set 1 start from the schedule (owner 2026-10-08)', () => {
     expect(startsFromSchedule({ setIndex: 1, scheduledAt })).toBe(true)
   })
 
+  it('a date without a time (bare date, or the local 00:00 MatchSetup stores) is no scheduled time: now, no remark', () => {
+    for (const dateOnly of ['2025-03-12', iso(2025, 3, 12, 0, 0)]) {
+      expect(defaultSetStartTime({ setIndex: 1, now: today, scheduledAt: dateOnly })).toBe(iso(2026, 10, 8, 12, 41))
+      expect(startsFromSchedule({ setIndex: 1, scheduledAt: dateOnly })).toBe(false)
+      expect(actualStartRemark({ setIndex: 1, scheduledAt: dateOnly, startTime: iso(2026, 10, 8, 12, 41) })).toBeNull()
+    }
+  })
+
   it('later sets keep "now, never before the previous end", without a remark', () => {
     const sets = [{ index: 1, endTime: iso(2026, 10, 8, 13, 5) }, { index: 2 }]
     expect(defaultSetStartTime({ setIndex: 2, sets, now: local(2026, 10, 8, 13, 8, 20), scheduledAt })).toBe(iso(2026, 10, 8, 13, 8))
