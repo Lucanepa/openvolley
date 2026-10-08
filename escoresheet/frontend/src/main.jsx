@@ -10,7 +10,8 @@ import { LoggingProvider } from './contexts/LoggingContext'
 import { ScaleProvider } from './contexts/ScaleContext'
 import ErrorBoundary from './components/ErrorBoundary'
 import { UiHost } from './ui/UiHost.jsx'
-import { stripCacheBustParam } from './hooks/useServiceWorker'
+import { stripCacheBustParam, applyUpdateAtStart } from './hooks/useServiceWorker'
+import { isDesktopScoretable } from './utils/appLifecycle'
 import { setAppEntry } from './utils/appEntry'
 import { watchFormStack } from './utils/formLayout'
 import { db } from './db/db'
@@ -27,6 +28,10 @@ installDiagnostics({ db })
 // Clean up cache_bust query parameter (added by cache clear / update flow).
 // Keep the rest of the query: ?match=&team= attach tablets to the live match.
 stripCacheBustParam()
+
+// The desktop app: a new build waiting at start is applied before the scorer
+// touches anything (the binary is the update; see applyUpdateAtStart)
+if (isDesktopScoretable()) applyUpdateAtStart()
 
 // Initialize logger to capture console output
 initLogger()
