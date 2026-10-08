@@ -5,6 +5,7 @@ import { SanctionChip, oneLine } from './rosters/RostersPanel.jsx'
 import { compareEvents, scoreAtEvent } from '../domain/rosterLive'
 import { isMatchOverStatus, getMatchWinner } from '../domain/matchEnd'
 import { teamBoxStyle } from '../utils/teamColours'
+import { matchTimes, setDurationMinutes } from '../../scoresheet_pdf/utils/matchTimes'
 
 // The scorer's "Sanctions and results" dialog (Match menu): every sanction of
 // the match as the referee's cards, the set results seen from the current
@@ -243,15 +244,13 @@ export default function SanctionsResultsModal({ open, onClose, data, teamAKey, l
     const leftPoints = total(set => pts(set, leftKey))
     const rightPoints = total(set => pts(set, rightKey))
 
-    let totalDurationMin = 0
-    finishedSets.forEach(set => {
-      if (set.startTime && set.endTime) totalDurationMin += Math.floor((new Date(set.endTime) - new Date(set.startTime)) / 60000)
-    })
-    const firstSetStart = events.find(e => e.type === 'set_start' && e.setIndex === 1)
-    const matchStartTime = firstSetStart ? new Date(firstSetStart.ts) : (finishedSets[0]?.startTime ? new Date(finishedSets[0].startTime) : null)
-    const lastSet = finishedSets[finishedSets.length - 1]
-    const matchEndTime = lastSet?.endTime ? new Date(lastSet.endTime) : null
-    const matchDurationMin = matchStartTime && matchEndTime ? Math.floor((matchEndTime - matchStartTime) / 60000) : 0
+    // The scoresheet's times (scoresheet_pdf/utils/matchTimes): a set starts at
+    // its first rally, not at the confirmed (scheduled) set 1 start time
+    const totalDurationMin = finishedSets.reduce((sum, set) => sum + (setDurationMinutes(set, events) ?? 0), 0)
+    const times = matchTimes(allSets, events)
+    const matchStartTime = times.startMs !== null ? new Date(times.startMs) : null
+    const matchEndTime = times.endMs !== null ? new Date(times.endMs) : null
+    const matchDurationMin = times.durationMinutes ?? 0
 
     // No winner for a match stopped with level sets
     const winnerKey = getMatchWinner(allSets, data?.match?.bestOf, { forfeitTeam: data?.match?.forfeitTeam })
@@ -335,10 +334,8 @@ export default function SanctionsResultsModal({ open, onClose, data, teamAKey, l
             {playedSets.map(set => {
               const lp = pts(set, leftKey)
               const rp = pts(set, rightKey)
-              let duration = ''
-              if (set.startTime && set.endTime) {
-                duration = `${Math.floor((new Date(set.endTime) - new Date(set.startTime)) / 60000)}'`
-              }
+              const minutes = setDurationMinutes(set, events)
+              const duration = minutes !== null ? `${minutes}'` : ''
               // The set in play: its row on the sunken tint, nobody has won it yet
               // (W stays 0 for both, the leader's points are not bolded as a win)
               const live = !set.finished

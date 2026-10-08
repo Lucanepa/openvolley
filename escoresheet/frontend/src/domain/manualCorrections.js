@@ -34,6 +34,8 @@ import {
 } from './describe'
 import { getSetResult, scoreFromPointEvents, getFirstServeForSet, isDecidingSet } from './rules'
 import { rotateLineup } from './rotation'
+import { actualStartLines } from './remarks'
+import { actualStartRemark, scheduledStartOnDay } from '../utils/setStartTime'
 import { validateManualTimeout, validateManualSubstitution, planSubstitutionDeletion, classifySubstitutionRequest } from './substitutions'
 import { resolveSanction, isDelaySanction, awardsPoint, validateMemberSanction } from './sanctions'
 
@@ -800,10 +802,15 @@ function rotationRows(events, setIndex, team, seq, ts, ctx, { base = seq, sub = 
 /**
  * Correct a finished set's start / end time: the set row and the set_end
  * payload. When the start is more than 5 minutes after the previous set's end
- * (or the scheduled time for set 1), a delayed-start remark is SUGGESTED
- * (never added silently, field-spec §5): plan.suggestedRemark.
+ * (or the scheduled time of day for set 1), a delayed-start remark is
+ * SUGGESTED (never added silently, field-spec §5): plan.suggestedRemark.
+ *
+ * Set 1 of a match with a scheduled time (owner 2026-10-08): a start other
+ * than the scheduled time of day is in the remarks as ONE line "Actual start
+ * time: HH:MM" (the line the start dialog wrote is replaced; a start back on
+ * the scheduled time removes it). `remarks` is the match's remarks text.
  */
-export function planSetTimes(events, sets, { setIndex, startTime, endTime, scheduledAt = null } = {}, ctx = {}) {
+export function planSetTimes(events, sets, { setIndex, startTime, endTime, scheduledAt = null, remarks = '' } = {}, ctx = {}) {
   const set = setNumber(setIndex, ctx)
   const row = (sets || []).find(s => s.index === setIndex)
   if (!row) return fail('notFound')
@@ -819,9 +826,20 @@ export function planSetTimes(events, sets, { setIndex, startTime, endTime, sched
   const end = setEvents(events, setIndex).find(e => e.type === 'set_end')
   if (end) plan.update = [{ id: end.id, changes: { payload: { ...end.payload, ...changes } } }]
 
+  if (changes.startTime) {
+    const line = actualStartRemark({ setIndex, scheduledAt, startTime: changes.startTime })
+    const existing = actualStartLines(remarks)
+    if (setIndex === 1 && scheduledStartOnDay(scheduledAt) && !(line && existing.length === 1 && existing[0] === line)) {
+      plan.remarkRemove = existing
+      plan.remarkAdd = line ? [line] : []
+    }
+  }
+
   const prev = [...(sets || [])].filter(s => s.index < setIndex).sort((a, b) => b.index - a.index)[0]
-  const ref = prev?.endTime || (setIndex === 1 ? scheduledAt : null)
   const startMs = tsMs(changes.startTime ?? row.startTime)
+  // set 1: the scheduled time of day on the day the set was played, never the
+  // scheduled date (a past date gave a delay of 827890 minutes)
+  const ref = prev?.endTime || (setIndex === 1 && startMs ? scheduledStartOnDay(scheduledAt, new Date(startMs)) : null)
   const refMs = tsMs(ref)
   if (startMs && refMs) {
     const minutes = Math.round((startMs - refMs) / 60000)

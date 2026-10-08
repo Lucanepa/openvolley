@@ -45,3 +45,21 @@ describe('Start Set pushes the live state', () => {
     })).toBe(true)
   })
 })
+
+describe('Set 1 start from the schedule (owner 2026-10-08)', () => {
+  it('both dialog openers pass the scheduled time', () => {
+    const calls = src.match(/defaultSetStartTime\(\{[^}]*\}\)/g) || []
+    expect(calls).toHaveLength(2)
+    for (const c of calls) expect(c).toMatch(/scheduledAt/)
+    expect((src.match(/startsFromSchedule\(\{ setIndex: data\?\.set\?\.index, scheduledAt \}\)/g) || [])).toHaveLength(2)
+  })
+
+  it('confirmSetStartTime writes the "Actual start time" remark and records it for undo', () => {
+    const body = confirmSetStartTimeBody()
+    expect(body).toMatch(/actualStartRemark\(\{ setIndex: setStartTimeModal\.setIndex, scheduledAt: data\.match\?\.scheduledAt/)
+    expect(body).toMatch(/setActualStartRemark\(freshMatch\?\.remarks \|\| '', autoRemark\)/)
+    expect(body).toMatch(/\.\.\.\(autoRemark \? \{ autoRemark \} : \{\}\)/)
+    // the remarks dialog does not pop up over the remark it wrote itself
+    expect(body).toMatch(/timeDifferent && !fromSchedule/)
+  })
+})

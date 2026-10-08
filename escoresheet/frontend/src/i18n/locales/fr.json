@@ -811,6 +811,9 @@
     "readyToConfirm": "Prêt à confirmer",
     "incomplete": "Incomplet",
     "confirmStartTimeForSet": "Confirmez l'heure de début pour {{set}} :",
+    "actualStartTime": "Heure de début effective",
+    "scheduledStartHint": "Heure prévue. Si le match a commencé à une autre heure, saisissez cette heure.",
+    "actualStartRemarkHint": "{{label}} : {{time}}, ajoutée aux remarques",
     "actionLog": {
       "deletePointEvent": "Supprimer cet événement de point ?",
       "deleteTimeoutEvent": "Supprimer cet événement de temps mort ?",

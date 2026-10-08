@@ -805,6 +805,9 @@
     "readyToConfirm": "Bereit zur Bestätigung",
     "incomplete": "Unvollständig",
     "confirmStartTimeForSet": "Startzeit für {{set}} bestätigen:",
+    "actualStartTime": "Tatsächliche Startzeit",
+    "scheduledStartHint": "Geplante Zeit. Hat das Spiel zu einer anderen Zeit begonnen, diese Zeit eingeben.",
+    "actualStartRemarkHint": "{{label}}: {{time}}, wird in die Bemerkungen eingetragen",
     "actionLog": {
       "deletePointEvent": "Dieses Punktereignis löschen?",
       "deleteTimeoutEvent": "Dieses Auszeit-Ereignis löschen?",

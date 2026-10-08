@@ -812,6 +812,9 @@
     "readyToConfirm": "Bereit zur Bestätigung",
     "incomplete": "Unvollständig",
     "confirmStartTimeForSet": "Startzeit für {{set}} bestätigen:",
+    "actualStartTime": "Tatsächlichi Startziit",
+    "scheduledStartHint": "Gplanti Ziit. Hät de Match zu ere andere Ziit agfange, die Ziit iitrage.",
+    "actualStartRemarkHint": "{{label}}: {{time}}, wird i d Bemerkige iitreit",
     "actionLog": {
       "deletePointEvent": "Dieses Punktereignis löschen?",
       "deleteTimeoutEvent": "Dieses Auszeit-Ereignis löschen?",
