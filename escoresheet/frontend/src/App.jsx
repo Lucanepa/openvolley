@@ -2569,7 +2569,7 @@ export default function App() {
         onConfirm: async () => {
           setConfirmModal(null)
           setTestMatchLoading(true)
-          setHomeWhilePreparing({ official: shownOfficialMatch, test: shownTestMatch })
+          setHomeWhilePreparing({ official: shownOfficialMatch, test: shownTestMatch, matchStatus: shownMatchStatus, matchInfoData: shownMatchInfoData })
           try {
             await clearLocalTestData()
             await createTestMatchData()
@@ -2589,7 +2589,7 @@ export default function App() {
     }
 
     setTestMatchLoading(true)
-    setHomeWhilePreparing({ official: shownOfficialMatch, test: shownTestMatch })
+    setHomeWhilePreparing({ official: shownOfficialMatch, test: shownTestMatch, matchStatus: shownMatchStatus, matchInfoData: shownMatchInfoData })
 
     try {
       // Clear previous test match locally
@@ -2814,6 +2814,10 @@ export default function App() {
   const homeTestMatch = homeWhilePreparing ? homeWhilePreparing.test : shownTestMatch
   const shownMatchStatus = notClosed(matchStatus?.match) === null ? null : matchStatus
   const shownMatchInfoData = notClosed(matchInfoData?.match) === null ? null : matchInfoData
+  // The header's match chip is held with the home screen: it went away for
+  // two frames when an older test match was replaced (verification 2026-10-08)
+  const headerMatchStatus = homeWhilePreparing ? homeWhilePreparing.matchStatus : shownMatchStatus
+  const headerMatchInfoData = homeWhilePreparing ? homeWhilePreparing.matchInfoData : shownMatchInfoData
 
   return (
     <div className="app-root" onClick={(e) => {
@@ -2867,8 +2871,8 @@ export default function App() {
             currentMatch={shownCurrentMatch}
             matchInfoMenuOpen={matchInfoMenuOpen}
             setMatchInfoMenuOpen={setMatchInfoMenuOpen}
-            matchInfoData={shownMatchInfoData}
-            matchStatus={shownMatchStatus}
+            matchInfoData={headerMatchInfoData}
+            matchStatus={headerMatchStatus}
             currentOfficialMatch={homeOfficialMatch}
             currentTestMatch={homeTestMatch}
             isFullscreen={isFullscreen}
