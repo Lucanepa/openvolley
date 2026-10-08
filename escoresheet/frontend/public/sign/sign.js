@@ -105,6 +105,19 @@
     try { return fn(window.sessionStorage) } catch (e) { return null }
   }
 
+  // The app the session names (open's `app`; the cloud backend sets it from the
+  // match's sport): its name and mark instead of OpenVolley's. Known names only.
+  var APP_NAMES = { beach: 'OpenBeach' }
+  var app = null
+
+  function applyApp(name) {
+    if (!name || !Object.prototype.hasOwnProperty.call(APP_NAMES, name)) return
+    app = name
+    var marks = document.querySelectorAll('.brand')
+    for (var i = 0; i < marks.length; i++) marks[i].hidden = marks[i].getAttribute('data-app') !== name
+    document.title = APP_NAMES[name]
+  }
+
   function setStatus(text, tone) {
     var el = $('status')
     el.textContent = text || ''
@@ -360,6 +373,7 @@
   function open() {
     post('/api/sign/open', { k: token }).then(function (r) {
       if (r.status === 200 && r.json.ok) {
+        applyApp(r.json.app)
         showContext(r.json.slot, r.json.context)
         setState('ready')
         setStatus('')
@@ -430,6 +444,7 @@
   window.__ovSignPage = {
     get state() { return state },
     get lang() { return lang },
+    get app() { return app },
     get strokes() { return strokes },
     get pad() { return { w: W, h: padH } },
     get points() { return points },
