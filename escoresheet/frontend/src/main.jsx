@@ -15,9 +15,14 @@ import { setAppEntry } from './utils/appEntry'
 import { watchFormStack } from './utils/formLayout'
 import { db } from './db/db'
 import { startActivityLog } from './utils/activity'
+import { installDiagnostics } from './diagnostics'
 
 // The scoretable: the only page that saves automatic match backups
 setAppEntry('scorer')
+
+// Diagnostics mode (off unless Options, ?diag=1 or OPENVOLLEY_DIAGNOSTICS=1
+// in the desktop app): first, so it sees this load and the database opening
+installDiagnostics({ db })
 
 // Clean up cache_bust query parameter (added by cache clear / update flow).
 // Keep the rest of the query: ?match=&team= attach tablets to the live match.

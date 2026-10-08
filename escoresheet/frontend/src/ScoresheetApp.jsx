@@ -21,6 +21,7 @@ import { scheduledInstant } from './components/dashboards/EntryKit.jsx'
 import { describeScoresheetLoadError, findOwnScoresheet, redactScoresheetPath } from '../scoresheet_pdf/utils/scoresheetStorage'
 import { BRAND } from './brand'
 import LegalLinks from './legal/LegalLinks'
+import { reloadWithReason } from './diagnostics/reload'
 
 // Fetch an approved scoresheet (_final file) from cloud storage. Only the
 // account that uploaded it may list or read it (backend README "Who can read a
@@ -397,7 +398,7 @@ const ScoresheetViewer = ({ date, game, action }) => {
     return <PageLoading label="Loading scoresheet..." />
   }
 
-  const backToList = { label: 'Back to list', icon: <ArrowLeft className="h-4 w-4" />, onClick: () => { window.location.href = window.location.pathname } }
+  const backToList = { label: 'Back to list', icon: <ArrowLeft className="h-4 w-4" />, onClick: () => { reloadWithReason('scoresheet-back-to-list', { how: 'href', url: window.location.pathname }) } }
 
   if (error?.kind === 'signin') {
     return (

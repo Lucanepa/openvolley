@@ -1204,7 +1204,14 @@
     "exportDiagnosticLog": "Diagnoseprotokoll exportiere (.ndjson)",
     "diagnosticLogFailed": "S Diagnoseprotokoll het nöd chöne exportiert werde.",
     "openLogFolder": "Protokollordner uftue",
-    "logFolderOpenFailed": "De Protokollordner het nöd chöne ufgmacht werde."
+    "logFolderOpenFailed": "De Protokollordner het nöd chöne ufgmacht werde.",
+    "diagnosticsMode": "Diagnosemodus",
+    "diagnosticsModeInfo": "Für d Fählersuechi bi Aazeigeproblem: zeichnet Fänster- und Layoutgrösse, Dialög, Neulade und Zytabläuf uf. Standardmässig us. PINs, Passwörter und Iigabe werded nie ufzeichnet. Desktop-App: Diagnosedateie im Protokollordner; susch uf däm Grät gspeicheret, bis si exportiert werded.",
+    "diagnosticsOnByLink": "Für dä Tab dur de Link (?diag=1) iigschalte.",
+    "diagnosticsOnByEnv": "Für dä Start dur OPENVOLLEY_DIAGNOSTICS=1 iigschalte.",
+    "exportDiagnostics": "Diagnose exportiere (.jsonl)",
+    "diagnosticsEmpty": "No nüt ufzeichnet.",
+    "diagnosticsExportFailed": "D Diagnose het nöd chöne exportiert werde."
   },
   "matchEnd": {
     "title": "Match beendet",

@@ -1,6 +1,7 @@
 import React from 'react'
 import { buildReloadUrl } from '../hooks/useServiceWorker'
 import { reportAppError } from '../utils/activity/appError'
+import { reloadWithReason } from '../diagnostics/reload'
 
 /**
  * Top-level error boundary for every app entry (scorer, referee, bench,
@@ -33,7 +34,7 @@ export default class ErrorBoundary extends React.Component {
   }
 
   handleReload() {
-    window.location.replace(buildReloadUrl())
+    reloadWithReason('error-boundary', { how: 'replace', url: buildReloadUrl() })
   }
 
   render() {

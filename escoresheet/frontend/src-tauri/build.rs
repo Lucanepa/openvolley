@@ -16,6 +16,9 @@ const APP_COMMANDS: &[&str] = &[
     // the activity log's daily files (activity.rs)
     "activity_append",
     "activity_open_dir",
+    // diagnostics mode: its daily files and the native events (diagnostics.rs)
+    "diagnostics_append",
+    "diagnostics_native",
     // networks the laptop creates for the tablets (netshare/)
     "hotspot_status",
     "hotspot_start",
@@ -51,7 +54,8 @@ fn main() {
     select_flavour();
 
     // An app ACL manifest: these commands are denied unless a capability
-    // grants them (capabilities/backup.json, capabilities/activity.json, capabilities/netshare.json,
+    // grants them (capabilities/backup.json, capabilities/activity.json,
+    // capabilities/diagnostics.json, capabilities/netshare.json,
     // capabilities/app.json, capabilities/update.json: only the main window,
     // only from http://localhost; capabilities/downloads.json: the main window
     // and the scoresheet windows, only from http://localhost).

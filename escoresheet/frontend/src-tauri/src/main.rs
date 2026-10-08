@@ -3,6 +3,7 @@
 
 mod activity;
 mod backup;
+mod diagnostics;
 mod firewall;
 mod flavour;
 mod lifecycle;
@@ -114,6 +115,10 @@ fn main() {
             #[cfg(target_os = "linux")]
             force_light_gtk_theme();
 
+            // Diagnostics mode (off unless OPENVOLLEY_DIAGNOSTICS=1 or the
+            // page's Options turn it on): diagnostics-<date>.jsonl
+            diagnostics::init(app.handle());
+
             // A tablet Wi-Fi a crashed run left on (Windows) goes off.
             netshare::recover(app.handle());
 
@@ -156,11 +161,17 @@ fn main() {
             // Load the desktop window from the local relay so window.location is
             // a real http origin (the existing LAN client code + the scoresheet
             // popups resolve correctly, and http://localhost keeps camera/QR).
-            let main = WebviewWindowBuilder::new(
+            let mut main = WebviewWindowBuilder::new(
                 app,
                 lifecycle::MAIN,
                 WebviewUrl::External(format!("http://localhost:{http}/").parse().unwrap()),
-            )
+            );
+            // OPENVOLLEY_DIAGNOSTICS=1: the page records from its first script
+            // (window.__OV_DIAGNOSTICS__, src/diagnostics/switch.js)
+            if diagnostics::env_enabled() {
+                main = main.initialization_script(diagnostics::INIT_SCRIPT);
+            }
+            let main = main
             .title(flavour::CURRENT.window_title)
             .inner_size(1400.0, 900.0)
             .min_inner_size(1200.0, 700.0)
@@ -174,12 +185,15 @@ fn main() {
             // a (re)loading page cannot answer "close" / "quit" until it has
             // called app_page_state again
             .on_page_load(|window, payload| {
-                if payload.event() == tauri::webview::PageLoadEvent::Started {
+                let started = payload.event() == tauri::webview::PageLoadEvent::Started;
+                diagnostics::page_load(started, payload.url());
+                if started {
                     lifecycle::page_load_started(window.app_handle());
                 }
             })
             .build()?;
             popups::let_scripts_open_windows(&main);
+            diagnostics::window_snapshot(&main, "created");
             // The close button / Alt+F4 hides the scoretable (and its
             // scoresheet windows) to the tray: the relay and the tablets'
             // network keep running. Quitting is "Quit OpenVolley…" and a
@@ -191,17 +205,20 @@ fn main() {
             // the LAN relay and ports 5173 / 8080 alive, and the next launch
             // then failed with "Cannot bind HTTP port".
             let handle = app.handle().clone();
-            main.on_window_event(move |event| match event {
-                tauri::WindowEvent::CloseRequested { api, .. } => {
-                    if lifecycle::on_close_requested(&handle) {
-                        api.prevent_close();
+            main.on_window_event(move |event| {
+                diagnostics::window_event(event);
+                match event {
+                    tauri::WindowEvent::CloseRequested { api, .. } => {
+                        if lifecycle::on_close_requested(&handle) {
+                            api.prevent_close();
+                        }
                     }
+                    tauri::WindowEvent::Destroyed => {
+                        popups::close_app_windows(&handle);
+                        handle.exit(0);
+                    }
+                    _ => {}
                 }
-                tauri::WindowEvent::Destroyed => {
-                    popups::close_app_windows(&handle);
-                    handle.exit(0);
-                }
-                _ => {}
             });
 
             Ok(())
@@ -293,7 +310,8 @@ fn apply_light_gtk_settings(settings: &gtk::Settings) {
 /// The scoretable window's native commands: automatic match backups
 /// (backup.rs; ACL in capabilities/backup.json), the networks the laptop
 /// creates for the tablets (netshare/; capabilities/netshare.json) and the
-/// check of the installer's firewall rule (firewall.rs; same capability) and
+/// check of the installer's firewall rule (firewall.rs; same capability), the
+/// diagnostics mode's files (diagnostics.rs; capabilities/diagnostics.json) and
 /// the close-to-tray / quit handshake (lifecycle.rs, and the list of the
 /// scoresheet windows a quit closes, popups.rs; capabilities/app.json) and
 /// the automatic updates (updater.rs; capabilities/update.json; the updater
@@ -315,6 +333,8 @@ fn with_app_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Bu
         backup::backup_pick_file,
         activity::activity_append,
         activity::activity_open_dir,
+        diagnostics::diagnostics_append,
+        diagnostics::diagnostics_native,
         netshare::hotspot_status,
         netshare::hotspot_start,
         netshare::hotspot_stop,
@@ -428,6 +448,10 @@ mod ipc_acl_tests {
     use tauri::webview::InvokeRequest;
     use tauri::{WebviewUrl, WebviewWindowBuilder};
 
+    /// The tests that point OPENVOLLEY_LOG_DIR (process-wide) at their own
+    /// folder run one at a time.
+    static LOG_DIR_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     fn request(cmd: &str, url: &str, body: serde_json::Value) -> InvokeRequest {
         InvokeRequest {
             cmd: cmd.into(),
@@ -486,6 +510,7 @@ mod ipc_acl_tests {
     /// today's file in the log folder; other origins may not.
     #[test]
     fn scoretable_page_may_append_activity_other_origins_may_not() {
+        let _env = LOG_DIR_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let root = std::env::temp_dir().join(format!("ov-activity-ipc-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::env::set_var("OPENVOLLEY_LOG_DIR", &root);
@@ -515,6 +540,48 @@ mod ipc_acl_tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// Diagnostics mode: the scoretable page appends JSON lines to
+    /// diagnostics-<date>.jsonl in the log folder and switches the native
+    /// events; other origins may not.
+    #[test]
+    fn scoretable_page_may_write_diagnostics_other_origins_may_not() {
+        let _env = LOG_DIR_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let root = std::env::temp_dir().join(format!("ov-diag-ipc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::env::set_var("OPENVOLLEY_LOG_DIR", &root);
+
+        let app = super::with_app_commands(mock_builder())
+            .build(tauri::generate_context!())
+            .expect("mock app");
+        let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::External("http://localhost:5173/".parse().unwrap()))
+            .build()
+            .unwrap();
+        let body = serde_json::json!({ "lines": ["{\"k\":\"page.load\",\"src\":\"page\"}"] });
+        let n = get_ipc_response(&window, request("diagnostics_append", "http://localhost:5173/", body.clone()))
+            .expect("localhost may append")
+            .deserialize::<u32>()
+            .unwrap();
+        assert_eq!(n, 1);
+        let files: Vec<_> = std::fs::read_dir(&root).unwrap().filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).collect();
+        assert!(files.iter().any(|f| f.starts_with("diagnostics-") && f.ends_with(".jsonl")), "{files:?}");
+        let bad = get_ipc_response(&window, request("diagnostics_append", "http://localhost:5173/", serde_json::json!({ "lines": ["not json"] })));
+        assert!(bad.is_err(), "an invalid line is refused");
+        let on = get_ipc_response(&window, request("diagnostics_native", "http://localhost:5173/", serde_json::json!({ "on": false })))
+            .expect("localhost may switch the native events")
+            .deserialize::<bool>()
+            .unwrap();
+        assert_eq!(on, crate::diagnostics::env_enabled());
+
+        for url in ["http://192.168.1.20:5173/", "https://example.com/", "http://localhost.evil.com:5173/"] {
+            for cmd in ["diagnostics_append", "diagnostics_native"] {
+                let err = get_ipc_response(&window, request(cmd, url, serde_json::json!({ "lines": [], "on": true })))
+                    .expect_err(&format!("{cmd} from {url} must be refused"));
+                assert!(err.to_string().contains("not allowed"), "{cmd} from {url}: refused by the ACL, got {err}");
+            }
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// A scoresheet window (window.open of /scoresheet/, label "popup-<n>",
     /// popups.rs) loads the same http://localhost origin as the scoretable,
     /// so only the capabilities naming "main" keep the backup and tablet-network
@@ -536,6 +603,7 @@ mod ipc_acl_tests {
         });
         for cmd in ["backup_info", "backup_write", "backup_list", "backup_remove", "backup_open_dir", "backup_pick_file",
                     "activity_append", "activity_open_dir",
+                    "diagnostics_append", "diagnostics_native",
                     "hotspot_status", "hotspot_start", "hotspot_stop", "bluetooth_status", "bluetooth_start", "bluetooth_stop",
                     "firewall_status",
                     "app_page_state", "app_page_gone", "app_hide", "app_quit", "app_quit_ack",

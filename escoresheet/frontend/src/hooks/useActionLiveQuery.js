@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { liveQuery } from 'dexie'
+import { diag } from '../diagnostics/recorder'
 
 // An action's screen changes (the dialogs it opens or closes) wait for the
 // live query result that shows its data. If no re-read including the commit
@@ -68,6 +69,7 @@ export function useActionLiveQuery(querier, deps) {
           return
         }
         console.warn('[action] no live query result for the commit: screen change applied anyway')
+        diag('lq.fallback', { gen: genRef.current, ms: Date.now() - since })
         flush(genRef.current)
       }, Math.max(50, COMMIT_FLUSH_FALLBACK_MS - elapsed))
     }
@@ -94,6 +96,7 @@ export function useActionLiveQuery(querier, deps) {
       next: ({ value, gen }) => {
         if (!alive) return
         if (gen > shownGenRef.current) shownGenRef.current = gen
+        diag('lq.emit', { gen, shown: shownGenRef.current, waiting: pendingRef.current.length })
         // Same callback, same React batch: the data and the action's dialogs
         setState({ value, error: null })
         commits.flush(shownGenRef.current)

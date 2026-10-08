@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { allowLeaving } from '../utils/leaveGuard'
+import { reloadWithReason } from '../diagnostics/reload'
 
 const CACHE_BUST_PARAM = 'cache_bust'
 
@@ -111,7 +112,7 @@ export async function clearCachesAndReload({ includeLocalStorage = false } = {})
   }
   if (includeLocalStorage) localStorage.clear()
   allowLeaving()
-  window.location.replace(buildReloadUrl())
+  reloadWithReason(includeLocalStorage ? 'clear-cache-and-storage' : 'clear-cache', { how: 'replace', url: buildReloadUrl() })
   return true
 }
 
@@ -127,7 +128,7 @@ export async function clearCachesAndReload({ includeLocalStorage = false } = {})
 export async function applyServiceWorkerUpdate({ clearIndexedDB = false, checkForUpdate = false, timeoutMs = 4000 } = {}) {
   const reload = () => {
     allowLeaving()
-    window.location.replace(buildReloadUrl())
+    reloadWithReason(clearIndexedDB ? 'sw-update-clear-db' : 'sw-update', { how: 'replace', url: buildReloadUrl() })
   }
   try {
     if (clearIndexedDB) await deleteAllIndexedDB()

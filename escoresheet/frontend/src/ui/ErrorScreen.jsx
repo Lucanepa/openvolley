@@ -11,6 +11,7 @@
 import { Component } from 'react';
 import { AlertTriangle, RotateCw, X } from 'lucide-react';
 import { FOCUS_RING } from './Button.jsx';
+import { reloadWithReason } from '../diagnostics/reload';
 
 /** Brand CTA used on every dead-end screen. ErrorBoundary.tsx:51-53, StaleBuildNotice.tsx:15 */
 const reloadClass =
@@ -23,7 +24,7 @@ export function ErrorScreen({
   body = 'Der Fehler wurde automatisch protokolliert.',
   detail,
   reloadLabel = 'Neu laden',
-  onReload = () => window.location.reload(),
+  onReload = () => reloadWithReason('error-screen'),
   secondary, // { label, onClick }
 }) {
   return (
@@ -97,7 +98,7 @@ export function UpdateNotice({ title = 'App-Update', message, onClose, inline, r
       <p className="mt-1.5 text-xs text-stone-600">{message}</p>
       <button
         type="button"
-        onClick={() => window.location.reload()}
+        onClick={() => reloadWithReason('stale-build')}
         className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 py-2.5 text-sm font-semibold text-white hover:bg-red-700 ${FOCUS_RING}`}
       >
         <RotateCw className="h-4 w-4" /> {reloadLabel}

@@ -1205,7 +1205,14 @@
     "exportDiagnosticLog": "Export diagnostic log (.ndjson)",
     "diagnosticLogFailed": "The diagnostic log could not be exported.",
     "openLogFolder": "Open log folder",
-    "logFolderOpenFailed": "The log folder could not be opened."
+    "logFolderOpenFailed": "The log folder could not be opened.",
+    "diagnosticsMode": "Diagnostics mode",
+    "diagnosticsModeInfo": "For troubleshooting a display problem: records window and layout sizes, dialogs, reloads and timing. Off by default. PINs, passwords and what is typed are never recorded. Desktop app: diagnostics files in the log folder; elsewhere kept on this device until exported.",
+    "diagnosticsOnByLink": "Switched on by the link (?diag=1) for this tab.",
+    "diagnosticsOnByEnv": "Switched on by OPENVOLLEY_DIAGNOSTICS=1 for this run.",
+    "exportDiagnostics": "Export diagnostics (.jsonl)",
+    "diagnosticsEmpty": "Nothing recorded yet.",
+    "diagnosticsExportFailed": "The diagnostics could not be exported."
   },
   "matchEnd": {
     "title": "Match complete",

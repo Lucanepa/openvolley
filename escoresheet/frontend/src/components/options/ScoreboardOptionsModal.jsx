@@ -21,6 +21,8 @@ import { backdropDismiss } from '../../ui/backdropDismiss.js'
 import ActivityLogModal from '../ActivityLogModal'
 import { canOpenLogFolder, openLogFolder } from '../../utils/activity'
 import { diagnosticLogQuery } from '../../utils/activity/logQuery'
+import { reloadWithReason } from '../../diagnostics/reload'
+import DiagnosticsSection from '../../diagnostics/DiagnosticsSection'
 
 // Opened over the scoreboard: no brand-red fills here (RESTYLE-SPEC R4).
 // Selection and "on" are slate-900, the non-destructive confirm emerald.
@@ -243,7 +245,7 @@ export default function ScoreboardOptionsModal({
     setRestoreConfirm(null)
     onClose?.()
     allowLeaving()
-    window.location.reload()
+    reloadWithReason('backup-restored')
   }
 
   const executeClearCache = async (includeLocalStorage) => {
@@ -830,6 +832,7 @@ export default function ScoreboardOptionsModal({
               </button>
             )}
           </Row>
+          <DiagnosticsSection showAlert={showAlert} testIdPrefix="options" />
         </Section>
 
         <Section title={t('options.cloudBackup')}>
