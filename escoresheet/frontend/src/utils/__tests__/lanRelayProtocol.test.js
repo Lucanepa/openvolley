@@ -1075,7 +1075,7 @@ describe('relay runtimes speak the shared protocol', () => {
     } finally {
       child.kill('SIGKILL')
     }
-  }, 20000)
+  })
 
   // With HTTPS on, browsers need wss:// while LAN tools (LedBox bridge:
   // ws://127.0.0.1:8080) speak plain ws:// — both on the same WS port.
@@ -1119,7 +1119,7 @@ describe('relay runtimes speak the shared protocol', () => {
       child.kill('SIGKILL')
       rmSync(dir, { recursive: true, force: true })
     }
-  }, 20000)
+  })
 
   it('Electron in-process relay', async () => {
     const relayServer = require('../../../electron/relayServer.js')
@@ -1131,7 +1131,7 @@ describe('relay runtimes speak the shared protocol', () => {
     } finally {
       await relayServer.stop()
     }
-  }, 20000)
+  })
 
   // The Rust port can't run in plain CI without building Tauri; point this at a
   // built binary to check it too:
@@ -1151,7 +1151,7 @@ describe('relay runtimes speak the shared protocol', () => {
     } finally {
       child.kill('SIGKILL')
     }
-  }, 30000)
+  })
 
   describe('Vite dev plugin', () => {
     let plugin
@@ -1195,6 +1195,6 @@ describe('relay runtimes speak the shared protocol', () => {
     it('serves the same protocol', async () => {
       await relayScenario({ httpBase, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await runBeachVenueContract({ httpBase, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'vite' })
-    }, 20000)
+    })
   })
 })

@@ -134,15 +134,15 @@ async function endSet(label) {
   await waitFor(() => expect(button('Start set')).toBeTruthy(), { timeout: 10000 })
   await settle()
   fireEvent.click(button('Start set'))
-  await waitFor(() => expect(button('Confirm')).toBeTruthy(), { timeout: 5000 })
+  await waitFor(() => expect(button('Confirm')).toBeTruthy())
   fireEvent.click(button('Confirm'))
   // the first rally is under way: the point buttons
   await waitFor(() => expect(button(label)).toBeTruthy(), { timeout: 10000 })
   await settle()
   fireEvent.click(button(label))
-  await waitFor(() => expect(document.body.textContent).toMatch(/Set \d end|Match end/), { timeout: 8000 })
+  await waitFor(() => expect(document.body.textContent).toMatch(/Set \d end|Match end/))
   await settle()
-  await waitFor(() => expect(button('Confirm')).toBeTruthy(), { timeout: 5000 })
+  await waitFor(() => expect(button('Confirm')).toBeTruthy())
   fireEvent.click(button('Confirm'))
   await waitFor(() => expect(setEndState()).toBeTruthy(), { timeout: 15000 })
   return setEndState()
@@ -164,8 +164,8 @@ describe('Scoreboard: the set end\'s live state has the scorer\'s sides', () => 
     expect(state.current_set).toBe(5)
     expect(state.side_a).toBe('right')
     // the scorer's court for set 5 before its coin toss: team A on the right
-    await waitFor(async () => expect((await db.matches.get(matchId)).set5LeftTeam).toBe('B'), { timeout: 8000 })
-    await waitFor(() => expect(teamAOnLeft()).toBe(false), { timeout: 8000 })
+    await waitFor(async () => expect((await db.matches.get(matchId)).set5LeftTeam).toBe('B'))
+    await waitFor(() => expect(teamAOnLeft()).toBe(false))
   }, 90000)
 })
 
@@ -183,7 +183,7 @@ describe('Scoreboard: the synced event\'s lineup_left is the scorer\'s left team
     if (await waitFor(() => { if (!button('Start set') && !button('Start rally')) throw new Error('not ready') }, { timeout: 10000 }).then(() => !!button('Start set'))) {
       await settle()
       fireEvent.click(button('Start set'))
-      await waitFor(() => expect(button('Confirm')).toBeTruthy(), { timeout: 5000 })
+      await waitFor(() => expect(button('Confirm')).toBeTruthy())
       fireEvent.click(button('Confirm'))
     } else {
       await settle()

@@ -38,7 +38,7 @@ describe('App: the match end', () => {
     mountApp() // opens the live match (App restores it)
     // the scoreboard's match-end dialog
     const dialog = () => [...document.querySelectorAll('[role=dialog]')].find(d => /won the match/.test(d.textContent))
-    await waitFor(() => expect(dialog()).toBeTruthy(), { timeout: 8000 })
+    await waitFor(() => expect(dialog()).toBeTruthy())
 
     const { states, stop } = track(() => {
       const text = document.body.textContent
@@ -49,7 +49,7 @@ describe('App: the match end', () => {
       }
     })
     fireEvent.click([...dialog().querySelectorAll('button')].find(b => b.textContent.trim() === 'Confirm'))
-    await waitFor(() => expect(states.at(-1)?.matchEnd).toBe(true), { timeout: 8000 })
+    await waitFor(() => expect(states.at(-1)?.matchEnd).toBe(true))
     await sleep(500)
     stop()
 
@@ -58,5 +58,5 @@ describe('App: the match end', () => {
     // 'Loading...', never a page with none of them
     expect(states.filter(s => s.progress === 'Loading...')).toEqual([])
     expect(states.filter(s => !s.dialog && !s.progress && !s.matchEnd)).toEqual([])
-  }, 30000)
+  })
 })

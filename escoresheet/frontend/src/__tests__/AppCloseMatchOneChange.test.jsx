@@ -35,9 +35,9 @@ describe('App: closing a match', () => {
     await db.events.add({ matchId, setIndex: 1, type: 'coin_toss', payload: {}, seq: 1, ts: start })
 
     mountApp()
-    await waitFor(() => expect(button('Continue match')).toBeTruthy(), { timeout: 8000 })
+    await waitFor(() => expect(button('Continue match')).toBeTruthy())
     fireEvent.click(button('Continue match'))
-    await waitFor(() => expect(button('Close match')).toBeTruthy(), { timeout: 8000 })
+    await waitFor(() => expect(button('Close match')).toBeTruthy())
 
     const { states, stop } = track(() => ({
       home: !!button('Restore match'),
@@ -46,8 +46,8 @@ describe('App: closing a match', () => {
       matchEnd: /Match complete/.test(document.body.textContent)
     }))
     fireEvent.click(button('Close match'))
-    await waitFor(async () => expect(await db.matches.count()).toBe(0), { timeout: 8000 })
-    await waitFor(() => expect(states.at(-1)?.home).toBe(true), { timeout: 8000 })
+    await waitFor(async () => expect(await db.matches.count()).toBe(0))
+    await waitFor(() => expect(states.at(-1)?.home).toBe(true))
     await sleep(500)
     stop()
 
@@ -55,5 +55,5 @@ describe('App: closing a match', () => {
     // never the home screen with the closed match on it, never an empty page
     expect(states.filter(s => s.home && (s.match || s.testMatchChip))).toEqual([])
     expect(states.filter(s => !s.home && !s.matchEnd)).toEqual([])
-  }, 30000)
+  })
 })

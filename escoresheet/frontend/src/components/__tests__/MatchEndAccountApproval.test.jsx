@@ -404,11 +404,11 @@ describe('MatchEnd: approve with an account', () => {
     await waitFor(() => expect(confirmButton()).toBeEnabled())
     fireEvent.click(confirmButton())
     // no scoresheet window: the scorer approves without the PDF
-    fireEvent.click(await findButton(en.matchEnd.export.approveWithoutPdf, { timeout: 3000 }))
+    fireEvent.click(await findButton(en.matchEnd.export.approveWithoutPdf))
     await waitFor(() => {
       const jobs = [...store.tables.sync_queue.values()]
       expect(jobs.some(j => j.payload?.status === 'approved')).toBe(true)
-    }, { timeout: 5000 })
+    })
     const job = [...store.tables.sync_queue.values()].find(j => j.payload?.status === 'approved')
     expect(job.payload.approval.accounts).toEqual({
       ref1: { short_id: '6F1C2A9B', name: 'Muster Anna', approved_at: '2026-10-07T19:42:10.000Z' },
@@ -444,10 +444,10 @@ describe('MatchEnd: approve with an account', () => {
     await waitFor(() => expect(confirmButton()).toBeEnabled())
     fireEvent.click(confirmButton())
     // no scoresheet window: the scorer approves without the PDF
-    fireEvent.click(await findButton(en.matchEnd.export.approveWithoutPdf, { timeout: 3000 }))
+    fireEvent.click(await findButton(en.matchEnd.export.approveWithoutPdf))
     await waitFor(() => {
       expect([...store.tables.sync_queue.values()].some(j => j.payload?.status === 'approved')).toBe(true)
-    }, { timeout: 5000 })
+    })
     expect(alerts.showAlert).not.toHaveBeenCalledWith(en.approval.revalidateFailed, 'warning')
   })
 
@@ -472,8 +472,8 @@ describe('MatchEnd: approve with an account', () => {
     render(<MatchEnd matchId={1} />)
     await waitFor(() => expect(confirmButton()).toBeEnabled())
     fireEvent.click(confirmButton())
-    fireEvent.click(await findButton(en.matchEnd.export.approveWithoutPdf, { timeout: 3000 }))
-    const reopen = await findButton(en.matchEnd.reopenMatch, { timeout: 5000 })
+    fireEvent.click(await findButton(en.matchEnd.export.approveWithoutPdf))
+    const reopen = await findButton(en.matchEnd.reopenMatch)
     fireEvent.click(reopen)
     await waitFor(() => expect(store.tables.matches.get(1).approved).toBe(false))
     expect(api.undo).not.toHaveBeenCalled()
@@ -578,7 +578,7 @@ describe('MatchEnd: Re-sign and Clear', () => {
     // signature boxes to change
     seed({ scorerSignature: 'data:s', approved: true })
     const first = render(<MatchEnd matchId={1} />)
-    await findButton(en.matchEnd.closeMatch, { timeout: 3000 })
+    await findButton(en.matchEnd.closeMatch)
     expect(screen.queryByTestId('signature-resign-scorer')).toBeNull()
     expect(screen.queryByTestId('account-approval-open-ref1')).toBeNull()
     first.unmount()

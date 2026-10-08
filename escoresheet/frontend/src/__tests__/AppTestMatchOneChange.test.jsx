@@ -15,7 +15,7 @@ afterAll(online)
 describe('App: a new test match', () => {
   it('goes from the home screen to the filled Match Setup in one change', async () => {
     mountApp()
-    await waitFor(() => expect(button('New match')).toBeTruthy(), { timeout: 8000 })
+    await waitFor(() => expect(button('New match')).toBeTruthy())
     fireEvent.click(button('New match'))
     await waitFor(() => expect(button('Test match')).toBeTruthy())
 
@@ -30,7 +30,7 @@ describe('App: a new test match', () => {
       }
     })
     fireEvent.click(button('Test match'))
-    await waitFor(() => expect(states.at(-1)).toMatchObject({ home: false, setup: true, notSet: 0 }), { timeout: 8000 })
+    await waitFor(() => expect(states.at(-1)).toMatchObject({ home: false, setup: true, notSet: 0 }))
     await sleep(500)
     stop()
 
@@ -39,5 +39,5 @@ describe('App: a new test match', () => {
     // Delete match', OB-2); once it is gone: only the filled setup
     expect(states.filter(s => s.home && s.match)).toEqual([])
     expect(states.filter(s => !s.home && !(s.setup && s.notSet === 0 && s.players === 'Players: 12 Players: 12'))).toEqual([])
-  }, 30000)
+  })
 })

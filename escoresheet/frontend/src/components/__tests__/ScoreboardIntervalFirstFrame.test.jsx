@@ -96,11 +96,11 @@ describe('Scoreboard: the interval after the set end', () => {
     await db.events.bulkAdd(events)
 
     render(<ScaleProvider><AlertProvider><LoggingProvider><Scoreboard matchId={matchId} /></LoggingProvider></AlertProvider></ScaleProvider>)
-    await waitFor(() => expect(button('Start rally')).toBeTruthy(), { timeout: 8000 })
+    await waitFor(() => expect(button('Start rally')).toBeTruthy())
     fireEvent.click(button('Start rally'))
-    await waitFor(() => expect(button('Point A')).toBeTruthy(), { timeout: 5000 })
+    await waitFor(() => expect(button('Point A')).toBeTruthy())
     fireEvent.click(button('Point A'))
-    await waitFor(() => expect(button('Confirm')).toBeTruthy(), { timeout: 5000 })
+    await waitFor(() => expect(button('Confirm')).toBeTruthy())
 
     // every countdown text the screen shows
     const seen = []
@@ -118,5 +118,5 @@ describe('Scoreboard: the interval after the set end', () => {
     // the clock stands still here: only the full interval
     expect(seen).toEqual(['3:00'])
     cleanup()
-  }, 30000)
+  })
 })

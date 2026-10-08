@@ -88,7 +88,7 @@ describe('MatchEnd: saving a signature drawn on the pad', () => {
     // never the pad gone with the box still empty
     expect(states.filter(st => !st.pad && !st.signed)).toEqual([])
     cleanup()
-  }, 30000)
+  })
 
   it('an official match: one change, and a second tap on Save saves once', async () => {
     // the pad stays open until the signature shows (a frame or two): a quick
@@ -129,7 +129,7 @@ describe('MatchEnd: saving a signature drawn on the pad', () => {
     const save = saveButton()
     fireEvent.click(save)
     fireEvent.click(save)
-    await waitFor(() => expect(pad()).toBeFalsy(), { timeout: 5000 })
+    await waitFor(() => expect(pad()).toBeFalsy())
     await sleep(300)
     observer.disconnect()
     // the pad closed in the change that showed the signature, also here: not
@@ -139,5 +139,5 @@ describe('MatchEnd: saving a signature drawn on the pad', () => {
     const jobs = (await db.sync_queue.toArray()).filter(j => j.payload?.id === 'sig-twice' && j.payload?.signatures)
     expect(jobs).toHaveLength(1)
     cleanup()
-  }, 30000)
+  })
 })
