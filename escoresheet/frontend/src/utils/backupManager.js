@@ -843,6 +843,21 @@ export function savedCourtSides(events, liveState, teamAKey = 'home', liveTeamAK
   return out
 }
 
+/**
+ * savedCourtSides in the other Team A's labels (A and B swapped): the same
+ * team on the left wherever an override or set 5's toss side pins it.
+ * @param {object} sides  savedCourtSides output
+ */
+function relabelCourtSides(sides) {
+  const out = { ...sides }
+  if (sides.setLeftTeamOverrides) {
+    out.setLeftTeamOverrides = Object.fromEntries(
+      Object.entries(sides.setLeftTeamOverrides).map(([set, v]) => [set, isAB(v) ? flipAB(v) : v]))
+  }
+  if (isAB(sides.set5LeftTeam)) out.set5LeftTeam = flipAB(sides.set5LeftTeam)
+  return out
+}
+
 const timeOf = (v) => {
   const t = Date.parse(v)
   return Number.isNaN(t) ? null : t
@@ -982,6 +997,7 @@ export async function fetchMatchByPin(gamePin, gameN) {
   // Team A from the coin toss: the matches table has the coin_toss JSON, no
   // coin_toss_team_a column (reading only that put Team A on away always)
   let teamAKey = matchData.coin_toss?.team_a || matchData.coin_toss_team_a || 'home'
+  const cloudTeamAKey = teamAKey
   // The live row's own Team A (its team names): "Switch sides" in sets 1-4
   // swaps A and B, the coin toss queued and the live state written at once,
   // so with the swap still in the sync queue the cloud coin toss names the
@@ -1010,7 +1026,6 @@ export async function fetchMatchByPin(gamePin, gameN) {
       }
     }
   }
-  const teamAIsHome = teamAKey === 'home'
   const liveAIsHome = liveTeamAKey === 'home'
   // The match's court sides as the scorer last saved them: the imported
   // match keeps them, and they place a row's court-side lineups below
@@ -1038,11 +1053,16 @@ export async function fetchMatchByPin(gamePin, gameN) {
       // (the snapshot's own set only: one taken in another set has that set's lineups)
       const bySnapshot = !!(snap && (snap.lineupA || snap.lineupB) &&
         (snap.currentSetIndex == null || Number(snap.currentSetIndex) === Number(setIndex)))
-      const snapAIsHome = (snap?.teamAKey || teamAKey) === 'home'
+      // The row's own Team A: its snapshot's, else the cloud coin toss's (a
+      // row synced before a swap still in the sync queue, not the live row's
+      // Team A the restored match takes), the saved sides in its labels
+      const rowTeamAKey = snap?.teamAKey === 'home' || snap?.teamAKey === 'away' ? snap.teamAKey : cloudTeamAKey
+      const snapAIsHome = rowTeamAKey === 'home'
+      const rowSides = rowTeamAKey === teamAKey ? courtSides : relabelCourtSides(courtSides)
       const markedLeft = rowLeftIsHome(eventWithLineup)
       const leftIsHome = markedLeft !== null
         ? markedLeft
-        : (getSideAForSet(Number(setIndex), courtSides) === 'left') === teamAIsHome
+        : (getSideAForSet(Number(setIndex), rowSides) === 'left') === snapAIsHome
 
       const homeRawLineup = bySnapshot
         ? (snapAIsHome ? snap.lineupA : snap.lineupB)

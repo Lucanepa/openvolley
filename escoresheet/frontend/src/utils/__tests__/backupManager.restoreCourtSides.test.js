@@ -310,6 +310,19 @@ describe('fetchMatchByPin: the live row\'s own Team A', () => {
     expect(lineupOf(out, 'away')).toEqual(numbers(11))
   })
 
+  it('a row placed by the rule (no snapshot, no serve mark) synced before the swap: by its own Team A, the cloud coin toss\'s', async () => {
+    // set 2 before the swap: A = home on the right (away left); the
+    // restored match takes the live row's Team A (away)
+    const out = await restoreWith({
+      match: { ...NAMES, coin_toss: { team_a: 'home', team_b: 'away', serve_a: true, first_serve: 'home', confirmed: true } },
+      events: [{ seq: 7, type: 'point', set_index: 2, payload: { team: 'home' }, created_at: '2026-10-08T10:00:00.000Z', lineup_left: AWAY, lineup_right: HOME }],
+      liveState: swappedLive()
+    })
+    expect(out.match.coin_toss.team_a).toBe('away')
+    expect(lineupOf(out, 'home')).toEqual(numbers(1))
+    expect(lineupOf(out, 'away')).toEqual(numbers(11))
+  })
+
   it('a live row older than the latest synced event: the cloud coin toss, the live side still read for its own Team A', async () => {
     const cloud = await restoreWith({
       match: { ...NAMES, coin_toss: { team_a: 'home', team_b: 'away', serve_a: true, first_serve: 'home', confirmed: true } },
