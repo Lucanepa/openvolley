@@ -1,4 +1,5 @@
-// Undoing the set 5 setup's confirmation (its set5_coin_toss event). Found
+// Undoing the set 5 setup's confirmation (its set5_coin_toss event, sent to
+// the server like every event). Found
 // by a check (2026-10-09): the undo took the event back but the setup panel
 // stayed hidden until a reload (set5SetupConfirmed was only reset at the
 // previous set's end), the interval countdown the confirmation had ended
@@ -107,12 +108,19 @@ describe('Scoreboard: undoing the set 5 setup confirmation', () => {
     await waitFor(async () => expect(await db.events.where({ matchId, type: 'set5_coin_toss' }).count()).toBe(1))
     await waitFor(() => expect(button('Confirm set 5 setup')).toBeFalsy())
     await waitFor(() => expect(countdownText()).toBeNull())
+    // the confirmation's event reaches the server like every event (it was
+    // a bare db.events.add: never sent, its undo voided a row the server
+    // never had)
+    await waitFor(async () => expect((await db.sync_queue.toArray())
+      .filter(j => j.resource === 'event' && j.action === 'insert' && j.payload?.type === 'set5_coin_toss')).toHaveLength(1))
     await settle()
 
     fireEvent.click(button('Undo'))
     await waitFor(() => expect(button('Yes')).toBeTruthy())
     fireEvent.click(button('Yes'))
     await waitFor(async () => expect(await db.events.where({ matchId, type: 'set5_coin_toss' }).count()).toBe(0))
+    // the insert not sent yet goes with it (or the server voids it)
+    expect((await db.sync_queue.toArray()).filter(j => j.resource === 'event' && j.action === 'insert' && j.payload?.type === 'set5_coin_toss' && j.status === 'queued')).toHaveLength(0)
 
     // the setup panel is back without a reload
     await waitFor(() => expect(button('Confirm set 5 setup')).toBeTruthy(), { timeout: 5000 })

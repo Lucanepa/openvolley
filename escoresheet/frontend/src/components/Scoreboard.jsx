@@ -6509,24 +6509,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
 
-    // Log the set 5 coin toss event so it can be undone
-    const nextSeq = await getNextSeq()
-    const set5CoinTossStateBefore = getStateSnapshot()
-    await db.events.add({
-      matchId,
-      setIndex: setIndex,
-      type: 'set5_coin_toss',
-      payload: {
-        leftTeam,
-        firstServe,
-        leftTeamKey,
-        firstServeTeamKey
-      },
-      ts: new Date().toISOString(),
-      seq: nextSeq,
-      stateBefore: set5CoinTossStateBefore
-    })
-  })), [runAction, deferUi, deferEffect, runSet5SideService, set5SideServiceModal, data?.match, matchId, getNextSeq, getStateSnapshot, syncSet5Setup])
+    // The set 5 coin toss event, so it can be undone: logged like every
+    // event (its snapshot, its sync job, the tablets' match data); a bare
+    // db.events.add never reached the server, and its undo voided a row the
+    // server never had. Its live state goes with syncSet5Setup above.
+    await logEvent('set5_coin_toss', {
+      leftTeam,
+      firstServe,
+      leftTeamKey,
+      firstServeTeamKey
+    }, { setIndexOverride: setIndex })
+  })), [runAction, deferUi, deferEffect, runSet5SideService, set5SideServiceModal, data?.match, matchId, logEvent, syncSet5Setup])
 
   // Get action description for an event: the paper-scoresheet wording of
   // domain/describe (localized, concerned team first, no raw event types)
