@@ -5,6 +5,7 @@ import { getCloudApiUrl } from '../utils/backendConfig'
 import { useAlert } from '../contexts/AlertContext'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { apiFrom } from '../lib/apiClient'
+import { selectAll } from '../lib/selectAll'
 import { AlertTriangle, Loader2, Search, X } from 'lucide-react'
 import { cn, FOCUS_RING, IconButton, Select } from '../ui'
 
@@ -203,12 +204,10 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
   }, [open])
 
   const fetchLeaguesFromSupabase = async () => {
-    // The backend caps a select at 1000 rows and svrz_games holds more. Newest
-    // first keeps every upcoming game inside the cap, so a league is never
-    // greyed out because its games were cut off; only old leagues drop out.
-    const { data, error } = await apiFrom('svrz_games')
-      .select('gender, league, datetime')
-      .order('datetime', { ascending: false })
+    // svrz_games holds more rows than the backend's per-select cap: read them
+    // all in pages, so no league and no upcoming game is cut off
+    const { data, error } = await selectAll(() => apiFrom('svrz_games')
+      .select('id, gender, league, datetime'))
     if (error) throw error
     if (!data || data.length === 0) return null
     // datetime is TEXT in ISO form: compare it as a string, like the match

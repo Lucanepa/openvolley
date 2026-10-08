@@ -8,14 +8,21 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key, fallback) => (typeof fallback === 'string' ? fallback : key), i18n: { language: 'en' } })
 }))
 
-// apiFrom('referee_database')...order() resolves when the test says so.
-const api = vi.hoisted(() => ({ pending: [], empties: [] }))
+// apiFrom('referee_database') resolves each page request when the test says so.
+const api = vi.hoisted(() => ({ pending: [], empties: [], queries: [] }))
 vi.mock('../../lib/apiClient', () => ({
   apiFrom: () => {
+    const call = { order: [], gt: null, limit: null }
     const q = {
       select: () => q,
       contains: () => q,
-      order: () => new Promise(res => api.pending.push(res))
+      order: (col, opts) => { call.order.push([col, opts?.ascending !== false]); return q },
+      gt: (col, v) => { call.gt = [col, v]; return q },
+      limit: (n) => { call.limit = n; return q },
+      then: (resolve, reject) => {
+        api.queries.push(call)
+        return new Promise(res => api.pending.push(res)).then(resolve, reject)
+      }
     }
     return q
   }
@@ -28,12 +35,20 @@ vi.mock('../../ui', async (importOriginal) => {
 })
 
 import RefereeSelector from '../RefereeSelector'
+
+// The page request reaches the mock a microtask after the effect runs
+async function resolvePage(n, result) {
+  await act(async () => {
+    await waitFor(() => expect(api.pending[n]).toBeTypeOf('function'))
+    api.pending[n](result)
+  })
+}
 import { PICKER_RESULTS } from '../pickerLayout'
 
 const rows = [
-  { first_name: 'Anna', last_name: 'Müller', country: 'CHE', dob: '01.01.1990' },
-  { first_name: 'Jean-Philippe', last_name: 'Schwarzenbach-Delacroix', country: 'FRA', dob: '02.02.1985' },
-  { first_name: 'Luca', last_name: 'Keller', country: 'CHE', dob: '' }
+  { id: 'a1', first_name: 'Anna', last_name: 'Müller', country: 'CHE', dob: '01.01.1990' },
+  { id: 'b2', first_name: 'Jean-Philippe', last_name: 'Schwarzenbach-Delacroix', country: 'FRA', dob: '02.02.1985' },
+  { id: 'c3', first_name: 'Luca', last_name: 'Keller', country: 'CHE', dob: '' }
 ]
 
 // The box contract (pickerLayout.js): jsdom cannot measure, so assert the
@@ -55,7 +70,7 @@ function expectFixedBox() {
 }
 
 describe('RefereeSelector', () => {
-  beforeEach(() => { api.pending = [] })
+  beforeEach(() => { api.pending = []; api.queries = [] })
 
   it('keeps the same box while loading and after the referees arrive', async () => {
     render(<RefereeSelector open onClose={() => {}} onSelect={() => {}} />)
@@ -64,7 +79,7 @@ describe('RefereeSelector', () => {
     expect(screen.getByTestId('referee-picker-list').querySelector('[role="status"]')).not.toBeNull()
     const before = screen.getByRole('dialog').className
 
-    await act(async () => { api.pending[0]({ data: rows, error: null }) })
+    await resolvePage(0, { data: rows, error: null })
     expect(await screen.findByRole('button', { name: /Müller, Anna/ })).toBeInTheDocument()
     expectFixedBox()
     expect(screen.getByRole('dialog').className).toBe(before)
@@ -73,14 +88,14 @@ describe('RefereeSelector', () => {
 
   it('an empty database and a no-match search use the same box', async () => {
     render(<RefereeSelector open onClose={() => {}} onSelect={() => {}} />)
-    await act(async () => { api.pending[0]({ data: [], error: null }) })
+    await resolvePage(0, { data: [], error: null })
     expect(screen.getByText('refereeSelector.noRefereeHistory')).toBeInTheDocument()
     expectFixedBox()
   })
 
   it('a network failure says to connect, in the same box', async () => {
     render(<RefereeSelector open onClose={() => {}} onSelect={() => {}} />)
-    await act(async () => { api.pending[0]({ data: null, error: { message: 'offline', status: 0, network: true } }) })
+    await resolvePage(0, { data: null, error: { message: 'offline', status: 0, network: true } })
     expect(screen.getByText('refereeSelector.connectToInternet')).toBeInTheDocument()
     expectFixedBox()
   })
@@ -89,7 +104,7 @@ describe('RefereeSelector', () => {
     const onSelect = vi.fn()
     const onClose = vi.fn()
     render(<RefereeSelector open onClose={onClose} onSelect={onSelect} />)
-    await act(async () => { api.pending[0]({ data: rows, error: null }) })
+    await resolvePage(0, { data: rows, error: null })
     const search = screen.getByRole('searchbox', { name: 'refereeSelector.searchReferees' })
     expect(document.activeElement).toBe(search)
 
@@ -114,7 +129,7 @@ describe('RefereeSelector', () => {
 
   it('a reopen starts on the skeleton, not on the last open\'s "no referees"', async () => {
     const { rerender } = render(<RefereeSelector open onClose={() => {}} onSelect={() => {}} />)
-    await act(async () => { api.pending[0]({ data: [], error: null }) })
+    await resolvePage(0, { data: [], error: null })
     expect(screen.getByText('refereeSelector.noRefereeHistory')).toBeInTheDocument()
     rerender(<RefereeSelector open={false} onClose={() => {}} onSelect={() => {}} />)
     // act() flushes effects before we can look, so count the empty messages
@@ -125,8 +140,30 @@ describe('RefereeSelector', () => {
     expect(screen.queryByText('refereeSelector.noRefereeHistory')).toBeNull()
     expect(screen.getByTestId('referee-picker-list').querySelector('[role="status"]')).not.toBeNull()
     expectFixedBox()
-    await act(async () => { api.pending[1]({ data: rows, error: null }) })
+    await resolvePage(1, { data: rows, error: null })
     expect(await screen.findByRole('button', { name: /Müller, Anna/ })).toBeInTheDocument()
+  })
+
+  it('reads the whole directory past the 1000-row cap and lists it by last name', async () => {
+    const page1 = Array.from({ length: 1000 }, (_, i) => ({
+      id: `id${String(i).padStart(4, '0')}`, first_name: `F${i}`, last_name: `Name${String(i).padStart(4, '0')}`, country: 'CHE', dob: ''
+    }))
+    // The 1001st row by id sorts first by last name
+    const page2 = [{ id: 'id9999', first_name: 'Beat', last_name: 'Aebi', country: 'CHE', dob: '' }]
+    render(<RefereeSelector open onClose={() => {}} onSelect={() => {}} />)
+    await resolvePage(0, { data: page1, error: null })
+    expect(api.queries[0]).toEqual({ order: [['id', true]], gt: null, limit: 1000 })
+    await resolvePage(1, { data: page2, error: null })
+    expect(api.queries[1].gt).toEqual(['id', 'id0999'])
+    expect(api.pending).toHaveLength(2)
+
+    // Plain DOM reads: role queries over 1001 rows are slow in jsdom
+    const list = screen.getByTestId('referee-picker-list')
+    await waitFor(() => expect(list.textContent).toContain('Aebi'))
+    const names = [...list.querySelectorAll('button')].map(b => b.textContent)
+    expect(names).toHaveLength(1001)
+    expect(names[0]).toMatch(/Aebi/)
+    expect(names[1]).toMatch(/Name0000/)
   })
 
   it('renders nothing while closed', () => {

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiFrom } from '../lib/apiClient'
+import { selectAll } from '../lib/selectAll'
 
 // Sport type for indoor volleyball
 const SPORT_TYPE = 'indoor'
@@ -26,10 +27,10 @@ export function useOfficialHistory() {
       setLoading(true)
       setError(null)
 
-      const { data, error: fetchError } = await apiFrom('referee_database')
-        .select('first_name, last_name, country, dob, created_at')
-        .contains('sport_type', JSON.stringify([SPORT_TYPE]))
-        .order('last_name', { ascending: true })
+      // The whole directory, paged past the server's row cap, by last name
+      const { data, error: fetchError } = await selectAll(() => apiFrom('referee_database')
+        .select('id, first_name, last_name, country, dob, created_at')
+        .contains('sport_type', JSON.stringify([SPORT_TYPE])), { order: [{ column: 'last_name' }] })
 
       if (fetchError) {
         console.error('Error fetching referees:', fetchError)
