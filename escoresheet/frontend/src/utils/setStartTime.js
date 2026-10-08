@@ -10,14 +10,21 @@ const HOUR = 3600 * 1000
  * durations of 827890 minutes). When today's occurrence is more than 12 hours
  * ahead (a 23:30 match confirmed at 00:10) it is the day before.
  *
+ * A date without a time is no scheduled time: a bare "YYYY-MM-DD", or the
+ * local midnight MatchSetup's createScheduledAt stores for a date entered
+ * without a time (set 1 would otherwise be proposed at 00:00). A match
+ * really scheduled at midnight is proposed now, as OpenBeach does.
+ *
  * @param {string|null|undefined} scheduledAt ISO
  * @param {Date} [now]
  * @returns {string|null} ISO timestamp with zeroed seconds, or null without a valid schedule
  */
 export function scheduledStartOnDay(scheduledAt, now = new Date()) {
   if (!scheduledAt) return null
+  if (typeof scheduledAt === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(scheduledAt.trim())) return null
   const scheduled = new Date(scheduledAt)
   if (Number.isNaN(scheduled.getTime())) return null
+  if (scheduled.getHours() === 0 && scheduled.getMinutes() === 0) return null
   const day = new Date(now.getTime())
   day.setHours(scheduled.getHours(), scheduled.getMinutes(), 0, 0)
   if (day.getTime() - now.getTime() > 12 * HOUR) day.setDate(day.getDate() - 1)
