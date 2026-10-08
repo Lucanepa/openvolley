@@ -17462,10 +17462,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     </div>
                     {/* Rally status and last action - only show beneath rally controls in full desktop mode (compact and laptop show in header) */}
                     {!isCompactMode && !isLaptopMode && (
+                      // As wide as the rally column (not as its text): the
+                      // line's ellipsis then cuts a long team name, which ran
+                      // past both window edges
                       <div
                         style={{
                           marginTop: '8px',
-                          textAlign: 'center'
+                          textAlign: 'center',
+                          width: '100%',
+                          minWidth: 0
                         }}
                       >
                         {/* Last action - filtered to current set */}
