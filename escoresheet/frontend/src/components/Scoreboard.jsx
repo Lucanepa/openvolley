@@ -6377,7 +6377,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Closed (or the inline setup confirmed) with the written choice (deferUi)
     if (inlineMode) {
-      deferUi(() => setSet5SetupConfirmed(true))
+      // The inline setup ends the interval: its countdown goes in the same
+      // change as the setup, and the tablets are told after the commit, with
+      // the confirmed sides / serve (it went one frame before the court)
+      deferUi(() => {
+        setSet5SetupConfirmed(true)
+        setBetweenSetsCountdown(null)
+        countdownDismissedRef.current = true
+      })
+      deferEffect({ run: () => syncSet5Setup({ endInterval: true }) })
     } else {
       deferUi(() => setSet5SideServiceModal(null))
     }
@@ -6459,7 +6467,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       seq: nextSeq,
       stateBefore: set5CoinTossStateBefore
     })
-  })), [runAction, deferUi, runSet5SideService, set5SideServiceModal, data?.match, matchId, getNextSeq, getStateSnapshot])
+  })), [runAction, deferUi, deferEffect, runSet5SideService, set5SideServiceModal, data?.match, matchId, getNextSeq, getStateSnapshot, syncSet5Setup])
 
   // Get action description for an event: the paper-scoresheet wording of
   // domain/describe (localized, concerned team first, no raw event types)
@@ -17249,9 +17257,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       </button>
                       <button
                         onClick={async () => {
-                          await confirmSet5SideService(data?.match?.set5LeftTeam || 'A', data?.match?.set5FirstServe || 'A', true)
                           // Ends the interval here and on the tablets, with the confirmed sides / serve
-                          await syncSet5Setup({ endInterval: true })
+                          await confirmSet5SideService(data?.match?.set5LeftTeam || 'A', data?.match?.set5FirstServe || 'A', true)
                         }}
                         style={{
                           display: 'flex',
