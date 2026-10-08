@@ -1,6 +1,7 @@
 import Dexie from 'dexie'
 import { rewriteQueuedSyncJobs } from '../utils/syncIds'
 import { installEventHistoryHooks } from './eventHistory'
+import { installRemarksSyncHook } from './remarksSync'
 
 /**
  * ============================================================================
@@ -364,6 +365,9 @@ db.version(20).stores({
 
 // Undo / delete / edit history of events, from Dexie hooks (see db/eventHistory.js)
 installEventHistoryHooks(db)
+
+// Every change of match.remarks is queued for the server (db/remarksSync.js, db/017)
+installRemarksSyncHook(db)
 
 // Request DURABLE storage for the origin. All match state lives in IndexedDB;
 // without this the browser treats it as "best-effort" and may evict it under

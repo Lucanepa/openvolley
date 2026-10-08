@@ -827,6 +827,12 @@ describe('failure classes', () => {
     expect(out).toEqual({ id: 'm', match: { status: 'live', teams: [{ name: 'A' }] }, mapping: 'kept', pinned: true, when: 123456 })
   })
 
+  it('redactForLog prints the remarks as a length, never their text (db/017)', () => {
+    expect(redactForLog({ id: 'm', remarks: 'Player 4 Muster injured' })).toEqual({ id: 'm', remarks: '[23 characters]' })
+    expect(redactForLog({ match: { remarks: '' } })).toEqual({ match: { remarks: '[0 characters]' } })
+    expect(redactForLog({ remarks: null })).toEqual({ remarks: null })
+  })
+
   it('redactForLog masks PIN values inside texts and error messages', () => {
     expect(redactForLog('Key (game_pin)=(123456) already exists.')).toBe('Key (game_pin)=([redacted]) already exists.')
     expect(redactForLog('{"refereePin":"654321","n":42}')).toBe('{"refereePin":"[redacted]","n":42}')

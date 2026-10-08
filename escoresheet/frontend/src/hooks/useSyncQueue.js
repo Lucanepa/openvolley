@@ -252,7 +252,8 @@ const LOG_REDACT_DEPTH = 6
 /**
  * A value for the console (and so for uploaded logs): PIN fields left out at
  * any depth (game_pin, connection_pins, refereePin, ...), PIN values in error
- * texts masked. Anything else is passed through unchanged.
+ * texts masked, the scoresheet remarks (db/017) as their length only, like
+ * the activity log. Anything else is passed through unchanged.
  */
 export function redactForLog(value, depth = 0) {
   if (typeof value === 'string') return redactText(value)
@@ -266,7 +267,8 @@ export function redactForLog(value, depth = 0) {
   if (proto !== Object.prototype && proto !== null) return value
   const out = {}
   for (const [k, v] of Object.entries(value)) {
-    if (!isSecretLogKey(k)) out[k] = redactForLog(v, depth + 1)
+    if (isSecretLogKey(k)) continue
+    out[k] = k === 'remarks' && typeof v === 'string' ? `[${v.length} characters]` : redactForLog(v, depth + 1)
   }
   return out
 }
