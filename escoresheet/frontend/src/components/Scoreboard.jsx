@@ -51,7 +51,7 @@ import { uploadBackupToCloud, uploadLogsToCloud, triggerContinuousBackup } from 
 import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../utils/timeUtils'
 import { defaultSetStartTime, actualStartRemark, startsFromSchedule, startScheduleOf, typedStartNear } from '../utils/setStartTime'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
-import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet } from '../domain/rules'
+import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet, getLeftTeamLabelForSet } from '../domain/rules'
 import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags, deferredPenaltyPoints } from '../domain/sanctions'
 import { classifyTimeoutRequest } from '../domain/timeouts'
 import { rallyStatusOf, currentSetOf } from '../domain/rally'
@@ -2154,20 +2154,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       else if (isTimeout) matchStatus = 'timeout'
       else if (isSetInterval || keepInterval) matchStatus = 'interval'
 
-      // Calculate side for next set: a manual side override or the set 5 coin
-      // toss choice (both stored as the LEFT team 'A'/'B') wins, as in
-      // captureFullStateSnapshot; otherwise odd sets A on left, even sets A on right
-      let nextSideA = snapshot.sideA
-      if (isSetInterval) {
-        const leftOverride = (match.setLeftTeamOverrides || {})[nextSetIndex]
-        if (leftOverride !== undefined) {
-          nextSideA = leftOverride === 'A' ? 'left' : 'right'
-        } else if (nextSetIndex === 5 && match.set5LeftTeam) {
-          nextSideA = match.set5LeftTeam === 'A' ? 'left' : 'right'
-        } else {
-          nextSideA = nextSetIndex % 2 === 1 ? 'left' : 'right'
-        }
-      }
+      // The side team A plays the set the live state shows on (the next set;
+      // the match's end: the last set), by the scorer's court's own rule
+      // (getSideAForSet). Not by the next set's number: the match's end has
+      // no next set, and set 5 keeps set 4's sides until its coin toss.
+      const nextSideA = isSetInterval ? getSideAForSet(finalSetIndex, match) : snapshot.sideA
 
       // For interval, points reset to 0 for the new set
       const nextPointsA = isSetInterval ? 0 : snapshot.pointsA
@@ -2235,7 +2226,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           nextSideA,
           nextPointsA,
           nextPointsB,
-          calculation: `Set ${nextSetIndex} is ${nextSetIndex % 2 === 1 ? 'odd' : 'even'}, so Team A is on ${nextSideA}`
+          sidesOfSet: finalSetIndex
         })
       }
 
@@ -2774,58 +2765,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Before coin toss, default to home left, away right
     const isBeforeCoinToss = !data?.match?.coinTossTeamA || !data?.match?.coinTossTeamB
     if (isBeforeCoinToss || !data?.set) return true
-
-    const setIndex = data.set.index
-
-    // Check for manual override first (for sets 1-4)
-    if (setIndex >= 1 && setIndex <= 4 && data.match?.setLeftTeamOverrides) {
-      const override = data.match.setLeftTeamOverrides[setIndex]
-      if (override) {
-        // Override is 'A' or 'B'
-        const leftTeamKey = override === 'A' ? teamAKey : teamBKey
-        return leftTeamKey === 'home'
-      }
-    }
-
-    // Set 1: Team A on left
-    if (setIndex === 1) {
-      return teamAKey === 'home'
-    }
-
-    // Set 5: Special case with court switch at 8 points
-    if (setIndex === 5) {
-      // Use set5LeftTeam if specified, otherwise default to teams switched (like set 2)
-      if (data.match?.set5LeftTeam) {
-        const leftTeamKey = data.match.set5LeftTeam === 'A' ? teamAKey : teamBKey
-        let isHome = leftTeamKey === 'home'
-
-        // If court switch has happened at 8 points, switch again
-        if (data.match?.set5CourtSwitched) {
-          isHome = !isHome
-        }
-
-        return isHome
-      }
-
-      // Fallback: Set 5 starts with teams switched (like set 2)
-      let isHome = teamAKey !== 'home'
-
-      // If court switch has happened at 8 points, switch again
-      if (data.match?.set5CourtSwitched) {
-        isHome = !isHome
-      }
-
-      return isHome
-    }
-
-    // Sets 2, 3, 4: Teams alternate sides (automatic if no override)
-    // Set 1: Team A left, Team B right
-    // Set 2: Team A right, Team B left (switched)
-    // Set 3: Team A left, Team B right (switched back - same as Set 1)
-    // Set 4: Team A right, Team B left (switched - same as Set 2)
-    // Pattern: odd sets (1, 3) have Team A on left, even sets (2, 4) have Team A on right
-    return setIndex % 2 === 1 ? (teamAKey === 'home') : (teamAKey !== 'home')
-  }, [data?.set, data?.match?.set5CourtSwitched, data?.match?.set5LeftTeam, data?.match?.setLeftTeamOverrides, teamAKey])
+    // The one rule of the sides (domain/rules getSideAForSet), the same the
+    // live state (side_a), the referee, the bench and the corrections card
+    // use: a set's override, odd sets A left / even sets A right, set 5 its
+    // coin toss (else set 4's sides), flipped at the change of courts at 8
+    const sideA = getSideAForSet(data.set.index, data.match)
+    return sideA === 'left' ? teamAKey === 'home' : teamAKey !== 'home'
+  }, [data?.set, data?.match, teamAKey])
 
   // Calculate sets won by each team
   const setsWon = useMemo(() => {
@@ -4614,19 +4560,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // A/B Model: Team A = coin toss winner (constant), side_a = which side they're on
       const teamAKey = match?.coinTossTeamA || 'home'
       const teamBKey = teamAKey === 'home' ? 'away' : 'home'
-      const setLeftTeamOverrides = match?.setLeftTeamOverrides || {}
 
-      // Determine which side Team A is on this set
-      // setLeftTeamOverrides stores 'A' or 'B', set5LeftTeam stores 'A' or 'B'
-      let sideA // 'left' or 'right'
-      if (setLeftTeamOverrides[setIndex] !== undefined) {
-        sideA = setLeftTeamOverrides[setIndex] === 'A' ? 'left' : 'right'
-      } else if (setIndex === 5 && match?.set5CourtSwitched && match?.set5LeftTeam) {
-        sideA = match.set5LeftTeam === 'A' ? 'left' : 'right'
-      } else {
-        // Default: Team A on left in odd sets (1, 3, 5), right in even sets (2, 4)
-        sideA = setIndex % 2 === 1 ? 'left' : 'right'
-      }
+      // Which side Team A is on this set: the scorer's court's rule (in set 5
+      // its coin toss and the change of courts at 8, which this guessed by
+      // the set number)
+      const sideA = getSideAForSet(setIndex, match || {})
 
       // Derive left/right team keys from A/B model
       const leftTeamKey = sideA === 'left' ? teamAKey : teamBKey
@@ -6351,10 +6289,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             // Get team A/B assignments for set 5
             const set4TeamAKey = data?.match?.coinTossTeamA || 'home'
 
-            // Determine current positions at end of set 4 (set 2, 3, 4 have teams switched)
-            const set4LeftIsHome = set4TeamAKey !== 'home'
-            const set4LeftTeamKey = set4LeftIsHome ? 'home' : 'away'
-            const set4LeftTeamLabel = set4LeftTeamKey === set4TeamAKey ? 'A' : 'B'
+            // The sides the set that ended (4; best-of-3: 2) finished on, by the
+            // scorer's court's rule (its override too, not only the set number)
+            const set4LeftTeamLabel = getLeftTeamLabelForSet(setIndex, matchRecord || data?.match || {})
 
             // Get current serve at end of set 4
             const currentServe = getCurrentServe()
@@ -14202,15 +14139,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 {/* Confirm */}
                                 <button
                                   onClick={async () => {
-                                    // Save to DB
-                                    // 1. setLeftTeamOverrides
-                                    // 2. set5FirstServe
+                                    // Save to DB: the set 5 coin toss in the fields
+                                    // every set 5 setup writes and the court reads
+                                    // (set5LeftTeam, not an override [5] the
+                                    // scorer's court did not read)
                                     const sideVal = set5CoinTossDraft.sideA === 'left' ? 'A' : 'B'
-                                    const overrides = data?.match?.setLeftTeamOverrides || {}
 
                                     await db.matches.update(matchId, {
-                                      setLeftTeamOverrides: { ...overrides, 5: sideVal },
-                                      set5FirstServe: set5CoinTossDraft.serve // 'A' or 'B'
+                                      set5LeftTeam: sideVal,
+                                      set5FirstServe: set5CoinTossDraft.serve, // 'A' or 'B'
+                                      set5CourtSwitched: false
                                     })
                                     // Dexie alone reaches no tablet: push sides / serve to them
                                     syncSet5Setup({ duringInterval: !!betweenSetsCountdown })

@@ -136,9 +136,9 @@ async function ready() {
   await settle()
 }
 async function startRally() {
-  await waitFor(() => expect(button('Start rally')).toBeTruthy(), { timeout: 5000 })
+  await waitFor(() => expect(button('Start rally')).toBeTruthy())
   fireEvent.click(button('Start rally'))
-  await waitFor(() => expect(button('Point A')).toBeTruthy(), { timeout: 5000 })
+  await waitFor(() => expect(button('Point A')).toBeTruthy())
   await settle()
 }
 async function point(label) {
@@ -149,7 +149,7 @@ async function point(label) {
   expect((await ofType('point')).length).toBe(before + 1)
 }
 async function switchCourts(matchId) {
-  await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+  await waitFor(() => expect(switchOpen()).toBe(true))
   fireEvent.click(button('Switch courts'))
   await waitFor(async () => expect(await switched(matchId)).toBe(true))
   await waitFor(() => expect(switchOpen()).toBe(false))
@@ -157,7 +157,7 @@ async function switchCourts(matchId) {
 }
 // The change back: the dialog says so, and confirming clears the change
 async function switchCourtsBack(matchId) {
-  await waitFor(() => expect(switchBackOpen()).toBe(true), { timeout: 5000 })
+  await waitFor(() => expect(switchBackOpen()).toBe(true))
   expect(document.body.textContent).toContain('the teams switch courts back')
   fireEvent.click(button('Switch courts back'))
   await waitFor(async () => expect(await switched(matchId)).toBe(false))
@@ -166,13 +166,13 @@ async function switchCourtsBack(matchId) {
 }
 // "Decision change" on the scoring screen (the rally button)
 async function screenDecisionChange() {
-  await waitFor(() => expect(button('Decision change')).toBeTruthy(), { timeout: 5000 })
+  await waitFor(() => expect(button('Decision change')).toBeTruthy())
   fireEvent.click(button('Decision change'))
   await waitFor(() => expect(decisionOpen()).toBe(true))
 }
 // "Decision change" of the open dialog whose main button is `dialogButtonText`
 async function dialogDecisionChange(dialogButtonText) {
-  await waitFor(() => expect(button(dialogButtonText)).toBeTruthy(), { timeout: 5000 })
+  await waitFor(() => expect(button(dialogButtonText)).toBeTruthy())
   const main = button(dialogButtonText)
   const dc = [...main.closest('div').querySelectorAll('button')].find(b => b.textContent.trim() === 'Decision change')
   fireEvent.click(dc)
@@ -215,7 +215,7 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
     await screenDecisionChange()
     await confirmDecision()
     expect(await score()).toEqual([8, 6])
-    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(switchOpen()).toBe(true))
     expect(document.body.textContent).toContain('8 : 6')
 
     await switchCourts(matchId)
@@ -236,12 +236,12 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
     await ready()
     await point('Point A')
     expect(await score()).toEqual([8, 7])
-    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(switchOpen()).toBe(true))
 
     await dialogDecisionChange('Switch courts')
     await confirmDecision()
     expect(await score()).toEqual([7, 8])
-    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(switchOpen()).toBe(true))
     expect(document.body.textContent).toContain('7 : 8')
     expect(await switched(matchId)).toBe(false)
 
@@ -259,13 +259,13 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
     mount(matchId)
     await ready()
     await point('Point A')
-    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(switchOpen()).toBe(true))
 
     await dialogDecisionChange('Switch courts')
     expect(switchOpen()).toBe(false)
     await cancelDecision()
     expect(await score()).toEqual([8, 7])
-    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(switchOpen()).toBe(true))
     expect(document.body.textContent).toContain('8 : 7')
 
     await switchCourts(matchId)
@@ -278,7 +278,7 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
     mount(matchId)
     await ready()
     await point('Point A')
-    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(switchOpen()).toBe(true))
 
     await dialogDecisionChange('Switch courts')
     chooseReplay()
@@ -290,7 +290,7 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
 
     // the next 8th point opens it
     await point('Point B')
-    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(switchOpen()).toBe(true))
     cleanup()
   }, 60000)
 
@@ -300,13 +300,13 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
     await ready()
     await point('Point A')
     expect(await score()).toEqual([15, 13])
-    await waitFor(() => expect(setEndOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(setEndOpen()).toBe(true))
 
     await dialogDecisionChange('Confirm')
     expect(setEndOpen()).toBe(false)
     await cancelDecision()
     expect(await score()).toEqual([15, 13])
-    await waitFor(() => expect(setEndOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(setEndOpen()).toBe(true))
     cleanup()
   }, 60000)
 
@@ -319,7 +319,7 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
     await screenDecisionChange()
     await confirmDecision()
     expect(await score()).toEqual([15, 13])
-    await waitFor(() => expect(setEndOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(setEndOpen()).toBe(true))
     expect(switchOpen()).toBe(false)
     cleanup()
   }, 60000)
@@ -341,7 +341,7 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
     await screenDecisionChange()
     await confirmDecision()
     expect(await score()).toEqual([7, 7])
-    await waitFor(() => expect(switchBackOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(switchBackOpen()).toBe(true))
     expect(switchOpen()).toBe(false)
     expect(document.body.textContent).toContain('Court switch back required')
     expect(document.body.textContent).toContain('7 : 7')
@@ -353,7 +353,7 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
 
     await point('Point B')
     expect(await score()).toEqual([7, 8])
-    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(switchOpen()).toBe(true))
     expect(document.body.textContent).toContain('7 : 8')
     await switchCourts(matchId)
     await waitFor(() => expect(teamAOnLeft()).toBe(false))
@@ -378,7 +378,7 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
 
     await point('Point A')
     expect(await score()).toEqual([8, 7])
-    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(switchOpen()).toBe(true))
     await switchCourts(matchId)
     await waitFor(() => expect(teamAOnLeft()).toBe(false))
     cleanup()
@@ -407,7 +407,7 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
     await switchCourts(matchId)
     await screenDecisionChange()
     await confirmDecision()
-    await waitFor(() => expect(switchBackOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(switchBackOpen()).toBe(true))
 
     await dialogDecisionChange('Switch courts back')
     expect(switchBackOpen()).toBe(false)
@@ -464,7 +464,7 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
       await switchCourts(matchId)
       await screenDecisionChange()
       await confirmDecision()
-      await waitFor(() => expect(switchBackOpen()).toBe(true), { timeout: 5000 })
+      await waitFor(() => expect(switchBackOpen()).toBe(true))
 
       fireEvent.keyDown(window, { key: 'Enter' })
       await settle()
@@ -488,7 +488,7 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
     await switchCourts(matchId)
     await screenDecisionChange()
     await confirmDecision()
-    await waitFor(() => expect(switchBackOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(switchBackOpen()).toBe(true))
 
     // a point gets on the score while the dialog is still open (taps under it)
     await point('Point B')
@@ -510,7 +510,7 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
     await switchCourts(matchId)
     await screenDecisionChange()
     await confirmDecision()
-    await waitFor(() => expect(switchBackOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(switchBackOpen()).toBe(true))
 
     cleanup()
     mount(matchId)
@@ -562,7 +562,7 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
     await waitFor(() => expect(teamAOnLeft()).toBe(true))
 
     await point('Point A')
-    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(switchOpen()).toBe(true))
     cleanup()
   }, 60000)
 
@@ -586,7 +586,7 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
 
     // the next 8th point asks for it again
     await point('Point B')
-    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(switchOpen()).toBe(true))
     cleanup()
   }, 60000)
 
@@ -597,7 +597,7 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
     mount(matchId)
     await ready()
     await point('Point A')
-    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(switchOpen()).toBe(true))
     await dialogDecisionChange('Switch courts')
     await confirmDecision()
     expect(await score()).toEqual([7, 7])
@@ -607,7 +607,7 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
     await undoLast()
     expect(await score()).toEqual([8, 6])
     expect(await switched(matchId)).toBe(false)
-    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(switchOpen()).toBe(true))
     await switchCourts(matchId)
     await waitFor(() => expect(teamAOnLeft()).toBe(false))
     cleanup()
@@ -621,7 +621,7 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
     mount(matchId)
     await ready()
     await point('Point A')
-    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(switchOpen()).toBe(true))
 
     cleanup()
     mount(matchId)
@@ -640,7 +640,7 @@ describe('Scoreboard: the set-5 change of courts and the set end on every point 
     mount(matchId)
     await ready()
     await point('Point A')
-    await waitFor(() => expect(switchOpen()).toBe(true), { timeout: 5000 })
+    await waitFor(() => expect(switchOpen()).toBe(true))
     await dialogDecisionChange('Switch courts')
 
     cleanup()

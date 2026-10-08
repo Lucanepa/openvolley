@@ -25,6 +25,7 @@ const SURFACE = {
   boxShadow: 'var(--ov-shadow-card)'
 }
 import { setsToWin } from '../utils/matchFormat'
+import { getSideAForSet } from '../domain/rules'
 import { matchDiscPaint, teamLiberoColour, markColourOn } from '../utils/teamColours'
 
 export default function MatchEntry({ matchId, team, onBack, embedded = false }) {
@@ -184,47 +185,16 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     fetchData()
   }, [matchId, updateFromMatchData])
 
-  // Determine which side the team is on (same logic as Scoreboard)
+  // Which side the team is on: the scorer's court's own rule (getSideAForSet:
+  // a set's override, odd sets A left / even sets A right, set 5 its coin toss
+  // and the change of courts at 8). It had A on the right in every set from 2
+  // to 4 (set 3 is A's left) and read no override.
   const teamSide = useMemo(() => {
     if (!data?.set || !data?.match) return 'left'
-    
-    // Get Team A and Team B from coin toss
     const teamAKey = data.match.coinTossTeamA || 'home'
-    const teamBKey = data.match.coinTossTeamB || 'away'
-    
-    // Set 1: Team A on left
-    if (data.set.index === 1) {
-      return team === teamAKey ? 'left' : 'right'
-    }
-    
-    // Set 5: Special case with court switch at 8 points
-    if (data.set.index === 5) {
-      // Use set5LeftTeam if specified
-      if (data.match.set5LeftTeam) {
-        const leftTeamKey = data.match.set5LeftTeam === 'A' ? teamAKey : teamBKey
-        let isLeft = team === leftTeamKey
-        
-        // If court switch has happened at 8 points, switch again
-        if (data.match.set5CourtSwitched) {
-          isLeft = !isLeft
-        }
-        
-        return isLeft ? 'left' : 'right'
-      }
-      
-      // Fallback: Set 5 starts with teams switched (like set 2+)
-      let isLeft = team !== teamAKey
-      
-      // If court switch has happened at 8 points, switch again
-      if (data.match.set5CourtSwitched) {
-        isLeft = !isLeft
-      }
-      
-      return isLeft ? 'left' : 'right'
-    }
-    
-    // Set 2, 3, 4: Teams switch sides (Team A goes right, Team B goes left)
-    return team === teamAKey ? 'right' : 'left'
+    const sideA = getSideAForSet(data.set.index, data.match)
+    const isTeamA = team === teamAKey
+    return isTeamA ? sideA : (sideA === 'left' ? 'right' : 'left')
   }, [data?.set, data?.match, team])
 
   // Get team info

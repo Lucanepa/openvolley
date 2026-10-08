@@ -78,7 +78,7 @@ describe('useActionLiveQuery', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const before = api.renders.length
     await action(api, 'sets', () => api.setDialog(null))
-    await waitFor(() => expect(api.renders[api.renders.length - 1]).toBe('home=1 dialog=null'), { timeout: 3000 })
+    await waitFor(() => expect(api.renders[api.renders.length - 1]).toBe('home=1 dialog=null'))
     expect(api.renders.slice(before)).toEqual(['home=1 dialog=null'])
     expect(warn).not.toHaveBeenCalled()
     warn.mockRestore()
@@ -89,7 +89,7 @@ describe('useActionLiveQuery', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const t0 = Date.now()
     await action(api, 'other', () => api.setDialog(null))
-    await waitFor(() => expect(api.renders[api.renders.length - 1]).toBe('home=0 dialog=null'), { timeout: 2000 })
+    await waitFor(() => expect(api.renders[api.renders.length - 1]).toBe('home=0 dialog=null'))
     expect(Date.now() - t0).toBeGreaterThanOrEqual(COMMIT_FLUSH_FALLBACK_MS - 20)
     expect(warn).toHaveBeenCalled()
     warn.mockRestore()

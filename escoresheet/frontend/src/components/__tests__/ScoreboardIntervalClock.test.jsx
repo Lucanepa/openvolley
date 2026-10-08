@@ -63,7 +63,7 @@ describe('Scoreboard: the set interval clock', () => {
     ])
 
     render(<ScaleProvider><AlertProvider><LoggingProvider><Scoreboard matchId={matchId} /></LoggingProvider></AlertProvider></ScaleProvider>)
-    await waitFor(() => expect(button('End set interval')).toBeTruthy(), { timeout: 8000 })
+    await waitFor(() => expect(button('End set interval')).toBeTruthy())
     fireEvent.click(button('End set interval'))
     await waitFor(() => expect(button('End set interval')).toBeFalsy())
 
@@ -79,14 +79,14 @@ describe('Scoreboard: the set interval clock', () => {
       await db.events.add({ matchId, setIndex: 2, type: 'set_end', payload: {}, seq: 4, ts: end2 })
     })
 
-    await waitFor(() => expect(button('End set interval')).toBeTruthy(), { timeout: 8000 })
+    await waitFor(() => expect(button('End set interval')).toBeTruthy())
     await sleep(600)
     // still running, with the full 3 minutes (not what the 1-2 interval had left)
     expect(button('End set interval')).toBeTruthy()
     expect(countdown(/^\d+(:\d\d)?$/)).toEqual(expect.arrayContaining([expect.stringMatching(/^(3:00|2:[45]\d)$/)]))
     vi.mocked(Date.now).mockRestore()
     cleanup()
-  }, 30000)
+  })
 })
 
 describe('Scoreboard: the set interval starts at the set end', () => {
@@ -112,9 +112,9 @@ describe('Scoreboard: the set interval starts at the set end', () => {
     ])
 
     render(<ScaleProvider><AlertProvider><LoggingProvider><Scoreboard matchId={matchId} /></LoggingProvider></AlertProvider></ScaleProvider>)
-    await waitFor(() => expect(countdown(/^\d:\d\d$/).length).toBeGreaterThan(0), { timeout: 8000 })
+    await waitFor(() => expect(countdown(/^\d:\d\d$/).length).toBeGreaterThan(0))
     // 180 - 10 s: 2:50, read a few seconds later at worst (not 180 - 55 s: 2:05)
     expect(countdown(/^\d:\d\d$/)).toEqual(expect.arrayContaining([expect.stringMatching(/^2:(3\d|4\d|50)$/)]))
     cleanup()
-  }, 30000)
+  })
 })

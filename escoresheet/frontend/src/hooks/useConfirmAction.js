@@ -60,8 +60,10 @@ function swallowFollowingClicks(ms) {
   // Capture on window: runs before React's listener on the root. Added while
   // the confirming click is being dispatched, so it does not see that click.
   window.addEventListener('click', swallow, true)
+  // The page may be gone when the timer fires (a test environment torn down
+  // with the guard still on: an uncaught "window is not defined")
   const remove = () => {
-    window.removeEventListener('click', swallow, true)
+    if (typeof window !== 'undefined') window.removeEventListener('click', swallow, true)
     activeGuards.delete(remove)
   }
   activeGuards.add(remove)

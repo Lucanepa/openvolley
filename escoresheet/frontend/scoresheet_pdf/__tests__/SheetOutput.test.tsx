@@ -172,7 +172,7 @@ describe('Save PDF', () => {
     expect(clicked).toHaveLength(0)
 
     view.rerender(<App matchData={first} autoAction="save" dataReady />)
-    await waitFor(() => expect(clicked).toHaveLength(1), { timeout: 3000 })
+    await waitFor(() => expect(clicked).toHaveLength(1))
     expect(clicked[0].download).toBe('20261007_382208_KSC-Wiedikon-H1_vs_Volley-Spada-Academica-H1.pdf')
     // a valid A3 PDF, the sheet at its true size, with its metadata
     expect(pdfCalls.find(c => c[0] === 'new')[1]).toMatchObject({ orientation: 'landscape', unit: 'mm', format: 'a3' })
@@ -199,7 +199,7 @@ describe('Save PDF', () => {
     try {
       const view = render(<App matchData={fixture()} autoAction="preview" />)
       await act(async () => { view.getByText('Save PDF').click() })
-      await waitFor(() => expect(clicked).toHaveLength(1), { timeout: 3000 })
+      await waitFor(() => expect(clicked).toHaveLength(1))
       const name = clicked[0].download
       expect(view.getByTestId('pdf-notice').textContent).toContain('Saving')
       const path = `/home/luca/Downloads/${name.replace('.pdf', ' (1).pdf')}`

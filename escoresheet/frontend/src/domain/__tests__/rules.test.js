@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { getFirstServeForSet, getSetResult, isDecidingSet, scoreFromPointEvents, getSideAForSet } from '../rules'
+import { getFirstServeForSet, getSetResult, isDecidingSet, scoreFromPointEvents, getSideAForSet, getLeftTeamLabelForSet } from '../rules'
 
 describe('getSideAForSet', () => {
-  it('odd sets A left, even sets A right', () => {
+  it('sets 1-4: odd sets A left, even sets A right (the teams change sides after every set)', () => {
     expect(getSideAForSet(1, {})).toBe('left')
     expect(getSideAForSet(2, {})).toBe('right')
-    expect(getSideAForSet(5, {})).toBe('left')
+    expect(getSideAForSet(3, {})).toBe('left')
+    expect(getSideAForSet(4, {})).toBe('right')
   })
 
   it('set 5 follows the coin toss left team (A/B), before and after the 8-point switch', () => {
@@ -16,9 +17,38 @@ describe('getSideAForSet', () => {
     expect(getSideAForSet(3, { set5LeftTeam: 'B' })).toBe('left')
   })
 
-  it('a manual override (left team A/B) wins', () => {
+  // The scorer's court (Scoreboard leftIsHome) put team A on the RIGHT in a
+  // set 5 without its coin toss (the side set 4 ended on, the default the set
+  // end proposes); the referee's fallback and the live state put A on the LEFT.
+  it('set 5 before its coin toss is written: the side the set before ended on, not odd = left', () => {
+    expect(getSideAForSet(5, {})).toBe('right')
+    expect(getSideAForSet(5, { set5CourtSwitched: true })).toBe('left')
+    expect(getSideAForSet(5, { setLeftTeamOverrides: { 4: 'A' } })).toBe('left')
+    // best-of-3: the decider (index 5) follows set 2
+    expect(getSideAForSet(5, { bestOf: 3, setLeftTeamOverrides: { 2: 'A', 4: 'B' } })).toBe('left')
+    expect(getSideAForSet(5, { bestOf: '3' })).toBe('right')
+  })
+
+  it('a manual override (left team A/B) wins in sets 1-4', () => {
     expect(getSideAForSet(2, { setLeftTeamOverrides: { 2: 'A' } })).toBe('left')
-    expect(getSideAForSet(5, { setLeftTeamOverrides: { 5: 'B' }, set5LeftTeam: 'A' })).toBe('right')
+    expect(getSideAForSet(1, { setLeftTeamOverrides: { 1: 'B' } })).toBe('right')
+    // an empty / null entry is no override
+    expect(getSideAForSet(2, { setLeftTeamOverrides: { 2: null } })).toBe('right')
+  })
+
+  // Every set 5 setup (the inline setup, its Switch sides, the corrections
+  // card) writes set5LeftTeam, the field the scorer's court reads; an older
+  // match's override [5] counts only without it. Both flip at 8.
+  it('set 5: set5LeftTeam wins over an older override [5]; the override alone counts, flipped at 8', () => {
+    expect(getSideAForSet(5, { setLeftTeamOverrides: { 5: 'B' }, set5LeftTeam: 'A' })).toBe('left')
+    expect(getSideAForSet(5, { setLeftTeamOverrides: { 5: 'B' } })).toBe('right')
+    expect(getSideAForSet(5, { setLeftTeamOverrides: { 5: 'B' }, set5CourtSwitched: true })).toBe('left')
+  })
+
+  it('getLeftTeamLabelForSet names the left team A/B', () => {
+    expect(getLeftTeamLabelForSet(1, {})).toBe('A')
+    expect(getLeftTeamLabelForSet(4, {})).toBe('B')
+    expect(getLeftTeamLabelForSet(4, { setLeftTeamOverrides: { 4: 'A' } })).toBe('A')
   })
 })
 

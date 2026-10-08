@@ -60,7 +60,7 @@ describe('Scoreboard: confirming a starting line-up', () => {
 
     render(<ScaleProvider><AlertProvider><LoggingProvider><Scoreboard matchId={matchId} /></LoggingProvider></AlertProvider></ScaleProvider>)
     const open = () => [...document.querySelectorAll('button')].find(b => /^LineupA/.test(b.textContent.trim()))
-    await waitFor(() => expect(open()).toBeTruthy(), { timeout: 8000 })
+    await waitFor(() => expect(open()).toBeTruthy())
     fireEvent.click(open())
     await waitFor(() => expect(document.querySelector('[role=dialog]')).toBeTruthy())
     const dialog = () => document.querySelector('[role=dialog]')
@@ -82,5 +82,5 @@ describe('Scoreboard: confirming a starting line-up', () => {
     // never the dialog gone with the court still empty, or the other way round
     expect(states.filter(st => st.dialog === st.saved)).toEqual([])
     cleanup()
-  }, 30000)
+  })
 })

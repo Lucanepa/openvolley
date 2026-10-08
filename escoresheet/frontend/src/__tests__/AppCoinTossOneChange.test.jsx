@@ -29,9 +29,9 @@ describe('App: confirming the coin toss', () => {
     })
 
     mountApp()
-    await waitFor(() => expect(button('Continue match')).toBeTruthy(), { timeout: 8000 })
+    await waitFor(() => expect(button('Continue match')).toBeTruthy())
     fireEvent.click(button('Continue match'))
-    await waitFor(() => expect(button('Confirm coin toss result')).toBeTruthy(), { timeout: 8000 })
+    await waitFor(() => expect(button('Confirm coin toss result')).toBeTruthy())
 
     const { states, stop } = track(() => {
       const text = document.body.textContent
@@ -56,5 +56,5 @@ describe('App: confirming the coin toss', () => {
     expect(states.filter(s => s.returnToMatch)).toEqual([])
     expect(states.filter(s => s.loading)).toEqual([])
     expect(states.filter(s => !s.confirm && !s.scoreboard)).toEqual([])
-  }, 30000)
+  })
 })

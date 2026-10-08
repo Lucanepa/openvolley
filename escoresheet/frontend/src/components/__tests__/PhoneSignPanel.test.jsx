@@ -158,7 +158,7 @@ describe('PhoneSignPanel', () => {
     await waitFor(() => expect(api.waitPhoneSign).toHaveBeenCalledTimes(1))
     // 16 minutes later (the tablet slept): one more try, then it stops
     clock.mockReturnValue(born + 16 * 60 * 1000)
-    await waitFor(() => expect(api.waitPhoneSign).toHaveBeenCalledTimes(2), { timeout: 4000 })
+    await waitFor(() => expect(api.waitPhoneSign).toHaveBeenCalledTimes(2))
     expect(await screen.findByTestId('phone-sign-status')).toHaveTextContent(en.phoneSign.expired)
     await new Promise((r) => setTimeout(r, 2500))
     expect(api.waitPhoneSign).toHaveBeenCalledTimes(2)

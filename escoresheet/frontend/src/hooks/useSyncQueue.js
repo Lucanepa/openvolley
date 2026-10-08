@@ -515,12 +515,21 @@ export async function pruneSyncQueue({ retentionMs = SENT_RETENTION_MS, now = Da
 // This dispatches a custom event that the debounced flush listener picks up.
 // The hook is installed once at module level so it works for all callers.
 let _syncQueueHookInstalled = false
+/**
+ * The 'sync-queue-write' event, when there is still a page to send it to: the
+ * timer below can fire after it is gone (a test environment torn down right
+ * after a write: an uncaught "window is not defined" failed whole suite runs).
+ */
+export function notifySyncQueueWrite() {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new Event('sync-queue-write'))
+}
 function installSyncQueueHook() {
   if (_syncQueueHookInstalled) return
   _syncQueueHookInstalled = true
   db.sync_queue.hook('creating', function () {
     // Dispatch after the current microtask completes (Dexie hooks run inside transaction)
-    setTimeout(() => window.dispatchEvent(new Event('sync-queue-write')), 0)
+    setTimeout(notifySyncQueueWrite, 0)
   })
 }
 installSyncQueueHook()
