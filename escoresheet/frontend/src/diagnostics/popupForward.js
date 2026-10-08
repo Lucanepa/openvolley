@@ -111,6 +111,40 @@ export async function desktopWindowRole(win = typeof window !== 'undefined' ? wi
   }
 }
 
+// desktopWindowRole's answer per window: the app is asked once a page
+const roles = new WeakMap()
+
+/**
+ * desktopWindowRole, asked once per window and kept: the diagnostics sink,
+ * the desktop app's update at start and isDesktopScoretable
+ * (utils/appLifecycle) share the one answer.
+ */
+export function desktopWindowRoleOnce(win = typeof window !== 'undefined' ? window : undefined) {
+  if (!win || (typeof win !== 'object' && typeof win !== 'function')) return desktopWindowRole(win)
+  let entry = roles.get(win)
+  if (!entry) {
+    entry = { role: null, promise: desktopWindowRole(win) }
+    // kept on the side: the sink's lines wait no longer than they did
+    entry.promise.then((role) => { entry.role = role })
+    roles.set(win, entry)
+  }
+  return entry.promise
+}
+
+/** Tests only: ask the app again in this window. */
+export function forgetDesktopWindowRole(win = typeof window !== 'undefined' ? window : undefined) {
+  if (win) roles.delete(win)
+}
+
+/** desktopWindowRoleOnce's answer once the app has given it, else null. */
+export function knownDesktopWindowRole(win = typeof window !== 'undefined' ? window : undefined) {
+  try {
+    return (win && roles.get(win)?.role) || null
+  } catch {
+    return null
+  }
+}
+
 /**
  * The recorder's sink in a desktop window: the file's (`fileSink`) in the
  * scoretable, which then also takes the pop-ups' lines (`onMain`), or
@@ -120,7 +154,7 @@ export async function desktopWindowRole(win = typeof window !== 'undefined' ? wi
 export function desktopDiagnosticsSink({ win = typeof window !== 'undefined' ? window : undefined, fileSink, page = null, sessionId, onMain, Channel } = {}) {
   let target = null
   let closed = false
-  const ready = desktopWindowRole(win).then(({ popup, label }) => {
+  const ready = desktopWindowRoleOnce(win).then(({ popup, label }) => {
     target = popup ? popupForwardSink({ win, label, page, sessionId, Channel }) : fileSink
     if (closed) {
       try { target.close?.() } catch { /* ignore */ }
