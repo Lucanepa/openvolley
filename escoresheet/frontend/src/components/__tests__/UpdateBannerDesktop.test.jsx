@@ -38,6 +38,7 @@ afterEach(() => {
   cleanup()
   sessionStorage.clear()
   forgetDesktopWindowRole(window)
+  document.body.inert = false
   delete window.__TAURI_INTERNALS__
   Object.defineProperty(window, 'location', { value: originalLocation, configurable: true, writable: true })
   if (originalSW) Object.defineProperty(navigator, 'serviceWorker', originalSW)
@@ -50,10 +51,15 @@ describe('UpdateBanner', () => {
   it('desktop app: applies the waiting build at once, no question', async () => {
     window.__TAURI_INTERNALS__ = { invoke: vi.fn(), metadata: { currentWindow: { label: 'main' } } }
     const { waiting, replace } = withWaitingWorker()
+    let inertAtSkip = null
+    const skip = waiting.postMessage.getMockImplementation()
+    waiting.postMessage.mockImplementation((msg) => { inertAtSkip = document.body.inert; skip(msg) })
     render(<UpdateBanner />)
     await waitFor(() => expect(replace).toHaveBeenCalledTimes(1))
     expect(waiting.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' })
     expect(screen.queryByRole('dialog')).toBeNull()
+    // no tap reaches the page between the apply and its reload
+    expect(inertAtSkip).toBe(true)
   })
 
   it('browser: still asks', async () => {
