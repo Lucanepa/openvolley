@@ -113,6 +113,18 @@ describe('diagnostics helpers', () => {
     document.body.innerHTML = ''
   })
 
+  it('names a kit button without id or label by its caption, never one with a digit or a field', () => {
+    document.body.innerHTML = '<div role="dialog"><button class="inline-flex">Confirm time-out</button><button class="inline-flex"> Cancel </button><button class="inline-flex">771 234</button><button class="inline-flex">Team PIN</button><div class="row">Claudia Moser</div><input class="f" value="Moser"></div>'
+    const [confirm, cancel, pin, team] = document.querySelectorAll('button')
+    expect(elementId(confirm).id).toBe('Confirm time-out')
+    expect(elementId(cancel).id).toBe('Cancel')
+    expect(elementId(pin).id).toBe('.inline-flex')
+    expect(elementId(team).id).toBe('Team PIN')
+    expect(elementId(document.querySelector('.row')).id).toBe('.row')
+    expect(elementId(document.querySelector('input')).id).toBe('.f')
+    document.body.innerHTML = ''
+  })
+
   it('reads the engine from the user agent', () => {
     const gtk = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15'
     expect(engineInfo(gtk)).toMatchObject({ webkit: '605.1.15', chrome: null, linux: true, safari: '18.0' })

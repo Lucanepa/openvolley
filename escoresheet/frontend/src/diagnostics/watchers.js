@@ -12,7 +12,8 @@
  *   dialog.*  open / close / content change of every [role=dialog|alertdialog]
  *             with a title key and a hash of its text (never the text itself)
  *   ui.*      clicks and keys (an element's id / data-testid / data-help-id,
- *             never its text; keys typed into a field are not recorded)
+ *             or a button's caption without digits, never a field's or
+ *             a row's text; keys typed into a field are not recorded)
  *   perf.*    long tasks and layout shifts where the engine has them
  *             (WebKitGTK has neither: geo.jump is the measure there)
  * Returns the cleanup.
@@ -69,18 +70,27 @@ export function dialogTitle(el) {
   }
 }
 
-/** The id a click or key is recorded under: never the element's text. */
+/**
+ * The id a click or key is recorded under: test id, help id, id, aria-label or
+ * title, and for a button or link without any of them its short caption; a
+ * label or caption with a digit never (a keypad's "7", a shown PIN).
+ */
 export function elementId(el) {
   if (!el || el.nodeType !== 1) return null
   const pick = el.closest?.('[data-testid], [data-help-id], button, a, [role="button"], [role="switch"], [role="tab"], [role="menuitem"], input, select, textarea, label, [id]') || el
   const attr = (n) => pick.getAttribute?.(n)
   // a label with a digit (a keypad's "7") could spell a PIN over several clicks
   const label = (v) => (v && !/\d/.test(v) ? redactDiagText(v).slice(0, 40) : null)
+  // the kit's dialog buttons have no id or label: "Confirm time-out" and
+  // "Cancel" would both be ".inline-flex" (a field's or a row's text never)
+  const caption = () => (/^(BUTTON|A)$/.test(pick.tagName) || /^(button|menuitem|tab)$/.test(attr('role') || '')
+    ? label(String(pick.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60))
+    : null)
   const cls = typeof pick.className === 'string' ? pick.className.trim().split(/\s+/)[0] : ''
   return {
     tag: pick.tagName?.toLowerCase() || null,
     id: attr('data-testid') || attr('data-help-id') || attr('data-diag') || (pick.id ? redactDiagText(pick.id) : null) ||
-      label(attr('aria-label')) || label(attr('title')) || (cls ? `.${cls}` : null),
+      label(attr('aria-label')) || label(attr('title')) || caption() || (cls ? `.${cls}` : null),
     role: attr('role') || null,
     type: pick.tagName === 'INPUT' ? attr('type') || 'text' : null,
     dialog: !!pick.closest?.(DIALOG_SELECTOR)
