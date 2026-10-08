@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Pencil, Plus, Trash2 } from 'lucide-react'
 import { savedTeamsApi, errorKeyOf } from '../../lib/accountApi'
 import { apiFrom } from '../../lib/apiClient'
+import { selectAll } from '../../lib/selectAll'
 import { storeSavedTeamsBundle } from '../../db/savedTeams'
 import { seasonOptions, seasonOf, seasonLabel } from '../../domain/season'
 import { sportOf, beachSeasonOptions } from '../../domain/savedTeams'
@@ -293,7 +294,8 @@ function CompetitionModal({ form, sport = 'indoor', onClose, onSaved }) {
   useEffect(() => {
     if (!form || beach) return undefined
     let alive = true
-    apiFrom('svrz_games').select('league, gender').limit(5000).then(({ data }) => {
+    // Every row (paged past the server's row cap), so no league is missing
+    selectAll(() => apiFrom('svrz_games').select('id, league, gender')).then(({ data }) => {
       if (alive && Array.isArray(data)) setSvrzRows(data)
     })
     return () => { alive = false }

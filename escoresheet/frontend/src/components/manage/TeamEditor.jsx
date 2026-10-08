@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Plus, Trash2, X } from 'lucide-react'
 import { savedTeamsApi, errorKeyOf } from '../../lib/accountApi'
 import { apiFrom } from '../../lib/apiClient'
+import { selectAll } from '../../lib/selectAll'
 import { STAFF_ROLES, validateSavedRoster, MAX_PLAYERS, MAX_STAFF, sportOf } from '../../domain/savedTeams'
 import { InlineError } from './common'
 import { Button, DateField, Field, Input, Select, Checkbox, Switch, SectionHeader, EmptyInset, IconButton, confirmDialog, toast, cn } from '../../ui'
@@ -179,7 +180,8 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
   useEffect(() => {
     if (!online || !leagues.length) return undefined
     let alive = true
-    apiFrom('svrz_games').select('team_home, team_away').in('league', leagues).limit(2000).then(({ data }) => {
+    // Every game of these leagues (paged past the server's row cap)
+    selectAll(() => apiFrom('svrz_games').select('id, team_home, team_away').in('league', leagues)).then(({ data }) => {
       if (!alive || !Array.isArray(data)) return
       const names = new Set()
       for (const g of data) {

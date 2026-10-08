@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import { apiFrom } from '../../lib/apiClient'
+import { selectAll, DB_MAX_ROWS } from '../../lib/selectAll'
 import { ClipboardIcon } from '../icons'
 import { ChevronRight, Loader2, X } from 'lucide-react'
 import { Button, cn, IconButton } from '../../ui'
@@ -61,11 +62,11 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
 
     try {
       // Get user's match associations
-      const { data: userMatches, error: userMatchesError } = await apiFrom('user_matches')
-        .select('match_external_id, role, created_at')
+      // All of them, paged past the server's row cap, newest first
+      const { data: userMatches, error: userMatchesError } = await selectAll(() => apiFrom('user_matches')
+        .select('id, match_external_id, role, created_at')
         .eq('user_id', user.id)
-        .eq('sport_type', 'indoor')
-        .order('created_at', { ascending: false })
+        .eq('sport_type', 'indoor'), { order: [{ column: 'created_at', ascending: false }] })
 
       if (userMatchesError) {
         throw userMatchesError
@@ -78,21 +79,27 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
       }
 
       // Get match details for each match_external_id (which references matches.external_id)
-      const matchIds = userMatches.map(m => m.match_external_id)
-      const { data: matchDetails, error: matchError } = await apiFrom('matches')
-        // matches has no team_a/team_b/start_time columns (the backend refuses
-        // unknown ones): the teams are home_team/away_team, the date scheduled_at
-        .select('external_id, game_n, home_team, away_team, final_score, winner, status, scheduled_at, created_at')
-        .in('external_id', matchIds)
-        .eq('sport_type', 'indoor')
+      // external_id is unique, so a chunk of ids never returns more rows than
+      // the server's row cap
+      const matchIds = [...new Set(userMatches.map(m => m.match_external_id))]
+      const byExternalId = new Map()
+      for (let i = 0; i < matchIds.length; i += DB_MAX_ROWS) {
+        const { data: matchDetails, error: matchError } = await apiFrom('matches')
+          // matches has no team_a/team_b/start_time columns (the backend refuses
+          // unknown ones): the teams are home_team/away_team, the date scheduled_at
+          .select('external_id, game_n, home_team, away_team, final_score, winner, status, scheduled_at, created_at')
+          .in('external_id', matchIds.slice(i, i + DB_MAX_ROWS))
+          .eq('sport_type', 'indoor')
 
-      if (matchError) {
-        throw matchError
+        if (matchError) {
+          throw matchError
+        }
+        for (const m of matchDetails || []) byExternalId.set(m.external_id, m)
       }
 
       // Combine data
-      const combined = userMatches.map(um => {
-        const match = matchDetails?.find(m => m.external_id === um.match_external_id) || {}
+      const combined = userMatches.map(({ id: _linkId, ...um }) => {
+        const match = byExternalId.get(um.match_external_id) || {}
         return {
           ...um,
           ...match,

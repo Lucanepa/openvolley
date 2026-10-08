@@ -9,27 +9,30 @@ vi.mock('../../hooks/useScaledLayout', () => ({ useScaledLayout: () => ({ scaleF
 vi.mock('../../utils/backendConfig', () => ({ getCloudApiUrl: (p) => `https://api.test${p}` }))
 
 // apiFrom('svrz_games'): a thenable builder that records its calls and answers
-// from `api.rows` (or with `api.error`), applying eq/gte/order and the row cap
-// (`api.maxRows`) like the server does.
+// from `api.rows` (or with `api.error`), applying eq/gte/gt/order/limit and the
+// row cap (`api.maxRows`) like the server does.
 const api = vi.hoisted(() => ({ rows: [], error: null, queries: [], maxRows: 1000 }))
 vi.mock('../../lib/apiClient', () => ({
   apiFrom: (table) => {
-    const q = { table, select: null, eq: {}, gte: {}, order: [] }
+    const q = { table, select: null, eq: {}, gte: {}, gt: {}, order: [], limit: null }
     api.queries.push(q)
     const b = {
       select: (cols) => { q.select = cols; return b },
       eq: (col, v) => { q.eq[col] = v; return b },
       gte: (col, v) => { q.gte[col] = v; return b },
+      gt: (col, v) => { q.gt[col] = v; return b },
+      limit: (n) => { q.limit = n; return b },
       order: (col, opts) => { q.order.push({ col, ascending: opts?.ascending !== false }); return b },
       then: (resolve, reject) => {
         if (api.error) return Promise.resolve({ data: null, error: api.error }).then(resolve, reject)
         const data = api.rows.filter(r =>
           Object.entries(q.eq).every(([c, v]) => r[c] === v) &&
-          Object.entries(q.gte).every(([c, v]) => r[c] >= v))
+          Object.entries(q.gte).every(([c, v]) => r[c] >= v) &&
+          Object.entries(q.gt).every(([c, v]) => r[c] > v))
         for (const { col, ascending } of [...q.order].reverse()) {
           data.sort((a, z) => (a[col] < z[col] ? -1 : a[col] > z[col] ? 1 : 0) * (ascending ? 1 : -1))
         }
-        data.splice(api.maxRows)
+        data.splice(Math.min(q.limit ?? api.maxRows, api.maxRows))
         return Promise.resolve({ data, error: null }).then(resolve, reject)
       }
     }
@@ -46,7 +49,9 @@ const isoInDays = (days) => {
   d.setHours(12, 0, 0, 0)
   return d.toISOString().replace(/\.\d{3}Z$/, '.000000+00:00')
 }
+let lastId = 0
 const game = (n, gender, league, days) => ({
+  id: ++lastId,
   game_number: n, gender, league, datetime: isoInDays(days), team_home: `Home ${n}`, team_away: `Away ${n}`
 })
 
@@ -108,26 +113,31 @@ describe('LoadOfficialMatchModal league list', () => {
     expect(matchQuery.gte.datetime).toBeTypeOf('string')
   })
 
-  it('keeps a league active when the row cap would cut off its upcoming games', async () => {
-    // Old rows first in storage order, the upcoming game last: an unordered
-    // capped select would miss it and grey out 3L
+  it('reads every svrz_games row past the 1000-row cap: no league and no upcoming game is lost', async () => {
+    // Like production (1442 rows): the oldest league (4L B, only past games)
+    // and the upcoming 3L games sit on both sides of the cap
     api.rows = [
-      game('O1', 'men', '1L D', -300),
-      game('O2', 'men', '3L', -290),
-      game('O3', 'men', '4L B', -280),
-      game('O4', 'men', '1L D', -270),
-      game('N1', 'men', '3L', 2)
+      game('O0', 'men', '4L B', -400),
+      ...Array.from({ length: 1438 }, (_, i) => game(`O${i + 1}`, 'men', '1L D', -300 + (i % 200))),
+      game('N1', 'men', '3L', 2),
+      game('N2', 'men', '3L', 9),
+      game('N3', 'women', '2L', 4)
     ]
-    api.maxRows = 2
+    expect(api.rows).toHaveLength(1442)
     render(<LoadOfficialMatchModal open onClose={() => {}} onSelectMatch={() => {}} />)
     await screen.findByRole('combobox', { name: 'loadOfficialMatch.gender' })
     chooseGender('men')
 
-    expect(api.queries[0].order).toEqual([{ col: 'datetime', ascending: false }])
+    // Two pages keyed on id; the second continues after the first page's last id
+    const leagueQueries = api.queries.filter(q => q.select !== '*')
+    expect(leagueQueries).toHaveLength(2)
+    expect(leagueQueries[0].order).toEqual([{ col: 'id', ascending: true }])
+    expect(leagueQueries[0].limit).toBe(1000)
+    expect(leagueQueries[1].gt).toEqual({ id: api.rows[999].id })
+
     const options = within(leagueSelect()).getAllByRole('option')
-    // Only the oldest league (4L B) falls outside the cap
-    expect(options.map(o => o.value)).toEqual(['', '3L', '1L D'])
-    expect(options.map(o => o.disabled)).toEqual([false, false, true])
+    expect(options.map(o => o.value)).toEqual(['', '3L', '1L D', '4L B'])
+    expect(options.map(o => o.disabled)).toEqual([false, false, true, true])
   })
 
   it('a gender with every league active shows no greyed-out group', async () => {

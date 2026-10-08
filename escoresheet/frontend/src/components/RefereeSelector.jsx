@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Database } from 'lucide-react'
 import { apiFrom } from '../lib/apiClient'
+import { selectAll } from '../lib/selectAll'
 import KitModal from './manage/KitModal'
 import { SearchInput, SkeletonRows, EmptyInset } from '../ui'
 import { FOCUS_RING_INSET } from '../ui/Button.jsx'
@@ -44,10 +45,10 @@ export default function RefereeSelector({ open, onClose, onSelect }) {
     let cancelled = false
     ;(async () => {
       try {
-        const { data, error } = await apiFrom('referee_database')
-          .select('first_name, last_name, country, dob, created_at')
-          .contains('sport_type', JSON.stringify([SPORT_TYPE]))
-          .order('last_name', { ascending: true })
+        // The whole directory, paged past the server's row cap, by last name
+        const { data, error } = await selectAll(() => apiFrom('referee_database')
+          .select('id, first_name, last_name, country, dob, created_at')
+          .contains('sport_type', JSON.stringify([SPORT_TYPE])), { order: [{ column: 'last_name' }] })
         if (cancelled) return
         if (error) {
           console.error('Error loading referees from history:', error)
