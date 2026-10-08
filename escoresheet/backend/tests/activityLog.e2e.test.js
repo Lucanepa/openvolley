@@ -22,6 +22,8 @@ import { checkEntry, csvLine, CSV_COLUMNS, createActivityLog, parseCursor } from
 
 const here = dirname(fileURLToPath(import.meta.url))
 const APP_SANITIZER = join(here, '..', '..', 'frontend', 'src', 'domain', 'activitySummary.js')
+// OpenBeach's copy, when its checkout sits where the desktop flavour build expects it (/openbeach)
+const BEACH_SANITIZER = join(here, '..', '..', '..', 'openbeach', 'escoresheet', 'frontend', 'src_beach', 'utils_beach', 'activitySummary_beach.js')
 
 const entry = (patch = {}) => ({
   uid: randomUUID(), client_ts: '2026-10-07T10:00:00.000Z', kind: 'event.add', level: 'info', app: 'indoor',
@@ -47,6 +49,32 @@ describe('activity log (unit)', () => {
     for (const [kind, data] of samples) assert.deepEqual(serverSide.sanitizeActivityData(kind, data), app.sanitizeActivityData(kind, data), kind)
     assert.deepEqual(serverSide.sanitizeActivityData('app.error', { message: 'pin 123456 failed' }), { message: 'pin [redacted] failed' })
     for (const t of ['PIN: 4711', 'game 1234567', 'code=5678 x', 'HTTP 404']) assert.equal(serverSide.redactFreeText(t), app.redactFreeText(t), t)
+  })
+
+  it('OpenBeach: set entries carry team 1 / team 2 as home / away (no team1 / team2 keys), app beach', () => {
+    const me = randomUUID()
+    for (const kind of ['set.start', 'set.end', 'set.reopen', 'set.delete']) {
+      assert.deepEqual(serverSide.ACTIVITY_KINDS[kind].keys, ['set', 'home', 'away'], kind)
+      // OpenBeach's setScoreData: { set, home: team1Points, away: team2Points }
+      const r = checkEntry(entry({ kind, app: 'beach', data: { set: 2, home: 21, away: 19, team1: 21, team2: 19 } }), me)
+      assert.equal(r.row.app, 'beach')
+      assert.deepEqual(r.row.data, { set: 2, home: 21, away: 19 }, kind)
+    }
+    // event.add keeps the team value as sent ('team1' / 'team2' on beach)
+    assert.deepEqual(checkEntry(entry({ app: 'beach', data: { type: 'point', team: 'team2', scoreA: 3, scoreB: 4 } }), me).row.data,
+      { type: 'point', team: 'team2', scoreA: 3, scoreB: 4 })
+    assert.equal(checkEntry(entry({ app: 'snow' }), me).code, 'OV_ACTIVITY_INVALID')
+  })
+
+  it('OpenBeach\'s sanitizer is the server\'s (same catalog, same results)', { skip: existsSync(BEACH_SANITIZER) ? false : 'openbeach not checked out at /openbeach' }, async () => {
+    const beach = await import(pathToFileURL(BEACH_SANITIZER).href)
+    assert.deepEqual(serverSide.ACTIVITY_KINDS, beach.ACTIVITY_KINDS)
+    assert.equal(String(serverSide.DENIED_KEY), String(beach.DENIED_KEY))
+    for (const [kind, data] of [
+      ['set.end', { set: 1, home: 21, away: 18, team1: 21 }],
+      ['event.add', { type: 'point', team: 'team1', scoreA: 5, scoreB: 2, stateSnapshot: {} }],
+      ['app.error', { message: 'pin 123456 failed' }]
+    ]) assert.deepEqual(serverSide.sanitizeActivityData(kind, data), beach.sanitizeActivityData(kind, data), kind)
   })
 
   it('checkEntry: catalog, account, shapes; the data is sanitized again', () => {

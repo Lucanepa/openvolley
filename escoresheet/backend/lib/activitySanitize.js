@@ -3,7 +3,14 @@
  * A copy of the scorer app's (escoresheet/frontend/src/domain/activitySummary.js):
  * every entry uploaded to POST /api/activity runs through it again here, so
  * a modified client cannot store more than the app would.
- * tests/activityLog.test.js checks that the two catalogs and results match.
+ * tests/activityLog.e2e.test.js checks that the catalogs and results match.
+ *
+ * OpenBeach (app 'beach') uses this same catalog (its
+ * src_beach/utils_beach/activitySummary_beach.js is a copy): its set entries
+ * carry team 1's points as `home` and team 2's as `away`, as its result key
+ * for approvals and the beach sets' team1 / team2 columns do (team 1 is the
+ * "home" side). There are no team1 / team2 keys; the console shows "set N
+ * home:away" for both apps, which reads right for beach too.
  */
 
 export const ACTIVITY_DATA_MAX_BYTES = 4096
