@@ -1380,8 +1380,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const homeLabel = teamAKey === 'home' ? 'A' : 'B'
   const awayLabel = teamAKey === 'away' ? 'A' : 'B'
 
-  // Determine which team is on the left (from referee's perspective)
-  // Uses same alternating pattern as Scoreboard: odd sets = Team A on left, even sets = Team A on right
+  // Which team is on the left for the 2nd referee (the scorer's side): the
+  // scorer's live state, else the scorer's own rule (getSideAForSet)
   const homeOnLeftFor2ndRef = useMemo(() => {
     if (!data?.currentSet) return true
 
@@ -1392,15 +1392,16 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
       return sideA === 'left' ? (teamAKey === 'home') : (teamAKey !== 'home')
     }
 
-    // No live state: the same rule as the scorer's snapshot (the overrides and
-    // set5LeftTeam store the LEFT team as 'A'/'B'; set 5 coin toss, 8-point switch)
+    // No live state: the scorer's court's own rule (the overrides and
+    // set5LeftTeam store the LEFT team as 'A'/'B'; a set 5 without its coin
+    // toss keeps set 4's sides; the change of courts at 8)
     const sideA = getSideAForSet(data.currentSet.index, data?.match || {})
 
     // Convert sideA to homeOnLeft:
     // If sideA='left' (Team A on left), then home is on left only if teamAKey='home'
     // If sideA='right' (Team A on right), then home is on left only if teamAKey!='home' (i.e., Team B is on left)
     return sideA === 'left' ? (teamAKey === 'home') : (teamAKey !== 'home')
-  }, [data?.currentSet, data?.match?.setLeftTeamOverrides, data?.match?.set5CourtSwitched, data?.match?.set5LeftTeam, teamAKey, data?.liveState?.side_a])
+  }, [data?.currentSet, data?.match, teamAKey, data?.liveState?.side_a])
 
   const homeTeamOnLeft = refereeView === '1st' ? !homeOnLeftFor2ndRef : homeOnLeftFor2ndRef
 
