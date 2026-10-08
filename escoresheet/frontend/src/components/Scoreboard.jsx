@@ -22688,13 +22688,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               </SbButton>
               <SbButton variant="positive"
                 onClick={async () => {
-                  setLiberoReminder(null)
                   // Show set start time confirmation: set 1 the scheduled time (on the
-                  // day played), any other set now (its first rally)
+                  // day played), any other set now (its first rally). The reminder
+                  // closes in the change that opens it (no frame without a dialog).
                   const allSets = await db.sets.where('matchId').equals(matchId).toArray()
                   const scheduledAt = startScheduleOf(data?.match)
                   const defaultTime = defaultSetStartTime({ setIndex: data?.set?.index, sets: allSets, scheduledAt })
                   const fromSchedule = startsFromSchedule({ setIndex: data?.set?.index, scheduledAt })
+                  setLiberoReminder(null)
                   setSetStartTimeModal({ setIndex: data?.set?.index, defaultTime, fromSchedule })
                 }}
               >
