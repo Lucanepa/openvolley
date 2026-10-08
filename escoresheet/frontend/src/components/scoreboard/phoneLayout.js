@@ -8,6 +8,26 @@
 /** Viewports narrower than this, held upright, get the phone layout (CSS px). */
 export const PHONE_MAX_WIDTH = 600
 
+// The phone view's heights (PhoneScoreboard.jsx, .phone-court and
+// .phone-square in styles.css). The point buttons are squares and the court
+// is 2:1 where the screen is tall enough; on a short one (a browser's bars,
+// the Android app's system bars) the point buttons get lower down to
+// PHONE_SQUARE_MIN_PX, then the court gets lower down to PHONE_COURT_MIN_PX,
+// and only then the view scrolls.
+
+/** The last actions keep one height whatever they show: three 15px lines, two 3px gaps, 6px padding top and bottom. */
+export const PHONE_RECENT_HEIGHT_PX = 63
+/**
+ * Everything but the court and the point buttons, top to bottom: header 52,
+ * score cards 89, court padding 10, last actions 63 + 12, team actions at
+ * their smallest 56 + 8, point-button padding 8, action grid 108.
+ */
+export const PHONE_SQUARE_RESERVE_PX = 52 + 89 + 10 + PHONE_RECENT_HEIGHT_PX + 12 + 64 + 8 + 108
+/** Below this height the point buttons stop getting lower. */
+export const PHONE_SQUARE_MIN_PX = 56
+/** Below this height the court stops getting lower (three rows of shirt numbers still fit). */
+export const PHONE_COURT_MIN_PX = 132
+
 /**
  * The display mode the screen size asks for (the "auto" choice of the
  * display-mode option):

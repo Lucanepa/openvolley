@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Undo2, Menu } from 'lucide-react'
 import { ActionSheet } from '../../ui/Modal.jsx'
 import { COURT_SURFACE, HEADER_SURFACE, normaliseColour, teamBoxStyle, teamTextPaint } from '../../utils/teamColours'
-import { COURT_CELLS, POSITIONS, officialRoleShort, tintOf } from './phoneLayout'
+import { COURT_CELLS, PHONE_COURT_MIN_PX, PHONE_RECENT_HEIGHT_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, POSITIONS, officialRoleShort, tintOf } from './phoneLayout'
 
 /**
  * The scoring screen on a phone held upright (owner-approved mockup, 390x844).
@@ -44,16 +44,6 @@ import { COURT_CELLS, POSITIONS, officialRoleShort, tintOf } from './phoneLayout
  *   [{ number }], officials: [{ role }], improperRequestDone, delayWarned,
  *   needsRedesignation }
  */
-// Three 15px lines, two 3px gaps, 6px padding top and bottom: the last
-// actions keep one height whether they show none or three
-const RECENT_HEIGHT_PX = 63
-// Everything but the court and the point buttons, top to bottom: header 52,
-// score cards 89, court padding 10, last actions 63 + 12, team actions at
-// their smallest 56 + 8, point-button padding 8, action grid 108
-const SQUARE_RESERVE_PX = 52 + 89 + 10 + RECENT_HEIGHT_PX + 12 + 64 + 8 + 108
-// Below this height the point buttons stop shrinking and the view scrolls
-const SQUARE_MIN_PX = 56
-
 export default function PhoneScoreboard({ setNumber, teams, serving, rally, centre, recent, canUndo, scoreFont = 'inherit', actions }) {
   const { t } = useTranslation()
   // The phone's own pickers: { kind: 'sub', side, out?: { position, number } } | { kind: 'sanction' } | { kind: 'libero' }
@@ -281,8 +271,9 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   // The point buttons: squares as wide as their column (.phone-square in
   // styles.css). On a screen too short for the whole layout (a browser's
   // address and tool bars, the Android app's system bars) they get lower,
-  // not narrower, so they and the action grid stay on screen without
-  // scrolling; the root is the size container that measures what is left.
+  // not narrower, then the court gets lower, so they and the action grid stay
+  // on screen without scrolling; the root is the size container that
+  // measures what is left (phoneLayout.js has the heights).
   const squareClass = 'phone-square'
   const pointButton = (team) => (
     <button
@@ -325,7 +316,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
     <div
       className="ov-kit phone-scoreboard"
       data-testid="phone-scoreboard"
-      style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, height: '100%', width: '100%', maxWidth: 600, margin: '0 auto', containerType: 'size', '--phone-square-reserve': `${SQUARE_RESERVE_PX}px`, '--phone-square-min': `${SQUARE_MIN_PX}px`, overflowY: 'auto', overflowX: 'hidden', background: 'var(--ov-page-top)', color: 'var(--ov-text)', fontFamily: 'var(--font-sans)' }}
+      style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, height: '100%', width: '100%', maxWidth: 600, margin: '0 auto', containerType: 'size', '--phone-square-reserve': `${PHONE_SQUARE_RESERVE_PX}px`, '--phone-square-min': `${PHONE_SQUARE_MIN_PX}px`, '--phone-court-min': `${PHONE_COURT_MIN_PX}px`, overflowY: 'auto', overflowX: 'hidden', background: 'var(--ov-page-top)', color: 'var(--ov-text)', fontFamily: 'var(--font-sans)' }}
     >
       {header}
 
@@ -335,13 +326,14 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
       </section>
 
       <section aria-label={t('scoreboard.phone.court')} style={{ flex: 'none', padding: '6px 12px 4px' }}>
-        <div style={{ width: '100%', aspectRatio: '2 / 1', display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', borderRadius: 16, background: COURT_SURFACE, border: '2px solid var(--ov-hairline-strong)', overflow: 'hidden' }}>
+        {/* 2:1, lower on a short screen (.phone-court in styles.css) */}
+        <div className="phone-court" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', borderRadius: 16, background: COURT_SURFACE, border: '2px solid var(--ov-hairline-strong)', overflow: 'hidden' }}>
           {courtHalf(left)}
           {courtHalf(right)}
         </div>
       </section>
 
-      <section aria-label={t('scoreboard.phone.recentActions')} data-testid="phone-recent" style={{ flex: 'none', margin: '4px 14px 8px', padding: '6px 10px', height: RECENT_HEIGHT_PX, boxSizing: 'border-box', overflow: 'hidden', borderRadius: 10, background: 'var(--ov-sunken-strong)', display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <section aria-label={t('scoreboard.phone.recentActions')} data-testid="phone-recent" style={{ flex: 'none', margin: '4px 14px 8px', padding: '6px 10px', height: PHONE_RECENT_HEIGHT_PX, boxSizing: 'border-box', overflow: 'hidden', borderRadius: 10, background: 'var(--ov-sunken-strong)', display: 'flex', flexDirection: 'column', gap: 3 }}>
         {recent.length === 0 ? (
           <span style={{ fontSize: 12, color: 'var(--ov-text-muted)' }}>{t('scoreboard.phone.noActions')}</span>
         ) : recent.map((r, i) => (
