@@ -4,6 +4,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { installWatchers, elementId, textHash, engineInfo } from '../watchers'
 import { startRecorder, stopRecorder, flushDiagnostics } from '../recorder'
+import { sanitizeDiagData } from '../redact'
 
 const frame = () => new Promise(r => setTimeout(r, 40))
 
@@ -134,7 +135,16 @@ describe('diagnostics helpers', () => {
   it('hashes text stably', () => {
     expect(textHash('abc')).toBe(textHash('abc'))
     expect(textHash('abc')).not.toBe(textHash('abd'))
-    expect(textHash('')).toMatch(/^[0-9a-f]{8}$/)
+    expect(textHash('')).toMatch(/^[a-p]{8}$/)
+  })
+
+  // Laptop run of 2026-10-08 (OV-2): a hex hash with a run of 6 digits looked
+  // like a PIN to the redaction, and dialog.content lines read "[redacted]ba"
+  it('a hash survives the redaction of its line', () => {
+    for (let i = 0; i < 3000; i++) {
+      const hash = textHash(`dialog text ${i}`)
+      expect(sanitizeDiagData({ hash }).hash).toBe(hash)
+    }
   })
 })
 
