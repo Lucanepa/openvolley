@@ -601,8 +601,13 @@ async function clearCloudBlock(job) {
 // then on the server refuses its sets and events (409 OV_MATCH_CLOSED). It
 // must not overtake an older set or event job of the same match that is still
 // on its way (queued, in flight or waiting out a backoff). Old 'failed' jobs do
-// not hold it: they were refused and wait for a hand retry.
+// not hold it: they were refused and wait for a hand retry. The same holds for
+// an older match update carrying the remarks (db/017): the approval queues the
+// remarks as approved just before itself, and once the match is closed the
+// server refuses them (a server without 017 refuses them as 'failed', which
+// does not hold the approval).
 const CLOSING_STATUSES = ['approved', 'final']
+const isRemarksUpdate = (j) => j.resource === 'match' && j.action === 'update' && j.payload != null && typeof j.payload === 'object' && 'remarks' in j.payload
 export function isClosingJob(job) {
   return job?.resource === 'match' && job.action === 'update' && CLOSING_STATUSES.includes(job.payload?.status)
 }
@@ -611,7 +616,7 @@ export async function closingMustWait(job) {
   if (!matchKey || job?.id == null) return false
   try {
     const pending = await db.sync_queue.where('status').anyOf('queued', 'sending', 'error').toArray()
-    return pending.some(j => j.id < job.id && (j.resource === 'set' || j.resource === 'event') && jobMatchKey(j) === matchKey)
+    return pending.some(j => j.id < job.id && (j.resource === 'set' || j.resource === 'event' || isRemarksUpdate(j)) && jobMatchKey(j) === matchKey)
   } catch {
     return false
   }
