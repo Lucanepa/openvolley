@@ -116,10 +116,21 @@ export async function clearCachesAndReload({ includeLocalStorage = false } = {})
   return true
 }
 
-// The update under way, if any: a second caller joins it (the desktop app's
-// home-screen banner and applyUpdateAtStart both applied the same waiting
-// build 1 ms apart: two SKIP_WAITING, two reloads)
+// The update under way, if any: a second caller joins it. And once this page
+// has asked to reload into the new build, a later call within a moment has
+// nothing left to do (the desktop app's home-screen banner and
+// applyUpdateAtStart both applied the same waiting build 2 ms apart: two
+// SKIP_WAITING, two reloads). After RELOAD_PENDING_MS (a reload that never
+// came) an update can be applied again.
 let applying = null
+let reloadRequestedAt = null
+const RELOAD_PENDING_MS = 10000
+
+/** Tests: a fresh page. */
+export function resetServiceWorkerUpdateForTests() {
+  applying = null
+  reloadRequestedAt = null
+}
 
 /**
  * Activate the waiting service worker and reload this tab with it.
@@ -131,12 +142,14 @@ let applying = null
  * the app still loads offline right after the update.
  */
 export function applyServiceWorkerUpdate(opts) {
+  if (reloadRequestedAt !== null && Date.now() - reloadRequestedAt < RELOAD_PENDING_MS) return Promise.resolve()
   if (!applying) applying = runServiceWorkerUpdate(opts).finally(() => { applying = null })
   return applying
 }
 
 async function runServiceWorkerUpdate({ clearIndexedDB = false, checkForUpdate = false, timeoutMs = 4000 } = {}) {
   const reload = () => {
+    reloadRequestedAt = Date.now()
     allowLeaving()
     reloadWithReason(clearIndexedDB ? 'sw-update-clear-db' : 'sw-update', { how: 'replace', url: buildReloadUrl() })
   }
