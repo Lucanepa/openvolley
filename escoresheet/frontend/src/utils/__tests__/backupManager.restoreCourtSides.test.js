@@ -34,7 +34,7 @@ vi.mock('../../lib/apiClient', () => ({
 }))
 
 import { fetchMatchByPin, importMatchFromSupabase, savedCourtSides } from '../backupManager'
-import { getSideAForSet } from '../../domain/rules'
+import { getSideAForSet, getFirstServeForSet } from '../../domain/rules'
 
 const lineup = (base) => Object.fromEntries(['I', 'II', 'III', 'IV', 'V', 'VI'].map((p, i) => [p, { number: base + i }]))
 const numbers = (base) => Object.fromEntries(['I', 'II', 'III', 'IV', 'V', 'VI'].map((p, i) => [p, base + i]))
@@ -321,6 +321,40 @@ describe('importMatchFromSupabase: the restored match keeps its court sides', ()
     expect(m.setLeftTeamOverrides).toEqual({ 2: 'A' })
     expect(getSideAForSet(2, m)).toBe('left')
     expect(m.coinTossTeamA).toBe('home')
+  })
+})
+
+// The set 5 setup's confirmation (its set5_coin_toss event) reaches the
+// server since 9a855629: restored, it hides the set 5 setup panel, so the
+// restored match needs the set's first server too. Only the event has it
+// (no snapshot or live field carries set5FirstServe): without it set 5 was
+// served by set 1's first server (found by a check, 2026-10-09).
+describe('importMatchFromSupabase: the set 5 coin toss', () => {
+  const toss = (over = {}) => ({ seq: 40, type: 'set5_coin_toss', set_index: 5, payload: { leftTeam: 'B', firstServe: 'B', leftTeamKey: 'away', firstServeTeamKey: 'away', ...over } })
+
+  it('its first server, as the label of the restored Team A', async () => {
+    const cloud = await restoreWith({ match: { coin_toss: { team_a: 'home', team_b: 'away', serve_a: true, first_serve: 'home', confirmed: true } }, events: [toss()] })
+    await importMatchFromSupabase(cloud)
+    const m = store.matches[0]
+    expect(m.set5FirstServe).toBe('B')
+    expect(getFirstServeForSet(5, m)).toBe('away')
+  })
+
+  it('A and B swapped since: the same team serves first', async () => {
+    const cloud = await restoreWith({ match: { coin_toss: { team_a: 'away', team_b: 'home', serve_a: false, first_serve: 'home', confirmed: true } }, events: [toss()] })
+    await importMatchFromSupabase(cloud)
+    const m = store.matches[0]
+    expect(m.set5FirstServe).toBe('A')
+    expect(getFirstServeForSet(5, m)).toBe('away')
+  })
+
+  it('the latest toss counts; none: no set5FirstServe', async () => {
+    const cloud = await restoreWith({ events: [toss(), toss({ firstServeTeamKey: 'home', firstServe: 'A' })].map((e, i) => ({ ...e, seq: 40 + i })) })
+    await importMatchFromSupabase(cloud)
+    expect(store.matches[0].set5FirstServe).toBe('A')
+    store.matches.length = 0
+    await importMatchFromSupabase(await restoreWith({ events: [] }))
+    expect(store.matches[0]).not.toHaveProperty('set5FirstServe')
   })
 })
 
