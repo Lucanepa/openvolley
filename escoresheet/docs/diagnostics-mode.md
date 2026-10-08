@@ -31,6 +31,15 @@ page loads. Switching it on in Options starts everything else at once.
   and those older files stay there). `OPENVOLLEY_LOG_DIR` overrides it.
   A day's file stops at 20 MB, and a `diag.capped` line marks the cut. 7 files are kept.
   "Open log folder" in Options opens it.
+  Only the scoretable window may write it. The app's pop-up windows (the
+  scoresheet, a referee view opened from the scoretable) send their lines to
+  the scoretable over a BroadcastChannel, and it writes them into the same file,
+  redacted again and tagged `"win":"popup-<n>"` and `"page":"scoresheet"` (or
+  `referee`). A pop-up keeps up to 2,000 lines while the scoretable is not
+  recording, and a `diag.dropped` line (`d.where: "popup"`) counts what it had to drop
+  (`src/diagnostics/popupForward.js`). A page asks the app which window it is
+  in (an empty `diagnostics_append`: refused means a pop-up), because on Linux
+  a pop-up's own Tauri metadata names the scoretable's window, `main`.
 - **Browser and Android:** an IndexedDB ring buffer (`openvolley-diagnostics`,
   50,000 lines, 7 days). Use Options > Logs > Export diagnostics to save it as a `.jsonl` file.
 
@@ -50,6 +59,7 @@ page loads. Switching it on in Options starts everything else at once.
 | `k` | kind (see below) |
 | `a` | number of the user action (click or key) this line follows, counted per load. 0 means before any action |
 | `d` | data, redacted |
+| `win`, `page` | only on a desktop pop-up window's lines: its window label (`popup-<n>`) and page (`scoresheet`, `referee`). The scoretable's lines have neither |
 
 Many `d` objects carry `after: {a, ms}`, which is the last user action and how long ago it was.
 `geo.*` lines also carry `state: {k, ms}`, which is the last line that changed the screen
@@ -100,6 +110,8 @@ jq -c 'select(.k=="page.load" or .k=="page.reload_request" or (.k|startswith("na
 jq -c 'select(.k=="geo.jump")' diagnostics-*.jsonl
 # one user action, from click to the last resize
 jq -c 'select(.sid=="k3f9a2" and .a==7)' diagnostics-*.jsonl
+# the scoresheet window's lines
+jq -c 'select(.page=="scoresheet")' diagnostics-*.jsonl
 # dialogs that flashed or changed content
 jq -c 'select(.k=="dialog.content" or (.k=="dialog.close" and .d.flash))' diagnostics-*.jsonl
 ```
