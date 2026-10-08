@@ -31,6 +31,20 @@ export function scheduledStartOnDay(scheduledAt, now = new Date()) {
   return day.toISOString()
 }
 
+/**
+ * The schedule set 1's start is proposed from: the match's scheduledAt, none
+ * for a test match (its scheduledAt is a made-up next 20:00 kickoff,
+ * testSeeds getNextTestMatchStartTime: a test scored at 15:00 was proposed
+ * 20:00, and any real start became an "Actual start time" remark).
+ *
+ * @param {{ scheduledAt?: string|null, test?: boolean }|null|undefined} match
+ * @returns {string|null}
+ */
+export function startScheduleOf(match) {
+  if (!match || match.test === true) return null
+  return match.scheduledAt || null
+}
+
 /** True when the set's start is proposed from the schedule: set 1 of a match with a scheduled time. */
 export function startsFromSchedule({ setIndex, scheduledAt }) {
   return setIndex === 1 && scheduledStartOnDay(scheduledAt) !== null
