@@ -205,7 +205,13 @@ export function useScorerActions({ db, commits, mutexRef, captureFinalSnapshot, 
         result = await db.transaction('rw', db.tables, async () => {
           ctx.idbtrans = Dexie.currentTransaction.idbtrans
           ctxRef.current = ctx
-          const value = await inActivityContext(reason, () => body(ctx))
+          // Awaited as a Dexie promise: the steps below (the pending writes,
+          // the final snapshot) run in this transaction however the body
+          // ended. A body ending in a plain async helper (afterPointScored)
+          // resumed here without the transaction under jsdom + fake-indexeddb:
+          // the final snapshot went to transactions of its own and the action
+          // failed with PrematureCommitError after its writes had landed.
+          const value = await Dexie.Promise.resolve(inActivityContext(reason, () => body(ctx)))
           // Writes started without awaiting them (logManualChange) finish inside
           while (ctx.pending.length > 0) await ctx.pending.shift()
           ctx.wrote = 'mutatedParts' in ctx.idbtrans
