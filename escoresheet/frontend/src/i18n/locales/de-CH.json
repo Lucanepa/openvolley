@@ -1633,6 +1633,7 @@
     "time": "Ziit",
     "homeVsAway": "Heim vs Gast",
     "noUpcomingMatches": "Kei aastelligi Spiil gfunde",
+    "noUpcomingGames": "Kei aastehendi Spiil",
     "fetchError": "Spiil händ nöd chönne glade werde. Verbindig prüefe.",
     "backendNotAvailable": "Backend-Server nöd verfügbar",
     "reminderAlert": "Teamfarbe und Kurznäme iistelle",

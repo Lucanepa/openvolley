@@ -1632,6 +1632,7 @@
     "time": "Heure",
     "homeVsAway": "Domicile vs extérieur",
     "noUpcomingMatches": "Aucun match à venir trouvé",
+    "noUpcomingGames": "Aucun match à venir",
     "fetchError": "Échec du chargement des matchs. Vérifiez votre connexion.",
     "backendNotAvailable": "Serveur backend non disponible",
     "reminderAlert": "Définir les couleurs et les noms courts des équipes",
