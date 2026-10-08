@@ -213,6 +213,21 @@ p {
   flex-grow: 1;
 }
 
+/* The home, coin toss and Match End screens are centred in the scrolling page
+   panel. With plain `center`, a screen taller than the window overflowed at the
+   top too, where no scroll reaches. `safe center` starts it at the top instead.
+   Engines that reject `safe` (Chrome/WebView < 115, Safari < 17.6) still centre.
+   The fallback sits behind @supports: the CSS minifier (lightningcss) merges two
+   align-items declarations in one rule into the last, dropping the fallback. */
+.panel--centred {
+  align-items: center;
+}
+@supports (align-items: safe center) {
+  .panel--centred {
+    align-items: safe center;
+  }
+}
+
 /* Laptop mode: allow overflow for scoreboard (960px - 1400px) */
 @media (min-width: 961px) and (max-width: 1400px) {
   .panel {

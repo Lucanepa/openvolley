@@ -2923,7 +2923,7 @@ export default function App() {
             overflowX: 'hidden',
             overflowY: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? 'hidden' : 'auto'
           }}>
-            <div className="panel" style={{
+            <div className={(!matchId || showCoinToss || showMatchEnd) ? 'panel panel--centred' : 'panel'} style={{
               flex: '1 1 auto',
               minHeight: 0,
               height: 'auto',
@@ -2933,12 +2933,11 @@ export default function App() {
               maxWidth: '100%',
               padding: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? '10px' : '10px',
               // Vertical centering for CoinToss, MatchEnd, and HomePage screens (not MatchSetup - it fills the space).
-              // 'safe': a screen taller than the window starts at the top and
-              // scrolls; plain 'center' pushed its top out of reach
+              // align-items comes from .panel--centred (styles.css): 'safe center'
+              // with a plain 'center' fallback, which an inline style cannot carry
               ...(!matchId || showCoinToss || showMatchEnd ? {
                 display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'safe center'
+                justifyContent: 'center'
               } : {}),
               // MatchSetup fills available space
               ...(showMatchSetup ? {
