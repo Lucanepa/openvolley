@@ -873,7 +873,7 @@
     },
     "phone": {
       "setInfo": "Set {{set}} · sets {{left}} : {{right}}",
-      "setsWon": "Sets gagnés : {{count}}",
+      "setsWon": "Sets : {{count}}",
       "timeOut": "Temps mort",
       "courtPlayer": "Joueur {{number}}, équipe {{team}}",
       "score": "Score",
