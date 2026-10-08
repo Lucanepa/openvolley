@@ -1381,8 +1381,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         await db.matches.delete(matchId)
       })
 
-      // Navigate home
-      if (onGoHome) onGoHome()
+      // Navigate home (the match is gone: App leaves it out at once)
+      if (onGoHome) onGoHome({ closed: true })
     } catch (error) {
       console.error('[MatchEnd] Error closing match:', error)
       showAlert(t('matchEnd.errorClosing', 'Error closing match: ') + error.message, 'error')

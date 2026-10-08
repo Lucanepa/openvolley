@@ -96,6 +96,11 @@ export default function App() {
   const [showCoinToss, setShowCoinToss] = useState(false)
   const [showMatchEnd, setShowMatchEnd] = useState(false)
   const [showManualAdjustments, setShowManualAdjustments] = useState(false)
+  // The match just closed from Match End (deleted): left out of the home
+  // screen and the header at once, while the live queries still see it for
+  // a moment (laptop run 2026-10-08, OV-17: one frame of its 'Continue match
+  // / Delete match' and 'Test match')
+  const [closedMatchId, setClosedMatchId] = useState(null)
   const [deleteMatchModal, setDeleteMatchModal] = useState(null)
   const [deletePinInput, setDeletePinInput] = useState('')
   const [deletePinError, setDeletePinError] = useState('')
@@ -2792,6 +2797,13 @@ export default function App() {
     }
   }
 
+  const notClosed = (m) => (m && closedMatchId != null && m.id === closedMatchId ? null : m)
+  const shownCurrentMatch = notClosed(currentMatch)
+  const shownOfficialMatch = notClosed(currentOfficialMatch)
+  const shownTestMatch = notClosed(currentTestMatch)
+  const shownMatchStatus = notClosed(matchStatus?.match) === null ? null : matchStatus
+  const shownMatchInfoData = notClosed(matchInfoData?.match) === null ? null : matchInfoData
+
   return (
     <div className="app-root" onClick={(e) => {
       // Close connection menu and debug menu when clicking outside
@@ -2841,13 +2853,13 @@ export default function App() {
             connectionDebugInfo={connectionDebugInfo}
             showMatchSetup={showMatchSetup}
             matchId={matchId}
-            currentMatch={currentMatch}
+            currentMatch={shownCurrentMatch}
             matchInfoMenuOpen={matchInfoMenuOpen}
             setMatchInfoMenuOpen={setMatchInfoMenuOpen}
-            matchInfoData={matchInfoData}
-            matchStatus={matchStatus}
-            currentOfficialMatch={currentOfficialMatch}
-            currentTestMatch={currentTestMatch}
+            matchInfoData={shownMatchInfoData}
+            matchStatus={shownMatchStatus}
+            currentOfficialMatch={shownOfficialMatch}
+            currentTestMatch={shownTestMatch}
             isFullscreen={isFullscreen}
             toggleFullscreen={toggleFullscreen}
             offlineMode={offlineMode}
@@ -3006,7 +3018,8 @@ export default function App() {
               ) : showMatchEnd && matchId ? (
                 <MatchEnd
                   matchId={matchId}
-                  onGoHome={() => {
+                  onGoHome={({ closed = false } = {}) => {
+                    if (closed) setClosedMatchId(matchId)
                     setMatchId(null)
                     setShowMatchEnd(false)
                     setShowManualAdjustments(false)
@@ -3034,8 +3047,8 @@ export default function App() {
                     createNewOfficialMatch={createNewOfficialMatch}
                     createNewTestMatch={createNewTestMatch}
                     testMatchLoading={testMatchLoading}
-                    currentOfficialMatch={currentOfficialMatch}
-                    currentTestMatch={currentTestMatch}
+                    currentOfficialMatch={shownOfficialMatch}
+                    currentTestMatch={shownTestMatch}
                     continueMatch={continueMatch}
                     continueTestMatch={continueTestMatch}
                     showDeleteMatchModal={showDeleteMatchModal}
