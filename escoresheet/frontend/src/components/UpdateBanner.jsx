@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import useServiceWorker from '../hooks/useServiceWorker'
+import useServiceWorker, { autoApplyAllowed, noteAutoApply, holdTapsUntilReload } from '../hooks/useServiceWorker'
 import { Download, RefreshCw } from 'lucide-react'
 import { Button } from '../ui/Button.jsx'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
+import { isDesktopScoretable, resolveDesktopWindow } from '../utils/appLifecycle'
 
 // Get current version from package.json (injected by Vite at build time)
 const currentVersion = __APP_VERSION__
@@ -15,21 +16,49 @@ export default function UpdateBanner() {
   const { t } = useTranslation()
   const { needRefresh, updateServiceWorker, dismissUpdate } = useServiceWorker()
   const [newVersion, setNewVersion] = useState(null)
+  // The desktop app's binary IS the update: its first start still runs the
+  // previous build from the service worker, with the new one waiting. Apply it
+  // at once (this banner is on the home screen only, never mid-match). Not a
+  // second time within a short while (autoApplyAllowed): an update that did
+  // not take reloaded into itself every few seconds; then the banner asks.
+  // The scoretable only, as the app says (a Linux pop-up's own metadata says
+  // "main"): a pop-up asks too.
+  const [applyAtOnce, setApplyAtOnce] = useState(() => isDesktopScoretable() && autoApplyAllowed())
+  const appliedRef = useRef(false)
+
+  useEffect(() => {
+    if (!needRefresh || !applyAtOnce || appliedRef.current) return
+    let live = true
+    resolveDesktopWindow().then((scoretable) => {
+      if (!live || appliedRef.current) return
+      if (!scoretable) {
+        setApplyAtOnce(false)
+        return
+      }
+      appliedRef.current = true
+      noteAutoApply()
+      // the scorer may be tapping (a tap closed applyUpdateAtStart's grace):
+      // nothing they start may be cut by the reload
+      holdTapsUntilReload()
+      updateServiceWorker()
+    }).catch(() => { if (live) setApplyAtOnce(false) })
+    return () => { live = false }
+  }, [needRefresh, applyAtOnce, updateServiceWorker])
 
   // Fetch the new version from server when update is detected (label only).
   // Relative to the app's base: sub-apps are served under /referee/, /bench/...
   useEffect(() => {
-    if (needRefresh) {
+    if (needRefresh && !applyAtOnce) {
       fetch(`${import.meta.env.BASE_URL}version.json?t=${Date.now()}`)
         .then(res => res.json())
         .then(data => setNewVersion(data.version))
         .catch(() => setNewVersion(null))
     }
-  }, [needRefresh])
+  }, [needRefresh, applyAtOnce])
 
   // The waiting service worker decides whether an update exists; version.json
   // is only the label (a deploy without a version bump still needs activating).
-  if (!needRefresh) return null
+  if (!needRefresh || applyAtOnce) return null
 
   // Kit content dialog (UpdateNotice look): stone scrim with blur, white
   // rounded-2xl panel, sky info disc, the version change as a mono chip, and

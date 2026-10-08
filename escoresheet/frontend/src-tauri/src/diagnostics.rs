@@ -16,6 +16,11 @@
 //! - this module: the window's native events (`"src":"native"`): size and
 //!   scale factor changes, focus, page loads, the webview version at start.
 //!
+//! The app's pop-up windows ("popup-<n>", popups.rs) may not call these
+//! commands (main.rs scoresheet_windows_may_not_back_up): their pages send
+//! their lines to the scoretable page, which appends them tagged with the
+//! window (src/diagnostics/popupForward.js).
+//!
 //! A day's file stops at 20 MB (one `diag.capped` line says so); 7 files are
 //! kept. Folder 0700, files 0600 on unix. ACL: capabilities/diagnostics.json
 //! (the scoretable window from http://localhost only). OpenBeach builds from

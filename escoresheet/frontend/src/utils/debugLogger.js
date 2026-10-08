@@ -10,6 +10,7 @@
 // Local only, never synced. A state snapshot larger than 20 KB is dropped.
 
 import { log as interactionLog, trimDebugData } from './comprehensiveLogger'
+import { countSetsWon } from '../domain/matchEnd'
 
 const RECENT_MAX = 200 // in-memory copy for the console (getLogs)
 
@@ -87,13 +88,13 @@ export function createStateSnapshot(data) {
   return {
     // Match info
     matchId: match?.id,
-    setIndex: currentSet?.setIndex,
+    setIndex: currentSet?.index,
 
-    // Scores
-    homeScore: currentSet?.homeScore,
-    awayScore: currentSet?.awayScore,
-    homeSetsWon: sets?.filter(s => s.winner === 'home').length,
-    awaySetsWon: sets?.filter(s => s.winner === 'away').length,
+    // Scores (a set has its points and `finished`, no winner field)
+    homeScore: currentSet?.homePoints,
+    awayScore: currentSet?.awayPoints,
+    homeSetsWon: countSetsWon(sets).home,
+    awaySetsWon: countSetsWon(sets).away,
 
     // Service
     currentServe: currentSet?.currentServe,
