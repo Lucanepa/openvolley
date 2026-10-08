@@ -12021,9 +12021,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // Check for modal confirmations first (Enter/Escape)
       // These modals need a decision - don't allow Escape to close them
+      // The set-5 change of courts (or the change back) too: no rally and no
+      // point under it (a point at 7:7 under the change back made it stale)
       const hasDecisionModal = substitutionConfirm || liberoConfirm || sanctionConfirmModal ||
         accidentalRallyConfirmModal || accidentalPointConfirmModal || undoConfirm || replayConfirm ||
-        replayRallyConfirm || liberoRotationModal || liberoReentryModal || sanctionSubstitutionModal
+        replayRallyConfirm || liberoRotationModal || liberoReentryModal || sanctionSubstitutionModal ||
+        courtSwitchModal
 
       // Confirm key (Enter)
       if (key === keyBindings.confirm) {
@@ -12164,7 +12167,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     timeoutModal, lineupModal, menuModal,
     substitutionConfirm, liberoConfirm, sanctionConfirmModal, accidentalRallyConfirmModal,
     accidentalPointConfirmModal, undoConfirm, replayConfirm, replayRallyConfirm, liberoRotationModal, liberoReentryModal,
-    confirmSubstitution, confirmLibero, confirmReplay, handleReplayRally, handleDecisionChange
+    courtSwitchModal, confirmSubstitution, confirmLibero, confirmReplay, handleReplayRally, handleDecisionChange
   ])
 
   // Courtside chips: px floors on the cqw sizes so a 200 px side column still
@@ -12469,9 +12472,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     deferUi(() => setCourtSwitchModal(null))
 
     // Set 5 courts changed at 8, or changed back (no team on 8 any more: the
-    // change is asked again when a team reaches 8)
-    const back = !!courtSwitchModal.back
-    await db.matches.update(matchId, { set5CourtSwitched: !back })
+    // change is asked again when a team reaches 8). Set from the stored score,
+    // not from the dialog: a point scored while it was open (keyboard
+    // shortcuts) made a change back confirmed at 7:8 leave a team on 8 with
+    // the courts not changed and nothing asked
+    const set5 = await db.sets.where({ matchId }).and(s => s.index === 5).first()
+    const changed = set5
+      ? Math.max(set5.homePoints || 0, set5.awayPoints || 0) >= 8
+      : !courtSwitchModal.back
+    const back = !changed
+    await db.matches.update(matchId, { set5CourtSwitched: changed })
 
     // Tablets and livescore: a fresh snapshot with the new side_a and serving_team
     syncLiveStateToSupabase('court_switch', null, { reason: back ? 'set5_switch_back' : 'set5_8points' }, null)
