@@ -110,7 +110,11 @@ vi.mock('../../db/db', () => {
   }
   const table = (name) => ({
     get: async (id) => rowsOf(name).get(id),
-    add: async (row) => { const id = row?.id ?? store.nextId++; rowsOf(name).set(id, { ...row, id }); changed(); return id },
+    // store.beforeAdd: a test holds (or fails) an add, as a slow tablet would
+    add: async (row) => {
+      if (store.beforeAdd) await store.beforeAdd(name, row)
+      const id = row?.id ?? store.nextId++; rowsOf(name).set(id, { ...row, id }); changed(); return id
+    },
     // Dexie key paths ('signatureSources.scorerSignature') set nested values
     update: async (id, ch) => {
       const r = rowsOf(name).get(id)
@@ -200,6 +204,7 @@ beforeEach(() => {
   api.approve = vi.fn()
   api.undo = vi.fn()
   pad.phone = null
+  store.beforeAdd = null
   auth.value = { user: { id: 'u-scorer', email: 'scorer@club.ch' }, access: { roles: ['scorer'], isAdmin: false } }
   Object.defineProperty(window.navigator, 'onLine', { configurable: true, get: () => true })
   globalThis.ResizeObserver ||= class { observe() {} unobserve() {} disconnect() {} }
@@ -351,6 +356,45 @@ describe('MatchEnd: Sign on phone with Re-sign and Clear', () => {
       expect(screen.getByTestId('signature-resign-captain-a')).toBeDisabled()
       view.unmount()
     }
+  })
+
+  // A slow tablet: the signature is on the match row (the next box opens)
+  // while its sync job is not queued yet, and the next box's pad is tapped
+  // open in between. The end of the previous save closes its own slot's pad
+  // only (OpenBeach f573c46, a full-suite flake at load 40, 2026-10-08).
+  // held: resolves the held add, or rejects it (the save then fails)
+  async function nextPadOpenDuringSave(settleHeld) {
+    seed()
+    let release
+    let held = false
+    store.beforeAdd = async (name) => {
+      if (name !== 'sync_queue' || held) return
+      held = true
+      await new Promise((resolve, reject) => { release = { resolve, reject } })
+    }
+    render(<MatchEnd matchId={1} />)
+    await signVia('captain-a', 'phone')
+    await waitFor(() => expect(row().homePostGameCaptainSignature).toBe('data:image/png;base64,PHONE'))
+    await waitFor(() => expect(release).toBeTruthy())
+    // the save of A still running: B's box is open, its pad is tapped open
+    fireEvent.click(await within(slot('captain-b')).findByText(en.matchEnd.tapToSign))
+    expect(await screen.findByRole('button', { name: /^phone .*Captain B/ })).toBeInTheDocument()
+    await act(async () => { settleHeld(release) })
+    await settle()
+    await act(async () => { await new Promise(r => setTimeout(r, 1600)) })
+    return screen.queryByRole('button', { name: /^phone .*Captain B/ })
+  }
+
+  it('the next box tapped while the last signature is still being queued: its pad stays open', async () => {
+    const padB = await nextPadOpenDuringSave(release => release.resolve())
+    expect(matchJobs()).toHaveLength(1)
+    expect(padB).toBeInTheDocument()
+  })
+
+  it('the last signature\'s queueing fails while the next pad is open: that pad stays open', async () => {
+    const padB = await nextPadOpenDuringSave(release => release.reject(new Error('quota (test)')))
+    expect(matchJobs()).toHaveLength(0)
+    expect(padB).toBeInTheDocument()
   })
 
   it('locked while the pad is open: "Sign on phone" is locked and a late phone result is not written', async () => {
