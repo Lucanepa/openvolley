@@ -60,6 +60,9 @@ function usePoll(active, load) {
   }, [active, load])
 }
 
+// The local server's state while the desktop app still reads its Wi-Fi
+const LAN_PENDING = Object.freeze({ loading: true, status: null })
+
 /**
  * "Connect tablets", in three steps:
  *
@@ -268,16 +271,21 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
   }
 
   // -- links for the chosen connection --
-  const port = relay.status?.port || (typeof window !== 'undefined' ? window.location.port : '') || null
-  const halls = hallInterfaces(relay.status)
+  // The desktop app reads the Wi-Fi this computer is on (hotspot status) next
+  // to the server's addresses: until both have answered the dialog shows
+  // neither, so it fills in one change (it changed three times within 83 ms:
+  // "Reading the local server...", the addresses and codes, the Wi-Fi name)
+  const lan = desktop && hs.loading ? LAN_PENDING : relay
+  const port = lan.status?.port || (typeof window !== 'undefined' ? window.location.port : '') || null
+  const halls = hallInterfaces(lan.status)
   const hallAddress = halls.find(i => i.ip === view.hallIp)?.ip || halls[0]?.ip || null
-  const hotspotIp = hs.status?.active ? (hs.status.gatewayIp || firstOfKind(relay.status, 'hotspot')?.ip || null) : null
+  const hotspotIp = hs.status?.active ? (hs.status.gatewayIp || firstOfKind(lan.status, 'hotspot')?.ip || null) : null
   // Only a Bluetooth network this computer serves: never one it merely joined
   // (tethered to a phone), which the tablets cannot reach. The desktop app
   // knows; a page elsewhere has only the relay's report.
   const btIp = desktop
     ? ((bt.status?.active && bt.status?.supported && bt.status?.ip) || null)
-    : (firstOfKind(relay.status, 'bluetooth')?.ip || null)
+    : (firstOfKind(lan.status, 'bluetooth')?.ip || null)
 
   let ip = null
   let noUrlText = ''
@@ -329,11 +337,11 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
   const options = transportOptions({
     served,
     desktop,
-    relayLoading: relay.loading,
+    relayLoading: lan.loading,
     halls,
     hotspot: hs.status,
     bluetooth: bt.status,
-    bluetoothFound: !!firstOfKind(relay.status, 'bluetooth'),
+    bluetoothFound: !!firstOfKind(lan.status, 'bluetooth'),
     platform: hs.status?.platform || fw?.platform || null,
     cloudBlocked
   })
@@ -422,9 +430,7 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
               {transport === 'hall' && (
                 <HallPanel
                   served={served}
-                  // the desktop app also names the Wi-Fi to join (hotspot
-                  // status): wait for it, so the panel fills in one change
-                  loading={relay.loading || (desktop && hs.loading)}
+                  loading={lan.loading}
                   interfaces={halls}
                   selectedIp={hallAddress}
                   onSelectIp={setHallIp}
