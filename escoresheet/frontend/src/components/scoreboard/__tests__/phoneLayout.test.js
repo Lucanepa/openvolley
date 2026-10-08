@@ -151,3 +151,18 @@ describe('phone action grid labels (a 4-column grid on a 360px phone)', () => {
     }
   })
 })
+
+describe('phone point buttons on a short screen (styles.css)', () => {
+  // Browser bars or the Android app's system bars leave less height than the
+  // phone has: the point buttons get lower there instead of pushing the
+  // action grid off screen; square otherwise, and square without container units
+  it('square by default, lower within the height left when container units exist', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    const css = readFileSync(resolve(__dirname, '../../../styles.css'), 'utf8')
+    const base = css.match(/\.phone-scoreboard \.phone-square \{([^}]*)\}/)
+    expect(base?.[1]).toMatch(/aspect-ratio: 1 \/ 1/)
+    const supports = css.match(/@supports \(height: 1cqh\) \{\s*\.phone-scoreboard \.phone-square \{([^}]*)\}/)
+    expect(supports?.[1]).toMatch(/height: min\(\(100cqw - 34px\) \/ 2, max\(var\(--phone-square-min\), 100cqh - var\(--phone-square-reserve\)/)
+  })
+})

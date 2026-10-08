@@ -44,6 +44,16 @@ import { COURT_CELLS, POSITIONS, officialRoleShort, tintOf } from './phoneLayout
  *   [{ number }], officials: [{ role }], improperRequestDone, delayWarned,
  *   needsRedesignation }
  */
+// Three 15px lines, two 3px gaps, 6px padding top and bottom: the last
+// actions keep one height whether they show none or three
+const RECENT_HEIGHT_PX = 63
+// Everything but the court and the point buttons, top to bottom: header 52,
+// score cards 89, court padding 10, last actions 63 + 12, team actions at
+// their smallest 56 + 8, point-button padding 8, action grid 108
+const SQUARE_RESERVE_PX = 52 + 89 + 10 + RECENT_HEIGHT_PX + 12 + 64 + 8 + 108
+// Below this height the point buttons stop shrinking and the view scrolls
+const SQUARE_MIN_PX = 56
+
 export default function PhoneScoreboard({ setNumber, teams, serving, rally, centre, recent, canUndo, scoreFont = 'inherit', actions }) {
   const { t } = useTranslation()
   // The phone's own pickers: { kind: 'sub', side, out?: { position, number } } | { kind: 'sanction' } | { kind: 'libero' }
@@ -264,6 +274,12 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
       </button>
     )
   }
+  // The point buttons: squares as wide as their column (.phone-square in
+  // styles.css). On a screen too short for the whole layout (a browser's
+  // address and tool bars, the Android app's system bars) they get lower,
+  // not narrower, so they and the action grid stay on screen without
+  // scrolling; the root is the size container that measures what is left.
+  const squareClass = 'phone-square'
   const pointButton = (team) => (
     <button
       key={team.side}
@@ -271,7 +287,8 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
       data-help-id={`scoreboard-point-${team.side}`}
       aria-label={t('scoreboard.buttons.pointTeam', { team: team.label })}
       onClick={() => actions.point(team.side)}
-      style={{ aspectRatio: '1 / 1', minWidth: 0, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, ...paint[team.side].fill }}
+      className={squareClass}
+      style={{ minWidth: 0, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, ...paint[team.side].fill }}
     >
       <span aria-hidden="true" style={{ fontSize: 40, fontWeight: 800, lineHeight: 1 }}>+1</span>
       <span aria-hidden="true" style={{ fontSize: 14, fontWeight: 600 }}>{t('scoreboard.buttons.pointTeam', { team: team.label })}</span>
@@ -304,7 +321,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
     <div
       className="ov-kit phone-scoreboard"
       data-testid="phone-scoreboard"
-      style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, height: '100%', width: '100%', maxWidth: 600, margin: '0 auto', overflowY: 'auto', overflowX: 'hidden', background: 'var(--ov-page-top)', color: 'var(--ov-text)', fontFamily: 'var(--font-sans)' }}
+      style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: 0, height: '100%', width: '100%', maxWidth: 600, margin: '0 auto', containerType: 'size', '--phone-square-reserve': `${SQUARE_RESERVE_PX}px`, '--phone-square-min': `${SQUARE_MIN_PX}px`, overflowY: 'auto', overflowX: 'hidden', background: 'var(--ov-page-top)', color: 'var(--ov-text)', fontFamily: 'var(--font-sans)' }}
     >
       {header}
 
@@ -320,7 +337,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
         </div>
       </section>
 
-      <section aria-label={t('scoreboard.phone.recentActions')} data-testid="phone-recent" style={{ flex: 'none', margin: '4px 14px 8px', padding: '6px 10px', minHeight: 58, boxSizing: 'border-box', borderRadius: 10, background: 'var(--ov-sunken-strong)', display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <section aria-label={t('scoreboard.phone.recentActions')} data-testid="phone-recent" style={{ flex: 'none', margin: '4px 14px 8px', padding: '6px 10px', height: RECENT_HEIGHT_PX, boxSizing: 'border-box', overflow: 'hidden', borderRadius: 10, background: 'var(--ov-sunken-strong)', display: 'flex', flexDirection: 'column', gap: 3 }}>
         {recent.length === 0 ? (
           <span style={{ fontSize: 12, color: 'var(--ov-text-muted)' }}>{t('scoreboard.phone.noActions')}</span>
         ) : recent.map((r, i) => (
@@ -340,8 +357,8 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
         ) : (
           <>
             {/* Two square slots keep the height of the point buttons */}
-            <div aria-hidden="true" style={{ aspectRatio: '1 / 1' }} />
-            <div aria-hidden="true" style={{ aspectRatio: '1 / 1' }} />
+            <div aria-hidden="true" className={squareClass} />
+            <div aria-hidden="true" className={squareClass} />
             <div style={{ position: 'absolute', top: 0, left: 12, right: 12, bottom: 8 }}>{overlay}</div>
           </>
         )}
