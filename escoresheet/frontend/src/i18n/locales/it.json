@@ -874,7 +874,7 @@
     },
     "phone": {
       "setInfo": "Set {{set}} · set {{left}} : {{right}}",
-      "setsWon": "Set vinti: {{count}}",
+      "setsWon": "Set: {{count}}",
       "timeOut": "Timeout",
       "courtPlayer": "Giocatore {{number}}, squadra {{team}}",
       "score": "Punteggio",
