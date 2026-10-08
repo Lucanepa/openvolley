@@ -80,8 +80,10 @@ describe('Scoreboard: one transaction and one screen change per scorer action', 
     expect(body).toContain('deferUi(() => setLiberoRotationModal({')
     expect(body).toContain('deferUi(() => setLiberoReentryModal({')
     const after = handler('afterPointScored')
-    expect(after).toContain('deferUi(() => setCourtSwitchModal({')
+    expect(after).toContain('await askCourtSwitchIfDue({ set, homePoints, awayPoints, teamKey })')
     expect(after).toContain('await checkSetEnd(set, homePoints, awayPoints)')
+    // the change of courts (or the change back) opens with the action's screen change
+    expect(handler('askCourtSwitchIfDue')).toContain('deferUi(() => setCourtSwitchModal({')
   })
 
   it('the serve ball is no longer hidden while a rotation is pending (no render shows one)', () => {

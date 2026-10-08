@@ -71,6 +71,15 @@ import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, restorePrefill } from './utils/m
 import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
 import { needsEventCheck, pickCurrentMatch } from './utils/currentMatch'
 import { isRelayErrorFor, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
+import { PHONE_MAX_WIDTH, phoneLayoutKept } from './components/scoreboard/phoneLayout'
+
+function readStoredDisplayMode() {
+  try {
+    return localStorage.getItem('displayMode') || 'auto'
+  } catch {
+    return 'auto'
+  }
+}
 
 function parseDateTime(dateTime) {
   const [datePart, timePart] = dateTime.split(' ')
@@ -378,14 +387,16 @@ export default function App() {
   }, [])
 
   // Screen size detection for display mode
-  // <= 1024px = tablet, > 1024px = desktop
+  // portrait under 600px = phone, <= 1024px = tablet, > 1024px = desktop
   useEffect(() => {
     const checkScreenSize = () => {
       const width = window.innerWidth
       const height = window.innerHeight
       let detected = 'desktop'
 
-      if (width <= 1024) {
+      if (height > width && width < PHONE_MAX_WIDTH) {
+        detected = 'phone'
+      } else if (width <= 1024) {
         detected = 'tablet'
       }
       // > 1024px = desktop (default)
@@ -2783,6 +2794,15 @@ export default function App() {
     }
   }
 
+  // The scoring screen in its phone layout (the display mode as the
+  // Scoreboard reads it: its options write localStorage), and the match end
+  // it leads to (signatures, approval): both get past the size gate on a phone
+  // It is kept on a phone turned sideways: the scoring screen stays mounted
+  // under its "hold the phone upright" notice, with its dialogs and countdowns
+  const phoneLayoutOn = phoneLayoutKept(readStoredDisplayMode(), viewportSize)
+  const phoneScoringShown = phoneLayoutOn && !!matchId && !showCoinToss && !showMatchSetup && !showMatchEnd && !showManualAdjustments
+  const phoneMatchEndShown = phoneLayoutOn && !!matchId && showMatchEnd && !showManualAdjustments
+
   return (
     <div className="app-root" onClick={(e) => {
       // Close connection menu and debug menu when clicking outside
@@ -2800,7 +2820,8 @@ export default function App() {
       {/* Minimum screen size warning - block phones/small screens */}
       {/* Allow if at least one dimension >= 800 (tablet in any orientation), but enforce min 500 on both */}
       {/* Skip warning in fullscreen mode - trust user has adequate screen space */}
-      {!isFullscreen && isViewportTooSmall(viewportSize.width, viewportSize.height) ? (
+      {/* The scoring screen is let through when it shows its phone layout (PhoneScoreboard), and its match end */}
+      {!isFullscreen && !phoneScoringShown && !phoneMatchEndShown && isViewportTooSmall(viewportSize.width, viewportSize.height) ? (
         <div className="ov-kit flex flex-1 flex-col items-center justify-center bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100 p-4">
           <div className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-stone-200/70 bg-white p-8 text-center shadow-card-lg">
             <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 to-red-500" />
@@ -2864,6 +2885,7 @@ export default function App() {
               benchCount: dashboardServerData.benchCount
             } : null}
             collapsible={!!(matchId && !showCoinToss && !showMatchSetup && !showMatchEnd)}
+            startCollapsed={phoneScoringShown}
             onTriggerAlarm={async () => {
               if (!matchId || !currentMatch) return
 
