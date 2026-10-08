@@ -25,6 +25,7 @@ import { useComponentLogging } from '../contexts/LoggingContext'
 import { exportLogsAsNDJSON } from '../utils/comprehensiveLogger'
 import { diagnosticLogQuery } from '../utils/activity/logQuery'
 import { listActivity } from '../utils/activity'
+import { preload, usePreloaded } from '../utils/preload'
 
 // Primary ball image (with a bundled copy as fallback)
 // The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
@@ -306,10 +307,8 @@ function MatchEndPageView({ children }) {
   return <div className="setup" style={setupViewStyle}>{children}</div>
 }
 
-export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualAdjustments }) {
-  const cLogger = useComponentLogging('MatchEnd')
-  const { vmin } = useScaledLayout()
-  const data = useLiveQuery(async () => {
+// Everything Match End shows of a match
+async function readMatchEnd(matchId) {
     const match = await db.matches.get(matchId)
     if (!match) return null
 
@@ -346,7 +345,22 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       sets,
       events
     }
-  }, [matchId])
+}
+
+const matchEndKey = (matchId) => `matchEnd:${matchId}`
+
+/**
+ * Read by App before it opens Match End: the page then shows filled in its
+ * first paint, never empty first (laptop run 2026-10-08, OV-14), and the
+ * scoreboard's set-end screen stays until then.
+ */
+export const preloadMatchEnd = (matchId) => preload(matchEndKey(matchId), () => readMatchEnd(matchId))
+
+export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualAdjustments }) {
+  const cLogger = useComponentLogging('MatchEnd')
+  const { vmin } = useScaledLayout()
+  const preloaded = usePreloaded(matchId != null ? matchEndKey(matchId) : null)
+  const data = useLiveQuery(() => readMatchEnd(matchId), [matchId], preloaded)
   const { t, i18n } = useTranslation()
 
   const { showAlert } = useAlert()
@@ -1367,8 +1381,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         await db.matches.delete(matchId)
       })
 
-      // Navigate home
-      if (onGoHome) onGoHome()
+      // Navigate home (the match is gone: App leaves it out at once)
+      if (onGoHome) onGoHome({ closed: true })
     } catch (error) {
       console.error('[MatchEnd] Error closing match:', error)
       showAlert(t('matchEnd.errorClosing', 'Error closing match: ') + error.message, 'error')
