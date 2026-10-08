@@ -1092,6 +1092,25 @@ describe('useSyncQueue flush loop', () => {
     expect(result.current.syncStatus).toBe('synced')
     unmount()
   })
+
+  // Laptop run of 2026-10-08 (OB-3): the scoreboard mounts its own queue,
+  // whose first probe published 'connecting' over the app's 'synced': the
+  // header's cloud chip changed for one frame ('Venue mode', then 'Ready')
+  it('a second instance never shows "connecting" over a cloud already known to work', async () => {
+    fakeDb.sync_queue.reset([])
+    const seen = []
+    const app = renderHook(() => { const q = useSyncQueue(); seen.push(q.syncStatus); return q })
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
+    expect(app.result.current.syncStatus).toBe('synced')
+
+    seen.length = 0
+    const scoreboard = renderHook(() => useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
+    expect(seen).not.toContain('connecting')
+    expect(app.result.current.syncStatus).toBe('synced')
+    scoreboard.unmount()
+    app.unmount()
+  })
 })
 
 describe('closing order (approval waits for the match\'s older sets and events)', () => {

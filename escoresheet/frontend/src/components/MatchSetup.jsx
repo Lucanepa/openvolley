@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react'
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, memo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useTranslation } from 'react-i18next'
 import { useAlert } from '../contexts/AlertContext'
@@ -50,6 +50,7 @@ import StackLabel from './StackLabel'
 import { useFormStack } from '../hooks/useFormStack'
 import { askText } from '../utils/askText.js'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
+import { preload, usePreloaded } from '../utils/preload'
 
 // Kit field look inside the setup editors: compact label tone, and the legacy
 // `label { margin: 8px 0 }` rule neutralised so the label sits on its field.
@@ -391,6 +392,31 @@ const LineJudgesCard = memo(function LineJudgesCard({
     </div>
   )
 })
+
+// What Match Setup shows of a stored match, read in one go: the match, its
+// teams and their players
+function readSetup(matchId) {
+  return db.transaction('r', db.matches, db.teams, db.players, async () => {
+    const match = await db.matches.get(matchId)
+    if (!match) return { match: null }
+    const [homeTeam, awayTeam, homePlayers, awayPlayers] = await Promise.all([
+      match.homeTeamId ? db.teams.get(match.homeTeamId) : null,
+      match.awayTeamId ? db.teams.get(match.awayTeamId) : null,
+      match.homeTeamId ? db.players.where('teamId').equals(match.homeTeamId).sortBy('number') : [],
+      match.awayTeamId ? db.players.where('teamId').equals(match.awayTeamId).sortBy('number') : []
+    ])
+    return { match, homeTeam, awayTeam, homePlayers, awayPlayers }
+  })
+}
+
+const setupKey = (matchId) => `matchSetup:${matchId}`
+
+/**
+ * Read by App before it opens Match Setup on a stored match: the setup then
+ * shows filled in its first paint, never 'Not set' / 'Players: 0' first
+ * (laptop run 2026-10-08, OV-18), and the screen before it stays until then.
+ */
+export const preloadMatchSetup = (matchId) => preload(setupKey(matchId), () => readSetup(matchId))
 
 function isNavigatorOnline() {
   return typeof navigator === 'undefined' || navigator.onLine !== false
@@ -747,7 +773,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
   // Referee selector state
   const [showRefereeSelector, setShowRefereeSelector] = useState(null) // 'ref1' | 'ref2' | null
-  const rosterLoadedRef = useRef(false) // Track if roster has been loaded to prevent overwriting user edits
   const homeTeamInputRef = useRef(null)
   const awayTeamInputRef = useRef(null)
   const homeTeamMeasureRef = useRef(null)
@@ -890,6 +915,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       awayCaptainSignature === savedSignatures.awayCaptain
   }, [homeCoachSignature, homeCaptainSignature, awayCoachSignature, awayCaptainSignature, savedSignatures])
 
+  // The stored match, its teams and players, when App read them before
+  // opening the setup (preloadMatchSetup)
+  const preloaded = usePreloaded(matchId ? setupKey(matchId) : null)
+
   // Load match data if matchId is provided
   const match = useLiveQuery(async () => {
     if (!matchId) return null
@@ -899,7 +928,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       console.error('Unable to load match', error)
       return null
     }
-  }, [matchId])
+  }, [matchId], preloaded?.match)
 
   const isMatchOngoing = match?.status === 'live'
 
@@ -1198,23 +1227,25 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     setBenchAway(o.benchAway)
   }
 
-  // Load match data if matchId is provided
-  // Split into two effects: one for initial load (matchId only), one for updates (match changes)
-
-  // Initial load effect - only runs when matchId changes or when match becomes available
-  useEffect(() => {
-    if (!matchId) return
+  // The form's fields from the stored match, once per match: later changes
+  // of the stored match never overwrite the scorer's edits. Preloaded, in
+  // the commit that first shows the setup (a layout effect: before the
+  // paint); else read here once the match is there.
+  const appliedMatchRef = useRef(null)
+  useLayoutEffect(() => {
+    if (!matchId || appliedMatchRef.current === matchId) return
+    if (preloaded?.match) {
+      appliedMatchRef.current = matchId
+      applyStoredMatch(preloaded)
+      return
+    }
     if (!match) return // Wait for match to be loaded from useLiveQuery
-    if (rosterLoadedRef.current) return // Already loaded for this matchId - don't reload to preserve user edits
+    appliedMatchRef.current = matchId
+    readSetup(matchId).then(applyStoredMatch, (error) => console.error('Error loading initial match data:', error))
 
-    async function loadInitialData() {
+    function applyStoredMatch({ match, homeTeam, awayTeam, homePlayers, awayPlayers }) {
+      if (!match) return
       try {
-        // Load teams
-        const [homeTeam, awayTeam] = await Promise.all([
-          match.homeTeamId ? db.teams.get(match.homeTeamId) : null,
-          match.awayTeamId ? db.teams.get(match.awayTeamId) : null
-        ])
-
         if (homeTeam) {
           setHome(homeTeam.name)
           setHomeColor(homeTeam.color || '#ef4444')
@@ -1297,31 +1328,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         if (match.game_n) setGameN(String(match.game_n))
         else if (match.gameNumber) setGameN(String(match.gameNumber))
 
-        // Generate PINs if they don't exist (for matches created before PIN feature)
-        const updates = missingConnectionPins(match)
-        if (Object.keys(updates).length > 0) {
-          await db.matches.update(matchId, updates)
-        }
-
-        // A created match: make sure the server has every connection PIN
-        // (roster upload validates the upload PIN there). Through the sync
-        // queue, so it also works offline and after the match insert; it
-        // heals matches created before Create match carried the PINs. Once
-        // per match (connectionPinsQueuedAt), or when PINs were just added:
-        // every update is a server write and a realtime publish.
-        if (match.seed_key && match.matchInfoConfirmedAt && (Object.keys(updates).length > 0 || !match.connectionPinsQueuedAt)) {
-          try {
-            await db.sync_queue.add(connectionPinsSyncJob(match.seed_key, { ...match, ...updates }))
-            await db.matches.update(matchId, { connectionPinsQueuedAt: new Date().toISOString() })
-          } catch (err) {
-            console.warn('[MatchSetup] Failed to queue the connection PINs:', err)
-          }
-        }
-
         // Load players only on initial load (when matchId changes, not when match updates)
         // Skip if roster was already loaded from draft (to preserve user edits like number/captain changes)
         if (match.homeTeamId && !rosterLoadedFromDraft.current.home) {
-          const homePlayers = await db.players.where('teamId').equals(match.homeTeamId).sortBy('number')
           setHomeRoster(homePlayers.map(p => ({
             id: p.id, // Store player ID for updates
             number: p.number,
@@ -1334,7 +1343,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           })))
         }
         if (match.awayTeamId && !rosterLoadedFromDraft.current.away) {
-          const awayPlayers = await db.players.where('teamId').equals(match.awayTeamId).sortBy('number')
           setAwayRoster(awayPlayers.map(p => ({
             id: p.id, // Store player ID for updates
             number: p.number,
@@ -1346,18 +1354,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             isLfp: p.isLfp || false
           })))
         }
-
-        // Migrate old matches: ensure connection fields are explicitly set to false if undefined
-        const connectionUpdates = {}
-        if (match.refereeConnectionEnabled === undefined) connectionUpdates.refereeConnectionEnabled = false
-        if (match.homeTeamConnectionEnabled === undefined) connectionUpdates.homeTeamConnectionEnabled = false
-        if (match.awayTeamConnectionEnabled === undefined) connectionUpdates.awayTeamConnectionEnabled = false
-        if (Object.keys(connectionUpdates).length > 0) {
-          await db.matches.update(matchId, connectionUpdates)
-        }
-
-        // Mark roster as loaded
-        rosterLoadedRef.current = true
 
         // Bench officials are already loaded above via resolvedHomeBench/resolvedAwayBench
         // This section is kept for backward compatibility but should not override if already set
@@ -1434,14 +1430,53 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         console.error('Error loading initial match data:', error)
       }
     }
+  }, [matchId, preloaded, match])
 
-    loadInitialData()
-  }, [matchId, match]) // Depend on both matchId and match - but only load once per matchId due to rosterLoadedRef check
-
-  // Reset roster loaded flag when matchId changes
+  // After the first read, once per match: complete the stored match
+  // (connection PINs, connection flags) and queue its PINs for the server
+  const completedMatchRef = useRef(null)
   useEffect(() => {
-    rosterLoadedRef.current = false
-  }, [matchId])
+    if (!matchId || !match || completedMatchRef.current === matchId) return
+    completedMatchRef.current = matchId
+
+    async function completeMatch() {
+      try {
+        // Generate PINs if they don't exist (for matches created before PIN feature)
+        const updates = missingConnectionPins(match)
+        if (Object.keys(updates).length > 0) {
+          await db.matches.update(matchId, updates)
+        }
+
+        // A created match: make sure the server has every connection PIN
+        // (roster upload validates the upload PIN there). Through the sync
+        // queue, so it also works offline and after the match insert; it
+        // heals matches created before Create match carried the PINs. Once
+        // per match (connectionPinsQueuedAt), or when PINs were just added:
+        // every update is a server write and a realtime publish.
+        if (match.seed_key && match.matchInfoConfirmedAt && (Object.keys(updates).length > 0 || !match.connectionPinsQueuedAt)) {
+          try {
+            await db.sync_queue.add(connectionPinsSyncJob(match.seed_key, { ...match, ...updates }))
+            await db.matches.update(matchId, { connectionPinsQueuedAt: new Date().toISOString() })
+          } catch (err) {
+            console.warn('[MatchSetup] Failed to queue the connection PINs:', err)
+          }
+        }
+
+        // Migrate old matches: ensure connection fields are explicitly set to false if undefined
+        const connectionUpdates = {}
+        if (match.refereeConnectionEnabled === undefined) connectionUpdates.refereeConnectionEnabled = false
+        if (match.homeTeamConnectionEnabled === undefined) connectionUpdates.homeTeamConnectionEnabled = false
+        if (match.awayTeamConnectionEnabled === undefined) connectionUpdates.awayTeamConnectionEnabled = false
+        if (Object.keys(connectionUpdates).length > 0) {
+          await db.matches.update(matchId, connectionUpdates)
+        }
+      } catch (error) {
+        console.error('Error completing the match:', error)
+      }
+    }
+
+    completeMatch()
+  }, [matchId, match])
 
   // Auto-fill scorer fields from logged-in user profile
   // Only applies when scorer fields are empty (new match or scorer not yet set)
