@@ -207,6 +207,7 @@ describe('MatchEnd: the approval PDF', () => {
   })
 
   it('Approve without PDF approves the match (the approval and its sync job in one transaction)', async () => {
+    store.tables.matches.get(1).remarks = 'Actual start time: 18:05'
     render(<MatchEnd matchId={1} />)
     await approve()
     await postFromSheet({ type: 'pdfBlobFailed' })
@@ -217,7 +218,13 @@ describe('MatchEnd: the approval PDF', () => {
     const tx = store.transactions.find(t => t.writes.includes('matches.update'))
     expect(tx).toBeTruthy()
     expect(tx.tables).toEqual(expect.arrayContaining(['sync_queue', 'matches']))
-    expect(tx.writes).toEqual(['sync_queue.add', 'matches.update'])
+    // db/017: the remarks as approved, their own job just before the approval
+    expect(tx.writes).toEqual(['sync_queue.add', 'sync_queue.add', 'matches.update'])
+    const jobs = [...store.tables.sync_queue.values()]
+    const remarksJob = jobs.find(j => j.payload && 'remarks' in j.payload)
+    expect(remarksJob.payload).toEqual({ id: 'match_1_pdf', remarks: 'Actual start time: 18:05' })
+    expect(jobs.indexOf(remarksJob)).toBeLessThan(jobs.indexOf(approvedJobs()[0]))
+    expect('remarks' in approvedJobs()[0].payload).toBe(false)
     expect(alerts.showAlert).toHaveBeenCalledWith(en.matchEnd.pdfGenerationFailed, 'warning')
   })
 

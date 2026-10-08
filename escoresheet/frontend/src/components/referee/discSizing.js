@@ -45,8 +45,12 @@ export const DISC = {
   badge: 0.26,
   badgeMinPx: 11,
   badgeMaxPx: 26,
-  /** serve ball: up to this share of the diameter, less when the court is narrow */
-  ballMax: 0.8,
+  /**
+   * serve ball: up to this share of the diameter, less when the court is
+   * narrow. It was 0.8: as big as a disc next to it, it read as a seventh
+   * player and reached the court edge on a landscape tablet.
+   */
+  ballMax: 0.6,
   ballGap: 0.06,
   /** room for the ball beside a back-row disc: 15cqw minus half a disc (see discMetrics) */
   ballRoomCqw: 15,
