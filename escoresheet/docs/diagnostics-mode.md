@@ -68,7 +68,7 @@ Many `d` objects carry `after: {a, ms}`, which is the last user action and how l
 | `geo.dpr` / `geo.fullscreen` / `geo.orientation` | zoom or screen change, fullscreen, orientation |
 | `css.vars` | `<html>` inline custom properties (`--scale-factor`, `--vmin-base`, ...), root font size, `<body>` classes: what changed |
 | `dialog.open` / `dialog.content` / `dialog.close` | every `[role=dialog]` / `[role=alertdialog]`: `id`, `title` (heading or label, redacted), `hash` of its text, `ms` open, `flash` (closed within 400 ms) |
-| `ui.click` / `ui.key` | user actions: element `id` (data-testid, data-help-id, id, or aria-label / title without digits, never the text), `role`, `dialog`. Keys typed into fields are not recorded |
+| `ui.click` / `ui.key` | user actions: element `id` (data-testid, data-help-id, id, or aria-label / title without digits; for a button or link without any of these, its caption when it has no digit, e.g. `Confirm time-out` / `Cancel`; never a field's or a row's text), `role`, `dialog`. Keys typed into fields are not recorded |
 | `action.start` / `action.commit` / `action.ui` / `action.drop` / `action.fail` | scorer actions (`useScorerActions`): `key` (`point`, `timeout`, `substitution`, ...), commit ms, `gen`, the number of screen changes and effects. `action.ui` is the moment the action's dialogs are applied |
 | `lq.emit` / `lq.fallback` | the scoreboard live query delivered a result (`gen`) / gave up waiting for it |
 | `db.tx_start` / `db.tx` / `db.reads` | read-write Dexie transactions (tables, ms, outcome). Read-only ones are summed per user action |
@@ -99,8 +99,9 @@ PINs, passwords, tokens or signatures. Diagnostics uses the activity log's redac
 (`domain/activitySummary`: no key named pin, password, token, signature, email, phone,
 and so on, and no PIN or long number in text) and the click log's
 (`utils/screenText`: no 6-digit run, also grouped like "771 234").
-It also leaves out URL queries and fragments, data URLs, JWTs, the text of an
-element or a dialog (a dialog keeps its title and a hash of its text), and
+It also leaves out URL queries and fragments, data URLs, JWTs, the text of a
+field, a row or a dialog (a dialog keeps its title and a hash of its text; a
+button keeps its caption only when it has no digit), and
 anything typed into a field.
 
 ## OpenBeach
