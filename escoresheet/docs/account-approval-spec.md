@@ -204,6 +204,12 @@ The frontend builds the same string from its Dexie sets (`finished`, `index`, `h
 `awayPoints`) in `src/domain/accountApproval.js` `resultKey(sets)`. It needs no hashing, because
 it compares strings. A missing points value counts as 0.
 
+A **beach** match (`matches.sport_type = 'beach'`) stores its points in `team1_points` /
+`team2_points`; its `home_points` / `away_points` keep the column default 0. The server then reads
+team 1 in the home place and team 2 in the away place (`<index>:<team1_points>:<team2_points>`),
+chosen by the sport of the match, never a `coalesce` of the two pairs. OpenBeach builds the same
+string in `src_beach/utils_beach/accountApproval_beach.js` `resultKey(sets)`.
+
 ### 1.5 Triggers
 
 1. **Closed-match lock.** Reuse 007's function, which reads `match_id` from OLD and NEW:
