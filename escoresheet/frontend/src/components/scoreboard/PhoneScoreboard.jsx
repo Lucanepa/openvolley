@@ -269,8 +269,9 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
         type="button"
         data-help-id="scoreboard-start-rally"
         disabled={rally.startDisabled}
-        // The desktop button hands its click event to handleStartRally too
-        onClick={(e) => actions.startRally(e)}
+        // No click event in: the screen's handler asks first when a point was
+        // just awarded (accidental rally start check), as the desktop does
+        onClick={() => actions.startRally()}
         style={{ ...bigButton, height: '100%', fontSize: 24, fontWeight: 800, borderRadius: 16, background: rally.startDisabled ? 'var(--ov-sunken-strong)' : 'var(--ov-selected)', color: rally.startDisabled ? 'var(--ov-text-faint)' : 'var(--ov-on-dark)' }}
       >
         {rally.isFirstRally ? t('scoreboard.buttons.startSet') : t('scoreboard.buttons.startRally')}

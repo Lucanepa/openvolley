@@ -5489,10 +5489,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     for (const team of teams) await handlePoint(mapTeamKeyToSide(team), true)
   }), [runAction, handlePoint, mapTeamKeyToSide])
 
+  // Only the literal true skips the accidental rally start check (its own
+  // "Yes, start rally"): a button handing its click event in must not, or a
+  // tap on Start rally never asks (it did, desktop and phone, until 2026-10)
   const handleStartRally = useCallback((skipConfirmation = false) => runAction('rally', async () => {
-    cLogger.logHandler('handleStartRally', { skipConfirmation })
+    const skipCheck = skipConfirmation === true
+    cLogger.logHandler('handleStartRally', { skipConfirmation: skipCheck })
     // Check for accidental rally start (if enabled and point was just awarded)
-    if (checkAccidentalRallyStart && !skipConfirmation && lastPointAwardedTimeRef.current) {
+    if (checkAccidentalRallyStart && !skipCheck && lastPointAwardedTimeRef.current) {
       const timeSinceLastPoint = (Date.now() - lastPointAwardedTimeRef.current) / 1000
       if (timeSinceLastPoint < accidentalRallyStartDuration) {
         deferUi(() => setAccidentalRallyConfirmModal({
@@ -12828,7 +12832,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         undo: showUndoConfirm,
         menu: () => setMenuModal(true),
         point: (side) => handlePoint(side),
-        startRally: handleStartRally,
+        startRally: () => handleStartRally(),
         timeout: (side) => handleTimeout(side),
         openLineup: (side) => setLineupModal({ team: mapSideToTeamKey(side), mode: 'initial' }),
         playerClick: handlePlayerClick,
@@ -14204,7 +14208,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     </>
                   ) : rallyStatus === 'idle' ? (
                     <button
-                      onClick={handleStartRally}
+                      onClick={() => handleStartRally()}
                       disabled={isFirstRally && (!leftTeamLineupSet || !rightTeamLineupSet)}
                       style={{
                         width: '100%',
@@ -17557,7 +17561,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       <button
                         data-help-id="scoreboard-start-rally"
                         className="secondary start-rally-button"
-                        onClick={handleStartRally}
+                        onClick={() => handleStartRally()}
                         disabled={isFirstRally && (!leftTeamLineupSet || !rightTeamLineupSet)}
                       >
                         {isFirstRally ? t('scoreboard.buttons.startSet') : t('scoreboard.buttons.startRally')}
