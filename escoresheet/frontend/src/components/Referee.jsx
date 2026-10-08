@@ -23,7 +23,7 @@ import { Button, FOCUS_RING } from '../ui/Button.jsx'
 import { Card } from '../ui/Card.jsx'
 import { StatusPill } from '../ui/StatusPill.jsx'
 import { NarrowScreenOverlay } from './dashboards/EntryKit.jsx'
-import { lastEventFromLiveState, lastEventFromMatchData, pickNewerLastEvent } from '../utils/refereeLastEvent.js'
+import { lastEventFromLiveState, lastEventFromMatchData, pickNewerLastEvent, refereeEventLabel } from '../utils/refereeLastEvent.js'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
 import PlayerDisc from './referee/PlayerDisc.jsx'
 import { matchDiscPaint, teamLiberoColour, teamBoxStyle } from '../utils/teamColours.js'
@@ -3891,58 +3891,19 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                   {new Date(lastEvent.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                 </span>
                 <span style={{ fontWeight: 600 }}>
-                  {(() => {
-                    // lastEvent.team is 'home' or 'away', need to map to display values
-                    const teamLbl = lastEvent.team === 'home' ? homeLabel : lastEvent.team === 'away' ? awayLabel : ''
-                    const teamShort = lastEvent.team === 'home' ? (data?.match?.homeShortName || data?.homeTeam?.name || t('common.home')) : lastEvent.team === 'away' ? (data?.match?.awayShortName || data?.awayTeam?.name || t('common.away')) : ''
-                    const scoreStr = `(${leftDisplayScore}-${rightDisplayScore})`
-                    const teamInfo = teamLbl ? `${teamLbl} ${teamShort} ${scoreStr}` : ''
-
-                    if (lastEvent.type === 'point') return `${t('refereeDashboard.events.point')} ${teamInfo}`
-                    if (lastEvent.type === 'timeout') return `${t('refereeDashboard.events.timeout')} ${teamInfo}`
-                    if (lastEvent.type === 'substitution') return `${t('refereeDashboard.events.substitution')} ${teamInfo}: #${lastEvent.data?.playerOut} → #${lastEvent.data?.playerIn}`
-                    if (lastEvent.type === 'libero_entry') return `${t('refereeDashboard.events.liberoIn')} ${teamInfo}`
-                    if (lastEvent.type === 'libero_exit') return `${t('refereeDashboard.events.liberoOut')} ${teamInfo}`
-                    if (lastEvent.type === 'libero_exchange') return `${t('refereeDashboard.events.liberoExchange')} ${teamInfo}`
-                    if (lastEvent.type === 'libero_redesignation') return `${t('refereeDashboard.events.liberoRedesignation')} ${teamInfo}`
-                    if (lastEvent.type === 'set_end') return t('refereeDashboard.events.setEnd', { set: lastEvent.data?.setIndex ? displaySetNumber(lastEvent.data.setIndex, refBestOf) : '' })
-                    if (lastEvent.type === 'sanction') {
-                      const sanctionData = lastEvent.data || {}
-                      // Short sanction type labels
-                      const sanctionTypeShort = {
-                        'improper_request': 'IR',
-                        'delay_warning': 'DW',
-                        'delay_penalty': 'DP',
-                        'warning': 'W',
-                        'penalty': 'P',
-                        'expulsion': 'EXP',
-                        'disqualification': 'DQ'
-                      }[sanctionData.type] || sanctionData.type || ''
-
-                      // For delay and IR, no member info needed
-                      const isDelayOrIR = ['delay_warning', 'delay_penalty', 'improper_request'].includes(sanctionData.type)
-
-                      let memberInfo = ''
-                      if (!isDelayOrIR) {
-                        if (sanctionData.playerNumber) {
-                          memberInfo = `#${sanctionData.playerNumber}`
-                        } else if (sanctionData.role) {
-                          // For officials: coach, assistant coach, etc.
-                          memberInfo = sanctionData.role
-                        } else if (sanctionData.playerType) {
-                          memberInfo = sanctionData.playerType
-                        }
-                      }
-
-                      const parts = [sanctionTypeShort, teamInfo, memberInfo].filter(Boolean)
-                      return parts.join(' ')
-                    }
-                    if (lastEvent.type === 'court_captain_designation') {
-                      const playerNumber = lastEvent.data?.playerNumber || '?'
-                      return `${t('refereeDashboard.events.courtCaptainDesignation')} ${teamInfo} #${playerNumber}`
-                    }
-                    return ''
-                  })()}
+                  {/* the score in court order with the letters ("B 20 : 16 A") */}
+                  {refereeEventLabel(lastEvent, {
+                    homeLabel,
+                    awayLabel,
+                    homeShort: data?.match?.homeShortName || data?.homeTeam?.name || t('common.home'),
+                    awayShort: data?.match?.awayShortName || data?.awayTeam?.name || t('common.away'),
+                    leftLabel,
+                    rightLabel,
+                    leftPoints: leftDisplayScore,
+                    rightPoints: rightDisplayScore,
+                    setLabel: (setIndex) => displaySetNumber(setIndex, refBestOf),
+                    t
+                  })}
                 </span>
               </>
             ) : (

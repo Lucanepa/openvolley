@@ -94,3 +94,59 @@ describe('lastEventFromMatchData', () => {
     expect(lastEventFromMatchData({ liveState, events }).type).toBe('timeout')
   })
 })
+
+// The footer's text: the score read in court order with the team letters
+// ("A 20 : 16 B"), as on the scorer screen (parity with OpenBeach a237c69 /
+// c1bdf49). It was "(20-16)": left-right numbers with no letters, so after a
+// court switch or on the 2nd referee's side nothing said whose 20 it was.
+describe('refereeEventLabel (the Last action line)', () => {
+  // dynamic import: the helpers are added by this change
+  const load = () => import('../refereeLastEvent')
+  const t = (key, opts) => {
+    const map = {
+      'refereeDashboard.events.point': 'Point',
+      'refereeDashboard.events.timeout': 'Timeout',
+      'refereeDashboard.events.substitution': 'Substitution',
+      'refereeDashboard.events.setEnd': `Set ${opts?.set} ended`
+    }
+    return map[key] ?? key
+  }
+  // 1st referee: B (away) on the left with 20, A (home) on the right with 16
+  const ctx = {
+    homeLabel: 'A', awayLabel: 'B', homeShort: 'Volley Home', awayShort: 'Volley Away',
+    leftLabel: 'B', rightLabel: 'A', leftPoints: 20, rightPoints: 16, t
+  }
+
+  it('prints the score in court order with each side\'s letter', async () => {
+    const { refereeEventLabel, courtScore } = await load()
+    expect(courtScore(ctx)).toBe('B 20 : 16 A')
+    expect(refereeEventLabel({ type: 'point', team: 'away' }, ctx)).toBe('Point B Volley Away (B 20 : 16 A)')
+    expect(refereeEventLabel({ type: 'timeout', team: 'home' }, ctx)).toBe('Timeout A Volley Home (B 20 : 16 A)')
+    expect(refereeEventLabel({ type: 'substitution', team: 'home', data: { playerOut: 7, playerIn: 12 } }, ctx))
+      .toBe('Substitution A Volley Home (B 20 : 16 A): #7 → #12')
+  })
+
+  it('the 2nd referee sees the other side first', async () => {
+    const { refereeEventLabel } = await load()
+    const second = { ...ctx, leftLabel: 'A', rightLabel: 'B', leftPoints: 16, rightPoints: 20 }
+    expect(refereeEventLabel({ type: 'point', team: 'away' }, second)).toBe('Point B Volley Away (A 16 : 20 B)')
+  })
+
+  it('never prints a bare "(20-16)"', async () => {
+    const { refereeEventLabel } = await load()
+    for (const type of ['point', 'timeout', 'libero_entry', 'sanction', 'court_captain_designation']) {
+      const text = refereeEventLabel({ type, team: 'home', data: { type: 'warning', playerNumber: 4 } }, ctx)
+      expect(text).not.toMatch(/\(\d+-\d+\)/)
+      expect(text).toContain('(B 20 : 16 A)')
+    }
+  })
+
+  it('keeps the other lines (sanction short form, set end, nothing for unknown types)', async () => {
+    const { refereeEventLabel } = await load()
+    expect(refereeEventLabel({ type: 'sanction', team: 'away', data: { type: 'delay_warning', playerNumber: 3 } }, ctx)).toBe('DW B Volley Away (B 20 : 16 A)')
+    expect(refereeEventLabel({ type: 'sanction', team: 'away', data: { type: 'penalty', playerNumber: 3 } }, ctx)).toBe('P B Volley Away (B 20 : 16 A) #3')
+    expect(refereeEventLabel({ type: 'set_end', data: { setIndex: 2 } }, { ...ctx, setLabel: (i) => i })).toBe('Set 2 ended')
+    expect(refereeEventLabel({ type: 'whatever' }, ctx)).toBe('')
+    expect(refereeEventLabel(null, ctx)).toBe('')
+  })
+})
