@@ -309,7 +309,8 @@ export default function ScoreboardOptionsModal({
 
   const modeDescriptions = {
     desktop: t('options.desktopDesc'),
-    tablet: t('options.tabletDesc')
+    tablet: t('options.tabletDesc'),
+    phone: t('options.phoneDesc')
   }
 
   return (
@@ -705,7 +706,7 @@ export default function ScoreboardOptionsModal({
                 size="lg"
                 value={displayMode}
                 className="max-w-md [&>button]:capitalize"
-                options={['auto', 'desktop', 'tablet'].map(mode => ({
+                options={['auto', 'desktop', 'tablet', 'phone'].map(mode => ({
                   value: mode,
                   label: mode === 'auto' ? t('options.autoWithMode', { mode: detectedDisplayMode }) : mode,
                   title: modeDescriptions[mode]

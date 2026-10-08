@@ -3015,6 +3015,33 @@ button.start-rally-button {
   }
 }
 
+/* Phone layout (PhoneScoreboard): the scoring screen's small menus (player
+   action menu, substitution / libero / sanction dropdowns, bench and libero
+   menus) are anchored next to the tapped player and drawn at 1.5x for the
+   large court. On a phone that puts them off screen, so they open centred,
+   at 1.25x, and scroll when taller than the screen. Only under .phone-layout:
+   desktop and tablet keep their anchored menus. */
+.match-record.phone-layout .modal-wrapper-roll-down,
+.match-record.phone-layout .modal-wrapper-roll-up,
+.match-record.phone-layout .sb-anchored-popover {
+  position: fixed !important;
+  left: 50% !important;
+  right: auto !important;
+  top: 50% !important;
+  bottom: auto !important;
+  transform: translate(-50%, -50%) !important;
+}
+
+.match-record.phone-layout .modal-wrapper-roll-down>div,
+.match-record.phone-layout .modal-wrapper-roll-up>div,
+.match-record.phone-layout .sb-anchored-popover>div {
+  transform: scale(1.25) !important;
+  transform-origin: center !important;
+  max-height: calc(80dvh / 1.25);
+  max-width: calc((100vw - 24px) / 1.25);
+  overflow-y: auto;
+}
+
 /* Responsive text visibility for referee view */
 .show-on-small {
   display: none;
