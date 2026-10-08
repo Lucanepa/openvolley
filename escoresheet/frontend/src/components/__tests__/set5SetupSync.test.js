@@ -46,7 +46,12 @@ describe('scorer: set 5 setup pushes a live state', () => {
   })
 
   it('Confirm records the coin toss, then ends the interval on the tablets too', () => {
-    expect(inline).toMatch(/await confirmSet5SideService\([^\n]*\)\s*\n[^\n]*\n\s*await syncSet5Setup\(\{ endInterval: true \}\)/)
+    expect(inline).toMatch(/await confirmSet5SideService\([^\n]*, true\)/)
+    // inside the action: the countdown goes with the setup, the tablets are
+    // told after the commit (ScoreboardSet5SetupOneChange)
+    const action = slice(scoreboard, 'const confirmSet5SideService = useCallback(', 1500)
+    expect(action).toMatch(/setBetweenSetsCountdown\(null\)/)
+    expect(action).toMatch(/deferEffect\(\{ run: \(\) => syncSet5Setup\(\{ endInterval: true \}\) \}\)/)
   })
 
   it('the push is a fresh snapshot to relay + cloud, plus the match bundle', () => {
