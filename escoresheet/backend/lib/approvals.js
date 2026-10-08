@@ -121,6 +121,15 @@ const pointsSql = (setAlias, matchAlias) => ({
   away: `CASE WHEN ${IS_BEACH_SQL(matchAlias)} THEN ${setAlias}.team2_points ELSE ${setAlias}.away_points END`
 })
 const SET_POINTS = pointsSql('s', 'sm')
+// The team names of a match for the mails and lists, by its sport: an indoor
+// match's home_team / away_team, a beach match's team1_data / team2_data
+// (OpenBeach leaves home_team / away_team empty). `alias` null: no table prefix.
+const teamNamesSql = (alias) => {
+  const a = alias ? `${alias}.` : ''
+  const beach = `${a}sport_type IS NOT DISTINCT FROM 'beach'`
+  return `CASE WHEN ${beach} THEN ${a}team1_data->>'name' ELSE ${a}home_team->>'name' END AS home_name, ` +
+    `CASE WHEN ${beach} THEN ${a}team2_data->>'name' ELSE ${a}away_team->>'name' END AS away_name`
+}
 // lib/approvalPin.js resultKey() in SQL (the admin lists, many matches at once)
 const currentKeySql = (matchIdExpr) => `('${RESULT_KEY_PREFIX}' || coalesce((
     SELECT string_agg(coalesce(s.index, 0) || ':' || coalesce(${SET_POINTS.home}, 0) || ':' || coalesce(${SET_POINTS.away}, 0), ',' ORDER BY s.index)
@@ -241,7 +250,7 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
   async function lockMatch (client, { externalId, id }) {
     const { rows: [m] } = await client.query(
       `SELECT id, external_id, game_n, status, closed_at, created_by, sport_type::text AS sport_type,
-              home_team->>'name' AS home_name, away_team->>'name' AS away_name
+              ${teamNamesSql(null)}
          FROM public.matches WHERE ${externalId ? 'external_id' : 'id'} = $1 LIMIT 1 FOR UPDATE`, [externalId || id])
     return m || null
   }
@@ -639,7 +648,7 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
     return guarded('list-mine', async () => {
       const { rows } = await pool.query(
         `SELECT ${APPROVAL_COLUMNS.split(', ').map((c) => 'a.' + c).join(', ')}, ${nameSql('rp')} AS requested_by_name,
-                m.external_id, m.game_n, m.home_team->>'name' AS home_name, m.away_team->>'name' AS away_name,
+                m.external_id, m.game_n, ${teamNamesSql('m')},
                 m.status, m.closed_at, m.test, ${currentKeySql('a.match_id')} AS current_key
            FROM public.match_approvals a
            JOIN public.matches m ON m.id = a.match_id
@@ -724,7 +733,7 @@ export function createApprovals ({ pool, auth = null, secret = null, mailer = nu
       const { rows } = await pool.query(
         `SELECT a.id, a.slot, a.user_id, a.display_name, a.approved_at, a.result_key, a.result_hash, a.ip_hash, a.device_hash,
                 a.revoked_at, a.revoked_reason, u.email, ${nameSql('rp')} AS requested_by_name, ${nameSql('vp')} AS revoked_by_name,
-                m.id AS m_id, m.external_id, m.game_n, m.home_team->>'name' AS home_name, m.away_team->>'name' AS away_name,
+                m.id AS m_id, m.external_id, m.game_n, ${teamNamesSql('m')},
                 m.status, m.closed_at, ${currentKeySql('a.match_id')} AS current_key
            FROM public.match_approvals a
            JOIN public.matches m ON m.id = a.match_id

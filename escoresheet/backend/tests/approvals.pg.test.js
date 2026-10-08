@@ -942,6 +942,38 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       assert.equal((await beachApp.approvalsForMatches([m.id])).get(m.id)[0].result_matches, true)
     })
 
+    it('a beach match names its teams from team1_data / team2_data (mail, the official\'s list, admin search)', async () => {
+      const sent = []
+      const mailer = { enabled: true, managerUrl: 'https://manager.example.test', async send (kind, o) { sent.push({ kind, ...o }); return { sent: true } } }
+      const mailed = createApprovals({ pool, auth, secret: SECRET, mailer, logger, beachApprovals: true })
+      const m = await newMatch('bOwner', { sport: 'beach', sets: [[1, 21, 19], [2, 21, 17]] })
+      // as OpenBeach stores a match: team1_data / team2_data, no home_team / away_team
+      await pool.query(`UPDATE public.matches SET home_team = NULL, away_team = NULL,
+        team1_data = '{"name":"Muster / Beispiel"}', team2_data = '{"name":"Sand / Strand"}' WHERE id = $1`, [m.id])
+      const r = await mailed.approve({
+        callerId: U.bOwner.id,
+        access: await access.get(U.bOwner.id),
+        body: { external_id: m.ext, slot: 'referee1', email: B.bRef2.email, pin: B.bRef2.pin, result: { sets: [[1, 21, 19], [2, 21, 17]] } },
+        ip: '203.0.113.24'
+      })
+      assert.equal(r.status, 200, JSON.stringify(r.body))
+      await mailed.settle()
+      assert.equal(sent.length, 1)
+      assert.equal(sent[0].vars.game, `#${m.gameN} Muster / Beispiel – Sand / Strand`)
+      assert.equal(sent[0].vars.result, '21:19, 21:17')
+      const mine = (await mailed.listMine({ callerId: B.bRef2.id })).body.data.approvals.find((x) => x.id === r.body.data.approval.id)
+      assert.deepEqual([mine.match.home_name, mine.match.away_name], ['Muster / Beispiel', 'Sand / Strand'])
+      const admin = (await mailed.adminSearch({ q: m.ext })).body.data.approvals
+      assert.deepEqual(admin.map((x) => [x.match.home_name, x.match.away_name]), [['Muster / Beispiel', 'Sand / Strand']])
+      // an indoor match keeps home_team / away_team even when team1_data holds a name
+      const i = await newMatch('owner')
+      await pool.query(`UPDATE public.matches SET team1_data = '{"name":"X"}', team2_data = '{"name":"Y"}' WHERE id = $1`, [i.id])
+      const ri = await approveAs('owner', i, 'referee1', 'ref1')
+      assert.equal(ri.status, 200, JSON.stringify(ri.body))
+      const ai = (await approvals.adminSearch({ q: i.ext })).body.data.approvals
+      assert.deepEqual(ai.map((x) => [x.match.home_name, x.match.away_name]), [['Home', 'Away']])
+    })
+
     it('an indoor match still reads home / away, whatever its sets\' team1 / team2 columns hold', async () => {
       const m = await newMatch('owner')
       await pool.query('UPDATE public.sets SET team1_points = 1, team2_points = 2 WHERE match_id = $1', [m.id])
