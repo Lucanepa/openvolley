@@ -519,6 +519,21 @@ export const TEAM_COLOUR_PRESETS = [
 // tile, not on Custom: home the red shirt, away the light blue one
 export const DEFAULT_HOME_COLOUR = '#dc2626'
 export const DEFAULT_AWAY_COLOUR = '#3b82f6'
+// The home default before it was a preset: matches set up then still carry it
+const LEGACY_DEFAULT_HOME_COLOUR = '#ef4444'
+
+/**
+ * Whether `colour` is still the side's untouched default (today's, or the
+ * old home red of a match set up before), so a saved team's colour may
+ * replace it.
+ * @param {'home'|'away'} side
+ * @param {string|null} colour
+ */
+export function isDefaultTeamColour(side, colour) {
+  const c = normaliseColour(colour)
+  if (!c) return false
+  return side === 'home' ? c === DEFAULT_HOME_COLOUR || c === LEGACY_DEFAULT_HOME_COLOUR : c === DEFAULT_AWAY_COLOUR
+}
 
 /**
  * The colour a team wears on the scorer's screen, and so on the referee,
