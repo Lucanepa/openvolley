@@ -33,6 +33,12 @@ const TEAM_COLORS = [
   { key: 'pink', value: '#ec4899' }
 ]
 
+// A team colour that is none of the list above (picked as a custom colour in
+// Match setup, or from a saved team): the select keeps it as its own option
+// instead of showing the first colour of the list
+const isOtherColour = (colour) =>
+  typeof colour === 'string' && colour.trim() !== '' && !TEAM_COLORS.some(c => c.value.toLowerCase() === colour.trim().toLowerCase())
+
 // Bench official roles - keys for translation
 const BENCH_ROLES = [
   { value: 'Coach', key: 'coach' },
@@ -788,6 +794,11 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                         aria-label={`${t('common.home', 'Home')} ${t('manualAdjustmentsEditor.color', 'Color')}`}
                         style={{ ...inputStyle, width: '100%', background: 'var(--panel)' }}
                       >
+                        {isOtherColour(editedHomeTeam?.color) && (
+                          <option value={editedHomeTeam.color} style={{ background: 'var(--panel)', color: 'var(--text)' }}>
+                            {t('matchSetup.customColour', 'Custom colour')} {editedHomeTeam.color} ■
+                          </option>
+                        )}
                         {TEAM_COLORS.map(c => (
                           <option key={c.value} value={c.value} style={{ background: 'var(--panel)', color: c.value === '#f8fafc' ? '#888' : 'var(--text)' }}>
                             {t(`manualAdjustmentsEditor.colors.${c.key}`, c.key)} ■
@@ -847,6 +858,11 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                         aria-label={`${t('common.away', 'Away')} ${t('manualAdjustmentsEditor.color', 'Color')}`}
                         style={{ ...inputStyle, width: '100%', background: 'var(--panel)' }}
                       >
+                        {isOtherColour(editedAwayTeam?.color) && (
+                          <option value={editedAwayTeam.color} style={{ background: 'var(--panel)', color: 'var(--text)' }}>
+                            {t('matchSetup.customColour', 'Custom colour')} {editedAwayTeam.color} ■
+                          </option>
+                        )}
                         {TEAM_COLORS.map(c => (
                           <option key={c.value} value={c.value} style={{ background: 'var(--panel)', color: c.value === '#f8fafc' ? '#888' : 'var(--text)' }}>
                             {t(`manualAdjustmentsEditor.colors.${c.key}`, c.key)} ■
