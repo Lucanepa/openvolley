@@ -903,6 +903,21 @@
       "redesignate": "Redesignate libero",
       "sidewaysTitle": "Hold the phone upright",
       "sidewaysBody": "The scoring screen on a phone is made for portrait. Turn the phone back: the match, its dialogs and countdowns are kept."
+    },
+    "a11y": {
+      "playerActions": "Player actions",
+      "substitution": "Substitution",
+      "liberoExchange": "Libero",
+      "liberoIn": "Libero in",
+      "sanction": "Sanction",
+      "benchPlayerActions": "Bench player actions",
+      "injury": "Injury",
+      "summaryTable": "Summary",
+      "liberoConfirm": "Libero exchange",
+      "liberoReentry": "Libero re-entry",
+      "liberoBenchActions": "Libero actions",
+      "liberoUnable": "Libero unable to play",
+      "liberoRotation": "Libero rotated out"
     }
   },
   "settings": {
