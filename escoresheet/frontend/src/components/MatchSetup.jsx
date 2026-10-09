@@ -30,7 +30,7 @@ import { splitLocalDateTime, parseLocalDateTimeToISO } from '../utils/timeUtils'
 import { generateSecurePin } from '../utils/stringUtils'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
 import { buildConnectionPins } from '../utils/connectionPins'
-import { coloursTooClose, isCustomColour, readableTextOn, teamBoxStyle } from '../utils/teamColours'
+import { coloursTooClose, DEFAULT_AWAY_COLOUR, DEFAULT_HOME_COLOUR, isCustomColour, readableTextOn, teamBoxStyle } from '../utils/teamColours'
 import { missingConnectionPins, connectionPinsSyncJob, fetchPendingRoster, clearPendingRosterJob, isKnownDob } from '../utils/remoteRoster'
 import { FileTextIcon, ClipboardIcon } from './icons'
 import { AlertTriangle, Loader2 } from 'lucide-react'
@@ -501,8 +501,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [bestOf, setBestOf] = useState(5) // 3 or 5
   const [gameN, setGameN] = useState('')
   const [league, setLeague] = useState('')
-  const [homeColor, setHomeColor] = useState('#ef4444')
-  const [awayColor, setAwayColor] = useState('#3b82f6')
+  const [homeColor, setHomeColor] = useState(DEFAULT_HOME_COLOUR)
+  const [awayColor, setAwayColor] = useState(DEFAULT_AWAY_COLOUR)
   const [homeShortName, setHomeShortName] = useState('')
   const [awayShortName, setAwayShortName] = useState('')
   const [notificationEmail, setNotificationEmail] = useState('')
@@ -1232,11 +1232,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       try {
         if (homeTeam) {
           setHome(homeTeam.name)
-          setHomeColor(homeTeam.color || '#ef4444')
+          setHomeColor(homeTeam.color || DEFAULT_HOME_COLOUR)
         }
         if (awayTeam) {
           setAway(awayTeam.name)
-          setAwayColor(awayTeam.color || '#3b82f6')
+          setAwayColor(awayTeam.color || DEFAULT_AWAY_COLOUR)
         }
 
         const normalizeBenchMember = member => ({
@@ -2487,8 +2487,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         awayName: away.trim(),
         homeShortName: homeShortName || home.substring(0, 3).toUpperCase(),
         awayShortName: awayShortName || away.substring(0, 3).toUpperCase(),
-        homeColor: homeColor || '#ef4444',
-        awayColor: awayColor || '#3b82f6',
+        homeColor: homeColor || DEFAULT_HOME_COLOUR,
+        awayColor: awayColor || DEFAULT_AWAY_COLOUR,
         game_n: gameN ? Number(gameN) : null,
         seed_key: seedKey, // Unique key for Supabase sync
         league,
@@ -2534,8 +2534,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             city: city || '',
             league: league || ''
           },
-          home_team: { name: home.trim(), short_name: homeShortName || generateShortName(home.trim()), color: homeColor || '#ef4444' },
-          away_team: { name: away.trim(), short_name: awayShortName || generateShortName(away.trim()), color: awayColor || '#3b82f6' },
+          home_team: { name: home.trim(), short_name: homeShortName || generateShortName(home.trim()), color: homeColor || DEFAULT_HOME_COLOUR },
+          away_team: { name: away.trim(), short_name: awayShortName || generateShortName(away.trim()), color: awayColor || DEFAULT_AWAY_COLOUR },
           players_home: homeRoster.map(p => ({
             number: p.number,
             first_name: p.firstName,
@@ -2722,13 +2722,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       setBenchHome(bench)
       if (!home?.trim() || home === 'Home') setHome(meta.name)
       if (!homeShortName && meta.shortName) setHomeShortName(meta.shortName)
-      if (meta.color && homeColor === '#ef4444') setHomeColor(meta.color)
+      if (meta.color && homeColor === DEFAULT_HOME_COLOUR) setHomeColor(meta.color)
     } else {
       setAwayRoster(sorted)
       setBenchAway(bench)
       if (!away?.trim() || away === 'Away') setAway(meta.name)
       if (!awayShortName && meta.shortName) setAwayShortName(meta.shortName)
-      if (meta.color && awayColor === '#3b82f6') setAwayColor(meta.color)
+      if (meta.color && awayColor === DEFAULT_AWAY_COLOUR) setAwayColor(meta.color)
     }
     toast.success(t('savedTeams.loaded', { name: team.name }))
     for (const w of warnings) toast.info(t(w.key, w.params))

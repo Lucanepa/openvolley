@@ -95,7 +95,7 @@ export const TEST_TEAM_SEED_DATA = [
     seedKey: 'test-team-away',
     name: 'Volley Luzern',
     shortName: 'LUZERN',
-    color: '#ef4444',
+    color: '#dc2626', // the red preset (DEFAULT_HOME_COLOUR)
     players: [
       { number: 1, firstName: 'Tom', lastName: 'Weber', dob: '11/01/1998', libero: 'libero1', isCaptain: false, isLfp: true },
       { number: 2, firstName: 'Max', lastName: 'Schneider', dob: '24/03/1996', libero: '', isCaptain: false, isLfp: true },

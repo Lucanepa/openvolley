@@ -5,7 +5,7 @@
  * once-per-match connection-PIN sync is queued only when it is needed.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, cleanup, fireEvent, within } from '@testing-library/react'
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -181,6 +181,8 @@ describe('MatchSetup smoke render', () => {
       const { readableTextOn } = await import('../../utils/teamColours')
       created('#dc2626')
       render(<Setup matchId={1} />)
+      // the stored team is loaded: a shirt in the default red shows before that
+      await screen.findAllByText('Home V')
       await waitFor(() => expect(shirtsOf('#dc2626').length).toBeGreaterThan(0))
       fireEvent.click(shirtsOf('#dc2626')[0])
       const dialog = await screen.findByRole('dialog')
@@ -209,6 +211,25 @@ describe('MatchSetup smoke render', () => {
       expect(custom.getAttribute('aria-label')).toBe('matchSetup.customColour #7b1e2b')
       expect(custom.querySelector('.shirt').dataset.color).toBe('#7b1e2b')
       expect(dialog.querySelectorAll('[aria-pressed="true"]')).toHaveLength(1)
+    })
+
+    it('a new match opens the picker on the red / light blue presets, not on Custom', async () => {
+      const { DEFAULT_HOME_COLOUR, DEFAULT_AWAY_COLOUR, presetColour } = await import('../../utils/teamColours')
+      expect(presetColour(DEFAULT_HOME_COLOUR)).toBeTruthy()
+      expect(presetColour(DEFAULT_AWAY_COLOUR)).toBeTruthy()
+      store.tables.matches = new Map([[1, { id: 1, status: 'setup', seed_key: 'match_1_new', ...PINS }]])
+      render(<Setup matchId={1} />)
+      for (const colour of ['#dc2626', '#3b82f6']) {
+        await waitFor(() => expect(shirtsOf(colour).length).toBeGreaterThan(0))
+        fireEvent.click(shirtsOf(colour)[0])
+        const dialog = await screen.findByRole('dialog')
+        expect(dialog.querySelector('[data-custom-tile]').getAttribute('aria-pressed'), colour).toBe('false')
+        expect(within(dialog).getByRole('button', { name: `Select colour ${colour}` }).getAttribute('aria-pressed'), colour).toBe('true')
+        fireEvent.keyDown(document, { key: 'Escape' })
+        cleanup()
+        render(<Setup matchId={1} />)
+      }
+      expect(shirtsOf('#ef4444')).toHaveLength(0)
     })
 
     it('two close team colours get the gentle note on the setup cards', async () => {

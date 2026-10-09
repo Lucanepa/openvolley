@@ -1697,7 +1697,7 @@ export default function App() {
     const awayTeamId = await db.teams.add({
       name: awayTeamData?.name || 'Away',
       shortName: awayTeamData?.short_name || getTestAwayTeamShortName(),
-      color: awayTeamData?.color || '#ef4444',
+      color: awayTeamData?.color || '#dc2626',
       seedKey: awayTeamData?.seed_key || TEST_AWAY_TEAM_EXTERNAL_ID,
       externalId: awayTeamData?.external_id || TEST_AWAY_TEAM_EXTERNAL_ID,
       benchStaff: awayBench,
