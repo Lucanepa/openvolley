@@ -75,8 +75,9 @@ const countdownText = () => [...document.querySelectorAll('div, span')]
 const seconds = (mmss) => { const [m, s] = mmss.split(':').map(Number); return m * 60 + s }
 const liveStates = (type) => upserts.filter(u => u.table === 'match_live_state' && u.row.last_event_type === type).map(u => u.row)
 
-describe('Scoreboard: undoing the set 5 setup confirmation', () => {
-  it('the setup panel comes back, the countdown runs on from the set end, the live state keeps the interval', async () => {
+// A match at 2-2, set 5 created, set 4 ended `ago` ms ago (its set_end
+// confirmed then)
+async function matchInSet5Break(ago) {
     const home = await db.teams.add({ name: 'Home VC', shortName: 'HOM' })
     const away = await db.teams.add({ name: 'Away VC', shortName: 'AWY' })
     const players = []
@@ -89,8 +90,7 @@ describe('Scoreboard: undoing the set 5 setup confirmation', () => {
       set5FirstServe: 'A', set5LeftTeam: 'A'
     })
     const t = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-    // set 4 ended 30 s ago (its set_end confirmed then): the interval runs
-    const end4 = new Date(Date.now() - 30000).toISOString()
+    const end4 = new Date(Date.now() - ago).toISOString()
     for (const index of [1, 2, 3, 4]) {
       const homeWins = index % 2 === 1
       await db.sets.add({ matchId, index, homePoints: homeWins ? 25 : 20, awayPoints: homeWins ? 20 : 25, finished: true, startTime: t, endTime: index === 4 ? end4 : t })
@@ -98,6 +98,13 @@ describe('Scoreboard: undoing the set 5 setup confirmation', () => {
     await db.sets.add({ matchId, index: 5, homePoints: 0, awayPoints: 0, finished: false })
     await db.events.add({ matchId, setIndex: 1, type: 'coin_toss', payload: {}, seq: 1, ts: t })
     await db.events.add({ matchId, setIndex: 4, type: 'set_end', payload: { setIndex: 4, winner: 'away' }, seq: 2, ts: end4 })
+    return { matchId, end4 }
+}
+
+describe('Scoreboard: undoing the set 5 setup confirmation', () => {
+  it('the setup panel comes back, the countdown runs on from the set end, the live state keeps the interval', async () => {
+    // set 4 ended 30 s ago: the interval runs
+    const { matchId, end4 } = await matchInSet5Break(30000)
 
     render(<ScaleProvider><AlertProvider><LoggingProvider><Scoreboard matchId={matchId} /></LoggingProvider></AlertProvider></ScaleProvider>)
     await waitFor(() => expect(button('Confirm set 5 setup')).toBeTruthy(), { timeout: 10000 })
@@ -144,6 +151,49 @@ describe('Scoreboard: undoing the set 5 setup confirmation', () => {
     fireEvent.click(button('Confirm set 5 setup'))
     await waitFor(async () => expect(await db.events.where({ matchId, type: 'set5_coin_toss' }).count()).toBe(1))
     await waitFor(() => expect(button('Confirm set 5 setup')).toBeFalsy())
+    cleanup()
+  }, 60000)
+
+  // Found by a browser check (2026-10-09): undone 5 min after set 4's end,
+  // the scorer showed the setup again but the undo's live state said "break
+  // over" (the break's time had run out), so the referee and the livescore
+  // showed set 5 as started. Before the confirmation they kept the break.
+  it('the break\'s time ran out: the live state keeps the break (0:00), also after Switch sides', async () => {
+    const { matchId, end4 } = await matchInSet5Break(5 * 60 * 1000)
+
+    render(<ScaleProvider><AlertProvider><LoggingProvider><Scoreboard matchId={matchId} /></LoggingProvider></AlertProvider></ScaleProvider>)
+    await waitFor(() => expect(button('Confirm set 5 setup')).toBeTruthy(), { timeout: 10000 })
+    await settle()
+
+    fireEvent.click(button('Confirm set 5 setup'))
+    await waitFor(async () => expect(await db.events.where({ matchId, type: 'set5_coin_toss' }).count()).toBe(1))
+    await waitFor(() => expect(button('Confirm set 5 setup')).toBeFalsy())
+    await waitFor(() => expect(liveStates('manual_set5_setup').at(-1)?.set_interval_active).toBe(false), { timeout: 10000 })
+    await settle()
+
+    fireEvent.click(button('Undo'))
+    await waitFor(() => expect(button('Yes')).toBeTruthy())
+    fireEvent.click(button('Yes'))
+    await waitFor(async () => expect(await db.events.where({ matchId, type: 'set5_coin_toss' }).count()).toBe(0))
+    await waitFor(() => expect(button('Confirm set 5 setup')).toBeTruthy(), { timeout: 5000 })
+    // no countdown on the scorer: its time ran out
+    expect(countdownText()).toBeNull()
+
+    await waitFor(() => expect(liveStates('undo').length).toBeGreaterThan(0), { timeout: 10000 })
+    const state = liveStates('undo').at(-1)
+    expect(state.set_interval_active).toBe(true)
+    expect(state.match_status).toBe('interval')
+    expect(Math.abs(Date.parse(state.set_interval_started_at) - Date.parse(end4))).toBeLessThan(2000)
+    expect(state.current_set).toBe(5)
+
+    // the setup changed before its confirmation: still the break, from set 4's end
+    const before = liveStates('manual_set5_setup').length
+    await settle()
+    fireEvent.click(button('⇄Switch sides'))
+    await waitFor(() => expect(liveStates('manual_set5_setup').length).toBeGreaterThan(before), { timeout: 10000 })
+    const switched = liveStates('manual_set5_setup').at(-1)
+    expect(switched.set_interval_active).toBe(true)
+    expect(Math.abs(Date.parse(switched.set_interval_started_at) - Date.parse(end4))).toBeLessThan(2000)
     cleanup()
   }, 60000)
 })
