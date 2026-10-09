@@ -88,6 +88,11 @@ import { ArrowUpDown, ChevronDown, Cross } from 'lucide-react'
 import { useDiagCommits } from '../diagnostics/commits'
 import { preload, usePreloaded } from '../utils/preload'
 
+// A set 5 setup (its coin toss: left team, first server, change of courts)
+// undone with set 5: undoing the set end that created set 5, reopening a set
+// before it
+const CLEARED_SET5_SETUP = { set5LeftTeam: null, set5FirstServe: null, set5CourtSwitched: false }
+
 // Live-state pushes that start or end the break between sets: the set end
 // (its own push opens it), "End set interval", the set's start, the set 5
 // setup's (they say whether it goes on: duringInterval)
@@ -2180,8 +2185,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // The side team A plays the set the live state shows on (the next set;
       // the match's end: the last set), by the scorer's court's own rule
       // (getSideAForSet). Not by the next set's number: the match's end has
-      // no next set, and set 5 keeps set 4's sides until its coin toss.
-      const nextSideA = isSetInterval ? getSideAForSet(finalSetIndex, match) : snapshot.sideA
+      // no next set, and set 5 keeps set 4's sides until its coin toss. The
+      // end of set 4 (best-of-3: 2) itself: the side that set ended on, as
+      // the set 5 setup it writes next (not a set 5 side left from an
+      // earlier end of that set)
+      const endsIntoSet5 = eventType === 'set_end' && finalSetIndex === 5 && snapshot.currentSetIndex < 5
+      const nextSideA = isSetInterval
+        ? getSideAForSet(endsIntoSet5 ? snapshot.currentSetIndex : finalSetIndex, match)
+        : snapshot.sideA
 
       // For interval, points reset to 0 for the new set
       const nextPointsA = isSetInterval ? 0 : snapshot.pointsA
@@ -6287,9 +6298,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             const currentServe = getCurrentServe()
             const set4ServingTeamLabel = currentServe === set4TeamAKey ? 'A' : 'B'
 
-            // Use existing values if set, otherwise use current positions
-            const selectedLeftTeam = data?.match?.set5LeftTeam || set4LeftTeamLabel
-            const selectedFirstServe = data?.match?.set5FirstServe || set4ServingTeamLabel
+            // The setup starts from where set 4 ended: the teams stay on their
+            // courts (and the server of set 4's last rally serves) until the
+            // scorer changes them and confirms (owner, 2026-10-09). Not a set 5
+            // choice left over from an earlier end of set 4 (undone, or the set
+            // reopened): the teams may have changed courts in set 4 since, and
+            // the set 5 court then moved them back
+            const selectedLeftTeam = set4LeftTeamLabel
+            const selectedFirstServe = set4ServingTeamLabel
 
             // Set default values for inline setup UI
             setSet5SelectedLeftTeam(selectedLeftTeam)
@@ -6413,7 +6429,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const firstServeTeamKey = firstServe === 'A' ? teamAKey : teamBKey
 
     // For inline mode, database is already updated on button press, so just log the event
+    // (and write the confirmed choice when the match has none: restored in the
+    // break without it, the court showed set 4's sides, now pinned)
     // For modal mode, update the database now
+    if (inlineMode && (data.match.set5LeftTeam !== leftTeam || data.match.set5FirstServe !== firstServe)) {
+      await db.matches.update(matchId, { set5LeftTeam: leftTeam, set5FirstServe: firstServe })
+    }
     if (!inlineMode) {
       // Update match with set 5 configuration
       await db.matches.update(matchId, {
@@ -7008,6 +7029,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           ]
           if (staleJobs.length > 0) await db.sync_queue.bulkDelete(staleJobs.map(j => j.id))
         }
+        // The set 5 setup the set end proposed goes with it: when the set
+        // before set 5 ends again (the teams may have changed courts since),
+        // its setup starts from where that set ended, not from this one
+        if (endedSetIndex < 5 && nextSet?.index === 5) await db.matches.update(matchId, CLEARED_SET5_SETUP)
         // The ended set is open again (no end time) ...
         const endedSet = allSets.find(s => s.index === endedSetIndex)
         if (endedSet) await db.sets.update(endedSet.id, { finished: false, endTime: null })
@@ -12547,13 +12572,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }
 
   // The deciding set's inline setup (desktop centre column, phone layout)
+  // The left team the setup shows: its saved choice, else (a match restored
+  // in the break without it, an older match) the sides set 4 ended on, as the
+  // court draws them (getSideAForSet). 'A' in its place moved the teams on
+  // "Switch sides" or on Confirm when A was on the left in set 4.
+  const set5SetupLeftTeam = (match) => getLeftTeamLabelForSet(5, { ...(match || {}), set5CourtSwitched: false })
+  // Its first server: the saved choice, else the one the court shows (getFirstServeForSet)
+  const set5SetupFirstServe = (match) => {
+    if (match?.set5FirstServe === 'A' || match?.set5FirstServe === 'B') return match.set5FirstServe
+    return getFirstServeForSet(5, match || {}) === (match?.coinTossTeamA || 'home') ? 'A' : 'B'
+  }
   const set5SwitchSides = async () => {
-    const newLeftTeam = data?.match?.set5LeftTeam === 'A' ? 'B' : 'A'
+    const newLeftTeam = set5SetupLeftTeam(data?.match) === 'A' ? 'B' : 'A'
     await db.matches.update(matchId, { set5LeftTeam: newLeftTeam })
     syncSet5Setup({ duringInterval: !!betweenSetsCountdown })
   }
   const set5SwitchServe = async () => {
-    const newFirstServe = data?.match?.set5FirstServe === 'A' ? 'B' : 'A'
+    const newFirstServe = set5SetupFirstServe(data?.match) === 'A' ? 'B' : 'A'
     await db.matches.update(matchId, { set5FirstServe: newFirstServe })
     syncSet5Setup({ duringInterval: !!betweenSetsCountdown })
   }
@@ -12561,7 +12596,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Ends the interval here and on the tablets, with the confirmed sides /
     // serve: the action tells the tablets itself, after its commit
     // (ScoreboardSet5SetupOneChange)
-    await confirmSet5SideService(data?.match?.set5LeftTeam || 'A', data?.match?.set5FirstServe || 'A', true)
+    await confirmSet5SideService(set5SetupLeftTeam(data?.match), set5SetupFirstServe(data?.match), true)
   }
 
   // Preview, print or save the scoresheet in its own window (the toolbar's
@@ -21226,6 +21261,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   await discardEvents(removedEvents, 'reopen_set')
                   for (const s of setsToDelete) {
                     await db.sets.delete(s.id)
+                  }
+                  // Set 5 is gone: its setup too (the next set end before it
+                  // proposes the sides that set ends on, not these)
+                  if (reopenIndex < 5 && setsToDelete.some(s => s.index === 5)) {
+                    await db.matches.update(matchId, CLEARED_SET5_SETUP)
                   }
                   // The match is being played on: back to 'live' from any finished
                   // state (the scoreboard writes 'ended', MatchEnd 'approved'/'final').
