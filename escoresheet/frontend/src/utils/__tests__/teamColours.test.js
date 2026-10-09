@@ -565,3 +565,23 @@ describe('custom team colours (any hex, not only the twelve presets)', () => {
     }
   })
 })
+
+describe('isDefaultTeamColour (a saved team\'s colour may replace it)', () => {
+  it('today\'s defaults, and the old home red of a match set up before they were presets', async () => {
+    const { isDefaultTeamColour, DEFAULT_HOME_COLOUR, DEFAULT_AWAY_COLOUR } = await import('../teamColours')
+    expect(isDefaultTeamColour('home', DEFAULT_HOME_COLOUR)).toBe(true)
+    expect(isDefaultTeamColour('home', '#EF4444')).toBe(true)
+    expect(isDefaultTeamColour('away', DEFAULT_AWAY_COLOUR)).toBe(true)
+    expect(isDefaultTeamColour('away', '#ef4444')).toBe(false)
+    expect(isDefaultTeamColour('home', '#22c55e')).toBe(false)
+    expect(isDefaultTeamColour('home', null)).toBe(false)
+  })
+
+  it('MatchSetup takes a saved team\'s colour over either default', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    const src = readFileSync(resolve(__dirname, '../../components/MatchSetup.jsx'), 'utf8')
+    expect(src).toContain("if (meta.color && isDefaultTeamColour('home', homeColor)) setHomeColor(meta.color)")
+    expect(src).toContain("if (meta.color && isDefaultTeamColour('away', awayColor)) setAwayColor(meta.color)")
+  })
+})

@@ -30,7 +30,7 @@ import { splitLocalDateTime, parseLocalDateTimeToISO } from '../utils/timeUtils'
 import { generateSecurePin } from '../utils/stringUtils'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
 import { buildConnectionPins } from '../utils/connectionPins'
-import { coloursTooClose, DEFAULT_AWAY_COLOUR, DEFAULT_HOME_COLOUR, isCustomColour, readableTextOn, teamBoxStyle } from '../utils/teamColours'
+import { coloursTooClose, DEFAULT_AWAY_COLOUR, DEFAULT_HOME_COLOUR, isCustomColour, isDefaultTeamColour, readableTextOn, teamBoxStyle } from '../utils/teamColours'
 import { missingConnectionPins, connectionPinsSyncJob, fetchPendingRoster, clearPendingRosterJob, isKnownDob } from '../utils/remoteRoster'
 import { FileTextIcon, ClipboardIcon } from './icons'
 import { AlertTriangle, Loader2 } from 'lucide-react'
@@ -2722,13 +2722,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       setBenchHome(bench)
       if (!home?.trim() || home === 'Home') setHome(meta.name)
       if (!homeShortName && meta.shortName) setHomeShortName(meta.shortName)
-      if (meta.color && homeColor === DEFAULT_HOME_COLOUR) setHomeColor(meta.color)
+      if (meta.color && isDefaultTeamColour('home', homeColor)) setHomeColor(meta.color)
     } else {
       setAwayRoster(sorted)
       setBenchAway(bench)
       if (!away?.trim() || away === 'Away') setAway(meta.name)
       if (!awayShortName && meta.shortName) setAwayShortName(meta.shortName)
-      if (meta.color && awayColor === DEFAULT_AWAY_COLOUR) setAwayColor(meta.color)
+      if (meta.color && isDefaultTeamColour('away', awayColor)) setAwayColor(meta.color)
     }
     toast.success(t('savedTeams.loaded', { name: team.name }))
     for (const w of warnings) toast.info(t(w.key, w.params))
