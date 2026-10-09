@@ -210,9 +210,10 @@ describe('ConnectTabletsModal', () => {
       benchAway: 0
     }
     renderModal({ match: MATCH, fetchImpl: okFetch(), win: {} })
-    // a tablet already in shows before the code does
-    expect(screen.getByTestId('scan-status')).toHaveTextContent('Tablet connected at 14:32 (…23)')
+    // a tablet already in shows with the code, in one change (the dialog
+    // keeps its placeholders until everything it reads has answered)
     await waitFor(() => expect(qrUrl()).not.toBeNull())
+    expect(screen.getByTestId('scan-status')).toHaveTextContent('Tablet connected at 14:32 (…23)')
     expect(screen.getByTestId('role-status-referee')).toHaveTextContent('Connected · since 14:32')
     expect(screen.getByTestId('role-status-referee')).toHaveAttribute('data-status', 'connected')
     expect(screen.getByTestId('role-status-bench_home')).toHaveTextContent('Waiting for the tablet…')
@@ -239,7 +240,7 @@ describe('ConnectTabletsModal', () => {
       benchAway: 0
     }
     renderModal({ match: { ...MATCH, homeTeamConnectionEnabled: false }, fetchImpl: okFetch(), win: {} })
-    expect(screen.getByTestId('devices-connected')).toHaveTextContent('Connected: Referee')
+    await waitFor(() => expect(screen.getByTestId('devices-connected')).toHaveTextContent('Connected: Referee'))
     expect(screen.getByTestId('devices-connected')).not.toHaveTextContent('of')
   })
 
@@ -463,6 +464,34 @@ describe('ConnectTabletsModal', () => {
     expect(screen.getByTestId('hall-panel')).not.toHaveTextContent('Reading the local server…')
 
     expect(qrUrl()).toBeTruthy()
+  })
+
+  it('the live status and the bench teams come with the addresses, in one change', async () => {
+    relayTablets.value = {
+      checked: true,
+      reachable: true,
+      connections: { clients: [{ id: 'c1', role: 'referee', matchId: SEED, ip: '192.168.1.23', connectedAt: '2026-10-07T12:32:05.000Z' }] },
+      referee: 1,
+      benchHome: 0,
+      benchAway: 0
+    }
+    let answer
+    const win = tauri({
+      hotspot_status: () => new Promise(resolve => { answer = resolve }),
+      bluetooth_status: () => ({ supported: false })
+    })
+    const { homeName: _h, awayName: _a, ...bare } = MATCH
+    renderModal({ match: { ...bare, homeTeamId: 11, awayTeamId: 12 }, fetchImpl: okFetch(), win })
+    await waitFor(() => expect(answer).toBeTypeOf('function'))
+    await waitFor(() => expect(dbMock.teams.get).toHaveBeenCalled())
+    await new Promise(r => setTimeout(r, 20))
+    // the relay and the database have answered, the Wi-Fi not yet: nothing of it shows
+    expect(screen.getByTestId('role-row-bench_home')).not.toHaveTextContent('KSC Wiedikon')
+    expect(screen.getByTestId('role-status-referee')).not.toHaveTextContent('Connected')
+    answer({ supported: true, active: false, platform: 'linux', ssid: 'a', password: 'b', takesOverWifi: true, leavesNetwork: 'Halle-WLAN' })
+    await waitFor(() => expect(screen.getByText('Tablets join the Wi-Fi “Halle-WLAN”.')).toBeInTheDocument())
+    expect(screen.getByTestId('role-row-bench_home')).toHaveTextContent('KSC Wiedikon')
+    expect(screen.getByTestId('role-status-referee')).toHaveTextContent('Connected · since 14:32')
   })
 
   it('create Wi-Fi: a hotspot the system runs shows its codes, and cannot be stopped here', async () => {

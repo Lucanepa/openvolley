@@ -546,16 +546,16 @@ export function useRealtimeConnection({
  * fields nothing on the scorer device writes, so it always said "disconnected".
  * @param {string|null} matchKey - relay room key (seed_key)
  * @param {object|null} match - scorer's match (connection flags)
- * @returns {{ connections: object|null, referee: number, benchHome: number, benchAway: number, watchers: number, reachable: boolean }}
+ * @returns {{ connections: object|null, checked: boolean, referee: number, benchHome: number, benchAway: number, watchers: number, reachable: boolean }}
  */
 export function useRelayTablets(matchKey, match, { enabled = true, intervalMs = 10000 } = {}) {
-  const [connections, setConnections] = useState(null)
+  // undefined until the first answer for this match (checked: false), then
+  // the relay's list or null (not reachable)
+  const [connections, setConnections] = useState(undefined)
 
   useEffect(() => {
-    if (!enabled || !matchKey) {
-      setConnections(null)
-      return
-    }
+    setConnections(undefined)
+    if (!enabled || !matchKey) return
     let cancelled = false
     const load = async () => {
       const result = await fetchRelayConnections(matchKey)
@@ -572,9 +572,10 @@ export function useRelayTablets(matchKey, match, { enabled = true, intervalMs = 
   const homeEnabled = match?.homeTeamConnectionEnabled === true
   const awayEnabled = match?.awayTeamConnectionEnabled === true
   return useMemo(() => ({
-    connections,
+    connections: connections ?? null,
+    checked: connections !== undefined,
     reachable: !!connections,
-    ...summarizeRelayTablets(connections, matchKey, { homeTeamConnectionEnabled: homeEnabled, awayTeamConnectionEnabled: awayEnabled })
+    ...summarizeRelayTablets(connections ?? null, matchKey, { homeTeamConnectionEnabled: homeEnabled, awayTeamConnectionEnabled: awayEnabled })
   }), [connections, matchKey, homeEnabled, awayEnabled])
 }
 
