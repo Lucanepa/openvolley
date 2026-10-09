@@ -530,6 +530,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // isBetweenSets): every live-state push in it keeps the break
   const breakRunningRef = useRef(false)
   const countdownDismissedRef = useRef(false) // Track if countdown was manually dismissed
+  // The break ended with "End set interval" (not by its clock running out:
+  // the tablets keep a break that ran out until the set 5 setup's Confirm)
+  const intervalEndedByHandRef = useRef(false)
   const setEndModalDismissedRef = useRef(null) // Track setIndex where set end modal was dismissed via undo
   const confirmedSetEndRef = useRef(new Set()) // Track which sets have been confirmed to prevent double-processing
   // Set once the scoreboard has ended the match (match end, forfeit): the
@@ -3096,6 +3099,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Reset to null only when no longer between sets (new set started)
       setBetweenSetsCountdown(null)
       countdownDismissedRef.current = false // Reset for next time
+      intervalEndedByHandRef.current = false
     }
   }, [isBetweenSets, setIntervalDuration, data?.set?.index, data?.sets]) // Removed betweenSetsCountdown from deps to prevent restart loop
 
@@ -3244,6 +3248,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Clear countdown and mark as dismissed so it doesn't restart
     setBetweenSetsCountdown(null)
     countdownDismissedRef.current = true
+    intervalEndedByHandRef.current = true
     // Notify referee to also close their countdown
     sendActionToReferee('end_interval', {})
     // Sync match_status back to 'in_progress' in Supabase
@@ -3269,13 +3274,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     let intervalInfo = {}
     if (keepInterval) {
       const previousSet = findPreviousSet(await db.sets.where({ matchId }).toArray(), 5)
-      // Fallback start (no set_end push in this session): the scorer's countdown
+      // Fallback start (no set_end push in this session): the scorer's
+      // countdown; none running (it ran out): the set end's (the live state
+      // looks it up)
       const startTs = betweenSetsStartTimestampRef.current
         ? betweenSetsStartTimestampRef.current - (setIntervalDuration - (betweenSetsInitialCountdownRef.current || setIntervalDuration)) * 1000
-        : Date.now()
+        : null
       intervalInfo = {
         duringInterval: true,
-        intervalStartedAt: new Date(startTs).toISOString(),
+        intervalStartedAt: startTs ? new Date(startTs).toISOString() : undefined,
         setIndex: previousSet?.index,
         winner: previousSet ? (previousSet.homePoints > previousSet.awayPoints ? 'home' : 'away') : undefined
       }
@@ -6848,8 +6855,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0]
     const startMs = Date.parse(setEndEvent?.ts || previousSet.endTime || '')
     if (Number.isNaN(startMs)) return null
+    // 0: the break's time ran out; the tablets keep it all the same until
+    // the setup is confirmed (as before the confirmation)
     const remaining = Math.max(0, setIntervalDuration - Math.floor((Date.now() - startMs) / 1000))
-    if (remaining <= 0) return null
     const winner = previousSet.homePoints > previousSet.awayPoints ? 'home' : 'away'
     const finished = sets.filter(s => s.finished)
     return {
@@ -7066,9 +7074,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // and the countdown and the tablets stayed "interval over")
       if (lastEvent.type === 'set5_coin_toss') {
         const interval = await set5IntervalAfterUndo()
+        intervalEndedByHandRef.current = false
         deferUi(() => {
           setSet5SetupConfirmed(false)
-          if (interval) {
+          if (interval?.remaining > 0) {
             countdownDismissedRef.current = false
             betweenSetsStartTimestampRef.current = null
             setBetweenSetsCountdown({ countdown: interval.remaining, started: true })
@@ -7076,7 +7085,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         })
         if (interval) {
           // The referee and the bench reopen their countdown (end_interval
-          // closed it), the livescore keeps the break (this undo's push)
+          // closed it), the livescore keeps the break (this undo's push),
+          // also when its time ran out (0:00, as before the confirmation)
           sendActionToReferee('set_end', interval.refereeAction)
           undoLiveData = interval.liveData
         }
@@ -12601,12 +12611,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const set5SwitchSides = async () => {
     const newLeftTeam = set5SetupLeftTeam(data?.match) === 'A' ? 'B' : 'A'
     await db.matches.update(matchId, { set5LeftTeam: newLeftTeam })
-    syncSet5Setup({ duringInterval: !!betweenSetsCountdown })
+    syncSet5Setup({ duringInterval: !!betweenSetsCountdown || !intervalEndedByHandRef.current })
   }
   const set5SwitchServe = async () => {
     const newFirstServe = set5SetupFirstServe(data?.match) === 'A' ? 'B' : 'A'
     await db.matches.update(matchId, { set5FirstServe: newFirstServe })
-    syncSet5Setup({ duringInterval: !!betweenSetsCountdown })
+    syncSet5Setup({ duringInterval: !!betweenSetsCountdown || !intervalEndedByHandRef.current })
   }
   const set5ConfirmSetup = async () => {
     // Ends the interval here and on the tablets, with the confirmed sides /
