@@ -129,6 +129,42 @@ describe('TeamColourPicker', () => {
     expect(onPick).toHaveBeenCalledTimes(2)
   })
 
+  it('a half-typed or wrong code keeps the preview on the last valid colour, not red', () => {
+    render(<TeamColourPicker value="#3b82f6" onPick={() => {}} />)
+    fireEvent.click(customTile())
+    const section = document.querySelector('[data-custom-section]')
+    const colourInput = within(section).getByLabelText('matchSetup.customColour')
+    const preview = () => section.querySelector('[data-preview]').dataset.color
+    // typing #1a7f5a key by key: '#', '#1', '#1a' are no code yet
+    for (const partial of ['#', '#1', '#1a']) {
+      fireEvent.change(hexField(), { target: { value: partial } })
+      expect(preview(), partial).toBe('#3b82f6')
+      expect(colourInput.value, partial).toBe('#3b82f6')
+    }
+    fireEvent.change(hexField(), { target: { value: '#1a7' } })
+    expect(preview()).toBe('#11aa77')
+    fireEvent.change(hexField(), { target: { value: '#1a7f' } })
+    expect(preview()).toBe('#11aa77')
+    expect(applyButton().disabled).toBe(true)
+    fireEvent.change(hexField(), { target: { value: '#1a7f5a' } })
+    expect(preview()).toBe('#1a7f5a')
+    fireEvent.change(hexField(), { target: { value: 'nonsense' } })
+    expect(preview()).toBe('#1a7f5a')
+    expect(colourInput.value).toBe('#1a7f5a')
+  })
+
+  it('a pasted code with spaces around it still reads', () => {
+    const onPick = vi.fn()
+    render(<TeamColourPicker value="#3b82f6" onPick={onPick} />)
+    fireEvent.click(customTile())
+    expect(Number(hexField().getAttribute('maxLength'))).toBeGreaterThanOrEqual(9)
+    fireEvent.change(hexField(), { target: { value: ' #C0FFEE ' } })
+    expect(hexField().value).toBe('#C0FFEE')
+    expect(applyButton().disabled).toBe(false)
+    fireEvent.click(applyButton())
+    expect(onPick).toHaveBeenCalledWith('#c0ffee')
+  })
+
   it('Cancel closes the custom section without picking', () => {
     const onPick = vi.fn()
     render(<TeamColourPicker value="#dc2626" onPick={onPick} />)
