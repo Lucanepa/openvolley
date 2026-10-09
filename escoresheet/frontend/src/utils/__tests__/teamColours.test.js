@@ -451,3 +451,104 @@ describe('markColourOn', () => {
     expect(markColourOn(null, '#3b82f6', '#0f172a')).toBe('#3b82f6')
   })
 })
+
+describe('custom team colours (any hex, not only the twelve presets)', () => {
+  // A deterministic spread of arbitrary colours: a 9-step RGB cube plus a
+  // pseudo-random sample
+  const ANY = (() => {
+    const out = []
+    const steps = [0, 32, 64, 96, 128, 160, 192, 224, 255]
+    for (const r of steps) for (const g of steps) for (const b of steps) out.push(normaliseColour({ r, g, b }))
+    let seed = 7
+    for (let i = 0; i < 400; i++) {
+      seed = (seed * 1103515245 + 12345) % 2147483648
+      out.push('#' + (seed % 0x1000000).toString(16).padStart(6, '0'))
+    }
+    return out
+  })()
+
+  it('parseHexColour takes #rrggbb, rrggbb, #rgb and rgb in any case, nothing else', async () => {
+    const { parseHexColour } = await import('../teamColours')
+    expect(parseHexColour('#1A7F5A')).toBe('#1a7f5a')
+    expect(parseHexColour('1a7f5a')).toBe('#1a7f5a')
+    expect(parseHexColour('#0aF')).toBe('#00aaff')
+    expect(parseHexColour(' fff ')).toBe('#ffffff')
+    for (const bad of ['', '#', '#12', '#1234', '#12345', '#1234567', '#12345678', 'blue', 'rgb(1,2,3)', '#ggg', null, undefined, 123]) {
+      expect(parseHexColour(bad), String(bad)).toBeNull()
+    }
+  })
+
+  it('presetColour / isCustomColour tell the twelve presets from any other colour', async () => {
+    const { presetColour, isCustomColour, TEAM_COLOUR_PRESETS } = await import('../teamColours')
+    expect(TEAM_COLOUR_PRESETS).toHaveLength(12)
+    for (const p of TEAM_COLOUR_PRESETS) {
+      expect(presetColour(p)).toBe(p)
+      expect(presetColour(p.toLowerCase())).toBe(p)
+      expect(isCustomColour(p)).toBe(false)
+    }
+    expect(presetColour('#fff')).toBe('#FFFFFF')
+    expect(presetColour('#ef4444')).toBeNull() // the default home red is no preset
+    expect(isCustomColour('#ef4444')).toBe(true)
+    expect(isCustomColour('#7b1e2b')).toBe(true)
+    expect(isCustomColour('')).toBe(false)
+    expect(isCustomColour(null)).toBe(false)
+    expect(isCustomColour('var(--x)')).toBe(false)
+  })
+
+  it('coloursTooClose flags near shades and the same colour, never two different presets', async () => {
+    const { coloursTooClose, TEAM_COLOUR_PRESETS, CLOSE_COLOUR_DISTANCE } = await import('../teamColours')
+    expect(coloursTooClose('#dc2626', '#dc2626')).toBe(true)
+    expect(coloursTooClose('#dc2626', '#ef4444')).toBe(true)
+    expect(coloursTooClose('#dc2626', '#e2001a')).toBe(true)
+    expect(coloursTooClose('#1e3a8a', '#1e3a5f')).toBe(true)
+    expect(coloursTooClose('#ffffff', '#f8fafc')).toBe(true)
+    expect(coloursTooClose('#3b82f6', '#2563eb')).toBe(true)
+    expect(coloursTooClose('#dc2626', '#3b82f6')).toBe(false)
+    expect(coloursTooClose('#22c55e', '#16a34a')).toBe(true) // two greens
+    expect(coloursTooClose('#ef4444', '#f97316')).toBe(false) // red next to the orange preset
+    expect(coloursTooClose('#ef4444', '#ec4899')).toBe(false) // and the pink one
+    expect(coloursTooClose('#ffffff', '#000000')).toBe(false)
+    for (const a of TEAM_COLOUR_PRESETS) {
+      for (const b of TEAM_COLOUR_PRESETS) {
+        if (a !== b) expect(coloursTooClose(a, b), `${a} ${b}`).toBe(false)
+      }
+    }
+    expect(coloursTooClose('#dc2626', null)).toBe(false)
+    expect(coloursTooClose(undefined, '#dc2626')).toBe(false)
+    expect(coloursTooClose('not a colour', '#dc2626')).toBe(false)
+    expect(colourDistance('#dc2626', '#ef4444')).toBeLessThan(CLOSE_COLOUR_DISTANCE)
+  })
+
+  it('readableTextOn picks near-black or white by luminance for any colour, at least 3:1', () => {
+    for (const c of ANY) {
+      const ink = readableTextOn(c)
+      expect([TEXT_DARK, TEXT_LIGHT], c).toContain(ink)
+      expect(contrastRatio(c, ink), c).toBeGreaterThanOrEqual(MIN_LARGE_TEXT_CONTRAST)
+      // never the worse of the two when only one reaches 3:1
+      const other = ink === TEXT_DARK ? TEXT_LIGHT : TEXT_DARK
+      if (contrastRatio(c, other) < MIN_LARGE_TEXT_CONTRAST) expect(contrastRatio(c, ink), c).toBeGreaterThan(contrastRatio(c, other))
+    }
+    // very light and very dark custom shirts
+    expect(readableTextOn('#fef9c3')).toBe(TEXT_DARK)
+    expect(readableTextOn('#0b1d3a')).toBe(TEXT_LIGHT)
+    expect(readableTextOn('#7b1e2b')).toBe(TEXT_LIGHT)
+    expect(readableTextOn('#a3e635')).toBe(TEXT_DARK)
+    // #rgb is read as #rrggbb
+    expect(readableTextOn('#ff0')).toBe(readableTextOn('#ffff00'))
+  })
+
+  it('teamBoxStyle and discPaint give every colour a readable text and a visible edge', () => {
+    for (const c of ANY) {
+      const box = teamBoxStyle(c)
+      expect(box.background, c).toBe(c)
+      expect(contrastRatio(box.background, box.color), c).toBeGreaterThanOrEqual(MIN_LARGE_TEXT_CONTRAST)
+      if (contrastRatio(c, HEADER_SURFACE) < MIN_EDGE_CONTRAST) expect(box.boxShadow, c).toMatch(/^inset 0 0 0 2px #[0-9a-f]{6}$/)
+      const disc = discPaint(c)
+      expect(contrastRatio(disc.background, disc.color), c).toBeGreaterThanOrEqual(MIN_LARGE_TEXT_CONTRAST)
+      const edge = disc.ring ?? disc.background
+      expect(contrastRatio(edge, COURT_SURFACE), c).toBeGreaterThanOrEqual(MIN_EDGE_CONTRAST - 0.05)
+      const text = teamTextPaint(c)
+      expect(text.contrast, c).toBeGreaterThanOrEqual(MIN_LARGE_TEXT_CONTRAST - 0.01)
+    }
+  })
+})
