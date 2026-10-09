@@ -37,6 +37,8 @@ import Scoreboard from '../Scoreboard'
 import ManualAdjustments from '../ManualAdjustments'
 import { getSideAForSet, getFirstServeForSet } from '../../domain/rules'
 import { GHOST_CLICK_MS } from '../../hooks/useConfirmAction'
+import { savedCourtSides } from '../../utils/backupManager'
+import { switchSides } from '../corrections/liveActions'
 
 class OfflineSocket {
   constructor() { this.readyState = 3 }
@@ -295,6 +297,67 @@ describe('Undo after Swap A/B of an event logged before it', () => {
     await settle()
     expect(button('Switch courts')).toBeFalsy()
     expect(homeOnLeftOnScreen()).toBe(false)
+    cleanup()
+  }, 120000)
+})
+
+// Restore by PIN rebuilds the court sides from the latest synced event's
+// state snapshot (utils/backupManager savedCourtSides). The sides of sets 1-4
+// are now saved per set (Swap A/B pins every set, "Switch sides" pins this
+// set and the ones after it): a snapshot carrying only its own set's side
+// put the other sets back on the set number's side, so after a restore the
+// teams were on the other courts in the sets before (the sheet) or did not
+// change courts at the next set.
+describe('Restore by PIN after a side correction and a point scored since', () => {
+  const settle = () => new Promise(r => setTimeout(r, GHOST_CLICK_MS + 150))
+  const lastPointEvent = async () => (await db.events.toArray())
+    .filter(e => e.type === 'point').sort((a, b) => b.seq - a.seq)[0]
+  async function scorePoint(label) {
+    await waitFor(() => expect(button('Start set') || button('Start rally')).toBeTruthy(), { timeout: 10000 })
+    await settle()
+    if (button('Start set')) {
+      fireEvent.click(button('Start set'))
+      await waitFor(() => expect(button('Confirm')).toBeTruthy())
+      fireEvent.click(button('Confirm'))
+    } else {
+      fireEvent.click(button('Start rally'))
+    }
+    await waitFor(() => expect(button(label)).toBeTruthy(), { timeout: 10000 })
+    await settle()
+    const before = (await db.events.toArray()).filter(e => e.type === 'point').length
+    fireEvent.click(button(label))
+    await waitFor(async () => expect((await db.events.toArray()).filter(e => e.type === 'point').length).toBe(before + 1))
+    await waitFor(async () => expect((await lastPointEvent())?.stateSnapshot).toBeTruthy(), { timeout: 10000 })
+    await settle()
+  }
+  // The match as a restore by PIN rebuilds it from that snapshot alone
+  const restored = async (match) => {
+    const ev = await lastPointEvent()
+    const sides = savedCourtSides([{ seq: ev.seq, created_at: ev.ts, state_snapshot: ev.stateSnapshot }], null, match.coinTossTeamA)
+    return { bestOf: match.bestOf, coinTossTeamA: match.coinTossTeamA, coinTossTeamB: match.coinTossTeamB, ...sides }
+  }
+
+  it('Swap A/B in set 2, then a point: every set keeps its teams on their sides', async () => {
+    const matchId = await setUpMatch(['home'], [3, 2])
+    await swapAB(matchId)
+    mountScoreboard(matchId)
+    await scorePoint('Point B') // home (B now)
+    const m = await db.matches.get(matchId)
+    const r = await restored(m)
+    for (const set of [1, 2, 3, 4]) expect(leftTeam(r, set), `left team in set ${set}`).toBe(leftTeam(m, set))
+    cleanup()
+  }, 120000)
+
+  it('"Switch sides" in set 2, then a point: the teams still change courts for set 3', async () => {
+    const matchId = await setUpMatch(['home'], [3, 2])
+    await switchSides({ db, matchId, match: await db.matches.get(matchId), setIndex: 2 })
+    mountScoreboard(matchId)
+    await scorePoint('Point A') // home (A)
+    const m = await db.matches.get(matchId)
+    expect(leftTeam(m, 2)).toBe('home')
+    const r = await restored(m)
+    for (const set of [1, 2, 3, 4]) expect(leftTeam(r, set), `left team in set ${set}`).toBe(leftTeam(m, set))
+    expect(leftTeam(r, 3)).toBe('away')
     cleanup()
   }, 120000)
 })
