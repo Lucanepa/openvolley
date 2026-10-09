@@ -231,6 +231,14 @@ describe('getSet5LeftTeamLabel', () => {
     expect(getSet5LeftTeamLabel({})).toBe('B')
     expect(getSet5LeftTeamLabel(undefined)).toBe('B')
   })
+  it('falls back to the sides set 4 ended on, its saved side included (best-of-3: set 2)', () => {
+    expect(getSet5LeftTeamLabel({ setLeftTeamOverrides: { 4: 'A' } })).toBe('A')
+    expect(getSet5LeftTeamLabel({ setLeftTeamOverrides: { 4: 'B' } })).toBe('B')
+    expect(getSet5LeftTeamLabel({ bestOf: 3, setLeftTeamOverrides: { 2: 'A' } })).toBe('A')
+    expect(getSet5LeftTeamLabel({ bestOf: 3 })).toBe('B')
+    // the panel is the toss side, before the change of courts at 8
+    expect(getSet5LeftTeamLabel({ setLeftTeamOverrides: { 4: 'A' }, set5CourtSwitched: true })).toBe('A')
+  })
 })
 
 describe('getFirstServeTeamKey', () => {
