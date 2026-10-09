@@ -12447,7 +12447,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   if (!data?.set || setTransitionLoading) {
     const loadingStep = setTransitionLoading?.step || 'Loading...'
     return (
-      <div style={{
+      <div role="status" aria-live="polite" style={{
         position: 'fixed',
         top: 0,
         left: 0,
@@ -19125,7 +19125,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {...backdropDismiss(() => { setPlayerActionMenu(null); setCourtSubExpanded(false); setCourtLiberoExpanded(false); setCourtSanctionExpanded(false); setCourtLiberoUnableExpanded(false) })}
             />
             {/* Action Menu */}
-            <div style={menuStyle} className="modal-wrapper-roll-down">
+            <div role="dialog" aria-label={t('scoreboard.a11y.playerActions', 'Player actions')} style={menuStyle} className="modal-wrapper-roll-down">
               <div
                 data-player-action-menu
                 className={SB_POPOVER}
@@ -19517,7 +19517,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               })}
             />
             {/* Dropdown */}
-            <div style={dropdownStyle} className="modal-wrapper-roll-down">
+            <div role="dialog" aria-label={t('scoreboard.a11y.substitution', 'Substitution')} style={dropdownStyle} className="modal-wrapper-roll-down">
               <div
                 data-substitution-dropdown
                 className={SB_POPOVER}
@@ -19660,7 +19660,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               })}
             />
             {/* Dropdown */}
-            <div style={dropdownStyle} className="modal-wrapper-roll-down">
+            <div role="dialog" aria-label={t('scoreboard.a11y.liberoExchange', 'Libero')} style={dropdownStyle} className="modal-wrapper-roll-down">
               <div
                 data-libero-dropdown
                 style={{
@@ -19749,7 +19749,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               })}
             />
             {/* Dropdown */}
-            <div style={dropdownStyle} className="modal-wrapper-roll-down">
+            <div role="dialog" aria-label={t('scoreboard.a11y.liberoIn', 'Libero in')} style={dropdownStyle} className="modal-wrapper-roll-down">
               <div
                 data-libero-in-dropdown
                 style={{
@@ -19841,7 +19841,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {...backdropDismiss(cancelSanction)}
             />
             {/* Dropdown */}
-            <div style={dropdownStyle} className="modal-wrapper-roll-up">
+            <div role="dialog" aria-label={t('scoreboard.a11y.sanction', 'Sanction')} style={dropdownStyle} className="modal-wrapper-roll-up">
               <div
                 data-sanction-dropdown
                 className={SB_POPOVER}
@@ -20001,7 +20001,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               {...backdropDismiss(() => { setBenchPlayerActionMenu(null); setBenchSubExpanded(false); setBenchSanctionExpanded(false) })}
             />
             {/* Action Menu */}
-            <div style={menuStyle} className="modal-wrapper-roll-down">
+            <div role="dialog" aria-label={t('scoreboard.a11y.benchPlayerActions', 'Bench player actions')} style={menuStyle} className="modal-wrapper-roll-down">
               <div
                 data-bench-player-action-menu
                 className={SB_POPOVER}
@@ -20221,7 +20221,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               })}
             />
             {/* Dropdown */}
-            <div style={dropdownStyle} className="modal-wrapper-roll-up">
+            <div role="dialog" aria-label={t('scoreboard.a11y.injury', 'Injury')} style={dropdownStyle} className="modal-wrapper-roll-up">
               <div
                 data-injury-dropdown
                 className={SB_POPOVER}
@@ -20278,7 +20278,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 justifyContent: 'center'
               }}
             >
-              <div
+              <div role="dialog" aria-modal="true" aria-label={t('scoreboard.a11y.summaryTable', 'Summary')}
                 onClick={(e) => e.stopPropagation()}
                 style={{
                   background: 'var(--panel)',
@@ -20728,7 +20728,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             }}
             {...backdropDismiss(cancelLiberoConfirm)}
           >
-            <div
+            <div role="dialog" aria-modal="true" aria-label={t('scoreboard.a11y.liberoConfirm', 'Libero exchange')}
               style={{
                 background: '#fff',
                 borderRadius: '16px',
@@ -20941,7 +20941,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             }}
             {...backdropDismiss(cancelLiberoReentry)}
           >
-            <div
+            <div role="dialog" aria-modal="true" aria-label={t('scoreboard.a11y.liberoReentry', 'Libero re-entry')}
               style={{
                 position: 'absolute',
                 top: typeof modalTop === 'number' ? `${modalTop}px` : modalTop,
@@ -21326,7 +21326,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               }}
               {...backdropDismiss(() => { setLiberoBenchActionMenu(null); setLiberoBenchReplaceExpanded(false); setLiberoBenchUnableExpanded(false) })}
             />
-            <div style={menuStyle} className="sb-anchored-popover">
+            <div role="dialog" aria-label={t('scoreboard.a11y.liberoBenchActions', 'Libero actions')} style={menuStyle} className="sb-anchored-popover">
               {/* Same scale(1.5) as the other player menus, so its rows match them on screen */}
               <div data-libero-bench-action-menu className={SB_POPOVER} style={{
                 padding: '8px',
@@ -21473,7 +21473,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             }}
             {...backdropDismiss(() => setLiberoUnableModal(null))}
           >
-            <div
+            <div role="dialog" aria-modal="true" aria-label={t('scoreboard.a11y.liberoUnable', 'Libero unable to play')}
               style={{
                 background: '#fff',
                 borderRadius: '16px',
@@ -22299,7 +22299,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             }}
             {...backdropDismiss(() => setLiberoRotationModal(null))}
           >
-            <div
+            <div role="dialog" aria-modal="true" aria-label={t('scoreboard.a11y.liberoRotation', 'Libero rotated out')}
               style={{
                 position: 'absolute',
                 top: typeof modalTop === 'number' ? `${modalTop}px` : modalTop,
