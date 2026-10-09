@@ -435,9 +435,12 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
     }
   }, [matchId])
 
-  // Colors are derived from match - no local state (can't change in CoinToss)
-  const homeColor = match?.homeColor || '#ef4444'
-  const awayColor = match?.awayColor || '#3b82f6'
+  // Colours can't change here. The team's own colour first, as on the
+  // scoreboard (Manual Adjustments edits only the team, a test match sets
+  // only the teams), then the match's copy
+  const [teamColours, setTeamColours] = useState({ home: null, away: null })
+  const homeColor = teamColours.home || match?.homeColor || '#ef4444'
+  const awayColor = teamColours.away || match?.awayColor || '#3b82f6'
 
   // Check if coin toss was previously confirmed
   // Use the dedicated coinTossConfirmed field instead of signature comparison
@@ -457,6 +460,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           match.homeTeamId ? db.teams.get(match.homeTeamId) : null,
           match.awayTeamId ? db.teams.get(match.awayTeamId) : null
         ])
+        setTeamColours({ home: homeTeam?.color || null, away: awayTeam?.color || null })
 
         if (homeTeam) {
           setHome(homeTeam.name || t('common.home'))
