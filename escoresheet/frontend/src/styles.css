@@ -380,53 +380,22 @@ p {
   }
 }
 
+/* Team shirt (components/TeamShirt.jsx): the box is the shirt's body, the
+   SVG jersey draws the sleeves and the back of the neck outside it */
 .shirt {
   position: relative;
   width: calc(38px * var(--scale-factor));
   height: calc(36px * var(--scale-factor));
-  background: linear-gradient(160deg, #2563eb, #1e3a8a);
-  border-radius: calc(6px * var(--scale-factor)) calc(6px * var(--scale-factor)) calc(8px * var(--scale-factor)) calc(8px * var(--scale-factor));
-  box-shadow:
-    inset 0 calc(2px * var(--scale-factor)) calc(3px * var(--scale-factor)) rgba(255, 255, 255, 0.2),
-    inset 0 calc(-3px * var(--scale-factor)) calc(4px * var(--scale-factor)) rgba(0, 0, 0, 0.4),
-    0 calc(2px * var(--scale-factor)) calc(6px * var(--scale-factor)) rgba(0, 0, 0, 0.3);
 }
 
-/* sleeves */
-.shirt::before,
-.shirt::after {
-  content: '';
+.shirt > svg {
   position: absolute;
-  top: calc(1px * var(--scale-factor));
-  width: calc(18px * var(--scale-factor));
-  height: calc(10px * var(--scale-factor));
-  background: inherit;
-  border-radius: calc(4px * var(--scale-factor));
-  box-shadow: inset 0 calc(1px * var(--scale-factor)) calc(2px * var(--scale-factor)) rgba(255, 255, 255, 0.15);
-}
-
-.shirt::before {
-  left: calc(-12px * var(--scale-factor));
-  transform: rotate(-8deg);
-  z-index: 1;
-}
-
-.shirt::after {
-  right: calc(-12px * var(--scale-factor));
-  transform: rotate(8deg);
-  z-index: 1;
-}
-
-.shirt .collar {
-  position: absolute;
-  top: calc(-4px * var(--scale-factor));
-  left: 50%;
-  transform: translateX(-50%);
-  width: calc(18px * var(--scale-factor));
-  height: calc(8px * var(--scale-factor));
-  background: #0f172a;
-  border-radius: 0 0 calc(4px * var(--scale-factor)) calc(4px * var(--scale-factor));
-  z-index: 2;
+  left: calc(-13px * var(--scale-factor));
+  top: calc(-5px * var(--scale-factor));
+  width: calc(64px * var(--scale-factor));
+  height: calc(43px * var(--scale-factor));
+  overflow: visible;
+  filter: drop-shadow(0 calc(1px * var(--scale-factor)) calc(1.5px * var(--scale-factor)) rgba(28, 25, 23, 0.22));
 }
 
 .shirt .number {
@@ -435,14 +404,13 @@ p {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding-top: calc(3px * var(--scale-factor));
   font-family: var(--font-sans);
   font-weight: 800;
   color: #ffffff;
   font-size: calc(18px * var(--scale-factor));
-  text-shadow:
-    0 calc(1px * var(--scale-factor)) calc(3px * var(--scale-factor)) rgba(0, 0, 0, 0.5),
-    0 0 calc(4px * var(--scale-factor)) rgba(255, 255, 255, 0.15);
-  z-index: 1;
+  line-height: 1;
+  text-shadow: 0 calc(1px * var(--scale-factor)) calc(2px * var(--scale-factor)) rgba(0, 0, 0, 0.35);
 }
 
 /* Bench row spacing */

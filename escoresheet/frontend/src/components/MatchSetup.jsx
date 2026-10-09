@@ -45,6 +45,7 @@ import { openRestore } from '../utils/manageNav'
 import { Users, Save as SaveIcon } from 'lucide-react'
 import CaptainToggle from './CaptainToggle'
 import StackLabel from './StackLabel'
+import TeamShirt from './TeamShirt'
 import { useFormStack } from '../hooks/useFormStack'
 import { askText } from '../utils/askText.js'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
@@ -3420,13 +3421,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       })
                     }}
                   >
-                    <div
-                      className="shirt"
-                      style={{ background: homeColor, transform: 'scale(0.65)', margin: '-10px' }}
-                    >
-                      <div className="collar" style={{ background: homeColor }} />
-                      <div className="number" style={{ color: getContrastColor(homeColor) }}>1</div>
-                    </div>
+                    <TeamShirt
+                      color={homeColor}
+                      numberColor={getContrastColor(homeColor)}
+                      style={{ transform: 'scale(0.65)', margin: '-10px' }}
+                    />
                   </div>
                   {/* Title: team-colour bar (frozen) */}
                   <div
@@ -3507,13 +3506,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       })
                     }}
                   >
-                    <div
-                      className="shirt"
-                      style={{ background: awayColor, transform: 'scale(0.65)', margin: '-10px' }}
-                    >
-                      <div className="collar" style={{ background: awayColor }} />
-                      <div className="number" style={{ color: getContrastColor(awayColor) }}>1</div>
-                    </div>
+                    <TeamShirt
+                      color={awayColor}
+                      numberColor={getContrastColor(awayColor)}
+                      style={{ transform: 'scale(0.65)', margin: '-10px' }}
+                    />
                   </div>
                 </div>
                 <div className="flex items-end gap-4 stack:flex-col stack:items-stretch stack:gap-3">
@@ -3744,10 +3741,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         minWidth: '60px'
                       }}
                     >
-                      <div className="shirt" style={{ background: color, transform: 'scale(0.8)' }}>
-                        <div className="collar" style={{ background: color }} />
-                        <div className="number" style={{ color: getContrastColor(color) }}>1</div>
-                      </div>
+                      <TeamShirt color={color} numberColor={getContrastColor(color)} style={{ transform: 'scale(0.8)' }} />
                     </button>
                   )
                 })}
@@ -6568,9 +6562,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           {/* Row 3: Color selector + Shirt + Roster */}
           <div className="flex items-center gap-5">
             <span className="text-xs text-stone-500">{t('matchSetup.selectColour')}</span>
-            <div
-              className="shirt"
-              style={{ background: homeColor, cursor: 'pointer', transform: `scale(${scaleFactor})` }}
+            <TeamShirt
+              color={homeColor}
+              numberColor={getContrastColor(homeColor)}
+              style={{ cursor: 'pointer', transform: `scale(${scaleFactor})` }}
               onClick={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect()
                 const centerX = rect.left + rect.width / 2
@@ -6579,10 +6574,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   position: { x: centerX, y: rect.bottom + 8 }
                 })
               }}
-            >
-              <div className="collar" style={{ background: homeColor }} />
-              <div className="number" style={{ color: getContrastColor(homeColor) }}>1</div>
-            </div>
+            />
             <div className="flex-1" />
             <Button variant="secondary" size="xl" onClick={() => setCurrentView('home')}>{t('matchSetup.editRoster')}</Button>
           </div>
@@ -6623,9 +6615,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           {/* Row 3: Color selector + Shirt + Roster */}
           <div className="flex items-center gap-5">
             <span className="text-xs text-stone-500">{t('matchSetup.selectColour')}</span>
-            <div
-              className="shirt"
-              style={{ background: awayColor, cursor: 'pointer', transform: `scale(${scaleFactor})` }}
+            <TeamShirt
+              color={awayColor}
+              numberColor={getContrastColor(awayColor)}
+              style={{ cursor: 'pointer', transform: `scale(${scaleFactor})` }}
               onClick={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect()
                 const centerX = rect.left + rect.width / 2
@@ -6634,10 +6627,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   position: { x: centerX, y: rect.bottom + 8 }
                 })
               }}
-            >
-              <div className="collar" style={{ background: awayColor }} />
-              <div className="number" style={{ color: getContrastColor(awayColor) }}>1</div>
-            </div>
+            />
             <div className="flex-1" />
             <Button variant="secondary" size="xl" onClick={() => setCurrentView('away')}>{t('matchSetup.editRoster')}</Button>
           </div>
@@ -7248,10 +7238,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       }
                     }}
                   >
-                    <div className="shirt" style={{ background: color, transform: 'scale(0.8)' }}>
-                      <div className="collar" style={{ background: color }} />
-                      <div className="number" style={{ color: getContrastColor(color) }}>1</div>
-                    </div>
+                    <TeamShirt color={color} numberColor={getContrastColor(color)} style={{ transform: 'scale(0.8)' }} />
                   </button>
                 )
               })}
