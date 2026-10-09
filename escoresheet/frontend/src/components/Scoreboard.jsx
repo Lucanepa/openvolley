@@ -18787,7 +18787,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               style={{
                 padding: '16px',
                 fontSize: '16px',
-                ...teamBoxStyle(data?.homeTeam?.color || '#3b82f6'),
+                ...teamBoxStyle(effectiveTeamColour('home', data?.homeTeam, data?.match)),
                 border: 'none',
                 borderRadius: '8px',
                 cursor: 'pointer'
@@ -18803,7 +18803,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               style={{
                 padding: '16px',
                 fontSize: '16px',
-                ...teamBoxStyle(data?.awayTeam?.color || '#ef4444'),
+                ...teamBoxStyle(effectiveTeamColour('away', data?.awayTeam, data?.match)),
                 border: 'none',
                 borderRadius: '8px',
                 cursor: 'pointer'
