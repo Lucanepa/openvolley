@@ -902,6 +902,21 @@
       "redesignate": "Ridesigna libero",
       "sidewaysTitle": "Tieni il telefono in verticale",
       "sidewaysBody": "La schermata di punteggio sul telefono è pensata per il formato verticale. Ruota di nuovo il telefono: la partita, i dialoghi e i conti alla rovescia restano."
+    },
+    "a11y": {
+      "playerActions": "Azioni giocatore",
+      "substitution": "Sostituzione",
+      "liberoExchange": "Libero",
+      "liberoIn": "Entrata libero",
+      "sanction": "Sanzione",
+      "benchPlayerActions": "Azioni giocatore in panchina",
+      "injury": "Infortunio",
+      "summaryTable": "Riepilogo",
+      "liberoConfirm": "Sostituzione libero",
+      "liberoReentry": "Rientro libero",
+      "liberoBenchActions": "Azioni libero",
+      "liberoUnable": "Libero non in grado di giocare",
+      "liberoRotation": "Libero uscito per rotazione"
     }
   },
   "settings": {

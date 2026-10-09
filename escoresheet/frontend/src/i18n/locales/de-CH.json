@@ -902,6 +902,21 @@
       "redesignate": "Libero neu bestimme",
       "sidewaysTitle": "Heb s Handy uufrächt",
       "sidewaysBody": "D Erfassig ufem Handy isch fürs Hochformat gmacht. Drääj s Handy zrugg: Spiil, Dialög und Countdowns blibed erhalte."
+    },
+    "a11y": {
+      "playerActions": "Spieleraktionen",
+      "substitution": "Wechsel",
+      "liberoExchange": "Libero",
+      "liberoIn": "Libero rein",
+      "sanction": "Sanktion",
+      "benchPlayerActions": "Aktionen Bankspieler",
+      "injury": "Verletzung",
+      "summaryTable": "Übersicht",
+      "liberoConfirm": "Liberowechsel",
+      "liberoReentry": "Wiedereintritt Libero",
+      "liberoBenchActions": "Libero-Aktionen",
+      "liberoUnable": "Libero nicht spielfähig",
+      "liberoRotation": "Libero rotiert hinaus"
     }
   },
   "settings": {

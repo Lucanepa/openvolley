@@ -901,6 +901,21 @@
       "redesignate": "Redésigner le libéro",
       "sidewaysTitle": "Tenez le téléphone à la verticale",
       "sidewaysBody": "L’écran de saisie sur téléphone est conçu pour le format portrait. Retournez le téléphone : le match, ses dialogues et ses comptes à rebours sont conservés."
+    },
+    "a11y": {
+      "playerActions": "Actions du joueur",
+      "substitution": "Remplacement",
+      "liberoExchange": "Libéro",
+      "liberoIn": "Entrée du libéro",
+      "sanction": "Sanction",
+      "benchPlayerActions": "Actions du joueur sur le banc",
+      "injury": "Blessure",
+      "summaryTable": "Résumé",
+      "liberoConfirm": "Remplacement du libéro",
+      "liberoReentry": "Retour du libéro",
+      "liberoBenchActions": "Actions du libéro",
+      "liberoUnable": "Libéro inapte à jouer",
+      "liberoRotation": "Libéro sorti par rotation"
     }
   },
   "settings": {

@@ -895,6 +895,21 @@
       "redesignate": "Libero neu bestimmen",
       "sidewaysTitle": "Halte das Handy aufrecht",
       "sidewaysBody": "Die Erfassung auf dem Handy ist für das Hochformat gemacht. Dreh das Handy zurück: Spiel, Dialoge und Countdowns bleiben erhalten."
+    },
+    "a11y": {
+      "playerActions": "Spieleraktionen",
+      "substitution": "Wechsel",
+      "liberoExchange": "Libero",
+      "liberoIn": "Libero rein",
+      "sanction": "Sanktion",
+      "benchPlayerActions": "Aktionen Bankspieler",
+      "injury": "Verletzung",
+      "summaryTable": "Übersicht",
+      "liberoConfirm": "Liberowechsel",
+      "liberoReentry": "Wiedereintritt Libero",
+      "liberoBenchActions": "Libero-Aktionen",
+      "liberoUnable": "Libero nicht spielfähig",
+      "liberoRotation": "Libero rotiert hinaus"
     }
   },
   "settings": {
