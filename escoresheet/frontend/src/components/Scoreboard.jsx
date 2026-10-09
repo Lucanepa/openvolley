@@ -2207,7 +2207,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const teamBKey = teamAKey === 'home' ? 'away' : 'home'
 
         let nextSetFirstServe
-        if (nextSetIndex === 5 && match.set5FirstServe) {
+        if (endsIntoSet5) {
+          // The end of set 4 (best-of-3: 2): the server of its last rally, as
+          // the set 5 setup it writes next proposes (not set 1's server, nor
+          // a set 5 server left from an earlier end of that set)
+          nextSetFirstServe = snapshot.servingTeam || set1FirstServe
+        } else if (nextSetIndex === 5 && match.set5FirstServe) {
           // Set 5 uses separate coin toss result if available
           nextSetFirstServe = match.set5FirstServe === 'A' ? teamAKey : teamBKey
         } else if (nextSetIndex === 5) {

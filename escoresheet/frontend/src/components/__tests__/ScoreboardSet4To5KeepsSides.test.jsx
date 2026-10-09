@@ -128,6 +128,8 @@ const leftTeam = (m, set) => {
 const liveStates = (type) => upserts.filter(u => u.table === 'match_live_state' && u.row.last_event_type === type).map(u => u.row)
 // The home team's side in a live state row (its side_a is its own Team A's)
 const homeLeftInLiveState = (row) => (row.side_a === 'left') === (row.team_a_name === 'Home VC')
+// Whether the home team serves in a live state row (serving_team is a side)
+const homeServingInLiveState = (row) => (row.serving_team === row.side_a) === (row.team_a_name === 'Home VC')
 
 const LINEUP = { I: '1', II: '2', III: '3', IV: '4', V: '5', VI: '6' }
 
@@ -297,8 +299,12 @@ describe('Set 4 -> set 5: the teams stay where set 4 ended until the set 5 setup
     // the break: set 4's sides, here and in the live state (referee, livescore)
     expect(state.current_set).toBe(5)
     expect(homeLeftInLiveState(state)).toBe(false)
+    // its server: the one of set 4's last rally (away), as the setup proposes,
+    // not set 1's (home)
+    expect(homeServingInLiveState(state)).toBe(false)
     const m = await db.matches.get(matchId)
     expect(m.set5LeftTeam).toBe('B')
+    expect(m.set5FirstServe).toBe('B')
     expect(m.set5CourtSwitched).toBe(false)
     expect(homeOnLeftOnScreen()).toBe(false)
     // the setup's push to the tablets too
@@ -343,8 +349,11 @@ describe('Set 4 -> set 5: the teams stay where set 4 ended until the set 5 setup
     expect(state.current_set).toBe(5)
     expect(homeLeftInLiveState(state)).toBe(true)
     await waitFor(() => expect(homeLeftInLiveState(liveStates('manual_set5_setup').at(-1))).toBe(true))
-    // the server of set 4's last rally (away, B), not the old setup's choice
+    // the server of set 4's last rally (away, B), not the old setup's choice,
+    // in the set end's push too (not only once the setup's push arrives)
     expect((await db.matches.get(matchId)).set5FirstServe).toBe('B')
+    expect(homeServingInLiveState(state)).toBe(false)
+    expect(homeServingInLiveState(liveStates('manual_set5_setup').at(-1))).toBe(false)
 
     await confirmSetup(matchId, { homeLeft: true })
   }, 150000)
