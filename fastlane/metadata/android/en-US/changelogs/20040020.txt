@@ -1,0 +1,9 @@
+OpenVolley 2.4.2
+- Fixes a crash when a libero was declared unable or re-designated.
+- Set 5: change of courts at 8 after every point, undo and reload.
+- Swap A/B only corrects the coin toss; Switch sides moves the teams.
+- Phone layout for the scorer.
+- Team colours: own colour picker, readable text, outlined shirts.
+- Slow tablets: a double tap no longer scores twice.
+- Remarks sync to the server.
+- Many smaller fixes.
