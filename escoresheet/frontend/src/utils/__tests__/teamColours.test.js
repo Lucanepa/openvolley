@@ -500,7 +500,7 @@ describe('custom team colours (any hex, not only the twelve presets)', () => {
       expect(isCustomColour(p)).toBe(false)
     }
     expect(presetColour('#fff')).toBe('#FFFFFF')
-    expect(presetColour('#ef4444')).toBeNull() // the default home red is no preset
+    expect(presetColour('#ef4444')).toBeNull() // the old default home red is no preset
     expect(isCustomColour('#ef4444')).toBe(true)
     expect(isCustomColour('#7b1e2b')).toBe(true)
     expect(isCustomColour('')).toBe(false)

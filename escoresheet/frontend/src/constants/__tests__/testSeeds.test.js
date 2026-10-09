@@ -50,3 +50,15 @@ describe('test team seeds', () => {
     expect(getTestTeamByExternalId('test-team-home')).toBe(getTestTeamByExternalId(TEST_HOME_TEAM_EXTERNAL_ID))
   })
 })
+
+// A test match's teams wear preset shirts, so the colour picker opens on
+// their tile and not on Custom (Volley Luzern was #ef4444, no preset)
+describe('test team colours', () => {
+  it('are presets', async () => {
+    const { TEST_TEAM_SEED_DATA } = await import('../testSeeds')
+    const { presetColour } = await import('../../utils/teamColours')
+    for (const team of TEST_TEAM_SEED_DATA) expect(presetColour(team.color), team.name).toBeTruthy()
+    const app = readFileSync(resolve(__dirname, '../../App.jsx'), 'utf8')
+    expect(app).not.toMatch(/awayTeamData\?\.color \|\| '#ef4444'/)
+  })
+})
