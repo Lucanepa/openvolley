@@ -27,6 +27,20 @@ export function regularSetIndexes(match = {}) {
 }
 
 /**
+ * The saved sides of sets 1-4 ('A' / 'B', the LEFT team) for an event's
+ * state snapshot, null when there are none. Set 5's side is its coin toss
+ * (set5LeftTeam), never an override, so an older match's [5] is left out.
+ * @param {object|null|undefined} overrides  match.setLeftTeamOverrides
+ * @returns {object|null}
+ */
+export function savedSidesOfRegularSets(overrides) {
+  if (!overrides || typeof overrides !== 'object') return null
+  const out = {}
+  for (const set of [1, 2, 3, 4]) if (isLabel(overrides[set])) out[set] = overrides[set]
+  return Object.keys(out).length ? out : null
+}
+
+/**
  * `setLeftTeamOverrides` after A and B are swapped: every set 1-4 pinned to
  * the team the court has on its left now, in the new labels. A set without an
  * override takes its side from the set number (A left in odd sets): flipping

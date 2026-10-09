@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { swapTeamDesignation, liveRowTeamA } from '../coinToss'
+import { swapTeamDesignation, liveRowTeamA, savedSidesOfRegularSets } from '../coinToss'
 import { getSideAForSet, getFirstServeForSet } from '../rules'
 
 describe('swapTeamDesignation', () => {
@@ -128,5 +128,19 @@ describe('liveRowTeamA: the Team A a live row was written with', () => {
     expect(liveRowTeamA({ team_a_name: 'H' }, 'H', 'W')).toBeNull()
     expect(liveRowTeamA(null, 'H', 'W')).toBeNull()
     expect(liveRowTeamA({ team_a_name: 'Other', team_b_name: 'W' }, 'H', 'W')).toBeNull()
+  })
+})
+
+describe('savedSidesOfRegularSets (the sides an event snapshot carries)', () => {
+  it('none saved: null', () => {
+    expect(savedSidesOfRegularSets(undefined)).toBeNull()
+    expect(savedSidesOfRegularSets({})).toBeNull()
+  })
+  it('the saved sides of sets 1-4, not an older match\'s set 5 nor a value that is no label', () => {
+    expect(savedSidesOfRegularSets({ 1: 'B', 2: 'A', 3: 'x', 5: 'A' })).toEqual({ 1: 'B', 2: 'A' })
+  })
+  it('a swap\'s sides go into the snapshot whole', () => {
+    const patch = swapTeamDesignation({ coinTossTeamA: 'home', coinTossTeamB: 'away', firstServe: 'home' })
+    expect(savedSidesOfRegularSets(patch.setLeftTeamOverrides)).toEqual({ 1: 'B', 2: 'A', 3: 'B', 4: 'A' })
   })
 })

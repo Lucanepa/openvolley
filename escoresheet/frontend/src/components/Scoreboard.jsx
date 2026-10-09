@@ -66,7 +66,7 @@ import { LINEUP_POSITIONS, lineupEntryErrors, lineupCandidates, lineupCaptainSta
 import { describeEventText } from '../domain/describe'
 import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal } from '../domain/matchEnd'
-import { swapTeamDesignation } from '../domain/coinToss'
+import { savedSidesOfRegularSets } from '../domain/coinToss'
 import { liveStateNeedsFreshSnapshot } from '../utils/livescoreModel'
 import { displaySetNumber, setsWonWithFinishedSet, finishedSetMissingFromSnapshot } from '../utils/matchFormat'
 import { TimeInput24 } from './TimeInput24'
@@ -1508,7 +1508,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
         // Match flags
         set5CourtSwitched: !!set5CourtSwitched,
-        set5LeftTeam: set5LeftTeam || null
+        set5LeftTeam: set5LeftTeam || null,
+        // The saved sides of sets 1-4 (the LEFT team, in this snapshot's
+        // labels): "Swap A/B" pins every set, "Switch sides" this set and the
+        // ones after it. A restore by PIN takes them from here
+        // (backupManager savedCourtSides); with only this set's side the
+        // other sets went back to the set number's side
+        setLeftTeamOverrides: savedSidesOfRegularSets(match.setLeftTeamOverrides)
       }
       // Return snapshot + raw queried data for reuse by logEvent (avoids redundant DB queries)
       return { snapshot, _rawEvents: allEvents, _rawSets: allSets, _rawMatch: match }
