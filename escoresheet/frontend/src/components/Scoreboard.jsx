@@ -35,7 +35,7 @@ import ballFallback from '../ball_fallback.png'
 // stay cached (old green ball) after an update
 const ballImage = ballFallback
 import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
-import { discPaint, matchDiscPaint, teamLiberoColour, markColourOn, teamBoxStyle, teamTextStyle, HEADER_SURFACE } from '../utils/teamColours'
+import { discPaint, effectiveTeamColour, matchDiscPaint, teamLiberoColour, markColourOn, teamBoxStyle, teamTextStyle, HEADER_SURFACE } from '../utils/teamColours'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom } from '../lib/apiClient'
 import { relayMatchKey, relayMatchPayload } from '../utils/serverDataSync'
@@ -1168,9 +1168,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       console.log(`[PERF:snapshot] After events query (${allEvents.length} events): +${(performance.now() - _ts).toFixed(0)}ms`)
 
       // Get players from database
-      const [homePlayersDb, awayPlayersDb] = await Promise.all([
+      // The team records (their colours), unless the snapshot is taken inside
+      // a transaction without the teams table: reading them there would throw
+      // and lose the whole snapshot (then the match's colours stand in)
+      const tx = Dexie.currentTransaction
+      const teamsReadable = !tx || tx.storeNames.includes('teams')
+      const [homePlayersDb, awayPlayersDb, homeTeamDb, awayTeamDb] = await Promise.all([
         match.homeTeamId ? db.players.where('teamId').equals(match.homeTeamId).toArray() : [],
-        match.awayTeamId ? db.players.where('teamId').equals(match.awayTeamId).toArray() : []
+        match.awayTeamId ? db.players.where('teamId').equals(match.awayTeamId).toArray() : [],
+        teamsReadable && match.homeTeamId ? db.teams.get(match.homeTeamId) : null,
+        teamsReadable && match.awayTeamId ? db.teams.get(match.awayTeamId) : null
       ])
       console.log(`[PERF:snapshot] After players query: +${(performance.now() - _ts).toFixed(0)}ms`)
 
@@ -1195,8 +1202,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const teamBName = teamAKey === 'home' ? match.awayName : match.homeName
       const teamAShort = teamAKey === 'home' ? match.homeShortName : match.awayShortName
       const teamBShort = teamAKey === 'home' ? match.awayShortName : match.homeShortName
-      const teamAColor = teamAKey === 'home' ? match.homeColor : match.awayColor
-      const teamBColor = teamAKey === 'home' ? match.awayColor : match.homeColor
+      // The colours the scorer's court shows (the team's own first): a test
+      // match has none on the match, so the referee and livescore got none
+      const homeColour = effectiveTeamColour('home', homeTeamDb, match)
+      const awayColour = effectiveTeamColour('away', awayTeamDb, match)
+      const teamAColor = teamAKey === 'home' ? homeColour : awayColour
+      const teamBColor = teamAKey === 'home' ? awayColour : homeColour
 
       // Points and set scores
       const pointsA = teamAKey === 'home' ? currentSet.homePoints : currentSet.awayPoints
@@ -1471,10 +1482,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         teamAKey,
         teamAName,
         teamAShort: teamAShort || teamAName?.substring(0, 3).toUpperCase(),
-        teamAColor: teamAColor || '#ef4444',
+        teamAColor,
         teamBName,
         teamBShort: teamBShort || teamBName?.substring(0, 3).toUpperCase(),
-        teamBColor: teamBColor || '#3b82f6',
+        teamBColor,
 
         // Current set
         currentSetIndex: setIndex,
@@ -3642,7 +3653,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const isTeamA = teamKey === teamAKey
     return {
       name: team?.name || (leftIsHome ? 'Home' : 'Away'),
-      color: team?.color || (leftIsHome ? '#ef4444' : '#3b82f6'),
+      color: effectiveTeamColour(teamKey, team, data.match),
       playersOnCourt: buildOnCourt(players, true, teamKey),
       isTeamA
     }
@@ -3656,7 +3667,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const isTeamA = teamKey === teamAKey
     return {
       name: team?.name || (leftIsHome ? 'Away' : 'Home'),
-      color: team?.color || (leftIsHome ? '#3b82f6' : '#ef4444'),
+      color: effectiveTeamColour(teamKey, team, data.match),
       playersOnCourt: buildOnCourt(players, false, teamKey),
       isTeamA
     }

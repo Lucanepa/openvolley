@@ -520,6 +520,21 @@ export const TEAM_COLOUR_PRESETS = [
 export const DEFAULT_HOME_COLOUR = '#dc2626'
 export const DEFAULT_AWAY_COLOUR = '#3b82f6'
 
+/**
+ * The colour a team wears on the scorer's screen, and so on the referee,
+ * bench and livescore screens it feeds: the team's own colour (Manual
+ * Adjustments edits only the team; a test match has its colours on the
+ * teams only), else the match's copy, else the scoreboard's home red / away
+ * blue.
+ * @param {'home'|'away'} teamKey
+ * @param {object|null} team the team record
+ * @param {object|null} match the match record (homeColor / awayColor)
+ * @returns {string}
+ */
+export function effectiveTeamColour(teamKey, team, match) {
+  return team?.color || match?.[teamKey === 'home' ? 'homeColor' : 'awayColor'] || (teamKey === 'home' ? '#ef4444' : '#3b82f6')
+}
+
 /** The preset the colour is (case and #rgb shorthand ignored), or null */
 export function presetColour(colour) {
   const c = normaliseColour(colour)
