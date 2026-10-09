@@ -159,4 +159,63 @@ describe('MatchSetup smoke render', () => {
     expect(pinJobs()).toHaveLength(1)
     expect(screen.queryByText(/Something went wrong/i)).toBeNull()
   })
+
+  // The colour picker's Custom tile: a hex picked there is saved on the team
+  // and the match, and the team's shirt and number are drawn with it; a
+  // saved colour that is none of the twelve presets selects the Custom tile.
+  describe('custom team colour', () => {
+    const created = (homeColor, awayColor = '#3b82f6') => {
+      store.tables.matches = new Map([[1, {
+        id: 1, status: 'setup', seed_key: 'match_1_col', matchInfoConfirmedAt: '2026-10-06T10:00:00Z',
+        homeTeamId: 11, awayTeamId: 12, game_n: 991405, ...PINS
+      }]])
+      store.tables.teams = new Map([
+        [11, { id: 11, name: 'Home V', color: homeColor }],
+        [12, { id: 12, name: 'Away V', color: awayColor }]
+      ])
+    }
+    const shirtsOf = (colour) => [...document.querySelectorAll('.shirt')].filter((el) => el.dataset.color === colour)
+    const rgb = (hex) => `rgb(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)})`
+
+    it('picking a custom hex saves it and the card shirt and number render with it', async () => {
+      const { readableTextOn } = await import('../../utils/teamColours')
+      created('#dc2626')
+      render(<Setup matchId={1} />)
+      await waitFor(() => expect(shirtsOf('#dc2626').length).toBeGreaterThan(0))
+      fireEvent.click(shirtsOf('#dc2626')[0])
+      const dialog = await screen.findByRole('dialog')
+      fireEvent.click(dialog.querySelector('[data-custom-tile]'))
+      fireEvent.change(screen.getByLabelText('matchSetup.customColourHex'), { target: { value: '#0E7490' } })
+      fireEvent.click(screen.getByRole('button', { name: 'matchSetup.applyColour' }))
+
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+      await waitFor(() => expect(store.tables.teams.get(11).color).toBe('#0e7490'))
+      expect(store.tables.matches.get(1).homeColor).toBe('#0e7490')
+      const shirt = shirtsOf('#0e7490')[0]
+      expect(shirt).toBeTruthy()
+      expect(shirt.querySelector('[data-part="body"]').getAttribute('fill')).toBe('#0e7490')
+      expect(shirt.querySelector('.number').style.color).toBe(rgb(readableTextOn('#0e7490')))
+      expect(shirtsOf('#dc2626')).toHaveLength(0)
+    })
+
+    it('a saved colour that is none of the presets selects the Custom tile, showing it', async () => {
+      created('#7b1e2b')
+      render(<Setup matchId={1} />)
+      await waitFor(() => expect(shirtsOf('#7b1e2b').length).toBeGreaterThan(0))
+      fireEvent.click(shirtsOf('#7b1e2b')[0])
+      const dialog = await screen.findByRole('dialog')
+      const custom = dialog.querySelector('[data-custom-tile]')
+      expect(custom.getAttribute('aria-pressed')).toBe('true')
+      expect(custom.getAttribute('aria-label')).toBe('matchSetup.customColour #7b1e2b')
+      expect(custom.querySelector('.shirt').dataset.color).toBe('#7b1e2b')
+      expect(dialog.querySelectorAll('[aria-pressed="true"]')).toHaveLength(1)
+    })
+
+    it('two close team colours get the gentle note on the setup cards', async () => {
+      created('#dc2626', '#e2001a')
+      render(<Setup matchId={1} />)
+      await waitFor(() => expect(shirtsOf('#e2001a').length).toBeGreaterThan(0))
+      expect((await screen.findAllByText('matchSetup.closeToOtherTeamColour')).length).toBeGreaterThan(0)
+    })
+  })
 })

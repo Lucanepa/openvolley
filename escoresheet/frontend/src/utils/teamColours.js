@@ -518,3 +518,60 @@ export function markColourOn(fill, preferred, fallback) {
   const d = colourDistance(fill, preferred)
   return d != null && d < 15 ? fallback : preferred
 }
+
+// The team colour picker's twelve shirts (MatchSetup), grouped by colour
+// family. Any other '#rrggbb' is a custom colour.
+export const TEAM_COLOUR_PRESETS = [
+  '#FFFFFF', // White
+  '#000000', // Black
+  '#808080', // Gray
+  '#dc2626', // Red
+  '#f97316', // Orange
+  '#eab308', // Yellow
+  '#22c55e', // Light Green
+  '#065f46', // Dark Green
+  '#3b82f6', // Light Blue
+  '#1e3a8a', // Dark Blue
+  '#a855f7', // Purple
+  '#ec4899' // Pink
+]
+
+/** The preset the colour is (case and #rgb shorthand ignored), or null */
+export function presetColour(colour) {
+  const c = normaliseColour(colour)
+  if (!c) return null
+  return TEAM_COLOUR_PRESETS.find(p => normaliseColour(p) === c) ?? null
+}
+
+/** A readable colour that is none of the twelve presets */
+export function isCustomColour(colour) {
+  return normaliseColour(colour) != null && presetColour(colour) == null
+}
+
+/**
+ * A hex code typed by hand: '#rrggbb', 'rrggbb', '#rgb' or 'rgb' (any case,
+ * spaces around it ignored) as '#rrggbb' in lower case; null otherwise.
+ */
+export function parseHexColour(input) {
+  if (typeof input !== 'string') return null
+  const m = input.trim().match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i)
+  if (!m) return null
+  const h = m[1].length === 3 ? [...m[1]].map(c => c + c).join('') : m[1]
+  return `#${h.toLowerCase()}`
+}
+
+// Two team colours closer than this (OKLab ΔE × 100) are hard to tell apart
+// on the court: red #dc2626 next to #ef4444 is 6, navy next to the dark blue
+// preset 6, two greens #22c55e / #16a34a 9.8. Red #ef4444 next to the orange
+// preset (10.4) or the pink one (11.4) still reads as two shirts, and the
+// closest two presets (red / pink, orange / yellow) are 14.5.
+export const CLOSE_COLOUR_DISTANCE = 10
+
+/**
+ * Whether two team colours look alike (colourDistance under
+ * CLOSE_COLOUR_DISTANCE); false when either is missing or unreadable.
+ */
+export function coloursTooClose(a, b) {
+  const d = colourDistance(a, b)
+  return d != null && d < CLOSE_COLOUR_DISTANCE
+}

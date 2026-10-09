@@ -16,6 +16,11 @@ const VIEW_BOX = '-13 -5 64 43'
 const CARD = '#ffffff'
 const MIN_EDGE = 3
 const FALLBACK_FILL = '#2563eb'
+// The "any colour" shirt (the picker's Custom tile before a colour is chosen):
+// a soft spectrum across the jersey, a stone edge and a dark "+"
+const RAINBOW = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#a855f7', '#ec4899']
+const RAINBOW_EDGE = '#57534e'
+const RAINBOW_INK = '#1c1917'
 
 function mix(a, b, t) {
   const x = parseColour(a), y = parseColour(b)
@@ -51,17 +56,21 @@ export function shirtEdge(fill) {
  * @param {string} props.color the team colour
  * @param {number|string} [props.number] shirt number (1)
  * @param {string} [props.numberColor] number colour, readableTextOn(color) by default
+ * @param {boolean} [props.rainbow] a spectrum instead of a team colour, with a
+ *   "+" (the picker's Custom tile while no custom colour is set)
  * @param {string} [props.className]
  * @param {object} [props.style]
  */
-export default function TeamShirt({ color, number = 1, numberColor, className, style, ...rest }) {
+export default function TeamShirt({ color, number, numberColor, rainbow = false, className, style, ...rest }) {
   const fill = normaliseColour(color) ?? FALLBACK_FILL
-  const edge = shirtEdge(fill)
-  const ink = numberColor ?? readableTextOn(fill)
+  const edge = rainbow ? RAINBOW_EDGE : shirtEdge(fill)
+  const ink = numberColor ?? (rainbow ? RAINBOW_INK : readableTextOn(fill))
   const lightInk = (contrastRatio(ink, '#000000') ?? 0) > (contrastRatio(ink, '#ffffff') ?? 0)
-  const shade = `shirt-shade-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
+  const id = useId().replace(/[^a-zA-Z0-9_-]/g, '')
+  const shade = `shirt-shade-${id}`
+  const spectrum = `shirt-spectrum-${id}`
   return (
-    <div className={className ? `shirt ${className}` : 'shirt'} style={style} data-color={fill} {...rest}>
+    <div className={className ? `shirt ${className}` : 'shirt'} style={style} data-color={rainbow ? 'rainbow' : fill} {...rest}>
       <svg viewBox={VIEW_BOX} aria-hidden="true" focusable="false">
         <defs>
           <linearGradient id={shade} x1="0" y1="0" x2="0" y2="1">
@@ -69,8 +78,14 @@ export default function TeamShirt({ color, number = 1, numberColor, className, s
             <stop offset="0.45" stopColor="#ffffff" stopOpacity="0" />
             <stop offset="1" stopColor="#000000" stopOpacity="0.16" />
           </linearGradient>
+          {rainbow && (
+            <linearGradient id={spectrum} x1="0" y1="0" x2="1" y2="1">
+              {RAINBOW.map((c, i) => <stop key={c} offset={i / (RAINBOW.length - 1)} stopColor={c} stopOpacity="0.55" />)}
+            </linearGradient>
+          )}
         </defs>
-        <path d={SHIRT_PATH} fill={fill} data-part="body" />
+        {rainbow && <path d={SHIRT_PATH} fill="#ffffff" />}
+        <path d={SHIRT_PATH} fill={rainbow ? `url(#${spectrum})` : fill} data-part="body" />
         <path d={SHIRT_PATH} fill={`url(#${shade})`} />
         <path d={NECK_PATH} fill={edge} fillOpacity="0.45" />
         <path d={COLLAR_PATH} fill={edge} fillOpacity="0.75" />
@@ -84,7 +99,7 @@ export default function TeamShirt({ color, number = 1, numberColor, className, s
           data-part="outline"
         />
       </svg>
-      <div className="number" style={{ color: ink, textShadow: lightInk ? undefined : 'none' }}>{number}</div>
+      <div className="number" style={{ color: ink, textShadow: lightInk ? undefined : 'none' }}>{number ?? (rainbow ? '+' : 1)}</div>
     </div>
   )
 }

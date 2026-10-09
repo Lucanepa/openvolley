@@ -30,7 +30,7 @@ import { splitLocalDateTime, parseLocalDateTimeToISO } from '../utils/timeUtils'
 import { generateSecurePin } from '../utils/stringUtils'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
 import { buildConnectionPins } from '../utils/connectionPins'
-import { readableTextOn, teamBoxStyle } from '../utils/teamColours'
+import { coloursTooClose, isCustomColour, readableTextOn, teamBoxStyle } from '../utils/teamColours'
 import { missingConnectionPins, connectionPinsSyncJob, fetchPendingRoster, clearPendingRosterJob, isKnownDob } from '../utils/remoteRoster'
 import { FileTextIcon, ClipboardIcon } from './icons'
 import { AlertTriangle, Loader2 } from 'lucide-react'
@@ -46,6 +46,7 @@ import { Users, Save as SaveIcon } from 'lucide-react'
 import CaptainToggle from './CaptainToggle'
 import StackLabel from './StackLabel'
 import TeamShirt from './TeamShirt'
+import TeamColourPicker, { CloseColourNote, recallCustomColour, rememberCustomColour } from './TeamColourPicker'
 import { useFormStack } from '../hooks/useFormStack'
 import { askText } from '../utils/askText.js'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
@@ -847,22 +848,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     // Bezirk Zürich
     'Zürich'
   ].sort()
-
-  // Grouped by color families: whites/grays, reds, oranges, yellows, greens, blues, purples, pinks, teals
-  const teamColors = [
-    '#FFFFFF', // White
-    '#000000', // Black
-    '#808080', // Gray
-    '#dc2626', // Red
-    '#f97316', // Orange
-    '#eab308', // Yellow
-    '#22c55e', // Light Green
-    '#065f46', // Dark Green
-    '#3b82f6', // Light Blue
-    '#1e3a8a', // Dark Blue
-    '#a855f7', // Purple
-    '#ec4899'  // Pink
-  ]
 
   const homeLiberoCount = homeRoster.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length
   const awayLiberoCount = awayRoster.filter(p => p.libero === 'libero1' || p.libero === 'libero2').length
@@ -1948,6 +1933,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // (utils/teamColours.js, as on the court and in the headers)
   function getContrastColor(color) {
     return readableTextOn(color)
+  }
+
+  // Where the picker keeps a team's last custom colour: the team name, or
+  // the side while the team has none
+  function customColourKey(isHome) {
+    const name = (isHome ? home : away)?.trim().toLowerCase()
+    return name ? `team:${name}` : (isHome ? 'home' : 'away')
   }
 
   // Validate and set date with immediate feedback
@@ -3542,6 +3534,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               </div>
 
             </div>
+            {coloursTooClose(homeColor, awayColor) && <CloseColourNote className="mt-3 justify-center" />}
 
           </div>
         </div>
@@ -3711,41 +3704,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <div className="mb-3 text-sm leading-[1.3] font-semibold text-stone-900">
                 {t('matchSetup.chooseTeamColour', { team: colorPickerModal.team === 'home' ? t('common.home') : t('common.away') })}
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
-                {teamColors.map((color) => {
-                  const isSelected = (colorPickerModal.team === 'home' ? homeColor : awayColor) === color
-                  return (
-                    <button
-                      key={color}
-                      type="button"
-                      aria-label={`${t('matchSetup.selectColour', 'Select colour')} ${color}`}
-                      onClick={() => {
-                        if (colorPickerModal.team === 'home') {
-                          setHomeColor(color)
-                        } else {
-                          setAwayColor(color)
-                        }
-                        setColorPickerModal(null)
-                      }}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: '8px',
-                        padding: '12px 8px',
-                        background: isSelected ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
-                        border: isSelected ? '2px solid #3b82f6' : '1px solid var(--border)',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s',
-                        minWidth: '60px'
-                      }}
-                    >
-                      <TeamShirt color={color} numberColor={getContrastColor(color)} style={{ transform: 'scale(0.8)' }} />
-                    </button>
-                  )
-                })}
-              </div>
+              <TeamColourPicker
+                value={colorPickerModal.team === 'home' ? homeColor : awayColor}
+                otherColour={colorPickerModal.team === 'home' ? awayColor : homeColor}
+                lastCustom={recallCustomColour(customColourKey(colorPickerModal.team === 'home'))}
+                onPick={(color) => {
+                  const isHome = colorPickerModal.team === 'home'
+                  if (isCustomColour(color)) rememberCustomColour(customColourKey(isHome), color)
+                  if (isHome) {
+                    setHomeColor(color)
+                  } else {
+                    setAwayColor(color)
+                  }
+                  setColorPickerModal(null)
+                }}
+              />
             </div>
           </>
         )}
@@ -6578,6 +6551,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div className="flex-1" />
             <Button variant="secondary" size="xl" onClick={() => setCurrentView('home')}>{t('matchSetup.editRoster')}</Button>
           </div>
+          {coloursTooClose(homeColor, awayColor) && <CloseColourNote />}
         </div>
 
         <div className={cn('flex flex-col gap-5 p-4 sm:p-5', SETUP_BLOCK)} style={{ order: 2 }}>
@@ -6631,6 +6605,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div className="flex-1" />
             <Button variant="secondary" size="xl" onClick={() => setCurrentView('away')}>{t('matchSetup.editRoster')}</Button>
           </div>
+          {coloursTooClose(homeColor, awayColor) && <CloseColourNote />}
         </div>
         {typeof window !== 'undefined' && window.electronAPI?.server && (
           <div className={cn('flex flex-col gap-4 p-4 sm:p-5', SETUP_BLOCK)} style={{ order: 3 }}>
@@ -7128,121 +7103,82 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div className="mb-3 text-sm leading-[1.3] font-semibold text-stone-900">
               {t('matchSetup.chooseTeamColor', { team: colorPickerModal.team === 'home' ? t('common.home') : t('common.away') })}
             </div>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(4, 1fr)',
-                gap: '12px'
+            <TeamColourPicker
+              value={colorPickerModal.team === 'home' ? homeColor : awayColor}
+              otherColour={colorPickerModal.team === 'home' ? awayColor : homeColor}
+              lastCustom={recallCustomColour(customColourKey(colorPickerModal.team === 'home'))}
+              onPick={async (color) => {
+                const isHome = colorPickerModal.team === 'home'
+                if (isCustomColour(color)) rememberCustomColour(customColourKey(isHome), color)
+                if (isHome) {
+                  setHomeColor(color)
+                } else {
+                  setAwayColor(color)
+                }
+                setColorPickerModal(null)
+
+                // Sync color to local DB and Supabase
+                try {
+                  // Update local team in IndexedDB
+                  const teamId = isHome ? match?.homeTeamId : match?.awayTeamId
+                  if (teamId) {
+                    await db.teams.update(teamId, { color })
+                  }
+
+                  // Update local match record in IndexedDB
+                  if (match?.id) {
+                    const colorField = isHome ? 'homeColor' : 'awayColor'
+                    await db.matches.update(match.id, { [colorField]: color })
+                    console.log(`[MatchSetup] Updated local match ${colorField}:`, color)
+                  }
+
+                  // Sync to Supabase if match exists
+                  if (match?.seed_key) {
+                    const teamKey = isHome ? 'home_team' : 'away_team'
+                    const teamName = isHome ? home : away
+                    const shortName = isHome ? homeShortName : awayShortName
+
+                    // Update matches table. The proxy does not return written
+                    // rows, so look the cloud UUID up separately for match_live_state.
+                    const { error: colorError } = await apiFrom('matches')
+                      .update({
+                        [teamKey]: {
+                          name: teamName?.trim() || '',
+                          short_name: shortName || generateShortName(teamName),
+                          color: color
+                        }
+                      })
+                      .eq('external_id', match.seed_key)
+
+                    if (!colorError) {
+                      console.log(`[MatchSetup] Synced ${teamKey} color to Supabase:`, color)
+                    }
+
+                    const { data: supabaseMatch } = await apiFrom('matches')
+                      .select('id')
+                      .eq('external_id', match.seed_key)
+                      .maybeSingle()
+
+                    // Also update match_live_state if it exists (for Referee app)
+                    if (supabaseMatch?.id) {
+                      // Team A = coin toss winner, determine if home is Team A
+                      const coinTossTeamA = match.coinTossTeamA || 'home'
+                      const homeIsTeamA = coinTossTeamA === 'home'
+                      // If changing home color and home is Team A -> update team_a_color
+                      // If changing home color and home is Team B -> update team_b_color
+                      const liveStateColorKey = (isHome === homeIsTeamA) ? 'team_a_color' : 'team_b_color'
+
+                      await apiFrom('match_live_state')
+                        .update({ [liveStateColorKey]: color, updated_at: new Date().toISOString() })
+                        .eq('match_id', supabaseMatch.id)
+                      console.log(`[MatchSetup] Synced ${liveStateColorKey} to match_live_state:`, color)
+                    }
+                  }
+                } catch (err) {
+                  console.warn('[MatchSetup] Failed to sync team color:', err)
+                }
               }}
-            >
-              {teamColors.map((color) => {
-                const isSelected = (colorPickerModal.team === 'home' ? homeColor : awayColor) === color
-                return (
-                  <button
-                    key={color}
-                    type="button"
-                    aria-label={`${t('matchSetup.selectColour', 'Select colour')} ${color}`}
-                    onClick={async () => {
-                      const isHome = colorPickerModal.team === 'home'
-                      if (isHome) {
-                        setHomeColor(color)
-                      } else {
-                        setAwayColor(color)
-                      }
-                      setColorPickerModal(null)
-
-                      // Sync color to local DB and Supabase
-                      try {
-                        // Update local team in IndexedDB
-                        const teamId = isHome ? match?.homeTeamId : match?.awayTeamId
-                        if (teamId) {
-                          await db.teams.update(teamId, { color })
-                        }
-
-                        // Update local match record in IndexedDB
-                        if (match?.id) {
-                          const colorField = isHome ? 'homeColor' : 'awayColor'
-                          await db.matches.update(match.id, { [colorField]: color })
-                          console.log(`[MatchSetup] Updated local match ${colorField}:`, color)
-                        }
-
-                        // Sync to Supabase if match exists
-                        if (match?.seed_key) {
-                          const teamKey = isHome ? 'home_team' : 'away_team'
-                          const teamName = isHome ? home : away
-                          const shortName = isHome ? homeShortName : awayShortName
-
-                          // Update matches table. The proxy does not return written
-                          // rows, so look the cloud UUID up separately for match_live_state.
-                          const { error: colorError } = await apiFrom('matches')
-                            .update({
-                              [teamKey]: {
-                                name: teamName?.trim() || '',
-                                short_name: shortName || generateShortName(teamName),
-                                color: color
-                              }
-                            })
-                            .eq('external_id', match.seed_key)
-
-                          if (!colorError) {
-                            console.log(`[MatchSetup] Synced ${teamKey} color to Supabase:`, color)
-                          }
-
-                          const { data: supabaseMatch } = await apiFrom('matches')
-                            .select('id')
-                            .eq('external_id', match.seed_key)
-                            .maybeSingle()
-
-                          // Also update match_live_state if it exists (for Referee app)
-                          if (supabaseMatch?.id) {
-                            // Team A = coin toss winner, determine if home is Team A
-                            const coinTossTeamA = match.coinTossTeamA || 'home'
-                            const homeIsTeamA = coinTossTeamA === 'home'
-                            // If changing home color and home is Team A -> update team_a_color
-                            // If changing home color and home is Team B -> update team_b_color
-                            const liveStateColorKey = (isHome === homeIsTeamA) ? 'team_a_color' : 'team_b_color'
-
-                            await apiFrom('match_live_state')
-                              .update({ [liveStateColorKey]: color, updated_at: new Date().toISOString() })
-                              .eq('match_id', supabaseMatch.id)
-                            console.log(`[MatchSetup] Synced ${liveStateColorKey} to match_live_state:`, color)
-                          }
-                        }
-                      } catch (err) {
-                        console.warn('[MatchSetup] Failed to sync team color:', err)
-                      }
-                    }}
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: '8px',
-                      padding: '12px 8px',
-                      background: isSelected ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
-                      border: isSelected ? '2px solid #3b82f6' : '1px solid var(--border)',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      minWidth: '60px'
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isSelected) {
-                        e.currentTarget.style.background = 'var(--panel-2)'
-                        e.currentTarget.style.borderColor = 'var(--border)'
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isSelected) {
-                        e.currentTarget.style.background = 'transparent'
-                        e.currentTarget.style.borderColor = 'var(--border)'
-                      }
-                    }}
-                  >
-                    <TeamShirt color={color} numberColor={getContrastColor(color)} style={{ transform: 'scale(0.8)' }} />
-                  </button>
-                )
-              })}
-            </div>
+            />
           </div>
         </>
       )}
