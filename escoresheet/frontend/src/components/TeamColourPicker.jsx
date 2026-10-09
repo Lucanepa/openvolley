@@ -74,12 +74,24 @@ export default function TeamColourPicker({ value, otherColour = null, lastCustom
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
   const draft = parseHexColour(text)
+  // The last valid code typed: the preview and the colour input keep it
+  // while the code is half typed ('#1a7f') or wrong, instead of jumping to red
+  const [lastDraft, setLastDraft] = useState(null)
+  const shown = draft ?? lastDraft ?? tileCustom ?? START_COLOUR
+  const edit = (value) => {
+    // spaces are never part of a code: a pasted ' #1a7f5a ' still reads
+    const next = value.replace(/\s+/g, '')
+    setText(next)
+    const valid = parseHexColour(next)
+    if (valid) setLastDraft(valid)
+  }
   const valueClose = coloursTooClose(value, otherColour)
   const draftClose = draft != null && coloursTooClose(draft, otherColour)
 
   const openCustom = () => {
     const start = tileCustom ?? normaliseColour(value) ?? START_COLOUR
     setText(start)
+    setLastDraft(parseHexColour(start))
     setOpen(true)
   }
   const apply = () => {
@@ -134,11 +146,11 @@ export default function TeamColourPicker({ value, otherColour = null, lastCustom
         <div id={`${uid}-custom`} className="flex flex-col gap-3 rounded-xl border border-stone-200 bg-stone-50 p-3" data-custom-section>
           <div className="text-xs font-semibold text-stone-700">{t('matchSetup.customColour')}</div>
           <div className="flex items-center gap-3">
-            <TeamShirt color={draft ?? tileCustom ?? START_COLOUR} style={{ transform: 'scale(0.8)' }} data-preview />
+            <TeamShirt color={shown} style={{ transform: 'scale(0.8)' }} data-preview />
             <input
               type="color"
-              value={draft ?? tileCustom ?? START_COLOUR}
-              onChange={(e) => setText(e.target.value.toLowerCase())}
+              value={shown}
+              onChange={(e) => edit(e.target.value.toLowerCase())}
               aria-label={t('matchSetup.customColour')}
               className="h-11 w-12 shrink-0 cursor-pointer rounded-lg border border-stone-300 bg-white p-1"
             />
@@ -147,9 +159,9 @@ export default function TeamColourPicker({ value, otherColour = null, lastCustom
               <Input
                 id={`${uid}-hex`}
                 value={text}
-                onChange={(e) => setText(e.target.value)}
+                onChange={(e) => edit(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); apply() } }}
-                maxLength={7}
+                maxLength={9}
                 spellCheck={false}
                 autoCapitalize="off"
                 autoComplete="off"
