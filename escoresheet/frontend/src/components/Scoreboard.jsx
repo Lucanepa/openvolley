@@ -2094,8 +2094,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
           // Fallback: capture fresh snapshot if none exists (e.g., before first event)
           // or it is partial (events added in Manual Adjustments only carry
-          // {scoreA, scoreB}, not the full state)
-          if (!snapshot || snapshot.currentSetIndex === undefined) {
+          // {scoreA, scoreB}, not the full state), or it names the teams the
+          // other way round than the match now ("Swap A/B" made since: its
+          // A/B fields and the sides read from the match would not agree)
+          const swappedSince = !!snapshot?.teamAKey && snapshot.teamAKey !== (match?.coinTossTeamA || 'home')
+          if (!snapshot || snapshot.currentSetIndex === undefined || swappedSince) {
             const result = await captureFullStateSnapshot()
             snapshot = result?.snapshot || null
           }
