@@ -60,8 +60,30 @@ function usePoll(active, load) {
   }, [active, load])
 }
 
-// The local server's state while the desktop app still reads its Wi-Fi
+// The local server's state until the dialog has settled (useSettled)
 const LAN_PENDING = Object.freeze({ loading: true, status: null })
+
+// At most this long, a reader that never answers holds the dialog's placeholders
+const SETTLE_MAX_MS = 1000
+
+/**
+ * False from opening until `answered` (or SETTLE_MAX_MS), then true until the
+ * dialog closes: what it read on opening is shown in one change.
+ */
+function useSettled(open, answered, maxMs = SETTLE_MAX_MS) {
+  const [settled, setSettled] = useState(false)
+  useEffect(() => { if (!open) setSettled(false) }, [open])
+  useEffect(() => {
+    if (!open || settled) return undefined
+    if (answered) {
+      setSettled(true)
+      return undefined
+    }
+    const timer = setTimeout(() => setSettled(true), maxMs)
+    return () => clearTimeout(timer)
+  }, [open, answered, settled, maxMs])
+  return open && settled
+}
 
 /**
  * "Connect tablets", in three steps:
@@ -180,21 +202,24 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
   const seedKey = match ? (relayMatchKey(match) || match.seed_key || match.externalId || null) : null
   const matchView = useMemo(() => (match ? { ...match, ...roleOverride } : null), [match, roleOverride])
   // A match keeps its teams by id (homeTeamId / awayTeamId): read their
-  // names so a bench card says which team's tablet it is
-  const [dbTeams, setDbTeams] = useState(null)
+  // names so a bench card says which team's tablet it is (undefined while
+  // reading)
+  const [dbTeams, setDbTeams] = useState(undefined)
   useEffect(() => {
-    setDbTeams(null)
-    if (!open || !match || !db.teams) return undefined
+    setDbTeams(undefined)
+    if (!open || !match || !db.teams) {
+      setDbTeams(null)
+      return undefined
+    }
     let cancelled = false
     Promise.all([
       match.homeTeamId != null ? db.teams.get(match.homeTeamId) : null,
       match.awayTeamId != null ? db.teams.get(match.awayTeamId) : null
     ]).then(([home, away]) => {
       if (!cancelled) setDbTeams({ home: home?.name || null, away: away?.name || null })
-    }).catch(() => { /* names stay as the match has them */ })
+    }).catch(() => { if (!cancelled) setDbTeams(null) /* names stay as the match has them */ })
     return () => { cancelled = true }
   }, [open, match?.id, match?.homeTeamId, match?.awayTeamId]) // eslint-disable-line react-hooks/exhaustive-deps
-  const teamNames = match ? matchTeamNames(match, { homeTeam: dbTeams?.home, awayTeam: dbTeams?.away }) : null
   const gameNumber = match ? (match.gameNumber ?? match.gameN ?? match.game_n ?? null) : null
   useEffect(() => { setRoleOverride({}) }, [match?.id])
 
@@ -271,11 +296,18 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
   }
 
   // -- links for the chosen connection --
-  // The desktop app reads the Wi-Fi this computer is on (hotspot status) next
-  // to the server's addresses: until both have answered the dialog shows
-  // neither, so it fills in one change (it changed three times within 83 ms:
-  // "Reading the local server...", the addresses and codes, the Wi-Fi name)
-  const lan = desktop && hs.loading ? LAN_PENDING : relay
+  // What the dialog reads on opening answers at its own time, 15-110 ms
+  // apart: the server's addresses, the Wi-Fi this computer is on (desktop
+  // app), the tablets the relay sees, the bench teams' names. It keeps its
+  // placeholders until all have answered, so it fills in one change (it
+  // changed three times within 83 ms: "Reading the local server...", the
+  // addresses and codes, the Wi-Fi name; then the live status and the names).
+  const answered = !relay.loading && !(desktop && hs.loading) &&
+    (!seedKey || relayTablets.checked !== false) && dbTeams !== undefined
+  const settled = useSettled(open, answered)
+  const lan = settled ? relay : LAN_PENDING
+  const tabletsReachable = settled && !!relayTablets.reachable
+  const teamNames = match ? matchTeamNames(match, settled ? { homeTeam: dbTeams?.home, awayTeam: dbTeams?.away } : {}) : null
   const port = lan.status?.port || (typeof window !== 'undefined' ? window.location.port : '') || null
   const halls = hallInterfaces(lan.status)
   const hallAddress = halls.find(i => i.ip === view.hallIp)?.ip || halls[0]?.ip || null
@@ -357,7 +389,7 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
       matchKey: seedKey,
       match: matchView,
       transport,
-      reachable: !!relayTablets.reachable
+      reachable: tabletsReachable
     })
   }
   const cards = PICKABLE_ROLES.map(role => ({
@@ -383,7 +415,7 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
               total: summary.on
             })
             : t('connectTablets.footer.connectedOnly', 'Connected: {{roles}}', { roles: summary.connected.map(r => labels[r]).join(', ') })
-          : transport !== 'server' && !relayTablets.reachable
+          : transport !== 'server' && !tabletsReachable
             ? t('connectTablets.card.unknown', 'Live status not available')
             : t('connectTablets.footer.none', 'No tablet connected yet'))}
         {seedKey && transport === 'server' && (
