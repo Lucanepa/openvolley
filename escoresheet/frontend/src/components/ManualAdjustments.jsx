@@ -54,6 +54,11 @@ const BENCH_ROLES = [
   { value: 'Medic', key: 'medic' }
 ]
 
+/** The index of the last set row (the set being played, or the last one played). */
+function lastSetIndex(sets) {
+  return (sets || []).reduce((max, s) => Math.max(max, Number(s?.index) || 0), 0) || null
+}
+
 /**
  * A stored instant as the local 'YYYY-MM-DDTHH:MM' the date + time field shows.
  * Local, because the field's value goes back through new Date(value) (local)
@@ -244,19 +249,20 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
     })
   }, [recordChange])
 
-  // Swap only the A/B designation (which team is A on the scoresheet). Home/away,
-  // team IDs, players, set scores and events are NOT touched: they are keyed by
-  // home/away, so they stay correct. The A/B-labelled fields (serve flags, set 5
-  // choices) are swapped together so the first server and set 5 sides keep
-  // referring to the same teams.
+  // Swap only the A/B designation (which team is A on the scoresheet): a
+  // coin toss correction, nothing moves (owner's decision, 2026-10-09).
+  // Home/away, team IDs, players, set scores and events are NOT touched: they
+  // are keyed by home/away, so they stay correct. The A/B-labelled fields
+  // (serve flags, set 5 choices, every set's side) are swapped together so
+  // the first server and each team's side stay the same (domain/coinToss).
+  // The log entry is written outside the state updater: React runs an
+  // updater twice in StrictMode, one tap logged two swaps.
   const swapTeamDesignation = useCallback(() => {
-    setEditedMatch(prev => {
-      if (!prev) return prev
-      const patch = swapTeamDesignationPatch(prev)
-      recordChange('match', 'teamDesignation', `A=${prev.coinTossTeamA || 'home'}`, `A=${patch.coinTossTeamA}`, 'Swapped team A/B designation')
-      return { ...prev, ...patch, _designationSwapped: !prev._designationSwapped }
-    })
-  }, [recordChange])
+    if (!editedMatch) return
+    const patch = swapTeamDesignationPatch(editedMatch, { currentSetIndex: lastSetIndex(data?.sets) })
+    recordChange('match', 'teamDesignation', `A=${editedMatch.coinTossTeamA || 'home'}`, `A=${patch.coinTossTeamA}`, 'Swapped team A/B designation')
+    setEditedMatch(prev => (prev ? { ...prev, ...patch, _designationSwapped: !prev._designationSwapped } : prev))
+  }, [editedMatch, data?.sets, recordChange])
 
   // ==================== PLAYER FUNCTIONS ====================
   const updatePlayer = useCallback((playerId, field, value, isHome) => {
@@ -365,6 +371,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
     }
 
     setSaving(true)
+    // the Swap A/B fields written (for the cloud coin toss)
+    let designationSaved = null
     try {
       // What the officials approved: the team names (set scores are only
       // changed through Corrections, which handles signatures itself).
@@ -400,7 +408,12 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
       if (editedMatch) {
         // The log as stored now: corrections may have added entries since
         // this page opened
-        const existingChanges = (await db.matches.get(matchId))?.manualChanges || []
+        const storedMatch = await db.matches.get(matchId)
+        const existingChanges = storedMatch?.manualChanges || []
+        const designationPatch = editedMatch._designationSwapped && storedMatch
+          ? swapTeamDesignationPatch(storedMatch, { currentSetIndex: lastSetIndex(await db.sets.where('matchId').equals(matchId).toArray()) })
+          : {}
+        if (designationPatch.coinTossTeamA) designationSaved = designationPatch
         await db.matches.update(matchId, {
           hall: editedMatch.hall,
           city: editedMatch.city,
@@ -409,17 +422,10 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           gameN: editedMatch.gameN,
           scheduledAt: editedMatch.scheduledAt,
           match_type_2: editedMatch.match_type_2,
-          coinTossTeamA: editedMatch.coinTossTeamA,
-          coinTossTeamB: editedMatch.coinTossTeamB,
-          // A/B-labelled fields move together with the designation (Swap A/B)
-          ...(editedMatch._designationSwapped ? {
-            firstServe: editedMatch.firstServe,
-            coinTossServeA: editedMatch.coinTossServeA,
-            coinTossServeB: editedMatch.coinTossServeB,
-            set5LeftTeam: editedMatch.set5LeftTeam,
-            set5FirstServe: editedMatch.set5FirstServe,
-            setLeftTeamOverrides: editedMatch.setLeftTeamOverrides
-          } : {}),
+          // Swap A/B: the designation and every A/B-labelled field with it,
+          // from the match as stored now (a correction made on this page
+          // since it opened, e.g. a set reopened, is kept)
+          ...designationPatch,
           // officials is an array of { role, ... } everywhere else: merge the
           // edits into it (keeps line judges) instead of storing the editor object
           officials: mergeOfficialsEdits(data?.match?.officials, editedOfficials),
@@ -473,7 +479,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
       // Sync to Supabase if available
       if (editedMatch?.seed_key) {
-        await syncToSupabase()
+        await syncToSupabase(designationSaved)
       }
 
       // Notify scoresheet window (and any other listeners) about the changes
@@ -495,7 +501,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   })
 
   // Sync changes to Supabase
-  const syncToSupabase = async () => {
+  const syncToSupabase = async (designation = null) => {
     if (!editedMatch?.seed_key) return
 
     try {
@@ -552,14 +558,14 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         home_team: homeTeamData,
         away_team: awayTeamData,
         officials: mergeOfficialsEdits(data?.match?.officials, editedOfficials, { snakeCase: true }),
-        ...(editedMatch._designationSwapped ? {
+        ...(designation ? {
           coin_toss: {
-            team_a: editedMatch.coinTossTeamA,
-            team_b: editedMatch.coinTossTeamB,
-            serve_a: editedMatch.coinTossServeA,
+            team_a: designation.coinTossTeamA,
+            team_b: designation.coinTossTeamB,
+            serve_a: designation.coinTossServeA,
             confirmed: true,
             // the first server the swap kept (swapTeamDesignation writes it)
-            first_serve: editedMatch.firstServe
+            first_serve: designation.firstServe
           }
         } : {}),
         // stored first (with this save's entries), then sent as stored

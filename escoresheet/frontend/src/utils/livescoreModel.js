@@ -34,6 +34,8 @@
  * the session (an undo back to 0:0 must not make it vanish).
  */
 
+import { liveRowTeamA } from '../domain/coinToss'
+
 export const isEndedStatus = (status) => status === 'ended' || status === 'final'
 
 const PRE_START_STATUSES = new Set(['pre_match', 'scheduled', 'not_started', 'setup'])
@@ -247,8 +249,9 @@ const joinedMatch = (game) => (Array.isArray(game?.matches) ? game.matches[0] : 
 
 /**
  * Is Team A (the live state's A/B model) the home team? set_results are
- * stored as {home, away}. Known from the match row (coin toss, else the home
- * team name against team_a_name); without either, from the set results
+ * stored as {home, away}. Known from the live row's team names against the
+ * match row's (domain/coinToss liveRowTeamA), else the coin toss, else the
+ * home team name against team_a_name; without either, from the set results
  * themselves: the live row's own Team A count matches the home or the away
  * wins (older scoreboards only ever undercounted Team B). A finished match
  * always; one in play (the cloud list's join has only set_results, so a page
@@ -260,6 +263,12 @@ const joinedMatch = (game) => (Array.isArray(game?.matches) ? game.matches[0] : 
  */
 export function teamAIsHome(game) {
   const match = joinedMatch(game)
+  // The live row's own Team A first, when its team names tell: its A/B
+  // fields (side_a, points, set counts, names) are by it, and a "Swap A/B"
+  // at the match end corrects the coin toss without rewriting the row (the
+  // set chips were put under the other team than the names)
+  const own = liveRowTeamA(game, match?.home_team?.name, match?.away_team?.name)
+  if (own) return own === 'home'
   const tossA = match?.coin_toss?.team_a
   if (tossA === 'home' || tossA === 'away') return tossA === 'home'
   const homeName = match?.home_team?.name

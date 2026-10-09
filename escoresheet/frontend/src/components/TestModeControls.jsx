@@ -144,9 +144,9 @@ export default function TestModeControls({ matchId, onRefresh }) {
         return
       }
 
-      // The change of sides the corrections card makes (sets 1-4 swap A and
-      // B, set 5 flips its coin toss side): it wrote match.leftTeam, which no
-      // screen reads
+      // The change of sides the corrections card makes (sets 1-4 pin the
+      // other sides, set 5 flips its coin toss side; A and B stay): it wrote
+      // match.leftTeam, which no screen reads
       const { after } = await switchSides({ db, matchId, match, setIndex: currentSet.index })
 
       setLastAction(`Side: ${after}`)

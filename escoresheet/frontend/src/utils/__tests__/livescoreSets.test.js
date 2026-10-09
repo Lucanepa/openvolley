@@ -201,3 +201,37 @@ describe('liveStateNeedsFreshSnapshot', () => {
     expect(liveStateNeedsFreshSnapshot(null)).toBe(false)
   })
 })
+
+// "Swap A/B" in Manual adjustments at the match end corrects the coin toss
+// (cloud: coin_toss.team_a) and leaves the live row as it was: its names,
+// side_a and set counts are still by the Team A it was written with. The
+// coin toss put the set chips and the set count under the other team than
+// the names.
+describe('a Swap A/B after the live row: its own Team A (its names)', () => {
+  const final = {
+    match_status: 'ended', current_set: 3, best_of: 3, side_a: 'left',
+    team_a_name: 'Home VC', team_b_name: 'Away VC', sets_won_a: 2, sets_won_b: 1,
+    matches: {
+      home_team: { name: 'Home VC' }, away_team: { name: 'Away VC' },
+      coin_toss: { team_a: 'away' },
+      set_results: [{ set: 1, home: 25, away: 20 }, { set: 2, home: 18, away: 25 }, { set: 5, home: 15, away: 10 }]
+    }
+  }
+
+  it('Team A is the live row\'s (home), not the corrected coin toss\'s', () => {
+    expect(teamAIsHome(final)).toBe(true)
+  })
+
+  it('home on the left with its sets and its set points', () => {
+    const view = liveScoreboard(final)
+    expect(view.leftName).toBe('Home VC')
+    expect(view.leftSets).toBe(2)
+    expect(view.rightSets).toBe(1)
+    expect(view.setResults[0]).toEqual({ set: 1, left: 25, right: 20 })
+  })
+
+  it('names that do not tell: the coin toss as before', () => {
+    const game = { ...final, team_a_name: 'X', team_b_name: 'X', matches: { ...final.matches, home_team: { name: 'X' }, away_team: { name: 'X' } } }
+    expect(teamAIsHome(game)).toBe(false)
+  })
+})
