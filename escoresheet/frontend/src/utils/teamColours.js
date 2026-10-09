@@ -1,11 +1,10 @@
 // Team colours on the player discs (scoring court, referee tablet, bench
 // tablet): every disc wears its team's shirt colour, the libero the colour
 // that stands out most from both teams, and the shirt number is near-black or
-// white, whichever reads better on the fill.
+// white, whichever has the higher contrast on the fill.
 //
 // Pure functions, no DOM: WCAG 2.x relative luminance + contrast ratio for
-// readability (APCA breaks the tie on mid-tone fills), OKLab distance for
-// "looks like a different shirt".
+// readability, OKLab distance for "looks like a different shirt".
 
 export const TEXT_DARK = '#1c1917' // stone-900
 export const TEXT_LIGHT = '#ffffff'
@@ -142,48 +141,28 @@ export function colourDistance(a, b) {
   return 100 * Math.hypot(x.L - y.L, x.a - y.a, x.b - y.b)
 }
 
-// APCA screen luminance (0.0.98G-4g constants, with its soft clamp near black)
-function apcaY(input) {
-  const c = solid(input)
-  if (!c) return null
-  const y = 0.2126729 * (c.r / 255) ** 2.4 + 0.7151522 * (c.g / 255) ** 2.4 + 0.0721750 * (c.b / 255) ** 2.4
-  return y < 0.022 ? y + (0.022 - y) ** 1.414 : y
-}
-
-/**
- * APCA lightness contrast Lc of `text` on `bg` (APCA 0.0.98G-4g): about 0
- * to 106 for dark text on a light fill, 0 to -108 for light text on a dark
- * one. It tracks how people see mid-tone fills (red, blue, green) better than
- * the WCAG 2 ratio, which favours black text there. null if unparseable.
- */
-export function apcaContrast(text, bg) {
-  const yt = apcaY(text)
-  const yb = apcaY(bg)
-  if (yt == null || yb == null) return null
-  if (yb > yt) {
-    const s = (yb ** 0.56 - yt ** 0.57) * 1.14
-    return s < 0.1 ? 0 : (s - 0.027) * 100
-  }
-  const s = (yb ** 0.65 - yt ** 0.62) * 1.14
-  return s > -0.1 ? 0 : (s + 0.027) * 100
-}
-
 // WCAG large-text minimum: the shirt number is big and bold
 export const MIN_LARGE_TEXT_CONTRAST = 3
 
+// Pure black: the dark ink on the few mid tones (grey #808080, purple
+// #a855f7...) where neither near-black nor white reaches 4.5:1
+export const TEXT_BLACK = '#000000'
+
 /**
- * Near-black or white for the number on `bg`. When both reach the WCAG
- * large-text 3:1 (mid-tone shirts: red, blue, green, grey), the one people
- * read better (higher APCA |Lc|) wins, so a red or blue shirt keeps white
- * numbers; otherwise the one with the higher WCAG ratio.
+ * The text colour on a team colour `bg` (shirt numbers, A/B chips, team
+ * bands, score boxes): near-black or white, whichever has the higher WCAG
+ * contrast ratio. Most of the text written on a team colour is small (9-11px
+ * chips), so the ratio decides, with no lean towards white: grey, light
+ * blue, purple and pink take dark text (white on grey is ~3.9:1, dark ~4.4).
+ * Between L ≈ 0.18 and 0.22 neither reaches 4.5:1 (near-black stops at ~4.2),
+ * so there the dark ink deepens to pure black, which reaches 4.6:1 or more:
+ * every colour gets at least 4.5:1.
  */
 export function readableTextOn(bg) {
   const dark = contrastRatio(bg, TEXT_DARK)
   const light = contrastRatio(bg, TEXT_LIGHT)
   if (dark == null) return TEXT_DARK
-  if (dark >= MIN_LARGE_TEXT_CONTRAST && light >= MIN_LARGE_TEXT_CONTRAST) {
-    return Math.abs(apcaContrast(TEXT_LIGHT, bg)) > Math.abs(apcaContrast(TEXT_DARK, bg)) ? TEXT_LIGHT : TEXT_DARK
-  }
+  if (Math.max(dark, light) < MIN_TEXT_CONTRAST && contrastRatio(bg, TEXT_BLACK) > Math.max(dark, light)) return TEXT_BLACK
   return dark >= light ? TEXT_DARK : TEXT_LIGHT
 }
 

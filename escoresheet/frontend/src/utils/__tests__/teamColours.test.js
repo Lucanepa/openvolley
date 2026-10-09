@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest'
 import {
   parseColour, normaliseColour, relativeLuminance, contrastRatio, colourDistance,
   readableTextOn, readableText, discRing, liberoColour, liberoScore, teamLiberoColour,
-  discPaint, teamDiscPaint, markColourOn, apcaContrast, liberoPair, matchDiscPaint, teamBoxStyle,
+  discPaint, teamDiscPaint, markColourOn, liberoPair, matchDiscPaint, teamBoxStyle,
   teamTextPaint, teamTextStyle, toOklab,
-  LIBERO_CLASH_DISTANCE, HEADER_SURFACE, TEXT_DARK, TEXT_LIGHT, COURT_SURFACE, LIBERO_PALETTE, MIN_TEXT_CONTRAST, MIN_EDGE_CONTRAST, MIN_LARGE_TEXT_CONTRAST
+  LIBERO_CLASH_DISTANCE, HEADER_SURFACE, TEXT_DARK, TEXT_LIGHT, TEXT_BLACK, COURT_SURFACE, LIBERO_PALETTE, MIN_TEXT_CONTRAST, MIN_EDGE_CONTRAST, MIN_LARGE_TEXT_CONTRAST
 } from '../teamColours'
 
 const PALETTE = LIBERO_PALETTE.map(p => p.hex)
@@ -68,30 +68,45 @@ describe('readableTextOn', () => {
     expect(readableTextOn('#e2001a')).toBe(TEXT_LIGHT) // Swiss Volley red
   })
 
-  it('mid-tone shirts where both pass 3:1 keep white numbers (APCA reads them better)', () => {
-    // WCAG 2 alone would pick near-black on all of these
-    for (const bg of ['#ef4444', '#3b82f6', '#16a34a', '#ec4899', '#0d9488', '#808080']) {
+  it('takes the higher WCAG ratio on mid tones too, with no lean towards white', () => {
+    // white on these is 3.4-4.0:1, too little for the 9-11px chips; dark reads better
+    for (const bg of ['#8a8a8a', '#3b82f6', '#ec4899', '#ef4444', '#16a34a', '#0d9488']) {
       expect(contrastRatio(bg, TEXT_DARK), bg).toBeGreaterThan(contrastRatio(bg, TEXT_LIGHT))
-      expect(contrastRatio(bg, TEXT_LIGHT), bg).toBeGreaterThanOrEqual(MIN_LARGE_TEXT_CONTRAST)
-      expect(Math.abs(apcaContrast(TEXT_LIGHT, bg)), bg).toBeGreaterThan(Math.abs(apcaContrast(TEXT_DARK, bg)))
-      expect(readableTextOn(bg), bg).toBe(TEXT_LIGHT)
+      expect(readableTextOn(bg), bg).toBe(TEXT_DARK)
+    }
+    // white where it has the higher ratio
+    for (const bg of ['#dc2626', '#e2001a', '#065f46', '#1e3a8a', '#7b1e2b']) expect(readableTextOn(bg), bg).toBe(TEXT_LIGHT)
+  })
+
+  it('deepens near-black to pure black on the mid tones where neither reaches 4.5:1', () => {
+    for (const bg of ['#808080', '#a855f7']) {
+      expect(Math.max(contrastRatio(bg, TEXT_DARK), contrastRatio(bg, TEXT_LIGHT)), bg).toBeLessThan(MIN_TEXT_CONTRAST)
+      expect(readableTextOn(bg), bg).toBe(TEXT_BLACK)
+      expect(contrastRatio(bg, TEXT_BLACK), bg).toBeGreaterThanOrEqual(MIN_TEXT_CONTRAST)
     }
   })
 
+  it('every #rrggbb (step 17) gets at least 4.5:1, the best of near-black and white', () => {
+    const steps = Array.from({ length: 16 }, (_, i) => i * 17)
+    let min = Infinity
+    for (const r of steps) for (const g of steps) for (const b of steps) {
+      const bg = normaliseColour({ r, g, b })
+      const ink = readableTextOn(bg)
+      const c = contrastRatio(bg, ink)
+      min = Math.min(min, c)
+      expect(c, bg).toBeGreaterThanOrEqual(MIN_TEXT_CONTRAST)
+      if (ink !== TEXT_BLACK) expect(c, bg).toBeCloseTo(Math.max(contrastRatio(bg, TEXT_DARK), contrastRatio(bg, TEXT_LIGHT)), 9)
+    }
+    expect(min).toBeLessThan(4.6) // the true minimum sits right at 4.5:1
+  })
+
   it('never picks a colour under the 3:1 large-text minimum when the other one passes', () => {
-    // orange: APCA leans white, but white is only ~2.8:1
+    // orange: white is only ~2.8:1
     expect(contrastRatio('#f97316', TEXT_LIGHT)).toBeLessThan(MIN_LARGE_TEXT_CONTRAST)
     expect(readableTextOn('#f97316')).toBe(TEXT_DARK)
     for (const bg of [...PALETTE, '#ef4444', '#3b82f6', '#808080', '#0ea5e9', '#22c55e', '#f97316', '#7b1e2b', '#ffd700', '#84cc16', '#c0c0c0']) {
       expect(contrastRatio(bg, readableTextOn(bg)), bg).toBeGreaterThanOrEqual(MIN_LARGE_TEXT_CONTRAST)
     }
-  })
-
-  it('APCA contrast has the expected sign and size', () => {
-    expect(apcaContrast('#000000', '#ffffff')).toBeCloseTo(106, 0)
-    expect(apcaContrast('#ffffff', '#000000')).toBeCloseTo(-108, 0)
-    expect(apcaContrast('#777777', '#777777')).toBe(0)
-    expect(apcaContrast('nope', '#fff')).toBeNull()
   })
 
   it('every palette colour and every common shirt gets ≥ 4.5:1, or an outline', () => {
@@ -104,10 +119,8 @@ describe('readableTextOn', () => {
     }
   })
 
-  it('a mid grey falls under 4.5:1 with both and gets an outline in the other colour', () => {
-    const t = readableText('#808080')
-    expect(t.contrast).toBeLessThan(MIN_TEXT_CONTRAST)
-    expect(t.textShadow).toBeTruthy()
+  it('no colour needs the outline any more: the ink always reaches 4.5:1', () => {
+    for (const bg of ['#808080', '#8a8a8a', '#a855f7', '#3b82f6']) expect(readableText(bg).textShadow, bg).toBeUndefined()
   })
 })
 
@@ -519,13 +532,13 @@ describe('custom team colours (any hex, not only the twelve presets)', () => {
     expect(colourDistance('#dc2626', '#ef4444')).toBeLessThan(CLOSE_COLOUR_DISTANCE)
   })
 
-  it('readableTextOn picks near-black or white by luminance for any colour, at least 3:1', () => {
+  it('readableTextOn picks near-black, black or white for any colour, at least 3:1', () => {
     for (const c of ANY) {
       const ink = readableTextOn(c)
-      expect([TEXT_DARK, TEXT_LIGHT], c).toContain(ink)
+      expect([TEXT_DARK, TEXT_LIGHT, TEXT_BLACK], c).toContain(ink)
       expect(contrastRatio(c, ink), c).toBeGreaterThanOrEqual(MIN_LARGE_TEXT_CONTRAST)
       // never the worse of the two when only one reaches 3:1
-      const other = ink === TEXT_DARK ? TEXT_LIGHT : TEXT_DARK
+      const other = ink === TEXT_LIGHT ? TEXT_DARK : TEXT_LIGHT
       if (contrastRatio(c, other) < MIN_LARGE_TEXT_CONTRAST) expect(contrastRatio(c, ink), c).toBeGreaterThan(contrastRatio(c, other))
     }
     // very light and very dark custom shirts
