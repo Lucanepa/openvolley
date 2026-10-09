@@ -15,6 +15,8 @@
  *  - The deciding set is always stored at index 5, also in best-of-3 matches.
  */
 
+import { getLeftTeamLabelForSet } from '../../src/domain/rules.js';
+
 export const POSITIONS = ['I', 'II', 'III', 'IV', 'V', 'VI'] as const;
 
 type TeamKey = 'home' | 'away';
@@ -142,12 +144,14 @@ export function getScoreBeforeEvent(events: any[], target: any): { home: number;
 
 /**
  * Team label ('A'|'B') starting the deciding set on the left (the panel 1/3 team).
- * Falls back like Scoreboard does when the set-5 toss was never stored:
- * teams switched as in sets 2 and 4, i.e. Team B on the left.
+ * Its toss (set5LeftTeam); never stored (an older match, one restored in the
+ * break), the court's own rule (domain/rules): the sides the set before it
+ * ended on (4; best-of-3: 2), its saved side included, as the scorer's court
+ * shows set 5 until its setup is confirmed. Before the change of courts at 8.
  */
 export function getSet5LeftTeamLabel(match: any): 'A' | 'B' {
   if (match?.set5LeftTeam === 'A' || match?.set5LeftTeam === 'B') return match.set5LeftTeam;
-  return 'B';
+  return getLeftTeamLabelForSet(5, { ...(match || {}), set5CourtSwitched: false }) as 'A' | 'B';
 }
 
 /**

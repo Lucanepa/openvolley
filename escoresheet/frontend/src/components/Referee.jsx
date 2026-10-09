@@ -32,6 +32,7 @@ import { discCapPx, discMetrics } from './referee/discSizing.js'
 import { isWideLayout, screenFit, SIDE_PANEL_CSS, REFEREE_LAYOUT } from './referee/refereeLayout.js'
 import { layoutReception, pointToFormation } from './referee/receptionLayout.js'
 import { getSideAForSet } from '../domain/rules'
+import { liveRowTeamA } from '../domain/coinToss'
 import { BRAND } from '../brand'
 
 // A lineup position: the rich format's { number, ... } or the legacy plain number
@@ -918,7 +919,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
           // A/B Model: Convert left/right to home/away using side_a (for modal handling)
           // side_a = 'left' or 'right' indicates which side Team A is on
-          const localTeamAKey = data?.match?.coinTossTeamA || 'home'
+          // (the row's own Team A: a "Swap A/B" since leaves the row as it was)
+          const localTeamAKey = liveRowTeamA(state, data?.match?.homeName || data?.homeTeam?.name, data?.match?.awayName || data?.awayTeam?.name) || data?.match?.coinTossTeamA || 'home'
           const sideA = state.side_a || 'left'
           const homeTeamOnLeft = (sideA === 'left') === (localTeamAKey === 'home')
           const getTeamFromSide = (side) => {
@@ -1251,7 +1253,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     // First, try to get stats from liveState (most accurate for Supabase-sourced data)
     if (data?.liveState) {
       const liveState = data.liveState
-      const teamAIsHome = data.match?.coinTossTeamA === 'home'
+      const teamAIsHome = (liveRowTeamA(liveState, data?.match?.homeName || data?.homeTeam?.name, data?.match?.awayName || data?.awayTeam?.name) || data.match?.coinTossTeamA || 'home') === 'home'
 
       // Helper to get count from either array (new format) or number (old format)
       const getCount = (value) => {
@@ -1416,6 +1418,11 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   // Determine team labels
   const teamAKey = data?.match?.coinTossTeamA || 'home'
+  // The Team A the live row names its A/B fields by (side_a, sets_won_a):
+  // its own, by its team names. A "Swap A/B" at the match end corrects the
+  // coin toss and leaves the row as it was, so the match's Team A put each
+  // team on the other side
+  const liveTeamAKey = liveRowTeamA(data?.liveState, data?.match?.homeName || data?.homeTeam?.name, data?.match?.awayName || data?.awayTeam?.name) || teamAKey
   const homeLabel = teamAKey === 'home' ? 'A' : 'B'
   const awayLabel = teamAKey === 'away' ? 'A' : 'B'
 
@@ -1428,7 +1435,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     // side_a indicates which side Team A is on ('left' or 'right')
     if (data?.liveState?.side_a) {
       const sideA = data.liveState.side_a
-      return sideA === 'left' ? (teamAKey === 'home') : (teamAKey !== 'home')
+      return sideA === 'left' ? (liveTeamAKey === 'home') : (liveTeamAKey !== 'home')
     }
 
     // No live state: the scorer's court's own rule (the overrides and
@@ -1440,7 +1447,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     // If sideA='left' (Team A on left), then home is on left only if teamAKey='home'
     // If sideA='right' (Team A on right), then home is on left only if teamAKey!='home' (i.e., Team B is on left)
     return sideA === 'left' ? (teamAKey === 'home') : (teamAKey !== 'home')
-  }, [data?.currentSet, data?.match, teamAKey, data?.liveState?.side_a])
+  }, [data?.currentSet, data?.match, teamAKey, liveTeamAKey, data?.liveState?.side_a])
 
   const homeTeamOnLeft = refereeView === '1st' ? !homeOnLeftFor2ndRef : homeOnLeftFor2ndRef
 
@@ -1979,10 +1986,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     : (rightTeam === 'home' ? data?.currentSet?.homePoints || 0 : data?.currentSet?.awayPoints || 0)
 
   // Sets won by each side - use liveState if available (from Supabase), otherwise fall back to setsWon
-  const liveStateSetsWonHome = teamAKey === 'home'
+  const liveStateSetsWonHome = liveTeamAKey === 'home'
     ? (data?.liveState?.sets_won_a ?? setsWon.home)
     : (data?.liveState?.sets_won_b ?? setsWon.home)
-  const liveStateSetsWonAway = teamAKey === 'home'
+  const liveStateSetsWonAway = liveTeamAKey === 'home'
     ? (data?.liveState?.sets_won_b ?? setsWon.away)
     : (data?.liveState?.sets_won_a ?? setsWon.away)
   const leftSetsWon = leftTeam === 'home' ? liveStateSetsWonHome : liveStateSetsWonAway
