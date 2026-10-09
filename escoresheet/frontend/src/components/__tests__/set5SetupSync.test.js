@@ -51,8 +51,9 @@ describe('scorer: set 5 setup pushes a live state', () => {
   })
 
   it('Switch sides and Switch serve push after writing Dexie', () => {
-    expect(handlers).toMatch(/set5LeftTeam: newLeftTeam \}\)\s*\n\s*syncSet5Setup\(\{ duringInterval: !!betweenSetsCountdown \}\)/)
-    expect(handlers).toMatch(/set5FirstServe: newFirstServe \}\)\s*\n\s*syncSet5Setup\(\{ duringInterval: !!betweenSetsCountdown \}\)/)
+    // (in the break, also after its time ran out, unless ended by hand)
+    expect(handlers).toMatch(/set5LeftTeam: newLeftTeam \}\)\s*\n\s*syncSet5Setup\(\{ duringInterval: !!betweenSetsCountdown \|\| !intervalEndedByHandRef\.current \}\)/)
+    expect(handlers).toMatch(/set5FirstServe: newFirstServe \}\)\s*\n\s*syncSet5Setup\(\{ duringInterval: !!betweenSetsCountdown \|\| !intervalEndedByHandRef\.current \}\)/)
   })
 
   it('Confirm records the coin toss, then ends the interval on the tablets too', () => {
