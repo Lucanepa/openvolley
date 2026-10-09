@@ -15,7 +15,7 @@ import { Button } from '../ui/Button.jsx'
 import { confirmDialog } from '../ui/uiStore.js'
 import { DateField, DateTimeField } from '../ui/DateField.jsx'
 import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
-import { discRing, HEADER_SURFACE } from '../utils/teamColours'
+import { discRing, HEADER_SURFACE, isCustomColour } from '../utils/teamColours'
 
 // Standard volleyball team colors - keys for translation
 const TEAM_COLORS = [
@@ -38,6 +38,12 @@ const TEAM_COLORS = [
 // instead of showing the first colour of the list
 const isOtherColour = (colour) =>
   typeof colour === 'string' && colour.trim() !== '' && !TEAM_COLORS.some(c => c.value.toLowerCase() === colour.trim().toLowerCase())
+
+// That option's text: "Custom colour #…" for a colour picked as a custom one,
+// the bare code for one of Match setup's twelve shirts this list lacks
+// (white #FFFFFF, black #000000, red #dc2626...), which is no custom colour
+const otherColourLabel = (t, colour) =>
+  isCustomColour(colour) ? `${t('matchSetup.customColour', 'Custom colour')} ${colour}` : colour
 
 // Bench official roles - keys for translation
 const BENCH_ROLES = [
@@ -796,7 +802,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       >
                         {isOtherColour(editedHomeTeam?.color) && (
                           <option value={editedHomeTeam.color} style={{ background: 'var(--panel)', color: 'var(--text)' }}>
-                            {t('matchSetup.customColour', 'Custom colour')} {editedHomeTeam.color} ■
+                            {otherColourLabel(t, editedHomeTeam.color)} ■
                           </option>
                         )}
                         {TEAM_COLORS.map(c => (
@@ -860,7 +866,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                       >
                         {isOtherColour(editedAwayTeam?.color) && (
                           <option value={editedAwayTeam.color} style={{ background: 'var(--panel)', color: 'var(--text)' }}>
-                            {t('matchSetup.customColour', 'Custom colour')} {editedAwayTeam.color} ■
+                            {otherColourLabel(t, editedAwayTeam.color)} ■
                           </option>
                         )}
                         {TEAM_COLORS.map(c => (
