@@ -60,7 +60,7 @@ case $app in
     short_en="Open Source Volleyball eScoresheet"
     desc_en="Fully offline volleyball e-scoresheet. Runs the scoretable and a built-in LAN server, so the referee, bench and livescore tablets connect over the same Wi-Fi: no internet, no accounts. The computer can open its own Wi-Fi for the tablets."
     short_de="Elektronisches Matchblatt für Volleyball (Open Source)"
-    desc_de="Elektronisches Volleyball-Matchblatt, das komplett offline funktioniert. Es betreibt den Schreibertisch und einen eingebauten LAN-Server, damit sich die Tablets von Schiedsrichter, Bank und Livescore über dasselbe WLAN verbinden: ohne Internet, ohne Anmeldung. Der Computer kann dafür ein eigenes WLAN für die Tablets öffnen."
+    desc_de="Elektronisches Volleyball-Matchblatt, das komplett offline funktioniert. Es betreibt den Schreibertisch und einen eingebauten LAN-Server, damit sich die Tablets von Schiedsrichter, Mannschaften und Livescore über dasselbe WLAN verbinden: ohne Internet, ohne Anmeldung. Der Computer kann dafür ein eigenes WLAN für die Tablets öffnen."
     tags=(volleyball scoresheet escoresheet scorekeeping sports referee livescore offline)
     ;;
   openbeach|beach)
