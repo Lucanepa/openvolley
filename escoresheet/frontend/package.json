@@ -67,7 +67,7 @@
     "fflate": "^0.8.3",
     "html-to-image": "^1.11.13",
     "html5-qrcode": "^2.3.8",
-    "i18next": "^25.8.10",
+    "i18next": "^26.4.3",
     "jspdf": "^4.1.0",
     "jszip": "^3.10.1",
     "lucide-react": "^1.52.0",
@@ -75,7 +75,7 @@
     "qrcode.react": "^4.2.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-i18next": "^16.5.4",
+    "react-i18next": "^17.0.16",
     "serve": "^14.2.5",
     "tailwind-merge": "^3.7.0",
     "ws": "^8.21.0"
