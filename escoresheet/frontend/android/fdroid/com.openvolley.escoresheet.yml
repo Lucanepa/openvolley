@@ -14,9 +14,9 @@ Binaries:
   https://github.com/Lucanepa/openvolley/releases/download/android-v%v/com.openvolley.escoresheet_%c.apk
 
 Builds:
-  - versionName: 2.0.0
-    versionCode: 20000000
-    commit: c420036f631256a274a13b46ed2d5722f5fed29b
+  - versionName: 2.4.2
+    versionCode: 20040020
+    commit: b7f49da530430136b214f415bacd5fdf37972d92
     subdir: escoresheet/frontend/android/app
     sudo:
       - echo "deb https://deb.debian.org/debian forky main" > /etc/apt/sources.list.d/forky.list
@@ -41,5 +41,5 @@ AllowedAPKSigningKeys: 2c7f9db4da41f5475f36142403043e45452a3143baff764e3d511d686
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags ^android-v[\d.]+$
-CurrentVersion: 2.0.0
-CurrentVersionCode: 20000000
+CurrentVersion: 2.4.2
+CurrentVersionCode: 20040020
