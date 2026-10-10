@@ -104,3 +104,16 @@ describe('build-subdomains: outputs', () => {
     expect(r.status).toBe(0)
   })
 })
+
+// A build whose entry chunk outgrows workbox's 2 MiB default fails ("won't
+// be precached"): OpenBeach's web app stopped deploying that way at 2.4 MB
+// (2026-10-10). The main build and every subdomain build raise the limit.
+describe('precache limit', () => {
+  it('both builds precache files up to PRECACHE_MAX_FILE_BYTES (at least 4 MiB)', async () => {
+    const { PRECACHE_MAX_FILE_BYTES } = await import('../../pwa-workbox.js')
+    expect(PRECACHE_MAX_FILE_BYTES).toBeGreaterThanOrEqual(4 * 1024 * 1024)
+    for (const f of ['vite.config.js', 'scripts/build-subdomains.js']) {
+      expect(readFileSync(resolve(frontendDir, f), 'utf8'), f).toMatch(/maximumFileSizeToCacheInBytes: PRECACHE_MAX_FILE_BYTES/)
+    }
+  })
+})

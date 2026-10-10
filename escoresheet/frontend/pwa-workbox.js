@@ -20,6 +20,13 @@ export const PRECACHE_GLOB_PATTERNS = ['**/*.{js,mjs,css,html,ico,png,jpg,jpeg,s
 // navigation to /sign must reach the server (its own page and CSP), never the
 // app shell.
 // (vite-plugin-pwa's own defaults are kept: setting globIgnores replaces them)
+// The largest file the service worker precaches. Workbox's default is
+// 2 MiB, and a build whose entry chunk outgrows it fails ("won't be
+// precached"): OpenBeach's web app stopped deploying at 2.4 MB (2.0.2), and
+// this app's entry was 1.6 MB (2.4.2). The entry must be precached:
+// scorers work offline.
+export const PRECACHE_MAX_FILE_BYTES = 8 * 1024 * 1024
+
 export const PRECACHE_GLOB_IGNORES = ['**/node_modules/**/*', 'sw.js', 'workbox-*.js', 'sign/**']
 export const NAVIGATE_FALLBACK_DENYLIST = [/^\/api\//, /^\/sign(\/|$)/]
 
