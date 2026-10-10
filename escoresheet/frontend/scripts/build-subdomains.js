@@ -24,6 +24,7 @@ import { readFileSync, writeFileSync, mkdirSync, cpSync, copyFileSync, existsSyn
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import { BUILD_TARGET } from '../build-target.js'
 import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, PWA_INCLUDE_ASSETS, PWA_ICONS } from '../pwa-workbox.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -394,17 +395,16 @@ async function buildSubdomain(subdomain, basePath = '/') {
       build: {
         outDir,
         emptyOutDir: true,
-        rollupOptions: {
+        target: BUILD_TARGET,
+        rolldownOptions: {
           input: tempIndexPath,
           output: {
             format: 'es',
-            manualChunks: (id) => {
-              if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/')) {
-                return 'react-vendor'
-              }
-              if (id.includes('node_modules/dexie')) {
-                return 'dexie-vendor'
-              }
+            codeSplitting: {
+              groups: [
+                { name: 'react-vendor', test: /node_modules[\\/]react(-dom)?[\\/]/ },
+                { name: 'dexie-vendor', test: /node_modules[\\/]dexie/ }
+              ]
             }
           }
         }
