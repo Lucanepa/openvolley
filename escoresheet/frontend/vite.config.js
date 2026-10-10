@@ -6,6 +6,7 @@ import { readFileSync, existsSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { vitePluginApiRoutes } from './vite-plugin-api-routes.js'
+import { BUILD_TARGET } from './build-target.js'
 import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, PWA_INCLUDE_ASSETS, PWA_ICONS } from './pwa-workbox.js'
 
 // Valid HTML pages for the app (folder-based structure for clean URLs)
@@ -305,7 +306,8 @@ export default defineConfig({
     // WebSocket server runs on port 8080 (or WS_PORT env var)
   },
   build: {
-    rollupOptions: {
+    target: BUILD_TARGET,
+    rolldownOptions: {
       input: {
         main: './index.html',
         referee: './referee/index.html',
@@ -316,20 +318,19 @@ export default defineConfig({
       },
       output: {
         format: 'es',
-        // Split vendor libraries into separate cached chunks
-        manualChunks: (id) => {
-          if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/')) {
-            return 'react-vendor'
-          }
-          if (id.includes('node_modules/dexie')) {
-            return 'dexie-vendor'
-          }
-          if (id.includes('node_modules/jspdf') || id.includes('node_modules/html-to-image')) {
-            return 'pdf-vendor'
-          }
-          if (id.includes('node_modules/i18next') || id.includes('node_modules/react-i18next')) {
-            return 'i18n-vendor'
-          }
+        // Split vendor libraries into separate cached chunks. The syntax
+        // helpers, Vite's preload helper and fflate (backups) get their own
+        // small chunks: inside pdf-vendor, as jsPDF's dependencies, they made
+        // every page load the PDF libraries.
+        codeSplitting: {
+          groups: [
+            { name: 'helpers', test: /vite[\\/]preload-helper|@oxc-project[+\\/]runtime[@\\/]|@babel[\\/]runtime[\\/]/, priority: 10 },
+            { name: 'fflate', test: /node_modules[\\/]fflate[\\/]/, priority: 10 },
+            { name: 'react-vendor', test: /node_modules[\\/]react(-dom)?[\\/]/ },
+            { name: 'dexie-vendor', test: /node_modules[\\/]dexie/ },
+            { name: 'pdf-vendor', test: /node_modules[\\/](jspdf|html-to-image)/ },
+            { name: 'i18n-vendor', test: /node_modules[\\/](react-)?i18next/ }
+          ]
         }
       }
     }
