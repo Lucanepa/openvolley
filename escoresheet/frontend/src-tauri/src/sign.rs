@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
-use rand::RngCore;
+use rand::TryRngCore;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use tokio::sync::oneshot;
@@ -159,7 +159,7 @@ pub fn base64url(bytes: &[u8]) -> String {
 
 fn new_secret() -> String {
     let mut bytes = [0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
+    rand::rngs::OsRng.try_fill_bytes(&mut bytes).expect("the OS random source");
     base64url(&bytes)
 }
 

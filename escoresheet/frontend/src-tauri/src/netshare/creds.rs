@@ -5,7 +5,7 @@
 //! (the SSID is encoded in the system code page: ASCII only) and WPA2 (8-63
 //! printable characters; exactly 64 would be read as a raw hex key).
 
-use rand::Rng;
+use rand::{Rng, TryRngCore};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Credentials {
@@ -20,12 +20,12 @@ const PASSWORD_ALPHABET: &[u8] = b"abcdefghijkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWX
 pub const PASSWORD_LEN: usize = 12;
 
 fn pick(rng: &mut impl Rng, alphabet: &[u8], n: usize) -> String {
-    (0..n).map(|_| alphabet[rng.gen_range(0..alphabet.len())] as char).collect()
+    (0..n).map(|_| alphabet[rng.random_range(0..alphabet.len())] as char).collect()
 }
 
 /// A fresh name and password from the OS random source.
 pub fn generate() -> Credentials {
-    generate_with(&mut rand::rngs::OsRng)
+    generate_with(&mut rand::rngs::OsRng.unwrap_err())
 }
 
 pub fn generate_with(rng: &mut impl Rng) -> Credentials {
