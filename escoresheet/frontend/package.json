@@ -71,7 +71,7 @@
     "jspdf": "^4.1.0",
     "jszip": "^3.10.1",
     "lucide-react": "^1.52.0",
-    "pdfjs-dist": "^5.4.624",
+    "pdfjs-dist": "~5.5.207",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
