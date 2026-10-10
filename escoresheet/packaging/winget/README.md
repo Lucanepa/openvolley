@@ -21,8 +21,8 @@ winget install Lucanepa.OpenBeach      # or: winget install openbeach
 manifests/l/Lucanepa/OpenVolley/2.3.0/   the same path as in winget-pkgs
   Lucanepa.OpenVolley.yaml               version manifest
   Lucanepa.OpenVolley.installer.yaml     installer: URL, SHA-256, switches
-  Lucanepa.OpenVolley.locale.en-US.yaml  default locale (English)
-  Lucanepa.OpenVolley.locale.de-CH.yaml  German (Switzerland)
+  Lucanepa.OpenVolley.locale.en-US.yaml  default locale (English; the only one:
+                                         German texts tripped the banking check)
 manifests/l/Lucanepa/OpenBeach/2.0.0/    the same for OpenBeach
 update-manifests.sh                      writes them for a new version
 validate.sh, validate.py                 checks them (Docker)
