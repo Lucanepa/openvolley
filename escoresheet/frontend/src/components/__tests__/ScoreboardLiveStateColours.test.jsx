@@ -66,8 +66,13 @@ beforeEach(async () => {
   upserts.length = 0
   await Promise.all(db.tables.map(t => t.clear()))
 })
-afterAll(() => {
+afterAll(async () => {
   cleanup()
+  // The last point's live-state write still logs after the test has its row,
+  // and the unmount logs too: let that out before the worker closes (with
+  // vitest 4.1.11 a full run failed on "Closing rpc while onUserConsoleLog
+  // was pending")
+  await settle()
   process.removeListener('unhandledRejection', filterRejections)
   for (const listener of rejectionListeners) process.on('unhandledRejection', listener)
   globalThis.WebSocket = saved.WebSocket
