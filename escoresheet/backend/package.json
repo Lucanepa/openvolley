@@ -15,7 +15,7 @@
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "node-ical": "^0.22.1",
-    "nodemailer": "^9.0.3",
+    "nodemailer": "^10.1.0",
     "pg": "^8.23.1",
     "pocketbase": "^0.26.8",
     "qrcode": "^1.5.4",
