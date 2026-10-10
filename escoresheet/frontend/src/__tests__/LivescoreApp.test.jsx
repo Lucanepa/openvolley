@@ -324,7 +324,9 @@ describe('LivescoreApp', () => {
   // Served by the desktop relay on the hall Wi-Fi / its hotspot / Bluetooth,
   // no internet: the relay's list and summaries, never /api/db, never a PIN.
   describe('on a venue relay (no internet)', () => {
-    const relay = vi.hoisted(() => ({ sockets: [] }))
+    // the sockets the page opened (no mock factory reads it, so no vi.hoisted:
+    // vitest 5 refuses one nested in a describe)
+    const relay = { sockets: [] }
     let savedFetch
     let savedWebSocket
     let savedLocation

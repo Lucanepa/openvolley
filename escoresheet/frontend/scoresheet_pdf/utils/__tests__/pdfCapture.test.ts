@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { hideImages, imageBox, isWebKitGtk, styleListFor, usedStyleProperties } from '../pdfCapture'
 
 describe('isWebKitGtk', () => {
@@ -25,9 +25,19 @@ describe('styleListFor', () => {
 })
 
 describe('usedStyleProperties', () => {
-  afterEach(() => { document.body.innerHTML = '' })
+  afterEach(() => {
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
+  })
 
   it('keeps what the sheet sets, drops UA defaults and custom properties, and cleans up', () => {
+    // A browser lists every property in <html>'s computed style; jsdom 30
+    // only the ones set there. Give the function a browser's kind of list.
+    const real = window.getComputedStyle.bind(window)
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((el, pseudo) =>
+      el === document.documentElement && !pseudo
+        ? (['color', 'display', 'width', '--color-x'] as unknown as CSSStyleDeclaration)
+        : real(el, pseudo))
     document.body.innerHTML = '<div id="sheet" style="--color-x: red"><span style="color: rgb(255, 0, 0)">A</span><div style="display: flex">B</div></div>'
     const used = usedStyleProperties(document.getElementById('sheet')!)
     expect(used).toContain('color')
