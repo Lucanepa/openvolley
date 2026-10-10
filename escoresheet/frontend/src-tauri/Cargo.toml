@@ -4,7 +4,7 @@ version = "2.4.2"
 description = "Open Source Volleyball eScoresheet"
 authors = ["Luca Canepa"]
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.90"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -23,18 +23,18 @@ tauri-plugin-dialog = "2"
 # relay ports ("Cannot bind HTTP port").
 tauri-plugin-single-instance = "2"
 # Automatic updates (updater.rs): latest.json from get.openvolley.app, the
-# download verified against the minisign key in tauri.conf.json. 2.12 is the
-# newest on tauri 2.11 (2.13 needs tauri 2.12 + Rust 1.90, same updater code).
+# download verified against the minisign key in tauri.conf.json (2.13: tauri
+# 2.12 and Rust 1.90, as the rest of tauri 2.12).
 # Its JS commands are not granted to any window (capabilities/update.json).
-tauri-plugin-updater = "~2.12"
+tauri-plugin-updater = "~2.13"
 # The desktop log (main.rs): <data dir>/OpenVolley/logs/desktop.log, rotated.
-# ~2.9: 2.10 needs Rust 1.90. None of its JS commands is granted to a window.
-tauri-plugin-log = "~2.9"
+# None of its JS commands is granted to a window.
+tauri-plugin-log = "~2.10"
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "signal"] }
-axum = { version = "0.7", features = ["ws"] }
+axum = { version = "0.8", features = ["ws"] }
 # The relay's embedded frontend comes from $OV_DIST (build.rs: OpenVolley's
 # ../dist, or the openbeach build for OpenBeach).
 rust-embed = { version = "8", features = ["interpolate-folder-path"] }
@@ -42,12 +42,12 @@ mime_guess = "2"
 local-ip-address = "0.6"
 futures-util = "0.3"
 # OS randomness for the tablet Wi-Fi password (hotspot.rs). Already in the
-# tree (0.8 through tauri), so this adds no new crate.
-rand = "0.8"
-# Sign on phone (sign.rs): SHA-256 of the session secrets (already in the
-# tree through tauri) and NFC for the context the phone page shows, the same
+# tree (0.9 through axum's tungstenite), so this adds no new crate.
+rand = "0.9"
+# Sign on phone (sign.rs): SHA-256 of the session secrets (0.11 is in the
+# tree through rust-embed) and NFC for the context the phone page shows, the same
 # as String.prototype.normalize('NFC') in electron/signSessionCore.cjs.
-sha2 = "0.10"
+sha2 = "0.11"
 unicode-normalization = "0.1"
 
 # GtkSettings: keep the window light on a dark GTK theme (main.rs). Already
@@ -69,7 +69,7 @@ libloading = "0.7"
 # (hotspot/windows.rs). Same version as tauri's (wry/webview2-com), so only
 # features are added.
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61", features = [
+windows = { version = "0.62", features = [
   "Foundation",
   "Foundation_Collections",
   "Foundation_Metadata",

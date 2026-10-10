@@ -739,7 +739,7 @@ fn http_router(state: Arc<AppState>) -> Router {
         .route("/api/match/validate-pin", post(validate_pin))
         .route("/api/match/list", get(match_list))
         .route("/api/match/by-game-number", get(by_game_number))
-        .route("/api/match/:id", get(match_get).patch(match_patch))
+        .route("/api/match/{id}", get(match_get).patch(match_patch))
         .route("/api/server/connections", get(server_connections))
         .route("/api/sign/start", post(sign_api))
         .route("/api/sign/open", post(sign_api))
@@ -1575,7 +1575,7 @@ async fn ws_handler(
 
 async fn send_to(state: &Arc<AppState>, conn_id: u64, msg: &Value) {
     if let Some(tx) = state.clients.lock().await.get(&conn_id) {
-        let _ = tx.send(Message::Text(msg.to_string()));
+        let _ = tx.send(Message::Text(msg.to_string().into()));
     }
 }
 
@@ -1584,7 +1584,7 @@ fn send_error(tx: &Tx, code: &str, message: &str, match_id: Option<&str>) {
     if let Some(id) = match_id {
         err["matchId"] = json!(id);
     }
-    let _ = tx.send(Message::Text(err.to_string()));
+    let _ = tx.send(Message::Text(err.to_string().into()));
 }
 
 /// Connections that proved the scoreboard role for at least one match.
@@ -1656,7 +1656,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, ip: IpAddr) {
     });
 
     let _ = tx.send(Message::Text(
-        json!({ "type": "connected", "message": "Connected to eScoresheet WebSocket server", "timestamp": now_ms() }).to_string(),
+        json!({ "type": "connected", "message": "Connected to eScoresheet WebSocket server", "timestamp": now_ms() }).to_string().into(),
     ));
 
     while let Some(Ok(msg)) = stream.next().await {
@@ -1909,7 +1909,7 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
 
     match msg_type {
         "ping" => {
-            let _ = tx.send(Message::Text(json!({ "type": "pong", "timestamp": now_ms() }).to_string()));
+            let _ = tx.send(Message::Text(json!({ "type": "pong", "timestamp": now_ms() }).to_string().into()));
         }
         "sync-match-data" => {
             let bundle = bundle_from(&data);
@@ -1985,7 +1985,7 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
             if let Some(bundle) = stored {
                 let full = has_access(state, conn_id, &match_id, Some(&bundle)).await;
                 let msg = bundle_message_access("match-full-data", &match_id, &bundle, None, full);
-                let _ = tx.send(Message::Text(msg.to_string()));
+                let _ = tx.send(Message::Text(msg.to_string().into()));
             }
         }
         "unsubscribe-match" => {
@@ -2272,7 +2272,7 @@ async fn notify_match_data(
         let Some(text) = text else { continue };
         for id in ids {
             if let Some(tx) = clients.get(&id) {
-                let _ = tx.send(Message::Text(text.clone()));
+                let _ = tx.send(Message::Text(text.clone().into()));
             }
         }
     }
@@ -2294,7 +2294,7 @@ async fn notify_access_only(state: &Arc<AppState>, match_id: &str, msg: &Value, 
     let clients = state.clients.lock().await;
     for id in ids {
         if let Some(tx) = clients.get(&id) {
-            let _ = tx.send(Message::Text(text.clone()));
+            let _ = tx.send(Message::Text(text.clone().into()));
         }
     }
 }
@@ -2317,7 +2317,7 @@ async fn notify_subscribers(state: &Arc<AppState>, match_id: &str, msg: &Value, 
             continue;
         }
         if let Some(tx) = clients.get(&id) {
-            let _ = tx.send(Message::Text(text.clone()));
+            let _ = tx.send(Message::Text(text.clone().into()));
         }
     }
 }

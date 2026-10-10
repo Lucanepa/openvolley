@@ -30,7 +30,7 @@
 //!   than group policy): WiFiDirectAdvertisementPublisher with legacy
 //!   settings, alive while this process holds it.
 //!
-//! The WinRT calls that wait (`.get()`) run on blocking threads, never on the
+//! The WinRT calls that wait (`.join()`) run on blocking threads, never on the
 //! window's thread. Bluetooth: Windows can only join a Bluetooth network
 //! (PANU), never serve one (NAP), so it answers "not supported".
 
@@ -235,7 +235,7 @@ fn restore(m: &NetworkOperatorTetheringManager, saved: &SavedAp) {
     if let Some(b) = saved.band {
         let _ = cfg.SetBand(b);
     }
-    let _ = m.ConfigureAccessPointAsync(&cfg).and_then(|a| a.get());
+    let _ = m.ConfigureAccessPointAsync(&cfg).and_then(|a| a.join());
 }
 
 /// What a started Mobile Hotspot needs at stop: its profile, the user's
@@ -253,10 +253,10 @@ fn start_tethering(ssid: &str, pass: &str, keep_saved: Option<SavedAp>) -> Resul
     let Some(profile) = profile else { return Err(capability_error(refused)) };
     let mgr = NetworkOperatorTetheringManager::CreateFromConnectionProfile(&profile).map_err(we("hotspot-failed"))?;
     if mgr.TetheringOperationalState().map(|s| s == TetheringOperationalState::On).unwrap_or(false) {
-        let _ = mgr.StopTetheringAsync().and_then(|op| op.get());
+        let _ = mgr.StopTetheringAsync().and_then(|op| op.join());
     }
     let timeout_was_on = NetworkOperatorTetheringManager::IsNoConnectionsTimeoutEnabled().unwrap_or(false);
-    let _ = NetworkOperatorTetheringManager::DisableNoConnectionsTimeoutAsync().and_then(|a| a.get());
+    let _ = NetworkOperatorTetheringManager::DisableNoConnectionsTimeoutAsync().and_then(|a| a.join());
 
     let ssid_h = HSTRING::from(ssid);
     let pass_h = HSTRING::from(pass);
@@ -270,7 +270,7 @@ fn start_tethering(ssid: &str, pass: &str, keep_saved: Option<SavedAp>) -> Resul
             let _ = cfg.SetBand(TetheringWiFiBand::TwoPointFourGigahertz);
         }
         let _ = cfg.SetAuthenticationKind(TetheringWiFiAuthenticationKind::Wpa2);
-        mgr.StartTetheringAsync2(&cfg).and_then(|op| op.get()).map_err(we("hotspot-failed"))?
+        mgr.StartTetheringAsync2(&cfg).and_then(|op| op.join()).map_err(we("hotspot-failed"))?
     } else {
         if saved.is_none() {
             let cur = mgr.GetCurrentAccessPointConfiguration().map_err(we("hotspot-failed"))?;
@@ -286,8 +286,8 @@ fn start_tethering(ssid: &str, pass: &str, keep_saved: Option<SavedAp>) -> Resul
         if cfg.IsBandSupported(TetheringWiFiBand::TwoPointFourGigahertz).unwrap_or(false) {
             let _ = cfg.SetBand(TetheringWiFiBand::TwoPointFourGigahertz);
         }
-        mgr.ConfigureAccessPointAsync(&cfg).and_then(|a| a.get()).map_err(we("hotspot-failed"))?;
-        mgr.StartTetheringAsync().and_then(|op| op.get()).map_err(we("hotspot-failed"))?
+        mgr.ConfigureAccessPointAsync(&cfg).and_then(|a| a.join()).map_err(we("hotspot-failed"))?;
+        mgr.StartTetheringAsync().and_then(|op| op.join()).map_err(we("hotspot-failed"))?
     };
     let status = result.Status().unwrap_or(TetheringOperationStatus::Unknown);
     if status != TetheringOperationStatus::Success {
@@ -296,7 +296,7 @@ fn start_tethering(ssid: &str, pass: &str, keep_saved: Option<SavedAp>) -> Resul
             restore(&mgr, s);
         }
         if timeout_was_on {
-            let _ = NetworkOperatorTetheringManager::EnableNoConnectionsTimeoutAsync().and_then(|a| a.get());
+            let _ = NetworkOperatorTetheringManager::EnableNoConnectionsTimeoutAsync().and_then(|a| a.join());
         }
         return Err(status_error(status, message));
     }
@@ -305,13 +305,13 @@ fn start_tethering(ssid: &str, pass: &str, keep_saved: Option<SavedAp>) -> Resul
 
 fn stop_tethering(profile: Option<ConnectionProfile>, saved: Option<SavedAp>, restore_timeout: bool) {
     if let Some(m) = manager(profile.as_ref()) {
-        let _ = m.StopTetheringAsync().and_then(|op| op.get());
+        let _ = m.StopTetheringAsync().and_then(|op| op.join());
         if let Some(s) = &saved {
             restore(&m, s);
         }
     }
     if restore_timeout {
-        let _ = NetworkOperatorTetheringManager::EnableNoConnectionsTimeoutAsync().and_then(|a| a.get());
+        let _ = NetworkOperatorTetheringManager::EnableNoConnectionsTimeoutAsync().and_then(|a| a.join());
     }
 }
 
