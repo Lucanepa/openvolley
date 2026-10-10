@@ -59,8 +59,6 @@ case $app in
     license_url=https://github.com/Lucanepa/openvolley/blob/main/escoresheet/LICENSE
     short_en="Open Source Volleyball eScoresheet"
     desc_en="Fully offline volleyball e-scoresheet. Runs the scoretable and a built-in LAN server, so the referee, bench and livescore tablets connect over the same Wi-Fi: no internet, no accounts. The computer can open its own Wi-Fi for the tablets."
-    short_de="Elektronisches Matchblatt für Volleyball (Open Source)"
-    desc_de="Elektronisches Volleyball-Matchblatt, das komplett offline funktioniert. Es betreibt den Schreibertisch und einen eingebauten LAN-Server, damit sich die Tablets von Schiedsrichter, Mannschaften und Livescore über dasselbe WLAN verbinden: ohne Internet, ohne Anmeldung. Der Computer kann dafür ein eigenes WLAN für die Tablets öffnen."
     tags=(volleyball scoresheet escoresheet scorekeeping sports referee livescore offline)
     ;;
   openbeach|beach)
@@ -75,8 +73,6 @@ case $app in
     license_url=https://github.com/Lucanepa/openbeach/blob/main/escoresheet/LICENSE
     short_en="Open Source Beach Volleyball eScoresheet"
     desc_en="Fully offline beach volleyball e-scoresheet. Runs the scoretable and a built-in LAN server, so the referee and livescore tablets and the court displays connect over the same Wi-Fi: no internet, no accounts. The computer can open its own Wi-Fi for the tablets."
-    short_de="Elektronisches Matchblatt für Beachvolleyball (Open Source)"
-    desc_de="Elektronisches Beachvolleyball-Matchblatt, das komplett offline funktioniert. Es betreibt den Schreibertisch und einen eingebauten LAN-Server, damit sich die Tablets von Schiedsrichter und Livescore und die Court-Anzeigen über dasselbe WLAN verbinden: ohne Internet, ohne Anmeldung. Der Computer kann dafür ein eigenes WLAN für die Tablets öffnen."
     tags=(beach-volleyball volleyball scoresheet escoresheet scorekeeping sports referee livescore offline)
     ;;
   *) die "app must be openvolley or openbeach, got '$app'" ;;
@@ -115,6 +111,10 @@ if [ -d "$base" ]; then
   find "$base" -mindepth 1 -maxdepth 1 -type d ! -name "$version" -exec rm -r {} +
 fi
 mkdir -p "$out"
+# English only: winget's banking check (Policy-Test-1.8) flagged the German
+# text twice ("Konten", "Bank" for the team bench), so there is no de-CH
+# locale any more (and none left over from an earlier run)
+rm -f "$out/$id.locale."*.yaml
 
 header() {
   printf '# yaml-language-server: $schema=https://aka.ms/winget-manifest.%s.%s.schema.json\n' "$1" "$MANIFEST_VERSION"
@@ -196,30 +196,5 @@ ManifestType: defaultLocale
 ManifestVersion: $MANIFEST_VERSION
 EOF
 } >"$out/$id.locale.en-US.yaml"
-
-{
-  header locale
-  cat <<EOF
-PackageIdentifier: $id
-PackageVersion: $version
-PackageLocale: de-CH
-Publisher: OpenVolley
-PublisherUrl: https://openvolley.app
-PublisherSupportUrl: https://github.com/$REPO/issues
-PrivacyUrl: https://openvolley.app/datenschutz
-Author: Luca Canepa
-PackageName: $(q "$package_name")
-PackageUrl: $package_url
-License: GPL-3.0-or-later
-LicenseUrl: $license_url
-ShortDescription: $(q "$short_de")
-Description: $(q "$desc_de")
-Tags:
-$(tag_list "${tags[@]}")
-ReleaseNotesUrl: $release_notes_url
-ManifestType: locale
-ManifestVersion: $MANIFEST_VERSION
-EOF
-} >"$out/$id.locale.de-CH.yaml"
 
 echo "wrote ${out#"$HERE"/}/ ($id $version, sha256 $sha, $date)"
