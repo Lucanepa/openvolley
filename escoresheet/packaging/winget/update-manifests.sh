@@ -60,7 +60,7 @@ case $app in
     short_en="Open Source Volleyball eScoresheet"
     desc_en="Fully offline volleyball e-scoresheet. Runs the scoretable and a built-in LAN server, so the referee, bench and livescore tablets connect over the same Wi-Fi: no internet, no accounts. The computer can open its own Wi-Fi for the tablets."
     short_de="Elektronisches Matchblatt für Volleyball (Open Source)"
-    desc_de="Elektronisches Volleyball-Matchblatt, das komplett offline funktioniert. Es betreibt den Schreibertisch und einen eingebauten LAN-Server, damit sich die Tablets von Schiedsrichter, Bank und Livescore über dasselbe WLAN verbinden: ohne Internet, ohne Konten. Der Computer kann dafür ein eigenes WLAN für die Tablets öffnen."
+    desc_de="Elektronisches Volleyball-Matchblatt, das komplett offline funktioniert. Es betreibt den Schreibertisch und einen eingebauten LAN-Server, damit sich die Tablets von Schiedsrichter, Bank und Livescore über dasselbe WLAN verbinden: ohne Internet, ohne Anmeldung. Der Computer kann dafür ein eigenes WLAN für die Tablets öffnen."
     tags=(volleyball scoresheet escoresheet scorekeeping sports referee livescore offline)
     ;;
   openbeach|beach)
@@ -76,7 +76,7 @@ case $app in
     short_en="Open Source Beach Volleyball eScoresheet"
     desc_en="Fully offline beach volleyball e-scoresheet. Runs the scoretable and a built-in LAN server, so the referee and livescore tablets and the court displays connect over the same Wi-Fi: no internet, no accounts. The computer can open its own Wi-Fi for the tablets."
     short_de="Elektronisches Matchblatt für Beachvolleyball (Open Source)"
-    desc_de="Elektronisches Beachvolleyball-Matchblatt, das komplett offline funktioniert. Es betreibt den Schreibertisch und einen eingebauten LAN-Server, damit sich die Tablets von Schiedsrichter und Livescore und die Court-Anzeigen über dasselbe WLAN verbinden: ohne Internet, ohne Konten. Der Computer kann dafür ein eigenes WLAN für die Tablets öffnen."
+    desc_de="Elektronisches Beachvolleyball-Matchblatt, das komplett offline funktioniert. Es betreibt den Schreibertisch und einen eingebauten LAN-Server, damit sich die Tablets von Schiedsrichter und Livescore und die Court-Anzeigen über dasselbe WLAN verbinden: ohne Internet, ohne Anmeldung. Der Computer kann dafür ein eigenes WLAN für die Tablets öffnen."
     tags=(beach-volleyball volleyball scoresheet escoresheet scorekeeping sports referee livescore offline)
     ;;
   *) die "app must be openvolley or openbeach, got '$app'" ;;
