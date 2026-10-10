@@ -67,6 +67,21 @@
   </screenshots>
 
   <releases>
+    <release version="2.0.2" date="2026-10-10">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.2</url>
+      <description>
+        <ul>
+          <li>Between sets nothing moves by itself; set 2 and set 3 choices follow the FIVB beach rules.</li>
+          <li>Change of courts and TTO after every point, undo and reload.</li>
+          <li>Phone layout for the scorer.</li>
+          <li>Team colours: own colour picker, readable text, outlined shirts.</li>
+          <li>Last action in your language.</li>
+          <li>Fixes crashes in the guide and at the final signatures.</li>
+          <li>Remarks sync to the server.</li>
+          <li>Many smaller fixes.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.0.1" date="2026-10-07">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.1</url>
       <description>
