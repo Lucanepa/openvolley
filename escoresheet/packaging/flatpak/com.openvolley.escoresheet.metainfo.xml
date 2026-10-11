@@ -71,6 +71,16 @@
   </screenshots>
 
   <releases>
+    <release version="2.4.3" date="2026-10-11">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v2.4.3</url>
+      <description>
+        <ul>
+          <li>Security update of the Android app runtime (Capacitor 8.5.3).</li>
+          <li>Pages load faster: the PDF code only loads when a PDF is made.</li>
+          <li>Updated libraries and build tools.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.4.2" date="2026-10-10">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v2.4.2</url>
       <description>
