@@ -152,9 +152,9 @@ describe('questions', () => {
     })
   })
 
-  it('close notice: tray or minimised', () => {
-    expect(closeNotice({ tray: true })).toMatchObject({ title: 'OpenVolley keeps running in the tray', confirmLabel: 'Hide window' })
-    expect(closeNotice({ tray: false })).toMatchObject({ title: 'OpenVolley keeps running', confirmLabel: 'Minimise window' })
+  it('close question: tray or minimised, or quit completely', () => {
+    expect(closeNotice({ tray: true })).toMatchObject({ title: 'Keep OpenVolley running in the tray?', confirmLabel: 'Hide window', altLabel: 'Quit completely', cancelLabel: 'Keep open' })
+    expect(closeNotice({ tray: false })).toMatchObject({ title: 'Keep OpenVolley running?', confirmLabel: 'Minimise window', altLabel: 'Quit completely' })
   })
 
   it('Android exit warns that the match is saved', () => {
@@ -240,26 +240,69 @@ describe('desktop app', () => {
     i18n.removeResourceBundle('it', 'translation')
   })
 
-  it('the first close shows the notice, then hides', async () => {
+  it('every close is taken and asks; Hide window hides', async () => {
     const { win, invoke } = desktopWin()
-    const ask = vi.fn().mockResolvedValue(true)
-    uninstall = installAppLifecycle({ win, ask })
+    const choose = vi.fn().mockResolvedValue('confirm')
+    uninstall = installAppLifecycle({ win, ask: vi.fn(), choose })
     await flush()
-    fire(win, 'close-requested')
-    await flush()
-    expect(ask).toHaveBeenCalledWith(expect.objectContaining({ title: 'OpenVolley keeps running in the tray' }))
-    expect(invoke).toHaveBeenCalledWith('app_hide')
+    for (let i = 0; i < 2; i++) {
+      fire(win, 'close-requested')
+      await flush()
+    }
+    expect(choose).toHaveBeenCalledTimes(2)
+    expect(choose).toHaveBeenCalledWith(expect.objectContaining({ title: 'Keep OpenVolley running in the tray?' }))
+    expect(invoke.mock.calls.filter(([cmd]) => cmd === 'app_close_ack')).toHaveLength(2)
+    expect(invoke.mock.calls.filter(([cmd]) => cmd === 'app_hide')).toHaveLength(2)
   })
 
-  it('the notice says "minimised" without a tray; Keep open does not hide', async () => {
+  it('the question says "minimised" without a tray; Keep open does not hide', async () => {
     const { win, invoke } = desktopWin({ status: { tray: false } })
-    const ask = vi.fn().mockResolvedValue(false)
-    uninstall = installAppLifecycle({ win, ask })
+    const choose = vi.fn().mockResolvedValue('cancel')
+    uninstall = installAppLifecycle({ win, ask: vi.fn(), choose })
     await flush()
     fire(win, 'close-requested')
     await flush()
-    expect(ask).toHaveBeenCalledWith(expect.objectContaining({ confirmLabel: 'Minimise window' }))
+    expect(choose).toHaveBeenCalledWith(expect.objectContaining({ confirmLabel: 'Minimise window' }))
     expect(invoke).not.toHaveBeenCalledWith('app_hide')
+    expect(invoke).not.toHaveBeenCalledWith('app_quit')
+  })
+
+  it('Quit completely quits at once when there is nothing more to say', async () => {
+    const { win, invoke } = desktopWin()
+    const ask = vi.fn().mockResolvedValue(false)
+    const choose = vi.fn().mockResolvedValue('alt')
+    uninstall = installAppLifecycle({ win, ask, choose })
+    await flush()
+    fire(win, 'close-requested')
+    await flush(); await flush(); await flush()
+    expect(ask).not.toHaveBeenCalled()
+    expect(invoke).toHaveBeenCalledWith('app_quit')
+    expect(invoke).not.toHaveBeenCalledWith('app_hide')
+  })
+
+  it('Quit completely during a match still asks the quit question', async () => {
+    const { win, invoke } = desktopWin()
+    const ask = vi.fn().mockResolvedValue(false)
+    const choose = vi.fn().mockResolvedValue('alt')
+    uninstall = installAppLifecycle({ win, ask, choose })
+    setLiveMatch('official')
+    await flush()
+    fire(win, 'close-requested')
+    await flush(); await flush(); await flush()
+    expect(ask).toHaveBeenCalledWith(expect.objectContaining({ title: 'Quit OpenVolley during the match?' }))
+    expect(invoke).not.toHaveBeenCalledWith('app_quit')
+  })
+
+  it('Quit completely with the laptop network for the tablets on still asks', async () => {
+    const { win, invoke } = desktopWin({ status: { wifi: { active: true, external: false } } })
+    const ask = vi.fn().mockResolvedValue(true)
+    const choose = vi.fn().mockResolvedValue('alt')
+    uninstall = installAppLifecycle({ win, ask, choose })
+    await flush()
+    fire(win, 'close-requested')
+    await flush(); await flush(); await flush()
+    expect(ask).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining("The laptop's Wi-Fi for tablets will stop.") }))
+    expect(invoke).toHaveBeenCalledWith('app_quit')
   })
 
   it('quit from the tray asks; cancel keeps running, confirm quits', async () => {
@@ -391,21 +434,19 @@ describe('desktop app', () => {
     expect(invoke.mock.calls.at(-1)[1].handler).not.toBe(handler)
   })
 
-  it('a tray quit while the first-close notice is open replaces the notice', async () => {
+  it('a tray quit while the close question is open replaces it', async () => {
     const { win, invoke } = desktopWin()
     let noticeSignal
-    const ask = vi.fn((q) => {
-      if (q.signal) {
-        noticeSignal = q.signal
-        return new Promise((r) => q.signal.addEventListener('abort', () => r(false)))
-      }
-      return Promise.resolve(false)
+    const choose = vi.fn((q) => {
+      noticeSignal = q.signal
+      return new Promise((r) => q.signal.addEventListener('abort', () => r('cancel')))
     })
-    uninstall = installAppLifecycle({ win, ask })
+    const ask = vi.fn().mockResolvedValue(false)
+    uninstall = installAppLifecycle({ win, ask, choose })
     await flush()
     fire(win, 'close-requested')
     await flush()
-    expect(ask).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'OpenVolley keeps running in the tray' }))
+    expect(choose).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Keep OpenVolley running in the tray?' }))
     fire(win, 'quit-requested')
     await flush(); await flush()
     expect(noticeSignal.aborted).toBe(true)
@@ -418,7 +459,7 @@ describe('desktop app', () => {
     uninstall = installAppLifecycle({ win, ask: askConfirm })
     fire(win, 'close-requested')
     await flush()
-    expect(getConfirmSnapshot()).toMatchObject({ title: 'OpenVolley keeps running in the tray' })
+    expect(getConfirmSnapshot()).toMatchObject({ title: 'Keep OpenVolley running in the tray?', altLabel: 'Quit completely' })
     const quitting = requestDesktopQuit(win, askConfirm, { canAsk: () => true })
     await flush(); await flush()
     expect(getConfirmSnapshot()).toMatchObject({ title: 'Quit OpenVolley?' })

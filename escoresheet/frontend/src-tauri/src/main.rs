@@ -347,6 +347,7 @@ fn with_app_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Bu
         lifecycle::app_hide,
         lifecycle::app_quit,
         lifecycle::app_quit_ack,
+        lifecycle::app_close_ack,
         lifecycle::app_quit_cancel,
         popups::app_windows,
         updater::update_status,
@@ -607,7 +608,7 @@ mod ipc_acl_tests {
                     "hotspot_status", "hotspot_start", "hotspot_stop", "bluetooth_status", "bluetooth_start", "bluetooth_stop",
                     "firewall_status",
                     "app_page_state", "app_page_gone", "app_hide", "app_quit", "app_quit_ack",
-                    "app_quit_cancel", "app_windows",
+                    "app_close_ack", "app_quit_cancel", "app_windows",
                     "update_status", "update_check_now", "update_install_now", "update_set_prefs"] {
             let err = get_ipc_response(&popup, request(cmd, "http://localhost:5173/scoresheet/?matchId=7", body.clone()))
                 .expect_err(&format!("{cmd} from {label} must be refused"));
@@ -706,7 +707,7 @@ mod ipc_acl_tests {
         assert_eq!(windows.len(), 2, "both scoresheet windows, not the scoretable: {windows:?}");
 
         for url in ["http://192.168.1.20:5173/", "http://10.42.0.1:5173/", "https://example.com/", "http://localhost.evil.com:5173/"] {
-            for cmd in ["app_page_state", "app_page_gone", "app_hide", "app_quit", "app_quit_ack", "app_quit_cancel", "app_windows"] {
+            for cmd in ["app_page_state", "app_page_gone", "app_hide", "app_quit", "app_quit_ack", "app_close_ack", "app_quit_cancel", "app_windows"] {
                 let err = get_ipc_response(&window, request(cmd, url, state.clone()))
                     .expect_err(&format!("{cmd} from {url} must be refused"));
                 assert!(err.to_string().contains("not allowed"), "{cmd} from {url}: refused by the ACL, got {err}");

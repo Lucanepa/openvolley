@@ -154,7 +154,7 @@ export function ConfirmDialog() {
             />
           </form>
         )}
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           <button
             type="button"
             data-testid="confirm-cancel"
@@ -163,6 +163,21 @@ export function ConfirmDialog() {
           >
             {cancelLabel}
           </button>
+          {/* a third answer (askChoice): settles 'alt' */}
+          {entry.altLabel && (
+            <button
+              type="button"
+              data-testid="confirm-alt"
+              onClick={() => settleConfirm(entry.id, 'alt')}
+              className={cn(
+                'px-4 py-2 text-sm rounded-lg border transition-colors',
+                FOCUS_RING,
+                entry.altTone === 'danger' ? 'border-red-300 text-red-700 hover:bg-red-50' : 'border-stone-300 hover:bg-stone-50',
+              )}
+            >
+              {entry.altLabel}
+            </button>
+          )}
           <button
             type="button"
             ref={acceptRef}
