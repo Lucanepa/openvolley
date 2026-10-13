@@ -16,7 +16,7 @@ import { randomBytes } from 'node:crypto'
 import pg from 'pg'
 import { SKIP, bootServer, api, provisionDatabase, sleep } from './helpers/e2eServer.js'
 import { grantRoles } from './helpers/pgTestDb.js'
-import { bestPdf, cleanGame, downloadName, filePart, pdfLocator } from '../lib/scoresheets.js'
+import { VIEW_LINK_MAX, VIEW_LINK_TTL_MS, bestPdf, cleanGame, createScoresheets, downloadName, filePart, pdfLocator } from '../lib/scoresheets.js'
 import { manageFamilyOf } from '../lib/manageApi.js'
 
 const key = () => `k${randomBytes(16).toString('hex')}`
@@ -72,6 +72,51 @@ describe('scoresheets (unit)', () => {
     assert.equal(bestPdf([{ name: 'old', mtimeMs: 9 }, { name: 'k1', mtimeMs: 1 }, { name: 'k2', mtimeMs: 5 }, { name: 'x', mtimeMs: 99 }], rank).name, 'k2')
     assert.equal(bestPdf([{ name: 'old', mtimeMs: 9 }], rank).name, 'old')
     assert.equal(bestPdf([{ name: 'x', mtimeMs: 9 }], rank), null)
+  })
+})
+
+describe('scoresheet view links (unit)', () => {
+  // a module with a fake clock and one stored PDF; readPdf's database and storage stubbed
+  function sheets () {
+    let t = 1_000_000
+    const audits = []
+    const m = { id: '11111111-1111-4111-8111-111111111111', game_n: 402397, external_id: 'x', status: 'final', scheduled_at: new Date('2026-10-10T12:30:00Z'), is_beach: false, test: false, league: '1L D', home_name: 'H', away_name: 'A' }
+    const pool = { query: async () => ({ rows: [m] }) }
+    const storage = {
+      listFilesTrusted: async () => [{ name: `game402397_k${'a'.repeat(32)}.pdf`, mtimeMs: 1 }],
+      readTrusted: async () => Buffer.from('%PDF-1.4\n%%EOF\n')
+    }
+    const accounts = { audit: async (_c, e) => { audits.push(e) } }
+    const s = createScoresheets({ pool, storage, accounts, logger: { warn () {}, error () {} }, now: () => t })
+    return { s, m, audits, tick: (ms) => { t += ms } }
+  }
+  const tokenOf = (path) => path.split('/')[3]
+
+  it('serves its PDF until the TTL, then 404; another name is 404', async () => {
+    const { s, m, audits, tick } = sheets()
+    const made = await s.createViewLink({ actorId: 'u1', matchId: m.id })
+    assert.equal(made.status, 200)
+    assert.equal(made.body.data.filename, 'game402397_1L-D_2026-10-10.pdf')
+    assert.equal(audits.length, 1)
+    const token = tokenOf(made.body.data.path)
+    assert.equal(s.readViewLink({ token, name: 'game402397_1L-D_2026-10-10.pdf' }).status, 200)
+    assert.equal(s.readViewLink({ token, name: 'game402397.pdf' }).status, 404)
+    tick(VIEW_LINK_TTL_MS - 1)
+    assert.equal(s.readViewLink({ token, name: 'game402397_1L-D_2026-10-10.pdf' }).status, 200)
+    tick(1)
+    assert.equal(s.readViewLink({ token, name: 'game402397_1L-D_2026-10-10.pdf' }).status, 404)
+  })
+
+  it('keeps at most VIEW_LINK_MAX PDFs: the oldest link goes first', async () => {
+    const { s, m } = sheets()
+    const first = tokenOf((await s.createViewLink({ actorId: 'u1', matchId: m.id })).body.data.path)
+    for (let i = 0; i < VIEW_LINK_MAX; i++) await s.createViewLink({ actorId: 'u1', matchId: m.id })
+    assert.equal(s.readViewLink({ token: first, name: 'game402397_1L-D_2026-10-10.pdf' }).status, 404)
+  })
+
+  it('a refused read makes no link', async () => {
+    const { s } = sheets()
+    assert.equal((await s.createViewLink({ actorId: 'u1', matchId: 'not-a-uuid' })).status, 404)
   })
 })
 
@@ -211,6 +256,56 @@ describe('scoresheets end to end', { skip: SKIP }, () => {
     expectCode(await get(users.bcm, `/api/scoresheets/${m.id}/pdf`), 403, 'OV_FORBIDDEN')
     expectCode(await get(users.ivan, `/api/scoresheets/${m.id}/pdf`), 403, 'OV_FORBIDDEN')
     assert.equal((await sql.query("SELECT count(*)::int n FROM audit_log WHERE action = 'scoresheet.read' AND match_id = $1", [m.id])).rows[0].n, 2)
+  })
+
+  it('a view link opens the PDF in the browser\'s viewer under its name, audited; others get 404', async () => {
+    const m = await newMatch(users.ivan)
+    await uploadPdf(users.ivan, `2026-10-10/game${m.n}_${key()}.pdf`, 'view me')
+    const post = (user, id) => api(srv.base, `/api/scoresheets/${id}/view`, { token: user?.token, body: {} })
+
+    const made = await post(users.cm, m.id)
+    assert.equal(made.status, 200, made.text)
+    const { path, filename, expires_at: expiresAt } = made.json.data
+    assert.equal(filename, `game${m.n}_2026-10-10.pdf`)
+    assert.match(path, new RegExp(`^/api/scoresheet-view/[A-Za-z0-9_-]{43}/game${m.n}_2026-10-10\\.pdf$`))
+    const ttl = Date.parse(expiresAt) - Date.now()
+    assert.ok(ttl > 9 * 60 * 1000 && ttl <= 10 * 60 * 1000, `expires in ~10 min, not ${ttl} ms`)
+    // the read is on record when the link is made, as for GET .../pdf
+    const { rows } = await sql.query("SELECT actor_id, details FROM audit_log WHERE action = 'scoresheet.read' AND match_id = $1", [m.id])
+    assert.deepEqual(rows.map((x) => [x.actor_id, x.details.download]), [[users.cm.id, false]])
+
+    // no session needed: the browser's viewer has none; inline, named, never cached or passed on
+    const r = await fetch(`${srv.base}${path}`)
+    assert.equal(r.status, 200)
+    assert.equal(r.headers.get('content-type'), 'application/pdf')
+    assert.equal(r.headers.get('content-disposition'), `inline; filename="game${m.n}_2026-10-10.pdf"`)
+    assert.equal(r.headers.get('cache-control'), 'no-store, private')
+    assert.equal(r.headers.get('referrer-policy'), 'no-referrer')
+    assert.equal(Buffer.from(await r.arrayBuffer()).toString(), pdfBytes('view me').toString())
+    // the viewer may load it again (a reload) within the TTL
+    assert.equal((await fetch(`${srv.base}${path}`)).status, 200)
+    assert.equal((await fetch(`${srv.base}${path}`, { method: 'HEAD' })).status, 200)
+
+    // another name, another token, a malformed one: 404, and nothing else is answered
+    const token = path.split('/')[3]
+    for (const bad of [
+      `/api/scoresheet-view/${token}/other.pdf`,
+      `/api/scoresheet-view/${'A'.repeat(43)}/game${m.n}_2026-10-10.pdf`,
+      `/api/scoresheet-view/${token}`,
+      '/api/scoresheet-view/x/y.pdf'
+    ]) {
+      const b = await fetch(`${srv.base}${bad}`)
+      assert.equal(b.status, 404, bad)
+      assert.notEqual(b.headers.get('content-type'), 'application/pdf', bad)
+    }
+    assert.equal((await fetch(`${srv.base}${path}`, { method: 'POST' })).status, 405)
+
+    // only who may open the PDF may make a link; no session, no link
+    expectCode(await post(users.bcm, m.id), 403, 'OV_FORBIDDEN')
+    expectCode(await post(users.ivan, m.id), 403, 'OV_FORBIDDEN')
+    assert.equal((await post(null, m.id)).status, 401)
+    const none = await newMatch(users.ivan)
+    expectCode(await post(users.cm, none.id), 404, 'OV_SCORESHEET_NOT_FOUND')
   })
 
   it('a beach PDF for the beach competition manager; no PDF and no match are 404', async () => {

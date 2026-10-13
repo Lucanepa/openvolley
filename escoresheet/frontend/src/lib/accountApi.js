@@ -5,6 +5,7 @@
  */
 
 import { apiRequest, apiDownload } from './apiClient'
+import { getCloudApiUrl } from '../utils/backendConfig'
 
 const enc = encodeURIComponent
 
@@ -196,6 +197,16 @@ export const scoresheetsApi = {
   /** The stored PDF of a match: { blob, filename } or { error }. */
   pdf(matchId, { download = false } = {}) {
     return apiDownload(`/api/scoresheets/${enc(matchId)}/pdf${query({ download: download ? 1 : undefined })}`)
+  },
+  /**
+   * POST /api/scoresheets/:id/view: a short-lived link to the stored PDF that the
+   * browser's own viewer opens in a tab (it shows and saves the file under its
+   * name; a blob: URL saved as "<uuid>.pdf"). { url, filename } or { error, status }.
+   */
+  async viewLink(matchId) {
+    const r = await apiRequest('POST', `/api/scoresheets/${enc(matchId)}/view`, {})
+    if (r.error || !r.data?.path) return { error: r.error || { message: 'No link' }, status: r.status }
+    return { url: getCloudApiUrl(r.data.path), filename: r.data.filename || null }
   }
 }
 

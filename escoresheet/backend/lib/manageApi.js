@@ -28,6 +28,9 @@
  *                                                    competition managers; no app = indoor)
  *   GET    /api/scoresheets/:id/pdf[?download=1]     canManageTeams of the match's sport: the stored
  *                                                    PDF (binary, audited; lib/scoresheets.js)
+ *   POST   /api/scoresheets/:id/view                 the same check and audit: a short-lived
+ *                                                    link to that PDF for the browser's viewer
+ *                                                    (served by server.js, /api/scoresheet-view/)
  *
  * Sports (db/012, lib/access.js): every check uses the sport of the ROW (the
  * body's sport_type, the competition of a saved team, the match of an
@@ -155,7 +158,8 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     // The manager's Scoresheets tab (lib/scoresheets.js). A file answers
     // { status, file } (server.js sends it as is), every other answer JSON.
     ['GET', /^\/api\/scoresheets$/, manageSheetsOfApp, (m, c) => sheets((s) => s.list({ app: q(c.query, 'app'), state: q(c.query, 'state') || 'all', q: q(c.query, 'q') ?? '', limit: q(c.query, 'limit') }))],
-    ['GET', new RegExp(`^/api/scoresheets/${ID}/pdf$`), manageTeamsOf((m) => (scoresheets ? scoresheets.sportOf(m[1]) : { sport: null })), (m, c) => sheets((s) => s.readPdf({ actorId: c.user.id, matchId: m[1], download: q(c.query, 'download') === '1' }))]
+    ['GET', new RegExp(`^/api/scoresheets/${ID}/pdf$`), manageTeamsOf((m) => (scoresheets ? scoresheets.sportOf(m[1]) : { sport: null })), (m, c) => sheets((s) => s.readPdf({ actorId: c.user.id, matchId: m[1], download: q(c.query, 'download') === '1' }))],
+    ['POST', new RegExp(`^/api/scoresheets/${ID}/view$`), manageTeamsOf((m) => (scoresheets ? scoresheets.sportOf(m[1]) : { sport: null })), (m, c) => sheets((s) => s.createViewLink({ actorId: c.user.id, matchId: m[1] }))]
   ]
 
   /** The role check of a route: null when allowed, else the 403 answer. */
