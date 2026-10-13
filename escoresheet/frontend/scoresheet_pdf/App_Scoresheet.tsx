@@ -54,6 +54,10 @@ interface AppScoresheetProps {
   matchMissing?: boolean;
 }
 
+// The space between the boxes below set 5 and between the rosters (owner
+// 2026-10-13: separate boxes, each with its own border)
+const FOOTER_GAP = '1mm';
+
 const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = true, matchMissing = false }) => {
   const { t } = useTranslation();
   // Normalised once: a JSON import or an older row may miss lists or hold null
@@ -2010,12 +2014,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
             {/* Rows 3-4: Set 5 + Footer sections on left, Rosters spanning on right */}
             {/* Rows 3-4 sit on the grid of the sets above (owner 2026-10-13: lines
                 aligned up and down): the left side ends on set 4's line between its
-                teams (legend + 8px + SET column + set-5 box), the rosters start on it
-                (one rule: they overlap the set-5 box's last pixel), and the rosters
-                meet on set 4's V|VI line. */}
+                teams (legend + 8px + SET column + set-5 box). The rosters stand apart
+                from it and from each other (owner: "detach ... the roster also"),
+                roster A ending on set 4's V|VI line; every box ends on one bottom
+                line (the rosters take the left side's height). */}
             <div className="flex mt-1 items-stretch print:flex-1 print:min-h-0">
               {/* Left side: Set 5 + Footer sections stacked */}
-              <div className="flex flex-col gap-2 min-h-0 shrink-0" style={{ width: `calc(${LEGEND_WIDTH} + 87px + 225mm)` }}>
+              <div className="flex flex-col gap-2 min-h-0 shrink-0" style={{ width: `calc(${LEGEND_WIDTH} + 87px + 225mm)` }} data-testid="sheet-lower-left">
                 {/* Set 5 */}
                 <div ref={set5Ref} className="flex">
                   <div>
@@ -2088,15 +2093,16 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
                 {/* Footer sections row - flex for horizontal control */}
                 {/* Footer: SANCTIONS under the legend and SET column (its right rule on the
-                    set-5 box's left one), REMARKS / APPROVAL under panels 1-2 (150 mm),
-                    RESULT under the court change and panel 3 */}
-                <div ref={footerRef} className="flex shrink-0" style={{ height: '8.4cm' }}>
+                    set-5 box's left one), RESULT under the court change and panel 3
+                    (its rules on set 5's), REMARKS / APPROVAL a box of its own between
+                    them, FOOTER_GAP apart (owner 2026-10-13: "detach approval") */}
+                <div ref={footerRef} className="flex shrink-0" style={{ height: '8.4cm', gap: FOOTER_GAP }}>
                   <div ref={sanctionsRef} className="flex-col shrink-0" style={{ height: '8.4cm', width: `calc(${LEGEND_WIDTH} + 39px)` }}>
                     <Sanctions items={sanctionsInBox} improperRequests={improperRequests} />
                   </div>
 
                   {/* Remarks and Approvals stacked - takes remaining space */}
-                  <div className="flex flex-col gap-1 min-h-0 shrink-0" style={{ width: '150mm' }}>
+                  <div className="flex flex-col gap-1 min-h-0 shrink-0" style={{ width: `calc(150mm - 2 * ${FOOTER_GAP})` }}>
                     {/* Remarks - 30% height */}
                     <div ref={remarksRef} className="flex-[3] min-h-0">
                       <Remarks overflowSanctions={overflowSanctions} remarks={typeof match?.remarks === 'string' ? match.remarks : ''} generated={autoRemarks} />
@@ -2137,8 +2143,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
               </div>
 
               {/* Right side: Rosters spanning full height - HOME always left, AWAY always right */}
-              <div className="flex flex-1 min-w-0" style={{ height: '13.5cm', marginLeft: '-1px' }}>
-                <div ref={rosterARef} className="shrink-0 min-w-0" style={{ width: 'calc(50mm + 1px)' }}>
+              <div className="flex flex-1 min-w-0" style={{ marginLeft: FOOTER_GAP, gap: FOOTER_GAP }}>
+                <div ref={rosterARef} className="shrink-0 min-w-0" style={{ width: `calc(50mm - ${FOOTER_GAP})` }}>
                   <Roster
                     team={homeShortName}
                     side={teamAKey === 'home' ? 'A' : 'B'}
@@ -2152,7 +2158,6 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                 </div>
                 <div ref={rosterBRef} className="flex-1 min-w-0">
                   <Roster
-                    noLeftRule
                     team={awayShortName}
                     side={teamAKey === 'away' ? 'A' : 'B'}
                     players={formatPlayers(awayPlayers)}

@@ -77,12 +77,22 @@ const zurichDayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Zurich
  * `<Home>_vs_<Away>` instead of `game<n>` without a game number; the day is the
  * match's day in Zurich (else the day the file was stored under).
  */
+/** "1L D" -> "1LD": a code (every word at most 3 characters) loses its spaces. */
+export function compactLeagueCode (raw) {
+  const s = raw === null || raw === undefined ? '' : String(raw).trim()
+  const words = s.split(/\s+/).filter(Boolean)
+  return words.length > 1 && words.every((w) => w.length <= 3) ? words.join('') : s
+}
+
 export function downloadName ({ game_n: gameN, external_id: externalId, sport, league, home_name: home, away_name: away, scheduled_at: scheduledAt }, folderDay) {
   const game = filePart(gameN ?? (sport === 'beach' ? null : externalId), 20)
   const who = game ? `game${game}` : `${filePart(home) || 'Home'}_vs_${filePart(away) || 'Away'}`
   const when = scheduledAt ? new Date(scheduledAt) : null
   const day = when && !Number.isNaN(when.getTime()) ? zurichDayFmt.format(when) : folderDay
-  return `${[who, filePart(league), day].filter(Boolean).join('_').slice(0, 116)}.pdf`
+  // an indoor league code loses its spaces, as in the app (sheetFormat.ts
+  // compactLeagueCode): "1L D" -> 1LD; a name keeps its words apart (owner 2026-10-13)
+  const lg = sport === 'beach' ? league : compactLeagueCode(league)
+  return `${[who, filePart(lg), day].filter(Boolean).join('_').slice(0, 116)}.pdf`
 }
 
 /** The seed part of an OpenBeach file name (scoresheetUploader_beach.js scoresheetStoragePath). */
