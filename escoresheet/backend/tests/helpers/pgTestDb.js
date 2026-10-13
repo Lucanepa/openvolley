@@ -138,6 +138,17 @@ export async function createTestDatabase (label, { schemaSql = SCHEMA_SQL } = {}
     },
     async drop () {
       try {
+        // pool.end() resolves before every client socket has closed. DROP ...
+        // WITH (FORCE) then terminated a closing one ("terminating connection due
+        // to administrator command"), which surfaced as an uncaught error of the
+        // test file's before hook (officialGame, savedTeams in CI). Wait (max 2 s)
+        // until the test's own connections are gone; FORCE stays for stragglers.
+        for (let i = 0; i < 40; i++) {
+          const { rows: [r] } = await admin.query(
+            'SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()', [name])
+          if (!r.n) break
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
         await admin.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`)
         if (appRole) await admin.query(`DROP ROLE IF EXISTS "${appRole}"`)
       } finally { await admin.end() }
