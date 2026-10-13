@@ -553,10 +553,12 @@ export function clearAuthBlock() {
 // ---------------------------------------------------------------------------
 // Cloud blocks (spec 6.7): the server refused a match for good because the
 // account is not an approved scorer, the official game is already scored by
-// another cloud match, or the match is closed. The local match carries
-// cloudBlock { code, claim, at } so the UI can say why it does not sync.
+// another cloud match, the match is closed, or (db/018) the game is not a home
+// game of the account's clubs. The local match carries cloudBlock { code,
+// claim, at } so the UI can say why it does not sync.
 // ---------------------------------------------------------------------------
-export const CLOUD_BLOCK_CODES = ['OV_SCORER_REQUIRED', 'OV_GAME_TAKEN', 'OV_MATCH_CLOSED']
+export const CLUB_BLOCK_CODES = ['OV_CLUB_REQUIRED', 'OV_NOT_YOUR_CLUB', 'OV_GAME_NOT_IN_SCHEDULE']
+export const CLOUD_BLOCK_CODES = ['OV_SCORER_REQUIRED', 'OV_GAME_TAKEN', 'OV_MATCH_CLOSED', ...CLUB_BLOCK_CODES]
 export const CLOUD_BLOCK_EVENT = 'ov-cloud-block'
 const CLOUD_BLOCK_RESOURCES = ['match', 'set', 'event']
 
@@ -644,8 +646,9 @@ function installAuthListener() {
   _authListenerInstalled = true
   const onSession = (session) => { if (session) resumeAfterSignIn() }
   window.addEventListener(AUTH_TOKEN_CHANGE_EVENT, (e) => onSession(e.detail))
-  // A pending account was approved (admin or invite code): the jobs the
-  // server refused with OV_SCORER_REQUIRED can go now.
+  // A pending account was approved (admin or invite code), or its clubs
+  // changed: the jobs the server refused (OV_SCORER_REQUIRED, the club codes)
+  // can go now.
   window.addEventListener(ACCESS_CHANGED_EVENT, (e) => { if (e?.detail?.canScore) resumeAfterSignIn() })
   // Another tab signed in. Only a new session (no old value): another tab
   // refreshing the stored session's expiry is not a sign-in.

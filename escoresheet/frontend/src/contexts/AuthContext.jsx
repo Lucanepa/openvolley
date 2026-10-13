@@ -4,7 +4,7 @@ import { getCloudApiUrl } from '../utils/backendConfig'
 import { profileUpdateColumns, confirmedProfileRow, PROFILE_NOT_SAVED } from '../components/auth/profileWrite'
 import { discardUnsentLogs } from '../utils/logger'
 import { accessFromRoles, accessChanged, NO_ACCESS, ACCESS_CHANGED_EVENT } from '../lib/access'
-import { redeemInvite as apiRedeemInvite } from '../lib/accountApi'
+import { fetchMe, redeemInvite as apiRedeemInvite } from '../lib/accountApi'
 import { clearSavedTeams, refreshSavedTeams } from '../db/savedTeams'
 import i18n from 'i18next'
 
@@ -29,6 +29,21 @@ function readCachedProfile() {
   } catch {
     return null
   }
+}
+
+// The clubs the account scores for and whether the rule "home games of your
+// club only" is on (db/018, GET /api/me), kept per account for offline use.
+const CLUBS_CACHE_KEY = 'ov:clubs'
+export function readCachedClubs(userId) {
+  try {
+    const v = JSON.parse(localStorage.getItem(CLUBS_CACHE_KEY) || 'null')
+    return v && v.userId === userId ? v : null
+  } catch {
+    return null
+  }
+}
+function cacheClubs(value) {
+  try { localStorage.setItem(CLUBS_CACHE_KEY, JSON.stringify(value)) } catch { /* the online check still applies */ }
 }
 
 // A pending account re-reads its profile this often, so an admin's approval
@@ -360,10 +375,40 @@ export function AuthProvider({ children, app = null }) {
   }, [userId, profile])
   const rolesKey = JSON.stringify(accessSource?.roles ?? [])
   const known = !!accessSource
+  // db/018: the account's clubs (from /api/me, else the cache of this account)
+  const [clubsState, setClubsState] = useState(null)
+  const clubsSource = clubsState?.userId === userId ? clubsState : (userId ? readCachedClubs(userId) : null)
+  const clubsKey = JSON.stringify(clubsSource ? [clubsSource.clubs, clubsSource.clubRule] : null)
   const access = useMemo(() => {
     if (!userId) return NO_ACCESS
-    return { ...accessFromRoles(JSON.parse(rolesKey)), known }
-  }, [userId, rolesKey, known])
+    const c = JSON.parse(clubsKey)
+    return { ...accessFromRoles(JSON.parse(rolesKey)), known, clubs: c ? c[0] : [], clubRule: c ? c[1] === true : false, clubsKnown: !!c }
+  }, [userId, rolesKey, known, clubsKey])
+
+  // Load the clubs once signed in, and again on focus and when back online
+  // (an admin may have added one meanwhile)
+  useEffect(() => {
+    if (!userId || !hasBackend()) return
+    let gone = false
+    const load = () => {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return
+      // never throws into the effect (a failing request keeps the cache)
+      Promise.resolve().then(() => fetchMe()).then((res) => {
+        if (gone || res?.error || !res?.data) return
+        const value = { userId, clubs: Array.isArray(res.data.clubs) ? res.data.clubs : [], clubRule: res.data.clubRule === true }
+        cacheClubs(value)
+        setClubsState(value)
+      }).catch(() => { /* offline-first: keep the cache */ })
+    }
+    load()
+    window.addEventListener('focus', load)
+    window.addEventListener('online', load)
+    return () => {
+      gone = true
+      window.removeEventListener('focus', load)
+      window.removeEventListener('online', load)
+    }
+  }, [userId])
 
   // Tell the rest of the app (sync queue, saved-team cache) when the access
   // changed, e.g. a pending account was approved.

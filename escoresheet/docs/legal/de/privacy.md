@@ -202,6 +202,12 @@ Ihrer eigenen Angaben im Spielbericht (Name, Land, Geburtsdatum).
 Administrator schaltet sie frei, oder Sie lösen einen Einladungscode ein. Dabei
 wird gespeichert, wer welchen Code wann eingelöst hat.
 
+**Vereine (OpenVolley):** Eine Administratorin oder ein Administrator, oder ein
+Einladungscode, kann Ihr Konto einem oder mehreren Vereinen zuordnen. Sie führen
+dann die offiziellen Heimspiele dieser Vereine. Gespeichert wird, zu welchen
+Vereinen Ihr Konto gehört, wer es zugeordnet hat und wann, bis der Verein oder
+die Zuordnung entfernt wird oder Sie das Konto löschen.
+
 **Anmeldung:** Nach der Anmeldung speichert Ihr Browser ein Anmelde-Token. Auf
 dem Server liegt nur ein Hash davon. Eine Sitzung gilt 30 Tage ab der letzten
 Nutzung, höchstens 90 Tage, und endet beim Abmelden, beim Ändern des Passworts

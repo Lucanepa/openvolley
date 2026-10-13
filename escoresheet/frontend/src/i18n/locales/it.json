@@ -473,7 +473,11 @@
     "teamShortNamesRequired": "Inserire i nomi brevi di entrambe le squadre",
     "gameTakenTitle": "La partita {{game}} è già refertata",
     "gameTakenBody": "{{name}} sta refertando questa partita ({{status}}). È consentita una sola partita cloud per partita ufficiale: unisciti con il suo PIN, oppure continua e tieni questa partita solo su questo dispositivo.",
-    "continueLocalOnly": "Continua solo su questo dispositivo"
+    "continueLocalOnly": "Continua solo su questo dispositivo",
+    "clubBlockedTitle": "Non è una partita in casa della tua società",
+    "clubRequired": "Il tuo account non ha ancora una società. Un admin la aggiunge prima che tu possa refertare partite ufficiali.",
+    "notYourClub": "{{home}} gioca in casa. Referti solo le partite in casa di {{clubs}}.",
+    "gameNotInSchedule": "La partita {{game}} non è nel calendario VolleyManager, quindi la squadra di casa è sconosciuta. Controlla il numero della partita."
   },
   "scoreboard": {
     "set": "Set",
@@ -2474,7 +2478,8 @@
       "teams": "Squadre salvate",
       "tournaments": "Tornei",
       "activity": "Attività",
-      "scoresheets": "Referti"
+      "scoresheets": "Referti",
+      "clubs": "Società"
     },
     "status": {
       "setup": "Preparazione",
@@ -2505,7 +2510,11 @@
       "selfDemote": "Non puoi rimuovere il tuo ruolo di admin.",
       "superAdminOnly": "Solo un super admin può modificare questo account.",
       "emailUnconfirmed": "E-mail non confermata",
-      "confirmEmailFirst": "Questo account non ha ancora confermato il suo indirizzo e-mail. I ruoli si possono assegnare solo dopo."
+      "confirmEmailFirst": "Questo account non ha ancora confermato il suo indirizzo e-mail. I ruoli si possono assegnare solo dopo.",
+      "editClubs": "Società",
+      "clubsTitle": "Società di {{name}}",
+      "clubsHint": "L'account referta le partite in casa di queste società.",
+      "noClubsYet": "Ancora nessuna società: creale nella scheda Società."
     },
     "invites": {
       "new": "Nuovo codice d’invito",
@@ -2532,7 +2541,9 @@
         "used_up": "Esaurito",
         "revoked": "Revocato"
       },
-      "empty": "Ancora nessun codice d’invito."
+      "empty": "Ancora nessun codice d’invito.",
+      "clubHint": "Chi usa il codice entra in questa società.",
+      "noClub": "Nessuna società"
     },
     "games": {
       "from": "Dal",
@@ -2708,6 +2719,37 @@
       "noPdfYet": "Nessun referto ancora salvato",
       "noPdf": "Per questa partita non è salvato alcun PDF del referto.",
       "storedAt": "Referto salvato {{date}}"
+    },
+    "clubs": {
+      "new": "Nuova società",
+      "edit": "Modifica",
+      "delete": "Elimina",
+      "save": "Salva società",
+      "saved": "Società salvata",
+      "deleted": "Società eliminata",
+      "name": "Nome della società",
+      "teams": "Squadre VolleyManager",
+      "teamsHint": "Le squadre di cui i refertisti della società refertano le partite in casa, scritte come in VolleyManager.",
+      "searchTeams": "Cerca squadre, p. es. Wiedikon",
+      "picked": "Squadre scelte: {{count}}",
+      "noVmTeams": "Nessuna squadra VolleyManager corrisponde.",
+      "inClub": "in {{club}}",
+      "scorers": "Refertisti: {{count}}",
+      "noTeams": "Ancora nessuna squadra",
+      "empty": "Ancora nessuna società. Creane una, poi assegna la società ai refertisti in Account o con un codice di invito.",
+      "editTitle": "Società {{name}}",
+      "teamTaken": "Una squadra appartiene a una sola società: {{teams}}",
+      "nameTaken": "Esiste già una società con questo nome.",
+      "deleteTitle": "Eliminare {{name}}?",
+      "deleteBody": "Le sue squadre e l'appartenenza dei suoi refertisti vengono eliminate (refertisti: {{count}}).",
+      "ruleTitle": "I refertisti refertano solo le partite in casa della loro società",
+      "ruleOffHint": "Disattivata: ogni refertista approvato può refertare qualsiasi partita ufficiale. Crea prima le società e assegna a ogni refertista la sua.",
+      "ruleOnHint": "Attivata: un refertista referta solo le partite ufficiali in casa delle sue società; senza società, nessuna. Gli admin e le partite di prova non sono controllati.",
+      "ruleOnTitle": "Attivare la regola delle società?",
+      "ruleOnBody": "Ogni refertista senza società viene subito bloccato per le partite ufficiali, e le partite di altre società vengono rifiutate.",
+      "ruleOnConfirm": "Attiva",
+      "ruleIsOn": "La regola delle società è attiva",
+      "ruleIsOff": "La regola delle società è disattivata"
     }
   },
   "savedTeams": {
@@ -2808,7 +2850,10 @@
     "gameTakenMine": "Non sincronizzata: refertai già la partita {{game}} in un’altra partita. Apri quella partita con il suo PIN.",
     "gameTakenUnknown": "Non sincronizzata: questa partita ufficiale è già refertata da un altro account.",
     "matchClosed": "Non sincronizzata: questa partita è chiusa sul server. Solo un admin può riaprirla.",
-    "joinWithPin": "Unisciti con il PIN della partita"
+    "joinWithPin": "Unisciti con il PIN della partita",
+    "clubRequired": "Non sincronizzata: il tuo account non ha ancora una società. Un admin la aggiunge; la partita è al sicuro su questo dispositivo.",
+    "notYourClub": "Non sincronizzata: la partita {{game}} non è una partita in casa della tua società. La partita è al sicuro su questo dispositivo.",
+    "gameNotInSchedule": "Non sincronizzata: la partita {{game}} non è nel calendario VolleyManager. La partita è al sicuro su questo dispositivo."
   },
   "androidUpdate": {
     "available": "OpenVolley {{version}} è disponibile",

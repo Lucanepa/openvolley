@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useTranslation } from 'react-i18next'
 import { useAlert } from '../contexts/AlertContext'
 import { useAuth } from '../contexts/AuthContext'
+import { matchClubBlock } from '../lib/access'
 import { db } from '../db/db'
 import SignaturePad from './SignaturePad'
 import { saveMatchSignature } from '../utils/saveSignature'
@@ -727,6 +728,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [saveToTeam, setSaveToTeam] = useState(null) // 'home' | 'away' | null
   const [savedSuggestion, setSavedSuggestion] = useState(null) // { home, away } | null
   const [officialClaim, setOfficialClaim] = useState(null) // claim of another account | null
+  // db/018: the game is not a home game of the account's clubs (or it has none):
+  // { code, home_team, clubs } | null. From the server's official check when
+  // online, else from the cached clubs (a schedule game only: a typed name may
+  // be spelled otherwise than VolleyManager's).
+  const [clubBlock, setClubBlock] = useState(null)
+  const serverClubRef = useRef(undefined) // the last official check's club verdict
+  const scheduleHomeRef = useRef(null) // the home team of the schedule game loaded
+  // another game number: the verdict was for the old one (confirm checks again)
+  useEffect(() => {
+    setClubBlock(null)
+    serverClubRef.current = undefined
+  }, [gameN])
   // confirmMatchInfo is running (button disabled, second taps ignored)
   const [confirmingMatchInfo, setConfirmingMatchInfo] = useState(false)
   const confirmingMatchInfoRef = useRef(false)
@@ -2062,7 +2075,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     const gameChanged = isCreating || String(originalMatchInfoRef.current?.gameN ?? '') !== String(gameN ?? '')
     if (gameChanged && !match?.test) {
       let claim = null
+      serverClubRef.current = undefined
       try { claim = await checkOfficialGame({ gameNumber: gameN, dateValue: date, timeValue: time, timeoutMs: OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS }) } catch { claim = null }
+      // db/018: the home games of the account's clubs only (the server refuses the rest)
+      const blocked = gameN?.trim() ? currentClubBlock(home) : null
+      setClubBlock(blocked)
+      if (blocked) {
+        showAlert(clubBlockText(blocked), 'error')
+        return
+      }
       if (claim) {
         const status = claim.status ? t(`manage.status.${claim.status}`, claim.status) : '–'
         const ok = await confirmDialog({
@@ -2756,8 +2777,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     try { scheduled = dateValue ? createScheduledAt(dateValue, timeValue, { allowEmpty: true }) : null } catch { scheduled = null }
     const { data, error } = await officialCheck({ game_n: n, scheduled_at: scheduled, sport_type: 'indoor', external_id: match?.seed_key || null }, { timeoutMs })
     if (error || !data) return null
+    // db/018: may this account score this game at all? (absent on an older server)
+    if (data.club) serverClubRef.current = data.club
     return data.taken ? (data.claim || { mine: false }) : false
   }
+
+  /** The club verdict for the game in the form: the server's, else the cached clubs' (schedule games only). */
+  const currentClubBlock = (homeName) => matchClubBlock({
+    access,
+    server: serverClubRef.current,
+    homeTeam: homeName,
+    scheduleHome: scheduleHomeRef.current,
+    isTest: !!match?.test
+  })
+  const clubBlockText = (v) => v.code === 'OV_CLUB_REQUIRED'
+    ? t('matchSetup.clubRequired')
+    : v.code === 'OV_GAME_NOT_IN_SCHEDULE'
+      ? t('matchSetup.gameNotInSchedule', { game: gameN })
+      : t('matchSetup.notYourClub', { home: v.home_team || home, clubs: (v.clubs || []).join(', ') })
 
   // After a schedule load: saved-team suggestions and the game-taken check
   const afterOfficialLoad = async (matchData) => {
@@ -2776,10 +2813,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     } catch (err) {
       console.warn('[MatchSetup] Saved-team suggestions failed:', err?.message)
     }
+    serverClubRef.current = undefined
+    scheduleHomeRef.current = matchData.home || null
     try {
       const claim = await checkOfficialGame({ gameNumber: matchData.gameN, dateValue: matchData.date, timeValue: matchData.time })
       setOfficialClaim(claim && !claim.mine ? claim : null)
     } catch { /* the check is a courtesy: the server enforces the rule */ }
+    setClubBlock(currentClubBlock(matchData.home))
   }
 
   const handleOfficialMatchSelect = (matchData) => {
@@ -6399,6 +6439,16 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       <div className="setup-section">
         {/* Why this match does not sync, if the server refused it for good */}
         {match?.cloudBlock && <CloudBlockNotice match={match} className="mb-3" />}
+
+        {/* db/018: not a home game of the account's clubs */}
+        {clubBlock && !match?.test && !match?.cloudBlock && (
+          <div className="ov-kit mb-3">
+            <div role="alert" data-testid="club-blocked-banner" className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-red-900">
+              <p className="text-sm font-semibold">{t('matchSetup.clubBlockedTitle')}</p>
+              <p className="mt-0.5 text-xs">{clubBlockText(clubBlock)}</p>
+            </div>
+          </div>
+        )}
 
         {/* Another account already scores this official game */}
         {officialClaim && !match?.cloudBlock && (

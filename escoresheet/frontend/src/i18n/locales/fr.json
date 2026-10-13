@@ -472,7 +472,11 @@
     "teamShortNamesRequired": "Remplir les noms courts des deux équipes",
     "gameTakenTitle": "Le match {{game}} est déjà tenu",
     "gameTakenBody": "{{name}} tient ce match ({{status}}). Un seul match cloud est autorisé par match officiel : rejoins-le avec son PIN, ou continue et garde ce match uniquement sur cet appareil.",
-    "continueLocalOnly": "Continuer sur cet appareil seulement"
+    "continueLocalOnly": "Continuer sur cet appareil seulement",
+    "clubBlockedTitle": "Pas un match à domicile de ton club",
+    "clubRequired": "Ton compte n'a pas encore de club. Un admin l'ajoute avant que tu puisses tenir des matchs officiels.",
+    "notYourClub": "{{home}} reçoit. Tu tiens uniquement les matchs à domicile de {{clubs}}.",
+    "gameNotInSchedule": "Le match {{game}} n'est pas dans le calendrier VolleyManager, son équipe qui reçoit est donc inconnue. Vérifie le numéro du match."
   },
   "scoreboard": {
     "set": "Set",
@@ -2468,7 +2472,8 @@
       "teams": "Équipes enregistrées",
       "tournaments": "Tournois",
       "activity": "Activité",
-      "scoresheets": "Feuilles de match"
+      "scoresheets": "Feuilles de match",
+      "clubs": "Clubs"
     },
     "status": {
       "setup": "Préparation",
@@ -2499,7 +2504,11 @@
       "selfDemote": "Tu ne peux pas retirer ton propre rôle d’admin.",
       "superAdminOnly": "Seul un super admin peut modifier ce compte.",
       "emailUnconfirmed": "E-mail non confirmé",
-      "confirmEmailFirst": "Ce compte n’a pas encore confirmé son adresse e-mail. Les rôles ne peuvent être attribués qu’ensuite."
+      "confirmEmailFirst": "Ce compte n’a pas encore confirmé son adresse e-mail. Les rôles ne peuvent être attribués qu’ensuite.",
+      "editClubs": "Clubs",
+      "clubsTitle": "Clubs de {{name}}",
+      "clubsHint": "Le compte tient les matchs à domicile de ces clubs.",
+      "noClubsYet": "Pas encore de clubs : crée-les dans l'onglet Clubs."
     },
     "invites": {
       "new": "Nouveau code d’invitation",
@@ -2526,7 +2535,9 @@
         "used_up": "Épuisé",
         "revoked": "Révoqué"
       },
-      "empty": "Pas encore de codes d’invitation."
+      "empty": "Pas encore de codes d’invitation.",
+      "clubHint": "Qui utilise le code rejoint ce club.",
+      "noClub": "Aucun club"
     },
     "games": {
       "from": "Du",
@@ -2702,6 +2713,37 @@
       "noPdfYet": "Pas encore de feuille de match enregistrée",
       "noPdf": "Aucun PDF de feuille de match n’est enregistré pour ce match.",
       "storedAt": "Feuille de match enregistrée {{date}}"
+    },
+    "clubs": {
+      "new": "Nouveau club",
+      "edit": "Modifier",
+      "delete": "Supprimer",
+      "save": "Enregistrer le club",
+      "saved": "Club enregistré",
+      "deleted": "Club supprimé",
+      "name": "Nom du club",
+      "teams": "Équipes VolleyManager",
+      "teamsHint": "Les équipes dont les marqueurs du club tiennent les matchs à domicile, écrites comme dans VolleyManager.",
+      "searchTeams": "Chercher des équipes, p. ex. Wiedikon",
+      "picked": "Équipes choisies : {{count}}",
+      "noVmTeams": "Aucune équipe VolleyManager ne correspond.",
+      "inClub": "dans {{club}}",
+      "scorers": "Marqueurs : {{count}}",
+      "noTeams": "Pas encore d'équipes",
+      "empty": "Pas encore de clubs. Crées-en un, puis donne leur club aux marqueurs dans Comptes ou avec un code d'invitation.",
+      "editTitle": "Club {{name}}",
+      "teamTaken": "Une équipe n'appartient qu'à un club : {{teams}}",
+      "nameTaken": "Un club de ce nom existe déjà.",
+      "deleteTitle": "Supprimer {{name}} ?",
+      "deleteBody": "Ses équipes et l'appartenance de ses marqueurs sont supprimées aussi (marqueurs : {{count}}).",
+      "ruleTitle": "Les marqueurs tiennent uniquement les matchs à domicile de leur club",
+      "ruleOffHint": "Désactivée : tout marqueur validé peut tenir tout match officiel. Crée d'abord les clubs et donne son club à chaque marqueur.",
+      "ruleOnHint": "Activée : un marqueur tient uniquement les matchs officiels à domicile de ses clubs ; sans club, aucun. Les admins et les matchs de test ne sont pas contrôlés.",
+      "ruleOnTitle": "Activer la règle des clubs ?",
+      "ruleOnBody": "Tout marqueur sans club est aussitôt bloqué pour les matchs officiels, et les matchs des autres clubs sont refusés.",
+      "ruleOnConfirm": "Activer",
+      "ruleIsOn": "La règle des clubs est activée",
+      "ruleIsOff": "La règle des clubs est désactivée"
     }
   },
   "savedTeams": {
@@ -2802,7 +2844,10 @@
     "gameTakenMine": "Non synchronisé : tu tiens déjà le match {{game}} dans un autre match. Ouvre ce match avec son PIN.",
     "gameTakenUnknown": "Non synchronisé : ce match officiel est déjà tenu par un autre compte.",
     "matchClosed": "Non synchronisé : ce match est clôturé sur le serveur. Seul un admin peut le rouvrir.",
-    "joinWithPin": "Rejoindre avec le PIN du match"
+    "joinWithPin": "Rejoindre avec le PIN du match",
+    "clubRequired": "Non synchronisé : ton compte n'a pas encore de club. Un admin l'ajoute ; le match est en sécurité sur cet appareil.",
+    "notYourClub": "Non synchronisé : le match {{game}} n'est pas un match à domicile de ton club. Le match est en sécurité sur cet appareil.",
+    "gameNotInSchedule": "Non synchronisé : le match {{game}} n'est pas dans le calendrier VolleyManager. Le match est en sécurité sur cet appareil."
   },
   "androidUpdate": {
     "available": "OpenVolley {{version}} est disponible",

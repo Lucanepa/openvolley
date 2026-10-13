@@ -17,6 +17,13 @@ export function cloudBlockMessage(block, match, t) {
       return { key: 'cloudBlock.scorerRequired', params: {}, join: false }
     case 'OV_MATCH_CLOSED':
       return { key: 'cloudBlock.matchClosed', params: {}, join: false }
+    // db/018: the home games of the account's clubs only
+    case 'OV_CLUB_REQUIRED':
+      return { key: 'cloudBlock.clubRequired', params: {}, join: false }
+    case 'OV_NOT_YOUR_CLUB':
+      return { key: 'cloudBlock.notYourClub', params: { game }, join: false }
+    case 'OV_GAME_NOT_IN_SCHEDULE':
+      return { key: 'cloudBlock.gameNotInSchedule', params: { game }, join: false }
     case 'OV_GAME_TAKEN':
       if (claim?.mine) return { key: 'cloudBlock.gameTakenMine', params: { game }, join: true }
       if (claim) {

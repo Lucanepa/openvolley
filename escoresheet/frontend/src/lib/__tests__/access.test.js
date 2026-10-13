@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { accessFromRoles, normalizeRoles, accessChanged, NO_ACCESS } from '../access'
+import { accessFromRoles, normalizeRoles, accessChanged, clubVerdict, matchClubBlock, NO_ACCESS } from '../access'
 
 describe('normalizeRoles', () => {
   it('accepts arrays, Postgres array literals and comma lists', () => {
@@ -46,5 +46,52 @@ describe('accessChanged', () => {
     expect(accessChanged(accessFromRoles(['scorer', 'referee']), accessFromRoles(['referee', 'scorer']))).toBe(false)
     expect(accessChanged(accessFromRoles([]), accessFromRoles(['scorer']))).toBe(true)
     expect(accessChanged(NO_ACCESS, accessFromRoles([]))).toBe(true)
+  })
+})
+
+describe('clubs (db/018)', () => {
+  const ksc = { id: 'c1', name: 'KSC Wiedikon', teams: ['KSC Wiedikon H1', 'KSC Wiedikon D2'] }
+  const scorer = (clubs, clubRule = true) => ({ ...accessFromRoles(['scorer']), clubs, clubRule })
+
+  it('clubVerdict: nothing while the rule is off, for admins, or before a home team is known', () => {
+    expect(clubVerdict(scorer([], false), 'VBC Other H1')).toBeNull()
+    expect(clubVerdict({ ...accessFromRoles(['admin']), clubs: [], clubRule: true }, 'VBC Other H1')).toBeNull()
+    expect(clubVerdict(scorer([ksc]), '')).toBeNull()
+  })
+
+  it('clubVerdict: no club, a home game of a club (any spelling of spaces and case), another club', () => {
+    expect(clubVerdict(scorer([]), 'KSC Wiedikon H1')).toEqual({ code: 'OV_CLUB_REQUIRED', home_team: 'KSC Wiedikon H1', clubs: [] })
+    expect(clubVerdict(scorer([ksc]), ' ksc  wiedikon d2 ')).toBeNull()
+    expect(clubVerdict(scorer([ksc]), 'VBC Other H1')).toEqual({ code: 'OV_NOT_YOUR_CLUB', home_team: 'VBC Other H1', clubs: ['KSC Wiedikon'] })
+  })
+
+  it('accessChanged: a club added or removed, or the rule switched, is a change (blocked jobs may go)', () => {
+    const a = scorer([ksc])
+    expect(accessChanged(a, scorer([ksc]))).toBe(false)
+    expect(accessChanged(a, scorer([]))).toBe(true)
+    expect(accessChanged(a, scorer([ksc], false))).toBe(true)
+    expect(accessChanged(accessFromRoles(['scorer']), accessFromRoles(['scorer']))).toBe(false)
+  })
+})
+
+describe('matchClubBlock (match setup, db/018)', () => {
+  const ksc = { id: 'c1', name: 'KSC Wiedikon', teams: ['KSC Wiedikon H1'] }
+  const access = { ...accessFromRoles(['scorer']), clubs: [ksc], clubRule: true }
+  const away = { ok: false, code: 'OV_NOT_YOUR_CLUB', home_team: 'VBC Other H1', clubs: ['KSC Wiedikon'] }
+
+  it('the server\'s answer wins, both ways', () => {
+    expect(matchClubBlock({ access, server: away, homeTeam: 'KSC Wiedikon H1' })).toBe(away)
+    expect(matchClubBlock({ access, server: { ok: true }, homeTeam: 'VBC Other H1', scheduleHome: 'VBC Other H1' })).toBeNull()
+    expect(matchClubBlock({ access, server: null, homeTeam: 'VBC Other H1', scheduleHome: 'VBC Other H1' })).toBeNull()
+  })
+
+  it('offline: a schedule game of another club is blocked; a typed name only without any club', () => {
+    expect(matchClubBlock({ access, server: undefined, homeTeam: 'VBC Other H1', scheduleHome: 'VBC Other H1' })?.code).toBe('OV_NOT_YOUR_CLUB')
+    expect(matchClubBlock({ access, server: undefined, homeTeam: 'VBC Othr H1', scheduleHome: null })).toBeNull()
+    expect(matchClubBlock({ access: { ...access, clubs: [] }, server: undefined, homeTeam: 'whatever' })?.code).toBe('OV_CLUB_REQUIRED')
+  })
+
+  it('a test match is never blocked', () => {
+    expect(matchClubBlock({ access, server: away, homeTeam: 'VBC Other H1', isTest: true })).toBeNull()
   })
 })
