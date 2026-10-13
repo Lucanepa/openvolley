@@ -115,20 +115,30 @@ export default function BackupTable({
 
   const hasMixedSources = backups.some(b => b.source === 'pocketbase') && backups.some(b => b.source !== 'pocketbase')
   const hasAnyPb = backups.some(b => b.source === 'pocketbase')
-  const sourceColWidth = (hasMixedSources || hasAnyPb) ? '32px ' : ''
-  const gridColumns = showRestoreButton
-    ? `${sourceColWidth}60px 35px 70px 90px 1fr 70px`
-    : `${sourceColWidth}60px 35px 70px 90px 1fr`
+  const showDot = hasMixedSources || hasAnyPb
+  // [source dot] Game N · Set · Score · Last action · Created at [restore],
+  // sized by the table's own width (@container), not the screen's. Under 28rem
+  // (a phone's dialog) the Game N column goes, it is the number just searched
+  // for, and the date may wrap: the fixed columns alone were wider than the
+  // dialog and pushed "Created at" off the right edge (2026-10-13). Whole class
+  // names, so Tailwind finds them.
+  const gridCols = showDot
+    ? (showRestoreButton
+      ? 'grid-cols-[16px_32px_56px_minmax(0,1fr)_auto_auto] @md:grid-cols-[32px_60px_35px_70px_90px_1fr_70px]'
+      : 'grid-cols-[16px_32px_56px_minmax(0,1fr)_auto] @md:grid-cols-[32px_60px_35px_70px_90px_1fr]')
+    : (showRestoreButton
+      ? 'grid-cols-[32px_56px_minmax(0,1fr)_auto_auto] @md:grid-cols-[60px_35px_70px_90px_1fr_70px]'
+      : 'grid-cols-[32px_56px_minmax(0,1fr)_auto] @md:grid-cols-[60px_35px_70px_90px_1fr]')
+  const gameCell = 'hidden text-center @md:block'
 
   return (
-    <div className="ov-kit divide-y divide-stone-100">
+    <div className="ov-kit @container divide-y divide-stone-100">
       {/* Table Header (kit sticky table head) */}
       <div
-        className="sticky top-0 z-10 grid items-center gap-0.5 border-b border-stone-200 bg-stone-50 px-2.5 py-2 text-[11px] font-bold uppercase tracking-wide text-stone-500"
-        style={{ gridTemplateColumns: gridColumns }}
+        className={cn('sticky top-0 z-10 grid items-center gap-x-1 border-b border-stone-200 bg-stone-50 px-2.5 py-2 text-[11px] font-bold uppercase tracking-wide text-stone-500', gridCols)}
       >
-        {(hasMixedSources || hasAnyPb) && <span className="text-center"></span>}
-        <span className="text-center">{t('backupTable.gameN', 'Game N')}</span>
+        {showDot && <span className="text-center"></span>}
+        <span className={gameCell}>{t('backupTable.gameN', 'Game N')}</span>
         <span className="text-center">{t('backupTable.set', 'Set')}</span>
         <span className="text-center">{t('backupTable.score', 'Score')}</span>
         <span >{t('backupTable.lastAction', 'Last action')}</span>
@@ -177,9 +187,9 @@ export default function BackupTable({
 
         const isDisabled = loading || loadingBackupPath === backup.path
 
-        const rowStyle = { gridTemplateColumns: gridColumns }
         const rowCls = cn(
-          'grid w-full min-h-11 items-center gap-0.5 px-2.5 py-2 text-left text-xs text-stone-800 tabular-nums transition-colors',
+          'grid w-full min-h-11 items-center gap-x-1 px-2.5 py-2 text-left text-xs text-stone-800 tabular-nums transition-colors',
+          gridCols,
           isDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-stone-50'
         )
         const sourceDot = (
@@ -200,10 +210,9 @@ export default function BackupTable({
               disabled={isDisabled}
               type="button"
               className={cn(rowCls, 'rounded-none bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-400/60')}
-              style={rowStyle}
             >
-              {(hasMixedSources || hasAnyPb) && sourceDot}
-              <span className="text-center font-semibold">{backup.gameN || 'N/A'}</span>
+              {showDot && sourceDot}
+              <span className={cn(gameCell, 'font-semibold')}>{backup.gameN || 'N/A'}</span>
               <span className="text-center">{backup.setIndex || 'N/A'}</span>
               <span className="text-center font-semibold text-stone-900">
                 {backup.leftScore !== undefined && backup.rightScore !== undefined
@@ -226,10 +235,9 @@ export default function BackupTable({
               key={backup.match_id || backup.name}
               onClick={() => !isDisabled && onBackupSelect(backup)}
               className={rowCls}
-              style={rowStyle}
             >
-              {(hasMixedSources || hasAnyPb) && sourceDot}
-              <span className="text-center font-semibold">{backup.gameN || 'N/A'}</span>
+              {showDot && sourceDot}
+              <span className={cn(gameCell, 'font-semibold')}>{backup.gameN || 'N/A'}</span>
               <span className="text-center">{backup.setIndex || 'N/A'}</span>
               <span className="text-center font-semibold text-stone-900">
                 {backup.leftScore !== undefined && backup.rightScore !== undefined

@@ -2996,8 +2996,8 @@ export default function App() {
               maxWidth: '100%',
               padding: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? '10px' : '10px',
               // Vertical centering for CoinToss, MatchEnd, and HomePage screens (not MatchSetup - it fills the space).
-              // align-items comes from .panel--centred (styles.css): 'safe center'
-              // with a plain 'center' fallback, which an inline style cannot carry
+              // The centring comes from .panel--centred (styles.css): auto
+              // margins, which start a screen taller than the window at its top
               ...(!matchId || showCoinToss || showMatchEnd ? {
                 display: 'flex',
                 justifyContent: 'center'
@@ -3472,7 +3472,9 @@ export default function App() {
                               restorePreviewData.source === 'cloud' ? t('settings.backup.restoreFromCloudBackup') : t('settings.backup.fromLocalFile')}
                           </span>
                           {restorePreviewData.backupName && (
-                            <span className="inline-flex items-center rounded border border-stone-200 bg-stone-50 px-1.5 py-0.5 font-mono text-[11px] text-stone-600">
+                            // One unbroken word: allowed to break anywhere, or it
+                            // ran off both edges of a phone's dialog (2026-10-13)
+                            <span className="inline-flex max-w-full items-center break-all rounded border border-stone-200 bg-stone-50 px-1.5 py-0.5 font-mono text-[11px] text-stone-600">
                               {restorePreviewData.backupName.replace('.json', '')}
                             </span>
                           )}
@@ -3610,8 +3612,9 @@ export default function App() {
                           </div>
                         )}
 
-                        {/* Actions */}
-                        <div className="flex flex-wrap justify-end gap-2 border-t border-stone-100 pt-4">
+                        {/* Actions: held at the bottom of the scrolling preview,
+                            so "Confirm restore" is in view on a phone too */}
+                        <div className="sticky bottom-0 -mx-2 -mb-2 flex flex-wrap justify-end gap-2 border-t border-stone-100 bg-white px-2 pt-4 pb-2 sm:-mx-4 sm:-mb-4 sm:px-4 sm:pb-4">
                           <button
                             onClick={() => {
                               setRestorePreviewData(null)

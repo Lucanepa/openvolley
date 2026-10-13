@@ -195,7 +195,9 @@ export default function HomePage({
           )}
         </Card>
 
-        <div className="grid grid-cols-2 gap-2">
+        {/* One above the other on a phone: side by side, "Support & feedback"
+            broke onto two lines beside its icon */}
+        <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
           <Button variant="secondary" size="xl" block onClick={onOpenSettings} icon={Settings}>
             {t('home.options')}
           </Button>
