@@ -30,8 +30,10 @@ const toBody = (node) => (typeof document !== 'undefined' ? createPortal(node, d
  *   signs out, so the surrounding menu can close
  * @param {boolean} [props.inMatch] a match is open: the console rows (Admin,
  *   Saved teams) are hidden, since the console never opens over a match
+ * @param {boolean} [props.compact] signed out, a person icon instead of
+ *   "Login ›": a phone's header has no room for the word (2026-10-13)
  */
-export default function UserButton({ style = {}, fullWidth = false, inline = false, onAction, inMatch = false }) {
+export default function UserButton({ style = {}, fullWidth = false, inline = false, onAction, inMatch = false, compact = false }) {
   const { t } = useTranslation()
   const { user, profile, access, loading, signOut } = useAuth()
 
@@ -73,21 +75,24 @@ export default function UserButton({ style = {}, fullWidth = false, inline = fal
             setShowLogin(true)
             onAction?.()
           }}
+          aria-label={compact ? t('auth.login', 'Login') : undefined}
+          title={compact ? t('auth.login', 'Login') : undefined}
           className={cn(
             inline ? cn(MENU_ROW, 'justify-between border-0 bg-transparent text-sm text-stone-700 hover:bg-stone-100') : HEADER_BTN,
             fullWidth && 'h-12 px-5 text-base rounded-xl',
+            compact && !inline && !fullWidth && 'w-9 px-0',
             FOCUS_RING
           )}
           style={style}
         >
-          {inline ? (
+          {compact && !inline && !fullWidth ? <User size={15} aria-hidden="true" /> : inline ? (
             // Same icon column as the other header menu rows
             <span className="flex flex-1 items-center gap-3">
               <span className="flex w-5 shrink-0 items-center justify-center text-stone-400"><User size={15} aria-hidden="true" /></span>
               {t('auth.login', 'Login')}
             </span>
           ) : t('auth.login', 'Login')}
-          <ChevronRight size={fullWidth ? 16 : 13} aria-hidden="true" className="text-stone-400" />
+          {!(compact && !inline && !fullWidth) && <ChevronRight size={fullWidth ? 16 : 13} aria-hidden="true" className="text-stone-400" />}
         </button>
 
         {/* Sign-in only: "Don't have an account?" opens manager.openvolley.app */}

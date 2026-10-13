@@ -41,7 +41,10 @@ export default function ConnectionStatus({
   onRetryErrors,
   queueStats = null,
   position = 'right', // 'left' | 'right' | 'center'
-  size = 'normal' // 'normal' | 'small' | 'large'
+  size = 'normal', // 'normal' | 'small' | 'large'
+  // The dot and the chevron only, the status as the button's name: a phone's
+  // header has no room for the word (2026-10-13)
+  compact = false
 }) {
   const { t } = useTranslation()
 
@@ -285,6 +288,19 @@ export default function ConnectionStatus({
   }
 
   const currentSize = sizeClasses[size] || sizeClasses.normal
+  const pillText = overallStatus === 'connected' ? (pendingCount > 0 ? t('connectionStatus.syncingDots', 'Syncing...') : t('connectionStatus.connected', 'Connected')) :
+    overallStatus === 'awaiting_match' ? t('connectionStatus.ready', 'Ready') :
+    overallStatus === 'local_only'
+      ? (pendingCount > 0
+        ? t('connectionStatus.localOnlyPending', 'Local only ({{count}} waiting)', { count: pendingCount })
+        : t('connectionStatus.localOnly', 'Local only'))
+      :
+      overallStatus === 'offline'
+        ? (pendingCount > 0
+          ? t('connectionStatus.offlinePending', 'Offline ({{count}} waiting)', { count: pendingCount })
+          : t('connectionStatus.offline', 'Offline'))
+        : overallStatus === 'auth_required' ? t('connectionStatus.signInToSync', 'Sign in to sync') :
+          t('connectionStatus.error', 'Error')
   const overallTone = STATUS_TONES[statusInfo.tone] || STATUS_TONES.neutral
 
   return (
@@ -301,29 +317,21 @@ export default function ConnectionStatus({
             }
             setShowConnectionMenu(!showConnectionMenu)
           }}
-          className={cn(STATUS_PILL, FOCUS_RING, overallTone.pill, currentSize.pill)}
+          aria-label={compact ? pillText : undefined}
+          title={compact ? pillText : undefined}
+          className={cn(STATUS_PILL, FOCUS_RING, overallTone.pill, currentSize.pill, compact && 'px-2')}
         >
           <span className={cn('inline-block shrink-0 rounded-full', currentSize.dot, overallTone.dot)}></span>
-          <span className="inline-flex items-center">
-            {overallStatus === 'connected' ? (pendingCount > 0 ? t('connectionStatus.syncingDots', 'Syncing...') : t('connectionStatus.connected', 'Connected')) :
-              overallStatus === 'awaiting_match' ? t('connectionStatus.ready', 'Ready') :
-              overallStatus === 'local_only'
-                ? (pendingCount > 0
-                  ? t('connectionStatus.localOnlyPending', 'Local only ({{count}} waiting)', { count: pendingCount })
-                  : t('connectionStatus.localOnly', 'Local only'))
-                :
-                overallStatus === 'offline'
-                  ? (pendingCount > 0
-                    ? t('connectionStatus.offlinePending', 'Offline ({{count}} waiting)', { count: pendingCount })
-                    : t('connectionStatus.offline', 'Offline'))
-                  : overallStatus === 'auth_required' ? t('connectionStatus.signInToSync', 'Sign in to sync') :
-                    t('connectionStatus.error', 'Error')}
-            {errorCount > 0 && (
-              <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold tabular-nums text-white">
-                {errorCount}
-              </span>
-            )}
-          </span>
+          {(!compact || errorCount > 0) && (
+            <span className="inline-flex items-center">
+              {!compact && pillText}
+              {errorCount > 0 && (
+                <span className={cn('inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold tabular-nums text-white', !compact && 'ml-1')}>
+                  {errorCount}
+                </span>
+              )}
+            </span>
+          )}
           <ChevronDown size={currentSize.chevron} aria-hidden="true" className={cn('opacity-70 transition-transform', showConnectionMenu && 'rotate-180')} />
         </button>
       </span>
