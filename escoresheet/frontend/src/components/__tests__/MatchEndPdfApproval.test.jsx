@@ -275,4 +275,14 @@ describe('MatchEnd: the approval PDF', () => {
     await findButton(en.matchEnd.closeMatch)
     expect(queryAllButtons(en.matchEnd.approveParams)).toHaveLength(0)
   })
+
+  it('the scoresheet stays at hand once the match is approved (closed), as before it', async () => {
+    seed({ approved: true, approvedAt: '2026-10-08T10:00:00Z' })
+    render(<MatchEnd matchId={1} />)
+    await findButton(en.matchEnd.closeMatch)
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(en.matchEnd.scoresheet) }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: new RegExp(en.matchEnd.preview) }))
+    await waitFor(() => expect(opened).toHaveLength(1))
+    expect(opened[0].url).toBe('/scoresheet/?matchId=1')
+  })
 })
