@@ -205,7 +205,9 @@ utilizzato quale codice e quando.
 assegnare il suo account a una o più società. Lei referta allora le partite
 ufficiali in casa di queste società. Il sistema registra a quali società
 appartiene il suo account, chi l'ha assegnato e quando, finché la società o
-l'assegnazione viene rimossa o lei elimina l'account.
+l'assegnazione viene rimossa o lei elimina l'account. L'app di refertazione
+conserva una copia delle sue società sul suo dispositivo, per poter verificare
+una partita anche offline; la copia viene eliminata quando lei si disconnette.
 
 **Accesso:** dopo l'accesso il suo browser salva un token di accesso. Sul
 server si trova solo un hash di esso. Una sessione dura 30 giorni dall'ultimo

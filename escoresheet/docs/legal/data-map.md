@@ -154,7 +154,7 @@ the account (4.5a).
 | **Whose** | Scorer accounts |
 | **Purpose** | A scorer scores the official home games of its own club(s) only (owner decision 2026-10-13); the database refuses other official games while the rule is on (`docs/scorer-clubs-spec.md`) |
 | **Basis** | (f) integrity of official results (who may score which game); (b) for the account holder |
-| **Stored** | VM (DE); backups. The scorer app keeps the account's clubs and the switch in the browser (`localStorage['ov:clubs']`) to check offline |
+| **Stored** | VM (DE); backups. The scorer app keeps the account's clubs and the switch in the browser (`localStorage['ov:clubs']`) to check offline; removed at sign-out and account deletion |
 | **Who sees it** | The account holder (`GET /api/me`); admins (Accounts list, Clubs tab) |
 | **Retention as built** | Until an admin removes the club or the club from the account; `account_clubs` rows go with the account (FK cascade) and with the club |
 | **Audit** | `club.create` / `club.update` / `club.delete`, `account.clubs` (before/after club ids and names), `club_rule.set` (4.6) |

@@ -224,7 +224,9 @@ utilisé quel code et quand.
 rattacher votre compte à un ou plusieurs clubs. Vous tenez alors les matchs
 officiels à domicile de ces clubs. Le système enregistre à quels clubs votre
 compte appartient, qui l'a rattaché et quand, jusqu'à ce que le club ou le
-rattachement soit supprimé ou que vous supprimiez le compte.
+rattachement soit supprimé ou que vous supprimiez le compte. L'application de
+marque garde une copie de vos clubs sur votre appareil pour vérifier un match
+hors ligne ; la copie est supprimée à la déconnexion.
 
 **Connexion :** après la connexion, votre navigateur enregistre un jeton de
 connexion. Le serveur n'en garde qu'un hachage. Une session dure 30 jours

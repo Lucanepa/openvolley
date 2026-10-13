@@ -206,7 +206,9 @@ wird gespeichert, wer welchen Code wann eingelöst hat.
 Einladungscode, kann Ihr Konto einem oder mehreren Vereinen zuordnen. Sie führen
 dann die offiziellen Heimspiele dieser Vereine. Gespeichert wird, zu welchen
 Vereinen Ihr Konto gehört, wer es zugeordnet hat und wann, bis der Verein oder
-die Zuordnung entfernt wird oder Sie das Konto löschen.
+die Zuordnung entfernt wird oder Sie das Konto löschen. Die App zum Spiel
+führen behält eine Kopie Ihrer Vereine auf Ihrem Gerät, damit sie ein Spiel auch
+offline prüfen kann; die Kopie wird beim Abmelden gelöscht.
 
 **Anmeldung:** Nach der Anmeldung speichert Ihr Browser ein Anmelde-Token. Auf
 dem Server liegt nur ein Hash davon. Eine Sitzung gilt 30 Tage ab der letzten

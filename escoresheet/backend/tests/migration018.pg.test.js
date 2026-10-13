@@ -111,6 +111,9 @@ describe('db/018 (clubs)', { skip: SKIP_PG }, () => {
     await assert.rejects(() => as(ids.other, "UPDATE public.matches SET game_n = 800005 WHERE external_id = 'm018_old'"), (e) => e.code === 'OVL01')
     // a test match turned official is checked then
     await assert.rejects(() => as(ids.scorer, "UPDATE public.matches SET test = false WHERE external_id = 'm018_test'"), (e) => e.code === 'OVL02')
+    // an admin's exemption lifted later claims the game anew (CodeRabbit on #11)
+    await raw.query("INSERT INTO public.matches (external_id, status, game_n, official_game_exempt) VALUES ('m018_exempt', 'live', 800002, true)")
+    await assert.rejects(() => as(ids.other, "UPDATE public.matches SET official_game_exempt = false WHERE external_id = 'm018_exempt'"), (e) => e.code === 'OVL01')
   })
 
   it('account deletion and club deletion cascade', async () => {

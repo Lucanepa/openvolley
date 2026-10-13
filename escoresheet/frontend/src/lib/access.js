@@ -95,8 +95,12 @@ export const NO_ACCESS = Object.freeze({
 /** Did anything that changes what the account may do change? */
 export function accessChanged(a, b) {
   if (!a || !b) return a !== b
-  // db/018: a club added or removed, or the rule switched (blocked jobs may go now)
-  const clubsOf = (x) => JSON.stringify([(x.clubs || []).map((c) => c.id).sort(), x.clubRule === true])
+  // db/018: a club or a club's team added or removed, or the rule switched
+  // (blocked jobs may go now)
+  const clubsOf = (x) => JSON.stringify([
+    (x.clubs || []).map((c) => [c.id, [...(c.teams || [])].map((t) => String(t).toLowerCase()).sort()]).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),
+    x.clubRule === true
+  ])
   return a.isAdmin !== b.isAdmin || a.canScore !== b.canScore || a.canManageTeams !== b.canManageTeams ||
     a.canReadTeams !== b.canReadTeams || a.isPending !== b.isPending || clubsOf(a) !== clubsOf(b)
 }

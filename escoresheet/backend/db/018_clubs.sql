@@ -107,8 +107,9 @@ BEGIN
       RETURN NEW;
     END IF;
   ELSIF OLD.test IS NOT TRUE AND OLD.sport_type IS DISTINCT FROM 'beach'
+        AND OLD.official_game_exempt IS NOT TRUE
         AND OLD.game_n IS NOT DISTINCT FROM NEW.game_n THEN
-    RETURN NEW; -- already this official game
+    RETURN NEW; -- already this official game (an exemption lifted claims it anew)
   END IF;
   IF EXISTS (SELECT 1 FROM public.profiles p
               WHERE p.user_id = actor AND p.roles && ARRAY['admin', 'super_admin']::text[]) THEN

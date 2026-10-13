@@ -10,7 +10,7 @@ a specific club so they can't score games of another team". Deploy steps:
 |---|---|
 | a | A scorer scores only the **home** games of its club(s). |
 | b | An account may belong to **several** clubs. |
-| c | A scorer **without a club** scores no official game until an admin adds one. |
+| c | While the rule is on, a scorer (not an admin) **without a club** scores no official game until an admin adds one. |
 | d | **Indoor only**: beach matches are not checked. |
 
 Also decided in the design:
@@ -95,7 +95,8 @@ backend is deployed before the migration).
 **Scorer app:**
 - `AuthContext` loads `clubs` and `clubRule` from `/api/me` once signed in, on
   focus and when the connection comes back. It caches them per account in
-  `localStorage['ov:clubs']`.
+  `localStorage['ov:clubs']` (removed at sign-out and account deletion). Redeeming
+  an invite code loads them again (a code may carry a club).
 - `access.clubs` / `access.clubRule` / `access.clubsKnown`.
 - A change of clubs or of the rule is an access change (`ACCESS_CHANGED_EVENT`),
   so the jobs the server refused are sent again.
