@@ -604,15 +604,15 @@ are left unchanged.
      `Home`, `Away`, `Team A`, `Team B`), use the full name.
    - The date is the **local** match date. `toISOString()` is UTC and gives the wrong day near
      midnight.
-   - The game number is omitted, together with its `_`, when it is unknown. Never use the
-     literal `match`.
+   - Never use the literal `match` in place of a missing game number.
    - Sanitising:
      - transliterate `ä→ae, ö→oe, ü→ue, é/è/ê→e, à/â→a, ç→c`;
      - replace every other character outside `[A-Za-z0-9-]` with `-`;
      - collapse repeated `-` and trim them;
-     - at most 30 characters per team;
-     - total length at most 120 characters.
-   - Example: `20261007_382208_KSCW-H1_vs_Spada-H1.pdf`.
+     - at most 20 characters for the game number, 30 for the league and for each team;
+     - total length at most 120 characters, `.pdf` included (the part before it is cut at 116).
+   - Examples: `game382208_2L_2026-10-07.pdf`; without a game number
+     `KSCW-H1_vs_Spada-H1_2L_2026-10-07.pdf`; without a league `game382208_2026-10-07.pdf`.
 5. **Saving and reporting**: the save must produce a valid PDF (starts with `%PDF-`, ends with
    `%%EOF`, opens in pdf.js and in the system viewer). The user must be told **exactly** where
    the file went:
