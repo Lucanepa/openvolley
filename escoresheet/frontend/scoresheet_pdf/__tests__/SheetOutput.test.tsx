@@ -163,7 +163,7 @@ describe('Save PDF', () => {
   })
   afterEach(() => { cleanup(); clicked = []; pdfCalls.length = 0 })
 
-  it('the automatic save waits for every query and names the file after the real teams (not match_HOME_AWAY)', async () => {
+  it('the automatic save waits for every query, then names the file game<n>_<league>_<date>', async () => {
     // first render: the match row only (short names HOME / AWAY, teams not loaded yet)
     const first = fixture({ match: { homeShortName: 'HOME', awayShortName: 'AWAY' } })
     const loading = { ...first, homeTeam: null, awayTeam: null }
@@ -173,7 +173,7 @@ describe('Save PDF', () => {
 
     view.rerender(<App matchData={first} autoAction="save" dataReady />)
     await waitFor(() => expect(clicked).toHaveLength(1))
-    expect(clicked[0].download).toBe('20261007_382208_KSC-Wiedikon-H1_vs_Volley-Spada-Academica-H1.pdf')
+    expect(clicked[0].download).toBe('game382208_2L_2026-10-07.pdf')
     // a valid A3 PDF, the sheet at its true size, with its metadata
     expect(pdfCalls.find(c => c[0] === 'new')[1]).toMatchObject({ orientation: 'landscape', unit: 'mm', format: 'a3' })
     expect(pdfCalls.find(c => c[0] === 'addImage')).toEqual(['addImage', 'JPEG', 5, 5, 410, 287])
@@ -183,7 +183,7 @@ describe('Save PDF', () => {
     expect(JSON.stringify(pdfCalls)).not.toMatch(/swiss/i)
     // a browser: the notice names the file and where it went
     await waitFor(() => expect(view.getByTestId('pdf-notice').textContent).toContain("browser's download folder"))
-    expect(view.getByTestId('pdf-notice-path').textContent).toBe('20261007_382208_KSC-Wiedikon-H1_vs_Volley-Spada-Academica-H1.pdf')
+    expect(view.getByTestId('pdf-notice-path').textContent).toBe('game382208_2L_2026-10-07.pdf')
   })
 
   it('a match that is not on this device: no empty sheet is saved, the page says why', async () => {

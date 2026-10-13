@@ -74,34 +74,34 @@ describe('game number and team names', () => {
   })
 })
 
-describe('file name (field-spec 13.4)', () => {
-  const match = { gameNumber: '382208', homeShortName: 'KSCW-H1', awayShortName: 'Spada H1', scheduledAt: local(2026, 10, 7, 20, 0) }
+describe('file name (owner 2026-10-13: game<n>_<league>_<YYYY-MM-DD>)', () => {
+  const match = { gameNumber: '382208', league: '2L', homeShortName: 'KSCW-H1', awayShortName: 'Spada H1', scheduledAt: local(2026, 10, 7, 20, 0) }
 
-  it('<YYYYMMDD>_<gameNo>_<Home>_vs_<Away>.pdf', () => {
-    expect(buildScoresheetFilename({ match })).toBe('20261007_382208_KSCW-H1_vs_Spada-H1.pdf')
+  it('game<gameNo>_<league>_<YYYY-MM-DD>.pdf', () => {
+    expect(buildScoresheetFilename({ match })).toBe('game382208_2L_2026-10-07.pdf')
+    expect(buildScoresheetFilename({ match: { ...match, league: '1L D' } })).toBe('game382208_1L-D_2026-10-07.pdf')
+    // no league: left out with its "_"
+    expect(buildScoresheetFilename({ match: { ...match, league: '' } })).toBe('game382208_2026-10-07.pdf')
   })
 
-  it('the owner\'s "match_HOME_AWAY": real team names, never "match" or the placeholders', () => {
-    const quick = { gameNumber: '382208', homeShortName: 'HOME', awayShortName: 'AWAY', scheduledAt: local(2026, 10, 7, 20, 0) }
-    expect(buildScoresheetFilename({ match: quick, homeTeam: { name: 'KSC Wiedikon H1' }, awayTeam: { name: 'Volley Spada Academica Zürich' } }))
-      .toBe('20261007_382208_KSC-Wiedikon-H1_vs_Volley-Spada-Academica-Zuerich.pdf')
-    // nothing known about the game number: left out with its "_"
-    const name = buildScoresheetFilename({ match: { scheduledAt: local(2026, 10, 7, 20, 0) }, homeTeam: { name: 'A-Team' }, awayTeam: { name: 'B-Team' } })
-    expect(name).toBe('20261007_A-Team_vs_B-Team.pdf')
+  it('no game number: the real team names in its place, never "match" or the placeholders', () => {
+    const quick = { homeShortName: 'HOME', awayShortName: 'AWAY', league: 'Friendly', scheduledAt: local(2026, 10, 7, 20, 0) }
+    const name = buildScoresheetFilename({ match: quick, homeTeam: { name: 'KSC Wiedikon H1' }, awayTeam: { name: 'Volley Spada Academica Zürich' } })
+    expect(name).toBe('KSC-Wiedikon-H1_vs_Volley-Spada-Academica-Zuerich_Friendly_2026-10-07.pdf')
     expect(name).not.toMatch(/match|HOME|AWAY/)
   })
 
   it('the local match date (not the UTC day), else set 1, else today', () => {
-    expect(buildScoresheetFilename({ match: { ...match, scheduledAt: local(2026, 10, 8, 0, 30) } })).toMatch(/^20261008_/)
-    expect(buildScoresheetFilename({ match: { ...match, scheduledAt: undefined }, sets: [{ index: 1, startTime: local(2026, 9, 1, 18, 0) }] })).toMatch(/^20260901_/)
-    expect(buildScoresheetFilename({ match: { ...match, scheduledAt: undefined } }, new Date(2026, 0, 2, 9))).toMatch(/^20260102_/)
+    expect(buildScoresheetFilename({ match: { ...match, scheduledAt: local(2026, 10, 8, 0, 30) } })).toMatch(/_2026-10-08\.pdf$/)
+    expect(buildScoresheetFilename({ match: { ...match, scheduledAt: undefined }, sets: [{ index: 1, startTime: local(2026, 9, 1, 18, 0) }] })).toMatch(/_2026-09-01\.pdf$/)
+    expect(buildScoresheetFilename({ match: { ...match, scheduledAt: undefined } }, new Date(2026, 0, 2, 9))).toMatch(/_2026-01-02\.pdf$/)
   })
 
   it('every part sanitised: no dots, slashes, spaces, umlauts; bounded length', () => {
     const name = buildScoresheetFilename({
-      match: { externalId: 'SV/2026-27 #12', homeShortName: 'VBC SCHÖNENWERD-AARAU HERREN EINS', awayShortName: 'Lindaren Volley Amriswil Nachwuchs', scheduledAt: local(2026, 10, 7, 20) }
+      match: { externalId: 'SV/2026-27 #12', league: 'Mobiliar Volley Cup / Männer', homeShortName: 'VBC SCHÖNENWERD-AARAU', awayShortName: 'Lindaren Volley Amriswil', scheduledAt: local(2026, 10, 7, 20) }
     })
-    expect(name).toBe('20261007_SV-2026-27-12_VBC-SCHOENENWERD-AARAU-HERREN_vs_Lindaren-Volley-Amriswil-Nachw.pdf')
+    expect(name).toBe('gameSV-2026-27-12_Mobiliar-Volley-Cup-Maenner_2026-10-07.pdf')
     expect(name.length).toBeLessThanOrEqual(120)
     expect(name.slice(0, -4)).toMatch(/^[A-Za-z0-9_-]+$/)
     expect(sanitizeFilenamePart('Zürich Genève Ça va', 60)).toBe('Zuerich-Geneve-Ca-va')

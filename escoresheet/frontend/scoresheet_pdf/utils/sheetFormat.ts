@@ -145,13 +145,22 @@ export function sanitizeFilenamePart(value: unknown, max = 30): string {
 
 const MAX_FILENAME = 120
 
+/** The local calendar day as `YYYY-MM-DD` (file names); empty when unknown. */
+export function localIsoDay(value: unknown): string {
+  const s = localDateStamp(value)
+  return s ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6)}` : ''
+}
+
 /**
- * The PDF's file name: `<YYYYMMDD>_<gameNo>_<Home>_vs_<Away>.pdf`
- * (field-spec 13.4), e.g. `20261007_382208_KSCW-H1_vs_Spada-H1.pdf`.
- *  - the real team names: the short name, unless it is empty or a placeholder
- *    (HOME / AWAY / Team A ...), then the full name;
- *  - the LOCAL match date (scheduled, else the first set's start, else `now`);
- *  - the game number left out (with its `_`) when unknown, never "match".
+ * The PDF's file name: `game<gameNo>_<league>_<YYYY-MM-DD>.pdf` (owner,
+ * 2026-10-13; it was `<YYYYMMDD>_<gameNo>_<Home>_vs_<Away>.pdf`, field-spec
+ * 13.4), e.g. `game382208_2L_2026-10-07.pdf`. The manager's download of a
+ * stored scoresheet has the same name (backend lib/scoresheets.js).
+ *  - no league: left out with its `_`;
+ *  - no game number: `<Home>_vs_<Away>` in its place (the real team names:
+ *    the short name, unless it is empty or a placeholder such as HOME / AWAY
+ *    / Team A, then the full name), never "match";
+ *  - the LOCAL match date (scheduled, else the first set's start, else `now`).
  */
 export function buildScoresheetFilename(
   data: { match?: any; homeTeam?: any; awayTeam?: any; sets?: any[] },
@@ -159,11 +168,16 @@ export function buildScoresheetFilename(
 ): string {
   const match = data.match || {}
   const firstSetStart = (data.sets || []).find((s: any) => s?.index === 1)?.startTime
-  const date = localDateStamp(match.scheduledAt) || localDateStamp(firstSetStart) || localDateStamp(now)
+  const date = localIsoDay(match.scheduledAt) || localIsoDay(firstSetStart) || localIsoDay(now)
   const game = sanitizeFilenamePart(gameNumberOf(match), 20)
-  const home = sanitizeFilenamePart(displayShortName(match.homeShortName, data.homeTeam?.name ?? match.homeTeamName), 30) || 'Home'
-  const away = sanitizeFilenamePart(displayShortName(match.awayShortName, data.awayTeam?.name ?? match.awayTeamName), 30) || 'Away'
-  const stem = [date, game, `${home}_vs_${away}`].filter(Boolean).join('_')
+  const league = sanitizeFilenamePart(match.league, 30)
+  let who = game ? `game${game}` : ''
+  if (!who) {
+    const home = sanitizeFilenamePart(displayShortName(match.homeShortName, data.homeTeam?.name ?? match.homeTeamName), 30) || 'Home'
+    const away = sanitizeFilenamePart(displayShortName(match.awayShortName, data.awayTeam?.name ?? match.awayTeamName), 30) || 'Away'
+    who = `${home}_vs_${away}`
+  }
+  const stem = [who, league, date].filter(Boolean).join('_')
   return `${stem.slice(0, MAX_FILENAME - 4)}.pdf`
 }
 
