@@ -3,7 +3,6 @@ import { SanctionRecord, Player } from '../types_scoresheet';
 import { SignatureModal } from './SignatureModal';
 import { isApprovalValid, formatApprovalStamp } from '../../src/domain/accountApproval.js';
 import { FitText } from './FitText';
-import { CIRCLED_NUMBER_PX, NumberCircle } from './Marks';
 import { findOfficial, formatDob, formatPersonName, type SheetOfficial } from '../utils/sheetFormat';
 
 /** Sanction rows in the box; further sanctions continue in REMARKS (field-spec 7.2). */
@@ -14,14 +13,13 @@ interface SanctionsProps {
     improperRequests?: { teamA: boolean; teamB: boolean };
 }
 
-/** A member code in a sanction cell; a bench player's number is circled (SC p.62),
- *  with the sheet's one number circle (owner item 7: the same circle everywhere). */
+/** A member code in a sanction cell. A bench player's number is not circled
+ *  (owner 2026-10-13), unlike the paper's convention (SC p.62). */
 const SanctionCode: React.FC<{ item?: SanctionRecord; type: SanctionRecord['type'] }> = ({ item, type }) => {
     if (!item || item.type !== type) return null;
     return (
-        <span className="relative inline-flex items-center justify-center leading-none" style={{ minWidth: '14px', minHeight: '14px', ...(item.onBench ? { fontSize: `${CIRCLED_NUMBER_PX}px` } : {}) }}>
+        <span className="inline-flex items-center justify-center leading-none" style={{ minWidth: '14px', minHeight: '14px' }}>
             {item.playerNr || ''}
-            {item.onBench && <NumberCircle testId="sanction-bench-circle" />}
         </span>
     );
 };
@@ -116,8 +114,7 @@ export const formatSanctionRemark = (sanction: SanctionRecord): string => {
         : sanction.type === 'disqualification'
         ? 'Disqualification'
         : '';
-    const member = sanction.onBench ? `(${sanction.playerNr})` : sanction.playerNr;
-    const playerInfo = !isDelay && sanction.playerNr ? `, ${member}` : '';
+    const playerInfo = !isDelay && sanction.playerNr ? `, ${sanction.playerNr}` : '';
     return `Team ${sanction.team}, Set ${sanction.set}, Score ${sanction.score}, ${typeLabel}${playerInfo}`;
 };
 
@@ -458,6 +455,16 @@ const APPROVAL_SLOT_OF_ROLE: Record<string, string> = {
     'Scorer': 'scorer'
 };
 
+// The approval grid's fixed columns (the signature takes the rest) and the
+// x of the rule at the right of each (88, 88+120, +72, +72).
+const APPROVAL_COL = {
+    official: 'w-[88px] shrink-0',
+    name: 'w-[120px] shrink-0',
+    country: 'w-[72px] shrink-0',
+    dob: 'w-[72px] shrink-0'
+};
+const APPROVAL_RULES_PX = [88, 208, 280, 352];
+
 export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, teamAKey = 'home', lineJudges = [], sets = [] }) => {
     const roles = ["1st Referee", "2nd Referee", "Scorer", "Assistant Scorer"];
 
@@ -501,14 +508,21 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
         <div className="border border-r-0 border-black bg-white flex flex-col w-full">
             <div className="bg-gray-200 border-b border-r border-black text-center font-bold text-[10px] py-0.5 shrink-0">APPROVAL</div>
 
-            {/* Column Headers */}
-            <div className="flex items-center border-b border-r border-black px-2 gap-2 text-[8px] font-bold bg-white h-5 shrink-0">
-                 <div className="w-20 border-r border-black text-left text-[9px] h-5 flex items-center justify-left">Official</div>
-                 <div className="w-28 border-r border-black text-left text-[9px] h-5 flex items-center justify-left">Name</div>
-                 <div className="w-16 border-r border-black text-center text-[9px] h-5 flex items-center justify-center">Country</div>
+            {/* Column headers and the officials' rows share one grid (owner 2026-10-13:
+                every entry centred in its cell, vertically and horizontally). The
+                columns end where they did with the earlier padded layout, so the line
+                judges' label (88px) still lines up with the Official column. The
+                column rules are drawn once over header and rows: the PDF capture
+                fixes every box's height on its own, and rules drawn per cell then
+                stopped short of a row's bottom line. */}
+            <div className="relative flex flex-col flex-1 min-h-0 border-r border-black">
+            <div className="flex items-stretch border-b border-black text-[9px] font-bold bg-white h-5 shrink-0">
+                 <div className={`${APPROVAL_COL.official} pl-2 flex items-center`}>Official</div>
+                 <div className={`${APPROVAL_COL.name} flex items-center justify-center`}>Name</div>
+                 <div className={`${APPROVAL_COL.country} flex items-center justify-center`}>Country</div>
                  {/* the paper's "Lizenz-Nr." column holds the date of birth (SC p.9-11) */}
-                 <div className="w-16 border-r border-black text-center text-[9px] h-5 flex items-center justify-center">DoB</div>
-                 <div className="flex-1 text-center text-[9px] h-5 flex items-center justify-center">Signature</div>
+                 <div className={`${APPROVAL_COL.dob} flex items-center justify-center`}>DoB</div>
+                 <div className="flex-1 flex items-center justify-center">Signature</div>
             </div>
 
             {/* Officials List */}
@@ -519,24 +533,21 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
                     const fullName = official ? formatPersonName(official.lastName, official.firstName) : '';
 
                     return (
-                    <div key={idx} className="flex items-center border-b border-r border-black px-2 gap-2 flex-1 h-5">
-                        <div className="w-20 border-r border-black font-bold text-[9px] shrink-0 flex items-center h-5">{role}</div>
+                    <div key={idx} className="flex items-stretch border-b border-black flex-1 min-h-5">
+                        <div className={`${APPROVAL_COL.official} pl-2 font-bold text-[9px] flex items-center`}>{role}</div>
 
-                        <div className="w-28 border-r border-black shrink-0 flex items-center h-5 min-w-0">
-                            <FitText max={9} min={5} className="w-full bg-white pb-0.5 pr-0.5" title={fullName}>{fullName}</FitText>
+                        <div className={`${APPROVAL_COL.name} flex items-center px-1 min-w-0`}>
+                            <FitText max={9} min={5} className="w-full text-center leading-none" title={fullName}>{fullName}</FitText>
                         </div>
 
-                        <div className="w-16 border-r border-black shrink-0 flex items-center justify-center h-5">
-                            <div className="text-center w-full text-[9px] bg-white pb-0.5">{fullName ? (official?.country || '') : ''}</div>
+                        <div className={`${APPROVAL_COL.country} flex items-center justify-center text-[9px] leading-none`}>
+                            {fullName ? (official?.country || '') : ''}
                         </div>
 
-                         <div className="w-16 border-r border-black shrink-0 flex items-center justify-center h-5" data-testid={`approval-dob-${idx}`}>
-                            <div className="text-center w-full text-[9px] bg-white pb-0.5">{fullName ? formatDob(official?.dob) : ''}</div>
+                        <div className={`${APPROVAL_COL.dob} flex items-center justify-center text-[9px] leading-none`} data-testid={`approval-dob-${idx}`}>
+                            {fullName ? formatDob(official?.dob) : ''}
                         </div>
-
-                        <div
-                            className="flex-1 h-full relative flex items-end min-h-0"
-                        >
+                        <div className="flex-1 relative flex items-center justify-center min-h-0 min-w-0">
                             {/* Signature space - read-only in PDF. A drawn signature wins;
                                 else the stamp of a valid account approval; else empty. */}
                             {getSignatureForRole(role) ? (
@@ -551,18 +562,20 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
                                     max={7.5}
                                     min={5}
                                     multiline
-                                    className="w-full h-5 text-left leading-[1.15] text-black pl-0.5 pt-[1px]"
+                                    className="w-full h-5 text-center leading-[1.15] text-black px-0.5 flex items-center justify-center"
                                     data-testid={`approval-stamp-${APPROVAL_SLOT_OF_ROLE[role]}`}
                                 >
                                     {getApprovalStamp(role)}
                                 </FitText>
-                            ) : (
-                                <div className="w-full h-5"></div>
-                            )}
+                            ) : null}
                         </div>
                     </div>
                 );
                 })}
+            </div>
+            {APPROVAL_RULES_PX.map((x) => (
+                <div key={x} className="absolute top-0 bottom-0 border-l border-black pointer-events-none" style={{ left: `${x - 1}px` }} aria-hidden="true" />
+            ))}
             </div>
 
             {/* Line Judges - 2 rows */}
@@ -599,9 +612,9 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
             </div>
 
             {/* Captains - Central Layout */}
-            <div className="flex justify-center border-r border-black items-center gap-2 px-4 py-2 h-7 shrink-0">
-                {/* Left: Captain Signature label */}
-                <span className="text-[7px] uppercase shrink-0">Captain<br />Signature</span>
+            <div className="flex justify-center border-r border-black items-center gap-2 pl-2 pr-4 py-2 h-7 shrink-0">
+                {/* Left: Captain Signature label, in line with the officials' labels */}
+                <span className="text-[7px] uppercase shrink-0 leading-tight">Captain<br />Signature</span>
 
                 {/* Captain A Signature */}
                 <div className="flex-1 flex flex-col">

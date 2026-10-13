@@ -4,7 +4,7 @@ import { PointsColumn5, PointsColumn30 } from './PointsColumn';
 import { StrikeZ } from './StrikeZ';
 import { FitText } from './FitText';
 import { ServiceBox, SubstitutionCells } from './ServiceBox';
-import { MARK_STROKE } from './Marks';
+import { LINEUP_NUMBER_PT, MARK_STROKE } from './Marks';
 
 interface ServiceRound {
   position: number; // 0-5 for I-VI
@@ -122,7 +122,7 @@ const TeamServiceGridSet5: React.FC<{
                     const isLast = idx === arr.length - 1;
                     return (
                         <div key={i} className={`p-0.5 flex items-center justify-center relative bg-white border-black border-b ${isLast ? 'border-r-0' : 'border-r'}`} style={{ width: '10mm', height: '5mm' }}>
-                            <div className="font-bold text-sm text-center print:text-base">{lineup[i] || ''}</div>
+                            <div className="font-bold text-center tabular-nums leading-none" style={{ fontSize: `${LINEUP_NUMBER_PT}pt` }}>{lineup[i] || ''}</div>
                         </div>
                     );
                 })}

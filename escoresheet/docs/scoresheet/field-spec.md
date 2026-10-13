@@ -264,8 +264,9 @@ the next round box (1, 2, … 8).
 3. **Circle the final points in the service boxes of BOTH teams.** For the loser, this is its
    last closed box. **Do not circle in the points column.**
 4. In the points columns of **both** teams, draw a `T` from the first unused number to the
-   bottom of the column. **Not on the generated sheet (owner decision 2026-10-07, section 16):**
-   the points columns show only the points actually scored.
+   bottom of the column. **Not on the generated sheet (owner decisions 2026-10-07 and
+   2026-10-13, sections 16 and 17):** no `T`; once the set is over the numbers above the team's
+   final score are left blank.
 5. Check the box counts:
    - The team that **served first** wins: both circled finals are at the **same** service count.
    - The team that **received first** wins: the winner has **one service box more** than the
@@ -329,10 +330,9 @@ Other differences from sets 1 to 4:
 1. Write the **left team's points at the change** (only the left team's points) in the
    "Pte. beim Seitenwechsel" box of panel 3.
 2. In **panel 3's points column**, draw a **reverse T `⊥`** over numbers 1..N, the points
-   already scored. **Not on the generated sheet (owner decision 2026-10-07, section 16):**
-   1..N stay plain printed numbers.
+   already scored. The generated sheet draws it (owner decision 2026-10-13, section 17).
 3. In **panel 1's points column**, draw a standard **T** over the numbers not ticked (N+1 to 8).
-   **Not on the generated sheet (section 16):** N+1..8 stay plain printed numbers.
+   **Not on the generated sheet (sections 16 and 17):** no `T`; N+1..8 are left blank.
 4. Copy **all time-outs and substitutions**, with their scores and circles, from panel 1 to
    panel 3.
 5. Service boxes:
@@ -388,7 +388,8 @@ The member code goes into **exactly one** of the four sanction columns:
 
 - A **player**: the shirt number, for example `14`.
   - If the player is **on the bench** (not on court), the number is **circled**, for example
-    `(6)` (SC p.62).
+    `(6)` (SC p.62). **Not on the generated sheet (owner decision 2026-10-13, section 17):** the
+    number is written plain, in the box and in an overflow remark.
 - **C** (coach), **AC1** / **AC2** (assistant coaches), **P** (physio), **M** (doctor).
 - **D** for a delay:
   - **Delay warning**: `D` in the **warning** column (SC p.57).
@@ -403,7 +404,8 @@ Examples taken from SC:
 - `| 14 | | | A | 2 | 24:16`: Team A player 14, penalty (red card). Team B's point is circled.
 - `| | 12 | | A | 2 | 24:18`: Team A player 12, expelled. If disqualified, the `12` goes in the
   4th column instead.
-- `(6) | | | | A | 2 | 24:19`: Team A bench player 6, warning.
+- `(6) | | | | A | 2 | 24:19`: Team A bench player 6, warning (printed `6` on the generated
+  sheet, section 17).
 - `7 | | | | A | 5 | 8:11`: Team A player 7, warning in set 5.
 
 Recording rules:
@@ -658,7 +660,8 @@ These are pointers for the implementation phase, not a complete audit.
 
 These override the paper conventions above wherever they differ. The audit must not flag them.
 
-1. **No `T` / `⊥` in the points columns.** Owner: "here no need to do the inverse T. just write
+1. **No `T` / `⊥` in the points columns** (the `⊥` and the unused numbers changed on
+   2026-10-13, section 17). Owner: "here no need to do the inverse T. just write
    the points actually scored". The generated sheet (preview and PDF, every set, set 5 included)
    draws no `T` through the unused numbers at set end, no `T` in set-5 panel 1 at the change of
    courts and no reverse `⊥` over the points already scored in panel 3. The points columns show
@@ -702,3 +705,36 @@ These override the paper conventions above wherever they differ. The audit must 
    (`components/Marks.tsx NUMBER_CIRCLE_MM`). The number inside is set at 9.5 px
    (`CIRCLED_NUMBER_PX`), so the ring sits well clear of the digits: it is bigger relative to the
    number, as asked, though not in absolute size, which the cell does not allow.
+   Superseded for the substitution rows by section 17.4.
+
+## 17. Owner decisions, 2026-10-13 (scoresheet review, round 3)
+
+These override sections 4-7 and 16 wherever they differ.
+
+1. **Unused points are blank.** Owner: "the points not used just don't show ... in set 1 only
+   show up to 15, rest blank". Once a set is over, each points column shows the numbers up to
+   that team's final score and leaves the rest blank. Set 5: panel 1 ends at the left team's
+   points at the change of courts, panels 2 and 3 at the final scores. A set still running
+   keeps every pre-printed number (`components/PointsColumn.tsx`, `shownUpTo`).
+2. **Points columns breathe.** A 0.5 mm margin above the first and below the last number, so
+   none touches the column's rules; the circle round a number is 3.0 mm (was ~2.2 mm), clear of
+   its digits and of the numbers above and below (`POINTS_GRID_PAD_MM`, `POINT_CIRCLE_MM`).
+3. **The reverse T in set-5 panel 3.** Owner: "the points of the team left (then right) that
+   got assigned while they were left, on the right box they need to have an inverted T". A
+   line down through 1..N (N = the left team's points at the change) and a bar under N, over
+   the printed numbers, as on paper (SC p.77-79). Panel 1 still gets no `T`.
+4. **Line-up and substitution numbers: one size.** Owner: "increase the circle radius don't
+   decrease the number font. actually decrease by 1pt all number fonts in lineup-sub rows, so
+   it's the same". The starting line-up and the substitutes share one size, the circled
+   substitute too (`LINEUP_NUMBER_PT`), and the ring grows instead of the number shrinking. The
+   5 mm row (4.74 mm between its rules) decides the size: at 9.5 pt the ring that clears two
+   bold digits crosses the rules, at 9 pt it grazes them. Shown all three, the owner chose
+   **8.5 pt** (was 14 px = 10.5 pt) with a **4.3 mm** ring (`SUB_CIRCLE_MM`, was 4.0 mm): it
+   clears the digits (ink radius ~1.87 mm) by ~0.12 mm and the rules by ~0.06 mm. The final
+   points in a service box keep the box's 10.5 px; its ring stays 4.0 mm, the most the ~4.6 mm
+   wide box holds, and still clears them.
+5. **No circle round a bench player's number in SANCTIONS** (box and overflow remark).
+6. **APPROVAL aligned.** Header and officials' rows share one grid; every entry (name, country,
+   DoB, signature, approval stamp) is centred in its cell, vertically and horizontally; the role
+   labels stay left. The column rules are drawn once over the header and the rows, so they meet
+   every row line in the PDF too.
