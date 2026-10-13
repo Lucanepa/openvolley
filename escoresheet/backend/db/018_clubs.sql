@@ -1,6 +1,6 @@
 -- 018_clubs.sql: scorers score the home games of their own club (indoor).
 --
--- Owner decisions 2026-10-13 (docs/scorer-accounts-spec.md section 9):
+-- Owner decisions 2026-10-13 (docs/scorer-clubs-spec.md):
 --   a. a scorer scores only the HOME games of their club(s);
 --   b. an account may belong to several clubs;
 --   c. a scorer without a club scores no official game until an admin adds one;

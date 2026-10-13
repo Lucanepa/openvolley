@@ -788,10 +788,14 @@ Errors: 401 no session, 403 `OV_FORBIDDEN` (role), 400 `OV_INVALID_REQUEST`
 | Route | Who | Answer |
 |---|---|---|
 | `POST /api/account/redeem-invite {code}` | any account | `{ roles, role_granted, already_had }`; 404 `OV_INVITE_INVALID`, 410 `OV_INVITE_EXPIRED`, 409 `OV_INVITE_USED_UP`, 409 `OV_EMAIL_UNCONFIRMED` (address not confirmed yet), 429 `OV_TOO_MANY_ATTEMPTS` |
-| `POST /api/match/official-check {game_n, scheduled_at, sport_type, external_id}` | scorer | `{ taken: false }` or `{ taken: true, claim }`; 403 `OV_SCORER_REQUIRED` |
-| `GET /api/admin/accounts?filter=pending\|all&q=&limit=` | admin | `{ accounts: [{ id, email, first_name, last_name, roles, pending, created_at, last_sign_in_at, email_confirmed }] }` |
+| `POST /api/match/official-check {game_n, scheduled_at, sport_type, external_id}` | scorer | `{ taken: false }` or `{ taken: true, claim }`, plus `club`: `{ ok: true }` or `{ ok: false, code, home_team, clubs }` (db/018, `docs/scorer-clubs-spec.md`); 403 `OV_SCORER_REQUIRED` |
+| `GET /api/admin/accounts?filter=pending\|all&q=&limit=` | admin | `{ accounts: [{ id, email, first_name, last_name, roles, pending, created_at, last_sign_in_at, email_confirmed, clubs }] }` |
+| `PUT /api/admin/accounts/:userId/clubs {club_ids}` | admin | `{ clubs }` (the account's whole list, db/018); 404 `OV_CLUB_NOT_FOUND` |
+| `GET /api/admin/clubs`, `POST /api/admin/clubs {name, teams?}`, `PATCH`/`DELETE /api/admin/clubs/:id` | admin | clubs with their VolleyManager teams and scorer count, and `rule`; 409 `OV_CLUB_EXISTS`, 409 `OV_TEAM_TAKEN` |
+| `GET /api/admin/club-teams?q=` | admin | `{ teams: [{ name, club_id, club_name }] }` (VolleyManager team names) |
+| `PUT /api/admin/club-rule {enabled}` | admin | `{ rule }`: scorers score the home games of their clubs only (off until switched on) |
 | `POST /api/admin/accounts/:userId/roles {add, remove}` | admin | `{ id, roles }`; 400 `OV_INVALID_ROLE`, 403, 404, 409 `OV_SELF_DEMOTE`, 409 `OV_EMAIL_UNCONFIRMED` (adding a role to an account that has not confirmed its address) |
-| `GET /api/admin/invites`, `POST /api/admin/invites {label, club?, role?, max_uses?, expires_at?}` | admin | list; create **201** `{ invite, code }` (the only time the code is shown; default 1 use, 30 days) |
+| `GET /api/admin/invites`, `POST /api/admin/invites {label, club?, club_id?, role?, max_uses?, expires_at?}` | admin | list; create **201** `{ invite, code }` (the only time the code is shown; default 1 use, 30 days) |
 | `POST /api/admin/invites/:id/revoke` | admin | `{ invite }` (idempotent) |
 | `GET /api/admin/official-games?from=&to=&q=` | admin | `svrz_games` rows (default Zurich today -1 .. +14, at most 120 days) with the claiming match, if any |
 | `GET /api/admin/matches?state=closed\|open\|all&q=&limit=` | admin | non-test matches with scorer, editors, `closed_at`, `closed_by_name` |

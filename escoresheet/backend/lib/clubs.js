@@ -1,6 +1,6 @@
 /**
  * clubs — scorers score the home games of their own club (indoor; db/018,
- * docs/scorer-accounts-spec.md section 9).
+ * docs/scorer-clubs-spec.md).
  *
  * A club is a name and the VolleyManager team names that play for it
  * (svrz_games.team_home / team_away); an account scores for one or more
