@@ -24,13 +24,18 @@
  *   GET    /api/admin/matches/:id/revisions          isAdmin: undone / edited events (db/015)
  *   GET    /api/admin/activity?match=&account=&...   isAdmin: the activity log (db/016)
  *   DELETE /api/admin/activity?match=|account=&confirm=yes  isAdmin: delete on request (audited)
+ *   GET    /api/scoresheets?app=indoor|beach&state=&q=  canManageTeams of that sport (admins and its
+ *                                                    competition managers; no app = indoor)
+ *   GET    /api/scoresheets/:id/pdf[?download=1]     canManageTeams of the match's sport: the stored
+ *                                                    PDF (binary, audited; lib/scoresheets.js)
  *
  * Sports (db/012, lib/access.js): every check uses the sport of the ROW (the
  * body's sport_type, the competition of a saved team, the match of an
  * approval), never the app the client says it is. Only the global admin
  * administers both apps (v1).
  *
- * route() returns { status, body, changes? } and never throws (the handlers
+ * route() returns { status, body, changes? } (or { status, file } for a
+ * scoresheet PDF) and never throws (the handlers
  * never throw either).
  */
 
@@ -56,10 +61,11 @@ export function manageFamilyOf (pathname) {
   if (pathname.startsWith('/api/beach/')) return 'beach'
   if (pathname === '/api/account/approval-pin' || pathname === '/api/account/approval-pin/remove') return 'approvalPin'
   if (pathname === '/api/approvals' || pathname.startsWith('/api/approvals/') || pathname === '/api/account/approvals') return 'approvals'
+  if (pathname === '/api/scoresheets' || pathname.startsWith('/api/scoresheets/')) return 'scoresheets'
   return null
 }
 
-export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null }) {
+export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null }) {
   // approvals?.x, or 503 when the module is not there
   const ap = (name) => (args) => (approvals && typeof approvals[name] === 'function' ? approvals[name](args) : APPROVALS_OFF())
   const q = (query, k) => {
@@ -95,6 +101,13 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     if (!SPORTS.includes(sport)) return null // the handler answers 400
     return accessForSport(c.access, sport).canReadTeams ? null : FORBIDDEN()
   }
+  // GET /api/scoresheets?app=: that sport's competition managers (admins count)
+  const manageSheetsOfApp = (m, c) => {
+    const app = q(c.query, 'app') || 'indoor'
+    if (!SPORTS.includes(app)) return null // the handler answers 400
+    return accessForSport(c.access, app).canManageTeams ? null : FORBIDDEN()
+  }
+  const sheets = (fn) => (scoresheets ? fn(scoresheets) : notFound())
 
   // [method, regex, need, handler(match, ctx)]
   const routes = [
@@ -137,7 +150,12 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['POST', /^\/api\/saved-teams\/teams$/, manageTeamsOf(newTeamSport), (m, c) => savedTeams.createTeam({ actorId: c.user.id, body: c.body })],
     ['PATCH', new RegExp(`^/api/saved-teams/teams/${ID}$`), manageTeamsOf((m) => teamSport(m[1])), (m, c) => savedTeams.updateTeam({ id: m[1], body: c.body })],
     ['DELETE', new RegExp(`^/api/saved-teams/teams/${ID}$`), manageTeamsOf((m) => teamSport(m[1])), (m) => savedTeams.deleteTeam({ id: m[1] })],
-    ['PUT', new RegExp(`^/api/saved-teams/teams/${ID}/roster$`), manageTeamsOf((m) => teamSport(m[1])), (m, c) => savedTeams.putRoster({ id: m[1], body: c.body })]
+    ['PUT', new RegExp(`^/api/saved-teams/teams/${ID}/roster$`), manageTeamsOf((m) => teamSport(m[1])), (m, c) => savedTeams.putRoster({ id: m[1], body: c.body })],
+
+    // The manager's Scoresheets tab (lib/scoresheets.js). A file answers
+    // { status, file } (server.js sends it as is), every other answer JSON.
+    ['GET', /^\/api\/scoresheets$/, manageSheetsOfApp, (m, c) => sheets((s) => s.list({ app: q(c.query, 'app'), state: q(c.query, 'state') || 'all', q: q(c.query, 'q') ?? '', limit: q(c.query, 'limit') }))],
+    ['GET', new RegExp(`^/api/scoresheets/${ID}/pdf$`), manageTeamsOf((m) => (scoresheets ? scoresheets.sportOf(m[1]) : { sport: null })), (m, c) => sheets((s) => s.readPdf({ actorId: c.user.id, matchId: m[1], download: q(c.query, 'download') === '1' }))]
   ]
 
   /** The role check of a route: null when allowed, else the 403 answer. */
@@ -158,6 +176,8 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     if (family === 'savedTeams') return sportsWith(access, method === 'GET' ? 'canReadTeams' : 'canManageTeams').length ? null : FORBIDDEN()
     // tournaments (lib/beachTournaments.js): some beach right first
     if (family === 'beach') return accessForSport(access, 'beach').canReadTeams ? null : FORBIDDEN()
+    // scoresheets: a competition manager of some sport first
+    if (family === 'scoresheets') return sportsWith(access, 'canManageTeams').length ? null : FORBIDDEN()
     return null
   }
 
