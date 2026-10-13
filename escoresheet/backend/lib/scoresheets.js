@@ -39,6 +39,33 @@ export function cleanGame (v) {
   return /[A-Za-z0-9]/.test(s) ? s : null
 }
 
+// ä -> ae etc. before the accents go (frontend sheetFormat.ts sanitizeFilenamePart)
+const TRANSLITERATION = { ä: 'ae', ö: 'oe', ü: 'ue', Ä: 'Ae', Ö: 'Oe', Ü: 'Ue', ß: 'ss' }
+
+/** A part of a download's file name: ASCII letters, digits and `-` only. */
+export function filePart (value, max = 30) {
+  const s = value === null || value === undefined ? '' : String(value)
+  return s.replace(/[äöüÄÖÜß]/g, (c) => TRANSLITERATION[c]).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, max).replace(/-$/, '')
+}
+
+const zurichDayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Zurich', year: 'numeric', month: '2-digit', day: '2-digit' })
+
+/**
+ * The download's file name, as the app names a scoresheet it saves
+ * (frontend scoresheet_pdf/utils/sheetFormat.ts buildScoresheetFilename):
+ * `game<n>_<league>_<YYYY-MM-DD>.pdf`, the league left out when there is none,
+ * `<Home>_vs_<Away>` instead of `game<n>` without a game number; the day is the
+ * match's day in Zurich (else the day the file was stored under).
+ */
+export function downloadName ({ game_n: gameN, external_id: externalId, sport, league, home_name: home, away_name: away, scheduled_at: scheduledAt }, folderDay) {
+  const game = filePart(gameN ?? (sport === 'beach' ? null : externalId), 20)
+  const who = game ? `game${game}` : `${filePart(home) || 'Home'}_vs_${filePart(away) || 'Away'}`
+  const when = scheduledAt ? new Date(scheduledAt) : null
+  const day = when && !Number.isNaN(when.getTime()) ? zurichDayFmt.format(when) : folderDay
+  return `${[who, filePart(league), day].filter(Boolean).join('_').slice(0, 116)}.pdf`
+}
+
 /** The seed part of an OpenBeach file name (scoresheetUploader_beach.js scoresheetStoragePath). */
 const cleanSeed = (v) => String(v).replace(/[^A-Za-z0-9_-]/g, '-')
 
@@ -207,7 +234,10 @@ export function createScoresheets ({ pool, storage, accounts, logger = console }
     if (!isUuid(matchId)) return notFound()
     let m
     try {
-      const { rows: [r] } = await pool.query(`SELECT ${ROW_COLUMNS}, m.test FROM public.matches m WHERE m.id = $1`, [matchId])
+      const { rows: [r] } = await pool.query(
+        `SELECT ${ROW_COLUMNS}, m.test, m.match_info->>'league' AS league,
+                m.home_team->>'name' AS home_name, m.away_team->>'name' AS away_name
+           FROM public.matches m WHERE m.id = $1`, [matchId])
       if (!r || r.test === true) return notFound()
       m = { ...r, sport: sportOut(r.is_beach) }
     } catch (err) {
@@ -237,14 +267,12 @@ export function createScoresheets ({ pool, storage, accounts, logger = console }
       log.error?.(`[scoresheets] audit failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 200)}`)
       return unavailable()
     }
-    const day = file.folder.split('/').pop()
-    const game = cleanGame(m.game_n ?? m.external_id) || 'match'
     return {
       status: 200,
       file: {
         data,
         contentType: 'application/pdf',
-        filename: `scoresheet_${m.sport === 'beach' ? 'beach_' : ''}game${game}_${day}.pdf`,
+        filename: downloadName(m, file.folder.split('/').pop()),
         disposition: download ? 'attachment' : 'inline'
       }
     }

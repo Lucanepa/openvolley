@@ -16,7 +16,7 @@ import { randomBytes } from 'node:crypto'
 import pg from 'pg'
 import { SKIP, bootServer, api, provisionDatabase, sleep } from './helpers/e2eServer.js'
 import { grantRoles } from './helpers/pgTestDb.js'
-import { bestPdf, cleanGame, pdfLocator } from '../lib/scoresheets.js'
+import { bestPdf, cleanGame, downloadName, filePart, pdfLocator } from '../lib/scoresheets.js'
 import { manageFamilyOf } from '../lib/manageApi.js'
 
 const key = () => `k${randomBytes(16).toString('hex')}`
@@ -56,6 +56,15 @@ describe('scoresheets (unit)', () => {
   it('no scheduled date: the days it was closed, updated and created', () => {
     const loc = pdfLocator({ sport: 'indoor', game_n: 5, scheduled_at: null, closed_at: '2026-10-12T20:00:00Z', updated_at: '2026-10-12T21:00:00Z', created_at: '2026-10-11T18:00:00Z' })
     assert.deepEqual(loc.folders, ['2026-10-12', '2026-10-11'])
+  })
+
+  it('the download is named like a scoresheet the app saves: game<n>_<league>_<day in Zurich>', () => {
+    assert.equal(downloadName({ game_n: 402397, league: '1L D', scheduled_at: '2026-10-10T12:30:00Z' }, '2026-10-10'), 'game402397_1L-D_2026-10-10.pdf')
+    // 00:30 in Zurich (22:30 UTC, filed under the UTC day): the name has the match day, as the app's
+    assert.equal(downloadName({ game_n: 5, league: '', scheduled_at: '2026-10-10T22:30:00Z' }, '2026-10-10'), 'game5_2026-10-11.pdf')
+    assert.equal(downloadName({ game_n: null, external_id: 'match_1_x', sport: 'beach', league: 'Coop Beachtour Zürich', home_name: 'Müller / Weber', away_name: 'Rossi / Bianchi' }, '2026-10-11'),
+      'Mueller-Weber_vs_Rossi-Bianchi_Coop-Beachtour-Zuerich_2026-10-11.pdf')
+    assert.equal(filePart('../a/b:c.d', 60), 'a-b-c-d')
   })
 
   it('the best file: a file of the match before an older one, then the newest', () => {
@@ -185,7 +194,7 @@ describe('scoresheets end to end', { skip: SKIP }, () => {
     assert.equal(r.status, 200)
     assert.equal(r.headers.get('content-type'), 'application/pdf')
     assert.equal(r.headers.get('cache-control'), 'no-store')
-    assert.match(r.headers.get('content-disposition'), new RegExp(`^attachment; filename="scoresheet_game${m.n}_2026-10-10\\.pdf"$`))
+    assert.match(r.headers.get('content-disposition'), new RegExp(`^attachment; filename="game${m.n}_2026-10-10\\.pdf"$`))
     assert.equal(Buffer.from(await r.arrayBuffer()).toString(), pdfBytes('second device').toString())
 
     const { rows } = await sql.query("SELECT actor_id, details, app FROM audit_log WHERE action = 'scoresheet.read' AND match_id = $1", [m.id])

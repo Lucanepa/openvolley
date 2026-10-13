@@ -595,9 +595,13 @@ are left unchanged.
      `Creator = "OpenVolley eScoresheet"`.
 2. **Ball**: only the new flat ball A from `brand/ball.svg`, everywhere on the sheet.
 3. **Approval column**: `DoB` instead of `Lic.`, filled from the officials' `dob` (section 10).
-4. **File name**: `<YYYYMMDD>_<gameNo>_<Home>_vs_<Away>.pdf`.
-   - Use the **real** team names. Prefer the short name, but if a short name is empty or is a
-     placeholder (`HOME`, `AWAY`, `Home`, `Away`, `Team A`, `Team B`), use the full name.
+4. **File name** (owner, 2026-10-13): `game<gameNo>_<league>_<YYYY-MM-DD>.pdf`, e.g.
+   `game382208_2L_2026-10-07.pdf`; the league left out when there is none. The manager's
+   download of a stored scoresheet has the same name. (Until 2.4.4:
+   `<YYYYMMDD>_<gameNo>_<Home>_vs_<Away>.pdf`.)
+   - Without a game number, `<Home>_vs_<Away>` takes its place, with the **real** team names.
+     Prefer the short name, but if a short name is empty or is a placeholder (`HOME`, `AWAY`,
+     `Home`, `Away`, `Team A`, `Team B`), use the full name.
    - The date is the **local** match date. `toISOString()` is UTC and gives the wrong day near
      midnight.
    - The game number is omitted, together with its `_`, when it is unknown. Never use the
