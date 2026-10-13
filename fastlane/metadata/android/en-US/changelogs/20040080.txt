@@ -1,0 +1,4 @@
+OpenVolley 2.4.8
+- Clubs: an admin can tie each scorer to a club, so a scorer scores only the home games of that club. Off until an admin switches it on.
+- Scoresheet: approval, result and the rosters stand in their own boxes; every box ends on the same bottom line.
+- Scoresheet: the winner and the result share one line; league codes are compact ("1L D" becomes "1LD").
