@@ -284,10 +284,13 @@ même la personne qui l'a saisi. Seul un administrateur peut le rouvrir.
 **Fichiers des feuilles de match :** à la fin du match, l'application
 téléverse la feuille de match en PDF et sous forme de fichier de données.
 Seul le compte qui l'a téléversée peut la lire (via
-`scoresheet.openvolley.app`), ainsi que les administrateurs. Si ce compte est
-supprimé, le fichier reste conservé comme procès-verbal du match, mais
-personne ne peut plus l'ouvrir jusqu'à ce qu'un administrateur rétablisse
-l'accès.
+`scoresheet.openvolley.app`), ainsi que les administrateurs et les
+responsables de compétition de l'application concernée (OpenVolley ou
+OpenBeach), qui peuvent ouvrir le PDF dans le gestionnaire. Chaque ouverture
+est inscrite au journal avec leur compte. Si le compte qui l'a téléversée est
+supprimé, le fichier reste conservé comme procès-verbal du match ; seuls les
+administrateurs et les responsables de compétition peuvent encore ouvrir le
+PDF.
 
 **Validation avec NIP :** les officiels peuvent confirmer le résultat, en plus
 de leur signature, avec un NIP de validation personnel. Sont enregistrés : le

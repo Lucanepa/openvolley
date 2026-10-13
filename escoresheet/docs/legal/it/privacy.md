@@ -264,9 +264,12 @@ può riaprirla.
 
 **File dei referti:** alla fine della partita l'app carica il referto in PDF e
 come file con i dati della partita. Può leggerlo solo l'account che l'ha
-caricato (tramite `scoresheet.openvolley.app`) e gli amministratori. Se questo
-account viene cancellato, il file resta conservato come verbale della partita,
-ma nessuno può più aprirlo finché un amministratore non ripristina l'accesso.
+caricato (tramite `scoresheet.openvolley.app`), gli amministratori e i
+responsabili competizione dell'app interessata (OpenVolley o OpenBeach),
+che possono aprire il PDF nel manager. Ogni apertura viene annotata nel
+registro con il loro account. Se l'account che l'ha caricato viene cancellato,
+il file resta conservato come verbale della partita; solo gli amministratori e
+i responsabili competizione possono ancora aprire il PDF.
 
 **Approvazione con PIN:** gli ufficiali di gara possono confermare il
 risultato, oltre che con la firma, con un PIN di approvazione personale.
