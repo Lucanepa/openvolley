@@ -287,8 +287,9 @@ function getDataLayer() {
     import('./lib/beachTournaments.js'),
     import('./lib/eventRevisions.js'),
     import('./lib/activityLog.js'),
-    import('./lib/scoresheets.js')
-  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, apv, bt, evr, act, ss]) => {
+    import('./lib/scoresheets.js'),
+    import('./lib/clubs.js')
+  ]).then(([pgq, mr, au, st, ph, ac, acc, svt, mg, og, ml, apv, bt, evr, act, ss, cl]) => {
     const poolMax = Number(process.env.PG_POOL_MAX) > 0 ? Math.floor(Number(process.env.PG_POOL_MAX)) : undefined
     const db = pgq.createPgQuery({
       connectionString: DATABASE_URL,
@@ -339,7 +340,10 @@ function getDataLayer() {
     // ones, and either kind makes an account eligible for an approval PIN.
     const approvals = apv.createApprovals({ pool: db.pool, auth, mailer, secret: pins.enabled ? String(process.env.OV_PIN_SECRET) : null, beachApprovals: true })
     if (!approvals.enabled) console.warn('⚠️  [Config] OV_PIN_SECRET is not set: approval with an account is off (503 OV_APPROVAL_UNAVAILABLE).')
-    const accounts = acc.createAccounts({ pool: db.pool, db, restore, access, approvalsForMatches: approvals.approvalsForMatches })
+    // Clubs (db/018, lib/clubs.js) audit through accounts, which asks them for /api/me
+    let clubs = null
+    const accounts = acc.createAccounts({ pool: db.pool, db, restore, access, approvalsForMatches: approvals.approvalsForMatches, clubs: () => clubs })
+    clubs = cl.createClubs({ pool: db.pool, audit: accounts.audit, access })
     const savedTeams = svt.createSavedTeams({ pool: db.pool })
     const beach = bt.createBeachTournaments({ pool: db.pool, accounts })
     // Undo / delete / edit history of events (db/015)
@@ -348,7 +352,7 @@ function getDataLayer() {
     const activity = act.createActivityLog({ pool: db.pool, accounts })
     // The manager's Scoresheets tab: stored PDFs for admins and competition managers (audited)
     const scoresheets = ss.createScoresheets({ pool: db.pool, storage, accounts })
-    const manage = mg.createManageApi({ accounts, savedTeams, beach, approvals, revisions, activity, scoresheets })
+    const manage = mg.createManageApi({ accounts, savedTeams, beach, approvals, revisions, activity, scoresheets, clubs })
     dataLayer = { db, restore, auth, storage, pins, access, accounts, savedTeams, beach, approvals, manage, revisions, activity, scoresheets, activityCsvLine: act.csvLine, activityCsvColumns: act.CSV_COLUMNS, publicClaim: og.publicClaim, sendAuthResult: au.sendAuthResult, AUTH_ACTIONS: au.AUTH_ACTIONS, ipKey: au.ipBucketKey }
     return dataLayer
   })
