@@ -179,7 +179,9 @@ describe('Save PDF', () => {
     expect(pdfCalls.find(c => c[0] === 'addImage')).toEqual(['addImage', 'JPEG', 5, 5, 410, 287])
     const props = pdfCalls.find(c => c[0] === 'setProperties')[1]
     expect(props.creator).toBe('OpenVolley eScoresheet')
-    expect(props.title).toBe('OpenVolley eScoresheet: KSC Wiedikon H1 vs Volley Spada Academica H1, 07.10.2026, game 382208')
+    // a viewer shows the scoresheet's name, as the file is named (owner 2026-10-13)
+    expect(props.title).toBe('game382208_2L_2026-10-07')
+    expect(props.subject).toBe('OpenVolley eScoresheet: KSC Wiedikon H1 vs Volley Spada Academica H1, 07.10.2026, game 382208')
     expect(JSON.stringify(pdfCalls)).not.toMatch(/swiss/i)
     // a browser: the notice names the file and where it went
     await waitFor(() => expect(view.getByTestId('pdf-notice').textContent).toContain("browser's download folder"))

@@ -24,6 +24,21 @@ export function isWebKitGtk(ua: string = typeof navigator !== 'undefined' ? navi
   return /AppleWebKit/.test(ua) && /(X11|Linux)/.test(ua) && !/(Chrome|Chromium|CriOS|Edg|OPR|Android)/.test(ua);
 }
 
+/**
+ * Any WebKit engine: WebKitGTK, Safari and the macOS desktop app (WKWebView),
+ * and every browser on iPhone / iPad (Chrome, Firefox and Edge there are WebKit
+ * too: CriOS, FxiOS, EdgiOS). All of them refuse the full capture and paint the
+ * pictures nested in the SVG only now and then, so the saved sheet lost its logo
+ * and signatures on Safari (2026-10-13); they take the lean capture with the
+ * pictures drawn afterwards, as WebKitGTK did.
+ */
+export function isWebKitEngine(ua: string = typeof navigator !== 'undefined' ? navigator.userAgent : ''): boolean {
+  if (/(iPhone|iPad|iPod)/.test(ua)) return true;
+  // WebKit itself says AppleWebKit/605 and later; Chromium (and jsdom) keep 537.36
+  const v = /AppleWebKit\/(\d+)/.exec(ua);
+  return !!v && Number(v[1]) >= 600 && !/(Chrome|Chromium|Edg|OPR|Android|SamsungBrowser)/.test(ua);
+}
+
 /** What html-to-image copies by default: every property of a computed style. */
 export function allStyleProperties(doc: Document = document): string[] {
   return Array.from(doc.defaultView!.getComputedStyle(doc.documentElement));

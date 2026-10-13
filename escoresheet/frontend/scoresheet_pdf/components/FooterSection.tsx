@@ -149,9 +149,11 @@ export const Remarks: React.FC<RemarksProps> = ({ overflowSanctions = [], remark
     const banded = ruled && band > 0;
 
     return (
-        <div className="border border-r-0 border-black bg-white flex flex-col h-full">
-            <div className="bg-gray-200 border-b border-r border-black text-center font-bold text-[10px] py-0.5 shrink-0">REMARKS</div>
-            <div ref={boxRef} className="border-r border-black px-1 flex-1 flex flex-col overflow-hidden min-h-0 relative">
+        // ruled top and bottom only: on the sheet SANCTIONS draws its left rule and
+        // RESULT its right one, on set 5's lines above (owner 2026-10-13)
+        <div className="border-y border-black bg-white flex flex-col h-full">
+            <div className="bg-gray-200 border-b border-black text-center font-bold text-[10px] py-0.5 shrink-0">REMARKS</div>
+            <div ref={boxRef} className="px-1 flex-1 flex flex-col overflow-hidden min-h-0 relative">
                 {ruled && [1, 2, 3].map(k => (
                     <div key={k} className="absolute left-0 right-0 border-t ss-rule pointer-events-none" style={{ top: `${k * 25}%` }} data-testid="remarks-rule" aria-hidden="true" />
                 ))}
@@ -193,6 +195,8 @@ interface ResultsProps {
    * Default false keeps the live set count for the match-entry view (MatchEntry.jsx).
    */
   blankResultUntilFinished?: boolean;
+  /** No outer margin: the sheet places the box edge to edge on its grid. */
+  flush?: boolean;
 }
 
 /**
@@ -223,6 +227,8 @@ export const Results: React.FC<ResultsProps> = ({
   coinTossConfirmed = false,
   bestOf = 5,
   blankResultUntilFinished = false
+,
+  flush = false
 }) => {
     // Once the match is decided, the rows of sets never played are struck off (field-spec 9, 11)
     const matchOver = !!result;
@@ -231,8 +237,8 @@ export const Results: React.FC<ResultsProps> = ({
     const isBestOf3 = bestOf === 3;
     const displaySets = isBestOf3 ? [1, 2, 5] : [1, 2, 3, 4, 5];
     return (
-        <div className="border border-r-0 border-black bg-white flex flex-col mr-1 h-full">
-            <div className="bg-gray-200 border-b border-r border-black text-center font-bold text-[10px] py-0.5 shrink-0">RESULT</div>
+        <div className={`border border-black bg-white flex flex-col h-full ${flush ? '' : 'mr-1'}`}>
+            <div className="bg-gray-200 border-b border-black text-center font-bold text-[10px] py-0.5 shrink-0">RESULT</div>
             <div className="grid grid-cols-[1fr_80px_1fr] gap-px bg-black flex-1 min-h-0">
                 {/* Team A Stats */}
                 <div className="bg-white flex flex-col">
@@ -329,14 +335,14 @@ export const Results: React.FC<ResultsProps> = ({
 
                 {/* Team B Stats */}
                  <div className="bg-white flex flex-col">
-                    <div className="flex items-center gap-1 px-1 border-b border-r border-black h-5 bg-gray-50 flex-row-reverse">
+                    <div className="flex items-center gap-1 px-1 border-b border-black h-5 bg-gray-50 flex-row-reverse">
                          <div className="w-4 h-4 rounded-full border border-black flex items-center justify-center bg-white text-black text-[9px] font-bold shrink-0">B</div>
                          <FitText max={9} min={5} className="font-bold text-center uppercase w-full bg-transparent">{coinTossConfirmed ? teamBShortName : ''}</FitText>
                     </div>
                     <div className="grid grid-cols-4 text-[8px] text-center font-bold bg-white border-b border-black">
-                        <div className="border-r border-black">P</div><div className="border-r border-black">W</div><div className="border-r border-black">S</div><div className="border-r border-black">T</div>
+                        <div className="border-r border-black">P</div><div className="border-r border-black">W</div><div className="border-r border-black">S</div><div>T</div>
                     </div>
-                    <div className="flex-1 flex flex-col border-r border-black">
+                    <div className="flex-1 flex flex-col">
                         {displaySets.map((set, idx) => {
                             const setData = setResults.find(r => r.setNumber === set);
                             const isFinished = setData && setData.teamBTimeouts !== null;
@@ -376,26 +382,34 @@ export const Results: React.FC<ResultsProps> = ({
                 </div>
             </div>
 
-            {/* Match start / end / duration: "HH h MM min" / "H h MM min" (field-spec 9) */}
-            <div className="border-t border-black grid bg-white shrink-0" style={{ height: '0.6cm', gridTemplateColumns: 'auto 1fr auto 1fr auto 1fr' }}>
-                <div className="border-r border-black text-[8px] font-bold flex items-center justify-start px-1">Start</div>
-                <div className="border-r border-black flex items-center justify-center min-w-0">
-                    <FitText max={8} min={5} className="w-full text-center font-bold bg-white">{matchStart}</FitText>
+            {/* Match start / end / duration: "HH h MM min" / "H h MM min" (field-spec 9),
+                on the table's columns (owner 2026-10-13: lines aligned): Start under T,
+                End under Set, Duration under P W */}
+            <div className="border-t border-black grid gap-px bg-black shrink-0" style={{ height: '0.6cm', gridTemplateColumns: '1fr 80px 1fr' }}>
+                <div className="bg-white grid grid-cols-4 min-w-0">
+                    <div className="border-r border-black text-[8px] font-bold flex items-center justify-center">Start</div>
+                    <div className="col-span-3 flex items-center justify-center min-w-0">
+                        <FitText max={8} min={5} className="w-full text-center font-bold bg-white">{matchStart}</FitText>
+                    </div>
                 </div>
-                <div className="border-r border-black text-[8px] font-bold flex items-center justify-start px-1">End</div>
-                <div className="border-r border-black flex items-center justify-center min-w-0">
-                    <FitText max={8} min={5} className="w-full text-center font-bold bg-white">{matchEnd}</FitText>
+                <div className="bg-white grid min-w-0" style={{ gridTemplateColumns: '1fr 2fr' }}>
+                    <div className="border-r border-black text-[8px] font-bold flex items-center justify-center">End</div>
+                    <div className="flex items-center justify-center min-w-0">
+                        <FitText max={8} min={5} className="w-full text-center font-bold bg-white">{matchEnd}</FitText>
+                    </div>
                 </div>
-                <div className="border-r border-black text-[8px] font-bold flex items-center justify-start px-1">Duration</div>
-                <div className="border-r border-black flex items-center justify-center min-w-0">
-                    <FitText max={8} min={5} className="w-full text-center font-bold bg-white">{matchDuration}</FitText>
+                <div className="bg-white grid grid-cols-4 min-w-0">
+                    <div className="col-span-2 border-r border-black text-[8px] font-bold flex items-center justify-center">Duration</div>
+                    <div className="col-span-2 flex items-center justify-center min-w-0">
+                        <FitText max={8} min={5} className="w-full text-center font-bold bg-white">{matchDuration}</FitText>
+                    </div>
                 </div>
             </div>
 
             {/* Winner Area */}
             {/* one row of exactly the box's height (minmax(0,1fr)): an auto row grew with the
                 unshrunk name (3 lines at 18px), so FitText measured no overflow */}
-            <div className="border-r border-black p-1 grid grid-cols-[3fr_1fr] grid-rows-[minmax(0,1fr)] gap-1 border-t border-black h-14 shrink-0 bg-white">
+            <div className="p-1 grid grid-cols-[3fr_1fr] grid-rows-[minmax(0,1fr)] gap-1 border-t border-black h-14 shrink-0 bg-white">
                  <div className="relative min-h-0">
                      <span className="text-[12px] leading-none absolute top-0 left-0 text-gray-500">WINNER</span>
                      {/* the full name (field-spec 9): shrinks to fit, never cut or overflowing the box */}
@@ -505,20 +519,22 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
     const getOfficial = (role: string) => findOfficial(officials, role);
 
     return (
-        <div className="border border-r-0 border-black bg-white flex flex-col w-full">
-            <div className="bg-gray-200 border-b border-r border-black text-center font-bold text-[10px] py-0.5 shrink-0">APPROVAL</div>
+        // ruled top and bottom only, as REMARKS: SANCTIONS and RESULT draw its sides
+        <div className="border-y border-black bg-white flex flex-col w-full">
+            <div className="bg-gray-200 border-b border-black text-center font-bold text-[10px] py-0.5 shrink-0">APPROVAL</div>
 
             {/* Column headers and the officials' rows share one grid (owner 2026-10-13:
-                every entry centred in its cell, vertically and horizontally). The
+                entries centred vertically; names left with a small margin, country,
+                DoB and signature centred). The
                 columns end where they did with the earlier padded layout, so the line
                 judges' label (88px) still lines up with the Official column. The
                 column rules are drawn once over header and rows: the PDF capture
                 fixes every box's height on its own, and rules drawn per cell then
                 stopped short of a row's bottom line. */}
-            <div className="relative flex flex-col flex-1 min-h-0 border-r border-black">
+            <div className="relative flex flex-col flex-1 min-h-0">
             <div className="flex items-stretch border-b border-black text-[9px] font-bold bg-white h-5 shrink-0">
                  <div className={`${APPROVAL_COL.official} pl-2 flex items-center`}>Official</div>
-                 <div className={`${APPROVAL_COL.name} flex items-center justify-center`}>Name</div>
+                 <div className={`${APPROVAL_COL.name} pl-2 flex items-center`}>Name</div>
                  <div className={`${APPROVAL_COL.country} flex items-center justify-center`}>Country</div>
                  {/* the paper's "Lizenz-Nr." column holds the date of birth (SC p.9-11) */}
                  <div className={`${APPROVAL_COL.dob} flex items-center justify-center`}>DoB</div>
@@ -536,8 +552,8 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
                     <div key={idx} className="flex items-stretch border-b border-black flex-1 min-h-5">
                         <div className={`${APPROVAL_COL.official} pl-2 font-bold text-[9px] flex items-center`}>{role}</div>
 
-                        <div className={`${APPROVAL_COL.name} flex items-center px-1 min-w-0`}>
-                            <FitText max={9} min={5} className="w-full text-center leading-none" title={fullName}>{fullName}</FitText>
+                        <div className={`${APPROVAL_COL.name} flex items-center pl-2 pr-1 min-w-0`}>
+                            <FitText max={9} min={5} className="w-full text-left leading-none" title={fullName}>{fullName}</FitText>
                         </div>
 
                         <div className={`${APPROVAL_COL.country} flex items-center justify-center text-[9px] leading-none`}>
@@ -579,7 +595,7 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
             </div>
 
             {/* Line Judges - 2 rows */}
-            <div className="flex border-b border-r border-black shrink-0" style={{ height: '42px' }}>
+            <div className="flex border-b border-black shrink-0" style={{ height: '42px' }}>
                 {/* Line Judges label - spans both rows */}
                 <div className=" font-bold text-[9px] shrink-0 flex items-center px-2 border-r border-black" style={{ width: '88px' }}>
                     Line Judges
@@ -612,7 +628,7 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
             </div>
 
             {/* Captains - Central Layout */}
-            <div className="flex justify-center border-r border-black items-center gap-2 pl-2 pr-4 py-2 h-7 shrink-0">
+            <div className="flex justify-center items-center gap-2 pl-2 pr-4 py-2 h-7 shrink-0">
                 {/* Left: Captain Signature label, in line with the officials' labels */}
                 <span className="text-[7px] uppercase shrink-0 leading-tight">Captain<br />Signature</span>
 
@@ -667,9 +683,11 @@ interface RosterProps {
   preGameCoachSignature?: string;
   coinTossConfirmed?: boolean;
   isHome?: boolean;
+  /** No left rule of its own: the roster beside it draws that line. */
+  noLeftRule?: boolean;
 }
 
-export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchStaff = [], preGameCaptainSignature, preGameCoachSignature, coinTossConfirmed, isHome = true }) => {
+export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchStaff = [], preGameCaptainSignature, preGameCoachSignature, coinTossConfirmed, isHome = true, noLeftRule = false }) => {
     const [openSignature, setOpenSignature] = useState<string | null>(null);
     // bench_home / bench_away may be null or an object in older rows
     const staff: any[] = Array.isArray(benchStaff) ? benchStaff : [];
@@ -733,7 +751,7 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
         .slice(0, 2);
 
     return (
-        <div className="border border-r-0 border-black bg-white w-full h-full flex flex-col min-w-0" data-testid={`roster-${isHome ? 'home' : 'away'}`}>
+        <div className={`border border-r-0 border-black bg-white w-full h-full flex flex-col min-w-0 ${noLeftRule ? 'border-l-0' : ''}`} data-testid={`roster-${isHome ? 'home' : 'away'}`}>
             {/* The A/B circle at the outer side, the short name centred in the header
                 (owner 2026-10-07: both rosters alike); a spacer as wide as the circle
                 on the other side keeps the name on the header's centre line */}
@@ -813,8 +831,8 @@ export const Roster: React.FC<RosterProps> = ({ team, side, players = [], benchS
 
                      return (
                          <div key={roleLabel} className={`${gridClass} text-[9px] items-stretch ${rowHeight} ${roleIdx < 4 ? 'border-b ss-rule' : ''}`} data-testid="roster-official-row">
-                             <div className={dobClass}>{formatDob(official?.dob)}</div>
-                             <div className={`font-bold text-center border-r border-l border-black h-full flex items-center justify-center bg-white ${roleLabel.length > 1 ? 'text-[7px]' : 'text-[9px]'}`}>{roleLabel}</div>
+                             <div className={`border-r border-black ${dobClass}`}>{formatDob(official?.dob)}</div>
+                             <div className={`font-bold text-center border-r border-black h-full flex items-center justify-center bg-white ${roleLabel.length > 1 ? 'text-[7px]' : 'text-[9px]'}`}>{roleLabel}</div>
                              <div className="bg-white px-1 text-left flex items-center min-w-0">
                                  <FitText max={9} min={5} className="flex-1">{fullName}</FitText>
                              </div>

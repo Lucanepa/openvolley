@@ -229,8 +229,10 @@ export const StandardSet: React.FC<StandardSetProps> = ({
                 <span className="font-bold text-[9px]">Start:</span>
                 <div className="bg-transparent text-center font-mono text-xs">{startTime}</div>
              </div>
-             {/* Team Left (A or B) - matches TeamServiceGrid (60mm) + PointsColumn (15mm) = 75mm */}
-             <div className="flex items-center justify-between px-2 bg-white shrink-0 border-r border-black" style={{ width: '40mm' }}>
+             {/* Team Left (A or B) - matches TeamServiceGrid (60mm) + PointsColumn (15mm) = 75mm.
+                 No rule of its own on the right: "Points" draws it on its left, where the
+                 points column below draws its line (owner 2026-10-13: lines aligned). */}
+             <div className="flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '40mm' }}>
                  <div className="flex items-center gap-1 w-full">
                      <div className="flex items-center gap-1">
                          <div className="w-6 h-6 rounded-full border border-black flex items-center justify-center bg-gray-200 text-black font-bold text-sm shrink-0">
@@ -241,7 +243,7 @@ export const StandardSet: React.FC<StandardSetProps> = ({
                      <FitText max={12} min={5} multiline style={{ height: '0.7cm' }} className="w-full uppercase leading-none flex items-center justify-center text-center font-bold bg-white ml-1">{teamNameLeft}</FitText>
                  </div>
              </div>
-             <div className="flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px] border-r border-black" style={{ width: '15mm' }}>Points</div>
+             <div className="flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px] border-l border-r border-black" style={{ width: '15mm' }}>Points</div>
               {/* Team Right (B or A) - matches TeamServiceGrid (60mm) + PointsColumn (15mm) = 75mm */}
              <div className="flex items-center justify-between px-2 bg-white shrink-0 border-r border-black" style={{ width: '40mm' }}>
                  <div className="flex items-center gap-1 w-full justify-end">
