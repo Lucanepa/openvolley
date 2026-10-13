@@ -67,6 +67,16 @@
   </screenshots>
 
   <releases>
+    <release version="2.0.5" date="2026-10-13">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.5</url>
+      <description>
+        <ul>
+          <li>A match scored offline or signed out now reaches the server whole: the approval waits for its sets and points.</li>
+          <li>Signed in again, the "Session expired" notice goes as soon as the waiting changes are being sent.</li>
+          <li>A saved scoresheet is named game&lt;n&gt;_&lt;league&gt;_&lt;date&gt;.pdf.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.0.4" date="2026-10-13">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.4</url>
       <description>
