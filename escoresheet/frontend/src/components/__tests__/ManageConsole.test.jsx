@@ -48,8 +48,8 @@ const asUser = (roles) => { auth.value = { user: { id: 'u-1', email: 'a@b.ch' },
 describe('ManageConsole', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('an admin sees eight tabs, a competition manager the scoresheets and saved teams, others none', () => {
-    expect(manageTabsFor(accessFromRoles(['admin']))).toEqual(['accounts', 'invites', 'games', 'matches', 'scoresheets', 'audit', 'activity', 'teams'])
+  it('an admin sees nine tabs (clubs: db/018), a competition manager the scoresheets and saved teams, others none', () => {
+    expect(manageTabsFor(accessFromRoles(['admin']))).toEqual(['accounts', 'invites', 'clubs', 'games', 'matches', 'scoresheets', 'audit', 'activity', 'teams'])
     expect(manageTabsFor(accessFromRoles(['competition_manager']))).toEqual(['scoresheets', 'teams'])
     expect(manageTabsFor(accessFromRoles(['scorer']))).toEqual([])
   })
@@ -58,7 +58,7 @@ describe('ManageConsole', () => {
     asUser(['admin'])
     render(<ManageConsole tab="accounts" onTab={() => {}} onClose={() => {}} />)
     const nav = screen.getAllByRole('navigation')[0]
-    expect(within(nav).getAllByRole('button')).toHaveLength(8)
+    expect(within(nav).getAllByRole('button')).toHaveLength(9)
     await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalled())
   })
 

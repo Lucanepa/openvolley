@@ -95,8 +95,44 @@ export const NO_ACCESS = Object.freeze({
 /** Did anything that changes what the account may do change? */
 export function accessChanged(a, b) {
   if (!a || !b) return a !== b
+  // db/018: a club added or removed, or the rule switched (blocked jobs may go now)
+  const clubsOf = (x) => JSON.stringify([(x.clubs || []).map((c) => c.id).sort(), x.clubRule === true])
   return a.isAdmin !== b.isAdmin || a.canScore !== b.canScore || a.canManageTeams !== b.canManageTeams ||
-    a.canReadTeams !== b.canReadTeams || a.isPending !== b.isPending
+    a.canReadTeams !== b.canReadTeams || a.isPending !== b.isPending || clubsOf(a) !== clubsOf(b)
+}
+
+/**
+ * db/018: may this account score the official indoor game whose VolleyManager
+ * home team is `homeTeam`? null when it may (or the rule is off, an admin, a
+ * test match), else { code, home_team, clubs }. The app's own check from the
+ * cached clubs (offline too); the server's official-check answer and the
+ * database decide.
+ */
+export function clubVerdict(access, homeTeam) {
+  if (!access?.clubRule || access.isAdmin) return null
+  const clubs = Array.isArray(access.clubs) ? access.clubs : []
+  if (!clubs.length) return { code: 'OV_CLUB_REQUIRED', home_team: homeTeam || null, clubs: [] }
+  const h = String(homeTeam || '').trim().replace(/\s+/g, ' ').toLowerCase()
+  if (!h) return null // no home team yet: the server decides
+  const mine = clubs.some((c) => (c.teams || []).some((t) => String(t).trim().replace(/\s+/g, ' ').toLowerCase() === h))
+  return mine ? null : { code: 'OV_NOT_YOUR_CLUB', home_team: homeTeam, clubs: clubs.map((c) => c.name) }
+}
+
+/**
+ * Match setup's club verdict for the game in its form (db/018): the server's
+ * official-check answer when there is one (`server`: its `club`, undefined
+ * when the check could not be asked), else the cached clubs'. Offline, a home
+ * team typed by hand (not the schedule game's `scheduleHome`) may be spelled
+ * otherwise than VolleyManager's, so only "no club at all" is certain then.
+ * null = may score; else { code, home_team, clubs }.
+ */
+export function matchClubBlock({ access, server, homeTeam, scheduleHome = null, isTest = false }) {
+  if (isTest) return null
+  if (server !== undefined) return server && server.ok === false ? server : null
+  const local = clubVerdict(access, homeTeam)
+  if (!local) return null
+  if (local.code === 'OV_NOT_YOUR_CLUB' && scheduleHome !== homeTeam) return null
+  return local
 }
 
 export const ACCESS_CHANGED_EVENT = 'ov-access-changed'

@@ -466,7 +466,11 @@
     "teamShortNamesRequired": "Bitte die Kurznamen beider Teams eingeben",
     "gameTakenTitle": "Spiel {{game}} wird schon geführt",
     "gameTakenBody": "{{name}} führt dieses Spiel ({{status}}). Pro offiziellem Spiel ist nur ein Cloud-Spiel erlaubt: Tritt ihm mit seinem Spiel-PIN bei oder fahre fort und behalte dieses Spiel nur auf diesem Gerät.",
-    "continueLocalOnly": "Nur auf diesem Gerät weiterfahren"
+    "continueLocalOnly": "Nur auf diesem Gerät weiterfahren",
+    "clubBlockedTitle": "Kein Heimspiel deines Vereins",
+    "clubRequired": "Deinem Konto ist noch kein Verein zugeordnet. Ein Admin ordnet ihn zu, bevor du offizielle Spiele führen kannst.",
+    "notYourClub": "{{home}} ist das Heimteam. Du führst nur die Heimspiele von {{clubs}}.",
+    "gameNotInSchedule": "Spiel {{game}} steht nicht im VolleyManager-Spielplan, das Heimteam ist darum unbekannt. Prüfe die Spielnummer."
   },
   "scoreboard": {
     "set": "Satz",
@@ -2453,7 +2457,8 @@
       "teams": "Gespeicherte Teams",
       "tournaments": "Turniere",
       "activity": "Aktivität",
-      "scoresheets": "Matchblätter"
+      "scoresheets": "Matchblätter",
+      "clubs": "Vereine"
     },
     "status": {
       "setup": "Vorbereitung",
@@ -2484,7 +2489,11 @@
       "selfDemote": "Du kannst dir die Admin-Rolle nicht selbst entziehen.",
       "superAdminOnly": "Nur ein Super-Admin kann dieses Konto ändern.",
       "emailUnconfirmed": "E-Mail nicht bestätigt",
-      "confirmEmailFirst": "Dieses Konto hat seine E-Mail-Adresse noch nicht bestätigt. Rollen gibt es erst danach."
+      "confirmEmailFirst": "Dieses Konto hat seine E-Mail-Adresse noch nicht bestätigt. Rollen gibt es erst danach.",
+      "editClubs": "Vereine",
+      "clubsTitle": "Vereine von {{name}}",
+      "clubsHint": "Das Konto führt die Heimspiele dieser Vereine.",
+      "noClubsYet": "Noch keine Vereine: Lege sie im Reiter Vereine an."
     },
     "invites": {
       "new": "Neuer Einladungscode",
@@ -2511,7 +2520,9 @@
         "used_up": "Aufgebraucht",
         "revoked": "Widerrufen"
       },
-      "empty": "Noch keine Einladungscodes."
+      "empty": "Noch keine Einladungscodes.",
+      "clubHint": "Wer den Code einlöst, wird diesem Verein zugeordnet.",
+      "noClub": "Kein Verein"
     },
     "games": {
       "from": "Von",
@@ -2687,6 +2698,37 @@
       "noPdfYet": "Noch kein Matchblatt gespeichert",
       "noPdf": "Für dieses Spiel ist kein Matchblatt-PDF gespeichert.",
       "storedAt": "Matchblatt gespeichert {{date}}"
+    },
+    "clubs": {
+      "new": "Neuer Verein",
+      "edit": "Bearbeiten",
+      "delete": "Löschen",
+      "save": "Verein speichern",
+      "saved": "Verein gespeichert",
+      "deleted": "Verein gelöscht",
+      "name": "Vereinsname",
+      "teams": "VolleyManager-Teams",
+      "teamsHint": "Die Teams, deren Heimspiele die Schreiber des Vereins führen, so wie VolleyManager sie schreibt.",
+      "searchTeams": "Teams suchen, z. B. Wiedikon",
+      "picked": "Gewählte Teams: {{count}}",
+      "noVmTeams": "Kein VolleyManager-Team passt.",
+      "inClub": "bei {{club}}",
+      "scorers": "Schreiber: {{count}}",
+      "noTeams": "Noch keine Teams",
+      "empty": "Noch keine Vereine. Lege einen an und gib den Schreibern ihren Verein unter Konten oder mit einem Einladungscode.",
+      "editTitle": "Verein {{name}}",
+      "teamTaken": "Ein Team gehört nur zu einem Verein: {{teams}}",
+      "nameTaken": "Ein Verein mit diesem Namen existiert schon.",
+      "deleteTitle": "{{name}} löschen?",
+      "deleteBody": "Seine Teams und die Zuordnung seiner Schreiber werden mitgelöscht (Schreiber: {{count}}).",
+      "ruleTitle": "Schreiber führen nur die Heimspiele ihres Vereins",
+      "ruleOffHint": "Aus: Jeder freigegebene Schreiber darf jedes offizielle Spiel führen. Lege zuerst die Vereine an und ordne jedem Schreiber seinen Verein zu.",
+      "ruleOnHint": "Ein: Ein Schreiber führt nur die offiziellen Heimspiele seiner Vereine, ohne Verein keine. Admins und Testspiele sind ausgenommen.",
+      "ruleOnTitle": "Vereinsregel einschalten?",
+      "ruleOnBody": "Jeder Schreiber ohne Verein kann sofort keine offiziellen Spiele mehr führen, und Spiele anderer Vereine werden abgelehnt.",
+      "ruleOnConfirm": "Einschalten",
+      "ruleIsOn": "Die Vereinsregel ist eingeschaltet",
+      "ruleIsOff": "Die Vereinsregel ist ausgeschaltet"
     }
   },
   "savedTeams": {
@@ -2787,7 +2829,10 @@
     "gameTakenMine": "Nicht synchronisiert: Du führst Spiel {{game}} schon in einem anderen Spiel. Öffne jenes Spiel mit seinem Spiel-PIN.",
     "gameTakenUnknown": "Nicht synchronisiert: Dieses offizielle Spiel wird schon von einem anderen Konto geführt.",
     "matchClosed": "Nicht synchronisiert: Dieses Spiel ist auf dem Server abgeschlossen. Nur ein Admin kann es wieder öffnen.",
-    "joinWithPin": "Mit Spiel-PIN beitreten"
+    "joinWithPin": "Mit Spiel-PIN beitreten",
+    "clubRequired": "Nicht synchronisiert: Deinem Konto ist noch kein Verein zugeordnet. Ein Admin ordnet ihn zu; das Spiel ist auf diesem Gerät sicher.",
+    "notYourClub": "Nicht synchronisiert: Spiel {{game}} ist kein Heimspiel deines Vereins. Das Spiel ist auf diesem Gerät sicher.",
+    "gameNotInSchedule": "Nicht synchronisiert: Spiel {{game}} steht nicht im VolleyManager-Spielplan. Das Spiel ist auf diesem Gerät sicher."
   },
   "androidUpdate": {
     "available": "OpenVolley {{version}} ist verfügbar",

@@ -104,8 +104,8 @@ describe('managerBrand', () => {
     expect(manageTabsFor(accessFromRoles(['competition_manager']), beach)).toEqual([])
     expect(manageTabsFor(accessFromRoles(['beach:competition_manager']))).toEqual([])
     // OpenVolley's console: as before
-    expect(manageTabsFor(accessFromRoles(['admin']))).toEqual(['accounts', 'invites', 'games', 'matches', 'scoresheets', 'audit', 'activity', 'teams'])
-    expect(manageTabsFor(accessFromRoles(['admin']), MANAGER_BRANDS.indoor)).toEqual(['accounts', 'invites', 'games', 'matches', 'scoresheets', 'audit', 'activity', 'teams'])
+    expect(manageTabsFor(accessFromRoles(['admin']))).toEqual(['accounts', 'invites', 'clubs', 'games', 'matches', 'scoresheets', 'audit', 'activity', 'teams'])
+    expect(manageTabsFor(accessFromRoles(['admin']), MANAGER_BRANDS.indoor)).toEqual(['accounts', 'invites', 'clubs', 'games', 'matches', 'scoresheets', 'audit', 'activity', 'teams'])
   })
 
   it('accessForApp: the beach flags; indoor is the access itself', () => {

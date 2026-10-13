@@ -201,6 +201,12 @@ precompilazione dei suoi dati nel referto (nome, paese, data di nascita).
 abilita, oppure lei utilizza un codice d'invito. Il sistema registra chi ha
 utilizzato quale codice e quando.
 
+**Società (OpenVolley):** un amministratore, o un codice d'invito, può
+assegnare il suo account a una o più società. Lei referta allora le partite
+ufficiali in casa di queste società. Il sistema registra a quali società
+appartiene il suo account, chi l'ha assegnato e quando, finché la società o
+l'assegnazione viene rimossa o lei elimina l'account.
+
 **Accesso:** dopo l'accesso il suo browser salva un token di accesso. Sul
 server si trova solo un hash di esso. Una sessione dura 30 giorni dall'ultimo
 utilizzo, al massimo 90 giorni, e termina con l'uscita, il cambio della

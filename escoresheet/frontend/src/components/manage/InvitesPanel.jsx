@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Copy, Plus } from 'lucide-react'
-import { admin } from '../../lib/accountApi'
+import { admin, clubsApi } from '../../lib/accountApi'
 import KitModal from './KitModal'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError, useErrorText } from './common'
 import { Button, DateField, Field, Input, Select, RowList, Row, RowTool, Chip, StatusPill, EmptyInset, SkeletonRows, Notice, ModalStrip, dayLabel, confirmDialog, toast } from '../../ui'
@@ -131,13 +131,18 @@ function CreateInviteModal({ app, open, onClose, onCreated }) {
   const errorText = useErrorText()
   const [label, setLabel] = useState('')
   const [club, setClub] = useState('')
+  // db/018: the club whoever redeems the code joins (OpenVolley)
+  const withClubs = app !== 'beach'
+  const [clubId, setClubId] = useState('')
+  const clubList = usePanelData(() => (withClubs && open ? clubsApi.list() : Promise.resolve({ data: null })), [withClubs, open])
+  const clubs = clubList.data?.clubs || []
   const [role, setRole] = useState('scorer')
   const [maxUses, setMaxUses] = useState('1')
   const [expires, setExpires] = useState(plusDays(30))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  const reset = () => { setLabel(''); setClub(''); setRole('scorer'); setMaxUses('1'); setExpires(plusDays(30)); setError('') }
+  const reset = () => { setLabel(''); setClub(''); setClubId(''); setRole('scorer'); setMaxUses('1'); setExpires(plusDays(30)); setError('') }
   const maxValid = maxUses === '' || (/^\d+$/.test(maxUses) && Number(maxUses) >= 1 && Number(maxUses) <= 10000)
   const valid = label.trim().length >= 1 && maxValid
   const submit = async (e) => {
@@ -149,7 +154,8 @@ function CreateInviteModal({ app, open, onClose, onCreated }) {
     const expiresAt = expires ? new Date(`${expires}T23:59:59`).toISOString() : null
     const res = await admin.createInvite({
       label: label.trim(),
-      club: club.trim() || null,
+      club: clubId ? null : (club.trim() || null),
+      ...(clubId ? { club_id: clubId } : {}),
       role,
       max_uses: maxUses === '' ? null : Number(maxUses),
       expires_at: expiresAt,
@@ -182,9 +188,18 @@ function CreateInviteModal({ app, open, onClose, onCreated }) {
         <Field label={t('manage.invites.label')} hint={t('manage.invites.labelHint')}>
           <Input value={label} onChange={e => setLabel(e.target.value)} maxLength={120} required autoFocus />
         </Field>
-        <Field label={t('manage.invites.club')}>
-          <Input value={club} onChange={e => setClub(e.target.value)} maxLength={120} />
-        </Field>
+        {withClubs && clubs.length > 0 ? (
+          <Field label={t('manage.invites.club')} hint={t('manage.invites.clubHint')}>
+            <Select value={clubId} onChange={e => setClubId(e.target.value)} data-testid="invite-club">
+              <option value="">{t('manage.invites.noClub')}</option>
+              {clubs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </Select>
+          </Field>
+        ) : (
+          <Field label={t('manage.invites.club')}>
+            <Input value={club} onChange={e => setClub(e.target.value)} maxLength={120} />
+          </Field>
+        )}
         <Field label={t('manage.invites.role')}>
           <Select value={role} onChange={e => setRole(e.target.value)}>
             {INVITE_ROLES.map(r => <option key={r} value={r}>{t(`access.roles.${r}`)}</option>)}

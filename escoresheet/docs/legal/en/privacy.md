@@ -188,6 +188,12 @@ your own details on the scoresheet (name, country, date of birth).
 **New accounts** start without a role. An administrator approves them, or you
 redeem an invite code. The system records who redeemed which code and when.
 
+**Clubs (OpenVolley):** an administrator, or an invite code, can assign your
+account to one or more clubs. You then score the official home games of these
+clubs. The system stores which clubs your account belongs to, who assigned
+them and when, until the club or the assignment is removed or you delete the
+account.
+
 **Sign-in:** after you sign in, your browser stores a sign-in token. The
 server holds only a hash of it. A session lasts 30 days from last use, at most
 90 days, and ends when you sign out, change your password or delete the

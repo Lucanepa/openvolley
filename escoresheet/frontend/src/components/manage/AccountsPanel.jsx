@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { admin } from '../../lib/accountApi'
+import { admin, clubsApi } from '../../lib/accountApi'
 import { API_GRANTABLE_ROLES, BEACH_ROLES, plainRole } from '../../lib/access'
 import RoleChips from '../auth/RoleChips'
 import KitModal from './KitModal'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError, personName, useErrorText } from './common'
-import { SegmentedControl, SearchInput, RowList, Row, RowTool, EmptyInset, SkeletonRows, Button, Checkbox, Notice, dayLabel, toast } from '../../ui'
+import { SegmentedControl, SearchInput, RowList, Row, RowTool, EmptyInset, SkeletonRows, Button, Checkbox, Chip, Notice, dayLabel, toast } from '../../ui'
 
 /**
  * Accounts: approve pending accounts, grant and revoke roles (admins).
@@ -24,6 +24,9 @@ export default function AccountsPanel({ selfId, app }) {
   const [rowError, setRowError] = useState({})
   const [busyId, setBusyId] = useState(null)
   const [editing, setEditing] = useState(null)
+  // db/018: clubs (OpenVolley only; beach is not checked)
+  const withClubs = app !== 'beach'
+  const [clubsOf, setClubsOf] = useState(null)
 
   const scope = app ? { app } : {}
   const { data, error, loading, reload } = usePanelData(
@@ -96,12 +99,16 @@ export default function AccountsPanel({ selfId, app }) {
                 <span>{a.last_sign_in_at ? t('manage.accounts.lastSignIn', { date: date(a.last_sign_in_at) }) : t('manage.accounts.neverSignedIn')}</span>
                 {a.email_confirmed === false && <span className="font-medium text-amber-700">{t('manage.accounts.emailUnconfirmed')}</span>}
               </>}
-              chips={<RoleChips roles={a.roles} pending={a.pending} app={app} />}
+              chips={<>
+                <RoleChips roles={a.roles} pending={a.pending} app={app} />
+                {withClubs && (a.clubs || []).map(c => <Chip key={c.id} tone="sky">{c.name}</Chip>)}
+              </>}
               tools={<>
                 {a.pending && (
                   <RowTool primary disabled={!online || busyId === a.id} onClick={() => approve(a)}>{t('manage.accounts.approve')}</RowTool>
                 )}
                 <RowTool disabled={!online} onClick={() => setEditing(a)}>{t('manage.accounts.editRoles')}</RowTool>
+                {withClubs && <RowTool disabled={!online} onClick={() => setClubsOf(a)}>{t('manage.accounts.editClubs')}</RowTool>}
                 {rowError[a.id] && <InlineError error={rowError[a.id]} className="ml-1" />}
               </>}
             />
@@ -116,7 +123,73 @@ export default function AccountsPanel({ selfId, app }) {
         onSaved={() => { setEditing(null); reload(); pending.reload() }}
         roleError={roleError}
       />
+      {clubsOf && (
+        <ClubsModal
+          account={clubsOf}
+          onClose={() => setClubsOf(null)}
+          onSaved={() => { setClubsOf(null); reload() }}
+        />
+      )}
     </section>
+  )
+}
+
+/** db/018: the clubs an account scores for (the home games of these clubs). */
+function ClubsModal({ account, onClose, onSaved }) {
+  const { t } = useTranslation()
+  const errorText = useErrorText()
+  const list = usePanelData(() => clubsApi.list(), [])
+  const [picked, setPicked] = useState(() => new Set((account.clubs || []).map(c => c.id)))
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const clubs = list.data?.clubs || []
+  const toggle = (id) => {
+    const next = new Set(picked)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setPicked(next)
+    setError('')
+  }
+  const save = async () => {
+    if (busy) return
+    setBusy(true)
+    const res = await admin.setAccountClubs(account.id, [...picked])
+    setBusy(false)
+    if (res.error) {
+      setError(errorText(res.error))
+      return
+    }
+    toast.success(t('manage.accounts.saved'))
+    onSaved()
+  }
+  const name = personName(account.first_name, account.last_name, account.email)
+  return (
+    <KitModal
+      open
+      onClose={() => { if (!busy) onClose() }}
+      decision
+      title={t('manage.accounts.clubsTitle', { name })}
+      closeLabel={t('common.close', 'Close')}
+      footer={<>
+        <Button variant="secondary" size="lg" onClick={onClose} disabled={busy}>{t('common.cancel', 'Cancel')}</Button>
+        <Button variant="positive" size="lg" onClick={save} loading={busy} disabled={busy || !list.data} data-testid="save-account-clubs">{t('manage.accounts.save')}</Button>
+      </>}
+    >
+      <p className="mb-2 text-xs text-stone-600">{t('manage.accounts.clubsHint')}</p>
+      {list.error && <Notice className="mb-2">{errorText(list.error)}</Notice>}
+      {list.loading && !list.data ? (
+        <SkeletonRows rows={3} pill={false} />
+      ) : clubs.length === 0 ? (
+        <EmptyInset>{t('manage.accounts.noClubsYet')}</EmptyInset>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {clubs.map(c => (
+            <Checkbox key={c.id} label={c.name} checked={picked.has(c.id)} onChange={() => toggle(c.id)} />
+          ))}
+        </div>
+      )}
+      <InlineError error={error} className="mt-2" />
+    </KitModal>
   )
 }
 

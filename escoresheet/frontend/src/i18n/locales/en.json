@@ -474,7 +474,11 @@
     "teamShortNamesRequired": "Fill in the short names of both teams",
     "gameTakenTitle": "Game {{game}} is already being scored",
     "gameTakenBody": "{{name}} is scoring this game ({{status}}). Only one cloud match per official game is allowed: join it with its game PIN, or continue and keep this match on this device only.",
-    "continueLocalOnly": "Continue on this device only"
+    "continueLocalOnly": "Continue on this device only",
+    "clubBlockedTitle": "Not a home game of your club",
+    "clubRequired": "Your account has no club yet. An admin adds your club before you can score official games.",
+    "notYourClub": "{{home}} is the home team. You score the home games of {{clubs}} only.",
+    "gameNotInSchedule": "Game {{game}} is not in the VolleyManager schedule, so its home team is unknown. Check the game number."
   },
   "scoreboard": {
     "set": "Set",
@@ -2475,7 +2479,8 @@
       "teams": "Saved teams",
       "tournaments": "Tournaments",
       "activity": "Activity",
-      "scoresheets": "Scoresheets"
+      "scoresheets": "Scoresheets",
+      "clubs": "Clubs"
     },
     "status": {
       "setup": "Set-up",
@@ -2506,7 +2511,11 @@
       "selfDemote": "You cannot remove your own admin role.",
       "superAdminOnly": "Only a super admin can change this account.",
       "emailUnconfirmed": "Email not confirmed",
-      "confirmEmailFirst": "This account has not confirmed its email address yet. Roles can be given once it has."
+      "confirmEmailFirst": "This account has not confirmed its email address yet. Roles can be given once it has.",
+      "editClubs": "Clubs",
+      "clubsTitle": "Clubs of {{name}}",
+      "clubsHint": "The account scores the home games of these clubs.",
+      "noClubsYet": "No clubs yet: create them in the Clubs tab."
     },
     "invites": {
       "new": "New invite code",
@@ -2533,7 +2542,9 @@
         "used_up": "Used up",
         "revoked": "Revoked"
       },
-      "empty": "No invite codes yet."
+      "empty": "No invite codes yet.",
+      "clubHint": "Whoever redeems the code joins this club.",
+      "noClub": "No club"
     },
     "games": {
       "from": "From",
@@ -2709,6 +2720,37 @@
       "noPdfYet": "No scoresheet stored yet",
       "noPdf": "No scoresheet PDF is stored for this match.",
       "storedAt": "Scoresheet stored {{date}}"
+    },
+    "clubs": {
+      "new": "New club",
+      "edit": "Edit",
+      "delete": "Delete",
+      "save": "Save club",
+      "saved": "Club saved",
+      "deleted": "Club deleted",
+      "name": "Club name",
+      "teams": "VolleyManager teams",
+      "teamsHint": "The teams whose home games the club's scorers score, as VolleyManager spells them.",
+      "searchTeams": "Search teams, e.g. Wiedikon",
+      "picked": "Teams picked: {{count}}",
+      "noVmTeams": "No VolleyManager team matches.",
+      "inClub": "in {{club}}",
+      "scorers": "Scorers: {{count}}",
+      "noTeams": "No teams yet",
+      "empty": "No clubs yet. Create one, then give scorers their club in Accounts or with an invite code.",
+      "editTitle": "Club {{name}}",
+      "teamTaken": "A team plays for one club only: {{teams}}",
+      "nameTaken": "A club with this name exists.",
+      "deleteTitle": "Delete {{name}}?",
+      "deleteBody": "Its teams and its scorers' membership go with it (scorers: {{count}}).",
+      "ruleTitle": "Scorers score the home games of their club only",
+      "ruleOffHint": "Off: every approved scorer may score any official game. Set up the clubs and give every scorer its club first.",
+      "ruleOnHint": "On: a scorer scores the official home games of its clubs only; without a club, none. Admins and test matches are not checked.",
+      "ruleOnTitle": "Switch the club rule on?",
+      "ruleOnBody": "Every scorer without a club is blocked from official games at once, and games of other clubs are refused.",
+      "ruleOnConfirm": "Switch on",
+      "ruleIsOn": "The club rule is on",
+      "ruleIsOff": "The club rule is off"
     }
   },
   "savedTeams": {
@@ -2809,7 +2851,10 @@
     "gameTakenMine": "Not synced: you already score game {{game}} in another match. Open that match with its game PIN.",
     "gameTakenUnknown": "Not synced: this official game is already scored by another account.",
     "matchClosed": "Not synced: this match is closed on the server. Only an admin can reopen it.",
-    "joinWithPin": "Join with game PIN"
+    "joinWithPin": "Join with game PIN",
+    "clubRequired": "Not synced: your account has no club yet. An admin adds it; the match is safe on this device.",
+    "notYourClub": "Not synced: game {{game}} is not a home game of your club. The match is safe on this device.",
+    "gameNotInSchedule": "Not synced: game {{game}} is not in the VolleyManager schedule. The match is safe on this device."
   },
   "androidUpdate": {
     "available": "OpenVolley {{version}} is available",

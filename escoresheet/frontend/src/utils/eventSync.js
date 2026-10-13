@@ -225,7 +225,9 @@ export function isLiveStateDirty(matchKey) {
 // the cloud live state of that match for a while (LIVE_REFUSAL_PAUSE_MS) or
 // until the account's access changes. Local scoring is never blocked.
 export const LIVE_STATE_REFUSAL_CODES = Object.freeze([
-  'OV_SCORER_REQUIRED', 'OV_MATCH_CLOSED', 'OV_GAME_TAKEN', 'OV_NOT_MATCH_OWNER', 'OV_UNSCOPED_WRITE'
+  'OV_SCORER_REQUIRED', 'OV_MATCH_CLOSED', 'OV_GAME_TAKEN', 'OV_NOT_MATCH_OWNER', 'OV_UNSCOPED_WRITE',
+  // db/018: not a home game of the account's clubs
+  'OV_CLUB_REQUIRED', 'OV_NOT_YOUR_CLUB', 'OV_GAME_NOT_IN_SCHEDULE'
 ])
 export const LIVE_REFUSAL_PAUSE_MS = 5 * 60 * 1000
 const liveRefusals = new Map() // matchKey -> { code, at }

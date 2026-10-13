@@ -57,6 +57,31 @@ export const OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS = 3500
 // `app` ('indoor' | 'beach'): the lists of one app (the OpenBeach manager
 // sends 'beach'); left out, the server answers as before (OpenVolley's console).
 
+// ── Clubs (db/018): scorers score the home games of their own club ──
+export const clubsApi = {
+  /** Clubs with their VolleyManager teams and scorer count, and the rule { enabled }. */
+  list() {
+    return apiRequest('GET', '/api/admin/clubs')
+  },
+  create({ name, teams = [] } = {}) {
+    return apiRequest('POST', '/api/admin/clubs', { name, teams })
+  },
+  /** { name?, teams? } (teams: the whole list) */
+  update(id, body) {
+    return apiRequest('PATCH', `/api/admin/clubs/${enc(id)}`, body)
+  },
+  remove(id) {
+    return apiRequest('DELETE', `/api/admin/clubs/${enc(id)}`)
+  },
+  /** VolleyManager team names (home and away), each with its club. */
+  vmTeams({ q } = {}) {
+    return apiRequest('GET', `/api/admin/club-teams${query({ q })}`)
+  },
+  setRule(enabled) {
+    return apiRequest('PUT', '/api/admin/club-rule', { enabled })
+  }
+}
+
 export const admin = {
   /** The activity log (db/016): filters match (game no. or external id), account (id), kind (prefix), level, from, to, app, before, limit. */
   listActivity({ match, account, kind, level, from, to, app, before, limit } = {}) {
@@ -81,12 +106,18 @@ export const admin = {
   setRoles(userId, { add = [], remove = [] } = {}) {
     return apiRequest('POST', `/api/admin/accounts/${enc(userId)}/roles`, { add, remove })
   },
+  /** db/018: the clubs an account scores for (the whole list). */
+  setAccountClubs(userId, clubIds = []) {
+    return apiRequest('PUT', `/api/admin/accounts/${enc(userId)}/clubs`, { club_ids: clubIds })
+  },
   listInvites({ app } = {}) {
     return apiRequest('GET', `/api/admin/invites${query({ app })}`)
   },
   /** sport 'beach': a code that grants beach:<role> (left out: indoor, as before). */
-  createInvite({ label, club = null, role = 'scorer', max_uses = 1, expires_at, sport } = {}) {
+  createInvite({ label, club = null, club_id = null, role = 'scorer', max_uses = 1, expires_at, sport } = {}) {
     const body = { label, club, role, max_uses }
+    // db/018: the club whoever redeems the code joins (indoor)
+    if (club_id) body.club_id = club_id
     if (expires_at !== undefined) body.expires_at = expires_at
     if (sport) body.sport = sport
     return apiRequest('POST', '/api/admin/invites', body)

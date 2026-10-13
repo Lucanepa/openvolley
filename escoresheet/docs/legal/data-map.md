@@ -140,9 +140,24 @@ user asked for. **(f)** = legitimate interest. **(a)** = consent.
 ### 4.5 Invite codes
 
 `public.invite_codes`: code as SHA-256 plus the last 4 characters, label,
-club, role, sport, limits, creator. `public.invite_redemptions`: who redeemed
-which code and when (deleted with the account). Basis (b)/(f). Retention: until
-an admin deletes them. Revoked or expired codes are kept.
+club (text, and since db/018 the club's id), role, sport, limits, creator.
+`public.invite_redemptions`: who redeemed which code and when (deleted with the
+account). Basis (b)/(f). Retention: until an admin deletes them. Revoked or
+expired codes are kept. Redeeming a code that carries a club adds that club to
+the account (4.5a).
+
+### 4.5a Clubs of an account (db/018, OpenVolley)
+
+| | |
+|---|---|
+| **Data** | `public.clubs` (name), `public.club_teams` (the club's VolleyManager team names, public data), `public.account_clubs`: which account scores for which club, who granted it and when. The switch `public.club_rule` (on/off, who, when) |
+| **Whose** | Scorer accounts |
+| **Purpose** | A scorer scores the official home games of its own club(s) only (owner decision 2026-10-13); the database refuses other official games while the rule is on (`docs/scorer-clubs-spec.md`) |
+| **Basis** | (f) integrity of official results (who may score which game); (b) for the account holder |
+| **Stored** | VM (DE); backups. The scorer app keeps the account's clubs and the switch in the browser (`localStorage['ov:clubs']`) to check offline |
+| **Who sees it** | The account holder (`GET /api/me`); admins (Accounts list, Clubs tab) |
+| **Retention as built** | Until an admin removes the club or the club from the account; `account_clubs` rows go with the account (FK cascade) and with the club |
+| **Audit** | `club.create` / `club.update` / `club.delete`, `account.clubs` (before/after club ids and names), `club_rule.set` (4.6) |
 
 ### 4.6 Audit log
 

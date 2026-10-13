@@ -93,6 +93,27 @@ export function openAppWindow(url, { features = 'width=1200,height=900', title, 
   return { ...openOn(platform, url, { features, title, win }), platform }
 }
 
+/**
+ * A browser tab opened NOW (inside the click), blank, to be sent to a page that
+ * is only known after a request: a tab opened after the request is blocked
+ * (Safari: the click's user activation is gone by then). null outside a plain
+ * browser (the desktop and Android apps open their own windows: use
+ * openAppWindow there) and when the browser blocked it anyway.
+ * @returns {{ go: (url: string) => void, close: () => void } | null}
+ */
+export function openPendingTab({ win = window } = {}) {
+  if (detectAppPlatform(win) !== 'web' || isInAppView(win)) return null
+  let tab = null
+  try { tab = win.open('', '_blank') } catch { tab = null }
+  if (!tab) return null
+  // the page shown later does not need this one
+  try { tab.opener = null } catch { /* a browser that refuses it */ }
+  return {
+    go (url) { tab.location.href = url },
+    close () { try { tab.close() } catch { /* already gone */ } }
+  }
+}
+
 // Inside the in-app view: the app under it opens the page (it replaces the
 // page shown in the view) or the external link. The URL is resolved here,
 // against this page (e.g. "?date=...&action=save" of the scoresheet list).

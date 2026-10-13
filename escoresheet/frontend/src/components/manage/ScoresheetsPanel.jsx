@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Download, Eye } from 'lucide-react'
 import { scoresheetsApi } from '../../lib/accountApi'
-import { detectAppPlatform, isInAppView, openAppWindow } from '../../utils/openAppWindow'
+import { openAppWindow, openPendingTab } from '../../utils/openAppWindow'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, MatchStatusPill, useErrorText } from './common'
 import { SegmentedControl, SearchInput, RowList, Row, RowTool, Chip, EmptyInset, SkeletonRows, Notice, dayTimeLabel, toast } from '../../ui'
 
@@ -51,10 +51,7 @@ export default function ScoresheetsPanel({ app = 'indoor' }) {
     // A browser blocks a tab opened after a request (Safari: the click's user
     // activation is gone by then): open it now, blank, and send it to the PDF
     // once there is one (closed again on an error). The apps open their own windows.
-    const tab = !download && detectAppPlatform(window) === 'web' && !isInAppView(window) ? window.open('', '_blank') : null
-    if (tab) {
-      try { tab.opener = null } catch { /* the PDF tab does not need this page */ }
-    }
+    const tab = download ? null : openPendingTab()
     const fail = (error) => {
       tab?.close()
       setBusy(null)
@@ -67,7 +64,7 @@ export default function ScoresheetsPanel({ app = 'indoor' }) {
       const link = await scoresheetsApi.viewLink(m.id)
       if (link.url) {
         if (tab) {
-          tab.location.href = link.url
+          tab.go(link.url)
           setBusy(null)
           return
         }
@@ -87,7 +84,7 @@ export default function ScoresheetsPanel({ app = 'indoor' }) {
     if (download) return saveBlob(blob, name)
     const url = URL.createObjectURL(blob)
     if (tab) {
-      tab.location.href = url
+      tab.go(url)
       setTimeout(() => URL.revokeObjectURL(url), VIEW_URL_TTL_MS)
       return
     }
