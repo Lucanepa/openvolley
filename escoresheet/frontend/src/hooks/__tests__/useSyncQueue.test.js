@@ -1093,6 +1093,34 @@ describe('useSyncQueue flush loop', () => {
     unmount()
   })
 
+  // 2026-10-13 (OpenBeach): signed in, the banner still said "Session
+  // expired" for the whole first pass: the status changed only at its end
+  it('after the sign-in the status leaves auth_required as the pass starts, not when it ends', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa' } }
+    ])
+    let signedIn = false
+    api.respond = (call) => {
+      if (call.action !== 'upsert') return defaultRespond(call)
+      if (!signedIn) return { data: null, error: { message: 'Authentication required', code: 'missing_token', status: 401 } }
+      return new Promise(resolve => setTimeout(() => resolve(defaultRespond(call)), 5000)) // a slow write
+    }
+    const { result, unmount } = renderHook(() => useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
+    expect(result.current.syncStatus).toBe('auth_required')
+
+    signedIn = true
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('api-auth-token-change', { detail: { access_token: 't' } }))
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('queued') // still on its way
+    expect(result.current.syncStatus).toBe('syncing')
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
+    expect(result.current.syncStatus).toBe('synced')
+    unmount()
+  })
+
   // Laptop run of 2026-10-08 (OB-3): the scoreboard mounts its own queue,
   // whose first probe published 'connecting' over the app's 'synced': the
   // header's cloud chip changed for one frame ('Venue mode', then 'Ready')
