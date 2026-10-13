@@ -759,21 +759,23 @@ These override sections 4-7 and 16 wherever they differ.
    - set 5 on the set grid: panels 1-2 under set 3 (150 mm), the court-change strip as wide as
      set 3's right border, the gap and set 4's SET column (48px, `SetFive COURT_CHANGE_W`), panel
      3 (75 mm) exactly under set 4's left team; its header boxes over positions I-III and IV-VI,
-     the "points at change" box exactly over position IV;
+     the "points at change" box exactly over position IV (superseded by 12: inside its cell);
    - the footer on set 5's lines: SANCTIONS under the legend and SET column (its right rule on
      set 5's left one), REMARKS / APPROVAL under panels 1-2 (150 mm, ruled top and bottom only),
      RESULT under the court change and panel 3 (75 mm + 48px), with no gaps (one rule between
-     boxes, not two 0.8 mm apart);
+     boxes, not two 0.8 mm apart; superseded by 12: boxes 1 mm apart);
    - the rosters start on set 4's line between its teams (overlapping the set-5 box's last
-     pixel, so one rule) and meet on set 4's V|VI line (50 mm + 1px and the rest);
+     pixel, so one rule) and meet on set 4's V|VI line (50 mm + 1px and the rest; superseded
+     by 12: 1 mm from the left side and from each other, roster A still ending on that line);
    - RESULT's Start / End / Duration row on the table's columns (Start under T, End under Set,
      Duration under P W); BENCH OFFICIALS' DoB|No rule where the players' is;
    - header: League and Date start where the sets' "End:" box starts, the Date|Time rule is the
      sets' right edge (Date 35 mm + 1px, Time 16px + 93px: the gap and the side strip).
 10. **The PDF's title is the scoresheet's name**, and the manager's **View** opens it in the
    browser's own viewer through a 10-minute view link (backend README "Who can read a
-   scoresheet"), so the viewer shows `game402397_1L-D_2026-10-10` and saves
-   `game402397_1L-D_2026-10-10.pdf` (a `blob:` URL saved `<uuid>`, without `.pdf`).
+   scoresheet"), so the viewer shows `game402397_1LD_2026-10-10` and saves
+   `game402397_1LD_2026-10-10.pdf` (a `blob:` URL saved `<uuid>`, without `.pdf`; the league
+   code without spaces since 12).
 11. **Saving on WebKit keeps the logo and the signatures.** Safari, the macOS desktop app
    (WKWebView) and every browser on iPhone / iPad refuse the full capture (an ~87 MB data URL),
    as WebKitGTK does; the lean retry did not draw the pictures, so their PDFs had no logo and no
@@ -781,8 +783,9 @@ These override sections 4-7 and 16 wherever they differ.
    AppleWebKit 605+ or iOS) now takes the WebKitGTK path: lean capture, pictures drawn
    afterwards; a failed full capture elsewhere retries the same way.
 12. **Boxes apart, one bottom line, a league code without spaces** (owner 2026-10-13, after
-   17.9): REMARKS / APPROVAL and RESULT are boxes of their own again, 1 mm apart
-   (`FOOTER_GAP`), and so are the rosters from the left side and from each other.
+   17.9; where the two differ, this item holds): REMARKS / APPROVAL and RESULT are boxes of
+   their own again, 1 mm apart (`FOOTER_GAP`), and so are the rosters from the left side and
+   from each other.
    - The edges that sit under a line keep it: SANCTIONS' right edge under set 5's left one,
      RESULT under the court change and panel 3, roster A ending on set 4's V|VI line.
    - Every box below set 5 and both rosters end on one bottom line (the rosters take the left
