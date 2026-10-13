@@ -7,9 +7,12 @@
 //!
 //! - **Close** (the window's close button, Alt+F4): the scoretable and its
 //!   scoresheet windows hide to the tray icon; the relay, the tablets'
-//!   Wi-Fi / Bluetooth and the match stay as they are. The first close of a
-//!   run asks the page first, which says "OpenVolley keeps running in the
-//!   tray" and then hides (`app_hide`). Without a tray (Linux without a
+//!   Wi-Fi / Bluetooth and the match stay as they are. Every close asks the
+//!   page first: "Keep OpenVolley running in the tray?" with Hide window
+//!   (`app_hide`), Quit OpenVolley (the quit below) and Keep open. The page
+//!   takes the request (`app_close_ack`); one that did not (stuck, or a page
+//!   from before 2.4.9) does not keep the window: the next close hides
+//!   without asking. Without a tray (Linux without a
 //!   StatusNotifier host, or without libayatana-appindicator3) the window is
 //!   minimised instead, so it can never become unreachable.
 //! - **Tray icon**: a click shows the window (Windows; on Linux a click opens
@@ -86,7 +89,7 @@ const MAX_DETACHED: usize = 8;
 /// What closing the scoretable window does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CloseAction {
-    /// The first close of a run: the page shows its notice, then hides.
+    /// The page asks: hide (keep running) or quit completely.
     AskPage,
     /// Hide the windows to the tray icon.
     Hide,
@@ -133,8 +136,8 @@ pub struct ExitGate {
     page: Option<String>,
     /// Handlers that said they are gone (a late report must not revive one).
     detached: Vec<String>,
-    /// The first-close notice was asked for this run.
-    notice_asked: bool,
+    /// A "close-requested" the page has not taken yet (`app_close_ack`).
+    close_unacked: bool,
     /// A "quit-requested" the page has not acknowledged yet (its number).
     quit_unacked: Option<u64>,
     quit_seq: u64,
@@ -190,6 +193,7 @@ impl ExitGate {
     /// it called app_page_state.
     pub fn page_unloaded(&mut self) {
         self.page = None;
+        self.close_unacked = false;
     }
 
     /// Hide or minimise: what "out of the way, still running" is here.
@@ -206,13 +210,21 @@ impl ExitGate {
         if self.exiting() {
             return CloseAction::Close;
         }
-        // The page shows the notice once per run. A page that does not answer
-        // (still loading, stuck) only delays the hide to the next close.
-        if self.page_ready() && !self.notice_asked {
-            self.notice_asked = true;
+        // The page asks every time (hide or quit completely). A page that did
+        // not take the last request (stuck) only delays the hide to the next
+        // close, so the window can always be put away.
+        if self.page_ready() && !self.close_unacked {
+            self.close_unacked = true;
             return CloseAction::AskPage;
         }
+        self.close_unacked = false;
         self.hide_action()
+    }
+
+    /// `app_close_ack`: the page took the close request, its question is on
+    /// screen.
+    pub fn close_acked(&mut self) {
+        self.close_unacked = false;
     }
 
     /// "Quit OpenVolley…" in the tray menu, or an exit nobody confirmed.
@@ -1100,6 +1112,12 @@ pub fn app_quit_ack(state: State<'_, Lifecycle>) {
     state.gate().quit_acked();
 }
 
+/// The page took a "close-requested": its question is on screen.
+#[tauri::command]
+pub fn app_close_ack(state: State<'_, Lifecycle>) {
+    state.gate().close_acked();
+}
+
 /// The page showed its first-close notice: hide (or minimise) now.
 #[tauri::command]
 pub fn app_hide<R: Runtime>(app: AppHandle<R>) {
@@ -1140,13 +1158,25 @@ mod tests {
     }
 
     #[test]
-    fn closing_the_window_hides_it() {
+    fn closing_the_window_asks_every_time() {
         let mut g = ready(true);
-        // the first close asks the page (notice), then hides
+        // the page asks: hide or quit completely
         assert_eq!(g.close_requested(), CloseAction::AskPage);
-        assert_eq!(g.close_requested(), CloseAction::Hide);
-        assert_eq!(g.close_requested(), CloseAction::Hide);
+        g.close_acked();
+        assert_eq!(g.close_requested(), CloseAction::AskPage);
+        g.close_acked();
+        assert_eq!(g.close_requested(), CloseAction::AskPage);
         assert_eq!(g.exit_requested(true), ExitDecision::Prevent, "closing never quits");
+    }
+
+    #[test]
+    fn a_page_that_does_not_take_the_close_does_not_keep_the_window() {
+        let mut g = ready(true);
+        assert_eq!(g.close_requested(), CloseAction::AskPage);
+        // no app_close_ack (stuck, or a page from before it): the next close hides
+        assert_eq!(g.close_requested(), CloseAction::Hide);
+        // and the one after asks again
+        assert_eq!(g.close_requested(), CloseAction::AskPage);
     }
 
     #[test]
@@ -1161,13 +1191,13 @@ mod tests {
     fn a_page_that_is_not_loaded_is_not_waited_for() {
         let mut g = ExitGate::new(true);
         assert_eq!(g.close_requested(), CloseAction::Hide);
-        // the notice is still shown once the page is there
+        // the question is asked once the page is there
         g.page_attached("h1");
         assert_eq!(g.close_requested(), CloseAction::AskPage);
-        // a reload does not show it again in the same run
+        // a reload: the new page is asked, whatever the old one did
         g.page_unloaded();
         g.page_attached("h2");
-        assert_eq!(g.close_requested(), CloseAction::Hide);
+        assert_eq!(g.close_requested(), CloseAction::AskPage);
     }
 
     #[test]

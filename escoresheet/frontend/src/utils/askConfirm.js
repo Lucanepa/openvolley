@@ -43,4 +43,30 @@ export async function askConfirm({ title, message, confirmLabel, cancelLabel, to
   return answer === true
 }
 
+/**
+ * Ask with a third answer besides confirm and cancel (e.g. the desktop app's
+ * close: Hide window / Quit completely / Keep open). ALWAYS await it.
+ *
+ * @param {object} opts  askConfirm's, plus
+ * @param {string} opts.altLabel  the third button (between cancel and confirm)
+ * @param {'danger'|'default'} [opts.altTone]
+ * @returns {Promise<'confirm'|'alt'|'cancel'>} 'cancel' also for Escape, a
+ *   backdrop click and an aborted signal
+ */
+export async function askChoice({ title, message, confirmLabel, cancelLabel, altLabel, altTone = 'default', tone = 'default', signal } = {}) {
+  const answer = await confirmDialog({
+    title,
+    message,
+    confirmLabel: confirmLabel ?? i18n.t('common.confirm', 'Confirm'),
+    cancelLabel: cancelLabel ?? i18n.t('common.cancel', 'Cancel'),
+    altLabel,
+    altTone,
+    tone,
+    signal,
+  })
+  if (answer === true) return 'confirm'
+  if (answer === 'alt') return 'alt'
+  return 'cancel'
+}
+
 export default askConfirm
