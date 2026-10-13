@@ -71,6 +71,16 @@
   </screenshots>
 
   <releases>
+    <release version="2.4.8" date="2026-10-13">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v2.4.8</url>
+      <description>
+        <ul>
+          <li>Clubs: an admin can tie each scorer to a club, so a scorer scores only the home games of that club. Off until an admin switches it on.</li>
+          <li>Scoresheet: approval, result and the rosters stand in their own boxes; every box ends on the same bottom line.</li>
+          <li>Scoresheet: the winner and the result share one line; league codes are compact ("1L D" becomes "1LD").</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.4.7" date="2026-10-13">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v2.4.7</url>
       <description>
