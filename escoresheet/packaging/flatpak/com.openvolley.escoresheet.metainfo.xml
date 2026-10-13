@@ -71,6 +71,16 @@
   </screenshots>
 
   <releases>
+    <release version="2.4.7" date="2026-10-13">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v2.4.7</url>
+      <description>
+        <ul>
+          <li>Scoresheet: every line of the sheet meets the lines above and below; set 5's third panel sits under set 4.</li>
+          <li>Scoresheet: saved on an iPhone, iPad or Mac, the PDF keeps the logo and the signatures.</li>
+          <li>Scoresheet: the PDF's title is the scoresheet's name; names in the approval box are left-aligned.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.4.5" date="2026-10-13">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v2.4.5</url>
       <description>
