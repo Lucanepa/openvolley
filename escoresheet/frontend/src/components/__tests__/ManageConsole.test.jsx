@@ -26,9 +26,10 @@ const api = vi.hoisted(() => ({
     deleteActivity: vi.fn(),
     listRevisions: vi.fn(async () => ({ data: [], error: null, status: 200 }))
   },
-  savedTeamsApi: { fetchBundle: vi.fn(async () => ({ data: { version: '0', competitions: [], teams: [] }, error: null, status: 200 })) }
+  savedTeamsApi: { fetchBundle: vi.fn(async () => ({ data: { version: '0', competitions: [], teams: [] }, error: null, status: 200 })) },
+  scoresheetsApi: { list: vi.fn(async () => ({ data: { matches: [] }, error: null, status: 200 })), pdf: vi.fn() }
 }))
-vi.mock('../../lib/accountApi', async (orig) => ({ ...(await orig()), admin: api.admin, savedTeamsApi: api.savedTeamsApi }))
+vi.mock('../../lib/accountApi', async (orig) => ({ ...(await orig()), admin: api.admin, savedTeamsApi: api.savedTeamsApi, scoresheetsApi: api.scoresheetsApi }))
 vi.mock('../../db/savedTeams', () => ({ storeSavedTeamsBundle: vi.fn(async () => []) }))
 vi.mock('../../lib/apiClient', () => ({
   apiFrom: () => {
@@ -47,9 +48,9 @@ const asUser = (roles) => { auth.value = { user: { id: 'u-1', email: 'a@b.ch' },
 describe('ManageConsole', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('an admin sees seven tabs, a competition manager only saved teams, others none', () => {
-    expect(manageTabsFor(accessFromRoles(['admin']))).toEqual(['accounts', 'invites', 'games', 'matches', 'audit', 'activity', 'teams'])
-    expect(manageTabsFor(accessFromRoles(['competition_manager']))).toEqual(['teams'])
+  it('an admin sees eight tabs, a competition manager the scoresheets and saved teams, others none', () => {
+    expect(manageTabsFor(accessFromRoles(['admin']))).toEqual(['accounts', 'invites', 'games', 'matches', 'scoresheets', 'audit', 'activity', 'teams'])
+    expect(manageTabsFor(accessFromRoles(['competition_manager']))).toEqual(['scoresheets', 'teams'])
     expect(manageTabsFor(accessFromRoles(['scorer']))).toEqual([])
   })
 
@@ -57,7 +58,7 @@ describe('ManageConsole', () => {
     asUser(['admin'])
     render(<ManageConsole tab="accounts" onTab={() => {}} onClose={() => {}} />)
     const nav = screen.getAllByRole('navigation')[0]
-    expect(within(nav).getAllByRole('button')).toHaveLength(7)
+    expect(within(nav).getAllByRole('button')).toHaveLength(8)
     await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalled())
   })
 
@@ -86,12 +87,12 @@ describe('ManageConsole', () => {
     }
   })
 
-  it('a competition manager lands on saved teams whatever tab was asked', async () => {
+  it('a competition manager lands on the scoresheets whatever tab was asked', async () => {
     asUser(['competition_manager'])
     render(<ManageConsole tab="accounts" onTab={() => {}} onClose={() => {}} />)
     const nav = screen.getAllByRole('navigation')[0]
-    expect(within(nav).getAllByRole('button').map(b => b.textContent)).toEqual(['manage.tabs.teams'])
-    await waitFor(() => expect(api.savedTeamsApi.fetchBundle).toHaveBeenCalled())
+    expect(within(nav).getAllByRole('button').map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.tabs.teams'])
+    await waitFor(() => expect(api.scoresheetsApi.list).toHaveBeenCalledWith(expect.objectContaining({ app: 'indoor' })))
     expect(api.admin.listAccounts).not.toHaveBeenCalled()
   })
 

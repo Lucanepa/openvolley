@@ -2406,7 +2406,7 @@
   "managerSite": {
     "eyebrow": "Gestion",
     "signInHeading": "Gérer OpenVolley",
-    "signInBody": "Comptes, codes d’invitation, matchs officiels, matchs clôturés et équipes enregistrées – pour les admins et les responsables de compétition.",
+    "signInBody": "Comptes, codes d’invitation, matchs officiels, matchs clôturés, feuilles de match et équipes enregistrées – pour les admins et les responsables de compétition.",
     "signIn": "Se connecter",
     "noAccountYet": "Pas encore de compte ? Créez-en un ici – il fonctionne dans toutes les applications OpenVolley.",
     "openApp": "Application du marqueur",
@@ -2431,11 +2431,12 @@
     "nativeAppsNote": "Vous utilisez l’application de bureau ou Android ? Connectez-vous simplement dans l’application avec cet email et ce mot de passe.",
     "allSetTitle": "Tout est prêt",
     "allSetBody": "Votre compte est validé pour marquer. Connectez-vous dans l’application du marqueur avec cet email et ce mot de passe.",
-    "haveManagerCode": "Vous avez reçu un code d’invitation pour la gestion ? Saisissez-le ici"
+    "haveManagerCode": "Vous avez reçu un code d’invitation pour la gestion ? Saisissez-le ici",
+    "switchTo": "Passer à {{name}}"
   },
   "managerBeach": {
     "signInHeading": "Gérer OpenBeach",
-    "signInBody": "Comptes, codes d’invitation et équipes de beach enregistrées – pour les admins et les responsables de compétition.",
+    "signInBody": "Comptes, codes d’invitation, feuilles de match et équipes de beach enregistrées – pour les admins et les responsables de compétition.",
     "noAccountYet": "Pas encore de compte ? Créez-en un ici. Un seul compte vaut pour OpenBeach et OpenVolley.",
     "signUpBody": "Un seul compte pour OpenBeach et OpenVolley. Chaque application vous valide séparément.",
     "existingAccount": "Cet email a déjà un compte (OpenVolley ou OpenBeach). Connectez-vous avec votre mot de passe actuel pour rejoindre OpenBeach.",
@@ -2466,7 +2467,8 @@
       "audit": "Journal",
       "teams": "Équipes enregistrées",
       "tournaments": "Tournois",
-      "activity": "Activité"
+      "activity": "Activité",
+      "scoresheets": "Feuilles de match"
     },
     "status": {
       "setup": "Préparation",
@@ -2595,7 +2597,8 @@
         "approval_pin_locked": "PIN d'approbation bloqué",
         "match_approve": "Résultat approuvé avec un compte",
         "match_approval_revoke": "Approbation par compte annulée",
-        "match_approval_void": "Approbations par compte invalidées"
+        "match_approval_void": "Approbations par compte invalidées",
+        "scoresheet_read": "Feuille de match ouverte"
       }
     },
     "approvals": {
@@ -2691,6 +2694,14 @@
         "correction": "Correction",
         "other": "Autre"
       }
+    },
+    "scoresheets": {
+      "intro": "Tous les matchs de cette application avec leur feuille de match enregistrée (PDF). Chaque consultation et téléchargement est inscrit au journal.",
+      "view": "Afficher",
+      "download": "Télécharger le PDF",
+      "noPdfYet": "Pas encore de feuille de match enregistrée",
+      "noPdf": "Aucun PDF de feuille de match n’est enregistré pour ce match.",
+      "storedAt": "Feuille de match enregistrée {{date}}"
     }
   },
   "savedTeams": {
