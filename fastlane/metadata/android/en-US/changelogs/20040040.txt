@@ -1,0 +1,4 @@
+OpenVolley 2.4.4
+- The scoresheet stays at hand after the approval: preview, print or save it before closing the match.
+- Manager: a Scoresheets tab with every match and its stored scoresheet (PDF) to view or download, for admins and competition managers.
+- Manager: switch between OpenVolley and OpenBeach without signing in again.
