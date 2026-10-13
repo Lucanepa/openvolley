@@ -1,6 +1,6 @@
 /**
  * Scorers score the home games of their own club (db/018, lib/clubs.js,
- * docs/scorer-accounts-spec.md section 9), end to end: the admin's clubs and
+ * docs/scorer-clubs-spec.md), end to end: the admin's clubs and
  * the switch, the database's refusal on every write path (/api/db insert,
  * upsert and update, /api/match/restore), what /api/me and the official-game
  * check tell the app, and invite codes that carry a club.
