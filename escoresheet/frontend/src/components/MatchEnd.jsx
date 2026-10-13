@@ -1891,22 +1891,26 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             >
               {t('corrections.title', 'Corrections')}
             </Button>
-            <div data-help-id="matchend-export-pdf">
-              <MenuList
-                buttonLabel={<span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><FileTextIcon size={15} />{t('matchEnd.scoresheet')}</span>}
-                buttonClassName={`${TOOLBAR_TRIGGER} px-5`}
-                showArrow={true}
-                position="right"
-                vertical="top"
-                items={[
-                  { key: 'preview', icon: <SearchIcon />, label: t('matchEnd.preview', 'Preview'), onClick: () => handleShowScoresheet('preview') },
-                  { key: 'print', icon: <PrinterIcon />, label: t('matchEnd.print', 'Print'), onClick: () => handleShowScoresheet('print') },
-                  { key: 'save', icon: <SaveIcon />, label: t('matchEnd.savePdf', 'Save PDF'), onClick: () => handleShowScoresheet('save') },
-                  { key: 'logs', icon: <ChartIcon />, label: t('matchEnd.downloadLogs', 'Download logs'), onClick: handleDownloadLogs }
-                ]}
-              />
-            </div>
           </>
+        )}
+        {/* The scoresheet, before and after approval (the server closes the
+            match at approval; Close match then removes it from this device) */}
+        {(isApproved || !showReopenConfirm) && (
+          <div data-help-id="matchend-export-pdf">
+            <MenuList
+              buttonLabel={<span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><FileTextIcon size={15} />{t('matchEnd.scoresheet')}</span>}
+              buttonClassName={`${TOOLBAR_TRIGGER} px-5`}
+              showArrow={true}
+              position="right"
+              vertical="top"
+              items={[
+                { key: 'preview', icon: <SearchIcon />, label: t('matchEnd.preview', 'Preview'), onClick: () => handleShowScoresheet('preview') },
+                { key: 'print', icon: <PrinterIcon />, label: t('matchEnd.print', 'Print'), onClick: () => handleShowScoresheet('print') },
+                { key: 'save', icon: <SaveIcon />, label: t('matchEnd.savePdf', 'Save PDF'), onClick: () => handleShowScoresheet('save') },
+                { key: 'logs', icon: <ChartIcon />, label: t('matchEnd.downloadLogs', 'Download logs'), onClick: handleDownloadLogs }
+              ]}
+            />
+          </div>
         )}
       </div>
 
