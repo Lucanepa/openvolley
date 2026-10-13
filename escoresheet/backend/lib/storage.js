@@ -942,6 +942,54 @@ export function createStorage(options = {}) {
     assertBucket(bucket)
     const segs = parse(p)
     const diskSegs = await scope('read', bucket, segs, userId)
+    // Uploader-only bucket: an existing object is read only by its owners
+    // (objects stored before owners were recorded have none: 403 for all)
+    const mayRead = uploaderReadBuckets.has(bucket)
+      ? async (rr) => typeof userId === 'string' && (await readOwners(rr, bucket, diskSegs.join('/'))).includes(userId)
+      : null
+    return readObject(bucket, diskSegs, mayRead)
+  }
+
+  /**
+   * Read an object WITHOUT the uploader-only check: for trusted server code
+   * that has already decided the caller may see it (lib/scoresheets.js: an
+   * admin or the sport's competition manager). Never reachable through
+   * handle(). `path` is the path on disk (no owner scope is applied).
+   */
+  async function readTrusted({ bucket, path: p } = {}) {
+    assertBucket(bucket)
+    return readObject(bucket, parse(p), null)
+  }
+
+  /**
+   * The files of a folder WITHOUT the uploader-only filter, as
+   * [{ name, size, mtimeMs }] (no folders, no dot-names, never a symlink):
+   * trusted server code only, like readTrusted. A missing folder gives [].
+   */
+  async function listFilesTrusted({ bucket, path: p } = {}) {
+    assertBucket(bucket)
+    const r = await resolve(bucket, parse(p ?? '', true), { isDir: true })
+    if (!r) return []
+    let dirents
+    try {
+      dirents = await fsp.readdir(r.dir, { withFileTypes: true })
+    } catch (e) {
+      if (isCode(e, 'ENOENT', 'ENOTDIR')) return []
+      throw e
+    }
+    const out = await Promise.all(dirents.filter((d) => d.isFile() && !d.name.startsWith('.')).map(async (d) => {
+      try {
+        const st = await fsp.lstat(path.join(r.dir, d.name))
+        return st.isFile() ? { name: d.name, size: st.size, mtimeMs: st.mtimeMs } : null
+      } catch {
+        return null // raced with a delete: skip
+      }
+    }))
+    return out.filter(Boolean)
+  }
+
+  /** The object at diskSegs as a Buffer; `mayRead(realRoot)` (when given) must answer true. */
+  async function readObject(bucket, diskSegs, mayRead) {
     const r = await resolve(bucket, diskSegs)
     if (!r) throw err.notFound()
     let fh
@@ -952,12 +1000,7 @@ export function createStorage(options = {}) {
       fh = await fsp.open(r.target, fsc.O_RDONLY | O_NOFOLLOW)
       const fst = await fh.stat()
       if (!fst.isFile()) throw err.notFound()
-      // Uploader-only bucket: an existing object is read only by its owners
-      // (objects stored before owners were recorded have none: 403 for all)
-      if (uploaderReadBuckets.has(bucket)) {
-        const owners = typeof userId === 'string' ? await readOwners(r.rr, bucket, diskSegs.join('/')) : []
-        if (!owners.includes(userId)) throw err.forbidden()
-      }
+      if (mayRead && !(await mayRead(r.rr))) throw err.forbidden()
       if (fst.size > maxDownloadBytes) throw err.tooLarge()
       return await fh.readFile()
     } catch (e) {
@@ -1347,6 +1390,8 @@ export function createStorage(options = {}) {
     upload,
     download,
     list,
+    readTrusted,
+    listFilesTrusted,
     remove,
     deleteUserData,
     sweep,

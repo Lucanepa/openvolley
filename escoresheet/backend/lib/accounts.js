@@ -60,7 +60,9 @@ export const AUDIT_ACTIONS = Object.freeze([
   // T2: an Excel/CSV import applied (lib/beachTournaments.js importTournament)
   'tournament.import',
   // db/016: activity log rows deleted on request (lib/activityLog.js)
-  'activity.delete'
+  'activity.delete',
+  // a stored scoresheet PDF opened past the uploader-only rule (lib/scoresheets.js)
+  'scoresheet.read'
 ])
 export const APPS = SPORTS
 // How a membership came about (auth.app_memberships.joined_via)
