@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Download, Eye } from 'lucide-react'
 import { scoresheetsApi } from '../../lib/accountApi'
-import { openAppWindow } from '../../utils/openAppWindow'
+import { detectAppPlatform, isInAppView, openAppWindow } from '../../utils/openAppWindow'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, MatchStatusPill, useErrorText } from './common'
 import { SegmentedControl, SearchInput, RowList, Row, RowTool, Chip, EmptyInset, SkeletonRows, Notice, dayTimeLabel, toast } from '../../ui'
 
@@ -48,32 +48,49 @@ export default function ScoresheetsPanel({ app = 'indoor' }) {
 
   const open = async (m, download) => {
     setBusy(`${m.id}:${download ? 'download' : 'view'}`)
+    // A browser blocks a tab opened after a request (Safari: the click's user
+    // activation is gone by then): open it now, blank, and send it to the PDF
+    // once there is one (closed again on an error). The apps open their own windows.
+    const tab = !download && detectAppPlatform(window) === 'web' && !isInAppView(window) ? window.open('', '_blank') : null
+    if (tab) {
+      try { tab.opener = null } catch { /* the PDF tab does not need this page */ }
+    }
+    const fail = (error) => {
+      tab?.close()
+      setBusy(null)
+      toast.error(errorText(error))
+    }
     if (!download) {
       // The browser's viewer on the server's link: its title and its Save use the
       // scoresheet's name (owner 2026-10-13). A server without the route (404 /
       // 405 before its update) or a blocked popup: the file as before.
       const link = await scoresheetsApi.viewLink(m.id)
       if (link.url) {
+        if (tab) {
+          tab.location.href = link.url
+          setBusy(null)
+          return
+        }
         if (openAppWindow(link.url, { title: link.filename || undefined }).ok) {
           setBusy(null)
           return
         }
       } else if (link.status !== 404 && link.status !== 405) {
-        setBusy(null)
-        toast.error(errorText(link.error))
-        return
+        return fail(link.error)
       }
     }
     const res = await scoresheetsApi.pdf(m.id, { download })
+    if (res.error) return fail(res.error)
     setBusy(null)
-    if (res.error) {
-      toast.error(errorText(res.error))
-      return
-    }
     const blob = pdfOf(res.blob)
     const name = res.filename || `scoresheet_game${m.game_n ?? ''}.pdf`
     if (download) return saveBlob(blob, name)
     const url = URL.createObjectURL(blob)
+    if (tab) {
+      tab.location.href = url
+      setTimeout(() => URL.revokeObjectURL(url), VIEW_URL_TTL_MS)
+      return
+    }
     // A popup blocker (Safari: a popup after a request) gets the file instead
     if (!openAppWindow(url, { title: name }).ok) {
       URL.revokeObjectURL(url)

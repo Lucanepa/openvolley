@@ -35,7 +35,7 @@ describe('ScoresheetsPanel', () => {
     api.viewLink.mockResolvedValue({ error: { code: 'OV_NOT_FOUND' }, status: 404 })
     URL.createObjectURL = vi.fn(() => SHEET_URL)
     URL.revokeObjectURL = vi.fn()
-    opened = { closed: false }
+    opened = { closed: false, location: { href: '' }, close: vi.fn() }
     vi.spyOn(window, 'open').mockImplementation(() => opened)
   })
   afterEach(() => vi.restoreAllMocks())
@@ -55,12 +55,18 @@ describe('ScoresheetsPanel', () => {
     await waitFor(() => expect(api.list).toHaveBeenLastCalledWith({ app: 'beach', state: 'closed', q: undefined, limit: 200 }))
   })
 
-  it('View opens the server\'s view link in the browser\'s viewer (its name, its Save); no file is fetched', async () => {
-    api.viewLink.mockResolvedValue({ url: VIEW_URL, filename: 'game402397_1L_2026-10-10.pdf' })
+  it('View opens a tab at the click (no popup blocker) and sends it to the server\'s view link; no file is fetched', async () => {
+    let resolveLink
+    api.viewLink.mockReturnValue(new Promise((r) => { resolveLink = r }))
     render(<ScoresheetsPanel />)
     await screen.findByText('Voléro vs Smash')
     fireEvent.click(within(rowOf('Voléro vs Smash')).getByRole('button', { name: 'manage.scoresheets.view' }))
-    await waitFor(() => expect(window.open).toHaveBeenCalledWith(VIEW_URL, '_blank', expect.any(String)))
+    // the tab is open before the request has answered
+    expect(window.open).toHaveBeenCalledWith('', '_blank')
+    expect(opened.opener).toBeNull()
+    resolveLink({ url: VIEW_URL, filename: 'game402397_1L_2026-10-10.pdf' })
+    await waitFor(() => expect(opened.location.href).toBe(VIEW_URL))
+    expect(window.open).toHaveBeenCalledTimes(1)
     expect(api.viewLink).toHaveBeenCalledWith('m-1')
     expect(api.pdf).not.toHaveBeenCalled()
     expect(URL.createObjectURL).not.toHaveBeenCalled()
@@ -72,18 +78,19 @@ describe('ScoresheetsPanel', () => {
     await screen.findByText('Voléro vs Smash')
     fireEvent.click(within(rowOf('Voléro vs Smash')).getByRole('button', { name: 'manage.scoresheets.view' }))
     await waitFor(() => expect(toasts.error.length).toBe(1))
-    expect(window.open).not.toHaveBeenCalled()
+    // the tab opened at the click is closed again
+    expect(opened.close).toHaveBeenCalled()
     expect(api.pdf).not.toHaveBeenCalled()
   })
 
-  it('View opens the PDF in a window (openAppWindow); a blocked popup saves it instead', async () => {
+  it('a server without view links: the tab gets the PDF itself; a blocked popup saves it instead', async () => {
     api.pdf.mockResolvedValue({ blob: pdfBlob, filename: 'scoresheet_game402397_2026-10-10.pdf' })
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     render(<ScoresheetsPanel />)
     await screen.findByText('Voléro vs Smash')
     const view = () => within(rowOf('Voléro vs Smash')).getByRole('button', { name: 'manage.scoresheets.view' })
     fireEvent.click(view())
-    await waitFor(() => expect(window.open).toHaveBeenCalledWith(SHEET_URL, '_blank', expect.any(String)))
+    await waitFor(() => expect(opened.location.href).toBe(SHEET_URL))
     expect(api.pdf).toHaveBeenCalledWith('m-1', { download: false })
     expect(click).not.toHaveBeenCalled()
 
@@ -110,6 +117,8 @@ describe('ScoresheetsPanel', () => {
     await waitFor(() => expect(within(row).getByRole('button', { name: 'manage.scoresheets.view' })).not.toBeDisabled())
     fireEvent.click(within(row).getByRole('button', { name: 'manage.scoresheets.view' }))
     await waitFor(() => expect(toasts.error).toEqual(['manage.scoresheets.noPdf']))
-    expect(window.open).not.toHaveBeenCalled()
+    // the tab opened at the click is closed again; nothing else was opened
+    expect(opened.close).toHaveBeenCalled()
+    expect(window.open).toHaveBeenCalledTimes(1)
   })
 })
