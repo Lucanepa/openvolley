@@ -1,6 +1,6 @@
 import React from 'react'
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
-import { render } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import App from '../App_Scoresheet'
 import { LiberoControlSheet } from '../components/LiberoControlSheet'
 import { Results } from '../components/FooterSection'
@@ -114,6 +114,42 @@ describe('App_Scoresheet', () => {
     expect(set2).not.toContain('IIIIIIIVVVI123456')
     // 17 -> 9 at 0:1 drawn in column I (first column right after the starting row)
     expect(set2).toMatch(/IIIIIIIVVVI17234569/)
+  })
+})
+
+describe('App_Scoresheet on a phone', () => {
+  const size = { w: window.innerWidth, h: window.innerHeight }
+  const setViewport = (w: number, h: number) => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: w })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: h })
+  }
+  beforeAll(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  afterAll(() => {
+    setViewport(size.w, size.h)
+    vi.restoreAllMocks()
+  })
+
+  it('held upright: no "rotate your device" wall, the sheet is shown turned; Turn puts it upright', () => {
+    setViewport(412, 892)
+    const { container } = render(<App matchData={buildMatch()} autoAction="preview" />)
+    expect(container.textContent).not.toContain('Please Rotate Your Device')
+    const sheet = container.querySelector('.scoresheet-container') as HTMLElement
+    expect(sheet.style.transform).toContain('rotate(90deg)')
+    const box = screen.getByTestId('sheet-turn-box')
+    expect(parseFloat(box.style.width)).toBeLessThan(parseFloat(box.style.height))
+    fireEvent.click(screen.getByRole('button', { name: /Turn/ }))
+    expect(sheet.style.transform).not.toContain('rotate')
+    expect(box.style.display).toBe('contents')
+  })
+
+  it('a wide screen: no Turn button, the sheet is not turned', () => {
+    setViewport(1366, 768)
+    const { container } = render(<App matchData={buildMatch()} autoAction="preview" />)
+    expect(screen.queryByRole('button', { name: /Turn/ })).toBeNull()
+    expect((container.querySelector('.scoresheet-container') as HTMLElement).style.transform).not.toContain('rotate')
   })
 })
 

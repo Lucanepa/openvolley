@@ -2830,6 +2830,8 @@ export default function App() {
   const phoneLayoutOn = phoneLayoutKept(readStoredDisplayMode(), viewportSize)
   const phoneScoringShown = phoneLayoutOn && !!matchId && !showCoinToss && !showMatchSetup && !showMatchEnd && !showManualAdjustments
   const phoneMatchEndShown = phoneLayoutOn && !!matchId && showMatchEnd && !showManualAdjustments
+  // the screens a phone cannot show (the size gate below)
+  const smallScreenBlocked = !!matchId && !showMatchSetup && !showCoinToss && !phoneScoringShown && !phoneMatchEndShown
 
   const notClosed = (m) => (m && closedMatchId != null && m.id === closedMatchId ? null : m)
   const shownCurrentMatch = notClosed(currentMatch)
@@ -2858,11 +2860,12 @@ export default function App() {
         setMatchInfoMenuOpen(false)
       }
     }}>
-      {/* Minimum screen size warning - block phones/small screens */}
-      {/* Allow if at least one dimension >= 800 (tablet in any orientation), but enforce min 500 on both */}
-      {/* Skip warning in fullscreen mode - trust user has adequate screen space */}
-      {/* The scoring screen is let through when it shows its phone layout (PhoneScoreboard), and its match end */}
-      {!isFullscreen && !phoneScoringShown && !phoneMatchEndShown && isViewportTooSmall(viewportSize.width, viewportSize.height) ? (
+      {/* Minimum screen size warning. Home, match setup, coin toss and their
+          dialogs fit a phone (2026-10-13); the scoring screen and its match
+          end only with the phone layout (PhoneScoreboard, Screen mode Auto or
+          Phone), and the manual adjustments not yet. Allowed when at least one
+          dimension >= 800 (tablet in any orientation) and in fullscreen. */}
+      {!isFullscreen && smallScreenBlocked && isViewportTooSmall(viewportSize.width, viewportSize.height) ? (
         <div className="ov-kit flex flex-1 flex-col items-center justify-center bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100 p-4">
           <div className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-stone-200/70 bg-white p-8 text-center shadow-card-lg">
             <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 to-red-500" />
@@ -2876,7 +2879,7 @@ export default function App() {
               Current: {viewportSize.width} × {viewportSize.height}px
             </p>
             <p className="mt-3 text-sm text-stone-600">
-              Try rotating your device or entering fullscreen mode.
+              Try rotating your device or entering fullscreen mode. On a phone, choose Screen mode Auto or Phone in Options.
             </p>
             <Button variant="dark" size="xl" block icon={Maximize} onClick={toggleFullscreen} className="mt-6">
               Enter fullscreen
