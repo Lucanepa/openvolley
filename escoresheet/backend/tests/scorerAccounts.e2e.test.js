@@ -197,7 +197,7 @@ describe('scorer accounts end to end', { skip: SKIP }, () => {
       assert.equal(chk.json.data.taken, true)
       assert.equal(chk.json.data.claim.mine, false)
       assert.equal((await call(users.anna, 'POST', '/api/match/official-check', { game_n: n, scheduled_at: '2026-10-11T10:00:00Z', sport_type: 'indoor', external_id: 'other-device' })).json.data.claim.mine, true)
-      assert.deepEqual((await call(users.ben, 'POST', '/api/match/official-check', { game_n: n, scheduled_at: '2027-10-11T10:00:00Z', sport_type: 'indoor' })).json.data, { taken: false })
+      assert.deepEqual((await call(users.ben, 'POST', '/api/match/official-check', { game_n: n, scheduled_at: '2027-10-11T10:00:00Z', sport_type: 'indoor' })).json.data, { taken: false, club: { ok: true } }) // db/018: the club rule is off
       // a test match for the same game is fine
       assert.equal((await dbCall(users.ben, 'matches', 'insert', { data: { ...second, external_id: `match_${Date.now()}_bt`, test: true } })).status, 200)
     })

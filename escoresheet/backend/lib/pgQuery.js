@@ -114,7 +114,11 @@ export const DEFAULT_CONFIG = Object.freeze({
       // db/011: match_approvals rows are append-only (only a bug reaches it)
       OVA01: { status: 409, code: 'OV_APPROVAL_IMMUTABLE', message: 'An approval cannot be changed.' },
       // db/012: matches.sport_type is fixed after insert
-      OVS01: { status: 409, code: 'OV_SPORT_LOCKED', message: 'The sport of a match cannot be changed.' }
+      OVS01: { status: 409, code: 'OV_SPORT_LOCKED', message: 'The sport of a match cannot be changed.' },
+      // db/018: a scorer scores the home games of its own club(s) (lib/clubs.js)
+      OVL01: { status: 403, code: 'OV_CLUB_REQUIRED', message: 'Your account has no club yet. An admin adds it before you can score official games.' },
+      OVL02: { status: 403, code: 'OV_NOT_YOUR_CLUB', message: 'You can score the home games of your club only.' },
+      OVL03: { status: 403, code: 'OV_GAME_NOT_IN_SCHEDULE', message: 'This game is not in the VolleyManager schedule, so its home team is unknown.' }
     },
     constraint: {
       matches_official_game_uidx: { status: 409, code: 'OV_GAME_TAKEN', message: 'This official game is already scored by another account.' }

@@ -23,6 +23,11 @@
  *   GET    /api/admin/approvals[?app=indoor|beach]   isAdmin
  *   GET    /api/admin/matches/:id/revisions          isAdmin: undone / edited events (db/015)
  *   GET    /api/admin/activity?match=&account=&...   isAdmin: the activity log (db/016)
+ *   GET    /api/admin/clubs                          isAdmin: clubs, their teams, the rule (db/018, lib/clubs.js)
+ *   POST   /api/admin/clubs, PATCH/DELETE /api/admin/clubs/:id   isAdmin
+ *   GET    /api/admin/club-teams?q=                  isAdmin: VolleyManager team names with their club
+ *   PUT    /api/admin/accounts/:id/clubs             isAdmin: the account's clubs (the whole list)
+ *   PUT    /api/admin/club-rule                      isAdmin: { enabled }
  *   DELETE /api/admin/activity?match=|account=&confirm=yes  isAdmin: delete on request (audited)
  *   GET    /api/scoresheets?app=indoor|beach&state=&q=  canManageTeams of that sport (admins and its
  *                                                    competition managers; no app = indoor)
@@ -68,7 +73,7 @@ export function manageFamilyOf (pathname) {
   return null
 }
 
-export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null }) {
+export function createManageApi ({ accounts, savedTeams, beach = null, approvals = null, revisions = null, activity = null, scoresheets = null, clubs = null }) {
   // approvals?.x, or 503 when the module is not there
   const ap = (name) => (args) => (approvals && typeof approvals[name] === 'function' ? approvals[name](args) : APPROVALS_OFF())
   const q = (query, k) => {
@@ -117,10 +122,18 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['GET', /^\/api\/me$/, 'any', (m, c) => accounts.me({ userId: c.user.id, access: c.access })],
     ['POST', /^\/api\/account\/join$/, 'any', (m, c) => accounts.joinApp({ userId: c.user.id, body: c.body })],
     ['POST', /^\/api\/account\/redeem-invite$/, 'any', (m, c) => accounts.redeemInvite({ userId: c.user.id, code: c.body?.code })],
-    ['POST', /^\/api\/match\/official-check$/, scoreInBodySport, (m, c) => accounts.officialCheck({ userId: c.user.id, body: c.body })],
+    ['POST', /^\/api\/match\/official-check$/, scoreInBodySport, (m, c) => accounts.officialCheck({ userId: c.user.id, access: c.access, body: c.body })],
 
     ['GET', /^\/api\/admin\/accounts$/, 'admin', (m, c) => accounts.listAccounts({ filter: q(c.query, 'filter') || 'pending', q: q(c.query, 'q') ?? '', limit: q(c.query, 'limit'), app: q(c.query, 'app') })],
     ['POST', new RegExp(`^/api/admin/accounts/${ID}/roles$`), 'admin', (m, c) => accounts.setRoles({ actor: { id: c.user.id, access: c.access }, userId: m[1], body: c.body })],
+    // db/018: clubs (lib/clubs.js); 404 on a server built without it
+    ['PUT', new RegExp(`^/api/admin/accounts/${ID}/clubs$`), 'admin', (m, c) => (clubs ? clubs.setAccountClubs({ actorId: c.user.id, userId: m[1], body: c.body }) : notFound())],
+    ['GET', /^\/api\/admin\/clubs$/, 'admin', () => (clubs ? clubs.list() : notFound())],
+    ['POST', /^\/api\/admin\/clubs$/, 'admin', (m, c) => (clubs ? clubs.create({ actorId: c.user.id, body: c.body }) : notFound())],
+    ['PATCH', new RegExp(`^/api/admin/clubs/${ID}$`), 'admin', (m, c) => (clubs ? clubs.update({ actorId: c.user.id, id: m[1], body: c.body }) : notFound())],
+    ['DELETE', new RegExp(`^/api/admin/clubs/${ID}$`), 'admin', (m, c) => (clubs ? clubs.remove({ actorId: c.user.id, id: m[1] }) : notFound())],
+    ['GET', /^\/api\/admin\/club-teams$/, 'admin', (m, c) => (clubs ? clubs.vmTeams({ q: q(c.query, 'q') ?? '' }) : notFound())],
+    ['PUT', /^\/api\/admin\/club-rule$/, 'admin', (m, c) => (clubs ? clubs.setRule({ actorId: c.user.id, body: c.body }) : notFound())],
     ['GET', /^\/api\/admin\/invites$/, 'admin', (m, c) => accounts.listInvites({ app: q(c.query, 'app') })],
     ['POST', /^\/api\/admin\/invites$/, 'admin', (m, c) => accounts.createInvite({ actorId: c.user.id, body: c.body, app: q(c.query, 'app') })],
     ['POST', new RegExp(`^/api/admin/invites/${ID}/revoke$`), 'admin', (m, c) => accounts.revokeInvite({ actorId: c.user.id, id: m[1] })],
