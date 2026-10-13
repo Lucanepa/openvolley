@@ -2407,7 +2407,7 @@
   "managerSite": {
     "eyebrow": "Verwaltung",
     "signInHeading": "OpenVolley verwalten",
-    "signInBody": "Konten, Einladungscodes, offizielle Spiele, abgeschlossene Spiele und gespeicherte Teams – für Admins und Wettbewerbsverantwortliche.",
+    "signInBody": "Konten, Einladungscodes, offizielle Spiele, abgeschlossene Spiele, Matchblätter und gespeicherte Teams – für Admins und Wettbewerbsverantwortliche.",
     "signIn": "Anmelden",
     "noAccountYet": "No kei Konto? Erstell eis da – es gilt i jedere OpenVolley-App.",
     "openApp": "Schreiber-App",
@@ -2432,11 +2432,12 @@
     "nativeAppsNote": "Bruuchsch d Desktop- oder Android-App? Mäld dich det eifach mit dere E-Mail und däm Passwort aa.",
     "allSetTitle": "Alles parat",
     "allSetBody": "Dis Konto isch fürs Schriibe freigäh. Mäld dich i de Schriiber-App mit dere E-Mail und däm Passwort aa.",
-    "haveManagerCode": "En Iiladigscode für d Verwaltig übercho? Da iigä"
+    "haveManagerCode": "En Iiladigscode für d Verwaltig übercho? Da iigä",
+    "switchTo": "Zu {{name}} wechseln"
   },
   "managerBeach": {
     "signInHeading": "OpenBeach verwalten",
-    "signInBody": "Konten, Einladungscodes und gespeicherte Beach-Teams – für Admins und Wettbewerbsverantwortliche.",
+    "signInBody": "Konten, Einladungscodes, Matchblätter und gespeicherte Beach-Teams – für Admins und Wettbewerbsverantwortliche.",
     "noAccountYet": "No kei Konto? Erstell eis da. Eis Konto gilt für OpenBeach und OpenVolley.",
     "signUpBody": "Eis Konto für OpenBeach und OpenVolley. Jedi App git dich separat frei.",
     "existingAccount": "Für die E-Mail gits scho es Konto (OpenVolley oder OpenBeach). Mäld dich mit dim bisherige Passwort aa, zum OpenBeach biiträte.",
@@ -2467,7 +2468,8 @@
       "audit": "Protokoll",
       "teams": "Gespeicherte Teams",
       "tournaments": "Turniere",
-      "activity": "Aktivität"
+      "activity": "Aktivität",
+      "scoresheets": "Matchblätter"
     },
     "status": {
       "setup": "Vorbereitung",
@@ -2596,7 +2598,8 @@
         "approval_pin_locked": "Genehmigungs-PIN gesperrt",
         "match_approve": "Resultat mit Konto genehmigt",
         "match_approval_revoke": "Konto-Genehmigung rückgängig gemacht",
-        "match_approval_void": "Konto-Genehmigungen ungültig"
+        "match_approval_void": "Konto-Genehmigungen ungültig",
+        "scoresheet_read": "Matchblatt geöffnet"
       }
     },
     "approvals": {
@@ -2692,6 +2695,14 @@
         "correction": "Korrektur",
         "other": "Anders"
       }
+    },
+    "scoresheets": {
+      "intro": "Alle Spiele dieser App mit ihrem gespeicherten Matchblatt (PDF). Jedes Ansehen und Herunterladen wird im Protokoll festgehalten.",
+      "view": "Ansehen",
+      "download": "PDF herunterladen",
+      "noPdfYet": "Noch kein Matchblatt gespeichert",
+      "noPdf": "Für dieses Spiel ist kein Matchblatt-PDF gespeichert.",
+      "storedAt": "Matchblatt gespeichert {{date}}"
     }
   },
   "savedTeams": {

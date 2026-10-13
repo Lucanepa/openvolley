@@ -2413,7 +2413,7 @@
   "managerSite": {
     "eyebrow": "Manager",
     "signInHeading": "Manage OpenVolley",
-    "signInBody": "Accounts, invite codes, official games, closed matches and saved teams – for admins and competition managers.",
+    "signInBody": "Accounts, invite codes, official games, closed matches, scoresheets and saved teams – for admins and competition managers.",
     "signIn": "Sign in",
     "noAccountYet": "No account yet? Create one here – it works in every OpenVolley app.",
     "openApp": "Scorer app",
@@ -2438,11 +2438,12 @@
     "nativeAppsNote": "Using the desktop or Android app? Just sign in there with this email and password.",
     "allSetTitle": "You're all set",
     "allSetBody": "Your account is approved for scoring. Sign in in the scorer app with this email and password.",
-    "haveManagerCode": "Got an invite code for the manager? Enter it here"
+    "haveManagerCode": "Got an invite code for the manager? Enter it here",
+    "switchTo": "Switch to {{name}}"
   },
   "managerBeach": {
     "signInHeading": "Manage OpenBeach",
-    "signInBody": "Accounts, invite codes and saved beach teams – for admins and competition managers.",
+    "signInBody": "Accounts, invite codes, scoresheets and saved beach teams – for admins and competition managers.",
     "noAccountYet": "No account yet? Create one here. One account works for OpenBeach and OpenVolley.",
     "signUpBody": "One account for OpenBeach and OpenVolley. Each app approves you separately.",
     "existingAccount": "This email already has an account (OpenVolley or OpenBeach). Sign in with your existing password to join OpenBeach.",
@@ -2473,7 +2474,8 @@
       "audit": "Audit log",
       "teams": "Saved teams",
       "tournaments": "Tournaments",
-      "activity": "Activity"
+      "activity": "Activity",
+      "scoresheets": "Scoresheets"
     },
     "status": {
       "setup": "Set-up",
@@ -2602,7 +2604,8 @@
         "approval_pin_locked": "Approval PIN locked",
         "match_approve": "Result approved with account",
         "match_approval_revoke": "Account approval undone",
-        "match_approval_void": "Account approvals voided"
+        "match_approval_void": "Account approvals voided",
+        "scoresheet_read": "Scoresheet opened"
       }
     },
     "approvals": {
@@ -2698,6 +2701,14 @@
         "correction": "Correction",
         "other": "Other"
       }
+    },
+    "scoresheets": {
+      "intro": "Every match of this app with its stored scoresheet (PDF). Each view and download is recorded in the audit log.",
+      "view": "View",
+      "download": "Download PDF",
+      "noPdfYet": "No scoresheet stored yet",
+      "noPdf": "No scoresheet PDF is stored for this match.",
+      "storedAt": "Scoresheet stored {{date}}"
     }
   },
   "savedTeams": {

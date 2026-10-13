@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Activity, ArrowLeft, ClipboardList, KeyRound, Medal, ScrollText, ShieldCheck, Trophy, Users } from 'lucide-react'
+import { Activity, ArrowLeft, ClipboardList, FileText, KeyRound, Medal, ScrollText, ShieldCheck, Trophy, Users } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { ConsoleShell, ConsolePanel, consoleHeaderBtn } from '../../ui'
 import AccountsPanel from './AccountsPanel'
 import InvitesPanel from './InvitesPanel'
 import OfficialGamesPanel from './OfficialGamesPanel'
 import ClosedMatchesPanel from './ClosedMatchesPanel'
+import ScoresheetsPanel from './ScoresheetsPanel'
 import AuditPanel from './AuditPanel'
 import ActivityPanel from './ActivityPanel'
 import SavedTeamsPanel from './SavedTeamsPanel'
@@ -20,6 +21,8 @@ const TABS = [
   { id: 'invites', icon: KeyRound, admin: true },
   { id: 'games', icon: Trophy, admin: true },
   { id: 'matches', icon: ShieldCheck, admin: true },
+  // every match's stored scoresheet PDF: admins and the sport's competition managers
+  { id: 'scoresheets', icon: FileText, admin: false },
   { id: 'audit', icon: ScrollText, admin: true },
   // the scoring devices' activity log (db/016)
   { id: 'activity', icon: Activity, admin: true },
@@ -29,7 +32,8 @@ const TABS = [
 ]
 
 /**
- * The tabs an account sees: admins all six, competition managers saved teams.
+ * The tabs an account sees: admins all of them, competition managers the
+ * scoresheets and saved teams.
  * With a brand (src/managerBrand.js) only that brand's tabs, and the saved
  * teams by that app's role (OpenBeach: beach:competition_manager). Without
  * one (or OpenVolley's), exactly as before. A tab with `apps` (tournaments)
@@ -50,9 +54,10 @@ export function manageTabsFor(access, brand = null) {
  * the main app. Hiding tabs is cosmetic: every action is refused by the
  * server without the role.
  * `onClose` draws "Back to the app" (left out on manager.openvolley.app);
- * `headerActions` go before it in the header.
+ * `headerActions` go before it in the header; `phoneTop` above the panel
+ * below sm (what the phone's header has no room for).
  */
-export default function ManageConsole({ tab, onTab, onClose, headerActions }) {
+export default function ManageConsole({ tab, onTab, onClose, headerActions, phoneTop = null }) {
   const { t } = useTranslation()
   const { user, access } = useAuth()
   const brand = useManagerBrand()
@@ -111,10 +116,12 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions }) {
         navLabel={t('manage.nav')}
         footer={<LegalLinks className="text-[11px] text-stone-400" />}
       >
+        {phoneTop && <div className="mb-3 sm:hidden">{phoneTop}</div>}
         {visited.has('accounts') && <ConsolePanel id="accounts" current={current}><AccountsPanel selfId={user.id} app={scope} /></ConsolePanel>}
         {visited.has('invites') && <ConsolePanel id="invites" current={current}><InvitesPanel app={scope} /></ConsolePanel>}
         {visited.has('games') && <ConsolePanel id="games" current={current}><OfficialGamesPanel /></ConsolePanel>}
         {visited.has('matches') && <ConsolePanel id="matches" current={current}><ClosedMatchesPanel onShowActivity={showActivity} /></ConsolePanel>}
+        {visited.has('scoresheets') && <ConsolePanel id="scoresheets" current={current}><ScoresheetsPanel app={brand.app} /></ConsolePanel>}
         {visited.has('audit') && <ConsolePanel id="audit" current={current}><AuditPanel app={scope} /></ConsolePanel>}
         {visited.has('activity') && <ConsolePanel id="activity" current={current}><ActivityPanel app={scope} initialMatch={activityMatch} /></ConsolePanel>}
         {visited.has('teams') && <ConsolePanel id="teams" current={current}><SavedTeamsPanel userId={user.id} sport={scope} /></ConsolePanel>}

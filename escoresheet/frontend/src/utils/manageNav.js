@@ -7,7 +7,7 @@
 export const OPEN_MANAGE_EVENT = 'ov-open-manage'
 export const OPEN_RESTORE_EVENT = 'ov-open-restore'
 
-/** Open the manage console on a tab ('accounts', 'invites', 'games', 'matches', 'audit', 'teams'). */
+/** Open the manage console on a tab ('accounts', 'invites', 'games', 'matches', 'scoresheets', 'audit', 'teams'). */
 export function openManage(tab = 'accounts') {
   try { window.dispatchEvent(new CustomEvent(OPEN_MANAGE_EVENT, { detail: { tab } })) } catch { /* no window */ }
 }

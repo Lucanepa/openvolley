@@ -24,9 +24,10 @@ const api = vi.hoisted(() => ({
     listMatches: vi.fn(async () => ({ data: { matches: [] }, error: null, status: 200 })),
     listAudit: vi.fn(async () => ({ data: { entries: [], next_before: null }, error: null, status: 200 }))
   },
-  savedTeamsApi: { fetchBundle: vi.fn(async () => ({ data: { version: '0', competitions: [], teams: [] }, error: null, status: 200 })) }
+  savedTeamsApi: { fetchBundle: vi.fn(async () => ({ data: { version: '0', competitions: [], teams: [] }, error: null, status: 200 })) },
+  scoresheetsApi: { list: vi.fn(async () => ({ data: { matches: [] }, error: null, status: 200 })), pdf: vi.fn() }
 }))
-vi.mock('../lib/accountApi', async (orig) => ({ ...(await orig()), admin: api.admin, savedTeamsApi: api.savedTeamsApi }))
+vi.mock('../lib/accountApi', async (orig) => ({ ...(await orig()), admin: api.admin, savedTeamsApi: api.savedTeamsApi, scoresheetsApi: api.scoresheetsApi }))
 vi.mock('../db/savedTeams', () => ({ storeSavedTeamsBundle: vi.fn(async () => []) }))
 vi.mock('../lib/apiClient', () => ({
   apiFrom: () => {
@@ -132,7 +133,7 @@ describe('ManagerApp (manager.openvolley.app)', () => {
     expect(screen.getByTestId('manage-console')).toBeInTheDocument()
     expect(railButtons().map(b => b.textContent)).toEqual([
       'manage.tabs.accounts', 'manage.tabs.invites', 'manage.tabs.games',
-      'manage.tabs.matches', 'manage.tabs.audit', 'manage.tabs.activity', 'manage.tabs.teams'
+      'manage.tabs.matches', 'manage.tabs.scoresheets', 'manage.tabs.audit', 'manage.tabs.activity', 'manage.tabs.teams'
     ])
     expect(screen.queryByRole('button', { name: 'manage.backToApp' })).toBeNull()
     expect(screen.getByRole('link', { name: 'managerSite.openAppLong' })).toHaveAttribute('href', APP_URL)
@@ -172,12 +173,12 @@ describe('ManagerApp (manager.openvolley.app)', () => {
     await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalled())
   })
 
-  it('competition manager: saved teams only, whatever the hash asks', async () => {
+  it('competition manager: scoresheets and saved teams, whatever the hash asks', async () => {
     window.history.replaceState(null, '', '/#accounts')
     setAuth({ roles: ['competition_manager'] })
     render(<ManagerApp />)
-    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.teams'])
-    await waitFor(() => expect(api.savedTeamsApi.fetchBundle).toHaveBeenCalled())
+    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.tabs.teams'])
+    await waitFor(() => expect(api.scoresheetsApi.list).toHaveBeenCalledWith(expect.objectContaining({ app: 'indoor' })))
     expect(api.admin.listAccounts).not.toHaveBeenCalled()
   })
 

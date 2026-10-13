@@ -2412,7 +2412,7 @@
   "managerSite": {
     "eyebrow": "Gestione",
     "signInHeading": "Gestisci OpenVolley",
-    "signInBody": "Account, codici d’invito, partite ufficiali, partite chiuse e squadre salvate – per admin e responsabili di competizione.",
+    "signInBody": "Account, codici d’invito, partite ufficiali, partite chiuse, referti e squadre salvate – per admin e responsabili di competizione.",
     "signIn": "Accedi",
     "noAccountYet": "Non hai ancora un account? Crealo qui – vale in ogni app OpenVolley.",
     "openApp": "App del segnapunti",
@@ -2437,11 +2437,12 @@
     "nativeAppsNote": "Usi l’app desktop o Android? Accedi lì con questa email e questa password.",
     "allSetTitle": "Tutto pronto",
     "allSetBody": "Il tuo account è approvato per refertare. Accedi nell’app del segnapunti con questa email e questa password.",
-    "haveManagerCode": "Hai ricevuto un codice d’invito per la gestione? Inseriscilo qui"
+    "haveManagerCode": "Hai ricevuto un codice d’invito per la gestione? Inseriscilo qui",
+    "switchTo": "Passa a {{name}}"
   },
   "managerBeach": {
     "signInHeading": "Gestisci OpenBeach",
-    "signInBody": "Account, codici d’invito e squadre di beach salvate – per admin e responsabili di competizione.",
+    "signInBody": "Account, codici d’invito, referti e squadre di beach salvate – per admin e responsabili di competizione.",
     "noAccountYet": "Non hai ancora un account? Crealo qui. Un solo account vale per OpenBeach e OpenVolley.",
     "signUpBody": "Un solo account per OpenBeach e OpenVolley. Ogni app ti approva separatamente.",
     "existingAccount": "Questa email ha già un account (OpenVolley o OpenBeach). Accedi con la tua password attuale per unirti a OpenBeach.",
@@ -2472,7 +2473,8 @@
       "audit": "Registro",
       "teams": "Squadre salvate",
       "tournaments": "Tornei",
-      "activity": "Attività"
+      "activity": "Attività",
+      "scoresheets": "Referti"
     },
     "status": {
       "setup": "Preparazione",
@@ -2601,7 +2603,8 @@
         "approval_pin_locked": "PIN di approvazione bloccato",
         "match_approve": "Risultato approvato con account",
         "match_approval_revoke": "Approvazione con account annullata",
-        "match_approval_void": "Approvazioni con account annullate"
+        "match_approval_void": "Approvazioni con account annullate",
+        "scoresheet_read": "Referto aperto"
       }
     },
     "approvals": {
@@ -2697,6 +2700,14 @@
         "correction": "Correzione",
         "other": "Altro"
       }
+    },
+    "scoresheets": {
+      "intro": "Tutte le partite di questa app con il referto salvato (PDF). Ogni visualizzazione e download viene annotato nel registro.",
+      "view": "Visualizza",
+      "download": "Scarica PDF",
+      "noPdfYet": "Nessun referto ancora salvato",
+      "noPdf": "Per questa partita non è salvato alcun PDF del referto.",
+      "storedAt": "Referto salvato {{date}}"
     }
   },
   "savedTeams": {

@@ -184,6 +184,21 @@ export function isApprovalUnavailable(error) {
 
 // ── Saved teams ──
 
+// ── Scoresheets (the manager's Scoresheets tab) ──
+// Admins and the sport's competition managers: a sport's matches with their
+// stored PDF, and the PDF itself (every open is in the audit log).
+
+export const scoresheetsApi = {
+  /** GET /api/scoresheets: `app` 'indoor' | 'beach', `state` 'closed' | 'open' | 'all'. */
+  list({ app = 'indoor', state = 'all', q, limit } = {}) {
+    return apiRequest('GET', `/api/scoresheets${query({ app, state, q, limit })}`)
+  },
+  /** The stored PDF of a match: { blob, filename } or { error }. */
+  pdf(matchId, { download = false } = {}) {
+    return apiDownload(`/api/scoresheets/${enc(matchId)}/pdf${query({ download: download ? 1 : undefined })}`)
+  }
+}
+
 export const savedTeamsApi = {
   /** sport: 'indoor' | 'beach' | 'all'; none = the server's default (indoor only). */
   fetchBundle({ sport } = {}) {
@@ -233,6 +248,7 @@ export function errorKeyOf(error, { context } = {}) {
     case 'OV_EMAIL_UNCONFIRMED': return 'access.errors.emailUnconfirmed'
     case 'OV_DUPLICATE': return 'savedTeams.duplicateTeam'
     case 'OV_FORBIDDEN': return 'manage.errors.forbidden'
+    case 'OV_SCORESHEET_NOT_FOUND': return 'manage.scoresheets.noPdf'
     default:
       if (error.status === 401 || error.status === 403) return 'manage.errors.forbidden'
       return 'manage.errors.generic'

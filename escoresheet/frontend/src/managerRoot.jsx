@@ -32,7 +32,8 @@ export function renderManager(app) {
   ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
       <ErrorBoundary name="manager">
-        <ManagerBrandProvider app={app}>
+        {/* switchable: an account that manages both apps flips between them here */}
+        <ManagerBrandProvider app={app} switchable>
           <AuthProvider app={authApp}>
             <ManagerApp authLink={authLink} />
           </AuthProvider>

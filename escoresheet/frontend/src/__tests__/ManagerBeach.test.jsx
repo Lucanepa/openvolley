@@ -32,6 +32,7 @@ const api = vi.hoisted(() => ({
     createInvite: vi.fn(async () => ({ data: { code: 'ABCD-EFGH-JKLM', invite: { label: 'Tour', role: 'scorer', sport: 'beach' } }, error: null, status: 200 }))
   },
   savedTeamsApi: { fetchBundle: vi.fn(async () => ({ data: { version: '0', competitions: [], teams: [] }, error: null, status: 200 })) },
+  scoresheetsApi: { list: vi.fn(async () => ({ data: { matches: [] }, error: null, status: 200 })), pdf: vi.fn() },
   fetchMe: vi.fn(async () => ({ data: { apps: { indoor: { member: true }, beach: { member: true } } }, error: null, status: 200 })),
   joinApp: vi.fn(async () => ({ data: { app: 'beach', member: true, already_member: false }, error: null, status: 200 }))
 }))
@@ -39,6 +40,7 @@ vi.mock('../lib/accountApi', async (orig) => ({
   ...(await orig()),
   admin: api.admin,
   savedTeamsApi: api.savedTeamsApi,
+  scoresheetsApi: api.scoresheetsApi,
   fetchMe: api.fetchMe,
   joinApp: api.joinApp
 }))
@@ -93,17 +95,17 @@ describe('managerBrand', () => {
     expect(MANAGER_BRANDS.indoor).toMatchObject({ name: 'OpenVolley', tabs: null, scope: 'indoor' })
   })
 
-  it('tabs: OpenBeach has no official games or closed matches, but tournaments (T1); roles of its own app', () => {
+  it('tabs: OpenBeach has no official games or closed matches, but scoresheets and tournaments (T1); roles of its own app', () => {
     const beach = MANAGER_BRANDS.beach
-    expect(manageTabsFor(accessFromRoles(['admin']), beach)).toEqual(['accounts', 'invites', 'audit', 'activity', 'teams', 'tournaments'])
-    expect(manageTabsFor(accessFromRoles(['beach:competition_manager']), beach)).toEqual(['teams', 'tournaments'])
+    expect(manageTabsFor(accessFromRoles(['admin']), beach)).toEqual(['accounts', 'invites', 'scoresheets', 'audit', 'activity', 'teams', 'tournaments'])
+    expect(manageTabsFor(accessFromRoles(['beach:competition_manager']), beach)).toEqual(['scoresheets', 'teams', 'tournaments'])
     expect(manageTabsFor(accessFromRoles(['beach:scorer']), beach)).toEqual([])
     // an indoor competition manager manages nothing in OpenBeach, and the reverse
     expect(manageTabsFor(accessFromRoles(['competition_manager']), beach)).toEqual([])
     expect(manageTabsFor(accessFromRoles(['beach:competition_manager']))).toEqual([])
     // OpenVolley's console: as before
-    expect(manageTabsFor(accessFromRoles(['admin']))).toEqual(['accounts', 'invites', 'games', 'matches', 'audit', 'activity', 'teams'])
-    expect(manageTabsFor(accessFromRoles(['admin']), MANAGER_BRANDS.indoor)).toEqual(['accounts', 'invites', 'games', 'matches', 'audit', 'activity', 'teams'])
+    expect(manageTabsFor(accessFromRoles(['admin']))).toEqual(['accounts', 'invites', 'games', 'matches', 'scoresheets', 'audit', 'activity', 'teams'])
+    expect(manageTabsFor(accessFromRoles(['admin']), MANAGER_BRANDS.indoor)).toEqual(['accounts', 'invites', 'games', 'matches', 'scoresheets', 'audit', 'activity', 'teams'])
   })
 
   it('accessForApp: the beach flags; indoor is the access itself', () => {
@@ -136,16 +138,17 @@ describe('ManagerApp as OpenBeach\'s manager', () => {
     expect(api.fetchMe).not.toHaveBeenCalled()
   })
 
-  it('admin: six tabs, every list asked for ?app=beach, a link to OpenBeach', async () => {
+  it('admin: seven tabs, every list asked for ?app=beach, a link to OpenBeach', async () => {
     setAuth({ roles: ['admin'] })
     renderBeach()
-    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.accounts', 'manage.tabs.invites', 'manage.tabs.audit', 'manage.tabs.activity', 'manage.tabs.teams', 'manage.tabs.tournaments'])
+    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.accounts', 'manage.tabs.invites', 'manage.tabs.scoresheets', 'manage.tabs.audit', 'manage.tabs.activity', 'manage.tabs.teams', 'manage.tabs.tournaments'])
     expect(screen.getByRole('link', { name: 'managerBeach.openAppLong' })).toHaveAttribute('href', BEACH_APP)
     expect(screen.getByAltText('OpenBeach')).toBeInTheDocument()
     await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalledWith({ filter: 'pending', q: undefined, app: 'beach' }))
     expect(api.admin.listAccounts).toHaveBeenCalledWith({ filter: 'pending', app: 'beach' })
-    for (const tab of ['invites', 'audit', 'teams']) fireEvent.click(railButtons().find(b => b.textContent === `manage.tabs.${tab}`))
+    for (const tab of ['invites', 'scoresheets', 'audit', 'teams']) fireEvent.click(railButtons().find(b => b.textContent === `manage.tabs.${tab}`))
     await waitFor(() => expect(api.admin.listInvites).toHaveBeenCalledWith({ app: 'beach' }))
+    await waitFor(() => expect(api.scoresheetsApi.list).toHaveBeenCalledWith(expect.objectContaining({ app: 'beach' })))
     await waitFor(() => expect(api.admin.listAudit).toHaveBeenCalledWith({ limit: 50, before: undefined, app: 'beach' }))
     await waitFor(() => expect(api.savedTeamsApi.fetchBundle).toHaveBeenCalledWith({ sport: 'beach' }))
     // no indoor/beach switch, and OpenVolley's offline team cache is left alone
@@ -155,11 +158,13 @@ describe('ManagerApp as OpenBeach\'s manager', () => {
     expect(api.fetchMe).not.toHaveBeenCalled()
   })
 
-  it('beach competition manager: saved teams and tournaments', async () => {
+  it('beach competition manager: scoresheets, saved teams and tournaments', async () => {
     window.history.replaceState(null, '', '/#accounts')
     setAuth({ roles: ['beach:competition_manager'] })
     renderBeach()
-    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.teams', 'manage.tabs.tournaments'])
+    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.tabs.teams', 'manage.tabs.tournaments'])
+    await waitFor(() => expect(api.scoresheetsApi.list).toHaveBeenCalledWith(expect.objectContaining({ app: 'beach' })))
+    fireEvent.click(railButtons().find(b => b.textContent === 'manage.tabs.teams'))
     await waitFor(() => expect(api.savedTeamsApi.fetchBundle).toHaveBeenCalledWith({ sport: 'beach' }))
     expect(api.admin.listAccounts).not.toHaveBeenCalled()
   })
@@ -370,5 +375,66 @@ describe('OpenBeach manager: invite wording and footer', () => {
     expect(managerFooter(MANAGER_BRANDS.beach, '2.3.0')).toBe('OpenBeach · OpenVolley 2.3.0')
     expect(managerFooter(MANAGER_BRANDS.beach, '')).toBe('OpenBeach')
     expect(managerFooter(MANAGER_BRANDS.beach, '2.3.0')).not.toMatch(/^OpenBeach 2/)
+  })
+})
+
+describe('flip between OpenVolley and OpenBeach (one sign-in)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.history.replaceState(null, '', '/')
+    window.sessionStorage.clear()
+  })
+  const renderSwitchable = (app) => render(<ManagerBrandProvider app={app} switchable><ManagerApp /></ManagerBrandProvider>)
+
+  it('an admin flips the beach manager to OpenVolley and back; the tab keeps the choice', async () => {
+    setAuth({ roles: ['admin'] })
+    renderSwitchable('beach')
+    expect(screen.getByAltText('OpenBeach')).toBeInTheDocument()
+    expect(screen.getByTestId('manager-brand-flip')).toHaveAccessibleName('managerSite.switchTo')
+    // a phone's header has no room: the same flip above the panel (CSS picks one)
+    expect(screen.getByTestId('manager-brand-flip-phone')).toHaveTextContent('managerSite.switchTo')
+    fireEvent.click(screen.getByTestId('manager-brand-flip'))
+    expect(await screen.findByAltText('OpenVolley')).toBeInTheDocument()
+    expect(railButtons().map(b => b.textContent)).toContain('manage.tabs.games')
+    expect(window.sessionStorage.getItem('ov-manager-app')).toBe('indoor')
+    expect(document.title).toBe('OpenVolley Manager')
+    await waitFor(() => expect(api.admin.listAccounts).toHaveBeenLastCalledWith(expect.objectContaining({ app: 'indoor' })))
+    fireEvent.click(screen.getByTestId('manager-brand-flip'))
+    expect(await screen.findByAltText('OpenBeach')).toBeInTheDocument()
+    expect(window.sessionStorage.getItem('ov-manager-app')).toBe('beach')
+  })
+
+  it('a competition manager of both apps flips to the indoor scoresheets', async () => {
+    setAuth({ roles: ['competition_manager', 'beach:competition_manager'] })
+    renderSwitchable('beach')
+    await waitFor(() => expect(api.scoresheetsApi.list).toHaveBeenCalledWith(expect.objectContaining({ app: 'beach' })))
+    fireEvent.click(screen.getByTestId('manager-brand-flip-phone'))
+    await waitFor(() => expect(api.scoresheetsApi.list).toHaveBeenLastCalledWith(expect.objectContaining({ app: 'indoor' })))
+    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.tabs.teams'])
+  })
+
+  it('no flip without a console in the other app, nor outside a switchable manager', () => {
+    setAuth({ roles: ['beach:competition_manager'] })
+    renderSwitchable('beach')
+    expect(screen.getByTestId('manage-console')).toBeInTheDocument()
+    expect(screen.queryByTestId('manager-brand-flip')).toBeNull()
+    expect(screen.queryByTestId('manager-brand-flip-phone')).toBeNull()
+  })
+
+  it('a kept flip this account cannot use goes back to the site\'s own app', async () => {
+    window.sessionStorage.setItem('ov-manager-app', 'indoor')
+    setAuth({ roles: ['beach:competition_manager'] })
+    renderSwitchable('beach')
+    expect(await screen.findByAltText('OpenBeach')).toBeInTheDocument()
+    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.tabs.teams', 'manage.tabs.tournaments'])
+    expect(window.sessionStorage.getItem('ov-manager-app')).toBe('beach')
+  })
+
+  it('signed out: the site\'s own app again', async () => {
+    window.sessionStorage.setItem('ov-manager-app', 'beach')
+    setAuth({ user: null })
+    renderSwitchable('indoor')
+    await waitFor(() => expect(screen.getByAltText('OpenVolley')).toBeInTheDocument())
+    expect(window.sessionStorage.getItem('ov-manager-app')).toBe('indoor')
   })
 })
