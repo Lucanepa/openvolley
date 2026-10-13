@@ -71,6 +71,15 @@
   </screenshots>
 
   <releases>
+    <release version="2.4.5" date="2026-10-13">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v2.4.5</url>
+      <description>
+        <ul>
+          <li>Signed in again, the "Session expired" notice goes as soon as the waiting changes are being sent.</li>
+          <li>A saved scoresheet is named game&lt;n&gt;_&lt;league&gt;_&lt;date&gt;.pdf.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.4.4" date="2026-10-13">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v2.4.4</url>
       <description>
