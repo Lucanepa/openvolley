@@ -780,3 +780,16 @@ These override sections 4-7 and 16 wherever they differ.
    signatures (found 2026-10-13 rendering in WebKit). Every WebKit engine (`isWebKitEngine`:
    AppleWebKit 605+ or iOS) now takes the WebKitGTK path: lean capture, pictures drawn
    afterwards; a failed full capture elsewhere retries the same way.
+12. **Boxes apart, one bottom line, a league code without spaces** (owner 2026-10-13, after
+   17.9): REMARKS / APPROVAL and RESULT are boxes of their own again, 1 mm apart
+   (`FOOTER_GAP`), and so are the rosters from the left side and from each other.
+   - The edges that sit under a line keep it: SANCTIONS' right edge under set 5's left one,
+     RESULT under the court change and panel 3, roster A ending on set 4's V|VI line.
+   - Every box below set 5 and both rosters end on one bottom line (the rosters take the left
+     side's height, APPROVAL fills its slot).
+   - The "points at change" box sits inside its cell again, with its own border.
+   - In RESULT, the winner's name and the sets ("3:2") are centred in the same band under
+     their labels.
+   - File names: an indoor league code loses its spaces, `1L D` → `1LD`
+     (`compactLeagueCode`: every word at most 3 characters; a name such as "Mobiliar Volley
+     Cup" keeps its words apart). Beach leagues are unchanged.

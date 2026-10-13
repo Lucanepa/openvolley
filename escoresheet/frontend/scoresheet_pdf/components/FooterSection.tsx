@@ -149,9 +149,8 @@ export const Remarks: React.FC<RemarksProps> = ({ overflowSanctions = [], remark
     const banded = ruled && band > 0;
 
     return (
-        // ruled top and bottom only: on the sheet SANCTIONS draws its left rule and
-        // RESULT its right one, on set 5's lines above (owner 2026-10-13)
-        <div className="border-y border-black bg-white flex flex-col h-full">
+        // a box of its own, apart from SANCTIONS and RESULT (owner 2026-10-13)
+        <div className="border border-black bg-white flex flex-col h-full">
             <div className="bg-gray-200 border-b border-black text-center font-bold text-[10px] py-0.5 shrink-0">REMARKS</div>
             <div ref={boxRef} className="px-1 flex-1 flex flex-col overflow-hidden min-h-0 relative">
                 {ruled && [1, 2, 3].map(k => (
@@ -413,13 +412,15 @@ export const Results: React.FC<ResultsProps> = ({
                  <div className="relative min-h-0">
                      <span className="text-[12px] leading-none absolute top-0 left-0 text-gray-500">WINNER</span>
                      {/* the full name (field-spec 9): shrinks to fit, never cut or overflowing the box */}
-                     <div className="w-full h-full flex items-end justify-center pb-0.5 pt-[14px] min-w-0">
-                         <FitText max={18} min={6} multiline className="w-full h-full text-center font-black uppercase bg-white leading-none" data-testid="results-winner">{winner}</FitText>
+                     {/* the name and the result are centred in the same band under their
+                         labels, so they stand on one line (owner 2026-10-13) */}
+                     <div className="w-full h-full flex items-center justify-center pb-0.5 pt-[14px] min-w-0">
+                         <FitText max={18} min={6} multiline className="w-full h-full flex items-center justify-center text-center font-black uppercase bg-white leading-none" data-testid="results-winner">{winner}</FitText>
                      </div>
                  </div>
                  <div className="relative" >
                      <span className="text-[12px] leading-none absolute top-0 left-0 right-0 text-center text-gray-500">RESULT</span>
-                     <div className="w-full h-full font-black text-lg bg-white flex items-end justify-center pb-0.5">
+                     <div className="w-full h-full font-black text-lg bg-white flex items-center justify-center pb-0.5 pt-[14px] leading-none" data-testid="results-score">
                          {(() => {
                              // `result` ("3-1", or "3:1" from MatchEntry) is only set once the match
                              // is finished, like WINNER. The official sheet stays blank until then;
@@ -519,8 +520,9 @@ export const Approvals: React.FC<ApprovalsProps> = ({ officials = [], match, tea
     const getOfficial = (role: string) => findOfficial(officials, role);
 
     return (
-        // ruled top and bottom only, as REMARKS: SANCTIONS and RESULT draw its sides
-        <div className="border-y border-black bg-white flex flex-col w-full">
+        // a box of its own, as REMARKS; as tall as its slot, so it ends on the
+        // bottom line of SANCTIONS, RESULT and the rosters (owner 2026-10-13)
+        <div className="border border-black bg-white flex flex-col w-full h-full">
             <div className="bg-gray-200 border-b border-black text-center font-bold text-[10px] py-0.5 shrink-0">APPROVAL</div>
 
             {/* Column headers and the officials' rows share one grid (owner 2026-10-13:

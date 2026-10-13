@@ -59,7 +59,10 @@ describe('scoresheets (unit)', () => {
   })
 
   it('the download is named like a scoresheet the app saves: game<n>_<league>_<day in Zurich>', () => {
-    assert.equal(downloadName({ game_n: 402397, league: '1L D', scheduled_at: '2026-10-10T12:30:00Z' }, '2026-10-10'), 'game402397_1L-D_2026-10-10.pdf')
+    assert.equal(downloadName({ game_n: 402397, league: '1L D', scheduled_at: '2026-10-10T12:30:00Z' }, '2026-10-10'), 'game402397_1LD_2026-10-10.pdf')
+    // beach leagues keep their words apart; so does an indoor league name (not a code)
+    assert.equal(downloadName({ game_n: 8, league: 'Mobiliar Volley Cup', scheduled_at: '2026-10-10T12:30:00Z' }, '2026-10-10'), 'game8_Mobiliar-Volley-Cup_2026-10-10.pdf')
+    assert.equal(downloadName({ game_n: 7, sport: 'beach', league: 'Swiss Beach Tour', scheduled_at: '2026-10-10T12:30:00Z' }, '2026-10-10'), 'game7_Swiss-Beach-Tour_2026-10-10.pdf')
     // 00:30 in Zurich (22:30 UTC, filed under the UTC day): the name has the match day, as the app's
     assert.equal(downloadName({ game_n: 5, league: '', scheduled_at: '2026-10-10T22:30:00Z' }, '2026-10-10'), 'game5_2026-10-11.pdf')
     assert.equal(downloadName({ game_n: null, external_id: 'match_1_x', sport: 'beach', league: 'Coop Beachtour Zürich', home_name: 'Müller / Weber', away_name: 'Rossi / Bianchi' }, '2026-10-11'),
@@ -96,22 +99,22 @@ describe('scoresheet view links (unit)', () => {
     const { s, m, audits, tick } = sheets()
     const made = await s.createViewLink({ actorId: 'u1', matchId: m.id })
     assert.equal(made.status, 200)
-    assert.equal(made.body.data.filename, 'game402397_1L-D_2026-10-10.pdf')
+    assert.equal(made.body.data.filename, 'game402397_1LD_2026-10-10.pdf')
     assert.equal(audits.length, 1)
     const token = tokenOf(made.body.data.path)
-    assert.equal(s.readViewLink({ token, name: 'game402397_1L-D_2026-10-10.pdf' }).status, 200)
+    assert.equal(s.readViewLink({ token, name: 'game402397_1LD_2026-10-10.pdf' }).status, 200)
     assert.equal(s.readViewLink({ token, name: 'game402397.pdf' }).status, 404)
     tick(VIEW_LINK_TTL_MS - 1)
-    assert.equal(s.readViewLink({ token, name: 'game402397_1L-D_2026-10-10.pdf' }).status, 200)
+    assert.equal(s.readViewLink({ token, name: 'game402397_1LD_2026-10-10.pdf' }).status, 200)
     tick(1)
-    assert.equal(s.readViewLink({ token, name: 'game402397_1L-D_2026-10-10.pdf' }).status, 404)
+    assert.equal(s.readViewLink({ token, name: 'game402397_1LD_2026-10-10.pdf' }).status, 404)
   })
 
   it('keeps at most VIEW_LINK_MAX PDFs: the oldest link goes first', async () => {
     const { s, m } = sheets()
     const first = tokenOf((await s.createViewLink({ actorId: 'u1', matchId: m.id })).body.data.path)
     for (let i = 0; i < VIEW_LINK_MAX; i++) await s.createViewLink({ actorId: 'u1', matchId: m.id })
-    assert.equal(s.readViewLink({ token: first, name: 'game402397_1L-D_2026-10-10.pdf' }).status, 404)
+    assert.equal(s.readViewLink({ token: first, name: 'game402397_1LD_2026-10-10.pdf' }).status, 404)
   })
 
   it('a refused read makes no link', async () => {
