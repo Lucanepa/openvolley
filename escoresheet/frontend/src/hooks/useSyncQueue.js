@@ -1570,6 +1570,9 @@ export function useSyncQueue() {
         await pruneSyncQueue({ now })
       }
 
+      // A session is there (the checks above): the "sign in again" banner must
+      // not stay up through this pass (a long queue takes a minute)
+      if (currentSyncStatus === 'auth_required') setSyncStatus('syncing')
       const outcome = await runQueuePass()
       noteSyncPass({ sent: outcome.sent, failed: outcome.hasFailed || outcome.hasError ? 1 : 0, pending: outcome.hasRetry ? 1 : 0 })
 
