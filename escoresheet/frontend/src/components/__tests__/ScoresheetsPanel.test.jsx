@@ -5,8 +5,8 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key, opts) => (typeof opts === 'string' ? opts : key), i18n: { language: 'en' } })
 }))
 
-const api = vi.hoisted(() => ({ list: vi.fn(), pdf: vi.fn() }))
-vi.mock('../../lib/accountApi', async (orig) => ({ ...(await orig()), scoresheetsApi: { list: (...a) => api.list(...a), pdf: (...a) => api.pdf(...a) } }))
+const api = vi.hoisted(() => ({ list: vi.fn(), pdf: vi.fn(), viewLink: vi.fn() }))
+vi.mock('../../lib/accountApi', async (orig) => ({ ...(await orig()), scoresheetsApi: { list: (...a) => api.list(...a), pdf: (...a) => api.pdf(...a), viewLink: (...a) => api.viewLink(...a) } }))
 const toasts = vi.hoisted(() => ({ error: [] }))
 vi.mock('../../ui', async (orig) => {
   const real = await orig()
@@ -23,6 +23,7 @@ const pdfBlob = new Blob(['%PDF-1.4'], { type: 'application/pdf' })
 // what a browser hands out: a blob: URL of this page's origin
 const SHEET_URL = `blob:${window.location.origin}/0f1e2d3c`
 const rowOf = (text) => screen.getByText(text).closest('.flex-wrap')
+const VIEW_URL = 'https://backend.example/api/scoresheet-view/tok/game402397_1L_2026-10-10.pdf'
 
 describe('ScoresheetsPanel', () => {
   let opened
@@ -30,6 +31,8 @@ describe('ScoresheetsPanel', () => {
     vi.clearAllMocks()
     toasts.error = []
     api.list.mockResolvedValue({ data: { matches: MATCHES }, error: null, status: 200 })
+    // a server before the view links (404): View falls back to the file
+    api.viewLink.mockResolvedValue({ error: { code: 'OV_NOT_FOUND' }, status: 404 })
     URL.createObjectURL = vi.fn(() => SHEET_URL)
     URL.revokeObjectURL = vi.fn()
     opened = { closed: false }
@@ -50,6 +53,27 @@ describe('ScoresheetsPanel', () => {
     expect(within(rowOf('Voléro vs Smash')).getByRole('button', { name: 'manage.scoresheets.view' })).toBeEnabled()
     fireEvent.click(screen.getByRole('radio', { name: 'manage.matches.filterClosed' }))
     await waitFor(() => expect(api.list).toHaveBeenLastCalledWith({ app: 'beach', state: 'closed', q: undefined, limit: 200 }))
+  })
+
+  it('View opens the server\'s view link in the browser\'s viewer (its name, its Save); no file is fetched', async () => {
+    api.viewLink.mockResolvedValue({ url: VIEW_URL, filename: 'game402397_1L_2026-10-10.pdf' })
+    render(<ScoresheetsPanel />)
+    await screen.findByText('Voléro vs Smash')
+    fireEvent.click(within(rowOf('Voléro vs Smash')).getByRole('button', { name: 'manage.scoresheets.view' }))
+    await waitFor(() => expect(window.open).toHaveBeenCalledWith(VIEW_URL, '_blank', expect.any(String)))
+    expect(api.viewLink).toHaveBeenCalledWith('m-1')
+    expect(api.pdf).not.toHaveBeenCalled()
+    expect(URL.createObjectURL).not.toHaveBeenCalled()
+  })
+
+  it('a refused view link says why and opens nothing', async () => {
+    api.viewLink.mockResolvedValue({ error: { code: 'OV_FORBIDDEN', status: 403 }, status: 403 })
+    render(<ScoresheetsPanel />)
+    await screen.findByText('Voléro vs Smash')
+    fireEvent.click(within(rowOf('Voléro vs Smash')).getByRole('button', { name: 'manage.scoresheets.view' }))
+    await waitFor(() => expect(toasts.error.length).toBe(1))
+    expect(window.open).not.toHaveBeenCalled()
+    expect(api.pdf).not.toHaveBeenCalled()
   })
 
   it('View opens the PDF in a window (openAppWindow); a blocked popup saves it instead', async () => {

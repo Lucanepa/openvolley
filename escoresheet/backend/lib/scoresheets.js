@@ -11,6 +11,19 @@
  *                                            as { status, file }; audited first
  *                                            (scoresheet.read): no entry, no file
  *   sportOf(matchId)                         { sport } | { sport: null } | { error }
+ *   createViewLink({ actorId, matchId })     reads the PDF as readPdf (same check before,
+ *                                            same audit entry) and keeps it for
+ *                                            VIEW_LINK_TTL_MS under a random token:
+ *                                            { path: /api/scoresheet-view/<token>/<file name>,
+ *                                            expires_at }
+ *   readViewLink({ token, name })            that PDF, inline, by its link: { status, file }
+ *                                            or 404. The browser's own PDF viewer opens
+ *                                            the link in a tab (no Authorization header
+ *                                            there), shows the file name and saves under
+ *                                            it (owner 2026-10-13: a blob: URL saved as
+ *                                            "<uuid>.pdf"). The token is the capability:
+ *                                            32 random bytes, kept in this process only,
+ *                                            gone after the TTL or a restart.
  *
  * Where the scorer apps put the files ('scoresheets' bucket; OpenVolley:
  * frontend/src/utils/scoresheetUploader.js, OpenBeach:
@@ -26,11 +39,17 @@
  * (README "Who can read a scoresheet"); every read is in the audit log.
  */
 
+import { randomBytes } from 'node:crypto'
 import { appParam, fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
 
 export const SCORESHEETS_BUCKET = 'scoresheets'
 const STATES = ['closed', 'open', 'all']
 const NO_PDF = () => fail(404, 'OV_SCORESHEET_NOT_FOUND', 'No scoresheet PDF is stored for this match')
+/** How long a view link opens its PDF (the manager's tab keeps it for as long). */
+export const VIEW_LINK_TTL_MS = 10 * 60 * 1000
+/** At most this many PDFs kept for view links (the oldest goes first). */
+export const VIEW_LINK_MAX = 50
+const VIEW_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/
 
 /** The game part of an OpenVolley file name (frontend scoresheet_pdf/utils/scoresheetStorage.ts cleanGame). */
 export function cleanGame (v) {
@@ -120,8 +139,15 @@ export function bestPdf (entries, rank) {
  * @param {ReturnType<import('./storage.js').createStorage>} o.storage
  * @param {ReturnType<import('./accounts.js').createAccounts>} o.accounts  its audit()
  */
-export function createScoresheets ({ pool, storage, accounts, logger = console } = {}) {
+export function createScoresheets ({ pool, storage, accounts, logger = console, now = () => Date.now() } = {}) {
   const log = logger
+  /** token -> { file, expires } (insertion order = age) */
+  const viewLinks = new Map()
+  const pruneViewLinks = () => {
+    const t = now()
+    for (const [k, v] of viewLinks) if (v.expires <= t) viewLinks.delete(k)
+    while (viewLinks.size >= VIEW_LINK_MAX) viewLinks.delete(viewLinks.keys().next().value)
+  }
   const sportOut = (isBeach) => (isBeach === true ? 'beach' : 'indoor')
 
   /** The PDF files of the folders, one listing per folder; null when the storage cannot be read. */
@@ -278,5 +304,37 @@ export function createScoresheets ({ pool, storage, accounts, logger = console }
     }
   }
 
-  return { list, readPdf, sportOf }
+  /**
+   * POST /api/scoresheets/:id/view: the PDF behind a short-lived link for the
+   * browser's viewer. The read is checked and audited exactly as GET .../pdf.
+   */
+  async function createViewLink ({ actorId, matchId } = {}) {
+    const r = await readPdf({ actorId, matchId, download: false })
+    if (r.status !== 200 || !r.file) return r
+    pruneViewLinks()
+    const token = randomBytes(32).toString('base64url')
+    const expires = now() + VIEW_LINK_TTL_MS
+    viewLinks.set(token, { file: r.file, expires })
+    return ok({
+      path: `/api/scoresheet-view/${token}/${encodeURIComponent(r.file.filename)}`,
+      filename: r.file.filename,
+      expires_at: new Date(expires).toISOString()
+    })
+  }
+
+  /** GET /api/scoresheet-view/:token/:name: the PDF of a live link, inline; else 404. */
+  function readViewLink ({ token, name } = {}) {
+    if (typeof token !== 'string' || !VIEW_TOKEN_RE.test(token)) return notFound()
+    const v = viewLinks.get(token)
+    if (!v) return notFound()
+    if (v.expires <= now()) {
+      viewLinks.delete(token)
+      return notFound()
+    }
+    // the name is part of the link: a link with another name is not this file's
+    if (name !== v.file.filename) return notFound()
+    return { status: 200, file: { ...v.file, disposition: 'inline' } }
+  }
+
+  return { list, readPdf, sportOf, createViewLink, readViewLink }
 }

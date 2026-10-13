@@ -7,6 +7,7 @@ import { usePanelData, useOnline, OfflineBanner, PanelHead, MatchStatusPill, use
 import { SegmentedControl, SearchInput, RowList, Row, RowTool, Chip, EmptyInset, SkeletonRows, Notice, dayTimeLabel, toast } from '../../ui'
 
 // A viewed PDF stays readable (and saveable from the browser's viewer) this long
+// (the server keeps a view link as long: lib/scoresheets.js VIEW_LINK_TTL_MS)
 const VIEW_URL_TTL_MS = 10 * 60 * 1000
 // RowTool has no disabled look of its own (offline, or another file on its way)
 const TOOL_OFF = 'disabled:cursor-not-allowed disabled:opacity-50'
@@ -47,6 +48,22 @@ export default function ScoresheetsPanel({ app = 'indoor' }) {
 
   const open = async (m, download) => {
     setBusy(`${m.id}:${download ? 'download' : 'view'}`)
+    if (!download) {
+      // The browser's viewer on the server's link: its title and its Save use the
+      // scoresheet's name (owner 2026-10-13). A server without the route (404 /
+      // 405 before its update) or a blocked popup: the file as before.
+      const link = await scoresheetsApi.viewLink(m.id)
+      if (link.url) {
+        if (openAppWindow(link.url, { title: link.filename || undefined }).ok) {
+          setBusy(null)
+          return
+        }
+      } else if (link.status !== 404 && link.status !== 405) {
+        setBusy(null)
+        toast.error(errorText(link.error))
+        return
+      }
+    }
     const res = await scoresheetsApi.pdf(m.id, { download })
     setBusy(null)
     if (res.error) {
