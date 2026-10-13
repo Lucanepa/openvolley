@@ -71,6 +71,16 @@
   </screenshots>
 
   <releases>
+    <release version="2.4.4" date="2026-10-13">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v2.4.4</url>
+      <description>
+        <ul>
+          <li>The scoresheet stays at hand after the approval: preview, print or save it before closing the match.</li>
+          <li>Manager: a Scoresheets tab with every match and its stored scoresheet (PDF) to view or download, for admins and competition managers.</li>
+          <li>Manager: switch between OpenVolley and OpenBeach without signing in again.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.4.3" date="2026-10-11">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v2.4.3</url>
       <description>
