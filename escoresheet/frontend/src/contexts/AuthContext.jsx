@@ -238,6 +238,7 @@ export function AuthProvider({ children, app = null }) {
       setUser(null)
       setProfile(null)
       localStorage.removeItem('cachedProfile')
+      localStorage.removeItem(CLUBS_CACHE_KEY)
       // Console lines not uploaded yet belong to this account: never upload
       // them under the next one signing in on this device
       discardUnsentLogs()
@@ -351,6 +352,7 @@ export function AuthProvider({ children, app = null }) {
       setUser(null)
       setProfile(null)
       localStorage.removeItem('cachedProfile')
+      localStorage.removeItem(CLUBS_CACHE_KEY)
       discardUnsentLogs()
       clearSavedTeams()
 
@@ -377,6 +379,8 @@ export function AuthProvider({ children, app = null }) {
   const known = !!accessSource
   // db/018: the account's clubs (from /api/me, else the cache of this account)
   const [clubsState, setClubsState] = useState(null)
+  // bumped to load the clubs again (an invite code that carries a club)
+  const [clubsReload, setClubsReload] = useState(0)
   const clubsSource = clubsState?.userId === userId ? clubsState : (userId ? readCachedClubs(userId) : null)
   const clubsKey = JSON.stringify(clubsSource ? [clubsSource.clubs, clubsSource.clubRule] : null)
   const access = useMemo(() => {
@@ -408,7 +412,7 @@ export function AuthProvider({ children, app = null }) {
       window.removeEventListener('focus', load)
       window.removeEventListener('online', load)
     }
-  }, [userId])
+  }, [userId, clubsReload])
 
   // Tell the rest of the app (sync queue, saved-team cache) when the access
   // changed, e.g. a pending account was approved.
@@ -466,6 +470,8 @@ export function AuthProvider({ children, app = null }) {
         return next
       })
       fetchProfile(user.id)
+      // a code may carry a club (db/018): the clubs come again from /api/me
+      setClubsReload((n) => n + 1)
     }
     return result
   }, [user, fetchProfile])

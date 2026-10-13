@@ -192,7 +192,8 @@ redeem an invite code. The system records who redeemed which code and when.
 account to one or more clubs. You then score the official home games of these
 clubs. The system stores which clubs your account belongs to, who assigned
 them and when, until the club or the assignment is removed or you delete the
-account.
+account. The scoring app keeps a copy of your clubs on your device, so it can
+check a game offline; the copy is removed when you sign out.
 
 **Sign-in:** after you sign in, your browser stores a sign-in token. The
 server holds only a hash of it. A session lasts 30 days from last use, at most
