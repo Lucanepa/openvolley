@@ -162,6 +162,17 @@ export function localIsoDay(value: unknown): string {
  *    / Team A, then the full name), never "match";
  *  - the LOCAL match date (scheduled, else the first set's start, else `now`).
  */
+/**
+ * A league code loses its spaces in the file name: "1L D" -> "1LD", "3L B" ->
+ * "3LB" (owner 2026-10-13). Only codes (every word at most 3 characters); a
+ * name such as "Mobiliar Volley Cup" keeps its words apart.
+ */
+export function compactLeagueCode(raw: unknown): string {
+  const s = raw === null || raw === undefined ? '' : String(raw).trim()
+  const words = s.split(/\s+/).filter(Boolean)
+  return words.length > 1 && words.every(w => w.length <= 3) ? words.join('') : s
+}
+
 export function buildScoresheetFilename(
   data: { match?: any; homeTeam?: any; awayTeam?: any; sets?: any[] },
   now: Date = new Date()
@@ -170,7 +181,7 @@ export function buildScoresheetFilename(
   const firstSetStart = (data.sets || []).find((s: any) => s?.index === 1)?.startTime
   const date = localIsoDay(match.scheduledAt) || localIsoDay(firstSetStart) || localIsoDay(now)
   const game = sanitizeFilenamePart(gameNumberOf(match), 20)
-  const league = sanitizeFilenamePart(match.league, 30)
+  const league = sanitizeFilenamePart(compactLeagueCode(match.league), 30)
   let who = game ? `game${game}` : ''
   if (!who) {
     const home = sanitizeFilenamePart(displayShortName(match.homeShortName, data.homeTeam?.name ?? match.homeTeamName), 30) || 'Home'

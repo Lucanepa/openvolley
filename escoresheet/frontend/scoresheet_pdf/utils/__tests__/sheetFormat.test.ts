@@ -79,7 +79,8 @@ describe('file name (owner 2026-10-13: game<n>_<league>_<YYYY-MM-DD>)', () => {
 
   it('game<gameNo>_<league>_<YYYY-MM-DD>.pdf', () => {
     expect(buildScoresheetFilename({ match })).toBe('game382208_2L_2026-10-07.pdf')
-    expect(buildScoresheetFilename({ match: { ...match, league: '1L D' } })).toBe('game382208_1L-D_2026-10-07.pdf')
+    // a league code loses its spaces (owner 2026-10-13)
+    expect(buildScoresheetFilename({ match: { ...match, league: '1L D' } })).toBe('game382208_1LD_2026-10-07.pdf')
     // no league: left out with its "_"
     expect(buildScoresheetFilename({ match: { ...match, league: '' } })).toBe('game382208_2026-10-07.pdf')
   })

@@ -263,10 +263,10 @@ export const SetFive: React.FC<SetFiveProps> = ({
                 </div>
            </div>
 
-           {/* Points at Change: the box spans position IV exactly, its sides on the
-               III|IV rule (the team box's) and the IV|V rule of the grid below */}
-           <div className="flex items-center pr-1 gap-1.5 bg-white shrink-0" style={{ width: '30mm' }}>
-                <div className="h-6 border border-l-0 border-black flex items-center justify-center bg-white font-bold text-sm relative shrink-0" style={{ width: '10mm' }} data-testid="set5-points-at-change">
+           {/* Points at Change: a box of its own inside the cell (owner 2026-10-13:
+               "inside the row, not sharing a border") */}
+           <div className="flex items-center px-1 gap-2 bg-white shrink-0" style={{ width: '30mm' }}>
+                <div className="h-6 border border-black flex items-center justify-center bg-white font-bold text-sm relative shrink-0" style={{ width: '35px' }} data-testid="set5-points-at-change">
                     {pointsAtChangeA !== null && pointsAtChangeA !== undefined ? pointsAtChangeA : ''}
                 </div>
                 <span className="text-[8px] font-bold leading-none text-center">Points at change</span>
