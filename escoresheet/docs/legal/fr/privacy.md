@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.1 · État au 7 octobre 2026
+**OpenVolley et OpenBeach** · Version 1.2 · État au 13 octobre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version allemande fait foi.

@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.1 · Aggiornata al 7 ottobre 2026
+**OpenVolley e OpenBeach** · Versione 1.2 · Aggiornata al 13 ottobre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione tedesca.
