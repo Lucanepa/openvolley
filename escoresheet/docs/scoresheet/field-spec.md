@@ -593,7 +593,9 @@ are left unchanged.
 
 1. **Branding**: see 2.1. No Swiss Volley name or logo anywhere, including the PDF text layer
    and metadata.
-   - PDF metadata: `Title = "OpenVolley eScoresheet: <Home> vs <Away>, <DD.MM.YYYY>, game <no>"`,
+   - PDF metadata (owner 2026-10-13, section 17.10): `Title` = the file name without `.pdf`
+     (`game402397_1L-D_2026-10-10`), which a PDF viewer shows in its bar;
+     `Subject = "OpenVolley eScoresheet: <Home> vs <Away>, <DD.MM.YYYY>, game <no>"`,
      `Creator = "OpenVolley eScoresheet"`.
 2. **Ball**: only the new flat ball A from `brand/ball.svg`, everywhere on the sheet.
 3. **Approval column**: `DoB` instead of `Lic.`, filled from the officials' `dob` (section 10).
@@ -738,3 +740,43 @@ These override sections 4-7 and 16 wherever they differ.
    DoB, signature, approval stamp) is centred in its cell, vertically and horizontally; the role
    labels stay left. The column rules are drawn once over the header and the rows, so they meet
    every row line in the PDF too.
+7. **Names left in APPROVAL.** Owner: "the names can be left aligned, with a little margin".
+   The Name column (header and names) is left-aligned with the role labels' 2 mm margin;
+   country, DoB and signature stay centred.
+8. **No rules between the points columns' sub-columns.** Owner: "in point boxes: no need for
+   the column separators" (sets 1-4, set 5 panels 1-3).
+9. **Every vertical rule meets the one above and below it.** Owner: "the vertical lines not
+   being aligned with up and down ... review the WHOLE scoresheet setup". Measured on the
+   rendered page (every left/right border, rules stacked with up to 6 mm between them that
+   missed by 0.15-4 mm: 41 before, 0 after):
+   - one legend width (39.5 mm, `LeftInfoBox LEGEND_WIDTH`) and one 30px SET column in every
+     row: the rows of sets 1-4 were over-full and squeezed the legend to 39.52 mm, set 5's was
+     39.7 mm, so set 5 sat 0.17 mm right of sets 1-4;
+   - set headers: the rule after the left team's name is drawn by "Points" on its left, where
+     the points column below draws it (it was 1px left of it); in set 5 the same for "Points",
+     "End" and "Points at change", and panel 2 no longer draws a rule of its own (it started
+     1px late);
+   - set 5 on the set grid: panels 1-2 under set 3 (150 mm), the court-change strip as wide as
+     set 3's right border, the gap and set 4's SET column (48px, `SetFive COURT_CHANGE_W`), panel
+     3 (75 mm) exactly under set 4's left team; its header boxes over positions I-III and IV-VI,
+     the "points at change" box exactly over position IV;
+   - the footer on set 5's lines: SANCTIONS under the legend and SET column (its right rule on
+     set 5's left one), REMARKS / APPROVAL under panels 1-2 (150 mm, ruled top and bottom only),
+     RESULT under the court change and panel 3 (75 mm + 48px), with no gaps (one rule between
+     boxes, not two 0.8 mm apart);
+   - the rosters start on set 4's line between its teams (overlapping the set-5 box's last
+     pixel, so one rule) and meet on set 4's V|VI line (50 mm + 1px and the rest);
+   - RESULT's Start / End / Duration row on the table's columns (Start under T, End under Set,
+     Duration under P W); BENCH OFFICIALS' DoB|No rule where the players' is;
+   - header: League and Date start where the sets' "End:" box starts, the Date|Time rule is the
+     sets' right edge (Date 35 mm + 1px, Time 16px + 93px: the gap and the side strip).
+10. **The PDF's title is the scoresheet's name**, and the manager's **View** opens it in the
+   browser's own viewer through a 10-minute view link (backend README "Who can read a
+   scoresheet"), so the viewer shows `game402397_1L-D_2026-10-10` and saves
+   `game402397_1L-D_2026-10-10.pdf` (a `blob:` URL saved `<uuid>`, without `.pdf`).
+11. **Saving on WebKit keeps the logo and the signatures.** Safari, the macOS desktop app
+   (WKWebView) and every browser on iPhone / iPad refuse the full capture (an ~87 MB data URL),
+   as WebKitGTK does; the lean retry did not draw the pictures, so their PDFs had no logo and no
+   signatures (found 2026-10-13 rendering in WebKit). Every WebKit engine (`isWebKitEngine`:
+   AppleWebKit 605+ or iOS) now takes the WebKitGTK path: lean capture, pictures drawn
+   afterwards; a failed full capture elsewhere retries the same way.

@@ -82,7 +82,7 @@ const ReverseT: React.FC<{ rows: number; to: number; bar: boolean }> = ({ rows, 
 };
 
 /**
- * The printed grid: `columns` sub-columns of `rows` numbers, ruled between them.
+ * The printed grid: `columns` sub-columns of `rows` numbers.
  * `shownUpTo`: numbers above it are blank (a finished set: the team's final
  * score); `reverseT`: set-5 panel 3, the points scored before the change.
  */
@@ -107,7 +107,8 @@ const PointsGrid: React.FC<{
                 // this sub-column's part of the reverse T: rows 1..tRows
                 const tRows = reverseT ? Math.min(rows, Math.max(0, reverseT - c * rows)) : 0;
                 return (
-                    <div key={c} className={`flex flex-col h-full min-w-0 ${c > 0 ? 'border-l ss-rule' : ''}`} style={{ paddingTop: `${POINTS_GRID_PAD_MM}mm`, paddingBottom: `${POINTS_GRID_PAD_MM}mm` }}>
+                    // no rules between the sub-columns (owner 2026-10-13)
+                    <div key={c} className="flex flex-col h-full min-w-0" style={{ paddingTop: `${POINTS_GRID_PAD_MM}mm`, paddingBottom: `${POINTS_GRID_PAD_MM}mm` }}>
                         <div className="flex-1 flex flex-col relative min-h-0">
                             {Array.from({ length: rows }).map((__, i) => {
                                 const num = c * rows + i + 1;
@@ -194,16 +195,18 @@ export const PointsColumn5: React.FC<{
     setFinished?: boolean;
     finalScore?: number;
     pointsAtChange?: number | null;
-}> = ({ timeouts = ["", ""], markedPoints = [], circledPoints = [], setFinished = false, finalScore = 0, pointsAtChange = null }) => {
+    /** a rule on the right (set-5 panel 1: the line between panels 1 and 2) */
+    ruleRight?: boolean;
+}> = ({ timeouts = ["", ""], markedPoints = [], circledPoints = [], setFinished = false, finalScore = 0, pointsAtChange = null, ruleRight = false }) => {
     const fontPx = fontForRows(25, 8);
     // after the change of courts the panel ends at the points then; a set over
     // without a change (a default) at the final score
     const shownUpTo = pointsAtChange !== null && pointsAtChange !== undefined ? pointsAtChange : setFinished ? finalScore : null;
     return (
-        <div className="flex flex-col shrink-0 border-t border-l border-black" style={{ width: '15mm', height: '40mm' }}>
+        <div className={`flex flex-col shrink-0 border-t border-l border-black ${ruleRight ? 'border-r' : ''}`} style={{ width: '15mm', height: '40mm' }}>
             <div className="grid grid-cols-3 bg-white shrink-0 border-b border-black" style={{ height: 'calc(25mm - 1px)' }} data-testid="points-grid">
                 <div className="h-full"></div>
-                <div className="flex flex-col h-full border-l border-r ss-rule" style={{ paddingTop: `${POINTS_GRID_PAD_MM}mm`, paddingBottom: `${POINTS_GRID_PAD_MM}mm` }}>
+                <div className="flex flex-col h-full" style={{ paddingTop: `${POINTS_GRID_PAD_MM}mm`, paddingBottom: `${POINTS_GRID_PAD_MM}mm` }}>
                     {Array.from({ length: 8 }).map((_, i) => {
                         const num = i + 1;
                         return <PointBox key={i} num={num} fontPx={fontPx} filledState={markedPoints.includes(num) ? 1 : 0} isCircled={circledPoints.includes(num)} blank={shownUpTo !== null && num > shownUpTo} />;
@@ -221,6 +224,8 @@ export const PointsColumn5: React.FC<{
 export const PointsColumn30: React.FC<{
     isLast?: boolean;
     isPanel3?: boolean;
+    /** a rule on the right (set-5 panel 3: on set 4's line between its teams) */
+    ruleRight?: boolean;
     timeouts?: [string, string];
     markedPoints?: number[];
     circledPoints?: number[];
@@ -228,10 +233,10 @@ export const PointsColumn30: React.FC<{
     maxScore?: number;
     setFinished?: boolean;
     finalScore?: number;
-}> = ({ isPanel3 = false, timeouts = ["", ""], markedPoints = [], circledPoints = [], preChangePoints = null, maxScore = 0, setFinished = false, finalScore = 0 }) => {
+}> = ({ isPanel3 = false, ruleRight = false, timeouts = ["", ""], markedPoints = [], circledPoints = [], preChangePoints = null, maxScore = 0, setFinished = false, finalScore = 0 }) => {
     const rows = calculateRowsPerColumn(maxScore, 3, 10);
     return (
-        <div className="flex flex-col shrink-0 border-t border-l border-black flex-1" style={{ minWidth: '15mm', height: '40mm' }}>
+        <div className={`flex flex-col shrink-0 border-t border-l border-black ${ruleRight ? 'border-r' : ''}`} style={{ width: '15mm', height: '40mm' }}>
             <PointsGrid
                 columns={3}
                 rows={rows}

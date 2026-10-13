@@ -163,6 +163,13 @@ const TeamServiceGridSet5: React.FC<{
     );
 };
 
+/**
+ * Width of the court-change strip between panels 2 and 3: set 3's right border,
+ * the 16px gap between the set columns and set 4's "SET" column (30px) with its
+ * border, so that panel 3 starts where set 4's grid starts.
+ */
+export const COURT_CHANGE_W = '48px';
+
 export const SetFive: React.FC<SetFiveProps> = ({
     teamNameA,
     teamNameB,
@@ -204,9 +211,14 @@ export const SetFive: React.FC<SetFiveProps> = ({
   const maxScore = Math.max(finalScoreB, finalScoreA);
 
   return (
-    <div className="border border-black bg-white flex flex-col overflow-hidden shadow-sm shrink-0 relative" style={{ width: 'calc(229mm + 2px)' }} data-testid="set5-box">
+    // The set-5 box sits on the set grid above (owner 2026-10-13: lines aligned up
+    // and down): panels 1 and 2 under set 3 (150 mm, as sets 1-4), the court-change
+    // strip over set 3's right rule, the gap and the "SET 4" column (COURT_CHANGE_W),
+    // and panel 3 exactly under set 4's left team (75 mm). No right border of its
+    // own: panel 3's points column draws it, on set 4's line.
+    <div className="border border-r-0 border-black bg-white flex flex-col overflow-hidden shadow-sm shrink-0 relative" style={{ width: `calc(225mm + ${COURT_CHANGE_W} + 1px)` }} data-testid="set5-box">
        {/* Header Strip */}
-       <div className="flex bg-gray-100 text-xs shrink-0" style={{ height: '0.8cm', width: '229mm' }}>
+       <div className="flex bg-gray-100 text-xs shrink-0" style={{ height: '0.8cm', width: `calc(225mm + ${COURT_CHANGE_W})` }}>
            {/* Start Time */}
            <div className="border-r border-black flex items-center pr-2 gap-2 bg-white shrink-0" style={{ width: '20mm', paddingLeft: '3px' }}>
                 <span className="font-bold text-[9px]">Start:</span>
@@ -214,7 +226,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
            </div>
 
            {/* Panel 1 Header: Team A (Left) */}
-           <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '40mm' }}>
+           <div className="flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '40mm' }}>
                 <div className="flex items-center gap-1 w-full">
                     <div className="flex items-center gap-1">
                         <div className="w-6 h-6 rounded-full border border-black text-center bg-gray-200 text-black font-bold text-sm shrink-0 flex items-center justify-center">{teamALabel}</div>
@@ -223,7 +235,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
                     <FitText max={12} min={5} multiline style={{ height: '0.7cm' }} className="w-full uppercase leading-none flex items-center justify-center text-center font-bold bg-white ml-1">{teamNameA || ''}</FitText>
                 </div>
            </div>
-           <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '15mm' }}>Points</div>
+           <div className="border-l border-r border-black flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '15mm' }}>Points</div>
 
            {/* Panel 2 Header: Team RIGHT */}
            <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '40mm' }}>
@@ -236,13 +248,13 @@ export const SetFive: React.FC<SetFiveProps> = ({
                 </div>
            </div>
            {/* End Time */}
-           <div className="flex items-center border-r border-black pl-1 pr-1 gap-1 justify-start bg-white shrink-0" style={{ width: '20mm' }}>
+           <div className="flex items-center pl-1 pr-1 gap-1 justify-start bg-white shrink-0" style={{ width: '20mm' }}>
                 <span className="font-bold text-[9px]">End:</span>
                 <div className="bg-transparent text-center font-mono text-xs">{endTime}</div>
            </div>
-           <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '15mm' }}>Points</div>
-           {/* Panel 3 Header: Team LEFT (Swapped) */}
-           <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '30mm', marginLeft: '3.5mm' }}>
+           <div className="border-l border-black flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '15mm' }}>Points</div>
+           {/* Panel 3 Header: Team LEFT (Swapped), over positions I-III */}
+           <div className="border-r border-black flex items-center justify-between px-2 bg-white shrink-0" style={{ width: '30mm', marginLeft: COURT_CHANGE_W }}>
                 <div className="flex items-center gap-1 w-full">
                     <div className="flex items-center gap-1">
                         <div className="w-6 h-6 rounded-full border border-black text-center bg-gray-200 text-black font-bold text-sm shrink-0 flex items-center justify-center">{teamALabel}</div>
@@ -251,41 +263,42 @@ export const SetFive: React.FC<SetFiveProps> = ({
                 </div>
            </div>
 
-           {/* Points at Change */}
-           <div className="border-r border-black flex items-center px-1 gap-2 bg-white shrink-0" style={{ width: '30mm' }}>
-                <div className="h-6 border border-black flex items-center justify-center bg-white font-bold text-sm relative" style={{ width: '35px' }} data-testid="set5-points-at-change">
+           {/* Points at Change: the box spans position IV exactly, its sides on the
+               III|IV rule (the team box's) and the IV|V rule of the grid below */}
+           <div className="flex items-center pr-1 gap-1.5 bg-white shrink-0" style={{ width: '30mm' }}>
+                <div className="h-6 border border-l-0 border-black flex items-center justify-center bg-white font-bold text-sm relative shrink-0" style={{ width: '10mm' }} data-testid="set5-points-at-change">
                     {pointsAtChangeA !== null && pointsAtChangeA !== undefined ? pointsAtChangeA : ''}
                 </div>
                 <span className="text-[8px] font-bold leading-none text-center">Points at change</span>
            </div>
-           <div className="flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '15.5mm' }}>Points</div>
+           <div className="border-l border-r border-black flex items-center justify-between px-2 bg-white shrink-0 text-center text-[8px]" style={{ width: '15mm' }}>Points</div>
        </div>
 
        {/* Court Change Box - spans full height of Set 5 (positioned at container level) */}
-       <div className="absolute flex items-center justify-center border-l border-r border-black bg-gray-100 z-10" style={{ width: '3.5mm', top: 0, bottom: 0, left: '150mm' }}>
+       <div className="absolute flex items-center justify-center border-l border-r border-black bg-gray-100 z-10" style={{ width: COURT_CHANGE_W, top: 0, bottom: 0, left: '150mm' }}>
             <div className="transform -rotate-90 text-[7px] font-bold uppercase tracking-wider whitespace-nowrap">
                 Court Change
             </div>
        </div>
 
        {/* Main Body - 3 Panels */}
-       <div className="flex justify-start shrink-0" style={{ width: '229mm', height: '4cm' }}>
+       <div className="flex justify-start shrink-0" style={{ width: `calc(225mm + ${COURT_CHANGE_W})`, height: '4cm' }}>
             {/* Panel 1: Team A */}
             <div className="flex shrink-0" style={{ width: '75mm' }}>
                  <TeamServiceGridSet5 lineup={lineupA} subs={subsA} startsReceiving={firstServeTeamA === false} positionBoxRef={positionBoxRef} serviceRounds={serviceRoundsA_Left} />
-                 <PointsColumn5 timeouts={timeoutsA || ["", ""]} markedPoints={markedPointsA_Left || []} circledPoints={circledPointsA_Left || []} setFinished={setFinished} finalScore={finalScoreA} pointsAtChange={pointsAtChangeA} />
+                 <PointsColumn5 ruleRight timeouts={timeoutsA || ["", ""]} markedPoints={markedPointsA_Left || []} circledPoints={circledPointsA_Left || []} setFinished={setFinished} finalScore={finalScoreA} pointsAtChange={pointsAtChangeA} />
             </div>
 
-            {/* Panel 2: Team B */}
-            <div className="flex border-l border-black shrink-0" style={{ width: '75mm' }}>
+            {/* Panel 2: Team B (no rule of its own on the left: panel 1's points column draws it) */}
+            <div className="flex shrink-0" style={{ width: '75mm' }}>
                  <TeamServiceGridSet5 lineup={lineupB} subs={subsB} startsReceiving={firstServeTeamA === true} serviceRounds={serviceRoundsB} />
                  <PointsColumn30 timeouts={timeoutsB || ["", ""]} markedPoints={markedPointsB || []} circledPoints={circledPointsB || []} maxScore={maxScore} setFinished={setFinished} finalScore={finalScoreB} />
             </div>
 
             {/* Panel 3: Team A (Swapped) */}
-            <div className="flex shrink-0" style={{ width: '75.5mm', marginLeft: '3.5mm' }}>
+            <div className="flex shrink-0" style={{ width: '75mm', marginLeft: COURT_CHANGE_W }}>
                  <TeamServiceGridSet5 lineup={lineupA} subs={subsA_Right || subsA} startsReceiving={false} serviceRounds={serviceRoundsA_Right} />
-                 <PointsColumn30 isLast={true} isPanel3={true} timeouts={timeoutsA_Right || timeoutsA || ["", ""]} markedPoints={markedPointsA_Right || []} circledPoints={circledPointsA_Right || []} preChangePoints={pointsAtChangeA ?? null} maxScore={maxScore} setFinished={setFinished} finalScore={finalScoreA} />
+                 <PointsColumn30 ruleRight isPanel3={true} timeouts={timeoutsA_Right || timeoutsA || ["", ""]} markedPoints={markedPointsA_Right || []} circledPoints={circledPointsA_Right || []} preChangePoints={pointsAtChangeA ?? null} maxScore={maxScore} setFinished={setFinished} finalScore={finalScoreA} />
             </div>
        </div>
        {struckOff && <StrikeZ />}

@@ -2,15 +2,15 @@ import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Header } from './components/Header';
 import { StandardSet } from './components/StandardSet';
-import { SetFive } from './components/SetFive';
+import { COURT_CHANGE_W, SetFive } from './components/SetFive';
 import { Sanctions, Results, Approvals, Roster, Remarks, SANCTION_ROWS } from './components/FooterSection';
-import { LeftInfoBox } from './components/LeftInfoBox';
+import { LEGEND_WIDTH, LeftInfoBox } from './components/LeftInfoBox';
 import { LiberoControlSheet } from './components/LiberoControlSheet';
 import { Player, SanctionRecord } from './types_scoresheet';
 import { asArray, buildScoresheetFilename, buildScoresheetTitle, displayShortName, findOfficial, formatDob, formatHoursMinutes, formatClockHoursMinutes, formatPersonName, normalizeOfficials } from './utils/sheetFormat';
 import { formatTimeLocal } from '../src/utils/timeUtils';
 import { extractLiberoData } from './utils/extractLiberoData';
-import { allStyleProperties, drawableImages, drawImagesOnto, hideImages, isWebKitGtk, styleListFor, usedStyleProperties } from './utils/pdfCapture';
+import { allStyleProperties, drawableImages, drawImagesOnto, hideImages, isWebKitEngine, styleListFor, usedStyleProperties } from './utils/pdfCapture';
 import {
   getStartingLineup,
   assignSubsToColumns,
@@ -1382,27 +1382,33 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         },
         includeStyleProperties: styleListFor(props),
       });
-      // WebKitGTK (Linux desktop app) cannot load the full capture (an ~87 MB
-      // data URL): it copies only the properties the sheet uses, and draws
-      // the logos and signatures itself, as it paints pictures nested in the
-      // SVG only now and then (utils/pdfCapture.ts). Elsewhere the full copy
-      // as before, and the lean one only if that fails.
-      let canvas: HTMLCanvasElement;
-      if (isWebKitGtk()) {
+      // WebKit (the Linux and macOS desktop apps, Safari, every iPhone / iPad
+      // browser) cannot load the full capture (an ~87 MB data URL): it copies
+      // only the properties the sheet uses, and draws the logos and signatures
+      // itself, as WebKit paints pictures nested in the SVG only now and then
+      // (utils/pdfCapture.ts). Elsewhere the full copy as before, and if that
+      // fails the lean one, with the pictures drawn the same way.
+      const leanWithPictures = async () => {
         const pictures = drawableImages(sheet!);
         const showPictures = hideImages(pictures);
+        let c: HTMLCanvasElement;
         try {
-          canvas = await capture(usedStyleProperties(sheet!));
+          c = await capture(usedStyleProperties(sheet!));
         } finally {
           showPictures();
         }
-        drawImagesOnto(canvas, sheet!, pictures);
+        drawImagesOnto(c, sheet!, pictures);
+        return c;
+      };
+      let canvas: HTMLCanvasElement;
+      if (isWebKitEngine()) {
+        canvas = await leanWithPictures();
       } else {
         try {
           canvas = await capture(allStyleProperties());
         } catch (err) {
           console.warn('[Scoresheet] Full capture failed, retrying with the used styles only:', err);
-          canvas = await capture(usedStyleProperties(sheet!));
+          canvas = await leanWithPictures();
         }
       }
       assertCanvas(canvas);
@@ -1418,9 +1424,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         format: 'a3',
         compress: true
       });
+      // the title is the scoresheet's name, as its file: a PDF viewer shows it in its
+      // bar (owner 2026-10-13); the teams, date and game go in the subject
       pdf.setProperties({
-        title,
-        subject: 'Volleyball scoresheet',
+        title: filename.replace(/\.pdf$/i, ''),
+        subject: title,
         creator: 'OpenVolley eScoresheet',
         keywords: 'OpenVolley, eScoresheet, volleyball, scoresheet'
       });
@@ -1859,7 +1867,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
               />
               <div className="flex gap-4">
                 <div ref={set1Ref} className="flex flex-1">
-                  <div className="flex flex-col items-center justify-center min-w-[30px] border-l border-t border-b border-black p-1 bg-gray-300">
+                  <div className="flex flex-col items-center justify-center w-[30px] shrink-0 border-l border-t border-b border-black p-1 bg-gray-300">
                     <div className="flex flex-col items-center font-black text-sm uppercase tracking-widest leading-tight">
                       <span>S</span>
                       <span>E</span>
@@ -1880,7 +1888,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                   </div>
                 </div>
                 <div ref={set2Ref} className="flex flex-1">
-                  <div className="flex flex-col items-center justify-center min-w-[30px] border-l border-t border-b border-black p-1 bg-gray-300">
+                  <div className="flex flex-col items-center justify-center w-[30px] shrink-0 border-l border-t border-b border-black p-1 bg-gray-300">
                     <div className="flex flex-col items-center font-black text-sm uppercase tracking-widest leading-tight">
                       <span>S</span>
                       <span>E</span>
@@ -1932,7 +1940,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
               />
               <div className="flex gap-4 flex">
                 <div ref={set3Ref} className="flex flex-1">
-                  <div className="flex flex-col items-center justify-center min-w-[30px] border-l border-t border-b border-black p-1 bg-gray-300">
+                  <div className="flex flex-col items-center justify-center w-[30px] shrink-0 border-l border-t border-b border-black p-1 bg-gray-300">
                     <div className="flex flex-col items-center font-black text-sm uppercase tracking-widest leading-tight">
                       <span>S</span>
                       <span>E</span>
@@ -1952,7 +1960,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                   </div>
                 </div>
                 <div ref={set4Ref} className="flex flex-1">
-                  <div className="flex flex-col items-center justify-center min-w-[30px] border-l border-t border-b border-black p-1 bg-gray-300">
+                  <div className="flex flex-col items-center justify-center w-[30px] shrink-0 border-l border-t border-b border-black p-1 bg-gray-300">
                     <div className="flex flex-col items-center font-black text-sm uppercase tracking-widest leading-tight">
                       <span>S</span>
                       <span>E</span>
@@ -2000,12 +2008,17 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
             </div>
 
             {/* Rows 3-4: Set 5 + Footer sections on left, Rosters spanning on right */}
-            <div className="flex gap-1 mt-1 items-stretch print:flex-1 print:min-h-0">
+            {/* Rows 3-4 sit on the grid of the sets above (owner 2026-10-13: lines
+                aligned up and down): the left side ends on set 4's line between its
+                teams (legend + 8px + SET column + set-5 box), the rosters start on it
+                (one rule: they overlap the set-5 box's last pixel), and the rosters
+                meet on set 4's V|VI line. */}
+            <div className="flex mt-1 items-stretch print:flex-1 print:min-h-0">
               {/* Left side: Set 5 + Footer sections stacked */}
-              <div className="flex flex-col gap-2 min-h-0" style={{ width: '290mm' }}>
+              <div className="flex flex-col gap-2 min-h-0 shrink-0" style={{ width: `calc(${LEGEND_WIDTH} + 87px + 225mm)` }}>
                 {/* Set 5 */}
                 <div ref={set5Ref} className="flex">
-                  <div className="mr-1">
+                  <div>
                     <LeftInfoBox
                       lineup={set5Shown ? set5Data.leftLineup : ['', '', '', '', '', '']}
                       subs={set5Shown ? set5Data.leftSubs : [[], [], [], [], [], []]}
@@ -2013,7 +2026,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                       isSet5={true}
                     />
                   </div>
-                  <div className="flex flex-col items-center justify-center w-[30px] border-l border-t border-b border-black p-1 bg-gray-300">
+                  <div className="flex flex-col items-center justify-center w-[30px] shrink-0 border-l border-t border-b border-black p-1 bg-gray-300">
                     <div className="flex flex-col items-center font-black text-sm uppercase tracking-widest leading-tight">
                       <span>S</span>
                       <span>E</span>
@@ -2074,14 +2087,16 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                 </div>
 
                 {/* Footer sections row - flex for horizontal control */}
-                <div ref={footerRef} className="flex gap-0.5 shrink-0" style={{ height: '8.4cm' }}>
-                  {/* Sanctions - narrower width */}
-                  <div ref={sanctionsRef} className="flex-col shrink-0" style={{ height: '8.4cm', width: '50mm' }}>
+                {/* Footer: SANCTIONS under the legend and SET column (its right rule on the
+                    set-5 box's left one), REMARKS / APPROVAL under panels 1-2 (150 mm),
+                    RESULT under the court change and panel 3 */}
+                <div ref={footerRef} className="flex shrink-0" style={{ height: '8.4cm' }}>
+                  <div ref={sanctionsRef} className="flex-col shrink-0" style={{ height: '8.4cm', width: `calc(${LEGEND_WIDTH} + 39px)` }}>
                     <Sanctions items={sanctionsInBox} improperRequests={improperRequests} />
                   </div>
 
                   {/* Remarks and Approvals stacked - takes remaining space */}
-                  <div className="flex-1 flex flex-col gap-1 min-h-0">
+                  <div className="flex flex-col gap-1 min-h-0 shrink-0" style={{ width: '150mm' }}>
                     {/* Remarks - 30% height */}
                     <div ref={remarksRef} className="flex-[3] min-h-0">
                       <Remarks overflowSanctions={overflowSanctions} remarks={typeof match?.remarks === 'string' ? match.remarks : ''} generated={autoRemarks} />
@@ -2102,8 +2117,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                   </div>
 
                   {/* Results - adjust flex-[x] to change width proportion */}
-                  <div ref={resultsRef} className="flex-[0.67] flex flex-col shrink-0" style={{ height: '8.4cm' }}>
+                  <div ref={resultsRef} className="flex flex-col shrink-0" style={{ height: '8.4cm', width: `calc(75mm + ${COURT_CHANGE_W})` }}>
                     <Results
+                      flush
                       teamAShortName={teamAShortName}
                       teamBShortName={teamBShortName}
                       setResults={setResults}
@@ -2121,8 +2137,8 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
               </div>
 
               {/* Right side: Rosters spanning full height - HOME always left, AWAY always right */}
-              <div className="flex gap-0.5 shrink-0" style={{ width: '110mm', height: '13.5cm', maxWidth: '110mm' }}>
-                <div ref={rosterARef} className="flex-1 min-w-0">
+              <div className="flex flex-1 min-w-0" style={{ height: '13.5cm', marginLeft: '-1px' }}>
+                <div ref={rosterARef} className="shrink-0 min-w-0" style={{ width: 'calc(50mm + 1px)' }}>
                   <Roster
                     team={homeShortName}
                     side={teamAKey === 'home' ? 'A' : 'B'}
@@ -2136,6 +2152,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                 </div>
                 <div ref={rosterBRef} className="flex-1 min-w-0">
                   <Roster
+                    noLeftRule
                     team={awayShortName}
                     side={teamAKey === 'away' ? 'A' : 'B'}
                     players={formatPlayers(awayPlayers)}

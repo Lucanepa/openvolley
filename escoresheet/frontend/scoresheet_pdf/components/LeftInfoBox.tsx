@@ -16,6 +16,14 @@ interface LeftInfoBoxProps {
   isSet5?: boolean;
 }
 
+/**
+ * The legend column's width in every set row. The rows of sets 1-4 fill the sheet
+ * exactly with it (39.5 mm + 8px + 2 x (30px + 150 mm + 2px) + 2 x 16px + 93px =
+ * 391.6 mm of 391.65 mm), so nothing is squeezed and the set-5 row, which has the
+ * same legend, label and box edges, lines up with them (owner 2026-10-13).
+ */
+export const LEGEND_WIDTH = '39.5mm';
+
 export const LeftInfoBox: React.FC<LeftInfoBoxProps> = ({
   lineup = [],
   subs = [],
@@ -28,10 +36,11 @@ export const LeftInfoBox: React.FC<LeftInfoBoxProps> = ({
 
   return (
     <div
-      className={`border border-black bg-white flex flex-col ${isSet5 ? "mr-1" : "mr-2"}`}
+      className="border border-black bg-white flex flex-col mr-2 shrink-0"
       // exactly as tall as the set box beside it (its 0.8 cm header + body + its two
-      // 1px borders), so every legend line meets its grid line (audit 2026-10)
-      style={{ width: isSet5 ? '39.7mm' : '40mm', height: isSet5 ? 'calc(4.8cm + 2px)' : 'calc(5.3cm + 2px)' }}
+      // 1px borders), so every legend line meets its grid line (audit 2026-10); one
+      // fixed width in every row (LEGEND_WIDTH), so set 5 lines up with sets 1-4
+      style={{ width: LEGEND_WIDTH, height: isSet5 ? 'calc(4.8cm + 2px)' : 'calc(5.3cm + 2px)' }}
       data-testid="legend-box"
     >
         <div className="flex flex-col items-center justify-center min-w-[30px] border-b border-black p-1 shrink-0" style={{height:'0.8cm'}}>

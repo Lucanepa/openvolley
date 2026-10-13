@@ -71,6 +71,14 @@ const OtherField: React.FC<{
  * switch it to a stacked "mobile" layout that pushes the sheet off the page.
  * Long names shrink to fit their box instead of growing the header.
  */
+// The header's right-hand rules sit on the set grid below (owner 2026-10-13):
+// Date spans the sets' "End:" (20 mm) and "Points" (15 mm) boxes, so its left
+// rule and the League box's meet the "End:" box's; Time spans the 16px gap
+// (gap-4) and the 93px "OpenVolley eScoresheet" strip, so the Date|Time rule
+// meets the right edge of the sets.
+const HEADER_DATE_WIDTH = '35mm';
+const HEADER_TIME_WIDTH = 'calc(16px + 93px)';
+
 export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, coinTossConfirmed }) => {
   // Determine if home team is "A" based on coin toss result
   const homeIsA = (match?.coinTossTeamA || 'home') === 'home';
@@ -140,8 +148,9 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, coinT
           </div>
         </div>
 
-        {/* Match identity at the top right: league and match number */}
-        <div className="shrink-0 flex flex-col justify-center px-2 gap-0.5 min-w-0" style={{ width: '62mm' }} data-testid="header-identity">
+        {/* Match identity at the top right: league and match number. Its left
+            rule lines up with Date's below and with the sets' "End:" box. */}
+        <div className="shrink-0 flex flex-col justify-center px-2 gap-0.5 min-w-0" style={{ width: `calc(${HEADER_DATE_WIDTH} + ${HEADER_TIME_WIDTH})` }} data-testid="header-identity">
           <div className="flex items-baseline gap-1 min-w-0">
             <span className="text-[9px] text-gray-500 shrink-0">League</span>
             <FitText max={12} min={6} className="flex-1 font-bold uppercase text-right" title={match?.league || ''}>
@@ -193,11 +202,13 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, coinT
               <span className="text-[11px] leading-tight text-gray-500">Hall/Gym</span>
               <FitText max={12} min={6} className="w-full bg-white pb-0.5 font-bold">{match?.hall || ''}</FitText>
             </div>
-            <div className="flex flex-col justify-center flex-[1.5] min-w-0 px-1.5 border-l border-black">
+            {/* 1px wider than Date's column below: its left rule (border-l) then lands on
+                the pixel of the League box's (a border-r) and of the "End:" box's */}
+            <div className="flex flex-col justify-center shrink-0 min-w-0 px-1.5 border-l border-black" style={{ width: `calc(${HEADER_DATE_WIDTH} + 1px)` }}>
               <span className="text-[11px] leading-tight text-gray-500">Date</span>
               <div className="w-full bg-white text-[12px] pb-0.5 font-bold whitespace-nowrap" data-testid="header-date">{dateStr}</div>
             </div>
-            <div className="flex flex-col justify-center flex-[1.2] min-w-0 px-1.5 border-l border-black">
+            <div className="flex flex-col justify-center shrink-0 min-w-0 px-1.5 border-l border-black" style={{ width: HEADER_TIME_WIDTH }}>
               <span className="text-[11px] leading-tight text-gray-500">Time</span>
               <div className="w-full bg-white text-[12px] pb-0.5 font-bold whitespace-nowrap">{timeStr}</div>
             </div>
