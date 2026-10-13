@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest
 import { render, cleanup, act, waitFor } from '@testing-library/react'
 import App from '../App_Scoresheet'
 import { BRAND } from '../../src/brand.js'
-import { NUMBER_CIRCLE_MM, CIRCLED_NUMBER_PX, MARK_STROKE } from '../components/Marks'
+import { NUMBER_CIRCLE_MM, SERVICE_NUMBER_PX, SUB_CIRCLE_MM, LINEUP_NUMBER_PT, TWO_DIGIT_INK_RADIUS_EM, MARK_STROKE } from '../components/Marks'
 
 // The owner's request of 2026-10-07 on the printed sheet and its PDF:
 // OpenVolley instead of Swiss Volley, the new ball, "DoB" in APPROVAL, a file
@@ -250,20 +250,53 @@ describe('set 5, defaults and sanctions on the sheet', () => {
     expect(container.querySelectorAll('[data-mark="reverseT"]')).toHaveLength(0)
   })
 
-  it('at the change: the left team\'s points only in the box, no T / reverse T in the points columns (owner 2026-10-07)', () => {
+  it('at the change: the points then in the box; panel 3 has them under the reverse T (owner 2026-10-13)', () => {
     // home (left) 5, then away reaches 8: the change at 5:8
     const { getByTestId, container } = render(<App matchData={set5('hhhhh' + 'aaaaaaaa' + 'h')} autoAction="preview" />)
     expect(getByTestId('set5-points-at-change').textContent).toBe('5')
-    expect(container.querySelectorAll('[data-mark="reverseT"], [data-mark="T"]')).toHaveLength(0)
-    // panel 3 (the last points grid): 1-5 stay plain, the 6th point is ticked
+    // no "T" through unused numbers anywhere (owner 2026-10-07); one reverse T, in panel 3
+    expect(container.querySelectorAll('[data-mark="T"]')).toHaveLength(0)
     const grids = container.querySelectorAll('[data-testid="points-grid"]')
     const panel3 = grids[grids.length - 1]
+    expect(container.querySelectorAll('[data-mark="reverseT"]')).toHaveLength(1)
+    expect(panel3.querySelectorAll('[data-mark="reverseT"]')).toHaveLength(1)
+    // its stem ends under the 5th of 10 rows, with the bar there
+    const lines = panel3.querySelectorAll('[data-mark="reverseT"] line')
+    expect([...lines].map(l => l.getAttribute('y2'))).toEqual(['50', '50'])
+    // 1-5 stay plain numbers under the T, the 6th point is ticked
     const mark = (n: number) => panel3.querySelector(`[data-point="${n}"]`)?.getAttribute('data-mark')
     expect([1, 2, 3, 4, 5].map(mark)).toEqual(['', '', '', '', ''])
     expect(mark(6)).toBe('tick')
     // panels 2 and 3 print 1-30 (3 x 10), sets 1-4 print 1-48
     expect(panel3.querySelectorAll('[data-point]')).toHaveLength(30)
     expect(grids[0].querySelectorAll('[data-point]')).toHaveLength(48)
+  })
+
+  it('a finished set leaves the numbers above each team\'s score blank (owner 2026-10-13)', () => {
+    // set 5: home (left) 5 at the change (5:8), then 15:8
+    const data = set5('hhhhh' + 'aaaaaaaa' + 'hhhhhhhhhh')
+    data.sets[4] = { ...data.sets[4], finished: true, endTime: local(2026, 10, 7, 22, 5) }
+    const { container } = render(<App matchData={data} autoAction="preview" />)
+    const grids = [...container.querySelectorAll('[data-testid="points-grid"]')]
+    const shown = (g: Element) => [...g.querySelectorAll('[data-point]:not([data-blank])')].map(e => Number(e.getAttribute('data-point')))
+    const upTo = (n: number) => Array.from({ length: n }, (_, i) => i + 1)
+    // sets 1-4 (25:20 each way): 1-25 and 1-20, the rest of 1-48 blank
+    for (const set of [0, 1, 2, 3]) {
+      expect([shown(grids[2 * set]), shown(grids[2 * set + 1])].map(a => a.length).sort()).toEqual([20, 25])
+    }
+    expect(shown(grids[0])).toEqual(upTo(shown(grids[0]).length))
+    // set 5: panel 1 ends at the change (1-5), panel 2 at 8, panel 3 at 15
+    const [p1, p2, p3] = grids.slice(-3)
+    expect(shown(p1)).toEqual(upTo(5))
+    expect(p1.querySelectorAll('[data-point]')).toHaveLength(8)
+    expect(shown(p2)).toEqual(upTo(8))
+    expect(shown(p3)).toEqual(upTo(15))
+  })
+
+  it('a set still running keeps every pre-printed number', () => {
+    const { container } = render(<App matchData={set5('hhaahhah')} autoAction="preview" />)
+    const grids = [...container.querySelectorAll('[data-testid="points-grid"]')]
+    expect(grids.slice(-3).map(g => g.querySelectorAll('[data-blank]').length)).toEqual([0, 0, 0])
   })
 
   it('a default before the start: the grids struck off, the result and the remark written', () => {
@@ -302,16 +335,19 @@ describe('set 5, defaults and sanctions on the sheet', () => {
     expect(getByTestId('remarks-text').textContent).toContain('Team B, Set 1, Result 12:16: incomplete team (expulsion). Set awarded to Team A, 25:12.')
   })
 
-  it('9 sanction rows; the 10th continues in REMARKS; a bench player\'s number circled', () => {
+  it('9 sanction rows; the 10th continues in REMARKS; a bench player\'s number not circled (owner 2026-10-13)', () => {
     seq = 0
     const base = fixture()
     const events = [
-      ...Array.from({ length: 9 }, (_, i) => ev('sanction', 1, { team: 'away', type: 'warning', playerNumber: i + 1, playerType: 'player' })),
+      ...Array.from({ length: 8 }, (_, i) => ev('sanction', 1, { team: 'away', type: 'warning', playerNumber: i + 1, playerType: 'player' })),
+      ev('sanction', 1, { team: 'away', type: 'penalty', playerNumber: 12, playerType: 'bench' }),
       ev('sanction', 1, { team: 'home', type: 'warning', playerNumber: 13, playerType: 'bench' })
     ]
-    const { getAllByTestId, getByTestId } = render(<App matchData={{ ...base, events }} autoAction="preview" />)
+    const { getAllByTestId, getByTestId, container } = render(<App matchData={{ ...base, events }} autoAction="preview" />)
     expect(getAllByTestId('sanction-row')).toHaveLength(9)
-    expect(getByTestId('remarks-text').textContent).toContain('Sanctions (overflow):\nTeam A, Set 1, Score 0:0, Warning, (13)')
+    expect(getAllByTestId('sanction-row')[8].textContent).toContain('12')
+    expect(container.querySelectorAll('[data-testid="sanction-bench-circle"]')).toHaveLength(0)
+    expect(getByTestId('remarks-text').textContent).toContain('Sanctions (overflow):\nTeam A, Set 1, Score 0:0, Warning, 13')
   })
 })
 
@@ -360,13 +396,27 @@ describe('round 2 (owner review 2026-10-07)', () => {
     expect(getAllByTestId('remarks-rule')).toHaveLength(3)
   })
 
-  it('a number circle fits inside the narrowest 5 mm cell with a visible gap, its number clear of the ring', () => {
-    // service-box cells are ~4.6 mm wide inside their rules, rows ~4.74 mm high;
-    // ring + stroke (CSS px at 96 dpi) must leave >= 0.1 mm on each side (owner item 7)
+  it('number circles: the service-box ring clear of its rules, every ring clear of its two-digit number', () => {
     const strokeMm = MARK_STROKE * 25.4 / 96
+    const inkMm = (px: number) => TWO_DIGIT_INK_RADIUS_EM * px * 25.4 / 96
+    // service boxes are ~4.6 mm wide inside their rules: >= 0.1 mm each side
     expect((4.6 - (NUMBER_CIRCLE_MM + strokeMm)) / 2).toBeGreaterThanOrEqual(0.1)
-    // a two-digit circled number (~0.6 em per bold digit) stays inside the ring
-    const digitsMm = 2 * 0.6 * CIRCLED_NUMBER_PX * 25.4 / 96
-    expect(digitsMm).toBeLessThan(NUMBER_CIRCLE_MM - strokeMm - 0.6)
+    // the final points keep the box's number size, inside the ring
+    expect(NUMBER_CIRCLE_MM / 2 - strokeMm / 2).toBeGreaterThan(inkMm(SERVICE_NUMBER_PX) + 0.05)
+    // a substitute who came back: the row's number size (owner 2026-10-13), a ring
+    // clear of it and clear of the row's rules (~4.74 mm apart)
+    const subPx = LINEUP_NUMBER_PT * 96 / 72
+    expect(SUB_CIRCLE_MM / 2 - strokeMm / 2).toBeGreaterThan(inkMm(subPx) + 0.05)
+    expect((4.74 - (SUB_CIRCLE_MM + strokeMm)) / 2).toBeGreaterThanOrEqual(0.05)
+  })
+
+  it('line-up and substitute numbers share one size; the circled substitute keeps it', () => {
+    seq = 0
+    const base = fixture()
+    const lineupRow = (container: HTMLElement) => [...container.querySelectorAll('[data-testid="service-grid"]')][0]
+    const { container } = render(<App matchData={base} autoAction="preview" />)
+    const sizes = [...lineupRow(container).querySelectorAll('div.font-bold.tabular-nums')].map(e => (e as HTMLElement).style.fontSize)
+    expect(sizes.length).toBeGreaterThan(0)
+    expect(new Set(sizes)).toEqual(new Set([`${LINEUP_NUMBER_PT}pt`]))
   })
 })

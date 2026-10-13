@@ -1,5 +1,5 @@
 import React from 'react';
-import { MARK_STROKE } from './Marks';
+import { LINEUP_NUMBER_PT, MARK_STROKE } from './Marks';
 import { SubRecord } from '../types_scoresheet';
 import { PointsColumn } from './PointsColumn';
 import { StrikeZ } from './StrikeZ';
@@ -120,7 +120,7 @@ export const TeamServiceGrid: React.FC<{
                     const isLast = idx === arr.length - 1;
                     return (
                         <div key={i} className={`p-0.5 flex items-center justify-center relative bg-white border-black border-b ${isLast ? 'border-r-0' : 'border-r'}`} style={{ width: '10mm', height: '5mm' }}>
-                            <div className="font-bold text-sm text-center print:text-base">{lineup[i] || ''}</div>
+                            <div className="font-bold text-center tabular-nums leading-none" style={{ fontSize: `${LINEUP_NUMBER_PT}pt` }}>{lineup[i] || ''}</div>
                         </div>
                     );
                 })}
