@@ -1,0 +1,3 @@
+OpenVolley 2.4.5
+- Signed in again, the "Session expired" notice goes as soon as the waiting changes are being sent.
+- A saved scoresheet is named game<n>_<league>_<date>.pdf.
