@@ -265,9 +265,12 @@ Administrator kann es wieder öffnen.
 **Spielbericht-Dateien:** Am Ende eines Spiels lädt die App den Spielbericht
 als PDF und als Datei mit den Spieldaten hoch. Lesen kann ihn nur das Konto,
 das ihn hochgeladen hat (über `scoresheet.openvolley.app`), sowie die
-Administration. Wird dieses Konto gelöscht, bleibt die Datei als
-Spielaufzeichnung gespeichert, ist aber für niemanden mehr abrufbar, bis eine
-Administratorin oder ein Administrator den Zugriff wieder vergibt.
+Administration und die Wettbewerbsverantwortlichen der jeweiligen App
+(OpenVolley oder OpenBeach), die das PDF im Manager öffnen können. Jedes
+Öffnen wird mit ihrem Konto im Protokoll festgehalten. Wird das hochladende
+Konto gelöscht, bleibt die Datei als Spielaufzeichnung gespeichert; das PDF
+können dann nur noch die Administration und die Wettbewerbsverantwortlichen
+öffnen.
 
 **Freigabe mit PIN:** Offizielle können das Resultat zusätzlich zur
 Unterschrift mit einem persönlichen Freigabe-PIN bestätigen. Gespeichert

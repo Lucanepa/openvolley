@@ -246,9 +246,12 @@ the person who recorded it. Only an administrator can reopen it.
 
 **Scoresheet files:** at the end of a match the app uploads the scoresheet as
 a PDF and as a file with the match data. Only the account that uploaded it can
-read it (through `scoresheet.openvolley.app`), plus the administrators. If that
-account is deleted, the file stays stored as the match record but nobody can
-open it until an administrator grants access again.
+read it (through `scoresheet.openvolley.app`), plus the administrators and the
+competition managers of that app (OpenVolley or OpenBeach), who can open the
+PDF in the manager. Every time they open one, it is recorded in the audit log
+with their account. If the uploading account is deleted, the file stays stored
+as the match record; only the administrators and competition managers can
+still open the PDF.
 
 **Approval with a PIN:** officials can confirm the result with a personal
 approval PIN in addition to their signature. Stored are: the PIN as a
