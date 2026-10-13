@@ -1365,6 +1365,8 @@
     "resetZoom": "Zoom zrugsetze (100%)",
     "fitToScreen": "A Bildschirm aapasse",
     "fit": "Aapasse",
+    "turn": "Dreihe",
+    "turnTooltip": "Blatt dreihe: Es füllt de Bildschirm, wenn Sie s Telefon dreihed",
     "fullscreen": "Vollbild",
     "exitFullscreen": "Vollbild beände",
     "printPdf": "Drucke / PDF",

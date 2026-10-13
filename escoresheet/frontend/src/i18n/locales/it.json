@@ -1365,6 +1365,8 @@
     "resetZoom": "Reimposta zoom (100%)",
     "fitToScreen": "Adatta allo schermo",
     "fit": "Adatta",
+    "turn": "Ruota",
+    "turnTooltip": "Ruota il referto: riempie lo schermo quando giri il telefono",
     "fullscreen": "Schermo intero",
     "exitFullscreen": "Esci da schermo intero",
     "printPdf": "Stampa / PDF",

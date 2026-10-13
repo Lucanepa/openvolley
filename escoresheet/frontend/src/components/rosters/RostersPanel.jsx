@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { usePhoneWidth } from '../../hooks/usePhoneWidth'
 import { SectionHeader } from '../../ui/SectionHeader.jsx'
 import { VolleyballIcon } from '../icons'
 import {
@@ -140,14 +141,17 @@ function PositionCell({ position, isServer }) {
 }
 
 // Column widths (fixed layout): # with its badges, the rest for the name.
+// A phone held upright: narrower columns, or the name got no room and the
+// table ran past the screen (the sanctions column was cut off).
 function Colgroup({ showPos }) {
+  const phone = usePhoneWidth()
   return (
     <colgroup>
-      <col style={{ width: 92 }} />
+      <col style={{ width: phone ? 64 : 92 }} />
       <col />
-      <col style={{ width: 96 }} />
-      {showPos && <col style={{ width: 64 }} />}
-      <col style={{ width: 96 }} />
+      <col style={{ width: phone ? 84 : 96 }} />
+      {showPos && <col style={{ width: phone ? 44 : 64 }} />}
+      <col style={{ width: phone ? 60 : 96 }} />
     </colgroup>
   )
 }
@@ -213,13 +217,14 @@ function PlayerTable({ team, rows, showPos, kind }) {
 
 function BenchTable({ team, rows, emptyAll }) {
   const { t } = useTranslation()
+  const phone = usePhoneWidth()
   return (
     <table className="roster-table" style={TABLE}>
       <colgroup>
-        <col style={{ width: 140 }} />
+        <col style={{ width: phone ? 92 : 140 }} />
         <col />
-        <col style={{ width: 96 }} />
-        <col style={{ width: 96 }} />
+        <col style={{ width: phone ? 84 : 96 }} />
+        <col style={{ width: phone ? 60 : 96 }} />
       </colgroup>
       <thead>
         <tr>
