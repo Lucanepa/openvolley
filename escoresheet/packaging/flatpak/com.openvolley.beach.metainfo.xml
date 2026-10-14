@@ -67,6 +67,15 @@
   </screenshots>
 
   <releases>
+    <release version="2.0.7" date="2026-10-14">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.7</url>
+      <description>
+        <ul>
+          <li>Narrow windows and phones: only the scoring screen asks for a larger window; every other screen works without fullscreen.</li>
+          <li>The header, the coin toss choices, the Scoresheet menu and the scoresheet preview fit a narrow window.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.0.6" date="2026-10-14">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.6</url>
       <description>

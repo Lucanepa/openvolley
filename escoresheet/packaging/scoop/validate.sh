@@ -2,8 +2,9 @@
 # Check the Scoop manifests here (needs Docker and network):
 #   1. against Scoop's own JSON schema (ScoopInstaller/Scoop, schema.json);
 #   2. the installer/uninstaller scripts parse as PowerShell (pwsh container);
-#   3. checkver's regex finds the version in the manifest among the
-#      GitHub releases, and the manifest's URL is its autoupdate URL;
+#   3. checkver finds the manifest's version in the app's latest.json on
+#      get.openvolley.app (the version the desktop updater announces), and
+#      the manifest's URL is its autoupdate URL;
 #   4. with --urls: the URL downloads and its SHA-256 is the manifest's.
 #
 #   escoresheet/packaging/scoop/validate.sh [--urls]
@@ -57,15 +58,26 @@ for f in sorted(glob.glob(sys.argv[1] + "/*.json")):
     m = json.load(open(f))
     cv = m["checkver"]
     if cv["url"] not in cache:
-        cache[cv["url"]] = urllib.request.urlopen(cv["url"], timeout=30).read().decode()
-    found = re.search(cv["regex"], cache[cv["url"]])
-    latest = found.group(1) if found else None
+        # Scoop's own user agent: get.openvolley.app (Cloudflare) refuses Python's
+        req = urllib.request.Request(cv["url"], headers={"User-Agent": "Scoop/1.0 (+http://scoop.sh/) PowerShell/7.4 (Windows NT 10.0; Win64; x64; Core)"})
+        cache[cv["url"]] = urllib.request.urlopen(req, timeout=30).read().decode()
+    if "jsonpath" in cv:
+        # "$.version": the GitHub release list is no use here, it puts
+        # desktop-v2.4.9 before desktop-v2.4.10
+        node = json.loads(cache[cv["url"]])
+        for key in cv["jsonpath"].split(".")[1:]:
+            node = node.get(key) if isinstance(node, dict) else None
+        latest = node if isinstance(node, str) else None
+    else:
+        found = re.search(cv["regex"], cache[cv["url"]])
+        latest = found.group(1) if found else None
     want_url = m["autoupdate"]["architecture"]["64bit"]["url"].replace("$version", m["version"])
     ok_url = m["architecture"]["64bit"]["url"] == want_url
     name = f.rsplit("/", 1)[-1]
-    print(f"{'ok  ' if latest and ok_url else 'BAD '} {name}: manifest {m['version']}, newest release {latest}"
+    ok_ver = latest == m["version"]
+    print(f"{'ok  ' if ok_ver and ok_url else 'BAD '} {name}: manifest {m['version']}, newest release {latest}"
           + ("" if ok_url else f", url is not the autoupdate url {want_url}"))
-    bad += not (latest and ok_url)
+    bad += not (ok_ver and ok_url)
 sys.exit(1 if bad else 0)
 EOF
 

@@ -71,6 +71,16 @@
   </screenshots>
 
   <releases>
+    <release version="2.4.10" date="2026-10-14">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v2.4.10</url>
+      <description>
+        <ul>
+          <li>The action log shows local times instead of UTC.</li>
+          <li>Narrow windows and phones: Corrections, the rosters, the roster editor during a match and the scoresheet preview fit the width.</li>
+          <li>The "screen too small" notice is translated and offers the phone layout.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.4.9" date="2026-10-14">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v2.4.9</url>
       <description>
