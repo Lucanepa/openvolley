@@ -72,6 +72,7 @@ import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
 import { needsEventCheck, pickCurrentMatch } from './utils/currentMatch'
 import { isRelayErrorFor, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
 import { PHONE_MAX_WIDTH, isPhoneScreen, phoneLayoutKept } from './components/scoreboard/phoneLayout'
+import { useSystemBarsHidden } from './utils/nativeSystemBars'
 
 function readStoredDisplayMode() {
   try {
@@ -2839,6 +2840,10 @@ export default function App() {
   // which the hint used to point to, is not reachable from the gate)
   const storedDisplayMode = readStoredDisplayMode()
   const gateOffersPhoneLayout = isPhoneScreen() && storedDisplayMode !== 'auto' && storedDisplayMode !== 'phone'
+  // The Android app on a tablet hides the status and navigation bars on these
+  // screens: an 8" tablet held sideways only gets past the gate without them
+  // (nativeSystemBars; a no-op in a browser). The gate waits while they go.
+  const systemBarsGoing = useSystemBarsHidden(smallScreenBlocked && !isPhoneScreen())
 
   const notClosed = (m) => (m && closedMatchId != null && m.id === closedMatchId ? null : m)
   const shownCurrentMatch = notClosed(currentMatch)
@@ -2872,7 +2877,7 @@ export default function App() {
           end only with the phone layout (PhoneScoreboard, Screen mode Auto or
           Phone), and the manual adjustments not yet. Allowed when at least one
           dimension >= 800 (tablet in any orientation) and in fullscreen. */}
-      {!isFullscreen && smallScreenBlocked && isViewportTooSmall(viewportSize.width, viewportSize.height) ? (
+      {!isFullscreen && !systemBarsGoing && smallScreenBlocked && isViewportTooSmall(viewportSize.width, viewportSize.height) ? (
         <div className="ov-kit flex flex-1 flex-col items-center justify-center bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100 p-4">
           <div className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-stone-200/70 bg-white p-8 text-center shadow-card-lg">
             <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 to-red-500" />
