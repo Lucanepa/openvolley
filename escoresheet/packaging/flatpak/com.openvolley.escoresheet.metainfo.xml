@@ -71,6 +71,16 @@
   </screenshots>
 
   <releases>
+    <release version="2.4.9" date="2026-10-14">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v2.4.9</url>
+      <description>
+        <ul>
+          <li>Closing the window asks whether OpenVolley keeps running in the tray or quits completely.</li>
+          <li>The "Update is ready" card no longer stays on "waits until OpenVolley has finished loading".</li>
+          <li>Narrow windows and phones: the header, the home screen, the backup list, the match setup, the coin toss and the scoreboard's rosters fit the width.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.4.8" date="2026-10-13">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v2.4.8</url>
       <description>

@@ -67,6 +67,15 @@
   </screenshots>
 
   <releases>
+    <release version="2.0.6" date="2026-10-14">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.6</url>
+      <description>
+        <ul>
+          <li>Closing the window asks whether OpenBeach keeps running in the tray or quits completely.</li>
+          <li>The "Update is ready" card no longer stays on "waits until OpenBeach has finished loading".</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.0.5" date="2026-10-13">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.5</url>
       <description>
