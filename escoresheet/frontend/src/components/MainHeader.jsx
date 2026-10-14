@@ -429,9 +429,8 @@ export default function MainHeader({
 
     const isTest = match?.test
     const matchNumber = match?.gameNumber || match?.game_n || 'N/A'
-    const buttonText = isPhoneWidth
-      ? (isTest ? t('header.test') : `#${matchNumber}`)
-      : (isTest ? t('header.testMatch') : t('header.matchNumber', { number: matchNumber }))
+    const fullText = isTest ? t('header.testMatch') : t('header.matchNumber', { number: matchNumber })
+    const buttonText = isPhoneWidth ? (isTest ? t('header.test') : `#${matchNumber}`) : fullText
 
     return (
       <div className="relative flex h-8 w-auto items-center justify-center gap-1.5">
@@ -440,6 +439,7 @@ export default function MainHeader({
             type="button"
             data-match-info-menu
             aria-expanded={matchInfoMenuOpen}
+            aria-label={isPhoneWidth ? fullText : undefined}
             onClick={(e) => {
               e.stopPropagation()
               // One header popup at a time: on a phone they overlap

@@ -1893,6 +1893,8 @@
     "title": "Connection status",
     "pendingBackgroundSync": "Pending background sync:",
     "synchronizationErrors": "Synchronization errors:",
+    "withErrors_one": "{{status}}, {{count}} sync error",
+    "withErrors_other": "{{status}}, {{count}} sync errors",
     "statusInformation": "Status information",
     "statusLabel": "Status:",
     "messageLabel": "Message:",

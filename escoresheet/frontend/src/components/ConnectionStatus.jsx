@@ -302,6 +302,10 @@ export default function ConnectionStatus({
         : overallStatus === 'auth_required' ? t('connectionStatus.signInToSync', 'Sign in to sync') :
           t('connectionStatus.error', 'Error')
   const overallTone = STATUS_TONES[statusInfo.tone] || STATUS_TONES.neutral
+  // The compact pill shows only the dot and the error badge: its name says both
+  const compactLabel = errorCount > 0
+    ? t('connectionStatus.withErrors', '{{status}}, {{count}} sync errors', { status: pillText, count: errorCount })
+    : pillText
 
   return (
     <div style={{ position: 'relative' }} data-connection-menu>
@@ -317,8 +321,8 @@ export default function ConnectionStatus({
             }
             setShowConnectionMenu(!showConnectionMenu)
           }}
-          aria-label={compact ? pillText : undefined}
-          title={compact ? pillText : undefined}
+          aria-label={compact ? compactLabel : undefined}
+          title={compact ? compactLabel : undefined}
           className={cn(STATUS_PILL, FOCUS_RING, overallTone.pill, currentSize.pill, compact && 'px-2')}
         >
           <span className={cn('inline-block shrink-0 rounded-full', currentSize.dot, overallTone.dot)}></span>
