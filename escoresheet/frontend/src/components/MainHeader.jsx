@@ -100,6 +100,21 @@ const languages = [
   { code: 'fr', Flag: FlagFR, label: 'FR' }
 ]
 
+// The match info popover is centred on its button. On a phone the button sits
+// between the header's two groups, not in the middle of the screen, so the
+// popover is moved back inside the screen (8 px margin)
+function keepPopoverOnScreen(el) {
+  if (!el) return
+  el.style.left = ''
+  const r = el.getBoundingClientRect()
+  const vw = document.documentElement.clientWidth || window.innerWidth
+  const margin = 8
+  let shift = 0
+  if (r.right > vw - margin) shift = vw - margin - r.right
+  if (r.left + shift < margin) shift = margin - r.left
+  if (shift) el.style.left = `calc(50% + ${Math.round(shift)}px)`
+}
+
 export default function MainHeader({
   connectionStatuses,
   connectionDebugInfo,
@@ -365,6 +380,7 @@ export default function MainHeader({
     return (
       <div
         data-match-info-menu
+        ref={keepPopoverOnScreen}
         onClick={(e) => e.stopPropagation()}
         className={cn('absolute left-1/2 top-full mt-1.5 flex min-w-[280px] -translate-x-1/2 flex-col gap-2 text-center', POPOVER_PANEL)}
         style={{ zIndex: 1000 }}

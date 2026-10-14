@@ -101,6 +101,27 @@ describe('RostersPanel', () => {
   })
 })
 
+describe('RostersPanel on a phone', () => {
+  it('shows the bench roles as their paper codes, the full role as the tooltip', () => {
+    const matchMedia = window.matchMedia
+    window.matchMedia = (query) => ({ matches: true, media: query, addEventListener: () => {}, removeEventListener: () => {} })
+    try {
+      const data = baseData()
+      data.match.bench_home = [
+        { role: 'Coach', lastName: 'Boss', firstName: 'B' },
+        { role: 'Assistant Coach 1', lastName: 'Help', firstName: 'H' },
+        { role: 'Physiotherapist', lastName: 'Care', firstName: 'C' }
+      ]
+      const { container } = render(<RostersPanel data={data} lineups={{ home: null, away: null }} servingTeam="home" />)
+      const codes = [...container.querySelectorAll('[data-role-code]')].map(el => [el.dataset.roleCode, el.title])
+      expect(codes).toEqual([['C', 'Coach'], ['AC1', 'Assistant coach 1'], ['P', 'Physiotherapist']])
+      expect(screen.queryByText('Assistant Coach 1')).toBeNull()
+    } finally {
+      window.matchMedia = matchMedia
+    }
+  })
+})
+
 describe('rosterLive locale keys', () => {
   const flat = (o, p = '') => Object.entries(o).flatMap(([k, v]) => (v && typeof v === 'object' ? flat(v, `${p}${k}.`) : [`${p}${k}`]))
   const keys = flat(en.rosterLive)
