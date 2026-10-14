@@ -1206,9 +1206,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // LEFT team 'A'/'B'), else odd sets left; set 5 flips at the 8-point switch
       const sideA = getSideAForSet(setIndex, match)
 
-      // Team names and colors
-      const teamAName = teamAKey === 'home' ? match.homeName : match.awayName
-      const teamBName = teamAKey === 'home' ? match.awayName : match.homeName
+      // Team names and colors. A match row without names (a test match: they
+      // are on its team records only) sent none, and the livescore and the
+      // referee showed "Team A" / "Team B" (emulator 2026-10-14)
+      const homeName = match.homeName || homeTeamDb?.name
+      const awayName = match.awayName || awayTeamDb?.name
+      const teamAName = teamAKey === 'home' ? homeName : awayName
+      const teamBName = teamAKey === 'home' ? awayName : homeName
       const teamAShort = teamAKey === 'home' ? match.homeShortName : match.awayShortName
       const teamBShort = teamAKey === 'home' ? match.awayShortName : match.homeShortName
       // The colours the scorer's court shows (the team's own first): a test
