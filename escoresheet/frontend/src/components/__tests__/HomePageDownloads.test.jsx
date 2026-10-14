@@ -12,7 +12,7 @@ vi.mock('../../utils/backendConfig', () => ({
   isServedFromLocalServer: () => backend.local
 }))
 
-import HomePage from '../pages/HomePage'
+import HomePage, { newestDesktopRelease } from '../pages/HomePage'
 
 const LINUX_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36'
 const RELEASE = {
@@ -60,6 +60,17 @@ describe('HomePage desktop download section', () => {
     const app = await screen.findByText(/Download the desktop app.*\(v2\.0\.0\)/)
     expect(app.closest('a')).toHaveAttribute('href', 'https://example.test/new.AppImage')
     expect(screen.getByText('or get the .deb package').closest('a')).toHaveAttribute('href', 'https://example.test/new.deb')
+  })
+
+  // GitHub listed desktop-v2.4.9 before desktop-v2.4.10 (2026-10-14)
+  it('offers the highest version, not the first release GitHub lists', async () => {
+    const rel = (v, extra = {}) => ({ ...RELEASE, tag_name: `desktop-v${v}`, ...extra })
+    const list = [rel('2.4.9'), rel('2.4.10'), rel('2.5.0', { draft: true }), rel('2.4.11', { prerelease: true }), { ...RELEASE, tag_name: 'android-v2.4.12' }, rel('2.4.8')]
+    expect(newestDesktopRelease(list).tag_name).toBe('desktop-v2.4.10')
+    expect(newestDesktopRelease([])).toBeNull()
+    global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve(list) }))
+    render(<HomePage />)
+    await screen.findByText(/Download the desktop app.*\(v2\.4\.10\)/)
   })
 
   it('a page served by the local relay (desktop app window, venue LAN) shows no downloads', () => {
