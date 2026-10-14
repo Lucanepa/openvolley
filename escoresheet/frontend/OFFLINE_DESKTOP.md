@@ -562,9 +562,13 @@ quit (`src-tauri/src/lifecycle.rs`, page side `src/utils/appLifecycle.js`):
 - **Close button / Alt+F4** hides the scoretable and its scoresheet windows
   to a **tray icon** (the app icon, tooltip "OpenVolley eScoresheet"). The
   relay keeps serving the tablets, the laptop's Wi-Fi / Bluetooth for the
-  tablets keeps running, the match is untouched. The first close of each run
-  shows an in-app notice first ("OpenVolley keeps running in the tray",
-  Hide window / Keep open); later closes hide at once.
+  tablets keeps running, the match is untouched. Every close asks first
+  ("Keep OpenVolley running in the tray?", Hide window / Quit completely /
+  Keep open). Quit completely quits without the quit question unless that
+  has more to say (a live match, the laptop's network for the tablets, other
+  app windows, a PDF still saving). The page takes each close
+  (`app_close_ack`); when it did not take the last one (stuck, or a page from
+  before 2.4.9), the next close hides at once.
 - **Tray icon**: on Windows a left click shows the window, the right click
   opens the menu; on Linux (AppIndicator) every click opens the menu. Menu:
   **Show OpenVolley**, a status line (tablets connected, "Match in progress" /
@@ -671,6 +675,12 @@ hand (APT: `sudo apt upgrade`).
   package from this repo. The running app keeps its old binary and says
   "Restart to finish the update to {v}"; it notices an `apt upgrade` or
   unattended-upgrades the same way (`/proc/self/exe` ends in " (deleted)").
+  With automatic installs on, the home screen's notice then restarts by
+  itself after a 10-second countdown ("OpenVolley restarts by itself in
+  {n} s.", Later stops it), only while the gate is open; every tap or key,
+  an open dialog or a hidden window starts the count over, so it never cuts
+  what the scorer is doing. A refused or failed automatic restart is not
+  tried again: the button stays.
   Without pkexec (or refused) Options shows `sudo apt update && sudo apt upgrade`.
   A .deb installed by hand (no repo) shows the install.sh command once.
 - **The gate**, in Rust, checked before every download / install / restart:

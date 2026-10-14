@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Copy, Download, RefreshCw } from 'lucide-react'
 import { Button, toast } from '../ui'
@@ -9,11 +9,21 @@ import { copyToClipboard } from '../utils/networkInfo'
 
 // "Later" hides the notice for that version until the app starts again.
 let laterVersion = null
+// The version the automatic restart was tried for: never a second time (a
+// refused or failed restart leaves the button).
+let autoTriedVersion = null
 
-/** Tests: forget "Later". */
+/** Seconds the card counts down before the automatic restart. */
+export const AUTO_RESTART_SECONDS = 10
+
+/** Tests: forget "Later" and the automatic restart. */
 export function resetDesktopUpdateNoticeForTests() {
   laterVersion = null
+  autoTriedVersion = null
 }
+
+// A dialog is open (the page's own, or the web update's): the scorer is busy.
+const dialogOpen = () => !!document.querySelector('[aria-modal="true"]')
 
 /**
  * The desktop app's "Update {v} is ready" (src-tauri/src/updater.rs): a
@@ -25,7 +35,13 @@ export function resetDesktopUpdateNoticeForTests() {
  *   Later and "Restart and update";
  * - ready, gate closed: one line with the reason, no button;
  * - deb installed by APT: "Restart to finish the update to {v}" + button;
+ *   with automatic installs on, it restarts by itself after a countdown
+ *   (AUTO_RESTART_SECONDS), which starts over at every tap or key and while
+ *   a dialog is open or the window is hidden, so it never cuts what the
+ *   scorer is doing;
  * - a .deb installed by hand: the command that adds the repo, with Copy.
+ *
+ * Every notice has Later.
  */
 export default function DesktopUpdateNotice() {
   const { t } = useTranslation()
@@ -33,20 +49,35 @@ export default function DesktopUpdateNotice() {
   const [live, setLive] = useState(getLiveMatch)
   const [hidden, setHidden] = useState(laterVersion)
   const [busy, setBusy] = useState(false)
+  const [autoTried, setAutoTried] = useState(autoTriedVersion)
+  const [left, setLeft] = useState(AUTO_RESTART_SECONDS)
 
   useEffect(() => onLiveMatchChange(setLive), [])
 
-  if (!active || live !== 'none') return null
-  const notice = noticeFor(status, { hidden })
-  if (!notice) return null
-  const { version } = notice
+  const notice = active && live === 'none' ? noticeFor(status, { hidden }) : null
+  // installed, only the restart is missing, and the app's gate is open
+  const autoVersion = notice?.type === 'restartPending' && status?.autoInstall && autoTried !== notice.version
+    ? notice.version
+    : null
 
-  const later = () => {
-    laterVersion = version
-    setHidden(version)
-  }
+  useEffect(() => {
+    if (!autoVersion) return undefined
+    setLeft(AUTO_RESTART_SECONDS)
+    const again = () => setLeft(AUTO_RESTART_SECONDS)
+    window.addEventListener('pointerdown', again, true)
+    window.addEventListener('keydown', again, true)
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'hidden' || dialogOpen()) again()
+      else setLeft((n) => Math.max(0, n - 1))
+    }, 1000)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('pointerdown', again, true)
+      window.removeEventListener('keydown', again, true)
+    }
+  }, [autoVersion])
 
-  const restart = async () => {
+  const restart = useCallback(async () => {
     setBusy(true)
     const result = await installNow()
     setBusy(false)
@@ -54,6 +85,26 @@ export default function DesktopUpdateNotice() {
     const err = result.error || {}
     if (err.code === 'blocked') toast.info(blockerText(mainBlocker(err.blockers), t))
     else toast.error(failureText(err.code, t))
+  }, [installNow, t])
+
+  useEffect(() => {
+    if (!autoVersion || left > 0) return
+    // the scorer may have opened a dialog or hidden the window since the last tick
+    if (document.visibilityState === 'hidden' || dialogOpen()) {
+      setLeft(AUTO_RESTART_SECONDS)
+      return
+    }
+    autoTriedVersion = autoVersion
+    setAutoTried(autoVersion)
+    restart()
+  }, [autoVersion, left, restart])
+
+  if (!notice) return null
+  const { version } = notice
+
+  const later = () => {
+    laterVersion = version
+    setHidden(version)
   }
 
   const copy = async () => {
@@ -65,7 +116,9 @@ export default function DesktopUpdateNotice() {
   let body
   if (notice.type === 'restartPending') {
     title = t('update.restartToFinish', { version, defaultValue: 'Restart to finish the update to {{version}}' })
-    body = t('update.restartTakes', 'Takes about 20 seconds.')
+    body = autoVersion
+      ? t('update.autoRestartIn', { seconds: left, defaultValue: 'OpenVolley restarts by itself in {{seconds}} s.' })
+      : t('update.restartTakes', 'Takes about 20 seconds.')
   } else if (notice.type === 'noRepo') {
     title = t('update.ready', { version, defaultValue: 'Update {{version}} is ready' })
     body = t('update.noRepo', 'This copy does not update itself. Run once in a terminal:')
@@ -107,18 +160,16 @@ export default function DesktopUpdateNotice() {
         </div>
       )}
 
-      {(notice.type === 'ready' || notice.type === 'restartPending' || notice.type === 'noRepo') && (
-        <div className="mt-3 flex justify-end gap-2">
-          <Button variant="secondary" size="md" onClick={later}>
-            {t('common.later', 'Later')}
+      <div className="mt-3 flex justify-end gap-2">
+        <Button variant="secondary" size="md" onClick={later}>
+          {t('common.later', 'Later')}
+        </Button>
+        {(notice.type === 'ready' || notice.type === 'restartPending') && (
+          <Button variant="dark" size="md" icon={RefreshCw} loading={busy} onClick={restart}>
+            {t('update.restartNow', 'Restart and update')}
           </Button>
-          {notice.type !== 'noRepo' && (
-            <Button variant="dark" size="md" icon={RefreshCw} loading={busy} onClick={restart}>
-              {t('update.restartNow', 'Restart and update')}
-            </Button>
-          )}
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
