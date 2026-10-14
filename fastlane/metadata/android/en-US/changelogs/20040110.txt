@@ -1,0 +1,4 @@
+OpenVolley 2.4.11
+- 8" tablets held sideways can score: the scoring screen hides Android's status and navigation bars (swipe from the edge to show them).
+- At 800×600 the point buttons no longer cover the set tables.
+- Phone: the header's match chip fits with a tablet connected.
