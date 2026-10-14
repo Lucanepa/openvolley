@@ -26,6 +26,7 @@ const SURFACE = {
 }
 import { setsToWin } from '../utils/matchFormat'
 import { getSideAForSet } from '../domain/rules'
+import { sanctionTarget } from '../domain/describe'
 import { matchDiscPaint, teamLiberoColour, markColourOn } from '../utils/teamColours'
 
 export default function MatchEntry({ matchId, team, onBack, embedded = false }) {
@@ -1040,16 +1041,20 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
         </div>
       </div>
 
-      {/* SECTION 2: Court (full width, centered) */}
+      {/* SECTION 2: Court (full width, centered). It does not shrink to fit
+          the screen's height: on a phone on its side (Chrome, 812x277) the
+          court was squeezed to a 55 px strip with 11 px discs (emulator
+          2026-10-14). It is at most 70% of the screen's height instead, and
+          the page scrolls the rest. */}
       <div style={{
         display: 'flex',
         justifyContent: 'center',
-        minHeight: 0
+        flexShrink: 0
       }}>
         {/* Court - centered, max 80% width */}
         <div style={{
           width: '80%',
-          maxWidth: '400px',
+          maxWidth: 'min(400px, 70vh)',
           aspectRatio: '1 / 1',
           position: 'relative'
         }}>
@@ -1184,12 +1189,13 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
                         style={{
                           ...discStyle(player.isLibero),
                           position: 'relative',
-                          // capped by the court's height (cqh): sized from the
-                          // width alone, three back-row discs ran off a short
-                          // court (a phone on its side, 844x390)
-                          width: 'min(clamp(44px, 10vw, 72px), 24cqh)',
-                          height: 'min(clamp(44px, 10vw, 72px), 24cqh)',
-                          fontSize: 'min(clamp(18px, 4vw, 28px), 12cqh)'
+                          // the front row's disc (.court-player is 22cqh, the
+                          // court's height, so three fit a short court too):
+                          // clamp(44px, 10vw, 72px) made the back row 44 px
+                          // next to a 67 px front row on a phone (emulator
+                          // 2026-10-14)
+                          aspectRatio: '1 / 1',
+                          fontSize: '11cqh'
                         }}
                       >
                         {shouldShowBall && (
@@ -1339,15 +1345,13 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
 
         {/* Officials - show role codes */}
         {benchOfficials.map((official, idx) => {
-          // Convert role to short code
-          const roleCode = official.role === 'Coach' || official.role === 'coach' ? 'C' :
-                          official.role === 'Assistant Coach' || official.role === 'assistant_coach' ? 'AC' :
-                          official.role === 'Doctor' || official.role === 'doctor' ? 'D' :
-                          official.role === 'Physio' || official.role === 'physio' ? 'P' :
-                          official.role === 'Manager' || official.role === 'manager' ? 'M' :
-                          official.role?.charAt(0)?.toUpperCase() || '?'
+          // The paper's role code (C, AC1, AC2, P, M), as the scorer's
+          // bench list shows it: the first letter made both assistant coaches
+          // "A" (emulator 2026-10-14)
+          const target = official.role ? sanctionTarget({ playerType: 'official', role: official.role }, t) : null
+          const roleCode = target && !target.incomplete ? target.code : (official.role?.charAt(0)?.toUpperCase() || '?')
           return (
-            <div key={`off-${idx}`} style={{
+            <div key={`off-${idx}`} title={target && !target.incomplete ? target.label : official.role || undefined} style={{
               display: 'flex',
               alignItems: 'center',
               gap: '4px',
