@@ -67,6 +67,14 @@
   </screenshots>
 
   <releases>
+    <release version="2.0.8" date="2026-10-14">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.8</url>
+      <description>
+        <ul>
+          <li>In a narrow window the header's match chip no longer covers the alarm bell; below 720 px the header uses its compact form.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.0.7" date="2026-10-14">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.7</url>
       <description>

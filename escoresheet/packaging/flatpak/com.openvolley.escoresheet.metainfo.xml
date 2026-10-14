@@ -71,6 +71,16 @@
   </screenshots>
 
   <releases>
+    <release version="2.4.11" date="2026-10-14">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v2.4.11</url>
+      <description>
+        <ul>
+          <li>In a window 800 px wide the scoring screen fits: the point buttons no longer cover the set tables.</li>
+          <li>Bench view on the team tablets: back-row players as large as the front row, officials by role code (C, AC1, AC2, P, M), and the court usable with the tablet sideways.</li>
+          <li>The livescore shows the team names of a test match.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.4.10" date="2026-10-14">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v2.4.10</url>
       <description>
