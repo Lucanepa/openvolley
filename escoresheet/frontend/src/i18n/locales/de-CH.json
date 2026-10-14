@@ -3897,6 +3897,7 @@
   },
   "sizeGate": {
     "title": "Die Aawändig bruucht es Tablet oder en grössere Bildschirm (mindestens 800×600).",
+    "phoneTitle": "D Tablet-Aasicht bruucht en grössere Bildschirm (mindestens 800×600).",
     "current": "Aktuell: {{width}} × {{height}} px",
     "hint": "Dräihed Sie s Grät oder wächsled Sie in Vollbildmodus.",
     "phoneHint": "Uf em Handy hät de Spielbildschirm en eigeni Aasicht.",

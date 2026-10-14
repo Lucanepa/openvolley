@@ -10,6 +10,7 @@ import {
   playerPlayStatus,
   gameCaptainOnCourt
 } from '../../domain/rosterLive'
+import { sanctionTarget } from '../../domain/describe'
 
 // Body of the scorer's "Rosters" dialog: players, liberos, bench officials and
 // match officials of both teams. During play it also shows, per person, the
@@ -252,7 +253,7 @@ function BenchTable({ team, rows, emptyAll }) {
           <tr key={official ? `${team.key}-bench-${idx}` : `empty-bench-${idx}`} style={{ height: ROW_H }}>
             {official ? (
               <>
-                <td style={{ ...CELL, textTransform: 'capitalize', fontWeight: 500 }}>{official.role || '—'}</td>
+                <td style={{ ...CELL, textTransform: 'capitalize', fontWeight: 500 }}><BenchRole role={official.role} phone={phone} /></td>
                 <td style={NAME_CELL} title={`${official.lastName || ''} ${official.firstName || ''}`.trim()}>
                   <NameWithDob name={`${official.lastName || ''} ${official.firstName || ''}`.trim()} dob={official.dob} phone={phone} />
                 </td>
@@ -271,6 +272,22 @@ function BenchTable({ team, rows, emptyAll }) {
         )}
       </tbody>
     </table>
+  )
+}
+
+// On a phone the 84 px role column holds the paper code (C, AC1, AC2, P, M):
+// "Assistant Coach 1" ran over the name. The full role stays the tooltip and
+// what a screen reader says.
+function BenchRole({ role, phone }) {
+  const { t } = useTranslation()
+  if (!role) return '—'
+  const target = phone ? sanctionTarget({ playerType: 'official', role }, t) : null
+  if (!target || target.incomplete) return role
+  return (
+    <span title={target.label} data-role-code={target.code}>
+      <span aria-hidden="true">{target.code}</span>
+      <span className="sr-only">{target.label}</span>
+    </span>
   )
 }
 

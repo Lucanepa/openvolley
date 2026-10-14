@@ -3885,6 +3885,7 @@
   },
   "sizeGate": {
     "title": "Diese Anwendung braucht ein Tablet oder einen grösseren Bildschirm (mindestens 800×600).",
+    "phoneTitle": "Die Tablet-Ansicht braucht einen grösseren Bildschirm (mindestens 800×600).",
     "current": "Aktuell: {{width}} × {{height}} px",
     "hint": "Drehen Sie Ihr Gerät oder wechseln Sie in den Vollbildmodus.",
     "phoneHint": "Auf einem Handy hat der Spielbildschirm eine eigene Ansicht.",
