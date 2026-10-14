@@ -8,7 +8,8 @@ import { cn } from '../ui/cn.js'
 import { StatusPill } from '../ui/StatusPill.jsx'
 import { FOCUS_RING, KIT_SCOPE, POPOVER_PANEL, STATUS_PILL, STATUS_TONES } from './chromeClasses'
 
-export default function TabletStatusIndicator({ match }) {
+// compact (a phone's header): no arrow, the header has no room for it
+export default function TabletStatusIndicator({ match, compact = false }) {
   const { t } = useTranslation()
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, right: 12 })
@@ -83,7 +84,9 @@ export default function TabletStatusIndicator({ match }) {
           {/* Status dot */}
           <span className={cn('h-2 w-2 shrink-0 rounded-full', overallTone.dot)} />
           <span className="tabular-nums">{summary.connectedCount}/{summary.expectedCount}</span>
-          <ChevronDown size={12} aria-hidden="true" className={cn('opacity-70 transition-transform', menuOpen && 'rotate-180')} />
+          {!compact && (
+            <ChevronDown size={12} aria-hidden="true" className={cn('opacity-70 transition-transform', menuOpen && 'rotate-180')} />
+          )}
         </button>
       </span>
 
