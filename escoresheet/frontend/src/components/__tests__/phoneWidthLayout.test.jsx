@@ -26,6 +26,10 @@ const header = () => render(
   </ScaleProvider>
 )
 const chipWrapper = (container) => container.querySelector('[data-match-info-menu]').closest('[data-diag="header"] > div[style]')
+const groups = (container) => {
+  const kids = [...container.querySelector('[data-diag="header"]').children]
+  return [kids[0], kids[kids.length - 1]]
+}
 
 describe('the header on a phone', () => {
   it('fits: the switch keeps its name but not its word, the chip joins the row, the menu is an icon', () => {
@@ -39,13 +43,53 @@ describe('the header on a phone', () => {
     expect(screen.getByTestId('user-button').dataset.compact).toBe('true')
   })
 
-  it('is unchanged on a tablet: the words, the centred chip, "Exit"', () => {
+  it('keeps its words on a tablet; the chip sits in the row between two groups that share the room', () => {
     setWidth(1024)
     const { container } = header()
     expect(screen.getByRole('switch').querySelector('.sr-only')).toBeNull()
     expect(screen.getByText('Match #402397')).toBeInTheDocument()
-    expect(chipWrapper(container).style.position).toBe('absolute')
+    expect(chipWrapper(container).style.position).toBe('relative')
+    expect(chipWrapper(container).style.flex).toBe('0 0 auto')
+    for (const group of groups(container)) expect(group.style.flex).toBe('1 1 0px')
     expect(screen.getByTestId('user-button').dataset.compact).toBe('false')
+  })
+})
+
+// 2026-10-15, Chromium with a match on and the tablets connected: centred
+// over the bar, the chip covered the tablet status at 600-760 px
+describe('the header of an upright 7" tablet (600-719 px)', () => {
+  it('is the compact bar a phone has', () => {
+    setWidth(640)
+    header()
+    expect(screen.getByRole('switch').querySelector('.sr-only')).toHaveTextContent('Online')
+    expect(screen.getByRole('button', { name: /#402397/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Menu' })).toBeInTheDocument()
+    expect(screen.getByTestId('user-button').dataset.compact).toBe('true')
+  })
+
+  it('keeps its words from 720 px', () => {
+    setWidth(720)
+    header()
+    expect(screen.getByRole('switch').querySelector('.sr-only')).toBeNull()
+    expect(screen.getByText('Match #402397')).toBeInTheDocument()
+  })
+})
+
+describe('the full bar that does not fit', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('turns compact: its right group ends past the bar (a long status, a translation)', () => {
+    setWidth(900)
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      const bar = this.dataset?.diag === 'header'
+      const right = this.parentElement?.dataset?.diag === 'header' && !this.nextElementSibling
+      const r = bar ? 900 : right ? 950 : 0
+      return { left: 0, top: 0, right: r, bottom: 40, width: r, height: 40, x: 0, y: 0, toJSON: () => ({}) }
+    })
+    header()
+    expect(screen.getByRole('switch').querySelector('.sr-only')).toHaveTextContent('Online')
+    expect(screen.getByRole('button', { name: 'Menu' })).toBeInTheDocument()
+    expect(screen.getByTestId('user-button').dataset.compact).toBe('true')
   })
 })
 
