@@ -56,6 +56,7 @@ import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags, deferredPena
 import { classifyTimeoutRequest } from '../domain/timeouts'
 import { rallyStatusOf, currentSetOf } from '../domain/rally'
 import { useConfirmAction } from '../hooks/useConfirmAction'
+import { usePhoneWidth } from '../hooks/usePhoneWidth'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
 import { playerReplacedByLibero } from '../domain/liberos'
 import { planSubstitutionDeletion, countRegularSubstitutions, classifySubstitutionRequest, MAX_SUBSTITUTIONS_PER_SET } from '../domain/substitutions'
@@ -18624,8 +18625,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                             if (!eventType || eventType === 'Unknown') return null
 
                             const actionId = Math.floor(event.seq || 0) // Show only base integer ID
-                            const eventTime = typeof event.ts === 'number' ? new Date(event.ts) : new Date(event.ts)
-                            const timeStr = `${String(eventTime.getUTCHours()).padStart(2, '0')}:${String(eventTime.getUTCMinutes()).padStart(2, '0')}:${String(eventTime.getUTCSeconds()).padStart(2, '0')}`
+                            // the hall's clock, like the set times (UTC was 2 h off in summer)
+                            const eventTime = new Date(event.ts)
+                            const timeStr = `${String(eventTime.getHours()).padStart(2, '0')}:${String(eventTime.getMinutes()).padStart(2, '0')}:${String(eventTime.getSeconds()).padStart(2, '0')}`
                             const setNum = getSetNumber(event)
                             const score = getScoreAtEvent(event)
                             const team = getTeamLabel(event)
@@ -23688,6 +23690,17 @@ function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose,
     fontSize: '13px',
     outline: 'none'
   }
+  // On a phone the rows wrap: names get the width, the date of birth (and a
+  // bench official's role) its own line. One line squeezed the names of the
+  // bench officials to 16 px (emulator audit 2026-10-14).
+  const phone = usePhoneWidth()
+  const playerGrid = phone
+    ? { gridTemplateColumns: '44px 1fr 1fr', gridTemplateAreas: '"num first last" ". dob dob"' }
+    : { gridTemplateColumns: '50px 1fr 1fr 100px' }
+  const benchGrid = phone
+    ? { gridTemplateColumns: '1fr 1fr 36px', gridTemplateAreas: '"role role del" "first last last" "dob dob ."' }
+    : { gridTemplateColumns: '140px 1fr 1fr 100px 36px' }
+  const area = (name) => (phone ? { gridArea: name } : null)
 
   return (
     <Modal
@@ -23708,32 +23721,33 @@ function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose,
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {editingPlayers.map((player, idx) => (
               <div key={player.id || `new-${idx}`} className={SB_BLOCK} style={{ padding: '10px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '50px 1fr 1fr 100px', gap: '6px', alignItems: 'center' }}>
+                <div style={{ display: 'grid', ...playerGrid, gap: '6px', alignItems: 'center' }}>
                   <input
                     type="number"
                     value={player.number || ''}
                     onChange={(e) => updatePlayer(idx, 'number', e.target.value === '' ? '' : (parseInt(e.target.value, 10) || 0))}
                     placeholder="#"
-                    style={{ ...inputStyle, textAlign: 'center', padding: '6px' }}
+                    style={{ ...inputStyle, textAlign: 'center', padding: '6px', minWidth: 0, ...area('num') }}
                   />
                   <input
                     type="text"
                     value={player.firstName || ''}
                     onChange={(e) => updatePlayer(idx, 'firstName', e.target.value)}
                     placeholder={t('scoreboard.reopenRoster.firstName', 'First name')}
-                    style={{ ...inputStyle, padding: '6px 8px' }}
+                    style={{ ...inputStyle, padding: '6px 8px', minWidth: 0, ...area('first') }}
                   />
                   <input
                     type="text"
                     value={player.lastName || ''}
                     onChange={(e) => updatePlayer(idx, 'lastName', e.target.value)}
                     placeholder={t('scoreboard.reopenRoster.lastName', 'Last name')}
-                    style={{ ...inputStyle, padding: '6px 8px' }}
+                    style={{ ...inputStyle, padding: '6px 8px', minWidth: 0, ...area('last') }}
                   />
                   <DateField
                     size="bare"
                     value={toISODate(player.dob)}
                     onChange={(v) => updatePlayer(idx, 'dob', v)}
+                    wrapperClassName={phone ? '[grid-area:dob]' : undefined}
                     style={{ ...inputStyle, padding: '4px', fontSize: '11px' }}
                   />
                 </div>
@@ -23794,11 +23808,11 @@ function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose,
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {editingBench.map((staff, idx) => (
               <div key={idx} className={SB_BLOCK} style={{ padding: '8px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 1fr 100px 36px', gap: '6px', alignItems: 'center' }}>
+                <div style={{ display: 'grid', ...benchGrid, gap: '6px', alignItems: 'center' }}>
                   <select
                     value={staff.role || 'Coach'}
                     onChange={(e) => updateBench(idx, 'role', e.target.value)}
-                    style={{ ...inputStyle, padding: '6px 8px', fontSize: '12px' }}
+                    style={{ ...inputStyle, padding: '6px 8px', fontSize: '12px', minWidth: 0, ...area('role') }}
                   >
                     {benchRoles.map(r => (
                       <option key={r.value} value={r.value}>{r.value}</option>
@@ -23809,24 +23823,27 @@ function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose,
                     value={staff.firstName || ''}
                     onChange={(e) => updateBench(idx, 'firstName', e.target.value)}
                     placeholder={t('scoreboard.reopenRoster.firstName', 'First name')}
-                    style={{ ...inputStyle, padding: '6px 8px' }}
+                    style={{ ...inputStyle, padding: '6px 8px', minWidth: 0, ...area('first') }}
                   />
                   <input
                     type="text"
                     value={staff.lastName || ''}
                     onChange={(e) => updateBench(idx, 'lastName', e.target.value)}
                     placeholder={t('scoreboard.reopenRoster.lastName', 'Last name')}
-                    style={{ ...inputStyle, padding: '6px 8px' }}
+                    style={{ ...inputStyle, padding: '6px 8px', minWidth: 0, ...area('last') }}
                   />
                   <DateField
                     size="bare"
                     value={toISODate(staff.dob)}
                     onChange={(v) => updateBench(idx, 'dob', v)}
+                    wrapperClassName={phone ? '[grid-area:dob]' : undefined}
                     style={{ ...inputStyle, padding: '4px', fontSize: '11px' }}
                   />
                   <button
                     onClick={() => removeBench(idx)}
+                    aria-label={t('scoreboard.reopenRoster.removePlayer', 'Remove')}
                     style={{
+                      ...area('del'),
                       padding: '4px 8px',
                       fontSize: '14px',
                       background: '#fef2f2',

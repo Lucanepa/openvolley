@@ -14,11 +14,14 @@ import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
 
-    // JS: bottom edge (CSS px, WebView viewport) of the focused text field, or -1
-    private static final String FOCUSED_FIELD_BOTTOM =
+    // JS: the focused text field's top and bottom edge and the bottom edge of
+    // the dialog it is in (its own bottom outside a dialog), CSS px in the
+    // WebView viewport, as [top, bottom, dialogBottom]; null without one
+    private static final String FOCUSED_FIELD_EDGES =
         "(function(){var e=document.activeElement;" +
-        "if(!e||e===document.body||!(e.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName)))return -1;" +
-        "return e.getBoundingClientRect().bottom;})()";
+        "if(!e||e===document.body||!(e.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName)))return null;" +
+        "var r=e.getBoundingClientRect(),d=e.closest('[aria-modal=true]');" +
+        "return [r.top,r.bottom,Math.max(r.bottom,d?d.getBoundingClientRect().bottom:r.bottom)];})()";
 
     // JS: the page's Back handler on its first page (src/utils/appLifecycle.js);
     // "true" when it took the press (it closes an open dialog, or asks
@@ -113,14 +116,9 @@ public class MainActivity extends BridgeActivity {
             return;
         }
         WebView webView = getBridge().getWebView();
-        webView.evaluateJavascript(FOCUSED_FIELD_BOTTOM, value -> {
-            float fieldBottomCss;
-            try {
-                fieldBottomCss = Float.parseFloat(value);
-            } catch (NumberFormatException e) {
-                fieldBottomCss = -1;
-            }
-            if (fieldBottomCss < 0) {
+        webView.evaluateJavascript(FOCUSED_FIELD_EDGES, value -> {
+            float[] edges = parseEdges(value);
+            if (edges == null) {
                 container.setTranslationY(0);
                 return;
             }
@@ -129,9 +127,32 @@ public class MainActivity extends BridgeActivity {
             webView.getLocationOnScreen(location);
             float webViewTop = location[1] - container.getTranslationY();
             float gap = 16 * density;
-            float fieldBottom = webViewTop + fieldBottomCss * density + gap;
             float keyboardTop = getWindow().getDecorView().getHeight() - imeBottom;
-            container.setTranslationY(-Math.max(0, fieldBottom - keyboardTop));
+            // the field always shows above the keyboard (as before)
+            float forField = webViewTop + edges[1] * density + gap - keyboardTop;
+            // its dialog's buttons too (Save under a remark being typed was
+            // behind the keyboard, emulator audit 2026-10-14), as long as
+            // the field's top stays on the screen
+            float forDialog = Math.min(
+                webViewTop + edges[2] * density + gap - keyboardTop,
+                edges[0] * density - gap);
+            container.setTranslationY(-Math.max(0, Math.max(forField, forDialog)));
         });
+    }
+
+    /** "[top,bottom,dialogBottom]" from evaluateJavascript, or null. */
+    static float[] parseEdges(String value) {
+        if (value == null) return null;
+        String v = value.trim();
+        if (!v.startsWith("[") || !v.endsWith("]")) return null;
+        String[] parts = v.substring(1, v.length() - 1).split(",");
+        if (parts.length != 3) return null;
+        float[] edges = new float[3];
+        try {
+            for (int k = 0; k < 3; k++) edges[k] = Float.parseFloat(parts[k].trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        return edges;
     }
 }

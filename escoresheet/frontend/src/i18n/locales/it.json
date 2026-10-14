@@ -3899,5 +3899,15 @@
     "reasonRole": "Il tuo account non può ancora avviare la firma sul telefono. Firma su questo dispositivo.",
     "reasonNoNetwork": "Nessuna rete per i telefoni: collega questo portatile al Wi-Fi della palestra o attiva il suo Wi-Fi (Collega tablet).",
     "startFailed": "Impossibile creare un link. Riprova, oppure firma su questo dispositivo."
+  },
+  "sizeGate": {
+    "title": "Per usare questa applicazione serve un tablet o uno schermo più grande (almeno 800×600).",
+    "phoneTitle": "La visualizzazione tablet richiede uno schermo più grande (almeno 800×600).",
+    "current": "Attuale: {{width}} × {{height}} px",
+    "hint": "Ruota il dispositivo o passa a schermo intero.",
+    "phoneHint": "Sul telefono la schermata di punteggio ha una visualizzazione propria.",
+    "usePhone": "Usa la visualizzazione telefono",
+    "fullscreen": "Schermo intero",
+    "fullscreenNote": "Lo schermo intero rimuove le intestazioni del browser per massimizzare lo spazio."
   }
 }
