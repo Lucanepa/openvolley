@@ -540,6 +540,17 @@ impl Updates {
     fn set_phase(&self, phase: Phase) {
         self.lock().phase = phase;
     }
+
+    /// The page has this status now (`unnumbered`: without its `seq`): false
+    /// when it had it already, so a push has nothing to say.
+    fn seen(&self, unnumbered: String) -> bool {
+        let mut i = self.lock();
+        if i.last_pushed == unnumbered {
+            return false;
+        }
+        i.last_pushed = unnumbered;
+        true
+    }
 }
 
 impl Default for Updates {
@@ -619,9 +630,17 @@ fn next_seq() -> u64 {
     SEQ.fetch_add(1, Ordering::Relaxed) + 1
 }
 
-/// The status the page sees, numbered (see `Status::seq`).
+/// The status the page sees, numbered (see `Status::seq`). The page has it
+/// now: a reloaded page asks before it calls app_page_state, so it gets
+/// "page not ready"; the push that follows its app_page_state must not be
+/// taken for one it had already (the card then said "The update waits until
+/// OpenVolley has finished loading" for good).
 pub fn status<R: Runtime>(app: &AppHandle<R>) -> Status {
-    Status { seq: next_seq(), ..current(app) }
+    let st = current(app);
+    if let (Some(updates), Ok(unnumbered)) = (app.try_state::<Updates>(), serde_json::to_string(&st)) {
+        updates.seen(unnumbered);
+    }
+    Status { seq: next_seq(), ..st }
 }
 
 /// The status without its number. Linux deb: also notices a binary replaced
@@ -688,12 +707,8 @@ pub fn push<R: Runtime>(app: &AppHandle<R>) {
     let offer = if st.can_restart { st.available.as_ref().map(|a| a.version.clone()) } else { None };
     lifecycle::set_update_offer(app, offer);
     let Ok(unnumbered) = serde_json::to_string(&st) else { return };
-    {
-        let mut i = updates.lock();
-        if i.last_pushed == unnumbered {
-            return;
-        }
-        i.last_pushed = unnumbered;
+    if !updates.seen(unnumbered) {
+        return;
     }
     let Ok(json) = serde_json::to_string(&Status { seq: next_seq(), ..st }) else { return };
     if let Some(main) = app.get_webview_window(lifecycle::MAIN) {
@@ -1465,6 +1480,17 @@ mod tests {
         assert!(serde_json::to_string(&p).unwrap().contains("\"autoInstall\":false"));
         assert_eq!(Prefs::parse("{not json"), Prefs::default());
         assert_eq!(Prefs::parse(r#"{"autoCheck":false}"#), Prefs { auto_check: false, ..Prefs::default() });
+    }
+
+    #[test]
+    fn a_status_the_page_asked_for_counts_as_seen() {
+        let u = Updates::new();
+        // the page reloaded and asked first: "page not ready"
+        assert!(u.seen("blocked".into()));
+        // its app_page_state: the gate is open, which the page has not seen
+        assert!(u.seen("ready".into()));
+        // the next tick: nothing new
+        assert!(!u.seen("ready".into()));
     }
 
     #[test]
