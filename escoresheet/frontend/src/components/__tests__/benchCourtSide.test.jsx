@@ -69,3 +69,27 @@ describe('bench tablet: its team\'s side of the court is the scorer\'s', () => {
     expect(await benchSide('home')).toBe('right')
   })
 })
+
+// The officials row showed the role's first letter: both assistant coaches
+// were "A" (emulator 2026-10-14). It shows the paper's codes, as the scorer's
+// bench list does, the full role as the tooltip.
+describe('bench tablet: the officials row', () => {
+  beforeEach(() => { cleanup(); bundle = null })
+
+  it('shows the paper role codes C, AC1, AC2, P, M', async () => {
+    bundle = benchBundle(1, {
+      bench_home: [
+        { role: 'Coach', lastName: 'Boss' },
+        { role: 'Assistant Coach 1', lastName: 'One' },
+        { role: 'Assistant Coach 2', lastName: 'Two' },
+        { role: 'Physiotherapist', lastName: 'Care' },
+        { role: 'Doctor', lastName: 'Med' }
+      ]
+    })
+    const { container } = render(<MatchEntry matchId="m1" team="home" onBack={() => {}} embedded />)
+    await waitFor(() => expect(container.querySelectorAll('[title="Assistant coach 2"]').length).toBe(1))
+    const chips = ['Coach', 'Assistant coach 1', 'Assistant coach 2', 'Physiotherapist', 'Doctor']
+      .map((title) => container.querySelector(`[title="${title}"]`)?.textContent.trim())
+    expect(chips).toEqual(['C', 'AC1', 'AC2', 'P', 'M'])
+  })
+})
