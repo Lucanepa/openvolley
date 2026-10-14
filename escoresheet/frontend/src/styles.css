@@ -133,35 +133,40 @@ body.no-scroll {
   box-sizing: border-box;
 }
 
-/* Custom scrollbar styling - global */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
+/* Custom scrollbar styling - global, for a mouse only. On a touch screen (the
+   Android app, a phone or tablet browser) the system's own overlay scrollbar
+   stays: it shows only while scrolling, where a styled ::-webkit-scrollbar
+   was a permanent 8px bar beside the content. */
+@media (pointer: fine) {
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-  border-radius: 4px;
-}
+  ::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 4px;
+  }
 
-::-webkit-scrollbar-thumb {
-  background: var(--ov-hairline-strong); /* stone-300 */
-  border-radius: 4px;
-}
+  ::-webkit-scrollbar-thumb {
+    background: var(--ov-hairline-strong); /* stone-300 */
+    border-radius: 4px;
+  }
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--ov-text-faint); /* stone-400 */
-}
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--ov-text-faint); /* stone-400 */
+  }
 
-::-webkit-scrollbar-corner {
-  background: transparent;
-}
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
 
-/* standard scrollbar properties (Firefox, and Chromium 121+ where they win
-   over the ::-webkit-scrollbar rules): thin stone-300 thumb, as the kit base */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--ov-hairline-strong) transparent;
+  /* standard scrollbar properties (Firefox, and Chromium 121+ where they win
+     over the ::-webkit-scrollbar rules): thin stone-300 thumb, as the kit base */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--ov-hairline-strong) transparent;
+  }
 }
 
 /* Allow text selection in form elements */
@@ -1254,7 +1259,8 @@ button:disabled {
 
 .roster-tables {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(calc(400px * var(--scale-factor)), 1fr));
+  /* min(100%, …): a phone is narrower than one 400px column */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(400px * var(--scale-factor))), 1fr));
   gap: calc(24px * var(--scale-factor));
 }
 
@@ -2450,7 +2456,7 @@ button.start-rally-button {
 
 .game-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
   gap: 16px;
 }
 

@@ -27,7 +27,6 @@ import { awardsPoint as sanctionAwardsPoint } from '../src/domain/sanctions.js';
 import { generatedRemarks } from './utils/sheetRemarks';
 import { isoOf, setDurationMinutes, setEndMs, setStartMs } from './utils/matchTimes';
 import { BRAND } from '../src/brand.js';
-import { PhoneIcon } from '../src/components/icons';
 import { deliverPdfToOpener, getOpenerWindow, isOwnDownload, reportPdfProgress, savePdfThroughApp, setPdfBusy, watchPdfWindowClose } from '../src/utils/appWindowGuest';
 import { detectAppPlatform } from '../src/utils/openAppWindow';
 import { assertCanvas, assertJpegDataUrl, assertValidPdf, assertVisibleSheet, downloadBlob, PdfCheckError, SHEET_MM, SHEET_OFFSET_MM, type SaveOutcome } from './utils/pdfOutput';
@@ -57,6 +56,10 @@ interface AppScoresheetProps {
 // The space between the boxes below set 5 and between the rosters (owner
 // 2026-10-13: separate boxes, each with its own border)
 const FOOTER_GAP = '1mm';
+
+// The sheet's size in CSS px (w-[410mm] h-[287mm]; 96 px per inch)
+const SHEET_W_PX = (410 * 96) / 25.4;
+const SHEET_H_PX = (287 * 96) / 25.4;
 
 const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = true, matchMissing = false }) => {
   const { t } = useTranslation();
@@ -1207,6 +1210,13 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1366);
   const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 768);
   const isLandscape = viewportWidth >= viewportHeight;
+  // A phone held upright (or an app that does not rotate, e.g. with the
+  // phone's auto-rotate off): the landscape sheet is shown turned by 90°, so
+  // it fills the screen and reads the right way up once the phone is turned.
+  // "Turn" switches back to the upright, much smaller view. Never while a PDF
+  // is made: html-to-image would capture the turned sheet.
+  const portraitPhone = !isLandscape && viewportWidth < 700;
+  const [turnedPref, setTurnedPref] = useState(true);
 
   const zoomIn = () => setZoomLevel(prev => Math.min(prev + 0.1, 2));
   const zoomOut = () => setZoomLevel(prev => Math.max(prev - 0.1, 0.3));
@@ -1217,9 +1227,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     // Get viewport dimensions (minus toolbar height ~50px)
     const viewportWidth = window.innerWidth - 32; // padding
     const viewportHeight = window.innerHeight - 70; // toolbar + padding
-    // Scoresheet is 410mm x 287mm, convert to px (1mm ≈ 3.78px at 96 DPI)
-    const scoresheetWidth = 410 * 3.78;
-    const scoresheetHeight = 287 * 3.78;
+    // Scoresheet is 410mm x 287mm, convert to px (1mm ≈ 3.78px at 96 DPI);
+    // turned, its width runs down the screen
+    const scoresheetWidth = (turnedRef.current ? 287 : 410) * 3.78;
+    const scoresheetHeight = (turnedRef.current ? 410 : 287) * 3.78;
     const zoomX = viewportWidth / scoresheetWidth;
     const zoomY = viewportHeight / scoresheetHeight;
     const optimalZoom = Math.min(zoomX, zoomY, 1);
@@ -1299,6 +1310,18 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
   // State for PDF generation
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const turned = portraitPhone && turnedPref && !showLCS && !isGeneratingPdf;
+  const turnedRef = useRef(turned);
+
+  // Fit again when the view turns (the phone rotated, or "Turn")
+  useEffect(() => {
+    turnedRef.current = turned;
+    // a PDF being made sets its own zoom (100 %)
+    if (generatingRef.current) return;
+    if (window.innerWidth < 410 * 3.78) fitToScreen();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turned]);
+
   const generatingRef = useRef(false);
   // Where the PDF went, shown next to the buttons until dismissed (field-spec 13.5):
   // the full path on the desktop (Open file / Show in folder), the file name in a
@@ -1543,72 +1566,6 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
   return (
     <>
-      {/* Portrait mode warning overlay for devices that don't support orientation lock (iOS) */}
-      {!isLandscape && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.95)',
-          zIndex: 99999,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '24px',
-          textAlign: 'center'
-        }}>
-          <div style={{
-            marginBottom: '24px',
-            color: '#ffffff',
-            animation: 'rotate90 1.5s ease-in-out infinite'
-          }}>
-            <PhoneIcon size={64} />
-          </div>
-          <style>{`
-            @keyframes rotate90 {
-              0%, 100% { transform: rotate(0deg); }
-              50% { transform: rotate(-90deg); }
-            }
-          `}</style>
-          <h2 style={{
-            fontSize: '24px',
-            fontWeight: 700,
-            color: '#ffffff',
-            marginBottom: '16px'
-          }}>
-            Please Rotate Your Device
-          </h2>
-          <p style={{
-            fontSize: '16px',
-            color: '#9ca3af',
-            maxWidth: '300px',
-            lineHeight: 1.5,
-            marginBottom: '24px'
-          }}>
-            The Scoresheet works best in landscape mode. Please rotate your device horizontally to continue.
-          </p>
-          <div style={{
-            padding: '12px 16px',
-            background: 'rgba(59, 130, 246, 0.15)',
-            border: '1px solid rgba(59, 130, 246, 0.3)',
-            borderRadius: '8px',
-            maxWidth: '320px'
-          }}>
-            <p style={{
-              fontSize: '13px',
-              color: '#93c5fd',
-              lineHeight: 1.4,
-              margin: 0
-            }}>
-              <strong>Tip:</strong> For auto-backup features, use Chrome or Edge on a desktop/laptop computer.
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* PDF Generating overlay */}
       {isGeneratingPdf && (
         <div style={{
@@ -1658,7 +1615,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
       )}
 
       <div ref={buttonsContainerRef} className="mb-2 flex flex-col justify-center items-center print:hidden w-full sticky top-0 z-50 bg-gray-100 py-2">
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center justify-center gap-2 px-2">
           {/* Zoom controls */}
           <button
             onClick={zoomOut}
@@ -1689,8 +1646,20 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
             +
           </button>
 
+          {/* A phone held upright: the sheet turned (fills the screen) or upright */}
+          {portraitPhone && !showLCS && (
+            <button
+              onClick={() => setTurnedPref(prev => !prev)}
+              className={`${turnedPref ? 'bg-gray-700' : 'bg-gray-500 hover:bg-gray-700'} text-white px-3 py-1 rounded text-sm shadow`}
+              title={t('scoresheetPdf.turnTooltip', 'Turn the sheet: it fills the screen when you turn the phone')}
+              aria-pressed={turnedPref}
+            >
+              ⟳ {t('scoresheetPdf.turn', 'Turn')}
+            </button>
+          )}
+
           {/* Divider */}
-          <div className="w-px h-6 bg-gray-400 mx-2"></div>
+          <div className="w-px h-6 bg-gray-400"></div>
 
           {/* Fullscreen button */}
           <button
@@ -1837,14 +1806,25 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
           </div>
         )}
 
-        {/* Scoresheet View */}
+        {/* Scoresheet View. Turned (a phone held upright): the box takes the
+            turned sheet's size, the sheet is scaled, turned by 90° clockwise
+            about its top left corner and moved back into the box. Otherwise
+            the box is not there (display: contents). */}
+        <div
+          data-testid="sheet-turn-box"
+          style={turned
+            ? { width: SHEET_H_PX * zoomLevel, height: SHEET_W_PX * zoomLevel, overflow: 'hidden', flex: 'none' }
+            : { display: 'contents' }}
+        >
         <div
           ref={containerRef}
           className="scoresheet-container w-[410mm] h-[287mm] bg-white shadow-xl print:shadow-none p-3 print:p-3 relative"
           style={{
             boxSizing: 'border-box',
-            transform: `scale(${zoomLevel})`,
-            transformOrigin: 'top center',
+            transform: turned
+              ? `translateX(${SHEET_H_PX * zoomLevel}px) rotate(90deg) scale(${zoomLevel})`
+              : `scale(${zoomLevel})`,
+            transformOrigin: turned ? 'top left' : 'top center',
             transition: 'transform 0.2s ease',
             display: showLCS ? 'none' : undefined,
           }}
@@ -2172,6 +2152,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
             </div>
 
           </div>
+        </div>
         </div>
       </div>
 

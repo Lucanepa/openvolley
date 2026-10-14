@@ -2317,6 +2317,8 @@
     "resetZoom": "Zoom zurücksetzen (100%)",
     "fitToScreen": "An Bildschirm anpassen",
     "fit": "Anpassen",
+    "turn": "Drehen",
+    "turnTooltip": "Blatt drehen: Es füllt den Bildschirm, wenn Sie das Telefon drehen",
     "zoomIn": "Vergrössern",
     "exitFullscreen": "Vollbild beenden",
     "fullscreen": "Vollbild",
