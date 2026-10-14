@@ -3882,5 +3882,14 @@
     "reasonRole": "Dein Konto kann das Unterschreiben auf dem Handy noch nicht starten. Auf diesem Gerät unterschreiben.",
     "reasonNoNetwork": "Kein Netz für Handys: diesen Laptop mit dem Hallen-WLAN verbinden oder sein eigenes WLAN einschalten (Tablets verbinden).",
     "startFailed": "Kein Link möglich. Nochmals versuchen oder auf diesem Gerät unterschreiben."
+  },
+  "sizeGate": {
+    "title": "Diese Anwendung braucht ein Tablet oder einen grösseren Bildschirm (mindestens 800×600).",
+    "current": "Aktuell: {{width}} × {{height}} px",
+    "hint": "Drehen Sie Ihr Gerät oder wechseln Sie in den Vollbildmodus.",
+    "phoneHint": "Auf einem Handy hat der Spielbildschirm eine eigene Ansicht.",
+    "usePhone": "Handy-Ansicht verwenden",
+    "fullscreen": "Vollbild",
+    "fullscreenNote": "Vollbild entfernt Browser-Kopfzeilen für maximalen Platz."
   }
 }

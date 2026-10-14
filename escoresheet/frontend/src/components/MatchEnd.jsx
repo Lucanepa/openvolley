@@ -1699,13 +1699,14 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               {homeSetsWon}<span style={{ color: 'var(--muted)' }}>:</span>{awaySetsWon}
             </div>
             {/* Set Scores - Vertical List */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: vmin(1.5) }}>
+            {/* at least 13 px: 1.5 vmin is under 6 px on a phone held upright */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: Math.max(13, vmin(1.5)) }}>
               {finishedSets.map((set, idx) => {
                 const romanNumerals = ['I', 'II', 'III', 'IV', 'V']
                 return (
                   // Fixed em-width centred cells (em, not ch: ch grows with the bold winner digit and is narrower than tabular digits), so 7 and 25 centre on one line
                   <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>
-                    <span style={{ width: '2em', fontSize: vmin(1.3), color: 'var(--muted)', textAlign: 'center' }}>{romanNumerals[idx]}</span>
+                    <span style={{ width: '2em', fontSize: Math.max(11, vmin(1.3)), color: 'var(--muted)', textAlign: 'center' }}>{romanNumerals[idx]}</span>
                     <span style={{ width: '1.5em', flexShrink: 0, textAlign: 'center', fontWeight: set.homePoints > set.awayPoints ? 700 : 400, color: set.homePoints > set.awayPoints ? 'var(--foreground)' : 'var(--muted)' }}>
                       {set.homePoints}
                     </span>

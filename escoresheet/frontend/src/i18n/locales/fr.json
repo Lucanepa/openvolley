@@ -3893,5 +3893,14 @@
     "reasonRole": "Votre compte ne peut pas encore lancer la signature sur téléphone. Signer sur cet appareil.",
     "reasonNoNetwork": "Pas de réseau pour les téléphones : connecter cet ordinateur au Wi-Fi de la salle ou activer son propre Wi-Fi (Connecter des tablettes).",
     "startFailed": "Impossible de créer un lien. Réessayer, ou signer sur cet appareil."
+  },
+  "sizeGate": {
+    "title": "Pour utiliser cette application, utilisez une tablette ou un écran plus grand (au moins 800×600).",
+    "current": "Actuel : {{width}} × {{height}} px",
+    "hint": "Tournez votre appareil ou passez en plein écran.",
+    "phoneHint": "Sur un téléphone, l'écran de marque a sa propre présentation.",
+    "usePhone": "Utiliser l'affichage téléphone",
+    "fullscreen": "Plein écran",
+    "fullscreenNote": "Le plein écran supprime les en-têtes du navigateur pour maximiser l'espace."
   }
 }

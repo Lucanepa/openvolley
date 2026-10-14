@@ -3900,5 +3900,14 @@
     "reasonRole": "Your account can’t start phone signing yet. Sign on this device.",
     "reasonNoNetwork": "No network for phones: connect this laptop to the hall Wi-Fi or turn on its own Wi-Fi (Connect tablets).",
     "startFailed": "Could not make a link. Try again, or sign on this device."
+  },
+  "sizeGate": {
+    "title": "To use this application, please use a tablet or larger screen (minimum 800×600).",
+    "current": "Current: {{width}} × {{height}} px",
+    "hint": "Try rotating your device or entering fullscreen mode.",
+    "phoneHint": "On a phone, the scoring screen has a layout of its own.",
+    "usePhone": "Use the phone layout",
+    "fullscreen": "Enter fullscreen",
+    "fullscreenNote": "Fullscreen removes browser headers to maximize screen space."
   }
 }

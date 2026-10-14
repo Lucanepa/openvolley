@@ -3894,5 +3894,14 @@
     "reasonRole": "Dis Konto cha s Underschriibe ufem Handy no nöd starte. Uf dem Grät underschriibe.",
     "reasonNoNetwork": "Kei Netz für Handys: dä Laptop mit em Halle-WLAN verbinde oder sis eigete WLAN iischalte (Tablets verbinde).",
     "startFailed": "Kei Link möglich. Nomal probiere oder uf dem Grät underschriibe."
+  },
+  "sizeGate": {
+    "title": "Die Aawändig bruucht es Tablet oder en grössere Bildschirm (mindestens 800×600).",
+    "current": "Aktuell: {{width}} × {{height}} px",
+    "hint": "Dräihed Sie s Grät oder wächsled Sie in Vollbildmodus.",
+    "phoneHint": "Uf em Handy hät de Spielbildschirm en eigeni Aasicht.",
+    "usePhone": "Handy-Aasicht bruuche",
+    "fullscreen": "Vollbild",
+    "fullscreenNote": "Vollbild entfernt Browser-Chopfziile für maximale Platz."
   }
 }

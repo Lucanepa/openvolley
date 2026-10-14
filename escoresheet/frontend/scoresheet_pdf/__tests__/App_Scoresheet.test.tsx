@@ -142,7 +142,20 @@ describe('App_Scoresheet on a phone', () => {
     expect(parseFloat(box.style.width)).toBeLessThan(parseFloat(box.style.height))
     fireEvent.click(screen.getByRole('button', { name: /Turn/ }))
     expect(sheet.style.transform).not.toContain('rotate')
-    expect(box.style.display).toBe('contents')
+    // upright the box takes the sheet's own scaled size, wider than high, and
+    // the sheet fits the screen: Fit may go below 30 % (emulator audit
+    // 2026-10-14: at 30 % it hung out on both sides of a 384 px phone)
+    expect(parseFloat(box.style.width)).toBeGreaterThan(parseFloat(box.style.height))
+    expect(parseFloat(box.style.width)).toBeLessThanOrEqual(412)
+    expect(sheet.style.transformOrigin).toBe('top left')
+  })
+
+  it('upright on a 360 px phone, the sheet still fits the width', () => {
+    setViewport(360, 780)
+    render(<App matchData={buildMatch()} autoAction="preview" />)
+    fireEvent.click(screen.getByRole('button', { name: /Turn/ }))
+    const box = screen.getByTestId('sheet-turn-box')
+    expect(parseFloat(box.style.width)).toBeLessThanOrEqual(360)
   })
 
   it('a wide screen: no Turn button, the sheet is not turned', () => {
