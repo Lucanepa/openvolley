@@ -336,7 +336,10 @@ export default function ConnectionStatus({
               )}
             </span>
           )}
-          <ChevronDown size={currentSize.chevron} aria-hidden="true" className={cn('opacity-70 transition-transform', showConnectionMenu && 'rotate-180')} />
+          {/* the compact pill (a phone's header) has no room for the arrow */}
+          {!compact && (
+            <ChevronDown size={currentSize.chevron} aria-hidden="true" className={cn('opacity-70 transition-transform', showConnectionMenu && 'rotate-180')} />
+          )}
         </button>
       </span>
 
