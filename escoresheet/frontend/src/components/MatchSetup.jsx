@@ -6996,10 +6996,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         const thCls = 'px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-stone-500'
         const tdCls = 'px-3 py-1.5 text-sm text-stone-800'
         const numberCls = 'relative w-[60px] px-3 py-1.5 text-center text-sm font-semibold tabular-nums text-stone-900'
-        const nameCls = 'min-w-[180px] px-3 py-1.5 text-sm text-stone-800'
+        // No 180px floor on a phone: # 60 + name 180 + DOB 100 was wider than
+        // the card, which cut the DOB off and squeezed the # column under its
+        // C / L badges (2026-10-13). The name wraps there instead.
+        const nameCls = 'min-w-0 px-2 py-1.5 text-sm text-stone-800 sm:min-w-[180px] sm:px-3'
         const dobCls = 'w-[100px] px-3 py-1.5 text-center text-sm tabular-nums text-stone-600'
         const emptyCls = 'h-9'
-        const tableBox = 'overflow-hidden rounded-lg border border-stone-200'
+        const tableBox = 'overflow-x-auto rounded-lg border border-stone-200'
         // Frozen roster marks: captain "C" (amber) and libero "L/L1/L2" (green), LFP (orange)
         const badgeAbsStyle = { position: 'absolute', left: s(4), top: '50%', transform: 'translateY(-50%)', padding: `${s(1)}px ${s(3)}px`, borderRadius: s(3), fontSize: s(10), fontWeight: 700 }
         const captainBadgeStyle = { ...badgeAbsStyle, background: '#f59e0b', color: '#000' }

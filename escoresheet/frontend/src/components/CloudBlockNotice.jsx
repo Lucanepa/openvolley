@@ -51,14 +51,18 @@ export default function CloudBlockNotice({ match, className = '' }) {
   const gameN = match?.cloudBlock?.claim?.game_n ?? match?.gameN ?? match?.game_n ?? null
   return (
     <div className={cn('ov-kit', className)}>
-      <div role="status" data-testid="cloud-block-notice" className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
-        <CloudOff size={14} aria-hidden="true" className="mt-0.5 shrink-0" />
-        <span className="flex-1">{t(msg.key, msg.params)}</span>
+      {/* Wraps: where the text and the button do not both fit (a phone), the
+          button goes under the text instead of squeezing it into a column */}
+      <div role="status" data-testid="cloud-block-notice" className="flex flex-wrap items-start gap-x-2 gap-y-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+        <span className="flex min-w-0 flex-[1_1_14rem] items-start gap-2">
+          <CloudOff size={14} aria-hidden="true" className="mt-0.5 shrink-0" />
+          <span className="min-w-0 flex-1">{t(msg.key, msg.params)}</span>
+        </span>
         {msg.join && (
           <button
             type="button"
             onClick={() => openRestore({ gameN })}
-            className={cn('shrink-0 rounded border border-amber-300 bg-white px-2 py-0.5 font-semibold text-amber-800 hover:bg-amber-100', FOCUS_RING)}
+            className={cn('ml-auto shrink-0 rounded border border-amber-300 bg-white px-2 py-0.5 font-semibold text-amber-800 hover:bg-amber-100', FOCUS_RING)}
           >
             {t('cloudBlock.joinWithPin')}
           </button>

@@ -176,8 +176,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
     volleyballSize: `${Math.round(60 * vhScale)}px`,
     // Unified button size for roster, sign, and switch buttons
     actionButtonFont: `${Math.round(14 * vhScale)}px`,
-    actionButtonPadding: `${Math.round(10 * vhScale)}px ${Math.round(20 * vhScale)}px`,
-    actionButtonMinWidth: `${Math.round(180 * vhScale)}px`,
+    actionButtonPadding: `${Math.round(10 * vhScale)}px clamp(8px, 3vw, ${Math.round(20 * vhScale)}px)`,
+    actionButtonMinWidth: `min(${Math.round(180 * vhScale)}px, 100%)`,
     actionButtonMinHeight: `${Math.round(44 * vhScale)}px`,
     confirmButtonFont: `${Math.round(16 * vhScale)}px`,
     confirmButtonPadding: `${Math.round(14 * vhScale)}px ${Math.round(28 * vhScale)}px`,
@@ -190,8 +190,12 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
     volleyballSize: `${Math.round(100 * vhScale)}px`,
     // Unified button size for roster, sign, and switch buttons
     actionButtonFont: `${Math.round(18 * vhScale)}px`,
-    actionButtonPadding: `${Math.round(12 * vhScale)}px ${Math.round(28 * vhScale)}px`,
-    actionButtonMinWidth: `${Math.round(220 * vhScale)}px`,
+    // The sides shrink on a phone, or "Show roster (12)" broke onto three
+    // lines and spilled out of its button
+    actionButtonPadding: `${Math.round(12 * vhScale)}px clamp(8px, 3vw, ${Math.round(28 * vhScale)}px)`,
+    // Never wider than its half of the screen: on a phone the fixed width
+    // ran the roster and sign buttons past the card's edges (2026-10-13)
+    actionButtonMinWidth: `min(${Math.round(220 * vhScale)}px, 100%)`,
     actionButtonMinHeight: `${Math.round(52 * vhScale)}px`,
     confirmButtonFont: `${Math.round(20 * vhScale)}px`,
     confirmButtonPadding: `${Math.round(18 * vhScale)}px ${Math.round(36 * vhScale)}px`,
@@ -1547,7 +1551,9 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
 
   return (
     <div className="setup" style={{
-      width: '95vw',
+      // 95vw, but never past the panel's padding: on a phone 95vw + 2 x 10px
+      // was wider than the screen and the page scrolled sideways (2026-10-13)
+      width: 'min(95vw, 100%)',
       maxWidth: '100vw',
       height: '100%',
       maxHeight: '100%',
@@ -1600,7 +1606,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   ...teamBoxStyle(teamAInfo.color),
                   flex: 1, padding: sizes.teamButtonPadding, fontSize: sizes.teamButtonFont, width: '100%',
                   fontWeight: 600, border: 'none', borderRadius: '8px',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  // Two lines before the ellipsis: one showed "VBC Z…" on a phone
+                  overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflowWrap: 'anywhere',
                   cursor: 'default'
                 }}
                 title={teamAInfo.name}
@@ -1614,7 +1621,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             {serveA ? volleyballImage : volleyballPlaceholder}
           </div>
           {/* Row 3: Roster Button */}
-          <div className="ov-kit" style={{ display: 'flex', justifyContent: 'center' }}>
+          <div className="ov-kit" style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
             <Button
               variant="secondary"
               size="xl"
@@ -1626,7 +1633,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           </div>
           {/* Row 4: Signatures */}
           <div className="ov-kit" style={{ display: 'flex', justifyContent: 'center', width: '100%', position: 'relative', marginTop: '12px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
               <Button
                 variant="secondary"
                 size="xl"
@@ -1683,7 +1690,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   ...teamBoxStyle(teamBInfo.color),
                   flex: 1, padding: sizes.teamButtonPadding, fontSize: sizes.teamButtonFont, width: '100%',
                   fontWeight: 600, border: 'none', borderRadius: '8px',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  // Two lines before the ellipsis: one showed "VBC Z…" on a phone
+                  overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflowWrap: 'anywhere',
                   cursor: 'default'
                 }}
                 title={teamBInfo.name}
@@ -1697,7 +1705,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             {serveB ? volleyballImage : volleyballPlaceholder}
           </div>
           {/* Row 3: Roster Button */}
-          <div className="ov-kit" style={{ display: 'flex', justifyContent: 'center' }}>
+          <div className="ov-kit" style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
             <Button
               variant="secondary"
               size="xl"
@@ -1709,7 +1717,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           </div>
           {/* Row 3: Signatures */}
           <div className="ov-kit" style={{ display: 'flex', justifyContent: 'center', width: '100%', position: 'relative', marginTop: '12px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
               <Button
                 variant="secondary"
                 size="xl"

@@ -215,17 +215,22 @@ p {
 
 /* The home, coin toss and Match End screens are centred in the scrolling page
    panel. With plain `center`, a screen taller than the window overflowed at the
-   top too, where no scroll reaches. `safe center` starts it at the top instead.
-   Engines that reject `safe` (Chrome/WebView < 115, Safari < 17.6) still centre.
-   The fallback sits behind @supports: the CSS minifier (lightningcss) merges two
-   align-items declarations in one rule into the last, dropping the fallback. */
+   top too, where no scroll reaches. Auto margins centre while there is room and
+   fall to 0 when there is not, so a tall screen starts at its first line, in
+   every engine. `align-items: safe center` (behind @supports) did not hold: the
+   Android app still cut the home page's title off at the top with it
+   (2026-10-13). A WebView can parse `safe` for grid and still ignore it in
+   flexbox, so the @supports test passes there.
+   !important: this file is the `legacy` layer, and the kit's reset
+   (`.ov-kit { margin: 0 }`, components layer, tailwind.css) sits above it and
+   would zero the margins of the home page, whose root is an .ov-kit. An
+   important declaration in a lower layer beats a normal one in a higher layer. */
 .panel--centred {
-  align-items: center;
+  align-items: flex-start;
 }
-@supports (align-items: safe center) {
-  .panel--centred {
-    align-items: safe center;
-  }
+.panel--centred > * {
+  margin-top: auto !important;
+  margin-bottom: auto !important;
 }
 
 /* Laptop mode: allow overflow for scoreboard (960px - 1400px) */

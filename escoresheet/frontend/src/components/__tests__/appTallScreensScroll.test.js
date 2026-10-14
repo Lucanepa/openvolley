@@ -3,9 +3,11 @@
  * With plain `align-items: center`, a screen taller than the window overflowed
  * at the top as well, where a scroll container cannot reach (seen on the
  * desktop: Match End's title cut off, up to 396 px out of reach). `safe
- * center` centres only what fits. Older engines (Chrome/WebView < 115, Safari
- * < 17.6) reject `safe`, so the panel needs a plain `center` fallback, which an
- * inline style cannot carry: the value lives in the .panel--centred class.
+ * center` behind @supports did not hold either: the Android app still cut the
+ * home page's title off (2026-10-13), a WebView that parses `safe` without
+ * honouring it in flexbox. Auto margins on the panel's children centre what
+ * fits and start the rest at its top in every engine; they live in the
+ * .panel--centred class (an inline style cannot reach the children).
  * App.jsx is too large to mount and jsdom has no layout: this pins the class
  * and its CSS.
  */
@@ -27,10 +29,12 @@ describe('a screen taller than the window scrolls to its top', () => {
     expect(block).not.toContain('alignItems')
   })
 
-  it('.panel--centred centres, and uses safe centring where supported', () => {
-    expect(css).toMatch(/\.panel--centred\s*\{\s*align-items:\s*center;\s*\}/)
-    expect(css).toMatch(
-      /@supports \(align-items: safe center\)\s*\{\s*\.panel--centred\s*\{\s*align-items:\s*safe center;\s*\}\s*\}/
-    )
+  it('.panel--centred centres its screen with auto margins, never by align-items alone', () => {
+    expect(css).toMatch(/\.panel--centred\s*\{\s*align-items:\s*flex-start;\s*\}/)
+    // !important: the kit's `.ov-kit { margin: 0 }` (components layer) beats
+    // the legacy layer this file is in, and the home page's root is an .ov-kit
+    expect(css).toMatch(/\.panel--centred > \*\s*\{\s*margin-top:\s*auto !important;\s*margin-bottom:\s*auto !important;\s*\}/)
+    // A plain or "safe" centre on the panel would overflow at the top again
+    expect(css).not.toMatch(/\.panel--centred\s*\{[^}]*align-items:\s*(safe )?center/)
   })
 })
