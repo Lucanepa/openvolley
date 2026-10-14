@@ -12,6 +12,22 @@ import { BRAND } from '../../brand'
 const RELEASES_PAGE = 'https://github.com/Lucanepa/openvolley/releases'
 const RELEASES_API = 'https://api.github.com/repos/Lucanepa/openvolley/releases?per_page=20'
 
+// "desktop-v2.4.10" -> [2, 4, 10]. GitHub does not list the releases newest
+// first (desktop-v2.4.9 came before desktop-v2.4.10), so the newest is the
+// highest version, compared number by number.
+const desktopVersion = tag => tag.slice('desktop-v'.length).split('.').map(n => parseInt(n, 10) || 0)
+function isHigherVersion(a, b) {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0)
+  }
+  return false
+}
+export function newestDesktopRelease(releases) {
+  return releases
+    .filter(r => !r.draft && !r.prerelease && r.tag_name?.startsWith('desktop-v'))
+    .reduce((best, r) => (!best || isHigherVersion(desktopVersion(r.tag_name), desktopVersion(best.tag_name)) ? r : best), null)
+}
+
 function detectDesktopOS() {
   const ua = navigator.userAgent
   if (/android|iphone|ipad|ipod|mobile|tablet/i.test(ua)) return null
@@ -61,7 +77,7 @@ export default function HomePage({
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(releases => {
         if (cancelled || !Array.isArray(releases)) return
-        const rel = releases.find(r => !r.draft && !r.prerelease && r.tag_name?.startsWith('desktop-v'))
+        const rel = newestDesktopRelease(releases)
         if (!rel) return
         const asset = ext => rel.assets?.find(a => a.name?.toLowerCase().endsWith(ext))?.browser_download_url
         setDesktopApp({
