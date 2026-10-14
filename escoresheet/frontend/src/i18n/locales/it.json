@@ -3902,6 +3902,7 @@
   },
   "sizeGate": {
     "title": "Per usare questa applicazione serve un tablet o uno schermo più grande (almeno 800×600).",
+    "phoneTitle": "La visualizzazione tablet richiede uno schermo più grande (almeno 800×600).",
     "current": "Attuale: {{width}} × {{height}} px",
     "hint": "Ruota il dispositivo o passa a schermo intero.",
     "phoneHint": "Sul telefono la schermata di punteggio ha una visualizzazione propria.",

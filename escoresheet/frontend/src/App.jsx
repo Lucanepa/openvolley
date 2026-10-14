@@ -2880,7 +2880,9 @@ export default function App() {
               <PhoneIcon size={28} />
             </div>
             <p className="text-lg font-bold leading-snug text-stone-900">
-              {t('sizeGate.title', 'To use this application, please use a tablet or larger screen (minimum 800×600).')}
+              {gateOffersPhoneLayout
+                ? t('sizeGate.phoneTitle', 'The tablet layout needs a larger screen (minimum 800×600).')
+                : t('sizeGate.title', 'To use this application, please use a tablet or larger screen (minimum 800×600).')}
             </p>
             <p className="mt-2 text-sm tabular-nums text-stone-500">
               {t('sizeGate.current', { width: viewportSize.width, height: viewportSize.height, defaultValue: 'Current: {{width}} × {{height}} px' })}
