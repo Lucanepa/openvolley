@@ -1746,6 +1746,8 @@
     "title": "Verbindungsstatus",
     "pendingBackgroundSync": "Ausstehende Hintergrund-Synchronisierung:",
     "synchronizationErrors": "Synchronisierungsfehler:",
+    "withErrors_one": "{{status}}, {{count}} Synchronisierungsfehler",
+    "withErrors_other": "{{status}}, {{count}} Synchronisierungsfehler",
     "statusInformation": "Statusinformationen",
     "statusLabel": "Status:",
     "messageLabel": "Nachricht:",

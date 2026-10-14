@@ -1892,6 +1892,8 @@
     "title": "Stato connessione",
     "pendingBackgroundSync": "Sincronizzazione in sospeso:",
     "synchronizationErrors": "Errori di sincronizzazione:",
+    "withErrors_one": "{{status}}, {{count}} errore di sincronizzazione",
+    "withErrors_other": "{{status}}, {{count}} errori di sincronizzazione",
     "statusInformation": "Stato",
     "statusLabel": "Stato:",
     "messageLabel": "Messaggio:",
