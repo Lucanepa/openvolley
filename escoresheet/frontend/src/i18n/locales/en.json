@@ -1366,6 +1366,8 @@
     "resetZoom": "Reset zoom (100%)",
     "fitToScreen": "Fit to screen",
     "fit": "Fit",
+    "turn": "Turn",
+    "turnTooltip": "Turn the sheet: it fills the screen when you turn the phone",
     "fullscreen": "Fullscreen",
     "exitFullscreen": "Exit fullscreen",
     "printPdf": "Print / PDF",

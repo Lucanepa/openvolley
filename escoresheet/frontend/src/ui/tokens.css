@@ -82,10 +82,13 @@
     background-color: color-mix(in srgb, var(--color-brand) 18%, transparent);
   }
 
-  /* Thin neutral scrollbar on desktop (index.css:47-51) */
-  * {
-    scrollbar-width: thin;
-    scrollbar-color: var(--color-stone-300) transparent;
+  /* Thin neutral scrollbar on desktop (index.css:47-51); a touch screen keeps
+     the system's overlay scrollbar */
+  @media (pointer: fine) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--color-stone-300) transparent;
+    }
   }
 }
 
