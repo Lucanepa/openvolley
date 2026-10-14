@@ -67,8 +67,11 @@ override). On Windows, Scoop's own `checkver.ps1 -u` does the same from the
 `validate.sh` checks the files against Scoop's JSON schema
 (`ScoopInstaller/Scoop/schema.json`), parses the installer and uninstaller
 scripts with PowerShell (pwsh container), checks that `checkver` finds the
-manifest's version among the GitHub releases and that the URL is the
-`autoupdate` URL, and with `--urls` that the download matches the hash.
+manifest's version (the app's `latest.json` on get.openvolley.app, as the
+desktop updater reads it: GitHub lists `desktop-v2.4.9` before
+`desktop-v2.4.10`, so a regex over the release list took 2.4.9) and that the
+URL is the `autoupdate` URL, and with `--urls` that the download matches the
+hash.
 
 ## Not covered
 
