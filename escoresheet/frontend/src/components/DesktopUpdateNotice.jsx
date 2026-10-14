@@ -89,6 +89,11 @@ export default function DesktopUpdateNotice() {
 
   useEffect(() => {
     if (!autoVersion || left > 0) return
+    // the scorer may have opened a dialog or hidden the window since the last tick
+    if (document.visibilityState === 'hidden' || dialogOpen()) {
+      setLeft(AUTO_RESTART_SECONDS)
+      return
+    }
     autoTriedVersion = autoVersion
     setAutoTried(autoVersion)
     restart()
