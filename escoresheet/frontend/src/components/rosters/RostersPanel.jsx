@@ -141,32 +141,45 @@ function PositionCell({ position, isServer }) {
 }
 
 // Column widths (fixed layout): # with its badges, the rest for the name.
-// A phone held upright: narrower columns, or the name got no room and the
-// table ran past the screen (the sanctions column was cut off).
-function Colgroup({ showPos }) {
-  const phone = usePhoneWidth()
+// A phone held upright: narrower columns and no date-of-birth column (the
+// date goes under the name, NameWithDob), or the name got no room: one
+// letter at 384 px, nothing at 360 (emulator audit 2026-10-14).
+function Colgroup({ showPos, phone }) {
   return (
     <colgroup>
-      <col style={{ width: phone ? 64 : 92 }} />
+      <col style={{ width: phone ? 56 : 92 }} />
       <col />
-      <col style={{ width: phone ? 84 : 96 }} />
+      {!phone && <col style={{ width: 96 }} />}
       {showPos && <col style={{ width: phone ? 44 : 64 }} />}
       <col style={{ width: phone ? 60 : 96 }} />
     </colgroup>
   )
 }
 
+// The name, and on a phone the date of birth under it
+const DOB_LINE = { fontSize: 11, lineHeight: 1.2, color: 'var(--ov-text-muted, #78716c)', overflow: 'hidden', textOverflow: 'ellipsis' }
+function NameWithDob({ name, dob, phone }) {
+  if (!phone) return name
+  return (
+    <>
+      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</div>
+      <div style={DOB_LINE}>{dob || '—'}</div>
+    </>
+  )
+}
+
 function PlayerTable({ team, rows, showPos, kind }) {
   const { t } = useTranslation()
-  const cols = showPos ? 5 : 4
+  const phone = usePhoneWidth()
+  const cols = (showPos ? 5 : 4) - (phone ? 1 : 0)
   return (
     <table className="roster-table" style={TABLE}>
-      <Colgroup showPos={showPos} />
+      <Colgroup showPos={showPos} phone={phone} />
       <thead>
         <tr>
           <th style={TH}>{t('roster.number')}</th>
           <th style={TH}>{t('roster.name')}</th>
-          <th style={TH}>{t('roster.dob')}</th>
+          {!phone && <th style={TH}>{t('roster.dob')}</th>}
           {showPos && <th style={TH} title={t('rosterLive.posTitle')}>{t('rosterLive.pos')}</th>}
           <th style={TH}>{t('rosterLive.sanctions')}</th>
         </tr>
@@ -202,9 +215,9 @@ function PlayerTable({ team, rows, showPos, kind }) {
                 </div>
               </td>
               <td className="roster-name" style={{ ...NAME_CELL, textDecoration: status.out ? 'line-through' : undefined }} title={fullName}>
-                {fullName}
+                <NameWithDob name={fullName} dob={player.dob} phone={phone} />
               </td>
-              <td className="roster-dob" style={CELL}>{player.dob || '—'}</td>
+              {!phone && <td className="roster-dob" style={CELL}>{player.dob || '—'}</td>}
               {showPos && <PositionCell position={position} isServer={team.serving && position === 'I'} />}
               <td style={CELL}><SanctionList entries={team.sanctions.players[num]} /></td>
             </tr>
@@ -221,16 +234,16 @@ function BenchTable({ team, rows, emptyAll }) {
   return (
     <table className="roster-table" style={TABLE}>
       <colgroup>
-        <col style={{ width: phone ? 92 : 140 }} />
+        <col style={{ width: phone ? 84 : 140 }} />
         <col />
-        <col style={{ width: phone ? 84 : 96 }} />
+        {!phone && <col style={{ width: 96 }} />}
         <col style={{ width: phone ? 60 : 96 }} />
       </colgroup>
       <thead>
         <tr>
           <th style={TH}>{t('roster.role')}</th>
           <th style={TH}>{t('roster.name')}</th>
-          <th style={TH}>{t('roster.dob')}</th>
+          {!phone && <th style={TH}>{t('roster.dob')}</th>}
           <th style={TH}>{t('rosterLive.sanctions')}</th>
         </tr>
       </thead>
@@ -241,19 +254,19 @@ function BenchTable({ team, rows, emptyAll }) {
               <>
                 <td style={{ ...CELL, textTransform: 'capitalize', fontWeight: 500 }}>{official.role || '—'}</td>
                 <td style={NAME_CELL} title={`${official.lastName || ''} ${official.firstName || ''}`.trim()}>
-                  {official.lastName || ''} {official.firstName || ''}
+                  <NameWithDob name={`${official.lastName || ''} ${official.firstName || ''}`.trim()} dob={official.dob} phone={phone} />
                 </td>
-                <td style={CELL}>{official.dob || '—'}</td>
+                {!phone && <td style={CELL}>{official.dob || '—'}</td>}
                 <td style={CELL}><SanctionList entries={team.sanctions.officials[official.role]} /></td>
               </>
             ) : (
-              <td colSpan={4} />
+              <td colSpan={phone ? 3 : 4} />
             )}
           </tr>
         ))}
         {emptyAll && (
           <tr>
-            <td colSpan={4} style={{ textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic' }}>{t('scoreboard.roster.noBenchOfficials')}</td>
+            <td colSpan={phone ? 3 : 4} style={{ textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic' }}>{t('scoreboard.roster.noBenchOfficials')}</td>
           </tr>
         )}
       </tbody>

@@ -60,6 +60,7 @@ const FOOTER_GAP = '1mm';
 // The sheet's size in CSS px (w-[410mm] h-[287mm]; 96 px per inch)
 const SHEET_W_PX = (410 * 96) / 25.4;
 const SHEET_H_PX = (287 * 96) / 25.4;
+const MIN_ZOOM = 0.2;
 
 const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = true, matchMissing = false }) => {
   const { t } = useTranslation();
@@ -1219,7 +1220,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   const [turnedPref, setTurnedPref] = useState(true);
 
   const zoomIn = () => setZoomLevel(prev => Math.min(prev + 0.1, 2));
-  const zoomOut = () => setZoomLevel(prev => Math.max(prev - 0.1, 0.3));
+  // The floor fits the upright sheet on a 360 px phone (about 0.21); at 0.3
+  // it stayed wider than the screen and Fit could not fit it
+  const zoomOut = () => setZoomLevel(prev => Math.max(prev - 0.1, MIN_ZOOM));
   const resetZoom = () => setZoomLevel(1);
 
   const fitToScreen = () => {
@@ -1234,7 +1237,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     const zoomX = viewportWidth / scoresheetWidth;
     const zoomY = viewportHeight / scoresheetHeight;
     const optimalZoom = Math.min(zoomX, zoomY, 1);
-    setZoomLevel(Math.max(0.3, Math.round(optimalZoom * 100) / 100));
+    setZoomLevel(Math.max(MIN_ZOOM, Math.floor(optimalZoom * 100) / 100));
   };
 
   const toggleFullscreen = async () => {
@@ -1311,6 +1314,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   // State for PDF generation
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const turned = portraitPhone && turnedPref && !showLCS && !isGeneratingPdf;
+  // A phone held upright: the sheet sits in a box of its scaled size, so a
+  // sheet wider than the screen scrolls from its left edge (centred, it hung
+  // out on both sides and its left part could not be reached)
+  const boxed = portraitPhone && !showLCS && !isGeneratingPdf;
   const turnedRef = useRef(turned);
 
   // Fit again when the view turns (the phone rotated, or "Turn")
@@ -1780,7 +1787,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
       <div
         ref={scrollContainerRef}
         className="scoresheet-scroll-container min-h-screen bg-gray-100 p-2 flex justify-center overflow-auto print:bg-white"
-        style={{ touchAction: 'pan-x pan-y' }}
+        style={{ touchAction: 'pan-x pan-y', justifyContent: boxed ? 'flex-start' : undefined }}
       >
         {/* LCS View */}
         {showLCS && (
@@ -1812,8 +1819,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
             the box is not there (display: contents). */}
         <div
           data-testid="sheet-turn-box"
-          style={turned
-            ? { width: SHEET_H_PX * zoomLevel, height: SHEET_W_PX * zoomLevel, overflow: 'hidden', flex: 'none' }
+          style={boxed
+            ? turned
+              ? { width: SHEET_H_PX * zoomLevel, height: SHEET_W_PX * zoomLevel, overflow: 'hidden', flex: 'none', margin: '0 auto' }
+              : { width: SHEET_W_PX * zoomLevel, height: SHEET_H_PX * zoomLevel, overflow: 'hidden', flex: 'none', margin: '0 auto' }
             : { display: 'contents' }}
         >
         <div
@@ -1824,7 +1833,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
             transform: turned
               ? `translateX(${SHEET_H_PX * zoomLevel}px) rotate(90deg) scale(${zoomLevel})`
               : `scale(${zoomLevel})`,
-            transformOrigin: turned ? 'top left' : 'top center',
+            transformOrigin: boxed ? 'top left' : 'top center',
             transition: 'transform 0.2s ease',
             display: showLCS ? 'none' : undefined,
           }}

@@ -71,7 +71,7 @@ import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, restorePrefill } from './utils/m
 import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
 import { needsEventCheck, pickCurrentMatch } from './utils/currentMatch'
 import { isRelayErrorFor, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
-import { PHONE_MAX_WIDTH, phoneLayoutKept } from './components/scoreboard/phoneLayout'
+import { PHONE_MAX_WIDTH, isPhoneScreen, phoneLayoutKept } from './components/scoreboard/phoneLayout'
 
 function readStoredDisplayMode() {
   try {
@@ -2830,8 +2830,15 @@ export default function App() {
   const phoneLayoutOn = phoneLayoutKept(readStoredDisplayMode(), viewportSize)
   const phoneScoringShown = phoneLayoutOn && !!matchId && !showCoinToss && !showMatchSetup && !showMatchEnd && !showManualAdjustments
   const phoneMatchEndShown = phoneLayoutOn && !!matchId && showMatchEnd && !showManualAdjustments
-  // the screens a phone cannot show (the size gate below)
-  const smallScreenBlocked = !!matchId && !showMatchSetup && !showCoinToss && !phoneScoringShown && !phoneMatchEndShown
+  // the screens a phone cannot show (the size gate below). The corrections fit
+  // a phone since 2.4.10; the gate had trapped a phone in them (no way back
+  // but closing the app, emulator audit 2026-10-14).
+  const smallScreenBlocked = !!matchId && !showMatchSetup && !showCoinToss && !showManualAdjustments && !phoneScoringShown && !phoneMatchEndShown
+  // On a phone the gate only shows for the scoring screen with Screen mode
+  // Tablet or Desktop: its button switches to the phone layout (Options,
+  // which the hint used to point to, is not reachable from the gate)
+  const storedDisplayMode = readStoredDisplayMode()
+  const gateOffersPhoneLayout = isPhoneScreen() && storedDisplayMode !== 'auto' && storedDisplayMode !== 'phone'
 
   const notClosed = (m) => (m && closedMatchId != null && m.id === closedMatchId ? null : m)
   const shownCurrentMatch = notClosed(currentMatch)
@@ -2873,19 +2880,26 @@ export default function App() {
               <PhoneIcon size={28} />
             </div>
             <p className="text-lg font-bold leading-snug text-stone-900">
-              To use this application, please use a tablet or larger screen (minimum 800×600).
+              {t('sizeGate.title', 'To use this application, please use a tablet or larger screen (minimum 800×600).')}
             </p>
             <p className="mt-2 text-sm tabular-nums text-stone-500">
-              Current: {viewportSize.width} × {viewportSize.height}px
+              {t('sizeGate.current', { width: viewportSize.width, height: viewportSize.height, defaultValue: 'Current: {{width}} × {{height}} px' })}
             </p>
             <p className="mt-3 text-sm text-stone-600">
-              Try rotating your device or entering fullscreen mode. On a phone, choose Screen mode Auto or Phone in Options.
+              {gateOffersPhoneLayout
+                ? t('sizeGate.phoneHint', 'On a phone, the scoring screen has a layout of its own.')
+                : t('sizeGate.hint', 'Try rotating your device or entering fullscreen mode.')}
             </p>
-            <Button variant="dark" size="xl" block icon={Maximize} onClick={toggleFullscreen} className="mt-6">
-              Enter fullscreen
+            {gateOffersPhoneLayout && (
+              <Button variant="dark" size="xl" block icon={PhoneIcon} onClick={() => { setDisplayMode('auto'); try { localStorage.setItem('displayMode', 'auto') } catch { /* private mode: the state still switches */ } }} className="mt-6">
+                {t('sizeGate.usePhone', 'Use the phone layout')}
+              </Button>
+            )}
+            <Button variant={gateOffersPhoneLayout ? 'secondary' : 'dark'} size="xl" block icon={Maximize} onClick={toggleFullscreen} className={gateOffersPhoneLayout ? 'mt-3' : 'mt-6'}>
+              {t('sizeGate.fullscreen', 'Enter fullscreen')}
             </Button>
             <p className="mt-3 text-xs text-stone-500">
-              Fullscreen removes browser headers to maximize screen space.
+              {t('sizeGate.fullscreenNote', 'Fullscreen removes browser headers to maximize screen space.')}
             </p>
           </div>
         </div>
@@ -3337,12 +3351,14 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* Divider before local backup */}
-                  <div className="mb-6 flex items-center gap-4">
-                    <div className="h-px flex-1 bg-stone-200" />
-                    <span className="text-xs text-stone-500">{t('settings.backup.or')}</span>
-                    <div className="h-px flex-1 bg-stone-200" />
-                  </div>
+                  {/* Divider before local backup (only after the cloud part) */}
+                  {!offlineMode && (
+                    <div className="mb-6 flex items-center gap-4">
+                      <div className="h-px flex-1 bg-stone-200" />
+                      <span className="text-xs text-stone-500">{t('settings.backup.or')}</span>
+                      <div className="h-px flex-1 bg-stone-200" />
+                    </div>
+                  )}
 
                   {/* Offline/File restore */}
                   <div>

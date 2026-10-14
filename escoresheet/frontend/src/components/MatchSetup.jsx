@@ -6497,7 +6497,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <h3 className="m-0 text-base font-semibold text-stone-900">{t('matchSetup.matchInfo')}</h3>
               <SyncStatusIndicator status={matchInfoSyncStatus} onRetry={() => retrySyncForCard('matchInfo')} />
             </div>
-            <div className="flex items-center gap-2">
+            {/* the officials' own status, above their column; on a phone the
+                columns stack and a second identical chip read as a duplicate */}
+            <div className={cn('flex items-center gap-2', officialsSyncStatus === matchInfoSyncStatus && 'max-sm:hidden')}>
               <SyncStatusIndicator status={officialsSyncStatus} onRetry={() => retrySyncForCard('officials')} />
             </div>
           </div>

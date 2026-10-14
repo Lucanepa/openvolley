@@ -15,6 +15,7 @@ import { Button } from '../ui/Button.jsx'
 import { confirmDialog } from '../ui/uiStore.js'
 import { DateField, DateTimeField } from '../ui/DateField.jsx'
 import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
+import { usePhoneWidth } from '../hooks/usePhoneWidth'
 import { discRing, HEADER_SURFACE, isCustomColour } from '../utils/teamColours'
 
 // Standard volleyball team colors - keys for translation
@@ -107,6 +108,12 @@ function toISODate(dateStr) {
  */
 export default function ManualAdjustments({ matchId, onClose, onSave }) {
   const { t } = useTranslation()
+  // A phone: the two teams and the two match-info cards one above the other,
+  // an official's name on one line and country / date of birth on the next
+  const phone = usePhoneWidth()
+  const pairCols = phone ? '1fr' : '1fr 1fr'
+  const officialCols = phone ? '1fr 1fr' : '1fr 1fr 80px 100px'
+  const scorerCols = phone ? '1fr 1fr' : '1fr 1fr 100px'
   const { showAlert } = useAlert()
 
   // Track all changes for audit log
@@ -765,7 +772,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         {/* ==================== TEAMS & PLAYERS TAB ==================== */}
         {activeTab === 'teams' && (
           <div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: pairCols, gap: '24px' }}>
               {/* Home Team */}
               <div>
                 {/* Team Info */}
@@ -895,7 +902,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
         {/* ==================== MATCH INFO TAB ==================== */}
         {activeTab === 'info' && editedMatch && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: pairCols, gap: '24px' }}>
             {/* Match Details */}
             <div style={cardStyle}>
               <h2 style={cardTitleStyle}>
@@ -965,7 +972,8 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     <option value="X">{t('manualAdjustmentsEditor.genderMixed', 'Mixed')}</option>
                   </select>
                 </div>
-                <div>
+                {/* date and time are two fields: a whole row on a phone */}
+                <div style={phone ? { gridColumn: '1 / -1' } : undefined}>
                   <label style={labelStyle}>{t('manualAdjustmentsEditor.scheduledDateTime', 'Scheduled date/time')}</label>
                   <DateTimeField
                     size="bare"
@@ -987,7 +995,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 {/* 1st Referee */}
                 <div>
                   <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--ov-text-muted)' }}>{t('manualAdjustmentsEditor.firstReferee', '1st referee')}</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px 100px', gap: '8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: officialCols, gap: '8px' }}>
                     <input
                       type="text"
                       placeholder={t('manualAdjustmentsEditor.firstName', 'First name')}
@@ -1025,7 +1033,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 {/* 2nd Referee */}
                 <div>
                   <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--ov-text-muted)' }}>{t('manualAdjustmentsEditor.secondReferee', '2nd referee')}</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 80px 100px', gap: '8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: officialCols, gap: '8px' }}>
                     <input
                       type="text"
                       placeholder={t('manualAdjustmentsEditor.firstName', 'First name')}
@@ -1063,7 +1071,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 {/* Scorer */}
                 <div>
                   <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--ov-text-muted)' }}>{t('manualAdjustmentsEditor.scorer', 'Scorer')}</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px', gap: '8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: scorerCols, gap: '8px' }}>
                     <input
                       type="text"
                       placeholder={t('manualAdjustmentsEditor.firstName', 'First name')}
@@ -1093,7 +1101,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                 {/* Assistant Scorer */}
                 <div>
                   <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--ov-text-muted)' }}>{t('manualAdjustmentsEditor.assistantScorer', 'Assistant scorer')}</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px', gap: '8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: scorerCols, gap: '8px' }}>
                     <input
                       type="text"
                       placeholder={t('manualAdjustmentsEditor.firstName', 'First name')}
