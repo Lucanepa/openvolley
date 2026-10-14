@@ -104,9 +104,11 @@ public class MainActivity extends BridgeActivity {
         ViewCompat.setOnApplyWindowInsetsListener(container, (v, windowInsets) -> {
             // Bars hidden for the scoring screen: the page keeps the full
             // screen even when Android shows one anyway (a swipe shows them
-            // over the page; a shorter page would bring the size notice back)
+            // over the page; a shorter page would bring the size notice back).
+            // A window's caption bar (desktop windowing) stays, and so does
+            // the room for it.
             Insets bars = windowInsets.getInsets(
-                (systemBarsHidden ? 0 : WindowInsetsCompat.Type.systemBars())
+                (systemBarsHidden ? WindowInsetsCompat.Type.captionBar() : WindowInsetsCompat.Type.systemBars())
                     | WindowInsetsCompat.Type.displayCutout()
             );
             ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) v.getLayoutParams();
