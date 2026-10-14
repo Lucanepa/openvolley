@@ -150,3 +150,16 @@ describe('Scoreboard: the live state carries the colours the scorer\'s court sho
     expect(state.team_b_color).toBe('#ef4444')
   }, 60000)
 })
+
+// A match row without names (a test match keeps them on its teams) sent none:
+// the livescore and the referee showed "Team A" / "Team B" (emulator
+// 2026-10-14). The team records' names now stand in.
+describe('Scoreboard: the live state carries the team names', () => {
+  it('names only on the teams: team A (away) sends the away team\'s name', async () => {
+    const matchId = await setUpMatch(null)
+    mount(matchId)
+    const state = await scorePoint()
+    expect(state.team_a_name).toBe('Away VC')
+    expect(state.team_b_name).toBe('Home VC')
+  }, 60000)
+})
