@@ -1,0 +1,4 @@
+OpenVolley 2.4.9
+- Phone: the app fits the screen: the header, the home screen, the backup list, the match setup, the coin toss and the scoreboard's rosters.
+- Phone: upright, the scoresheet is shown turned so it fills the screen; "Turn" puts it upright. No more "Please rotate your device".
+- Phone: home, match setup and coin toss work without fullscreen; screen readers hear the match number and the sync errors.
