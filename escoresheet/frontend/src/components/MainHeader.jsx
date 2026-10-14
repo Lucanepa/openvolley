@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import i18n from '../i18n'
 import ConnectionStatus from './ConnectionStatus'
@@ -12,12 +12,16 @@ import { isDesktopScoretable, requestDesktopQuit } from '../utils/appLifecycle'
 import { cn } from '../ui/cn.js'
 import { useCollapseTransition } from '../hooks/useCollapseTransition'
 import { SwitchTrack } from '../ui/Switch.jsx'
-import { PHONE_MAX_WIDTH } from './scoreboard/phoneLayout'
 import {
   FOCUS_RING, KIT_SCOPE, HEADER_BAR, HEADER_BTN, HEADER_BTN_ON, POPOVER_PANEL, MENU_PANEL, MENU_ROW, MENU_SUBROW, MENU_ROW_ON,
   MENU_NEST, MENU_SEP, MENU_ICON, MENU_COUNT, STATUS_PILL, STATUS_TONES, HEADER_SWITCH
 } from './chromeClasses'
 
+// Below this width the bar's controls lose their words (isCompactBar): with
+// the alarm bell, all three tablets and Login the full bar needs about 720 px
+// (Chromium, 2026-10-15). A longer connection status ("Sign in to sync", or
+// in French) needs more: the bar measures itself for that (fullBarFrom).
+const COMPACT_BAR_BELOW = 720
 
 const FlagBox = ({ children }) => (
   <span
@@ -100,9 +104,9 @@ const languages = [
   { code: 'fr', Flag: FlagFR, label: 'FR' }
 ]
 
-// The match info popover is centred on its button. On a phone the button sits
-// between the header's two groups, not in the middle of the screen, so the
-// popover is moved back inside the screen (8 px margin)
+// The match info popover is centred on its button. The button sits between
+// the header's two groups, not always in the middle of the screen (a phone, a
+// long left group), so the popover is moved back inside the screen (8 px margin)
 function keepPopoverOnScreen(el) {
   if (!el) return
   el.style.left = ''
@@ -171,20 +175,48 @@ export default function MainHeader({
   const actionsMenuRef = useRef(null)
   const touchStartY = useRef(0)
   const headerRef = useRef(null)
+  const rightGroupRef = useRef(null)
   // Use version from package.json (injected by Vite at build time)
   const currentVersion = __APP_VERSION__
 
   // Check if compact mode (viewport width <= 960px)
   const isCompactMode = viewportSize.width > 0 && viewportSize.width <= 960
-  // A phone's width (either way up): the bar's controls lose their words and
-  // the match chip joins the row instead of floating over it (2026-10-13: at
-  // 384px it covered the connection status and pushed the menu off-screen)
-  const isPhoneWidth = viewportSize.width > 0 && viewportSize.width < PHONE_MAX_WIDTH
+  // A phone's width (either way up) or an upright 7" tablet (600 px): the
+  // bar's controls lose their words and the match chip gives up its arrow and
+  // shrinks (2026-10-13: at 384px it covered the connection status and pushed
+  // the menu off-screen; 2026-10-15: at 600-760 px it covered the tablet
+  // status and the alarm bell). Also wider, where the full bar was measured
+  // not to fit (fullBarFrom).
+  const [fullBarFrom, setFullBarFrom] = useState(COMPACT_BAR_BELOW)
+  const isCompactBar = viewportSize.width > 0 && viewportSize.width < fullBarFrom
 
   // Effective collapsed state - only collapse when collapsible is true
   const effectivelyCollapsed = collapsible && isCollapsed
   // Animated only while it collapses or expands, not on an app scale change
   const headerTransition = useCollapseTransition(effectivelyCollapsed)
+
+  // The full bar does not fit (a long connection status, a translation):
+  // the compact one from this width down, until the window is wider. Checked
+  // before paint, and again when a group grows later (Connecting -> Sign in
+  // to sync, a tablet turned on)
+  useLayoutEffect(() => {
+    const bar = headerRef.current
+    const right = rightGroupRef.current
+    if (isCompactBar || effectivelyCollapsed || !bar || !right || !viewportSize.width) return
+    const check = () => {
+      const barBox = bar.getBoundingClientRect()
+      if (!barBox.width) return
+      const padRight = parseFloat(getComputedStyle(bar).paddingRight) || 0
+      if (right.getBoundingClientRect().right > barBox.right - padRight + 1) {
+        setFullBarFrom(viewportSize.width + 1)
+      }
+    }
+    check()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(check)
+    for (const group of bar.children) observer.observe(group)
+    return () => observer.disconnect()
+  }, [isCompactBar, effectivelyCollapsed, viewportSize.width])
 
   // The phone scoring layout fills the screen: the header starts folded
   // away (its thin bar opens it again)
@@ -446,21 +478,21 @@ export default function MainHeader({
     const isTest = match?.test
     const matchNumber = match?.gameNumber || match?.game_n || 'N/A'
     const fullText = isTest ? t('header.testMatch') : t('header.matchNumber', { number: matchNumber })
-    const buttonText = isPhoneWidth ? (isTest ? t('header.test') : `#${matchNumber}`) : fullText
+    const buttonText = isCompactBar ? (isTest ? t('header.test') : `#${matchNumber}`) : fullText
 
     // On a phone the chip gets the room the header leaves it (an alarm bell
     // and the tablet status take some): no arrow, and a label that ends in
     // "…" instead of spilling over its border onto the collapse button and
     // "?" (emulator 2026-10-14, 360 px with a tablet on)
     return (
-      <div className={cn('relative flex h-8 w-auto items-center justify-center', isPhoneWidth ? 'min-w-0 gap-1' : 'gap-1.5')}>
+      <div className={cn('relative flex h-8 w-auto items-center justify-center', isCompactBar ? 'min-w-0 gap-1' : 'gap-1.5')}>
         <span className={KIT_SCOPE}>
           <button
             type="button"
             data-match-info-menu
             aria-expanded={matchInfoMenuOpen}
-            aria-label={isPhoneWidth ? fullText : undefined}
-            title={isPhoneWidth ? fullText : undefined}
+            aria-label={isCompactBar ? fullText : undefined}
+            title={isCompactBar ? fullText : undefined}
             onClick={(e) => {
               e.stopPropagation()
               // One header popup at a time: on a phone they overlap
@@ -469,15 +501,15 @@ export default function MainHeader({
             }}
             className={cn(
               'inline-flex h-7 items-center justify-center gap-1 rounded-full border text-xs font-semibold tabular-nums transition-colors cursor-pointer',
-              isPhoneWidth ? 'min-w-0 px-2' : 'min-w-[100px] px-3',
+              isCompactBar ? 'min-w-0 px-2' : 'min-w-[100px] px-3',
               FOCUS_RING,
               isTest
                 ? 'border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200/70'
                 : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-100'
             )}
           >
-            <span className={isPhoneWidth ? 'truncate' : undefined}>{buttonText}</span>
-            {!isPhoneWidth && (
+            <span className={isCompactBar ? 'truncate' : undefined}>{buttonText}</span>
+            {!isCompactBar && (
               <ChevronDown size={13} aria-hidden="true" className={cn('transition-transform', matchInfoMenuOpen && 'rotate-180')} />
             )}
           </button>
@@ -624,15 +656,19 @@ export default function MainHeader({
           maxHeight: effectivelyCollapsed ? '0px' : `${40 * scaleFactor}px`,
           justifyContent: 'space-between',
           alignItems: 'center',
-          padding: effectivelyCollapsed ? '0' : `0 ${Math.round((isPhoneWidth ? 8 : 12) * scaleFactor)}px`,
+          padding: effectivelyCollapsed ? '0' : `0 ${Math.round((isCompactBar ? 8 : 12) * scaleFactor)}px`,
           flexShrink: 0,
-          gap: `${Math.round((isPhoneWidth ? 6 : 10) * scaleFactor)}px`,
+          gap: `${Math.round((isCompactBar ? 6 : 10) * scaleFactor)}px`,
           overflow: effectivelyCollapsed ? 'hidden' : 'visible',
           transition: headerTransition,
           fontSize: `${Math.round(14 * scaleFactor)}px`
         }}>
-        {/* Left: Online/Offline Toggle + Connection Status */}
-        <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: isPhoneWidth ? '4px' : '8px' }}>
+        {/* Left: Online/Offline Toggle + Connection Status. Wider than a
+            phone, it and the right group share the room left and right of
+            the match chip equally, so the chip sits in the middle of the bar
+            and moves aside when a group needs more: centred over the bar, it
+            covered the tablet status at 600-760 px (2026-10-15) */}
+        <div style={{ flex: isCompactBar ? '0 0 auto' : '1 1 0', display: 'flex', alignItems: 'center', gap: isCompactBar ? '4px' : '8px' }}>
           {/* Online/Offline Toggle */}
           <span className={KIT_SCOPE}>
             <button
@@ -641,9 +677,9 @@ export default function MainHeader({
               aria-checked={!offlineMode}
               onClick={() => setOfflineMode(!offlineMode)}
               title={offlineMode ? t('header.switchToOnline') : t('header.switchToOffline')}
-              className={cn(HEADER_SWITCH, isPhoneWidth && 'pl-1.5')}
+              className={cn(HEADER_SWITCH, isCompactBar && 'pl-1.5')}
             >
-              <span className={isPhoneWidth ? 'sr-only' : undefined}>{offlineMode ? t('header.offline') : t('header.online')}</span>
+              <span className={isCompactBar ? 'sr-only' : undefined}>{offlineMode ? t('header.offline') : t('header.online')}</span>
               {/* Toggle Switch: emerald when online (no brand red on the scoreboard, R4) */}
               <SwitchTrack checked={!offlineMode} className={!offlineMode ? 'bg-emerald-500' : undefined} />
             </button>
@@ -658,7 +694,7 @@ export default function MainHeader({
               onRetryErrors={onRetryErrors}
               position="left"
               size="normal"
-              compact={isPhoneWidth}
+              compact={isCompactBar}
             />
           )}
 
@@ -813,24 +849,19 @@ export default function MainHeader({
           )}
 
           {/* Tablet Status Indicator */}
-          {currentMatch && <TabletStatusIndicator match={currentMatch} compact={isPhoneWidth} />}
+          {currentMatch && <TabletStatusIndicator match={currentMatch} compact={isCompactBar} />}
         </div>
 
-        {/* Center: Collapsible Match Info Menu - Absolutely positioned for true centering */}
+        {/* Center: Collapsible Match Info Menu, between the two equal groups */}
         {/* Only show when match has a gamePin set OR is a test match */}
         {!effectivelyCollapsed && (((showMatchSetup || matchId) && currentMatch && (currentMatch.gamePin || currentMatch.test)) || (!matchId && matchStatus && (currentOfficialMatch || currentTestMatch) && ((currentOfficialMatch || currentTestMatch)?.gamePin || (currentOfficialMatch || currentTestMatch)?.test))) ? (
-          <div style={isPhoneWidth ? {
+          <div style={{
             // In the row, between the two groups: centred over the bar it
-            // covered the connection status on a phone
+            // covered the connection status on a phone and the tablet status
+            // at 600-760 px. On a phone its label shrinks to fit.
             position: 'relative',
-            flex: '0 1 auto',
+            flex: isCompactBar ? '0 1 auto' : '0 0 auto',
             minWidth: 0,
-            zIndex: 101
-          } : {
-            position: 'absolute',
-            left: '50%',
-            top: '50%',
-            transform: 'translate(-50%, -50%)',
             zIndex: 101
           }}>
             {(showMatchSetup || matchId) && currentMatch ? (
@@ -842,11 +873,12 @@ export default function MainHeader({
         ) : null}
 
         {/* Right: Home Button, Version and Fullscreen */}
-        <div style={{
+        <div ref={rightGroupRef} style={{
           display: 'flex',
           alignItems: 'center',
-          gap: isPhoneWidth ? '6px' : 'clamp(8px, 1.5vw, 12px)',
-          flex: '0 0 auto',
+          justifyContent: 'flex-end',
+          gap: isCompactBar ? '6px' : 'clamp(8px, 1.5vw, 12px)',
+          flex: isCompactBar ? '0 0 auto' : '1 1 0',
           alignSelf: 'stretch',
           position: 'relative'
         }}>
@@ -857,7 +889,7 @@ export default function MainHeader({
               {helpButton}
 
               {/* User Button - hidden in offline mode */}
-              {!offlineMode && <UserButton inMatch={!!matchId} compact={isPhoneWidth} />}
+              {!offlineMode && <UserButton inMatch={!!matchId} compact={isCompactBar} />}
 
               <div ref={actionsMenuRef} style={{ position: 'relative' }}>
                 <span className={KIT_SCOPE}>
@@ -869,11 +901,11 @@ export default function MainHeader({
                       if (!actionsMenuOpen) setMatchInfoMenuOpen?.(false)
                       setActionsMenuOpen(!actionsMenuOpen)
                     }}
-                    className={cn(HEADER_BTN, isPhoneWidth && 'w-9 px-0', actionsMenuOpen && HEADER_BTN_ON)}
-                    aria-label={isPhoneWidth ? t('header.menu', 'Menu') : undefined}
-                    title={isPhoneWidth ? t('header.menu', 'Menu') : undefined}
+                    className={cn(HEADER_BTN, isCompactBar && 'w-9 px-0', actionsMenuOpen && HEADER_BTN_ON)}
+                    aria-label={isCompactBar ? t('header.menu', 'Menu') : undefined}
+                    title={isCompactBar ? t('header.menu', 'Menu') : undefined}
                   >
-                    {isPhoneWidth ? (
+                    {isCompactBar ? (
                       actionsMenuOpen ? <X size={16} aria-hidden="true" /> : <Menu size={16} aria-hidden="true" />
                     ) : (
                       <>
