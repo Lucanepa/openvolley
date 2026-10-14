@@ -2273,6 +2273,10 @@ button:disabled {
   display: grid;
   width: 100%;
   gap: inherit;
+  /* The rally buttons fit the column (100cqw below): at 800 px wide the
+     column is 175 px, narrower than the two point buttons side by side, and
+     they covered the set tables beside it (device check 2026-10-14) */
+  container-type: inline-size;
 }
 
 .rally-stack-layer {
@@ -2290,7 +2294,7 @@ button:disabled {
   align-items: center;
   justify-content: center;
   gap: var(--rally-gap);
-  width: var(--rally-block-w);
+  width: min(var(--rally-block-w), 100cqw);
 }
 
 /* Replay rally / Decision change + Undo: two equal halves under the
@@ -2298,7 +2302,7 @@ button:disabled {
 .rally-secondary-row {
   display: flex;
   gap: var(--rally-gap);
-  width: var(--rally-block-w);
+  width: min(var(--rally-block-w), 100cqw);
 }
 
 .rally-secondary-row > * {
@@ -2322,11 +2326,13 @@ button:disabled {
 
 /* Rally point buttons - 15% larger than original */
 .rally-point-button {
-  flex: 0 0 var(--rally-btn-w);
+  /* shrinks with a narrow column, its label with it (9cqw: "Punkt A" stays
+     on one line); a wide column keeps the sizes as before */
+  flex: 0 1 var(--rally-btn-w);
   width: var(--rally-btn-w);
   min-width: 0;
   min-height: var(--rally-btn-h);
-  font-size: calc(24px * var(--scale-factor));
+  font-size: min(calc(24px * var(--scale-factor)), 9cqw);
   font-weight: 700;
   padding: calc(18px * var(--scale-factor)) calc(10px * var(--scale-factor));
   white-space: nowrap;
@@ -2334,7 +2340,7 @@ button:disabled {
 
 /* Start Rally button - slightly smaller than point buttons */
 button.start-rally-button {
-  width: var(--rally-block-w);
+  width: min(var(--rally-block-w), 100cqw);
   min-height: var(--rally-btn-h);
   font-size: calc(20px * var(--scale-factor));
   font-weight: 700;
@@ -2352,13 +2358,29 @@ button.start-rally-button {
   }
 
   .rally-point-button {
-    font-size: calc(22px * var(--scale-factor));
+    font-size: min(calc(22px * var(--scale-factor)), 9cqw);
     padding: calc(14px * var(--scale-factor)) calc(10px * var(--scale-factor));
   }
 
   button.start-rally-button {
     font-size: calc(18px * var(--scale-factor));
     padding: calc(12px * var(--scale-factor)) calc(23px * var(--scale-factor));
+  }
+}
+
+/* The set tables (Set P W S T) beside the rally buttons: their columns are
+   88 px at 800 px wide, narrower than a table with its usual padding (cut by
+   8 px, device check 2026-10-14). A narrow column tightens the horizontal
+   padding; a wider one keeps it (Scoreboard: --set-card-pad-x,
+   --set-cell-pad-x). */
+.set-summary-col {
+  container-type: inline-size;
+}
+
+@container (max-width: 127px) {
+  .set-summary-card {
+    --set-card-pad-x: calc(3px * var(--scale-factor));
+    --set-cell-pad-x: calc(1px * var(--scale-factor));
   }
 }
 

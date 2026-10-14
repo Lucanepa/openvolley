@@ -223,6 +223,15 @@ The app is prepared for f-droid.org, which builds it from source itself:
   Android 15+). The keyboard never resizes the page (that would drop it under
   the app's 600 px minimum height and unmount the form being typed in); the
   WebView slides up just enough to show the focused field.
+- **No bars while scoring on a tablet**: the scoring screen and its match
+  end hide the status and navigation bars on a tablet (not on a phone; the
+  app's plugin `OpenVolleyBars`, `ScoringBarsPlugin.java`,
+  `src/utils/nativeSystemBars.js`). An 8" tablet held sideways (1280×800 at
+  213 dpi: Lenovo Tab M8, Galaxy Tab A9) leaves the page 962×539 between
+  them, under the scoring screen's 600 px minimum height; without them it is
+  962×601. A swipe from the screen's edge shows the bars over the page for a
+  few seconds; the page keeps its size. Leaving the scoring screen shows them
+  again.
 - **Back button**: goes back inside the app first (out of the scoresheet's
   in-app view, referee view → scorer). On the first page (home, match setup,
   scoreboard) it asks in the in-app dialog **"Exit OpenVolley?"**; with a live
