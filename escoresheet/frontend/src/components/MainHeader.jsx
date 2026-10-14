@@ -448,14 +448,19 @@ export default function MainHeader({
     const fullText = isTest ? t('header.testMatch') : t('header.matchNumber', { number: matchNumber })
     const buttonText = isPhoneWidth ? (isTest ? t('header.test') : `#${matchNumber}`) : fullText
 
+    // On a phone the chip gets the room the header leaves it (an alarm bell
+    // and the tablet status take some): no arrow, and a label that ends in
+    // "…" instead of spilling over its border onto the collapse button and
+    // "?" (emulator 2026-10-14, 360 px with a tablet on)
     return (
-      <div className="relative flex h-8 w-auto items-center justify-center gap-1.5">
+      <div className={cn('relative flex h-8 w-auto items-center justify-center', isPhoneWidth ? 'min-w-0 gap-1' : 'gap-1.5')}>
         <span className={KIT_SCOPE}>
           <button
             type="button"
             data-match-info-menu
             aria-expanded={matchInfoMenuOpen}
             aria-label={isPhoneWidth ? fullText : undefined}
+            title={isPhoneWidth ? fullText : undefined}
             onClick={(e) => {
               e.stopPropagation()
               // One header popup at a time: on a phone they overlap
@@ -463,16 +468,18 @@ export default function MainHeader({
               setMatchInfoMenuOpen(!matchInfoMenuOpen)
             }}
             className={cn(
-              'inline-flex h-7 items-center justify-center gap-1 rounded-full border px-3 text-xs font-semibold tabular-nums transition-colors cursor-pointer',
-              !isPhoneWidth && 'min-w-[100px]',
+              'inline-flex h-7 items-center justify-center gap-1 rounded-full border text-xs font-semibold tabular-nums transition-colors cursor-pointer',
+              isPhoneWidth ? 'min-w-0 px-2' : 'min-w-[100px] px-3',
               FOCUS_RING,
               isTest
                 ? 'border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200/70'
                 : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-100'
             )}
           >
-            <span>{buttonText}</span>
-            <ChevronDown size={13} aria-hidden="true" className={cn('transition-transform', matchInfoMenuOpen && 'rotate-180')} />
+            <span className={isPhoneWidth ? 'truncate' : undefined}>{buttonText}</span>
+            {!isPhoneWidth && (
+              <ChevronDown size={13} aria-hidden="true" className={cn('transition-transform', matchInfoMenuOpen && 'rotate-180')} />
+            )}
           </button>
         </span>
 
@@ -485,7 +492,7 @@ export default function MainHeader({
                 e.stopPropagation()
                 setIsCollapsed(!isCollapsed)
               }}
-              className={cn(HEADER_BTN, 'h-7 w-7 px-0')}
+              className={cn(HEADER_BTN, 'h-7 w-7 shrink-0 px-0')}
               aria-label={isCollapsed ? t('header.showHeader') : t('header.hideHeader')}
               title={isCollapsed ? t('header.showHeader') : t('header.hideHeader')}
             >
@@ -625,7 +632,7 @@ export default function MainHeader({
           fontSize: `${Math.round(14 * scaleFactor)}px`
         }}>
         {/* Left: Online/Offline Toggle + Connection Status */}
-        <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: isPhoneWidth ? '4px' : '8px' }}>
           {/* Online/Offline Toggle */}
           <span className={KIT_SCOPE}>
             <button
@@ -806,7 +813,7 @@ export default function MainHeader({
           )}
 
           {/* Tablet Status Indicator */}
-          {currentMatch && <TabletStatusIndicator match={currentMatch} />}
+          {currentMatch && <TabletStatusIndicator match={currentMatch} compact={isPhoneWidth} />}
         </div>
 
         {/* Center: Collapsible Match Info Menu - Absolutely positioned for true centering */}
@@ -838,7 +845,7 @@ export default function MainHeader({
         <div style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 'clamp(8px, 1.5vw, 12px)',
+          gap: isPhoneWidth ? '6px' : 'clamp(8px, 1.5vw, 12px)',
           flex: '0 0 auto',
           alignSelf: 'stretch',
           position: 'relative'
