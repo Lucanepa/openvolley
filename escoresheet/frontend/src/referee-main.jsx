@@ -12,6 +12,7 @@ import { stripCacheBustParam } from './hooks/useServiceWorker'
 import { setAppEntry } from './utils/appEntry'
 import { db } from './db/db'
 import { installPopupDiagnostics } from './diagnostics'
+import { initTheme } from './utils/theme'
 
 // Not the scoretable: this page never saves a match backup (utils/appEntry)
 setAppEntry('referee')
@@ -25,6 +26,7 @@ installPopupDiagnostics({ db, app: 'referee' })
 // Keep the rest of the query: ?match=&team= attach tablets to the live match.
 stripCacheBustParam()
 
+initTheme()
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ErrorBoundary name="referee">

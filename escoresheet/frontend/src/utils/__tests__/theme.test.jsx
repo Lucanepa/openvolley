@@ -3,7 +3,7 @@ import { readFileSync } from 'fs'
 import { resolve } from 'path'
 import { createHash } from 'crypto'
 import { render, screen, act } from '@testing-library/react'
-import { THEME_KEY, applyTheme, getTheme, setTheme, useTheme } from '../theme'
+import { THEME_KEY, applyTheme, getTheme, initTheme, setTheme, useTheme } from '../theme'
 import { TEAM_COLOUR_MARK, teamBoxStyle } from '../teamColours'
 import { THEME_BOOT_SCRIPT, themeBoot, themedPage } from '../../../theme-boot.js'
 
@@ -20,6 +20,22 @@ describe('colour theme', () => {
   beforeEach(() => {
     localStorage.removeItem(THEME_KEY)
     root.removeAttribute('data-theme')
+  })
+
+  it('initTheme applies the stored theme without the boot script', () => {
+    localStorage.setItem(THEME_KEY, 'eink')
+    initTheme()
+    expect(root.getAttribute('data-theme')).toBe('eink')
+    localStorage.setItem(THEME_KEY, 'dark')
+    window.dispatchEvent(new StorageEvent('storage', { key: THEME_KEY }))
+    expect(root.getAttribute('data-theme')).toBe('dark')
+  })
+
+  it('every themed page entry calls initTheme', () => {
+    for (const entry of ['main', 'referee-main', 'bench-main', 'livescore-main', 'upload-roster-main']) {
+      const src = readFileSync(resolve(__dirname, `../../${entry}.jsx`), 'utf-8')
+      expect(src, entry).toMatch(/^initTheme\(\)$/m)
+    }
   })
 
   it('is light by default and for an unknown value', () => {
