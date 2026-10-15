@@ -52,6 +52,20 @@ function subscribe(fn) {
   }
 }
 
+/**
+ * Each themed page entry (*-main.jsx) calls this first. The boot script
+ * (theme-boot.js) normally got there before the first paint; this is the
+ * fallback for a page where it did not run (a host whose
+ * Content-Security-Policy forbids inline scripts), so the stored theme still
+ * applies, one paint late.
+ */
+export function initTheme() {
+  applyTheme(getTheme())
+  window.addEventListener('storage', (e) => {
+    if (e.key === THEME_KEY || e.key === null) applyTheme(getTheme())
+  })
+}
+
 /** The current theme; re-renders when it changes here or in another tab. */
 export function useTheme() {
   return useSyncExternalStore(subscribe, getTheme, () => 'light')
