@@ -18,6 +18,7 @@ import { backdropDismiss } from '../../ui/backdropDismiss.js'
 import LegalLinks from '../../legal/LegalLinks'
 import ActivityLogModal from '../ActivityLogModal'
 import DiagnosticsSection from '../../diagnostics/DiagnosticsSection'
+import ThemeOption from './ThemeOption'
 
 // Kit field recipes for the small inline number/select controls (h-9, svrz md).
 const SMALL_FIELD = 'h-9 rounded-lg border border-stone-300 bg-white px-2 text-center text-sm tabular-nums text-stone-800 focus:outline-none focus:ring-2 focus:ring-red-500'
@@ -622,6 +623,10 @@ export default function HomeOptionsModal({
                 </div>
               )}
             </div>
+          </Row>
+
+          <Row style={{ alignItems: 'flex-start' }}>
+            <ThemeOption info={<InfoDot title={t('options.themeInfo')} />} />
           </Row>
 
           <Row>

@@ -1722,7 +1722,10 @@ const server = createServer((req, res) => {
     : "connect-src 'self' ws: wss: http: https:"
   res.setHeader('Content-Security-Policy', [
     "default-src 'self'",
-    "script-src 'self'",
+    // and the colour theme boot script at the top of the frontend pages this
+    // server hands out (frontend/theme-boot.js; the frontend's theme test
+    // checks this hash against the script)
+    "script-src 'self' 'sha256-hAC66PTngtOWJY571phiLXHzeuEYS3pprPNjnV1uBik='",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     connectSrc,

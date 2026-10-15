@@ -11,7 +11,7 @@ import { Select } from '../../ui/Select.jsx'
 import { SegmentedControl } from '../../ui/SegmentedControl.jsx'
 import { FormError } from '../../ui/Field.jsx'
 import { Textarea } from '../../ui/Textarea.jsx'
-import { discRing, HEADER_SURFACE } from '../../utils/teamColours'
+import { TEAM_COLOUR_MARK, discRing, HEADER_SURFACE } from '../../utils/teamColours'
 import { formatScore, teamLabel, displaySetNumber, tr } from '../../domain/describe'
 import { errorText } from '../../domain/manualCorrections'
 
@@ -24,7 +24,7 @@ export function TeamDot({ color, size = 12, className }) {
     <span
       aria-hidden="true"
       className={cn('inline-block shrink-0 rounded-full', className)}
-      style={{ width: size, height: size, background: color || '#888', ...(ring ? { boxShadow: `inset 0 0 0 1.5px ${ring}` } : {}) }}
+      style={{ width: size, height: size, background: color || '#888', ...TEAM_COLOUR_MARK, ...(ring ? { boxShadow: `inset 0 0 0 1.5px ${ring}` } : {}) }}
     />
   )
 }

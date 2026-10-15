@@ -103,7 +103,7 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
   return (
     <div className="ov-kit fixed inset-0 z-[900] overflow-y-auto bg-stone-100" data-testid="manage-console">
       <ConsoleShell
-        logo={<img src={brand.lockup} alt={brand.name} className="h-7 w-auto" />}
+        logo={<img src={brand.lockup} alt={brand.name} className="ov-ink h-7 w-auto" />}
         eyebrow={t('manage.title')}
         actions={<>
           {headerActions}

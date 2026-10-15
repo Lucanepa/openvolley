@@ -44,7 +44,7 @@ const FlagBox = ({ children }) => (
 
 // Small flag SVG components
 const FlagGB = () => (
-  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+  <svg className="flag" width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
     <rect width="60" height="42" fill="#012169" />
     <path d="M0,0 L60,42 M60,0 L0,42" stroke="#fff" strokeWidth="7" />
     <path d="M0,0 L60,42 M60,0 L0,42" stroke="#C8102E" strokeWidth="4" clipPath="url(#gbClip)" />
@@ -54,7 +54,7 @@ const FlagGB = () => (
 )
 
 const FlagIT = () => (
-  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+  <svg className="flag" width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
     <rect width="20" height="42" fill="#009246" />
     <rect x="20" width="20" height="42" fill="#fff" />
     <rect x="40" width="20" height="42" fill="#CE2B37" />
@@ -62,7 +62,7 @@ const FlagIT = () => (
 )
 
 const FlagDE = () => (
-  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+  <svg className="flag" width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
     <rect width="60" height="14" fill="#000" />
     <rect y="14" width="60" height="14" fill="#DD0000" />
     <rect y="28" width="60" height="14" fill="#FFCE00" />
@@ -70,7 +70,7 @@ const FlagDE = () => (
 )
 
 const FlagFR = () => (
-  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+  <svg className="flag" width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
     <rect width="20" height="42" fill="#002395" />
     <rect x="20" width="20" height="42" fill="#fff" />
     <rect x="40" width="20" height="42" fill="#ED2939" />
@@ -79,6 +79,7 @@ const FlagFR = () => (
 
 const FlagCH = () => (
   <svg
+    className="flag"
     width="14"
     height="14"
     viewBox="0 0 32 32"

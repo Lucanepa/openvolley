@@ -1375,7 +1375,7 @@ export default function UploadRosterApp() {
                       )}
                     >
                       {sig.value ? (
-                        <img src={sig.value} alt={sig.alt} className="max-h-full max-w-full" />
+                        <img src={sig.value} alt={sig.alt} className="ov-ink max-h-full max-w-full" />
                       ) : (
                         <span className="text-sm">{t('rosterSetup.tapToSign', 'Tap to sign')}</span>
                       )}

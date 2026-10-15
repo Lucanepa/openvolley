@@ -4442,7 +4442,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 )}
               >
                 {homeCoachSignature ? (
-                  <img src={homeCoachSignature} alt={t('matchSetup.coachSignature')} style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                  <img src={homeCoachSignature} alt={t('matchSetup.coachSignature')} className="ov-ink" style={{ maxWidth: '100%', maxHeight: '100%' }} />
                 ) : (
                   <span className="text-xs text-stone-500">
                     {t('rosterSetup.tapToSign', 'Tap to sign')}
@@ -4474,7 +4474,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 )}
               >
                 {homeCaptainSignature ? (
-                  <img src={homeCaptainSignature} alt={t('matchSetup.captainSignature')} style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                  <img src={homeCaptainSignature} alt={t('matchSetup.captainSignature')} className="ov-ink" style={{ maxWidth: '100%', maxHeight: '100%' }} />
                 ) : (
                   <span className="text-xs text-stone-500">
                     {t('rosterSetup.tapToSign', 'Tap to sign')}
@@ -5591,7 +5591,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 )}
               >
                 {awayCoachSignature ? (
-                  <img src={awayCoachSignature} alt={t('matchSetup.coachSignature')} style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                  <img src={awayCoachSignature} alt={t('matchSetup.coachSignature')} className="ov-ink" style={{ maxWidth: '100%', maxHeight: '100%' }} />
                 ) : (
                   <span className="text-xs text-stone-500">
                     {t('rosterSetup.tapToSign', 'Tap to sign')}
@@ -5623,7 +5623,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 )}
               >
                 {awayCaptainSignature ? (
-                  <img src={awayCaptainSignature} alt={t('matchSetup.captainSignature')} style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                  <img src={awayCaptainSignature} alt={t('matchSetup.captainSignature')} className="ov-ink" style={{ maxWidth: '100%', maxHeight: '100%' }} />
                 ) : (
                   <span className="text-xs text-stone-500">
                     {t('rosterSetup.tapToSign', 'Tap to sign')}

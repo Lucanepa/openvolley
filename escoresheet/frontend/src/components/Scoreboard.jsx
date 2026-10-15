@@ -35,7 +35,7 @@ import ballFallback from '../ball_fallback.png'
 // stay cached (old green ball) after an update
 const ballImage = ballFallback
 import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
-import { discPaint, effectiveTeamColour, matchDiscPaint, teamLiberoColour, markColourOn, teamBoxStyle, teamTextStyle, HEADER_SURFACE } from '../utils/teamColours'
+import { TEAM_COLOUR_MARK, discPaint, effectiveTeamColour, matchDiscPaint, teamLiberoColour, markColourOn, teamBoxStyle, teamTextStyle, HEADER_SURFACE } from '../utils/teamColours'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom } from '../lib/apiClient'
 import { relayMatchKey, relayMatchPayload } from '../utils/serverDataSync'
@@ -14922,6 +14922,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     ? 'rgba(239, 68, 68, 0.2)'  // Red tint for invalid
                                     : isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#fdba74' : getPlayerCircleColors('left', player.isLibero).bg,
                                 color: isRecentlySub ? '#000' : getPlayerCircleColors('left', player.isLibero).text,
+                                ...TEAM_COLOUR_MARK,
                                 textShadow: isRecentlySub ? undefined : getPlayerCircleColors('left', player.isLibero).textShadow,
                                 position: 'relative',
                                 animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
@@ -15198,6 +15199,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     ? 'rgba(239, 68, 68, 0.2)'
                                     : isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : getPlayerCircleColors('left', player.isLibero).bg,
                                 color: isRecentlySub ? '#000' : getPlayerCircleColors('left', player.isLibero).text,
+                                ...TEAM_COLOUR_MARK,
                                 textShadow: isRecentlySub ? undefined : getPlayerCircleColors('left', player.isLibero).textShadow,
                                 animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                                 fontWeight: isRecentlySub ? 900 : undefined,
@@ -15511,6 +15513,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
                                 background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : getPlayerCircleColors('right', player.isLibero).bg,
                                 color: isRecentlySub ? '#000' : getPlayerCircleColors('right', player.isLibero).text,
+                                ...TEAM_COLOUR_MARK,
                                 textShadow: isRecentlySub ? undefined : getPlayerCircleColors('right', player.isLibero).textShadow,
                                 animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                                 fontWeight: isRecentlySub ? 900 : undefined,
@@ -15780,6 +15783,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                     ? 'rgba(239, 68, 68, 0.2)'
                                     : isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : getPlayerCircleColors('right', player.isLibero).bg,
                                 color: isRecentlySub ? '#000' : getPlayerCircleColors('right', player.isLibero).text,
+                                ...TEAM_COLOUR_MARK,
                                 textShadow: isRecentlySub ? undefined : getPlayerCircleColors('right', player.isLibero).textShadow,
                                 animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                                 fontWeight: isRecentlySub ? 900 : undefined,
@@ -22868,7 +22872,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
   // keeps a light shirt apart from the pool's stone-50
   const discStyle = useMemo(() => {
     const paint = discPaint(teamColor, '#fafaf9') || discPaint(isTeamA ? '#ef4444' : '#3b82f6', '#fafaf9')
-    return { background: paint.background, color: paint.color, textShadow: paint.textShadow, borderColor: paint.ring || 'transparent' }
+    return { background: paint.background, color: paint.color, textShadow: paint.textShadow, borderColor: paint.ring || 'transparent', ...TEAM_COLOUR_MARK }
   }, [teamColor, isTeamA])
 
   // Get all events to check for disqualifications
@@ -23167,7 +23171,9 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
         onDrop={(e) => handleDrop(e, idx)}
       >
         <div className="lineup-pos__label" aria-hidden="true">{pos}</div>
-        <div className="lineup-pos__field">
+        {/* The disc and the number typed over it (a transparent input): both
+            wear the team colour's paint, so the field carries the mark */}
+        <div className="lineup-pos__field" style={showDisc ? TEAM_COLOUR_MARK : undefined}>
           {showDisc && <span className="lineup-disc" style={{ background: discStyle.background, border: `2px solid ${discStyle.borderColor}` }} />}
           <input
             type="text"

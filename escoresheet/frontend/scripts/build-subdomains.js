@@ -25,6 +25,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { BUILD_TARGET } from '../build-target.js'
+import { themeBoot } from '../theme-boot.js'
 import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, PWA_INCLUDE_ASSETS, PWA_ICONS } from '../pwa-workbox.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -160,6 +161,14 @@ export function manifestFor(config) {
 export function htmlFor(config) {
   if (config.htmlFile) return readFileSync(resolve(frontendDir, config.htmlFile), 'utf-8')
   return config.customHtml ? createScoresheetHtml(config) : createIndexHtml(config)
+}
+
+/**
+ * Whether the pages get the colour theme boot script (theme-boot.js): not the
+ * scoresheet (the paper form) and not the manager consoles (no theme choice).
+ */
+export function usesTheme(config) {
+  return !config.customHtml && !config.htmlFile
 }
 
 /** Whether the build gets VitePWA (manifest + service worker). */
@@ -330,6 +339,8 @@ async function buildSubdomain(subdomain, basePath = '/') {
         react(),
         // Tailwind used to reach these builds only via the merged vite.config.js
         tailwindcss(),
+        // Colour theme boot script (theme-boot.js), as in vite.config.js
+        themeBoot({ enabled: usesTheme(config) }),
         ...(usesPwa(config) ? [VitePWA({
           registerType: 'prompt',
           includeAssets: PWA_INCLUDE_ASSETS,

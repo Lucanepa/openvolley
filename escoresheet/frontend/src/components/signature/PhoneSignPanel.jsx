@@ -310,7 +310,7 @@ export default function PhoneSignPanel({ transports, slot, matchKey = null, cont
       {phase === 'received' ? (
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-center overflow-hidden rounded-xl border border-stone-300 bg-white" style={{ height: 200 }}>
-            <img src={signature} alt={t('common.signature')} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} data-testid="phone-signature-preview" />
+            <img src={signature} alt={t('common.signature')} className="ov-ink" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} data-testid="phone-signature-preview" />
           </div>
           <p className="flex items-center gap-1.5 text-sm font-medium text-emerald-700">
             <Smartphone size={15} aria-hidden="true" />
