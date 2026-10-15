@@ -9,6 +9,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 import { UiHost } from './ui/UiHost.jsx'
 import { stripCacheBustParam } from './hooks/useServiceWorker'
 import { setAppEntry } from './utils/appEntry'
+import { initTheme } from './utils/theme'
 
 // Not the scoretable: this page never saves a match backup (utils/appEntry)
 setAppEntry('livescore')
@@ -17,6 +18,7 @@ setAppEntry('livescore')
 // Keep the rest of the query: ?match=&team= attach tablets to the live match.
 stripCacheBustParam()
 
+initTheme()
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ErrorBoundary name="livescore">

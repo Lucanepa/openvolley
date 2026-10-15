@@ -17,6 +17,7 @@ import { watchFormStack } from './utils/formLayout'
 import { db } from './db/db'
 import { startActivityLog } from './utils/activity'
 import { installDiagnostics } from './diagnostics'
+import { initTheme } from './utils/theme'
 
 // The scoretable: the only page that saves automatic match backups
 setAppEntry('scorer')
@@ -49,6 +50,7 @@ startActivityLog({ db })
 // this app and its dialogs portalled to <body> (not for the other apps).
 watchFormStack(document.body)
 
+initTheme()
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ErrorBoundary name="scorer">

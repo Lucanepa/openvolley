@@ -4,7 +4,7 @@ import { existsSync } from 'fs'
 import { spawnSync } from 'child_process'
 import { resolve } from 'path'
 import { readFileSync } from 'fs'
-import { subdomains, htmlFor, usesPwa, extraFilesFor, hostFor, manifestFor } from '../../scripts/build-subdomains.js'
+import { subdomains, htmlFor, usesPwa, usesTheme, extraFilesFor, hostFor, manifestFor } from '../../scripts/build-subdomains.js'
 
 const frontendDir = resolve(__dirname, '../..')
 
@@ -115,5 +115,12 @@ describe('precache limit', () => {
     for (const f of ['vite.config.js', 'scripts/build-subdomains.js']) {
       expect(readFileSync(resolve(frontendDir, f), 'utf8'), f).toMatch(/maximumFileSizeToCacheInBytes: PRECACHE_MAX_FILE_BYTES/)
     }
+  })
+})
+
+describe('build-subdomains: colour theme boot script (theme-boot.js)', () => {
+  it('in the apps, not in the scoresheet (the paper form) nor the manager consoles', () => {
+    for (const name of ['app', 'referee', 'bench', 'livescore', 'roster']) expect(usesTheme(subdomains[name]), name).toBe(true)
+    for (const name of ['scoresheet', 'manager', 'manager-beach']) expect(usesTheme(subdomains[name]), name).toBe(false)
   })
 })

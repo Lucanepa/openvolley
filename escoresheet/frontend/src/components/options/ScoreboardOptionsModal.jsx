@@ -23,6 +23,7 @@ import { canOpenLogFolder, openLogFolder } from '../../utils/activity'
 import { diagnosticLogQuery } from '../../utils/activity/logQuery'
 import { reloadWithReason } from '../../diagnostics/reload'
 import DiagnosticsSection from '../../diagnostics/DiagnosticsSection'
+import ThemeOption from './ThemeOption'
 
 // Opened over the scoreboard: no brand-red fills here (RESTYLE-SPEC R4).
 // Selection and "on" are slate-900, the non-destructive confirm emerald.
@@ -737,6 +738,9 @@ export default function ScoreboardOptionsModal({
                 </div>
               )}
             </div>
+          </Row>
+          <Row style={{ alignItems: 'flex-start' }}>
+            <ThemeOption info={<InfoDot title={t('options.themeInfo')} />} />
           </Row>
         </Section>
 

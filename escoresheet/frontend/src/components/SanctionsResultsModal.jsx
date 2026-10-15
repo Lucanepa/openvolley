@@ -308,7 +308,7 @@ export default function SanctionsResultsModal({ open, onClose, data, teamAKey, l
               </div>
               {c.signature ? (
                 <div style={{ border: '1px solid var(--ov-hairline, #e7e5e4)', borderRadius: 6, padding: 4, minHeight: '3em', background: 'var(--panel-2)' }}>
-                  <img src={c.signature} alt={t('common.signature')} style={{ maxWidth: '100%', maxHeight: '3em', objectFit: 'contain' }} />
+                  <img src={c.signature} alt={t('common.signature')} className="ov-ink" style={{ maxWidth: '100%', maxHeight: '3em', objectFit: 'contain' }} />
                 </div>
               ) : (
                 <span className="ov-kit contents">

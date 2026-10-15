@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   parseColour, normaliseColour, relativeLuminance, contrastRatio, colourDistance,
   readableTextOn, readableText, discRing, liberoColour, liberoScore, teamLiberoColour,
-  discPaint, teamDiscPaint, markColourOn, liberoPair, matchDiscPaint, teamBoxStyle,
+  discPaint, teamDiscPaint, markColourOn, liberoPair, matchDiscPaint, teamBoxStyle, TEAM_COLOUR_MARK,
   teamTextPaint, teamTextStyle, toOklab,
   LIBERO_CLASH_DISTANCE, HEADER_SURFACE, TEXT_DARK, TEXT_LIGHT, TEXT_BLACK, COURT_SURFACE, LIBERO_PALETTE, MIN_TEXT_CONTRAST, MIN_EDGE_CONTRAST, MIN_LARGE_TEXT_CONTRAST
 } from '../teamColours'
@@ -307,8 +307,8 @@ describe('matchDiscPaint', () => {
 
 describe('teamBoxStyle', () => {
   it('fills with the team colour and the readable text colour', () => {
-    expect(teamBoxStyle('#e2001a')).toEqual({ background: '#e2001a', color: readableTextOn('#e2001a') })
-    expect(teamBoxStyle('#1c1917')).toEqual({ background: '#1c1917', color: TEXT_LIGHT })
+    expect(teamBoxStyle('#e2001a')).toEqual({ background: '#e2001a', color: readableTextOn('#e2001a'), ...TEAM_COLOUR_MARK })
+    expect(teamBoxStyle('#1c1917')).toEqual({ background: '#1c1917', color: TEXT_LIGHT, ...TEAM_COLOUR_MARK })
     expect(teamBoxStyle('#facc15').color).toBe(TEXT_DARK)
   })
 
@@ -326,7 +326,7 @@ describe('teamBoxStyle', () => {
 
   it('uses the fallback for a missing colour and passes an unreadable one through', () => {
     expect(teamBoxStyle(null, { fallback: '#3b82f6' }).background).toBe('#3b82f6')
-    expect(teamBoxStyle('var(--accent)')).toEqual({ background: 'var(--accent)', color: TEXT_LIGHT })
+    expect(teamBoxStyle('var(--accent)')).toEqual({ background: 'var(--accent)', color: TEXT_LIGHT, ...TEAM_COLOUR_MARK })
     expect(teamBoxStyle(null)).toEqual({})
   })
 })
