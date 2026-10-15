@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.2 · Stand: 13. Oktober 2026
+**OpenVolley und OpenBeach** · Version 1.3 · Stand: 16. Oktober 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die deutsche Fassung.
@@ -22,8 +22,8 @@ Massgebend ist die deutsche Fassung.
 - Die OpenVolley-App führt ein Aktivitätsprotokoll jedes Spiels, ohne PINs
   und Passwörter. Mit Anmeldung geht es auf den Server. Was Sie anklicken oder
   tippen, bleibt auf Ihrem Gerät (Abschnitt 5).
-- Der Server steht in Deutschland (Hetzner). Cloudflare (USA) liefert die
-  Websites aus und leitet den Verkehr zum Server weiter.
+- Der Server steht in der Schweiz und wird von mir betrieben. Cloudflare (USA)
+  liefert die Websites aus und leitet den Verkehr zum Server weiter.
 - Sie können jederzeit Auskunft, Berichtigung oder Löschung verlangen:
   **support@openvolley.app**.
 
@@ -472,7 +472,6 @@ brauche. Sie bearbeiten die Daten in meinem Auftrag.
 
 | Dienstleister | Aufgabe | Land |
 |---|---|---|
-| Hetzner Online GmbH | Server, Datenbank, Dateispeicher | Deutschland |
 | Cloudflare, Inc. | Auslieferung der Websites, DNS, sichere Verbindung zum Server | USA (weltweites Netz) |
 | Migadu | E-Mail-Versand (noreply@) und Postfach (support@) | Schweiz / Europa |
 | Resend, Inc. | Versand der Spielinfo per E-Mail (nur diese Funktion, falls aktiviert) | USA |
@@ -487,12 +486,12 @@ Erbringung seines Dienstes verwenden.
 die Versionsliste, F-Droid für den App-Katalog, Swiss Volley für die Daten
 im VolleyManager.
 
-**Datensicherungen** liegen verschlüsselt auf meinem Server in Deutschland und
-auf meinen eigenen Geräten in der Schweiz; dafür gebe ich keine Daten an
+**Datensicherungen** liegen verschlüsselt auf meinem Server und auf meinem
+eigenen Speichergerät, beide in der Schweiz; dafür gebe ich keine Daten an
 Dritte (Abschnitt 18).
 
-**Übermittlung ins Ausland:** Deutschland und die EU bieten nach dem Schweizer
-Bundesrat einen angemessenen Datenschutz. Für die USA stütze ich mich auf das
+**Übermittlung ins Ausland:** Die Staaten der EU und des EWR bieten nach dem
+Schweizer Bundesrat einen angemessenen Datenschutz. Für die USA stütze ich mich auf das
 Swiss-U.S. Data Privacy Framework, soweit der Anbieter zertifiziert ist, und
 sonst auf die Standardvertragsklauseln in den Verträgen der Anbieter. Auf
 Anfrage erhalten Sie eine Kopie dieser Garantien.
@@ -544,10 +543,10 @@ für ihr Kind ausüben.
   schreibgeschützt.
 - Begrenzung von Anmeldeversuchen und Sperre nach Fehlversuchen.
 - Datensicherungen: Der Server sichert die Datenbank stündlich und die
-  Dateien täglich, **verschlüsselt**. Der Schlüssel zum Entschlüsseln liegt
-  nicht auf dem Server. Die Sicherungen werden täglich auf mein eigenes
-  Speichergerät in der Schweiz kopiert und dort bis 90 Tage und in
-  Monats-Schnappschüssen **bis etwa 6 Monate** aufbewahrt. Gelöschte Daten
+  Dateien täglich, **verschlüsselt**. Die Sicherungen werden täglich auf mein
+  eigenes Speichergerät in der Schweiz kopiert und dort in täglichen,
+  wöchentlichen und monatlichen Schnappschüssen **bis etwa 6 Monate**
+  aufbewahrt. Gelöschte Daten
   können deshalb noch bis zu etwa 6 Monate in diesen verschlüsselten
   Sicherungen enthalten sein; sie werden nur für eine Wiederherstellung
   verwendet.

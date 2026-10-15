@@ -8,9 +8,9 @@
  * both forms on read, so this is only needed for rows written before that.
  * Idempotent: hashed values are left alone. Dry run unless --apply.
  *
- * Usage (on hetzner, with the backend's environment):
- *   docker exec -it ov-backend node scripts/hash-pins.mjs           # count only
- *   docker exec -it ov-backend node scripts/hash-pins.mjs --apply   # rewrite
+ * Usage (on lenovoserver, production since 16.10.2026, with the backend's environment):
+ *   sudo docker compose --project-directory /opt/openvolley exec ov-backend node scripts/hash-pins.mjs           # count only
+ *   sudo docker compose --project-directory /opt/openvolley exec ov-backend node scripts/hash-pins.mjs --apply   # rewrite
  *
  * Never prints a PIN. Exit codes: 0 done, 1 error, 2 usage.
  */
