@@ -97,7 +97,7 @@ export default function HomePage({
       <div className="w-full max-w-md">
         <h1 className="text-center text-2xl sm:text-3xl font-bold tracking-tight text-stone-900">{t('home.title')}</h1>
         <div className="my-4 flex justify-center">
-          <img src={BRAND.lockupStacked} alt="OpenVolley" className="h-24 w-auto sm:h-28" />
+          <img src={BRAND.lockupStacked} alt="OpenVolley" className="ov-ink h-24 w-auto sm:h-28" />
         </div>
 
         <PendingApprovalBanner className="mb-4" />

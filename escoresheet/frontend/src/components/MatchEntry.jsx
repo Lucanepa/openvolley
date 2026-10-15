@@ -27,7 +27,7 @@ const SURFACE = {
 import { setsToWin } from '../utils/matchFormat'
 import { getSideAForSet } from '../domain/rules'
 import { sanctionTarget } from '../domain/describe'
-import { matchDiscPaint, teamLiberoColour, markColourOn } from '../utils/teamColours'
+import { TEAM_COLOUR_MARK, matchDiscPaint, teamLiberoColour, markColourOn } from '../utils/teamColours'
 
 export default function MatchEntry({ matchId, team, onBack, embedded = false }) {
   const { t } = useTranslation()
@@ -242,7 +242,8 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
       background: paint.background,
       color: paint.color,
       textShadow: paint.textShadow,
-      borderColor: paint.ring || undefined
+      borderColor: paint.ring || undefined,
+      ...TEAM_COLOUR_MARK
     }
   }
   const liberoMarkOn = (isLibero) => markColourOn(discStyle(isLibero).background, '#3b82f6', '#0f172a')

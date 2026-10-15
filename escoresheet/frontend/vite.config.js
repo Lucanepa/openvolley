@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { vitePluginApiRoutes } from './vite-plugin-api-routes.js'
 import { BUILD_TARGET } from './build-target.js'
+import { themeBoot } from './theme-boot.js'
 import { PRECACHE_GLOB_PATTERNS, PRECACHE_GLOB_IGNORES, PRECACHE_MAX_FILE_BYTES, NAVIGATE_FALLBACK_DENYLIST, IGNORE_URL_PARAMETERS, offlineNavigationRoute, PWA_INCLUDE_ASSETS, PWA_ICONS } from './pwa-workbox.js'
 
 // Valid HTML pages for the app (folder-based structure for clean URLs)
@@ -91,6 +92,9 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    // Colour theme (src/utils/theme.js): <html data-theme> set before the
+    // first paint on every page but the scoresheet and the manager consoles
+    themeBoot(),
     // Rewrite clean URLs to their index.html files
     {
       name: 'html-rewrite-handler',

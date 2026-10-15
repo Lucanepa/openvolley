@@ -1,6 +1,6 @@
 import ballFallback from '../../ball_fallback.png'
 import { DISC, discCssVars } from './discSizing.js'
-import { markColourOn } from '../../utils/teamColours.js'
+import { TEAM_COLOUR_MARK, markColourOn } from '../../utils/teamColours.js'
 
 // Primary ball image (with a bundled copy as fallback)
 // The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
@@ -92,6 +92,7 @@ export default function PlayerDisc({
         border: flash ? '3px solid #f97316' : ring ? `2px solid ${ring}` : '1px solid var(--border)',
         borderRadius: '50%',
         background,
+        ...TEAM_COLOUR_MARK,
         color,
         display: 'flex',
         alignItems: 'center',
