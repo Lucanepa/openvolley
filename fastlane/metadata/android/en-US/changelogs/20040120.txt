@@ -1,0 +1,3 @@
+OpenVolley 2.4.12
+- Upright 7-8" tablets and narrow windows: the header's match chip no longer covers the tablet status; below 720 px the header uses its compact form.
+- A long connection status or translation no longer pushes the header off the screen: it switches to the compact form when the full one does not fit.
