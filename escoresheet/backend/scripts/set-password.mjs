@@ -19,8 +19,8 @@
  *                   you know the address belongs to this person)
  *   --help
  *
- * On hetzner:
- *   docker exec -it ov-backend node scripts/set-password.mjs someone@example.com
+ * On lenovoserver (production since 16.10.2026):
+ *   sudo docker compose --project-directory /opt/openvolley exec ov-backend node scripts/set-password.mjs someone@example.com
  *
  * Exit codes: 0 done, 1 error, 2 usage.
  */

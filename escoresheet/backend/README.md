@@ -628,7 +628,7 @@ Why not a share link: a link is a bearer secret that keeps working for whoever i
 **Files stored before this change** (`game{n}_final.json`, `game{n}.json`, `game{n}.pdf`) have no owner record and are readable by nobody through the API (nor replaceable). There is no trustworthy source to seed them from (see above), so an operator grants them one by one, after confirming out of band who scored the match:
 
 ```bash
-# on hetzner: docker exec -it ov-backend <command>
+# on lenovoserver (production since 16.10.2026): sudo docker compose --project-directory /opt/openvolley exec ov-backend <command>
 node scripts/storage-owner.mjs unowned 2026-05-12          # files without an owner (optionally one folder)
 psql "$DATABASE_URL" -c "SELECT id FROM auth.users WHERE email = lower('scorer@example.ch')"
 node scripts/storage-owner.mjs grant 2026-05-12/game4711_final.json <user uuid>
@@ -924,9 +924,9 @@ Files in `db/`, all run as `ov_owner` (the cluster superuser, `docker exec` only
 **A database already running** gets a new `db/NNN_*.sql` file by hand, in number order, as `ov_owner`, then `roles.sql` (RUNBOOK-hetzner.md, "Apply a new db migration"). `restore.sh` only picks the files up on a restore. For `006`:
 
 ```bash
-lenovo$ ssh hetzner 'cd /opt/openvolley && docker compose exec -T ov-postgres psql -U ov_owner -d openvolley -v ON_ERROR_STOP=1' \
+lenovo$ sudo docker compose --project-directory /opt/openvolley exec -T ov-postgres psql -U ov_owner -d openvolley -v ON_ERROR_STOP=1 \
           < escoresheet/backend/db/006_matches_updated_at.sql
-lenovo$ ssh hetzner /opt/openvolley/apply-roles.sh < escoresheet/backend/db/roles.sql
+lenovo$ sudo /opt/openvolley/apply-roles.sh < escoresheet/backend/db/roles.sql
 ```
 
 `scripts/migrate/restore.sh [--force] [--expect-counts FILE] [--env-file FILE] [--db-user U] [--scrub-except EMAIL] <container> <export-dir>` loads the Phase-0 export (`public.dump`, `auth_users.csv`) through all of the above (every `db/NNN_*.sql` from 003 on, in order; two files with the same number stop it) with a filtered `pg_restore` list, then verifies (row counts, per table against `--expect-counts` when given, users vs CSV, FKs incl. `match_live_state_match_id_fkey_cascade`, no RLS, sequences, ownership, `ov_app` grants and TCP login). A restore list that leaves out a table's data is refused (`--allow-missing-data` overrides). It replaces the target database only when that is empty or left over from an unfinished run the app never used; otherwise it refuses unless `--force`, which renames the old database to `<db>_pre_restore_<UTC>` instead of dropping it. `--print-toc` shows the restore list. `--help` has the details.
