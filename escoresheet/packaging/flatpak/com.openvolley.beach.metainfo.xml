@@ -67,6 +67,14 @@
   </screenshots>
 
   <releases>
+    <release version="2.0.9" date="2026-10-15">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.9</url>
+      <description>
+        <ul>
+          <li>A long connection status or translation no longer pushes the header under the match chip or off the screen: it switches to the compact form when the full one does not fit, and back when it fits again.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.0.8" date="2026-10-14">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.8</url>
       <description>

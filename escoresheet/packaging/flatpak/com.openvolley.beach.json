@@ -30,8 +30,8 @@
       "sources": [
         {
           "type": "file",
-          "url": "https://github.com/Lucanepa/openvolley/releases/download/beach-desktop-v2.0.8/openbeach-escoresheet_2.0.8_amd64.deb",
-          "sha256": "13d3f7c2e8c546a19480d718d3e40739f4188c12b57f73145d7abb9aede4b470",
+          "url": "https://github.com/Lucanepa/openvolley/releases/download/beach-desktop-v2.0.9/openbeach-escoresheet_2.0.9_amd64.deb",
+          "sha256": "c27e22a4344a3417f0e71c63ffbf63bfed1014cec47569160ae1614457bbca94",
           "dest-filename": "openbeach-escoresheet.deb",
           "only-arches": [
             "x86_64"
