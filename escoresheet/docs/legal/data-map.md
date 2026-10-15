@@ -28,7 +28,8 @@ say otherwise.
   Contact: support@openvolley.app.
 - **Law:** Swiss revFADP (nDSG, in force since 2023-09-01) applies. The GDPR
   may also apply (Art. 3(2)): the apps are open to anyone, beach tournaments
-  carry foreign players, and the server is in Germany. The texts should meet
+  carry foreign players (the server moved from Germany to Switzerland on
+  16.10.2026). The texts should meet
   both. For the GDPR, Art. 27 may require an EU representative. The usual
   exemption for occasional processing that is not large-scale probably does
   not cover dates of birth of minors. **Lawyer to confirm.**
@@ -47,7 +48,7 @@ say otherwise.
 
 | System | What runs there | Location | Who operates it |
 |---|---|---|---|
-| Backend VM | Node backend (`backend/server.js`), Postgres 17, file storage (`STORAGE_ROOT`), Caddy for `get.openvolley.app` | Hetzner Cloud, Germany (`fsn1`/`nbg1`: `deploy/RUNBOOK-move-to-own-vm.md`; confirm the actual location in the Hetzner console) | Hetzner Online GmbH (DE), processor |
+| Backend VM | Node backend (`backend/server.js`), Postgres 17, file storage (`STORAGE_ROOT`), Caddy for `get.openvolley.app` | The operator's own server (lenovoserver), Switzerland, since 16.10.2026; before that Hetzner Cloud `nbg1`, Germany | Operator (no processor) |
 | Cloudflare | DNS; Pages for the static sites (`openvolley.app`, `app.`, `referee.`, `bench.`, `livescore.`, `roster.`, `scoresheet.`, `manager.`, `manager-beach.`, `beach.`, `referee-beach.`, `livescore-beach.`, `scoresheet-beach.`, `readvolley.`); a Cloudflare Tunnel in front of `backend.openvolley.app` and `get.openvolley.app` | Global edge; Cloudflare Inc. (US) | Processor. **TLS ends at Cloudflare** (`deploy/cloudflared/config.yml`: "TLS ends at Cloudflare"), so every API request and answer, rosters and dates of birth included, passes Cloudflare unencrypted at the edge |
 | Mail | SMTP via Migadu for `noreply@` (account mails) and `support@` (inbox) | Migadu (CH company; confirm where the mail servers are) | Processor |
 | Resend (only if configured) | `POST /api/match/send-info` sends through `api.resend.com` when `RESEND_API_KEY` is set (`backend/server.js:675`) | Resend Inc. (US) | Processor **if the key is set**. Check `/opt/openvolley/.env` on the VM |
@@ -288,7 +289,7 @@ file tar). The policy must say so (F8).
 
 | Recipient | Role | Country | Transfer basis to cite | Action |
 |---|---|---|---|---|
-| Hetzner Online GmbH | Hosting (VM, disks) | DE | EU, recognised as adequate by Switzerland | Sign the DPA (AVV) in the Hetzner console |
+| ~~Hetzner Online GmbH~~ | ~~Hosting (VM, disks)~~ | DE | — | No longer used since 16.10.2026 (the server moved to the operator's own machine in Switzerland) |
 | Cloudflare Inc. | CDN/Pages, DNS, Tunnel, TLS termination | US (global edge) | Swiss-U.S. DPF (Cloudflare is certified; check) and/or SCCs in Cloudflare's DPA | The DPA is part of Cloudflare's self-serve terms; keep a copy |
 | Migadu | Email | CH (check the server location) | — | Check their DPA / terms |
 | Resend Inc. | Email for send-info, **only if `RESEND_API_KEY` is set** | US | DPF/SCCs | Either remove the key and code (preferred; F13) or list it |
@@ -382,7 +383,7 @@ PocketBase (legacy relay backup), Supabase (left in 2026-10).
   pseudonymous IP/device hash.
 - Processors and transfers (section 5), including Cloudflare seeing the
   traffic and Cloudflare/GitHub being US companies.
-- Backups: encrypted, in Germany and Switzerland, retention as in 4.15.
+- Backups: encrypted, in Switzerland only (server + operator's NAS), retention as in 4.15.
 - Logs: no IP logging by the backend; Cloudflare edge logs; container logs
   rotate by size.
 - Update checks: desktop (automatic, no personal data beyond the request),
@@ -398,7 +399,7 @@ request" and "we answer your message".
 ## 9. Open questions for the owner
 
 1. Is `RESEND_API_KEY` set on the VM? Is `SMTP_LEGACY_ROUTES` set?
-2. Hetzner location (fsn1 / nbg1 / other) and whether the DPA is signed.
+2. ~~Hetzner location and DPA~~: moot since 16.10.2026, the server is the operator's own, in Switzerland.
 3. Where does Migadu store mail? Which Migadu plan?
 4. Whose VolleyManager account does the sync use, and do its terms allow
    storing and showing referee data?

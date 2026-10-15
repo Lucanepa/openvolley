@@ -45,7 +45,7 @@ all four languages); until then the pages show them highlighted.
 
 ## Statements that depend on owner facts (check before go-live)
 
-1. Hetzner location is Germany (privacy 15, "In short").
+1. Server location is Switzerland, run by the operator (privacy 15, "In short"; since 16.10.2026, before: Hetzner, Germany).
 2. Migadu: "Switzerland / Europe" for the company and mail servers.
 3. Resend is listed for "match info by email" because the code can use it
    (`RESEND_API_KEY`). If the key is not set, or the code is removed (F13),
