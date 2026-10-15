@@ -1,6 +1,6 @@
 pkgbase = openbeach-escoresheet-bin
 	pkgdesc = Open source beach volleyball eScoresheet: offline scoretable with a LAN server for referee and livescore tablets and court displays
-	pkgver = 2.0.8
+	pkgver = 2.0.9
 	pkgrel = 1
 	url = https://beach.openvolley.app
 	arch = x86_64
@@ -22,12 +22,12 @@ pkgbase = openbeach-escoresheet-bin
 	optdepends = xdg-utils: open links, the PDF and the backup folder
 	provides = openbeach-escoresheet
 	conflicts = openbeach-escoresheet
-	noextract = openbeach-escoresheet-2.0.8-amd64.deb
+	noextract = openbeach-escoresheet-2.0.9-amd64.deb
 	options = !strip
 	options = !debug
-	source = LICENSE-2.0.8::https://raw.githubusercontent.com/Lucanepa/openvolley/beach-desktop-v2.0.8/escoresheet/LICENSE
+	source = LICENSE-2.0.9::https://raw.githubusercontent.com/Lucanepa/openvolley/beach-desktop-v2.0.9/escoresheet/LICENSE
 	sha256sums = 4916eae672b6d1d5ec8d97c2bb9838815fdd4e313473d2c16ff759c51d9b7aec
-	source_x86_64 = openbeach-escoresheet-2.0.8-amd64.deb::https://github.com/Lucanepa/openvolley/releases/download/beach-desktop-v2.0.8/openbeach-escoresheet_2.0.8_amd64.deb
-	sha256sums_x86_64 = 13d3f7c2e8c546a19480d718d3e40739f4188c12b57f73145d7abb9aede4b470
+	source_x86_64 = openbeach-escoresheet-2.0.9-amd64.deb::https://github.com/Lucanepa/openvolley/releases/download/beach-desktop-v2.0.9/openbeach-escoresheet_2.0.9_amd64.deb
+	sha256sums_x86_64 = c27e22a4344a3417f0e71c63ffbf63bfed1014cec47569160ae1614457bbca94
 
 pkgname = openbeach-escoresheet-bin
