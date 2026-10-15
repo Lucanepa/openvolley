@@ -23,6 +23,10 @@ import {
 // in French) needs more: the bar measures itself for that (fullBarFrom).
 const COMPACT_BAR_BELOW = 720
 
+// One object for every render: the header re-checks its fit when queueStats
+// changes
+const NO_QUEUE_STATS = { pending: 0, error: 0 }
+
 const FlagBox = ({ children }) => (
   <span
     style={{
@@ -137,7 +141,7 @@ export default function MainHeader({
   setOfflineMode,
   onOpenSetup,
   onRetryErrors,
-  queueStats = { pending: 0, error: 0 },
+  queueStats = NO_QUEUE_STATS,
   dashboardServer = null, // { enabled, dashboardCount, refereePin, onOpenOptions }
   collapsible = false, // Only allow collapsing on Scoreboard page
   startCollapsed = false, // Collapse when this turns true (the scoring screen's phone layout)
@@ -195,10 +199,18 @@ export default function MainHeader({
   // Animated only while it collapses or expands, not on an app scale change
   const headerTransition = useCollapseTransition(effectivelyCollapsed)
 
+  // What the bar says changed (a shorter status, another language, a smaller
+  // scale): try the full bar again; the check below puts the compact one back
+  // before paint if it still does not fit (CodeRabbit, #20). Before the
+  // check, so a measurement in the same commit has the last word
+  useLayoutEffect(() => {
+    setFullBarFrom(COMPACT_BAR_BELOW)
+  }, [i18n.language, offlineMode, connectionStatuses, queueStats, scaleFactor])
+
   // The full bar does not fit (a long connection status, a translation):
-  // the compact one from this width down, until the window is wider. Checked
-  // before paint, and again when a group grows later (Connecting -> Sign in
-  // to sync, a tablet turned on)
+  // the compact one from this width down, until the window is wider or the
+  // bar's content changes. Checked before paint, and again when a group
+  // grows later (Connecting -> Sign in to sync, a tablet turned on)
   useLayoutEffect(() => {
     const bar = headerRef.current
     const right = rightGroupRef.current
@@ -216,7 +228,7 @@ export default function MainHeader({
     const observer = new ResizeObserver(check)
     for (const group of bar.children) observer.observe(group)
     return () => observer.disconnect()
-  }, [isCompactBar, effectivelyCollapsed, viewportSize.width])
+  }, [isCompactBar, effectivelyCollapsed, viewportSize.width, scaleFactor])
 
   // The phone scoring layout fills the screen: the header starts folded
   // away (its thin bar opens it again)

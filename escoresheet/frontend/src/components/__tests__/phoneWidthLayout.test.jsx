@@ -91,6 +91,28 @@ describe('the full bar that does not fit', () => {
     expect(screen.getByRole('button', { name: 'Menu' })).toBeInTheDocument()
     expect(screen.getByTestId('user-button').dataset.compact).toBe('true')
   })
+
+  it('tries the full bar again when what it says changes (a shorter status)', () => {
+    setWidth(900)
+    let rightEnd = 950
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      const bar = this.dataset?.diag === 'header'
+      const right = this.parentElement?.dataset?.diag === 'header' && !this.nextElementSibling
+      const r = bar ? 900 : right ? rightEnd : 0
+      return { left: 0, top: 0, right: r, bottom: 40, width: r, height: 40, x: 0, y: 0, toJSON: () => ({}) }
+    })
+    const el = (connectionStatuses) => (
+      <ScaleProvider>
+        <MainHeader matchStatus={{ match }} currentOfficialMatch={match} isFullscreen matchInfoMenuOpen={false} setMatchInfoMenuOpen={() => {}} connectionStatuses={connectionStatuses} />
+      </ScaleProvider>
+    )
+    const { rerender } = render(el({ api: 'connecting' }))
+    expect(screen.getByTestId('user-button').dataset.compact).toBe('true')
+    rightEnd = 880
+    rerender(el({ api: 'connected' }))
+    expect(screen.getByTestId('user-button').dataset.compact).toBe('false')
+    expect(screen.getByText('Match #402397')).toBeInTheDocument()
+  })
 })
 
 describe('the cloud-backup list', () => {
