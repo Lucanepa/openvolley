@@ -1,5 +1,14 @@
 # Runbook: move OpenVolley to its own VM (Option B)
 
+> **Done 16.10.2026: moved to lenovoserver.** The stack moved from hetzner to lenovoserver with
+> this procedure, lenovoserver as `new`. The Hetzner VPS now belongs to the KSC Wiedikon club and
+> must never host OpenVolley again. The procedure stays as the template for a future move: `old`
+> is then lenovoserver, where `/opt/openvolley` is root-only and there is no root ssh, so run the
+> `old` steps locally with `sudo` instead of `ssh hetzner ...` (e.g.
+> `sudo docker compose --project-directory /opt/openvolley ...`). `build-image.sh --ship local`
+> covers images for lenovoserver itself. Operations on lenovoserver: RUNBOOK-hetzner.md, from
+> "Match-day rules" on.
+
 Moves the whole stack from `lucanepa-prod` (`hetzner`) to a dedicated small VM. Nothing in the
 kit changes: same `compose.yaml`, same `.env`, same **tunnel token**, so `backend.openvolley.app`
 keeps pointing at the same tunnel and **DNS does not change**. Cloudflare sends traffic to

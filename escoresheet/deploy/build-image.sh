@@ -1,15 +1,24 @@
 #!/usr/bin/env bash
-# build-image.sh [--ship <ssh-host>] [--allow-dirty] [--allow-prewiring]
+# build-image.sh [--ship <ssh-host> | --ship local] [--allow-dirty] [--allow-prewiring]
 #
 # Builds openvolley-backend:<git-sha> from escoresheet/backend on the build
-# machine (lenovoserver), never on the production host. With --ship it streams
-# the image to <ssh-host>, keeps a gzipped copy in /opt/openvolley/images/
-# (rollback images survive `docker image prune`, e.g. Coolify's cleanup),
-# `docker load`s it there, prunes archives and image tags beyond the newest
-# OV_KEEP_IMAGES (default 5; the tag in .env is always kept), and records the
-# tag in ${OV_OPS_DIR:-~/ov-ops}/shipped-<ssh-host> (restore-test.sh's default
-# image). It does not restart anything: deploying is editing OV_BACKEND_IMAGE
-# in /opt/openvolley/.env + `docker compose up -d ov-backend`.
+# machine (lenovoserver). With --ship <ssh-host> it streams the image to
+# <ssh-host>, keeps a gzipped copy in /opt/openvolley/images/ (rollback images
+# survive `docker image prune`, e.g. Coolify's cleanup), `docker load`s it
+# there, prunes archives and image tags beyond the newest OV_KEEP_IMAGES
+# (default 5; the tag in .env is always kept), and records the tag in
+# ${OV_OPS_DIR:-~/ov-ops}/shipped-<ssh-host>.
+#
+# --ship local: production runs on this machine (lenovoserver since 16.10.2026;
+# no root ssh into itself). The image is already in the local Docker, so it is
+# not loaded again: the gzipped copy is written to /opt/openvolley/images/
+# (checked with gzip -t before it gets its name) and pruned there, both with
+# sudo (/opt/openvolley is root-only), and the tag is recorded in
+# ${OV_OPS_DIR}/shipped-local (restore-test.sh's default image).
+#
+# Neither restarts anything: deploying is editing OV_BACKEND_IMAGE in
+# /opt/openvolley/.env + `docker compose up -d ov-backend` (RUNBOOK-hetzner.md,
+# Updating).
 #
 # Refuses to build a tree without the self-host wiring (no /health/live,
 # DATABASE_URL, STORAGE_ROOT or STATUS_DIR in the backend sources): such an
@@ -29,10 +38,10 @@ ALLOW_DIRTY=0
 ALLOW_PREWIRING=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --ship) SHIP=${2:?--ship needs an ssh host}; shift 2 ;;
+    --ship) SHIP=${2:?--ship needs an ssh host or local}; shift 2 ;;
     --allow-dirty) ALLOW_DIRTY=1; shift ;;
     --allow-prewiring) ALLOW_PREWIRING=1; shift ;;
-    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -75,7 +84,22 @@ docker build --platform "$PLATFORM" \
   --build-arg OV_REVISION="$SHA" \
   -t "$TAG" "$BACKEND"
 
-if [[ -n "$SHIP" ]]; then
+if [[ "$SHIP" == local ]]; then
+  ARCHIVE="/opt/openvolley/images/openvolley-backend-${SHA}.tar.gz"
+  sudo -v   # ask for the password now, not in the middle of the pipe
+  echo "[build-image] saving ${TAG} to ${ARCHIVE} (local, sudo)"
+  # shellcheck disable=SC2016  # $1 expands in the root shell
+  docker save "$TAG" | gzip -1 | sudo sh -c \
+    'set -e; umask 077; cat > "$1.part" && gzip -t "$1.part" && mv "$1.part" "$1"' sh "$ARCHIVE"
+
+  echo "[build-image] pruning /opt/openvolley/images to the newest ${OV_KEEP_IMAGES} (plus the deployed tag)"
+  # shellcheck disable=SC2024  # the script is read as the user on purpose; root runs it
+  sudo bash -s -- "$OV_KEEP_IMAGES" /opt/openvolley/images /opt/openvolley/.env <"$KIT_DIR/prune-images.sh"
+
+  mkdir -p "$OV_OPS_DIR"
+  printf '%s\n' "$TAG" >"$OV_OPS_DIR/shipped-local.tmp" && mv -f "$OV_OPS_DIR/shipped-local.tmp" "$OV_OPS_DIR/shipped-local"
+  echo "[build-image] archived locally (recorded in ${OV_OPS_DIR}/shipped-local). Deploy: RUNBOOK-hetzner.md, Updating."
+elif [[ -n "$SHIP" ]]; then
   ARCHIVE="/opt/openvolley/images/openvolley-backend-${SHA}.tar.gz"
   echo "[build-image] shipping ${TAG} to ${SHIP}:${ARCHIVE}"
   # shellcheck disable=SC2029  # ARCHIVE is meant to expand locally

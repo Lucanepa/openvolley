@@ -21,11 +21,14 @@
 #   6. tear everything down, update the floor file, push to Kuma
 #
 # Settings (env or ${RT_CONF:-~/.config/openvolley/restore-test.env}):
-#   RT_SOURCE            nas:/volume1/backups/openvolley/hetzner | /local/dir
+#   RT_SOURCE            /data/openvolley/backups (default: the production
+#                        host's own backups; that is lenovoserver since
+#                        16.10.2026, readable with group ovbackup) | /local/dir
+#                        | nas:/path (ssh)
 #   RT_BACKEND_IMAGE     default: the tag in RT_TAG_FILE (written by
-#                        `build-image.sh --ship hetzner`); *-dirty / *-prewiring
+#                        `build-image.sh --ship local`); *-dirty / *-prewiring
 #                        tags are refused unless RT_ALLOW_DEV_IMAGE=1
-#   RT_TAG_FILE          ~/ov-ops/shipped-hetzner
+#   RT_TAG_FILE          ~/ov-ops/shipped-local
 #   RT_PG_IMAGE          postgres:17.11-alpine
 #   RT_GNUPGHOME         default $GNUPGHOME or ~/.gnupg
 #   RT_GPG_PASSPHRASE_FILE  default $CREDENTIALS_DIRECTORY/gpg-pass if present
@@ -48,7 +51,7 @@ if [[ -f "$RT_CONF" ]]; then
 fi
 
 KIT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
-RT_SOURCE=${RT_SOURCE:-nas:/volume1/backups/openvolley/hetzner}
+RT_SOURCE=${RT_SOURCE:-/data/openvolley/backups}
 RT_PG_IMAGE=${RT_PG_IMAGE:-postgres:17.11-alpine}
 RT_BACKEND_IMAGE=${RT_BACKEND_IMAGE:-}
 RT_GNUPGHOME=${RT_GNUPGHOME:-${GNUPGHOME:-$HOME/.gnupg}}
@@ -58,7 +61,7 @@ if [[ -z "$RT_GPG_PASSPHRASE_FILE" && -n "${CREDENTIALS_DIRECTORY:-}" && -f "${C
 fi
 RT_ROLES_SQL=${RT_ROLES_SQL:-$KIT_DIR/../backend/db/roles.sql}
 RT_ALLOW_BUILTIN_ROLES=${RT_ALLOW_BUILTIN_ROLES:-0}
-RT_TAG_FILE=${RT_TAG_FILE:-$HOME/ov-ops/shipped-hetzner}
+RT_TAG_FILE=${RT_TAG_FILE:-$HOME/ov-ops/shipped-local}
 RT_ALLOW_DEV_IMAGE=${RT_ALLOW_DEV_IMAGE:-0}
 RT_PG_MEMORY=${RT_PG_MEMORY:-1g}
 RT_PG_TMPFS=${RT_PG_TMPFS:-640m}
@@ -122,7 +125,7 @@ fi
 find "${RT_WORK_BASE%/}" -maxdepth 1 -name 'ov-rt.*' -user "$(id -u)" -exec rm -rf -- {} + 2>/dev/null || true
 
 if [[ -z "$RT_BACKEND_IMAGE" ]]; then
-  [[ -s "$RT_TAG_FILE" ]] || fail "no ${RT_TAG_FILE} (written by build-image.sh --ship hetzner); set RT_BACKEND_IMAGE"
+  [[ -s "$RT_TAG_FILE" ]] || fail "no ${RT_TAG_FILE} (written by build-image.sh --ship local); set RT_BACKEND_IMAGE"
   RT_BACKEND_IMAGE=$(head -n1 "$RT_TAG_FILE")
 fi
 case "$RT_BACKEND_IMAGE" in
