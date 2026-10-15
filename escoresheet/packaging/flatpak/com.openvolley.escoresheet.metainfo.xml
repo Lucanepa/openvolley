@@ -71,6 +71,15 @@
   </screenshots>
 
   <releases>
+    <release version="2.4.12" date="2026-10-15">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v2.4.12</url>
+      <description>
+        <ul>
+          <li>In a narrow window the header's match chip no longer covers the tablet status; below 720 px the header uses its compact form.</li>
+          <li>A long connection status or translation no longer pushes the header off the screen: it switches to the compact form when the full one does not fit.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.4.11" date="2026-10-14">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v2.4.11</url>
       <description>
