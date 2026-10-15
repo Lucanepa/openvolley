@@ -7,6 +7,7 @@ import { selectAll } from '../../lib/selectAll'
 import { storeSavedTeamsBundle } from '../../db/savedTeams'
 import { seasonOptions, seasonOf, seasonLabel } from '../../domain/season'
 import { sportOf, beachSeasonOptions } from '../../domain/savedTeams'
+import { TEAM_COLOUR_MARK } from '../../utils/teamColours'
 import KitModal from './KitModal'
 import TeamEditor from './TeamEditor'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError, useErrorText } from './common'
@@ -166,7 +167,7 @@ export default function SavedTeamsPanel({ userId, sport: fixedSport }) {
                   key={x.id}
                   stripe={false}
                   title={<p className="flex items-center gap-2 text-sm font-semibold text-stone-900 sm:text-[15px]">
-                    {x.color && <span aria-hidden className="inline-block h-3 w-3 rounded-full border border-stone-300" style={{ backgroundColor: x.color }} />}
+                    {x.color && <span aria-hidden className="inline-block h-3 w-3 rounded-full border border-stone-300" style={{ backgroundColor: x.color, ...TEAM_COLOUR_MARK }} />}
                     {x.name}
                   </p>}
                   meta={<>

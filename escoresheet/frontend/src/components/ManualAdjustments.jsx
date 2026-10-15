@@ -16,7 +16,7 @@ import { confirmDialog } from '../ui/uiStore.js'
 import { DateField, DateTimeField } from '../ui/DateField.jsx'
 import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
 import { usePhoneWidth } from '../hooks/usePhoneWidth'
-import { discRing, HEADER_SURFACE, isCustomColour } from '../utils/teamColours'
+import { TEAM_COLOUR_MARK, discRing, HEADER_SURFACE, isCustomColour } from '../utils/teamColours'
 
 // Standard volleyball team colors - keys for translation
 const TEAM_COLORS = [
@@ -663,7 +663,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
     const fill = colour || '#888'
     const ring = discRing(fill, HEADER_SURFACE)
     return {
-      width: '24px', height: '24px', borderRadius: '50%', background: fill, display: 'inline-block',
+      width: '24px', height: '24px', borderRadius: '50%', background: fill, display: 'inline-block', ...TEAM_COLOUR_MARK,
       ...(ring ? { boxShadow: `inset 0 0 0 1.5px ${ring}` } : {})
     }
   }
@@ -825,7 +825,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                         ))}
                       </select>
                       <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ width: '20px', height: '20px', borderRadius: '4px', background: editedHomeTeam?.color || '#3b82f6', border: '1px solid var(--border)' }} />
+                        <span style={{ width: '20px', height: '20px', borderRadius: '4px', background: editedHomeTeam?.color || '#3b82f6', ...TEAM_COLOUR_MARK, border: '1px solid var(--border)' }} />
                         <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{t('manualAdjustmentsEditor.selected', 'Selected')}</span>
                       </div>
                     </div>
@@ -889,7 +889,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                         ))}
                       </select>
                       <div style={{ marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ width: '20px', height: '20px', borderRadius: '4px', background: editedAwayTeam?.color || '#ef4444', border: '1px solid var(--border)' }} />
+                        <span style={{ width: '20px', height: '20px', borderRadius: '4px', background: editedAwayTeam?.color || '#ef4444', ...TEAM_COLOUR_MARK, border: '1px solid var(--border)' }} />
                         <span style={{ fontSize: '11px', color: 'var(--muted)' }}>{t('manualAdjustmentsEditor.selected', 'Selected')}</span>
                       </div>
                     </div>

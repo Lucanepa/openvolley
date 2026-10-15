@@ -28,6 +28,8 @@ import { backdropDismiss } from '../ui/backdropDismiss.js'
 import PlayerDisc from './referee/PlayerDisc.jsx'
 import ScoreServeRow from './referee/ScoreServeRow.jsx'
 import { matchDiscPaint, teamLiberoColour, teamBoxStyle } from '../utils/teamColours.js'
+import { useTheme } from '../utils/theme'
+import { themeMenuItems } from './themeMenuItems'
 import { discCapPx, discMetrics } from './referee/discSizing.js'
 import { isWideLayout, screenFit, SIDE_PANEL_CSS, REFEREE_LAYOUT } from './referee/refereeLayout.js'
 import { layoutReception, pointToFormation } from './referee/receptionLayout.js'
@@ -48,7 +50,7 @@ const BREAK_END_EVENTS = new Set(['end_interval', 'manual_set5_setup'])
 
 // Flag SVG components for language selector
 const FlagGB = () => (
-  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+  <svg className="flag" width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
     <rect width="60" height="42" fill="#012169" />
     <path d="M0,0 L60,42 M60,0 L0,42" stroke="#fff" strokeWidth="7" />
     <path d="M0,0 L60,42 M60,0 L0,42" stroke="#C8102E" strokeWidth="4" clipPath="url(#gbClip)" />
@@ -58,7 +60,7 @@ const FlagGB = () => (
 )
 
 const FlagIT = () => (
-  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+  <svg className="flag" width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
     <rect width="20" height="42" fill="#009246" />
     <rect x="20" width="20" height="42" fill="#fff" />
     <rect x="40" width="20" height="42" fill="#CE2B37" />
@@ -66,7 +68,7 @@ const FlagIT = () => (
 )
 
 const FlagDE = () => (
-  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+  <svg className="flag" width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
     <rect width="60" height="14" fill="#000" />
     <rect y="14" width="60" height="14" fill="#DD0000" />
     <rect y="28" width="60" height="14" fill="#FFCE00" />
@@ -74,7 +76,7 @@ const FlagDE = () => (
 )
 
 const FlagFR = () => (
-  <svg width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+  <svg className="flag" width="20" height="14" viewBox="0 0 60 42" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
     <rect width="20" height="42" fill="#002395" />
     <rect x="20" width="20" height="42" fill="#fff" />
     <rect x="40" width="20" height="42" fill="#ED2939" />
@@ -82,7 +84,7 @@ const FlagFR = () => (
 )
 
 const FlagCH = () => (
-  <svg width="14" height="14" viewBox="0 0 32 32" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
+  <svg className="flag" width="14" height="14" viewBox="0 0 32 32" style={{ borderRadius: '2px', boxShadow: '0 0 1px rgba(0,0,0,0.3)' }}>
     <rect width="32" height="32" fill="#ff0000" />
     <rect x="14" y="6" width="4" height="20" fill="#fff" />
     <rect x="6" y="14" width="20" height="4" fill="#fff" />
@@ -192,6 +194,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const [attentionModalOpen, setAttentionModalOpen] = useState(false)
   const lastAttentionTriggerRef = useRef(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const theme = useTheme()
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false)
   // Score/countdown font from settings
   const [scoreFont, setScoreFont] = useState(() => {
@@ -2735,6 +2738,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             toggle: wakeLockActive,
             keepOpen: true
           },
+          // Colour theme: one row per choice, the chosen one inverted
+          ...themeMenuItems(t, theme),
           { divider: true },
           // Connection (only if not master mode)
           ...(!isMasterMode ? [
@@ -3602,6 +3607,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 <img
                   src={BRAND.lockupStacked}
                   alt="OpenVolley"
+                  className="ov-ink"
                   style={{
                     width: '100%',
                     height: '100%',

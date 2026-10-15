@@ -918,6 +918,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
                 <img
                   src={signatureData}
                   alt={t('common.signature')}
+                  className="ov-ink"
                   style={{
                     maxWidth: '100%',
                     maxHeight: '56px',

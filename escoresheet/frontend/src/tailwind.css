@@ -1,5 +1,6 @@
 /**
- * Tailwind v4 + volleyui tokens: LIGHT MODE ONLY.
+ * Tailwind v4 + volleyui tokens: LIGHT MODE ONLY (the dark and e-ink
+ * themes are filters over it, at the end of this file).
  *
  * Cascade order (lowest to highest):
  *   theme -> base -> legacy -> components -> utilities -> unlayered -> inline style
@@ -648,5 +649,107 @@
     height: 44px !important;
     border-radius: 8px !important;
     font-size: 14px !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Colour themes: <html data-theme="dark|eink">, light without the attribute
+   (utils/theme.js; theme-boot.js sets it before the first paint).
+   Many colours are still literal (inline styles, the legacy sheet), so a token
+   set would leave white boxes behind. Both themes are a filter on the whole
+   page instead; on the root element it does not change what position: fixed
+   is fixed to.
+   - dark: lightness inverted, hue turned back. Pictures (the ball), flags,
+     shirts and whatever wears a team or libero colour (TEAM_COLOUR_MARK, the
+     --ov-team inline property) are inverted again, so they keep their real
+     colours: a white shirt stays white. Logos and signatures (.ov-ink) are
+     dark ink on a clear ground: they turn light with the page.
+   - eink: greyscale on a steep curve (paper white, ink black) for screens in
+     full sun. Team colours get a gentle curve instead: on the steep one a
+     mid-tone shirt sinks to the dark grey of its own text. No shadows (they
+     turn into grey smears), no motion.
+   Screen only: printing always gets the light page.
+   --------------------------------------------------------------------------- */
+@media screen {
+  html[data-theme='dark'] {
+    filter: invert(1) hue-rotate(180deg) contrast(0.92);
+  }
+  html[data-theme='dark'] :is(img:not(.ov-ink), video, canvas, .flag, .shirt, [style*='--ov-team']):not(:is(.shirt, [style*='--ov-team']) *) {
+    filter: invert(1) hue-rotate(180deg);
+  }
+  html[data-theme='dark'] *,
+  html[data-theme='dark'] *::before,
+  html[data-theme='dark'] *::after {
+    /* Inverted, Tailwind's shadow-* glow white. ring-* still draws. */
+    --tw-shadow: 0 0 #0000 !important;
+  }
+  /* Dialog scrims: a dark wash would come out light and brighten the page.
+     The same strength in white comes out dark. The kit's (classes) and the
+     scoring screen's own (inline, position: fixed). */
+  html[data-theme='dark'] .bg-slate-900\/40 { background-color: rgb(255 255 255 / 0.4); }
+  html[data-theme='dark'] .bg-stone-900\/50 { background-color: rgb(255 255 255 / 0.5); }
+  html[data-theme='dark'] .bg-stone-900\/60 { background-color: rgb(255 255 255 / 0.6); }
+  html[data-theme='dark'] .bg-stone-900\/70 { background-color: rgb(255 255 255 / 0.7); }
+  html[data-theme='dark'] .bg-stone-900\/90 { background-color: rgb(255 255 255 / 0.9); }
+  html[data-theme='dark'] [style*='position: fixed'][style*='background: rgba(0, 0, 0, 0.5)'] { background: rgb(255 255 255 / 0.5) !important; }
+  html[data-theme='dark'] [style*='position: fixed'][style*='background: rgba(0, 0, 0, 0.6)'] { background: rgb(255 255 255 / 0.6) !important; }
+  /* A white dialog turns as dark as that wash: give it an edge. */
+  html[data-theme='dark'] :is([role='dialog'], [role='alertdialog']) {
+    outline: 1px solid rgb(0 0 0 / 0.3);
+  }
+  /* The legacy danger button (Undo...) writes near-black on red-500:
+     inverted, that is pale ink on pink. It keeps its real colours instead. */
+  html[data-theme='dark'] button.danger:not(:is(.shirt, [style*='--ov-team']) *) {
+    filter: invert(1) hue-rotate(180deg);
+  }
+
+  html[data-theme='eink'] {
+    /* grey g -> 1.6 g - 0.5: page white, hairlines and labels darker */
+    filter: grayscale(1) brightness(0.8) contrast(2);
+  }
+  html[data-theme='eink'] :is(.shirt, [style*='--ov-team']):not(:is(.shirt, [style*='--ov-team']) *) {
+    /* With the page's curve after it: g -> 1.3 (g - 0.5) + 0.5, a mild
+       contrast around mid grey. The ink readableText() chose sits on the
+       other side of mid grey from its shirt, so it only gains. */
+    filter: contrast(0.65) brightness(1.25);
+  }
+  html[data-theme='eink'] *,
+  html[data-theme='eink'] *::before,
+  html[data-theme='eink'] *::after {
+    /* Tailwind's shadow-* only; ring-* (focus, chosen) still draws. */
+    --tw-shadow: 0 0 #0000 !important;
+    --tw-inset-shadow: 0 0 #0000 !important;
+    animation-duration: 0s !important;
+    transition: none !important;
+  }
+  /* The kit's track segmented controls show the chosen segment as a white
+     card with a shadow on a stone-100 track: both turn white here. Ink it. */
+  html[data-theme='eink'] [role='radio'][aria-checked='true'] {
+    outline: 2px solid #000;
+    outline-offset: -2px;
+  }
+  /* The legacy danger button (Undo...): near-black on red-500, both of
+     which the curve takes to black. White ink instead. */
+  html[data-theme='eink'] button.danger {
+    color: #fff;
+  }
+  /* The scoring court: its floor and lines are pale tints that come out
+     white, so draw its edge; the discs' drop shadows come out grey smears. */
+  html[data-theme='eink'] .court {
+    outline: 2px solid #000;
+  }
+  html[data-theme='eink'] :is(.court-player, [data-player-disc]) {
+    box-shadow: none !important;
+  }
+  html[data-theme='eink'] [data-disc-ball] {
+    filter: none !important;
+  }
+  /* Captain, game captain and libero marks on the court discs: green, amber
+     or blue on white come out pale grey on the team colour's gentle curve. */
+  html[data-theme='eink'] .court-player-captain {
+    background: #fff !important;
+    color: #000 !important;
+    border-color: #000 !important;
+    box-shadow: none;
   }
 }
