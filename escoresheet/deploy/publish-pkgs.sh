@@ -77,7 +77,9 @@
 #      published, the Flatpak and Arch (pacman) cards once those repos are;
 #      install.sh takes the package name (default openvolley-escoresheet).
 #   5. Refuses if anything key-like ended up in the public tree, then rsyncs
-#      that tree to ${OV_PKGS_DEST} (default hetzner:/data/openvolley/pkgs/),
+#      that tree to ${OV_PKGS_DEST} (default /data/openvolley/pkgs/ on this
+#      machine: lenovoserver serves get.openvolley.app since 16.10.2026; that
+#      directory is root's, so the rsync runs with sudo; host:/path also works),
 #      unless --no-sync.
 #
 # Layout under ${OV_PKGS_HOME} (default ~/.config/openvolley-pkgs, mode 700):
@@ -105,7 +107,7 @@ set -euo pipefail
 umask 022
 
 PKGS=${OV_PKGS_HOME:-$HOME/.config/openvolley-pkgs}
-DEST=${OV_PKGS_DEST:-hetzner:/data/openvolley/pkgs/}
+DEST=${OV_PKGS_DEST:-/data/openvolley/pkgs/}
 KIT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 APT_SIGNER_FPR=AB469DA8DC3EC90F8057320D285B18D76C16B82C
 # The Android signing certificate of each app id: APP_CERT_SHA256 below (from
@@ -450,7 +452,10 @@ if (( SYNC )); then
   # --delay-updates puts every changed file in place at the end, so a client
   # never sees a new index that points at a package not uploaded yet.
   # The Flatpak repo's tmp/ and .lock are OSTree's own working files.
-  rsync -rlt --delete-after --delay-updates --chmod=D755,F644 \
+  # A local DEST that exists but is not ours (the default) is written with sudo.
+  SUDO=()
+  [[ "$DEST" != /* || ! -d "$DEST" || -w "$DEST" ]] || SUDO=(sudo)
+  "${SUDO[@]}" rsync -rlt --delete-after --delay-updates --chmod=D755,F644 \
     --exclude=/flatpak/repo/tmp/ --exclude=/flatpak/repo/.lock "$PUB/" "$DEST"
   echo "synced to $DEST"
   # Only now: latest.json on GitHub must not point at a .deb not yet in the pool.

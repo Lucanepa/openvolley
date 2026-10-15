@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.2 · As of 13 October 2026
+**OpenVolley and OpenBeach** · Version 1.3 · As of 16 October 2026
 
 This policy is available in German, English, French and Italian. The German
 version is binding.
@@ -21,8 +21,8 @@ version is binding.
 - The OpenVolley app keeps an activity log of each match, without PINs or
   passwords. When you are signed in it goes to the server. What you click or
   type stays on your device (section 5).
-- The server is in Germany (Hetzner). Cloudflare (USA) delivers the websites
-  and forwards the traffic to the server.
+- The server is in Switzerland and is run by me. Cloudflare (USA) delivers the
+  websites and forwards the traffic to the server.
 - You can ask for access, correction or deletion at any time:
   **support@openvolley.app**.
 
@@ -439,7 +439,6 @@ They process the data on my behalf.
 
 | Provider | Task | Country |
 |---|---|---|
-| Hetzner Online GmbH | Server, database, file storage | Germany |
 | Cloudflare, Inc. | Delivering the websites, DNS, secure connection to the server | USA (global network) |
 | Migadu | Sending email (noreply@) and mailbox (support@) | Switzerland / Europe |
 | Resend, Inc. | Sending the match info by email (this function only, if enabled) | USA |
@@ -453,11 +452,11 @@ dates of birth. Cloudflare may use the data only to provide its service.
 version list, F-Droid for the app catalogue, Swiss Volley for the data in
 VolleyManager.
 
-**Backups** are kept encrypted on my server in Germany and on my own devices
-in Switzerland; no third party receives data for this (section 18).
+**Backups** are kept encrypted on my server and on my own storage device,
+both in Switzerland; no third party receives data for this (section 18).
 
-**Transfers abroad:** according to the Swiss Federal Council, Germany and the
-EU provide adequate data protection. For the USA I rely on the Swiss-U.S. Data
+**Transfers abroad:** according to the Swiss Federal Council, the EU and EEA
+states provide adequate data protection. For the USA I rely on the Swiss-U.S. Data
 Privacy Framework where the provider is certified, and otherwise on the
 standard contractual clauses in the providers' contracts. You can ask me for a
 copy of these safeguards.
@@ -506,10 +505,9 @@ for their child.
 - Access by role; tablets only with a PIN; closed matches are read-only.
 - Limits on sign-in attempts and locking after failed attempts.
 - Backups: the server backs up the database every hour and the files every
-  day, **encrypted**. The key to decrypt them is not on the server. The
-  backups are copied daily to my own storage device in Switzerland and kept
-  there for up to 90 days, and in monthly snapshots **for up to about
-  6 months**. Deleted data can therefore remain in these encrypted backups for
+  day, **encrypted**. The backups are copied daily to my own storage device
+  in Switzerland and kept there in daily, weekly and monthly snapshots **for
+  up to about 6 months**. Deleted data can therefore remain in these encrypted backups for
   up to about 6 months; they are used only to restore the service.
 - Backup and log files of the desktop app can only be read by your user
   account and contain no PINs.

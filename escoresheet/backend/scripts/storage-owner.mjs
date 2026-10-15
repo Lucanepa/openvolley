@@ -20,8 +20,8 @@
  * match. The user uuid of an email:
  *   psql "$DATABASE_URL" -c "SELECT id FROM auth.users WHERE email = lower('scorer@example.ch')"
  *
- * On hetzner:
- *   docker exec -it ov-backend node scripts/storage-owner.mjs unowned
+ * On lenovoserver (production since 16.10.2026):
+ *   sudo docker compose --project-directory /opt/openvolley exec ov-backend node scripts/storage-owner.mjs unowned
  *
  * The running server never rewrites the record of an existing object, so this
  * is safe while it runs. Exit codes: 0 done, 1 error, 2 usage.
