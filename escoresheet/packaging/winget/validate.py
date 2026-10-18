@@ -8,6 +8,11 @@ own pipeline checks across the files of one version: one PackageIdentifier
 and PackageVersion everywhere, the folder path
 manifests/<first letter>/<Publisher>/<Name>/<version>/, the file names, one
 default locale that the version manifest names, one installer manifest.
+
+An installer manifest written before its app's first release
+(update-manifests.sh --placeholder: InstallerSha256 @SHA256@) is checked with
+a dummy hash in its place and listed as pending; validate.sh then fails it
+once its installer is published.
 """
 import json
 import pathlib
@@ -27,6 +32,8 @@ Loader.yaml_implicit_resolvers = {
     for k, v in yaml.SafeLoader.yaml_implicit_resolvers.items()
 }
 
+PLACEHOLDER = "@SHA256@"
+
 SCHEMA_NAME = {
     "version": "version",
     "installer": "installer",
@@ -39,6 +46,7 @@ def main(schema_dir: str, root: str) -> int:
     schema_dir = pathlib.Path(schema_dir)
     root = pathlib.Path(root)
     errors = []
+    pending = []
     versions = sorted({p.parent for p in root.rglob("*.yaml")})
     if not versions:
         print(f"no manifests under {root}")
@@ -52,6 +60,11 @@ def main(schema_dir: str, root: str) -> int:
                 errors.append(f"{f.name}: contains a tab")
             data = yaml.load(text, Loader=Loader)
             mtype = data.get("ManifestType")
+            if mtype == "installer":
+                for inst in data.get("Installers", []):
+                    if inst.get("InstallerSha256") == PLACEHOLDER:
+                        pending.append(f"{rel}: {inst.get('InstallerUrl')}")
+                        inst["InstallerSha256"] = "0" * 64
             mver = data.get("ManifestVersion")
             schema_file = schema_dir / f"manifest.{SCHEMA_NAME.get(mtype, mtype)}.{mver}.json"
             if not schema_file.is_file():
@@ -93,12 +106,15 @@ def main(schema_dir: str, root: str) -> int:
         for fname, d in types.get("installer", []):
             for inst in d.get("Installers", []):
                 url = inst.get("InstallerUrl", "")
-                if f"_{pver}_" not in url:
+                # the version as a whole in the file name (..._2.4.12_x64-setup.exe, point-hub-1.1.0.msi)
+                if not re.search(rf"(?<![0-9.]){re.escape(pver)}(?![0-9])", url.rsplit("/", 1)[-1]):
                     errors.append(f"{rel}/{fname}: InstallerUrl does not carry version {pver}: {url}")
                 if not re.fullmatch(r"[0-9A-F]{64}", inst.get("InstallerSha256", "")):
                     errors.append(f"{rel}/{fname}: InstallerSha256 must be 64 upper-case hex digits")
         print(f"checked {rel} ({len(docs)} files)")
 
+    for p in pending:
+        print(f"pending {p} (placeholder hash: update-manifests.sh after the release)")
     if errors:
         print("\nFAILED:")
         for e in errors:
