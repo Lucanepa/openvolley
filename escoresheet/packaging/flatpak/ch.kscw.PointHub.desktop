@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Point Hub
+GenericName=Scoreboard console
+Comment=The console of the KSCW LedBox scoreboard
+Keywords=scoreboard;volleyball;LedBox;KSCW;score;match;
+Categories=Utility;Sports;
+Exec=point-hub
+Icon=ch.kscw.PointHub
+Terminal=false
+SingleMainWindow=true
