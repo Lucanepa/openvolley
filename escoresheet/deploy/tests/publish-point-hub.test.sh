@@ -270,7 +270,7 @@ if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
       if docker exec "$CLI" pgrep -f jcef_helper >/dev/null; then up=1; break; fi
     done
     sleep 5
-    docker exec "$CLI" pgrep -u scorer -f /opt/point-hub >/dev/null || { docker exec "$CLI" cat /tmp/ph.log | tail -30; bad "point-hub is not running"; }
+    docker exec "$CLI" pgrep -u scorer -x point-hub >/dev/null || { docker exec "$CLI" cat /tmp/ph.log | tail -30; bad "point-hub is not running"; }
     (( up )) || { docker exec "$CLI" cat /tmp/ph.log | tail -30; bad "Chromium (jcef_helper) did not start"; }
     if docker exec "$CLI" sh -c 'ls /home/scorer/hs_err_pid*.log 2>/dev/null | grep -q .'; then bad "the JVM crashed (hs_err file)"; fi
     docker exec "$CLI" test -d /home/scorer/.config/point-hub && docker exec "$CLI" test -d /home/scorer/.local/share/point-hub/browser ||
