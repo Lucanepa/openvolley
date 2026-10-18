@@ -2,7 +2,7 @@
 # Builds a desktop release as a Flatpak and adds it to the self-hosted, signed
 # Flatpak repository behind https://get.openvolley.app/flatpak/
 #
-#   escoresheet/packaging/flatpak/publish-flatpak.sh [--app openvolley|beach] [--deb FILE] VERSION
+#   escoresheet/packaging/flatpak/publish-flatpak.sh [--app openvolley|beach|point-hub] [--deb FILE] VERSION
 #   escoresheet/packaging/flatpak/publish-flatpak.sh --init-key
 #
 # Runs on lenovoserver, like publish-pkgs.sh (the repo key lives only there).
@@ -12,7 +12,9 @@
 #   1. The .deb: --deb FILE, else the APT pool's copy
 #      (public/apt/pool/main/<package>_VERSION_amd64.deb, the bytes
 #      publish-pkgs.sh signed), else the GitHub release asset. Its Package and
-#      Version must be the app's and VERSION.
+#      Version must be the app's and VERSION. --app point-hub: Point Hub
+#      (ch.kscw.PointHub, package point-hub, releases desktop-vVERSION of
+#      Lucanepa/point-hub; KSC Wiedikon's scoreboard console, no updater).
 #   2. A build copy of this directory: the manifest's .deb source points at
 #      that file; the metainfo gets <release VERSION> if it lacks one (notes
 #      from the fastlane changelog; commit it with bump.sh afterwards).
@@ -29,6 +31,7 @@
 #
 # The in-app updater is off inside the Flatpak (unstamp-bundle-type.py, and
 # from 2.4.1 / OpenBeach 2.0.1 updater.rs managed_by): `flatpak update` updates the app.
+# Point Hub has no in-app updater at all.
 #
 # Layout under ${OV_PKGS_HOME} (default ~/.config/openvolley-pkgs, mode 700):
 #   flatpak-gpg/              GNUPGHOME with the Flatpak repo key (only that
@@ -68,7 +71,7 @@ VERSION=
 INIT_KEY=0
 while (( $# )); do
   case "$1" in
-    --app) (( $# > 1 )) || die "--app needs openvolley or beach"; APP=$2; shift ;;
+    --app) (( $# > 1 )) || die "--app needs openvolley, beach or point-hub"; APP=$2; shift ;;
     --deb) (( $# > 1 )) || die "--deb needs a file"; DEB=$2; shift ;;
     --init-key) INIT_KEY=1 ;;
     -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 0 ;;
@@ -111,14 +114,18 @@ EOF
 fi
 
 # --- checks -----------------------------------------------------------------
-[[ -n "$VERSION" ]] || die "VERSION missing (publish-flatpak.sh [--app openvolley|beach] VERSION)"
+[[ -n "$VERSION" ]] || die "VERSION missing (publish-flatpak.sh [--app openvolley|beach|point-hub] VERSION)"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "$VERSION: not a version like 2.3.0"
+APP_GH_REPO=$GH_REPO
 case "$APP" in
   openvolley) APP_ID=com.openvolley.escoresheet CMD=openvolley-escoresheet TAG=desktop-v$VERSION
     TITLE="OpenVolley eScoresheet" NAME=OpenVolley HOMEPAGE=https://openvolley.app LOGS=$FASTLANE_CHANGELOGS ;;
   beach) APP_ID=com.openvolley.beach CMD=openbeach-escoresheet TAG=beach-desktop-v$VERSION
     TITLE="OpenBeach" NAME=OpenBeach HOMEPAGE=https://beach.openvolley.app LOGS=$BEACH_CHANGELOGS ;;
-  *) die "--app $APP: expected openvolley or beach" ;;
+  # Point Hub: its own repo, no changelogs (the release has no notes here)
+  point-hub) APP_ID=ch.kscw.PointHub CMD=point-hub TAG=desktop-v$VERSION APP_GH_REPO=Lucanepa/point-hub
+    TITLE="Point Hub" NAME="Point Hub" HOMEPAGE=https://github.com/Lucanepa/point-hub LOGS= ;;
+  *) die "--app $APP: expected openvolley, beach or point-hub" ;;
 esac
 for t in flatpak flatpak-builder ostree gpg gpgconf dpkg-deb python3; do
   command -v "$t" >/dev/null || die "$t not found (apt install flatpak flatpak-builder ostree)"
@@ -150,7 +157,7 @@ if [[ -z "$DEB" ]]; then
     DEB=$pool
   else
     command -v gh >/dev/null || die "no $pool and no gh to download $TAG"
-    gh release download "$TAG" --repo "$GH_REPO" --pattern "${CMD}_${VERSION}_amd64.deb" --dir "$WORK" ||
+    gh release download "$TAG" --repo "$APP_GH_REPO" --pattern "${CMD}_${VERSION}_amd64.deb" --dir "$WORK" ||
       die "cannot download ${CMD}_${VERSION}_amd64.deb from $TAG"
     DEB="$WORK/${CMD}_${VERSION}_amd64.deb"
   fi
@@ -170,7 +177,7 @@ maj=${VERSION%%.*} rest=${VERSION#*.}; min=${rest%%.*} pat=${rest#*.}
 code=$(( (maj * 1000000 + min * 1000 + pat) * 10 ))
 notes=
 for b in 9 8 7 6 5 4 3 2 1 0; do
-  if [[ -f "$LOGS/$((code + b)).txt" ]]; then notes="$LOGS/$((code + b)).txt"; break; fi
+  if [[ -n "$LOGS" && -f "$LOGS/$((code + b)).txt" ]]; then notes="$LOGS/$((code + b)).txt"; break; fi
 done
 notes_args=()
 if [[ -n "$notes" ]]; then
@@ -181,7 +188,7 @@ if ! grep -q "<release [^>]*version=\"$VERSION\"" "$HERE/$APP_ID.metainfo.xml"; 
   echo "note: $APP_ID.metainfo.xml has no release $VERSION; the build adds it (commit it: bump.sh $APP $VERSION)"
 fi
 python3 "$HERE/flatpak-meta.py" add-release "$SRC/$APP_ID.metainfo.xml" "$VERSION" "$(date -u +%F)" \
-  "https://github.com/$GH_REPO/releases/tag/$TAG" "${notes_args[@]}" >/dev/null
+  "https://github.com/$APP_GH_REPO/releases/tag/$TAG" "${notes_args[@]}" >/dev/null
 
 # --- 3. build, then commit signed into the public repo -----------------------
 mkdir -p "$CACHE/build" "$FLAT"

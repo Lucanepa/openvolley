@@ -1,0 +1,53 @@
+{
+  "id": "ch.kscw.PointHub",
+  "runtime": "org.gnome.Platform",
+  "runtime-version": "51",
+  "sdk": "org.gnome.Sdk",
+  "command": "point-hub",
+  "finish-args": [
+    "--share=ipc",
+    "--socket=x11",
+    "--device=dri",
+    "--share=network"
+  ],
+  "modules": [
+    {
+      "name": "point-hub",
+      "buildsystem": "simple",
+      "build-options": {
+        "no-debuginfo": true,
+        "strip": false
+      },
+      "sources": [
+        {
+          "type": "file",
+          "url": "https://github.com/Lucanepa/point-hub/releases/download/desktop-v1.1.0/point-hub_1.1.0_amd64.deb",
+          "sha256": "@SHA256@",
+          "dest-filename": "point-hub.deb",
+          "only-arches": [
+            "x86_64"
+          ]
+        },
+        {
+          "type": "file",
+          "path": "ch.kscw.PointHub.desktop"
+        },
+        {
+          "type": "file",
+          "path": "ch.kscw.PointHub.metainfo.xml"
+        }
+      ],
+      "build-commands": [
+        "ar x point-hub.deb",
+        "tar -xf data.tar.*",
+        "test -x opt/point-hub/bin/point-hub",
+        "cp -a opt/point-hub ${FLATPAK_DEST}/point-hub",
+        "install -d ${FLATPAK_DEST}/bin",
+        "ln -s ../point-hub/bin/point-hub ${FLATPAK_DEST}/bin/point-hub",
+        "install -Dm644 opt/point-hub/lib/point-hub.png ${FLATPAK_DEST}/share/icons/hicolor/512x512/apps/${FLATPAK_ID}.png",
+        "install -Dm644 ${FLATPAK_ID}.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop",
+        "install -Dm644 ${FLATPAK_ID}.metainfo.xml ${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml"
+      ]
+    }
+  ]
+}
