@@ -310,7 +310,9 @@ Server = https://get.openvolley.app/arch/$arch</code></pre><button class="copy" 
     <p class="meta">winget <span class="soon">coming soon</span>: <code>winget install KSCWiedikon.PointHub</code>, once the winget repository has reviewed it.</p>
     <h3>macOS <span class="meta">@POINTHUB_DESKTOP_VERSION@ · Apple silicon or Intel</span></h3>
     <div class="cmd"><pre><code>brew install --cask lucanepa/tap/point-hub</code></pre><button class="copy" type="button">Copy</button></div>
-    <p>Or the disk image for your Mac: open it and drag <b>Point Hub</b> to Applications. Not notarized by Apple: the first time, open it once, then <kbd>System Settings</kbd> → <kbd>Privacy &amp; Security</kbd> → <kbd>Open Anyway</kbd> (macOS 14 and older: right-click → <kbd>Open</kbd>), or run <code>xattr -dr com.apple.quarantine "/Applications/Point Hub.app"</code>.</p>
+    <!-- point-hub.app: the bundle name of point-hub's jpackage build (CFBundleName point-hub). If that build
+         ever names it otherwise, change it here; the cask takes it from the disk image (homebrew/bump-cask.sh). -->
+    <p>Or the disk image for your Mac: open it and drag <b>point-hub</b> to Applications. Not notarized by Apple: the first time, open it once, then <kbd>System Settings</kbd> → <kbd>Privacy &amp; Security</kbd> → <kbd>Open Anyway</kbd> (macOS 14 and older: right-click → <kbd>Open</kbd>), or run <code>xattr -dr com.apple.quarantine /Applications/point-hub.app</code>.</p>
     <div class="actions">
       <a class="btn btn-primary" href="https://github.com/Lucanepa/point-hub/releases/download/desktop-v@POINTHUB_DESKTOP_VERSION@/Point-Hub-@POINTHUB_DESKTOP_VERSION@-macos-arm64.dmg">Download for Apple silicon</a>
       <a class="btn btn-ghost" href="https://github.com/Lucanepa/point-hub/releases/download/desktop-v@POINTHUB_DESKTOP_VERSION@/Point-Hub-@POINTHUB_DESKTOP_VERSION@-macos-x64.dmg">Download for Intel Macs</a>

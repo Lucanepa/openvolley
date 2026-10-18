@@ -59,7 +59,7 @@ network, and carries `traefik.enable=false`.
 | `pkgs/install.sh` | copied by `publish-pkgs.sh` | Linux one-line installer at `/install.sh`: checks the APT key fingerprint, adds the repo, installs `openvolley-escoresheet` (or the package given: `sh -s openbeach-escoresheet`, `sh -s point-hub`) |
 | `publish-pkgs.sh` | lenovoserver | Adds `.deb` (repacked to `openvolley-escoresheet` if named otherwise)/signed `.apk`, copies `pkgs/install.sh`, re-signs the APT and F-Droid indexes, rsyncs the public tree to `/data/openvolley/pkgs/` on lenovoserver (with `sudo`; `OV_PKGS_DEST` overrides). `--desktop VERSION [--staging]` also signs a desktop release for the in-app updater and writes its `latest.json`. See [Public downloads](#public-downloads-getopenvolleyapp) |
 | `lib/publish-lib.sh`, `lib/desktop-updater.mjs` | lenovoserver (used by `publish-pkgs.sh`) | The `--desktop` steps and the key-material guard; the `.mjs` (Node, no npm packages) checks updater signatures the way the app does and writes and validates `latest.json` |
-| `homebrew/bump-cask.sh`, `homebrew/Casks/*.rb` | lenovoserver (or any machine), after `publish-pkgs.sh --desktop` | Writes the macOS casks `openvolley` / `openbeach` (version + SHA-256 of the release's `.dmg`) into a checkout of the tap `Lucanepa/homebrew-tap`; you review, commit and push there. See [macOS](#macos-unsigned-homebrew-tap) |
+| `homebrew/bump-cask.sh`, `homebrew/Casks/*.rb` | lenovoserver (or any machine), after `publish-pkgs.sh --desktop` | Writes the macOS casks `openvolley` / `openbeach` (version + SHA-256 of the release's `.dmg`) and `point-hub` (`--app point-hub`: both `.dmg` of Lucanepa/point-hub's release, the bundle name read from them with 7z) into a checkout of the tap `Lucanepa/homebrew-tap`; you review, commit and push there. See [macOS](#macos-unsigned-homebrew-tap) |
 | `tests/bump-cask.test.sh` | any machine | Offline tests of `bump-cask.sh` |
 | `tests/publish-desktop.test.sh` | any machine with Node, `dpkg-deb` and tauri-cli >= 2.12 | Offline tests of `--desktop` (OpenVolley and `--app beach`) with a throwaway key: signing, verification, `latest.json`, staging, rollback and leak guards, the per-app APT hold-back, GitHub's "Latest" and the OpenBeach fallback (stubbed `gh`), APT names, the Android certificate per app id, `install.sh` and the landing page; Point Hub's `.deb` checks, `--point-hub` and its page section |
 | `tests/publish-point-hub.test.sh` | lenovoserver (fdroidserver, Android build-tools; Docker for the last step) | A whole `publish-pkgs.sh --point-hub` run with throwaway APT and F-Droid keys (a kit copy with the test key's fingerprint), on real packages: APT lists `point-hub` next to a held-back OpenVolley, the APK is accepted by its committed certificate, refusals, then a clean Debian installs it with the published `install.sh` and starts it under Xvfb. See [Point Hub](#point-hub) |
@@ -340,6 +340,20 @@ After `publish-pkgs.sh --desktop <version>` (OpenBeach: `--app beach`):
 git clone git@github.com:Lucanepa/homebrew-tap.git ~/src/homebrew-tap   # once
 escoresheet/deploy/homebrew/bump-cask.sh <version> ~/src/homebrew-tap   # OpenBeach: --app beach
 cd ~/src/homebrew-tap && git diff && git commit -am "openvolley <version>" && git push
+```
+
+Point Hub (`--app point-hub`, after its GitHub release `desktop-v<version>` of Lucanepa/point-hub):
+two disk images, `Point-Hub-<version>-macos-arm64.dmg` and `-x64.dmg`, so the cask has
+`arch arm: "arm64", intel: "x64"` and one SHA-256 each; no `auto_updates` (no updater: `brew
+upgrade` updates it). The script reads the app bundle's name, identifier and version from each
+image (`7z`; it must be `ch.kscw.pointhub` at that version, the same bundle in both) and puts that
+name in `app` and the caveats: point-hub's jpackage build makes `point-hub.app` today (its
+`macOS { packageName = "Point Hub" }` does not rename the bundle). Copy `homebrew/README.md` to
+the tap again (it lists the cask). `brew style` passes; `brew audit` needs a Mac (Homebrew on
+Linux cannot pick an `arm:` / `intel:` checksum, also for a minimal control cask).
+```bash
+escoresheet/deploy/homebrew/bump-cask.sh --app point-hub <version> ~/src/homebrew-tap
+cd ~/src/homebrew-tap && git diff && git commit -am "point-hub <version>" && git push
 ```
 
 ### Release procedure
