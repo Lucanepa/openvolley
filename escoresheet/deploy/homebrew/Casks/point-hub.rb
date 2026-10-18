@@ -20,6 +20,9 @@ cask "point-hub" do
     strategy :github_latest
   end
 
+  # Chromium in its runtime needs macOS 12; the bundle says so too (LSMinimumSystemVersion).
+  depends_on macos: ">= :monterey"
+
   # No auto_updates: Point Hub has no updater, `brew upgrade` brings each version.
   app "@APP@"
 

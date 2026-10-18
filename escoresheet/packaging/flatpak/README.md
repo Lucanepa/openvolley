@@ -229,13 +229,11 @@ What is different in the sandbox:
   backups, the schedule copy and Chromium's cache in
   `~/.var/app/ch.kscw.PointHub/data/point-hub/` (the app follows `XDG_CONFIG_HOME` /
   `XDG_DATA_HOME`); a `.deb` install's `~/.config/point-hub` is not seen.
-- **"Export backups" saves inside the sandbox only.** The app's save dialog (AWT's
-  GTK file chooser, not the FileChooser portal) sees the sandbox's file system, and
-  with these four permissions the only folder that outlives the app there is
-  `~/.var/app/ch.kscw.PointHub/`: a zip saved anywhere else in the home folder is
-  gone when the app quits. Save it under `~/.var/app/ch.kscw.PointHub/data/`, or
-  add `--filesystem=xdg-download` (as the other two apps have) to let it write to
-  Downloads.
+- **"Export backups" saves to Downloads.** The app's save dialog (AWT's GTK file
+  chooser, not the FileChooser portal) sees the sandbox's file system: with
+  `--filesystem=xdg-download` (as the other two apps have) a zip saved in Downloads
+  stays; one saved anywhere else outside `~/.var/app/ch.kscw.PointHub/` is gone when
+  the app quits.
 - x86_64 only, as the release has no arm64 `.deb`.
 
 The manifest is committed before Point Hub's first release with the `@SHA256@`
