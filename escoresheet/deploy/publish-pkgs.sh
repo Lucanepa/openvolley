@@ -211,7 +211,7 @@ pacman_pkgbuild_check() {
   pb_ver=$(sed -n 's/^pkgver=//p' "$pb" | head -n1)
   [[ "$pb_ver" == "$2" ]] ||
     die "--pacman: $pb is at $pb_ver, not $2: run packaging/aur/bump.sh $3 $2 and commit it first"
-  ! grep -q '@SHA256@' "$pb" || die "--pacman: $pb still has the @SHA256@ placeholder: run packaging/aur/bump.sh $3 $2 and commit it first"
+  ! grep -Eq '^sha256sums(_x86_64)?=.*@SHA256@' "$pb" || die "--pacman: $pb still has the @SHA256@ placeholder: run packaging/aur/bump.sh $3 $2 and commit it first"
 }
 if (( PACMAN )); then
   # The PKGBUILD must already be at this release (aur/bump.sh needs the GitHub

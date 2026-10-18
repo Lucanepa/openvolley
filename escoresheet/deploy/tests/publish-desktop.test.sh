@@ -798,6 +798,32 @@ PKGBUILD
 }
 fake_pkgbuild openvolley-escoresheet 2.4.0 1
 fake_pkgbuild openbeach-escoresheet 2.0.0 1
+# fake_pointhub_pkgbuild PKGVER PKGREL [SUMS]: point-hub-bin laid out like the
+# real one (/opt/point-hub, /usr/bin/point-hub a symlink), no updater marker
+# (Point Hub has no updater); SUMS "placeholder": the committed state before
+# its first release (sha256sums '@SHA256@').
+fake_pointhub_pkgbuild() {
+  mkdir -p "$T/pkgbuilds/point-hub-bin"
+  cat > "$T/pkgbuilds/point-hub-bin/PKGBUILD" <<PKGBUILD
+# bump.sh fills in the @SHA256@ placeholder (the real PKGBUILD's comment says so too)
+pkgname=point-hub-bin
+pkgver=$1
+pkgrel=$2
+pkgdesc='test package'
+arch=('x86_64')
+license=('MIT')
+options=('!strip' '!debug')
+package() {
+  install -Dm755 /dev/stdin "\$pkgdir/opt/point-hub/bin/point-hub" <<<'#!/bin/sh'
+  install -d "\$pkgdir/usr/bin"
+  ln -s /opt/point-hub/bin/point-hub "\$pkgdir/usr/bin/point-hub"
+}
+PKGBUILD
+  if [[ "${3:-}" == placeholder ]]; then
+    printf "sha256sums=('@SHA256@')\nsha256sums_x86_64=('@SHA256@')\n" >> "$T/pkgbuilds/point-hub-bin/PKGBUILD"
+  fi
+}
+fake_pointhub_pkgbuild 1.0.0 1
 
 pm --help | grep -q -- '--init-key' && ok "publish-pacman.sh --help"
 pm --init-key > "$T/pm-init.out" 2>&1
@@ -817,9 +843,13 @@ expect_fail "--init-key takes no VERSION" pm --init-key 2.4.0
 expect_fail "2.4: not a version like 2.4.0" pm 2.4
 expect_fail "is at 2.4.0, not 2.5.0: run ../aur/bump.sh openvolley 2.5.0 and commit it first" pm 2.5.0
 expect_fail "is at 2.0.0, not 2.4.0: run ../aur/bump.sh openbeach 2.4.0 and commit it first" pm --app beach 2.4.0
+expect_fail "is at 1.0.0, not 1.1.0: run ../aur/bump.sh point-hub 1.1.0 and commit it first" pm --app point-hub 1.1.0
+fake_pointhub_pkgbuild 1.1.0 1 placeholder
+expect_fail "point-hub-bin/PKGBUILD still has the @SHA256@ placeholder: run ../aur/bump.sh point-hub 1.1.0 and commit it first" pm --app point-hub 1.1.0
+expect_fail "--app pointhub: expected openvolley, beach, point-hub or both" pm --app pointhub
 expect_fail "--app both takes no VERSION" pm --app both 2.4.0
 expect_fail "--deb goes with one app" pm --app both --deb "$T/release/openvolley-escoresheet_${V}_amd64.deb"
-expect_fail "--app volley: expected openvolley, beach or both" pm --app volley
+expect_fail "--app volley: expected openvolley, beach, point-hub or both" pm --app volley
 expect_fail "--keep 0: expected a number from 1" pm --keep 0
 expect_fail "no pacman repo key in $T/nokey/pacman-gpg" env OV_PKGS_HOME="$T/nokey" "$PM"
 chmod 644 "$PMH/pacman-gpg-passphrase"
@@ -831,6 +861,13 @@ expect_fail "--pacman needs --desktop VERSION" pp --pacman --no-sync
 expect_fail "--pacman cannot go with --staging" pp --desktop 2.4.0 --staging --pacman --no-sync
 expect_fail "openvolley-escoresheet-bin/PKGBUILD is at 2.4.0, not $V: run packaging/aur/bump.sh openvolley $V and commit it first" \
   pp --desktop "$V" --pacman --no-sync
+expect_fail "point-hub-bin/PKGBUILD still has the @SHA256@ placeholder: run packaging/aur/bump.sh point-hub 1.1.0 and commit it first" \
+  pp --point-hub 1.1.0 --pacman --no-sync
+expect_fail "point-hub-bin/PKGBUILD is at 1.1.0, not 1.2.0: run packaging/aur/bump.sh point-hub 1.2.0 and commit it first" \
+  pp --point-hub 1.2.0 --pacman --no-sync
+# once bumped (the sums filled in; a comment may still name the placeholder) it passes
+fake_pointhub_pkgbuild 1.1.0 1
+expect_fail "no signing key in $OV_PKGS_HOME" pp --point-hub 1.1.0 --pacman --no-sync
 expect_fail "openbeach-escoresheet-bin/PKGBUILD is at 2.0.0, not 2.0.1: run packaging/aur/bump.sh openbeach 2.0.1" \
   pp --desktop 2.0.1 --app beach --pacman --no-sync
 pp --help | grep -q -- '\[--flatpak\] \[--pacman\]' && ok "--help documents --pacman"
@@ -944,6 +981,14 @@ PY
   pm > "$T/pm5.out" 2>&1 || { cat "$T/pm5.out"; bad "pacman: 2.4.1"; }
   [[ "$(in_db "$RX/openvolley.db" | xargs)" == "openbeach-escoresheet-bin 2.0.0-1 openvolley-escoresheet-bin 2.4.1-1" ]] || bad "pacman db after 2.4.1"
   ok "pacman: a new version after the refusals (foreign file, other key) publishes"
+  # Point Hub's package next to them: no updater marker needed
+  fake_pointhub_pkgbuild 1.1.0 1
+  pm --app point-hub 1.1.0 > "$T/pm6.out" 2>&1 || { cat "$T/pm6.out"; bad "pacman: point-hub"; }
+  [[ "$(in_db "$RX/openvolley.db" | xargs)" == "openbeach-escoresheet-bin 2.0.0-1 openvolley-escoresheet-bin 2.4.1-1 point-hub-bin 1.1.0-1" ]] ||
+    bad "pacman db with point-hub: $(in_db "$RX/openvolley.db")"
+  gpgv --keyring "$AR/openvolley.gpg" "$RX/point-hub-bin-1.1.0-1-x86_64.pkg.tar.zst.sig" "$RX/point-hub-bin-1.1.0-1-x86_64.pkg.tar.zst" 2>/dev/null ||
+    bad "pacman: point-hub-bin's signature"
+  ok "pacman: point-hub-bin built (no updater marker), signed and in the database with the other two"
 else
   echo "skip publish-pacman.sh build and repo steps (no docker)"
 fi

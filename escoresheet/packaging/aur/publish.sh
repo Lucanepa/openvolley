@@ -4,6 +4,7 @@
 #
 #   escoresheet/packaging/aur/publish.sh openvolley
 #   escoresheet/packaging/aur/publish.sh openbeach [--yes]
+#   escoresheet/packaging/aur/publish.sh point-hub
 #
 # The first push of a package name creates it on the AUR. It checks first that
 # .SRCINFO matches the PKGBUILD (run bump.sh after any PKGBUILD edit), shows
@@ -14,10 +15,17 @@ here=$(cd "$(dirname "$0")" && pwd)
 case ${1:-} in
   openvolley) pkg=openvolley-escoresheet-bin ;;
   openbeach)  pkg=openbeach-escoresheet-bin ;;
-  *) echo "usage: $0 <openvolley|openbeach> [--yes]" >&2; exit 2 ;;
+  point-hub)  pkg=point-hub-bin ;;
+  *) echo "usage: $0 <openvolley|openbeach|point-hub> [--yes]" >&2; exit 2 ;;
 esac
 yes=${2:-}
 dir=$here/$pkg
+
+# Point Hub's PKGBUILD is committed with the @SHA256@ placeholder until its
+# first release: never push that (makepkg would refuse it for every user).
+if grep -Eq '^sha256sums(_x86_64)?=.*@SHA256@' "$dir/PKGBUILD"; then
+  echo "$pkg/PKGBUILD still has the @SHA256@ placeholder: run bump.sh $1 <version> first" >&2; exit 1
+fi
 
 # .SRCINFO must describe this PKGBUILD (the AUR web page and helpers read it)
 ver=$(sed -n 's/^pkgver=//p' "$dir/PKGBUILD")

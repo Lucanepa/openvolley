@@ -2,7 +2,7 @@
 # Builds the Arch packages (the AUR PKGBUILDs) and publishes them in the
 # self-hosted, signed pacman repository behind https://get.openvolley.app/arch/
 #
-#   escoresheet/packaging/pacman/publish-pacman.sh [--app openvolley|beach] [--deb FILE] [--keep N] [VERSION]
+#   escoresheet/packaging/pacman/publish-pacman.sh [--app openvolley|beach|point-hub] [--deb FILE] [--keep N] [VERSION]
 #   escoresheet/packaging/pacman/publish-pacman.sh --app both [--keep N]
 #   escoresheet/packaging/pacman/publish-pacman.sh --init-key
 #
@@ -16,7 +16,10 @@
 #   1. Which package: ../aur/<package>-bin/PKGBUILD as committed (the same
 #      PKGBUILD the AUR gets; bump it first with ../aur/bump.sh). VERSION,
 #      when given, must be the PKGBUILD's pkgver. --app both takes both apps
-#      at their PKGBUILD versions. A package whose file
+#      at their PKGBUILD versions. --app point-hub: Point Hub (point-hub-bin,
+#      KSC Wiedikon's scoreboard console, from github.com/Lucanepa/point-hub);
+#      a PKGBUILD still holding the @SHA256@ placeholder (committed before its
+#      first release) is refused: bump it first. A package whose file
 #      (<package>-bin-<pkgver>-<pkgrel>-x86_64.pkg.tar.zst) is in the repo
 #      already is kept as it is (published files never change: bump pkgrel
 #      for a packaging fix); one older than the repo's newest is refused.
@@ -26,7 +29,8 @@
 #      .deb, or takes --deb FILE (publish-pkgs.sh passes the .deb it signed);
 #      makepkg checks it against the PKGBUILD's sha256sums either way.
 #      Each package must contain /usr/bin/<package> and the updater marker
-#      /usr/lib/<package>/package-manager.
+#      /usr/lib/<package>/package-manager (not point-hub-bin: Point Hub has no
+#      in-app updater to turn off).
 #   3. Signs each new package (detached, <file>.sig) with the pacman repo key,
 #      here, not in the container (the private key never leaves this
 #      machine's GNUPGHOME), and adds it to public/arch/x86_64/. Of each
@@ -71,7 +75,7 @@ IMAGE=${OV_PACMAN_IMAGE:-openvolley-pacman-build}
 DB=openvolley
 KEY_UID="OpenVolley pacman repository <packages@openvolley.app>"
 # every package this repo may hold
-NAMES=(openvolley-escoresheet-bin openbeach-escoresheet-bin)
+NAMES=(openvolley-escoresheet-bin openbeach-escoresheet-bin point-hub-bin)
 
 die() { echo "publish-pacman: $*" >&2; exit 1; }
 pmgpg() { gpg --homedir "$PM_GNUPG" --batch "$@"; }
@@ -84,7 +88,7 @@ KEEP=3
 INIT_KEY=0
 while (( $# )); do
   case "$1" in
-    --app) (( $# > 1 )) || die "--app needs openvolley, beach or both"; APP=$2; shift ;;
+    --app) (( $# > 1 )) || die "--app needs openvolley, beach, point-hub or both"; APP=$2; shift ;;
     --deb) (( $# > 1 )) || die "--deb needs a file"; DEB=$2; shift ;;
     --keep) (( $# > 1 )) || die "--keep needs a number"; KEEP=$2; shift ;;
     --init-key) INIT_KEY=1 ;;
@@ -130,12 +134,13 @@ APP=${APP:-openvolley}
 case "$APP" in
   openvolley) APPS=(openvolley) ;;
   beach) APPS=(beach) ;;
+  point-hub) APPS=(point-hub) ;;
   both)
     APPS=(openvolley beach)
     [[ -z "$VERSION" ]] || die "--app both takes no VERSION (each app is published at its PKGBUILD's pkgver)"
     [[ -z "$DEB" ]] || die "--deb goes with one app, not --app both"
     ;;
-  *) die "--app $APP: expected openvolley, beach or both" ;;
+  *) die "--app $APP: expected openvolley, beach, point-hub or both" ;;
 esac
 [[ -z "$VERSION" || "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "$VERSION: not a version like 2.4.0"
 [[ "$KEEP" =~ ^[1-9][0-9]*$ ]] || die "--keep $KEEP: expected a number from 1"
@@ -145,7 +150,9 @@ done
 (( $(id -u) != 0 )) || die "run it as your own user, not root (makepkg builds as your uid)"
 
 # app_pkg APP: the command / package base name of the app.
-app_pkg() { case "$1" in openvolley) echo openvolley-escoresheet ;; beach) echo openbeach-escoresheet ;; esac; }
+app_pkg() { case "$1" in openvolley) echo openvolley-escoresheet ;; beach) echo openbeach-escoresheet ;; point-hub) echo point-hub ;; esac; }
+# bump_app APP: the app's name for ../aur/bump.sh.
+bump_app() { case "$1" in beach) echo openbeach ;; *) echo "$1" ;; esac; }
 # pkgbuild_var FILE NAME: a plain NAME=value line of a PKGBUILD (not sourced).
 pkgbuild_var() { sed -n "s/^$2=['\"]\{0,1\}\([^'\"]*\)['\"]\{0,1\}\$/\1/p" "$1" | head -n1; }
 
@@ -160,8 +167,12 @@ for app in "${APPS[@]}"; do
   [[ "${PKGVER[$app]}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "${PKGREL[$app]}" =~ ^[1-9][0-9]*$ ]] ||
     die "$pb: pkgver ${PKGVER[$app]} / pkgrel ${PKGREL[$app]} are not X.Y.Z / N"
   if [[ -n "$VERSION" && "$VERSION" != "${PKGVER[$app]}" ]]; then
-    die "$pb is at ${PKGVER[$app]}, not $VERSION: run ../aur/bump.sh $([[ $app == beach ]] && echo openbeach || echo openvolley) $VERSION and commit it first"
+    die "$pb is at ${PKGVER[$app]}, not $VERSION: run ../aur/bump.sh $(bump_app "$app") $VERSION and commit it first"
   fi
+  # Point Hub's PKGBUILD was committed before its first release, its checksums
+  # the @SHA256@ placeholder that bump.sh fills in from the release.
+  ! grep -Eq '^sha256sums(_x86_64)?=.*@SHA256@' "$pb" ||
+    die "$pb still has the @SHA256@ placeholder: run ../aur/bump.sh $(bump_app "$app") ${VERSION:-${PKGVER[$app]}} and commit it first"
   PKGFILE[$app]="$base-bin-${PKGVER[$app]}-${PKGREL[$app]}-x86_64.pkg.tar.zst"
 done
 if [[ -n "$DEB" ]]; then
@@ -272,7 +283,8 @@ for p in /work/out/*.pkg.tar.zst; do
   base=${name%-bin}
   files=$(bsdtar -tf "$p")
   grep -qx "usr/bin/$base" <<<"$files" || { echo "$p: no /usr/bin/$base"; exit 1; }
-  grep -qx "usr/lib/$base/package-manager" <<<"$files" || { echo "$p: no updater marker /usr/lib/$base/package-manager"; exit 1; }
+  # (Point Hub has no in-app updater: nothing for a marker to turn off)
+  [[ $base == point-hub ]] || grep -qx "usr/lib/$base/package-manager" <<<"$files" || { echo "$p: no updater marker /usr/lib/$base/package-manager"; exit 1; }
 done
 EOF
   for app in "${BUILD[@]}"; do
