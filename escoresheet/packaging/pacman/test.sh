@@ -21,6 +21,14 @@
 #
 #   escoresheet/packaging/pacman/test.sh
 #
+# Point Hub (point-hub-bin) goes along: published next to the two, installed
+# with the line of the page's Point Hub section, checked by
+# check-installed.sh (its own checks: no updater there). Before its first
+# release its PKGBUILD has the @SHA256@ placeholder; then
+# OV_PACMAN_TEST_POINTHUB_DEB=FILE and OV_PACMAN_TEST_POINTHUB_LICENSE=FILE
+# build it from those files (a test copy of the PKGBUILD with their checksums,
+# a scratch source cache), and without them it is skipped.
+#
 # Needs docker, gpg, python3 and the network (GitHub, Arch mirrors). About
 # 6 minutes. Containers, network and scratch files are removed at the end.
 # The downloaded .deb files stay in ${OV_PACMAN_CACHE:-~/.cache/openvolley-pacman}.
@@ -43,10 +51,18 @@ trap cleanup EXIT INT TERM
 
 export OV_PKGS_HOME="$T/home" OV_PACMAN_PKGBUILDS="$T/pkgbuilds"
 unset OV_PACMAN_GNUPG OV_PACMAN_PASSPHRASE
+# local Point Hub files: a scratch source cache, so a test LICENSE never sits
+# in the real one
+PH_DEB=${OV_PACMAN_TEST_POINTHUB_DEB:-} PH_LICENSE=${OV_PACMAN_TEST_POINTHUB_LICENSE:-}
+if [[ -n "$PH_DEB$PH_LICENSE" ]]; then
+  [[ -f "$PH_DEB" && -f "$PH_LICENSE" ]] || { echo "OV_PACMAN_TEST_POINTHUB_DEB and _LICENSE: both files are needed" >&2; exit 2; }
+  export OV_PACMAN_CACHE="$T/pacman-cache"
+fi
 PUBLISH="$HERE/publish-pacman.sh"
 RX="$T/home/public/arch/x86_64"
 OV=openvolley-escoresheet-bin
 OB=openbeach-escoresheet-bin
+PH=point-hub-bin
 
 PASS=0
 ok() { PASS=$((PASS + 1)); echo "ok   $*"; }
@@ -83,13 +99,38 @@ step "publish both"
 [[ -f "$RX/$OV-$OV_VER-x86_64.pkg.tar.zst" && -f "$RX/$OB-$OB_VER-x86_64.pkg.tar.zst" ]] || bad "packages missing"
 ok "published $OV $OV_VER and $OB $OB_VER, signed with the throwaway key"
 
+step "Point Hub"
+PH_ON=1
+if grep -Eq '^sha256sums(_x86_64)?=.*@SHA256@' "$ESC/packaging/aur/$PH/PKGBUILD" && [[ -z "$PH_DEB" ]]; then
+  PH_ON=0
+  echo "skip $PH: its PKGBUILD waits for the first release (OV_PACMAN_TEST_POINTHUB_DEB / _LICENSE build it from local files)"
+fi
+if (( PH_ON )); then
+  cp -r "$ESC/packaging/aur/$PH" "$T/pkgbuilds/"
+  PH_V=$(sed -n 's/^pkgver=//p' "$T/pkgbuilds/$PH/PKGBUILD")
+  PH_VER=$PH_V-$(sed -n 's/^pkgrel=//p' "$T/pkgbuilds/$PH/PKGBUILD")
+  ph_args=(--app point-hub)
+  if [[ -n "$PH_DEB" ]]; then
+    # the release's files, checksummed as bump.sh would; the LICENSE where
+    # makepkg looks for sources (SRCDEST)
+    sed -i -e "s/^sha256sums=.*/sha256sums=('$(sha256sum "$PH_LICENSE" | cut -d' ' -f1)')/" \
+      -e "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('$(sha256sum "$PH_DEB" | cut -d' ' -f1)')/" "$T/pkgbuilds/$PH/PKGBUILD"
+    mkdir -p "$OV_PACMAN_CACHE/src"
+    cp "$PH_LICENSE" "$OV_PACMAN_CACHE/src/LICENSE-$PH_V"
+    ph_args+=(--deb "$PH_DEB")
+  fi
+  "$PUBLISH" "${ph_args[@]}" | tail -n 5
+  [[ -f "$RX/$PH-$PH_VER-x86_64.pkg.tar.zst" && -f "$RX/$OV-$OV_VER-x86_64.pkg.tar.zst" ]] || bad "$PH missing, or it pushed the others out"
+  ok "published $PH $PH_VER next to them (no updater marker needed)"
+fi
+
 # --- 2. serve it -------------------------------------------------------------------------
 step "serve public/ with the production Caddyfile"
 docker network create "$NET" >/dev/null
 mkdir -p "$T/steps"
 docker run -d --name "$SRV" --network "$NET" --network-alias get.test \
   -v "$ESC/deploy/pkgs/Caddyfile:/etc/caddy/Caddyfile:ro" -v "$T/home/public:/srv/pkgs:ro" caddy:2 >/dev/null
-docker run -d --name "$CLI" --network "$NET" \
+docker run -d --name "$CLI" --network "$NET" --shm-size=512m \
   -v "$ESC/packaging/aur/check-installed.sh:/check-installed.sh:ro" -v "$T/steps:/steps:ro" \
   archlinux:latest sleep infinity >/dev/null
 # has_headers PATH LINE...: the response to PATH (asked with Accept-Encoding,
@@ -128,6 +169,11 @@ open(f"{out}/1-key.sh", "w").write(site(blocks[0]) + "\n")
 open(f"{out}/pacman.conf.add", "w").write(site(blocks[1]) + "\n")
 open(f"{out}/3-install-ov.sh", "w").write(site(blocks[2]) + "\n")
 open(f"{out}/3-install-ob.sh", "w").write(site(blocks[3]) + "\n")
+# Point Hub's line is in its own section (it refers to the repo set up above)
+ph = s[s.index("<!--pointhub-pacman-->\n"):s.index("<!--/pointhub-pacman-->\n")]
+ph_blocks = [html.unescape(b) for b in re.findall(r"<pre><code>(.*?)</code></pre>", ph, re.S)]
+assert len(ph_blocks) == 1, ph_blocks
+open(f"{out}/3-install-ph.sh", "w").write(site(ph_blocks[0]) + "\n")
 PY
 cat > "$T/steps/run.sh" <<'EOF'
 set -euo pipefail
@@ -135,7 +181,7 @@ sudo() { if [[ $1 == pacman ]]; then shift; pacman --noconfirm --noprogressbar "
 cd /tmp
 . "/steps/$1"
 EOF
-sed 's/^/     /' "$T/steps/1-key.sh" "$T/steps/pacman.conf.add" "$T/steps/3-install-ov.sh" "$T/steps/3-install-ob.sh"
+sed 's/^/     /' "$T/steps/1-key.sh" "$T/steps/pacman.conf.add" "$T/steps/3-install-ov.sh" "$T/steps/3-install-ob.sh" "$T/steps/3-install-ph.sh"
 # An up-to-date Arch system, as on a real computer. The Docker image comes
 # without the keyring's local key (an installed Arch has one, made at install
 # time), which pacman-key --lsign-key needs: make it here.
@@ -147,11 +193,20 @@ client 'bash /steps/run.sh 3-install-ov.sh' | tail -n 4
 client 'bash /steps/run.sh 3-install-ob.sh' | tail -n 4
 [[ "$(client "pacman -Q $OV $OB" | xargs)" == "$OV $OV_VER $OB $OB_VER" ]] || bad "installed: $(client "pacman -Q $OV $OB")"
 ok "a clean Arch container installed both apps with the page's steps (key, lsign, pacman.conf, pacman -Syu)"
+if (( PH_ON )); then
+  client 'bash /steps/run.sh 3-install-ph.sh' | tail -n 4
+  [[ "$(client "pacman -Q $PH")" == "$PH $PH_VER" ]] || bad "installed: $(client "pacman -Q $PH")"
+  ok "and Point Hub with the line of its section of the page"
+fi
 
 step "check-installed.sh"
 client 'PKG=openvolley-escoresheet PORT=5173 bash /check-installed.sh' | tail -n 12
 client 'PKG=openbeach-escoresheet PORT=5174 bash /check-installed.sh' | tail -n 12
 ok "both apps: marker file 'aur', bundle stamp UNK, run under Xvfb, LAN page 200, the in-app updater off"
+if (( PH_ON )); then
+  client 'PKG=point-hub bash /check-installed.sh' | tail -n 8
+  ok "point-hub: every library resolves, menu entry, starts under Xvfb with Chromium's helpers"
+fi
 
 # --- 4. an update ------------------------------------------------------------------------------
 step "a newer pkgrel"
