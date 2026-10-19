@@ -71,6 +71,14 @@
   </screenshots>
 
   <releases>
+    <release version="2.4.14" date="2026-10-19">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v2.4.14</url>
+      <description>
+        <ul>
+          <li>Easy match: New match → Easy match is an unofficial match with no rosters, officials or signatures. Shirt numbers are typed with the line-ups (two libero boxes there) and a new substitute by its number; everything else is the normal scoreboard.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.4.13" date="2026-10-19">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v2.4.13</url>
       <description>
