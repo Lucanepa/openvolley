@@ -10,6 +10,9 @@ After=docker.service network-online.target
 [Service]
 Type=oneshot
 User=lucanepa
+# The default RT_SOURCE is /data/openvolley/backups on this host (root:ovbackup,
+# mode 2750; production runs on lenovoserver since 16.10.2026).
+SupplementaryGroups=ovbackup
 # Passphrase of the openvolley-backup key (file mode 0600). The script reads
 # it from $CREDENTIALS_DIRECTORY/gpg-pass.
 LoadCredential=gpg-pass:/home/lucanepa/.config/openvolley/gpg-passphrase

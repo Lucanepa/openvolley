@@ -1,5 +1,25 @@
 # Runbook: first deploy on hetzner (Option A, co-tenant on `lucanepa-prod`)
 
+> **Since 16.10.2026 production runs on lenovoserver, not on hetzner.** The Hetzner VPS
+> (`lucanepa-prod`, `ssh hetzner`) was transferred to the KSC Wiedikon club's own Hetzner
+> account. OpenVolley is the owner's private project and must **never be deployed there
+> again**. The stack (compose project `openvolley`: `ov-postgres`, `ov-backend`, `ov-tunnel`,
+> `ov-pkgs`, same tunnel) moved with RUNBOOK-move-to-own-vm.md, lenovoserver as `new`.
+>
+> - Steps 1-13 are the record of the first deploy on hetzner. Do not run them against
+>   hetzner; a move to another host follows RUNBOOK-move-to-own-vm.md.
+> - From "Match-day rules" on, the commands are for lenovoserver (`lenovo$`, the owner's shell
+>   in the repo checkout). The kit and `.env` in `/opt/openvolley` are `root:root` 0750, so
+>   every compose and kit command needs `sudo`:
+>   `sudo docker compose --project-directory /opt/openvolley ...`,
+>   `sudo /opt/openvolley/restore-db.sh`, `sudo /opt/openvolley/apply-roles.sh < roles.sql`.
+>   There is no root ssh into lenovoserver: images ship with `build-image.sh --ship local`.
+> - lenovoserver is also the build machine and holds the backup private key. `host-prep.sh` ran
+>   unchanged there; `openvolley-backup.timer` and `openvolley-backup-files.timer` are enabled.
+>   Backups land in `/data/openvolley/backups`, which is inside lenovoserver's nightly borg
+>   backup to the NAS (the loop images `/var/lib/openvolley/*.img` are excluded from borg). The
+>   NAS pull (`nas-pull.sh`, step 12) was never configured and is not set up.
+
 Who: the owner, at a keyboard on lenovoserver, Monday to Friday before 17:00.
 Time: about half a day the first time, excluding the data load from the migration plan (§6).
 Hosts: `lenovoserver` (build machine, tunnel admin, private backup key), `hetzner`
@@ -295,38 +315,45 @@ From **Friday 17:00 to Sunday 23:59**: no `build-image.sh --ship`, no `docker co
 in `/opt/openvolley`, no `host-prep.sh`, no Postgres image bump, no `publish-pkgs.sh --desktop`
 (desktop apps download an update within 6 hours and install it when the scorer quits). Relay rooms live in memory, so any
 backend restart during a match drops every live room. On Friday: check `/health`, the probe
-history, `systemctl list-timers 'openvolley-*'` and the newest NAS file.
+history, `systemctl list-timers 'openvolley-*'` and the newest file in `/data/openvolley/backups`.
 
 ## Updating
 
 Backend release (Monday to Friday, before 17:00):
 
 ```bash
-lenovo$ git pull && escoresheet/deploy/build-image.sh --ship hetzner          # prints NEW tag
-hetzner# cd /opt/openvolley
-hetzner# grep ^OV_BACKEND_IMAGE= .env | tee -a DEPLOYED.log                  # remember the current tag
-hetzner# systemctl start openvolley-backup.service                            # fresh dump before the change
-hetzner# sed -i 's|^OV_BACKEND_IMAGE=.*|OV_BACKEND_IMAGE=openvolley-backend:<NEW>|' .env
-hetzner# env | grep -E '^(OV_|TUNNEL_TOKEN)=' ; docker compose config --images | grep backend   # nothing exported; shows <NEW>
-hetzner# docker compose up -d ov-backend && docker compose ps
-hetzner# docker compose exec ov-backend node -e 'fetch("http://127.0.0.1:8080/health").then(async r=>console.log(r.status, await r.text()))'
-hetzner# echo "$(date -u +%FT%TZ) deployed openvolley-backend:<NEW>" >> DEPLOYED.log
+lenovo$ git pull && escoresheet/deploy/build-image.sh --ship local            # prints NEW tag
+lenovo$ sudo grep ^OV_BACKEND_IMAGE= /opt/openvolley/.env | sudo tee -a /opt/openvolley/DEPLOYED.log   # remember the current tag
+lenovo$ sudo systemctl start openvolley-backup.service                        # fresh dump before the change
+lenovo$ sudo sed -i 's|^OV_BACKEND_IMAGE=.*|OV_BACKEND_IMAGE=openvolley-backend:<NEW>|' /opt/openvolley/.env
+lenovo$ env | grep -E '^(OV_|TUNNEL_TOKEN)=' ; sudo docker compose --project-directory /opt/openvolley config --images | grep backend   # nothing exported; shows <NEW>
+lenovo$ sudo docker compose --project-directory /opt/openvolley up -d ov-backend && sudo docker compose --project-directory /opt/openvolley ps
+lenovo$ sudo docker compose --project-directory /opt/openvolley exec ov-backend node -e 'fetch("http://127.0.0.1:8080/health").then(async r=>console.log(r.status, await r.text()))'
+lenovo$ echo "$(date -u +%FT%TZ) deployed openvolley-backend:<NEW>" | sudo tee -a /opt/openvolley/DEPLOYED.log
 ```
 
-Kit changes (`compose.yaml`, `cloudflared/config.yml`, `pkgs/Caddyfile`, scripts): rsync and chmod as in step 4 (never `.env`),
-then `docker compose config -q && docker compose up -d` (recreates only what changed). Script
-changes also need `./host-prep.sh` (reinstalls `backup-openvolley.sh` and the units). A changed
-bind-mounted file alone (`pkgs/Caddyfile`, `cloudflared/config.yml`) is not a compose change:
-also `docker compose up -d --force-recreate ov-pkgs` (or `ov-tunnel`). For the F-Droid index
-CORS header (Android update check), check afterwards from lenovoserver:
+Kit changes (`compose.yaml`, `cloudflared/config.yml`, `pkgs/Caddyfile`, scripts): copy the kit
+(never `.env`), then `config -q` and `up -d` (recreates only what changed):
+
+```bash
+lenovo$ sudo rsync -rlt --chmod=D750,F640 --exclude=.env escoresheet/deploy/ /opt/openvolley/
+lenovo$ sudo sh -c 'chmod 750 /opt/openvolley/*.sh && chmod 644 /opt/openvolley/cloudflared/config.yml /opt/openvolley/pkgs/Caddyfile'
+lenovo$ sudo docker compose --project-directory /opt/openvolley config -q && sudo docker compose --project-directory /opt/openvolley up -d
+```
+
+Script changes also need `sudo /opt/openvolley/host-prep.sh` (reinstalls `backup-openvolley.sh`
+and the units). A changed bind-mounted file alone (`pkgs/Caddyfile`, `cloudflared/config.yml`)
+is not a compose change: also `sudo docker compose --project-directory /opt/openvolley up -d --force-recreate ov-pkgs`
+(or `ov-tunnel`). For the F-Droid index CORS header (Android update check), check afterwards:
 
 ```bash
 lenovo$ curl -fsSI https://get.openvolley.app/fdroid/repo/index-v2.json | grep -i '^access-control-allow-origin: \*'
 lenovo$ curl -fsSI https://get.openvolley.app/apt/dists/stable/InRelease | grep -ci access-control   # 0: only the index
 ```
 
-Desktop app release (Monday to Thursday, or Friday before 17:00; lenovoserver only, nothing on
-the VM): after CI has built `desktop-v<version>`,
+Desktop app release (Monday to Thursday, or Friday before 17:00; lenovoserver only, nothing in
+`/opt/openvolley`; `publish-pkgs.sh` copies the public tree into `/data/openvolley/pkgs` with
+`sudo`): after CI has built `desktop-v<version>`,
 
 ```bash
 lenovo$ cd ~/repos/openvolley && git pull && (cd escoresheet/frontend && npm ci)
@@ -348,9 +375,11 @@ lenovo$ gh release edit desktop-v<previous> --repo Lucanepa/openvolley --latest
 
 Details, the updater key and the APT hold-back: README.md, "Release procedure".
 
-Postgres minor bump (monthly, weekday): set `OV_POSTGRES_IMAGE=postgres:17.<n>-alpine`,
-`docker compose pull ov-postgres && docker compose up -d ov-postgres`, check `/health`, then run the
-restore test.
+Postgres minor bump (monthly, weekday): set `OV_POSTGRES_IMAGE=postgres:17.<n>-alpine` in
+`/opt/openvolley/.env` (with `sudo`), then
+`sudo docker compose --project-directory /opt/openvolley pull ov-postgres` and
+`sudo docker compose --project-directory /opt/openvolley up -d ov-postgres`, check `/health`,
+then run the restore test.
 
 ## Apply a new db migration
 
@@ -360,9 +389,9 @@ idempotent. Run the files the database does not have yet, in number order, as `o
 `roles.sql`, before or together with the backend that expects them:
 
 ```bash
-lenovo$  ssh hetzner 'cd /opt/openvolley && docker compose exec -T ov-postgres psql -U ov_owner -d openvolley -v ON_ERROR_STOP=1' \
+lenovo$  sudo docker compose --project-directory /opt/openvolley exec -T ov-postgres psql -U ov_owner -d openvolley -v ON_ERROR_STOP=1 \
            < escoresheet/backend/db/006_matches_updated_at.sql
-lenovo$  ssh hetzner /opt/openvolley/apply-roles.sh < escoresheet/backend/db/roles.sql   # "ok: ov_app logs in and sees N matches"
+lenovo$  sudo /opt/openvolley/apply-roles.sh < escoresheet/backend/db/roles.sql   # "ok: ov_app logs in and sees N matches"
 ```
 
 Do the same on the dev database.
@@ -380,11 +409,11 @@ emails"). Without `SMTP_HOST`/`SMTP_PASS` the backend sends nothing: reset answe
 2. **Deliverability** (once): Migadu admin, domain `openvolley.app`, "DNS Configuration" shows
    every record green (MX, SPF `include:spf.migadu.com`, the three DKIM CNAMEs, DMARC).
    Otherwise the mails land in spam or bounce.
-3. **Egress** (once): Hetzner blocks outgoing port 465 on new cloud servers. From the backend
-   container:
+3. **Egress** (once per host; Hetzner, for one, blocks outgoing port 465 on new cloud servers).
+   From the backend container:
 
    ```bash
-   hetzner# cd /opt/openvolley && for p in 465 587; do docker compose exec -T ov-backend node -e "const s=require('net').connect($p,'smtp.migadu.com');s.setTimeout(5000);s.on('connect',()=>{console.log($p,'open');process.exit(0)}).on('timeout',()=>{console.log($p,'blocked');process.exit(1)}).on('error',e=>{console.log($p,e.code);process.exit(1)})"; done
+   lenovo$ for p in 465 587; do sudo docker compose --project-directory /opt/openvolley exec -T ov-backend node -e "const s=require('net').connect($p,'smtp.migadu.com');s.setTimeout(5000);s.on('connect',()=>{console.log($p,'open');process.exit(0)}).on('timeout',()=>{console.log($p,'blocked');process.exit(1)}).on('error',e=>{console.log($p,e.code);process.exit(1)})"; done
    ```
 
    465 open: keep `SMTP_PORT=465`. Only 587 open: use `SMTP_PORT=587` (STARTTLS, enforced).
@@ -394,20 +423,22 @@ emails"). Without `SMTP_HOST`/`SMTP_PASS` the backend sends nothing: reset answe
    entry "OpenVolley noreply@openvolley.app SMTP"), and writes `SMTP_HOST`, `SMTP_PORT`,
    `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`, `MANAGER_URL` into `/opt/openvolley/.env` over ssh
    stdin, with a timestamped backup `.env.bak-<UTC>` (mode 600). It restarts nothing.
+   **It was written for hetzner** (`HOST=hetzner`, over ssh): adapt it to lenovoserver before its
+   next use, and never run it as it is.
 5. **Activate** (a backend recreate; weekday, not during a match):
 
    ```bash
-   hetzner# cd /opt/openvolley && docker compose config -q && docker compose up -d ov-backend
-   hetzner# docker compose logs ov-backend 2>&1 | grep '\[Mail\]'   # "[Mail] account emails on: SMTP smtp.migadu.com:465 ..."
+   lenovo$ sudo docker compose --project-directory /opt/openvolley config -q && sudo docker compose --project-directory /opt/openvolley up -d ov-backend
+   lenovo$ sudo docker compose --project-directory /opt/openvolley logs ov-backend 2>&1 | grep '\[Mail\]'   # "[Mail] account emails on: SMTP smtp.migadu.com:465 ..."
    ```
 
    "account emails off (...)" names what is missing.
 6. **Check**: manager.openvolley.app, "Sign in", "Forgot password?" with your own address. The
    mail arrives within a minute; the link opens "Set a new password"; afterwards every device is
    signed out and a "password was changed" notice arrives. A failed send is in
-   `docker compose logs ov-backend | grep 'reset-password mail failed'` (addresses masked).
+   `sudo docker compose --project-directory /opt/openvolley logs ov-backend | grep 'reset-password mail failed'` (addresses masked).
 7. **Watch** (any time): the mail counters are in the internal health body,
-   `hetzner# docker compose exec -T ov-backend wget -qO- http://127.0.0.1:3000/health` (or the
+   `lenovo$ sudo docker compose --project-directory /opt/openvolley exec -T ov-backend wget -qO- http://127.0.0.1:3000/health` (or the
    status network), under `mail`: `budgets.account` (reset, password changed) and
    `budgets.confirm` (confirmation links), 50 each per hour, with `used`, `dropped` this hour
    and `droppedTotal`; `exhausted` names a budget that is used up; `inboxDropped` counts mails
@@ -415,7 +446,8 @@ emails"). Without `SMTP_HOST`/`SMTP_PASS` the backend sends nothing: reset answe
    budget only drops mails (logged as `[mail] hourly ... budget ... used up`); the server stays
    healthy. A burst of sign-ups can use up `confirm` but never `account`.
 
-To switch the mails off again: empty `SMTP_PASS=` in `.env`, `docker compose up -d ov-backend`.
+To switch the mails off again: empty `SMTP_PASS=` in `/opt/openvolley/.env` (with `sudo`),
+`sudo docker compose --project-directory /opt/openvolley up -d ov-backend`.
 To rotate the password: set it in Migadu, then run the script again (it replaces the lines).
 
 ## Rollback
@@ -423,9 +455,9 @@ To rotate the password: set it in Migadu, then run the script again (it replaces
 | Situation | Action |
 |---|---|
 | Before go-live (step 10) | `docker compose down`. Nothing public changed. |
-| Bad backend release | Put the previous tag (from `DEPLOYED.log`) back into `OV_BACKEND_IMAGE`, check `docker compose config --images` shows it (if not, the shell exports `OV_BACKEND_IMAGE`: see Shell hygiene), and `docker compose up -d ov-backend`. If the image was pruned: `gunzip -c images/openvolley-backend-<sha>.tar.gz \| docker load` first. Same database and storage, so sessions survive and no data moves. If the release changed the schema, first restore the pre-deploy dump into a side container (as `restore-test.sh` does) and compare. |
+| Bad backend release | Put the previous tag (from `/opt/openvolley/DEPLOYED.log`) back into `OV_BACKEND_IMAGE` (with `sudo`), check `sudo docker compose --project-directory /opt/openvolley config --images` shows it (if not, the shell exports `OV_BACKEND_IMAGE`: see Shell hygiene), and `sudo docker compose --project-directory /opt/openvolley up -d ov-backend`. If the image was pruned: `sudo sh -c 'gunzip -c /opt/openvolley/images/openvolley-backend-<sha>.tar.gz \| docker load'` first. Same database and storage, so sessions survive and no data moves. If the release changed the schema, first restore the pre-deploy dump into a side container (as `restore-test.sh` does) and compare. |
 | Data corruption | "Restore the database" below. |
-| VM lost or KSCW under pressure | Same compose on lenovoserver with the **same `TUNNEL_TOKEN`** and the newest NAS dump (RUNBOOK-move-to-own-vm.md, steps 3-9, with lenovoserver as the target). No DNS change. Make sure the hetzner `ov-tunnel` is stopped, or Cloudflare splits traffic between both. |
+| lenovoserver lost | Same compose on another host (never the club's Hetzner VPS) with the **same `TUNNEL_TOKEN`** and the newest dump from lenovoserver's borg backup on the NAS (RUNBOOK-move-to-own-vm.md, steps 3-9, restoring that dump instead of reading from `old`; it needs the backup private key). No DNS change. Make sure the lenovoserver `ov-tunnel` is stopped, or Cloudflare splits traffic between both. |
 | Anything on a match day | LAN mode / Pi / desktop build from `pre-selfhost`. Scoring never depends on the cloud. |
 
 ## Restore the database (data corruption)
@@ -438,29 +470,30 @@ does not remove objects or rows missing from the dump. The script runs `pg_resto
 
 ```bash
 # 1. stop writes and the backup timers (a restored, smaller DB must not trip or feed the count guard)
-hetzner# systemctl stop openvolley-backup.timer openvolley-backup-files.timer
-hetzner# cd /opt/openvolley && docker compose stop ov-tunnel ov-backend
-# 2. newest GOOD dump + its .counts, decrypted on lenovoserver (private key), sent to the pg fs
-lenovo$  set -o pipefail; D=db-<UTC>                                # from the NAS: /volume1/backups/openvolley/hetzner
-lenovo$  scp "nas:/volume1/backups/openvolley/hetzner/$D.*" /dev/shm/ && gpg -o /dev/shm/db.dump -d /dev/shm/$D.dump.gpg
-lenovo$  ssh hetzner 'install -d -m 700 /data/openvolley/pg/import' && scp /dev/shm/db.dump /dev/shm/$D.counts hetzner:/data/openvolley/pg/import/
-lenovo$  shred -u /dev/shm/db.dump && rm -f /dev/shm/$D.*
+lenovo$ sudo systemctl stop openvolley-backup.timer openvolley-backup-files.timer
+lenovo$ sudo docker compose --project-directory /opt/openvolley stop ov-tunnel ov-backend
+# 2. newest GOOD dump + its .counts (/data/openvolley/backups; older ones: lenovoserver's borg backup
+#    on the NAS), decrypted with the private key, put on the pg fs
+lenovo$ set -o pipefail; D=db-<UTC>
+lenovo$ sudo cat /data/openvolley/backups/$D.dump.gpg | gpg -o /dev/shm/db.dump -d
+lenovo$ sudo install -d -m 700 /data/openvolley/pg/import && sudo install -m 600 /dev/shm/db.dump /data/openvolley/backups/$D.counts /data/openvolley/pg/import/
+lenovo$ shred -u /dev/shm/db.dump
 # 3. restore (refuses while backend/tunnel/timers run; checks the .counts file)
-hetzner# ./restore-db.sh --counts /data/openvolley/pg/import/db-<UTC>.counts /data/openvolley/pg/import/db.dump
+lenovo$ sudo /opt/openvolley/restore-db.sh --counts /data/openvolley/pg/import/db-<UTC>.counts /data/openvolley/pg/import/db.dump
 # 4. roles, then the backend
-lenovo$  ssh hetzner /opt/openvolley/apply-roles.sh < escoresheet/backend/db/roles.sql
-hetzner# env | grep -E '^(OV_|TUNNEL_TOKEN)=' ; docker compose up -d && docker compose ps
-hetzner# docker compose exec ov-backend node -e 'fetch("http://127.0.0.1:8080/health").then(async r=>console.log(r.status, await r.text()))'
+lenovo$ sudo /opt/openvolley/apply-roles.sh < escoresheet/backend/db/roles.sql
+lenovo$ env | grep -E '^(OV_|TUNNEL_TOKEN)=' ; sudo docker compose --project-directory /opt/openvolley up -d && sudo docker compose --project-directory /opt/openvolley ps
+lenovo$ sudo docker compose --project-directory /opt/openvolley exec ov-backend node -e 'fetch("http://127.0.0.1:8080/health").then(async r=>console.log(r.status, await r.text()))'
 # 5. backups back on (restore-db.sh touched counts.reset: the first run takes the restored counts as baseline)
-hetzner# systemctl start openvolley-backup.service && journalctl -u openvolley-backup -n 5 --no-pager
-hetzner# systemctl enable --now openvolley-backup.timer openvolley-backup-files.timer
+lenovo$ sudo systemctl start openvolley-backup.service && journalctl -u openvolley-backup -n 5 --no-pager
+lenovo$ sudo systemctl enable --now openvolley-backup.timer openvolley-backup-files.timer
 # 6. clean up once satisfied (the old database stays for comparison until then)
-hetzner# shred -u /data/openvolley/pg/import/* && rmdir /data/openvolley/pg/import
-hetzner# docker compose exec -T ov-postgres psql -U ov_owner -d postgres -c 'DROP DATABASE "openvolley_pre_restore_<UTC>"'
+lenovo$ sudo sh -c 'shred -u /data/openvolley/pg/import/* && rmdir /data/openvolley/pg/import'
+lenovo$ sudo docker compose --project-directory /opt/openvolley exec -T ov-postgres psql -U ov_owner -d postgres -c 'DROP DATABASE "openvolley_pre_restore_<UTC>"'
 ```
 
 If `/health` reports the floor below `OV_MIN_MATCHES` because the dump is older, lower it in
-`.env` and `docker compose up -d ov-backend`. Devices re-sync what they still have queued. If
+`.env` and `sudo docker compose --project-directory /opt/openvolley up -d ov-backend`. Devices re-sync what they still have queued. If
 the restore-test floor (`~/ov-ops/restore-floor` on lenovoserver) is above the restored counts,
 delete that file after the next good backup.
 
@@ -471,18 +504,21 @@ follow the steps above.
 
 ## Uninstall (removes every trace from the VM)
 
+Used to remove OpenVolley from the hetzner VPS after the move to lenovoserver (16.10.2026).
+`host#` is root on the host being cleaned (on lenovoserver: `sudo -i`).
+
 ```bash
-hetzner# cd /opt/openvolley && docker compose down --rmi local     # containers + networks
-hetzner# systemctl disable --now openvolley-backup.timer openvolley-backup-files.timer
-hetzner# rm -f /etc/systemd/system/openvolley-backup* /usr/local/sbin/backup-openvolley.sh && systemctl daemon-reload
-hetzner# umount /data/openvolley/pg /data/openvolley/storage
-hetzner# sed -i '/openvolley/d' /etc/fstab && systemctl daemon-reload      # only our lines contain "openvolley"
-hetzner# chattr -i /data/openvolley/pg /data/openvolley/storage
-hetzner# rm -rf /data/openvolley /var/lib/openvolley /var/lib/openvolley-status /var/lib/openvolley-backup /etc/openvolley /opt/openvolley
-hetzner# userdel -r ovbackup
-hetzner# docker rmi $(docker images openvolley-backend -q) 2>/dev/null; true
+host# cd /opt/openvolley && docker compose down --rmi local     # containers + networks
+host# systemctl disable --now openvolley-backup.timer openvolley-backup-files.timer
+host# rm -f /etc/systemd/system/openvolley-backup* /usr/local/sbin/backup-openvolley.sh && systemctl daemon-reload
+host# umount /data/openvolley/pg /data/openvolley/storage
+host# sed -i '/openvolley/d' /etc/fstab && systemctl daemon-reload      # only our lines contain "openvolley"
+host# chattr -i /data/openvolley/pg /data/openvolley/storage
+host# rm -rf /data/openvolley /var/lib/openvolley /var/lib/openvolley-status /var/lib/openvolley-backup /etc/openvolley /opt/openvolley
+host# userdel -r ovbackup
+host# docker rmi $(docker images openvolley-backend -q) 2>/dev/null; true
 ```
 
 Check `grep -n openvolley /etc/fstab` prints nothing first, and keep the off-site copies on the NAS.
-Then revert the exclusion in `postgres-autopatch.sh` / `backup-postgres.sh` and the sshd drop-in,
-if step 1 added them.
+On hetzner, then revert the exclusion in `postgres-autopatch.sh` / `backup-postgres.sh` and the
+sshd drop-in, if step 1 added them.

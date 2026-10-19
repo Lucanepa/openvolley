@@ -5,7 +5,11 @@
 #
 #   escoresheet/packaging/aur/bump.sh openvolley 2.4.0
 #   escoresheet/packaging/aur/bump.sh openbeach 2.1.0
+#   escoresheet/packaging/aur/bump.sh point-hub 1.1.0      # Lucanepa/point-hub's release
 #   escoresheet/packaging/aur/bump.sh openvolley 2.4.0 2   # pkgrel 2, same release
+#
+# Point Hub's PKGBUILD is committed before its first release with the
+# @SHA256@ placeholder in both sha256sums lines: this fills them in.
 #
 # .SRCINFO comes from `makepkg --printsrcinfo`: the local makepkg on Arch,
 # otherwise an archlinux Docker container (non-root). Needs curl, sha256sum, sed.
@@ -13,7 +17,7 @@ set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
 
-usage() { echo "usage: $0 <openvolley|openbeach> <version> [pkgrel]" >&2; exit 2; }
+usage() { echo "usage: $0 <openvolley|openbeach|point-hub> <version> [pkgrel]" >&2; exit 2; }
 [[ $# -ge 2 && $# -le 3 ]] || usage
 app=$1 ver=$2 rel=${3:-1}
 [[ $ver =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "version must be X.Y.Z, got '$ver'" >&2; exit 2; }
@@ -22,11 +26,17 @@ app=$1 ver=$2 rel=${3:-1}
 case $app in
   openvolley) pkg=openvolley-escoresheet tag=desktop-v$ver ;;
   openbeach)  pkg=openbeach-escoresheet  tag=beach-desktop-v$ver ;;
+  point-hub)  pkg=point-hub              tag=desktop-v$ver ;;
   *) usage ;;
 esac
 dir=$here/$pkg-bin
 deb_url=https://github.com/Lucanepa/openvolley/releases/download/$tag/${pkg}_${ver}_amd64.deb
 lic_url=https://raw.githubusercontent.com/Lucanepa/openvolley/$tag/escoresheet/LICENSE
+if [[ $app == point-hub ]]; then
+  # its own repository; the license is at its root
+  deb_url=https://github.com/Lucanepa/point-hub/releases/download/$tag/${pkg}_${ver}_amd64.deb
+  lic_url=https://raw.githubusercontent.com/Lucanepa/point-hub/$tag/LICENSE
+fi
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT

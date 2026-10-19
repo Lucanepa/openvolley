@@ -1,22 +1,25 @@
-# Flatpak: OpenVolley eScoresheet and OpenBeach
+# Flatpak: OpenVolley eScoresheet, OpenBeach and Point Hub
 
-Flatpak packages of the two desktop apps, for any Linux distribution with
+Flatpak packages of the desktop apps, for any Linux distribution with
 Flatpak (Fedora, Arch, openSUSE, Mint, Ubuntu, ...). They repack the `.deb`
 that GitHub Actions builds and releases (`.github/workflows/desktop.yml`), the
 same way the AUR packages do: nothing is compiled here except the tray library.
+Point Hub, KSC Wiedikon's scoreboard console, is published here too; its
+`.deb` comes from its own repository's releases (see [Point Hub](#point-hub)).
 
-| | OpenVolley eScoresheet | OpenBeach |
-|---|---|---|
-| App id | `com.openvolley.escoresheet` | `com.openvolley.beach` |
-| Command | `openvolley-escoresheet` | `openbeach-escoresheet` |
-| Release tag / asset | `desktop-vX` / `openvolley-escoresheet_X_amd64.deb` | `beach-desktop-vX` / `openbeach-escoresheet_X_amd64.deb` |
-| Version here | 2.4.0 | 2.0.0 |
+| | OpenVolley eScoresheet | OpenBeach | Point Hub |
+|---|---|---|---|
+| App id | `com.openvolley.escoresheet` | `com.openvolley.beach` | `ch.kscw.PointHub` |
+| Command | `openvolley-escoresheet` | `openbeach-escoresheet` | `point-hub` |
+| Release tag / asset | `desktop-vX` / `openvolley-escoresheet_X_amd64.deb` | `beach-desktop-vX` / `openbeach-escoresheet_X_amd64.deb` | `desktop-vX` of Lucanepa/point-hub / `point-hub_X_amd64.deb` |
+| Version here | 2.4.0 | 2.0.0 | 1.1.0 (checksum filled in at its release) |
 
 Install (self-hosted repo, once it is published):
 
 ```sh
 flatpak install --user https://get.openvolley.app/flatpak/com.openvolley.escoresheet.flatpakref
 flatpak install --user https://get.openvolley.app/flatpak/com.openvolley.beach.flatpakref
+flatpak install --user https://get.openvolley.app/flatpak/ch.kscw.PointHub.flatpakref
 flatpak update   # updates come from here, never from the app
 ```
 
@@ -27,7 +30,7 @@ the runtime repo, so it is added if missing.
 
 | File | What |
 |---|---|
-| `com.openvolley.escoresheet.json`, `com.openvolley.beach.json` | flatpak-builder manifests (JSON: the scripts edit them with the Python stdlib) |
+| `com.openvolley.escoresheet.json`, `com.openvolley.beach.json`, `ch.kscw.PointHub.json` | flatpak-builder manifests (JSON: the scripts edit them with the Python stdlib) |
 | `*.metainfo.xml` | AppStream metadata: description, releases, screenshots, OARS rating, branding |
 | `*.desktop` | desktop entries (`Icon=<app id>`, `StartupWMClass=<command>`) |
 | `screenshots/` | the screenshots the metainfo links to (taken from the Flatpak under Xvfb) |
@@ -36,7 +39,7 @@ the runtime repo, so it is added if missing.
 | `flatpak-meta.py` | edits a manifest's `.deb` source and adds a `<release>` to a metainfo |
 | `bump.sh` | a new release into the manifest and metainfo (to commit) |
 | `publish-flatpak.sh` | builds a release into the signed self-hosted repo (lenovoserver) |
-| `test.sh` | builds, installs, starts and publishes both apps in a Docker container |
+| `test.sh` | builds, installs, starts and publishes the apps in a Docker container |
 
 ## The in-app updater is off
 
@@ -188,6 +191,75 @@ Xvfb (LAN page answers, updater log line), then runs `publish-flatpak.sh` with
 a throwaway key and installs from the `.flatpakref` over HTTP. The runtimes
 stay in the Docker volume `ov-flatpak-test-cache`. Last run 2026-10-07: all
 checks passed for OpenVolley 2.3.0 and OpenBeach 2.0.0.
+
+## Point Hub
+
+`ch.kscw.PointHub` is KSC Wiedikon's scoreboard console
+([Lucanepa/point-hub](https://github.com/Lucanepa/point-hub)), a Compose Desktop
+app on JetBrains Runtime with Chromium (JCEF): not the Tauri shell above, so
+none of its tray, updater or WebKitGTK points apply.
+
+- **What is in it.** The release `.deb` is jpackage's: a self-contained bundle in
+  `/opt/point-hub` (launcher, its own Java runtime, Chromium; about 150 MB, 460 MB
+  unpacked). The manifest copies that tree to `/app/point-hub` as it is and links
+  `/app/bin/point-hub` to the launcher (it finds its runtime next to itself). The
+  module is neither stripped nor split into debug info (`strip: false`,
+  `no-debuginfo`): the binaries are prebuilt, and skiko checks its library
+  against the `.sha256` file next to it. Icon: the bundle's 512 px PNG. The
+  `.desktop` file and the metainfo are ours (jpackage's entry says `point-hub`).
+- **Runtime.** GNOME 51, like the others: every system library the bundle links
+  (NSS, CUPS, ALSA, at-spi, X11, GBM, ...) is in it; `test.sh` checks each ELF file.
+- **No in-app updater** at all: nothing to switch off; `flatpak update` brings each
+  version.
+
+| finish-arg | Why |
+|---|---|
+| `--share=network` | the scoreboard over its Wi-Fi or the cable (the console is the board's web page) and the schedule |
+| `--socket=x11` | the window: the app is AWT on X11 (no Wayland toolkit), so plain x11, not fallback-x11 |
+| `--share=ipc` | X11 shared memory (MIT-SHM) |
+| `--device=dri` | GPU access for the window (Chromium itself renders in software, `--disable-gpu`) |
+
+Chromium runs **without its own sandbox**: point-hub starts CEF with `no_sandbox`
+(its setuid helper and user namespaces are not available inside a Flatpak), and
+locks the page to the scoreboard's own origin; the Flatpak sandbox is around it.
+
+What is different in the sandbox:
+
+- **Its own data.** Settings in `~/.var/app/ch.kscw.PointHub/config/point-hub/`,
+  backups, the schedule copy and Chromium's cache in
+  `~/.var/app/ch.kscw.PointHub/data/point-hub/` (the app follows `XDG_CONFIG_HOME` /
+  `XDG_DATA_HOME`); a `.deb` install's `~/.config/point-hub` is not seen.
+- **"Export backups" saves to Downloads.** The app's save dialog (AWT's GTK file
+  chooser, not the FileChooser portal) sees the sandbox's file system: with
+  `--filesystem=xdg-download` (as the other two apps have) a zip saved in Downloads
+  stays; one saved anywhere else outside `~/.var/app/ch.kscw.PointHub/` is gone when
+  the app quits.
+- x86_64 only, as the release has no arm64 `.deb`.
+
+The manifest is committed before Point Hub's first release with the `@SHA256@`
+placeholder for the `.deb` (flatpak-builder refuses it, so nothing builds from
+an unchecked download): `bump.sh point-hub <version>` fills in URL and SHA-256
+from the release. `publish-flatpak.sh` does not need it (it builds from the
+`.deb` it is given, `--deb` or the APT pool).
+
+Each release, with the APT and pacman ones (`../../deploy/README.md`, "Point Hub"):
+
+```sh
+escoresheet/packaging/flatpak/bump.sh point-hub 1.1.0          # commit
+escoresheet/deploy/publish-pkgs.sh --point-hub 1.1.0 --flatpak [--pacman] [APK]
+```
+
+or by hand: `publish-flatpak.sh --app point-hub 1.1.0`, then `publish-pkgs.sh`.
+
+Test: `test.sh point-hub`; before the release (no asset to download yet)
+`OV_FLATPAK_TEST_DEB=<point-hub_1.1.0_amd64.deb> test.sh point-hub`. Instead of the
+stamp, the LAN page and the updater line it checks that every ELF file of the
+bundle finds its libraries in the runtime, and that the app starts under Xvfb,
+brings up Chromium's helper processes and makes its settings and cache under
+`~/.var/app/ch.kscw.PointHub/`. Last run 2026-10-19 with a local 1.1.0 build
+(jpackage, from point-hub's `feat/desktop-app` branch): all checks passed, and
+`publish-flatpak.sh --app point-hub` with a throwaway key published and
+installed it from the `.flatpakref`.
 
 ## Flathub
 

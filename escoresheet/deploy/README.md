@@ -3,10 +3,15 @@
 Everything needed to run the OpenVolley cloud backend (`escoresheet/backend`) with its own
 Postgres on one Linux VM, reachable only through a Cloudflare Tunnel.
 
-- **Now (Option A):** co-tenant on the Hetzner VM `lucanepa-prod` (`ssh hetzner`), which also
-  runs KSCW production under Coolify and Traefik. See [RUNBOOK-hetzner.md](RUNBOOK-hetzner.md).
-- **Later (Option B):** the same files on a small VM of its own. No DNS change, downtime under
-  15 minutes. See [RUNBOOK-move-to-own-vm.md](RUNBOOK-move-to-own-vm.md).
+- **Now (since 16.10.2026): lenovoserver**, the owner's home server, which is also the build
+  machine. The kit and `.env` are in `/opt/openvolley` (`root:root` 0750), so every compose and
+  kit command there needs `sudo` (`sudo docker compose --project-directory /opt/openvolley ...`).
+  Operations: [RUNBOOK-hetzner.md](RUNBOOK-hetzner.md), from "Match-day rules" on.
+- **Before (Option A):** co-tenant on the Hetzner VM `lucanepa-prod` (`ssh hetzner`) next to
+  KSCW production. That VPS now belongs to the KSC Wiedikon club's own Hetzner account:
+  OpenVolley is the owner's private project and must **never be deployed there again**.
+- **Moving (Option B):** the same files on another host, no DNS change, downtime under
+  15 minutes. Used for the move to lenovoserver; see [RUNBOOK-move-to-own-vm.md](RUNBOOK-move-to-own-vm.md).
 
 The stack is a plain `docker compose` project named `openvolley` in `/opt/openvolley`. It is
 **not** a Coolify resource. It publishes **no host ports**, joins **no** Coolify or Traefik
@@ -34,12 +39,15 @@ network, and carries `traefik.enable=false`.
    /data/openvolley/storage 15 GB loop ext4  (.ovdata sentinel, scoresheets/, backup/)
    /data/openvolley/backups  hourly db dumps + nightly storage tars, GPG-encrypted (public key only)
    /var/lib/openvolley-status/last_backup   (mounted read-only into ov-backend)
-        |  nightly PULL over Tailscale (rrsync -ro)          weekly restore test
-        v                                                    v
-   NAS /volume1/backups/openvolley/hetzner  ------------>  lenovoserver (holds the private key)
+        |  lenovoserver's nightly borg backup (the loop images are excluded)
+        v
+   NAS (borg)            weekly restore test: restore-test.sh on lenovoserver (holds the private key)
+   (nas-pull.sh, a pull of the encrypted files over Tailscale, was never configured)
 ```
 
 ## Files
+
+"VM" below is the production host: lenovoserver since 16.10.2026.
 
 | File | Runs where | What it does |
 |---|---|---|
@@ -48,20 +56,22 @@ network, and carries `traefik.enable=false`.
 | `cloudflared/config.yml` | VM (mounted read-only) | Tunnel ingress: `backend.openvolley.app` (and the temporary `ov-preflight` name) -> `http://ov-backend:8080`, `get.openvolley.app` -> `http://ov-pkgs:80`; everything else 404 |
 | `pkgs/Caddyfile` | VM (mounted read-only into `ov-pkgs`) | Static server for `get.openvolley.app`: GET/HEAD only, directory listings, MIME types for `.deb`/`.apk`/`.jar`/`.json`/`.gpg`, 1-year `immutable` cache for packages, 60 s for everything else (the desktop updater manifests too); `Access-Control-Allow-Origin: *` on `/fdroid/repo/index-v2.json` only (the Android app's update check) |
 | `pkgs/index.html` | template, filled by `publish-pkgs.sh` | Install page at `/` (Android via F-Droid or APK, Linux via APT, Windows `.exe`). Its `<!--per-machine-->` block (administrator prompt, firewall rule) is published only for a desktop version newer than 2.1.0, the last per-user Windows installer |
-| `pkgs/install.sh` | copied by `publish-pkgs.sh` | Linux one-line installer at `/install.sh`: checks the APT key fingerprint, adds the repo, installs `openvolley-escoresheet` (or the package given: `sh -s openbeach-escoresheet`) |
-| `publish-pkgs.sh` | lenovoserver | Adds `.deb` (repacked to `openvolley-escoresheet` if named otherwise)/signed `.apk`, copies `pkgs/install.sh`, re-signs the APT and F-Droid indexes, rsyncs the public tree to `hetzner:/data/openvolley/pkgs/`. `--desktop VERSION [--staging]` also signs a desktop release for the in-app updater and writes its `latest.json`. See [Public downloads](#public-downloads-getopenvolleyapp) |
+| `pkgs/install.sh` | copied by `publish-pkgs.sh` | Linux one-line installer at `/install.sh`: checks the APT key fingerprint, adds the repo, installs `openvolley-escoresheet` (or the package given: `sh -s openbeach-escoresheet`, `sh -s point-hub`) |
+| `publish-pkgs.sh` | lenovoserver | Adds `.deb` (repacked to `openvolley-escoresheet` if named otherwise)/signed `.apk`, copies `pkgs/install.sh`, re-signs the APT and F-Droid indexes, rsyncs the public tree to `/data/openvolley/pkgs/` on lenovoserver (with `sudo`; `OV_PKGS_DEST` overrides). `--desktop VERSION [--staging]` also signs a desktop release for the in-app updater and writes its `latest.json`. See [Public downloads](#public-downloads-getopenvolleyapp) |
 | `lib/publish-lib.sh`, `lib/desktop-updater.mjs` | lenovoserver (used by `publish-pkgs.sh`) | The `--desktop` steps and the key-material guard; the `.mjs` (Node, no npm packages) checks updater signatures the way the app does and writes and validates `latest.json` |
-| `homebrew/bump-cask.sh`, `homebrew/Casks/*.rb` | lenovoserver (or any machine), after `publish-pkgs.sh --desktop` | Writes the macOS casks `openvolley` / `openbeach` (version + SHA-256 of the release's `.dmg`) into a checkout of the tap `Lucanepa/homebrew-tap`; you review, commit and push there. See [macOS](#macos-unsigned-homebrew-tap) |
+| `homebrew/bump-cask.sh`, `homebrew/Casks/*.rb` | lenovoserver (or any machine), after `publish-pkgs.sh --desktop` | Writes the macOS casks `openvolley` / `openbeach` (version + SHA-256 of the release's `.dmg`) and `point-hub` (`--app point-hub`: both `.dmg` of Lucanepa/point-hub's release, the bundle name read from them with 7z) into a checkout of the tap `Lucanepa/homebrew-tap`; you review, commit and push there. See [macOS](#macos-unsigned-homebrew-tap) |
 | `tests/bump-cask.test.sh` | any machine | Offline tests of `bump-cask.sh` |
-| `tests/publish-desktop.test.sh` | any machine with Node, `dpkg-deb` and tauri-cli >= 2.12 | Offline tests of `--desktop` (OpenVolley and `--app beach`) with a throwaway key: signing, verification, `latest.json`, staging, rollback and leak guards, the per-app APT hold-back, GitHub's "Latest" and the OpenBeach fallback (stubbed `gh`), APT names, the Android certificate per app id, `install.sh` and the landing page |
+| `tests/publish-desktop.test.sh` | any machine with Node, `dpkg-deb` and tauri-cli >= 2.12 | Offline tests of `--desktop` (OpenVolley and `--app beach`) with a throwaway key: signing, verification, `latest.json`, staging, rollback and leak guards, the per-app APT hold-back, GitHub's "Latest" and the OpenBeach fallback (stubbed `gh`), APT names, the Android certificate per app id, `install.sh` and the landing page; Point Hub's `.deb` checks, `--point-hub` and its page section |
+| `tests/publish-point-hub.test.sh` | lenovoserver (fdroidserver, Android build-tools; Docker for the last step) | A whole `publish-pkgs.sh --point-hub` run with throwaway APT and F-Droid keys (a kit copy with the test key's fingerprint), on real packages: APT lists `point-hub` next to a held-back OpenVolley, the APK is accepted by its committed certificate, refusals, then a clean Debian installs it with the published `install.sh` and starts it under Xvfb. See [Point Hub](#point-hub) |
+| `fdroid-metadata/ch.kscw.pointhub.yml` | copied once to `~/.config/openvolley-pkgs/fdroid/metadata/` | Point Hub's F-Droid metadata (the other apps' live only in that directory) |
 | `Dockerfile.backend` (+ `.dockerignore`) | build machine | Packages `escoresheet/backend`: `node:22.23.3-bookworm-slim`, `npm ci --omit=dev`, user `node`, HEALTHCHECK on `/health/live` + storage sentinel (no fallback) |
-| `build-image.sh` | lenovoserver | Builds `openvolley-backend:<git-sha>`, refusing a backend tree without the self-host contract; `--ship <host>` streams it to the VM, keeps a `.tar.gz` for rollbacks and prunes to the newest 5 (`prune-images.sh`) |
+| `build-image.sh` | lenovoserver | Builds `openvolley-backend:<git-sha>`, refusing a backend tree without the self-host contract; `--ship <host>` streams it to the VM, keeps a `.tar.gz` for rollbacks and prunes to the newest 5 (`prune-images.sh`); `--ship local` does the archive and the prune with `sudo` when the VM is lenovoserver itself |
 | `apply-roles.sh` | VM, root | `roles.sql` from stdin with `OV_APP_PW` read from `.env` (never exported into a shell), then checks the `ov_app` login |
 | `restore-db.sh` | VM, root | Restores a decrypted dump into a **fresh** database, all-or-nothing (`--single-transaction`), count check, rolls back on any failure, resets the backup count guard |
 | `host-prep.sh` | VM, as root | Idempotent host setup: loop filesystems, sentinels, `chattr +i`, fstab (`nofail`), dirs, `ovbackup` user, backup units. `--check` is read-only |
 | `backup-openvolley.sh` + `systemd/openvolley-backup*.{service,timer}` | VM, root | Hourly `pg_dump -Fc` + nightly storage tars, GPG to the public key, count-drop guard, rotation, `last_backup` |
-| `nas-pull.sh` | NAS (DSM Task Scheduler) | Pulls the encrypted files over Tailscale with a restricted read-only key, NAS-side retention, freshness check |
-| `restore-test.sh` + `systemd/openvolley-restore-test.{service,timer}` | lenovoserver, weekly | Decrypts the newest NAS dump, restores into a throwaway Postgres, boots the backend image against it, checks `/health` and row-count floors, tears down |
+| `nas-pull.sh` | NAS (DSM Task Scheduler) | Pulls the encrypted files over Tailscale with a restricted read-only key, NAS-side retention, freshness check. Not set up (never was): lenovoserver's borg backup covers `/data/openvolley/backups` |
+| `restore-test.sh` + `systemd/openvolley-restore-test.{service,timer}` | lenovoserver, weekly | Decrypts the newest dump (default: `/data/openvolley/backups`, read through group `ovbackup`), restores into a throwaway Postgres, boots the backend image against it (default: the tag `build-image.sh --ship local` recorded), checks `/health` and row-count floors, tears down |
 
 ## Runtime contract (backend <-> kit)
 
@@ -100,6 +110,9 @@ refuses to `initdb` when a cluster has existed on the filesystem (`state/initial
 so later `up`/rollback commands in that shell would silently use the old values.
 
 ## What touches KSCW (isolation on the shared VM)
+
+Written for the co-tenancy on `lucanepa-prod` (until 16.10.2026). The limits are the same on
+lenovoserver; the Coolify, Traefik and KSCW items refer to that old host.
 
 Everything the kit does on `lucanepa-prod`, and nothing else:
 
@@ -206,7 +219,7 @@ repo only ever lists `openvolley-escoresheet`. Someone who installed `openvolley
 (the GitHub `.deb`, or this repo before the rename) moves over with the installer or
 `sudo apt install openvolley-escoresheet`; plain `apt upgrade` does not switch package names.
 
-**Keys** (lenovoserver only, never on the VM, never in git), all under
+**Keys** (lenovoserver only, never in `/opt/openvolley`, never in git), all under
 `~/.config/openvolley-pkgs/` (mode 700):
 
 - `gnupg/` + `gpg-passphrase`: the APT key. Vaultwarden, folder OpenVolley, **"OpenVolley APT
@@ -250,6 +263,66 @@ both repos, then as below with `--app beach` (`--desktop <version> --app beach -
 `beach-desktop-latest` instead of GitHub's "Latest" (re-upload `latest-<previous>.json` there as
 `latest.json`).
 
+### Point Hub
+
+Point Hub, KSC Wiedikon's scoreboard console (the LedBox board's control screen,
+[Lucanepa/point-hub](https://github.com/Lucanepa/point-hub)), goes out through the same channels
+as a third app. It is not the Tauri shell and has **no in-app updater**, which is what makes it
+simpler than OpenBeach:
+
+| | Point Hub |
+|---|---|
+| APT | package `point-hub`: jpackage's `.deb` (`/opt/point-hub`, with Chromium from JetBrains Runtime, about 150 MB), plus `/usr/bin/point-hub`, the symlink point-hub's CI adds (`android/desktop/packaging/finish-deb.sh`); `publish-pkgs.sh` refuses it without that command or with it dangling |
+| Android | app id `ch.kscw.pointhub`, signed with KSC Wiedikon's key: certificate SHA-256 `6d66f614…8d92e48c22` committed in `lib/publish-lib.sh` (from point-hub's `android/signing-cert.sha256`; the APK comes from its `android/build-release.sh`) |
+| Desktop releases | GitHub releases `desktop-v<version>` of **Lucanepa/point-hub** (its `desktop.yml`): `point-hub_<v>_amd64.deb`, `point-hub-<v>-1.x86_64.rpm`, `point-hub-<v>.msi` (per machine), `Point-Hub-<v>-macos-arm64.dmg`, `Point-Hub-<v>-macos-x64.dmg` |
+| Updates | only through the package managers: no `latest.json`, no updater signatures, nothing under `/desktop/`. The APT hold-back never applies (APT lists a new `point-hub` at once) and a hand-given `point-hub` `.deb` is never refused for being newer than a manifest |
+| Other channels | Flatpak `ch.kscw.PointHub`, AUR and pacman `point-hub-bin`, Scoop `point-hub.json`, winget `KSCWiedikon.PointHub`, Homebrew cask `point-hub` (`../packaging/*/README.md`, `homebrew/`). No snap: a snap name needs the owner's Snap Store registration (`../packaging/snap/README.md`) |
+
+The install page shows a Point Hub section once its `.deb` or APK is published (each part once
+that one is; its Flatpak and pacman lines once those are). Linux:
+`curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s point-hub`.
+
+**Once, before the first APK:** its F-Droid metadata. The other apps' metadata lives only in
+`~/.config/openvolley-pkgs/fdroid/metadata/`; Point Hub's template is in this repo.
+`publish-pkgs.sh` refuses an APK whose app id has no metadata there (`fdroid update` would only
+warn and leave it out of the index).
+
+```bash
+install -m 644 escoresheet/deploy/fdroid-metadata/ch.kscw.pointhub.yml ~/.config/openvolley-pkgs/fdroid/metadata/
+install -D -m 644 ~/repos/point-hub/android/desktop/icons/point-hub.png \
+  ~/.config/openvolley-pkgs/fdroid/metadata/ch.kscw.pointhub/en-US/icon.png
+```
+
+**A release** (Point Hub `<v>`, after point-hub's CI published `desktop-v<v>` and the APK is built
+with `android/build-release.sh --version-name <v>` in point-hub). Not on match days either.
+
+1. The checksums of the packaging files, from the release (each script downloads the asset; the
+   files are committed with the `@SHA256@` placeholder until the first release), then commit and
+   merge to `main` (Scoop installs from `main`):
+   ```bash
+   escoresheet/packaging/aur/bump.sh point-hub <v>
+   escoresheet/packaging/flatpak/bump.sh point-hub <v>
+   escoresheet/packaging/scoop/update-manifests.sh point-hub <v>
+   escoresheet/packaging/winget/update-manifests.sh point-hub <v>
+   escoresheet/packaging/scoop/validate.sh --urls && escoresheet/packaging/winget/validate.sh --urls
+   ```
+2. APT, F-Droid, Flatpak and pacman in one run (no `--staging`: nothing to stage without an
+   updater; `--flatpak` and `--pacman` build the same `.deb`):
+   ```bash
+   escoresheet/deploy/publish-pkgs.sh --point-hub <v> --flatpak --pacman ~/repos/point-hub/android/dist/pointhub.apk
+   ```
+   `--point-hub <v>` downloads `point-hub_<v>_amd64.deb` from the release (a draft or prerelease is
+   refused) and checks package, version and architecture; it can go with `--desktop` in one run.
+3. The AUR (`escoresheet/packaging/aur/publish.sh point-hub`), the Homebrew cask
+   (`escoresheet/deploy/homebrew/bump-cask.sh --app point-hub <v> ~/src/homebrew-tap`, then commit and
+   push there) and winget (submit `manifests/k/KSCWiedikon/PointHub/<v>/`, `../packaging/winget/README.md`).
+
+Withdraw a version as for the others: delete `point-hub_<v>_amd64.deb` from the pool (or the APK
+from `fdroid/repo/`) and run `publish-pkgs.sh` again. There is no kill switch to flip (no updater).
+
+Tests: `tests/publish-point-hub.test.sh` (throwaway keys, `--no-sync`); with the real inputs:
+`OV_TEST_POINTHUB_DEB=<.deb> OV_TEST_POINTHUB_APK=<release APK> OV_TEST_POINTHUB_BAD_APK=<debug APK>`.
+
 ### macOS (unsigned), Homebrew tap
 
 The macOS app is ad-hoc signed, not notarized (no paid Apple developer account). macOS blocks
@@ -267,6 +340,20 @@ After `publish-pkgs.sh --desktop <version>` (OpenBeach: `--app beach`):
 git clone git@github.com:Lucanepa/homebrew-tap.git ~/src/homebrew-tap   # once
 escoresheet/deploy/homebrew/bump-cask.sh <version> ~/src/homebrew-tap   # OpenBeach: --app beach
 cd ~/src/homebrew-tap && git diff && git commit -am "openvolley <version>" && git push
+```
+
+Point Hub (`--app point-hub`, after its GitHub release `desktop-v<version>` of Lucanepa/point-hub):
+two disk images, `Point-Hub-<version>-macos-arm64.dmg` and `-x64.dmg`, so the cask has
+`arch arm: "arm64", intel: "x64"` and one SHA-256 each; no `auto_updates` (no updater: `brew
+upgrade` updates it). The script reads the app bundle's name, identifier and version from each
+image (`7z`; it must be `ch.kscw.pointhub` at that version, the same bundle in both) and puts that
+name in `app` and the caveats: point-hub's jpackage build makes `point-hub.app` today (its
+`macOS { packageName = "Point Hub" }` does not rename the bundle). Copy `homebrew/README.md` to
+the tap again (it lists the cask). `brew style` passes; `brew audit` needs a Mac (Homebrew on
+Linux cannot pick an `arm:` / `intel:` checksum, also for a minimal control cask).
+```bash
+escoresheet/deploy/homebrew/bump-cask.sh --app point-hub <version> ~/src/homebrew-tap
+cd ~/src/homebrew-tap && git diff && git commit -am "point-hub <version>" && git push
 ```
 
 ### Release procedure
@@ -361,19 +448,21 @@ Tests (offline, throwaway key, no GitHub, no sync):
 
 ### Deploy (owner, once)
 
+On lenovoserver (first done on hetzner; on lenovoserver `host-prep.sh` already made the directory):
+
 ```bash
 # DNS (openvolley.app zone): CNAME get -> 10659462-0408-42a4-bdd9-fc890094954d.cfargotunnel.com, proxied
-lenovo$ ssh hetzner install -d -m 0755 -o root -g root /data/openvolley/pkgs     # or ./host-prep.sh
-lenovo$ escoresheet/deploy/publish-pkgs.sh                                      # fills it
-lenovo$ rsync -rlt --chmod=D750,F640 --exclude=.env escoresheet/deploy/ hetzner:/opt/openvolley/
-lenovo$ ssh hetzner 'chmod 750 /opt/openvolley/*.sh && chmod 644 /opt/openvolley/cloudflared/config.yml /opt/openvolley/pkgs/Caddyfile'
-hetzner# cd /opt/openvolley && docker compose config -q && docker compose up -d ov-pkgs && docker compose restart ov-tunnel
-hetzner# docker compose ps ov-pkgs                                               # healthy
+lenovo$ sudo install -d -m 0755 -o root -g root /data/openvolley/pkgs           # or host-prep.sh
+lenovo$ escoresheet/deploy/publish-pkgs.sh                                      # fills it (sudo rsync)
+lenovo$ sudo rsync -rlt --chmod=D750,F640 --exclude=.env escoresheet/deploy/ /opt/openvolley/
+lenovo$ sudo sh -c 'chmod 750 /opt/openvolley/*.sh && chmod 644 /opt/openvolley/cloudflared/config.yml /opt/openvolley/pkgs/Caddyfile'
+lenovo$ sudo docker compose --project-directory /opt/openvolley config -q && sudo docker compose --project-directory /opt/openvolley up -d ov-pkgs && sudo docker compose --project-directory /opt/openvolley restart ov-tunnel
+lenovo$ sudo docker compose --project-directory /opt/openvolley ps ov-pkgs       # healthy
 ```
 
 A later `pkgs/Caddyfile` change (such as the F-Droid index CORS header) does not change the
 compose config, so `up -d` alone keeps the old one: copy the kit as above, then
-`docker compose up -d --force-recreate ov-pkgs` and check
+`sudo docker compose --project-directory /opt/openvolley up -d --force-recreate ov-pkgs` and check
 `curl -fsSI https://get.openvolley.app/fdroid/repo/index-v2.json | grep -i access-control`.
 
 The `chmod 644` matters: the kit lands root-owned `640`, and `ov-pkgs` runs as `nobody` (as

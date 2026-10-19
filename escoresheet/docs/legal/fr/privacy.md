@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.2 · État au 13 octobre 2026
+**OpenVolley et OpenBeach** · Version 1.3 · État au 16 octobre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version allemande fait foi.
@@ -24,8 +24,8 @@ version allemande fait foi.
 - L'application OpenVolley tient un journal d'activité de chaque match, sans
   NIP ni mots de passe. Si vous êtes connecté, il est envoyé au serveur. Ce que
   vous cliquez ou tapez reste sur votre appareil (section 5).
-- Le serveur se trouve en Allemagne (Hetzner). Cloudflare (États-Unis) diffuse
-  les sites web et transmet le trafic au serveur.
+- Le serveur se trouve en Suisse et est exploité par moi. Cloudflare
+  (États-Unis) diffuse les sites web et transmet le trafic au serveur.
 - Vous pouvez demander à tout moment l'accès, la rectification ou
   l'effacement : **support@openvolley.app**.
 
@@ -498,7 +498,6 @@ besoin pour l'exploitation. Ils traitent les données sur mandat.
 
 | Prestataire | Tâche | Pays |
 |---|---|---|
-| Hetzner Online GmbH | Serveur, base de données, stockage de fichiers | Allemagne |
 | Cloudflare, Inc. | Diffusion des sites, DNS, connexion sécurisée au serveur | États-Unis (réseau mondial) |
 | Migadu | Envoi d'e-mails (noreply@) et boîte aux lettres (support@) | Suisse / Europe |
 | Resend, Inc. | Envoi des infos du match par e-mail (seulement cette fonction, si activée) | États-Unis |
@@ -513,12 +512,12 @@ utiliser les données que pour fournir son service.
 les téléchargements et la liste des versions, F-Droid pour le catalogue
 d'applications, Swiss Volley pour les données du VolleyManager.
 
-**Les sauvegardes** sont conservées chiffrées sur mon serveur en Allemagne et
-sur mes propres appareils en Suisse ; aucun tiers ne reçoit de données à cet
-effet (section 18).
+**Les sauvegardes** sont conservées chiffrées sur mon serveur et sur mon
+propre support de stockage, tous deux en Suisse ; aucun tiers ne reçoit de
+données à cet effet (section 18).
 
-**Communication à l'étranger :** selon le Conseil fédéral, l'Allemagne et
-l'UE offrent une protection adéquate des données. Pour les États-Unis, je me
+**Communication à l'étranger :** selon le Conseil fédéral, les États de l'UE
+et de l'EEE offrent une protection adéquate des données. Pour les États-Unis, je me
 fonde sur le Swiss-U.S. Data Privacy Framework lorsque le prestataire est
 certifié, et sinon sur les clauses contractuelles types des contrats des
 prestataires. Vous pouvez me demander une copie de ces garanties.
@@ -570,10 +569,10 @@ section 19 pour leur enfant.
   sont en lecture seule.
 - Limitation des tentatives de connexion et blocage après des échecs.
 - Sauvegardes : le serveur sauvegarde la base de données chaque heure et les
-  fichiers chaque jour, **chiffrés**. La clé de déchiffrement ne se trouve pas
-  sur le serveur. Les sauvegardes sont copiées chaque jour sur mon propre
-  support de stockage en Suisse et y sont conservées jusqu'à 90 jours, et dans
-  des instantanés mensuels **jusqu'à environ 6 mois**. Des données effacées
+  fichiers chaque jour, **chiffrés**. Les sauvegardes sont copiées chaque jour
+  sur mon propre support de stockage en Suisse et y sont conservées dans des
+  instantanés quotidiens, hebdomadaires et mensuels **jusqu'à environ
+  6 mois**. Des données effacées
   peuvent donc subsister jusqu'à environ 6 mois dans ces sauvegardes
   chiffrées ; elles ne servent qu'à une restauration.
 - Les fichiers de sauvegarde et les fichiers journaux de l'application de

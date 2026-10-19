@@ -16,6 +16,15 @@
 #   landing_page TEMPLATE PACKAGES INDEXV2 OUT   pkgs/index.html filled in
 #   pacman_repo_fpr ARCHDIR     the published pacman repo key's fingerprint (checked)
 #
+# A third app rides along: Point Hub, KSC Wiedikon's scoreboard console
+# (github.com/Lucanepa/point-hub; APT package point-hub, Android app
+# ch.kscw.pointhub with its own key). Its desktop app is not the Tauri shell
+# and has no in-app updater: no latest.json, no updater signature, so none of
+# the desktop_* steps and none of the APT hold-back ever apply to it. Its .deb
+# goes into the pool as it is (publish-pkgs.sh FILE.deb, or --point-hub V):
+#   pointhub_fetch V DIR        point-hub_V_amd64.deb of point-hub's GitHub
+#                               release desktop-vV, checked (sets POINTHUB_DEB)
+#
 # Desktop updater release (publish-pkgs.sh --desktop VERSION [--staging] [--app APP]):
 #   desktop_check_setup         tools, key files, tauri CLI >= 2.12, trusted pubkey
 #   desktop_fetch V DIR         the three installers of desktop-vV into DIR, and
@@ -52,8 +61,10 @@ FASTLANE_CHANGELOGS="$KIT_DIR/../../fastlane/metadata/android/en-US/changelogs"
 BEACH_CHANGELOGS=${OV_BEACH_CHANGELOGS:-$KIT_DIR/../../openbeach/fastlane/metadata/android/en-US/changelogs}
 
 # The APT packages this repository publishes, one per desktop app.
-APT_NAMES=(openvolley-escoresheet openbeach-escoresheet)
-# Every app's package, for the APT hold-back: app -> package, app -> manifest dir.
+APT_NAMES=(openvolley-escoresheet openbeach-escoresheet point-hub)
+# Every updater app's package, for the APT hold-back: app -> package, app ->
+# manifest dir. Point Hub is not in here on purpose: it has no latest.json, so
+# nothing holds its versions back (apt_held is never true for point-hub).
 declare -A APP_DEB_NAME=([openvolley]=openvolley-escoresheet [beach]=openbeach-escoresheet)
 declare -A APP_DESKTOP_DIR=([openvolley]=desktop [beach]=desktop/beach)
 
@@ -62,6 +73,16 @@ DESKTOP_APP='' DESKTOP_NAME='' DESKTOP_TAG_PREFIX='' DESKTOP_DEB_NAME='' DESKTOP
 DESKTOP_TAURI_CONF='' DESKTOP_MAKE_LATEST='' DESKTOP_FALLBACK_TAG='' DESKTOP_ID=''
 # Set by desktop_fetch (DESKTOP_MAC empty: the release has no macOS build).
 DESKTOP_EXE='' DESKTOP_APPIMAGE='' DESKTOP_DEB='' DESKTOP_MAC=''
+
+# Point Hub: its own GitHub repo; desktop releases tagged desktop-vV there
+# (point-hub's .github/workflows/desktop.yml), the .deb named
+# point-hub_V_amd64.deb. OV_POINTHUB_RELEASE_DIR=DIR takes the .deb from DIR
+# instead of GitHub (tests; publish-pkgs.sh allows it with --no-sync only).
+POINTHUB_GH_REPO=Lucanepa/point-hub
+POINTHUB_TAG_PREFIX=desktop-v
+POINTHUB_RELEASE_DIR=${OV_POINTHUB_RELEASE_DIR:-}
+# Set by pointhub_fetch.
+POINTHUB_DEB=''
 
 # desktop_app_select APP: which app's desktop release the desktop_* steps handle.
 #   openvolley  tags desktop-vV, package openvolley-escoresheet, manifests in
@@ -95,14 +116,22 @@ apt_name_ok() {
 # its own key: OpenVolley's from ANDROID.md; OpenBeach's from
 # $OPENBEACH_CERT_FILE (default ~/.config/openbeach-android/cert.sha256, written
 # when its key was made; Vaultwarden "OpenBeach Android signing key") unless
-# OPENBEACH_APP_CERT_SHA256 is filled in below. Any other app id is refused.
+# OPENBEACH_APP_CERT_SHA256 is filled in below. Point Hub's is committed here,
+# from point-hub's android/signing-cert.sha256 (its build-release.sh refuses an
+# APK signed with any other key; KSC Wiedikon's key, not OpenVolley's). Any
+# other app id is refused.
 OPENVOLLEY_APP_CERT_SHA256=2c7f9db4da41f5475f36142403043e45452a3143baff764e3d511d686ddabe87
 OPENBEACH_APP_CERT_SHA256=
 OPENBEACH_CERT_FILE=${OV_BEACH_CERT_FILE:-$HOME/.config/openbeach-android/cert.sha256}
+POINTHUB_APP_CERT_SHA256=6d66f61494feaa02c31f030b5a0aaf749ac24cbe852684f75eb58b8d92e48c22
 app_cert_sha256() {
   local cert
   case "$1" in
     com.openvolley.escoresheet) cert=$OPENVOLLEY_APP_CERT_SHA256 ;;
+    ch.kscw.pointhub)
+      cert=$POINTHUB_APP_CERT_SHA256
+      [[ "$cert" != "$OPENVOLLEY_APP_CERT_SHA256" ]] ||
+        die "the ch.kscw.pointhub certificate is OpenVolley's: Point Hub must have its own Android key" ;;
     com.openvolley.beach)
       cert=$OPENBEACH_APP_CERT_SHA256
       if [[ -z "$cert" && -r "$OPENBEACH_CERT_FILE" ]]; then
@@ -112,7 +141,7 @@ app_cert_sha256() {
         die "no signing certificate for com.openvolley.beach: put its SHA-256 in $OPENBEACH_CERT_FILE (or OPENBEACH_APP_CERT_SHA256 in lib/publish-lib.sh)"
       [[ "$cert" != "$OPENVOLLEY_APP_CERT_SHA256" ]] ||
         die "the com.openvolley.beach certificate is OpenVolley's: OpenBeach must have its own Android key" ;;
-    *) die "app id ${1:-?} is not published here (com.openvolley.escoresheet, com.openvolley.beach)" ;;
+    *) die "app id ${1:-?} is not published here (com.openvolley.escoresheet, com.openvolley.beach, ch.kscw.pointhub)" ;;
   esac
   [[ "$cert" =~ ^[0-9a-f]{64}$ ]] || die "the certificate SHA-256 for $1 is not 64 hex digits: $cert"
   printf '%s\n' "$cert"
@@ -184,9 +213,17 @@ PY
 # (<!--mac-->, <!--beach-mac-->) only when its GitHub release has a .dmg.
 # The Flatpak parts and the pacman card (<!--pacman-->) once those are
 # published next to OUT (OUT's directory: flatpak/, arch/).
+# The Point Hub section (<!--pointhub--> ... <!--/pointhub-->) the same way as
+# OpenBeach's: once a point-hub .deb or a ch.kscw.pointhub APK is published,
+# its desktop (<!--pointhub-desktop-->) and Android (<!--pointhub-android-->)
+# parts each once that one is, its Flatpak and pacman lines once those are.
+# Its download links are built from the asset names point-hub's desktop.yml
+# gives every release (no GitHub API call: a release job that ran has all of
+# them, it needs every build job).
 landing_page() {
   local template=$1 packages=$2 index=$3 out=$4 ver apk_ver='' apk_file='' win_url mac_url
   local b_ver b_apk_ver='' b_apk_file='' b_win='' b_mac='' sed_args=()
+  local p_ver p_apk_ver='' p_apk_file=''
   ver=$(newest_deb "$packages" openvolley-escoresheet)
   read -r apk_ver apk_file < <(newest_apk "$index" com.openvolley.escoresheet) || true
   [[ -n "$ver" && -n "$apk_file" ]] || die "need at least one openvolley-escoresheet .deb and one com.openvolley.escoresheet APK"
@@ -214,11 +251,21 @@ landing_page() {
     fi
     [[ -n "$b_apk_file" ]] || sed_args+=(-e '/<!--beach-android-->/,/<!--\/beach-android-->/d')
   fi
+
+  p_ver=$(newest_deb "$packages" point-hub)
+  read -r p_apk_ver p_apk_file < <(newest_apk "$index" ch.kscw.pointhub) || true
+  if [[ -z "$p_ver" && -z "$p_apk_file" ]]; then
+    sed_args+=(-e '/<!--pointhub-->/,/<!--\/pointhub-->/d')
+  else
+    [[ -n "$p_ver" ]] || sed_args+=(-e '/<!--pointhub-desktop-->/,/<!--\/pointhub-desktop-->/d')
+    [[ -n "$p_apk_file" ]] || sed_args+=(-e '/<!--pointhub-android-->/,/<!--\/pointhub-android-->/d')
+  fi
   # Flatpak parts once publish-flatpak.sh published that app next to this page.
   local flat
   flat="$(dirname "$out")/flatpak"
   [[ -f "$flat/com.openvolley.escoresheet.flatpakref" ]] || sed_args+=(-e 's|<!--flatpak-->.*<!--/flatpak-->||' -e '/<!--flatpak-->/,/<!--\/flatpak-->/d')
   [[ -f "$flat/com.openvolley.beach.flatpakref" ]] || sed_args+=(-e '/<!--beach-flatpak-->/,/<!--\/beach-flatpak-->/d')
+  [[ -f "$flat/ch.kscw.PointHub.flatpakref" ]] || sed_args+=(-e '/<!--pointhub-flatpak-->/,/<!--\/pointhub-flatpak-->/d')
   # The pacman card once publish-pacman.sh published the repo next to this
   # page (its key's fingerprint filled in), each app's line once its package is.
   local arch fpr='' fpr_grouped=''
@@ -230,8 +277,11 @@ landing_page() {
       sed_args+=(-e '/<!--pacman-ov-->/,/<!--\/pacman-ov-->/d')
     compgen -G "$arch/x86_64/openbeach-escoresheet-bin-*.pkg.tar.zst" >/dev/null ||
       sed_args+=(-e '/<!--beach-pacman-->/,/<!--\/beach-pacman-->/d')
+    compgen -G "$arch/x86_64/point-hub-bin-*.pkg.tar.zst" >/dev/null ||
+      sed_args+=(-e '/<!--pointhub-pacman-->/,/<!--\/pointhub-pacman-->/d')
   else
     sed_args+=(-e 's|<!--pacman-->.*<!--/pacman-->||' -e '/<!--pacman-->/,/<!--\/pacman-->/d')
+    sed_args+=(-e '/<!--pointhub-pacman-->/,/<!--\/pointhub-pacman-->/d')
   fi
   sed "${sed_args[@]}" \
     -e "s|@DESKTOP_VERSION@|$ver|g" -e "s|@DEB_PACKAGE@|openvolley-escoresheet|g" -e "s|@WINDOWS_URL@|$win_url|g" \
@@ -239,6 +289,8 @@ landing_page() {
     -e "s|@APK_VERSION@|$apk_ver|g" -e "s|@APK_FILE@|$apk_file|g" \
     -e "s|@BEACH_DESKTOP_VERSION@|$b_ver|g" -e "s|@BEACH_WINDOWS_URL@|$b_win|g" \
     -e "s|@BEACH_APK_VERSION@|$b_apk_ver|g" -e "s|@BEACH_APK_FILE@|$b_apk_file|g" \
+    -e "s|@POINTHUB_DESKTOP_VERSION@|$p_ver|g" \
+    -e "s|@POINTHUB_APK_VERSION@|$p_apk_ver|g" -e "s|@POINTHUB_APK_FILE@|$p_apk_file|g" \
     -e "s|@PACMAN_FPR@|$fpr|g" -e "s|@PACMAN_FPR_GROUPED@|$fpr_grouped|g" \
     "$template" > "$out"
   ! grep -q '@[A-Z_]*@' "$out" || die "index.html has unfilled placeholders"
@@ -531,6 +583,39 @@ desktop_upload() {
   else
     echo "WARNING: GitHub's latest release is ${latest:-unknown}, not $tag, and making it latest failed: the updater's fallback endpoint serves the wrong release (gh release edit $tag --latest)" >&2
   fi
+}
+
+# --- Point Hub ---------------------------------------------------------------------
+# pointhub_fetch V DIR: point-hub_V_amd64.deb of the GitHub release desktop-vV
+# of Lucanepa/point-hub (or of $POINTHUB_RELEASE_DIR) into DIR, checked to be
+# a published release (no draft, no prerelease: the tag CI's release job made),
+# package point-hub, version V, amd64. Sets POINTHUB_DEB. Only the .deb: the
+# Windows and macOS packages go to Scoop, winget and Homebrew from the release
+# itself, and nothing is signed or announced (Point Hub has no updater, so no
+# latest.json; the .deb goes into the pool unchanged, like any other).
+pointhub_fetch() {
+  local v=$1 dir=$2 tag name f pkg ver arch draft pre
+  tag=$POINTHUB_TAG_PREFIX$v name="point-hub_${v}_amd64.deb"
+  mkdir -p "$dir"
+  if [[ -n "$POINTHUB_RELEASE_DIR" ]]; then
+    [[ -f "$POINTHUB_RELEASE_DIR/$name" ]] || die "$POINTHUB_RELEASE_DIR: no $name"
+    cp "$POINTHUB_RELEASE_DIR/$name" "$dir/"
+  else
+    read -r draft pre < <(gh release view "$tag" --repo "$POINTHUB_GH_REPO" --json isDraft,isPrerelease -q '"\(.isDraft) \(.isPrerelease)"') ||
+      die "no GitHub release $tag in $POINTHUB_GH_REPO"
+    [[ "$draft $pre" == "false false" ]] || die "$POINTHUB_GH_REPO release $tag is a draft or a prerelease"
+    gh release download "$tag" --repo "$POINTHUB_GH_REPO" -p "$name" -D "$dir" --clobber >/dev/null ||
+      die "could not download $name from the $POINTHUB_GH_REPO release $tag"
+  fi
+  f="$dir/$name"
+  [[ -f "$f" ]] || die "$POINTHUB_GH_REPO $tag has no $name"
+  pkg=$(dpkg-deb -f "$f" Package) || die "$f: not a .deb"
+  ver=$(dpkg-deb -f "$f" Version); arch=$(dpkg-deb -f "$f" Architecture)
+  [[ "$pkg" == point-hub ]] || die "$f: package $pkg, expected point-hub"
+  [[ "$ver" == "$v" ]] || die "$f: version $ver, expected $v"
+  [[ "$arch" == amd64 ]] || die "$f: architecture $arch, expected amd64"
+  POINTHUB_DEB=$f
+  echo "fetched $name from $POINTHUB_GH_REPO $tag"
 }
 
 # --- APT hold-back -------------------------------------------------------------

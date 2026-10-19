@@ -1,12 +1,15 @@
 # Scoop (Windows, no store account)
 
-[Scoop](https://scoop.sh) manifests for the two Windows apps. Unlike winget
-nothing has to be submitted anywhere: Scoop installs straight from a
-manifest URL, and these files are that URL once they are on `main`.
+[Scoop](https://scoop.sh) manifests for the Windows apps: OpenVolley,
+OpenBeach and Point Hub (KSC Wiedikon's scoreboard console, see
+[Point Hub](#point-hub)). Unlike winget nothing has to be submitted anywhere:
+Scoop installs straight from a manifest URL, and these files are that URL
+once they are on `main`.
 
 ```powershell
 scoop install https://raw.githubusercontent.com/Lucanepa/openvolley/main/escoresheet/packaging/scoop/openvolley.json
 scoop install https://raw.githubusercontent.com/Lucanepa/openvolley/main/escoresheet/packaging/scoop/openbeach.json
+scoop install https://raw.githubusercontent.com/Lucanepa/openvolley/main/escoresheet/packaging/scoop/point-hub.json
 
 scoop update openvolley      # re-reads the manifest from that URL
 scoop uninstall openvolley
@@ -72,6 +75,53 @@ desktop updater reads it: GitHub lists `desktop-v2.4.9` before
 `desktop-v2.4.10`, so a regex over the release list took 2.4.9) and that the
 URL is the `autoupdate` URL, and with `--urls` that the download matches the
 hash.
+
+## Point Hub
+
+`point-hub.json` installs Point Hub's `.msi` (`point-hub-<version>.msi` of the
+GitHub release `desktop-v<version>` in Lucanepa/point-hub; jpackage, per
+machine) the same way: silently, with one administrator prompt, so it is
+the website's install (Program Files, Start menu, Apps & features). It is
+not portable either, although Point Hub needs no firewall rule: run as the
+installer, winget, Scoop and the download are one install that each can
+upgrade.
+
+- **The download is named `point-hub.msi_`** (`#/point-hub.msi_` in the URL):
+  Scoop unpacks any `.msi` it downloads instead of running it. The installer
+  script renames it and runs `msiexec /i ... /qn /norestart` elevated (exit code
+  0, or 3010 for "restart wanted").
+- **Updates:** Point Hub has no updater of its own, so `scoop update point-hub` is
+  how a Scoop install gets a new version. As for the others, the uninstaller
+  does nothing during an update (the new `.msi` upgrades the old in place: same
+  UpgradeCode, `6F0C3A2E-6C7B-4D44-9A3E-2F5A8E1B7C10`, fixed in point-hub's
+  `build.gradle.kts`).
+- **Uninstall:** `scoop uninstall point-hub` asks Windows Installer for every
+  product with that UpgradeCode (`WindowsInstaller.Installer.RelatedProducts`)
+  and removes each with `msiexec /x {code} /qn`. Settings and backups
+  (`%APPDATA%\Point Hub`, `%LOCALAPPDATA%\Point Hub`) stay.
+- **checkver:** Point Hub has no `latest.json`; its repo's GitHub "Latest"
+  release (`desktop.yml` makes each desktop release that), `tag_name` with the
+  `desktop-v` prefix taken off. If point-hub ever publishes other releases as
+  "Latest", this has to change.
+- **Before the first release** the hash is the placeholder `@SHA256@` (no
+  checksum of a file that does not exist yet): Scoop refuses to install it.
+  `validate.sh` checks the rest with a dummy hash and reports it as
+  "pending" while GitHub has no release, and as BAD once the release is out
+  and the hash is still missing. Then:
+
+  ```bash
+  escoresheet/packaging/scoop/update-manifests.sh point-hub 1.1.0
+  escoresheet/packaging/scoop/validate.sh --urls
+  ```
+
+  and commit to `main` (the install command above reads it from there).
+
+Checked here (2026-10-19, no Windows): the schema, the PowerShell syntax of
+both scripts, the "pending" state, and in a scratch copy the "release out,
+hash missing" refusal and `update-manifests.sh point-hub` against a stand-in
+release. Not run: an install on Windows (`scoop install .\point-hub.json`,
+then Apps & features must show `point-hub` by KSC Wiedikon; `scoop uninstall
+point-hub` must remove it).
 
 ## Not covered
 

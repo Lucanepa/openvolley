@@ -17,6 +17,12 @@
      published (packaging/flatpak/publish-flatpak.sh); the pacman parts once arch/x86_64/openvolley.db
      is (packaging/pacman/publish-pacman.sh; PACMAN_FPR and PACMAN_FPR_GROUPED from arch/fingerprint.txt),
      its pacman-ov / beach-pacman lines once that app's package is in it.
+     The pointhub block (Point Hub, KSC Wiedikon's scoreboard console, github.com/Lucanepa/point-hub)
+     works like the beach one: POINTHUB_DESKTOP_VERSION, POINTHUB_APK_VERSION and POINTHUB_APK_FILE,
+     shown once a point-hub .deb or ch.kscw.pointhub APK is published, its pointhub-desktop /
+     pointhub-android parts each once that one is, pointhub-flatpak once flatpak/ch.kscw.PointHub.flatpakref
+     is, pointhub-pacman once arch/ has point-hub-bin. Its links follow the asset names of point-hub's
+     desktop.yml releases.
      Plain HTML, no external requests. -->
 <style>
   :root {
@@ -264,6 +270,57 @@ Server = https://get.openvolley.app/arch/$arch</code></pre><button class="copy" 
     <!--/beach-desktop-->
   </section>
   <!--/beach-->
+
+  <!--pointhub-->
+  <section class="card" id="point-hub">
+    <h2>Point Hub <span>KSCW scoreboard console</span></h2>
+    <p>The console of KSC Wiedikon's LedBox scoreboard (<a href="https://github.com/Lucanepa/point-hub">Lucanepa/point-hub</a>), a separate app published through the same repositories, signed by its own app keys. It finds the scoreboard on its Wi-Fi or on the cable and shows the board's console, with the Game tab drawn natively. It installs next to OpenVolley eScoresheet and OpenBeach.</p>
+    <!--pointhub-android-->
+    <h3>Android tablets <span class="meta">@POINTHUB_APK_VERSION@</span></h3>
+    <p>Same F-Droid repository as above: add it once, then search for <b>Point Hub</b> and install. Or the APK directly (no automatic updates):</p>
+    <div class="actions">
+      <a class="btn btn-ghost" href="/fdroid/repo/@POINTHUB_APK_FILE@">Download Point Hub APK @POINTHUB_APK_VERSION@</a>
+    </div>
+    <!--/pointhub-android-->
+    <!--pointhub-desktop-->
+    <h3>Linux (Debian, Ubuntu, Mint) <span class="meta">@POINTHUB_DESKTOP_VERSION@ · amd64</span></h3>
+    <p>The same signed APT repository; this installs the package <code>point-hub</code>.</p>
+    <div class="cmd"><pre><code>curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s point-hub</code></pre><button class="copy" type="button">Copy</button></div>
+    <p>Repository already added? <code>sudo apt install point-hub</code>. Start it from the app menu or with <code>point-hub</code>; <code>sudo apt update &amp;&amp; sudo apt upgrade</code> brings each new version.</p>
+    <!--pointhub-flatpak-->
+    <h3>Linux, any distribution (Flatpak)</h3>
+    <div class="cmd"><pre><code>flatpak install --user https://get.openvolley.app/flatpak/ch.kscw.PointHub.flatpakref</code></pre><button class="copy" type="button">Copy</button></div>
+    <p>Flatpak keeps it up to date; start it with <code>flatpak run ch.kscw.PointHub</code> or from the app menu. Its settings and backups stay inside the sandbox (<code>~/.var/app/ch.kscw.PointHub/</code>).</p>
+    <!--/pointhub-flatpak-->
+    <!--pointhub-pacman-->
+    <h3>Arch Linux, Manjaro, EndeavourOS (pacman)</h3>
+    <p>The <a href="#arch">pacman repository</a> above, set up once, then:</p>
+    <div class="cmd"><pre><code>sudo pacman -Syu point-hub-bin</code></pre><button class="copy" type="button">Copy</button></div>
+    <!--/pointhub-pacman-->
+    <h3>Windows <span class="meta">@POINTHUB_DESKTOP_VERSION@ · 64-bit</span></h3>
+    <p>The installer installs for all users and asks once for an administrator; the next version installs over it. Windows may show a SmartScreen notice for a new download: <kbd>More info</kbd> → <kbd>Run anyway</kbd>.</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="https://github.com/Lucanepa/point-hub/releases/download/desktop-v@POINTHUB_DESKTOP_VERSION@/point-hub-@POINTHUB_DESKTOP_VERSION@.msi">Download Point Hub for Windows</a>
+      <a class="btn btn-ghost" href="https://github.com/Lucanepa/point-hub/releases/tag/desktop-v@POINTHUB_DESKTOP_VERSION@">All downloads</a>
+    </div>
+    <p>Or with Scoop (it runs the same installer):</p>
+    <div class="cmd"><pre><code>scoop install https://raw.githubusercontent.com/Lucanepa/openvolley/main/escoresheet/packaging/scoop/point-hub.json</code></pre><button class="copy" type="button">Copy</button></div>
+    <!-- Static, like the "Other ways to install" card: once KSCWiedikon.PointHub is in winget-pkgs,
+         delete the "coming soon" and the "once ..." words (packaging/winget/README.md). -->
+    <p class="meta">winget <span class="soon">coming soon</span>: <code>winget install KSCWiedikon.PointHub</code>, once the winget repository has reviewed it.</p>
+    <h3>macOS <span class="meta">@POINTHUB_DESKTOP_VERSION@ · Apple silicon or Intel</span></h3>
+    <div class="cmd"><pre><code>brew install --cask lucanepa/tap/point-hub</code></pre><button class="copy" type="button">Copy</button></div>
+    <!-- point-hub.app: the bundle name of point-hub's jpackage build (CFBundleName point-hub). If that build
+         ever names it otherwise, change it here; the cask takes it from the disk image (homebrew/bump-cask.sh). -->
+    <p>Or the disk image for your Mac: open it and drag <b>point-hub</b> to Applications. Not notarized by Apple: the first time, open it once, then <kbd>System Settings</kbd> → <kbd>Privacy &amp; Security</kbd> → <kbd>Open Anyway</kbd> (macOS 14 and older: right-click → <kbd>Open</kbd>), or run <code>xattr -dr com.apple.quarantine /Applications/point-hub.app</code>.</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="https://github.com/Lucanepa/point-hub/releases/download/desktop-v@POINTHUB_DESKTOP_VERSION@/Point-Hub-@POINTHUB_DESKTOP_VERSION@-macos-arm64.dmg">Download for Apple silicon</a>
+      <a class="btn btn-ghost" href="https://github.com/Lucanepa/point-hub/releases/download/desktop-v@POINTHUB_DESKTOP_VERSION@/Point-Hub-@POINTHUB_DESKTOP_VERSION@-macos-x64.dmg">Download for Intel Macs</a>
+    </div>
+    <p class="meta">The desktop app does not update itself: APT, Flatpak, pacman, Scoop, winget and Homebrew bring each new version; a copy installed from the .msi or the disk image is updated by installing the next one.</p>
+    <!--/pointhub-desktop-->
+  </section>
+  <!--/pointhub-->
 
   <!-- Static card. When a channel marked "coming soon" goes live, delete its <span class="soon"> and
        its "Waiting for ..." sentence (escoresheet/packaging/<manager>/README.md has the steps). -->
