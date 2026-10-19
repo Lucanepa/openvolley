@@ -646,7 +646,8 @@
       "warning": "Avvertimento",
       "penalty": "Penalità",
       "expulsion": "Espulsione",
-      "disqualification": "Squalifica"
+      "disqualification": "Squalifica",
+      "wholeTeam": "La squadra"
     },
     "actions": {
       "libero": "Libero",
@@ -918,7 +919,8 @@
       "onCourt": "in campo",
       "redesignate": "Ridesigna libero",
       "sidewaysTitle": "Tieni il telefono in verticale",
-      "sidewaysBody": "La schermata di punteggio sul telefono è pensata per il formato verticale. Ruota di nuovo il telefono: la partita, i dialoghi e i conti alla rovescia restano."
+      "sidewaysBody": "La schermata di punteggio sul telefono è pensata per il formato verticale. Ruota di nuovo il telefono: la partita, i dialoghi e i conti alla rovescia restano.",
+      "sanctionOnePlayer": "Oppure un giocatore"
     },
     "easySub": {
       "notAllowed": "Non può entrare",

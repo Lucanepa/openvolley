@@ -645,7 +645,8 @@
       "warning": "Avertissement",
       "penalty": "Pénalité",
       "expulsion": "Expulsion",
-      "disqualification": "Disqualification"
+      "disqualification": "Disqualification",
+      "wholeTeam": "L'équipe"
     },
     "actions": {
       "libero": "Libéro",
@@ -917,7 +918,8 @@
       "onCourt": "sur le terrain",
       "redesignate": "Redésigner le libéro",
       "sidewaysTitle": "Tenez le téléphone à la verticale",
-      "sidewaysBody": "L’écran de saisie sur téléphone est conçu pour le format portrait. Retournez le téléphone : le match, ses dialogues et ses comptes à rebours sont conservés."
+      "sidewaysBody": "L’écran de saisie sur téléphone est conçu pour le format portrait. Retournez le téléphone : le match, ses dialogues et ses comptes à rebours sont conservés.",
+      "sanctionOnePlayer": "Ou un joueur"
     },
     "easySub": {
       "notAllowed": "Ne peut pas entrer",

@@ -195,6 +195,41 @@ describe('Scoreboard: the phone layout', () => {
     await waitFor(() => expect(view.getByTestId('phone-sub-right').textContent).toMatch('0/6'))
   }, 60000)
 
+  // An easy match has no bench or officials: the sanction goes to the team
+  it('easy match: a warning and a penalty for the team, no person picked', async () => {
+    setViewport(390, 844)
+    const matchId = await setUpMatch()
+    await db.matches.update(matchId, { test: true, easy: true })
+    mount(matchId)
+    await waitFor(() => expect(phone()).toBeTruthy(), { timeout: 10000 })
+    const view = within(phone())
+    await waitFor(() => expect(view.getByTestId('phone-score-left').textContent).toBe('1'))
+    await settle()
+
+    fireEvent.click(view.getByTestId('phone-action-sanction'))
+    await waitFor(() => expect(screen.getByTestId('phone-team-warning-left')).toBeTruthy())
+    expect(screen.getAllByText('Or one player').length).toBe(2)
+    fireEvent.click(screen.getByTestId('phone-team-warning-left'))
+    await waitFor(() => expect(button('Confirm')).toBeTruthy())
+    expect(screen.getByText('The team')).toBeTruthy()
+    await settle()
+    fireEvent.click(button('Confirm'))
+    await waitFor(async () => expect((await ofType('sanction')).length).toBe(1))
+    expect((await ofType('sanction'))[0].payload).toMatchObject({ team: 'home', type: 'warning', playerType: 'team' })
+    await settle()
+
+    // one formal warning per team: now a penalty, a point for the other team
+    fireEvent.click(view.getByTestId('phone-action-sanction'))
+    await waitFor(() => expect(screen.getByTestId('phone-team-warning-left').disabled).toBe(true))
+    fireEvent.click(screen.getByTestId('phone-team-penalty-left'))
+    await waitFor(() => expect(button('Confirm')).toBeTruthy())
+    await settle()
+    fireEvent.click(button('Confirm'))
+    await waitFor(async () => expect((await ofType('sanction')).length).toBe(2))
+    expect((await ofType('sanction'))[1].payload).toMatchObject({ team: 'home', type: 'penalty', playerType: 'team' })
+    await waitFor(() => expect(view.getByTestId('phone-score-right').textContent).toBe('2'))
+  }, 60000)
+
   it('a phone turned sideways keeps the phone layout, its dialogs and countdown, under a notice', async () => {
     const screenSize = { width: window.screen.width, height: window.screen.height }
     Object.defineProperty(window.screen, 'width', { value: 390, configurable: true })

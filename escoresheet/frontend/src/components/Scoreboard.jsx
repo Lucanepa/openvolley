@@ -10639,6 +10639,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         return
       }
     }
+    // Easy match, a sanction for the team: one formal warning per team too
+    if (type === 'team' && sanctionType === 'warning' && teamHasFormalWarning(team)) {
+      deferUi(() => showAlert(`Warning cannot be given because the team has already been warned.`, 'warning'))
+      deferUi(() => setSanctionConfirmModal(null))
+      return
+    }
 
     // Closed with the written sanction (deferUi, one render); the follow-up
     // dialogs below open from this snapshot, not from the dialog
@@ -12776,6 +12782,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         officials: (bench.benchOfficials || []).filter(o => o?.role).map(o => ({ role: o.role })),
         improperRequestDone: sanctionFlag('improperRequest'),
         delayWarned: sanctionFlag('delayWarning'),
+        // Easy match: a warning or a penalty for the team, no person picked
+        easy: data?.match?.easy === true,
+        formalWarned: teamHasFormalWarning(teamKey),
         needsRedesignation
       }
     }
@@ -12859,6 +12868,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         sanctionPerson: ({ team, side, type, playerNumber, position, role }, e) => {
           if (rallyStatus !== 'idle') return
           setSanctionDropdown({ team, type, playerNumber, position, role, side, ...anchorOf(e) })
+        },
+        // Easy match: an unofficial match has no bench or officials to pick
+        // from, the sanction goes to the team (straight to the confirmation)
+        sanctionTeam: (teamKey, sanctionType) => {
+          if (rallyStatus !== 'idle') return
+          setSanctionConfirmModal({ team: teamKey, type: 'team', sanctionType })
         },
         liberoClick: (teamKey, libero, e) => {
           if (libero.onCourt) {
@@ -20727,6 +20742,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {sanctionConfirmModal.type === 'bench' && `Bench #${sanctionConfirmModal.playerNumber}`}
                 {sanctionConfirmModal.type === 'libero' && `Libero #${sanctionConfirmModal.playerNumber}`}
                 {sanctionConfirmModal.type === 'official' && `${sanctionConfirmModal.role}`}
+                {sanctionConfirmModal.type === 'team' && t('scoreboard.sanctions.wholeTeam', 'The team')}
               </p>
               <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
                 {sanctionConfirmModal.sanctionType === 'warning' && <div className="sanction-card yellow" style={{ width: '28px', height: '38px' }}></div>}

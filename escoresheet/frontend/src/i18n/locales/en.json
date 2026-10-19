@@ -647,7 +647,8 @@
       "warning": "Warning",
       "penalty": "Penalty",
       "expulsion": "Expulsion",
-      "disqualification": "Disqualification"
+      "disqualification": "Disqualification",
+      "wholeTeam": "The team"
     },
     "actions": {
       "libero": "Libero",
@@ -919,7 +920,8 @@
       "onCourt": "on court",
       "redesignate": "Redesignate libero",
       "sidewaysTitle": "Hold the phone upright",
-      "sidewaysBody": "The scoring screen on a phone is made for portrait. Turn the phone back: the match, its dialogs and countdowns are kept."
+      "sidewaysBody": "The scoring screen on a phone is made for portrait. Turn the phone back: the match, its dialogs and countdowns are kept.",
+      "sanctionOnePlayer": "Or one player"
     },
     "easySub": {
       "notAllowed": "Cannot come in",

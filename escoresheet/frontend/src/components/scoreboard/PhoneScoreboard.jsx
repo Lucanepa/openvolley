@@ -42,7 +42,7 @@ import { COURT_CELLS, PHONE_COURT_MIN_PX, PHONE_RECENT_HEIGHT_PX, PHONE_SQUARE_M
  *   points, timeouts, subs, lineupSet, court: [{ position, number, isLibero }],
  *   liberos: [{ number, libero, unable, onCourt, position }], benchPlayers:
  *   [{ number }], officials: [{ role }], improperRequestDone, delayWarned,
- *   needsRedesignation }
+ *   easy, formalWarned, needsRedesignation }
  */
 export default function PhoneScoreboard({ setNumber, teams, serving, rally, centre, recent, canUndo, scoreFont = 'inherit', actions }) {
   const { t } = useTranslation()
@@ -615,7 +615,14 @@ function SanctionColumn({ team, ink, title, actions, onDone }) {
       ) : (
         <button type="button" style={{ ...wideButton, background: '#fee2e2' }} onClick={() => { onDone(); actions.delayPenalty(team.side) }}>{t('scoreboard.sanctions.delayPenalty')}</button>
       )}
-      <p style={{ ...sheetNote, fontSize: 12, marginTop: 4 }}>{t('scoreboard.phone.sanctionPeople')}</p>
+      {team.easy && (
+        <>
+          {/* Easy match: no bench or officials, the sanction goes to the team */}
+          <button type="button" data-testid={`phone-team-warning-${team.side}`} disabled={team.formalWarned} style={{ ...wideButton, background: team.formalWarned ? 'var(--ov-sunken-strong)' : '#fef9c3', color: team.formalWarned ? 'var(--ov-text-faint)' : undefined }} onClick={() => { onDone(); actions.sanctionTeam(team.teamKey, 'warning') }}>{t('scoreboard.sanctions.warning')}</button>
+          <button type="button" data-testid={`phone-team-penalty-${team.side}`} style={{ ...wideButton, background: '#fee2e2' }} onClick={() => { onDone(); actions.sanctionTeam(team.teamKey, 'penalty') }}>{t('scoreboard.sanctions.penalty')}</button>
+        </>
+      )}
+      <p style={{ ...sheetNote, fontSize: 12, marginTop: 4 }}>{team.easy ? t('scoreboard.phone.sanctionOnePlayer') : t('scoreboard.phone.sanctionPeople')}</p>
       <div style={chipGrid}>
         {court.map(pl => (
           <Chip key={`c-${pl.number}`} onClick={person({ type: 'player', playerNumber: pl.number, position: pl.position })}>{pl.number}</Chip>
