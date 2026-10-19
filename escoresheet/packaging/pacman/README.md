@@ -10,6 +10,7 @@ the updater marker), built here and signed with our own key.
 |---|---|---|
 | `openvolley-escoresheet-bin` | OpenVolley eScoresheet | `desktop-vX.Y.Z` |
 | `openbeach-escoresheet-bin` | OpenBeach | `beach-desktop-vX.Y.Z` |
+| `point-hub-bin` | Point Hub (KSC Wiedikon's scoreboard console) | `desktop-vX.Y.Z` of Lucanepa/point-hub |
 
 ## What users do (the install page's Arch card)
 
@@ -55,7 +56,7 @@ On lenovoserver, under `~/.config/openvolley-pkgs` (mode 700):
 | `public/arch/x86_64/openvolley.db`, `.files` (+ `.sig`) | the database, signed |
 | `public/arch/x86_64/*.pkg.tar.zst` (+ `.sig`) | the packages, each signed; the newest 3 versions of each |
 
-`publish-pkgs.sh` syncs `public/` to `hetzner:/data/openvolley/pkgs/`, Caddy
+`publish-pkgs.sh` syncs `public/` to `/data/openvolley/pkgs/` on lenovoserver, Caddy
 serves it (`../../deploy/pkgs/Caddyfile`): packages and their `.sig` are
 immutable (a version is never rebuilt), the database and its `.sig` are
 `no-cache` (pacman sends `If-Modified-Since`, so that costs a 304), and none
@@ -113,11 +114,11 @@ a5542a38 that is OpenVolley 2.4.1 and OpenBeach 2.0.1):
 
 ```bash
 escoresheet/packaging/pacman/publish-pacman.sh --app both
-escoresheet/deploy/publish-pkgs.sh      # the page gets its Arch card, syncs to hetzner
+escoresheet/deploy/publish-pkgs.sh      # the page gets its Arch card, syncs to lenovoserver
 ```
 
-Redeploy `escoresheet/deploy/pkgs/Caddyfile` on hetzner first
-(`deploy/RUNBOOK-hetzner.md`): it has the pacman content types and caching.
+Redeploy `escoresheet/deploy/pkgs/Caddyfile` on lenovoserver first
+(`deploy/RUNBOOK-hetzner.md`, "Updating", kit changes): it has the pacman content types and caching.
 
 Check on any Arch machine (or `./test.sh` here): the page's steps install the app.
 
@@ -135,6 +136,14 @@ cd ../../deploy
 `--pacman` is refused with `--staging` (`pacman -Syu` would install the staging
 version at once) and refused before anything is signed when the PKGBUILD is not
 at `X.Y.Z`. OpenBeach: `bump.sh openbeach X.Y.Z`, `--desktop X.Y.Z --app beach --pacman`.
+
+Point Hub (no updater, no staging): `./bump.sh point-hub X.Y.Z`, commit, then
+`publish-pkgs.sh --point-hub X.Y.Z --pacman [--flatpak] [APK]` (or by hand
+`publish-pacman.sh --app point-hub X.Y.Z`, then `publish-pkgs.sh`). Its
+PKGBUILD has the `@SHA256@` placeholder until its first bump: refused here
+before anything is built. Its package needs no updater marker. The install
+page shows its pacman line in the Point Hub section (the Arch card's steps
+add the repo).
 
 A packaging-only fix of a release: `./bump.sh openvolley X.Y.Z 2` (pkgrel 2),
 commit, `publish-pacman.sh X.Y.Z`, then `publish-pkgs.sh`. Users get it with

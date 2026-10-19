@@ -20,8 +20,8 @@
  *               whether VM sends Z/offsets or Zurich wall-clock times
  *   --help
  *
- * On hetzner:
- *   docker exec ov-backend node scripts/vm-sync.mjs --from 2026-10-01 --to 2026-10-31
+ * On lenovoserver (production since 16.10.2026):
+ *   sudo docker compose --project-directory /opt/openvolley exec ov-backend node scripts/vm-sync.mjs --from 2026-10-01 --to 2026-10-31
  *
  * Exit codes: 0 success, 1 failed, 2 usage/config error,
  *             3 skipped (another run holds the lock), 4 partial (some games not written/fetched).

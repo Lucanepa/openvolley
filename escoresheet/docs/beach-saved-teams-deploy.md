@@ -1,5 +1,13 @@
 # Deploying beach saved teams (db/009) to production
 
+> **Host moved, 16.10.2026:** production now runs on lenovoserver. The Hetzner VPS belongs to
+> the KSC Wiedikon club and must never host OpenVolley again. Run the `hetzner#` steps below on
+> lenovoserver with `sudo` (`/opt/openvolley` is root-only there):
+> `cd /opt/openvolley && docker compose ...` becomes
+> `sudo docker compose --project-directory /opt/openvolley ...`, `ssh hetzner <cmd>` becomes
+> `sudo <cmd>`, `build-image.sh --ship hetzner` becomes `--ship local`. Current commands:
+> `deploy/RUNBOOK-hetzner.md` ("Updating", "Apply a new db migration").
+
 Owner checklist for the `feat/beach-saved-teams` branch: the competition
 manager (OpenVolley's admin console) now manages **indoor and beach**
 competitions, and OpenBeach loads beach teams in its match setup. Design:

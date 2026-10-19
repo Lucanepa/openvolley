@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.2 · Aggiornata al 13 ottobre 2026
+**OpenVolley e OpenBeach** · Versione 1.3 · Aggiornata al 16 ottobre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione tedesca.
@@ -22,8 +22,8 @@ la versione tedesca.
 - L'app OpenVolley tiene un registro attività di ogni partita, senza PIN né
   password. Se ha effettuato l'accesso, viene caricato sul server. Ciò che
   clicca o digita resta sul suo dispositivo (sezione 5).
-- Il server si trova in Germania (Hetzner). Cloudflare (USA) distribuisce i
-  siti web e inoltra il traffico al server.
+- Il server si trova in Svizzera ed è gestito da me. Cloudflare (USA)
+  distribuisce i siti web e inoltra il traffico al server.
 - Può chiedere in ogni momento informazioni, rettifica o cancellazione:
   **support@openvolley.app**.
 
@@ -472,7 +472,6 @@ l'esercizio. Essi trattano i dati per mio conto.
 
 | Fornitore | Compito | Paese |
 |---|---|---|
-| Hetzner Online GmbH | Server, banca dati, archiviazione dei file | Germania |
 | Cloudflare, Inc. | Distribuzione dei siti, DNS, connessione sicura al server | USA (rete mondiale) |
 | Migadu | Invio di e-mail (noreply@) e casella postale (support@) | Svizzera / Europa |
 | Resend, Inc. | Invio delle info della partita per e-mail (solo questa funzione, se attivata) | USA |
@@ -487,12 +486,12 @@ dati solo per fornire il proprio servizio.
 l'elenco delle versioni, F-Droid per il catalogo delle app, Swiss Volley per i
 dati nel VolleyManager.
 
-**Le copie di sicurezza** sono conservate cifrate sul mio server in Germania e
-sui miei dispositivi in Svizzera; a tal fine nessun terzo riceve dati
-(sezione 18).
+**Le copie di sicurezza** sono conservate cifrate sul mio server e sul mio
+dispositivo di archiviazione, entrambi in Svizzera; a tal fine nessun terzo
+riceve dati (sezione 18).
 
-**Comunicazione all'estero:** secondo il Consiglio federale, la Germania e
-l'UE offrono una protezione adeguata dei dati. Per gli USA mi baso sullo
+**Comunicazione all'estero:** secondo il Consiglio federale, gli Stati
+dell'UE e del SEE offrono una protezione adeguata dei dati. Per gli USA mi baso sullo
 Swiss-U.S. Data Privacy Framework se il fornitore è certificato, altrimenti
 sulle clausole contrattuali tipo nei contratti dei fornitori. Su richiesta
 riceve una copia di queste garanzie.
@@ -544,10 +543,9 @@ sezione 19 per il proprio figlio.
   lettura.
 - Limitazione dei tentativi di accesso e blocco dopo tentativi falliti.
 - Copie di sicurezza: il server salva la banca dati ogni ora e i file ogni
-  giorno, **in forma cifrata**. La chiave per decifrarle non si trova sul
-  server. Le copie vengono trasferite ogni giorno sul mio dispositivo di
-  archiviazione in Svizzera e vi sono conservate fino a 90 giorni, e in
-  istantanee mensili **fino a circa 6 mesi**. I dati cancellati possono
+  giorno, **in forma cifrata**. Le copie vengono trasferite ogni giorno sul
+  mio dispositivo di archiviazione in Svizzera e vi sono conservate in
+  istantanee giornaliere, settimanali e mensili **fino a circa 6 mesi**. I dati cancellati possono
   quindi restare fino a circa 6 mesi in queste copie cifrate; servono solo per
   un ripristino.
 - Le copie di sicurezza e i file di registro dell'app desktop sono leggibili

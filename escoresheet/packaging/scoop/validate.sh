@@ -3,9 +3,16 @@
 #   1. against Scoop's own JSON schema (ScoopInstaller/Scoop, schema.json);
 #   2. the installer/uninstaller scripts parse as PowerShell (pwsh container);
 #   3. checkver finds the manifest's version in the app's latest.json on
-#      get.openvolley.app (the version the desktop updater announces), and
-#      the manifest's URL is its autoupdate URL;
+#      get.openvolley.app (the version the desktop updater announces; Point
+#      Hub, which has none: its GitHub repo's latest release), and the
+#      manifest's URL is its autoupdate URL;
 #   4. with --urls: the URL downloads and its SHA-256 is the manifest's.
+#
+# A manifest committed before its app's first release (point-hub.json) has
+# the hash placeholder @SHA256@: the schema is checked with a dummy hash in
+# its place, and it passes as "pending" while checkver finds no release;
+# once the release exists it fails until update-manifests.sh has filled in
+# the hash.
 #
 #   escoresheet/packaging/scoop/validate.sh [--urls]
 #
@@ -26,7 +33,12 @@ schema = json.load(open("/s/schema.json"))
 v = jsonschema.Draft7Validator(schema)
 bad = 0
 for f in sorted(glob.glob("/w/*.json")):
-    errs = list(v.iter_errors(json.load(open(f))))
+    m = json.load(open(f))
+    # the placeholder of a manifest waiting for its first release (validated below)
+    for a in m.get("architecture", {}).values():
+        if a.get("hash") == "@SHA256@":
+            a["hash"] = "0" * 64
+    errs = list(v.iter_errors(m))
     for e in errs:
         print(f, list(e.path), e.message)
     bad += len(errs)
@@ -51,7 +63,7 @@ docker run --rm -v "$HERE:/w:ro" mcr.microsoft.com/powershell:latest pwsh -NoPro
 
 echo "== checkver / autoupdate"
 python3 - "$HERE" <<'EOF'
-import json, glob, re, sys, urllib.request
+import json, glob, re, sys, urllib.error, urllib.request
 bad = 0
 cache = {}
 for f in sorted(glob.glob(sys.argv[1] + "/*.json")):
@@ -60,20 +72,41 @@ for f in sorted(glob.glob(sys.argv[1] + "/*.json")):
     if cv["url"] not in cache:
         # Scoop's own user agent: get.openvolley.app (Cloudflare) refuses Python's
         req = urllib.request.Request(cv["url"], headers={"User-Agent": "Scoop/1.0 (+http://scoop.sh/) PowerShell/7.4 (Windows NT 10.0; Win64; x64; Core)"})
-        cache[cv["url"]] = urllib.request.urlopen(req, timeout=30).read().decode()
-    if "jsonpath" in cv:
+        try:
+            cache[cv["url"]] = urllib.request.urlopen(req, timeout=30).read().decode()
+        except urllib.error.HTTPError as e:
+            # 404: no release yet (GitHub's releases/latest of a repo without one)
+            if e.code != 404:
+                raise
+            cache[cv["url"]] = None
+    if cache[cv["url"]] is None:
+        latest = None
+    elif "jsonpath" in cv:
         # "$.version": the GitHub release list is no use here, it puts
         # desktop-v2.4.9 before desktop-v2.4.10
         node = json.loads(cache[cv["url"]])
         for key in cv["jsonpath"].split(".")[1:]:
             node = node.get(key) if isinstance(node, dict) else None
         latest = node if isinstance(node, str) else None
+        # with a regex too (as Scoop does it): the regex's group 1 of that value
+        if latest is not None and "regex" in cv:
+            found = re.search(cv["regex"], latest)
+            latest = found.group(1) if found else None
     else:
         found = re.search(cv["regex"], cache[cv["url"]])
         latest = found.group(1) if found else None
     want_url = m["autoupdate"]["architecture"]["64bit"]["url"].replace("$version", m["version"])
     ok_url = m["architecture"]["64bit"]["url"] == want_url
     name = f.rsplit("/", 1)[-1]
+    if m["architecture"]["64bit"]["hash"] == "@SHA256@":
+        # committed before the app's first release: fine until there is one
+        ok = latest is None and ok_url
+        print(f"{'ok  ' if ok else 'BAD '} {name}: manifest {m['version']} "
+              + ("pending: no release yet, the hash is the @SHA256@ placeholder" if latest is None
+                 else f"still has the @SHA256@ placeholder, but release {latest} is out: update-manifests.sh")
+              + ("" if ok_url else f", url is not the autoupdate url {want_url}"))
+        bad += not ok
+        continue
     ok_ver = latest == m["version"]
     print(f"{'ok  ' if ok_ver and ok_url else 'BAD '} {name}: manifest {m['version']}, newest release {latest}"
           + ("" if ok_url else f", url is not the autoupdate url {want_url}"))
@@ -88,6 +121,8 @@ if [ "${1:-}" = --urls ]; then
   fail=0
   for f in "$HERE"/*.json; do
     read -r url want < <(python3 -c 'import json,sys; a=json.load(open(sys.argv[1]))["architecture"]["64bit"]; print(a["url"].split("#")[0], a["hash"])' "$f")
+    # pending (checked above: no release yet), nothing to download
+    if [ "$want" = @SHA256@ ]; then echo "skip $url: pending, no release yet"; continue; fi
     curl -fsSL --retry 3 -o "$tmp/s.exe" "$url"
     got=$(sha256sum "$tmp/s.exe" | cut -d' ' -f1)
     if [ "$got" = "$want" ]; then echo "ok   $url"; else echo "BAD  $url: $got, manifest says $want"; fail=1; fi

@@ -86,6 +86,20 @@ make_deb() {
   chmod 755 "$root/usr/bin/$pkg"
   dpkg-deb --root-owner-group -b "$root" "$out" >/dev/null
 }
+# make_pointhub_deb OUT VERSION [LINK]: a .deb laid out like Point Hub's
+# (jpackage's /opt/point-hub/bin/point-hub; /usr/bin/point-hub a symlink to
+# LINK, default /opt/point-hub/bin/point-hub; LINK "none": no /usr/bin/point-hub).
+make_pointhub_deb() {
+  local out=$1 ver=$2 link=${3:-/opt/point-hub/bin/point-hub} root="$T/phroot"
+  rm -rf "$root"
+  mkdir -p "$root/DEBIAN" "$root/opt/point-hub/bin" "$root/usr/bin"
+  printf 'Package: point-hub\nVersion: %s\nArchitecture: amd64\nMaintainer: test <test@example.invalid>\nDescription: test package\n' \
+    "$ver" > "$root/DEBIAN/control"
+  printf '#!/bin/sh\necho %s\n' "$ver" > "$root/opt/point-hub/bin/point-hub"
+  chmod 755 "$root/opt/point-hub/bin/point-hub"
+  [[ "$link" == none ]] || ln -s "$link" "$root/usr/bin/point-hub"
+  dpkg-deb --root-owner-group -b "$root" "$out" >/dev/null
+}
 # make_mac OUT TOP ID VERSION EXEC: an updater archive like the macOS job's
 # (TOP.app/Contents/{Info.plist,MacOS/EXEC}); EXTRA_ENTRY=path adds a file
 # beside it.
@@ -370,9 +384,39 @@ if command -v fdroid >/dev/null && command -v apt-ftparchive >/dev/null && comma
     "$KIT_DIR/publish-pkgs.sh" --no-sync "$T/openbeach-escoresheet_2.0.1_amd64.deb"
   # a package that is neither app (nor an OpenVolley old name)
   make_deb "$T/other-tool_9.0.0_amd64.deb" 9.0.0 other-tool
-  expect_fail "package other-tool is not published here (openvolley-escoresheet openbeach-escoresheet)" \
+  expect_fail "package other-tool is not published here (openvolley-escoresheet openbeach-escoresheet point-hub)" \
     "$KIT_DIR/publish-pkgs.sh" --no-sync "$T/other-tool_9.0.0_amd64.deb"
+  # Point Hub's .deb without its command, or with the command dangling
+  mkdir -p "$T/ph-nobin"; make_pointhub_deb "$T/ph-nobin/point-hub_1.1.0_amd64.deb" 1.1.0 none
+  expect_fail "no /usr/bin/point-hub in the package" "$KIT_DIR/publish-pkgs.sh" --no-sync "$T/ph-nobin/point-hub_1.1.0_amd64.deb"
+  mkdir -p "$T/ph-dangle"; make_pointhub_deb "$T/ph-dangle/point-hub_1.1.0_amd64.deb" 1.1.0 /opt/pointhub/bin/point-hub
+  expect_fail "/usr/bin/point-hub does not point at /opt/point-hub/bin/point-hub" "$KIT_DIR/publish-pkgs.sh" --no-sync "$T/ph-dangle/point-hub_1.1.0_amd64.deb"
   [[ -z "$(ls "$OV_PKGS_HOME/public/apt/pool/main/" 2>/dev/null)" ]] || bad "a refused .deb reached the pool"
+  # Point Hub has no latest.json: its hand-given .deb is never refused or held
+  # back, also while desktop/latest.json holds OpenVolley back. (The run then
+  # stops at the fake signing key, after the pool step.)
+  make_pointhub_deb "$T/point-hub_1.1.0_amd64.deb" 1.1.0
+  expect_fail "added $OV_PKGS_HOME/public/apt/pool/main/point-hub_1.1.0_amd64.deb" \
+    "$KIT_DIR/publish-pkgs.sh" --no-sync "$T/point-hub_1.1.0_amd64.deb"
+  if grep -q 'not announced\|held back' "$T/expect.out"; then bad "point-hub was held back: $(cat "$T/expect.out")"; fi
+  ok "a hand-given point-hub .deb goes into the pool (no hold-back, no latest.json)"
+  # --point-hub: the .deb of the release (here OV_POINTHUB_RELEASE_DIR), checked
+  rm -rf "$OV_PKGS_HOME/public/apt/pool/main"
+  mkdir -p "$T/ph-rel"; make_pointhub_deb "$T/ph-rel/point-hub_1.1.0_amd64.deb" 1.1.0
+  expect_fail "fetched point-hub_1.1.0_amd64.deb from Lucanepa/point-hub desktop-v1.1.0" \
+    env OV_POINTHUB_RELEASE_DIR="$T/ph-rel" "$KIT_DIR/publish-pkgs.sh" --no-sync --point-hub 1.1.0
+  grep -q "added $OV_PKGS_HOME/public/apt/pool/main/point-hub_1.1.0_amd64.deb" "$T/expect.out" || bad "--point-hub: the .deb did not reach the pool"
+  ok "--point-hub 1.1.0 adds the release's .deb to the pool"
+  expect_fail "$T/ph-rel: no point-hub_1.2.0_amd64.deb" \
+    env OV_POINTHUB_RELEASE_DIR="$T/ph-rel" "$KIT_DIR/publish-pkgs.sh" --no-sync --point-hub 1.2.0
+  mkdir -p "$T/ph-relver"; make_pointhub_deb "$T/ph-relver/point-hub_1.2.0_amd64.deb" 1.1.9
+  expect_fail "version 1.1.9, expected 1.2.0" \
+    env OV_POINTHUB_RELEASE_DIR="$T/ph-relver" "$KIT_DIR/publish-pkgs.sh" --no-sync --point-hub 1.2.0
+  mkdir -p "$T/ph-relpkg"; make_deb "$T/ph-relpkg/point-hub_1.2.0_amd64.deb" 1.2.0 openbeach-escoresheet
+  expect_fail "package openbeach-escoresheet, expected point-hub" \
+    env OV_POINTHUB_RELEASE_DIR="$T/ph-relpkg" "$KIT_DIR/publish-pkgs.sh" --no-sync --point-hub 1.2.0
+  expect_fail "OV_POINTHUB_RELEASE_DIR is for tests: use it with --no-sync" \
+    env -u OV_DESKTOP_RELEASE_DIR OV_POINTHUB_RELEASE_DIR="$T/ph-rel" "$KIT_DIR/publish-pkgs.sh" --point-hub 1.1.0
 else
   echo "skip publish-pkgs.sh hand-given .deb refusal (fdroid, apt-ftparchive or rsync not installed)"
 fi
@@ -415,6 +459,15 @@ expect_fail "--app needs openvolley or beach" pp --desktop 2.0.0 --no-sync --app
 expect_fail "--flatpak needs --desktop VERSION" pp --flatpak --no-sync
 expect_fail "--flatpak cannot go with --staging" pp --desktop 2.2.0 --staging --flatpak --no-sync
 pp --help | grep -q -- '--staging\] \[--flatpak\]' && ok "--help documents --flatpak"
+# --point-hub: Point Hub's release (no updater, so no --app, --staging or signing)
+expect_fail "--point-hub needs a version" pp --no-sync --point-hub
+expect_fail "--point-hub 1.1: not a version like 1.1.0" pp --point-hub 1.1 --no-sync
+expect_fail "--point-hub given twice" pp --point-hub 1.1.0 --point-hub 1.1.1 --no-sync
+expect_fail "--app point-hub: Point Hub has no updater release; use --point-hub VERSION" pp --desktop 2.2.0 --app point-hub --no-sync
+expect_fail "--staging needs --desktop VERSION" pp --point-hub 1.1.0 --staging --no-sync
+# --flatpak / --pacman take --point-hub instead of --desktop (past the argument checks: no key here)
+expect_fail "no signing key in $OV_PKGS_HOME" pp --point-hub 1.1.0 --flatpak --no-sync
+pp --help | grep -q -- '--point-hub VERSION \[--flatpak\] \[--pacman\]' && ok "--help documents --point-hub"
 
 if [[ -n "${OV_TEST_KEEP:-}" ]]; then
   # For a cross-check outside this script: the signed files, latest.json and the test pubkey.
@@ -554,12 +607,34 @@ desktop_app_select openvolley
 apt_hold_init "$BHP"
 apt_held 2.2.1 && ! apt_held 2.0.1 || bad "hold: apt_held defaults to the selected app's package"
 ok "hold: apt_held without a package is the selected app's"
+# Point Hub has no latest.json: none of its versions is ever held back, also in
+# a run of either updater app, also next to their manifests.
+for v in 1.1.0 1.2.0; do make_pointhub_deb "$BPOOL/point-hub_${v}_amd64.deb" "$v"; done
+(cd "$T/bapt" && dpkg-scanpackages --multiversion --arch amd64 pool/main 2>/dev/null) > "$T/bPackages-ph"
+for run in "" "2.2.1 1" "2.2.1 0"; do
+  # shellcheck disable=SC2086 # run is "" or "V STAGING"
+  apt_hold_init "$BHP" $run
+  cp "$T/bPackages-ph" "$T/bP3"; apt_hold_packages "$T/bP3" > "$T/bheld3"
+  [[ "$(listed "$T/bP3" point-hub)" == "1.1.0 1.2.0" ]] || bad "hold: point-hub held back (run '$run'): $(cat "$T/bheld3")"
+  ! apt_held 1.2.0 point-hub || bad "hold: apt_held point-hub"
+  # the other apps' stanzas: exactly what the same run keeps without point-hub
+  cp "$T/bPackages" "$T/bP4"; apt_hold_packages "$T/bP4" >/dev/null
+  awk 'BEGIN { RS = ""; ORS = "\n\n" } !/Package: point-hub\n/' "$T/bP3" | cmp -s - "$T/bP4" ||
+    bad "hold: point-hub changed the others' hold (run '$run')"
+done
+ok "hold: point-hub is never held back (no latest.json), the other apps' hold is unchanged"
+rm -f "$BPOOL"/point-hub_*.deb
 
 # APT names and the Android certificate per app id.
-apt_name_ok openvolley-escoresheet && apt_name_ok openbeach-escoresheet && ! apt_name_ok openbeach && ! apt_name_ok openvolley ||
+apt_name_ok openvolley-escoresheet && apt_name_ok openbeach-escoresheet && apt_name_ok point-hub &&
+  ! apt_name_ok openbeach && ! apt_name_ok openvolley && ! apt_name_ok pointhub ||
   bad "apt_name_ok"
-ok "APT names: openvolley-escoresheet and openbeach-escoresheet only"
+ok "APT names: openvolley-escoresheet, openbeach-escoresheet and point-hub only"
 [[ "$(app_cert_sha256 com.openvolley.escoresheet)" == 2c7f9db4da41f5475f36142403043e45452a3143baff764e3d511d686ddabe87 ]] || bad "OpenVolley cert"
+[[ "$(app_cert_sha256 ch.kscw.pointhub)" == 6d66f61494feaa02c31f030b5a0aaf749ac24cbe852684f75eb58b8d92e48c22 ]] || bad "Point Hub cert"
+ok "Android: Point Hub's certificate (point-hub's signing-cert.sha256)"
+ph_cert_ov() { POINTHUB_APP_CERT_SHA256=$OPENVOLLEY_APP_CERT_SHA256; app_cert_sha256 ch.kscw.pointhub; }
+expect_fail "Point Hub must have its own Android key" ph_cert_ov
 expect_fail "no signing certificate for com.openvolley.beach: put its SHA-256 in $OV_BEACH_CERT_FILE" app_cert_sha256 com.openvolley.beach
 BCERT=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
 printf '%s\n' "$BCERT" | tr 'a-f' 'A-F' | sed 's/../&:/g; s/:$//' > "$OV_BEACH_CERT_FILE"
@@ -580,10 +655,11 @@ sed 's/^DEFAULT_PKG=.*/DEFAULT_PKG=openbeach-escoresheet/' "$KIT_DIR/pkgs/instal
 expect_fail "does not install openvolley-escoresheet by default" check_install_sh "$T/install-default.sh" AB469DA8DC3EC90F8057320D285B18D76C16B82C
 expect_fail "does not pin the APT key" check_install_sh "$KIT_DIR/pkgs/install.sh" 0000000000000000000000000000000000000000
 inst() { sh "$KIT_DIR/pkgs/install.sh" "$@"; }
-expect_fail "unknown package 'openbeach'; this repository has: openvolley-escoresheet openbeach-escoresheet" inst openbeach
-expect_fail "usage: install.sh [openvolley-escoresheet | openbeach-escoresheet]" inst a b
+expect_fail "unknown package 'openbeach'; this repository has: openvolley-escoresheet openbeach-escoresheet point-hub" inst openbeach
+expect_fail "usage: install.sh [openvolley-escoresheet | openbeach-escoresheet | point-hub]" inst a b
 if [[ "$(id -u)" != 0 ]] && command -v apt-get >/dev/null && [[ "$(dpkg --print-architecture)" == amd64 ]]; then
   expect_fail "curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s openbeach-escoresheet" inst openbeach-escoresheet
+  expect_fail "curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s point-hub" inst point-hub
   out=$(inst 2>&1 || true)
   [[ "$out" == *"| sudo sh" && "$out" != *" -s "* ]] || bad "install.sh: default package hint: $out"
   ok "install.sh: the root hint repeats the package name only when it is not the default"
@@ -655,6 +731,42 @@ grep -q 'brew install --cask lucanepa/tap/openbeach' "$T/index.html" &&
   grep -q 'releases/download/beach-desktop-v2.0.1/App_universal.dmg' "$T/index.html" || bad "page: OpenBeach macOS part"
 if grep -q '@[A-Z_]*@' "$T/index.html"; then bad "page: placeholders left (macOS)"; fi
 ok "page: OpenBeach's macOS part once its release has a .dmg"
+# Point Hub's section: left out until its .deb or APK is published; then each
+# part once that one is (its Flatpak and pacman lines once those are).
+if grep -q 'id="point-hub"\|sudo sh -s point-hub' "$T/index.html"; then bad "page: Point Hub section without any Point Hub package"; fi
+PHPOOL="$T/phapt/pool/main"
+mkdir -p "$PHPOOL"
+make_deb "$PHPOOL/openvolley-escoresheet_2.2.1_amd64.deb" 2.2.1
+make_pointhub_deb "$PHPOOL/point-hub_1.1.0_amd64.deb" 1.1.0
+make_pointhub_deb "$PHPOOL/point-hub_1.0.9_amd64.deb" 1.0.9
+(cd "$T/phapt" && dpkg-scanpackages --multiversion --arch amd64 pool/main 2>/dev/null) > "$T/phPackages"
+page "$T/phPackages" "$T/index-ov.json"
+PHGH=https://github.com/Lucanepa/point-hub/releases
+grep -q 'id="point-hub"' "$T/index.html" && grep -q 'sudo sh -s point-hub</code>' "$T/index.html" &&
+  grep -q "href=\"$PHGH/download/desktop-v1.1.0/point-hub-1.1.0.msi\"" "$T/index.html" &&
+  grep -q "href=\"$PHGH/download/desktop-v1.1.0/Point-Hub-1.1.0-macos-arm64.dmg\"" "$T/index.html" &&
+  grep -q "href=\"$PHGH/download/desktop-v1.1.0/Point-Hub-1.1.0-macos-x64.dmg\"" "$T/index.html" &&
+  grep -q "href=\"$PHGH/tag/desktop-v1.1.0\"" "$T/index.html" &&
+  grep -q 'brew install --cask lucanepa/tap/point-hub' "$T/index.html" &&
+  grep -q 'packaging/scoop/point-hub.json' "$T/index.html" || bad "page: Point Hub desktop part"
+if grep -q 'ch.kscw.pointhub_\|Point Hub APK' "$T/index.html"; then bad "page: Point Hub Android part without its APK"; fi
+if grep -q 'flatpak install --user https://get.openvolley.app/flatpak/ch.kscw.PointHub.flatpakref\|pacman -Syu point-hub-bin' "$T/index.html"; then bad "page: Point Hub Flatpak / pacman lines without them"; fi
+if grep -q '@[A-Z_]*@' "$T/index.html"; then bad "page: placeholders left (Point Hub)"; fi
+grep -q 'releases/download/desktop-v2.2.1/' "$T/index.html" || bad "page: OpenVolley's own version with Point Hub there"
+ok "page: Point Hub's desktop part once its .deb is published (its newest version: .msi, both .dmg, brew, Scoop)"
+fdroid_index com.openvolley.escoresheet,2.2.1,22020010,ov.apk ch.kscw.pointhub,1.1.0,2,ch.kscw.pointhub_2.apk > "$T/index-ph.json"
+page "$T/ovPackages" "$T/index-ph.json"
+grep -q 'id="point-hub"' "$T/index.html" && grep -q 'href="/fdroid/repo/ch.kscw.pointhub_2.apk"' "$T/index.html" &&
+  grep -q 'Download Point Hub APK 1.1.0' "$T/index.html" || bad "page: Point Hub Android part"
+if grep -q 'sudo sh -s point-hub\|point-hub-1\.1\.0\.msi' "$T/index.html"; then bad "page: Point Hub desktop part without its .deb"; fi
+ok "page: Point Hub's Android part once its APK is published"
+mkdir -p "$T/flatpak" "$T/arch/x86_64"
+touch "$T/flatpak/ch.kscw.PointHub.flatpakref"
+page "$T/phPackages" "$T/index-ph.json"
+grep -q 'flatpak install --user https://get.openvolley.app/flatpak/ch.kscw.PointHub.flatpakref' "$T/index.html" || bad "page: Point Hub Flatpak line"
+if grep -q 'pacman -Syu point-hub-bin' "$T/index.html"; then bad "page: Point Hub pacman line without the pacman repo"; fi
+rm -rf "$T/flatpak" "$T/arch"
+ok "page: Point Hub's Flatpak line once its .flatpakref is published"
 noov() { fdroid_index com.openvolley.beach,2.0.0,20000000,b.apk > "$T/index-b.json"; page "$T/bPackages" "$T/index-b.json"; }
 expect_fail "need at least one openvolley-escoresheet .deb and one com.openvolley.escoresheet APK" noov
 
@@ -686,6 +798,32 @@ PKGBUILD
 }
 fake_pkgbuild openvolley-escoresheet 2.4.0 1
 fake_pkgbuild openbeach-escoresheet 2.0.0 1
+# fake_pointhub_pkgbuild PKGVER PKGREL [SUMS]: point-hub-bin laid out like the
+# real one (/opt/point-hub, /usr/bin/point-hub a symlink), no updater marker
+# (Point Hub has no updater); SUMS "placeholder": the committed state before
+# its first release (sha256sums '@SHA256@').
+fake_pointhub_pkgbuild() {
+  mkdir -p "$T/pkgbuilds/point-hub-bin"
+  cat > "$T/pkgbuilds/point-hub-bin/PKGBUILD" <<PKGBUILD
+# bump.sh fills in the @SHA256@ placeholder (the real PKGBUILD's comment says so too)
+pkgname=point-hub-bin
+pkgver=$1
+pkgrel=$2
+pkgdesc='test package'
+arch=('x86_64')
+license=('MIT')
+options=('!strip' '!debug')
+package() {
+  install -Dm755 /dev/stdin "\$pkgdir/opt/point-hub/bin/point-hub" <<<'#!/bin/sh'
+  install -d "\$pkgdir/usr/bin"
+  ln -s /opt/point-hub/bin/point-hub "\$pkgdir/usr/bin/point-hub"
+}
+PKGBUILD
+  if [[ "${3:-}" == placeholder ]]; then
+    printf "sha256sums=('@SHA256@')\nsha256sums_x86_64=('@SHA256@')\n" >> "$T/pkgbuilds/point-hub-bin/PKGBUILD"
+  fi
+}
+fake_pointhub_pkgbuild 1.0.0 1
 
 pm --help | grep -q -- '--init-key' && ok "publish-pacman.sh --help"
 pm --init-key > "$T/pm-init.out" 2>&1
@@ -705,9 +843,13 @@ expect_fail "--init-key takes no VERSION" pm --init-key 2.4.0
 expect_fail "2.4: not a version like 2.4.0" pm 2.4
 expect_fail "is at 2.4.0, not 2.5.0: run ../aur/bump.sh openvolley 2.5.0 and commit it first" pm 2.5.0
 expect_fail "is at 2.0.0, not 2.4.0: run ../aur/bump.sh openbeach 2.4.0 and commit it first" pm --app beach 2.4.0
+expect_fail "is at 1.0.0, not 1.1.0: run ../aur/bump.sh point-hub 1.1.0 and commit it first" pm --app point-hub 1.1.0
+fake_pointhub_pkgbuild 1.1.0 1 placeholder
+expect_fail "point-hub-bin/PKGBUILD still has the @SHA256@ placeholder: run ../aur/bump.sh point-hub 1.1.0 and commit it first" pm --app point-hub 1.1.0
+expect_fail "--app pointhub: expected openvolley, beach, point-hub or both" pm --app pointhub
 expect_fail "--app both takes no VERSION" pm --app both 2.4.0
 expect_fail "--deb goes with one app" pm --app both --deb "$T/release/openvolley-escoresheet_${V}_amd64.deb"
-expect_fail "--app volley: expected openvolley, beach or both" pm --app volley
+expect_fail "--app volley: expected openvolley, beach, point-hub or both" pm --app volley
 expect_fail "--keep 0: expected a number from 1" pm --keep 0
 expect_fail "no pacman repo key in $T/nokey/pacman-gpg" env OV_PKGS_HOME="$T/nokey" "$PM"
 chmod 644 "$PMH/pacman-gpg-passphrase"
@@ -719,6 +861,13 @@ expect_fail "--pacman needs --desktop VERSION" pp --pacman --no-sync
 expect_fail "--pacman cannot go with --staging" pp --desktop 2.4.0 --staging --pacman --no-sync
 expect_fail "openvolley-escoresheet-bin/PKGBUILD is at 2.4.0, not $V: run packaging/aur/bump.sh openvolley $V and commit it first" \
   pp --desktop "$V" --pacman --no-sync
+expect_fail "point-hub-bin/PKGBUILD still has the @SHA256@ placeholder: run packaging/aur/bump.sh point-hub 1.1.0 and commit it first" \
+  pp --point-hub 1.1.0 --pacman --no-sync
+expect_fail "point-hub-bin/PKGBUILD is at 1.1.0, not 1.2.0: run packaging/aur/bump.sh point-hub 1.2.0 and commit it first" \
+  pp --point-hub 1.2.0 --pacman --no-sync
+# once bumped (the sums filled in; a comment may still name the placeholder) it passes
+fake_pointhub_pkgbuild 1.1.0 1
+expect_fail "no signing key in $OV_PKGS_HOME" pp --point-hub 1.1.0 --pacman --no-sync
 expect_fail "openbeach-escoresheet-bin/PKGBUILD is at 2.0.0, not 2.0.1: run packaging/aur/bump.sh openbeach 2.0.1" \
   pp --desktop 2.0.1 --app beach --pacman --no-sync
 pp --help | grep -q -- '\[--flatpak\] \[--pacman\]' && ok "--help documents --pacman"
@@ -751,6 +900,21 @@ page "$T/bPackages" "$T/index-both.json"
 grep -q 'sudo pacman -Syu openbeach-escoresheet-bin' "$T/index.html" || bad "page: OpenBeach's pacman line"
 if grep -q '@[A-Z_]*@' "$T/index.html"; then bad "page: placeholders left (pacman)"; fi
 ok "page: OpenBeach's pacman line once its package is in the repo"
+page "$T/phPackages" "$T/index-ph.json"
+if grep -q 'pacman -Syu point-hub-bin' "$T/index.html"; then bad "page: Point Hub's pacman line without its package"; fi
+touch "$T/arch/x86_64/point-hub-bin-1.1.0-1-x86_64.pkg.tar.zst"
+page "$T/phPackages" "$T/index-ph.json"
+grep -q 'sudo pacman -Syu point-hub-bin</code>' "$T/index.html" || bad "page: Point Hub's pacman line"
+# The Arch card itself keeps its four command blocks (packaging/pacman/test.sh runs them)
+python3 - "$T/index.html" <<'PY' || bad "page: the Arch card's command blocks changed"
+import re, sys
+s = open(sys.argv[1]).read()
+card = s[s.index('<section class="card" id="arch">'):]
+card = card[:card.index("</section>")]
+assert len(re.findall(r"<pre><code>", card)) == 4, card
+PY
+rm "$T/arch/x86_64/point-hub-bin-1.1.0-1-x86_64.pkg.tar.zst"
+ok "page: Point Hub's pacman line once point-hub-bin is in the repo (in its own section; the Arch card unchanged)"
 echo 0000000000000000000000000000000000000000 > "$T/arch/fingerprint.txt"
 expect_fail "openvolley.gpg is not the key 0000000000000000000000000000000000000000 of fingerprint.txt" page "$T/bPackages" "$T/index-both.json"
 rm "$T/arch/fingerprint.txt"
@@ -817,6 +981,14 @@ PY
   pm > "$T/pm5.out" 2>&1 || { cat "$T/pm5.out"; bad "pacman: 2.4.1"; }
   [[ "$(in_db "$RX/openvolley.db" | xargs)" == "openbeach-escoresheet-bin 2.0.0-1 openvolley-escoresheet-bin 2.4.1-1" ]] || bad "pacman db after 2.4.1"
   ok "pacman: a new version after the refusals (foreign file, other key) publishes"
+  # Point Hub's package next to them: no updater marker needed
+  fake_pointhub_pkgbuild 1.1.0 1
+  pm --app point-hub 1.1.0 > "$T/pm6.out" 2>&1 || { cat "$T/pm6.out"; bad "pacman: point-hub"; }
+  [[ "$(in_db "$RX/openvolley.db" | xargs)" == "openbeach-escoresheet-bin 2.0.0-1 openvolley-escoresheet-bin 2.4.1-1 point-hub-bin 1.1.0-1" ]] ||
+    bad "pacman db with point-hub: $(in_db "$RX/openvolley.db")"
+  gpgv --keyring "$AR/openvolley.gpg" "$RX/point-hub-bin-1.1.0-1-x86_64.pkg.tar.zst.sig" "$RX/point-hub-bin-1.1.0-1-x86_64.pkg.tar.zst" 2>/dev/null ||
+    bad "pacman: point-hub-bin's signature"
+  ok "pacman: point-hub-bin built (no updater marker), signed and in the database with the other two"
 else
   echo "skip publish-pacman.sh build and repo steps (no docker)"
 fi
