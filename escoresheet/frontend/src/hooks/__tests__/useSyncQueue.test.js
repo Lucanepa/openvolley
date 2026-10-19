@@ -181,6 +181,19 @@ describe('runQueuePass', () => {
     expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
   })
 
+  it('deleting a match that is closed on the server is done: the server keeps it, the job is not refused', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'delete', status: 'queued', retry_count: 0, payload: { id: 'match_100_aaa' } }
+    ])
+    const closed = { data: null, error: { message: 'Match is closed', code: 'OV_MATCH_CLOSED', status: 409 } }
+    api.respond = (call) => (call.action === 'delete' ? closed : defaultRespond(call))
+    const outcome = await runQueuePass()
+    expect(api.calls.some(c => c.table === 'matches' && c.action === 'delete')).toBe(true)
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    expect(outcome.hasFailed).toBeFalsy()
+    expect(fakeDb.matches.map.get(1).cloudBlock).toBeFalsy()
+  })
+
   it('a write refused as OV_NOT_MATCH_OWNER takes the match over with the local game PIN, then is sent', async () => {
     fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', gamePin: '864201' }])
     fakeDb.sync_queue.reset([

@@ -916,6 +916,13 @@ async function processJobInner(job, ctx) {
       const { error: matchError } = await apiFrom('matches')
         .delete()
         .eq('id', matchUuid)
+      if (matchError?.code === 'OV_MATCH_CLOSED') {
+        // A closed match is the official record: the server keeps it, only an
+        // admin can reopen or remove it. Deleting it here only meant deleting
+        // this device's copy, which is done, so the job has nothing left to do.
+        safeLog.log('[SyncQueue] Match is closed on the server, kept there; local copy deleted:', id)
+        return true
+      }
       if (matchError) {
         safeLog.error('[SyncQueue] Match delete error:', matchError, job.payload)
         return failureResult(matchError, ctx)
