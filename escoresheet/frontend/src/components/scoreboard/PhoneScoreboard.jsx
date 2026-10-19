@@ -224,23 +224,27 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   const countdown = ({ countdown: value, countdownText, total }, warnAt, size = 48) => (
     <>
       <div data-testid="phone-countdown" style={{ flex: 'none', fontSize: size, lineHeight: 1, fontWeight: 800, fontFamily: scoreFont, fontVariantNumeric: 'tabular-nums', color: value <= warnAt ? 'var(--danger)' : 'var(--ov-text)' }}>{countdownText ?? value}</div>
-      <div style={{ flex: 'none', width: '70%', height: 8, borderRadius: 4, overflow: 'hidden', background: 'var(--ov-hairline)' }}>
-        <div style={{ width: `${total > 0 ? Math.max(0, Math.min(1, value / total)) * 100 : 0}%`, height: '100%', marginLeft: 'auto', borderRadius: 4, background: value <= warnAt ? 'var(--danger)' : 'var(--accent)', transition: 'width 1s linear' }} />
+      <div style={{ flex: 'none', width: '70%', height: 6, borderRadius: 3, overflow: 'hidden', background: 'var(--ov-hairline)' }}>
+        <div style={{ width: `${total > 0 ? Math.max(0, Math.min(1, value / total)) * 100 : 0}%`, height: '100%', marginLeft: 'auto', borderRadius: 3, background: value <= warnAt ? 'var(--danger)' : 'var(--accent)', transition: 'width 1s linear' }} />
       </div>
     </>
   )
   let overlay = null
-  // The time-out, the interval and the deciding set's setup are each under
-  // 163px high (the point buttons at 360x780), so they never make the view
-  // scroll where the point buttons are square; on a shorter screen their row
-  // grows to them (the view scrolls) rather than them running over the rest
-  const countdownCard = { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, flex: 1, padding: 10, boxSizing: 'border-box', borderRadius: 16, background: 'var(--ov-card)', border: '1px solid var(--ov-hairline)' }
-  const cardButton = { ...outlineButton, minHeight: 44, width: 'auto', padding: '0 24px' }
+  // The time-out, the interval and the deciding set's setup are each about
+  // 131px high, under the point buttons of a 375x740 view (158px), so they
+  // never make the view scroll where the point buttons are square; on a
+  // shorter screen their row grows to them (the view scrolls) rather than
+  // them running over the rest. At 154px, and 172px when "Time-out: <long
+  // team name>" took two lines, they scrolled on a 375x740 phone (2026-10-20).
+  const countdownCard = { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, flex: 1, padding: 8, boxSizing: 'border-box', borderRadius: 16, background: 'var(--ov-card)', border: '1px solid var(--ov-hairline)' }
+  const cardButton = { ...outlineButton, minHeight: 40, width: 'auto', padding: '0 24px' }
+  // One line, cut short: a second line pushed the card past the point buttons
+  const cardTitle = { maxWidth: '100%', fontSize: 14, lineHeight: 1.2, fontWeight: 700, color: 'var(--ov-text-secondary)', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
   if (centre?.kind === 'timeout') {
     overlay = (
       <div style={countdownCard}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ov-text-secondary)', textAlign: 'center' }}>{t('scoreboard.phone.timeoutRunning', { team: centre.teamName })}</div>
-        {countdown(centre, 10, 44)}
+        <div style={cardTitle} title={t('scoreboard.phone.timeoutRunning', { team: centre.teamName })}>{t('scoreboard.phone.timeoutRunning', { team: centre.teamName })}</div>
+        {countdown(centre, 10, 38)}
         <button type="button" style={cardButton} onClick={() => actions.stopTimeout()}>{t('scoreboard.buttons.stopTimeout')}</button>
       </div>
     )
@@ -262,8 +266,8 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   } else if (centre?.kind === 'interval') {
     overlay = (
       <div style={countdownCard}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ov-text-secondary)', textAlign: 'center' }}>{t('scoreboard.phone.interval')}</div>
-        {countdown(centre, 30, 44)}
+        <div style={cardTitle}>{t('scoreboard.phone.interval')}</div>
+        {countdown(centre, 30, 38)}
         <button type="button" style={cardButton} onClick={() => actions.endInterval()}>{t('scoreboard.buttons.endSetInterval')}</button>
       </div>
     )
