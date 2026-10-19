@@ -892,7 +892,7 @@ grep -q "sudo pacman-key --lsign-key $PM_FPR</code>" "$T/index.html" &&
   grep -q 'href="/arch/"' "$T/index.html" && grep -q 'Until then: the <a href="#arch">pacman repository</a>' "$T/index.html" ||
   bad "page: the Arch card"
 if grep -q 'pacman -Syu openbeach-escoresheet-bin' "$T/index.html"; then bad "page: OpenBeach's pacman line without its package"; fi
-grep -q 'yay -S openvolley-escoresheet-bin' "$T/index.html" && grep -q 'Arch Linux, Manjaro, EndeavourOS (AUR) <span class="soon">coming soon</span>' "$T/index.html" ||
+grep -q 'yay -S openvolley-escoresheet-bin' "$T/index.html" && grep -q '<h4>AUR <span class="soon">coming soon</span></h4>' "$T/index.html" ||
   bad "page: the AUR stays 'coming soon'"
 ok "page: the Arch card once arch/ is published (key steps, fingerprint, pacman.conf lines); AUR still coming soon"
 touch "$T/arch/x86_64/openbeach-escoresheet-bin-2.0.0-1-x86_64.pkg.tar.zst"
@@ -905,16 +905,27 @@ if grep -q 'pacman -Syu point-hub-bin' "$T/index.html"; then bad "page: Point Hu
 touch "$T/arch/x86_64/point-hub-bin-1.1.0-1-x86_64.pkg.tar.zst"
 page "$T/phPackages" "$T/index-ph.json"
 grep -q 'sudo pacman -Syu point-hub-bin</code>' "$T/index.html" || bad "page: Point Hub's pacman line"
-# The Arch card itself keeps its four command blocks (packaging/pacman/test.sh runs them)
-python3 - "$T/index.html" <<'PY' || bad "page: the Arch card's command blocks changed"
+# Each app's Arch part keeps its three command blocks, the key and pacman.conf steps the same
+# in all three (packaging/pacman/test.sh runs OpenVolley's and each app's install line)
+python3 - "$T/index.html" <<'PY' || bad "page: the Arch parts' command blocks changed"
 import re, sys
 s = open(sys.argv[1]).read()
-card = s[s.index('<section class="card" id="arch">'):]
-card = card[:card.index("</section>")]
-assert len(re.findall(r"<pre><code>", card)) == 4, card
+def blocks(id):
+    head = f'<details class="more" id="{id}">'
+    if head not in s:
+        return None
+    part = s[s.index(head):]
+    part = part[:part.index("</details>")]
+    found = re.findall(r"<pre><code>(.*?)</code></pre>", part, re.S)
+    assert len(found) == 3, (id, found)
+    return found
+ov, ph = blocks("arch"), blocks("point-hub-arch")
+assert ov and ph, "OpenVolley's or Point Hub's Arch part is missing"
+for other in (ph, blocks("openbeach-arch")):
+    assert other is None or other[:2] == ov[:2], "the apps' key / pacman.conf steps differ"
 PY
 rm "$T/arch/x86_64/point-hub-bin-1.1.0-1-x86_64.pkg.tar.zst"
-ok "page: Point Hub's pacman line once point-hub-bin is in the repo (in its own section; the Arch card unchanged)"
+ok "page: Point Hub's pacman line once point-hub-bin is in the repo (each app's Arch part: the same key and pacman.conf steps)"
 echo 0000000000000000000000000000000000000000 > "$T/arch/fingerprint.txt"
 expect_fail "openvolley.gpg is not the key 0000000000000000000000000000000000000000 of fingerprint.txt" page "$T/bPackages" "$T/index-both.json"
 rm "$T/arch/fingerprint.txt"
