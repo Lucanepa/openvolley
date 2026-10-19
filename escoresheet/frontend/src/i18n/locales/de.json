@@ -520,7 +520,8 @@
         "libero": "Libero nicht erlaubt",
         "disqualified": "Disqualifiziert",
         "exceptionallySubstituted": "Ausserordentlich ersetzt",
-        "saveFailed": "Speichern fehlgeschlagen"
+        "saveFailed": "Speichern fehlgeschlagen",
+        "invalidNumber": "1 bis 99"
       },
       "gameCaptain": {
         "title": "Spielkapitän",
@@ -531,6 +532,13 @@
         "noCaptain": "Kein Kapitän auf der Mannschaftsliste",
         "whenCaptainLeaves": "Übernimmt, wenn Kapitän {{captain}} das Feld verlässt",
         "fromFirstRally": "Kapitän {{captain}} ist nicht in der Aufstellung: Spielkapitän ab dem ersten Ballwechsel"
+      },
+      "easyLiberos": "Liberos (optional)",
+      "easyLiberoInput": "Libero {{n}}",
+      "easyLiberoErrors": {
+        "invalid": "1 bis 99",
+        "inLineup": "In der Aufstellung",
+        "played": "Spielte als Spieler"
       }
     },
     "lastAction": "Letzte Aktion:",
@@ -904,6 +912,15 @@
       "redesignate": "Libero neu bestimmen",
       "sidewaysTitle": "Halte das Handy aufrecht",
       "sidewaysBody": "Die Erfassung auf dem Handy ist für das Hochformat gemacht. Dreh das Handy zurück: Spiel, Dialoge und Countdowns bleiben erhalten."
+    },
+    "easySub": {
+      "notAllowed": "Darf nicht rein",
+      "invalid": "1 bis 99",
+      "onCourt": "Auf dem Feld",
+      "libero": "Ein Libero",
+      "label": "Neue Nummer",
+      "placeholder": "# neu",
+      "ok": "Rein"
     }
   },
   "settings": {
@@ -984,7 +1001,9 @@
     "scale": "Skalierung",
     "default": "Standard",
     "viewportWidth": "Breite der Ansicht",
-    "viewportHeight": "Höhe der Ansicht"
+    "viewportHeight": "Höhe der Ansicht",
+    "unofficial": "Inoffiziell",
+    "easyMatch": "Einfaches Spiel · inoffiziell"
   },
   "home": {
     "title": "OpenVolley eScoresheet",
@@ -1011,13 +1030,21 @@
       "failedToRestoreMatch": "Spiel konnte nicht wiederhergestellt werden",
       "failedToRestoreFromFile": "Wiederherstellung aus Datei fehlgeschlagen",
       "enter6DigitPin": "Bitte geben Sie einen 6-stelligen PIN ein",
-      "matchNotFound": "Spiel nicht gefunden"
+      "matchNotFound": "Spiel nicht gefunden",
+      "easyMatchOverwriteWarning": "Ein offizielles Spiel wird noch aufgezeichnet. Ein einfaches Spiel ersetzt das Test- oder einfache Spiel auf diesem Gerät. Fortfahren?",
+      "easyMatchReplaceEasy": "Das einfache Spiel auf diesem Gerät wird durch das neue ersetzt und seine Daten gelöscht. Fortfahren?",
+      "easyMatchReplaceTest": "Das Testspiel auf diesem Gerät wird durch das einfache Spiel ersetzt und seine Daten gelöscht. Fortfahren?",
+      "unableToPrepareEasyMatch": "Das einfache Spiel konnte nicht gestartet werden: {{error}}",
+      "deleteEasyMatchConfirm": "Dies löscht das einfache Spiel und alle seine Daten. Fortfahren?",
+      "easyMatchDeleted": "Einfaches Spiel gelöscht."
     },
     "exitFullscreen": "Vollbild beenden",
     "fullscreen": "Vollbild",
     "downloadApp": "Desktop-App herunterladen — Offline-Schreibertisch + Tablet-Server",
     "downloadAppDeb": "oder das .deb-Paket herunterladen",
-    "downloadServer": "Server herunterladen — Schiedsrichter ohne Internet"
+    "downloadServer": "Server herunterladen — Schiedsrichter ohne Internet",
+    "easyMatch": "Einfaches Spiel",
+    "easyMatchHint": "Inoffiziell · ohne Kader und Unterschriften"
   },
   "options": {
     "title": "Optionen",
@@ -3897,5 +3924,18 @@
     "usePhone": "Handy-Ansicht verwenden",
     "fullscreen": "Vollbild",
     "fullscreenNote": "Vollbild entfernt Browser-Kopfzeilen für maximalen Platz."
+  },
+  "easyMatch": {
+    "title": "Einfaches Spiel",
+    "home": "Heimteam",
+    "away": "Gastteam",
+    "chooseColour": "Trikotfarbe von {{team}}",
+    "teamName": "Name",
+    "nameRequired": "Erforderlich",
+    "shortName": "Kurz",
+    "intro": "Inoffiziell: ohne Kader, Offizielle oder Unterschriften. Die Rückennummern werden mit den Aufstellungen eingegeben; alles andere ist das normale Scoreboard.",
+    "format": "Format",
+    "bestOf": "Best of {{count}}",
+    "start": "Zur Auslosung"
   }
 }

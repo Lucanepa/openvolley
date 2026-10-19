@@ -478,7 +478,9 @@ export default function MainHeader({
             ? 'border-amber-200 bg-amber-50 text-[11px] uppercase tracking-[0.08em] text-amber-800'
             : 'border-stone-200 bg-stone-50 font-mono tracking-[0.3em] text-stone-900'
         )}>
-          {matchData.match.test ? t('header.test') : (matchData.match.gamePin || 'N/A')}
+          {matchData.match.easy === true
+            ? t('header.unofficial', 'Unofficial')
+            : matchData.match.test ? t('header.test') : (matchData.match.gamePin || 'N/A')}
         </div>
       </div>
     )
@@ -489,9 +491,15 @@ export default function MainHeader({
     if (!match || (!match.test && !match.gameNumber && !match.game_n)) return null
 
     const isTest = match?.test
+    const isEasy = match?.easy === true
     const matchNumber = match?.gameNumber || match?.game_n || 'N/A'
-    const fullText = isTest ? t('header.testMatch') : t('header.matchNumber', { number: matchNumber })
-    const buttonText = isCompactBar ? (isTest ? t('header.test') : `#${matchNumber}`) : fullText
+    // An easy match says it is unofficial (domain/easyMatch.js)
+    const fullText = isEasy
+      ? t('header.easyMatch', 'Easy match · unofficial')
+      : isTest ? t('header.testMatch') : t('header.matchNumber', { number: matchNumber })
+    const buttonText = isCompactBar
+      ? (isEasy ? t('header.unofficial', 'Unofficial') : isTest ? t('header.test') : `#${matchNumber}`)
+      : fullText
 
     // On a phone the chip gets the room the header leaves it (an alarm bell
     // and the tablet status take some): no arrow, and a label that ends in
