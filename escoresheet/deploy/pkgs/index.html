@@ -6,24 +6,29 @@
 <meta name="theme-color" content="#e2001a">
 <meta name="color-scheme" content="light">
 <title>Get OpenVolley</title>
-<meta name="description" content="Install the OpenVolley eScoresheet and OpenBeach: Android via F-Droid or APK, Linux via APT, Flatpak or pacman (Arch), Windows installer or Scoop.">
+<meta name="description" content="Install the OpenVolley eScoresheet, OpenBeach and Point Hub: Android via F-Droid or APK, Linux via APT, Flatpak or pacman (Arch), Windows installer or Scoop, macOS with Homebrew.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Ccircle cx='256' cy='256' r='256' fill='%23ffffff'/%3E%3Cpath fill='%23e2001a' d='M495.37 273.44A240 240 0 0 1 480.87 339.85A182.72 182.72 0 0 0 262.66 226.69A130.72 130.72 0 0 1 237.07 188.46A226.72 226.72 0 0 1 495.37 273.44ZM297.34 19.59A240 240 0 0 1 486.05 187.6A278.72 278.72 0 0 0 226.09 137.36A130.72 130.72 0 0 1 297.34 19.59Z'/%3E%3Cpath fill='%231c1917' d='M440.07 410.01A240 240 0 0 1 70.94 408.82A182.72 182.72 0 0 0 278.05 276.42A130.72 130.72 0 0 1 440.07 410.01Z'/%3E%3Cpath fill='%231c1917' d='M30.59 338.4A240 240 0 0 1 216.18 19.33A182.72 182.72 0 0 0 227.29 264.89A130.72 130.72 0 0 1 30.59 338.4Z'/%3E%3C/svg%3E">
 <!-- Template: publish-pkgs.sh (lib/publish-lib.sh landing_page) fills in the placeholders
-     DESKTOP_VERSION, DEB_PACKAGE, WINDOWS_URL, APK_VERSION, APK_FILE and, for OpenBeach,
-     BEACH_DESKTOP_VERSION, BEACH_WINDOWS_URL, BEACH_APK_VERSION and BEACH_APK_FILE (each between
-     @ signs) from the packages it publishes. The beach block is left out until an OpenBeach
+     DESKTOP_VERSION, DEB_PACKAGE, WINDOWS_URL, MAC_URL, APK_VERSION, APK_FILE and, for OpenBeach,
+     BEACH_DESKTOP_VERSION, BEACH_WINDOWS_URL, BEACH_MAC_URL, BEACH_APK_VERSION and BEACH_APK_FILE (each
+     between @ signs) from the packages it publishes. The beach block is left out until an OpenBeach
      package is published, its beach-desktop / beach-android parts until that one is.
      The flatpak / beach-flatpak parts appear once flatpak/<app id>.flatpakref is
      published (packaging/flatpak/publish-flatpak.sh); the pacman parts once arch/x86_64/openvolley.db
      is (packaging/pacman/publish-pacman.sh; PACMAN_FPR and PACMAN_FPR_GROUPED from arch/fingerprint.txt),
-     its pacman-ov / beach-pacman lines once that app's package is in it.
+     its pacman-ov / beach-pacman / pointhub-pacman parts once that app's package is in it.
      The pointhub block (Point Hub, KSC Wiedikon's scoreboard console, github.com/Lucanepa/point-hub)
      works like the beach one: POINTHUB_DESKTOP_VERSION, POINTHUB_APK_VERSION and POINTHUB_APK_FILE,
      shown once a point-hub .deb or ch.kscw.pointhub APK is published, its pointhub-desktop /
      pointhub-android parts each once that one is, pointhub-flatpak once flatpak/ch.kscw.PointHub.flatpakref
-     is, pointhub-pacman once arch/ has point-hub-bin. Its links follow the asset names of point-hub's
-     desktop.yml releases.
-     Plain HTML, no external requests. -->
+     is. Its links follow the asset names of point-hub's desktop.yml releases.
+     Those parts are cut out line by line (sed ranges from a marker line to its closing marker line):
+     keep every marker on its own line, nest them, and start no other comment with "mac" or
+     "per-machine". Inline pairs (one line) exist only for flatpak and pacman.
+     Layout: one section.app per app, one .panel per platform in it (data-os). The script at the end
+     makes tabs of whatever sections and panels are left; without JavaScript everything shows, one
+     after the other. Plain HTML, no external requests. -->
+<script>document.documentElement.classList.add('js')</script>
 <style>
   :root {
     --stone-50: #fafaf9; --stone-100: #f5f5f4; --stone-200: #e7e5e4; --stone-300: #d6d3d1;
@@ -41,25 +46,28 @@
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
   main { max-width: 48rem; margin: 0 auto; padding: 2rem 1rem 3rem; }
-  header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
+  header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.25rem; }
   header .hero-icon { width: 56px; height: 56px; flex: none; }
   .eyebrow { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .14em; color: var(--stone-400); margin: 0 0 .15rem; }
   h1 { font-size: 1.75rem; line-height: 1.2; font-weight: 700; letter-spacing: -.02em; color: var(--stone-900); margin: 0; }
-  .lead { color: var(--stone-600); margin: 0 0 1.5rem; max-width: 40rem; }
+  .lead { color: var(--stone-600); margin: 0 0 1.25rem; max-width: 40rem; }
   .card {
     background: #fff; border: 1px solid rgb(231 229 228 / .7); border-radius: 1rem;
     box-shadow: var(--shadow-card); padding: 1.25rem; margin-bottom: 1rem; position: relative;
   }
   .card > h2 {
     font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--stone-800);
-    margin: 0 0 1rem; padding-bottom: .4rem; border-bottom: 1.5px solid var(--stone-800);
+    margin: 0 0 .75rem; padding-bottom: .4rem; border-bottom: 1.5px solid var(--stone-800);
     display: flex; justify-content: space-between; gap: .5rem;
   }
-  .card > h2 span { color: var(--stone-500); font-weight: 600; text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+  .card > h2 span { color: var(--stone-500); font-weight: 600; text-transform: none; letter-spacing: 0; }
+  .intro { color: var(--stone-600); margin: 0 0 1rem; }
   h3 { font-size: 14px; font-weight: 600; color: var(--stone-700); margin: 1.25rem 0 .35rem; }
-  h3:first-of-type { margin-top: 0; }
+  h4 { font-size: 13px; font-weight: 600; color: var(--stone-700); margin: 1rem 0 .3rem; }
+  .panel > h3:first-child, .panel > .pv:first-child + h3, details > h4:first-of-type { margin-top: .5rem; }
   p { margin: .35rem 0; }
   .meta { font-size: 12px; color: var(--stone-500); }
+  .pv { font-size: 12px; color: var(--stone-500); font-variant-numeric: tabular-nums; margin: 0 0 .5rem; }
   .soon {
     display: inline-block; margin-left: .4rem; padding: 0 .5rem; border: 1px solid var(--stone-200); border-radius: 999px;
     background: var(--stone-100); color: var(--stone-600); font-size: 11px; font-weight: 600; line-height: 1.6; vertical-align: 1px;
@@ -78,14 +86,13 @@
     font: 500 12px/1 inherit; font-family: inherit; padding: 0 .75rem; cursor: pointer; min-width: 4.25rem;
   }
   .copy:hover { background: var(--stone-100); }
-  .copy:focus-visible, .btn:focus-visible, a:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgb(248 113 113 / .6); }
+  .copy:focus-visible, .btn:focus-visible, a:focus-visible, button:focus-visible, summary:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgb(248 113 113 / .6); }
   .fp { font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; color: var(--stone-700); }
   .row { display: flex; gap: 1.25rem; align-items: flex-start; }
   .row > div { flex: 1; min-width: 0; }
-  .qr { flex: none; width: 132px; text-align: center; }
+  .row > .qr { flex: none; width: 132px; text-align: center; }
   .qr img { width: 132px; height: 132px; image-rendering: pixelated; border: 1px solid var(--stone-200); border-radius: .5rem; display: block; }
   .actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
-  .actions + h3, .row + h3 { margin-top: 1.5rem; }
   .btn {
     display: inline-flex; align-items: center; height: 2.25rem; padding: 0 .85rem; border-radius: .5rem;
     font-size: 14px; font-weight: 500; text-decoration: none; transition: background-color .15s;
@@ -96,12 +103,50 @@
   .btn-ghost:hover { background: var(--stone-100); }
   a { color: var(--red-dark); }
   kbd { font: 600 12px/1 inherit; font-family: inherit; border: 1px solid var(--stone-300); border-bottom-width: 2px; border-radius: .3rem; padding: .1rem .3rem; background: #fff; color: var(--stone-700); }
+
+  /* The app picker (one tab per section.app) and each app's platform tabs, both made by the script. */
+  .apps { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: .5rem; margin: 0 0 1rem; }
+  .apps button {
+    text-align: left; border: 1px solid var(--stone-200); background: #fff; border-radius: .9rem; padding: .65rem .85rem;
+    cursor: pointer; font: inherit; color: var(--stone-600); box-shadow: var(--shadow-card); min-width: 0;
+  }
+  .apps button b { display: block; font-size: 14px; color: var(--stone-900); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .apps button small { display: block; font-size: 12px; color: var(--stone-500); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .apps button:hover { border-color: var(--stone-300); }
+  .apps button[aria-selected="true"] { border-color: var(--red); box-shadow: inset 0 0 0 1px var(--red), var(--shadow-card); }
+  .ptabs { display: flex; gap: .25rem; padding: .25rem; margin: 0 0 1rem; background: var(--stone-100); border-radius: .75rem; overflow-x: auto; }
+  .ptabs:empty { display: none; }
+  .ptabs button {
+    flex: 1 0 auto; border: 0; background: transparent; padding: .45rem .75rem; border-radius: .55rem; cursor: pointer;
+    font: 600 13px/1.2 inherit; font-family: inherit; color: var(--stone-600); white-space: nowrap;
+  }
+  .ptabs button:hover { color: var(--stone-900); }
+  .ptabs button[aria-selected="true"] { background: #fff; color: var(--stone-900); box-shadow: var(--shadow-card); }
+  html.js .app:not(.on), html.js .panel:not(.on) { display: none; }
+  html.js .ph { display: none; }
+  html:not(.js) .apps, html:not(.js) .ptabs { display: none; }
+  html:not(.js) .panel + .panel { border-top: 1px solid var(--stone-200); margin-top: 1.25rem; }
+
+  /* Everything that is not the one recommended way: folded. */
+  details.more { border-top: 1px solid var(--stone-200); margin-top: 1rem; padding-top: .7rem; }
+  details.more + details.more { margin-top: .7rem; }
+  details.more > summary { cursor: pointer; font-weight: 600; color: var(--stone-700); list-style: none; display: flex; gap: .45rem; align-items: baseline; }
+  details.more > summary::-webkit-details-marker { display: none; }
+  details.more > summary::before { content: ""; flex: none; width: .45rem; height: .45rem; border: solid var(--stone-400); border-width: 0 2px 2px 0; transform: rotate(-45deg); transition: transform .15s; position: relative; top: -1px; }
+  details.more[open] > summary::before { transform: rotate(45deg); }
+  details.more > summary .meta { font-weight: 400; }
+  details.more[open] > summary { margin-bottom: .35rem; }
+  details.card.more { margin-top: 0; padding-top: 1rem; border-top: 1px solid rgb(231 229 228 / .7); }
+  details.card.more > summary { font-size: 14px; }
   footer { color: var(--stone-500); font-size: 12px; margin-top: 2rem; }
   footer a { color: var(--stone-600); }
   @media (max-width: 560px) {
     h1 { font-size: 1.5rem; }
     .row { flex-direction: column; align-items: stretch; }
-    .qr { width: auto; text-align: left; }
+    .row > .qr { display: none; }
+    .apps button { padding: .55rem .6rem; }
+    .apps button b { font-size: 13px; }
+    .apps button small { font-size: 11px; white-space: normal; line-height: 1.3; }
   }
 </style>
 </head>
@@ -111,252 +156,387 @@
     <svg class="hero-icon" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect x="0.75" y="0.75" width="510.5" height="510.5" rx="114" fill="#ffffff" stroke="#e7e5e4" stroke-width="1.5"/><path fill="#e2001a" d="M405.99 254.5A150 150 0 0 1 391.96 319.36A106.45 106.45 0 0 0 257.95 246.38A89.45 89.45 0 0 1 234.12 209.23A149.45 149.45 0 0 1 405.99 254.5ZM269.35 106.6A150 150 0 0 1 403.05 226.4A166.45 166.45 0 0 0 230.29 192.48A89.45 89.45 0 0 1 269.35 106.6Z"/><path fill="#1c1917" d="M182.3 386.65A150 150 0 0 1 133.15 342.06A106.45 106.45 0 0 0 263.36 262.5A89.45 89.45 0 0 1 307.44 260.44A149.45 149.45 0 0 1 182.3 386.65ZM378.71 342.26A150 150 0 0 1 208.11 398.15A166.45 166.45 0 0 0 323.87 265.5A89.45 89.45 0 0 1 378.71 342.26Z"/><path fill="#1c1917" d="M179.71 126.85A150 150 0 0 1 242.89 106.57A106.45 106.45 0 0 0 246.69 259.12A89.45 89.45 0 0 1 226.43 298.33A149.45 149.45 0 0 1 179.71 126.85ZM119.94 319.14A150 150 0 0 1 156.84 143.45A166.45 166.45 0 0 0 213.84 310.03A89.45 89.45 0 0 1 119.94 319.14Z"/></svg>
     <div>
       <p class="eyebrow">get.openvolley.app</p>
-      <h1>Install OpenVolley eScoresheet</h1>
+      <h1>Install OpenVolley</h1>
     </div>
   </header>
-  <p class="lead">The electronic volleyball scoresheet (FIVB and Swiss Volley rules). Pick your device below. Every package here is signed: the apps by the OpenVolley app key, the repositories by the keys whose fingerprints are shown on this page.</p>
+  <p class="lead">Pick the app, then your device. Every package here is signed: the apps by their own app keys, the repositories by the keys whose fingerprints are shown with them.</p>
+  <div class="apps" id="apps" aria-label="App"></div>
 
-  <section class="card" id="android">
-    <h2>Android tablets <span>@APK_VERSION@</span></h2>
-    <div class="row">
-      <div>
-        <h3>With F-Droid (gets updates automatically)</h3>
-        <ol>
-          <li>Install <a href="https://f-droid.org/">F-Droid</a>.</li>
-          <li>On the tablet, open the link below, or scan the code with F-Droid. Or in F-Droid: <kbd>Settings</kbd> → <kbd>Repositories</kbd> → <kbd>+</kbd> and paste the address.</li>
-          <li>Search for <b>OpenVolley</b> and install.</li>
-        </ol>
+  <section class="card app" id="openvolley" data-name="OpenVolley" data-sub="Indoor volleyball">
+    <h2>OpenVolley eScoresheet <span>indoor volleyball</span></h2>
+    <p class="intro">The electronic volleyball scoresheet (FIVB and Swiss Volley rules), for the scorer's laptop and the tablets around it.</p>
+    <div class="ptabs" aria-label="Device"></div>
+
+    <div class="panel" id="android" data-os="android" data-label="Android">
+      <h3 class="ph">Android tablets</h3>
+      <p class="pv">Version @APK_VERSION@</p>
+      <div class="row">
+        <div>
+          <p>With F-Droid, which keeps it up to date:</p>
+          <ol>
+            <li>Install <a href="https://f-droid.org/">F-Droid</a>.</li>
+            <li>Add the OpenVolley repository: tap <b>Add to F-Droid</b> on the tablet, or scan the code with F-Droid.</li>
+            <li>Search for <b>OpenVolley</b> and install.</li>
+          </ol>
+          <div class="actions">
+            <a class="btn btn-primary" href="https://fdroid.link/#https://get.openvolley.app/fdroid/repo?fingerprint=61C70F8949441E04E2E21ACC8E6E5C6CC502ADD52A157FB9A8DD8588DACE0720">Add to F-Droid</a>
+          </div>
+        </div>
+        <div class="qr">
+          <img src="/fdroid/repo/index.png" alt="QR code of the F-Droid repository address with its fingerprint">
+          <p class="meta">Scan with F-Droid</p>
+        </div>
+      </div>
+      <details class="more">
+        <summary>Add the repository by hand, check its fingerprint</summary>
+        <p>In F-Droid: <kbd>Settings</kbd> → <kbd>Repositories</kbd> → <kbd>+</kbd> and paste the address:</p>
         <div class="cmd"><pre><code>https://get.openvolley.app/fdroid/repo?fingerprint=61C70F8949441E04E2E21ACC8E6E5C6CC502ADD52A157FB9A8DD8588DACE0720</code></pre><button class="copy" type="button">Copy</button></div>
         <p class="meta">Repository fingerprint (SHA-256):</p>
         <p class="fp">61C7 0F89 4944 1E04 E2E2 1ACC 8E6E 5C6C C502 ADD5 2A15 7FB9 A8DD 8588 DACE 0720</p>
+      </details>
+      <details class="more">
+        <summary>Without F-Droid: the APK</summary>
+        <p>Allow installs from your browser when Android asks. Updates install over it as long as they come from here or the F-Droid repository above.</p>
         <div class="actions">
-          <a class="btn btn-primary" href="https://fdroid.link/#https://get.openvolley.app/fdroid/repo?fingerprint=61C70F8949441E04E2E21ACC8E6E5C6CC502ADD52A157FB9A8DD8588DACE0720">Add to F-Droid</a>
+          <a class="btn btn-ghost" href="/fdroid/repo/@APK_FILE@">Download APK @APK_VERSION@</a>
+          <a class="btn btn-ghost" href="https://github.com/Lucanepa/openvolley/releases/tag/desktop-v@DESKTOP_VERSION@">GitHub release</a>
         </div>
-      </div>
-      <div class="qr">
-        <img src="/fdroid/repo/index.png" alt="QR code of the F-Droid repository address with its fingerprint">
-        <p class="meta">Scan with F-Droid</p>
-      </div>
+        <h4>f-droid.org <span class="soon">coming soon</span></h4>
+        <p class="meta">Waiting for review at F-Droid: OpenVolley and OpenBeach in F-Droid's main repository, built by F-Droid from the source code and signed with the same key as the APKs here, so you can switch to it without reinstalling. Until then, use the repository above.</p>
+      </details>
+      <p class="meta">Updates: F-Droid installs them by itself on Android 12 and newer, while the tablet is idle. <a href="#updates">How updates work</a></p>
     </div>
-    <h3>Or the APK directly (no automatic updates)</h3>
-    <p>Allow installs from your browser when Android asks. Updates install over it as long as they come from here or the F-Droid repository above.</p>
-    <div class="actions">
-      <a class="btn btn-ghost" href="/fdroid/repo/@APK_FILE@">Download APK @APK_VERSION@</a>
-      <a class="btn btn-ghost" href="https://github.com/Lucanepa/openvolley/releases/tag/desktop-v@DESKTOP_VERSION@">GitHub release</a>
-    </div>
-  </section>
 
-  <section class="card" id="linux">
-    <h2>Linux (Debian, Ubuntu, Mint) <span>@DESKTOP_VERSION@ · amd64</span></h2>
-    <h3>Install with one command</h3>
-    <p>Adds the signed APT repository (it checks the key fingerprint below first) and installs the app. Running it again is harmless.</p>
-    <div class="cmd"><pre><code>curl -fsSL https://get.openvolley.app/install.sh | sudo sh</code></pre><button class="copy" type="button">Copy</button></div>
-    <p class="meta">Read it first if you like: <a href="/install.sh">install.sh</a></p>
-    <h3>From then on</h3>
-    <div class="cmd"><pre><code>sudo apt install @DEB_PACKAGE@</code></pre><button class="copy" type="button">Copy</button></div>
-    <div class="cmd"><pre><code>sudo apt update &amp;&amp; sudo apt upgrade</code></pre><button class="copy" type="button">Copy</button></div>
-    <p>Start it from the app menu (<b>OpenVolley eScoresheet</b>) or with <code>@DEB_PACKAGE@</code>. Headless relay for the tablets only: <code>@DEB_PACKAGE@ --server-only</code>.</p>
-    <h3>Or by hand (same result)</h3>
-    <div class="cmd"><pre><code>curl -fsSL https://get.openvolley.app/apt/openvolley.gpg | sudo tee /usr/share/keyrings/openvolley.gpg &gt;/dev/null
+    <div class="panel" id="windows" data-os="windows" data-label="Windows">
+      <h3 class="ph">Windows</h3>
+      <p class="pv">Version @DESKTOP_VERSION@ · 64-bit</p>
+      <p>Download and run the installer. Windows may show a SmartScreen notice for a new download: <kbd>More info</kbd> → <kbd>Run anyway</kbd>.</p>
+      <!--per-machine: kept by publish-pkgs.sh only when the published version is newer than 2.1.0 (the last per-user installer)-->
+      <p>It installs for all users and asks once for an administrator: that lets the tablets on the local network through Windows Firewall. An earlier version installed by the same Windows account is replaced; matches and backups stay. Typed an administrator's password into a standard account? Then the earlier version stays as well: remove it in Settings › Apps (its matches stay).</p>
+      <!--/per-machine-->
+      <div class="actions">
+        <a class="btn btn-primary" href="@WINDOWS_URL@">Download for Windows</a>
+        <a class="btn btn-ghost" href="https://github.com/Lucanepa/openvolley/releases/tag/desktop-v@DESKTOP_VERSION@">All downloads</a>
+      </div>
+      <details class="more">
+        <summary>With a package manager: Scoop, winget</summary>
+        <h4>Scoop</h4>
+        <div class="cmd"><pre><code>scoop install https://raw.githubusercontent.com/Lucanepa/openvolley/main/escoresheet/packaging/scoop/openvolley.json</code></pre><button class="copy" type="button">Copy</button></div>
+        <p class="meta">Runs the installer above (it asks once for an administrator). Run <code>scoop update</code> only between matches: it closes the app.</p>
+        <h4>winget <span class="soon">coming soon</span></h4>
+        <div class="cmd"><pre><code>winget install Lucanepa.OpenVolley</code></pre><button class="copy" type="button">Copy</button></div>
+        <p class="meta">Waiting for review in the winget repository. It runs the installer above, so the app keeps updating itself as well. Run <code>winget upgrade</code> only between matches: it closes the app.</p>
+      </details>
+      <p class="meta">Updates: the app updates itself and installs the update when you quit it, never during a match. <a href="#updates">How updates work</a></p>
+    </div>
+
+    <!--mac: left out by publish-pkgs.sh while the published version's GitHub release has no macOS disk image-->
+    <div class="panel" id="macos" data-os="macos" data-label="macOS">
+      <h3 class="ph">macOS</h3>
+      <p class="pv">Version @DESKTOP_VERSION@ · Apple silicon and Intel · macOS 11 Big Sur or newer</p>
+      <p>With <a href="https://brew.sh/">Homebrew</a>:</p>
+      <div class="cmd"><pre><code>brew install --cask lucanepa/tap/openvolley</code></pre><button class="copy" type="button">Copy</button></div>
+      <p>Or download the disk image, open it and drag <b>OpenVolley eScoresheet</b> to <b>Applications</b>.</p>
+      <div class="actions">
+        <a class="btn btn-primary" href="@MAC_URL@">Download for macOS</a>
+        <a class="btn btn-ghost" href="https://github.com/Lucanepa/openvolley/releases/tag/desktop-v@DESKTOP_VERSION@">All downloads</a>
+      </div>
+      <h3>The first start</h3>
+      <p>The app is not notarized by Apple (that needs a paid Apple developer account), so macOS blocks it the first time. Open it once and close the message, then <kbd>System Settings</kbd> → <kbd>Privacy &amp; Security</kbd> → <kbd>Open Anyway</kbd>. On macOS 14 and older: right-click the app → <kbd>Open</kbd>. Or in Terminal:</p>
+      <div class="cmd"><pre><code>xattr -dr com.apple.quarantine "/Applications/OpenVolley eScoresheet.app"</code></pre><button class="copy" type="button">Copy</button></div>
+      <p class="meta">Start it from Applications: from there it updates itself. The tablet Wi-Fi of the Windows and Linux app is not available on macOS: connect the tablets through the venue's Wi-Fi, a travel router or macOS Internet Sharing.</p>
+    </div>
+    <!--/mac-->
+
+    <div class="panel" id="linux" data-os="linux" data-label="Linux">
+      <h3 class="ph">Linux</h3>
+      <p class="pv">Version @DESKTOP_VERSION@ · amd64</p>
+      <p><b>Debian, Ubuntu, Mint:</b> one command adds the signed APT repository (it checks the key fingerprint first) and installs the app. Running it again is harmless.</p>
+      <div class="cmd"><pre><code>curl -fsSL https://get.openvolley.app/install.sh | sudo sh</code></pre><button class="copy" type="button">Copy</button></div>
+      <p class="meta">Read it first if you like: <a href="/install.sh">install.sh</a></p>
+      <p>Start it from the app menu (<b>OpenVolley eScoresheet</b>) or with <code>@DEB_PACKAGE@</code>. Headless relay for the tablets only: <code>@DEB_PACKAGE@ --server-only</code>. It updates itself; <code>sudo apt update &amp;&amp; sudo apt upgrade</code> works too.</p>
+      <details class="more">
+        <summary>Set up APT by hand, check the key</summary>
+        <div class="cmd"><pre><code>curl -fsSL https://get.openvolley.app/apt/openvolley.gpg | sudo tee /usr/share/keyrings/openvolley.gpg &gt;/dev/null
 echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/openvolley.gpg] https://get.openvolley.app/apt stable main' | sudo tee /etc/apt/sources.list.d/openvolley.list
 sudo apt update &amp;&amp; sudo apt install @DEB_PACKAGE@</code></pre><button class="copy" type="button">Copy</button></div>
-    <p class="meta">Check the key before trusting it: <code>gpg --show-keys /usr/share/keyrings/openvolley.gpg</code> must show the fingerprint below. Installed the <code>.deb</code> from GitHub before (package <code>openvolley-e-scoresheet</code>)? <code>sudo apt install @DEB_PACKAGE@</code> replaces it.</p>
-    <p class="meta">Signing key: OpenVolley packages &lt;packages@openvolley.app&gt;, ed25519 (<a href="/apt/openvolley.asc">openvolley.asc</a>)</p>
-    <p class="fp">AB46 9DA8 DC3E C90F 8057 320D 285B 18D7 6C16 B82C</p>
-  </section>
-
-  <!--flatpak-->
-  <section class="card" id="flatpak">
-    <h2>Linux, any distribution (Flatpak) <span>x86_64</span></h2>
-    <p>For Fedora, Arch, openSUSE and any other Linux with Flatpak. Flatpak keeps it up to date (<code>flatpak update</code> or the software centre); this copy does not update itself.</p>
-    <div class="cmd"><pre><code>flatpak install --user https://get.openvolley.app/flatpak/com.openvolley.escoresheet.flatpakref</code></pre><button class="copy" type="button">Copy</button></div>
-    <p>Start it from the app menu (<b>OpenVolley eScoresheet</b>) or with <code>flatpak run com.openvolley.escoresheet</code>. The signed repository (its key is in the file): <a href="/flatpak/openvolley.flatpakrepo">openvolley.flatpakrepo</a>.</p>
-    <p class="meta">The tablet Wi-Fi and Bluetooth network need NetworkManager on the computer; the tray icon needs a tray (GNOME: the AppIndicator extension). Matches of an APT install are not seen by the Flatpak: back them up and restore them in the app.</p>
-  </section>
-  <!--/flatpak-->
-
-  <!--pacman-->
-  <section class="card" id="arch">
-    <h2>Arch Linux, Manjaro, EndeavourOS (pacman) <span>x86_64</span></h2>
-    <p>A signed pacman repository: pacman installs the app and brings every update with <code>sudo pacman -Syu</code>; this copy does not update itself. Set it up once:</p>
-    <h3>1. Trust the repository key</h3>
-    <div class="cmd"><pre><code>curl -fsSLO https://get.openvolley.app/arch/openvolley.gpg
+        <p class="meta">Check the key before trusting it: <code>gpg --show-keys /usr/share/keyrings/openvolley.gpg</code> must show the fingerprint below. Installed the <code>.deb</code> from GitHub before (package <code>openvolley-e-scoresheet</code>)? <code>sudo apt install @DEB_PACKAGE@</code> replaces it.</p>
+        <p class="meta">Signing key: OpenVolley packages &lt;packages@openvolley.app&gt;, ed25519 (<a href="/apt/openvolley.asc">openvolley.asc</a>)</p>
+        <p class="fp">AB46 9DA8 DC3E C90F 8057 320D 285B 18D7 6C16 B82C</p>
+      </details>
+      <!--flatpak-->
+      <details class="more" id="flatpak">
+        <summary>Fedora, openSUSE, any distribution: Flatpak</summary>
+        <div class="cmd"><pre><code>flatpak install --user https://get.openvolley.app/flatpak/com.openvolley.escoresheet.flatpakref</code></pre><button class="copy" type="button">Copy</button></div>
+        <p>Start it from the app menu (<b>OpenVolley eScoresheet</b>) or with <code>flatpak run com.openvolley.escoresheet</code>. Flatpak keeps it up to date (<code>flatpak update</code> or the software centre); this copy does not update itself. The signed repository (its key is in the file): <a href="/flatpak/openvolley.flatpakrepo">openvolley.flatpakrepo</a>.</p>
+        <p class="meta">The tablet Wi-Fi and Bluetooth network need NetworkManager on the computer; the tray icon needs a tray (GNOME: the AppIndicator extension). Matches of an APT install are not seen by the Flatpak: back them up and restore them in the app.</p>
+      </details>
+      <!--/flatpak-->
+      <!--pacman-->
+      <details class="more" id="arch">
+        <summary>Arch Linux, Manjaro, EndeavourOS: pacman</summary>
+        <p>A signed pacman repository: pacman installs the app and brings every update with <code>sudo pacman -Syu</code>; this copy does not update itself. Set it up once:</p>
+        <h4>1. Trust the repository key</h4>
+        <div class="cmd"><pre><code>curl -fsSLO https://get.openvolley.app/arch/openvolley.gpg
 sudo pacman-key --add openvolley.gpg
 sudo pacman-key --lsign-key @PACMAN_FPR@</code></pre><button class="copy" type="button">Copy</button></div>
-    <p class="meta">Check the key before trusting it: <code>gpg --show-keys openvolley.gpg</code> must show the fingerprint below.</p>
-    <h3>2. Add the repository</h3>
-    <p>At the end of <code>/etc/pacman.conf</code> (for example with <code>sudo nano /etc/pacman.conf</code>):</p>
-    <div class="cmd"><pre><code>[openvolley]
+        <p class="meta">Check the key before trusting it: <code>gpg --show-keys openvolley.gpg</code> must show the fingerprint below.</p>
+        <h4>2. Add the repository</h4>
+        <p>At the end of <code>/etc/pacman.conf</code> (for example with <code>sudo nano /etc/pacman.conf</code>):</p>
+        <div class="cmd"><pre><code>[openvolley]
 SigLevel = Required DatabaseRequired
 Server = https://get.openvolley.app/arch/$arch</code></pre><button class="copy" type="button">Copy</button></div>
-    <h3>3. Install</h3>
-    <!--pacman-ov-->
-    <div class="cmd"><pre><code>sudo pacman -Syu openvolley-escoresheet-bin</code></pre><button class="copy" type="button">Copy</button></div>
-    <!--/pacman-ov-->
-    <!--beach-pacman-->
-    <div class="cmd"><pre><code>sudo pacman -Syu openbeach-escoresheet-bin</code></pre><button class="copy" type="button">Copy</button></div>
-    <!--/beach-pacman-->
-    <p>Updates come with <code>sudo pacman -Syu</code>. Start it from the app menu or with <code>openvolley-escoresheet</code> (OpenBeach: <code>openbeach-escoresheet</code>). For the tablet Wi-Fi also install <code>networkmanager</code> and <code>dnsmasq</code>.</p>
-    <p class="meta">The same packages as the AUR's (<code>-bin</code>: the released <code>.deb</code>, repackaged), built and signed here. Signing key: OpenVolley pacman repository &lt;packages@openvolley.app&gt;, ed25519 (<a href="/arch/openvolley.gpg">openvolley.gpg</a>)</p>
-    <p class="fp">@PACMAN_FPR_GROUPED@</p>
-  </section>
-  <!--/pacman-->
-
-  <section class="card" id="windows">
-    <h2>Windows <span>@DESKTOP_VERSION@ · 64-bit</span></h2>
-    <p>Download and run the installer from the GitHub release. Windows may show a SmartScreen notice for a new download: <kbd>More info</kbd> → <kbd>Run anyway</kbd>.</p>
-    <!--per-machine: kept by publish-pkgs.sh only when the published version is newer than 2.1.0 (the last per-user installer)-->
-    <p>It installs for all users and asks once for an administrator: that lets the tablets on the local network through Windows Firewall. An earlier version installed by the same Windows account is replaced; matches and backups stay. Typed an administrator's password into a standard account? Then the earlier version stays as well: remove it in Settings › Apps (its matches stay).</p>
-    <!--/per-machine-->
-    <div class="actions">
-      <a class="btn btn-primary" href="@WINDOWS_URL@">Download for Windows</a>
-      <a class="btn btn-ghost" href="https://github.com/Lucanepa/openvolley/releases/tag/desktop-v@DESKTOP_VERSION@">All downloads</a>
+        <h4>3. Install</h4>
+        <!--pacman-ov-->
+        <div class="cmd"><pre><code>sudo pacman -Syu openvolley-escoresheet-bin</code></pre><button class="copy" type="button">Copy</button></div>
+        <!--/pacman-ov-->
+        <p>Start it from the app menu or with <code>openvolley-escoresheet</code>. For the tablet Wi-Fi also install <code>networkmanager</code> and <code>dnsmasq</code>.</p>
+        <p class="meta">The same packages as the AUR's (<code>-bin</code>: the released <code>.deb</code>, repackaged), built and signed here. Signing key: OpenVolley pacman repository &lt;packages@openvolley.app&gt;, ed25519 (<a href="/arch/openvolley.gpg">openvolley.gpg</a>)</p>
+        <p class="fp">@PACMAN_FPR_GROUPED@</p>
+      </details>
+      <!--/pacman-->
+      <details class="more" id="snap">
+        <summary>Snap, AUR</summary>
+        <h4>Snap (Ubuntu and others)</h4>
+        <div class="cmd"><pre><code>sudo snap install openvolley-escoresheet
+sudo snap connect openvolley-escoresheet:network-manager
+sudo snap connect openvolley-escoresheet:bluez</code></pre><button class="copy" type="button">Copy</button></div>
+        <p class="meta">The two <code>snap connect</code> lines allow the tablet Wi-Fi and Bluetooth network. Matches of an APT install are not seen by the snap: back them up and restore them in the app.</p>
+        <h4>AUR <span class="soon">coming soon</span></h4>
+        <div class="cmd"><pre><code>yay -S openvolley-escoresheet-bin</code></pre><button class="copy" type="button">Copy</button></div>
+        <p class="meta">Any AUR helper works (paru too). Updates come with <code>yay -Syu</code>.<!--pacman--> Until then: the <a href="#arch">pacman repository</a> above, same packages.<!--/pacman--></p>
+      </details>
     </div>
   </section>
-
-  <!--mac: left out by publish-pkgs.sh while the published version's GitHub release has no macOS disk image-->
-  <section class="card" id="macos">
-    <h2>macOS <span>@DESKTOP_VERSION@ · Apple silicon and Intel</span></h2>
-    <p>macOS 11 Big Sur or newer. With <a href="https://brew.sh/">Homebrew</a>:</p>
-    <div class="cmd"><pre><code>brew install --cask lucanepa/tap/openvolley</code></pre><button class="copy" type="button">Copy</button></div>
-    <p>Or download the disk image, open it and drag <b>OpenVolley eScoresheet</b> to <b>Applications</b>.</p>
-    <div class="actions">
-      <a class="btn btn-primary" href="@MAC_URL@">Download for macOS</a>
-      <a class="btn btn-ghost" href="https://github.com/Lucanepa/openvolley/releases/tag/desktop-v@DESKTOP_VERSION@">All downloads</a>
-    </div>
-    <h3>The first start</h3>
-    <p>The app is not notarized by Apple (that needs a paid Apple developer account), so macOS blocks it the first time. Open it once and close the message, then <kbd>System Settings</kbd> → <kbd>Privacy &amp; Security</kbd> → <kbd>Open Anyway</kbd>. On macOS 14 and older: right-click the app → <kbd>Open</kbd>. Or in Terminal:</p>
-    <div class="cmd"><pre><code>xattr -dr com.apple.quarantine "/Applications/OpenVolley eScoresheet.app"</code></pre><button class="copy" type="button">Copy</button></div>
-    <p class="meta">Start it from Applications: from there it updates itself. The tablet Wi-Fi of the Windows and Linux app is not available on macOS: connect the tablets through the venue's Wi-Fi, a travel router or macOS Internet Sharing.</p>
-  </section>
-  <!--/mac-->
 
   <!--beach-->
-  <section class="card" id="openbeach">
+  <section class="card app" id="openbeach" data-name="OpenBeach" data-sub="Beach volleyball">
     <h2>OpenBeach <span>beach volleyball</span></h2>
-    <p>The beach volleyball eScoresheet, a separate app from the same team. It installs next to OpenVolley eScoresheet and runs on the same computer (OpenBeach uses ports 5174 and 8081).</p>
+    <p class="intro">The beach volleyball eScoresheet, a separate app from the same team. It installs next to OpenVolley eScoresheet and runs on the same computer (OpenBeach uses ports 5174 and 8081).</p>
+    <div class="ptabs" aria-label="Device"></div>
     <!--beach-android-->
-    <h3>Android tablets <span class="meta">@BEACH_APK_VERSION@</span></h3>
-    <p>Same F-Droid repository as above: add it once, then search for <b>OpenBeach</b> and install. Or the APK directly (no automatic updates):</p>
-    <div class="actions">
-      <a class="btn btn-ghost" href="/fdroid/repo/@BEACH_APK_FILE@">Download OpenBeach APK @BEACH_APK_VERSION@</a>
+    <div class="panel" id="openbeach-android" data-os="android" data-label="Android">
+      <h3 class="ph">Android tablets</h3>
+      <p class="pv">Version @BEACH_APK_VERSION@</p>
+      <div class="row">
+        <div>
+          <p>With F-Droid, which keeps it up to date (the same repository as OpenVolley's):</p>
+          <ol>
+            <li>Install <a href="https://f-droid.org/">F-Droid</a>.</li>
+            <li>Add the OpenVolley repository: tap <b>Add to F-Droid</b> on the tablet, or scan the code with F-Droid.</li>
+            <li>Search for <b>OpenBeach</b> and install.</li>
+          </ol>
+          <div class="actions">
+            <a class="btn btn-primary" href="https://fdroid.link/#https://get.openvolley.app/fdroid/repo?fingerprint=61C70F8949441E04E2E21ACC8E6E5C6CC502ADD52A157FB9A8DD8588DACE0720">Add to F-Droid</a>
+          </div>
+        </div>
+        <div class="qr">
+          <img src="/fdroid/repo/index.png" alt="QR code of the F-Droid repository address with its fingerprint">
+          <p class="meta">Scan with F-Droid</p>
+        </div>
+      </div>
+      <details class="more">
+        <summary>Without F-Droid: the APK</summary>
+        <p>Allow installs from your browser when Android asks (no automatic updates). The repository's address and fingerprint: <a href="#android">OpenVolley › Android</a>.</p>
+        <div class="actions">
+          <a class="btn btn-ghost" href="/fdroid/repo/@BEACH_APK_FILE@">Download OpenBeach APK @BEACH_APK_VERSION@</a>
+        </div>
+      </details>
     </div>
     <!--/beach-android-->
     <!--beach-desktop-->
-    <h3>Linux (Debian, Ubuntu, Mint) <span class="meta">@BEACH_DESKTOP_VERSION@ · amd64</span></h3>
-    <p>The same signed APT repository; this installs the package <code>openbeach-escoresheet</code>.</p>
-    <div class="cmd"><pre><code>curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s openbeach-escoresheet</code></pre><button class="copy" type="button">Copy</button></div>
-    <p>Repository already added? <code>sudo apt install openbeach-escoresheet</code>. Start it from the app menu (<b>OpenBeach</b>) or with <code>openbeach-escoresheet</code>; tablet server only: <code>openbeach-escoresheet --server-only</code>.</p>
-    <!--beach-flatpak-->
-    <h3>Linux, any distribution (Flatpak)</h3>
-    <div class="cmd"><pre><code>flatpak install --user https://get.openvolley.app/flatpak/com.openvolley.beach.flatpakref</code></pre><button class="copy" type="button">Copy</button></div>
-    <p>Flatpak keeps it up to date; start it with <code>flatpak run com.openvolley.beach</code> or from the app menu.</p>
-    <!--/beach-flatpak-->
-    <h3>Windows <span class="meta">@BEACH_DESKTOP_VERSION@ · 64-bit</span></h3>
-    <p>It installs for all users and asks once for an administrator, so the tablets on the local network get through Windows Firewall.</p>
-    <div class="actions">
-      <a class="btn btn-primary" href="@BEACH_WINDOWS_URL@">Download OpenBeach for Windows</a>
-      <a class="btn btn-ghost" href="https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v@BEACH_DESKTOP_VERSION@">All downloads</a>
+    <div class="panel" id="openbeach-windows" data-os="windows" data-label="Windows">
+      <h3 class="ph">Windows</h3>
+      <p class="pv">Version @BEACH_DESKTOP_VERSION@ · 64-bit</p>
+      <p>It installs for all users and asks once for an administrator, so the tablets on the local network get through Windows Firewall.</p>
+      <div class="actions">
+        <a class="btn btn-primary" href="@BEACH_WINDOWS_URL@">Download OpenBeach for Windows</a>
+        <a class="btn btn-ghost" href="https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v@BEACH_DESKTOP_VERSION@">All downloads</a>
+      </div>
+      <details class="more">
+        <summary>With a package manager: Scoop, winget</summary>
+        <h4>Scoop</h4>
+        <div class="cmd"><pre><code>scoop install https://raw.githubusercontent.com/Lucanepa/openvolley/main/escoresheet/packaging/scoop/openbeach.json</code></pre><button class="copy" type="button">Copy</button></div>
+        <p class="meta">Runs the installer above. Run <code>scoop update</code> only between matches: it closes the app.</p>
+        <h4>winget <span class="soon">coming soon</span></h4>
+        <div class="cmd"><pre><code>winget install Lucanepa.OpenBeach</code></pre><button class="copy" type="button">Copy</button></div>
+        <p class="meta">Waiting for review in the winget repository.</p>
+      </details>
+      <p class="meta">Updates: like OpenVolley's, in the background, installed when you quit it, never during a match.</p>
     </div>
     <!--beach-mac-->
-    <h3>macOS <span class="meta">@BEACH_DESKTOP_VERSION@ · Apple silicon and Intel</span></h3>
-    <div class="cmd"><pre><code>brew install --cask lucanepa/tap/openbeach</code></pre><button class="copy" type="button">Copy</button></div>
-    <p>Or the disk image: drag <b>OpenBeach</b> to Applications. Not notarized by Apple: the first time, open it once, then <kbd>System Settings</kbd> → <kbd>Privacy &amp; Security</kbd> → <kbd>Open Anyway</kbd> (macOS 14 and older: right-click → <kbd>Open</kbd>), or run <code>xattr -dr com.apple.quarantine /Applications/OpenBeach.app</code>.</p>
-    <div class="actions">
-      <a class="btn btn-primary" href="@BEACH_MAC_URL@">Download OpenBeach for macOS</a>
+    <div class="panel" id="openbeach-macos" data-os="macos" data-label="macOS">
+      <h3 class="ph">macOS</h3>
+      <p class="pv">Version @BEACH_DESKTOP_VERSION@ · Apple silicon and Intel</p>
+      <div class="cmd"><pre><code>brew install --cask lucanepa/tap/openbeach</code></pre><button class="copy" type="button">Copy</button></div>
+      <p>Or the disk image: drag <b>OpenBeach</b> to Applications. Not notarized by Apple: the first time, open it once, then <kbd>System Settings</kbd> → <kbd>Privacy &amp; Security</kbd> → <kbd>Open Anyway</kbd> (macOS 14 and older: right-click → <kbd>Open</kbd>), or run <code>xattr -dr com.apple.quarantine /Applications/OpenBeach.app</code>.</p>
+      <div class="actions">
+        <a class="btn btn-primary" href="@BEACH_MAC_URL@">Download OpenBeach for macOS</a>
+      </div>
+      <p class="meta">Updates: like OpenVolley's, in the background, installed when you quit it, never during a match.</p>
     </div>
     <!--/beach-mac-->
-    <p class="meta">The desktop app updates itself like OpenVolley's: in the background, installed when you quit it, never during a match.</p>
+    <div class="panel" id="openbeach-linux" data-os="linux" data-label="Linux">
+      <h3 class="ph">Linux</h3>
+      <p class="pv">Version @BEACH_DESKTOP_VERSION@ · amd64</p>
+      <p><b>Debian, Ubuntu, Mint:</b> the same signed APT repository; this installs the package <code>openbeach-escoresheet</code>.</p>
+      <div class="cmd"><pre><code>curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s openbeach-escoresheet</code></pre><button class="copy" type="button">Copy</button></div>
+      <p>Repository already added? <code>sudo apt install openbeach-escoresheet</code>. Start it from the app menu (<b>OpenBeach</b>) or with <code>openbeach-escoresheet</code>; tablet server only: <code>openbeach-escoresheet --server-only</code>. It updates itself like OpenVolley's.</p>
+      <!--beach-flatpak-->
+      <details class="more" id="openbeach-flatpak">
+        <summary>Fedora, openSUSE, any distribution: Flatpak</summary>
+        <div class="cmd"><pre><code>flatpak install --user https://get.openvolley.app/flatpak/com.openvolley.beach.flatpakref</code></pre><button class="copy" type="button">Copy</button></div>
+        <p>Flatpak keeps it up to date; start it with <code>flatpak run com.openvolley.beach</code> or from the app menu.</p>
+      </details>
+      <!--/beach-flatpak-->
+      <!--pacman-->
+      <!--beach-pacman-->
+      <details class="more" id="openbeach-arch">
+        <summary>Arch Linux, Manjaro, EndeavourOS: pacman</summary>
+        <p>The OpenVolley pacman repository (the same as OpenVolley's: set it up once). Trust its key:</p>
+        <div class="cmd"><pre><code>curl -fsSLO https://get.openvolley.app/arch/openvolley.gpg
+sudo pacman-key --add openvolley.gpg
+sudo pacman-key --lsign-key @PACMAN_FPR@</code></pre><button class="copy" type="button">Copy</button></div>
+        <p>Add it at the end of <code>/etc/pacman.conf</code>:</p>
+        <div class="cmd"><pre><code>[openvolley]
+SigLevel = Required DatabaseRequired
+Server = https://get.openvolley.app/arch/$arch</code></pre><button class="copy" type="button">Copy</button></div>
+        <p>Then install; updates come with <code>sudo pacman -Syu</code>:</p>
+        <div class="cmd"><pre><code>sudo pacman -Syu openbeach-escoresheet-bin</code></pre><button class="copy" type="button">Copy</button></div>
+        <p class="meta">Key fingerprint: <span class="fp">@PACMAN_FPR_GROUPED@</span>. More: <a href="#arch">OpenVolley › Linux › pacman</a>.</p>
+      </details>
+      <!--/beach-pacman-->
+      <!--/pacman-->
+      <details class="more" id="openbeach-snap">
+        <summary>Snap, AUR</summary>
+        <h4>Snap (Ubuntu and others)</h4>
+        <div class="cmd"><pre><code>sudo snap install openbeach-escoresheet
+sudo snap connect openbeach-escoresheet:network-manager
+sudo snap connect openbeach-escoresheet:bluez</code></pre><button class="copy" type="button">Copy</button></div>
+        <h4>AUR <span class="soon">coming soon</span></h4>
+        <div class="cmd"><pre><code>yay -S openbeach-escoresheet-bin</code></pre><button class="copy" type="button">Copy</button></div>
+      </details>
+    </div>
     <!--/beach-desktop-->
   </section>
   <!--/beach-->
 
   <!--pointhub-->
-  <section class="card" id="point-hub">
+  <section class="card app" id="point-hub" data-name="Point Hub" data-sub="KSCW scoreboard">
     <h2>Point Hub <span>KSCW scoreboard console</span></h2>
-    <p>The console of KSC Wiedikon's LedBox scoreboard (<a href="https://github.com/Lucanepa/point-hub">Lucanepa/point-hub</a>), a separate app published through the same repositories, signed by its own app keys. It finds the scoreboard on its Wi-Fi or on the cable and shows the board's console, with the Game tab drawn natively. It installs next to OpenVolley eScoresheet and OpenBeach.</p>
+    <p class="intro">The console of KSC Wiedikon's LedBox scoreboard (<a href="https://github.com/Lucanepa/point-hub">Lucanepa/point-hub</a>). It finds the scoreboard on its Wi-Fi or on the cable and shows the board's console, with the Game tab drawn natively. A separate app, signed by its own app keys; it installs next to OpenVolley eScoresheet and OpenBeach.</p>
+    <div class="ptabs" aria-label="Device"></div>
     <!--pointhub-android-->
-    <h3>Android tablets <span class="meta">@POINTHUB_APK_VERSION@</span></h3>
-    <p>Same F-Droid repository as above: add it once, then search for <b>Point Hub</b> and install. Or the APK directly (no automatic updates):</p>
-    <div class="actions">
-      <a class="btn btn-ghost" href="/fdroid/repo/@POINTHUB_APK_FILE@">Download Point Hub APK @POINTHUB_APK_VERSION@</a>
+    <div class="panel" id="point-hub-android" data-os="android" data-label="Android">
+      <h3 class="ph">Android tablets</h3>
+      <p class="pv">Version @POINTHUB_APK_VERSION@</p>
+      <div class="row">
+        <div>
+          <p>With F-Droid (the same repository as OpenVolley's):</p>
+          <ol>
+            <li>Install <a href="https://f-droid.org/">F-Droid</a>.</li>
+            <li>Add the OpenVolley repository: tap <b>Add to F-Droid</b> on the tablet, or scan the code with F-Droid.</li>
+            <li>Search for <b>Point Hub</b> and install.</li>
+          </ol>
+          <div class="actions">
+            <a class="btn btn-primary" href="https://fdroid.link/#https://get.openvolley.app/fdroid/repo?fingerprint=61C70F8949441E04E2E21ACC8E6E5C6CC502ADD52A157FB9A8DD8588DACE0720">Add to F-Droid</a>
+          </div>
+        </div>
+        <div class="qr">
+          <img src="/fdroid/repo/index.png" alt="QR code of the F-Droid repository address with its fingerprint">
+          <p class="meta">Scan with F-Droid</p>
+        </div>
+      </div>
+      <details class="more">
+        <summary>Without F-Droid: the APK</summary>
+        <p>Allow installs from your browser when Android asks. It installs over an earlier Point Hub with its settings and backups. The repository's address and fingerprint: <a href="#android">OpenVolley › Android</a>.</p>
+        <div class="actions">
+          <a class="btn btn-ghost" href="/fdroid/repo/@POINTHUB_APK_FILE@">Download Point Hub APK @POINTHUB_APK_VERSION@</a>
+        </div>
+      </details>
+      <p class="meta">Updates: on the scoreboard's tablet the app also updates itself from the board, never during a match.</p>
     </div>
     <!--/pointhub-android-->
     <!--pointhub-desktop-->
-    <h3>Linux (Debian, Ubuntu, Mint) <span class="meta">@POINTHUB_DESKTOP_VERSION@ · amd64</span></h3>
-    <p>The same signed APT repository; this installs the package <code>point-hub</code>.</p>
-    <div class="cmd"><pre><code>curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s point-hub</code></pre><button class="copy" type="button">Copy</button></div>
-    <p>Repository already added? <code>sudo apt install point-hub</code>. Start it from the app menu or with <code>point-hub</code>; <code>sudo apt update &amp;&amp; sudo apt upgrade</code> brings each new version.</p>
-    <!--pointhub-flatpak-->
-    <h3>Linux, any distribution (Flatpak)</h3>
-    <div class="cmd"><pre><code>flatpak install --user https://get.openvolley.app/flatpak/ch.kscw.PointHub.flatpakref</code></pre><button class="copy" type="button">Copy</button></div>
-    <p>Flatpak keeps it up to date; start it with <code>flatpak run ch.kscw.PointHub</code> or from the app menu. Its settings and backups stay inside the sandbox (<code>~/.var/app/ch.kscw.PointHub/</code>).</p>
-    <!--/pointhub-flatpak-->
-    <!--pointhub-pacman-->
-    <h3>Arch Linux, Manjaro, EndeavourOS (pacman)</h3>
-    <p>The <a href="#arch">pacman repository</a> above, set up once, then:</p>
-    <div class="cmd"><pre><code>sudo pacman -Syu point-hub-bin</code></pre><button class="copy" type="button">Copy</button></div>
-    <!--/pointhub-pacman-->
-    <h3>Windows <span class="meta">@POINTHUB_DESKTOP_VERSION@ · 64-bit</span></h3>
-    <p>The installer installs for all users and asks once for an administrator; the next version installs over it. Windows may show a SmartScreen notice for a new download: <kbd>More info</kbd> → <kbd>Run anyway</kbd>.</p>
-    <div class="actions">
-      <a class="btn btn-primary" href="https://github.com/Lucanepa/point-hub/releases/download/desktop-v@POINTHUB_DESKTOP_VERSION@/point-hub-@POINTHUB_DESKTOP_VERSION@.msi">Download Point Hub for Windows</a>
-      <a class="btn btn-ghost" href="https://github.com/Lucanepa/point-hub/releases/tag/desktop-v@POINTHUB_DESKTOP_VERSION@">All downloads</a>
+    <div class="panel" id="point-hub-windows" data-os="windows" data-label="Windows">
+      <h3 class="ph">Windows</h3>
+      <p class="pv">Version @POINTHUB_DESKTOP_VERSION@ · 64-bit</p>
+      <p>The installer installs for all users and asks once for an administrator; the next version installs over it. Windows may show a SmartScreen notice for a new download: <kbd>More info</kbd> → <kbd>Run anyway</kbd>.</p>
+      <div class="actions">
+        <a class="btn btn-primary" href="https://github.com/Lucanepa/point-hub/releases/download/desktop-v@POINTHUB_DESKTOP_VERSION@/point-hub-@POINTHUB_DESKTOP_VERSION@.msi">Download Point Hub for Windows</a>
+        <a class="btn btn-ghost" href="https://github.com/Lucanepa/point-hub/releases/tag/desktop-v@POINTHUB_DESKTOP_VERSION@">All downloads</a>
+      </div>
+      <details class="more">
+        <summary>With a package manager: Scoop, winget</summary>
+        <h4>Scoop</h4>
+        <div class="cmd"><pre><code>scoop install https://raw.githubusercontent.com/Lucanepa/openvolley/main/escoresheet/packaging/scoop/point-hub.json</code></pre><button class="copy" type="button">Copy</button></div>
+        <p class="meta">It runs the same installer.</p>
+        <!-- Static: once KSCWiedikon.PointHub is in winget-pkgs, delete the "coming soon" and the
+             "once ..." words (packaging/winget/README.md). -->
+        <h4>winget <span class="soon">coming soon</span></h4>
+        <p class="meta"><code>winget install KSCWiedikon.PointHub</code>, once the winget repository has reviewed it.</p>
+      </details>
+      <p class="meta">Updates: the desktop app does not update itself. Scoop and winget bring each new version; a copy from the .msi is updated by installing the next one.</p>
     </div>
-    <p>Or with Scoop (it runs the same installer):</p>
-    <div class="cmd"><pre><code>scoop install https://raw.githubusercontent.com/Lucanepa/openvolley/main/escoresheet/packaging/scoop/point-hub.json</code></pre><button class="copy" type="button">Copy</button></div>
-    <!-- Static, like the "Other ways to install" card: once KSCWiedikon.PointHub is in winget-pkgs,
-         delete the "coming soon" and the "once ..." words (packaging/winget/README.md). -->
-    <p class="meta">winget <span class="soon">coming soon</span>: <code>winget install KSCWiedikon.PointHub</code>, once the winget repository has reviewed it.</p>
-    <h3>macOS <span class="meta">@POINTHUB_DESKTOP_VERSION@ · Apple silicon or Intel</span></h3>
-    <div class="cmd"><pre><code>brew install --cask lucanepa/tap/point-hub</code></pre><button class="copy" type="button">Copy</button></div>
-    <!-- point-hub.app: the bundle name of point-hub's jpackage build (CFBundleName point-hub). If that build
-         ever names it otherwise, change it here; the cask takes it from the disk image (homebrew/bump-cask.sh). -->
-    <p>Or the disk image for your Mac: open it and drag <b>point-hub</b> to Applications. Not notarized by Apple: the first time, open it once, then <kbd>System Settings</kbd> → <kbd>Privacy &amp; Security</kbd> → <kbd>Open Anyway</kbd> (macOS 14 and older: right-click → <kbd>Open</kbd>), or run <code>xattr -dr com.apple.quarantine /Applications/point-hub.app</code>.</p>
-    <div class="actions">
-      <a class="btn btn-primary" href="https://github.com/Lucanepa/point-hub/releases/download/desktop-v@POINTHUB_DESKTOP_VERSION@/Point-Hub-@POINTHUB_DESKTOP_VERSION@-macos-arm64.dmg">Download for Apple silicon</a>
-      <a class="btn btn-ghost" href="https://github.com/Lucanepa/point-hub/releases/download/desktop-v@POINTHUB_DESKTOP_VERSION@/Point-Hub-@POINTHUB_DESKTOP_VERSION@-macos-x64.dmg">Download for Intel Macs</a>
+    <div class="panel" id="point-hub-macos" data-os="macos" data-label="macOS">
+      <h3 class="ph">macOS</h3>
+      <p class="pv">Version @POINTHUB_DESKTOP_VERSION@ · Apple silicon or Intel · macOS 12 or newer</p>
+      <div class="cmd"><pre><code>brew install --cask lucanepa/tap/point-hub</code></pre><button class="copy" type="button">Copy</button></div>
+      <!-- point-hub.app: the bundle name of point-hub's jpackage build (CFBundleName point-hub). If that build
+           ever names it otherwise, change it here; the cask takes it from the disk image (homebrew/bump-cask.sh). -->
+      <p>Or the disk image for your Mac: open it and drag <b>point-hub</b> to Applications. Not notarized by Apple: the first time, open it once, then <kbd>System Settings</kbd> → <kbd>Privacy &amp; Security</kbd> → <kbd>Open Anyway</kbd> (macOS 14 and older: right-click → <kbd>Open</kbd>), or run <code>xattr -dr com.apple.quarantine /Applications/point-hub.app</code>.</p>
+      <div class="actions">
+        <a class="btn btn-primary" href="https://github.com/Lucanepa/point-hub/releases/download/desktop-v@POINTHUB_DESKTOP_VERSION@/Point-Hub-@POINTHUB_DESKTOP_VERSION@-macos-arm64.dmg">Download for Apple silicon</a>
+        <a class="btn btn-ghost" href="https://github.com/Lucanepa/point-hub/releases/download/desktop-v@POINTHUB_DESKTOP_VERSION@/Point-Hub-@POINTHUB_DESKTOP_VERSION@-macos-x64.dmg">Download for Intel Macs</a>
+      </div>
+      <p class="meta">Updates: <code>brew upgrade</code> brings each new version; a copy from the disk image is updated by installing the next one.</p>
     </div>
-    <p class="meta">The desktop app does not update itself: APT, Flatpak, pacman, Scoop, winget and Homebrew bring each new version; a copy installed from the .msi or the disk image is updated by installing the next one.</p>
+    <div class="panel" id="point-hub-linux" data-os="linux" data-label="Linux">
+      <h3 class="ph">Linux</h3>
+      <p class="pv">Version @POINTHUB_DESKTOP_VERSION@ · amd64</p>
+      <p><b>Debian, Ubuntu, Mint:</b> the same signed APT repository; this installs the package <code>point-hub</code>.</p>
+      <div class="cmd"><pre><code>curl -fsSL https://get.openvolley.app/install.sh | sudo sh -s point-hub</code></pre><button class="copy" type="button">Copy</button></div>
+      <p>Repository already added? <code>sudo apt install point-hub</code>. Start it from the app menu or with <code>point-hub</code>; <code>sudo apt update &amp;&amp; sudo apt upgrade</code> brings each new version.</p>
+      <!--pointhub-flatpak-->
+      <details class="more" id="point-hub-flatpak">
+        <summary>Fedora, openSUSE, any distribution: Flatpak</summary>
+        <div class="cmd"><pre><code>flatpak install --user https://get.openvolley.app/flatpak/ch.kscw.PointHub.flatpakref</code></pre><button class="copy" type="button">Copy</button></div>
+        <p>Flatpak keeps it up to date; start it with <code>flatpak run ch.kscw.PointHub</code> or from the app menu. Its settings and backups stay inside the sandbox (<code>~/.var/app/ch.kscw.PointHub/</code>).</p>
+      </details>
+      <!--/pointhub-flatpak-->
+      <!--pacman-->
+      <!--pointhub-pacman-->
+      <details class="more" id="point-hub-arch">
+        <summary>Arch Linux, Manjaro, EndeavourOS: pacman</summary>
+        <p>The OpenVolley pacman repository (the same as OpenVolley's: set it up once). Trust its key:</p>
+        <div class="cmd"><pre><code>curl -fsSLO https://get.openvolley.app/arch/openvolley.gpg
+sudo pacman-key --add openvolley.gpg
+sudo pacman-key --lsign-key @PACMAN_FPR@</code></pre><button class="copy" type="button">Copy</button></div>
+        <p>Add it at the end of <code>/etc/pacman.conf</code>:</p>
+        <div class="cmd"><pre><code>[openvolley]
+SigLevel = Required DatabaseRequired
+Server = https://get.openvolley.app/arch/$arch</code></pre><button class="copy" type="button">Copy</button></div>
+        <p>Then install; updates come with <code>sudo pacman -Syu</code>:</p>
+        <div class="cmd"><pre><code>sudo pacman -Syu point-hub-bin</code></pre><button class="copy" type="button">Copy</button></div>
+        <p class="meta">Key fingerprint: <span class="fp">@PACMAN_FPR_GROUPED@</span>. More: <a href="#arch">OpenVolley › Linux › pacman</a>.</p>
+      </details>
+      <!--/pointhub-pacman-->
+      <!--/pacman-->
+      <p class="meta">Updates: the desktop app does not update itself. APT, Flatpak and pacman bring each new version.</p>
+    </div>
     <!--/pointhub-desktop-->
   </section>
   <!--/pointhub-->
 
-  <!-- Static card. When a channel marked "coming soon" goes live, delete its <span class="soon"> and
-       its "Waiting for ..." sentence (escoresheet/packaging/<manager>/README.md has the steps). -->
-  <section class="card" id="other">
-    <h2>Other ways to install <span>OpenVolley · OpenBeach</span></h2>
-    <p>The same releases through other package managers. On Linux these copies are updated by the package manager, not by the app itself.</p>
-    <h3>Arch Linux, Manjaro, EndeavourOS (AUR) <span class="soon">coming soon</span></h3>
-    <div class="cmd"><pre><code>yay -S openvolley-escoresheet-bin</code></pre><button class="copy" type="button">Copy</button></div>
-    <div class="cmd"><pre><code>yay -S openbeach-escoresheet-bin</code></pre><button class="copy" type="button">Copy</button></div>
-    <p class="meta">Any AUR helper works (paru too). Updates come with <code>yay -Syu</code>. For the tablet Wi-Fi also install <code>networkmanager</code> and <code>dnsmasq</code>.<!--pacman--> Until then: the <a href="#arch">pacman repository</a> above, same packages.<!--/pacman--></p>
-    <h3>Snap (Ubuntu and others)</h3>
-    <div class="cmd"><pre><code>sudo snap install openvolley-escoresheet
-sudo snap connect openvolley-escoresheet:network-manager
-sudo snap connect openvolley-escoresheet:bluez</code></pre><button class="copy" type="button">Copy</button></div>
-    <p class="meta">OpenBeach: the same with <code>openbeach-escoresheet</code>. The two <code>snap connect</code> lines allow the tablet Wi-Fi and Bluetooth network. Matches of an APT install are not seen by the snap: back them up and restore them in the app.</p>
-    <h3>Windows: winget <span class="soon">coming soon</span></h3>
-    <div class="cmd"><pre><code>winget install Lucanepa.OpenVolley</code></pre><button class="copy" type="button">Copy</button></div>
-    <div class="cmd"><pre><code>winget install Lucanepa.OpenBeach</code></pre><button class="copy" type="button">Copy</button></div>
-    <p class="meta">Waiting for review in the winget repository. It runs the installer above, so the app keeps updating itself as well. Run <code>winget upgrade</code> only between matches: it closes the app.</p>
-    <h3>Windows: Scoop</h3>
-    <div class="cmd"><pre><code>scoop install https://raw.githubusercontent.com/Lucanepa/openvolley/main/escoresheet/packaging/scoop/openvolley.json</code></pre><button class="copy" type="button">Copy</button></div>
-    <div class="cmd"><pre><code>scoop install https://raw.githubusercontent.com/Lucanepa/openvolley/main/escoresheet/packaging/scoop/openbeach.json</code></pre><button class="copy" type="button">Copy</button></div>
-    <p class="meta">Runs the installer above (it asks once for an administrator). Same rule as winget: <code>scoop update</code> only between matches.</p>
-    <h3>Android: f-droid.org <span class="soon">coming soon</span></h3>
-    <p class="meta">Waiting for review at F-Droid. OpenVolley and OpenBeach in F-Droid's main repository, built by F-Droid from the source code and signed with the same key as the APKs here, so you can switch to it without reinstalling. Until then, use the F-Droid repository above.</p>
-  </section>
-
-  <section class="card" id="updates">
-    <h2>Automatic updates</h2>
-    <h3>Android</h3>
+  <details class="card more" id="updates">
+    <summary>How updates work</summary>
+    <h4>Android</h4>
     <p>F-Droid keeps the app up to date: on Android 12 and newer it installs updates by itself, with no tap, while the tablet is idle (never while the scoreboard keeps the screen on). Android 7 to 11 shows one <kbd>Update</kbd> tap. On a scorer tablet use the F-Droid client 2.0 or newer, and in F-Droid set <kbd>Settings</kbd> → app auto-updates → <kbd>Only on Wi-Fi</kbd>. Installed from f-droid.org? It builds each version some days after it appears here; add this repository in F-Droid to get it right away.</p>
-    <p>Installed the APK from the browser? Open OpenVolley in F-Droid once and tap <kbd>Update</kbd>: from then on F-Droid updates it. Without F-Droid the app can tell you about a new version instead, if you say yes when it asks (about once a day it reads the version list on this site, never during a match; nothing else is sent). It never installs anything itself.</p>
-    <h3>Windows, Linux and macOS</h3>
-    <p>From version 2.2.0 the desktop app updates itself: it downloads the update in the background and installs it when you quit OpenVolley, never during a match. Windows asks once for an administrator per update. Linux installed with the command above updates in the background and then restarts into the new version by itself, on the home screen and never during a match. macOS: the same, for the app started from Applications; it asks for an administrator only when the app's folder is not yours to write (Homebrew leaves the updates to the app). Version 2.1.x and older: install 2.2.0 once by hand (Linux: <code>sudo apt update &amp;&amp; sudo apt upgrade</code>).</p>
-    <p>A Flatpak, Snap, Arch (pacman) or AUR copy never updates itself: <code>flatpak update</code>, the Snap Store, <code>sudo pacman -Syu</code> or <code>yay -Syu</code> brings the new version.</p>
-  </section>
+    <p>Installed the APK from the browser? Open the app in F-Droid once and tap <kbd>Update</kbd>: from then on F-Droid updates it. Without F-Droid, OpenVolley can tell you about a new version instead, if you say yes when it asks (about once a day it reads the version list on this site, never during a match; nothing else is sent). It never installs anything itself. Point Hub on the scoreboard's tablet updates itself from the board.</p>
+    <h4>Windows, Linux and macOS</h4>
+    <p>From version 2.2.0 the OpenVolley and OpenBeach desktop apps update themselves: they download the update in the background and install it when you quit the app, never during a match. Windows asks once for an administrator per update. Linux installed with the command above updates in the background and then restarts into the new version by itself, on the home screen and never during a match. macOS: the same, for the app started from Applications; it asks for an administrator only when the app's folder is not yours to write (Homebrew leaves the updates to the app). Version 2.1.x and older: install 2.2.0 once by hand (Linux: <code>sudo apt update &amp;&amp; sudo apt upgrade</code>).</p>
+    <p>A Flatpak, Snap, Arch (pacman) or AUR copy never updates itself: <code>flatpak update</code>, the Snap Store, <code>sudo pacman -Syu</code> or <code>yay -Syu</code> brings the new version. Point Hub's desktop app never updates itself: its package manager, or the next installer, does.</p>
+  </details>
 
   <footer>
     Browse the repositories: <a href="/apt/">/apt/</a> · <a href="/fdroid/repo/">/fdroid/repo/</a> ·<!--flatpak--> <a href="/flatpak/">/flatpak/</a> ·<!--/flatpak--><!--pacman--> <a href="/arch/">/arch/</a> ·<!--/pacman-->
@@ -374,6 +554,89 @@ sudo snap connect openvolley-escoresheet:bluez</code></pre><button class="copy" 
       setTimeout(() => { b.textContent = 'Copy'; }, 2000);
     });
   }
+
+  // Tabs: one per app section and, inside it, one per platform panel that publish-pkgs.sh left in.
+  // The visitor's own platform is picked first; a link to any id on the page (#updates, #point-hub-linux)
+  // opens the app, the panel and the folded part it is in.
+  (() => {
+    const all = (sel, root = document) => [...root.querySelectorAll(sel)];
+    const apps = all('section.app');
+    const nav = document.getElementById('apps');
+    if (!apps.length || !nav) return;
+    const ua = navigator.userAgent || '';
+    const mine = /Android/i.test(ua) ? 'android' : /Windows/i.test(ua) ? 'windows'
+      : /Macintosh|Mac OS X/i.test(ua) ? 'macos' : /Linux|X11|CrOS/i.test(ua) ? 'linux' : '';
+    let cur = null;
+    const panelsOf = (app) => all(':scope > .panel', app);
+    const pick = (app, os) => panelsOf(app).find((p) => p.dataset.os === os) || panelsOf(app)[0];
+    const mark = (tabs, on) => tabs.forEach((t) => { t.setAttribute('aria-selected', String(t === on)); t.tabIndex = t === on ? 0 : -1; });
+
+    function show(app, panel, remember) {
+      for (const a of apps) a.classList.toggle('on', a === app);
+      mark(all('button', nav), all('button', nav).find((t) => t.panelApp === app));
+      for (const p of panelsOf(app)) p.classList.toggle('on', p === panel);
+      const tabs = all('.ptabs button', app);
+      mark(tabs, tabs.find((t) => t.panel === panel));
+      cur = { app, panel };
+      if (remember && panel) history.replaceState(null, '', '#' + panel.id);
+    }
+
+    function keys(list) {
+      list.addEventListener('keydown', (e) => {
+        const tabs = all('button', list), i = tabs.indexOf(document.activeElement);
+        if (i < 0) return;
+        const j = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : -2;
+        if (j === -2) return;
+        e.preventDefault();
+        const t = tabs[(j + tabs.length) % tabs.length];
+        t.focus(); t.click();
+      });
+    }
+
+    nav.setAttribute('role', 'tablist');
+    for (const app of apps) {
+      const t = document.createElement('button');
+      t.type = 'button'; t.setAttribute('role', 'tab'); t.setAttribute('aria-controls', app.id); t.panelApp = app;
+      const name = document.createElement('b'); name.textContent = app.dataset.name || app.id;
+      const sub = document.createElement('small'); sub.textContent = app.dataset.sub || '';
+      t.append(name, sub);
+      t.addEventListener('click', () => show(app, pick(app, cur && cur.panel ? cur.panel.dataset.os : mine), true));
+      nav.append(t);
+      app.setAttribute('role', 'tabpanel');
+      const bar = app.querySelector('.ptabs');
+      if (!bar) continue;
+      bar.setAttribute('role', 'tablist');
+      for (const p of panelsOf(app)) {
+        const b = document.createElement('button');
+        b.type = 'button'; b.setAttribute('role', 'tab'); b.setAttribute('aria-controls', p.id); b.panel = p;
+        b.textContent = p.dataset.label || p.dataset.os;
+        b.addEventListener('click', () => show(app, p, true));
+        bar.append(b);
+        p.setAttribute('role', 'tabpanel');
+      }
+      if (panelsOf(app).length < 2) bar.hidden = true;
+      keys(bar);
+    }
+    keys(nav);
+    if (apps.length < 2) nav.hidden = true;
+
+    function fromHash() {
+      const id = decodeURIComponent(location.hash.slice(1));
+      const el = id ? document.getElementById(id) : null;
+      if (!el) return false;
+      if (el.tagName === 'DETAILS') el.open = true;
+      const fold = el.parentElement && el.parentElement.closest('details');
+      if (fold) fold.open = true;
+      const app = el.closest('section.app');
+      if (!app) { if (!cur) show(apps[0], pick(apps[0], mine), false); requestAnimationFrame(() => el.scrollIntoView()); return true; }
+      const panel = el.closest('.panel') || pick(app, cur && cur.app === app ? cur.panel.dataset.os : mine);
+      show(app, panel, false);
+      if (el !== app && el !== panel) requestAnimationFrame(() => el.scrollIntoView());
+      return true;
+    }
+    if (!fromHash()) show(apps[0], pick(apps[0], mine), false);
+    addEventListener('hashchange', fromHash);
+  })();
 </script>
 </body>
 </html>
