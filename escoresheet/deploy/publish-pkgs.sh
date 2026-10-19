@@ -3,6 +3,7 @@
 #
 #   escoresheet/deploy/publish-pkgs.sh [--no-sync] [FILE.deb | FILE.apk ...]
 #   escoresheet/deploy/publish-pkgs.sh --desktop VERSION [--app beach] [--staging] [--flatpak] [--pacman] [--no-sync] [FILE.apk ...]
+#   escoresheet/deploy/publish-pkgs.sh --point-hub VERSION [--flatpak] [--pacman] [--no-sync] [FILE.apk ...]
 #
 # Runs on lenovoserver (never on the VM: the signing keys live only here).
 #
@@ -14,6 +15,13 @@
 # GitHub release never becomes "Latest" (OpenVolley's updater falls back to
 # GitHub's "Latest"; OpenBeach's to the beach-desktop-latest prerelease,
 # which gets its latest.json). Without --app it is OpenVolley, as before.
+#
+# A third app is published through the same repos: Point Hub, KSC Wiedikon's
+# scoreboard console (github.com/Lucanepa/point-hub: APT point-hub, Android
+# ch.kscw.pointhub, desktop tags desktop-v* in that repo). Its desktop app has
+# no in-app updater, so --desktop, --staging, latest.json and the APT hold-back
+# never touch it: its .deb is published like a plain file (point-hub_X_amd64.deb
+# given by hand, or --point-hub VERSION), and APT lists it at once.
 #
 #   0. --desktop VERSION (a desktop app release; replaces downloading the .deb
 #      by hand): downloads the Windows installer, the AppImage and the .deb of
@@ -36,13 +44,26 @@
 #      unless --staging. Needs gh, node and tauri-cli >= 2.12
 #      (escoresheet/frontend: npm ci). OV_DESKTOP_RELEASE_DIR=DIR takes the
 #      installers from DIR instead of GitHub (tests; only with --no-sync).
+#   0b. --point-hub VERSION (a Point Hub desktop release): downloads
+#      point-hub_VERSION_amd64.deb from the GitHub release desktop-vVERSION of
+#      Lucanepa/point-hub (gh; a draft or prerelease is refused) and checks it
+#      is package point-hub, that version, amd64; then it goes through 1. like
+#      any .deb. Nothing is signed or announced (no updater). It can go with
+#      --desktop in the same run. OV_POINTHUB_RELEASE_DIR=DIR takes the .deb
+#      from DIR instead of GitHub (tests; only with --no-sync).
 #   1. Adds the given packages: a .deb goes to the APT pool, a signed .apk to
 #      the F-Droid repo. An APK must already be signed with its app's own key
 #      (lib/publish-lib.sh app_cert_sha256: OpenVolley's from ANDROID.md,
-#      OpenBeach's from ~/.config/openbeach-android/cert.sha256); any other app
-#      id or key is refused. Nothing is ever re-signed.
-#      APT packages: openvolley-escoresheet and openbeach-escoresheet (each
-#      with the command /usr/bin/<package>); any other name is refused, except
+#      OpenBeach's from ~/.config/openbeach-android/cert.sha256, Point Hub's
+#      from point-hub's android/signing-cert.sha256, committed in the lib); any
+#      other app id or key is refused. Nothing is ever re-signed. Its app id
+#      needs F-Droid metadata in fdroid/metadata/<app id>.yml (fdroid update
+#      would leave it out of the index without; Point Hub's template is
+#      fdroid-metadata/ch.kscw.pointhub.yml, copy it there once).
+#      APT packages: openvolley-escoresheet, openbeach-escoresheet and
+#      point-hub (each with the command /usr/bin/<package>; point-hub's is
+#      the symlink to /opt/point-hub/bin/point-hub that point-hub's CI adds
+#      to jpackage's .deb); any other name is refused, except
 #      OpenVolley's old names: a .deb named openvolley-e-scoresheet (Tauri
 #      builds up to 1.48.19) or openvolley is repacked first:
 #      same version, depends and files, plus Provides/Replaces/Conflicts:
@@ -51,13 +72,14 @@
 #      files already in the pool are migrated the same way. Repacking is
 #      deterministic: the same input always gives the same bytes. A .deb given
 #      by hand that is newer than desktop/latest.json is refused (use
-#      --desktop VERSION).
+#      --desktop VERSION); point-hub has no latest.json and is never refused.
 #   2. Rebuilds the APT index (Packages, Release, InRelease, Release.gpg) and
 #      exports the public key as apt/openvolley.gpg and apt/openvolley.asc.
 #      The index never lists a desktop version newer than its app's latest.json
 #      (desktop/ or desktop/beach/; lib/publish-lib.sh, APT hold-back): the in-app .deb updater installs
 #      APT's newest, so a staging .deb, or one the kill switch withdrew from
-#      latest.json, stays in the pool but out of the index.
+#      latest.json, stays in the pool but out of the index. point-hub is not
+#      held back: every version in the pool is listed.
 #   3. Rebuilds the F-Droid index (fdroid update) and copies repo/ over.
 #   3b. --flatpak (with --desktop, never with --staging: Flatpak users would get
 #      it at once): builds the signed .deb as a Flatpak and commits it, signed,
@@ -65,6 +87,7 @@
 #      needs flatpak, flatpak-builder, ostree and the Flatpak repo key in
 #      flatpak-gpg/). Without --flatpak public/flatpak/ is left as it is (and
 #      still synced): run publish-flatpak.sh VERSION by hand, then this script.
+#      With --point-hub the same for Point Hub's .deb (ch.kscw.PointHub).
 #   3c. --pacman (with --desktop, never with --staging: pacman -Syu would
 #      install it at once): builds the AUR PKGBUILD (../packaging/aur/<package>-bin,
 #      which must be at VERSION: run aur/bump.sh and commit first) from the
@@ -72,10 +95,12 @@
 #      (../packaging/pacman/publish-pacman.sh; needs docker and the pacman repo
 #      key in pacman-gpg/). Without --pacman public/arch/ is left as it is (and
 #      still synced): run publish-pacman.sh by hand, then this script.
+#      With --point-hub the same for point-hub-bin from the .deb of step 0b.
 #   4. Copies the landing page and the installer (pkgs/index.html, pkgs/install.sh).
-#      The page's OpenBeach section appears once an OpenBeach .deb or APK is
-#      published, the Flatpak and Arch (pacman) cards once those repos are;
-#      install.sh takes the package name (default openvolley-escoresheet).
+#      The page's OpenBeach and Point Hub sections each appear once that app's
+#      .deb or APK is published, the Flatpak and Arch (pacman) cards once those
+#      repos are; install.sh takes the package name (default
+#      openvolley-escoresheet; `sh -s point-hub` for Point Hub).
 #   5. Refuses if anything key-like ended up in the public tree, then rsyncs
 #      that tree to ${OV_PKGS_DEST} (default /data/openvolley/pkgs/ on this
 #      machine: lenovoserver serves get.openvolley.app since 16.10.2026; that
@@ -133,6 +158,7 @@ STAGING=0
 APP=
 FLATPAK=0
 PACMAN=0
+POINTHUB_V=
 while (( $# )); do
   case "$1" in
     --no-sync) SYNC=0 ;;
@@ -142,10 +168,19 @@ while (( $# )); do
       DESKTOP_V=${2#v}; shift
       desktop_version_ok "$DESKTOP_V" || die "--desktop $DESKTOP_V: not a version like 2.2.0"
       ;;
+    --point-hub)
+      [[ -z "$POINTHUB_V" ]] || die "--point-hub given twice"
+      (( $# > 1 )) || die "--point-hub needs a version"
+      POINTHUB_V=${2#v}; shift
+      [[ "$POINTHUB_V" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ||
+        die "--point-hub $POINTHUB_V: not a version like 1.1.0"
+      ;;
     --app)
       [[ -z "$APP" ]] || die "--app given twice"
       (( $# > 1 )) || die "--app needs openvolley or beach"
       APP=$2; shift
+      # Point Hub has no updater, so nothing for --desktop to do: it has its own option.
+      [[ "$APP" != point-hub ]] || die "--app point-hub: Point Hub has no updater release; use --point-hub VERSION"
       [[ "$APP" == openvolley || "$APP" == beach ]] || die "--app $APP: expected openvolley or beach"
       ;;
     --staging) STAGING=1 ;;
@@ -159,27 +194,39 @@ while (( $# )); do
 done
 (( ! STAGING )) || [[ -n "$DESKTOP_V" ]] || die "--staging needs --desktop VERSION"
 [[ -z "$APP" ]] || [[ -n "$DESKTOP_V" ]] || die "--app needs --desktop VERSION"
-(( ! FLATPAK )) || [[ -n "$DESKTOP_V" ]] || die "--flatpak needs --desktop VERSION (or run ../packaging/flatpak/publish-flatpak.sh VERSION, then this script)"
+(( ! FLATPAK )) || [[ -n "$DESKTOP_V$POINTHUB_V" ]] || die "--flatpak needs --desktop VERSION or --point-hub VERSION (or run ../packaging/flatpak/publish-flatpak.sh VERSION, then this script)"
 (( ! FLATPAK || ! STAGING )) || die "--flatpak cannot go with --staging: Flatpak users would get the staging version at once"
-(( ! PACMAN )) || [[ -n "$DESKTOP_V" ]] || die "--pacman needs --desktop VERSION (or run ../packaging/pacman/publish-pacman.sh, then this script)"
+(( ! PACMAN )) || [[ -n "$DESKTOP_V$POINTHUB_V" ]] || die "--pacman needs --desktop VERSION or --point-hub VERSION (or run ../packaging/pacman/publish-pacman.sh, then this script)"
 (( ! PACMAN || ! STAGING )) || die "--pacman cannot go with --staging: pacman -Syu would install the staging version at once"
 FLATPAK_PUBLISH="$KIT_DIR/../packaging/flatpak/publish-flatpak.sh"
 PACMAN_PUBLISH="$KIT_DIR/../packaging/pacman/publish-pacman.sh"
 desktop_app_select "${APP:-openvolley}"
+# pacman_pkgbuild_check PACKAGE VERSION BUMP_APP: ../packaging/aur/PACKAGE-bin/PKGBUILD
+# is at VERSION, its checksums filled in (Point Hub's is committed with the
+# @SHA256@ placeholder until its first release is bumped).
+pacman_pkgbuild_check() {
+  local pb pb_ver
+  pb="${OV_PACMAN_PKGBUILDS:-$KIT_DIR/../packaging/aur}/$1-bin/PKGBUILD"
+  [[ -f "$pb" ]] || die "--pacman: no $pb"
+  pb_ver=$(sed -n 's/^pkgver=//p' "$pb" | head -n1)
+  [[ "$pb_ver" == "$2" ]] ||
+    die "--pacman: $pb is at $pb_ver, not $2: run packaging/aur/bump.sh $3 $2 and commit it first"
+  ! grep -Eq '^sha256sums(_x86_64)?=.*@SHA256@' "$pb" || die "--pacman: $pb still has the @SHA256@ placeholder: run packaging/aur/bump.sh $3 $2 and commit it first"
+}
 if (( PACMAN )); then
   # The PKGBUILD must already be at this release (aur/bump.sh needs the GitHub
   # release, which --desktop downloads from anyway): checked before any signing.
-  pb="${OV_PACMAN_PKGBUILDS:-$KIT_DIR/../packaging/aur}/$DESKTOP_DEB_NAME-bin/PKGBUILD"
-  [[ -f "$pb" ]] || die "--pacman: no $pb"
-  pb_ver=$(sed -n 's/^pkgver=//p' "$pb" | head -n1)
-  [[ "$pb_ver" == "$DESKTOP_V" ]] ||
-    die "--pacman: $pb is at $pb_ver, not $DESKTOP_V: run packaging/aur/bump.sh $([[ ${APP:-openvolley} == beach ]] && echo openbeach || echo openvolley) $DESKTOP_V and commit it first"
+  [[ -z "$DESKTOP_V" ]] ||
+    pacman_pkgbuild_check "$DESKTOP_DEB_NAME" "$DESKTOP_V" "$([[ ${APP:-openvolley} == beach ]] && echo openbeach || echo openvolley)"
+  [[ -z "$POINTHUB_V" ]] || pacman_pkgbuild_check point-hub "$POINTHUB_V" point-hub
 fi
 [[ -z "$DESKTOP_RELEASE_DIR" ]] || (( ! SYNC )) || die "OV_DESKTOP_RELEASE_DIR is for tests: use it with --no-sync"
+[[ -z "$POINTHUB_RELEASE_DIR" ]] || (( ! SYNC )) || die "OV_POINTHUB_RELEASE_DIR is for tests: use it with --no-sync"
 
 for t in dpkg-deb dpkg-scanpackages apt-ftparchive gpg gpgv fdroid rsync curl python3; do
   command -v "$t" >/dev/null || die "$t not found"
 done
+[[ -z "$POINTHUB_V" || -n "$POINTHUB_RELEASE_DIR" ]] || command -v gh >/dev/null || die "gh not found (--point-hub downloads the release with it)"
 [[ -d "$GNUPGHOME" && -f "$PKGS/gpg-passphrase" ]] || die "no signing key in $PKGS (restore it from Vaultwarden)"
 [[ -f "$FD/config.yml" && -f "$FD/keystore.p12" ]] || die "no F-Droid repo in $FD (restore it from Vaultwarden)"
 [[ -z "$DESKTOP_V" ]] || desktop_check_setup
@@ -217,6 +264,12 @@ if [[ -n "$DESKTOP_V" ]]; then
   desktop_verify "$DESKTOP_V" "$DESKTOP_EXE" "$DESKTOP_APPIMAGE" "$DESKTOP_DEB" ${DESKTOP_MAC:+"$DESKTOP_MAC"}
   desktop_manifest "$DESKTOP_V" "$WORK/desktop" "$WORK/desktop/latest.json"
   FILES+=("$DESKTOP_DEB")
+fi
+
+# --- 0b. Point Hub release: its .deb only (no updater: nothing to sign) ------
+if [[ -n "$POINTHUB_V" ]]; then
+  pointhub_fetch "$POINTHUB_V" "$WORK/point-hub"
+  FILES+=("$POINTHUB_DEB")
 fi
 apt_hold_init "$PUB" "$DESKTOP_V" "$STAGING"
 
@@ -285,6 +338,16 @@ add_deb() {
   # Whole listing first: grep -q exiting early would kill dpkg-deb (pipefail).
   files=$(dpkg-deb -c "$f") || die "$f: cannot list its files"
   grep -Eq " (\./)?usr/bin/$pkg( |$)" <<<"$files" || die "$f: no /usr/bin/$pkg in the package"
+  if [[ "$pkg" == point-hub ]]; then
+    # jpackage installs the launcher to /opt/point-hub/bin; /usr/bin/point-hub is
+    # point-hub CI's symlink to it (android/desktop/packaging/finish-deb.sh): it
+    # must point there, not dangle.
+    grep -Eq " (\./)?opt/point-hub/bin/point-hub$" <<<"$files" || die "$f: no /opt/point-hub/bin/point-hub (jpackage's launcher) in the package"
+    if grep -Eq " (\./)?usr/bin/point-hub -> " <<<"$files"; then
+      grep -Eq " (\./)?usr/bin/point-hub -> (/opt/point-hub/bin/point-hub|\.\./\.\./opt/point-hub/bin/point-hub)$" <<<"$files" ||
+        die "$f: /usr/bin/point-hub does not point at /opt/point-hub/bin/point-hub"
+    fi
+  fi
   target="$APT/pool/main/${pkg}_${ver}_${arch}.deb"
   if [[ -e "$target" ]] && ! cmp -s "$f" "$target"; then
     die "$target exists with different content; bump the version instead (apt and caches treat versions as immutable)"
@@ -301,6 +364,7 @@ for f in "${FILES[@]}"; do
       ver=$(dpkg-deb -f "$f" Version) || die "$f: not a .deb"
       pkg=$(dpkg-deb -f "$f" Package)
       if legacy_name "$pkg"; then pkg=$OV_APT_NAME; fi
+      # (never true for point-hub: no latest.json holds it back)
       if [[ "$f" != "$DESKTOP_DEB" ]] && apt_held "$ver" "$pkg"; then
         app=openvolley; [[ "$pkg" != openbeach-escoresheet ]] || app=beach
         die "$f: version $ver is not announced by ${APP_DESKTOP_DIR[$app]}/latest.json, so APT would not list it; publish desktop releases with --desktop $ver$([[ $app == beach ]] && echo ' --app beach') [--staging]"
@@ -314,6 +378,10 @@ for f in "${FILES[@]}"; do
       code=$(sed -E "s/.*versionCode='([0-9]+)'.*/\1/" <<<"$badging")
       [[ -n "${APP_CERT_SHA256[$app_id]:-}" ]] || APP_CERT_SHA256[$app_id]=$(app_cert_sha256 "$app_id")
       grep -q "SHA-256 digest: ${APP_CERT_SHA256[$app_id]}" <<<"$certs" || die "$f: $app_id is not signed with its app key"
+      # fdroid update only warns about an APK without metadata and leaves it out
+      # of the index: it would be "added" here and never reach a tablet.
+      [[ -f "$FD/metadata/$app_id.yml" ]] ||
+        die "$f: no F-Droid metadata $FD/metadata/$app_id.yml (fdroid update would leave $app_id out of the index)$([[ $app_id == ch.kscw.pointhub ]] && echo "; copy $KIT_DIR/fdroid-metadata/ch.kscw.pointhub.yml there, see deploy/README.md, Point Hub")"
       target="$FD/repo/${app_id}_${code}.apk"
       if [[ -e "$target" ]] && ! cmp -s "$f" "$target"; then
         die "$target exists with different content; raise versionCode instead (ANDROID.md, Version rule)"
@@ -385,15 +453,26 @@ mkdir -p "$PUB/fdroid"
 rsync -a --delete --delete-excluded --exclude=/status/ "$FD/repo/" "$PUB/fdroid/repo/"
 
 # --- 3b. Flatpak (--flatpak) --------------------------------------------------
-# The signed .deb (same bytes as the pool's, checked below) into the Flatpak repo.
+# The signed .deb (same bytes as the pool's, checked below) into the Flatpak repo;
+# Point Hub's .deb of step 0b likewise.
 if (( FLATPAK )); then
-  OV_PKGS_HOME="$PKGS" "$FLATPAK_PUBLISH" --app "${APP:-openvolley}" --deb "$DESKTOP_DEB" "$DESKTOP_V"
+  if [[ -n "$DESKTOP_V" ]]; then
+    OV_PKGS_HOME="$PKGS" "$FLATPAK_PUBLISH" --app "${APP:-openvolley}" --deb "$DESKTOP_DEB" "$DESKTOP_V"
+  fi
+  if [[ -n "$POINTHUB_V" ]]; then
+    OV_PKGS_HOME="$PKGS" "$FLATPAK_PUBLISH" --app point-hub --deb "$POINTHUB_DEB" "$POINTHUB_V"
+  fi
 fi
 
 # --- 3c. pacman (--pacman) --------------------------------------------------------
 # The AUR PKGBUILD built from the same .deb (makepkg checks its sha256).
 if (( PACMAN )); then
-  OV_PKGS_HOME="$PKGS" "$PACMAN_PUBLISH" --app "${APP:-openvolley}" --deb "$DESKTOP_DEB" "$DESKTOP_V"
+  if [[ -n "$DESKTOP_V" ]]; then
+    OV_PKGS_HOME="$PKGS" "$PACMAN_PUBLISH" --app "${APP:-openvolley}" --deb "$DESKTOP_DEB" "$DESKTOP_V"
+  fi
+  if [[ -n "$POINTHUB_V" ]]; then
+    OV_PKGS_HOME="$PKGS" "$PACMAN_PUBLISH" --app point-hub --deb "$POINTHUB_DEB" "$POINTHUB_V"
+  fi
 fi
 
 # --- 4. landing page and installer -----------------------------------------
@@ -409,6 +488,10 @@ if [[ -n "$DESKTOP_V" ]]; then
   cmp -s "$DESKTOP_DEB" "$APT/pool/main/${DESKTOP_DEB_NAME}_${DESKTOP_V}_amd64.deb" ||
     die "pool .deb for $DESKTOP_V differs from the signed one"
   desktop_publish_tree "$DESKTOP_V" "$STAGING" "$WORK/desktop/latest.json" "$PUB"
+fi
+if [[ -n "$POINTHUB_V" ]]; then
+  cmp -s "$POINTHUB_DEB" "$APT/pool/main/point-hub_${POINTHUB_V}_amd64.deb" ||
+    die "pool .deb for point-hub $POINTHUB_V differs from the release's"
 fi
 
 # --- 5. check and sync ------------------------------------------------------

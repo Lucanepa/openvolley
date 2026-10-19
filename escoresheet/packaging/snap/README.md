@@ -1,6 +1,7 @@
 # Snap packages
 
-Two snaps, one per desktop app, for the Snap Store:
+Two snaps, one per desktop app, for the Snap Store (Point Hub has none, see
+[Point Hub: no snap](#point-hub-no-snap-yet)):
 
 | Snap | App | From the release | Identifier |
 |---|---|---|---|
@@ -219,6 +220,26 @@ the version in the package and that the binary has the updater switch (it
 refuses 2.4.0 and earlier; `ALLOW_SELF_UPDATING=1` for a local test only;
 needs `curl`, `jq`, `dpkg-deb`), then writes `version`, the URL and the sha256 into
 the snapcraft.yaml. Commit, build, upload.
+
+## Point Hub: no snap (yet)
+
+Point Hub (KSC Wiedikon's scoreboard console, `point-hub` from
+Lucanepa/point-hub) goes out through every other channel here (APT, Flatpak,
+AUR and pacman, Scoop, winget, Homebrew), but not as a snap: a snap name has
+to be registered in the Snap Store by its publisher first
+(`snapcraft register point-hub`, the owner's Ubuntu One account), and only
+then can a snap of that name be uploaded. Nothing for it is in this
+directory.
+
+If it is wanted later, it would follow the same pattern: a `point-hub/snap/snapcraft.yaml`
+that dumps the release `.deb` (`source-type: deb`, pinned by URL and sha256;
+jpackage's tree in `$SNAP/opt/point-hub`, `command: opt/point-hub/bin/point-hub`),
+base `core24`, strict confinement, the plugs `network`, `x11`, `desktop`,
+`opengl` (and `home` for exporting backups outside the snap), no updater to
+switch off. Chromium runs without its own sandbox (point-hub sets CEF
+`no_sandbox` and locks the page to the board), so strict confinement is its
+sandbox; that and Chromium's `/dev/shm` use under AppArmor would need a test
+like the one above.
 
 ## Owner steps (store; nothing of this is done)
 

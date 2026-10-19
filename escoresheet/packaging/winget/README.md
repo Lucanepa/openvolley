@@ -7,6 +7,7 @@ Manifests for the two Windows apps, ready to submit to
 |-----------------------|------------------------|----------------------|-------------------------------------------------|
 | `Lucanepa.OpenVolley` | OpenVolley eScoresheet | `desktop-v<X>`       | `Openvolley.eScoresheet_<X>_x64-setup.exe`      |
 | `Lucanepa.OpenBeach`  | OpenBeach              | `beach-desktop-v<X>` | `OpenBeach_<X>_x64-setup.exe`                   |
+| `KSCWiedikon.PointHub` | Point Hub (KSC Wiedikon) | `desktop-v<X>` of Lucanepa/point-hub | `point-hub-<X>.msi` |
 
 Once they are in winget-pkgs, people install them with
 
@@ -109,6 +110,55 @@ winget settings --enable LocalManifestFiles     # once, as administrator
 winget validate --manifest manifests\l\Lucanepa\OpenVolley\2.3.0
 winget install  --manifest manifests\l\Lucanepa\OpenVolley\2.3.0
 ```
+
+## Point Hub (`KSCWiedikon.PointHub`)
+
+Point Hub, KSC Wiedikon's scoreboard console, publisher "KSC Wiedikon", from
+the `.msi` of [Lucanepa/point-hub](https://github.com/Lucanepa/point-hub)'s
+release `desktop-v<X>` (jpackage, WiX 3.11). Its manifests are in
+`manifests/k/KSCWiedikon/PointHub/<X>/` and differ from the Tauri ones:
+
+- `InstallerType: wix`, `Scope: machine`: the `.msi` sets `ALLUSERS=1`
+  (Program Files, `%ProgramFiles%\point-hub`). No `InstallerSwitches`: winget
+  has its own for MSI (`/quiet`, `/passive`), and gets a machine-scope MSI
+  elevated itself, so no `ElevationRequirement` either.
+- `ProductCode` and `AppsAndFeaturesEntries` are what the `.msi` writes:
+  DisplayName `point-hub` (its ProductName), Publisher `KSC Wiedikon` (its
+  Manufacturer), the ProductCode (`update-manifests.sh` reads it from the
+  `.msi` with msitools' `msiinfo`, or in a `debian` container; jpackage
+  derives it from name and version) and the UpgradeCode
+  `{6F0C3A2E-6C7B-4D44-9A3E-2F5A8E1B7C10}` (fixed in point-hub's
+  `build.gradle.kts`; the script checks it, the version and `ALLUSERS`).
+- `UpgradeBehavior: install`: a newer `.msi` with that UpgradeCode replaces
+  the installed one (major upgrade; the `.msi` refuses a downgrade).
+- **No in-app updater**: `winget upgrade` is how a winget install gets a new
+  version. Nothing about matches here: the console is not the scoretable.
+
+Checked against the `.msi` of point-hub's CI (PR build of 1.1.0): Property
+table ProductName `point-hub`, Manufacturer `KSC Wiedikon`, `ALLUSERS` 1,
+the UpgradeCode above, install folder `point-hub` under ProgramFiles64Folder,
+Start menu folder `Point Hub`; the manifests written from it pass
+`validate.sh`.
+
+**Before the first release** the folder is written with `--placeholder`:
+`InstallerSha256: '@SHA256@'`, no ProductCode, no ReleaseDate (none of them
+exists yet). `validate.sh` checks it against the schemas with a dummy hash
+and reports it "pending" while the `.msi` is not published; once it is, it
+fails until the folder is regenerated. Do not submit a placeholder folder.
+After the release:
+
+```bash
+escoresheet/packaging/winget/update-manifests.sh point-hub 1.1.0    # downloads the .msi, reads it
+escoresheet/packaging/winget/validate.sh --urls
+```
+
+then commit, and submit `manifests/k/KSCWiedikon/PointHub/1.1.0/` like the
+others (PR title `New package: KSCWiedikon.PointHub version 1.1.0`), or with
+`wingetcreate new` / `komac new` from the `.msi` URL. On Windows:
+`winget validate --manifest manifests\k\KSCWiedikon\PointHub\1.1.0` and
+`winget install --manifest ...`. Not installed on Windows from here (no
+Windows); the install page's Point Hub section keeps winget "coming soon"
+until the package is merged.
 
 ## Owner steps (not done: they need your GitHub account)
 

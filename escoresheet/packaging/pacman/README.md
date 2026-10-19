@@ -10,6 +10,7 @@ the updater marker), built here and signed with our own key.
 |---|---|---|
 | `openvolley-escoresheet-bin` | OpenVolley eScoresheet | `desktop-vX.Y.Z` |
 | `openbeach-escoresheet-bin` | OpenBeach | `beach-desktop-vX.Y.Z` |
+| `point-hub-bin` | Point Hub (KSC Wiedikon's scoreboard console) | `desktop-vX.Y.Z` of Lucanepa/point-hub |
 
 ## What users do (the install page's Arch card)
 
@@ -135,6 +136,14 @@ cd ../../deploy
 `--pacman` is refused with `--staging` (`pacman -Syu` would install the staging
 version at once) and refused before anything is signed when the PKGBUILD is not
 at `X.Y.Z`. OpenBeach: `bump.sh openbeach X.Y.Z`, `--desktop X.Y.Z --app beach --pacman`.
+
+Point Hub (no updater, no staging): `./bump.sh point-hub X.Y.Z`, commit, then
+`publish-pkgs.sh --point-hub X.Y.Z --pacman [--flatpak] [APK]` (or by hand
+`publish-pacman.sh --app point-hub X.Y.Z`, then `publish-pkgs.sh`). Its
+PKGBUILD has the `@SHA256@` placeholder until its first bump: refused here
+before anything is built. Its package needs no updater marker. The install
+page shows its pacman line in the Point Hub section (the Arch card's steps
+add the repo).
 
 A packaging-only fix of a release: `./bump.sh openvolley X.Y.Z 2` (pkgrel 2),
 commit, `publish-pacman.sh X.Y.Z`, then `publish-pkgs.sh`. Users get it with
