@@ -1,0 +1,2 @@
+OpenVolley 2.4.14
+- Easy match: New match → Easy match is an unofficial match with no rosters, officials or signatures. Shirt numbers are typed with the line-ups (two libero boxes there) and a new substitute by its number; everything else is the normal scoreboard.
