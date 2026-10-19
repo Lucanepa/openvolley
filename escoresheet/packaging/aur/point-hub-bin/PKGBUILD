@@ -67,8 +67,8 @@ source_x86_64=("$_pkgname-$pkgver-amd64.deb::https://github.com/Lucanepa/point-h
 noextract=("$_pkgname-$pkgver-amd64.deb")
 # bump.sh fills these in from the release. Before the first release they are
 # the @SHA256@ placeholder, which makepkg, publish.sh and publish-pacman.sh refuse.
-sha256sums=('@SHA256@')
-sha256sums_x86_64=('@SHA256@')
+sha256sums=('c8f59120a0fb511bba6e6f34968f5c62d8b636d6ee6377fbbaa8a8ead0a0bc66')
+sha256sums_x86_64=('3e671d7d87a3119d45ce12f4a3da368b940777b0be6f8e089722dc947bc792d8')
 
 prepare() {
   rm -rf deb

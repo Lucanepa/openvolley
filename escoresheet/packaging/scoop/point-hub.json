@@ -18,7 +18,7 @@
     "architecture": {
         "64bit": {
             "url": "https://github.com/Lucanepa/point-hub/releases/download/desktop-v1.1.0/point-hub-1.1.0.msi#/point-hub.msi_",
-            "hash": "@SHA256@"
+            "hash": "e3f77a5ecca1c17e342c045959bbac177de71532d3cb1ec8ee0e9d11443a271f"
         }
     },
     "installer": {
