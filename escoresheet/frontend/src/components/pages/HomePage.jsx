@@ -52,6 +52,8 @@ export default function HomePage({
   createNewOfficialMatch,
   createNewTestMatch,
   testMatchLoading,
+  createEasyMatch,
+  easyMatchLoading = false,
   currentOfficialMatch,
   currentTestMatch,
   continueMatch,
@@ -143,6 +145,24 @@ export default function HomePage({
                   {testMatchLoading && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
                   {testMatchLoading ? t('home.preparing') : t('home.testMatch')}
                 </button>
+                {createEasyMatch && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewMatchMenuOpen(false)
+                      createEasyMatch()
+                    }}
+                    disabled={easyMatchLoading || testMatchLoading}
+                    aria-busy={easyMatchLoading || undefined}
+                    className={cn('w-full min-h-12 inline-flex flex-col items-center justify-center px-4 py-2.5 text-base font-semibold text-stone-800 hover:bg-stone-100 transition-colors disabled:cursor-not-allowed disabled:opacity-60', FOCUS_RING_INSET)}
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      {easyMatchLoading && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
+                      {t('home.easyMatch', 'Easy match')}
+                    </span>
+                    <span className="text-xs font-medium text-stone-500">{t('home.easyMatchHint', 'Unofficial · no rosters or signatures')}</span>
+                  </button>
+                )}
               </div>
             )}
           </div>

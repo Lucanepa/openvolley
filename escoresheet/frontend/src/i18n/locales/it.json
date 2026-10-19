@@ -527,7 +527,8 @@
         "libero": "Libero non ammesso",
         "disqualified": "Squalificato",
         "exceptionallySubstituted": "Sostituito eccezionalmente",
-        "saveFailed": "Salvataggio non riuscito"
+        "saveFailed": "Salvataggio non riuscito",
+        "invalidNumber": "Da 1 a 99"
       },
       "gameCaptain": {
         "title": "Capitano in gioco",
@@ -538,6 +539,13 @@
         "noCaptain": "Nessun capitano nell’elenco squadra",
         "whenCaptainLeaves": "Subentra quando il capitano {{captain}} lascia il campo",
         "fromFirstRally": "Il capitano {{captain}} non è nella formazione: capitano in gioco dal primo scambio"
+      },
+      "easyLiberos": "Liberi (facoltativo)",
+      "easyLiberoInput": "Libero {{n}}",
+      "easyLiberoErrors": {
+        "invalid": "Da 1 a 99",
+        "inLineup": "In formazione",
+        "played": "Ha giocato come giocatore"
       }
     },
     "lastAction": "Ultima azione:",
@@ -911,6 +919,15 @@
       "redesignate": "Ridesigna libero",
       "sidewaysTitle": "Tieni il telefono in verticale",
       "sidewaysBody": "La schermata di punteggio sul telefono è pensata per il formato verticale. Ruota di nuovo il telefono: la partita, i dialoghi e i conti alla rovescia restano."
+    },
+    "easySub": {
+      "notAllowed": "Non può entrare",
+      "invalid": "Da 1 a 99",
+      "onCourt": "In campo",
+      "libero": "Un libero",
+      "label": "Nuovo numero",
+      "placeholder": "# nuovo",
+      "ok": "Entra"
     }
   },
   "settings": {
@@ -991,7 +1008,9 @@
     "scale": "Zoom",
     "default": "Predefinito",
     "viewportWidth": "Larghezza della vista",
-    "viewportHeight": "Altezza della vista"
+    "viewportHeight": "Altezza della vista",
+    "unofficial": "Non ufficiale",
+    "easyMatch": "Partita semplice · non ufficiale"
   },
   "home": {
     "title": "OpenVolley eScoresheet",
@@ -1018,13 +1037,21 @@
       "failedToRestoreMatch": "Ripristino della partita fallito",
       "failedToRestoreFromFile": "Ripristino dal file fallito",
       "enter6DigitPin": "Inserisci un PIN a 6 cifre",
-      "matchNotFound": "Partita non trovata"
+      "matchNotFound": "Partita non trovata",
+      "easyMatchOverwriteWarning": "Una partita ufficiale è ancora in registrazione. Una partita semplice sostituisce la partita test o semplice di questo dispositivo. Continuare?",
+      "easyMatchReplaceEasy": "La partita semplice di questo dispositivo viene sostituita dalla nuova e i suoi dati eliminati. Continuare?",
+      "easyMatchReplaceTest": "La partita test di questo dispositivo viene sostituita dalla partita semplice e i suoi dati eliminati. Continuare?",
+      "unableToPrepareEasyMatch": "Impossibile avviare la partita semplice: {{error}}",
+      "deleteEasyMatchConfirm": "Questo eliminerà la partita semplice e tutti i suoi dati. Continuare?",
+      "easyMatchDeleted": "Partita semplice eliminata."
     },
     "exitFullscreen": "Esci dallo schermo intero",
     "fullscreen": "Schermo intero",
     "downloadApp": "Scarica l'app desktop — tavolo del segnapunti offline + server per tablet",
     "downloadAppDeb": "oppure scarica il pacchetto .deb",
-    "downloadServer": "Scarica il server — arbitro senza internet"
+    "downloadServer": "Scarica il server — arbitro senza internet",
+    "easyMatch": "Partita semplice",
+    "easyMatchHint": "Non ufficiale · senza elenchi né firme"
   },
   "options": {
     "title": "Opzioni",
@@ -3914,5 +3941,18 @@
     "usePhone": "Usa la visualizzazione telefono",
     "fullscreen": "Schermo intero",
     "fullscreenNote": "Lo schermo intero rimuove le intestazioni del browser per massimizzare lo spazio."
+  },
+  "easyMatch": {
+    "title": "Partita semplice",
+    "home": "Squadra di casa",
+    "away": "Squadra ospite",
+    "chooseColour": "Colore della maglia di {{team}}",
+    "teamName": "Nome",
+    "nameRequired": "Obbligatorio",
+    "shortName": "Breve",
+    "intro": "Non ufficiale: senza elenchi, ufficiali né firme. I numeri si inseriscono con le formazioni; tutto il resto è il tabellone normale.",
+    "format": "Formato",
+    "bestOf": "Al meglio dei {{count}}",
+    "start": "Coin toss"
   }
 }

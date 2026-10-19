@@ -526,7 +526,8 @@
         "libero": "Libéro interdit",
         "disqualified": "Disqualifié",
         "exceptionallySubstituted": "Remplacement exceptionnel",
-        "saveFailed": "Échec de l’enregistrement"
+        "saveFailed": "Échec de l’enregistrement",
+        "invalidNumber": "1 à 99"
       },
       "gameCaptain": {
         "title": "Capitaine de jeu",
@@ -537,6 +538,13 @@
         "noCaptain": "Aucun capitaine sur la liste d’équipe",
         "whenCaptainLeaves": "Prend le relais quand le capitaine {{captain}} quitte le terrain",
         "fromFirstRally": "Le capitaine {{captain}} n’est pas dans la composition : capitaine de jeu dès le premier échange"
+      },
+      "easyLiberos": "Libéros (facultatif)",
+      "easyLiberoInput": "Libéro {{n}}",
+      "easyLiberoErrors": {
+        "invalid": "1 à 99",
+        "inLineup": "Dans la composition",
+        "played": "A joué comme joueur"
       }
     },
     "lastAction": "Dernière action :",
@@ -910,6 +918,15 @@
       "redesignate": "Redésigner le libéro",
       "sidewaysTitle": "Tenez le téléphone à la verticale",
       "sidewaysBody": "L’écran de saisie sur téléphone est conçu pour le format portrait. Retournez le téléphone : le match, ses dialogues et ses comptes à rebours sont conservés."
+    },
+    "easySub": {
+      "notAllowed": "Ne peut pas entrer",
+      "invalid": "1 à 99",
+      "onCourt": "Sur le terrain",
+      "libero": "Un libéro",
+      "label": "Nouveau numéro",
+      "placeholder": "# nouv.",
+      "ok": "Entre"
     }
   },
   "settings": {
@@ -990,7 +1007,9 @@
     "scale": "Échelle",
     "default": "Par défaut",
     "viewportWidth": "Largeur de l'affichage",
-    "viewportHeight": "Hauteur de l'affichage"
+    "viewportHeight": "Hauteur de l'affichage",
+    "unofficial": "Non officiel",
+    "easyMatch": "Match simplifié · non officiel"
   },
   "home": {
     "title": "OpenVolley e-Feuille",
@@ -1017,13 +1036,21 @@
       "failedToRestoreMatch": "Échec de la restauration du match",
       "failedToRestoreFromFile": "Échec de la restauration depuis le fichier",
       "enter6DigitPin": "Veuillez entrer un code PIN à 6 chiffres",
-      "matchNotFound": "Match non trouvé"
+      "matchNotFound": "Match non trouvé",
+      "easyMatchOverwriteWarning": "Un match officiel est encore en cours d'enregistrement. Un match simplifié remplace le match amical ou simplifié de cet appareil. Continuer ?",
+      "easyMatchReplaceEasy": "Le match simplifié de cet appareil est remplacé par le nouveau et ses données supprimées. Continuer ?",
+      "easyMatchReplaceTest": "Le match amical de cet appareil est remplacé par le match simplifié et ses données supprimées. Continuer ?",
+      "unableToPrepareEasyMatch": "Impossible de démarrer le match simplifié : {{error}}",
+      "deleteEasyMatchConfirm": "Cela supprimera le match simplifié et toutes ses données. Continuer ?",
+      "easyMatchDeleted": "Match simplifié supprimé."
     },
     "exitFullscreen": "Quitter le plein écran",
     "fullscreen": "Plein écran",
     "downloadApp": "Télécharger l'application de bureau — table de marque hors ligne + serveur pour tablettes",
     "downloadAppDeb": "ou télécharger le paquet .deb",
-    "downloadServer": "Télécharger le serveur — arbitre sans internet"
+    "downloadServer": "Télécharger le serveur — arbitre sans internet",
+    "easyMatch": "Match simplifié",
+    "easyMatchHint": "Non officiel · sans listes ni signatures"
   },
   "options": {
     "title": "Options",
@@ -3908,5 +3935,18 @@
     "usePhone": "Utiliser l'affichage téléphone",
     "fullscreen": "Plein écran",
     "fullscreenNote": "Le plein écran supprime les en-têtes du navigateur pour maximiser l'espace."
+  },
+  "easyMatch": {
+    "title": "Match simplifié",
+    "home": "Équipe recevante",
+    "away": "Équipe visiteuse",
+    "chooseColour": "Couleur du maillot de {{team}}",
+    "teamName": "Nom",
+    "nameRequired": "Obligatoire",
+    "shortName": "Court",
+    "intro": "Non officiel : sans listes, officiels ni signatures. Les numéros sont saisis avec les compositions ; tout le reste est le tableau de marque habituel.",
+    "format": "Format",
+    "bestOf": "Au meilleur des {{count}}",
+    "start": "Tirage au sort"
   }
 }

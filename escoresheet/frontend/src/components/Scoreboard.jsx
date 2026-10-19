@@ -64,6 +64,7 @@ import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval,
 import { validateReopenedRoster, referencedPlayerNumbers, renumberPlayerInEvents } from '../domain/roster'
 import { appendRemark, removeRemarkLine, eventRemark, remarkClock, setActualStartRemark } from '../domain/remarks'
 import { LINEUP_POSITIONS, lineupEntryErrors, lineupCandidates, lineupCaptainStatus, teamCaptainNumber, gameCaptainOptions, initialGameCaptainChoice, lineupGameCaptainDecision } from '../domain/lineupEntry'
+import { easyLiberoNumbers, easyLiberoErrors, easyRosterChanges, liberoSlotEditable, MAX_LIBEROS, easyPlayerRow, newPlayerMayEnter, newPlayerError, NEW_PLAYER_ERRORS, easyReferencedNumbers, isEasyStray } from '../domain/easyMatch'
 import { describeEventText } from '../domain/describe'
 import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal } from '../domain/matchEnd'
@@ -3811,12 +3812,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const playersOnCourtSet = new Set(playersOnCourt.map(num => Number(num)))
 
 
+    // Easy match: a number no event names any more (a line-up undone or
+    // retyped) is no bench player (domain/easyMatch.js)
+    const easyReferenced = data.match?.easy === true ? easyReferencedNumbers(data.events, teamKey) : null
     const benchPlayers = players
       .filter(p => {
         const playerNumber = Number(p.number)
         if (Number.isNaN(playerNumber) || playersOnCourtSet.has(playerNumber) || (p.libero && p.libero !== '')) {
           return false
         }
+        if (easyReferenced && isEasyStray(p, easyReferenced)) return false
 
         // Keep expelled/disqualified/exceptionally substituted players on bench (they'll show with X)
         // They should be visible but not selectable for substitutions/lineups
@@ -3856,12 +3861,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const playersOnCourtSet = new Set(playersOnCourt.map(num => Number(num)))
 
 
+    // Easy match: a number no event names any more (a line-up undone or
+    // retyped) is no bench player (domain/easyMatch.js)
+    const easyReferenced = data.match?.easy === true ? easyReferencedNumbers(data.events, teamKey) : null
     const benchPlayers = players
       .filter(p => {
         const playerNumber = Number(p.number)
         if (Number.isNaN(playerNumber) || playersOnCourtSet.has(playerNumber) || (p.libero && p.libero !== '')) {
           return false
         }
+        if (easyReferenced && isEasyStray(p, easyReferenced)) return false
 
         // Keep expelled/disqualified/exceptionally substituted players on bench (they'll show with X)
         // They should be visible but not selectable for substitutions/lineups
@@ -8233,6 +8242,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   // Get available players for exceptional substitution
   // Excludes: liberos, expelled/disqualified players, and the player being replaced
+  // Easy match (domain/easyMatch.js): may a number that is no player yet come
+  // in for playerOut? The injury, sanction and exceptional paths ask it when
+  // the bench (which starts empty there) offers nobody.
+  const easyNewSubstituteOpen = useCallback((teamKey, playerOutNumber, exceptional = false) => {
+    if (data?.match?.easy !== true || !data?.set) return false
+    return newPlayerMayEnter({
+      substitutions: getSubstitutionHistory(teamKey),
+      playerOut: playerOutNumber,
+      regularSubstitutionsUsed: countRegularSubstitutions(data.events, teamKey, data.set.index),
+      exceptional
+    })
+  }, [data?.match?.easy, data?.set, data?.events, getSubstitutionHistory])
+
   const getAvailableExceptionalSubstitutes = useCallback((teamKey, playerOutNumber) => {
     if (!data) return []
 
@@ -9610,7 +9632,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [rallyStatus, isRallyReplayed, leftTeamLineupSet, rightTeamLineupSet, leftIsHome, playerActionMenu, substitutionsUsed, canPlayerBeSubstituted, getCurrentServe, getLiberoOnCourt, hasPointSinceLastLiberoExchange, data?.homePlayers, data?.awayPlayers])
 
   // Show substitution confirmation
-  const showSubstitutionConfirm = useCallback((substituteNumber) => {
+  const showSubstitutionConfirm = useCallback((substituteNumber, { newPlayer = false } = {}) => {
     if (!substitutionDropdown || !substituteNumber) return
 
     const teamKey = substitutionDropdown.team
@@ -9638,7 +9660,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       isInjury: substitutionDropdown.isInjury || false,
       isExceptional: isExceptional,
       isExpelled: isExpelled,
-      isDisqualified: isDisqualified
+      isDisqualified: isDisqualified,
+      // Easy match: a shirt number that is no player yet (added on Confirm)
+      newPlayer: newPlayer === true
     })
     setSubstitutionDropdown(null)
     setLiberoDropdown(null) // Close libero dropdown when selecting substitution
@@ -9883,11 +9907,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // players for the next set (then the MATCH). `outNumber` is the player being
   // disqualified right now, if any (domain/matchEnd, tested).
   const getForfaitScope = useCallback((teamKey, reason, outNumber = null) => {
+    // Easy match: the team has no roster, new numbers can always come: the set
+    if (data?.match?.easy === true) return forfeitScope(reason)
     const players = teamKey === 'home' ? data?.homePlayers : data?.awayPlayers
     const exclude = reason === 'disqualification' && outNumber != null ? [outNumber] : []
     const available = playersAvailableForNextSet(players, data?.events, teamKey, { exclude }).length
     return forfeitScope(reason, { playersAvailableNextSet: available })
-  }, [data?.homePlayers, data?.awayPlayers, data?.events])
+  }, [data?.homePlayers, data?.awayPlayers, data?.events, data?.match?.easy])
 
   // An automatic forfait never fires on its own: it asks for confirmation
   // first (the forfait confirmation modal shows the scope and can be cancelled)
@@ -9995,7 +10021,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (choice === 'exceptional') {
       // Show substitution dropdown with exceptional substitutes
       const exceptionalSubstitutes = getAvailableExceptionalSubstitutes(team, playerOut)
-      if (exceptionalSubstitutes.length > 0) {
+      if (exceptionalSubstitutes.length > 0 || easyNewSubstituteOpen(team, playerOut, true)) {
         // Find the court player element
         const courtPlayers = document.querySelectorAll('.court-player')
         let playerElement = null
@@ -10042,7 +10068,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     } else if (choice === 'cancel') {
       setExceptionalSubstitutionModal(null)
     }
-  }, [exceptionalSubstitutionModal, getAvailableExceptionalSubstitutes, handleForfait, getForfaitScope])
+  }, [exceptionalSubstitutionModal, getAvailableExceptionalSubstitutes, handleForfait, getForfaitScope, easyNewSubstituteOpen])
 
   // Confirm substitution
   const runSubstitutionConfirm = useConfirmAction(onConfirmFailed)
@@ -10070,6 +10096,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return
     }
     const isExceptional = verdict === 'exceptional'
+
+    // Easy match: the new substitute becomes a player of the team, in the
+    // same action as the substitution (domain/easyMatch.js)
+    if (substitutionConfirm.newPlayer && data.match?.easy === true) {
+      const teamRow = team === 'home' ? data.homeTeam : data.awayTeam
+      if (teamRow?.id != null) {
+        const known = await db.players.where('teamId').equals(teamRow.id).filter(p => String(p.number) === String(playerIn)).first()
+        if (!known) await db.players.add(easyPlayerRow({ teamId: teamRow.id, number: Number(playerIn) }))
+      }
+    }
 
     // Get current lineup for this team in the current set
     // IMPORTANT: Sort by sequence number to get the most recent lineup event
@@ -10365,7 +10401,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // First, check if a legal substitution is possible (not exceptional)
     const legalSubstitutes = getAvailableSubstitutes(team, playerNumber, false)
-    if (legalSubstitutes.length > 0) {
+    if (legalSubstitutes.length > 0 || easyNewSubstituteOpen(team, playerNumber)) {
       // Legal substitution is possible - show substitution dropdown
       const pos = getCommonModalPosition(element, playerActionMenu.x, playerActionMenu.y, side)
       setSubstitutionDropdown({
@@ -10382,7 +10418,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     } else {
       // No legal substitution possible - check for exceptional substitution
       const exceptionalSubstitutes = getAvailableExceptionalSubstitutes(team, playerNumber)
-      if (exceptionalSubstitutes.length > 0) {
+      if (exceptionalSubstitutes.length > 0 || easyNewSubstituteOpen(team, playerNumber, true)) {
         // Show modal to choose between exceptional substitution or forfait
         setPlayerActionMenu(null)
         setExceptionalSubstitutionModal({
@@ -10397,7 +10433,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         requestAutomaticForfait(team, 'injury', playerNumber, position)
       }
     }
-  }, [playerActionMenu, data?.set, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, requestAutomaticForfait, getCommonModalPosition])
+  }, [playerActionMenu, data?.set, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, requestAutomaticForfait, getCommonModalPosition, easyNewSubstituteOpen])
 
   const cancelSubstitution = useCallback(() => {
     setSubstitutionDropdown(null)
@@ -10418,7 +10454,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // First, check if a legal substitution is possible (not exceptional)
     const legalSubstitutes = getAvailableSubstitutes(team, playerNumber, false)
-    if (legalSubstitutes.length > 0) {
+    if (legalSubstitutes.length > 0 || easyNewSubstituteOpen(team, playerNumber)) {
       // Legal substitution is possible - show substitution dropdown
       setInjuryDropdown(null)
       const rect = injuryDropdown.element?.getBoundingClientRect?.()
@@ -10435,7 +10471,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     } else {
       // No legal substitution possible - check for exceptional substitution
       const exceptionalSubstitutes = getAvailableExceptionalSubstitutes(team, playerNumber)
-      if (exceptionalSubstitutes.length > 0) {
+      if (exceptionalSubstitutes.length > 0 || easyNewSubstituteOpen(team, playerNumber, true)) {
         // Show modal to choose between exceptional substitution or forfait
         setInjuryDropdown(null)
         setExceptionalSubstitutionModal({
@@ -10450,7 +10486,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         requestAutomaticForfait(team, 'injury', playerNumber, position)
       }
     }
-  }, [injuryDropdown, data?.set, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, requestAutomaticForfait])
+  }, [injuryDropdown, data?.set, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, requestAutomaticForfait, easyNewSubstituteOpen])
 
   // Cancel injury dropdown
   const cancelInjury = useCallback(() => {
@@ -10710,7 +10746,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
       // First, check if a legal substitution is possible (not exceptional)
       const legalSubstitutes = getAvailableSubstitutes(team, playerNumber, false)
-      if (legalSubstitutes.length === 1) {
+      // Easy match: a new number may come in as well, so never auto-select
+      const easyNewLegal = easyNewSubstituteOpen(team, playerNumber)
+      if (legalSubstitutes.length === 1 && !easyNewLegal) {
         // Only one legal substitute - auto-select and show confirmation modal
         deferUi(() => setSubstitutionConfirm({
           team,
@@ -10720,7 +10758,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           isExpelled: sanctionType === 'expulsion',
           isDisqualified: sanctionType === 'disqualification'
         }))
-      } else if (legalSubstitutes.length > 1) {
+      } else if (legalSubstitutes.length > 1 || easyNewLegal) {
         // Multiple legal substitutes - show substitution dropdown
         const courtPlayers = document.querySelectorAll('.court-player')
         let playerElement = null
@@ -10760,7 +10798,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       } else {
         // No legal substitution possible - check for exceptional substitution
         const exceptionalSubstitutes = getAvailableExceptionalSubstitutes(team, playerNumber)
-        if (exceptionalSubstitutes.length > 0) {
+        if (exceptionalSubstitutes.length > 0 || easyNewSubstituteOpen(team, playerNumber, true)) {
           // Show modal to choose between exceptional substitution or forfait
           deferUi(() => setExceptionalSubstitutionModal({
             team,
@@ -10937,7 +10975,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       }
     }
-  })), [runAction, deferUi, runPlayerSanctionConfirm, sanctionConfirmModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, playerHasSanctionType, teamHasFormalWarning, checkLiberoRedesignation, requestAutomaticForfait, getLiberoOnCourt, teamAKey])
+  })), [runAction, deferUi, runPlayerSanctionConfirm, sanctionConfirmModal, data?.set, data?.events, data?.homePlayers, data?.awayPlayers, logEvent, logManualChange, getAvailableSubstitutes, getAvailableExceptionalSubstitutes, mapTeamKeyToSide, handlePoint, leftIsHome, getPlayerSanctionLevel, playerHasSanctionType, teamHasFormalWarning, checkLiberoRedesignation, requestAutomaticForfait, getLiberoOnCourt, teamAKey, easyNewSubstituteOpen])
 
   // Handle sanction substitution when bench player (libero replacement) is expelled/disqualified
   // Per FIVB Casebook: libero stays on court, the expelled bench player is replaced by a substitute
@@ -12686,7 +12724,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     showSanctions: () => setShowSanctions(true),
     showActionLog: () => setShowLogs(true),
     openRemarks: () => setShowRemarks(true),
-    openMatchSetup: onOpenMatchSetup ? () => onOpenMatchSetup() : undefined,
+    openMatchSetup: onOpenMatchSetup && data?.match?.easy !== true ? () => onOpenMatchSetup() : undefined,
     manualChanges: () => setShowManualPanel(true),
     editRosterHome: () => setReopenRosterConfirm('home'),
     editRosterAway: () => setReopenRosterConfirm('away'),
@@ -12799,8 +12837,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         playerClick: handlePlayerClick,
         canSubstituteOut: (teamKey, number) => canPlayerBeSubstituted(teamKey, number),
         substituteCandidates: (teamKey, number) => getAvailableSubstitutes(teamKey, number),
+        // Easy match: may a number that is no player yet come in, and is the
+        // typed number fine (domain/easyMatch.js)
+        newSubstituteAllowed: (teamKey, number) => data?.match?.easy === true && canPlayerBeSubstituted(teamKey, number) && newPlayerMayEnter({
+          substitutions: getSubstitutionHistory(teamKey),
+          playerOut: number,
+          regularSubstitutionsUsed: data?.set ? countRegularSubstitutions(data.events, teamKey, data.set.index) : 0
+        }),
+        checkNewSubstitute: (teamKey, value) => newPlayerError({
+          value,
+          players: (teamKey === 'home' ? data?.homePlayers : data?.awayPlayers) || [],
+          onCourt: getTeamLineupState(teamKey).playersOnCourt || []
+        }),
         // The court action menu's substitution: its confirmation dialog
-        substitute: ({ teamKey, position, playerOut, playerIn }) => setSubstitutionConfirm({ team: teamKey, position, playerOut, playerIn }),
+        substitute: ({ teamKey, position, playerOut, playerIn, newPlayer = false }) => setSubstitutionConfirm({ team: teamKey, position, playerOut, playerIn, ...(newPlayer ? { newPlayer: true } : {}) }),
         improperRequest: handleImproperRequest,
         delayWarning: handleDelayWarning,
         delayPenalty: handleDelayPenalty,
@@ -19075,6 +19125,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         lfpMinimumOnCourt={lfpMinimumOnCourt}
         courtCaptain={lineupModal.team === 'home' ? data?.match?.homeCourtCaptain : data?.match?.awayCourtCaptain}
         rememberedCourtCaptain={lineupModal.team === 'home' ? data?.match?.homeRememberedCourtCaptain : data?.match?.awayRememberedCourtCaptain}
+        easy={data?.match?.easy === true}
         onClose={() => setLineupModal(null)}
         // One action: the line-up, its owed penalty points and the game
         // captain commit together, and the dialog closes with them on the
@@ -19150,6 +19201,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Get available substitutes for this player
         const { team, position, playerNumber } = playerActionMenu
         const availableSubs = playerActionMenu.canSubstitute ? getAvailableSubstitutes(team, playerNumber) : []
+        // Easy match: a number that is no player yet can come in (domain/easyMatch.js)
+        const easyNewSub = data?.match?.easy === true && playerActionMenu.canSubstitute && newPlayerMayEnter({
+          substitutions: getSubstitutionHistory(team),
+          playerOut: playerNumber,
+          regularSubstitutionsUsed: data?.set ? countRegularSubstitutions(data.events, team, data.set.index) : 0
+        })
         const teamPlayersForMenu = team === 'home' ? data?.homePlayers : data?.awayPlayers
         const playerForMenu = (teamPlayersForMenu || []).find(p => String(p.number) === String(playerNumber))
         const playerNameForMenu = playerForMenu ? [playerForMenu.firstName, playerForMenu.lastName].filter(Boolean).join(' ') : ''
@@ -19176,7 +19233,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           })
         }
 
-        const handleSubFromMenu = (subPlayer) => {
+        const handleSubFromMenu = (subPlayer, { newPlayer = false } = {}) => {
           setPlayerActionMenu(null)
           setCourtSubExpanded(false)
           setCourtSanctionExpanded(false)
@@ -19185,7 +19242,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             team,
             position,
             playerOut: playerNumber,
-            playerIn: subPlayer.number
+            playerIn: subPlayer.number,
+            // Easy match: added as a player when the substitution is confirmed
+            ...(newPlayer ? { newPlayer: true } : {})
           })
         }
 
@@ -19223,25 +19282,26 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   # {playerNumber}{playerNameForMenu ? ` ${playerNameForMenu}` : ''}
                 </div>
                 {/* Substitution - auto-fire if only 1 legal substitute, otherwise expandable */}
-                {playerActionMenu.canSubstitute && availableSubs.length > 0 && (
+                {playerActionMenu.canSubstitute && (availableSubs.length > 0 || easyNewSub) && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <SbMenuItem
                       tone="positive"
                       onClick={() => {
                         // If only 1 legal substitute, go directly to confirmation
-                        if (availableSubs.length === 1) {
+                        // (an easy match always opens: a new number can come in)
+                        if (availableSubs.length === 1 && !easyNewSub) {
                           handleSubFromMenu(availableSubs[0])
                         } else {
                           setCourtSubExpanded(!courtSubExpanded)
                         }
                       }}
                       // Only a disclosure (chevron) if more than 1 substitute available
-                      expanded={availableSubs.length > 1 ? courtSubExpanded : undefined}
-                      icon={availableSubs.length > 1 ? undefined : <ArrowUpDown size={16} strokeWidth={2.5} />}
+                      expanded={availableSubs.length > 1 || easyNewSub ? courtSubExpanded : undefined}
+                      icon={availableSubs.length > 1 || easyNewSub ? undefined : <ArrowUpDown size={16} strokeWidth={2.5} />}
                     >
                       Substitution
                     </SbMenuItem>
-                    {courtSubExpanded && availableSubs.length > 1 && (
+                    {courtSubExpanded && (availableSubs.length > 1 || (easyNewSub && availableSubs.length > 0)) && (
                       <div className={SB_MENU_CHIPS}>
                         {availableSubs.map(sub => (
                           <SbMenuItem key={sub.number} chip tone="positive-soft" onClick={() => handleSubFromMenu(sub)}>
@@ -19249,6 +19309,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           </SbMenuItem>
                         ))}
                       </div>
+                    )}
+                    {courtSubExpanded && easyNewSub && (
+                      <EasyNewSubstitute
+                        players={teamPlayersForMenu || []}
+                        onCourt={getTeamLineupState(team).playersOnCourt || []}
+                        available={availableSubs}
+                        onPick={(number, newPlayer) => handleSubFromMenu({ number }, { newPlayer })}
+                      />
                     )}
                   </div>
                 )}
@@ -19619,11 +19687,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     Exceptional
                   </div>
                 )}
-                {availableSubstitutes.length === 0 ? (
+                {availableSubstitutes.length === 0 && !(data?.match?.easy === true && newPlayerMayEnter({
+                  substitutions: getSubstitutionHistory(teamKey),
+                  playerOut: substitutionDropdown.playerNumber,
+                  regularSubstitutionsUsed: data?.set ? countRegularSubstitutions(data.events, teamKey, data.set.index) : 0,
+                  exceptional: isExceptional || !isLegal
+                })) ? (
                   <div style={{ padding: '8px', textAlign: 'center', color: 'var(--muted)', fontSize: '11px' }}>
                     No substitutes
                   </div>
-                ) : (
+                ) : availableSubstitutes.length === 0 ? null : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     {availableSubstitutes.map(player => (
                       <SbMenuItem key={player.id} tone="positive-soft" onClick={() => showSubstitutionConfirm(player.number)}>
@@ -19631,6 +19704,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       </SbMenuItem>
                     ))}
                   </div>
+                )}
+                {/* Easy match: a number that is no player yet (domain/easyMatch.js) */}
+                {data?.match?.easy === true && newPlayerMayEnter({
+                  substitutions: getSubstitutionHistory(teamKey),
+                  playerOut: substitutionDropdown.playerNumber,
+                  regularSubstitutionsUsed: data?.set ? countRegularSubstitutions(data.events, teamKey, data.set.index) : 0,
+                  exceptional: isExceptional || !isLegal
+                }) && (
+                  <EasyNewSubstitute
+                    players={subDropdownPlayers || []}
+                    onCourt={getTeamLineupState(teamKey).playersOnCourt || []}
+                    available={availableSubstitutes}
+                    onPick={(number, newPlayer) => showSubstitutionConfirm(number, { newPlayer })}
+                  />
                 )}
                 {/* Cancel Sanction button - only shown when player must substitute due to expulsion/disqualification */}
                 {mustSubstitute && (
@@ -22013,6 +22100,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const teamLabel = team === teamAKey ? 'A' : 'B'
         const reasonText = reason === 'expulsion' ? 'expelled' : reason === 'disqualification' ? 'disqualified' : 'injured'
         const exceptionalSubstitutes = getAvailableExceptionalSubstitutes(team, playerOut)
+        // Easy match: a new number can always come in exceptionally
+        const exceptionalPossible = exceptionalSubstitutes.length > 0 || easyNewSubstituteOpen(team, playerOut, true)
         // FIVB 6.4.3 / 7.3.1: incomplete for the SET unless the team cannot
         // field six players next set (then the MATCH)
         const forfaitScopeNow = getForfaitScope(team, reason, playerOut)
@@ -22035,7 +22124,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <p style={{ marginBottom: '16px', fontSize: '16px' }}>
                 No legal substitution is possible for this player.
               </p>
-              {exceptionalSubstitutes.length > 0 ? (
+              {exceptionalPossible ? (
                 <>
                   <p style={{ marginBottom: '24px', fontSize: '14px', color: 'var(--muted)' }}>
                     Choose an option:
@@ -22850,7 +22939,55 @@ function ScoreboardCourtColumn({ children }) {
   return <section className="court-wrapper">{children}</section>
 }
 
-function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, teamAKey, teamBKey, lfpTrackingEnabled, lfpMinimumOnCourt, courtCaptain = null, rememberedCourtCaptain = null, onClose, onSave, onLineupSaved, onPenaltyPointsOwed, runSave = (body) => body() }) {
+/**
+ * Easy match: the substitution menu's "new number" field. A number that is
+ * no player yet comes in as a new player; one already on the bench is taken
+ * only when the list offers it (the substitution rules decided there).
+ */
+function EasyNewSubstitute({ players, onCourt, available, onPick }) {
+  const { t } = useTranslation()
+  const [value, setValue] = useState('')
+  const [error, setError] = useState('')
+  const submit = () => {
+    const code = newPlayerError({ value, players, onCourt })
+    if (code === null) { onPick(Number(value), true); return }
+    if (code === 'existing') {
+      const listed = (available || []).find(p => String(p.number) === String(Number(value)))
+      if (listed) { onPick(listed.number, false); return }
+      setError(t('scoreboard.easySub.notAllowed', 'Cannot come in'))
+      return
+    }
+    setError(({
+      [NEW_PLAYER_ERRORS.invalid]: t('scoreboard.easySub.invalid', '1 to 99'),
+      [NEW_PLAYER_ERRORS.onCourt]: t('scoreboard.easySub.onCourt', 'On court'),
+      [NEW_PLAYER_ERRORS.libero]: t('scoreboard.easySub.libero', 'A libero')
+    })[code] || t('scoreboard.easySub.notAllowed', 'Cannot come in'))
+  }
+  return (
+    <form
+      className="mt-2 flex items-center gap-1"
+      style={{ borderTop: '1px solid var(--border)', paddingTop: '8px' }}
+      onSubmit={e => { e.preventDefault(); submit() }}
+    >
+      <input
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        aria-label={t('scoreboard.easySub.label', 'New number')}
+        placeholder={t('scoreboard.easySub.placeholder', '# new')}
+        value={value}
+        onChange={e => { setValue(e.target.value.replace(/[^0-9]/g, '').slice(0, 2)); setError('') }}
+        style={{ width: '52px', padding: '4px 6px', fontSize: '12px', fontWeight: 700, textAlign: 'center', borderRadius: '6px', border: `1px solid ${error ? 'var(--ov-danger-text)' : 'var(--border)'}`, background: 'var(--ov-card)', color: 'var(--text)' }}
+      />
+      <SbButton type="submit" variant="positive" style={{ padding: '4px 8px', fontSize: '11px', minHeight: 0 }} disabled={!value}>
+        {t('scoreboard.easySub.ok', 'In')}
+      </SbButton>
+      {error && <span role="alert" style={{ fontSize: '10px', fontWeight: 600, color: 'var(--ov-danger-text)', marginLeft: '2px' }}>{error}</span>}
+    </form>
+  )
+}
+
+function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initial', lineup: presetLineup = null, teamAKey, teamBKey, lfpTrackingEnabled, lfpMinimumOnCourt, courtCaptain = null, rememberedCourtCaptain = null, easy = false, onClose, onSave, onLineupSaved, onPenaltyPointsOwed, runSave = (body) => body() }) {
   const { t } = useTranslation()
   const [lineup, setLineup] = useState(() => {
     if (presetLineup) {
@@ -22880,17 +23017,36 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     return await db.events.where('matchId').equals(matchId).toArray()
   }, [matchId])
 
+  // Easy match (domain/easyMatch.js): any shirt number is fine (it becomes a
+  // player on Confirm), and the starting line-up of a set names the liberos
+  const showLiberos = easy && mode === 'initial'
+  const [liberos, setLiberos] = useState(() => (showLiberos ? easyLiberoNumbers(players) : ['', '']))
+  const liberoErrors = useMemo(
+    () => (showLiberos ? easyLiberoErrors({ liberos, lineup, players, events: events || [], team }) : {}),
+    [showLiberos, liberos, lineup, players, events, team]
+  )
+  const liberoEditable = (i) => liberoSlotEditable({ players, events: events || [], team, slot: i === 0 ? 'libero1' : 'libero2' })
+  const liberoErrorText = (code) => ({
+    invalid: t('scoreboard.lineupModal.easyLiberoErrors.invalid', '1 to 99'),
+    duplicate: t('scoreboard.lineupModal.errors.duplicate', 'Duplicate'),
+    inLineup: t('scoreboard.lineupModal.easyLiberoErrors.inLineup', 'In the line-up'),
+    played: t('scoreboard.lineupModal.easyLiberoErrors.played', 'Played as a player')
+  })[code] || ''
+
   // Every error is derived from the whole line-up on each change, so fixing
   // either box of a duplicate clears both (domain/lineupEntry.js)
   const errors = useMemo(() => {
     if (saveFailed) return Object.fromEntries(LINEUP_POSITIONS.map((_, i) => [i, 'saveFailed']))
-    return lineupEntryErrors({ lineup, players, events, team, requireAll: confirmAttempted })
-  }, [saveFailed, lineup, players, events, team, confirmAttempted])
+    return lineupEntryErrors({ lineup, players, events, team, requireAll: confirmAttempted, allowUnknown: easy })
+  }, [saveFailed, lineup, players, events, team, confirmAttempted, easy])
 
-  const candidates = useMemo(
-    () => lineupCandidates({ players, lineup, events, team, setIndex }),
-    [players, lineup, events, team, setIndex]
-  )
+  const candidates = useMemo(() => {
+    const list = lineupCandidates({ players, lineup, events, team, setIndex })
+    if (!easy) return list
+    // Easy match: a number no event names any more is no candidate
+    const referenced = easyReferencedNumbers(events || [], team)
+    return list.filter(p => !isEasyStray(p, referenced))
+  }, [players, lineup, events, team, setIndex, easy])
 
   // Optional game captain (FIVB 5.2), among the valid entries other than the
   // team captain. Opening on an existing line-up shows the current choice.
@@ -22916,6 +23072,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     required: t('scoreboard.lineupModal.errors.required', 'Required'),
     duplicate: t('scoreboard.lineupModal.errors.duplicate', 'Duplicate'),
     notOnRoster: t('scoreboard.lineupModal.errors.notOnRoster', 'Not on roster'),
+    invalidNumber: t('scoreboard.lineupModal.errors.invalidNumber', '1 to 99'),
     libero: t('scoreboard.lineupModal.errors.libero', 'Cannot be libero'),
     disqualified: t('scoreboard.lineupModal.errors.disqualified', 'Disqualified'),
     exceptionallySubstituted: t('scoreboard.lineupModal.errors.exceptionallySubstituted', 'Exceptionally substituted'),
@@ -23051,7 +23208,10 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     const lineupNumbers = lineup.map(n => (n ? Number(n) : null))
 
     // Same checks the boxes show, with every empty box required now
-    if (Object.keys(lineupEntryErrors({ lineup, players, events, team, requireAll: true })).length > 0) {
+    if (Object.keys(lineupEntryErrors({ lineup, players, events, team, requireAll: true, allowUnknown: easy })).length > 0) {
+      return
+    }
+    if (showLiberos && Object.keys(easyLiberoErrors({ liberos, lineup, players, events: events || [], team })).length > 0) {
       return
     }
 
@@ -23093,6 +23253,23 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
       runSave(async () => {
         // Get next sequence number
         const allEvents = await db.events.where('matchId').equals(matchId).toArray()
+        // Easy match: the typed numbers become the team's players, and the
+        // libero boxes name its liberos, in the same action as the line-up
+        if (easy && teamData?.id != null) {
+          const teamPlayers = await db.players.where('teamId').equals(teamData.id).toArray()
+          const changes = easyRosterChanges({
+            teamId: teamData.id,
+            team,
+            players: teamPlayers,
+            events: allEvents,
+            lineup: lineupNumbers.filter(n => n != null),
+            liberos: showLiberos ? liberos : null
+          })
+          for (const id of changes.remove) await db.players.delete(id)
+          for (const { id, changes: fields } of changes.update) await db.players.update(id, fields)
+          if (changes.add.length) await db.players.bulkAdd(changes.add)
+        }
+
         // An undone or deleted event's seq is never given out again (event
         // history), as getNextSeq: a line-up entered again after its undo
         // must not take the voided line-up's seq
@@ -23267,8 +23444,9 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
             <div className="lineup-grid">
               {[0, 1, 2, 3, 4, 5].map(renderPosition)}
             </div>
-            {/* Optional game captain (FIVB 5.2): always rendered, fixed height */}
-            <div className="lineup-gcapt" role="group" aria-labelledby={`lineup-gcapt-${team}`} aria-describedby={`lineup-gcapt-note-${team}`}>
+            {/* Optional game captain (FIVB 5.2): always rendered, fixed height
+                (not in an easy match: its teams have no captain) */}
+            {!easy && <div className="lineup-gcapt" role="group" aria-labelledby={`lineup-gcapt-${team}`} aria-describedby={`lineup-gcapt-note-${team}`}>
               <div className="lineup-gcapt__head">
                 <span className="lineup-gcapt__title" id={`lineup-gcapt-${team}`}>
                   {t('scoreboard.lineupModal.gameCaptain.title', 'Game captain')}
@@ -23299,12 +23477,46 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                 ))}
               </div>
               <p className="lineup-gcapt__note" id={`lineup-gcapt-note-${team}`}>{gameCaptainNote}</p>
-            </div>
+            </div>}
           </div>
 
           <div className="lineup-modal__side">
-            {/* Available players (excluding liberos and players out of the game) */}
-            <div className="lineup-pool">
+            {/* Easy match: name up to two liberos (domain/easyMatch.js) */}
+            {showLiberos && (
+              <div className="lineup-pool lineup-libs" role="group" aria-labelledby={`lineup-libs-${team}`}>
+                <div className="lineup-pool__title" id={`lineup-libs-${team}`}>
+                  {t('scoreboard.lineupModal.easyLiberos', 'Liberos (optional)')}
+                </div>
+                <div className="lineup-libs__row">
+                  {Array.from({ length: MAX_LIBEROS }, (_, i) => {
+                    const editable = liberoEditable(i)
+                    const err = liberoErrors[i]
+                    return (
+                      <label key={i} className="lineup-lib" data-error={err ? '' : undefined}>
+                        <span className="lineup-lib__label">L{i + 1}</span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          className="lineup-lib__input"
+                          aria-label={t('scoreboard.lineupModal.easyLiberoInput', { n: i + 1, defaultValue: 'Libero {{n}}' })}
+                          aria-invalid={err ? true : undefined}
+                          value={liberos[i] || ''}
+                          disabled={!editable}
+                          onChange={e => {
+                            const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 2)
+                            setLiberos(prev => prev.map((v, j) => (j === i ? val : v)))
+                          }}
+                        />
+                        <span className="lineup-lib__msg" aria-live="polite">{err ? liberoErrorText(err) : ''}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+            {/* Available players (excluding liberos and players out of the game);
+                an easy match starts without any: no empty box then */}
+            <div className="lineup-pool" hidden={easy && candidates.length === 0}>
               <div className="lineup-pool__title">
                 {t('scoreboard.lineupModal.availablePlayers', 'Available players:')}
               </div>

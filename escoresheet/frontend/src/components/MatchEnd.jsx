@@ -1758,8 +1758,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         </div>
       </div>
 
-      {/* Captain Signatures */}
-      {!isApproved && (
+      {/* Captain Signatures (none in an easy match: domain/easyMatch.js) */}
+      {!isApproved && match?.easy !== true && (
         <div className="card" data-help-id="matchend-signatures" style={{ marginBottom: '16px' }}>
           <div className={SECTION_HEAD}><h3 className={SECTION_TITLE}>{t('matchEnd.teamCaptains', 'Team captains')}</h3></div>
           <div className="stack:flex-col" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
@@ -1793,7 +1793,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       </div>
 
       {/* Other Signatures - At the bottom */}
-      {!isApproved && captainsDone && (
+      {!isApproved && captainsDone && match?.easy !== true && (
         <div className="card" style={{ marginBottom: '16px' }}>
           <div className={SECTION_HEAD}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
