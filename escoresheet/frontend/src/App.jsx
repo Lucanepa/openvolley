@@ -16,6 +16,8 @@ import StartupConnectivityModal from './components/StartupConnectivityModal'
 import MainHeader from './components/MainHeader'
 import BackupTable from './components/BackupTable'
 import HomePage from './components/pages/HomePage'
+import EasyMatchModal from './components/EasyMatchModal'
+import { EASY_TEAM_SEED_KEYS, easyMatchPrefill } from './domain/easyMatch'
 import HomeOptionsModal from './components/options/HomeOptionsModal'
 import ConnectTabletsModal from './components/connect/ConnectTabletsModal'
 import { useSyncQueue, useUserMatchLink } from './hooks/useSyncQueue'
@@ -160,6 +162,13 @@ export default function App() {
     }
   }, [matchId])
   const [testMatchLoading, setTestMatchLoading] = useState(false)
+  // Easy match form: { prefill } while open. A page address with ?easy=...
+  // (domain/easyMatch.js easyMatchPrefill) opens it on that game.
+  const [easyMatchForm, setEasyMatchForm] = useState(() => {
+    const prefill = typeof window !== 'undefined' ? easyMatchPrefill(window.location.search) : null
+    return prefill ? { prefill } : null
+  })
+  const [easyMatchLoading, setEasyMatchLoading] = useState(false)
   const [alertModal, setAlertModal] = useState(null) // { message: string }
   const [confirmModal, setConfirmModal] = useState(null) // { message: string, onConfirm: function, onCancel: function }
   const [newMatchMenuOpen, setNewMatchMenuOpen] = useState(false)
@@ -2648,6 +2657,15 @@ export default function App() {
         existing.awayCoachSignature &&
         existing.awayCaptainSignature
 
+      // An easy match has no Match Setup: the coin toss until it is confirmed,
+      // then the scoreboard or Match End as any test match
+      if (existing.easy === true && !['live', 'ended', 'final'].includes(existing.status)) {
+        setMatchId(existing.id)
+        setShowMatchSetup(false)
+        setShowCoinToss(!isCoinTossConfirmed)
+        return
+      }
+
       // Match Setup opens filled (OV-18): read before the home screen goes
       if (!['live', 'ended', 'final'].includes(existing.status) && !isMatchSetupComplete) {
         await preloadMatchSetup(existing.id)
@@ -2700,7 +2718,9 @@ export default function App() {
     setTestMatchLoading(true)
 
     setConfirmModal({
-      message: t('home.modals.deleteTestMatchConfirm'),
+      message: currentTestMatch?.easy === true
+        ? t('home.modals.deleteEasyMatchConfirm', 'This will delete the easy match and all its data. Continue?')
+        : t('home.modals.deleteTestMatchConfirm'),
       onConfirm: async () => {
         setConfirmModal(null)
         try {
@@ -2722,7 +2742,9 @@ export default function App() {
           setShowCoinToss(false)
           setShowManualAdjustments(false)
 
-          setAlertModal(t('home.modals.testMatchDeleted'))
+          setAlertModal(testMatch.easy === true
+            ? t('home.modals.easyMatchDeleted', 'Easy match deleted.')
+            : t('home.modals.testMatchDeleted'))
         } catch (error) {
           console.error('Failed to delete test match:', error)
           setAlertModal(t('home.modals.unableToDeleteTestMatch', { error: error.message || error }))
@@ -2735,6 +2757,122 @@ export default function App() {
         setTestMatchLoading(false)
       }
     })
+  }
+
+  // The form opened from a page address must not open again on a reload
+  useEffect(() => {
+    if (!easyMatchForm?.prefill || typeof window === 'undefined') return
+    try {
+      const url = new URL(window.location.href)
+      ;['easy', 'home', 'away', 'homeShort', 'awayShort', 'homeColor', 'awayColor', 'bestOf', 'league', 'game', 'hall'].forEach(k => url.searchParams.delete(k))
+      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash)
+    } catch { /* the address stays as it is */ }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** "Easy match" in the New match menu: the form (the warnings come when it is started) */
+  function openEasyMatch(prefill = null) {
+    if (testMatchLoading || easyMatchLoading) return
+    setEasyMatchForm({ prefill })
+  }
+
+  /**
+   * The form's Start: the same warnings as a test match (an official match
+   * still recording, or the test / easy match it replaces), for the menu and
+   * for a page address alike. Cancel brings the form back as it was.
+   */
+  async function startEasyMatch(form) {
+    if (easyMatchLoading) return
+    const previous = (await db.matches.filter(m => m.test === true && m.status !== 'final').first()) || null
+    const officialMatchRecording = matchStatus?.status === 'Match recording' && currentOfficialMatch
+    const replacing = previous && ['live', 'ended'].includes(previous.status)
+    if (!officialMatchRecording && !replacing) {
+      await createEasyMatch(form)
+      return
+    }
+    const message = officialMatchRecording
+      ? t('home.modals.easyMatchOverwriteWarning', 'An official match is still recording. An easy match replaces the test or easy match on this device. Continue?')
+      : previous.easy === true
+        ? t('home.modals.easyMatchReplaceEasy', 'The easy match on this device is replaced by the new one and its data deleted. Continue?')
+        : t('home.modals.easyMatchReplaceTest', 'The test match on this device is replaced by the easy match and its data deleted. Continue?')
+    setEasyMatchForm(null)
+    setConfirmModal({
+      message,
+      onConfirm: () => { setConfirmModal(null); createEasyMatch(form) },
+      onCancel: () => { setConfirmModal(null); setEasyMatchForm({ prefill: form }) }
+    })
+  }
+
+  /**
+   * An easy match (domain/easyMatch.js): two teams without players, straight
+   * to the coin toss. It takes the device's test-match slot and keeps its
+   * relay room, so a LedBox following that room follows this match.
+   */
+  async function createEasyMatch(form) {
+    if (easyMatchLoading) return
+    setEasyMatchLoading(true)
+    try {
+      const previous = (await db.matches.filter(m => isTestMatchSeedKey(m.seedKey)).first()) || null
+      const seedKey = testMatchSeedKeyFor(previous?.seedKey)
+      const refereePin = previous?.refereePin || generateRefereePin()
+      await clearLocalTestData()
+      await db.match_setup.clear()
+
+      const timestamp = new Date().toISOString()
+      let createdMatchId = null
+      await db.transaction('rw', db.matches, db.teams, async () => {
+        const team = (side) => db.teams.add({
+          name: form[`${side}Name`],
+          shortName: form[`${side}Short`],
+          color: form[`${side}Color`],
+          seedKey: EASY_TEAM_SEED_KEYS[side],
+          test: true,
+          easy: true,
+          createdAt: timestamp
+        })
+        const homeTeamId = await team('home')
+        const awayTeamId = await team('away')
+        createdMatchId = await db.matches.add({
+          status: 'scheduled',
+          homeTeamId,
+          awayTeamId,
+          homeShortName: form.homeShort,
+          awayShortName: form.awayShort,
+          hall: form.hall || '',
+          city: '',
+          league: form.league || '',
+          gameNumber: form.gameNumber || '',
+          bestOf: form.bestOf === 3 ? 3 : 5,
+          scheduledAt: timestamp,
+          refereePin,
+          bench_home: [],
+          bench_away: [],
+          officials: [],
+          homeCoachSignature: null,
+          homeCaptainSignature: null,
+          awayCoachSignature: null,
+          awayCaptainSignature: null,
+          coinTossConfirmed: false,
+          test: true,
+          easy: true,
+          seedKey,
+          externalId: TEST_MATCH_EXTERNAL_ID,
+          matchInfoConfirmedAt: timestamp,
+          createdAt: timestamp,
+          updatedAt: timestamp
+        })
+      })
+      setEasyMatchForm(null)
+      if (createdMatchId) {
+        setMatchId(createdMatchId)
+        setShowMatchSetup(false)
+        setShowCoinToss(true)
+      }
+    } catch (error) {
+      console.error('Failed to create the easy match:', error)
+      setAlertModal(t('home.modals.unableToPrepareEasyMatch', { error: error.message || error, defaultValue: 'Unable to start the easy match: {{error}}' }))
+    } finally {
+      setEasyMatchLoading(false)
+    }
   }
 
   async function continueMatch(matchIdParam) {
@@ -3054,6 +3192,13 @@ export default function App() {
                     // Match status is set to 'live' by CoinToss component
                   }}
                   onBack={async () => {
+                    // An easy match has no Match Setup: back to the home screen
+                    const backFrom = await db.matches.get(matchId)
+                    if (backFrom?.easy === true) {
+                      setShowCoinToss(false)
+                      setMatchId(null)
+                      return
+                    }
                     await preloadMatchSetup(matchId) // filled at once (OV-18)
                     setShowCoinToss(false)
                     setShowMatchSetup(true)
@@ -3117,6 +3262,8 @@ export default function App() {
                     createNewOfficialMatch={createNewOfficialMatch}
                     createNewTestMatch={createNewTestMatch}
                     testMatchLoading={testMatchLoading}
+                    createEasyMatch={() => openEasyMatch()}
+                    easyMatchLoading={easyMatchLoading}
                     currentOfficialMatch={homeOfficialMatch}
                     currentTestMatch={homeTestMatch}
                     continueMatch={continueMatch}
@@ -3139,6 +3286,17 @@ export default function App() {
                 />
               )}
             </div>
+
+            {/* Easy match: the teams and the format, then the coin toss */}
+            {easyMatchForm && (
+              <EasyMatchModal
+                open={true}
+                prefill={easyMatchForm.prefill}
+                busy={easyMatchLoading}
+                onCancel={() => setEasyMatchForm(null)}
+                onStart={startEasyMatch}
+              />
+            )}
 
             {/* Delete Match Modal */}
             {deleteMatchModal && (

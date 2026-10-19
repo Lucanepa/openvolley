@@ -528,7 +528,8 @@
         "libero": "Cannot be libero",
         "disqualified": "Disqualified",
         "exceptionallySubstituted": "Exceptionally substituted",
-        "saveFailed": "Save failed"
+        "saveFailed": "Save failed",
+        "invalidNumber": "1 to 99"
       },
       "gameCaptain": {
         "title": "Game captain",
@@ -539,6 +540,13 @@
         "noCaptain": "No team captain on the roster",
         "whenCaptainLeaves": "Takes over when captain {{captain}} leaves the court",
         "fromFirstRally": "Captain {{captain}} is not in the line-up: game captain from the first rally"
+      },
+      "easyLiberos": "Liberos (optional)",
+      "easyLiberoInput": "Libero {{n}}",
+      "easyLiberoErrors": {
+        "invalid": "1 to 99",
+        "inLineup": "In the line-up",
+        "played": "Played as a player"
       }
     },
     "lastAction": "Last action:",
@@ -912,6 +920,15 @@
       "redesignate": "Redesignate libero",
       "sidewaysTitle": "Hold the phone upright",
       "sidewaysBody": "The scoring screen on a phone is made for portrait. Turn the phone back: the match, its dialogs and countdowns are kept."
+    },
+    "easySub": {
+      "notAllowed": "Cannot come in",
+      "invalid": "1 to 99",
+      "onCourt": "On court",
+      "libero": "A libero",
+      "label": "New number",
+      "placeholder": "# new",
+      "ok": "In"
     }
   },
   "settings": {
@@ -992,7 +1009,9 @@
     "scale": "Scale",
     "default": "Default",
     "viewportWidth": "Viewport width",
-    "viewportHeight": "Viewport height"
+    "viewportHeight": "Viewport height",
+    "unofficial": "Unofficial",
+    "easyMatch": "Easy match · unofficial"
   },
   "home": {
     "title": "OpenVolley eScoresheet",
@@ -1019,13 +1038,21 @@
       "failedToRestoreMatch": "Failed to restore match",
       "failedToRestoreFromFile": "Failed to restore from file",
       "enter6DigitPin": "Please enter a 6-digit game PIN",
-      "matchNotFound": "Match not found"
+      "matchNotFound": "Match not found",
+      "easyMatchOverwriteWarning": "An official match is still recording. An easy match replaces the test or easy match on this device. Continue?",
+      "easyMatchReplaceEasy": "The easy match on this device is replaced by the new one and its data deleted. Continue?",
+      "easyMatchReplaceTest": "The test match on this device is replaced by the easy match and its data deleted. Continue?",
+      "unableToPrepareEasyMatch": "Unable to start the easy match: {{error}}",
+      "deleteEasyMatchConfirm": "This will delete the easy match and all its data. Continue?",
+      "easyMatchDeleted": "Easy match deleted."
     },
     "exitFullscreen": "Exit fullscreen",
     "fullscreen": "Fullscreen",
     "downloadApp": "Download the desktop app — offline scoretable + tablet server",
     "downloadAppDeb": "or get the .deb package",
-    "downloadServer": "Download server — referee without internet"
+    "downloadServer": "Download server — referee without internet",
+    "easyMatch": "Easy match",
+    "easyMatchHint": "Unofficial · no rosters or signatures"
   },
   "options": {
     "title": "Options",
@@ -3915,5 +3942,18 @@
     "usePhone": "Use the phone layout",
     "fullscreen": "Enter fullscreen",
     "fullscreenNote": "Fullscreen removes browser headers to maximize screen space."
+  },
+  "easyMatch": {
+    "title": "Easy match",
+    "home": "Home team",
+    "away": "Away team",
+    "chooseColour": "Shirt colour of {{team}}",
+    "teamName": "Name",
+    "nameRequired": "Required",
+    "shortName": "Short",
+    "intro": "Unofficial: no rosters, officials or signatures. Shirt numbers are entered with the line-ups; everything else is the normal scoreboard.",
+    "format": "Format",
+    "bestOf": "Best of {{count}}",
+    "start": "Coin toss"
   }
 }
