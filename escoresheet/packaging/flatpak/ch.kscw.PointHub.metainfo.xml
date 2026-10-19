@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright 2026 KSC Wiedikon -->
+<component type="desktop-application">
+  <id>ch.kscw.PointHub</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>Point Hub</name>
+  <summary>The console of the KSCW LedBox scoreboard</summary>
+  <developer id="ch.kscw">
+    <name>KSC Wiedikon</name>
+  </developer>
+
+  <description>
+    <p>
+      Point Hub is the console of KSC Wiedikon's LedBox scoreboard: the screen
+      the scorer's table runs the board from.
+    </p>
+    <p>
+      It finds the scoreboard by itself, on the board's own Wi-Fi or on the
+      cable, also when that network has no internet, and shows the board's
+      console: the game on the board, the link to an OpenVolley eScoresheet
+      match, the history, diagnostics and settings. The Game tab is drawn
+      natively; the other tabs are the board's own pages.
+    </p>
+    <ul>
+      <li>Points, sets, timeouts and substitutions on the board</li>
+      <li>Games from the season's schedule, or typed in</li>
+      <li>Backups of every game, exported as a zip</li>
+    </ul>
+    <p>It needs the scoreboard: on its own, the app only looks for one.</p>
+  </description>
+
+  <launchable type="desktop-id">ch.kscw.PointHub.desktop</launchable>
+  <provides>
+    <binary>point-hub</binary>
+  </provides>
+
+  <url type="homepage">https://github.com/Lucanepa/point-hub</url>
+  <url type="bugtracker">https://github.com/Lucanepa/point-hub/issues</url>
+  <url type="vcs-browser">https://github.com/Lucanepa/point-hub</url>
+
+  <content_rating type="oars-1.1"/>
+
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>touch</control>
+  </supports>
+
+  <releases>
+    <release version="1.1.0" date="2026-10-19">
+      <url type="details">https://github.com/Lucanepa/point-hub/releases/tag/desktop-v1.1.0</url>
+    </release>
+  </releases>
+</component>

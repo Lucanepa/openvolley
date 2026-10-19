@@ -1,15 +1,19 @@
 # AUR packages (Arch Linux, Manjaro, EndeavourOS, ...)
 
-Two packages for the Arch User Repository, both built from the `.deb` that
+Packages for the Arch User Repository, each built from the `.deb` that
 GitHub Actions releases (`.github/workflows/desktop.yml`):
 
 | AUR package | App | Release tag | Ports (HTTP / WebSocket) |
 |---|---|---|---|
 | `openvolley-escoresheet-bin` | OpenVolley eScoresheet | `desktop-vX.Y.Z` | 5173 / 8080 |
 | `openbeach-escoresheet-bin` | OpenBeach | `beach-desktop-vX.Y.Z` | 5174 / 8081 |
+| `point-hub-bin` | Point Hub (KSC Wiedikon's scoreboard console) | `desktop-vX.Y.Z` of [Lucanepa/point-hub](https://github.com/Lucanepa/point-hub) | none (it is the board's client) |
 
 `-bin` is the AUR name for a package that installs a prebuilt binary rather
-than compiling. The two can be installed side by side.
+than compiling. They can be installed side by side. Point Hub is a different
+kind of app (jpackage, Java and Chromium, no updater): see
+[Point Hub](#point-hub-point-hub-bin); the rest of this file is about the two
+Tauri apps unless it says otherwise.
 
 Users install with any AUR helper, or by hand:
 
@@ -198,6 +202,55 @@ key, and keys stay on lenovoserver, so it runs there (like
 
 Optional on the AUR web page: add a co-maintainer, and keep the package's
 comments on (users report problems there).
+
+## Point Hub (`point-hub-bin`)
+
+Point Hub's desktop app is Compose Desktop on JetBrains Runtime with Chromium
+(JCEF), packed by jpackage into one self-contained tree. The PKGBUILD takes the
+release `.deb` (Lucanepa/point-hub, `desktop-v$pkgver`) apart and installs:
+
+- `/opt/point-hub/` as it is (launcher, its own Java runtime, Chromium; about
+  460 MB), with `options=('!strip' '!debug')`: prebuilt binaries, and skiko
+  checks its library against the `.sha256` file next to it;
+- `/usr/bin/point-hub`, a symlink to the launcher (the `.deb` has the same,
+  added by point-hub's CI);
+- a menu entry of its own (`Name=Point Hub`, `Icon=point-hub`) and the 512 px
+  icon: the `.deb` installs jpackage's entry from its postinst with
+  `xdg-desktop-menu`, which a package must not run;
+- the MIT license from the root of point-hub at the same tag.
+
+**Dependencies** are what the bundle's ELF files link from the system
+(`readelf -d`, minus the bundle's own libraries, each soname mapped with
+`pacman -F`): NSS/NSPR, CUPS, ALSA, at-spi2-core, X11 and xcb libraries,
+libxkbcommon, mesa (libgbm), libglvnd, wayland, pango, cairo, ... Plus
+**`ttf-font`**: Compose draws with a system font, and with none installed
+(a clean `archlinux` image) the app stops at start with
+`FontLoadFailedException: Failed to load font FontFamily.Default` (`test.sh`
+found it; Debian pulls a font in through fontconfig, Arch does not).
+
+**No in-app updater**, so nothing to switch off: no marker file, no
+bundle-type reset; pacman updates it.
+
+`namcap` reports errors that come with a prebuilt Java bundle and are expected:
+"ELF files outside of a valid path ('opt/')", "Insecure RPATH '.'" in JBR's
+`jcef_helper` and `libjcef.so`, "Dependency java-runtime detected and not
+included" (the runtime is bundled), and many "Unused shared library" warnings.
+
+**Before the first release** the PKGBUILD and `.SRCINFO` carry the `@SHA256@`
+placeholder in both `sha256sums` lines (no checksum of a file that does not
+exist yet): makepkg refuses it, and so do `publish.sh`, `publish-pacman.sh`
+and `publish-pkgs.sh --pacman`. `./bump.sh point-hub 1.1.0` fills them in
+from the release and regenerates `.SRCINFO`; then commit, `./test.sh
+point-hub`, `./publish.sh point-hub`.
+
+Test before the release (no assets to download yet): `OV_AUR_TEST_DEB=<point-hub_1.1.0_amd64.deb>
+OV_AUR_TEST_LICENSE=<point-hub/LICENSE> ./test.sh point-hub` builds the
+container's copy from those files. `check-installed.sh` has Point Hub's own
+checks: every ELF file of `/opt/point-hub` finds its libraries, the command
+and menu entry, and the app starts under Xvfb as a normal user with
+Chromium's helper processes and its settings and cache in `~/.config/point-hub`
+and `~/.local/share/point-hub`. Run 2026-10-19 on a local 1.1.0 build: passed
+(after adding `ttf-font`).
 
 ## Rules worth knowing
 

@@ -4,9 +4,10 @@
 #
 #   escoresheet/packaging/scoop/update-manifests.sh openvolley 2.4.0
 #   escoresheet/packaging/scoop/update-manifests.sh openbeach  2.0.1 --file OpenBeach_2.0.1_x64-setup.exe
+#   escoresheet/packaging/scoop/update-manifests.sh point-hub  1.1.0   # the .msi of Lucanepa/point-hub
 #
-#   --file PATH    hash a local copy of the setup .exe (default: download it
-#                  from the GitHub release, ~7 MB)
+#   --file PATH    hash a local copy of the installer (default: download it
+#                  from the GitHub release, ~7 MB; Point Hub's .msi ~150 MB)
 #   --sha256 HEX   use this hash, download nothing
 #
 # Scoop's own `checkver.ps1 -u` (Windows, from a Scoop checkout) does the same
@@ -17,7 +18,7 @@ set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 die() { echo "update-manifests: $*" >&2; exit 1; }
 
-[ $# -ge 2 ] || die "usage: $0 openvolley|openbeach VERSION [--file PATH | --sha256 HEX]"
+[ $# -ge 2 ] || die "usage: $0 openvolley|openbeach|point-hub VERSION [--file PATH | --sha256 HEX]"
 app=$1 version=$2
 shift 2
 file='' sha=''
@@ -28,7 +29,7 @@ while [ $# -gt 0 ]; do
     *) die "unknown option $1" ;;
   esac
 done
-case $app in openvolley|openbeach) ;; beach) app=openbeach ;; *) die "app must be openvolley or openbeach" ;; esac
+case $app in openvolley|openbeach|point-hub) ;; beach) app=openbeach ;; *) die "app must be openvolley, openbeach or point-hub" ;; esac
 [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "version must look like 2.4.0, got '$version'"
 manifest=$HERE/$app.json
 

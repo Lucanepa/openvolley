@@ -1,0 +1,61 @@
+{
+    "##": [
+        "Point Hub for Windows through Scoop, without a bucket: scoop install https://raw.githubusercontent.com/Lucanepa/openvolley/main/escoresheet/packaging/scoop/point-hub.json",
+        "Point Hub is KSC Wiedikon's scoreboard console (github.com/Lucanepa/point-hub). This runs its official .msi silently (the same one winget and the download page use), so the app is installed per machine to Program Files with its Start menu entry.",
+        "Regenerate for a new version: escoresheet/packaging/scoop/update-manifests.sh point-hub VERSION. Until the first release the hash is the @SHA256@ placeholder, which Scoop refuses. README.md next to this file says more."
+    ],
+    "version": "1.1.0",
+    "description": "Point Hub: the console of the KSCW LedBox scoreboard, for the scorer's table.",
+    "homepage": "https://github.com/Lucanepa/point-hub",
+    "license": {
+        "identifier": "MIT",
+        "url": "https://github.com/Lucanepa/point-hub/blob/main/LICENSE"
+    },
+    "notes": [
+        "Point Hub was installed with its own installer (one administrator prompt) to Program Files, like a download from the website. Start it from the Start menu.",
+        "It does not update itself: 'scoop update point-hub' installs each new version over the old one."
+    ],
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/Lucanepa/point-hub/releases/download/desktop-v1.1.0/point-hub-1.1.0.msi#/point-hub.msi_",
+            "hash": "e3f77a5ecca1c17e342c045959bbac177de71532d3cb1ec8ee0e9d11443a271f"
+        }
+    },
+    "installer": {
+        "script": [
+            "# Downloaded as point-hub.msi_: under its own name Scoop would unpack the .msi instead of running it",
+            "$msi = Join-Path $dir 'point-hub.msi'",
+            "Move-Item -Force (Join-Path $dir 'point-hub.msi_') $msi",
+            "Write-Host 'Running the Point Hub installer (Windows asks for administrator rights)...'",
+            "$p = Start-Process -FilePath msiexec.exe -ArgumentList \"/i `\"$msi`\" /qn /norestart\" -Verb RunAs -Wait -PassThru",
+            "Remove-Item $msi -ErrorAction SilentlyContinue",
+            "# 3010: installed, Windows wants a restart",
+            "if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { abort \"The Point Hub installer stopped (exit code $($p.ExitCode)).\" }"
+        ]
+    },
+    "uninstaller": {
+        "script": [
+            "# 'scoop update': the new .msi upgrades this version in place (same UpgradeCode), so no uninstall first",
+            "if (Get-PSCallStack | Where-Object { $_.ScriptName -like '*scoop-update.ps1' }) { return }",
+            "# Point Hub's UpgradeCode, fixed for good in point-hub's android/desktop/build.gradle.kts",
+            "$upgrade = '{6F0C3A2E-6C7B-4D44-9A3E-2F5A8E1B7C10}'",
+            "$codes = @((New-Object -ComObject WindowsInstaller.Installer).RelatedProducts($upgrade))",
+            "if (!$codes) { warn 'Point Hub is not installed any more (removed in Settings > Apps?): nothing to uninstall.'; return }",
+            "# silent: the settings and backups (%APPDATA%\\Point Hub, %LOCALAPPDATA%\\Point Hub) stay",
+            "foreach ($code in $codes) { Start-Process -FilePath msiexec.exe -ArgumentList \"/x $code /qn /norestart\" -Verb RunAs -Wait }",
+            "if (@((New-Object -ComObject WindowsInstaller.Installer).RelatedProducts($upgrade))) { warn 'Point Hub is still installed: uninstall it in Settings > Apps.' }"
+        ]
+    },
+    "checkver": {
+        "url": "https://api.github.com/repos/Lucanepa/point-hub/releases/latest",
+        "jsonpath": "$.tag_name",
+        "regex": "desktop-v([\\d.]+)"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/Lucanepa/point-hub/releases/download/desktop-v$version/point-hub-$version.msi#/point-hub.msi_"
+            }
+        }
+    }
+}
