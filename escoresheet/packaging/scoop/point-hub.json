@@ -1,11 +1,11 @@
 {
     "##": [
         "Point Hub for Windows through Scoop, without a bucket: scoop install https://raw.githubusercontent.com/Lucanepa/openvolley/main/escoresheet/packaging/scoop/point-hub.json",
-        "Point Hub is KSC Wiedikon's scoreboard console (github.com/Lucanepa/point-hub). This runs its official .msi silently (the same one winget and the download page use), so the app is installed per machine to Program Files with its Start menu entry.",
+        "Point Hub is the LedBox scoreboard console (github.com/Lucanepa/point-hub). This runs its official .msi silently (the same one winget and the download page use), so the app is installed per machine to Program Files with its Start menu entry.",
         "Regenerate for a new version: escoresheet/packaging/scoop/update-manifests.sh point-hub VERSION. Until the first release the hash is the @SHA256@ placeholder, which Scoop refuses. README.md next to this file says more."
     ],
     "version": "1.1.1",
-    "description": "Point Hub: the console of the KSCW LedBox scoreboard, for the scorer's table.",
+    "description": "Point Hub: the console of the LedBox scoreboard, for the scorer's table.",
     "homepage": "https://github.com/Lucanepa/point-hub",
     "license": {
         "identifier": "MIT",

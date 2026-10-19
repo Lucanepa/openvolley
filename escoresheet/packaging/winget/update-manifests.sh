@@ -106,9 +106,9 @@ case $app in
     moniker=point-hub
     package_url=https://github.com/Lucanepa/point-hub
     license_url=https://github.com/Lucanepa/point-hub/blob/main/LICENSE
-    short_en="The console of the KSCW LedBox scoreboard"
-    desc_en="Point Hub is the console of KSC Wiedikon's LedBox scoreboard, for the scorer's table. It finds the scoreboard on its own Wi-Fi or on the cable, also without internet, and shows the board's console: the game on the board, the link to an OpenVolley eScoresheet match, the history and the settings."
-    tags=(scoreboard volleyball ledbox kscw sports console)
+    short_en="The console of the LedBox scoreboard"
+    desc_en="Point Hub is the console of the LedBox scoreboard, for the scorer's table. It finds the scoreboard on its own Wi-Fi or on the cable, also without internet, and shows the board's console: the game on the board, the link to an OpenVolley eScoresheet match, the history and the settings."
+    tags=(scoreboard volleyball ledbox sports console)
     ;;
   *) die "app must be openvolley, openbeach or point-hub, got '$app'" ;;
 esac

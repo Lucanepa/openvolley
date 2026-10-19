@@ -9,8 +9,8 @@
 pkgname=point-hub-bin
 _pkgname=point-hub
 pkgver=1.1.1
-pkgrel=1
-pkgdesc='Point Hub: the console of the KSCW LedBox scoreboard'
+pkgrel=2
+pkgdesc='Point Hub: the console of the LedBox scoreboard'
 arch=('x86_64')
 url='https://github.com/Lucanepa/point-hub'
 license=('MIT')
@@ -94,8 +94,8 @@ package() {
 Type=Application
 Name=Point Hub
 GenericName=Scoreboard console
-Comment=The console of the KSCW LedBox scoreboard
-Keywords=scoreboard;volleyball;LedBox;KSCW;score;match;
+Comment=The console of the LedBox scoreboard
+Keywords=scoreboard;volleyball;LedBox;score;match;
 Categories=Utility;Sports;
 Exec=point-hub
 Icon=point-hub

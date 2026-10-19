@@ -1,7 +1,7 @@
 pkgbase = point-hub-bin
-	pkgdesc = Point Hub: the console of the KSCW LedBox scoreboard
+	pkgdesc = Point Hub: the console of the LedBox scoreboard
 	pkgver = 1.1.1
-	pkgrel = 1
+	pkgrel = 2
 	url = https://github.com/Lucanepa/point-hub
 	arch = x86_64
 	license = MIT
