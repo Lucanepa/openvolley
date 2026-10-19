@@ -12784,6 +12784,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         subs: getSubstitutionsUsed(side),
         lineupSet: isLeft ? leftTeamLineupSet : rightTeamLineupSet,
         lineupOptional: lineupsOptional,
+        // The libero's shirt (the desktop court's disc paint): the phone court
+        // showed the libero's number in the team colour, like any player
+        liberoPaint: discPaintBySide[side]?.libero || null,
         court,
         liberos,
         benchPlayers: (bench.benchPlayers || []).map(p => ({ number: p.number })),

@@ -195,6 +195,29 @@ describe('Scoreboard: the phone layout', () => {
     await waitFor(() => expect(view.getByTestId('phone-sub-right').textContent).toMatch('0/6'))
   }, 60000)
 
+  // 2026-10-20: the phone court showed the libero in the team colour, like
+  // any player (the desktop court's disc paint was never used there)
+  it("shows the libero on court in its own shirt colour", async () => {
+    setViewport(390, 844)
+    const matchId = await setUpMatch()
+    const away = (await db.matches.get(matchId)).awayTeamId
+    const libero = await db.players.where({ teamId: away, number: 8 }).first()
+    await db.players.update(libero.id, { libero: 'libero1' })
+    const t = new Date(Date.now() - 20 * 60 * 1000).toISOString()
+    await db.events.add({ matchId, setIndex: 1, type: 'libero_entry', payload: { team: 'away', position: 'V', playerOut: 5, liberoIn: 8, liberoType: 'libero1' }, seq: 20, ts: t })
+    await db.events.add({ matchId, setIndex: 1, type: 'lineup', payload: { team: 'away', lineup: { I: '1', II: '2', III: '3', IV: '4', V: '8', VI: '6' }, liberoSubstitution: { position: 'V', liberoNumber: 8, playerNumber: 5, liberoType: 'libero1' } }, seq: 20.1, ts: t })
+    mount(matchId)
+    await waitFor(() => expect(phone()).toBeTruthy(), { timeout: 10000 })
+    const disc = await waitFor(() => within(phone()).getByTestId('phone-libero-disc-right'))
+    expect(disc.textContent).toBe('8')
+    // not the team's blue: the libero's own shirt, picked against both teams and the court
+    const { liberoPair } = await import('../../utils/teamColours')
+    const hex = liberoPair('#dc2626', '#2563eb').away
+    const rgb = `rgb(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)})`
+    expect(disc.style.background).toBe(rgb)
+    expect(within(phone()).queryByTestId('phone-libero-disc-left')).toBeNull()
+  }, 60000)
+
   // An easy match plays without line-ups when it likes (domain/easyMatch.js)
   it('easy match: the set starts without line-ups, an official match waits for them', async () => {
     setViewport(390, 844)
