@@ -639,7 +639,8 @@
       "warning": "Warnung",
       "penalty": "Strafe",
       "expulsion": "Ausschluss",
-      "disqualification": "Disqualifikation"
+      "disqualification": "Disqualifikation",
+      "wholeTeam": "Das Team"
     },
     "actions": {
       "libero": "Libero",
@@ -911,7 +912,8 @@
       "onCourt": "auf dem Feld",
       "redesignate": "Libero neu bestimmen",
       "sidewaysTitle": "Halte das Handy aufrecht",
-      "sidewaysBody": "Die Erfassung auf dem Handy ist für das Hochformat gemacht. Dreh das Handy zurück: Spiel, Dialoge und Countdowns bleiben erhalten."
+      "sidewaysBody": "Die Erfassung auf dem Handy ist für das Hochformat gemacht. Dreh das Handy zurück: Spiel, Dialoge und Countdowns bleiben erhalten.",
+      "sanctionOnePlayer": "Oder ein Spieler"
     },
     "easySub": {
       "notAllowed": "Darf nicht rein",

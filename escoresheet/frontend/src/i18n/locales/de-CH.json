@@ -646,7 +646,8 @@
       "warning": "Warnig",
       "penalty": "Straaf",
       "expulsion": "Usschluss",
-      "disqualification": "Disqualifikation"
+      "disqualification": "Disqualifikation",
+      "wholeTeam": "Das Team"
     },
     "actions": {
       "libero": "Libero",
@@ -918,7 +919,8 @@
       "onCourt": "ufem Fäld",
       "redesignate": "Libero neu bestimme",
       "sidewaysTitle": "Heb s Handy uufrächt",
-      "sidewaysBody": "D Erfassig ufem Handy isch fürs Hochformat gmacht. Drääj s Handy zrugg: Spiil, Dialög und Countdowns blibed erhalte."
+      "sidewaysBody": "D Erfassig ufem Handy isch fürs Hochformat gmacht. Drääj s Handy zrugg: Spiil, Dialög und Countdowns blibed erhalte.",
+      "sanctionOnePlayer": "Oder ein Spieler"
     },
     "easySub": {
       "notAllowed": "Darf nöd ine",
