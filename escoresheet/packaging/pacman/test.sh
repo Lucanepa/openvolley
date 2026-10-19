@@ -154,26 +154,30 @@ ok "Caddy: database + .sig no-cache (octet-stream, not re-encoded), packages + .
 
 # --- 3. a clean Arch system follows the install page ---------------------------------------
 step "the install page's Arch steps"
-# The Arch card's command blocks, in page order: key steps, the pacman.conf
-# block, one install line per app. sudo is root in the container, pacman
-# gets --noconfirm, the site is http://get.test.
+# Each app's Arch part of the page has three command blocks: the key steps,
+# the pacman.conf block and its install line. The first two are the same for
+# every app (checked here); OpenVolley's are run. sudo is root in the
+# container, pacman gets --noconfirm, the site is http://get.test.
 python3 - "$ESC/deploy/pkgs/index.html" "$T/steps" "$FPR" <<'PY'
 import html, re, sys
 page, out, fpr = sys.argv[1:]
 s = open(page).read()
-card = s[s.index("<!--pacman-->\n"):s.index("<!--/pacman-->\n")]
-blocks = [html.unescape(b) for b in re.findall(r"<pre><code>(.*?)</code></pre>", card, re.S)]
-assert len(blocks) == 4, blocks
+def blocks(start, end):
+    i = s.index(start + "\n")
+    part = s[i:s.index(end + "\n", i)]
+    found = [html.unescape(b) for b in re.findall(r"<pre><code>(.*?)</code></pre>", part, re.S)]
+    assert len(found) == 3, (start, found)
+    return found
+ov = blocks("<!--pacman-->", "<!--/pacman-->")
+ob = blocks("<!--beach-pacman-->", "<!--/beach-pacman-->")
+ph = blocks("<!--pointhub-pacman-->", "<!--/pointhub-pacman-->")
+assert ob[:2] == ov[:2] and ph[:2] == ov[:2], "the apps' key / pacman.conf steps differ"
 def site(t): return t.replace("https://get.openvolley.app", "http://get.test").replace("@PACMAN_FPR@", fpr)
-open(f"{out}/1-key.sh", "w").write(site(blocks[0]) + "\n")
-open(f"{out}/pacman.conf.add", "w").write(site(blocks[1]) + "\n")
-open(f"{out}/3-install-ov.sh", "w").write(site(blocks[2]) + "\n")
-open(f"{out}/3-install-ob.sh", "w").write(site(blocks[3]) + "\n")
-# Point Hub's line is in its own section (it refers to the repo set up above)
-ph = s[s.index("<!--pointhub-pacman-->\n"):s.index("<!--/pointhub-pacman-->\n")]
-ph_blocks = [html.unescape(b) for b in re.findall(r"<pre><code>(.*?)</code></pre>", ph, re.S)]
-assert len(ph_blocks) == 1, ph_blocks
-open(f"{out}/3-install-ph.sh", "w").write(site(ph_blocks[0]) + "\n")
+open(f"{out}/1-key.sh", "w").write(site(ov[0]) + "\n")
+open(f"{out}/pacman.conf.add", "w").write(site(ov[1]) + "\n")
+open(f"{out}/3-install-ov.sh", "w").write(site(ov[2]) + "\n")
+open(f"{out}/3-install-ob.sh", "w").write(site(ob[2]) + "\n")
+open(f"{out}/3-install-ph.sh", "w").write(site(ph[2]) + "\n")
 PY
 cat > "$T/steps/run.sh" <<'EOF'
 set -euo pipefail
