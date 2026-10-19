@@ -392,6 +392,18 @@ export function isLocalRelayUrl(url) {
  * @param {{ isTest?: boolean, relayKey?: string|null, relayUrl?: string|null }} args
  * @returns {{ relay: boolean, cloud: boolean }}
  */
+/**
+ * Whether a match's full data (sync-match-data) may go to this relay: the
+ * same rule as its live state (liveStateTargets). A test match goes to a
+ * local relay only, never to the cloud's: its full data reached the server
+ * on every sync, while its live state was kept local (2026-10-19).
+ * @param {object|null} match
+ * @param {string|null} relayUrl
+ */
+export function mayPublishMatchData(match, relayUrl) {
+  return !!match && (match.test !== true || isLocalRelayUrl(relayUrl))
+}
+
 export function liveStateTargets({ isTest = false, relayKey = null, relayUrl = null } = {}) {
   return {
     relay: !!relayKey && (!isTest || isLocalRelayUrl(relayUrl)),

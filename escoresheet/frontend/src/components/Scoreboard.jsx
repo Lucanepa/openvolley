@@ -39,7 +39,7 @@ import { TEAM_COLOUR_MARK, discPaint, effectiveTeamColour, matchDiscPaint, teamL
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom } from '../lib/apiClient'
 import { relayMatchKey, relayMatchPayload } from '../utils/serverDataSync'
-import { isRelayErrorFor, liveStateTargets, publishLiveState, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
+import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveState, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { exportMatchData } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
@@ -1709,6 +1709,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // relay room key (see relayMatchKey)
         const relayKey = relayMatchKey(freshMatch)
         if (!relayKey) return
+        // A test match: to a local relay only (mayPublishMatchData)
+        if (!mayPublishMatchData(freshMatch, scorerRelay.url)) return
 
         const [freshHomeTeam, freshAwayTeam, freshSets, freshEvents, freshHomePlayers, freshAwayPlayers] = await Promise.all([
           db.teams.get(freshMatch?.homeTeamId),

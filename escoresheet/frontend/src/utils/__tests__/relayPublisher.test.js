@@ -6,6 +6,7 @@ import {
   isRelayErrorFor,
   isLocalRelayUrl,
   liveStateTargets,
+  mayPublishMatchData,
   publishLiveState,
   relayReconnectDelay,
   relayConnectionStatus,
@@ -296,6 +297,15 @@ describe('test (rehearsal) matches: live state to a local relay only', () => {
     expect(liveStateTargets({ isTest: true, relayKey: 'test_match', relayUrl: 'ws://192.168.1.20:8080' })).toEqual({ relay: true, cloud: false })
     expect(liveStateTargets({ isTest: true, relayKey: 'test_match', relayUrl: 'wss://backend.openvolley.app' })).toEqual({ relay: false, cloud: false })
     expect(liveStateTargets({ isTest: true, relayKey: 'test_match', relayUrl: null })).toEqual({ relay: false, cloud: false })
+  })
+
+  // 2026-10-19: a test match's full data reached the cloud relay on every sync
+  it("a test match's full data goes to a local relay only, an official match's anywhere", () => {
+    expect(mayPublishMatchData({ id: 1 }, 'wss://backend.openvolley.app')).toBe(true)
+    expect(mayPublishMatchData({ id: 1, test: true }, 'ws://192.168.1.20:8080')).toBe(true)
+    expect(mayPublishMatchData({ id: 1, test: true }, 'wss://backend.openvolley.app')).toBe(false)
+    expect(mayPublishMatchData({ id: 1, test: true }, null)).toBe(false)
+    expect(mayPublishMatchData(null, 'ws://127.0.0.1:8080')).toBe(false)
   })
 
   it('publishLiveState: the relay first, the cloud work only for an official match', async () => {

@@ -73,7 +73,7 @@ import ManagerSiteLink from './components/ManagerSiteLink'
 import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, restorePrefill } from './utils/manageNav'
 import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
 import { needsEventCheck, pickCurrentMatch } from './utils/currentMatch'
-import { isRelayErrorFor, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
+import { isRelayErrorFor, mayPublishMatchData, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
 import { PHONE_MAX_WIDTH, isPhoneScreen, phoneLayoutKept } from './components/scoreboard/phoneLayout'
 import { useSystemBarsHidden } from './utils/nativeSystemBars'
 
@@ -1174,6 +1174,8 @@ export default function App() {
       // could join, and a Dexie id is no room key (see relayMatchKey)
       const relayKey = relayMatchKey(currentMatchData)
       if (!relayKey) return
+      // A test match: to a local relay only (mayPublishMatchData)
+      if (!mayPublishMatchData(currentMatchData, scorerRelay.url)) return
 
       try {
         // Before the reads: a live state numbered after this mark is newer
