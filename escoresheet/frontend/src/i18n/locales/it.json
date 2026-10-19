@@ -920,7 +920,8 @@
       "redesignate": "Ridesigna libero",
       "sidewaysTitle": "Tieni il telefono in verticale",
       "sidewaysBody": "La schermata di punteggio sul telefono è pensata per il formato verticale. Ruota di nuovo il telefono: la partita, i dialoghi e i conti alla rovescia restano.",
-      "sanctionOnePlayer": "Oppure un giocatore"
+      "sanctionOnePlayer": "Oppure un giocatore",
+      "lineupOptional": "{{team}} · facoltativa"
     },
     "easySub": {
       "notAllowed": "Non può entrare",
@@ -3970,7 +3971,7 @@
     "teamName": "Nome",
     "nameRequired": "Obbligatorio",
     "shortName": "Breve",
-    "intro": "Non ufficiale: senza elenchi, ufficiali né firme. I numeri si inseriscono con le formazioni; tutto il resto è il tabellone normale.",
+    "intro": "Non ufficiale: senza elenchi, ufficiali né firme. Le formazioni sono facoltative: senza, una squadra gioca senza rotazione né sostituzioni. Tutto il resto è il tabellone normale.",
     "format": "Formato",
     "bestOf": "Al meglio dei {{count}}",
     "start": "Coin toss"

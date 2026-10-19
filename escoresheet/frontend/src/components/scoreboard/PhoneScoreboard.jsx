@@ -39,7 +39,7 @@ import { COURT_CELLS, PHONE_COURT_MIN_PX, PHONE_RECENT_HEIGHT_PX, PHONE_SQUARE_M
  * @param {object} props.actions the Scoreboard's handlers (see Scoreboard.jsx)
  *
  * TeamVM: { side, teamKey, label ('A'|'B'), name, shortName, color, setsWon,
- *   points, timeouts, subs, lineupSet, court: [{ position, number, isLibero }],
+ *   points, timeouts, subs, lineupSet, lineupOptional (easy match), court: [{ position, number, isLibero }],
  *   liberos: [{ number, libero, unable, onCourt, position }], benchPlayers:
  *   [{ number }], officials: [{ role }], improperRequestDone, delayWarned,
  *   easy, formalWarned, needsRedesignation }
@@ -172,7 +172,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
             style={{ position: 'absolute', inset: 6, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, borderRadius: 12, background: 'var(--ov-success)', color: '#ffffff', fontSize: 18, fontWeight: 800 }}
           >
             <span>{t('scoreboard.lineup', 'Line-up')}</span>
-            <span style={{ fontSize: 12, fontWeight: 600 }}>{teamTitle(team)}</span>
+            <span style={{ fontSize: 12, fontWeight: 600 }}>{team.lineupOptional ? t('scoreboard.phone.lineupOptional', { team: teamTitle(team) }) : teamTitle(team)}</span>
           </button>
         )}
       </div>

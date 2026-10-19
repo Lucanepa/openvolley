@@ -913,7 +913,8 @@
       "redesignate": "Libero neu bestimmen",
       "sidewaysTitle": "Halte das Handy aufrecht",
       "sidewaysBody": "Die Erfassung auf dem Handy ist für das Hochformat gemacht. Dreh das Handy zurück: Spiel, Dialoge und Countdowns bleiben erhalten.",
-      "sanctionOnePlayer": "Oder ein Spieler"
+      "sanctionOnePlayer": "Oder ein Spieler",
+      "lineupOptional": "{{team}} · freiwillig"
     },
     "easySub": {
       "notAllowed": "Darf nicht rein",
@@ -3953,7 +3954,7 @@
     "teamName": "Name",
     "nameRequired": "Erforderlich",
     "shortName": "Kurz",
-    "intro": "Inoffiziell: ohne Kader, Offizielle oder Unterschriften. Die Rückennummern werden mit den Aufstellungen eingegeben; alles andere ist das normale Scoreboard.",
+    "intro": "Inoffiziell: ohne Kader, Offizielle oder Unterschriften. Die Aufstellungen sind freiwillig: ohne spielt ein Team ohne Rotation und Wechsel. Alles andere ist das normale Scoreboard.",
     "format": "Format",
     "bestOf": "Best of {{count}}",
     "start": "Zur Auslosung"

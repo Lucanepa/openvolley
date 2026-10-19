@@ -3736,6 +3736,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     )
   }, [data?.events, data?.set, leftIsHome])
 
+  // Easy match (domain/easyMatch.js): the line-ups are optional. Without one a
+  // team plays the set with no rotation (the serve still follows the points),
+  // no substitutions and no libero; it can still enter one later.
+  const lineupsOptional = data?.match?.easy === true
+
   // Track which lineups we've already validated (to prevent infinite modal loops)
   const validatedLineupRef = useRef({ home: null, away: null })
 
@@ -5716,7 +5721,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         e.payload?.isInitial
       )
 
-      if (homeLineupSet && awayLineupSet) {
+      // An easy match plays without line-ups when it likes: the point now
+      if ((homeLineupSet && awayLineupSet) || data.match?.easy === true) {
         // Both lineups are set - award point immediately (same transaction)
         const otherSide = side === 'left' ? 'right' : 'left'
         await handlePoint(otherSide)
@@ -10972,7 +10978,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           e.payload?.isInitial
         )
 
-        if (homeLineupSet && awayLineupSet) {
+        // An easy match plays without line-ups when it likes: the point now
+        if ((homeLineupSet && awayLineupSet) || data.match?.easy === true) {
           // Both lineups are set - award point immediately
           const otherTeam = team === 'home' ? 'away' : 'home'
           const otherSide = mapTeamKeyToSide(otherTeam)
@@ -12776,6 +12783,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         timeouts: getTimeoutsUsed(side),
         subs: getSubstitutionsUsed(side),
         lineupSet: isLeft ? leftTeamLineupSet : rightTeamLineupSet,
+        lineupOptional: lineupsOptional,
         court,
         liberos,
         benchPlayers: (bench.benchPlayers || []).map(p => ({ number: p.number })),
@@ -12830,7 +12838,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       rally: {
         status: rallyStatus,
         isFirstRally,
-        startDisabled: isFirstRally && (!leftTeamLineupSet || !rightTeamLineupSet),
+        startDisabled: isFirstRally && !lineupsOptional && (!leftTeamLineupSet || !rightTeamLineupSet),
         canReplayRally,
         isRallyReplayed
       },
@@ -16549,7 +16557,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         data-help-id="scoreboard-start-rally"
                         className="secondary start-rally-button"
                         onClick={() => handleStartRally()}
-                        disabled={isFirstRally && (!leftTeamLineupSet || !rightTeamLineupSet)}
+                        disabled={isFirstRally && !lineupsOptional && (!leftTeamLineupSet || !rightTeamLineupSet)}
                       >
                         {isFirstRally ? t('scoreboard.buttons.startSet') : t('scoreboard.buttons.startRally')}
                       </button>
