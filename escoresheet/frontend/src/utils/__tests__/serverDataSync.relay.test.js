@@ -35,6 +35,8 @@ describe('relay key and payload (scorer)', () => {
     // A blank match before Create Match has none: not published
     expect(relayMatchKey({ id: 1 })).toBeNull()
     expect(relayMatchKey({ id: 1, seed_key: '  ' })).toBeNull()
+    // an easy match is unofficial and never leaves the device
+    expect(relayMatchKey({ id: 1, seed_key: 'test-match-default-abc', test: true, easy: true })).toBeNull()
     expect(relayMatchKey(null)).toBeNull()
   })
 
