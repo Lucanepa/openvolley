@@ -22,8 +22,8 @@
       "sources": [
         {
           "type": "file",
-          "url": "https://github.com/Lucanepa/point-hub/releases/download/desktop-v1.1.0/point-hub_1.1.0_amd64.deb",
-          "sha256": "3e671d7d87a3119d45ce12f4a3da368b940777b0be6f8e089722dc947bc792d8",
+          "url": "https://github.com/Lucanepa/point-hub/releases/download/desktop-v1.1.1/point-hub_1.1.1_amd64.deb",
+          "sha256": "585e190933175cbebdce3dfa11fd07f9b9a4b2d8a629e4218aec9337d88cc7d2",
           "dest-filename": "point-hub.deb",
           "only-arches": [
             "x86_64"
