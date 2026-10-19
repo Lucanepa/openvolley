@@ -578,13 +578,27 @@ export function resetCloudBlockCache() {
   blockedSeeds = null
 }
 
+// A match that ended here and that the server already closed (approved on
+// another device, or a backup of it restored here) is the server's official
+// record: the local copy is finished too and no longer counts as an open
+// match on the home screen (2026-10-19: a restored, closed match stayed open
+// next to a new match of the same game). A match still being scored here is
+// left open: its notice says why it does not sync.
+const FINISHED_HERE = ['ended', 'approved']
+export const closesLocalCopy = (local, code) => code === 'OV_MATCH_CLOSED' && local?.test !== true && FINISHED_HERE.includes(local?.status)
+
 async function recordCloudBlock(job, error) {
   const seedKey = jobMatchKey(job)
   if (!seedKey || !error?.code) return
   try {
     const local = await findLocalMatchBySeed(seedKey)
     if (!local) return
-    await db.matches.update(local.id, { cloudBlock: { code: error.code, claim: error.claim ?? null, at: Date.now() } })
+    const mods = { cloudBlock: { code: error.code, claim: error.claim ?? null, at: Date.now() } }
+    if (closesLocalCopy(local, error.code)) {
+      mods.status = 'final'
+      safeLog.log('[SyncQueue] Match is closed on the server, local copy marked final:', seedKey)
+    }
+    await db.matches.update(local.id, mods)
     ;(await getBlockedSeeds()).add(seedKey)
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent(CLOUD_BLOCK_EVENT, { detail: { seedKey, code: error.code } }))

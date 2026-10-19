@@ -1051,7 +1051,25 @@
     "downloadAppDeb": "oder s .deb-Paket abelade",
     "downloadServer": "Server abelade — Schiri ohni Internet",
     "easyMatch": "Eifachs Spiil",
-    "easyMatchHint": "Inoffiziell · ohni Kader und Underschrifte"
+    "easyMatchHint": "Inoffiziell · ohni Kader und Underschrifte",
+    "deviceMatches": {
+      "title": "Auf diesem Gerät",
+      "game": "Spiel {{game}}",
+      "home": "Heim",
+      "away": "Gast",
+      "noTeams": "Teams nicht erfasst",
+      "notSynced": "Nicht synchronisiert",
+      "sameGame": "Gleiches Spiel doppelt",
+      "duplicateNotice": "Spiel {{game}} ist zweimal auf diesem Gerät. Der Server führt ein Match pro Spiel: Setze das gezählte fort und lösche das andere.",
+      "continue": "Fortsetzen",
+      "delete": "Löschen",
+      "status": {
+        "scheduled": "Nicht gestartet",
+        "live": "Läuft",
+        "ended": "Beendet",
+        "approved": "Genehmigt"
+      }
+    }
   },
   "options": {
     "title": "Optione",
