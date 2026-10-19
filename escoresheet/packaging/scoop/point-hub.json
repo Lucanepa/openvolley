@@ -4,7 +4,7 @@
         "Point Hub is KSC Wiedikon's scoreboard console (github.com/Lucanepa/point-hub). This runs its official .msi silently (the same one winget and the download page use), so the app is installed per machine to Program Files with its Start menu entry.",
         "Regenerate for a new version: escoresheet/packaging/scoop/update-manifests.sh point-hub VERSION. Until the first release the hash is the @SHA256@ placeholder, which Scoop refuses. README.md next to this file says more."
     ],
-    "version": "1.1.0",
+    "version": "1.1.1",
     "description": "Point Hub: the console of the KSCW LedBox scoreboard, for the scorer's table.",
     "homepage": "https://github.com/Lucanepa/point-hub",
     "license": {
@@ -17,8 +17,8 @@
     ],
     "architecture": {
         "64bit": {
-            "url": "https://github.com/Lucanepa/point-hub/releases/download/desktop-v1.1.0/point-hub-1.1.0.msi#/point-hub.msi_",
-            "hash": "e3f77a5ecca1c17e342c045959bbac177de71532d3cb1ec8ee0e9d11443a271f"
+            "url": "https://github.com/Lucanepa/point-hub/releases/download/desktop-v1.1.1/point-hub-1.1.1.msi#/point-hub.msi_",
+            "hash": "2d917d869af976148a1a17da15fba4447dc69f39106697a3c45866cd1cd2a015"
         }
     },
     "installer": {
