@@ -921,7 +921,8 @@
       "redesignate": "Redesignate libero",
       "sidewaysTitle": "Hold the phone upright",
       "sidewaysBody": "The scoring screen on a phone is made for portrait. Turn the phone back: the match, its dialogs and countdowns are kept.",
-      "sanctionOnePlayer": "Or one player"
+      "sanctionOnePlayer": "Or one player",
+      "lineupOptional": "{{team}} · optional"
     },
     "easySub": {
       "notAllowed": "Cannot come in",
@@ -3971,7 +3972,7 @@
     "teamName": "Name",
     "nameRequired": "Required",
     "shortName": "Short",
-    "intro": "Unofficial: no rosters, officials or signatures. Shirt numbers are entered with the line-ups; everything else is the normal scoreboard.",
+    "intro": "Unofficial: no rosters, officials or signatures. The line-ups are optional: without one a team plays without rotation or substitutions. Everything else is the normal scoreboard.",
     "format": "Format",
     "bestOf": "Best of {{count}}",
     "start": "Coin toss"

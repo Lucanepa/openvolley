@@ -919,7 +919,8 @@
       "redesignate": "Redésigner le libéro",
       "sidewaysTitle": "Tenez le téléphone à la verticale",
       "sidewaysBody": "L’écran de saisie sur téléphone est conçu pour le format portrait. Retournez le téléphone : le match, ses dialogues et ses comptes à rebours sont conservés.",
-      "sanctionOnePlayer": "Ou un joueur"
+      "sanctionOnePlayer": "Ou un joueur",
+      "lineupOptional": "{{team}} · facultative"
     },
     "easySub": {
       "notAllowed": "Ne peut pas entrer",
@@ -3964,7 +3965,7 @@
     "teamName": "Nom",
     "nameRequired": "Obligatoire",
     "shortName": "Court",
-    "intro": "Non officiel : sans listes, officiels ni signatures. Les numéros sont saisis avec les compositions ; tout le reste est le tableau de marque habituel.",
+    "intro": "Non officiel : sans listes, officiels ni signatures. Les compositions sont facultatives : sans elle, une équipe joue sans rotation ni remplacements. Tout le reste est le tableau de marque habituel.",
     "format": "Format",
     "bestOf": "Au meilleur des {{count}}",
     "start": "Tirage au sort"

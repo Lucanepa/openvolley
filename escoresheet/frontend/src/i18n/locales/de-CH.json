@@ -647,7 +647,7 @@
       "penalty": "Straaf",
       "expulsion": "Usschluss",
       "disqualification": "Disqualifikation",
-      "wholeTeam": "Das Team"
+      "wholeTeam": "S Team"
     },
     "actions": {
       "libero": "Libero",
@@ -920,7 +920,8 @@
       "redesignate": "Libero neu bestimme",
       "sidewaysTitle": "Heb s Handy uufrächt",
       "sidewaysBody": "D Erfassig ufem Handy isch fürs Hochformat gmacht. Drääj s Handy zrugg: Spiil, Dialög und Countdowns blibed erhalte.",
-      "sanctionOnePlayer": "Oder ein Spieler"
+      "sanctionOnePlayer": "Oder en Spieler",
+      "lineupOptional": "{{team}} · freiwillig"
     },
     "easySub": {
       "notAllowed": "Darf nöd ine",
@@ -1055,21 +1056,21 @@
     "easyMatch": "Eifachs Spiil",
     "easyMatchHint": "Inoffiziell · ohni Kader und Underschrifte",
     "deviceMatches": {
-      "title": "Auf diesem Gerät",
-      "game": "Spiel {{game}}",
+      "title": "Uf däm Gerät",
+      "game": "Spiil {{game}}",
       "home": "Heim",
       "away": "Gast",
-      "noTeams": "Teams nicht erfasst",
-      "notSynced": "Nicht synchronisiert",
-      "sameGame": "Gleiches Spiel doppelt",
-      "duplicateNotice": "Spiel {{game}} ist zweimal auf diesem Gerät. Der Server führt ein Match pro Spiel: Setze das gezählte fort und lösche das andere.",
-      "continue": "Fortsetzen",
-      "delete": "Löschen",
+      "noTeams": "Teams nonig erfasst",
+      "notSynced": "Nöd synchronisiert",
+      "sameGame": "Gliichs Spiil zwöimal",
+      "duplicateNotice": "Spiil {{game}} isch zwöimal uf däm Gerät. De Server füehrt eis Match pro Spiil: füehr das wiiter, wo du zellt häsch, und lösch s andere.",
+      "continue": "Wiiterfüehre",
+      "delete": "Lösche",
       "status": {
-        "scheduled": "Nicht gestartet",
-        "live": "Läuft",
-        "ended": "Beendet",
-        "approved": "Genehmigt"
+        "scheduled": "Nonig gstartet",
+        "live": "Lauft",
+        "ended": "Fertig",
+        "approved": "Gnehmigt"
       }
     }
   },
@@ -3965,7 +3966,7 @@
     "teamName": "Name",
     "nameRequired": "Nötig",
     "shortName": "Kurz",
-    "intro": "Inoffiziell: ohni Kader, Offizielli oder Underschrifte. D Ruggenummere chömed mit de Ufstellige; alles andere isch s normale Scoreboard.",
+    "intro": "Inoffiziell: ohni Kader, Offizielli oder Underschrifte. D Ufstellige sind freiwillig: ohni spielt es Team ohni Rotation und Wächsel. Alles andere isch s normale Scoreboard.",
     "format": "Format",
     "bestOf": "Best of {{count}}",
     "start": "Zur Usloosig"

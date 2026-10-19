@@ -195,6 +195,35 @@ describe('Scoreboard: the phone layout', () => {
     await waitFor(() => expect(view.getByTestId('phone-sub-right').textContent).toMatch('0/6'))
   }, 60000)
 
+  // An easy match plays without line-ups when it likes (domain/easyMatch.js)
+  it('easy match: the set starts without line-ups, an official match waits for them', async () => {
+    setViewport(390, 844)
+    const setUp = async (easy) => {
+      await Promise.all(db.tables.map(t => t.clear()))
+      const home = await db.teams.add({ name: 'Home VC', shortName: 'HOM', color: '#dc2626' })
+      const away = await db.teams.add({ name: 'Away VC', shortName: 'AWY', color: '#2563eb' })
+      const matchId = await db.matches.add({
+        homeTeamId: home, awayTeamId: away, status: 'live', test: easy, ...(easy ? { easy: true } : {}), bestOf: 5,
+        firstServe: 'home', coinTossTeamA: 'home', coinTossTeamB: 'away'
+      })
+      const t = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+      await db.sets.add({ matchId, index: 1, homePoints: 0, awayPoints: 0, finished: false })
+      await db.events.add({ matchId, setIndex: 1, type: 'coin_toss', payload: {}, seq: 1, ts: t })
+      return matchId
+    }
+    const startSet = () => within(phone()).getByRole('button', { name: 'Start set' })
+
+    mount(await setUp(true))
+    await waitFor(() => expect(phone()).toBeTruthy(), { timeout: 10000 })
+    await waitFor(() => expect(startSet().disabled).toBe(false))
+    expect(within(phone()).getAllByText(/· optional$/).length).toBe(2)
+    cleanup()
+
+    mount(await setUp(false))
+    await waitFor(() => expect(phone()).toBeTruthy(), { timeout: 10000 })
+    await waitFor(() => expect(startSet().disabled).toBe(true))
+  }, 60000)
+
   // An easy match has no bench or officials: the sanction goes to the team
   it('easy match: a warning and a penalty for the team, no person picked', async () => {
     setViewport(390, 844)
