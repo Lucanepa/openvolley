@@ -6,14 +6,14 @@
   <project_license>MIT</project_license>
 
   <name>Point Hub</name>
-  <summary>The console of the KSCW LedBox scoreboard</summary>
+  <summary>The console of the LedBox scoreboard</summary>
   <developer id="ch.kscw">
     <name>KSC Wiedikon</name>
   </developer>
 
   <description>
     <p>
-      Point Hub is the console of KSC Wiedikon's LedBox scoreboard: the screen
+      Point Hub is the console of the LedBox scoreboard: the screen
       the scorer's table runs the board from.
     </p>
     <p>

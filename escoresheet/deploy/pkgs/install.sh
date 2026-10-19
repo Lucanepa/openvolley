@@ -8,7 +8,7 @@
 #
 # Adds the signed OpenVolley APT repository and installs one package:
 # openvolley-escoresheet (the default), openbeach-escoresheet (OpenBeach, the
-# beach volleyball app) or point-hub (Point Hub, KSC Wiedikon's scoreboard
+# beach volleyball app) or point-hub (Point Hub, the LedBox scoreboard
 # console); from then on `sudo apt upgrade` keeps it current. All three come
 # from the same repository and can be installed side by side. Safe to run
 # again: it rewrites the same two files and installs or upgrades the package.

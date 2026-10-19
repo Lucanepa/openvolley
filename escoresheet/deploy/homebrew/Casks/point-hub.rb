@@ -10,7 +10,7 @@ cask "point-hub" do
   url "https://github.com/Lucanepa/point-hub/releases/download/desktop-v#{version}/Point-Hub-#{version}-macos-#{arch}.dmg",
       verified: "github.com/Lucanepa/point-hub/"
   name "Point Hub"
-  desc "Console of the KSCW LedBox scoreboard"
+  desc "Console of the LedBox scoreboard"
   homepage "https://github.com/Lucanepa/point-hub"
 
   # Its desktop releases are GitHub's "Latest" of that repo, tagged desktop-v<version>.
