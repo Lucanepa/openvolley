@@ -1051,7 +1051,25 @@
     "downloadAppDeb": "oppure scarica il pacchetto .deb",
     "downloadServer": "Scarica il server — arbitro senza internet",
     "easyMatch": "Partita semplice",
-    "easyMatchHint": "Non ufficiale · senza elenchi né firme"
+    "easyMatchHint": "Non ufficiale · senza elenchi né firme",
+    "deviceMatches": {
+      "title": "Su questo dispositivo",
+      "game": "Partita {{game}}",
+      "home": "Casa",
+      "away": "Ospiti",
+      "noTeams": "Squadre non inserite",
+      "notSynced": "Non sincronizzata",
+      "sameGame": "Stessa partita due volte",
+      "duplicateNotice": "La partita {{game}} è due volte su questo dispositivo. Il server tiene un match per partita: continua quello che hai refertato ed elimina l'altro.",
+      "continue": "Continua",
+      "delete": "Elimina",
+      "status": {
+        "scheduled": "Non iniziata",
+        "live": "In corso",
+        "ended": "Terminata",
+        "approved": "Approvata"
+      }
+    }
   },
   "options": {
     "title": "Opzioni",

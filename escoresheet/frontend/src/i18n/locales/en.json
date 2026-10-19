@@ -1052,7 +1052,25 @@
     "downloadAppDeb": "or get the .deb package",
     "downloadServer": "Download server — referee without internet",
     "easyMatch": "Easy match",
-    "easyMatchHint": "Unofficial · no rosters or signatures"
+    "easyMatchHint": "Unofficial · no rosters or signatures",
+    "deviceMatches": {
+      "title": "On this device",
+      "game": "Game {{game}}",
+      "home": "Home",
+      "away": "Away",
+      "noTeams": "Teams not set",
+      "notSynced": "Not synced",
+      "sameGame": "Same game twice",
+      "duplicateNotice": "Game {{game}} is on this device twice. The server keeps one match per game: continue the one you scored and delete the other.",
+      "continue": "Continue",
+      "delete": "Delete",
+      "status": {
+        "scheduled": "Not started",
+        "live": "In progress",
+        "ended": "Ended",
+        "approved": "Approved"
+      }
+    }
   },
   "options": {
     "title": "Options",

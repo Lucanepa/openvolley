@@ -5,7 +5,8 @@ import UserButton from '../auth/UserButton'
 import PendingApprovalBanner from '../auth/PendingApprovalBanner'
 import CloudBlockNotice from '../CloudBlockNotice'
 import { ChevronDown, Download, LifeBuoy, Loader2, Settings } from 'lucide-react'
-import { Button, Card, cn, FOCUS_RING, FOCUS_RING_INSET } from '../../ui'
+import { Button, Card, cn, dayLabel, FOCUS_RING, FOCUS_RING_INSET, Notice, Row, RowList, RowTool, SectionHeader, StatusPill } from '../../ui'
+import { duplicateGameNumbers } from '../../utils/deviceMatches'
 import { isServedFromLocalServer } from '../../utils/backendConfig'
 import { BRAND } from '../../brand'
 
@@ -56,6 +57,7 @@ export default function HomePage({
   easyMatchLoading = false,
   currentOfficialMatch,
   currentTestMatch,
+  deviceMatches,
   continueMatch,
   continueTestMatch,
   showDeleteMatchModal,
@@ -231,6 +233,12 @@ export default function HomePage({
           )}
         </Card>
 
+        {/* Two or more open official matches: the buttons above only reach the
+            newest, this list reaches each one (utils/deviceMatches.js) */}
+        {deviceMatches?.length > 1 && (
+          <DeviceMatchList matches={deviceMatches} onContinue={continueMatch} onDelete={showDeleteMatchModal} />
+        )}
+
         {/* One above the other on a phone: side by side, "Support & feedback"
             broke onto two lines beside its icon */}
         <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
@@ -282,5 +290,59 @@ export default function HomePage({
         />
       </div>
     </div>
+  )
+}
+
+const STATUS_PILL_TONE = { scheduled: 'neutral', live: 'planned', ended: 'todo', approved: 'todo' }
+
+function DeviceMatchList({ matches, onContinue, onDelete }) {
+  const { t } = useTranslation()
+  const twice = duplicateGameNumbers(matches)
+  return (
+    <Card className="w-full" aria-labelledby="device-matches-title">
+      <SectionHeader as="h2" title={<span id="device-matches-title">{t('home.deviceMatches.title')}</span>} count={matches.length} />
+      {[...twice].map(game => (
+        <Notice key={game} tone="warning" className="mt-3">{t('home.deviceMatches.duplicateNotice', { game })}</Notice>
+      ))}
+      <RowList className="mt-1">
+        {matches.map(m => {
+          const duplicate = !!m.gameN && twice.has(m.gameN)
+          const title = m.home || m.away
+            ? `${m.home || t('home.deviceMatches.home')} – ${m.away || t('home.deviceMatches.away')}`
+            : t('home.deviceMatches.noTeams')
+          return (
+            <Row
+              key={m.id}
+              tone={duplicate ? 'amber' : 'stone'}
+              title={title}
+              meta={
+                <>
+                  {m.gameN && <span className="tabular-nums">{t('home.deviceMatches.game', { game: m.gameN })}</span>}
+                  {m.createdAt && <span className="tabular-nums">{dayLabel(m.createdAt, { year: true })}</span>}
+                  {m.cloudBlock && <span>{t('home.deviceMatches.notSynced')}</span>}
+                </>
+              }
+              // on their own line under the title: beside it they squeezed
+              // the team names on a phone
+              chips={
+                <>
+                  <StatusPill tone={STATUS_PILL_TONE[m.status] || 'neutral'}>
+                    {t(`home.deviceMatches.status.${m.status}`, { defaultValue: t('home.deviceMatches.status.scheduled') })}
+                  </StatusPill>
+                  {duplicate && <StatusPill tone="attention">{t('home.deviceMatches.sameGame')}</StatusPill>}
+                </>
+              }
+              toolsIndent="pl-[0.875rem] sm:pl-[1.125rem]"
+              tools={
+                <>
+                  <RowTool primary onClick={() => onContinue(m.id)}>{t('home.deviceMatches.continue')}</RowTool>
+                  <RowTool className="text-red-700 hover:bg-red-50" onClick={() => onDelete(m.id)}>{t('home.deviceMatches.delete')}</RowTool>
+                </>
+              }
+            />
+          )
+        })}
+      </RowList>
+    </Card>
   )
 }

@@ -1050,7 +1050,25 @@
     "downloadAppDeb": "ou télécharger le paquet .deb",
     "downloadServer": "Télécharger le serveur — arbitre sans internet",
     "easyMatch": "Match simplifié",
-    "easyMatchHint": "Non officiel · sans listes ni signatures"
+    "easyMatchHint": "Non officiel · sans listes ni signatures",
+    "deviceMatches": {
+      "title": "Sur cet appareil",
+      "game": "Match {{game}}",
+      "home": "Recevant",
+      "away": "Visiteur",
+      "noTeams": "Équipes non saisies",
+      "notSynced": "Non synchronisé",
+      "sameGame": "Même match en double",
+      "duplicateNotice": "Le match {{game}} est deux fois sur cet appareil. Le serveur garde une feuille par match : continuez celle que vous avez tenue et supprimez l'autre.",
+      "continue": "Continuer",
+      "delete": "Supprimer",
+      "status": {
+        "scheduled": "Pas commencé",
+        "live": "En cours",
+        "ended": "Terminé",
+        "approved": "Approuvé"
+      }
+    }
   },
   "options": {
     "title": "Options",

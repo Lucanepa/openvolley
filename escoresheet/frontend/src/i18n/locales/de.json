@@ -1044,7 +1044,25 @@
     "downloadAppDeb": "oder das .deb-Paket herunterladen",
     "downloadServer": "Server herunterladen — Schiedsrichter ohne Internet",
     "easyMatch": "Einfaches Spiel",
-    "easyMatchHint": "Inoffiziell · ohne Kader und Unterschriften"
+    "easyMatchHint": "Inoffiziell · ohne Kader und Unterschriften",
+    "deviceMatches": {
+      "title": "Auf diesem Gerät",
+      "game": "Spiel {{game}}",
+      "home": "Heim",
+      "away": "Gast",
+      "noTeams": "Teams nicht erfasst",
+      "notSynced": "Nicht synchronisiert",
+      "sameGame": "Gleiches Spiel doppelt",
+      "duplicateNotice": "Spiel {{game}} ist zweimal auf diesem Gerät. Der Server führt ein Match pro Spiel: Setze das gezählte fort und lösche das andere.",
+      "continue": "Fortsetzen",
+      "delete": "Löschen",
+      "status": {
+        "scheduled": "Nicht gestartet",
+        "live": "Läuft",
+        "ended": "Beendet",
+        "approved": "Genehmigt"
+      }
+    }
   },
   "options": {
     "title": "Optionen",
