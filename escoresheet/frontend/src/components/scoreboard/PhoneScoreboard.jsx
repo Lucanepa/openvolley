@@ -39,7 +39,8 @@ import { COURT_CELLS, PHONE_COURT_MIN_PX, PHONE_RECENT_HEIGHT_PX, PHONE_SQUARE_M
  * @param {object} props.actions the Scoreboard's handlers (see Scoreboard.jsx)
  *
  * TeamVM: { side, teamKey, label ('A'|'B'), name, shortName, color, setsWon,
- *   points, timeouts, subs, lineupSet, lineupOptional (easy match), court: [{ position, number, isLibero }],
+ *   points, timeouts, subs, lineupSet, lineupOptional (easy match),
+ *   liberoPaint ({ background, color, textShadow?, ring } | null), court: [{ position, number, isLibero }],
  *   liberos: [{ number, libero, unable, onCourt, position }], benchPlayers:
  *   [{ number }], officials: [{ role }], improperRequestDone, delayWarned,
  *   easy, formalWarned, needsRedesignation }
@@ -145,6 +146,14 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
           const pl = bySide[position]
           const number = pl && pl.number !== '' && pl.number !== undefined && pl.number !== null ? pl.number : null
           const hasBall = servesHere && position === 'I'
+          // The libero in its own shirt colour (a disc, as on the desktop court)
+          const liberoDisc = number !== null && pl?.isLibero && team.liberoPaint
+            ? {
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 42, height: 42, padding: '0 4px', boxSizing: 'border-box', borderRadius: 21,
+                fontSize: 24, background: team.liberoPaint.background, color: team.liberoPaint.color, textShadow: team.liberoPaint.textShadow,
+                border: team.liberoPaint.ring ? `2px solid ${team.liberoPaint.ring}` : undefined
+              }
+            : null
           return (
             <button
               key={position}
@@ -156,7 +165,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 0, minHeight: 0, background: 'transparent', borderRadius: 8, cursor: number !== null ? 'pointer' : 'default' }}
             >
               {/* The ball hangs outside the number, so every number keeps its place */}
-              <span style={{ position: 'relative', fontSize: 28, lineHeight: 1, fontWeight: 800, color: p.courtInk, fontVariantNumeric: 'tabular-nums' }}>
+              <span data-testid={liberoDisc ? `phone-libero-disc-${team.side}` : undefined} style={{ position: 'relative', fontSize: 28, lineHeight: 1, fontWeight: 800, color: p.courtInk, fontVariantNumeric: 'tabular-nums', ...liberoDisc }}>
                 {number ?? '–'}
                 {hasBall && (
                   <span data-testid="phone-serve-ball" aria-label={t('scoreboard.labels.serveLabel')} style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', ...(team.side === 'left' ? { right: '100%', marginRight: 5 } : { left: '100%', marginLeft: 5 }), width: 12, height: 12, borderRadius: '50%', background: '#facc15', border: '2px solid #1c1917' }} />
