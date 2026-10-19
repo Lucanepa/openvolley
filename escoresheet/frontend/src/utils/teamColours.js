@@ -202,18 +202,31 @@ export function discRing(fill, surface = COURT_SURFACE) {
   return towards
 }
 
+// A libero shirt closer than this to the court (OKLab ΔE × 100) blends into
+// it: white (6) and yellow (17) on the light court
+export const LIBERO_COURT_CLASH_DISTANCE = 20
+// The score of a 3:1 contrast with the team's shirt (log scale, see liberoScore)
+const SCORE_3_TO_1 = (100 * Math.log(3)) / Math.log(21)
+
 /**
  * How well `candidate` works as a libero shirt next to the team's own shirt
  * and the opponent's: the weakest of (luminance contrast with the team
  * shirt, on a log scale to 0..100), (OKLab distance to the team shirt) and
  * (OKLab distance to the opponent shirt). Higher is better.
+ * A shirt that blends into the court (LIBERO_COURT_CLASH_DISTANCE) scores no
+ * more than a 3:1 contrast: it is picked only when no other shirt reaches
+ * 3:1 against the team's while staying apart from both shirts. Without that
+ * a white libero was picked often and all but vanished on the light court
+ * (2026-10-20); the contrast with the team's shirt (FIVB 19.2) still comes
+ * first, so two red teams keep a white libero.
  */
-export function liberoScore(candidate, teamColour, opponentColour) {
+export function liberoScore(candidate, teamColour, opponentColour, surface = COURT_SURFACE) {
   const c = contrastRatio(candidate, teamColour) ?? 1
   const contrast = (100 * Math.log(c)) / Math.log(21)
   const toTeam = colourDistance(candidate, teamColour) ?? 100
   const toOpponent = opponentColour ? (colourDistance(candidate, opponentColour) ?? 100) : 100
-  return Math.min(contrast, toTeam, toOpponent)
+  const blendsIn = !!surface && (colourDistance(candidate, surface) ?? 100) < LIBERO_COURT_CLASH_DISTANCE
+  return Math.min(contrast, toTeam, toOpponent, blendsIn ? SCORE_3_TO_1 : Infinity)
 }
 
 /**
@@ -223,7 +236,7 @@ export function liberoScore(candidate, teamColour, opponentColour) {
  * palette order (white first).
  * @returns {string|null} '#rrggbb', null without a usable team colour
  */
-export function liberoColour(teamColour, opponentColour = null, { explicit = null } = {}) {
+export function liberoColour(teamColour, opponentColour = null, { explicit = null, surface = COURT_SURFACE } = {}) {
   const own = normaliseColour(explicit)
   if (own) return own
   const team = normaliseColour(teamColour)
@@ -231,7 +244,7 @@ export function liberoColour(teamColour, opponentColour = null, { explicit = nul
   const opp = normaliseColour(opponentColour)
   let best = null
   for (const { hex } of LIBERO_PALETTE) {
-    const score = liberoScore(hex, team, opp)
+    const score = liberoScore(hex, team, opp, surface)
     if (!best || score > best.score + 1e-9) best = { hex, score }
   }
   return best.hex
@@ -254,20 +267,20 @@ export const LIBERO_CLASH_DISTANCE = 30
  * best on its own, then the away libero, then palette order. Deterministic.
  * @returns {{ home: string|null, away: string|null }} '#rrggbb' each, null for a team without a usable colour
  */
-export function liberoPair(homeColour, awayColour, { home: homeExplicit = null, away: awayExplicit = null } = {}) {
+export function liberoPair(homeColour, awayColour, { home: homeExplicit = null, away: awayExplicit = null, surface = COURT_SURFACE } = {}) {
   const home = normaliseColour(homeColour)
   const away = normaliseColour(awayColour)
   if (!home || !away) {
     return {
-      home: liberoColour(home, away, { explicit: home ? homeExplicit : null }),
-      away: liberoColour(away, home, { explicit: away ? awayExplicit : null })
+      home: liberoColour(home, away, { explicit: home ? homeExplicit : null, surface }),
+      away: liberoColour(away, home, { explicit: away ? awayExplicit : null, surface })
     }
   }
   const palette = LIBERO_PALETTE.map(p => p.hex)
   const homeOptions = [normaliseColour(homeExplicit) ?? palette].flat()
   const awayOptions = [normaliseColour(awayExplicit) ?? palette].flat()
-  const homeScore = new Map(homeOptions.map(c => [c, liberoScore(c, home, away)]))
-  const awayScore = new Map(awayOptions.map(c => [c, liberoScore(c, away, home)]))
+  const homeScore = new Map(homeOptions.map(c => [c, liberoScore(c, home, away, surface)]))
+  const awayScore = new Map(awayOptions.map(c => [c, liberoScore(c, away, home, surface)]))
   const EPS = 1e-9
   let best = null
   for (const h of homeOptions) {
@@ -314,7 +327,7 @@ export function discPaint(fill, surface = COURT_SURFACE) {
 export function teamDiscPaint(teamColour, { opponent = null, libero = null, surface = COURT_SURFACE } = {}) {
   const player = discPaint(teamColour, surface)
   if (!player) return null
-  return { player, libero: discPaint(liberoColour(teamColour, opponent, { explicit: libero }), surface) }
+  return { player, libero: discPaint(liberoColour(teamColour, opponent, { explicit: libero, surface }), surface) }
 }
 
 /**
@@ -329,7 +342,7 @@ export function teamDiscPaint(teamColour, { opponent = null, libero = null, surf
  * @returns {{ home: { player: object, libero: object } | null, away: { player: object, libero: object } | null }} null for a team without a usable colour (callers keep their default look)
  */
 export function matchDiscPaint(homeColour, awayColour, { homeLibero = null, awayLibero = null, surface = COURT_SURFACE } = {}) {
-  const liberos = liberoPair(homeColour, awayColour, { home: homeLibero, away: awayLibero })
+  const liberos = liberoPair(homeColour, awayColour, { home: homeLibero, away: awayLibero, surface })
   const side = (colour, libero) => {
     const player = discPaint(colour, surface)
     return player ? { player, libero: discPaint(libero, surface) } : null
