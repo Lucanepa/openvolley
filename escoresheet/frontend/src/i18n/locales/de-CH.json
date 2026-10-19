@@ -527,7 +527,8 @@
         "libero": "Libero nicht erlaubt",
         "disqualified": "Disqualifiziert",
         "exceptionallySubstituted": "Ausserordentlich ersetzt",
-        "saveFailed": "Speichern fehlgeschlagen"
+        "saveFailed": "Speichern fehlgeschlagen",
+        "invalidNumber": "1 bis 99"
       },
       "gameCaptain": {
         "title": "Spiilcaptain",
@@ -538,6 +539,13 @@
         "noCaptain": "Kei Captain uf de Mannschaftslischte",
         "whenCaptainLeaves": "Übernimmt, wänn Captain {{captain}} s Feld verlaat",
         "fromFirstRally": "Captain {{captain}} isch nöd i de Ufstellig: Spiilcaptain ab em erschte Ballwächsel"
+      },
+      "easyLiberos": "Liberos (optional)",
+      "easyLiberoInput": "Libero {{n}}",
+      "easyLiberoErrors": {
+        "invalid": "1 bis 99",
+        "inLineup": "I de Ufstellig",
+        "played": "Het als Spieler gspilt"
       }
     },
     "lastAction": "Letschti Aktion:",
@@ -911,6 +919,15 @@
       "redesignate": "Libero neu bestimme",
       "sidewaysTitle": "Heb s Handy uufrächt",
       "sidewaysBody": "D Erfassig ufem Handy isch fürs Hochformat gmacht. Drääj s Handy zrugg: Spiil, Dialög und Countdowns blibed erhalte."
+    },
+    "easySub": {
+      "notAllowed": "Darf nöd ine",
+      "invalid": "1 bis 99",
+      "onCourt": "Uf em Feld",
+      "libero": "En Libero",
+      "label": "Neui Nummere",
+      "placeholder": "# neu",
+      "ok": "Ine"
     }
   },
   "settings": {
@@ -991,7 +1008,9 @@
     "scale": "Skalierung",
     "default": "Standard",
     "viewportWidth": "Breiti vo de Aasicht",
-    "viewportHeight": "Höchi vo de Aasicht"
+    "viewportHeight": "Höchi vo de Aasicht",
+    "unofficial": "Inoffiziell",
+    "easyMatch": "Eifachs Spiil · inoffiziell"
   },
   "home": {
     "title": "OpenVolley eScoresheet",
@@ -1018,13 +1037,21 @@
       "failedToRestoreMatch": "Spiil hät nöd chönne widerhergstellt werde",
       "failedToRestoreFromFile": "Widerherstellig us Datei fehlgschlage",
       "enter6DigitPin": "Bitte gänd Sie en 6-stellige PIN ii",
-      "matchNotFound": "Spiil nöd gfunde"
+      "matchNotFound": "Spiil nöd gfunde",
+      "easyMatchOverwriteWarning": "Es offiziells Spiil lauft no. Es eifachs Spiil ersetzt s Test- oder eifache Spiil uf dem Gerät. Wiiterfahre?",
+      "easyMatchReplaceEasy": "S eifache Spiil uf dem Gerät wird dur s neue ersetzt und sini Date glöscht. Wiiterfahre?",
+      "easyMatchReplaceTest": "S Testspiil uf dem Gerät wird dur s eifache Spiil ersetzt und sini Date glöscht. Wiiterfahre?",
+      "unableToPrepareEasyMatch": "S eifache Spiil het nöd chönne starte: {{error}}",
+      "deleteEasyMatchConfirm": "Das löscht s eifache Spiil und alli Date. Wiiterfahre?",
+      "easyMatchDeleted": "Eifachs Spiil glöscht."
     },
     "exitFullscreen": "Vollbildmodus beenden",
     "fullscreen": "Vollbildschirm",
     "downloadApp": "Desktop-App abelade — Offline-Schriibertisch + Tablet-Server",
     "downloadAppDeb": "oder s .deb-Paket abelade",
-    "downloadServer": "Server abelade — Schiri ohni Internet"
+    "downloadServer": "Server abelade — Schiri ohni Internet",
+    "easyMatch": "Eifachs Spiil",
+    "easyMatchHint": "Inoffiziell · ohni Kader und Underschrifte"
   },
   "options": {
     "title": "Optione",
@@ -3909,5 +3936,18 @@
     "usePhone": "Handy-Aasicht bruuche",
     "fullscreen": "Vollbild",
     "fullscreenNote": "Vollbild entfernt Browser-Chopfziile für maximale Platz."
+  },
+  "easyMatch": {
+    "title": "Eifachs Spiil",
+    "home": "Heimteam",
+    "away": "Gastteam",
+    "chooseColour": "Trikotfarb vo {{team}}",
+    "teamName": "Name",
+    "nameRequired": "Nötig",
+    "shortName": "Kurz",
+    "intro": "Inoffiziell: ohni Kader, Offizielli oder Underschrifte. D Ruggenummere chömed mit de Ufstellige; alles andere isch s normale Scoreboard.",
+    "format": "Format",
+    "bestOf": "Best of {{count}}",
+    "start": "Zur Usloosig"
   }
 }

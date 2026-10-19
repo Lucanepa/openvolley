@@ -460,6 +460,60 @@ function Chip({ children, onClick, disabled = false, tone = 'plain', label, test
 }
 
 const chipGrid = { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }
+
+/**
+ * Easy match: a shirt number typed for the player coming in. A number that is
+ * no player yet comes in as a new player; one already in the team only when
+ * the list offers it (the substitution rules decided there).
+ */
+function NewNumberField({ candidates, check, onPick }) {
+  const { t } = useTranslation()
+  const [value, setValue] = useState('')
+  const [error, setError] = useState('')
+  const submit = () => {
+    const code = check(value)
+    if (code === null) { onPick(Number(value), true); return }
+    if (code === 'existing') {
+      const listed = (candidates || []).find(c => String(c.number) === String(Number(value)))
+      if (listed) { onPick(listed.number, false); return }
+    }
+    setError(({
+      invalid: t('scoreboard.easySub.invalid', '1 to 99'),
+      onCourt: t('scoreboard.easySub.onCourt', 'On court'),
+      libero: t('scoreboard.easySub.libero', 'A libero')
+    })[code] || t('scoreboard.easySub.notAllowed', 'Cannot come in'))
+  }
+  return (
+    <form
+      data-testid="phone-sub-new"
+      style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}
+      onSubmit={(e) => { e.preventDefault(); submit() }}
+    >
+      <input
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        aria-label={t('scoreboard.easySub.label', 'New number')}
+        placeholder={t('scoreboard.easySub.label', 'New number')}
+        value={value}
+        onChange={(e) => { setValue(e.target.value.replace(/[^0-9]/g, '').slice(0, 2)); setError('') }}
+        style={{
+          minHeight: 44, flex: 1, minWidth: 0, padding: '0 10px', borderRadius: 10,
+          border: `1px solid ${error ? 'var(--ov-danger-text)' : 'var(--ov-hairline-strong)'}`,
+          background: 'var(--ov-card)', color: 'var(--ov-text)', fontSize: 16, fontWeight: 700, fontVariantNumeric: 'tabular-nums'
+        }}
+      />
+      <button
+        type="submit"
+        disabled={!value}
+        style={{ ...wideButton, width: 'auto', minWidth: 88, fontWeight: 700, background: value ? 'var(--ov-success-soft)' : 'var(--ov-sunken-strong)' }}
+      >
+        {t('scoreboard.easySub.ok', 'In')}
+      </button>
+      {error && <p role="alert" style={{ margin: 0, alignSelf: 'center', fontSize: 12, fontWeight: 600, color: 'var(--ov-danger-text)' }}>{error}</p>}
+    </form>
+  )
+}
 const sheetNote = { margin: 0, fontSize: 13, color: 'var(--ov-text-secondary)' }
 const sheetHead = (ink) => ({ margin: 0, fontSize: 13, fontWeight: 800, color: ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' })
 const wideButton = { minHeight: 44, width: '100%', padding: '0 8px', borderRadius: 10, border: '1px solid var(--ov-hairline-strong)', background: 'var(--ov-card)', color: 'var(--ov-text)', fontSize: 13, fontWeight: 600, textAlign: 'center' }
@@ -474,6 +528,8 @@ function SubstitutionSheet({ team, ink, out, onPickOut, onBack, onClose, actions
   const { t } = useTranslation()
   const court = POSITIONS.map(position => (team.court || []).find(pl => pl.position === position)).filter(pl => pl && pl.number !== '' && pl.number !== null && pl.number !== undefined)
   const candidates = out ? actions.substituteCandidates(team.teamKey, out.number) : []
+  // Easy match (domain/easyMatch.js): a number that is no player yet can come in
+  const easyNew = !!out && !!actions.newSubstituteAllowed?.(team.teamKey, out.number)
   return (
     <ActionSheet open onClose={onClose} title={title} closeLabel={t('common.close')} railOffset={false}>
       <div data-testid="phone-sub-sheet" style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '4px 8px 8px' }}>
@@ -497,9 +553,9 @@ function SubstitutionSheet({ team, ink, out, onPickOut, onBack, onClose, actions
         ) : (
           <>
             <p style={sheetHead(ink)}>{t('scoreboard.phone.subIn', { number: out.number })}</p>
-            {candidates.length === 0 ? (
+            {candidates.length === 0 && !easyNew ? (
               <p style={sheetNote}>{t('scoreboard.phone.noSubstitutes')}</p>
-            ) : (
+            ) : candidates.length === 0 ? null : (
               <div style={chipGrid}>
                 {candidates.map(c => (
                   <Chip
@@ -515,6 +571,16 @@ function SubstitutionSheet({ team, ink, out, onPickOut, onBack, onClose, actions
                   </Chip>
                 ))}
               </div>
+            )}
+            {easyNew && (
+              <NewNumberField
+                candidates={candidates}
+                check={(value) => actions.checkNewSubstitute(team.teamKey, value)}
+                onPick={(number, newPlayer) => {
+                  onClose()
+                  actions.substitute({ teamKey: team.teamKey, position: out.position, playerOut: out.number, playerIn: number, newPlayer })
+                }}
+              />
             )}
             <button type="button" style={wideButton} onClick={onBack}>{t('common.back')}</button>
           </>

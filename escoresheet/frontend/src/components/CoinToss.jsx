@@ -438,6 +438,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
       return null
     }
   }, [matchId])
+  // An easy match (domain/easyMatch.js): no rosters or signatures to show
+  const isEasyMatch = match?.easy === true
 
   // Colours can't change here. The team's own colour first, as on the
   // scoreboard (Manual Adjustments edits only the team, a test match sets
@@ -1620,8 +1622,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center' }}>
             {serveA ? volleyballImage : volleyballPlaceholder}
           </div>
-          {/* Row 3: Roster Button */}
-          <div className="ov-kit" style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
+          {/* Row 3: Roster Button (an easy match has no roster) */}
+          <div className="ov-kit" style={{ display: isEasyMatch ? 'none' : 'flex', justifyContent: 'center', width: '100%' }}>
             <Button
               variant="secondary"
               size="xl"
@@ -1632,7 +1634,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             </Button>
           </div>
           {/* Row 4: Signatures */}
-          <div className="ov-kit" style={{ display: 'flex', justifyContent: 'center', width: '100%', position: 'relative', marginTop: '12px' }}>
+          <div className="ov-kit" style={{ display: isEasyMatch ? 'none' : 'flex', justifyContent: 'center', width: '100%', position: 'relative', marginTop: '12px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
               <Button
                 variant="secondary"
@@ -1704,8 +1706,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center' }}>
             {serveB ? volleyballImage : volleyballPlaceholder}
           </div>
-          {/* Row 3: Roster Button */}
-          <div className="ov-kit" style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
+          {/* Row 3: Roster Button (an easy match has no roster) */}
+          <div className="ov-kit" style={{ display: isEasyMatch ? 'none' : 'flex', justifyContent: 'center', width: '100%' }}>
             <Button
               variant="secondary"
               size="xl"
@@ -1716,7 +1718,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             </Button>
           </div>
           {/* Row 3: Signatures */}
-          <div className="ov-kit" style={{ display: 'flex', justifyContent: 'center', width: '100%', position: 'relative', marginTop: '12px' }}>
+          <div className="ov-kit" style={{ display: isEasyMatch ? 'none' : 'flex', justifyContent: 'center', width: '100%', position: 'relative', marginTop: '12px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
               <Button
                 variant="secondary"

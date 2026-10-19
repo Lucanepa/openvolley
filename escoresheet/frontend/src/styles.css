@@ -1521,6 +1521,77 @@ button:disabled {
   background: var(--ov-sunken);
 }
 
+/* Easy match: the two libero boxes above the pool (domain/easyMatch.js) */
+.lineup-libs__row {
+  display: flex;
+  gap: 12px;
+}
+
+.lineup-lib {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 84px;
+  border: 1px solid var(--ov-hairline-strong);
+  border-radius: var(--ov-radius-lg);
+  background: var(--ov-card);
+  overflow: hidden;
+}
+
+.lineup-lib__label {
+  align-self: stretch;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ov-sunken-strong);
+  border-bottom: 1px solid var(--ov-hairline);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ov-text-secondary);
+}
+
+.lineup-lib__input {
+  width: 100%;
+  height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--ov-text);
+  font-size: 22px;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.lineup-lib__input:focus {
+  outline: none;
+}
+
+.lineup-lib__input:disabled {
+  color: var(--ov-text-secondary);
+}
+
+.lineup-lib:focus-within {
+  outline: 2px solid var(--ov-selected);
+  outline-offset: 2px;
+}
+
+.lineup-lib__msg {
+  min-height: 18px;
+  padding: 0 4px 3px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--ov-danger-text);
+}
+
+.lineup-lib[data-error] {
+  border-color: var(--ov-danger-text);
+  box-shadow: 0 0 0 1px var(--ov-danger-text);
+  background: var(--ov-danger-soft);
+}
+
 .lineup-pool__title {
   margin: 0 0 8px;
   font-size: 13px;

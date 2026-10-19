@@ -11,6 +11,7 @@ export const LINEUP_POSITIONS = ['IV', 'III', 'II', 'V', 'VI', 'I']
 export const LINEUP_ERRORS = {
   required: 'required',
   notOnRoster: 'notOnRoster',
+  invalidNumber: 'invalidNumber',
   libero: 'libero',
   disqualified: 'disqualified',
   exceptionallySubstituted: 'exceptionallySubstituted',
@@ -55,9 +56,11 @@ function wasExceptionallySubstituted(events, team, number) {
  * @param {object[]} [args.events] the match events (disqualifications, exceptional substitutions)
  * @param {'home'|'away'} [args.team]
  * @param {boolean} [args.requireAll] flag empty boxes as required
+ * @param {boolean} [args.allowUnknown] an easy match: a number that is no player yet is fine
+ *   (domain/easyMatch.js adds it when the line-up is saved)
  * @returns {Record<number, string>} position index -> LINEUP_ERRORS code (valid boxes are absent)
  */
-export function lineupEntryErrors({ lineup, players = [], events = [], team = null, requireAll = false }) {
+export function lineupEntryErrors({ lineup, players = [], events = [], team = null, requireAll = false, allowUnknown = false }) {
   const values = (lineup || []).map(v => (isBlank(v) ? '' : String(Number(v))))
   const counts = values.reduce((acc, v) => {
     if (v) acc[v] = (acc[v] || 0) + 1
@@ -74,7 +77,10 @@ export function lineupEntryErrors({ lineup, players = [], events = [], team = nu
       return
     }
     const player = (players || []).find(p => sameNumber(p.number, value))
-    if (!player) errors[i] = LINEUP_ERRORS.notOnRoster
+    if (!player && allowUnknown) {
+      if (Number(value) < 1 || Number(value) > 99) errors[i] = LINEUP_ERRORS.invalidNumber
+      else if (isDisqualified(events, team, value)) errors[i] = LINEUP_ERRORS.disqualified
+    } else if (!player) errors[i] = LINEUP_ERRORS.notOnRoster
     else if (isLiberoPlayer(player)) errors[i] = LINEUP_ERRORS.libero
     else if (isDisqualified(events, team, value)) errors[i] = LINEUP_ERRORS.disqualified
     else if (wasExceptionallySubstituted(events, team, value)) errors[i] = LINEUP_ERRORS.exceptionallySubstituted
