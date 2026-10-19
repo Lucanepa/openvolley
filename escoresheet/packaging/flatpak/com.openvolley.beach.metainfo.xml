@@ -67,6 +67,15 @@
   </screenshots>
 
   <releases>
+    <release version="2.0.10" date="2026-10-19">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.10</url>
+      <description>
+        <ul>
+          <li>Theme: Options → Display mode → Theme chooses Light, Dark or E-ink. E-ink is black and white at full contrast, for reading the screen in full sun. The referee view has it in its menu.</li>
+          <li>Dark keeps team and shirt colours, flags and photos as they are.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.0.9" date="2026-10-15">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.9</url>
       <description>
