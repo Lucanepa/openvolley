@@ -1746,6 +1746,7 @@
       "live": "Live",
       "final": "Beendet",
       "approved": "Genehmigt",
+      "ended": "Genehmigung ausstehend",
       "setup": "Vorbereitung"
     }
   },
