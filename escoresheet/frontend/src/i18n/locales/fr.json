@@ -890,6 +890,7 @@
     "phone": {
       "setInfo": "Set {{set}} · sets {{left}} : {{right}}",
       "setsWon": "Sets : {{count}}",
+      "serveNumber": "Service #{{number}}",
       "timeOut": "Temps mort",
       "courtPlayer": "Joueur {{number}}, équipe {{team}}",
       "markCaptain": "capitaine",

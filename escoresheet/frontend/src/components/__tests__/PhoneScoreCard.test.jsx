@@ -39,8 +39,19 @@ describe('PhoneScoreboard: the score cards on a narrow phone', () => {
     expect(info.style.minWidth).toBe('0px')
     for (const line of info.children) {
       expect(line.style.maxWidth).toBe('100%')
-      expect(line.style.textOverflow).toBe('ellipsis')
+      // the serve pill cuts its word short, never the server's number
+      const clipped = line.dataset.testid === 'phone-serve-pill' ? line.firstChild : line
+      expect(clipped.style.textOverflow).toBe('ellipsis')
     }
+  })
+
+  it('the serve pill names the server (position I of the serving team)', () => {
+    const left = { ...team('left', 'A'), court: [{ position: 'I', number: '11' }, { position: 'II', number: '7' }] }
+    render(<PhoneScoreboard {...props} teams={{ left, right: team('right', 'B') }} />)
+    const pill = screen.getByTestId('phone-serve-pill')
+    expect(pill.textContent).toBe('SERVE#11')
+    expect(pill.getAttribute('aria-label')).toBe('Serve #11')
+    expect(screen.getByTestId('phone-server-number').style.flex).toMatch(/^0 0 auto|none/)
   })
 
   it('the sets won fit beside a two-digit score at 360px, in every locale', async () => {
