@@ -1886,7 +1886,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             width={800}
             hideCloseButton={true}
           >
-            <div style={{ maxHeight: '70vh', overflowY: 'auto', padding: '0 16px' }}>
+            <div className="ct-roster-body" style={{ maxHeight: '70vh', overflowY: 'auto', padding: '0 16px' }}>
               {/* Players Section */}
               <div style={{ marginBottom: 16 }}>
                 <div className={`ov-kit ${SECTION_HEAD}`}>
@@ -1895,7 +1895,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     {t('roster.addPlayer')}
                   </Button>
                 </div>
-                <table className="roster-table ct-cards" style={{ width: '100%' }}>
+                <table className={`roster-table ct-cards${lfpTrackingEnabled ? ' has-lfp' : ''}`} style={{ width: '100%' }}>
                   <thead>
                     <tr>
                       <th>{t('roster.number')}</th>
@@ -1963,7 +1963,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                               )}
                             </div>
                           </td>
-                          <td style={{ verticalAlign: 'middle', padding: '6px' }}>
+                          <td className="ct-name" style={{ verticalAlign: 'middle', padding: '6px' }}>
                             <StackLabel>{t('roster.name')}</StackLabel>
                             <input
                               aria-label={t('roster.name')}
@@ -1981,7 +1981,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                               style={{ width: '100%', padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px' }}
                             />
                           </td>
-                          <td style={{ verticalAlign: 'middle', padding: '6px', width: '90px' }}>
+                          <td className="ct-dob" style={{ verticalAlign: 'middle', padding: '6px', width: '90px' }}>
                             <StackLabel>{t('roster.dateOfBirth')}</StackLabel>
                             <DateField
                               size="bare"
@@ -1999,7 +1999,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                               style={{ width: '100%', padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px' }}
                             />
                           </td>
-                          <td style={{ verticalAlign: 'middle', padding: '6px' }}>
+                          <td className="ct-role" style={{ verticalAlign: 'middle', padding: '6px' }}>
                             <StackLabel>{t('roster.libero')} · {t('matchSetup.captain')}</StackLabel>
                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: '1 1 0' }}>
                               <select
@@ -2060,7 +2060,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                             </div>
                           </td>
                           {lfpTrackingEnabled && (
-                            <td style={{ verticalAlign: 'middle', padding: '4px', textAlign: 'center' }}>
+                            <td className="ct-lfp" style={{ verticalAlign: 'middle', padding: '4px', textAlign: 'center' }}>
                               <StackLabel>LFP</StackLabel>
                               <div
                                 role="button"
@@ -2117,7 +2117,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     {t('roster.addBench')}
                   </Button>
                 </div>
-                <table className="roster-table ct-cards" style={{ width: '100%' }}>
+                <table className="roster-table ct-cards ct-bench" style={{ width: '100%' }}>
                   <thead>
                     <tr>
                       <th>{t('roster.role')}</th>
@@ -2151,7 +2151,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                               ))}
                             </select>
                           </td>
-                          <td style={{ verticalAlign: 'middle', padding: '6px' }}>
+                          <td className="ct-name" style={{ verticalAlign: 'middle', padding: '6px' }}>
                             <StackLabel>{t('roster.name')}</StackLabel>
                             <input
                               aria-label={t('roster.name')}
@@ -2168,7 +2168,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                               style={{ width: '100%', padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px' }}
                             />
                           </td>
-                          <td style={{ verticalAlign: 'middle', padding: '6px', width: '90px' }}>
+                          <td className="ct-dob" style={{ verticalAlign: 'middle', padding: '6px', width: '90px' }}>
                             <StackLabel>{t('roster.dateOfBirth')}</StackLabel>
                             <DateField
                               size="bare"

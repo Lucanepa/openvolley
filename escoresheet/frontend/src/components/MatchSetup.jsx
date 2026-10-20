@@ -43,7 +43,7 @@ import { savedTeamToRoster, findSavedTeamSuggestions } from '../domain/savedTeam
 import { getSavedTeams, refreshSavedTeams } from '../db/savedTeams'
 import { officialCheck, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS } from '../lib/accountApi'
 import { openRestore } from '../utils/manageNav'
-import { Users, Save as SaveIcon } from 'lucide-react'
+import { Users, Save as SaveIcon, Trash2 } from 'lucide-react'
 import CaptainToggle from './CaptainToggle'
 import StackLabel from './StackLabel'
 import TeamShirt from './TeamShirt'
@@ -4063,11 +4063,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StackLabel head>{t('matchSetup.playerNumber', 'Player number')}</StackLabel>
                 <input aria-label={t('matchSetup.playerNumber', 'Player number')} className="cell-head" placeholder={t('matchSetup.numberPlaceholder')} type="number" inputMode="numeric" value={homeNum} onChange={e => setHomeNum(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
-                <input aria-label={t('matchSetup.lastName')} className="capitalize" placeholder={t('matchSetup.lastName')} value={homeLast} onChange={e => setHomeLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input aria-label={t('matchSetup.lastName')} className="capitalize cell-last" placeholder={t('matchSetup.lastName')} value={homeLast} onChange={e => setHomeLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
-                <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={homeFirst} onChange={e => setHomeFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input aria-label={t('matchSetup.firstName')} className="capitalize cell-first" placeholder={t('matchSetup.firstName')} value={homeFirst} onChange={e => setHomeFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
-                <DateField size="bare" aria-label={t('matchSetup.dateOfBirth')} value={homeDob ? formatDateToISO(homeDob) : ''} onChange={v => setHomeDob(v ? formatDateToDDMMYYYY(v) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <DateField size="bare" wrapperClassName="cell-dob" aria-label={t('matchSetup.dateOfBirth')} value={homeDob ? formatDateToISO(homeDob) : ''} onChange={v => setHomeDob(v ? formatDateToDDMMYYYY(v) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.roleLibero')} · {t('matchSetup.captain')}</StackLabel>
                 <select aria-label={t('matchSetup.libero', 'Libero')} className="cell-libero" data-help-id="setup-libero-toggle" value={homeLibero} onChange={e => {
                   let newValue = e.target.value
@@ -4088,7 +4088,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   <CaptainToggle pressed={homeCaptain} number={homeNum} onToggle={() => setHomeCaptain(!homeCaptain)} />
                 </div>
                 {lfpTrackingEnabled && (
-                  <div className="cell-captain">
+                  <div className="cell-captain cell-lfp">
                     <div
                       onClick={() => setHomeLfp(!homeLfp)}
                       style={{
@@ -4172,7 +4172,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             }
 
             return (
-              <div key={`h-${i}`} className="roster-grid-row" style={borderStyle}>
+              <div key={`h-${i}`} className={cn('roster-grid-row', isCaptain && 'row-captain', isLibero && 'row-libero')} style={borderStyle}>
                 <div className={`roster-badge${isCaptain ? ' badge-captain' : isLibero ? ' badge-libero' : ''}`}>
                   {isCaptain ? 'C' : p.libero === 'libero1' ? (homeLiberoCount > 1 ? 'L1' : 'L') : p.libero === 'libero2' ? (homeLiberoCount > 1 ? 'L2' : 'L') : ''}
                 </div>
@@ -4210,7 +4210,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.lastName')}
-                  className="capitalize"
+                  className="capitalize cell-last"
                   placeholder={t('matchSetup.placeholders.lastName')}
                   value={p.lastName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -4223,7 +4223,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.firstName')}
-                  className="capitalize"
+                  className="capitalize cell-first"
                   placeholder={t('matchSetup.placeholders.firstName')}
                   value={p.firstName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -4236,6 +4236,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
                 <DateField
                   size="bare"
+                  wrapperClassName="cell-dob"
                   aria-label={t('matchSetup.dateOfBirth')}
                   value={p.dob ? formatDateToISO(p.dob) : ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -4305,7 +4306,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   />
                 </div>
                 {lfpTrackingEnabled && (
-                  <div className="cell-captain">
+                  <div className="cell-captain cell-lfp">
                     <div
                       onClick={() => {
                         const updated = [...homeRoster]
@@ -4331,8 +4332,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   </div>
                 )}
                 <div className="cell-action">
-                  <Button variant="danger-outline" size="md" onClick={() => setHomeRoster(list => list.filter((_, idx) => idx !== i))}>
-                    {t('common.delete')}
+                  <Button variant="danger-outline" size="md" title={t('common.delete')} onClick={() => setHomeRoster(list => list.filter((_, idx) => idx !== i))}>
+                    <Trash2 size={16} className="hidden stack:block" aria-hidden="true" /><span className="stack:sr-only">{t('common.delete')}</span>
                   </Button>
                 </div>
               </div>
@@ -4377,24 +4378,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   })}
                 </select>
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
-                <input aria-label={t('matchSetup.lastName')} className="capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.lastName')} className="capitalize cell-last" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
-                <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.firstName')} className="capitalize cell-first" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
                 <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
-                <DateField size="bare" aria-label={t('matchSetup.dateOfBirth')} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
+                <DateField size="bare" wrapperClassName="cell-dob" aria-label={t('matchSetup.dateOfBirth')} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
                 <div className="cell-action">
-                  <Button variant="danger-outline" size="md" onClick={() => {
+                  <Button variant="danger-outline" size="md" title={t('common.delete')} onClick={() => {
                     const updated = benchHome.filter((_, idx) => idx !== originalIdx)
                     setBenchHome(updated)
                     setTimeout(() => saveDraft(true), 100)
                     }}>
-                      {t('common.delete')}
+                      <Trash2 size={16} className="hidden stack:block" aria-hidden="true" /><span className="stack:sr-only">{t('common.delete')}</span>
                     </Button>
                 </div>
               </div>
             )
           })}
-          <div className="bench-grid-row" style={{ border: 'none', padding: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <div className="bench-grid-row bench-add-row" style={{ border: 'none', padding: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
             <Button
               variant="ghost"
               size="md"
@@ -5219,11 +5220,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                 />
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
-                <input aria-label={t('matchSetup.lastName')} className="capitalize" placeholder={t('matchSetup.lastName')} value={awayLast} onChange={e => setAwayLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input aria-label={t('matchSetup.lastName')} className="capitalize cell-last" placeholder={t('matchSetup.lastName')} value={awayLast} onChange={e => setAwayLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
-                <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={awayFirst} onChange={e => setAwayFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input aria-label={t('matchSetup.firstName')} className="capitalize cell-first" placeholder={t('matchSetup.firstName')} value={awayFirst} onChange={e => setAwayFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
-                <DateField size="bare" aria-label={t('matchSetup.dateOfBirth')} value={awayDob ? formatDateToISO(awayDob) : ''} onChange={v => setAwayDob(v ? formatDateToDDMMYYYY(v) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <DateField size="bare" wrapperClassName="cell-dob" aria-label={t('matchSetup.dateOfBirth')} value={awayDob ? formatDateToISO(awayDob) : ''} onChange={v => setAwayDob(v ? formatDateToDDMMYYYY(v) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.roleLibero')} · {t('matchSetup.captain')}</StackLabel>
                 <select aria-label={t('matchSetup.libero', 'Libero')} className="cell-libero" value={awayLibero} onChange={e => {
                   let newValue = e.target.value
@@ -5244,7 +5245,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   <CaptainToggle pressed={awayCaptain} number={awayNum} onToggle={() => setAwayCaptain(!awayCaptain)} />
                 </div>
                 {lfpTrackingEnabled && (
-                  <div className="cell-captain">
+                  <div className="cell-captain cell-lfp">
                     <div
                       onClick={() => setAwayLfp(!awayLfp)}
                       style={{
@@ -5326,7 +5327,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             }
 
             return (
-              <div key={`a-${i}`} className="roster-grid-row" style={borderStyle}>
+              <div key={`a-${i}`} className={cn('roster-grid-row', isCaptain && 'row-captain', isLibero && 'row-libero')} style={borderStyle}>
                 <div className={`roster-badge${isCaptain ? ' badge-captain' : isLibero ? ' badge-libero' : ''}`}>
                   {isCaptain ? 'C' : p.libero === 'libero1' ? (awayLiberoCount > 1 ? 'L1' : 'L') : p.libero === 'libero2' ? (awayLiberoCount > 1 ? 'L2' : 'L') : ''}
                 </div>
@@ -5363,7 +5364,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.lastName')}
-                  className="capitalize"
+                  className="capitalize cell-last"
                   placeholder={t('matchSetup.placeholders.lastName')}
                   value={p.lastName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -5376,7 +5377,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.firstName')}
-                  className="capitalize"
+                  className="capitalize cell-first"
                   placeholder={t('matchSetup.placeholders.firstName')}
                   value={p.firstName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -5389,6 +5390,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
                 <DateField
                   size="bare"
+                  wrapperClassName="cell-dob"
                   aria-label={t('matchSetup.dateOfBirth')}
                   value={p.dob ? formatDateToISO(p.dob) : ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -5454,7 +5456,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   />
                 </div>
                 {lfpTrackingEnabled && (
-                  <div className="cell-captain">
+                  <div className="cell-captain cell-lfp">
                     <div
                       onClick={() => {
                         const updated = [...awayRoster]
@@ -5480,8 +5482,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   </div>
                 )}
                 <div className="cell-action">
-                  <Button variant="danger-outline" size="md" onClick={() => setAwayRoster(list => list.filter((_, idx) => idx !== i))}>
-                    {t('common.delete')}
+                  <Button variant="danger-outline" size="md" title={t('common.delete')} onClick={() => setAwayRoster(list => list.filter((_, idx) => idx !== i))}>
+                    <Trash2 size={16} className="hidden stack:block" aria-hidden="true" /><span className="stack:sr-only">{t('common.delete')}</span>
                   </Button>
                 </div>
               </div>
@@ -5526,24 +5528,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   })}
                 </select>
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
-                <input aria-label={t('matchSetup.lastName')} className="capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.lastName')} className="capitalize cell-last" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
-                <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.firstName')} className="capitalize cell-first" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
                 <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
-                <DateField size="bare" aria-label={t('matchSetup.dateOfBirth')} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
+                <DateField size="bare" wrapperClassName="cell-dob" aria-label={t('matchSetup.dateOfBirth')} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
                 <div className="cell-action">
-                  <Button variant="danger-outline" size="md" onClick={() => {
+                  <Button variant="danger-outline" size="md" title={t('common.delete')} onClick={() => {
                     const updated = benchAway.filter((_, idx) => idx !== originalIdx)
                     setBenchAway(updated)
                     setTimeout(() => saveDraft(true), 100)
                     }}>
-                      {t('common.delete')}
+                      <Trash2 size={16} className="hidden stack:block" aria-hidden="true" /><span className="stack:sr-only">{t('common.delete')}</span>
                     </Button>
                 </div>
               </div>
             )
           })}
-          <div className="bench-grid-row" style={{ border: 'none', padding: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <div className="bench-grid-row bench-add-row" style={{ border: 'none', padding: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
             <Button
               variant="ghost"
               size="md"
