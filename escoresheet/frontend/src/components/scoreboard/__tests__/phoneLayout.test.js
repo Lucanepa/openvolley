@@ -179,6 +179,20 @@ describe('phone action grid labels (a 4-column grid on a 360px phone)', () => {
       }
     }
   })
+
+  // The decision label is set smaller (10.5px) and its button is about 70px
+  // wide inside on a 360px phone (60px on a 320px one): a piece of 13
+  // letters ("Entscheidungs-") did not fit and broke mid-word, "Entscheidung
+  // / sänderung" (2026-10-21). Every piece between spaces and soft hyphens
+  // stays at 11 letters or fewer
+  it('the small decision label has no piece too wide for its button', async () => {
+    for (const lang of ['en', 'de', 'de-CH', 'fr', 'it']) {
+      const { default: locale } = await import(`../../../i18n/locales/${lang}.json`)
+      for (const piece of locale.scoreboard.phone.decision.split(/[\s\u00ad]+/)) {
+        expect(piece.length, `${lang}: ${piece}`).toBeLessThanOrEqual(11)
+      }
+    }
+  })
 })
 
 describe('phone point buttons on a short screen (styles.css)', () => {
