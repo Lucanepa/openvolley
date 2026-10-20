@@ -156,7 +156,8 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
           // Marks as on the paper sheet, small at the number's foot: C bottom
           // left (team captain, or the acting game captain), bottom right the
           // libero's L or the number of the player a substitute came in for.
-          // The ball hangs halfway up, so it never meets them.
+          // The ball hangs halfway up on the outer side, level with the top of
+          // the number when a mark sits under it there.
           const isLibero = number !== null && !!pl?.isLibero
           const captain = number !== null && !!pl?.isCaptain
           const replaced = number !== null && !isLibero && hasValue(pl?.replaced) ? String(pl.replaced) : null
@@ -165,6 +166,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
             isLibero && t('scoreboard.phone.markLibero', 'libero'),
             replaced && t('scoreboard.phone.markReplaced', { number: replaced, defaultValue: 'in for {{number}}' })
           ].filter(Boolean)
+          const markUnderBall = team.side === 'left' ? captain : (isLibero || !!replaced)
           const label = number !== null ? [t('scoreboard.phone.courtPlayer', { number, team: team.label }), ...marks].join(', ') : undefined
           return (
             <button
@@ -183,7 +185,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
                 {isLibero && <span aria-hidden="true" data-testid="phone-mark-libero" style={{ ...courtMark, left: '100%', marginLeft: 1, color: liberoInk }}>L</span>}
                 {replaced && <span aria-hidden="true" data-testid="phone-mark-replaced" style={{ ...courtMark, left: '100%', marginLeft: 1, color: 'var(--ov-text-secondary)' }}>{replaced}</span>}
                 {hasBall && (
-                  <span data-testid="phone-serve-ball" aria-label={t('scoreboard.labels.serveLabel')} style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', ...(team.side === 'left' ? { right: '100%', marginRight: 5 } : { left: '100%', marginLeft: 5 }), width: 12, height: 12, borderRadius: '50%', background: '#facc15', border: '2px solid #1c1917' }} />
+                  <span data-testid="phone-serve-ball" aria-label={t('scoreboard.labels.serveLabel')} style={{ position: 'absolute', ...(markUnderBall ? { top: 0 } : { top: '50%', transform: 'translateY(-50%)' }), ...(team.side === 'left' ? { right: '100%', marginRight: 5 } : { left: '100%', marginLeft: 5 }), width: 12, height: 12, borderRadius: '50%', background: '#facc15', border: '2px solid #1c1917' }} />
                 )}
               </span>
             </button>
