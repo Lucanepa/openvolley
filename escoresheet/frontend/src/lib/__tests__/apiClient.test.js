@@ -5,7 +5,7 @@ vi.mock('../../utils/backendConfig', () => ({
   getCloudApiUrl: (path) => `http://backend.test${path}`
 }))
 
-import { apiFrom, apiAuth, apiStorage, apiMatchRestore, apiMatchRestoreByPin, apiMatchClaim, apiMatchScorer, isSessionRejected, normalizeError, toBase64 } from '../apiClient'
+import { apiFrom, apiAuth, apiStorage, apiMatchRestore, apiMatchRestoreByPin, apiMatchClaim, apiMatchScorer, apiPostEventRevisions, ageOf, isSessionRejected, normalizeError, toBase64 } from '../apiClient'
 
 function jsonResponse(body, status = 200) {
   return {
@@ -305,6 +305,25 @@ describe('self-hosted backend contract', () => {
     expect(Object.keys(sentHeaders()).some(k => /device/i.test(k))).toBe(false)
     await apiFrom('events').select('id').eq('external_id', 'm1:e:1')
     expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body).device).toBeUndefined()
+  })
+
+  it('a queued restore says how long ago it was made (db/019), by this device\'s clock', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { id: 'u', counts: {} }, error: null }))
+    const queuedAt = new Date(Date.now() - 60_000).toISOString()
+    await apiMatchRestore({ match: { external_id: 'm1' }, queuedAt })
+    expect(sentBody().age_ms).toBeGreaterThanOrEqual(60_000)
+    expect(sentBody().age_ms).toBeLessThan(120_000)
+    expect(ageOf(1000, 4000)).toBe(3000)
+    expect(ageOf(5000, 4000)).toBe(0)
+    expect(ageOf('nope')).toBeNull()
+    expect(ageOf(null)).toBeNull()
+  })
+
+  it('the event history names the device that sends it (db/019)', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: {}, error: null }))
+    await apiPostEventRevisions('m1', [{ rev_uid: 'r', device_id: 'old-id' }])
+    expect(globalThis.fetch.mock.calls[0][0]).toBe('http://backend.test/api/match/event-revisions')
+    expect(sentBody()).toEqual({ match_external_id: 'm1', revisions: [{ rev_uid: 'r', device_id: 'old-id' }], device: { id: expect.stringMatching(UUID_RE), platform: 'web' } })
   })
 
   it('apiMatchScorer claims or asks for this device', async () => {

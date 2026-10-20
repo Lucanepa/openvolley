@@ -13,7 +13,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const store = vi.hoisted(() => ({ matches: [], sets: [], events: [] }))
 vi.mock('../../db/db', () => {
-  const table = (rows) => ({ add: vi.fn(async (row) => { rows.push(row); return rows.length }) })
+  const table = (rows) => ({
+    add: vi.fn(async (row) => { rows.push(row); return rows.length }),
+    // the import replaces an earlier local copy of the match (none here)
+    filter: (fn) => ({ toArray: async () => rows.filter(fn) })
+  })
   return {
     db: {
       transaction: async (...args) => args[args.length - 1](),

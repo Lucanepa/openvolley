@@ -33,3 +33,18 @@ export function deviceId(storage = globalThis.localStorage) {
     return null
   }
 }
+
+/**
+ * localStorage.clear() that keeps this installation's id. The app's "Clear
+ * all (includes settings)" keeps the matches and the sync queue (IndexedDB):
+ * with a new id the device would be refused as "another device" for its own
+ * open match (db/019, the scoring device), and its undo/edit revisions name
+ * the id they were made with.
+ */
+export function clearStorageKeepingDeviceId(storage = globalThis.localStorage) {
+  let id = null
+  try { id = storage.getItem(DEVICE_KEY) } catch { /* unreadable: nothing to keep */ }
+  storage.clear()
+  if (!id || !UUID_RE.test(id)) return
+  try { storage.setItem(DEVICE_KEY, id) } catch { /* storage full or blocked: a new id next time */ }
+}

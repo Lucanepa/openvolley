@@ -10,7 +10,7 @@ import { filterMatchPayload, JSONB_COLUMNS } from '../db/matchRepository'
 import { parseExtId, resolveJobExternalId, jobMatchKey, USER_MATCH_RESOURCE, userMatchRoles, userMatchJob } from '../utils/syncIds'
 import { buildConnectionPins } from '../utils/connectionPins'
 import { ACCESS_CHANGED_EVENT } from '../lib/access'
-import { SCORER_CLAIM_ACTION, SCORER_MOVED, noteScorerMoved, requeueScorerMovedJobs, retireIfSuperseded, retireStaleGameCopies } from '../utils/matchHandover'
+import { SCORER_CLAIM_ACTION, SCORER_MOVED, isScorerMoved, noteScorerMoved, markScorerMoved, hasUnsentClaim, closeMovedMatches, retireIfSuperseded, retireStaleGameCopies } from '../utils/matchHandover'
 
 /**
  * ============================================================================
@@ -602,12 +602,32 @@ export function resetCloudBlockCache() {
 const FINISHED_HERE = ['ended', 'approved']
 export const closesLocalCopy = (local, code) => code === 'OV_MATCH_CLOSED' && local?.test !== true && FINISHED_HERE.includes(local?.status)
 
+/**
+ * @returns {Promise<{ setAside?: boolean }>} setAside: the match moved to
+ *   another device, its unsent writes (this job too) are set aside
+ */
 async function recordCloudBlock(job, error) {
   const seedKey = jobMatchKey(job)
-  if (!seedKey || !error?.code) return
+  if (!seedKey || !error?.code) return {}
   try {
     const local = await findLocalMatchBySeed(seedKey)
-    if (!local) return
+    if (!local) return {}
+    // db/019: another device scores the match. The notice stays whatever the
+    // server refuses later (a closed match is no longer checked for its
+    // device: OV_MATCH_CLOSED must not bring this device's old scoreboard
+    // back); once the server says closed, the local copy is final too.
+    if (error.code === SCORER_MOVED || isScorerMoved(local)) {
+      const n = await markScorerMoved(db, local, {
+        scorer: error.code === SCORER_MOVED ? (error.scorer ?? null) : null,
+        closed: error.code === 'OV_MATCH_CLOSED'
+      })
+      ;(await getBlockedSeeds()).add(seedKey)
+      safeLog.log(`[SyncQueue] Another device scores ${seedKey}${error.code === 'OV_MATCH_CLOSED' ? ' (closed there)' : ''}: ${n} unsent write(s) of this device set aside`)
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(CLOUD_BLOCK_EVENT, { detail: { seedKey, code: SCORER_MOVED } }))
+      }
+      return { setAside: true }
+    }
     const mods = { cloudBlock: { code: error.code, claim: error.claim ?? null, ...(error.scorer ? { scorer: error.scorer } : {}), at: Date.now() } }
     if (closesLocalCopy(local, error.code)) {
       mods.status = 'final'
@@ -627,6 +647,7 @@ async function recordCloudBlock(job, error) {
   } catch (err) {
     safeLog.warn('[SyncQueue] Could not record the cloud block of a match:', err?.message)
   }
+  return {}
 }
 
 /**
@@ -737,12 +758,26 @@ export async function processJob(job) {
     }
   }
   if (CLOUD_BLOCK_RESOURCES.includes(job?.resource)) {
+    if (result === PERMANENT_FAILURE && jobErrors.get(job?.id)?.code === SCORER_MOVED && job.action !== SCORER_CLAIM_ACTION &&
+        await hasUnsentClaim(db, jobMatchKey(job)).catch(() => false)) {
+      // This device asked to score the match (a join, a take-back) and the
+      // server has not confirmed it yet: the previous device still holds it.
+      // Retried after the claim, never the "scored on another device" notice
+      // on the device the scorer is using.
+      safeLog.log('[SyncQueue] Write waits for this device\'s scoring claim:', jobMatchKey(job), job.resource, job.action)
+      result = null
+    }
     if (result === PERMANENT_FAILURE) {
       const error = jobErrors.get(job?.id)
       // Judged on the local copy BEFORE the block marks it final
       const dropAfterClose = error?.code === 'OV_MATCH_CLOSED' && await isNeedlessAfterClose(job)
-      if (CLOUD_BLOCK_CODES.includes(error?.code)) await recordCloudBlock(job, error)
-      if (dropAfterClose) {
+      const recorded = CLOUD_BLOCK_CODES.includes(error?.code) ? await recordCloudBlock(job, error) : {}
+      if (recorded.setAside) {
+        // Another device scores the match: this write is set aside with the
+        // match's others (utils/matchHandover setAsideMovedJobs), not refused
+        result = DROP_JOB
+        if (job?.id != null) setAsideJobIds.add(job.id)
+      } else if (dropAfterClose) {
         safeLog.log('[SyncQueue] Dropping a match update refused after the match was closed here (nothing of the score in it):',
           jobMatchKey(job), Object.keys(job.payload || {}).filter(k => k !== 'id').join(','))
         result = DROP_JOB
@@ -754,15 +789,6 @@ export async function processJob(job) {
       }
     } else if (result === true) {
       await clearCloudBlock(job)
-    }
-  }
-  // A claim the server confirmed: the writes it refused meanwhile go again
-  if (result === true && job?.resource === 'match' && job.action === SCORER_CLAIM_ACTION) {
-    try {
-      const n = await requeueScorerMovedJobs(db, jobMatchKey(job))
-      if (n) safeLog.log(`[SyncQueue] This device scores ${jobMatchKey(job)} again: ${n} refused job(s) queued again`)
-    } catch (err) {
-      safeLog.warn('[SyncQueue] Could not requeue the jobs refused while another device scored:', err?.message)
     }
   }
   return result
@@ -811,6 +837,10 @@ async function isNeedlessAfterClose(job) {
     return false
   }
 }
+
+// Jobs whose match moved to another device while they were processed: the
+// pass must not send the match's other jobs it read before they were set aside
+const setAsideJobIds = new Set()
 
 async function processJobOnce(job) {
   const ctx = { error: null }
@@ -1105,7 +1135,10 @@ async function processJobInner(job, ctx) {
           match: filterMatchPayload(match),
           sets: Array.isArray(sets) ? sets : [],
           events: Array.isArray(events) ? events : [],
-          liveState: liveState || null
+          liveState: liveState || null,
+          // When the restore was made (db/019): another device that took the
+          // match over after that keeps it (409 OV_SCORER_MOVED)
+          queuedAt: job.ts
         })
         if (error) {
           safeLog.error('[SyncQueue] Restore failed:', error.code || error.status, error.message, error.details || '')
@@ -1343,8 +1376,16 @@ export function pendingEntityBlocks(pendingJobs) {
     if (!blocks.has(key) || blocks.get(key) > id) blocks.set(key, id)
   }
   for (const job of pendingJobs) {
-    // (a parked scoring-device claim neither: utils/matchHandover)
-    if ((job.status === 'error' || job.status === 'failed') && (job.action === 'update' || job.action === SCORER_CLAIM_ACTION)) continue
+    // A scoring-device claim (utils/matchHandover) not answered yet, in flight
+    // or waiting out a backoff, holds the whole match back: its writes would
+    // be refused as long as the previous device holds the match. A refused
+    // ('failed') claim holds nothing back.
+    if (job.resource === 'match' && job.action === SCORER_CLAIM_ACTION) {
+      const matchKey = jobMatchKey(job)
+      if (matchKey && (job.status === 'error' || job.status === 'sending')) add(`whole:${matchKey}`, job.id)
+      continue
+    }
+    if ((job.status === 'error' || job.status === 'failed') && job.action === 'update') continue
     add(entityKey(job), job.id)
     const matchKey = jobMatchKey(job)
     if (matchKey && blocksWholeMatch(job)) add(`whole:${matchKey}`, job.id)
@@ -1405,6 +1446,8 @@ export async function runQueuePass() {
   const queued = await db.sync_queue.where('status').equals('queued').toArray()
   const outcome = { processed: queued.length, sent: 0, hasError: false, hasFailed: false, hasRetry: false, stopped: false, authRequired: false }
   if (queued.length === 0) return outcome
+  // (marks left by direct sends, sendJobNow, which have no pass to block)
+  setAsideJobIds.clear()
 
   safeLog.log(`[SyncQueue] Processing ${queued.length} queued items`)
 
@@ -1440,7 +1483,9 @@ export async function runQueuePass() {
     for (const job of jobs) {
       const key = entityKey(job)
       const matchKey = jobMatchKey(job)
-      if (isHeldBack(key, job.id) || (matchKey && isHeldBack(`whole:${matchKey}`, job.id))) {
+      // (a claim is never held back: the match's other jobs wait for it)
+      const isClaim = job.resource === 'match' && job.action === SCORER_CLAIM_ACTION
+      if (!isClaim && (isHeldBack(key, job.id) || (matchKey && isHeldBack(`whole:${matchKey}`, job.id)))) {
         // An earlier job for this entity/match failed or is still pending: keep order
         outcome.hasRetry = true
         continue
@@ -1468,9 +1513,11 @@ export async function runQueuePass() {
 
       if (result === DROP_JOB) {
         await db.sync_queue.update(job.id, { status: 'dropped' })
-        // A dropped match creation (its match retired, utils/matchHandover):
-        // the rest of the match has nothing to attach to in this pass either
-        if (matchKey && blocksWholeMatch(job)) blocked.add(`whole:${matchKey}`)
+        // A dropped match creation (its match retired, utils/matchHandover),
+        // or a match that moved to another device (its jobs set aside): the
+        // rest of the match is not sent in this pass either
+        const setAside = setAsideJobIds.delete(job.id)
+        if (matchKey && (blocksWholeMatch(job) || setAside)) blocked.add(`whole:${matchKey}`)
         continue
       }
 
@@ -1580,6 +1627,15 @@ function sweepStaleGameCopiesOnce() {
     .catch((err) => safeLog.warn('[SyncQueue] Could not check the refused local matches:', err?.message))
   return staleCopiesSweep
 }
+// Matches this device lost to another one (OV_SCORER_MOVED) are asked about
+// once per page load: closed there meanwhile, they are final here too
+let movedMatchesCheck = null
+function checkMovedMatchesOnce() {
+  movedMatchesCheck ??= closeMovedMatches(db, { check: (key) => apiMatchScorer(key, { claim: false }) })
+    .then((n) => { if (n) safeLog.log(`[SyncQueue] ${n} match(es) continued and closed on another device marked final here`) })
+    .catch((err) => safeLog.warn('[SyncQueue] Could not check the matches scored on another device:', err?.message))
+  return movedMatchesCheck
+}
 // A clock that went backwards (device time corrected) counts as due
 function isDue(last, interval, now) {
   return !last || now - last >= interval || now < last
@@ -1590,6 +1646,7 @@ export function resetQueueHousekeeping() {
   lastPruneAt = 0
   claimAttempts.clear()
   staleCopiesSweep = null
+  movedMatchesCheck = null
 }
 
 // Sync status is shared by every mounted instance: whichever instance runs the
@@ -1829,6 +1886,7 @@ export function useSyncQueue() {
         checkSupabaseConnection(true).then(async (connected) => {
           if (connected) {
             await sweep
+            checkMovedMatchesOnce()
             // On initial load, retry errored jobs if any; once per page load
             // also the ones the backend refused (a fix may have been deployed)
             const includeFailed = !startupFailedRetryDone

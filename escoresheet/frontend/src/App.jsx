@@ -1562,6 +1562,30 @@ export default function App() {
 
   const returnToMatch = () => setShowMatchSetup(false)
 
+  // A match restored or joined from the cloud: the screen its state needs.
+  // Priority: finished match → MatchEnd, live with activity → Scoreboard,
+  // else → Setup
+  const openRestoredMatch = (newMatchId, cloudData) => {
+    setMatchId(newMatchId)
+    const matchStatus = cloudData.match?.status
+    const hasEvents = cloudData.events && cloudData.events.length > 0
+    const hasSets = cloudData.sets && cloudData.sets.length > 0
+    const finishedSets = (cloudData.sets || []).filter(s => s.finished)
+    const homeSetsWon = finishedSets.filter(s => (s.homePoints ?? s.home_points ?? 0) > (s.awayPoints ?? s.away_points ?? 0)).length
+    const awaySetsWon = finishedSets.filter(s => (s.awayPoints ?? s.away_points ?? 0) > (s.homePoints ?? s.home_points ?? 0)).length
+    const isMatchFinished = isMatchFinishedUtil(homeSetsWon, awaySetsWon, cloudData.match?.bestOf ?? cloudData.match?.best_of)
+    if (isMatchFinished) {
+      setShowMatchSetup(false)
+      setShowMatchEnd(true)
+    } else if ((matchStatus === 'live' || hasEvents || hasSets) && (hasEvents || hasSets)) {
+      setShowMatchEnd(false)
+      setShowMatchSetup(false)
+    } else {
+      setShowMatchEnd(false)
+      setShowMatchSetup(true)
+    }
+  }
+
   const goHome = async () => {
     // Unlock session if match was open
     if (matchId) {
@@ -3344,9 +3368,15 @@ export default function App() {
             {matchId && isScorerMoved({ cloudBlock: openMatchBlock }) && (
               <ScorerMovedModal
                 scorer={openMatchBlock?.scorer || null}
+                closed={openMatchBlock?.closed === true}
                 onTakeBack={async () => {
-                  await takeBackScoring(db, matchId)
+                  // The other device's score from the cloud first, then the claim
+                  const online = typeof navigator === 'undefined' || navigator.onLine !== false
+                  const r = await takeBackScoring(db, matchId, { fetchCloud: fetchMatchByPin, importCloud: importMatchFromSupabase, online })
+                  if (!r.ok) return { error: r.reason }
+                  openRestoredMatch(r.matchId, r.cloud)
                   try { window.dispatchEvent(new Event('sync-queue-write')) } catch { /* no window */ }
+                  return { ok: true }
                 }}
                 onClose={goHome}
               />
@@ -3909,29 +3939,7 @@ export default function App() {
                                 setCloudBackupPin('')
                                 setCloudBackupGameN('')
                                 setCloudBackupError('')
-                                setMatchId(newMatchId)
-
-                                // Determine where to go based on match state
-                                const matchStatus = cloudData.match?.status
-                                const hasEvents = cloudData.events && cloudData.events.length > 0
-                                const hasSets = cloudData.sets && cloudData.sets.length > 0
-                                const finishedSets = (cloudData.sets || []).filter(s => s.finished)
-                                const homeSetsWon = finishedSets.filter(s => (s.homePoints ?? s.home_points ?? 0) > (s.awayPoints ?? s.away_points ?? 0)).length
-                                const awaySetsWon = finishedSets.filter(s => (s.awayPoints ?? s.away_points ?? 0) > (s.homePoints ?? s.home_points ?? 0)).length
-                                const isMatchFinished = isMatchFinishedUtil(homeSetsWon, awaySetsWon, cloudData.match?.bestOf ?? cloudData.match?.best_of)
-
-                                // Priority: finished match → MatchEnd, live with activity → Scoreboard, else → Setup
-                                if (isMatchFinished) {
-                                  // Match is complete - go directly to MatchEnd
-                                  setShowMatchSetup(false)
-                                  setShowMatchEnd(true)
-                                } else if ((matchStatus === 'live' || hasEvents || hasSets) && (hasEvents || hasSets)) {
-                                  // Match in progress with activity - go to Scoreboard
-                                  setShowMatchSetup(false)
-                                } else {
-                                  // New or setup-phase match - go to MatchSetup
-                                  setShowMatchSetup(true)
-                                }
+                                openRestoredMatch(newMatchId, cloudData)
                               } catch (err) {
                                 setRestoreError(err.message || 'Failed to restore match')
                               } finally {
