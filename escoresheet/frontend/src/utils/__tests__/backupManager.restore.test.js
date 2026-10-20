@@ -34,7 +34,10 @@ function fakeTable(rows = []) {
     clear: async () => { map.clear() },
     toArray: async () => [...map.values()],
     filter: (fn) => collection(fn),
-    where: (field) => ({ equals: (value) => collection(r => r[field] === value) })
+    where: (field) => ({
+      equals: (value) => collection(r => r[field] === value),
+      anyOf: (...values) => collection(r => values.flat().includes(r[field]))
+    })
   }
 }
 
@@ -217,5 +220,33 @@ describe('remarks (db/017)', () => {
     expect(fakeDb.matches.map.get(id).remarks).toBe(REMARKS)
     const none = await importMatchFromSupabase({ match: { external_id: OTHER, status: 'live' }, sets: [], events: [] })
     expect(fakeDb.matches.map.get(none).remarks).toBe('')
+  })
+})
+
+// 2026-10-20, game 406970: the phone's own copy was refused (OV_GAME_TAKEN)
+// and the scorer joined the PC's match with its game PIN
+describe('joining a cloud match on this device', () => {
+  const OWN = 'match_300_own'
+  beforeEach(() => {
+    fakeDb.matches = fakeTable([{ id: 1, seed_key: OWN, gameN: 406970, status: 'scheduled', matchInfoConfirmedAt: 'x',
+      cloudBlock: { code: 'OV_GAME_TAKEN', claim: { game_n: 406970, mine: true, status: 'live' }, at: 1 } }])
+    fakeDb.sync_queue = fakeTable([{ id: 1, resource: 'match', action: 'insert', status: 'failed', payload: { external_id: OWN } }])
+  })
+
+  it('a restore by game PIN makes this device the scorer and retires the refused copy of the game', async () => {
+    const id = await importMatchFromSupabase({ match: { external_id: SEED, game_n: 406970, status: 'live' }, sets: [], events: [] })
+    const claim = [...fakeDb.sync_queue.map.values()].find(j => j.action === 'scorer')
+    expect(claim).toMatchObject({ resource: 'match', payload: { id: SEED }, status: 'queued' })
+    expect(fakeDb.matches.map.get(1)).toMatchObject({ status: 'final', supersededBy: SEED })
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('superseded')
+    expect(fakeDb.matches.map.get(id)).toMatchObject({ seed_key: SEED, status: 'live' })
+  })
+
+  it('a backup restore retires it too (its restore job is the take-over), a test match claims nothing', async () => {
+    await restoreMatchFromJson(backup({ gameN: 406970 }))
+    expect(fakeDb.matches.map.get(1).status).toBe('final')
+    expect([...fakeDb.sync_queue.map.values()].some(j => j.action === 'scorer')).toBe(false)
+    await importMatchFromSupabase({ match: { external_id: OTHER, game_n: 5, status: 'live', test: true }, sets: [], events: [] })
+    expect([...fakeDb.sync_queue.map.values()].some(j => j.action === 'scorer')).toBe(false)
   })
 })
