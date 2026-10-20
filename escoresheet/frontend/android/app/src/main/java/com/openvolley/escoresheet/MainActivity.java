@@ -98,9 +98,15 @@ public class MainActivity extends BridgeActivity {
      * height and it swaps everything for its "use a larger screen" notice,
      * unmounting the form being typed in. Like Chrome, the page keeps its
      * size; the WebView is slid up just enough to show the focused field.
+     * It slides inside its container, which stays below the status bar and
+     * clips it: sliding the container itself drew the page under the status
+     * bar (the line-up's top row under the clock, phone 2026-10-20).
      */
     private void keepWebViewInsideSystemBars() {
         View container = (View) getBridge().getWebView().getParent();
+        if (container instanceof ViewGroup) {
+            ((ViewGroup) container).setClipChildren(true);
+        }
         ViewCompat.setOnApplyWindowInsetsListener(container, (v, windowInsets) -> {
             // Bars hidden for the scoring screen: the page keeps the full
             // screen even when Android shows one anyway (a swipe shows them
@@ -119,7 +125,7 @@ public class MainActivity extends BridgeActivity {
             }
             boolean imeVisible = windowInsets.isVisible(WindowInsetsCompat.Type.ime());
             int imeBottom = windowInsets.getInsets(WindowInsetsCompat.Type.ime()).bottom;
-            panFocusedFieldAboveKeyboard(v, imeVisible ? imeBottom : 0);
+            panFocusedFieldAboveKeyboard(imeVisible ? imeBottom : 0);
             return WindowInsetsCompat.CONSUMED;
         });
         ViewCompat.requestApplyInsets(container);
@@ -159,33 +165,35 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
-    private void panFocusedFieldAboveKeyboard(View container, int imeBottom) {
+    private void panFocusedFieldAboveKeyboard(int imeBottom) {
+        WebView webView = getBridge().getWebView();
         if (imeBottom <= 0) {
-            container.setTranslationY(0);
+            webView.setTranslationY(0);
             return;
         }
-        WebView webView = getBridge().getWebView();
         webView.evaluateJavascript(FOCUSED_FIELD_EDGES, value -> {
             float[] edges = parseEdges(value);
             if (edges == null) {
-                container.setTranslationY(0);
+                webView.setTranslationY(0);
                 return;
             }
             float density = getResources().getDisplayMetrics().density;
             int[] location = new int[2];
             webView.getLocationOnScreen(location);
-            float webViewTop = location[1] - container.getTranslationY();
+            float webViewTop = location[1] - webView.getTranslationY();
             float gap = 16 * density;
             float keyboardTop = getWindow().getDecorView().getHeight() - imeBottom;
             // the field always shows above the keyboard (as before)
             float forField = webViewTop + edges[1] * density + gap - keyboardTop;
             // its dialog's buttons too (Save under a remark being typed was
             // behind the keyboard, emulator audit 2026-10-14), as long as
-            // the field's top stays on the screen
+            // the field stays on the screen with room above it for its label
+            // (a line-up position's "IV")
+            float labelRoom = 40 * density;
             float forDialog = Math.min(
                 webViewTop + edges[2] * density + gap - keyboardTop,
-                edges[0] * density - gap);
-            container.setTranslationY(-Math.max(0, Math.max(forField, forDialog)));
+                edges[0] * density - labelRoom);
+            webView.setTranslationY(-Math.max(0, Math.max(forField, forDialog)));
         });
     }
 
