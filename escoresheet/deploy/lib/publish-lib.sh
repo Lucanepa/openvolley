@@ -118,12 +118,16 @@ apt_name_ok() {
 # when its key was made; Vaultwarden "OpenBeach Android signing key") unless
 # OPENBEACH_APP_CERT_SHA256 is filled in below. Point Hub's is committed here,
 # from point-hub's android/signing-cert.sha256 (its build-release.sh refuses an
-# APK signed with any other key; KSC Wiedikon's key, not OpenVolley's). Any
+# APK signed with any other key; KSC Wiedikon's key, not OpenVolley's).
+# ReadVolley's (Lucanepa/readvolley, the rules reference app) is committed here
+# too, from ~/.config/readvolley-android/cert.sha256 (its own key; the same
+# value is AllowedAPKSigningKeys in readvolley's android/fdroid recipe). Any
 # other app id is refused.
 OPENVOLLEY_APP_CERT_SHA256=2c7f9db4da41f5475f36142403043e45452a3143baff764e3d511d686ddabe87
 OPENBEACH_APP_CERT_SHA256=
 OPENBEACH_CERT_FILE=${OV_BEACH_CERT_FILE:-$HOME/.config/openbeach-android/cert.sha256}
 POINTHUB_APP_CERT_SHA256=6d66f61494feaa02c31f030b5a0aaf749ac24cbe852684f75eb58b8d92e48c22
+READVOLLEY_APP_CERT_SHA256=3d011feb587afaaecc45b4023bae07ae5e4db1905084f932959a672135d5a1fb
 app_cert_sha256() {
   local cert
   case "$1" in
@@ -141,7 +145,11 @@ app_cert_sha256() {
         die "no signing certificate for com.openvolley.beach: put its SHA-256 in $OPENBEACH_CERT_FILE (or OPENBEACH_APP_CERT_SHA256 in lib/publish-lib.sh)"
       [[ "$cert" != "$OPENVOLLEY_APP_CERT_SHA256" ]] ||
         die "the com.openvolley.beach certificate is OpenVolley's: OpenBeach must have its own Android key" ;;
-    *) die "app id ${1:-?} is not published here (com.openvolley.escoresheet, com.openvolley.beach, ch.kscw.pointhub)" ;;
+    com.openvolley.readvolley)
+      cert=$READVOLLEY_APP_CERT_SHA256
+      [[ "$cert" != "$OPENVOLLEY_APP_CERT_SHA256" ]] ||
+        die "the com.openvolley.readvolley certificate is OpenVolley's: ReadVolley must have its own Android key" ;;
+    *) die "app id ${1:-?} is not published here (com.openvolley.escoresheet, com.openvolley.beach, ch.kscw.pointhub, com.openvolley.readvolley)" ;;
   esac
   [[ "$cert" =~ ^[0-9a-f]{64}$ ]] || die "the certificate SHA-256 for $1 is not 64 hex digits: $cert"
   printf '%s\n' "$cert"

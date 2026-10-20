@@ -633,6 +633,10 @@ ok "APT names: openvolley-escoresheet, openbeach-escoresheet and point-hub only"
 [[ "$(app_cert_sha256 com.openvolley.escoresheet)" == 2c7f9db4da41f5475f36142403043e45452a3143baff764e3d511d686ddabe87 ]] || bad "OpenVolley cert"
 [[ "$(app_cert_sha256 ch.kscw.pointhub)" == 6d66f61494feaa02c31f030b5a0aaf749ac24cbe852684f75eb58b8d92e48c22 ]] || bad "Point Hub cert"
 ok "Android: Point Hub's certificate (point-hub's signing-cert.sha256)"
+[[ "$(app_cert_sha256 com.openvolley.readvolley)" == 3d011feb587afaaecc45b4023bae07ae5e4db1905084f932959a672135d5a1fb ]] || bad "ReadVolley cert"
+rv_cert_ov() { READVOLLEY_APP_CERT_SHA256=$OPENVOLLEY_APP_CERT_SHA256; app_cert_sha256 com.openvolley.readvolley; }
+expect_fail "ReadVolley must have its own Android key" rv_cert_ov
+ok "Android: ReadVolley's certificate (its own key)"
 ph_cert_ov() { POINTHUB_APP_CERT_SHA256=$OPENVOLLEY_APP_CERT_SHA256; app_cert_sha256 ch.kscw.pointhub; }
 expect_fail "Point Hub must have its own Android key" ph_cert_ov
 expect_fail "no signing certificate for com.openvolley.beach: put its SHA-256 in $OV_BEACH_CERT_FILE" app_cert_sha256 com.openvolley.beach

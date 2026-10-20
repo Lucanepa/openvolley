@@ -242,6 +242,16 @@ cannot push code to venue laptops. `publish-pkgs.sh` checks every signature agai
 This is separate from the owner's private F-Droid repo (`/srv/fdroid/desktop-calendar`), which
 stays private and is not touched by any of this.
 
+### ReadVolley (Android only)
+
+ReadVolley (the volleyball rules reference, Lucanepa/readvolley) is in the F-Droid repo as
+`com.openvolley.readvolley`, signed with its own key (certificate SHA-256 committed in
+`lib/publish-lib.sh`, `READVOLLEY_APP_CERT_SHA256`). It has no desktop app and no `.deb`: build
+and sign the APK with readvolley's `scripts/release-android.sh`, then
+`escoresheet/deploy/publish-pkgs.sh <signed.apk>`. Its F-Droid metadata is
+`fdroid/metadata/com.openvolley.readvolley.yml` (copy it there once). The install page has no
+ReadVolley section; the app shows up in F-Droid clients that have the repo.
+
 ### OpenBeach
 
 OpenBeach (the beach volleyball app, Lucanepa/openbeach) is published from the same repository
