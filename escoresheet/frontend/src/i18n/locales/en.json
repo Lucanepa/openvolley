@@ -1895,6 +1895,7 @@
       "live": "Live",
       "final": "Final",
       "approved": "Approved",
+      "ended": "Awaiting approval",
       "setup": "Setup"
     }
   },

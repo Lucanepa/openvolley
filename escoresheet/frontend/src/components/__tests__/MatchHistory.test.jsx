@@ -98,6 +98,14 @@ describe('MatchHistory: an approved match', () => {
     expect(open).toHaveBeenCalledWith(`${window.location.origin}/scoresheet/?date=2026-10-20&game=406970`, '_blank', 'noopener')
   })
 
+  it('an ended match (not approved yet) is not a link and does not say "Final"', async () => {
+    api.rows = [{ external_id: 'match_1_a', game_n: 7, home_team: 'H', away_team: 'A', final_score: '3-1', status: 'ended', scheduled_at: '2026-10-01T18:00:00Z' }]
+    render(<MatchHistory open onClose={() => {}} />)
+    expect(await screen.findByText('Awaiting approval')).toBeInTheDocument()
+    expect(screen.queryByText('Final')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Open scoresheet/ })).toBeNull()
+  })
+
   it('a live match is not a link', async () => {
     api.rows = [{ external_id: 'match_1_a', game_n: 5, home_team: 'H', away_team: 'A', final_score: null, status: 'live', scheduled_at: '2026-10-20T18:00:00Z' }]
     render(<MatchHistory open onClose={() => {}} />)
@@ -146,7 +154,10 @@ describe('matchStatusPill', () => {
       expect(matchStatusPill(s).className).not.toContain('amber')
     }
     expect(matchStatusPill('final').fallback).toBe('Final')
-    expect(matchStatusPill('ended').fallback).toBe('Final')
+    // ended = played, not approved yet: it does not open, so it is not "Final"
+    expect(matchStatusPill('ended').fallback).toBe('Awaiting approval')
+    expect(matchStatusPill('ended').className).not.toContain('emerald')
+    expect(matchStatusPill('approved').className).toContain('emerald')
     expect(matchStatusPill('live').fallback).toBe('Live')
   })
 })

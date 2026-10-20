@@ -12,9 +12,11 @@ import { backdropDismiss } from '../../ui/backdropDismiss.js'
 
 /**
  * Status pill of a My matches row. The database says 'live', 'final',
- * 'ended', 'approved' or 'setup' ('finished' in older rows). A finished match
- * is the done state (emerald), a running one the brand red, setup neutral.
- * Amber (warning) is not used: 'Final' used to fall through to it.
+ * 'ended', 'approved' or 'setup' ('finished' in older rows). A closed match
+ * (approved, final: its scoresheet opens) is the done state (emerald), a
+ * running one the brand red; setup and an ended match still awaiting
+ * approval are neutral. Amber (warning) is not used: 'Final' used to fall
+ * through to it.
  * @returns {{ key: string, fallback: string, className: string }}
  */
 export function matchStatusPill(status) {
@@ -24,10 +26,13 @@ export function matchStatusPill(status) {
       return { key: 'matchHistory.status.live', fallback: 'Live', className: 'border-red-200 bg-red-50 text-red-700' }
     case 'final':
     case 'finished':
-    case 'ended':
       return { key: 'matchHistory.status.final', fallback: 'Final', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' }
     case 'approved':
       return { key: 'matchHistory.status.approved', fallback: 'Approved', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' }
+    // Played but not approved yet: no scoresheet to open, so neither the
+    // green of a closed match nor its label
+    case 'ended':
+      return { key: 'matchHistory.status.ended', fallback: 'Awaiting approval', className: 'border-stone-200 bg-stone-50 text-stone-600' }
     case 'setup':
       return { key: 'matchHistory.status.setup', fallback: 'Setup', className: 'border-stone-200 bg-stone-50 text-stone-600' }
     default:
