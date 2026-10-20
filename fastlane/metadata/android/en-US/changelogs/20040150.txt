@@ -1,0 +1,5 @@
+OpenVolley 2.4.15
+- Home: every open match on the device is listed with its own Continue and Delete; two matches of the same game are flagged.
+- Sync: deleting a match closed on the server no longer stays in error.
+- Easy match: line-ups optional; team warning/penalty; never sent online.
+- Phone: libero shown in its own colour; time-out countdown fits without scrolling; match setup on narrow screens.
