@@ -58,6 +58,7 @@ import DesktopUpdateNotice from './components/DesktopUpdateNotice'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils/matchFormat'
 import { getMatchWinner } from './domain/matchEnd'
 import { setExtId } from './utils/syncIds'
+import { deviceMatchRows, jobsOfMatch } from './utils/deviceMatches'
 import { PhoneIcon } from './components/icons'
 import { Maximize } from 'lucide-react'
 import { Button, cn, FormError, Input } from './ui'
@@ -72,7 +73,7 @@ import ManagerSiteLink from './components/ManagerSiteLink'
 import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, restorePrefill } from './utils/manageNav'
 import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
 import { needsEventCheck, pickCurrentMatch } from './utils/currentMatch'
-import { isRelayErrorFor, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
+import { isRelayErrorFor, mayPublishMatchData, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
 import { PHONE_MAX_WIDTH, isPhoneScreen, phoneLayoutKept } from './components/scoreboard/phoneLayout'
 import { useSystemBarsHidden } from './utils/nativeSystemBars'
 
@@ -535,6 +536,21 @@ export default function App() {
     } catch (error) {
       console.error('Unable to load official match', error)
       return null
+    }
+  }, [])
+
+  // Every open official match on this device, for the home screen's list
+  // (utils/deviceMatches.js): Continue and Delete above only reach the newest
+  const deviceMatches = useLiveQuery(async () => {
+    try {
+      const matches = await db.matches.toArray()
+      const teamIds = [...new Set(matches.flatMap(m => [m.homeTeamId, m.awayTeamId]).filter(id => id != null))]
+      const teams = teamIds.length ? await db.teams.bulkGet(teamIds) : []
+      const names = new Map(teams.filter(Boolean).map(tm => [tm.id, tm.name]))
+      return deviceMatchRows(matches, names)
+    } catch (error) {
+      console.error('Unable to list the matches on this device', error)
+      return []
     }
   }, [])
 
@@ -1158,6 +1174,8 @@ export default function App() {
       // could join, and a Dexie id is no room key (see relayMatchKey)
       const relayKey = relayMatchKey(currentMatchData)
       if (!relayKey) return
+      // A test match: to a local relay only (mayPublishMatchData)
+      if (!mayPublishMatchData(currentMatchData, scorerRelay.url)) return
 
       try {
         // Before the reads: a live state numbered after this mark is newer
@@ -2018,8 +2036,9 @@ export default function App() {
     })
   }
 
-  async function showDeleteMatchModal() {
-    const matchToDelete = currentOfficialMatch || currentMatch
+  // targetId: a match of the home screen's list; none = the newest open one
+  async function showDeleteMatchModal(targetId) {
+    const matchToDelete = targetId != null ? await db.matches.get(targetId) : (currentOfficialMatch || currentMatch)
     if (!matchToDelete) return
 
     const [homeTeam, awayTeam] = await Promise.all([
@@ -2103,10 +2122,10 @@ export default function App() {
         await db.teams.delete(match.awayTeamId)
       }
 
-      // Delete all sync queue items (since we can't filter by matchId easily)
-      const syncQueueCount = await db.sync_queue.count()
-      console.log('[Delete Match] Clearing', syncQueueCount, 'sync queue items')
-      await db.sync_queue.clear()
+      // This match's unsent jobs; the other matches on the device keep theirs
+      const matchJobs = jobsOfMatch(await db.sync_queue.toArray(), match?.seed_key)
+      console.log('[Delete Match] Removing', matchJobs.length, 'sync queue items of the match')
+      if (matchJobs.length > 0) await db.sync_queue.bulkDelete(matchJobs.map(j => j.id))
 
       // Delete match setup draft
       await db.match_setup.clear()
@@ -2225,8 +2244,9 @@ export default function App() {
           await db.teams.delete(currentMatch.awayTeamId)
         }
 
-        // Delete all sync queue items
-        await db.sync_queue.clear()
+        // This match's unsent jobs; the other matches on the device keep theirs
+        const matchJobs = jobsOfMatch(await db.sync_queue.toArray(), currentMatch.seed_key)
+        if (matchJobs.length > 0) await db.sync_queue.bulkDelete(matchJobs.map(j => j.id))
 
         // Delete match setup draft
         await db.match_setup.clear()
@@ -3266,6 +3286,7 @@ export default function App() {
                     easyMatchLoading={easyMatchLoading}
                     currentOfficialMatch={homeOfficialMatch}
                     currentTestMatch={homeTestMatch}
+                    deviceMatches={deviceMatches?.filter(r => r.id !== closedMatchId)}
                     continueMatch={continueMatch}
                     continueTestMatch={continueTestMatch}
                     showDeleteMatchModal={showDeleteMatchModal}

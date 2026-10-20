@@ -646,7 +646,8 @@
       "warning": "Warnig",
       "penalty": "Straaf",
       "expulsion": "Usschluss",
-      "disqualification": "Disqualifikation"
+      "disqualification": "Disqualifikation",
+      "wholeTeam": "S Team"
     },
     "actions": {
       "libero": "Libero",
@@ -918,7 +919,9 @@
       "onCourt": "ufem Fäld",
       "redesignate": "Libero neu bestimme",
       "sidewaysTitle": "Heb s Handy uufrächt",
-      "sidewaysBody": "D Erfassig ufem Handy isch fürs Hochformat gmacht. Drääj s Handy zrugg: Spiil, Dialög und Countdowns blibed erhalte."
+      "sidewaysBody": "D Erfassig ufem Handy isch fürs Hochformat gmacht. Drääj s Handy zrugg: Spiil, Dialög und Countdowns blibed erhalte.",
+      "sanctionOnePlayer": "Oder en Spieler",
+      "lineupOptional": "{{team}} · freiwillig"
     },
     "easySub": {
       "notAllowed": "Darf nöd ine",
@@ -1051,7 +1054,25 @@
     "downloadAppDeb": "oder s .deb-Paket abelade",
     "downloadServer": "Server abelade — Schiri ohni Internet",
     "easyMatch": "Eifachs Spiil",
-    "easyMatchHint": "Inoffiziell · ohni Kader und Underschrifte"
+    "easyMatchHint": "Inoffiziell · ohni Kader und Underschrifte",
+    "deviceMatches": {
+      "title": "Uf däm Gerät",
+      "game": "Spiil {{game}}",
+      "home": "Heim",
+      "away": "Gast",
+      "noTeams": "Teams nonig erfasst",
+      "notSynced": "Nöd synchronisiert",
+      "sameGame": "Gliichs Spiil zwöimal",
+      "duplicateNotice": "Spiil {{game}} isch zwöimal uf däm Gerät. De Server füehrt eis Match pro Spiil: füehr das wiiter, wo du zellt häsch, und lösch s andere.",
+      "continue": "Wiiterfüehre",
+      "delete": "Lösche",
+      "status": {
+        "scheduled": "Nonig gstartet",
+        "live": "Lauft",
+        "ended": "Fertig",
+        "approved": "Gnehmigt"
+      }
+    }
   },
   "options": {
     "title": "Optione",
@@ -3945,7 +3966,7 @@
     "teamName": "Name",
     "nameRequired": "Nötig",
     "shortName": "Kurz",
-    "intro": "Inoffiziell: ohni Kader, Offizielli oder Underschrifte. D Ruggenummere chömed mit de Ufstellige; alles andere isch s normale Scoreboard.",
+    "intro": "Inoffiziell: ohni Kader, Offizielli oder Underschrifte. D Ufstellige sind freiwillig: ohni spielt es Team ohni Rotation und Wächsel. Alles andere isch s normale Scoreboard.",
     "format": "Format",
     "bestOf": "Best of {{count}}",
     "start": "Zur Usloosig"

@@ -123,11 +123,11 @@ describe('bench tablet court discs', () => {
     expect(d['7'].style.background).not.toBe(rgb('#1c1917'))
   })
 
-  it('navy vs black: the two benches show different liberos (white for home, orange for away)', async () => {
+  it('navy vs black: the two benches show different liberos (orange for home, sky for away)', async () => {
     bundle = benchBundle('#000080', '#000000')
     const home = await benchDiscs('home')
     expect(home['10'].style.background).toBe(rgb('#000080'))
-    expect(home['7'].style.background).toBe(rgb('#ffffff'))
+    expect(home['7'].style.background).toBe(rgb('#f97316'))
     document.body.innerHTML = ''
     const away = await benchDiscs('away')
     expect(away['2'].style.background).toBe(rgb('#000000'))

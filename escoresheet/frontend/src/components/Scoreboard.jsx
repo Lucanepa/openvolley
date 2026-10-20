@@ -39,7 +39,7 @@ import { TEAM_COLOUR_MARK, discPaint, effectiveTeamColour, matchDiscPaint, teamL
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom } from '../lib/apiClient'
 import { relayMatchKey, relayMatchPayload } from '../utils/serverDataSync'
-import { isRelayErrorFor, liveStateTargets, publishLiveState, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
+import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveState, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { exportMatchData } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
@@ -1709,6 +1709,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // relay room key (see relayMatchKey)
         const relayKey = relayMatchKey(freshMatch)
         if (!relayKey) return
+        // A test match: to a local relay only (mayPublishMatchData)
+        if (!mayPublishMatchData(freshMatch, scorerRelay.url)) return
 
         const [freshHomeTeam, freshAwayTeam, freshSets, freshEvents, freshHomePlayers, freshAwayPlayers] = await Promise.all([
           db.teams.get(freshMatch?.homeTeamId),
@@ -3734,6 +3736,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     )
   }, [data?.events, data?.set, leftIsHome])
 
+  // Easy match (domain/easyMatch.js): the line-ups are optional. Without one a
+  // team plays the set with no rotation (the serve still follows the points),
+  // no substitutions and no libero; it can still enter one later.
+  const lineupsOptional = data?.match?.easy === true
+
   // Track which lineups we've already validated (to prevent infinite modal loops)
   const validatedLineupRef = useRef({ home: null, away: null })
 
@@ -5714,7 +5721,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         e.payload?.isInitial
       )
 
-      if (homeLineupSet && awayLineupSet) {
+      // An easy match plays without line-ups when it likes: the point now
+      if ((homeLineupSet && awayLineupSet) || data.match?.easy === true) {
         // Both lineups are set - award point immediately (same transaction)
         const otherSide = side === 'left' ? 'right' : 'left'
         await handlePoint(otherSide)
@@ -10637,6 +10645,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         return
       }
     }
+    // Easy match, a sanction for the team: one formal warning per team too
+    if (type === 'team' && sanctionType === 'warning' && teamHasFormalWarning(team)) {
+      deferUi(() => showAlert(`Warning cannot be given because the team has already been warned.`, 'warning'))
+      deferUi(() => setSanctionConfirmModal(null))
+      return
+    }
 
     // Closed with the written sanction (deferUi, one render); the follow-up
     // dialogs below open from this snapshot, not from the dialog
@@ -10964,7 +10978,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           e.payload?.isInitial
         )
 
-        if (homeLineupSet && awayLineupSet) {
+        // An easy match plays without line-ups when it likes: the point now
+        if ((homeLineupSet && awayLineupSet) || data.match?.easy === true) {
           // Both lineups are set - award point immediately
           const otherTeam = team === 'home' ? 'away' : 'home'
           const otherSide = mapTeamKeyToSide(otherTeam)
@@ -12768,12 +12783,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         timeouts: getTimeoutsUsed(side),
         subs: getSubstitutionsUsed(side),
         lineupSet: isLeft ? leftTeamLineupSet : rightTeamLineupSet,
+        lineupOptional: lineupsOptional,
+        // The libero's shirt (the desktop court's disc paint): the phone court
+        // showed the libero's number in the team colour, like any player
+        liberoPaint: discPaintBySide[side]?.libero || null,
         court,
         liberos,
         benchPlayers: (bench.benchPlayers || []).map(p => ({ number: p.number })),
         officials: (bench.benchOfficials || []).filter(o => o?.role).map(o => ({ role: o.role })),
         improperRequestDone: sanctionFlag('improperRequest'),
         delayWarned: sanctionFlag('delayWarning'),
+        // Easy match: a warning or a penalty for the team, no person picked
+        easy: data?.match?.easy === true,
+        formalWarned: teamHasFormalWarning(teamKey),
         needsRedesignation
       }
     }
@@ -12819,7 +12841,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       rally: {
         status: rallyStatus,
         isFirstRally,
-        startDisabled: isFirstRally && (!leftTeamLineupSet || !rightTeamLineupSet),
+        startDisabled: isFirstRally && !lineupsOptional && (!leftTeamLineupSet || !rightTeamLineupSet),
         canReplayRally,
         isRallyReplayed
       },
@@ -12857,6 +12879,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         sanctionPerson: ({ team, side, type, playerNumber, position, role }, e) => {
           if (rallyStatus !== 'idle') return
           setSanctionDropdown({ team, type, playerNumber, position, role, side, ...anchorOf(e) })
+        },
+        // Easy match: an unofficial match has no bench or officials to pick
+        // from, the sanction goes to the team (straight to the confirmation)
+        sanctionTeam: (teamKey, sanctionType) => {
+          if (rallyStatus !== 'idle') return
+          setSanctionConfirmModal({ team: teamKey, type: 'team', sanctionType })
         },
         liberoClick: (teamKey, libero, e) => {
           if (libero.onCourt) {
@@ -16532,7 +16560,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         data-help-id="scoreboard-start-rally"
                         className="secondary start-rally-button"
                         onClick={() => handleStartRally()}
-                        disabled={isFirstRally && (!leftTeamLineupSet || !rightTeamLineupSet)}
+                        disabled={isFirstRally && !lineupsOptional && (!leftTeamLineupSet || !rightTeamLineupSet)}
                       >
                         {isFirstRally ? t('scoreboard.buttons.startSet') : t('scoreboard.buttons.startRally')}
                       </button>
@@ -20725,6 +20753,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {sanctionConfirmModal.type === 'bench' && `Bench #${sanctionConfirmModal.playerNumber}`}
                 {sanctionConfirmModal.type === 'libero' && `Libero #${sanctionConfirmModal.playerNumber}`}
                 {sanctionConfirmModal.type === 'official' && `${sanctionConfirmModal.role}`}
+                {sanctionConfirmModal.type === 'team' && t('scoreboard.sanctions.wholeTeam', 'The team')}
               </p>
               <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
                 {sanctionConfirmModal.sanctionType === 'warning' && <div className="sanction-card yellow" style={{ width: '28px', height: '38px' }}></div>}

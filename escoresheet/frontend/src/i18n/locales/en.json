@@ -647,7 +647,8 @@
       "warning": "Warning",
       "penalty": "Penalty",
       "expulsion": "Expulsion",
-      "disqualification": "Disqualification"
+      "disqualification": "Disqualification",
+      "wholeTeam": "The team"
     },
     "actions": {
       "libero": "Libero",
@@ -919,7 +920,9 @@
       "onCourt": "on court",
       "redesignate": "Redesignate libero",
       "sidewaysTitle": "Hold the phone upright",
-      "sidewaysBody": "The scoring screen on a phone is made for portrait. Turn the phone back: the match, its dialogs and countdowns are kept."
+      "sidewaysBody": "The scoring screen on a phone is made for portrait. Turn the phone back: the match, its dialogs and countdowns are kept.",
+      "sanctionOnePlayer": "Or one player",
+      "lineupOptional": "{{team}} · optional"
     },
     "easySub": {
       "notAllowed": "Cannot come in",
@@ -1052,7 +1055,25 @@
     "downloadAppDeb": "or get the .deb package",
     "downloadServer": "Download server — referee without internet",
     "easyMatch": "Easy match",
-    "easyMatchHint": "Unofficial · no rosters or signatures"
+    "easyMatchHint": "Unofficial · no rosters or signatures",
+    "deviceMatches": {
+      "title": "On this device",
+      "game": "Game {{game}}",
+      "home": "Home",
+      "away": "Away",
+      "noTeams": "Teams not set",
+      "notSynced": "Not synced",
+      "sameGame": "Same game twice",
+      "duplicateNotice": "Game {{game}} is on this device twice. The server keeps one match per game: continue the one you scored and delete the other.",
+      "continue": "Continue",
+      "delete": "Delete",
+      "status": {
+        "scheduled": "Not started",
+        "live": "In progress",
+        "ended": "Ended",
+        "approved": "Approved"
+      }
+    }
   },
   "options": {
     "title": "Options",
@@ -3951,7 +3972,7 @@
     "teamName": "Name",
     "nameRequired": "Required",
     "shortName": "Short",
-    "intro": "Unofficial: no rosters, officials or signatures. Shirt numbers are entered with the line-ups; everything else is the normal scoreboard.",
+    "intro": "Unofficial: no rosters, officials or signatures. The line-ups are optional: without one a team plays without rotation or substitutions. Everything else is the normal scoreboard.",
     "format": "Format",
     "bestOf": "Best of {{count}}",
     "start": "Coin toss"

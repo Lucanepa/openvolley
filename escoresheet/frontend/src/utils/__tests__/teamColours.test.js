@@ -4,7 +4,7 @@ import {
   readableTextOn, readableText, discRing, liberoColour, liberoScore, teamLiberoColour,
   discPaint, teamDiscPaint, markColourOn, liberoPair, matchDiscPaint, teamBoxStyle, TEAM_COLOUR_MARK,
   teamTextPaint, teamTextStyle, toOklab,
-  LIBERO_CLASH_DISTANCE, HEADER_SURFACE, TEXT_DARK, TEXT_LIGHT, TEXT_BLACK, COURT_SURFACE, LIBERO_PALETTE, MIN_TEXT_CONTRAST, MIN_EDGE_CONTRAST, MIN_LARGE_TEXT_CONTRAST
+  LIBERO_CLASH_DISTANCE, LIBERO_COURT_CLASH_DISTANCE, HEADER_SURFACE, TEXT_DARK, TEXT_LIGHT, TEXT_BLACK, COURT_SURFACE, LIBERO_PALETTE, MIN_TEXT_CONTRAST, MIN_EDGE_CONTRAST, MIN_LARGE_TEXT_CONTRAST
 } from '../teamColours'
 
 const PALETTE = LIBERO_PALETTE.map(p => p.hex)
@@ -181,17 +181,31 @@ describe('liberoColour', () => {
 
   it('picks the expected shirts for real pairs', () => {
     expect(liberoColour('#ffffff', '#ffffff')).toBe('#1c1917') // white vs white: black
-    expect(liberoColour('#e2001a', '#e2001a')).toBe('#ffffff') // red vs red: white
-    expect(liberoColour('#000000', '#000080')).toBe('#ffffff') // black vs navy: white
+    expect(liberoColour('#e2001a', '#e2001a')).toBe('#1c1917') // red vs red: black
+    // black vs navy: orange, not white (white blends into the light court)
+    expect(liberoColour('#000000', '#000080')).toBe('#f97316')
     expect(liberoColour('#facc15', '#f97316')).toBe('#1c1917') // yellow vs orange: black
     // white vs black: neither white nor black, a strong colour
     expect(['#ffffff', '#1c1917']).not.toContain(liberoColour('#ffffff', '#000000'))
   })
 
   it('takes the opponent into account', () => {
-    // Black shirts: white is the natural libero, unless the opponent wears white
-    expect(liberoColour('#000000', '#e2001a')).toBe('#ffffff')
-    expect(liberoColour('#000000', '#ffffff')).not.toBe('#ffffff')
+    // Black shirts: sky against red, red against white
+    expect(liberoColour('#000000', '#e2001a')).toBe('#38bdf8')
+    expect(liberoColour('#000000', '#ffffff')).toBe('#e2001a')
+  })
+
+  // 2026-10-20: white was the natural pick for dark shirts and all but
+  // vanished on the light court
+  it('passes over a shirt that blends into the court while another reaches 3:1', () => {
+    for (const [team, opp] of [['#000000', '#000080'], ['#000080', '#000000'], ['#000000', '#e2001a'], ['#1c1917', '#1d4ed8']]) {
+      const lib = liberoColour(team, opp)
+      expect(colourDistance(lib, COURT_SURFACE), `${team} vs ${opp}`).toBeGreaterThanOrEqual(LIBERO_COURT_CLASH_DISTANCE)
+      expect(contrastRatio(lib, team)).toBeGreaterThanOrEqual(3)
+    }
+    // two red teams: only white reaches 3:1 against red for the second
+    // libero, the shirt contrast comes first
+    expect(liberoPair('#e2001a', '#e2001a')).toEqual({ home: '#1c1917', away: '#ffffff' })
   })
 
   it('uses an explicit libero colour when the data has one', () => {
@@ -247,16 +261,16 @@ describe('liberoPair', () => {
     expect(joint(p.home, p.away, home, away)).toBeCloseTo(best, 9)
   })
 
-  it('navy vs black: the two liberos are no longer both white', () => {
-    expect(liberoColour('#000080', '#000000')).toBe('#ffffff')
-    expect(liberoColour('#000000', '#000080')).toBe('#ffffff')
-    expect(liberoPair('#000080', '#000000')).toEqual({ home: '#ffffff', away: '#f97316' }) // white, orange
-    expect(liberoPair('#000000', '#000080')).toEqual({ home: '#ffffff', away: '#f97316' })
+  it('navy vs black: the two liberos are different, and neither is white', () => {
+    expect(liberoColour('#000080', '#000000')).toBe('#f97316')
+    expect(liberoColour('#000000', '#000080')).toBe('#f97316')
+    expect(liberoPair('#000080', '#000000')).toEqual({ home: '#f97316', away: '#38bdf8' }) // orange, sky
+    expect(liberoPair('#000000', '#000080')).toEqual({ home: '#f97316', away: '#38bdf8' })
   })
 
   it('white vs white and red vs red: home keeps its best pick, away takes the next', () => {
     expect(liberoPair('#ffffff', '#ffffff')).toEqual({ home: '#1c1917', away: '#1d4ed8' }) // black, blue
-    expect(liberoPair('#e2001a', '#e2001a')).toEqual({ home: '#ffffff', away: '#1c1917' }) // white, black
+    expect(liberoPair('#e2001a', '#e2001a')).toEqual({ home: '#1c1917', away: '#ffffff' }) // black, white
   })
 
   it('keeps both teams\' own best picks when they do not clash', () => {
@@ -292,10 +306,10 @@ describe('matchDiscPaint', () => {
     const m = matchDiscPaint('#000080', '#000000')
     expect(m.home.player.background).toBe('#000080')
     expect(m.away.player.background).toBe('#000000')
-    expect(m.home.libero.background).toBe('#ffffff')
-    expect(m.away.libero.background).toBe('#f97316')
-    expect(m.away.libero.color).toBe(readableTextOn('#f97316'))
-    expect(m.home.libero.ring).toBeTruthy() // a white libero gets its ring on the court
+    expect(m.home.libero.background).toBe('#f97316')
+    expect(m.away.libero.background).toBe('#38bdf8')
+    expect(m.away.libero.color).toBe(readableTextOn('#38bdf8'))
+    expect(m.home.libero.ring).toBeTruthy() // under 3:1 on the court: a ring
   })
 
   it('null for a team without a colour, and honours explicit libero colours', () => {
