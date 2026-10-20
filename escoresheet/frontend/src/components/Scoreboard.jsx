@@ -76,7 +76,7 @@ import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
 import { isNativeApp } from '../utils/backendConfig'
 import PhoneScoreboard from './scoreboard/PhoneScoreboard.jsx'
-import { detectDisplayMode, isPhoneScreen, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
+import { detectDisplayMode, dialogsCentred, isPhoneScreen, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
 import { WarningIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon } from './icons'
 import { cn } from '../ui/cn.js'
@@ -167,6 +167,21 @@ const SB_ROW_DELETE = `inline-flex items-center justify-center h-11 min-w-[64px]
 /** Anchored action menu / dropdown beside a player (kit anchored menu). The
  *  scale(1.5) and the position stay inline, so targets keep their size. */
 const SB_POPOVER = 'rounded-xl border border-stone-200 bg-white shadow-card-lg text-stone-800'
+
+// A court-anchored dialog drawn centred (phone, small tablet: centreDialogs):
+// the overlay centres it, the panel stays inside the screen and scrolls
+const CENTRED_OVERLAY = { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }
+const centredPanel = (maxWidth) => ({
+  position: 'relative',
+  top: 'auto',
+  left: 'auto',
+  boxSizing: 'border-box',
+  padding: '20px',
+  minWidth: 'min(320px, 100%)',
+  maxWidth: `min(${maxWidth}, 100%)`,
+  maxHeight: '100%',
+  overflowY: 'auto'
+})
 
 /**
  * One button spec for every row of the player / libero / official popovers
@@ -1032,6 +1047,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // it upright, rather than falling back to the landscape layout.
   const isPhoneSideways = phoneHeldSideways(displayMode, { width: viewportWidth, height: viewportHeight })
   const isPhoneView = activeDisplayMode === 'phone' || isPhoneSideways
+  // Phones and small tablets get the court-anchored dialogs and menus centred
+  // (styles.css .centre-dialogs; the libero dialogs below): anchored next to
+  // the court side, they ran off the screen there. A large screen keeps them
+  // next to the tapped player.
+  const centreDialogs = dialogsCentred({ phoneView: isPhoneView, width: viewportWidth, height: viewportHeight })
 
   // Update current datetime every second for fullscreen header display
   useEffect(() => {
@@ -12981,7 +13001,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }
 
   return (
-    <div className={isPhoneView ? 'match-record phone-layout' : 'match-record'}>
+    <div className={['match-record', isPhoneView && 'phone-layout', centreDialogs && 'centre-dialogs'].filter(Boolean).join(' ')}>
       {relayRejection && now - relayRejection.at < 45000 && (
         <div role="alert" className="no-print rounded-xl border border-red-200 bg-red-50 text-red-800 font-medium leading-snug shadow-lg" style={{
           position: 'fixed',
@@ -21138,7 +21158,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const positionRef = isOnLeftSide ? leftCourtPositionVRef : rightCourtPositionIIRef
         const rect = positionRef.current?.getBoundingClientRect()
 
-        // Calculate modal position (top-left corner at the position box)
+        // Calculate modal position (top-left corner at the position box). On a
+        // phone or a small tablet (centreDialogs), and whenever that box is not
+        // on screen (the phone layout has no such court), it is centred
+        // instead: anchored, it ran off the right or the bottom edge
+        const centred = centreDialogs || !rect
         const modalTop = rect ? rect.top : (isOnLeftSide ? '50%' : '30%')
         const modalLeft = rect ? rect.left : (isOnLeftSide ? '10%' : '55%')
 
@@ -21151,7 +21175,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               right: 0,
               bottom: 0,
               background: 'rgba(0, 0, 0, 0.5)',
-              zIndex: 9999
+              zIndex: 9999,
+              ...(centred ? CENTRED_OVERLAY : null)
             }}
             {...backdropDismiss(cancelLiberoReentry)}
           >
@@ -21165,7 +21190,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 padding: '24px 32px',
                 minWidth: '320px',
                 maxWidth: '420px',
-                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)'
+                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+                ...(centred ? centredPanel('420px') : null)
               }}
               onClick={e => e.stopPropagation()}
             >
@@ -22503,7 +22529,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const positionRef = isOnLeftSide ? leftCourtPositionVRef : rightCourtPositionIIRef
         const rect = positionRef.current?.getBoundingClientRect()
 
-        // Calculate modal position (top-left corner at the position box)
+        // Calculate modal position (top-left corner at the position box). On a
+        // phone or a small tablet (centreDialogs), and whenever that box is not
+        // on screen (the phone layout has no such court), it is centred
+        // instead: anchored, it ran off the right or the bottom edge
+        const centred = centreDialogs || !rect
         const modalTop = rect ? rect.top : (isOnLeftSide ? '50%' : '30%')
         const modalLeft = rect ? rect.left : (isOnLeftSide ? '10%' : '55%')
 
@@ -22516,7 +22546,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               right: 0,
               bottom: 0,
               background: 'rgba(0, 0, 0, 0.5)',
-              zIndex: 9999
+              zIndex: 9999,
+              ...(centred ? CENTRED_OVERLAY : null)
             }}
             {...backdropDismiss(() => setLiberoRotationModal(null))}
           >
@@ -22530,7 +22561,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 padding: '24px 32px',
                 minWidth: '320px',
                 maxWidth: '400px',
-                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)'
+                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+                ...(centred ? centredPanel('400px') : null)
               }}
               onClick={e => e.stopPropagation()}
             >

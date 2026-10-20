@@ -96,6 +96,30 @@ export function phoneHeldSideways(displayMode, size, screenSize) {
 }
 
 /**
+ * Screens smaller than this (CSS px, short side x long side) get the scoring
+ * screen's court-anchored dialogs and menus centred: phones either way
+ * round, and small tablets (an 8" tablet held sideways is 962x601). A 10"
+ * tablet (1280x800) and a laptop, even in a short browser window
+ * (1366x650), keep them next to the tapped player.
+ */
+export const CENTRED_DIALOGS_BELOW = { short: 700, long: 1100 }
+
+/**
+ * True when the scoring screen centres its court-anchored dialogs and menus
+ * (player, substitution, libero and sanction menus, the libero dialogs):
+ * always in the phone layout, and on any screen smaller than
+ * CENTRED_DIALOGS_BELOW.
+ * @param {{ phoneView?: boolean, width: number, height: number }} opts
+ */
+export function dialogsCentred({ phoneView = false, width, height }) {
+  if (phoneView) return true
+  const w = Number(width) || 0
+  const h = Number(height) || 0
+  if (!w || !h) return false
+  return Math.min(w, h) < CENTRED_DIALOGS_BELOW.short && Math.max(w, h) < CENTRED_DIALOGS_BELOW.long
+}
+
+/**
  * The rotation positions of one half of the court in reading order of its
  * 2 x 3 grid (row by row, top to bottom). The left team faces right: its
  * back row is the outer (left) column, position IV top front, II bottom

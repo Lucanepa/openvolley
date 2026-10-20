@@ -3152,21 +3152,31 @@ button.start-rally-button {
   }
 }
 
-/* Phone layout (PhoneScoreboard): the scoring screen's small menus (player
-   action menu, substitution / libero / sanction dropdowns, bench and libero
-   menus) are anchored next to the tapped player and drawn at 1.5x for the
-   large court. On a phone that puts them off screen, so they open centred,
-   at 1.25x, and scroll when taller than the screen. Only under .phone-layout:
-   desktop and tablet keep their anchored menus. */
-.match-record.phone-layout .modal-wrapper-roll-down,
-.match-record.phone-layout .modal-wrapper-roll-up,
-.match-record.phone-layout .sb-anchored-popover {
+/* Phones and small tablets (.centre-dialogs, phoneLayout.js dialogsCentred):
+   the scoring screen's small menus (player action menu, substitution /
+   libero / sanction dropdowns, bench and libero menus) are anchored next to
+   the tapped player and drawn at 1.5x for the large court. There that puts
+   them off screen, so they open centred, scaled from their middle, and
+   scroll when taller than the screen. The phone layout draws them at 1.25x.
+   A large tablet and the desktop keep their anchored menus. */
+.match-record.centre-dialogs .modal-wrapper-roll-down,
+.match-record.centre-dialogs .modal-wrapper-roll-up,
+.match-record.centre-dialogs .sb-anchored-popover {
   position: fixed !important;
   left: 50% !important;
   right: auto !important;
   top: 50% !important;
   bottom: auto !important;
   transform: translate(-50%, -50%) !important;
+}
+
+.match-record.centre-dialogs .modal-wrapper-roll-down>div,
+.match-record.centre-dialogs .modal-wrapper-roll-up>div,
+.match-record.centre-dialogs .sb-anchored-popover>div {
+  transform-origin: center !important;
+  max-height: calc(85dvh / 1.5);
+  max-width: calc((100vw - 24px) / 1.5);
+  overflow-y: auto;
 }
 
 .match-record.phone-layout .modal-wrapper-roll-down>div,

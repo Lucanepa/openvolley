@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { COURT_CELLS, PHONE_COURT_MIN_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, POSITIONS, detectDisplayMode, isPhoneScreen, officialRoleShort, phoneHeldSideways, phoneLayoutActive, phoneLayoutKept, recentActions, tintOf } from '../phoneLayout'
+import { COURT_CELLS, PHONE_COURT_MIN_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, POSITIONS, detectDisplayMode, dialogsCentred, isPhoneScreen, officialRoleShort, phoneHeldSideways, phoneLayoutActive, phoneLayoutKept, recentActions, tintOf } from '../phoneLayout'
 
 describe('detectDisplayMode (the automatic display mode)', () => {
   it.each([[390, 844], [360, 740], [412, 915], [599, 1000]])('a %ix%i portrait phone gets the phone layout', (w, h) => {
@@ -17,6 +17,20 @@ describe('detectDisplayMode (the automatic display mode)', () => {
 
   it.each([[1280, 800], [1920, 1080], [1024, 768]])('a %ix%i screen without touch stays desktop', (w, h) => {
     expect(detectDisplayMode({ width: w, height: h, hasTouch: false })).toBe('desktop')
+  })
+})
+
+describe('dialogsCentred (court-anchored dialogs and menus)', () => {
+  it('always in the phone layout', () => {
+    expect(dialogsCentred({ phoneView: true, width: 1280, height: 800 })).toBe(true)
+  })
+
+  it.each([[412, 915], [915, 412], [962, 601], [1024, 600]])('a %ix%i phone or small tablet centres them', (w, h) => {
+    expect(dialogsCentred({ width: w, height: h })).toBe(true)
+  })
+
+  it.each([[1280, 800], [800, 1280], [1366, 650], [1920, 1080]])('a %ix%i tablet or laptop keeps them anchored', (w, h) => {
+    expect(dialogsCentred({ width: w, height: h })).toBe(false)
   })
 })
 
