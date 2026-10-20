@@ -1751,10 +1751,12 @@ const NEVER_RELAYED = ['game_pin', 'connection_pins', 'connectionPins']
  * before Create Match): it is not published then. A Dexie id is no key: every
  * device's first match is id 1, so scorers met in room '1' and a tablet
  * following it got another scorer's match.
+ * An easy match has none: it is unofficial and never leaves the device.
  * @param {object|null} match
  * @returns {string|null}
  */
 export function relayMatchKey(match) {
+  if (match?.easy === true) return null
   for (const seed of [match?.seed_key, match?.seedKey]) {
     if (typeof seed === 'string' && seed.trim()) return seed.trim()
   }

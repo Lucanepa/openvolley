@@ -3208,16 +3208,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   if (currentView === 'info') {
     return (
       <MatchSetupInfoView kitScale={kitScale}>
-        <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-3">
+        {/* "Load match from schedule" sits on the setup card, next to "Create match" */}
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
           <div>
-            <Button variant="ghost" size="xl" className="bg-white" onClick={() => { restoreMatchInfo(); restoreOfficials(); setCurrentView('main') }}>← {t('common.back')}</Button>
+            <Button variant="ghost" size="xl" className="whitespace-nowrap bg-white" onClick={() => { restoreMatchInfo(); restoreOfficials(); setCurrentView('main') }}>← {t('common.back')}</Button>
           </div>
-          <div className="flex flex-col items-center gap-2">
-            <h1 className="m-0 text-xl sm:text-2xl font-bold tracking-tight text-stone-900">{t('matchSetup.matchInfo')}</h1>
-            <Button variant="toolbar" size="md" className="stack:h-11 stack:px-4" onClick={() => setLoadOfficialMatchModal(true)}>
-              {t('loadOfficialMatch.button')}
-            </Button>
-          </div>
+          <h1 className="m-0 text-xl sm:text-2xl font-bold tracking-tight text-stone-900">{t('matchSetup.matchInfo')}</h1>
           <div />
         </div>
         <div className="grid grid-cols-5 gap-4 stack:grid-cols-1">
@@ -6491,16 +6487,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             matchInfoConfirmed ? 'border-stone-200/70' : canConfirmMatchInfo ? 'border-2 border-sky-300' : 'border-2 border-amber-300'
           )}
         >
-          <div className="mb-4 flex items-center justify-between gap-2">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <StatusBadge ready={matchInfoConfirmed} pending={!matchInfoConfirmed && canConfirmMatchInfo} />
               <h3 className="m-0 text-base font-semibold text-stone-900">{t('matchSetup.matchInfo')}</h3>
-              <SyncStatusIndicator status={matchInfoSyncStatus} onRetry={() => retrySyncForCard('matchInfo')} />
             </div>
-            {/* the officials' own status, above their column; on a phone the
-                columns stack and a second identical chip read as a duplicate */}
-            <div className={cn('flex items-center gap-2', officialsSyncStatus === matchInfoSyncStatus && 'max-sm:hidden')}>
-              <SyncStatusIndicator status={officialsSyncStatus} onRetry={() => retrySyncForCard('officials')} />
+            {/* one sync chip for the card, on its own row on a phone; the
+                officials get a second one only when theirs differs */}
+            <div className="flex flex-wrap items-center gap-2 max-sm:basis-full">
+              <SyncStatusIndicator status={matchInfoSyncStatus} onRetry={() => retrySyncForCard('matchInfo')} />
+              {officialsSyncStatus !== matchInfoSyncStatus && (
+                <SyncStatusIndicator status={officialsSyncStatus} onRetry={() => retrySyncForCard('officials')} />
+              )}
             </div>
           </div>
 
@@ -6538,11 +6536,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             ]} />
           </div>
 
-          <div className="mt-4 flex justify-end gap-2">
+          {/* on a phone the two share a row when they fit, else each takes a row of its own */}
+          <div className="mt-4 flex flex-wrap justify-end gap-2">
+            {/* opens the info page with the schedule on top: the snapshot for
+                Back is taken before a game is picked, so Back still discards it */}
+            <Button variant="secondary" size="xl" className="whitespace-nowrap max-sm:flex-auto" onClick={() => { setCurrentView('info'); setLoadOfficialMatchModal(true) }}>
+              {t('loadOfficialMatch.button')}
+            </Button>
             {matchInfoConfirmed ? (
-              <Button variant="secondary" size="xl" onClick={() => setCurrentView('info')}>{t('common.edit')}</Button>
+              <Button variant="secondary" size="xl" className="whitespace-nowrap max-sm:flex-auto" onClick={() => setCurrentView('info')}>{t('common.edit')}</Button>
             ) : (
-              <Button variant="primary" size="xl" onClick={() => setCurrentView('info')}>
+              <Button variant="primary" size="xl" className="whitespace-nowrap max-sm:flex-auto" onClick={() => setCurrentView('info')}>
                 {t('matchSetup.createMatch')}
               </Button>
             )}
@@ -6553,12 +6557,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
       <div className={cn('grid-4 setup-section', !matchInfoConfirmed && 'pointer-events-none opacity-50')}>
         <div className={cn('flex flex-col gap-5 p-4 sm:p-5', SETUP_BLOCK)} style={{ order: 1 }}>
-          {/* Row 1: Status + Team Name + Sync Indicator */}
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
+          {/* Row 1: Status + Team Name + Sync Indicator; on a phone the chip
+              takes the row under the name, and a long name wraps instead of
+              widening the card */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
               <StatusBadge ready={homeConfigured} />
               {/* Team-colour bar: frozen (team colour + contrast text, sizes) */}
-              <h1 style={{
+              <h1 className="min-w-0 [overflow-wrap:anywhere]" style={{
                 margin: 0,
                 ...teamBoxStyle(homeColor),
                 padding: `${s(6)}px ${s(16)}px`,
@@ -6568,7 +6574,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 {home && home !== 'Home' ? home.toUpperCase() : t('matchSetup.homeTeam').toUpperCase()}
               </h1>
             </div>
-            <SyncStatusIndicator status={homeTeamSyncStatus} onRetry={() => retrySyncForCard('home')} />
+            <div className="max-sm:basis-full">
+              <SyncStatusIndicator status={homeTeamSyncStatus} onRetry={() => retrySyncForCard('home')} />
+            </div>
           </div>
 
           {/* Row 2: Stats */}
@@ -6584,8 +6592,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </CountBadge>
           </div>
 
-          {/* Row 3: Color selector + Shirt + Roster */}
-          <div className="flex items-center gap-5">
+          {/* Row 3: Color selector + Shirt + Roster; the button takes its own row on a phone */}
+          <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
             <span className="text-xs text-stone-500">{t('matchSetup.selectColour')}</span>
             <TeamShirt
               color={homeColor}
@@ -6600,19 +6608,20 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 })
               }}
             />
-            <div className="flex-1" />
-            <Button variant="secondary" size="xl" onClick={() => setCurrentView('home')}>{t('matchSetup.editRoster')}</Button>
+            <Button variant="secondary" size="xl" className="max-sm:w-full sm:ml-auto" onClick={() => setCurrentView('home')}>{t('matchSetup.editRoster')}</Button>
           </div>
           {coloursTooClose(homeColor, awayColor) && <CloseColourNote />}
         </div>
 
         <div className={cn('flex flex-col gap-5 p-4 sm:p-5', SETUP_BLOCK)} style={{ order: 2 }}>
-          {/* Row 1: Status + Team Name + Sync Indicator */}
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
+          {/* Row 1: Status + Team Name + Sync Indicator; on a phone the chip
+              takes the row under the name, and a long name wraps instead of
+              widening the card */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
               <StatusBadge ready={awayConfigured} />
               {/* Team-colour bar: frozen (team colour + contrast text, sizes) */}
-              <h1 style={{
+              <h1 className="min-w-0 [overflow-wrap:anywhere]" style={{
                 margin: 0,
                 ...teamBoxStyle(awayColor),
                 padding: `${s(6)}px ${s(16)}px`,
@@ -6622,7 +6631,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 {away && away !== 'Away' ? away.toUpperCase() : t('matchSetup.awayTeam').toUpperCase()}
               </h1>
             </div>
-            <SyncStatusIndicator status={awayTeamSyncStatus} onRetry={() => retrySyncForCard('away')} />
+            <div className="max-sm:basis-full">
+              <SyncStatusIndicator status={awayTeamSyncStatus} onRetry={() => retrySyncForCard('away')} />
+            </div>
           </div>
 
           {/* Row 2: Stats */}
@@ -6638,8 +6649,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </CountBadge>
           </div>
 
-          {/* Row 3: Color selector + Shirt + Roster */}
-          <div className="flex items-center gap-5">
+          {/* Row 3: Color selector + Shirt + Roster; the button takes its own row on a phone */}
+          <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
             <span className="text-xs text-stone-500">{t('matchSetup.selectColour')}</span>
             <TeamShirt
               color={awayColor}
@@ -6654,8 +6665,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 })
               }}
             />
-            <div className="flex-1" />
-            <Button variant="secondary" size="xl" onClick={() => setCurrentView('away')}>{t('matchSetup.editRoster')}</Button>
+            <Button variant="secondary" size="xl" className="max-sm:w-full sm:ml-auto" onClick={() => setCurrentView('away')}>{t('matchSetup.editRoster')}</Button>
           </div>
           {coloursTooClose(homeColor, awayColor) && <CloseColourNote />}
         </div>

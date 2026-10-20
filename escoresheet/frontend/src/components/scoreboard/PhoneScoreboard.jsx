@@ -39,10 +39,11 @@ import { COURT_CELLS, PHONE_COURT_MIN_PX, PHONE_RECENT_HEIGHT_PX, PHONE_SQUARE_M
  * @param {object} props.actions the Scoreboard's handlers (see Scoreboard.jsx)
  *
  * TeamVM: { side, teamKey, label ('A'|'B'), name, shortName, color, setsWon,
- *   points, timeouts, subs, lineupSet, court: [{ position, number, isLibero }],
+ *   points, timeouts, subs, lineupSet, lineupOptional (easy match),
+ *   liberoPaint ({ background, color, textShadow?, ring } | null), court: [{ position, number, isLibero }],
  *   liberos: [{ number, libero, unable, onCourt, position }], benchPlayers:
  *   [{ number }], officials: [{ role }], improperRequestDone, delayWarned,
- *   needsRedesignation }
+ *   easy, formalWarned, needsRedesignation }
  */
 export default function PhoneScoreboard({ setNumber, teams, serving, rally, centre, recent, canUndo, scoreFont = 'inherit', actions }) {
   const { t } = useTranslation()
@@ -145,6 +146,14 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
           const pl = bySide[position]
           const number = pl && pl.number !== '' && pl.number !== undefined && pl.number !== null ? pl.number : null
           const hasBall = servesHere && position === 'I'
+          // The libero in its own shirt colour (a disc, as on the desktop court)
+          const liberoDisc = number !== null && pl?.isLibero && team.liberoPaint
+            ? {
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 42, height: 42, padding: '0 4px', boxSizing: 'border-box', borderRadius: 21,
+                fontSize: 24, background: team.liberoPaint.background, color: team.liberoPaint.color, textShadow: team.liberoPaint.textShadow,
+                border: team.liberoPaint.ring ? `2px solid ${team.liberoPaint.ring}` : undefined
+              }
+            : null
           return (
             <button
               key={position}
@@ -156,7 +165,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 0, minHeight: 0, background: 'transparent', borderRadius: 8, cursor: number !== null ? 'pointer' : 'default' }}
             >
               {/* The ball hangs outside the number, so every number keeps its place */}
-              <span style={{ position: 'relative', fontSize: 28, lineHeight: 1, fontWeight: 800, color: p.courtInk, fontVariantNumeric: 'tabular-nums' }}>
+              <span data-testid={liberoDisc ? `phone-libero-disc-${team.side}` : undefined} style={{ position: 'relative', fontSize: 28, lineHeight: 1, fontWeight: 800, color: p.courtInk, fontVariantNumeric: 'tabular-nums', ...liberoDisc }}>
                 {number ?? '–'}
                 {hasBall && (
                   <span data-testid="phone-serve-ball" aria-label={t('scoreboard.labels.serveLabel')} style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', ...(team.side === 'left' ? { right: '100%', marginRight: 5 } : { left: '100%', marginLeft: 5 }), width: 12, height: 12, borderRadius: '50%', background: '#facc15', border: '2px solid #1c1917' }} />
@@ -172,7 +181,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
             style={{ position: 'absolute', inset: 6, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, borderRadius: 12, background: 'var(--ov-success)', color: '#ffffff', fontSize: 18, fontWeight: 800 }}
           >
             <span>{t('scoreboard.lineup', 'Line-up')}</span>
-            <span style={{ fontSize: 12, fontWeight: 600 }}>{teamTitle(team)}</span>
+            <span style={{ fontSize: 12, fontWeight: 600 }}>{team.lineupOptional ? t('scoreboard.phone.lineupOptional', { team: teamTitle(team) }) : teamTitle(team)}</span>
           </button>
         )}
       </div>
@@ -224,23 +233,27 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   const countdown = ({ countdown: value, countdownText, total }, warnAt, size = 48) => (
     <>
       <div data-testid="phone-countdown" style={{ flex: 'none', fontSize: size, lineHeight: 1, fontWeight: 800, fontFamily: scoreFont, fontVariantNumeric: 'tabular-nums', color: value <= warnAt ? 'var(--danger)' : 'var(--ov-text)' }}>{countdownText ?? value}</div>
-      <div style={{ flex: 'none', width: '70%', height: 8, borderRadius: 4, overflow: 'hidden', background: 'var(--ov-hairline)' }}>
-        <div style={{ width: `${total > 0 ? Math.max(0, Math.min(1, value / total)) * 100 : 0}%`, height: '100%', marginLeft: 'auto', borderRadius: 4, background: value <= warnAt ? 'var(--danger)' : 'var(--accent)', transition: 'width 1s linear' }} />
+      <div style={{ flex: 'none', width: '70%', height: 6, borderRadius: 3, overflow: 'hidden', background: 'var(--ov-hairline)' }}>
+        <div style={{ width: `${total > 0 ? Math.max(0, Math.min(1, value / total)) * 100 : 0}%`, height: '100%', marginLeft: 'auto', borderRadius: 3, background: value <= warnAt ? 'var(--danger)' : 'var(--accent)', transition: 'width 1s linear' }} />
       </div>
     </>
   )
   let overlay = null
-  // The time-out, the interval and the deciding set's setup are each under
-  // 163px high (the point buttons at 360x780), so they never make the view
-  // scroll where the point buttons are square; on a shorter screen their row
-  // grows to them (the view scrolls) rather than them running over the rest
-  const countdownCard = { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, flex: 1, padding: 10, boxSizing: 'border-box', borderRadius: 16, background: 'var(--ov-card)', border: '1px solid var(--ov-hairline)' }
-  const cardButton = { ...outlineButton, minHeight: 44, width: 'auto', padding: '0 24px' }
+  // The time-out, the interval and the deciding set's setup are each about
+  // 131px high, under the point buttons of a 375x740 view (158px), so they
+  // never make the view scroll where the point buttons are square; on a
+  // shorter screen their row grows to them (the view scrolls) rather than
+  // them running over the rest. At 154px, and 172px when "Time-out: <long
+  // team name>" took two lines, they scrolled on a 375x740 phone (2026-10-20).
+  const countdownCard = { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, flex: 1, padding: 8, boxSizing: 'border-box', borderRadius: 16, background: 'var(--ov-card)', border: '1px solid var(--ov-hairline)' }
+  const cardButton = { ...outlineButton, minHeight: 40, width: 'auto', padding: '0 24px' }
+  // One line, cut short: a second line pushed the card past the point buttons
+  const cardTitle = { maxWidth: '100%', fontSize: 14, lineHeight: 1.2, fontWeight: 700, color: 'var(--ov-text-secondary)', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
   if (centre?.kind === 'timeout') {
     overlay = (
       <div style={countdownCard}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ov-text-secondary)', textAlign: 'center' }}>{t('scoreboard.phone.timeoutRunning', { team: centre.teamName })}</div>
-        {countdown(centre, 10, 44)}
+        <div style={cardTitle} title={t('scoreboard.phone.timeoutRunning', { team: centre.teamName })}>{t('scoreboard.phone.timeoutRunning', { team: centre.teamName })}</div>
+        {countdown(centre, 10, 38)}
         <button type="button" style={cardButton} onClick={() => actions.stopTimeout()}>{t('scoreboard.buttons.stopTimeout')}</button>
       </div>
     )
@@ -262,8 +275,8 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   } else if (centre?.kind === 'interval') {
     overlay = (
       <div style={countdownCard}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--ov-text-secondary)', textAlign: 'center' }}>{t('scoreboard.phone.interval')}</div>
-        {countdown(centre, 30, 44)}
+        <div style={cardTitle}>{t('scoreboard.phone.interval')}</div>
+        {countdown(centre, 30, 38)}
         <button type="button" style={cardButton} onClick={() => actions.endInterval()}>{t('scoreboard.buttons.endSetInterval')}</button>
       </div>
     )
@@ -611,7 +624,14 @@ function SanctionColumn({ team, ink, title, actions, onDone }) {
       ) : (
         <button type="button" style={{ ...wideButton, background: '#fee2e2' }} onClick={() => { onDone(); actions.delayPenalty(team.side) }}>{t('scoreboard.sanctions.delayPenalty')}</button>
       )}
-      <p style={{ ...sheetNote, fontSize: 12, marginTop: 4 }}>{t('scoreboard.phone.sanctionPeople')}</p>
+      {team.easy && (
+        <>
+          {/* Easy match: no bench or officials, the sanction goes to the team */}
+          <button type="button" data-testid={`phone-team-warning-${team.side}`} disabled={team.formalWarned} style={{ ...wideButton, background: team.formalWarned ? 'var(--ov-sunken-strong)' : '#fef9c3', color: team.formalWarned ? 'var(--ov-text-faint)' : undefined }} onClick={() => { onDone(); actions.sanctionTeam(team.teamKey, 'warning') }}>{t('scoreboard.sanctions.warning')}</button>
+          <button type="button" data-testid={`phone-team-penalty-${team.side}`} style={{ ...wideButton, background: '#fee2e2' }} onClick={() => { onDone(); actions.sanctionTeam(team.teamKey, 'penalty') }}>{t('scoreboard.sanctions.penalty')}</button>
+        </>
+      )}
+      <p style={{ ...sheetNote, fontSize: 12, marginTop: 4 }}>{team.easy ? t('scoreboard.phone.sanctionOnePlayer') : t('scoreboard.phone.sanctionPeople')}</p>
       <div style={chipGrid}>
         {court.map(pl => (
           <Chip key={`c-${pl.number}`} onClick={person({ type: 'player', playerNumber: pl.number, position: pl.position })}>{pl.number}</Chip>

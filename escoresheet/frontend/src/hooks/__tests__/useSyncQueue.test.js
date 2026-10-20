@@ -181,6 +181,19 @@ describe('runQueuePass', () => {
     expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
   })
 
+  it('deleting a match that is closed on the server is done: the server keeps it, the job is not refused', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'delete', status: 'queued', retry_count: 0, payload: { id: 'match_100_aaa' } }
+    ])
+    const closed = { data: null, error: { message: 'Match is closed', code: 'OV_MATCH_CLOSED', status: 409 } }
+    api.respond = (call) => (call.action === 'delete' ? closed : defaultRespond(call))
+    const outcome = await runQueuePass()
+    expect(api.calls.some(c => c.table === 'matches' && c.action === 'delete')).toBe(true)
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    expect(outcome.hasFailed).toBeFalsy()
+    expect(fakeDb.matches.map.get(1).cloudBlock).toBeFalsy()
+  })
+
   it('a write refused as OV_NOT_MATCH_OWNER takes the match over with the local game PIN, then is sent', async () => {
     fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', gamePin: '864201' }])
     fakeDb.sync_queue.reset([
@@ -1263,6 +1276,37 @@ describe('cloud blocks (OV_SCORER_REQUIRED, OV_GAME_TAKEN, OV_MATCH_CLOSED)', ()
     await runQueuePass()
     expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
     expect(fakeDb.matches.map.get(1).cloudBlock).toMatchObject({ code, claim: null })
+  })
+
+  // 2026-10-19: a backup of a match the server had closed was restored next to
+  // a new match of the same game; it stayed open on the home screen
+  const restoreJob = (id) => ({ id, resource: 'match', action: 'restore', status: 'queued', payload: { match: { external_id: 'match_100_aaa' }, sets: [], events: [] } })
+  const closedRestore = (call) => (call.table === '__restore'
+    ? { data: null, error: { message: 'closed', code: 'OV_MATCH_CLOSED', status: 409 } }
+    : defaultRespond(call))
+
+  it.each(['ended', 'approved'])('OV_MATCH_CLOSED marks a match that ended here (%s) final', async (status) => {
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', status }])
+    fakeDb.sync_queue.reset([restoreJob(1)])
+    api.respond = closedRestore
+    await runQueuePass()
+    expect(fakeDb.matches.map.get(1)).toMatchObject({ status: 'final', cloudBlock: { code: 'OV_MATCH_CLOSED' } })
+  })
+
+  it.each(['scheduled', 'live'])('OV_MATCH_CLOSED leaves a match still scored here (%s) open', async (status) => {
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', status }])
+    fakeDb.sync_queue.reset([restoreJob(1)])
+    api.respond = closedRestore
+    await runQueuePass()
+    expect(fakeDb.matches.map.get(1)).toMatchObject({ status, cloudBlock: { code: 'OV_MATCH_CLOSED' } })
+  })
+
+  it('other blocks leave an ended match open', async () => {
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', status: 'ended' }])
+    fakeDb.sync_queue.reset([eventJob(1)])
+    api.respond = (call) => (call.table === 'events' ? { data: null, error: { message: 'no', code: 'OV_SCORER_REQUIRED', status: 403 } } : defaultRespond(call))
+    await runQueuePass()
+    expect(fakeDb.matches.map.get(1).status).toBe('ended')
   })
 
   it('a later successful job of the match clears the block', async () => {

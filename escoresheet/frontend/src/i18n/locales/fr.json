@@ -645,7 +645,8 @@
       "warning": "Avertissement",
       "penalty": "Pénalité",
       "expulsion": "Expulsion",
-      "disqualification": "Disqualification"
+      "disqualification": "Disqualification",
+      "wholeTeam": "L'équipe"
     },
     "actions": {
       "libero": "Libéro",
@@ -917,7 +918,9 @@
       "onCourt": "sur le terrain",
       "redesignate": "Redésigner le libéro",
       "sidewaysTitle": "Tenez le téléphone à la verticale",
-      "sidewaysBody": "L’écran de saisie sur téléphone est conçu pour le format portrait. Retournez le téléphone : le match, ses dialogues et ses comptes à rebours sont conservés."
+      "sidewaysBody": "L’écran de saisie sur téléphone est conçu pour le format portrait. Retournez le téléphone : le match, ses dialogues et ses comptes à rebours sont conservés.",
+      "sanctionOnePlayer": "Ou un joueur",
+      "lineupOptional": "{{team}} · facultative"
     },
     "easySub": {
       "notAllowed": "Ne peut pas entrer",
@@ -1050,7 +1053,25 @@
     "downloadAppDeb": "ou télécharger le paquet .deb",
     "downloadServer": "Télécharger le serveur — arbitre sans internet",
     "easyMatch": "Match simplifié",
-    "easyMatchHint": "Non officiel · sans listes ni signatures"
+    "easyMatchHint": "Non officiel · sans listes ni signatures",
+    "deviceMatches": {
+      "title": "Sur cet appareil",
+      "game": "Match {{game}}",
+      "home": "Recevant",
+      "away": "Visiteur",
+      "noTeams": "Équipes non saisies",
+      "notSynced": "Non synchronisé",
+      "sameGame": "Même match en double",
+      "duplicateNotice": "Le match {{game}} est deux fois sur cet appareil. Le serveur garde une feuille par match : continuez celle que vous avez tenue et supprimez l'autre.",
+      "continue": "Continuer",
+      "delete": "Supprimer",
+      "status": {
+        "scheduled": "Pas commencé",
+        "live": "En cours",
+        "ended": "Terminé",
+        "approved": "Approuvé"
+      }
+    }
   },
   "options": {
     "title": "Options",
@@ -3944,7 +3965,7 @@
     "teamName": "Nom",
     "nameRequired": "Obligatoire",
     "shortName": "Court",
-    "intro": "Non officiel : sans listes, officiels ni signatures. Les numéros sont saisis avec les compositions ; tout le reste est le tableau de marque habituel.",
+    "intro": "Non officiel : sans listes, officiels ni signatures. Les compositions sont facultatives : sans elle, une équipe joue sans rotation ni remplacements. Tout le reste est le tableau de marque habituel.",
     "format": "Format",
     "bestOf": "Au meilleur des {{count}}",
     "start": "Tirage au sort"

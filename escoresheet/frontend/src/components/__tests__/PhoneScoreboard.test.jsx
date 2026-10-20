@@ -195,6 +195,93 @@ describe('Scoreboard: the phone layout', () => {
     await waitFor(() => expect(view.getByTestId('phone-sub-right').textContent).toMatch('0/6'))
   }, 60000)
 
+  // 2026-10-20: the phone court showed the libero in the team colour, like
+  // any player (the desktop court's disc paint was never used there)
+  it("shows the libero on court in its own shirt colour", async () => {
+    setViewport(390, 844)
+    const matchId = await setUpMatch()
+    const away = (await db.matches.get(matchId)).awayTeamId
+    const libero = await db.players.where({ teamId: away, number: 8 }).first()
+    await db.players.update(libero.id, { libero: 'libero1' })
+    const t = new Date(Date.now() - 20 * 60 * 1000).toISOString()
+    await db.events.add({ matchId, setIndex: 1, type: 'libero_entry', payload: { team: 'away', position: 'V', playerOut: 5, liberoIn: 8, liberoType: 'libero1' }, seq: 20, ts: t })
+    await db.events.add({ matchId, setIndex: 1, type: 'lineup', payload: { team: 'away', lineup: { I: '1', II: '2', III: '3', IV: '4', V: '8', VI: '6' }, liberoSubstitution: { position: 'V', liberoNumber: 8, playerNumber: 5, liberoType: 'libero1' } }, seq: 20.1, ts: t })
+    mount(matchId)
+    await waitFor(() => expect(phone()).toBeTruthy(), { timeout: 10000 })
+    const disc = await waitFor(() => within(phone()).getByTestId('phone-libero-disc-right'))
+    expect(disc.textContent).toBe('8')
+    // not the team's blue: the libero's own shirt, picked against both teams and the court
+    const { liberoPair } = await import('../../utils/teamColours')
+    const hex = liberoPair('#dc2626', '#2563eb').away
+    const rgb = `rgb(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)})`
+    expect(disc.style.background).toBe(rgb)
+    expect(within(phone()).queryByTestId('phone-libero-disc-left')).toBeNull()
+  }, 60000)
+
+  // An easy match plays without line-ups when it likes (domain/easyMatch.js)
+  it('easy match: the set starts without line-ups, an official match waits for them', async () => {
+    setViewport(390, 844)
+    const setUp = async (easy) => {
+      await Promise.all(db.tables.map(t => t.clear()))
+      const home = await db.teams.add({ name: 'Home VC', shortName: 'HOM', color: '#dc2626' })
+      const away = await db.teams.add({ name: 'Away VC', shortName: 'AWY', color: '#2563eb' })
+      const matchId = await db.matches.add({
+        homeTeamId: home, awayTeamId: away, status: 'live', test: easy, ...(easy ? { easy: true } : {}), bestOf: 5,
+        firstServe: 'home', coinTossTeamA: 'home', coinTossTeamB: 'away'
+      })
+      const t = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+      await db.sets.add({ matchId, index: 1, homePoints: 0, awayPoints: 0, finished: false })
+      await db.events.add({ matchId, setIndex: 1, type: 'coin_toss', payload: {}, seq: 1, ts: t })
+      return matchId
+    }
+    const startSet = () => within(phone()).getByRole('button', { name: 'Start set' })
+
+    mount(await setUp(true))
+    await waitFor(() => expect(phone()).toBeTruthy(), { timeout: 10000 })
+    await waitFor(() => expect(startSet().disabled).toBe(false))
+    expect(within(phone()).getAllByText(/· optional$/).length).toBe(2)
+    cleanup()
+
+    mount(await setUp(false))
+    await waitFor(() => expect(phone()).toBeTruthy(), { timeout: 10000 })
+    await waitFor(() => expect(startSet().disabled).toBe(true))
+  }, 60000)
+
+  // An easy match has no bench or officials: the sanction goes to the team
+  it('easy match: a warning and a penalty for the team, no person picked', async () => {
+    setViewport(390, 844)
+    const matchId = await setUpMatch()
+    await db.matches.update(matchId, { test: true, easy: true })
+    mount(matchId)
+    await waitFor(() => expect(phone()).toBeTruthy(), { timeout: 10000 })
+    const view = within(phone())
+    await waitFor(() => expect(view.getByTestId('phone-score-left').textContent).toBe('1'))
+    await settle()
+
+    fireEvent.click(view.getByTestId('phone-action-sanction'))
+    await waitFor(() => expect(screen.getByTestId('phone-team-warning-left')).toBeTruthy())
+    expect(screen.getAllByText('Or one player').length).toBe(2)
+    fireEvent.click(screen.getByTestId('phone-team-warning-left'))
+    await waitFor(() => expect(button('Confirm')).toBeTruthy())
+    expect(screen.getByText('The team')).toBeTruthy()
+    await settle()
+    fireEvent.click(button('Confirm'))
+    await waitFor(async () => expect((await ofType('sanction')).length).toBe(1))
+    expect((await ofType('sanction'))[0].payload).toMatchObject({ team: 'home', type: 'warning', playerType: 'team' })
+    await settle()
+
+    // one formal warning per team: now a penalty, a point for the other team
+    fireEvent.click(view.getByTestId('phone-action-sanction'))
+    await waitFor(() => expect(screen.getByTestId('phone-team-warning-left').disabled).toBe(true))
+    fireEvent.click(screen.getByTestId('phone-team-penalty-left'))
+    await waitFor(() => expect(button('Confirm')).toBeTruthy())
+    await settle()
+    fireEvent.click(button('Confirm'))
+    await waitFor(async () => expect((await ofType('sanction')).length).toBe(2))
+    expect((await ofType('sanction'))[1].payload).toMatchObject({ team: 'home', type: 'penalty', playerType: 'team' })
+    await waitFor(() => expect(view.getByTestId('phone-score-right').textContent).toBe('2'))
+  }, 60000)
+
   it('a phone turned sideways keeps the phone layout, its dialogs and countdown, under a notice', async () => {
     const screenSize = { width: window.screen.width, height: window.screen.height }
     Object.defineProperty(window.screen, 'width', { value: 390, configurable: true })
