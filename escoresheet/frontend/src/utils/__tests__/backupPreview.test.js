@@ -102,6 +102,41 @@ describe('summarizeBackup (Restore preview)', () => {
     expect(s.serving).toBe('away')
   })
 
+  it('a database restore past set 1: its server events (set_index, state_snapshot) count in their own set', () => {
+    const row = (set_index, s, type, payload, extra = {}) => ({ set_index, seq: s, type, payload, ...extra })
+    const s = summarizeBackup({
+      match: { home_team: 'A', away_team: 'B', status: 'live' },
+      liveState: { current_set: 2, points_a: 3, points_b: 2 },
+      sets: [
+        { index: 1, home_points: 25, away_points: 20, finished: true },
+        { index: 2, home_points: 3, away_points: 2, finished: false }
+      ],
+      events: [
+        row(1, 1, 'lineup', { team: 'home', lineup: { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6 } }),
+        row(1, 2, 'point', { team: 'away' }),
+        row(1, 3, 'timeout', { team: 'home' }),
+        row(2, 50, 'set_start', {}, { state_snapshot: { servingTeam: 'away' } }),
+        row(2, 51, 'point', { team: 'home' }),
+        row(2, 52, 'point', { team: 'home' }),
+        row(2, 53, 'timeout', { team: 'away' }),
+        row(2, 54, 'substitution', { team: 'away', playerIn: 9, playerOut: '8' }),
+        row(2, 55, 'point', { team: 'away' })
+      ]
+    })
+    expect(s.setIndex).toBe(2)
+    expect(s.timeouts).toEqual({ home: 0, away: 1 })
+    expect(s.substitutions.away.map(x => [x.playerIn, x.playerOut, x.home, x.away])).toEqual([[9, '8', 2, 0]])
+    expect(s.serving).toBe('away')
+    // no set-2 point yet: the set's state snapshot says who serves
+    const start = summarizeBackup({
+      match: { home_team: 'A', away_team: 'B' },
+      liveState: { current_set: 2 },
+      sets: [{ index: 2, home_points: 0, away_points: 0 }],
+      events: [row(1, 1, 'point', { team: 'home' }), row(2, 2, 'set_start', {}, { state_snapshot: { servingTeam: 'away' } })]
+    })
+    expect(start.serving).toBe('away')
+  })
+
   it('an empty backup gives an empty preview, not a crash', () => {
     const s = summarizeBackup({})
     expect(s.teams).toEqual({ home: null, away: null })

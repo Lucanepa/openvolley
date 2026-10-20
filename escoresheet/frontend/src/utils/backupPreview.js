@@ -6,7 +6,7 @@
  *
  * Two shapes come in: a backup file / cloud backup (match, homeTeam,
  * awayTeam, sets, events) and a database restore (match.home_team,
- * liveState, sets with home_points).
+ * liveState, sets with home_points, events with set_index).
  *
  * A substitution event carries no score (its payload is team, position,
  * playerOut, playerIn and flags), so the score is counted from the points of
@@ -43,7 +43,13 @@ export function summarizeBackup(d) {
     return t?.name || (side === 'home' ? m.homeTeamName : m.awayTeamName) || null
   }
 
-  const events = Array.isArray(data.events) ? data.events : []
+  // A database restore's events are the server's rows (set_index,
+  // state_snapshot); a backup's are the app's (setIndex, stateSnapshot)
+  const events = (Array.isArray(data.events) ? data.events : []).map(e => ({
+    ...e,
+    setIndex: e.setIndex ?? e.set_index ?? 1,
+    stateSnapshot: e.stateSnapshot ?? e.state_snapshot
+  }))
   const sets = (Array.isArray(data.sets) ? data.sets : [])
     .slice()
     .sort((a, b) => (a.index || 0) - (b.index || 0))
@@ -55,7 +61,7 @@ export function summarizeBackup(d) {
     away: pointsOf(latestSet, 'away') ?? live?.points_b ?? 0
   }
 
-  const inSet = (e) => (e.setIndex ?? 1) === setIndex
+  const inSet = (e) => e.setIndex === setIndex
 
   // Current line-up: the last line-up of the set (a substitution or libero
   // change writes a new one), else the last one of the match, else liveState
