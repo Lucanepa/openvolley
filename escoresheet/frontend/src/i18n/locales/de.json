@@ -346,6 +346,7 @@
     "libero1": "Libero 1",
     "libero2": "Libero 2",
     "noLibero": "Kein Libero",
+    "noLiberoShort": "Keiner",
     "captain": "Kapitän",
     "role": "Rolle",
     "signatures": "Unterschriften",

@@ -154,6 +154,9 @@ const sortBenchByHierarchy = (bench) => {
 
 const initBench = role => ({ role, firstName: '', lastName: '', dob: '' })
 
+// Team name in landscape: two lines, then the ellipsis
+const TEAM_NAME_CLAMP = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', overflowWrap: 'anywhere' }
+
 export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnabled = false }) {
   const { t, i18n } = useTranslation()
   const { showAlert } = useAlert()
@@ -169,6 +172,12 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
   // "VBC Züri…", Back over the title, buttons on three lines, the ball in a
   // tall empty middle (the owner, 2026-10-21).
   const phone = usePhoneWidth()
+  // The libero select's empty option in a portrait row (its column head is
+  // hidden there): "None", "-" on a phone with the LFP toggle on the same
+  // line (room for "L1" only). Keyed on the text: see formStack above.
+  const liberoNone = !formStack
+    ? { key: 'blank', text: '' }
+    : (phone && lfpTrackingEnabled ? { key: 'tight', text: '-' } : { key: 'stack', text: t('matchSetup.noLiberoShort') })
 
   // Compact mode disabled - always use full layout
   const isCompact = false
@@ -1639,17 +1648,19 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   ...teamBoxStyle(teamAInfo.color),
                   flex: 1, padding: sizes.teamButtonPadding, fontSize: sizes.teamButtonFont, width: '100%',
                   fontWeight: 600, border: 'none', borderRadius: '8px',
-                  // Two lines before the ellipsis: one showed "VBC Z…" on a phone.
-                  // A phone shows the whole name, on as many lines as it needs
-                  // (the clamp cut it and let the third line peek out below).
-                  ...(phone
-                    ? { overflowWrap: 'break-word', hyphens: 'auto', lineHeight: 1.25 }
-                    : { overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflowWrap: 'anywhere' }),
+                  // Upright (phone, tablet) the whole name, on as many lines as
+                  // it needs: there is room above the ball. Landscape: two lines
+                  // before the ellipsis (one showed "VBC Z…"), the clamp on an
+                  // inner box without padding: on this padded box the third
+                  // line peeked out below the second (an 820 px tablet).
+                  ...(formStack ? { overflowWrap: 'break-word', hyphens: 'auto', lineHeight: 1.25 } : { overflow: 'hidden' }),
                   cursor: 'default'
                 }}
                 title={teamAInfo.name}
               >
-                {getDisplayName(teamAInfo.name)}
+                {formStack
+                  ? getDisplayName(teamAInfo.name)
+                  : <span style={TEAM_NAME_CLAMP}>{getDisplayName(teamAInfo.name)}</span>}
               </div>
             </div>
           </div>
@@ -1733,17 +1744,19 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   ...teamBoxStyle(teamBInfo.color),
                   flex: 1, padding: sizes.teamButtonPadding, fontSize: sizes.teamButtonFont, width: '100%',
                   fontWeight: 600, border: 'none', borderRadius: '8px',
-                  // Two lines before the ellipsis: one showed "VBC Z…" on a phone.
-                  // A phone shows the whole name, on as many lines as it needs
-                  // (the clamp cut it and let the third line peek out below).
-                  ...(phone
-                    ? { overflowWrap: 'break-word', hyphens: 'auto', lineHeight: 1.25 }
-                    : { overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflowWrap: 'anywhere' }),
+                  // Upright (phone, tablet) the whole name, on as many lines as
+                  // it needs: there is room above the ball. Landscape: two lines
+                  // before the ellipsis (one showed "VBC Z…"), the clamp on an
+                  // inner box without padding: on this padded box the third
+                  // line peeked out below the second (an 820 px tablet).
+                  ...(formStack ? { overflowWrap: 'break-word', hyphens: 'auto', lineHeight: 1.25 } : { overflow: 'hidden' }),
                   cursor: 'default'
                 }}
                 title={teamBInfo.name}
               >
-                {getDisplayName(teamBInfo.name)}
+                {formStack
+                  ? getDisplayName(teamBInfo.name)
+                  : <span style={TEAM_NAME_CLAMP}>{getDisplayName(teamBInfo.name)}</span>}
               </div>
             </div>
           </div>
@@ -1936,8 +1949,11 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             onClose={handleCloseOrModify}
             width={800}
             hideCloseButton={true}
+            // a column: the lists scroll, Close / Modify stays in view (it
+            // was under a 70vh body, below the dialog's edge on a phone)
+            panelStyle={{ display: 'flex', flexDirection: 'column' }}
           >
-            <div className="ct-roster-body" style={{ maxHeight: '70vh', overflowY: 'auto', padding: '0 16px' }}>
+            <div className="ct-roster-body" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '0 16px' }}>
               {/* Players Section */}
               <div style={{ marginBottom: 16 }}>
                 <div className={`ov-kit ${SECTION_HEAD}`}>
@@ -2073,7 +2089,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                                 style={{ padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px' }}
                                 className="coin-toss-select"
                               >
-                                <option key={formStack ? 'no-libero' : 'blank'} value="" style={{ background: 'var(--bg)', color: 'var(--text)' }}>{formStack ? t('matchSetup.noLibero') : ''}</option>
+                                <option key={liberoNone.key} value="" style={{ background: 'var(--bg)', color: 'var(--text)' }}>{liberoNone.text}</option>
                                 {!roster.some((player, idx) => idx !== originalIdx && player.libero === 'libero1') && (
                                   <option value="libero1" style={{ background: 'var(--bg)', color: 'var(--text)' }}>L1</option>
                                 )}
@@ -2307,7 +2323,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             </div>
 
             {/* Custom Close/Modify Button */}
-            <div className="ov-kit border-t border-stone-200" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16, paddingTop: 12 }}>
+            <div className="ov-kit border-t border-stone-200" style={{ display: 'flex', flexShrink: 0, justifyContent: 'flex-end', gap: 8, marginTop: 16, paddingTop: 12 }}>
               {hasChanges && (
                 <Button
                   variant="secondary"

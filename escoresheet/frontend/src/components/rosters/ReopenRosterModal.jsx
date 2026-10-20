@@ -18,37 +18,49 @@ import { cn } from '../../ui/cn.js'
 // them (it was a boxed card per player, "clumsy": the owner, 2026-10-20). The
 // rows are a grid on the dialog's width (container query), as the setup
 // roster (tailwind.css, "Roster and bench editors"):
-//   phone    # | last name | first name | remove
-//            date of birth | libero    | captain
+//   phone    # | last name     | first name | remove
+//            date of birth     | libero     | captain
 //   >=560px  # | last | first | date of birth | libero | C | remove, under a
 //            column head
-// Bench: role + remove over last + first name + date of birth; one line from
-// 560 px. Every control is 44 px tall (courtside).
+// Bench: role + date of birth over last + first name + remove, so the names
+// get a line; one line from 560 px. Every control is 44 px tall
+// (courtside). The number, captain and remove columns are 44-48 px at any
+// font size (a 2.75rem toggle in a 44 px track ran out of the row at 130 %),
+// the date's in rem, so it keeps its digits at a large Android font.
 
 const LIST = '@container border-y border-stone-200 divide-y divide-stone-100'
 const ROW = 'grid items-center gap-1.5 py-2.5'
 // The libero labels are short (-, L1, L2, LR): the date of birth gets the
-// number's track too.
+// number's track too. The last name, which the scoresheet prints, gets the
+// larger share of the names' line (4:3; 1:1 cut "Bachmann" at 360 px).
 const PLAYER_GRID = cn(
-  'grid-cols-[48px_minmax(0,1fr)_minmax(0,1fr)_44px]',
+  'grid-cols-[48px_minmax(0,4fr)_minmax(0,3fr)_44px]',
   "[grid-template-areas:'num_last_first_del'_'dob_dob_lib_cap']",
-  '@[560px]:grid-cols-[56px_minmax(0,1fr)_minmax(0,1fr)_150px_110px_44px_44px]',
+  '@[560px]:grid-cols-[56px_minmax(0,4fr)_minmax(0,3fr)_9rem_7rem_44px_44px]',
   "@[560px]:[grid-template-areas:'num_last_first_dob_lib_cap_del']"
 )
+// phone: role | date of birth (6.5rem + 44 px) over last | first | remove, the
+// names about half the line each. Three on one line left the names 75 px (the
+// removed in-match code had given them a line of their own after the emulator
+// audit of 2026-10-14).
 const BENCH_GRID = cn(
-  'grid-cols-[minmax(0,5fr)_minmax(0,5fr)_minmax(0,6fr)_44px]',
-  "[grid-template-areas:'role_role_role_del'_'last_first_dob_dob']",
-  '@[560px]:grid-cols-[210px_minmax(0,1fr)_minmax(0,1fr)_150px_44px]',
+  'grid-cols-[minmax(0,5fr)_minmax(0,1fr)_6.5rem_44px]',
+  "[grid-template-areas:'role_role_dob_dob'_'last_first_first_del']",
+  '@[560px]:grid-cols-[15.5rem_minmax(0,1fr)_minmax(0,1fr)_9rem_44px]',
   "@[560px]:[grid-template-areas:'role_last_first_dob_del']"
 )
 // Column head: the one-line rows only.
 const HEAD = 'hidden @[560px]:grid border-stone-200 py-2 text-[11px] font-bold uppercase tracking-wide text-stone-500'
-const REMOVE = 'h-11 w-11 px-0'
+const REMOVE = 'h-11 w-[44px] min-w-0 px-0'
 // The date field at the kit's md size (its calendar button takes 36 px, not
 // lg's 44, so the digits fit a phone's row) made as tall as an lg Input.
 const DATE = 'h-11 rounded-xl border-stone-200 pl-2.5 text-base'
-// CaptainToggle draws itself 40 px (inline): 44 here, as every row control
-const CAPTAIN_CELL = 'flex justify-center [grid-area:cap] [&>button]:!h-11 [&>button]:!w-11 [&>button]:!min-w-11'
+// CaptainToggle draws itself 40 px (inline): as tall as the row's inputs
+// here, as wide as its 44 px track (a 2.75rem toggle ran out of the row at
+// 130 %)
+const CAPTAIN_CELL = 'flex justify-center [grid-area:cap] [&>button]:!h-11 [&>button]:!w-[44px] [&>button]:!min-w-[44px]'
+// Names: 8 px of padding (the kit's 12 cut "Bachmann" on a phone)
+const NAME = 'px-2'
 
 export default function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose, t, benchRoles, toISODate }) {
   const [editingPlayers, setEditingPlayers] = useState(() =>
@@ -107,9 +119,12 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
       open={true}
       onClose={onClose}
       width={760}
+      // a column: the lists scroll, Cancel / Save stays in view (under a 65vh
+      // list it fell below the dialog's edge on a phone and at 1280x720)
+      panelStyle={{ display: 'flex', flexDirection: 'column' }}
     >
-      <div className="ov-kit">
-        <div className="max-h-[65vh] overflow-y-auto pb-1">
+      <div className="ov-kit flex min-h-0 flex-1 flex-col">
+        <div className="min-h-0 flex-1 overflow-y-auto pb-1">
           {/* Players */}
           <SectionHeader
             as="h4"
@@ -150,7 +165,7 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
                   value={player.lastName || ''}
                   onChange={(e) => updatePlayer(idx, 'lastName', e.target.value)}
                   placeholder={lastNameLabel}
-                  className="[grid-area:last]"
+                  className={cn('[grid-area:last]', NAME)}
                 />
                 <Input
                   size="lg"
@@ -158,7 +173,7 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
                   value={player.firstName || ''}
                   onChange={(e) => updatePlayer(idx, 'firstName', e.target.value)}
                   placeholder={firstNameLabel}
-                  className="[grid-area:first]"
+                  className={cn('[grid-area:first]', NAME)}
                 />
                 <DateField
                   size="md"
@@ -229,8 +244,12 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
                   onChange={(e) => updateBench(idx, 'role', e.target.value)}
                   className="[grid-area:role] pl-2.5"
                 >
+                  {/* "AC1 - Assistant coach 1", as in match setup: a phone's row
+                      cuts the text, the code in front still tells AC1 from AC2 */}
                   {benchRoles.map(r => (
-                    <option key={r.value} value={r.value}>{r.value}</option>
+                    <option key={r.value} value={r.value}>
+                      {r.key ? `${t(`benchRolesShort.${r.key}`)} - ${t(`benchRoles.${r.key}`, r.value)}` : r.value}
+                    </option>
                   ))}
                 </Select>
                 <Input
@@ -239,7 +258,7 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
                   value={staff.lastName || ''}
                   onChange={(e) => updateBench(idx, 'lastName', e.target.value)}
                   placeholder={lastNameLabel}
-                  className="[grid-area:last]"
+                  className={cn('[grid-area:last]', NAME)}
                 />
                 <Input
                   size="lg"
@@ -247,7 +266,7 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
                   value={staff.firstName || ''}
                   onChange={(e) => updateBench(idx, 'firstName', e.target.value)}
                   placeholder={firstNameLabel}
-                  className="[grid-area:first]"
+                  className={cn('[grid-area:first]', NAME)}
                 />
                 <DateField
                   size="md"
@@ -268,7 +287,7 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
         </div>
 
         {/* Cancel / Save */}
-        <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-stone-200 pt-4">
+        <div className="mt-4 flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-stone-200 pt-4">
           <Button variant="secondary" size="lg" className="h-11 min-w-[88px]" onClick={onClose}>
             {t('scoreboard.reopenRoster.cancel', 'Cancel')}
           </Button>
