@@ -28,6 +28,7 @@ import { phoneSignContext, signatureUpdate } from '../domain/phoneSignature'
 import LongPressProgressIndicator from './LongPressProgressIndicator'
 import DraggedPlayerOverlay from './DraggedPlayerOverlay'
 import { setPlayerDragImage } from '../utils/dragImage'
+import { teamShortLabels } from '../utils/teamShortLabels'
 import ballFallback from '../ball_fallback.png'
 
 // Primary ball image (with a bundled copy as fallback)
@@ -12639,12 +12640,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   const teamALabel = leftTeam.isTeamA ? 'A' : 'B'
   const teamBLabel = rightTeam.isTeamA ? 'A' : 'B'
-  const teamAShortName = leftIsHome
-    ? (data?.match?.homeShortName || leftTeam.name?.substring(0, 3).toUpperCase() || 'A')
-    : (data?.match?.awayShortName || leftTeam.name?.substring(0, 3).toUpperCase() || 'A')
-  const teamBShortName = leftIsHome
-    ? (data?.match?.awayShortName || rightTeam.name?.substring(0, 3).toUpperCase() || 'B')
-    : (data?.match?.homeShortName || rightTeam.name?.substring(0, 3).toUpperCase() || 'B')
+  // The match's short name, else the team's, else one derived from the name
+  // without "VBC" / "VC" / ...; never the same for both teams
+  // (utils/teamShortLabels.js: the first 3 letters gave "VBC" to both teams of
+  // "VBC Einsiedeln D2 - VBC Rämi D1")
+  const [homeShortLabel, awayShortLabel] = teamShortLabels(
+    { shortName: data?.match?.homeShortName, teamShortName: data?.homeTeam?.shortName, name: data?.homeTeam?.name },
+    { shortName: data?.match?.awayShortName, teamShortName: data?.awayTeam?.shortName, name: data?.awayTeam?.name }
+  )
+  const teamAShortName = (leftIsHome ? homeShortLabel : awayShortLabel) || leftTeam.name || 'A'
+  const teamBShortName = (leftIsHome ? awayShortLabel : homeShortLabel) || rightTeam.name || 'B'
 
   // Help content function - deprecated, interactive help system replaces this
   const getHelpContent = () => {
