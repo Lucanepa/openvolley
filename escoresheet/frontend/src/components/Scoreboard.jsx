@@ -23098,6 +23098,10 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
   // Optional game captain (FIVB 5.2), among the valid entries other than the
   // team captain. Opening on an existing line-up shows the current choice.
   // A choice whose player has left the six is simply not shown (nor saved).
+  // Only asked when the six are entered without the team captain: while the
+  // team captain is on court, the team captain is the game captain (FIVB
+  // 5.1.2), and the scoreboard asks for one when the captain leaves the court
+  // (checkAndRequestCaptainOnCourt, with "Manage captain on court" on)
   const [gameCaptainChoice, setGameCaptainChoice] = useState(() => (presetLineup
     ? initialGameCaptainChoice({ lineup, players, team, currentCourtCaptain: courtCaptain, rememberedCourtCaptain })
     : ''))
@@ -23105,15 +23109,13 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     () => gameCaptainOptions({ lineup, players, events, team }),
     [lineup, players, events, team]
   )
-  const gameCaptain = gameCaptainChoices.includes(gameCaptainChoice) ? gameCaptainChoice : ''
   const captainStatus = lineupCaptainStatus({ lineup, players })
   const captainNumber = teamCaptainNumber(players)
-  const gameCaptainNote = (() => {
-    if (captainStatus === 'noCaptain') return t('scoreboard.lineupModal.gameCaptain.noCaptain', 'No team captain on the roster')
-    if (gameCaptainChoices.length === 0) return t('scoreboard.lineupModal.gameCaptain.enterFirst', 'Choose once the players are entered')
-    if (captainStatus === 'onCourt') return t('scoreboard.lineupModal.gameCaptain.whenCaptainLeaves', { captain: captainNumber, defaultValue: 'Takes over when captain {{captain}} leaves the court' })
-    return t('scoreboard.lineupModal.gameCaptain.fromFirstRally', { captain: captainNumber, defaultValue: 'Captain {{captain}} is not in the line-up: game captain from the first rally' })
-  })()
+  const askGameCaptain = !easy && captainStatus === 'offCourt' && lineup.every(v => String(v ?? '').trim() !== '')
+  const gameCaptain = askGameCaptain && gameCaptainChoices.includes(gameCaptainChoice) ? gameCaptainChoice : ''
+  const gameCaptainNote = gameCaptainChoices.length === 0
+    ? t('scoreboard.lineupModal.gameCaptain.enterFirst', 'Choose once the players are entered')
+    : t('scoreboard.lineupModal.gameCaptain.fromFirstRally', { captain: captainNumber, defaultValue: 'Captain {{captain}} is not in the line-up: game captain from the first rally' })
 
   const errorText = (code) => ({
     required: t('scoreboard.lineupModal.errors.required', 'Required'),
@@ -23491,9 +23493,10 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
             <div className="lineup-grid">
               {[0, 1, 2, 3, 4, 5].map(renderPosition)}
             </div>
-            {/* Optional game captain (FIVB 5.2): always rendered, fixed height
-                (not in an easy match: its teams have no captain) */}
-            {!easy && <div className="lineup-gcapt" role="group" aria-labelledby={`lineup-gcapt-${team}`} aria-describedby={`lineup-gcapt-note-${team}`}>
+            {/* Optional game captain (FIVB 5.2): only once the six are in
+                without the team captain (not in an easy match: its teams
+                have no captain) */}
+            {askGameCaptain && <div className="lineup-gcapt" role="group" aria-labelledby={`lineup-gcapt-${team}`} aria-describedby={`lineup-gcapt-note-${team}`}>
               <div className="lineup-gcapt__head">
                 <span className="lineup-gcapt__title" id={`lineup-gcapt-${team}`}>
                   {t('scoreboard.lineupModal.gameCaptain.title', 'Game captain')}

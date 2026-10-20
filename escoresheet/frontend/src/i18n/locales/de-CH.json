@@ -536,8 +536,6 @@
         "none": "Kei",
         "player": "Spiilcaptain: Spieler {{number}}",
         "enterFirst": "Chasch uswähle, sobald d Spieler iitreit sind",
-        "noCaptain": "Kei Captain uf de Mannschaftslischte",
-        "whenCaptainLeaves": "Übernimmt, wänn Captain {{captain}} s Feld verlaat",
         "fromFirstRally": "Captain {{captain}} isch nöd i de Ufstellig: Spiilcaptain ab em erschte Ballwächsel"
       },
       "easyLiberos": "Liberos (optional)",
