@@ -4,8 +4,8 @@
  * A match is scored on ONE device at a time. The apps name their installation
  * (frontend utils/deviceId.js, a random uuid) in the body of their writes:
  * `device: { id, platform }` next to table/action/params on /api/db and on
- * /api/match/restore, the revisions' own device_id on
- * /api/match/event-revisions. A body field, not a header: an older backend
+ * /api/match/restore and /api/match/event-revisions (the device sending
+ * them: a revision's own device_id is the one that made it). A body field, not a header: an older backend
  * ignores it, while a new header would fail its CORS preflight and cut every
  * new app off from an old backend.
  *
@@ -14,6 +14,8 @@
  *            scorer's platform and the time of its take-over (never its id).
  *   adopt()  after a write that found no scorer: the writing device becomes
  *            it (the first device that writes a match scores it).
+ *   movedSince()  before a backup restore: a restore made before another
+ *            device took the match over is refused the same way.
  *   claim()  POST /api/match/scorer: "continue on this device" (a restore by
  *            game PIN, a backup restore) and "Take back scoring here". The
  *            device becomes the scorer whoever it was; server.js then tells
@@ -32,6 +34,8 @@
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const PLATFORM_RE = /^[a-z0-9-]{1,24}$/
 const MAX_REFS = 50
+// The oldest restore movedSince() still dates (an app offline for weeks)
+const MAX_RESTORE_AGE_MS = 30 * 24 * 60 * 60 * 1000
 
 // The tables whose writes score a match. user_matches ("My Matches") and the
 // storage uploads are not scoring.
@@ -238,7 +242,37 @@ export function createScorerDevices ({ pool, db = null, audit = null } = {}) {
     }
   }
 
-  return { check, adopt, claim }
+  /**
+   * Before a backup restore by `device` (POST /api/match/restore, which
+   * then takes the match over for it): the restore was made `ageMs` ago (the
+   * app's own clock, so no clock skew), and another device that took the
+   * match over AFTER that keeps it. A restore queued on a device the scorer
+   * left (offline, sent late) must not replace the other device's score; a
+   * restore made after the other device took over is this device taking it
+   * back on purpose. Open, non-test matches only.
+   * @returns {Promise<object|null>} the scorer row that keeps the match
+   */
+  async function movedSince ({ device, externalId, ageMs }) {
+    if (!device || typeof externalId !== 'string' || !externalId || externalId.length > 200) return null
+    const age = Number(ageMs)
+    if (!Number.isFinite(age) || age <= 0) return null
+    try {
+      const { rows } = await pool.query(
+        `SELECT m.external_id, s.device_id, s.platform, s.claimed_at
+           FROM public.matches m
+           JOIN public.match_scorer_devices s ON s.match_id = m.id
+          WHERE m.external_id = $1 AND m.closed_at IS NULL AND m.test IS NOT TRUE
+            AND s.device_id <> $2
+            AND s.claimed_at > now() - ($3::bigint * interval '1 millisecond')`,
+        [externalId, device.id, Math.min(Math.floor(age), MAX_RESTORE_AGE_MS)])
+      return rows[0] || null
+    } catch (err) {
+      if (isMissingTable(err)) return null
+      throw err
+    }
+  }
+
+  return { check, adopt, claim, movedSince }
 }
 
 function ok (data) {

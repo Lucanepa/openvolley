@@ -144,17 +144,23 @@ describe('scoring-device handover end to end', { skip: SKIP }, () => {
     assert.deepEqual(await holder(m), { device_id: PC.id, platform: 'tauri-linux' })
   })
 
-  it('the event history is checked by the revisions own device_id', async () => {
+  it('the event history is checked by the device that sends it, not the id a revision was made with', async () => {
     const m = await newMatch(users.anna, PC)
     assert.equal((await event(m, 1, PC)).status, 200)
-    const rev = (device) => ({
+    const rev = (madeBy, sender) => ({
       match_external_id: m.ext,
-      revisions: [{ rev_uid: randomUUID(), event_external_id: `${m.ext}:e:1`, op: 'void', reason: 'undo', seq: 1, set_index: 1, type: 'point', client_ts: new Date().toISOString(), device_id: device, app_version: 'test' }]
+      revisions: [{ rev_uid: randomUUID(), event_external_id: `${m.ext}:e:1`, op: 'void', reason: 'undo', seq: 1, set_index: 1, type: 'point', client_ts: new Date().toISOString(), device_id: madeBy, app_version: 'test' }],
+      ...(sender ? { device: sender } : {})
     })
     const post = (body) => api(srv.base, '/api/match/event-revisions', { token: users.anna.token, proto: null, body })
-    expectCode(await post(rev(PHONE.id)), 409, 'OV_SCORER_MOVED')
-    const ok = await post(rev(PC.id))
+    expectCode(await post(rev(PC.id, PHONE)), 409, 'OV_SCORER_MOVED')
+    // review: a revision made under the PC's older id ("Clear all" gave it a
+    // new one) is sent by the PC as it is now: checked by the sender
+    const ok = await post(rev(PHONE.id, PC))
     assert.equal(ok.status, 200, ok.text)
+    // an app that names no sender is not checked (as on /api/db)
+    const legacy = await post({ ...rev(PHONE.id), revisions: [{ ...rev(PHONE.id).revisions[0], event_external_id: `${m.ext}:e:1`, op: 'restore', reason: 'redo' }] })
+    assert.notEqual(legacy.json?.error?.code, 'OV_SCORER_MOVED', legacy.text)
   })
 
   it('a backup restored on a device takes the match over', async () => {
@@ -166,6 +172,28 @@ describe('scoring-device handover end to end', { skip: SKIP }, () => {
     assert.equal(r.status, 200, r.text)
     assert.equal((await holder(m)).device_id, PHONE.id)
     expectCode(await event(m, 1, PC), 409, 'OV_SCORER_MOVED')
+  })
+
+  it('a restore made before another device took over is refused (sent late from the device the scorer left)', async () => {
+    const m = await newMatch(users.anna, PC)
+    // The phone takes over now
+    assert.equal((await scorer(users.anna, { external_id: m.ext, device: PHONE })).status, 200)
+    const restore = (ageMs) => api(srv.base, '/api/match/restore', {
+      token: users.anna.token,
+      body: { match: { external_id: m.ext, status: 'live' }, sets: [], events: [], liveState: null, device: PC, ...(ageMs != null ? { age_ms: ageMs } : {}) }
+    })
+    // queued on the PC a minute ago, before the phone took over
+    const late = await restore(60_000)
+    expectCode(late, 409, 'OV_SCORER_MOVED')
+    assert.equal(late.json.error.scorer.platform, 'android')
+    assert.equal((await holder(m)).device_id, PHONE.id, 'the phone keeps the match')
+    // made now, after the take-over: the PC takes it back on purpose
+    await sleep(20)
+    const now = await restore(0)
+    assert.equal(now.status, 200, now.text)
+    assert.equal((await holder(m)).device_id, PC.id)
+    // a restore by the device that scores it is never refused
+    assert.equal((await restore(60_000)).status, 200)
   })
 
   it('test and closed matches are not checked; a closed match cannot be claimed', async () => {
