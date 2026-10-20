@@ -954,7 +954,22 @@
       "selectBackupFile": "Select backup file",
       "restorePreview": "Restore preview",
       "fromDatabase": "From database",
-      "fromLocalFile": "From local file"
+      "fromLocalFile": "From local file",
+      "preview": {
+        "set": "Set {{n}}",
+        "serving": "Serving",
+        "lineup": "Line-up",
+        "noLineup": "No line-up recorded",
+        "timeouts": "Time-outs",
+        "substitutions": "Substitutions",
+        "none": "None",
+        "subTitle": "#{{playerIn}} in for #{{playerOut}} at {{home}}:{{away}}",
+        "sanctions": "Sanctions",
+        "setScores": "Set scores",
+        "selectAnother": "Select another",
+        "confirmRestore": "Confirm restore",
+        "restoring": "Restoring…"
+      }
     }
   },
   "languages": {
