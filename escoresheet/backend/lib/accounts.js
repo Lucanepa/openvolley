@@ -64,7 +64,9 @@ export const AUDIT_ACTIONS = Object.freeze([
   // a stored scoresheet PDF opened past the uploader-only rule (lib/scoresheets.js)
   'scoresheet.read',
   // db/018: clubs and the clubs an account scores for (lib/clubs.js)
-  'club.create', 'club.update', 'club.delete', 'account.clubs', 'club_rule.set'
+  'club.create', 'club.update', 'club.delete', 'account.clubs', 'club_rule.set',
+  // db/019: a match moved to another scoring device (lib/scorerDevice.js claim)
+  'match.scorer_device'
 ])
 export const APPS = SPORTS
 // How a membership came about (auth.app_memberships.joined_via)
