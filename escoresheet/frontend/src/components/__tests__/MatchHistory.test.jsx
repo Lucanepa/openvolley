@@ -10,7 +10,7 @@ vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => ({ user: authUser 
 
 // Records every apiFrom query; matches rows as the backend returns them
 // (`api.links`, when set, is the user_matches table, paged by id like the server)
-const api = vi.hoisted(() => ({ calls: [], links: null }))
+const api = vi.hoisted(() => ({ calls: [], links: null, rows: null }))
 vi.mock('../../lib/apiClient', () => ({
   apiFrom: (table) => {
     const call = { table, columns: null, filters: [], order: [], limit: null }
@@ -36,6 +36,7 @@ vi.mock('../../lib/apiClient', () => ({
         if (table === 'user_matches') {
           return Promise.resolve({ data: [{ id: 'l1', match_external_id: 'match_1_a', role: 'scorer', created_at: '2026-10-05T18:30:00Z' }], error: null }).then(resolve)
         }
+        if (api.rows) return Promise.resolve({ data: api.rows, error: null }).then(resolve)
         return Promise.resolve({
           data: [{ external_id: 'match_1_a', game_n: 991404, home_team: { name: 'Home V' }, away_team: { name: 'Away V' }, final_score: '2:0', status: 'final', scheduled_at: '2026-10-05T18:00:00Z', created_at: '2026-10-05T17:00:00Z' }],
           error: null
@@ -46,11 +47,12 @@ vi.mock('../../lib/apiClient', () => ({
   }
 }))
 
-import MatchHistory, { matchStatusPill } from '../auth/MatchHistory'
+import MatchHistory, { matchStatusPill, parseSetsWon } from '../auth/MatchHistory'
 
 afterEach(() => {
   api.calls = []
   api.links = null
+  api.rows = null
   vi.restoreAllMocks()
 })
 
@@ -79,6 +81,37 @@ describe('MatchHistory (My Matches)', () => {
     expect(pill.className).not.toContain('amber')
     fireEvent.keyDown(row, { key: 'Enter' })
     expect(open).toHaveBeenCalledWith(`${window.location.origin}/scoresheet/?date=2026-10-05&game=991404`, '_blank', 'noopener')
+  })
+})
+
+describe('MatchHistory: an approved match', () => {
+  it('opens its scoresheet like a final one (it had no chevron and no link)', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    api.rows = [{ external_id: 'match_1_a', game_n: 406970, home_team: 'VBC Rämi D1', away_team: 'VBC Einsiedeln D2', final_score: '3-0', status: 'approved', scheduled_at: '2026-10-20T18:00:00+00:00', created_at: '2026-10-20T17:00:00Z' }]
+    render(<MatchHistory open onClose={() => {}} />)
+    const row = await screen.findByRole('button', { name: /VBC Rämi D1 – VBC Einsiedeln D2 3-0: Open scoresheet/ })
+    expect(screen.getByText('Approved')).toBeInTheDocument()
+    // sets won beside each team, the loser's muted
+    expect(screen.getByText('3').className).toContain('text-stone-900')
+    expect(screen.getByText('0').className).toContain('text-stone-400')
+    fireEvent.click(row)
+    expect(open).toHaveBeenCalledWith(`${window.location.origin}/scoresheet/?date=2026-10-20&game=406970`, '_blank', 'noopener')
+  })
+
+  it('a live match is not a link', async () => {
+    api.rows = [{ external_id: 'match_1_a', game_n: 5, home_team: 'H', away_team: 'A', final_score: null, status: 'live', scheduled_at: '2026-10-20T18:00:00Z' }]
+    render(<MatchHistory open onClose={() => {}} />)
+    expect(await screen.findByText('H')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Open scoresheet/ })).toBeNull()
+  })
+})
+
+describe('parseSetsWon', () => {
+  it('reads "3-0" and "2:3"; anything else is null', () => {
+    expect(parseSetsWon('3-0')).toEqual({ home: 3, away: 0 })
+    expect(parseSetsWon(' 2 : 3 ')).toEqual({ home: 2, away: 3 })
+    expect(parseSetsWon('25-20, 25-12')).toBe(null)
+    expect(parseSetsWon(null)).toBe(null)
   })
 })
 

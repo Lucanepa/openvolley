@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { Fragment, useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../../contexts/AuthContext'
 import { apiFrom } from '../../lib/apiClient'
@@ -33,6 +33,12 @@ export function matchStatusPill(status) {
     default:
       return { key: '', fallback: String(status || ''), className: 'border-stone-200 bg-stone-50 text-stone-600' }
   }
+}
+
+/** '3-0' / '2:3' -> { home: 3, away: 0 }; null for anything else. */
+export function parseSetsWon(finalScore) {
+  const m = /^\s*(\d+)\s*[-:–]\s*(\d+)\s*$/.exec(String(finalScore ?? ''))
+  return m ? { home: Number(m[1]), away: Number(m[2]) } : null
 }
 
 export default function MatchHistory({ open, onClose, onSelectMatch }) {
@@ -187,6 +193,8 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
               {matches.map((match, index) => {
                 const openable = canOpen(match)
                 const pill = match.status ? matchStatusPill(match.status) : null
+                const sets = parseSetsWon(match.final_score)
+                const winner = sets ? (sets.home > sets.away ? 'home' : sets.away > sets.home ? 'away' : null) : null
                 return (
                 <div
                   key={`${match.match_external_id || index}:${match.userRole || ''}`}
@@ -204,49 +212,58 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
                     }
                   } : {})}
                   className={cn(
-                    'rounded-md px-2 py-3 transition-colors',
+                    'flex items-center gap-3 rounded-lg px-2 py-3 transition-colors',
                     openable && 'cursor-pointer hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60'
                   )}
                 >
-                  {/* Top row: Teams and score */}
-                  <div className="mb-1.5 flex items-center justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-semibold text-stone-900">
-                        {getTeamName(match.home_team)}
-                      </div>
-                      <div className="text-xs text-stone-500">
-                        {t('matchHistory.vs', 'vs')}
-                      </div>
-                      <div className="text-sm font-semibold text-stone-900">
-                        {getTeamName(match.away_team)}
-                      </div>
+                  <div className="min-w-0 flex-1">
+                    {/* Teams with their sets won beside them, scoreboard style:
+                        one grid, so both numbers stand in one column whatever
+                        the names' length (a long name wraps) */}
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 gap-y-1">
+                      {['home', 'away'].map(side => (
+                        <Fragment key={side}>
+                          <span className={cn(
+                            'break-words text-sm leading-snug',
+                            sets && winner && winner !== side ? 'font-medium text-stone-600' : 'font-semibold text-stone-900'
+                          )}>
+                            {getTeamName(side === 'home' ? match.home_team : match.away_team)}
+                          </span>
+                          {sets ? (
+                            <span className={cn(
+                              'min-w-[1.25rem] text-right text-lg font-bold leading-none tabular-nums',
+                              winner && winner !== side ? 'text-stone-400' : 'text-stone-900'
+                            )}>
+                              {sets[side]}
+                            </span>
+                          ) : match.final_score ? (
+                            // A score that is not "sets-sets": shown whole, across both lines
+                            side === 'home' && <span className="row-span-2 self-center whitespace-nowrap text-lg font-bold tabular-nums text-stone-900">{match.final_score}</span>
+                          ) : <span aria-hidden="true" />}
+                        </Fragment>
+                      ))}
                     </div>
-                    {match.final_score && (
-                      <div className="text-2xl font-bold tabular-nums text-stone-900">
-                        {match.final_score}
-                      </div>
-                    )}
-                  </div>
 
-                  {/* Bottom row: Date, role, status */}
-                  <div className="flex items-center justify-between gap-2 text-xs">
-                    <div className="tabular-nums text-stone-500">
-                      {formatDate(match.scheduled_at || match.created_at)}
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="inline-flex items-center whitespace-nowrap rounded border border-stone-200 bg-stone-50 px-1.5 py-[3px] text-[11px] font-semibold capitalize leading-none text-stone-600">
+                    {/* Date, role, status */}
+                    <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="mr-auto text-xs tabular-nums text-stone-500">
+                        {formatDate(match.scheduled_at || match.created_at)}
+                      </span>
+                      <span className="inline-flex items-center whitespace-nowrap rounded border border-stone-200 bg-stone-50 px-1.5 py-0.5 text-[11px] font-semibold capitalize leading-none text-stone-600">
                         {match.userRole || 'scorer'}
                       </span>
                       {pill && (
-                        <span className={cn('inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium', pill.className)}>
+                        <span className={cn('inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium leading-none', pill.className)}>
                           {pill.key ? t(pill.key, pill.fallback) : pill.fallback}
                         </span>
                       )}
-                      {openable && (
-                        <ChevronRight size={16} aria-hidden="true" className="text-stone-400" />
-                      )}
                     </div>
                   </div>
+
+                  {/* The chevron's column is kept on every row, so the scores line up */}
+                  <span className="flex w-4 shrink-0 justify-center self-center">
+                    {openable && <ChevronRight size={16} aria-hidden="true" className="text-stone-400" />}
+                  </span>
                 </div>
                 )
               })}
