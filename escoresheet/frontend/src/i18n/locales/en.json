@@ -892,6 +892,7 @@
     "phone": {
       "setInfo": "Set {{set}} · sets {{left}} : {{right}}",
       "setsWon": "Sets won: {{count}}",
+      "serveNumber": "Serve #{{number}}",
       "timeOut": "Time-out",
       "courtPlayer": "Player {{number}}, team {{team}}",
       "markCaptain": "captain",

@@ -131,6 +131,10 @@ describe('Scoreboard: the phone layout', () => {
     // the ball next to the server: B won the last rally (right)
     expect(within(view.getByTestId('phone-court-right')).getByTestId('phone-serve-ball')).toBeTruthy()
     expect(within(view.getByTestId('phone-court-left')).queryByTestId('phone-serve-ball')).toBeNull()
+    // the serve pill names the server: B's player in position I
+    expect(view.getAllByTestId('phone-server-number')).toHaveLength(1)
+    expect(view.getByTestId('phone-server-number').textContent).toBe('#1')
+    expect(view.getByTestId('phone-serve-pill').getAttribute('aria-label')).toBe('Serve #1')
     // the last actions: the newest point first, the teams as their letters
     // (a team name pushed the rest of the line out, 2026-10-20)
     expect(view.getByTestId('phone-recent').firstChild.textContent).toBe('Point B · Set 1 · A 1:1 B')
@@ -152,6 +156,8 @@ describe('Scoreboard: the phone layout', () => {
     const lastPoint = (await ofType('point')).at(-1)
     expect(lastPoint.payload.team).toBe('home')
     await waitFor(() => expect(view.getByTestId('phone-score-left').textContent).toBe('2'))
+    // side-out: A rotates, its new server is the player from position II
+    await waitFor(() => expect(view.getByTestId('phone-server-number').textContent).toBe('#2'))
     await waitFor(() => expect(view.getByRole('button', { name: 'Start rally' })).toBeTruthy())
     await settle()
 
@@ -231,8 +237,8 @@ describe('Scoreboard: the phone layout', () => {
     expect(within(phone()).queryByTestId('phone-libero-left')).toBeNull()
   }, 60000)
 
-  // The paper sheet's marks on the phone court: C for the captain (team
-  // captain on court, or the acting game captain), the replaced player's
+  // The paper sheet's marks on the phone court: the captain's number circled
+  // (team captain on court, or the acting game captain), the replaced player's
   // number at a substitute's foot; the counters red at the limit, amber at
   // the 5th substitution
   it('marks the captain and the substitutes, and colours the counters near the limit', async () => {
@@ -258,9 +264,16 @@ describe('Scoreboard: the phone layout', () => {
     await waitFor(() => expect(phone()).toBeTruthy(), { timeout: 10000 })
     const left = within(phone()).getByTestId('phone-court-left')
     const right = within(phone()).getByTestId('phone-court-right')
-    // the team captain on court
+    // the team captain on court: a thin ring in the number's colour, no "C"
     await waitFor(() => expect(within(left).getAllByTestId('phone-mark-captain')).toHaveLength(1))
-    expect(within(left).getByTestId('phone-mark-captain').parentElement.firstChild.textContent).toBe('2')
+    const ring = within(left).getByTestId('phone-mark-captain')
+    expect(ring.parentElement.firstChild.textContent).toBe('2')
+    expect(ring.textContent).toBe('')
+    expect(ring.style.borderStyle).toBe('solid')
+    expect(ring.style.borderWidth).toBe('2px')
+    expect(ring.style.borderColor).toBe(ring.parentElement.style.color)
+    expect(ring.style.background).toBe('')
+    expect(left.querySelector('[data-court-cell="II"]').getAttribute('aria-label')).toMatch(/captain/)
     // #9 came in for #5 (#3 and #4 came back): only that one is marked
     const replaced = within(left).getAllByTestId('phone-mark-replaced')
     expect(replaced).toHaveLength(1)

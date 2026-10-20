@@ -891,6 +891,7 @@
     "phone": {
       "setInfo": "Set {{set}} · set {{left}} : {{right}}",
       "setsWon": "Set: {{count}}",
+      "serveNumber": "Servizio #{{number}}",
       "timeOut": "Timeout",
       "courtPlayer": "Giocatore {{number}}, squadra {{team}}",
       "markCaptain": "capitano",

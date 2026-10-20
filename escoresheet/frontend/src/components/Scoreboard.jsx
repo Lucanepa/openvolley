@@ -76,7 +76,7 @@ import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
 import { isNativeApp } from '../utils/backendConfig'
 import PhoneScoreboard from './scoreboard/PhoneScoreboard.jsx'
-import { detectDisplayMode, dialogsCentred, isPhoneScreen, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
+import { PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, isPhoneScreen, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
 import { WarningIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon } from './icons'
 import { cn } from '../ui/cn.js'
@@ -12883,7 +12883,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         isRallyReplayed
       },
       centre,
-      recent: recentActions(data?.events, data?.set?.index, getShortActionDescription, 3),
+      recent: recentActions(data?.events, data?.set?.index, getShortActionDescription, PHONE_RECENT_MAX_LINES),
       canUndo,
       scoreFont: getScoreFont(),
       limits: { timeouts: 2, subs: MAX_SUBSTITUTIONS_PER_SET },

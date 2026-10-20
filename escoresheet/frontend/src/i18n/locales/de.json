@@ -884,6 +884,7 @@
     "phone": {
       "setInfo": "Satz {{set}} · Sätze {{left}} : {{right}}",
       "setsWon": "Sätze: {{count}}",
+      "serveNumber": "Aufschlag #{{number}}",
       "timeOut": "Timeout",
       "courtPlayer": "Spieler {{number}}, Team {{team}}",
       "markCaptain": "Captain",

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { COURT_CELLS, PHONE_COURT_MIN_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, POSITIONS, detectDisplayMode, dialogsCentred, isPhoneScreen, officialRoleShort, phoneHeldSideways, phoneLayoutActive, phoneLayoutKept, recentActions, tintOf } from '../phoneLayout'
+import { COURT_CELLS, PHONE_COURT_MIN_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, POSITIONS, PHONE_COUNTER_HEIGHT_PX, PHONE_RECENT_HEIGHT_PX, PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, recentLinesFor, isPhoneScreen, officialRoleShort, phoneHeldSideways, phoneLayoutActive, phoneLayoutKept, recentActions, tintOf } from '../phoneLayout'
 
 describe('detectDisplayMode (the automatic display mode)', () => {
   it.each([[390, 844], [360, 740], [412, 915], [599, 1000]])('a %ix%i portrait phone gets the phone layout', (w, h) => {
@@ -102,6 +102,21 @@ describe('COURT_CELLS', () => {
     const row = (side, pos) => Math.floor(COURT_CELLS[side].indexOf(pos) / 2)
     expect(row('left', 'IV')).toBe(row('right', 'II'))
     expect(row('left', 'II')).toBe(row('right', 'IV'))
+  })
+})
+
+describe('recentLinesFor (the last actions fill the height left over)', () => {
+  it('three lines at their lowest, whole lines only, at most PHONE_RECENT_MAX_LINES', () => {
+    expect(recentLinesFor(PHONE_RECENT_HEIGHT_PX)).toBe(3)
+    expect(recentLinesFor(PHONE_RECENT_HEIGHT_PX + 17)).toBe(3)
+    expect(recentLinesFor(PHONE_RECENT_HEIGHT_PX + 18)).toBe(4)
+    expect(recentLinesFor(117)).toBe(6)
+    expect(recentLinesFor(1000)).toBe(PHONE_RECENT_MAX_LINES)
+    expect(recentLinesFor(0)).toBe(1)
+  })
+
+  it('the counters keep a tappable height of their own', () => {
+    expect(PHONE_COUNTER_HEIGHT_PX).toBeGreaterThanOrEqual(48)
   })
 })
 
