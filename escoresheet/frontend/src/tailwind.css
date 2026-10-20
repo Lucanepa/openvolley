@@ -115,6 +115,7 @@
   --ov-warning-border: #fef3c7;  /* amber-100 */
   --ov-warning-strong: #fcd34d;  /* amber-300 */
   --ov-warning-text: #92400e;    /* amber-800 */
+  --ov-warning-ink: #d97706;     /* amber-600: large bold digits only (3.2:1), a count about to run out */
   --ov-danger: #e2001a;          /* = brand: one red for act and destroy */
   --ov-danger-hover: #be0014;
   --ov-danger-text: #b91c1c;     /* red-700 stock, inline errors */
@@ -746,6 +747,17 @@
   }
   /* Captain, game captain and libero marks on the court discs: green, amber
      or blue on white come out pale grey on the team colour's gentle curve. */
+  /* The phone's time-out / substitution counts: red at the limit, amber
+     one before. Grey on paper white, so they also get a line under them,
+     double at the limit. */
+  html[data-theme='eink'] [data-count-state] {
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
+  }
+  html[data-theme='eink'] [data-count-state='max'] {
+    text-decoration-style: double;
+  }
   html[data-theme='eink'] .court-player-captain {
     background: #fff !important;
     color: #000 !important;

@@ -168,6 +168,25 @@ describe('describeEvent', () => {
     expect(title(913)).toBe('Match stopped')
   })
 
+  it('the short form (scoring screen) writes the team letters, never the names', () => {
+    const short = { ...ctx, short: true }
+    const point = describeEvent(find(e => e.type === 'point' && e.payload.team === 'away'), events, short)
+    expect(point.text).toMatch(/^Point B · Set 1 · A \d+:\d+ B$/)
+    expect(describeEvent(find(e => e.type === 'timeout'), events, short).text).toMatch(/^Time-out B · Set 1 · B \d+:\d+ A$/)
+    expect(describeEvent(find(e => e.type === 'substitution'), events, short).text).toMatch(/^Substitution A · #9 in for #3 · Set 1 · A \d+:\d+ B$/)
+    expect(describeEvent(find(e => e.type === 'sanction' && e.payload.type === 'penalty'), events, short).text)
+      .toMatch(/^Penalty — Player #8 \(bench\) · A · Set 1 · A \d+:\d+ B · \+1 point to B$/)
+    expect(describeEvent(find(e => e.type === 'set_end'), events, short).title).toBe('Set 1 won by A')
+    const lineup = { id: 920, seq: 0.5, setIndex: 1, type: 'lineup', payload: { team: 'away', isInitial: true, lineup: { I: 9, II: 6, III: 2, IV: 5, V: 1, VI: 3 } } }
+    expect(describeEvent(lineup, events, short).text).toBe('Starting line-up B · 9 6 2 5 1 3 · Set 1 · B 0:0 A')
+    const libero = { id: 921, seq: 0.6, setIndex: 1, type: 'libero_entry', payload: { team: 'away', liberoIn: 7, playerOut: 1, liberoType: 'libero1' } }
+    expect(describeEvent(libero, events, short).text).toBe('Libero #7 in for #1 · B · Set 1 · B 0:0 A')
+    for (const e of events) {
+      const d = describeEvent(e, events, short)
+      if (d) expect(d.text).not.toMatch(/VC Smash|Volley Bern/)
+    }
+  })
+
   it('translates through t with interpolation', () => {
     const t = (key, opts) => (key === 'corrections.term.timeout' ? 'Auszeit' : key === 'corrections.term.set' ? `Satz ${opts.n}` : opts.defaultValue)
     const d = describeEvent(find(e => e.type === 'timeout'), events, { ...ctx, t })
