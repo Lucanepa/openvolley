@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { allowLeaving } from '../utils/leaveGuard'
 import { reloadWithReason } from '../diagnostics/reload'
+import { clearStorageKeepingDeviceId } from '../utils/deviceId'
 
 const CACHE_BUST_PARAM = 'cache_bust'
 
@@ -110,7 +111,8 @@ export async function clearCachesAndReload({ includeLocalStorage = false } = {})
     const registrations = await navigator.serviceWorker.getRegistrations()
     await Promise.all(registrations.map((reg) => reg.unregister()))
   }
-  if (includeLocalStorage) localStorage.clear()
+  // (this installation's id stays: the matches in IndexedDB stay too)
+  if (includeLocalStorage) clearStorageKeepingDeviceId()
   allowLeaving()
   reloadWithReason(includeLocalStorage ? 'clear-cache-and-storage' : 'clear-cache', { how: 'replace', url: buildReloadUrl() })
   return true

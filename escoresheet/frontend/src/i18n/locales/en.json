@@ -1386,6 +1386,7 @@
     "noWinner": "No winner (match stopped)",
     "pdfGenerationFailed": "Match approved, but the PDF could not be created. You can create it from the scoresheet button.",
     "reopenMatch": "Reopen match",
+    "closedOnServer": "This match is closed on the server: it can no longer be changed here. Only an admin can reopen it (Reopen match).",
     "reopenAdminOnlyTitle": "Only an admin can reopen this match",
     "reopenAdminOnlyBody": "Game {{game}} is closed on the server. Ask an admin to reopen it, then tap “Reopen match” again.",
     "reopenNeedsConnection": "Reopening a closed match needs a connection to the server.",
@@ -3983,9 +3984,18 @@
     "title": "Scored on another device",
     "body": "This match is now scored on another device ({{platform}}, {{time}}). This device no longer scores it.",
     "bodyUnknown": "This match is now scored on another device. This device no longer scores it.",
-    "takeBackHint": "Take it back only if you score on this device again: the other device is then told the same and stops.",
+    "bodyClosed": "This match was continued on another device and is closed now. This device no longer scores it.",
+    "takeBackHint": "Take it back only if you score on this device again. It first loads the score from the other device (needs a connection); that device is then told and stops.",
     "takeBack": "Take back scoring here",
+    "showResult": "Load the final result",
     "close": "Close",
+    "errors": {
+      "offline": "Taking it back needs a connection: this device first loads the score from the other device.",
+      "noPin": "This device does not have the game PIN of this match. Join it with the game number and game PIN instead.",
+      "notFound": "The match was not found in the cloud. Join it with the game number and game PIN.",
+      "otherMatch": "The game PIN on this device belongs to another match. Join it with the game number and game PIN.",
+      "failed": "The match could not be loaded from the cloud. Try again."
+    },
     "platforms": {
       "android": "Android phone or tablet",
       "ios": "iPhone or iPad",

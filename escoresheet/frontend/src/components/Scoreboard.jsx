@@ -19,7 +19,8 @@ import SanctionsResultsModal from './SanctionsResultsModal'
 import ScoreboardOptionsModal from './options/ScoreboardOptionsModal'
 import NativeBackupAlert from './options/NativeBackupAlert'
 import ConnectTabletsModal from './connect/ConnectTabletsModal'
-import { useSyncQueue, isAuthBlocked } from '../hooks/useSyncQueue'
+import { useSyncQueue, isAuthBlocked, checkScorerMoved } from '../hooks/useSyncQueue'
+import { isScorerMoved, SCORER_MOVED } from '../utils/matchHandover'
 import { useSequentialSync } from '../hooks/useSequentialSync'
 import SyncProgressModal from './SyncProgressModal'
 import SignaturePad from './SignaturePad'
@@ -704,6 +705,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const initialSyncRef = useRef(null)
   // Relay room key of this match (its seed_key; null while it has none)
   const relayKeyRef = useRef(null)
+  // Another device scores this match now (db/019, ScorerMovedModal): nothing
+  // of this device's older copy goes to the relay room, whose referee, bench
+  // and livescore tablets follow the other device
+  const scorerMovedRef = useRef(false)
   // Live-state pushes and match_live_state upserts: never older over newer.
   // The page's one order (shared with App's syncs, which mark it): its
   // numbers keep rising across remounts, so the tablets can order by them.
@@ -1096,6 +1101,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // paint shows the match, not 'Loading...' first
   const preloaded = usePreloaded(matchId != null ? scoreboardKey(matchId) : null)
   const [data, liveCommits] = useActionLiveQuery(() => readScoreboard(matchId), [matchId], preloaded)
+  scorerMovedRef.current = isScorerMoved(data?.match)
 
   // Monitor tablet connection health — notify when a device drops
   const handleDeviceDisconnected = useCallback(({ label }) => {
@@ -1711,6 +1717,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         if (!relayKey) return
         // A test match: to a local relay only (mayPublishMatchData)
         if (!mayPublishMatchData(freshMatch, scorerRelay.url)) return
+        // Another device scores it now: its tablets follow that one (db/019)
+        if (isScorerMoved(freshMatch)) return
 
         const [freshHomeTeam, freshAwayTeam, freshSets, freshEvents, freshHomePlayers, freshAwayPlayers] = await Promise.all([
           db.teams.get(freshMatch?.homeTeamId),
@@ -1859,13 +1867,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const syncMark = liveStateOrderRef.current.mark()
         // Fetch ALL fresh data from IndexedDB (not from React state which may be stale due to closures)
         const freshMatch = await db.matches.get(matchId)
-        if (!freshMatch) {
+        if (!freshMatch || isScorerMoved(freshMatch)) {
           ws.send(JSON.stringify({
             type: 'match-data-response',
             requestId,
             matchId: requestedMatchId,
             success: false,
-            error: 'Match not found in database'
+            // (another device scores it now, db/019: never this older copy)
+            error: freshMatch ? 'Match scored on another device' : 'Match not found in database'
           }))
           return
         }
@@ -2030,6 +2039,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // timeout started during a Wi-Fi blip still reaches the referee.
   const sendRelayMessage = useCallback((payload) => {
     const send = () => {
+      // Another device scores this match now (db/019): not this one's actions
+      if (scorerMovedRef.current) return
       const ws = wsRef.current
       if (!ws || ws.readyState !== WebSocket.OPEN) return
       try {
@@ -2420,7 +2431,15 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             () => apiFrom('match_live_state').upsert(liveStateData, { onConflict: 'match_id' }))
           if (liveStateResult?.skipped) return
 
-          if (liveStateResult.error && isLiveStateRefusal(liveStateResult.error)) {
+          if (liveStateResult.error?.code === SCORER_MOVED && isLiveStateRefusal(liveStateResult.error)) {
+            // Another device holds the match (db/019). This device's claim may
+            // not be through yet (a join, a take-back): pushed again once the
+            // queue drains, no pause; the server tells whether this device
+            // lost it (ScorerMovedModal). Never a dialog.
+            console.warn('[LiveState] Refused: another device holds this match')
+            setLiveStateDirty(matchId, true)
+            if (match?.seed_key) checkScorerMoved(match.seed_key)
+          } else if (liveStateResult.error && isLiveStateRefusal(liveStateResult.error)) {
             // Never a dialog per rally: the cloud-block notice explains it
             console.warn('[LiveState] Refused by the server:', liveStateResult.error.code)
             markLiveStateRefused(matchId, liveStateResult.error.code)

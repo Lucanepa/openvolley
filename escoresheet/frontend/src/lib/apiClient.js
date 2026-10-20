@@ -237,6 +237,13 @@ export function apiFrom(table) {
 
 // ==================== Helpers ====================
 
+// Milliseconds since `at` (an ISO time or epoch ms), null when unknown
+export function ageOf(at, now = Date.now()) {
+  const t = typeof at === 'number' ? at : (typeof at === 'string' ? Date.parse(at) : NaN)
+  if (!Number.isFinite(t)) return null
+  return Math.max(0, Math.round(now - t))
+}
+
 function deviceField() {
   const device = writingDevice()
   return device ? { device } : {}
@@ -336,9 +343,12 @@ export async function apiDownload(path, { timeoutMs = 120000 } = {}) {
  * @param {{match: object, sets?: object[], events?: object[], liveState?: object|null}} payload
  * @returns {Promise<{data: {id: string, counts: {sets: number, events: number, liveState: number}, dropped?: object}|null, error: object|null, status: number}>}
  */
-export function apiMatchRestore({ match, sets = [], events = [], liveState = null }) {
-  // The device: a backup restored here is this device's take-over (db/019)
-  return postJson('/api/match/restore', { match, sets, events, liveState, ...deviceField() }, {
+export function apiMatchRestore({ match, sets = [], events = [], liveState = null, queuedAt = null }) {
+  // The device: a backup restored here is this device's take-over (db/019),
+  // unless another device took the match over after the restore was made
+  // (age_ms: how long ago, by this device's own clock, so no clock skew)
+  const ageMs = ageOf(queuedAt)
+  return postJson('/api/match/restore', { match, sets, events, liveState, ...deviceField(), ...(ageMs != null ? { age_ms: ageMs } : {}) }, {
     timeoutMs: RESTORE_REQUEST_TIMEOUT_MS,
     fallbackError: 'Match restore failed'
   })
@@ -401,7 +411,9 @@ export function apiPostActivity(entries) {
  * @returns {Promise<{data: {applied: number, pending: number}|null, error: object|null, status: number}>}
  */
 export function apiPostEventRevisions(matchExternalId, revisions) {
-  return postJson('/api/match/event-revisions', { match_external_id: matchExternalId, revisions }, {
+  // The device sending them (db/019): a revision's own device_id is the one
+  // that made it, which may be this installation's id before a "clear all"
+  return postJson('/api/match/event-revisions', { match_external_id: matchExternalId, revisions, ...deviceField() }, {
     fallbackError: 'Event history upload failed'
   })
 }

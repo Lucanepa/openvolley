@@ -191,6 +191,21 @@ describe('clearCachesAndReload', () => {
     expect(url.searchParams.has('cache_bust')).toBe(true)
   })
 
+  // review 2026-10-21: "Clear all" gave the device a new id while its open
+  // match stayed, and the server then refused it as "another device"
+  it('"Clear all" keeps this installation\'s id (the matches in IndexedDB stay)', async () => {
+    stubLocation('https://host/')
+    stubCachesAndSW()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
+    const id = '0f8fad5b-d9cb-469f-a165-70867728950e'
+    localStorage.setItem('ov.deviceId', id)
+    localStorage.setItem('some.setting', 'x')
+    expect(await clearCachesAndReload({ includeLocalStorage: true })).toBe(true)
+    expect(localStorage.getItem('some.setting')).toBeNull()
+    expect(localStorage.getItem('ov.deviceId')).toBe(id)
+    localStorage.removeItem('ov.deviceId')
+  })
+
   it('touches nothing when the server is unreachable (the reload could not load the app offline)', async () => {
     const replace = stubLocation('https://host/referee/?match=42')
     const { cachesDelete, unregister } = stubCachesAndSW()

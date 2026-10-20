@@ -218,7 +218,8 @@ describe('live state catch-up flag', () => {
   })
 
   it('a server refusal (pending account, closed match, taken game, not an owner) never opens a dialog', () => {
-    for (const [status, code] of [[403, 'OV_SCORER_REQUIRED'], [409, 'OV_MATCH_CLOSED'], [409, 'OV_GAME_TAKEN'], [403, 'OV_NOT_MATCH_OWNER'], [409, 'OV_UNSCOPED_WRITE']]) {
+    // (OV_SCORER_MOVED, db/019: another device holds the match; review 2026-10-21: it opened "Sync failed")
+    for (const [status, code] of [[403, 'OV_SCORER_REQUIRED'], [409, 'OV_MATCH_CLOSED'], [409, 'OV_GAME_TAKEN'], [403, 'OV_NOT_MATCH_OWNER'], [409, 'OV_UNSCOPED_WRITE'], [409, 'OV_SCORER_MOVED']]) {
       expect(isLiveStateRefusal({ status, code, message: 'x' })).toBe(true)
       expect(isLiveStateErrorWorthAlert({ status, code, message: 'x' })).toBe(false)
     }

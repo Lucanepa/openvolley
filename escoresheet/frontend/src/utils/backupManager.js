@@ -1255,7 +1255,15 @@ export async function importMatchFromSupabase(cloudData) {
 
   let importedMatchId = null
 
-  await db.transaction('rw', db.matches, db.teams, db.players, db.sets, db.events, async () => {
+  await db.transaction('rw', db.matches, db.teams, db.players, db.sets, db.events, db.sync_queue, async () => {
+    // The cloud copy REPLACES this device's own copy of the match (a join
+    // with the game PIN on a device that had it, "Take back scoring here"):
+    // two local copies of one match key would both sync, and the older one's
+    // unsent writes would overwrite the score the other device left. Its sets
+    // and events go (replaced, not undone: nothing is voided on the server),
+    // its unsent jobs are superseded; other local matches are kept.
+    await replaceLocalCopies(match.external_id)
+
     // Extract team data from JSONB columns
     const homeTeamData = match.home_team || {}
     const awayTeamData = match.away_team || {}
@@ -1451,6 +1459,26 @@ export async function importMatchFromSupabase(cloudData) {
 
   await afterJoin(importedMatchId, { claim: true })
   return importedMatchId
+}
+
+// Remove the local copies of match `externalId` (inside the caller's
+// transaction: matches, sets, events, sync_queue); their unsent jobs are
+// superseded by the cloud copy.
+async function replaceLocalCopies(externalId) {
+  if (!externalId) return 0
+  const previous = await db.matches.filter(m => localMatchKey(m) === externalId).toArray()
+  if (!previous.length) return 0
+  for (const old of previous) {
+    await wipeMatchEvents(db, old.id)
+    await db.sets.where('matchId').equals(old.id).delete()
+    await db.matches.delete(old.id)
+  }
+  const open = await db.sync_queue.where('status').anyOf('queued', 'error', 'failed').toArray()
+  // (the writes of the match's score; a "My Matches" link still goes)
+  const ids = open.filter(j => ['match', 'set', 'event'].includes(j.resource) && jobMatchKey(j) === externalId).map(j => j.id)
+  for (const id of ids) await db.sync_queue.update(id, { status: 'superseded', superseded_by: 'cloud-copy' })
+  console.log(`[Import] Replaced ${previous.length} local copy/copies of match ${externalId} with the cloud copy (${ids.length} unsent job(s) superseded)`)
+  return previous.length
 }
 
 /**

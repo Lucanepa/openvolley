@@ -1385,6 +1385,7 @@
     "noWinner": "Kein Sieger (Spiil abbroche)",
     "pdfGenerationFailed": "Spiil gnehmigt, aber s PDF hät nöd chöne erstellt werde. Sie chönd s über de Chnopf eMatchblatt erstelle.",
     "reopenMatch": "Spiil wieder ufmache",
+    "closedOnServer": "Dieses Spiel ist auf dem Server abgeschlossen und kann hier nicht mehr geändert werden. Nur ein Admin kann es wieder öffnen («Spiel wieder öffnen»).",
     "reopenAdminOnlyTitle": "Nur ein Admin kann dieses Spiel wieder öffnen",
     "reopenAdminOnlyBody": "Spiel {{game}} ist auf dem Server abgeschlossen. Bitte einen Admin, es wieder zu öffnen, und tippe dann nochmals auf «Spiel wieder öffnen».",
     "reopenNeedsConnection": "Zum Wiederöffnen eines abgeschlossenen Spiels braucht es eine Verbindung zum Server.",
@@ -3977,9 +3978,18 @@
     "title": "Auf einem anderen Gerät geführt",
     "body": "Dieses Spiel wird jetzt auf einem anderen Gerät geführt ({{platform}}, {{time}}). Dieses Gerät führt es nicht mehr.",
     "bodyUnknown": "Dieses Spiel wird jetzt auf einem anderen Gerät geführt. Dieses Gerät führt es nicht mehr.",
-    "takeBackHint": "Übernimm es nur, wenn du wieder auf diesem Gerät schreibst: Das andere Gerät erfährt es dann und hört auf.",
+    "bodyClosed": "Dieses Spiel wurde auf einem anderen Gerät weitergeführt und ist jetzt abgeschlossen. Dieses Gerät führt es nicht mehr.",
+    "takeBackHint": "Übernimm es nur, wenn du wieder auf diesem Gerät schreibst. Zuerst wird der Spielstand des anderen Geräts geladen (braucht eine Verbindung); das andere Gerät erfährt es dann und hört auf.",
     "takeBack": "Hier wieder übernehmen",
+    "showResult": "Endergebnis laden",
     "close": "Schliesse",
+    "errors": {
+      "offline": "Zum Übernehmen braucht es eine Verbindung: Zuerst wird der Spielstand des anderen Geräts geladen.",
+      "noPin": "Auf diesem Gerät fehlt der Spiel-PIN dieses Spiels. Tritt dem Spiel mit Spielnummer und Spiel-PIN bei.",
+      "notFound": "Das Spiel wurde in der Cloud nicht gefunden. Tritt ihm mit Spielnummer und Spiel-PIN bei.",
+      "otherMatch": "Der Spiel-PIN auf diesem Gerät gehört zu einem anderen Spiel. Tritt dem Spiel mit Spielnummer und Spiel-PIN bei.",
+      "failed": "Das Spiel konnte nicht aus der Cloud geladen werden. Versuche es nochmals."
+    },
     "platforms": {
       "android": "Android-Handy oder -Tablet",
       "ios": "iPhone oder iPad",
