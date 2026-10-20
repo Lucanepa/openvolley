@@ -104,10 +104,16 @@ export async function findOwnScoresheet(storage: StorageBucket, date: string, ga
 /**
  * Viewer URL (scorer app origin, where the session lives) of a match's approved
  * scoresheet, from a cloud matches row; null when it cannot be located (no
- * scheduled date, no game number or external id) or the match is not final yet.
+ * scheduled date, no game number or external id) or the match is not closed
+ * yet. Closed is 'approved' (MatchEnd's approval, which uploads the _final
+ * JSON first) or 'final' (the match closed after it); 'approved' rows used to
+ * get no link at all, so a just-approved match could not be opened from My
+ * matches.
  */
+export const SCORESHEET_OPEN_STATUSES: readonly string[] = Object.freeze(['approved', 'final'])
+
 export function finalScoresheetUrl(match: { status?: string | null, scheduled_at?: string | null, game_n?: number | string | null, external_id?: string | null } | null | undefined): string | null {
-  if (!match || match.status !== 'final') return null
+  if (!match || !SCORESHEET_OPEN_STATUSES.includes(String(match.status))) return null
   const game = scoresheetGameId(match)
   if (!game) return null
   const when = match.scheduled_at ? new Date(match.scheduled_at) : null
