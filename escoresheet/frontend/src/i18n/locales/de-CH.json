@@ -953,7 +953,22 @@
       "selectBackupFile": "Backup-Datei uswähle",
       "restorePreview": "Widerherstelligs-Vorschau",
       "fromDatabase": "Vo Datebank",
-      "fromLocalFile": "Vo lokaler Datei"
+      "fromLocalFile": "Vo lokaler Datei",
+      "preview": {
+        "set": "Satz {{n}}",
+        "serving": "Ufschlag",
+        "lineup": "Ufstellig",
+        "noLineup": "Kei Ufstellig erfasst",
+        "timeouts": "Auszeite",
+        "substitutions": "Spielerwächsel",
+        "none": "Keini",
+        "subTitle": "#{{playerIn}} für #{{playerOut}} bim Stand {{home}}:{{away}}",
+        "sanctions": "Sanktione",
+        "setScores": "Satzresultat",
+        "selectAnother": "Anderi wähle",
+        "confirmRestore": "Widerherstelle",
+        "restoring": "Wird widerhergstellt…"
+      }
     }
   },
   "languages": {

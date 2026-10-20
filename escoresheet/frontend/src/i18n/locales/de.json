@@ -946,7 +946,22 @@
       "selectBackupFile": "Backup-Datei auswählen",
       "restorePreview": "Wiederherstellungs-Vorschau",
       "fromDatabase": "Aus Datenbank",
-      "fromLocalFile": "Aus lokaler Datei"
+      "fromLocalFile": "Aus lokaler Datei",
+      "preview": {
+        "set": "Satz {{n}}",
+        "serving": "Aufschlag",
+        "lineup": "Aufstellung",
+        "noLineup": "Keine Aufstellung erfasst",
+        "timeouts": "Auszeiten",
+        "substitutions": "Spielerwechsel",
+        "none": "Keine",
+        "subTitle": "#{{playerIn}} für #{{playerOut}} beim Stand {{home}}:{{away}}",
+        "sanctions": "Sanktionen",
+        "setScores": "Satzresultate",
+        "selectAnother": "Andere wählen",
+        "confirmRestore": "Wiederherstellen",
+        "restoring": "Wird wiederhergestellt…"
+      }
     }
   },
   "languages": {

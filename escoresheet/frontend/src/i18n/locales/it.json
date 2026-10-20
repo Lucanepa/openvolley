@@ -953,7 +953,22 @@
       "selectBackupFile": "Seleziona file di backup",
       "restorePreview": "Anteprima ripristino",
       "fromDatabase": "Dal database",
-      "fromLocalFile": "Da file locale"
+      "fromLocalFile": "Da file locale",
+      "preview": {
+        "set": "Set {{n}}",
+        "serving": "Servizio",
+        "lineup": "Formazione",
+        "noLineup": "Nessuna formazione registrata",
+        "timeouts": "Tempi di riposo",
+        "substitutions": "Sostituzioni",
+        "none": "Nessuna",
+        "subTitle": "#{{playerIn}} per #{{playerOut}} sul {{home}}:{{away}}",
+        "sanctions": "Sanzioni",
+        "setScores": "Punteggi dei set",
+        "selectAnother": "Scegline un altro",
+        "confirmRestore": "Conferma ripristino",
+        "restoring": "Ripristino…"
+      }
     }
   },
   "languages": {
