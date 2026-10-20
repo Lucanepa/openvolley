@@ -461,13 +461,17 @@
      player with one field per line, a screen for every two players ("each
      player row by row on a card rather than clumsy", the owner, 2026-10-20).
      A row is a grid on the list's width (container query):
-       phone    # | last name | first name | delete
-                date of birth | libero     | captain
+       phone    # | last name     | first name | delete
+                date of birth | libero     | captain | (LFP)
        >=600px  # | last | first | date of birth | libero | C | (LFP) | delete,
                 under the column head
-     The narrow track between the names gives the libero select the width of
-     "No libero" (and the date its digits) on a 384 px phone. Bench: role +
-     delete over last + first name + date of birth; one line from 600 px.
+     The date of birth has a fixed track (# + 82 px = 136 px, the digits and
+     the calendar button), so the year is never cut ("12.03.19" read as 2019);
+     the libero select takes what is left of the second line. The last name,
+     which the scoresheet prints, gets the wider share of the first. Bench:
+     role + date of birth over last + first name + delete, so the names get
+     a line (three on one line left them 80 px each, the in-match editor's
+     emulator audit of 2026-10-14 had found the same); one line from 600 px.
      The fields go by their placeholders and aria-labels (the .pf-labels stay
      hidden in a row), the C/L badge by the libero select and the captain
      toggle beside it. Captain and libero rows keep their inline green / grey
@@ -483,7 +487,7 @@
   }
   .ov-form-stack :is(.roster-grid-row, .bench-grid-row) {
     display: grid;
-    grid-template-columns: 48px minmax(0, 10fr) minmax(0, 1fr) minmax(0, 12fr) 44px;
+    grid-template-columns: 48px 82px minmax(0, 1fr) minmax(0, 3fr) 44px;
     grid-template-areas:
       "num last last first del"
       "dob dob lib lib cap";
@@ -494,17 +498,23 @@
     border-top: 1px solid var(--color-stone-100);
     border-radius: 0;
   }
+  /* LFP: the first name reaches under the captain column; the libero
+     select (MatchSetup: "-" / "L1" / "L2" on a phone here) keeps the rest */
   .ov-form-stack .roster-grid.has-lfp .roster-grid-row {
-    grid-template-columns: 48px minmax(0, 10fr) minmax(0, 1fr) minmax(0, 12fr) 44px 44px;
+    grid-template-columns: 48px 82px minmax(0, 1fr) minmax(0, 2fr) 44px 44px;
     grid-template-areas:
       "num last last first first del"
       "dob dob lib lib cap lfp";
   }
+  /* role | date of birth (86 + 44 px) over last | first | delete: the
+     names about half the line each, the role select the rest of the first
+     (173 px on a 360 px phone: "C - Coach", "AC1 - Assistant c..."). With the
+     delete on the first line the role got 104 px ("C - Co..."). */
   .ov-form-stack .bench-grid-row {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 44px;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 1fr) 86px 44px;
     grid-template-areas:
-      "role role role del"
-      "last first dob dob";
+      "role role dob dob"
+      "last first first del";
   }
   /* the head strip names the columns of the one-line rows only */
   .ov-form-stack :is(.roster-grid-row, .bench-grid-row).grid-header {
@@ -543,6 +553,23 @@
   .ov-form-stack .roster-grid-row > select.cell-libero {
     padding-left: 8px;
   }
+  /* A smaller chevron box (14 px, 24 px of padding; the select rule's 1.9em
+     is 30 px): "Libero 1" / "Nessuno" fit the libero select on a 360 px
+     phone, "L1" with the LFP toggle beside it; the coin toss roster's
+     selects too. In the base layer: the legacy
+     layer's !important (styles.css) beats an unlayered or later one. */
+  @layer base {
+    .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > select:where(:not(.ov-select)),
+    .ov-form-stack table.ct-cards select:where(:not(.ov-select)) {
+      padding-right: 24px !important;
+      background-position: right 6px center !important;
+      background-size: 14px 14px !important;
+    }
+  }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > :is(.cell-last, .cell-first),
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > .cell-dob input {
+    padding-inline: 6px;
+  }
   .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > :is(.cell-captain, .cell-action) {
     justify-content: center;
   }
@@ -563,17 +590,22 @@
     min-height: 44px;
     padding-inline: 16px;
   }
+  /* One line: the date and the libero select as wide as their texts (136 px:
+     the digits and the calendar button; 120 px: "Libero 2", "Nessuno" and
+     the chevron), the names the rest, the last name the larger share. It was
+     150 + 150 px, which cut ordinary surnames on an 800 px tablet with LFP. */
   @container (min-width: 600px) {
     .ov-form-stack .roster-grid-row {
-      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) 150px 150px 44px 44px;
+      grid-template-columns: 56px minmax(0, 4fr) minmax(0, 3fr) 136px 120px 44px 44px;
       grid-template-areas: "num last first dob lib cap del";
     }
     .ov-form-stack .roster-grid.has-lfp .roster-grid-row {
-      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) 150px 150px 44px 44px 44px;
+      grid-template-columns: 56px minmax(0, 4fr) minmax(0, 3fr) 136px 120px 44px 44px 44px;
       grid-template-areas: "num last first dob lib cap lfp del";
     }
+    /* 232 px: "AC1 - Assistant coach 1" and the chevron */
     .ov-form-stack .bench-grid-row {
-      grid-template-columns: 220px minmax(0, 1fr) minmax(0, 1fr) 150px 44px;
+      grid-template-columns: 232px minmax(0, 1fr) minmax(0, 1fr) 136px 44px;
       grid-template-areas: "role last first dob del";
     }
     .ov-form-stack :is(.roster-grid-row, .bench-grid-row).grid-header {
@@ -586,13 +618,15 @@
       border-top-color: var(--ov-hairline);
     }
   }
-  /* Add-player box: the same row in its own stone box, Add on a line of its
-     own under the fields it submits (beside them from 600 px). */
+  /* Add-player box: the same row in its own stone box (26 px narrower), the
+     captain toggle (and LFP) beside Add on a line under the fields they
+     submit, so the libero select keeps the rest of the second line (it had
+     78 px at 360). Beside the fields from 600 px. */
   .ov-form-stack .roster-add > .roster-grid-row {
     grid-template-areas:
       "num last last first first"
-      "dob dob lib lib cap"
-      "act act act act act";
+      "dob dob lib lib lib"
+      "cap act act act act";
     padding: 0;
     border: 0;
     background: transparent;
@@ -600,38 +634,53 @@
   .ov-form-stack .roster-add.has-lfp > .roster-grid-row {
     grid-template-areas:
       "num last last first first first"
-      "dob dob lib lib cap lfp"
-      "act act act act act act";
+      "dob dob lib lib lib lib"
+      "cap lfp act act act act";
   }
   .ov-form-stack .roster-add > .roster-grid-row > .cell-action {
     grid-area: act;
-    margin-top: 4px;
   }
   .ov-form-stack .roster-add > .roster-grid-row > .cell-action button {
     width: 100%;
     min-height: 44px;
   }
+  /* One line of fields from 600 px, the names half each; Add under them up
+     to 860 px (an upright tablet: beside them it left "Nachnar" / "Vorname"
+     in the box, 26 px narrower than the list), beside them from there. */
   @container (min-width: 600px) {
     .ov-form-stack .roster-add > .roster-grid-row {
-      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) 150px 150px 44px 88px;
+      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) 136px 120px 44px;
+      grid-template-areas:
+        "num last first dob lib cap"
+        "act act act act act act";
+    }
+    .ov-form-stack .roster-add.has-lfp > .roster-grid-row {
+      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) 136px 120px 44px 44px;
+      grid-template-areas:
+        "num last first dob lib cap lfp"
+        "act act act act act act act";
+    }
+  }
+  @container (min-width: 860px) {
+    .ov-form-stack .roster-add > .roster-grid-row {
+      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) 136px 120px 44px max-content;
       grid-template-areas: "num last first dob lib cap act";
     }
     .ov-form-stack .roster-add.has-lfp > .roster-grid-row {
-      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) 150px 150px 44px 44px 88px;
+      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) 136px 120px 44px 44px max-content;
       grid-template-areas: "num last first dob lib cap lfp act";
-    }
-    .ov-form-stack .roster-add > .roster-grid-row > .cell-action {
-      margin-top: 0;
     }
   }
 
   /* Coin toss roster review (CoinToss, table.ct-cards): the same flat rows,
      on the dialog. Each <tr> is a grid row, each <td> one cell:
        phone    # (L1)        | name       | delete
-                date of birth | libero + C
+                date of birth | libero + C | (LFP)
        >=560px  # | name | date of birth | libero + C | (LFP) | delete, under
                 the column head
-     Bench (.ct-bench): role + delete over name + date of birth. Its controls
+     The date has a fixed track (64 + 56 px = 126 px, its digits) so the year
+     is never cut; libero + C take the rest. Bench (.ct-bench): role + date of
+     birth + delete over the name, which gets the whole line. Its controls
      are text-styled inline edits, so the field look and the 44 px / 16 px
      sizes need !important here. */
   .ov-form-stack table.ct-cards {
@@ -649,7 +698,7 @@
   }
   .ov-form-stack table.ct-cards tr {
     display: grid;
-    grid-template-columns: 64px minmax(0, 2fr) minmax(0, 5fr) 44px;
+    grid-template-columns: 64px 56px minmax(0, 1fr) 44px;
     grid-template-areas:
       "num name name del"
       "dob dob role role";
@@ -659,16 +708,16 @@
     border-top: 1px solid var(--color-stone-100);
   }
   .ov-form-stack table.ct-cards.has-lfp tr {
-    grid-template-columns: 64px minmax(0, 2fr) minmax(0, 5fr) 44px 44px;
+    grid-template-columns: 64px 56px minmax(0, 1fr) 44px 44px;
     grid-template-areas:
       "num name name name del"
       "dob dob role role lfp";
   }
   .ov-form-stack table.ct-cards.ct-bench tr {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px;
+    grid-template-columns: minmax(0, 1fr) 126px 44px;
     grid-template-areas:
-      "role role del"
-      "name dob .";
+      "role dob del"
+      "name name name";
   }
   .ov-form-stack table.ct-cards tbody tr:first-child {
     border-top-color: transparent;
@@ -764,7 +813,7 @@
       grid-template-areas: "num name dob role lfp del";
     }
     .ov-form-stack table.ct-cards.ct-bench tr {
-      grid-template-columns: 220px minmax(0, 1fr) 130px 44px;
+      grid-template-columns: 232px minmax(0, 1fr) 130px 44px;
       grid-template-areas: "role name dob del";
     }
   }

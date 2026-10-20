@@ -63,6 +63,21 @@ describe('ReopenRosterModal', () => {
     expect(snapBench).toEqual(bench)
   })
 
+  it('keeps Cancel / Save outside the scrolling lists', () => {
+    open()
+    const list = screen.getAllByRole('list')[0]
+    const scroller = list.closest('.overflow-y-auto')
+    expect(scroller).not.toBeNull()
+    expect(scroller.contains(screen.getByRole('button', { name: 'Save changes' }))).toBe(false)
+  })
+
+  it('names a bench role by its code first (AC1 / AC2 stay apart when cut)', () => {
+    open()
+    const role = within(screen.getAllByRole('list')[1]).getByLabelText('Role')
+    expect([...role.options].map(o => o.value)).toEqual(['Coach', 'Medic'])
+    expect(role.options[0].textContent).toMatch(/^benchRolesShort\.coach - Coach$/)
+  })
+
   it('every control in a row is 44 px tall', () => {
     open()
     const row = within(screen.getAllByRole('list')[0]).getAllByRole('listitem')[0]
