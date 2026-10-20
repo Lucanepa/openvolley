@@ -1672,9 +1672,9 @@ button:disabled {
   color: #fbbf24;
 }
 
-/* Optional game captain choice, under the court: one fixed-height block
-   whatever the line-up holds (no players yet, six options, a two-line note),
-   so the modal keeps its size (and still fits 85vh of a 1280x720 screen) */
+/* Optional game captain choice, under the court: shown once the six are
+   entered without the team captain (FIVB 5.1.2: the team captain on court is
+   the game captain), and still inside 85vh of a 1280x720 screen */
 .lineup-gcapt {
   display: flex;
   flex-direction: column;
