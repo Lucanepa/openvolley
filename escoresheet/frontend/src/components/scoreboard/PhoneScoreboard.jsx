@@ -36,16 +36,20 @@ import { COURT_CELLS, PHONE_COURT_MIN_PX, PHONE_RECENT_HEIGHT_PX, PHONE_SQUARE_M
  * @param {Array<{ id: any, text: string }>} props.recent newest first
  * @param {boolean} props.canUndo
  * @param {string} [props.scoreFont] CSS font family of scores and countdowns
+ * @param {{ timeouts: number, subs: number }} [props.limits] time-outs and substitutions per set
  * @param {object} props.actions the Scoreboard's handlers (see Scoreboard.jsx)
  *
  * TeamVM: { side, teamKey, label ('A'|'B'), name, shortName, color, setsWon,
  *   points, timeouts, subs, lineupSet, lineupOptional (easy match),
- *   liberoPaint ({ background, color, textShadow?, ring } | null), court: [{ position, number, isLibero }],
+ *   liberoPaint ({ background, color, textShadow?, ring } | null),
+ *   court: [{ position, number, isLibero, isCaptain, replaced }] (isCaptain:
+ *   the team captain or the acting game captain; replaced: the player a
+ *   substitute came in for),
  *   liberos: [{ number, libero, unable, onCourt, position }], benchPlayers:
  *   [{ number }], officials: [{ role }], improperRequestDone, delayWarned,
  *   easy, formalWarned, needsRedesignation }
  */
-export default function PhoneScoreboard({ setNumber, teams, serving, rally, centre, recent, canUndo, scoreFont = 'inherit', actions }) {
+export default function PhoneScoreboard({ setNumber, teams, serving, rally, centre, recent, canUndo, scoreFont = 'inherit', limits = DEFAULT_LIMITS, actions }) {
   const { t } = useTranslation()
   // The phone's own pickers: { kind: 'sub', side, out?: { position, number } } | { kind: 'sanction' } | { kind: 'libero' }
   const [sheet, setSheet] = useState(null)
@@ -128,6 +132,9 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
     const servesHere = serving === team.side
     const p = paint[team.side]
     const needsLineup = rally.status === 'idle' && rally.isFirstRally && !team.lineupSet
+    // The libero's number in its own shirt colour, shaded where that colour
+    // does not read on the court floor (a white or yellow libero shirt)
+    const liberoInk = team.liberoPaint ? (teamTextPaint(team.liberoPaint.background, COURT_SURFACE)?.color || p.courtInk) : p.courtInk
     return (
       <div
         key={team.side}
@@ -146,27 +153,35 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
           const pl = bySide[position]
           const number = pl && pl.number !== '' && pl.number !== undefined && pl.number !== null ? pl.number : null
           const hasBall = servesHere && position === 'I'
-          // The libero in its own shirt colour (a disc, as on the desktop court)
-          const liberoDisc = number !== null && pl?.isLibero && team.liberoPaint
-            ? {
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 42, height: 42, padding: '0 4px', boxSizing: 'border-box', borderRadius: 21,
-                fontSize: 24, background: team.liberoPaint.background, color: team.liberoPaint.color, textShadow: team.liberoPaint.textShadow,
-                border: team.liberoPaint.ring ? `2px solid ${team.liberoPaint.ring}` : undefined
-              }
-            : null
+          // Marks as on the paper sheet, small at the number's foot: C bottom
+          // left (team captain, or the acting game captain), bottom right the
+          // libero's L or the number of the player a substitute came in for.
+          // The ball hangs halfway up, so it never meets them.
+          const isLibero = number !== null && !!pl?.isLibero
+          const captain = number !== null && !!pl?.isCaptain
+          const replaced = number !== null && !isLibero && hasValue(pl?.replaced) ? String(pl.replaced) : null
+          const marks = [
+            captain && t('scoreboard.phone.markCaptain', 'captain'),
+            isLibero && t('scoreboard.phone.markLibero', 'libero'),
+            replaced && t('scoreboard.phone.markReplaced', { number: replaced, defaultValue: 'in for {{number}}' })
+          ].filter(Boolean)
+          const label = number !== null ? [t('scoreboard.phone.courtPlayer', { number, team: team.label }), ...marks].join(', ') : undefined
           return (
             <button
               key={position}
               type="button"
               data-court-cell={position}
-              aria-label={number !== null ? t('scoreboard.phone.courtPlayer', { number, team: team.label }) : undefined}
+              aria-label={label}
               disabled={number === null}
               onClick={(e) => number !== null && actions.playerClick(team.teamKey, position, number, e)}
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 0, minHeight: 0, background: 'transparent', borderRadius: 8, cursor: number !== null ? 'pointer' : 'default' }}
             >
-              {/* The ball hangs outside the number, so every number keeps its place */}
-              <span data-testid={liberoDisc ? `phone-libero-disc-${team.side}` : undefined} style={{ position: 'relative', fontSize: 28, lineHeight: 1, fontWeight: 800, color: p.courtInk, fontVariantNumeric: 'tabular-nums', ...liberoDisc }}>
+              {/* The ball and the marks hang outside the number, so every number keeps its place */}
+              <span data-testid={isLibero ? `phone-libero-${team.side}` : undefined} style={{ position: 'relative', fontSize: 28, lineHeight: 1, fontWeight: 800, color: isLibero ? liberoInk : p.courtInk, fontVariantNumeric: 'tabular-nums' }}>
                 {number ?? '–'}
+                {captain && <span aria-hidden="true" data-testid="phone-mark-captain" style={{ ...courtMark, right: '100%', marginRight: 1, color: 'var(--ov-text)' }}>C</span>}
+                {isLibero && <span aria-hidden="true" data-testid="phone-mark-libero" style={{ ...courtMark, left: '100%', marginLeft: 1, color: liberoInk }}>L</span>}
+                {replaced && <span aria-hidden="true" data-testid="phone-mark-replaced" style={{ ...courtMark, left: '100%', marginLeft: 1, color: 'var(--ov-text-secondary)' }}>{replaced}</span>}
                 {hasBall && (
                   <span data-testid="phone-serve-ball" aria-label={t('scoreboard.labels.serveLabel')} style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', ...(team.side === 'left' ? { right: '100%', marginRight: 5 } : { left: '100%', marginLeft: 5 }), width: 12, height: 12, borderRadius: '50%', background: '#facc15', border: '2px solid #1c1917' }} />
                 )}
@@ -192,9 +207,17 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   // As the desktop counters: open between rallies, also while a time-out or
   // the interval runs (a consecutive time-out, a substitution right after a
   // time-out); greyed once used up
-  const toDisabled = (team) => !idle || team.timeouts >= 2
-  const subDisabled = (team) => !idle || team.subs >= 6 || !team.lineupSet
-  const counter = (team, { label, value, disabled, onClick, testId }) => {
+  const toDisabled = (team) => !idle || team.timeouts >= limits.timeouts
+  const subDisabled = (team) => !idle || team.subs >= limits.subs || !team.lineupSet
+  // Only the count taken, as the desktop counters: red once the last one is
+  // taken, amber at the substitution before the last (the 5th of 6)
+  const countState = (taken, max, { warnBefore = false } = {}) => {
+    if (taken >= max) return 'max'
+    if (warnBefore && max > 1 && taken === max - 1) return 'warn'
+    return null
+  }
+  const COUNT_INK = { max: 'var(--ov-danger-text)', warn: 'var(--ov-warning-ink)' }
+  const counter = (team, { label, value, state = null, disabled, onClick, testId }) => {
     const p = paint[team.side]
     return (
       <button
@@ -215,14 +238,14 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
             longer than the button ("TEMPS MORT") goes on two lines rather than
             out of it */}
         <span style={{ maxWidth: '100%', fontSize: 'clamp(10px, 2.85vw, 11px)', lineHeight: 1.15, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', textAlign: 'center', textWrap: 'balance', overflowWrap: 'anywhere', color: disabled ? 'var(--ov-text-faint)' : p.ink }}>{label}</span>
-        <span style={{ fontSize: 22, lineHeight: 1.1, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+        <span data-count-state={state || undefined} style={{ fontSize: 22, lineHeight: 1.1, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: state ? COUNT_INK[state] : undefined }}>{value}</span>
       </button>
     )
   }
   const teamActions = (team) => (
     <div key={team.side} style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6 }}>
-      {counter(team, { label: t('scoreboard.phone.timeOut'), value: `${team.timeouts}/2`, disabled: toDisabled(team), onClick: () => actions.timeout(team.side), testId: `phone-timeout-${team.side}` })}
-      {counter(team, { label: t('scoreboard.labels.sub'), value: `${team.subs}/6`, disabled: subDisabled(team), onClick: () => setSheet({ kind: 'sub', side: team.side }), testId: `phone-sub-${team.side}` })}
+      {counter(team, { label: t('scoreboard.phone.timeOut'), value: team.timeouts, state: countState(team.timeouts, limits.timeouts), disabled: toDisabled(team), onClick: () => actions.timeout(team.side), testId: `phone-timeout-${team.side}` })}
+      {counter(team, { label: t('scoreboard.labels.sub'), value: team.subs, state: countState(team.subs, limits.subs, { warnBefore: true }), disabled: subDisabled(team), onClick: () => setSheet({ kind: 'sub', side: team.side }), testId: `phone-sub-${team.side}` })}
     </div>
   )
 
@@ -310,15 +333,15 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
       aria-label={t('scoreboard.buttons.pointTeam', { team: team.label })}
       onClick={() => actions.point(team.side)}
       className={squareClass}
-      style={{ minWidth: 0, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, ...paint[team.side].fill }}
+      style={{ minWidth: 0, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', ...paint[team.side].fill }}
     >
-      <span aria-hidden="true" style={{ fontSize: 40, fontWeight: 800, lineHeight: 1 }}>+1</span>
-      <span aria-hidden="true" style={{ fontSize: 14, fontWeight: 600 }}>{t('scoreboard.buttons.pointTeam', { team: team.label })}</span>
+      {/* "Point A", no "+1": a point is always one */}
+      <span aria-hidden="true" style={{ fontSize: 24, fontWeight: 800, lineHeight: 1.1 }}>{t('scoreboard.buttons.pointTeam', { team: team.label })}</span>
     </button>
   )
 
   // ---- the other actions --------------------------------------------------
-  const gridButton = (key, label, onClick, { disabled = false, span = 1, muted = false } = {}) => (
+  const gridButton = (key, label, onClick, { disabled = false, span = 1, muted = false, small = false } = {}) => (
     <button
       key={key}
       type="button"
@@ -332,7 +355,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
         color: disabled ? 'var(--ov-text-faint)' : 'var(--ov-text)',
         // Long words break only at their soft hyphens (Score-sheet, Wieder-holen),
         // not anywhere mid-word; overflowWrap is the last resort
-        fontSize: 12, lineHeight: 1.15, fontWeight: 600, overflow: 'hidden', overflowWrap: 'anywhere', hyphens: 'manual'
+        fontSize: small ? 10.5 : 12, lineHeight: 1.15, fontWeight: 600, overflow: 'hidden', overflowWrap: 'anywhere', hyphens: 'manual'
       }}
     >
       {label}
@@ -395,7 +418,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
         {gridButton('libero', t('scoreboard.phone.libero'), () => setSheet({ kind: 'libero' }), { disabled: !idle })}
         {gridButton('sanction', t('scoreboard.sanction'), () => setSheet({ kind: 'sanction' }), { disabled: rally.status !== 'idle' })}
         {gridButton('replay', t('scoreboard.phone.replay'), () => actions.replay(), { disabled: !inPlay })}
-        {gridButton('decision', t('scoreboard.phone.decision'), () => actions.replay(), { disabled: !(rally.status === 'idle' && rally.canReplayRally) })}
+        {gridButton('decision', t('scoreboard.phone.decision'), () => actions.replay(), { disabled: !(rally.status === 'idle' && rally.canReplayRally), small: true })}
         {gridButton('rosters', t('scoreboard.rosters'), () => actions.rosters(), { muted: true })}
         {gridButton('scoresheet', t('scoreboard.phone.scoresheet'), () => actions.scoresheet(), { muted: true })}
         {gridButton('remarks', t('scoreboard.phone.remarks'), () => actions.remarks(), { muted: true, span: 2 })}
@@ -473,6 +496,14 @@ function Chip({ children, onClick, disabled = false, tone = 'plain', label, test
 }
 
 const chipGrid = { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }
+
+/** Time-outs and substitutions per set (FIVB 15.1, 15.6) unless the Scoreboard says otherwise. */
+const DEFAULT_LIMITS = { timeouts: 2, subs: 6 }
+
+const hasValue = (v) => v !== undefined && v !== null && v !== ''
+
+// A court mark (C, L, the replaced player's number): small, at the number's foot
+const courtMark = { position: 'absolute', bottom: -3, fontSize: 10, lineHeight: 1, fontWeight: 800, letterSpacing: 0, whiteSpace: 'nowrap', pointerEvents: 'none' }
 
 /**
  * Easy match: a shirt number typed for the player coming in. A number that is

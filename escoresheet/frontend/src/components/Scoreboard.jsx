@@ -6552,6 +6552,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return null
   }, [data, t])
 
+  // The scoring screen's last actions: one line, so the teams are their
+  // letters ("Point B · Set 1 · A 5:11 B"), never their names, which pushed
+  // the rest of the line out on a phone (domain/describe.js, short form)
+  const getShortActionDescription = useCallback((event) => {
+    if (!event || !data) return 'Unknown action'
+    return describeEventText(event, data.events || [], { t, match: data.match, homeTeam: data.homeTeam, awayTeam: data.awayTeam, short: true }) || getActionDescription(event)
+  }, [data, t, getActionDescription])
+
   // Show undo confirmation
   const showUndoConfirm = useCallback(() => {
     if (!data?.events || data.events.length === 0 || !data?.set) return
@@ -12758,7 +12766,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const team = isLeft ? leftTeam : rightTeam
       const bench = isLeft ? leftTeamBench : rightTeamBench
       const teamPlayers = (teamKey === 'home' ? data?.homePlayers : data?.awayPlayers) || []
-      const court = (team.playersOnCourt || []).map(pl => ({ position: pl.position, number: pl.isPlaceholder ? '' : pl.number, isLibero: !!pl.isLibero }))
+      // Marks as on the desktop court: captain (team captain, or the acting
+      // game captain) and the player a substitute came in for
+      const replacements = isLeft ? leftTeamActiveReplacements : rightTeamActiveReplacements
+      const court = (team.playersOnCourt || []).map(pl => ({
+        position: pl.position,
+        number: pl.isPlaceholder ? '' : pl.number,
+        isLibero: !!pl.isLibero,
+        isCaptain: !pl.isPlaceholder && !!(pl.isCaptain || pl.isCourtCaptain),
+        replaced: pl.isPlaceholder || pl.isLibero ? null : resolveReplacementNumber(pl, replacements)
+      }))
       const allLiberos = teamPlayers.filter(p => p.libero && p.libero !== '')
       const liberos = allLiberos
         .slice()
@@ -12846,9 +12863,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         isRallyReplayed
       },
       centre,
-      recent: recentActions(data?.events, data?.set?.index, getActionDescription, 3),
+      recent: recentActions(data?.events, data?.set?.index, getShortActionDescription, 3),
       canUndo,
       scoreFont: getScoreFont(),
+      limits: { timeouts: 2, subs: MAX_SUBSTITUTIONS_PER_SET },
       actions: {
         undo: showUndoConfirm,
         menu: () => setMenuModal(true),
@@ -16677,7 +16695,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                           if (!lastEvent) return null
 
-                          const description = getActionDescription(lastEvent)
+                          const description = getShortActionDescription(lastEvent)
 
                           return (
                             // One fixed line: a description that wrapped to two lines made the

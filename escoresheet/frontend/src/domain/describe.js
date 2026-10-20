@@ -279,8 +279,17 @@ export function setTimesText(startTime, endTime, t) {
 
 const LIBERO_SHORT = { libero1: 'L1', libero2: 'L2', redesignated: 'LR' }
 
+// Short form (ctx.short, the scoring screen's last actions): the team is
+// its letter, written after the title where the title names what the team
+// did ("Time-out B"), so the line fits a phone
+const TEAM_AFTER_TITLE = ['timeout', 'substitution', 'lineup']
+
 /**
  * One event of the log as the scorer reads it on paper.
+ *
+ * `ctx.short`: the scoring screen's one-line form. Teams are their letter
+ * ("Point B · Set 1 · A 5:11 B", "Time-out B · Set 1 · B 3:5 A",
+ * "Libero #7 in for #1 · B · Set 1 · B 0:0 A"), never the team name.
  * @returns {null | {
  *   kind: string, title: string, detail: string, score: string,
  *   scoreValue: {home:number, away:number}|null, team: object|null,
@@ -295,8 +304,11 @@ export function describeEvent(event, events, ctx = {}) {
   const p = event.payload || {}
   const setIndex = event.setIndex ?? p.setIndex ?? 1
   const setLabel = tr(t, 'corrections.term.set', 'Set {{n}}', { n: displaySetNumber(setIndex, ctx.match) })
+  const short = ctx.short === true
   const team = teamLabel(p.team, ctx)
-  const teamText = team ? teamNameWithLetter(p.team, ctx) : ''
+  let teamText = team ? (short ? team.letter : teamNameWithLetter(p.team, ctx)) : ''
+  // A team as the sentence names it: its name, or its letter in the short form
+  const teamRef = (lbl) => (lbl ? (short ? lbl.letter : lbl.name) : '?')
   const before = scoreBeforeEvent(events, event)
   const num = (n) => (hasNumber(n) ? n : '?')
 
@@ -313,7 +325,10 @@ export function describeEvent(event, events, ctx = {}) {
     case 'set_start':
       return null
     case 'point': {
-      title = tr(t, 'corrections.describe.point', 'Point for {{team}}', { team: team?.name || '?' })
+      title = short
+        ? tr(t, 'corrections.describe.pointShort', 'Point {{team}}', { team: teamRef(team) })
+        : tr(t, 'corrections.describe.point', 'Point for {{team}}', { team: team?.name || '?' })
+      if (short) teamText = ''
       scoreValue = scoreAfterPoint(events, event)
       concerned = null
       break
@@ -338,19 +353,19 @@ export function describeEvent(event, events, ctx = {}) {
       incomplete = target.incomplete
       if ((type === 'penalty' || type === 'delay_penalty') && p.team) {
         const opp = teamLabel(otherTeam(p.team), ctx)
-        detail = tr(t, 'corrections.describe.pointTo', '+1 point to {{team}}', { team: opp?.name || '?' })
+        detail = tr(t, 'corrections.describe.pointTo', '+1 point to {{team}}', { team: teamRef(opp) })
       }
       break
     }
     case 'lineup': {
       if (p.isInitial === true) {
         title = tr(t, 'corrections.describe.startingLineup', 'Starting line-up')
-        detail = ['I', 'II', 'III', 'IV', 'V', 'VI'].map(pos => p.lineup?.[pos] ?? '?').join(' · ')
+        detail = ['I', 'II', 'III', 'IV', 'V', 'VI'].map(pos => p.lineup?.[pos] ?? '?').join(short ? ' ' : ' · ')
         break
       }
       if (p.fromSubstitution || p.fromRotation || p.liberoSubstitution !== undefined || p.isInitial !== false) return null
       title = tr(t, 'corrections.describe.lineupCorrected', 'Line-up corrected')
-      detail = ['I', 'II', 'III', 'IV', 'V', 'VI'].map(pos => p.lineup?.[pos] ?? '?').join(' · ')
+      detail = ['I', 'II', 'III', 'IV', 'V', 'VI'].map(pos => p.lineup?.[pos] ?? '?').join(short ? ' ' : ' · ')
       break
     }
     case 'libero_entry':
@@ -374,7 +389,7 @@ export function describeEvent(event, events, ctx = {}) {
     case 'set_end': {
       const winnerKey = p.team === 'home' || p.team === 'away' ? p.team : null
       const winner = winnerKey ? teamLabel(winnerKey, ctx) : null
-      title = tr(t, 'corrections.describe.setEnd', 'Set {{n}} won by {{team}}', { n: displaySetNumber(setIndex, ctx.match), team: winner?.name || (p.teamLabel ? tr(t, 'corrections.teamLetter', 'Team {{letter}}', { letter: p.teamLabel }) : '?') })
+      title = tr(t, 'corrections.describe.setEnd', 'Set {{n}} won by {{team}}', { n: displaySetNumber(setIndex, ctx.match), team: winner ? teamRef(winner) : (p.teamLabel ? (short ? p.teamLabel : tr(t, 'corrections.teamLetter', 'Team {{letter}}', { letter: p.teamLabel })) : '?') })
       detail = setTimesText(p.startTime, p.endTime, t)
       scoreValue = p.homePoints != null && p.awayPoints != null ? { home: p.homePoints, away: p.awayPoints } : before
       concerned = null
@@ -386,7 +401,7 @@ export function describeEvent(event, events, ctx = {}) {
       break
     case 'decision_change': {
       const to = teamLabel(p.toTeam, ctx)
-      title = tr(t, 'corrections.describe.decisionChange', 'Decision changed: point given to {{team}}', { team: to?.name || '?' })
+      title = tr(t, 'corrections.describe.decisionChange', 'Decision changed: point given to {{team}}', { team: teamRef(to) })
       concerned = null
       break
     }
@@ -423,6 +438,10 @@ export function describeEvent(event, events, ctx = {}) {
   }
 
   const score = scoreValue ? formatScore(scoreValue, concerned, ctx) : ''
+  if (short && teamText && TEAM_AFTER_TITLE.includes(event.type)) {
+    title = `${title} ${teamText}`
+    teamText = ''
+  }
   // "Penalty — Player #8 (bench) · VC Smash (A) · Set 1 · A 8:24 B · +1 point to Volley Bern";
   // "Substitution · VC Smash (A) · #12 in for #7 · Set 2 · A 14:11 B"
   const detailLast = event.type === 'sanction'
