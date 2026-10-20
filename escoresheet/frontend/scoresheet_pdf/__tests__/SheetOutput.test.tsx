@@ -301,6 +301,15 @@ describe('set 5, defaults and sanctions on the sheet', () => {
     expect(grids.slice(-3).map(g => g.querySelectorAll('[data-blank]').length)).toEqual([0, 0, 0])
   })
 
+  it('a 3:0: the unplayed sets 4 and 5 and their RESULT rows are left blank, not struck off (owner 2026-10-20)', () => {
+    const base = fixture({ match: { status: 'ended' } })
+    const threeNil = [0, 30, 60].map((m, i) => ({ index: i + 1, homePoints: 25, awayPoints: 20, finished: true, startTime: local(2026, 10, 7, 20, m), endTime: local(2026, 10, 7, 20, m + 25) }))
+    const { queryAllByTestId, container } = render(<App matchData={{ ...base, sets: threeNil }} autoAction="preview" />)
+    expect(queryAllByTestId('strike-z')).toHaveLength(0)
+    expect(queryAllByTestId('row-strike')).toHaveLength(0)
+    expect(container.querySelectorAll('.scoresheet-container svg polyline')).toHaveLength(0)
+  })
+
   it('a default before the start: the grids struck off, the result and the remark written', () => {
     seq = 0
     const base = fixture({ match: { status: 'ended', forfeitTeam: 'away', forfeitReason: 'forfeit' } })
@@ -313,8 +322,8 @@ describe('set 5, defaults and sanctions on the sheet', () => {
       ]
     }
     const { getAllByTestId, getByTestId, container } = render(<App matchData={data} autoAction="preview" />)
-    // sets 1-3 by default, sets 4 and 5 never played
-    expect(getAllByTestId('strike-z')).toHaveLength(5)
+    // sets 1-3 by default struck off; sets 4 and 5, never played, left blank
+    expect(getAllByTestId('strike-z')).toHaveLength(3)
     // no awarded point drawn as a rally (the grid stays empty)
     expect(container.querySelectorAll('[data-mark="tick"]')).toHaveLength(0)
     expect(getByTestId('remarks-text').textContent).toContain('Team B declared in default, match result 3:0 (25:0, 25:0, 25:0).')

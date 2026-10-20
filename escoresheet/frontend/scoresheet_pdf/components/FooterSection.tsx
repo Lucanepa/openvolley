@@ -198,15 +198,6 @@ interface ResultsProps {
   flush?: boolean;
 }
 
-/**
- * A single line through an unused row (SC p.18: one line for one empty row).
- * A plain rule, not an SVG: the PDF capture (html-to-image) dropped part of an
- * SVG line where it crossed the Set cell.
- */
-const RowStrike: React.FC = () => (
-    <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 border-t-[1.5px] border-black pointer-events-none z-10" data-testid="row-strike" aria-hidden="true" />
-);
-
 // Component to display set duration (removed countdown functionality - duration should only show the set length)
 const SetIntervalCountdown: React.FC<{ endTime?: string; duration?: string }> = ({ duration }) => {
   // Simply show the duration - no countdown needed for Results table
@@ -229,8 +220,7 @@ export const Results: React.FC<ResultsProps> = ({
 ,
   flush = false
 }) => {
-    // Once the match is decided, the rows of sets never played are struck off (field-spec 9, 11)
-    const matchOver = !!result;
+    // The rows of sets never played stay blank, not struck off (owner 2026-10-20)
     // For best-of-3: show 3 rows (sets 1, 2, and the deciding set which is stored at index 5)
     // For best-of-5: show 5 rows (sets 1-5)
     const isBestOf3 = bestOf === 3;
@@ -254,7 +244,6 @@ export const Results: React.FC<ResultsProps> = ({
                             const isFinished = setData && setData.teamATimeouts !== null;
                             return (
                              <div key={set} className={`grid grid-cols-4 flex-1 ${idx < displaySets.length - 1 ? 'border-b ss-rule' : ''} text-xs relative`}>
-                                {matchOver && !isFinished && <RowStrike />}
                                 <div className="border-r ss-rule flex items-center justify-center text-[9px] font-bold">
                                     {isFinished ? (setData.teamATimeouts ?? 0) : ''}
                                 </div>
@@ -302,11 +291,10 @@ export const Results: React.FC<ResultsProps> = ({
                             // but is the 3rd set played, so it is numbered "3" on the sheet
                             // (Swiss Matchblatt records sets in play order 1,2,3).
                             const displayLabel = isBestOf3 && set === 5 ? "3" : set;
-                            // every set label is pre-printed, as on the paper (unplayed rows are struck off)
+                            // every set label is pre-printed, as on the paper (unplayed rows stay blank)
                             const showSetNumber = true;
                             return (
                             <div key={set} className={`flex-1 ${idx < displaySets.length - 1 ? 'border-b ss-rule' : ''} grid font-bold text-xs bg-white relative`} style={{ gridTemplateColumns: '1fr 2fr' }}>
-                                {matchOver && !(setData && setData.teamATimeouts !== null) && <RowStrike />}
                                 <div className="flex items-center justify-center border-r border-black text-[9px]">{showSetNumber ? displayLabel : ''}</div>
                                 <div className="flex items-center justify-center text-[9px]">
                                     <SetIntervalCountdown endTime={setData?.endTime} duration={setData?.duration} />
@@ -347,7 +335,6 @@ export const Results: React.FC<ResultsProps> = ({
                             const isFinished = setData && setData.teamBTimeouts !== null;
                             return (
                              <div key={set} className={`grid grid-cols-4 flex-1 ${idx < displaySets.length - 1 ? 'border-b ss-rule' : ''} text-xs min-h-[16px] relative`}>
-                                {matchOver && !isFinished && <RowStrike />}
                                 <div className="border-r ss-rule flex items-center justify-center text-[9px] font-bold">
                                     {isFinished ? (setData.teamBPoints ?? 0) : ''}
                                 </div>

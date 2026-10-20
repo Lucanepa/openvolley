@@ -47,7 +47,7 @@ interface StandardSetProps {
   positionBoxRef?: React.RefObject<HTMLDivElement>;
   // True when the set is finished — enables T-bar finalization of unused numbers
   setFinished?: boolean;
-  /** Unused grid (unplayed set, or a set awarded by default): struck off with a Z. */
+  /** A set awarded by default: its empty grid is struck off with a Z (an unplayed set is just left blank). */
   struckOff?: boolean;
 }
 
