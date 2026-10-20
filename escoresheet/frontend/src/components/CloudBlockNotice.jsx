@@ -17,6 +17,9 @@ export function cloudBlockMessage(block, match, t) {
       return { key: 'cloudBlock.scorerRequired', params: {}, join: false }
     case 'OV_MATCH_CLOSED':
       return { key: 'cloudBlock.matchClosed', params: {}, join: false }
+    // db/019: another device scores the match now (ScorerMovedModal on the scoring screens)
+    case 'OV_SCORER_MOVED':
+      return { key: 'cloudBlock.scorerMoved', params: {}, join: false }
     // db/018: the home games of the account's clubs only
     case 'OV_CLUB_REQUIRED':
       return { key: 'cloudBlock.clubRequired', params: {}, join: false }

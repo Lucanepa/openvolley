@@ -5,7 +5,7 @@ vi.mock('../../utils/backendConfig', () => ({
   getCloudApiUrl: (path) => `http://backend.test${path}`
 }))
 
-import { apiFrom, apiAuth, apiStorage, apiMatchRestore, apiMatchRestoreByPin, apiMatchClaim, isSessionRejected, normalizeError, toBase64 } from '../apiClient'
+import { apiFrom, apiAuth, apiStorage, apiMatchRestore, apiMatchRestoreByPin, apiMatchClaim, apiMatchScorer, isSessionRejected, normalizeError, toBase64 } from '../apiClient'
 
 function jsonResponse(body, status = 200) {
   return {
@@ -17,6 +17,7 @@ function jsonResponse(body, status = 200) {
 
 // Returns the parsed JSON body of the n-th fetch call
 const sentBody = (n = 0) => JSON.parse(globalThis.fetch.mock.calls[n][1].body)
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 describe('apiClient QueryBuilder', () => {
   beforeEach(() => {
@@ -291,9 +292,29 @@ describe('self-hosted backend contract', () => {
     expect(globalThis.fetch.mock.calls[0][0]).toBe('http://backend.test/api/match/restore')
     expect(sentHeaders()['X-OV-Proto']).toBe('2')
     expect(sentHeaders().Authorization).toBe('Bearer tok')
-    expect(sentBody()).toEqual({ match: { external_id: 'm1' }, sets: [{}], events: [{}, {}], liveState: null })
+    // device: the restore is this device's take-over of the match (db/019)
+    expect(sentBody()).toEqual({ match: { external_id: 'm1' }, sets: [{}], events: [{}, {}], liveState: null, device: { id: expect.stringMatching(UUID_RE), platform: 'web' } })
     expect(r.error).toBeNull()
     expect(r.data.counts.events).toBe(2)
+  })
+
+  it('/api/db writes name the device in the body (never a header), reads do not', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: null }))
+    await apiFrom('events').upsert({ external_id: 'm1:e:1' }, { onConflict: 'external_id' })
+    expect(sentBody().device).toEqual({ id: expect.stringMatching(UUID_RE), platform: 'web' })
+    expect(Object.keys(sentHeaders()).some(k => /device/i.test(k))).toBe(false)
+    await apiFrom('events').select('id').eq('external_id', 'm1:e:1')
+    expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body).device).toBeUndefined()
+  })
+
+  it('apiMatchScorer claims or asks for this device', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { external_id: 'm1', mine: true, moved: true }, error: null }))
+    const r = await apiMatchScorer('m1')
+    expect(globalThis.fetch.mock.calls[0][0]).toBe('http://backend.test/api/match/scorer')
+    expect(sentBody()).toEqual({ external_id: 'm1', device: { id: expect.stringMatching(UUID_RE), platform: 'web' }, claim: true })
+    expect(r.data.moved).toBe(true)
+    await apiMatchScorer('m1', { claim: false })
+    expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body).claim).toBe(false)
   })
 
   it('apiMatchRestore reports 426 with its status (retry later, not fatal)', async () => {

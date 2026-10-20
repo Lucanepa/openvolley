@@ -18,6 +18,7 @@ import { buildConnectionPins } from './connectionPins'
 import { missingConnectionPins } from './remoteRoster'
 import { generateSecurePin } from './stringUtils'
 import { isScorerEntry } from './appEntry'
+import { queueScorerClaim, retireSupersededMatches } from './matchHandover'
 
 // IndexedDB key for storing file system directory handle
 const BACKUP_DB_NAME = 'escoresheet_backup'
@@ -567,6 +568,7 @@ export async function restoreMatchFromJson(jsonData) {
     }
   })
 
+  await afterJoin(restoredMatchId)
   return restoredMatchId
 }
 
@@ -1447,7 +1449,26 @@ export async function importMatchFromSupabase(cloudData) {
     }
   })
 
+  await afterJoin(importedMatchId, { claim: true })
   return importedMatchId
+}
+
+/**
+ * This device continues a cloud match (a restore by game PIN, a backup
+ * restore; utils/matchHandover): it becomes the match's scoring device (the
+ * claim job; a backup restore claims through its restore job instead), and
+ * this device's own refused copy of the same game is retired. Never throws:
+ * the restore itself is done.
+ */
+async function afterJoin(localMatchId, { claim = false } = {}) {
+  try {
+    const joined = localMatchId != null ? await db.matches.get(localMatchId) : null
+    if (!joined) return
+    if (claim) await queueScorerClaim(db, joined)
+    await retireSupersededMatches(db, joined)
+  } catch (err) {
+    console.warn('[Restore] Could not hand the match over to this device:', err?.message)
+  }
 }
 
 /**

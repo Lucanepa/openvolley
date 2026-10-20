@@ -6,6 +6,18 @@
  */
 
 import { getCloudApiUrl } from '../utils/backendConfig'
+import { deviceId, platformName } from '../utils/identity'
+
+/**
+ * This installation, as the writes name it (server db/019, the scoring-device
+ * handover: a match is scored on one device at a time). In the JSON body, not
+ * a header: an older backend ignores an unknown body field, while a new
+ * header would fail its CORS preflight. Null without storage.
+ */
+export function writingDevice() {
+  const id = deviceId()
+  return id ? { id, platform: platformName() } : null
+}
 
 // Client protocol version, sent as X-OV-Proto on every data request. The
 // backend refuses writes below 2 (426 OV_CLIENT_TOO_OLD), so queued jobs from
@@ -198,7 +210,9 @@ class QueryBuilder {
         body: JSON.stringify({
           table: this._table,
           action: this._action,
-          params: this._params
+          params: this._params,
+          // writes name the device (db/019); reads never need it
+          ...(this._action && this._action !== 'select' ? deviceField() : {})
         }),
         // A stalled request (captive portal, half-open TCP) must not hang the
         // page-wide sync flush forever.
@@ -222,6 +236,11 @@ export function apiFrom(table) {
 }
 
 // ==================== Helpers ====================
+
+function deviceField() {
+  const device = writingDevice()
+  return device ? { device } : {}
+}
 
 function getAuthHeaders() {
   const headers = { 'Content-Type': 'application/json', 'X-OV-Proto': OV_PROTO }
@@ -318,7 +337,8 @@ export async function apiDownload(path, { timeoutMs = 120000 } = {}) {
  * @returns {Promise<{data: {id: string, counts: {sets: number, events: number, liveState: number}, dropped?: object}|null, error: object|null, status: number}>}
  */
 export function apiMatchRestore({ match, sets = [], events = [], liveState = null }) {
-  return postJson('/api/match/restore', { match, sets, events, liveState }, {
+  // The device: a backup restored here is this device's take-over (db/019)
+  return postJson('/api/match/restore', { match, sets, events, liveState, ...deviceField() }, {
     timeoutMs: RESTORE_REQUEST_TIMEOUT_MS,
     fallbackError: 'Match restore failed'
   })
@@ -344,6 +364,21 @@ export function apiMatchRestoreByPin(gameN, pin) {
  */
 export function apiMatchClaim(externalId, pin) {
   return postJson('/api/match/claim', { externalId, pin }, { fallbackError: 'Match take-over failed' })
+}
+
+/**
+ * The scoring device of a match (db/019, the scoring-device handover).
+ * claim true: this device scores the match from now on (a join, "Take back
+ * scoring here"); the previous one is told and refused (409 OV_SCORER_MOVED).
+ * claim false: is this device the scorer? Needs a session; the creator, an
+ * editor or an admin of the match. 404 OV_MATCH_NOT_FOUND: not in the cloud
+ * yet; 409 OV_MATCH_CLOSED: closed; a 404 without code: an older backend.
+ * @returns {Promise<{data: {external_id: string, mine: boolean|null, moved?: boolean, scorer: {platform: string|null, at: string|null}|null, previous?: object|null}|null, error: object|null, status: number}>}
+ */
+export function apiMatchScorer(externalId, { claim = true } = {}) {
+  const device = writingDevice()
+  if (!device) return Promise.resolve({ data: null, error: { message: 'No device id', code: 'OV_NO_DEVICE' }, status: 0 })
+  return postJson('/api/match/scorer', { external_id: externalId, device, claim }, { fallbackError: 'Scoring device change failed' })
 }
 
 /**
