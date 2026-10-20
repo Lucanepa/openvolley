@@ -356,7 +356,7 @@ Other differences from sets 1 to 4:
 - The deciding set is stored at index 5 and printed as "3" (`displaySetNumber`).
 - **OV decision:** the deciding set of a best-of-3 match is printed in the **set-5 grid**, with
   the change of courts at 8. The grid is labelled with its played number (3). Sets 3 and 4 of
-  the standard grid stay empty and are struck off.
+  the standard grid stay empty (not struck off, owner 2026-10-20).
 
 ---
 
@@ -471,7 +471,8 @@ Columns: `"T" | S | W | Punkte || Satz (Dauer) || Punkte | W | S | "T"`. They me
 
 Rows and footer:
 
-- One row per set (1 to 5). Unplayed sets are struck off.
+- One row per set (1 to 5). The rows of unplayed sets are left blank (**OV decision**, owner
+  2026-10-20: not struck off as on paper).
 - **Total** row: the sums of T, S, W and Punkte for each team, and the **sum of the set
   durations** in the "Total ( )" bracket (SC p.86: 12+17+20+12+15 = 76).
 - **Beginn**: the match start (set 1 Beginn), written as `HH h MM min`.
@@ -539,7 +540,7 @@ Rows, from top to bottom:
 | Default / forfeit (FIVB 6.4.1-2) | The team that defaults loses 0:3, each set 0:25. **OV decision:** set grids empty and struck off. Result rows printed as 25 / 0 with W 1/0, durations empty. Winner `3:0`. Remark: `Team X declared in default (reason), match result 3:0 (25:0, 25:0, 25:0).` |
 | Absent player | Roster row struck through (section 3). |
 | Delayed set or match start | Actual time in Beginn, plus a remark with the reason and the delay in minutes. |
-| Match ends 3:0 / 3:1 / 3:2 | Unused set grids and result rows struck off with a Z. Result, winner, captains' signatures as in sections 9 and 10. |
+| Match ends 3:0 / 3:1 / 3:2 | **OV decision** (owner 2026-10-20): unused set grids and result rows are left blank, not struck off. Result, winner, captains' signatures as in sections 9 and 10. |
 
 ---
 
