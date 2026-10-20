@@ -12,6 +12,7 @@ import { isDesktopScoretable, requestDesktopQuit } from '../utils/appLifecycle'
 import { cn } from '../ui/cn.js'
 import { useCollapseTransition } from '../hooks/useCollapseTransition'
 import { SwitchTrack } from '../ui/Switch.jsx'
+import { FOCUS_RING_INSET } from '../ui/Button.jsx'
 import {
   FOCUS_RING, KIT_SCOPE, HEADER_BAR, HEADER_BTN, HEADER_BTN_ON, POPOVER_PANEL, MENU_PANEL, MENU_ROW, MENU_SUBROW, MENU_ROW_ON,
   MENU_NEST, MENU_SEP, MENU_ICON, MENU_COUNT, STATUS_PILL, STATUS_TONES, HEADER_SWITCH
@@ -1207,14 +1208,24 @@ export default function MainHeader({
 
       </div>
       {lanTabletsOpen && <ConnectTabletsModal open onClose={() => setLanTabletsOpen(false)} match={currentMatch || null} />}
-      {/* Show thin expand bar when header is collapsed */}
+      {/* Show thin expand bar when header is collapsed. It stays 16px high
+          (the phone layout counts on it), but over the phone scoring screen
+          its middle takes taps 48px down, over the screen's title (no
+          button there): the bar alone was too small a target on a phone
+          (2026-10-20). Elsewhere the toolbar below has buttons there. */}
       {effectivelyCollapsed && (
-        <div
-          onClick={() => setIsCollapsed(false)}
-          className="flex h-4 w-full cursor-pointer items-center justify-center border-b border-stone-200/70 bg-white text-stone-400 transition-colors hover:bg-stone-100"
-        >
-          <ChevronDown size={12} aria-hidden="true" />
-        </div>
+        <span className={KIT_SCOPE}>
+          <button
+            type="button"
+            onClick={() => setIsCollapsed(false)}
+            aria-label={t('header.showHeader')}
+            title={t('header.showHeader')}
+            className={cn('relative flex h-4 w-full cursor-pointer items-center justify-center overflow-visible border-0 border-b border-stone-200/70 bg-white p-0 text-stone-400 transition-colors hover:bg-stone-100', FOCUS_RING_INSET)}
+          >
+            <ChevronDown size={14} aria-hidden="true" />
+            {startCollapsed && <span aria-hidden="true" data-testid="header-expand-target" className="absolute left-1/2 top-0 h-12 w-[min(40%,200px)] -translate-x-1/2" />}
+          </button>
+        </span>
       )}
     </div>
   )
