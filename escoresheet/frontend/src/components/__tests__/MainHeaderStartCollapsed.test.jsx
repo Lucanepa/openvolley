@@ -52,6 +52,9 @@ describe('MainHeader startCollapsed (phone scoring layout)', () => {
     const target = screen.getByTestId('header-expand-target')
     expect(bar.contains(target)).toBe(true)
     expect(target.className).toMatch(/\bh-12\b/)
+    // narrower than the header minus the phone header's Undo + Menu buttons
+    // (106px from the right edge), or it covers Undo on a 340px phone
+    expect(target.className).toContain('w-[min(40%,calc(100%_-_224px),200px)]')
     fireEvent.click(target)
     expect(foldedBar(container)).toBeFalsy()
   })
