@@ -101,6 +101,14 @@ export function inActivityContext(reason, fn, { joined = false } = {}) {
   return withActivityContext({ reason, actionId: current?.actionId ?? randomUuid() }, fn)
 }
 
+/**
+ * Dexie's "Transaction committed too early": the transaction's scope ended
+ * (without an error) after its IndexedDB transaction had committed.
+ */
+export function isEarlyCommit(err) {
+  return !!(err && typeof err === 'object' && err.name === 'PrematureCommitError')
+}
+
 /** An action failure already shown to the scorer (onError, or by the action itself). */
 export function isReportedActionError(err) {
   return !!(err && typeof err === 'object' && err.scorerActionReported)
@@ -141,6 +149,14 @@ export function markActionErrorReported(err) {
  *   the db.events hooks write for a delete or an edit commit or roll back with
  *   the action. `reason` ('undo', 'decision_change', ...) labels them
  *   (inActivityContext); without it a delete is 'delete', an edit 'other'.
+ * - Committed early (Dexie's PrematureCommitError: the IndexedDB transaction
+ *   had committed by the time the body ended, without an error): every write
+ *   the body awaited is stored, in the action's transaction or, if the body
+ *   ran on outside its transaction zone, in a transaction of its own. Not one
+ *   atomic write then, but nothing is lost: the action counts as done (its
+ *   screen changes and side effects follow) and a warning is logged
+ *   ('action.early_commit'). It used to count as failed: "That was not
+ *   saved" with the point stored, and its dialog and pushes dropped.
  * - If the transaction fails nothing of it is written, its screen changes and
  *   side effects are dropped and the error is rethrown. A keyed action (a
  *   scorer tap) also passes it to `onError` (the scorer must see that nothing
@@ -201,6 +217,9 @@ export function useScorerActions({ db, commits, mutexRef, captureFinalSnapshot, 
       const ctx = { effects: [], ui: [], pending: [], wrote: false, gen: 0, finalSnapshot: null, idbtrans: null }
       let result
       let failure = null
+      // The body ran to its end (and the steps after it): set last inside
+      let bodyDone = false
+      let earlyCommit = false
       try {
         result = await db.transaction('rw', db.tables, async () => {
           ctx.idbtrans = Dexie.currentTransaction.idbtrans
@@ -220,10 +239,20 @@ export function useScorerActions({ db, commits, mutexRef, captureFinalSnapshot, 
             ctx.finalSnapshot = await captureRef.current()
           }
           ctx.gen = commits.nextGen()
+          ctx.value = value
+          bodyDone = true
           return value
         })
       } catch (err) {
-        failure = err
+        if (bodyDone && isEarlyCommit(err)) {
+          // Stored, though not as one transaction (see above): done
+          console.warn('[action] committed before its end, not as one transaction; everything it wrote is stored', key)
+          diag('action.early_commit', { key, ms: Math.round(performance.now() - t0) })
+          result = ctx.value
+          earlyCommit = true
+        } else {
+          failure = err
+        }
       } finally {
         if (ctxRef.current === ctx) ctxRef.current = null
         if (acquired) mutexRef.current = false
@@ -242,8 +271,11 @@ export function useScorerActions({ db, commits, mutexRef, captureFinalSnapshot, 
       // re-read); the key is free once the change is shown
       const committedAt = performance.now()
       diag('action.commit', { key, ms: Math.round(committedAt - t0), wrote: !!ctx.wrote, gen: ctx.gen, ui: ctx.ui.length, effects: ctx.effects.length })
-      commits.afterCommit(ctx.wrote ? ctx.gen : 0, () => {
-        diag('action.ui', { key, gen: ctx.wrote ? ctx.gen : 0, ui: ctx.ui.length, ms: Math.round(performance.now() - committedAt) })
+      // (committed early: before the generation was taken, so no live query
+      // result would carry it; its data is stored already)
+      const gen = ctx.wrote && !earlyCommit ? ctx.gen : 0
+      commits.afterCommit(gen, () => {
+        diag('action.ui', { key, gen, ui: ctx.ui.length, ms: Math.round(performance.now() - committedAt) })
         for (const apply of ctx.ui) {
           try { apply() } catch (err) { console.error('[action] screen change failed', err) }
         }
