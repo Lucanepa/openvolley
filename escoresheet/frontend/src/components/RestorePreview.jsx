@@ -96,7 +96,7 @@ export default function RestorePreview({ data, source, backupName }) {
           <div className="whitespace-nowrap text-2xl font-bold tabular-nums text-stone-900 sm:text-3xl">
             {s.score.home}<span className="px-1 text-stone-400">:</span>{s.score.away}
           </div>
-          <div className="text-[11px] text-stone-500">{tp('set', { n: s.setIndex })}</div>
+          <div className="text-[11px] text-stone-500">{tp('set', { n: s.setNumber })}</div>
         </div>
       </div>
 
@@ -110,7 +110,7 @@ export default function RestorePreview({ data, source, backupName }) {
 
       {/* Per team, row by row in one grid: name, line-up, counts, substitutions */}
       <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:gap-x-5">
-        <div className={cn(MICRO, 'col-span-2')}>{tp('lineup')} · {tp('set', { n: s.setIndex })}</div>
+        <div className={cn(MICRO, 'col-span-2')}>{tp('lineup')} · {tp('set', { n: s.setNumber })}</div>
         {SIDES.map(side => (
           <div key={`name-${side}`} className="line-clamp-2 self-end break-words text-sm font-semibold leading-snug text-stone-800" title={name(side)}>
             {name(side)}
@@ -188,7 +188,7 @@ export default function RestorePreview({ data, source, backupName }) {
                   set.finished ? 'border-stone-200 bg-white' : 'border-sky-200 bg-sky-50'
                 )}
               >
-                <div className="text-[11px] text-stone-500">{tp('set', { n: set.index })}</div>
+                <div className="text-[11px] text-stone-500">{tp('set', { n: set.number })}</div>
                 <div className="whitespace-nowrap text-sm font-semibold tabular-nums text-stone-900">
                   {set.home}<span className="px-0.5 text-stone-400">:</span>{set.away}
                 </div>

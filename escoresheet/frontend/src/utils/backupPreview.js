@@ -15,6 +15,8 @@
 import { compareBySeq, scoreBeforeEvent } from '../domain/describe.js'
 
 const SIDES = ['home', 'away']
+// The printed set number: best of 3, the deciding set (index 5) is set 3
+const shownSet = (index, bestOf) => (bestOf === 3 && index === 5 ? 3 : index)
 const isSide = (v) => v === 'home' || v === 'away'
 
 const pointsOf = (set, side) => (side === 'home'
@@ -53,6 +55,9 @@ export function summarizeBackup(d) {
   const sets = (Array.isArray(data.sets) ? data.sets : [])
     .slice()
     .sort((a, b) => (a.index || 0) - (b.index || 0))
+
+  const m = data.match || {}
+  const bestOf = Number(m.bestOf ?? m.best_of ?? m.match_info?.best_of ?? live?.best_of) === 3 ? 3 : 5
 
   const latestSet = sets[sets.length - 1] || null
   const setIndex = latestSet?.index || live?.current_set || 1
@@ -108,6 +113,7 @@ export function summarizeBackup(d) {
   return {
     teams: { home: teamName('home'), away: teamName('away') },
     setIndex,
+    setNumber: shownSet(setIndex, bestOf),
     score,
     serving,
     lineup,
@@ -116,6 +122,7 @@ export function summarizeBackup(d) {
     sanctions,
     sets: sets.map(s => ({
       index: s.index,
+      number: shownSet(s.index, bestOf),
       home: pointsOf(s, 'home') ?? 0,
       away: pointsOf(s, 'away') ?? 0,
       finished: !!s.finished
