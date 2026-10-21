@@ -2824,6 +2824,33 @@
       "ruleIsOff": "La règle des clubs est désactivée"
     }
   },
+  "playerPool": {
+    "open": "Choisir les joueurs",
+    "title": "Choisir les joueurs · {{team}}",
+    "description": "{{count}} joueurs connus : cochez ceux qui jouent ce match.",
+    "ticked": "{{count}} sur {{total}} cochés",
+    "selectAll": "Tous",
+    "selectNone": "Aucun",
+    "apply_one": "Utiliser {{count}} joueur",
+    "apply_other": "Utiliser {{count}} joueurs",
+    "applied_one": "{{count}} joueur dans l’effectif",
+    "applied_other": "{{count}} joueurs dans l’effectif",
+    "empty": "Aucun joueur connu pour cette équipe : ajoutez-les dans l’effectif, importez une Einsatzliste ou chargez une équipe enregistrée.",
+    "tooMany": "{{count}} cochés : au plus {{max}} joueurs figurent sur la feuille de match.",
+    "twoLiberos": "Plus de {{max}} joueurs : deux libéros sont obligatoires.",
+    "tooManyLiberos": "Plus de deux libéros cochés : seuls les deux premiers sont marqués.",
+    "tooFew": "Seulement {{count}} cochés : une équipe a besoin d’au moins {{min}} joueurs.",
+    "sourceCurrent": "Effectif",
+    "sourceImported": "Einsatzliste",
+    "sourceSaved": "Équipe enregistrée",
+    "sourceEarlier": "Match précédent",
+    "sourceLastMatch": "Dernier match",
+    "suggestionTitle": "Joueurs des matchs précédents",
+    "suggestionHome": "Domicile : {{name}}, {{count}} joueurs connus",
+    "suggestionAway": "Visiteur : {{name}}, {{count}} joueurs connus",
+    "chooseHome": "Joueurs à domicile",
+    "chooseAway": "Joueurs visiteurs"
+  },
   "savedTeams": {
     "title": "Équipes enregistrées",
     "competitions": "Compétitions",

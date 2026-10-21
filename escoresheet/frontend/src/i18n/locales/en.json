@@ -2831,6 +2831,33 @@
       "ruleIsOff": "The club rule is off"
     }
   },
+  "playerPool": {
+    "open": "Choose players",
+    "title": "Choose the players · {{team}}",
+    "description": "{{count}} players known: tick who plays this match.",
+    "ticked": "{{count}} of {{total}} ticked",
+    "selectAll": "All",
+    "selectNone": "None",
+    "apply_one": "Use {{count}} player",
+    "apply_other": "Use {{count}} players",
+    "applied_one": "{{count}} player on the roster",
+    "applied_other": "{{count}} players on the roster",
+    "empty": "No players known for this team yet: add them in the roster, import an Einsatzliste or load a saved team.",
+    "tooMany": "{{count}} ticked: at most {{max}} players go on the scoresheet.",
+    "twoLiberos": "More than {{max}} players: two liberos are required.",
+    "tooManyLiberos": "More than two liberos ticked: only the first two are marked.",
+    "tooFew": "Only {{count}} ticked: a team needs at least {{min}} players.",
+    "sourceCurrent": "Roster",
+    "sourceImported": "Einsatzliste",
+    "sourceSaved": "Saved team",
+    "sourceEarlier": "Earlier match",
+    "sourceLastMatch": "Last match",
+    "suggestionTitle": "Players from earlier matches",
+    "suggestionHome": "Home: {{name}}, {{count}} players known",
+    "suggestionAway": "Away: {{name}}, {{count}} players known",
+    "chooseHome": "Choose home players",
+    "chooseAway": "Choose away players"
+  },
   "savedTeams": {
     "title": "Saved teams",
     "competitions": "Competitions",
