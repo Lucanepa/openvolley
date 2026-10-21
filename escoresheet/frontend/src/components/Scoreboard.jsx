@@ -23138,13 +23138,19 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     return lineupEntryErrors({ lineup, players, events, team, requireAll: confirmAttempted, allowUnknown: easy })
   }, [saveFailed, lineup, players, events, team, confirmAttempted, easy])
 
-  const candidates = useMemo(() => {
-    const list = lineupCandidates({ players, lineup, events, team, setIndex })
+  const poolFor = useCallback((entries) => {
+    const list = lineupCandidates({ players, lineup: entries, events, team, setIndex })
     if (!easy) return list
     // Easy match: a number no event names any more is no candidate
     const referenced = easyReferencedNumbers(events || [], team)
     return list.filter(p => !isEasyStray(p, referenced))
-  }, [players, lineup, events, team, setIndex, easy])
+  }, [players, events, team, setIndex, easy])
+  const candidates = useMemo(() => poolFor(lineup), [poolFor, lineup])
+  // Room in the pool for every player who can be in it (none on court):
+  // invisible cells keep it as players move to the court, so the pool is
+  // as tall as the roster needs and keeps that size (on a phone it has no
+  // fixed height: styles.css "Line-up entry modal")
+  const poolRoom = useMemo(() => poolFor([]).length, [poolFor])
 
   // Optional game captain (FIVB 5.2), among the valid entries other than the
   // team captain. Opening on an existing line-up shows the current choice.
@@ -23649,6 +23655,9 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
                     {p.number}
                   </div>
                 ))}
+                {Array.from({ length: Math.max(0, poolRoom - candidates.length) }, (_, i) => (
+                  <span key={`room-${i}`} className="lineup-chip lineup-chip--room" aria-hidden="true" />
+                ))}
               </div>
             </div>
 
@@ -23669,7 +23678,9 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
               {t('scoreboard.lineupModal.dragInstruction', 'Please write the number, drag and drop it, or click on available player to fill each of the available positions')}
             </p>
 
-            {/* Edit tools: always there (disabled when there is nothing to do), so the modal keeps its size */}
+            {/* Edit tools: always there (disabled when there is nothing to do), so the modal keeps its size.
+                On a phone one row: rotate | undo | clear | rotate */}
+            <div className="lineup-edit">
             <div className="lineup-tools">
               <SbButton className="w-full min-w-0 whitespace-normal leading-tight" onClick={handleUndoLastEdit} disabled={editHistory.length === 0}>
                 <span style={{ fontSize: '16px' }} aria-hidden="true">↩</span>
@@ -23700,6 +23711,7 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
               >
                 ↺
               </SbButton>
+            </div>
             </div>
           </div>
         </div>
