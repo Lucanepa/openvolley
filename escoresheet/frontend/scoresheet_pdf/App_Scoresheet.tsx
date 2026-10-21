@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Header } from './components/Header';
 import { StandardSet } from './components/StandardSet';
 import { COURT_CHANGE_W, SetFive } from './components/SetFive';
-import { Sanctions, Results, Approvals, Roster, Remarks, SANCTION_ROWS } from './components/FooterSection';
+import { Sanctions, Results, Approvals, Roster, Remarks, SANCTION_ROWS, remarksText } from './components/FooterSection';
 import { LEGEND_WIDTH, LeftInfoBox } from './components/LeftInfoBox';
 import { LiberoControlSheet } from './components/LiberoControlSheet';
 import { Player, SanctionRecord } from './types_scoresheet';
@@ -29,7 +29,7 @@ import { isoOf, setDurationMinutes, setEndMs, setStartMs } from './utils/matchTi
 import { BRAND } from '../src/brand.js';
 import { deliverPdfToOpener, getOpenerWindow, isOwnDownload, reportPdfProgress, savePdfThroughApp, setPdfBusy, watchPdfWindowClose } from '../src/utils/appWindowGuest';
 import { detectAppPlatform } from '../src/utils/openAppWindow';
-import { assertCanvas, assertJpegDataUrl, assertValidPdf, assertVisibleSheet, downloadBlob, PdfCheckError, SHEET_MM, SHEET_OFFSET_MM, type SaveOutcome } from './utils/pdfOutput';
+import { assertCanvas, assertJpegDataUrl, assertValidPdf, assertVisibleSheet, downloadBlob, PdfCheckError, SHEET_MM, SHEET_OFFSET_MM, A3_LANDSCAPE_MM, type SaveOutcome } from './utils/pdfOutput';
 
 interface AppScoresheetProps {
   matchData: {
@@ -1198,6 +1198,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   const set5Ref = useRef<HTMLDivElement>(null);
   const sanctionsRef = useRef<HTMLDivElement>(null);
   const remarksRef = useRef<HTMLDivElement>(null);
+  // REMARKS too long for its box even at the smallest size: warned above the
+  // sheet, and the PDF prints the whole text on a second page (field-spec 8:
+  // never truncate)
+  const [remarksClipped, setRemarksClipped] = useState(false);
   const approvalsRef = useRef<HTMLDivElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
   const rosterARef = useRef<HTMLDivElement>(null);
@@ -1476,6 +1480,16 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         pdf.setFontSize(6);
         pdf.text(`${title}${result ? ` - ${result.replace('-', ':')}` : ''}`, SHEET_OFFSET_MM.x, 3, { renderingMode: 'invisible' } as any);
       } catch { /* text layer is optional */ }
+      if (remarksClipped) {
+        const all = remarksText({ overflowSanctions, remarks: typeof match?.remarks === 'string' ? match.remarks : '', generated: autoRemarks });
+        pdf.addPage('a3', 'landscape');
+        pdf.setFontSize(14);
+        pdf.text('REMARKS (continued from the scoresheet)', 15, 20);
+        pdf.setFontSize(10);
+        pdf.text(title, 15, 27);
+        pdf.setFontSize(11);
+        pdf.text(pdf.splitTextToSize(all, A3_LANDSCAPE_MM.width - 30), 15, 38);
+      }
 
       const bytes = pdf.output('arraybuffer');
       assertValidPdf(bytes);
@@ -1703,11 +1717,12 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
           )}
 
         </div>
-        {sheetWarnings.length > 0 && (
+        {(sheetWarnings.length > 0 || remarksClipped) && (
           <div data-testid="sheet-warnings" className="mt-2 mx-2 max-w-[min(100%,72rem)] rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs text-amber-900">
             <span className="font-semibold">{t('scoresheetPdf.checkTheMatch', 'Check the match before approving it:')}</span>
             <ul className="list-disc pl-5">
               {sheetWarnings.map((w, i) => <li key={i}>{w}</li>)}
+              {remarksClipped && <li data-testid="remarks-clipped-warning">{t('scoresheetPdf.remarksClipped', 'REMARKS: the text does not fit the box; the PDF prints all of it on page 2.')}</li>}
             </ul>
           </div>
         )}
@@ -2093,7 +2108,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                   <div className="flex flex-col gap-1 min-h-0 shrink-0" style={{ width: `calc(150mm - 2 * ${FOOTER_GAP})` }}>
                     {/* Remarks - 30% height */}
                     <div ref={remarksRef} className="flex-[3] min-h-0">
-                      <Remarks overflowSanctions={overflowSanctions} remarks={typeof match?.remarks === 'string' ? match.remarks : ''} generated={autoRemarks} />
+                      <Remarks overflowSanctions={overflowSanctions} remarks={typeof match?.remarks === 'string' ? match.remarks : ''} generated={autoRemarks} onClipped={setRemarksClipped} />
                     </div>
                     {/* Approvals - 70% height */}
                     <div ref={approvalsRef} className="flex-[5] min-h-0">

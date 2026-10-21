@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { SanctionRecord, Player } from '../types_scoresheet';
 import { SignatureModal } from './SignatureModal';
 import { isApprovalValid, formatApprovalStamp } from '../../src/domain/accountApproval.js';
@@ -104,6 +104,8 @@ interface RemarksProps {
     remarks?: string;
     /** Remarks the sheet writes itself (a default, an incomplete team), printed first. */
     generated?: string[];
+    /** Told whether the text does not fit the box even at the smallest size. */
+    onClipped?: (clipped: boolean) => void;
 }
 
 /** One overflow sanction as a remark line, in the sanction-row format (field-spec 7.2). */
@@ -122,16 +124,35 @@ export const formatSanctionRemark = (sanction: SanctionRecord): string => {
     return `Team ${sanction.team}, Set ${sanction.set}, Score ${sanction.score}, ${typeLabel}${playerInfo}`;
 };
 
-export const Remarks: React.FC<RemarksProps> = ({ overflowSanctions = [], remarks = '', generated = [] }) => {
-    // One text: generated remarks, the scorer's own, then the sanctions beyond the box.
-    // It wraps and shrinks to fit the box: never hidden, never a scrollbar in the PDF.
+/**
+ * The REMARKS text: the generated remarks, the sanctions beyond the box, then
+ * the scorer's own (the sanctions are records of the match: if the box is too
+ * small, the free text is what is cut, field-spec 8).
+ */
+export const remarksText = ({ overflowSanctions = [], remarks = '', generated = [] }: RemarksProps): string => {
     const parts: string[] = [];
     for (const line of generated) if (line.trim()) parts.push(line.trim());
-    if (remarks.trim()) parts.push(remarks.trim());
     if (overflowSanctions.length > 0) {
         parts.push(['Sanctions (overflow):', ...overflowSanctions.map(formatSanctionRemark)].join('\n'));
     }
-    const text = parts.join('\n');
+    if (remarks.trim()) parts.push(remarks.trim());
+    return parts.join('\n');
+};
+
+/** The first line of a REMARKS box too small for its text: the PDF prints all of it on page 2. */
+export const REMARKS_CONTINUED = 'Remarks continue on page 2.';
+
+export const Remarks: React.FC<RemarksProps> = ({ overflowSanctions = [], remarks = '', generated = [], onClipped }) => {
+    // One text (remarksText). It wraps and shrinks to fit the box: never a
+    // scrollbar in the PDF. Still too long at the smallest size, it starts with
+    // REMARKS_CONTINUED and the PDF prints the whole text on a second page.
+    const full = remarksText({ overflowSanctions, remarks, generated });
+    // the text found too long (with the notice shown, it stays so until the text changes)
+    const [clippedText, setClippedText] = useState<string | null>(null);
+    const clipped = !!full && clippedText === full;
+    const text = clipped ? `${REMARKS_CONTINUED}\n${full}` : full;
+    const reportClipped = (c: boolean) => { if (c && !clipped) setClippedText(full); };
+    useEffect(() => { onClipped?.(clipped); }, [clipped, onClipped]);
 
     // The Matchblatt's 4 ruled writing lines. While the text fits in 4 lines at the
     // full size, each line sits in its own band between the rules (a rule never runs
@@ -151,6 +172,8 @@ export const Remarks: React.FC<RemarksProps> = ({ overflowSanctions = [], remark
         if (ruled && band > 0 && el && parseFloat(el.style.fontSize) < MAX_PX) setRuled(false);
     });
     const banded = ruled && band > 0;
+    // (banded, the line height is fixed: a fifth line never fits, at any size,
+    // so only the unbanded text tells whether it is cut off)
 
     return (
         // a box of its own, apart from SANCTIONS and RESULT (owner 2026-10-13)
@@ -160,7 +183,7 @@ export const Remarks: React.FC<RemarksProps> = ({ overflowSanctions = [], remark
                 {ruled && [1, 2, 3].map(k => (
                     <div key={k} className="absolute left-0 right-0 border-t ss-rule pointer-events-none" style={{ top: `${k * 25}%` }} data-testid="remarks-rule" aria-hidden="true" />
                 ))}
-                <FitText max={MAX_PX} min={4} multiline className={`w-full h-full relative ${banded ? '' : 'leading-tight py-0.5'}`} style={banded ? { lineHeight: `${band}px` } : undefined} data-testid="remarks-text">
+                <FitText max={MAX_PX} min={4} multiline className={`w-full h-full relative ${banded ? '' : 'leading-tight py-0.5'}`} style={banded ? { lineHeight: `${band}px` } : undefined} data-testid="remarks-text" onClipped={banded ? undefined : reportClipped}>
                     {text}
                 </FitText>
             </div>

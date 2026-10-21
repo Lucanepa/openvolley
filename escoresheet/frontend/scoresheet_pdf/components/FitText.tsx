@@ -20,7 +20,9 @@ export const FitText: React.FC<{
     title?: string;
     children?: React.ReactNode;
     'data-testid'?: string;
-}> = ({ max, min = 5, multiline = false, className = '', style, title, children, ...rest }) => {
+    /** Told whether the text still overflows at `min` (it is then cut off). */
+    onClipped?: (clipped: boolean) => void;
+}> = ({ max, min = 5, multiline = false, className = '', style, title, children, onClipped, ...rest }) => {
     const ref = useRef<HTMLDivElement>(null);
     const [size, setSize] = useState(max);
 
@@ -39,6 +41,7 @@ export const FitText: React.FC<{
             el.style.fontSize = `${s}px`;
         }
         if (s !== size) setSize(s);
+        onClipped?.(overflows());
     });
 
     return (

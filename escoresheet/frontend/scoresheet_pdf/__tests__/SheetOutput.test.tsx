@@ -24,7 +24,9 @@ vi.mock('jspdf', () => ({
     setProperties (p: any) { pdfCalls.push(['setProperties', p]) }
     addImage (...a: any[]) { pdfCalls.push(['addImage', ...a.slice(1, 6)]) }
     setFontSize () {}
-    text (t: string) { pdfCalls.push(['text', t]) }
+    text (t: string | string[]) { pdfCalls.push(['text', t]) }
+    addPage (...a: any[]) { pdfCalls.push(['addPage', ...a]) }
+    splitTextToSize (t: string) { return t.split('\n') }
     output () { return new TextEncoder().encode(`%PDF-1.3\n${'x'.repeat(30_000)}\n%%EOF\n`).buffer }
   }
 }))
@@ -432,5 +434,63 @@ describe('round 2 (owner review 2026-10-07)', () => {
     const sizes = [...lineupRow(container).querySelectorAll('div.font-bold.tabular-nums')].map(e => (e as HTMLElement).style.fontSize)
     expect(sizes.length).toBeGreaterThan(0)
     expect(new Set(sizes)).toEqual(new Set([`${LINEUP_NUMBER_PT}pt`]))
+  })
+})
+
+// Long remarks with overflow sanctions: the box stopped at its smallest font
+// and cut the rest off, and the overflow sanctions (always last) went first.
+// The sanctions now come before the free text, and a text that still does not
+// fit is warned about and printed whole on a second PDF page.
+describe('REMARKS that do not fit their box', () => {
+  let clicked: HTMLAnchorElement[] = []
+  const tenSanctions = () => [
+    ...Array.from({ length: 9 }, (_, i) => ev('sanction', 1, { team: 'away', type: 'warning', playerNumber: i + 1, playerType: 'player' })),
+    ev('sanction', 1, { team: 'home', type: 'warning', playerNumber: 13, playerType: 'bench' })
+  ]
+  beforeAll(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get () { return 1550 } })
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get () { return 1085 } })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { clicked.push(this) })
+    ;(URL as any).createObjectURL = vi.fn(() => 'blob:x')
+    ;(URL as any).revokeObjectURL = vi.fn()
+  })
+  afterAll(() => {
+    delete (HTMLElement.prototype as any).offsetWidth
+    delete (HTMLElement.prototype as any).offsetHeight
+    delete (HTMLElement.prototype as any).scrollHeight
+    vi.restoreAllMocks()
+  })
+  afterEach(() => { cleanup(); clicked = []; pdfCalls.length = 0; delete (HTMLElement.prototype as any).scrollHeight })
+
+  it('the overflow sanctions come before the scorer\'s own remarks', () => {
+    seq = 0
+    const base = fixture({ match: { remarks: 'Ball pressure checked.' } })
+    const { getByTestId, queryByTestId } = render(<App matchData={{ ...base, events: tenSanctions() }} autoAction="preview" />)
+    const text = getByTestId('remarks-text').textContent || ''
+    expect(text.indexOf('Sanctions (overflow):')).toBeGreaterThan(-1)
+    expect(text.indexOf('Sanctions (overflow):')).toBeLessThan(text.indexOf('Ball pressure checked.'))
+    // it fits (jsdom lays nothing out): no notice, no warning
+    expect(text).not.toContain('Remarks continue on page 2.')
+    expect(queryByTestId('remarks-clipped-warning')).toBeNull()
+  })
+
+  it('still too long at the smallest size: a notice, a warning, and the whole text on PDF page 2', async () => {
+    // the remarks text overflows its box at every size
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+      configurable: true,
+      get () { return (this as HTMLElement).dataset?.testid === 'remarks-text' ? 1000 : 0 }
+    })
+    seq = 0
+    const long = 'A long remark. '.repeat(80).trim()
+    const base = fixture({ match: { remarks: long } })
+    const { getByTestId } = render(<App matchData={{ ...base, events: tenSanctions() }} autoAction="save" dataReady />)
+    await waitFor(() => expect(getByTestId('remarks-text').textContent).toMatch(/^Remarks continue on page 2\./))
+    expect(getByTestId('remarks-clipped-warning')).toBeTruthy()
+    await waitFor(() => expect(clicked).toHaveLength(1))
+    expect(pdfCalls.some(c => c[0] === 'addPage')).toBe(true)
+    const page2 = pdfCalls.filter(c => c[0] === 'text' && Array.isArray(c[1])).map(c => c[1].join('\n')).join('\n')
+    expect(page2).toContain('Sanctions (overflow):\nTeam A, Set 1, Score 0:0, Warning, 13')
+    expect(page2).toContain(long)
   })
 })

@@ -1469,7 +1469,8 @@
     "showInFolder": "Show in folder",
     "dismiss": "Close",
     "fileActionFailed": "The file could not be opened from here. It is in: {{path}}",
-    "checkTheMatch": "Check the match before approving it:"
+    "checkTheMatch": "Check the match before approving it:",
+    "remarksClipped": "REMARKS: the text does not fit the box; the PDF prints all of it on page 2."
   },
   "supportFeedback": {
     "title": "Support & feedback",

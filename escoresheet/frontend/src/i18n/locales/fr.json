@@ -1467,7 +1467,8 @@
     "showInFolder": "Afficher dans le dossier",
     "dismiss": "Fermer",
     "fileActionFailed": "Le fichier n'a pas pu être ouvert d'ici. Il se trouve dans : {{path}}",
-    "checkTheMatch": "Vérifier le match avant de l'approuver :"
+    "checkTheMatch": "Vérifier le match avant de l'approuver :",
+    "remarksClipped": "REMARQUES : le texte ne tient pas dans la case ; le PDF l’imprime en entier en page 2."
   },
   "supportFeedback": {
     "title": "Support & avis",
