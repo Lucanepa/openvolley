@@ -292,4 +292,13 @@ describe('consistencyWarnings (field-spec 12.2)', () => {
   it('a clean match has no warning', () => {
     expect(consistencyWarnings({ sets: [{ index: 1, homePoints: 0, awayPoints: 0 }], events: [], teamAKey: 'home' })).toEqual([])
   })
+
+  it('best of 3: the deciding set (index 5) is named set 3', () => {
+    s = 0
+    const events = [e('point', 5, { team: 'home' })]
+    const sets = [{ index: 5, homePoints: 2, awayPoints: 0 }]
+    expect(consistencyWarnings({ sets, events, teamAKey: 'home', bestOf: 3 })).toEqual([
+      'Set 3: the points recorded (1:0, home:away) do not match the set score (2:0).'
+    ])
+  })
 })

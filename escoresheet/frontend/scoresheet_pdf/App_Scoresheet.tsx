@@ -924,9 +924,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   const autoRemarks = generatedRemarks({ sets, events, teamAKey, bestOf });
   // Consistency checks (field-spec 12.2): listed above the sheet, never printed
   const sheetWarnings = useMemo(
-    () => consistencyWarnings({ sets, events, teamAKey, homePlayers, awayPlayers }),
+    () => consistencyWarnings({ sets, events, teamAKey, homePlayers, awayPlayers, bestOf }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sets, events, teamAKey, homePlayers, awayPlayers]
+    [sets, events, teamAKey, homePlayers, awayPlayers, bestOf]
   );
 
   // Calculate set results for Results section

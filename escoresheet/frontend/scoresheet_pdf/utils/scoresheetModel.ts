@@ -198,12 +198,13 @@ export function getFirstServeTeamKey(setIndex: number, match: any, teamAKey: Tea
  * change the sheet: the scoresheet window lists them above it (not in the PDF)
  * so the scorer can correct the match before approving it.
  */
-export function consistencyWarnings({ sets, events, teamAKey, homePlayers, awayPlayers }: {
+export function consistencyWarnings({ sets, events, teamAKey, homePlayers, awayPlayers, bestOf }: {
   sets: any[]
   events: any[]
   teamAKey: TeamKey
   homePlayers?: any[]
   awayPlayers?: any[]
+  bestOf?: number
 }): string[] {
   const out: string[] = []
   const letter = (t: TeamKey) => (t === teamAKey ? 'A' : 'B')
@@ -212,7 +213,7 @@ export function consistencyWarnings({ sets, events, teamAKey, homePlayers, awayP
     away: new Set((awayPlayers || []).map(p => String(p?.number ?? '')).filter(Boolean))
   }
   for (const set of (sets || []).filter(Boolean).sort((a, b) => a.index - b.index)) {
-    const n = displaySetNumber(set.index, undefined)
+    const n = displaySetNumber(set.index, bestOf)
     const setEvents = (events || []).filter(e => e?.setIndex === set.index)
     const pts = { home: 0, away: 0 }
     for (const e of setEvents) if (e.type === 'point' && (e.payload?.team === 'home' || e.payload?.team === 'away')) pts[e.payload.team as TeamKey]++

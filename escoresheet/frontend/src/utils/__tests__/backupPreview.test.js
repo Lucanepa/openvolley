@@ -42,6 +42,16 @@ function backup() {
 }
 
 describe('summarizeBackup (Restore preview)', () => {
+  it('best of 3: the deciding set (index 5) reads set 3, from the match or its match_info', () => {
+    const sets = [{ index: 1, homePoints: 25, awayPoints: 20, finished: true }, { index: 5, homePoints: 4, awayPoints: 2 }]
+    const app = summarizeBackup({ match: { bestOf: 3 }, sets, events: [] })
+    expect([app.setIndex, app.setNumber]).toEqual([5, 3])
+    expect(app.sets.map(x => x.number)).toEqual([1, 3])
+    const db = summarizeBackup({ match: { home_team: 'H', match_info: { best_of: 3 } }, sets, events: [] })
+    expect(db.setNumber).toBe(3)
+    expect(summarizeBackup({ match: {}, sets, events: [] }).setNumber).toBe(5)
+  })
+
   it('shows each substitution at the score it happened, not 0-0', () => {
     const s = summarizeBackup(backup())
     expect(s.setIndex).toBe(3)
@@ -97,7 +107,7 @@ describe('summarizeBackup (Restore preview)', () => {
       sets: [{ index: 1, home_points: 25, away_points: 23, finished: true }]
     })
     expect(s.teams).toEqual({ home: 'A', away: 'B' })
-    expect(s.sets).toEqual([{ index: 1, home: 25, away: 23, finished: true }])
+    expect(s.sets).toEqual([{ index: 1, number: 1, home: 25, away: 23, finished: true }])
     expect(s.lineup).toEqual({ home: { I: 1 }, away: null })
     expect(s.serving).toBe('away')
   })
