@@ -6244,10 +6244,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const homeRosterExists = !!(home && homeRoster.length >= 6 && homeCounts.liberos >= 0)
   const awayRosterExists = !!(away && awayRoster.length >= 6 && awayCounts.liberos >= 0)
 
-  // Roster validation for proceeding to coin toss (requires captain and coach)
+  // Roster validation for proceeding to coin toss (requires captain and coach,
+  // at most 14 players: FIVB 4.1.1)
   // Note: all players having numbers is only required when CONFIRMING coin toss, not proceeding to it
-  const homeConfigured = homeRosterExists && homeCounts.hasCaptain && homeCounts.hasCoach && homeCounts.liberosOk
-  const awayConfigured = awayRosterExists && awayCounts.hasCaptain && awayCounts.hasCoach && awayCounts.liberosOk
+  const homeConfigured = homeRosterExists && homeRoster.length <= ROSTER_MAX && homeCounts.hasCaptain && homeCounts.hasCoach && homeCounts.liberosOk
+  const awayConfigured = awayRosterExists && awayRoster.length <= ROSTER_MAX && awayCounts.hasCaptain && awayCounts.hasCoach && awayCounts.liberosOk
 
   // All 4 cards must be complete before proceeding to coin toss
   const canProceedToCoinToss = matchInfoConfirmed && officialsConfigured && homeConfigured && awayConfigured
@@ -6264,6 +6265,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (!homeConfigured) {
       if (!home || homeRoster.length < 6) missing.push(t('warnings.homeRosterIncomplete', { count: homeRoster.length }))
       else {
+        if (homeRoster.length > ROSTER_MAX) missing.push(t('warnings.homeRosterTooMany', { max: ROSTER_MAX, count: homeRoster.length }))
         if (!homeCounts.hasCaptain) missing.push(t('warnings.homeCaptainMissing'))
         if (!homeCounts.hasCoach) missing.push(t('warnings.homeCoachMissing'))
         if (!homeCounts.liberosOk) missing.push(t('warnings.homeTwoLiberosRequired', 'Home: 2 liberos required for more than 12 players'))
@@ -6272,6 +6274,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     if (!awayConfigured) {
       if (!away || awayRoster.length < 6) missing.push(t('warnings.awayRosterIncomplete', { count: awayRoster.length }))
       else {
+        if (awayRoster.length > ROSTER_MAX) missing.push(t('warnings.awayRosterTooMany', { max: ROSTER_MAX, count: awayRoster.length }))
         if (!awayCounts.hasCaptain) missing.push(t('warnings.awayCaptainMissing'))
         if (!awayCounts.hasCoach) missing.push(t('warnings.awayCoachMissing'))
         if (!awayCounts.liberosOk) missing.push(t('warnings.awayTwoLiberosRequired', 'Away: 2 liberos required for more than 12 players'))

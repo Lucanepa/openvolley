@@ -190,6 +190,7 @@
     "invalidBirthdate": "Alcuni giocatori o ufficiali hanno una data di nascita non valida (01.01.1900). Correggi queste date.",
     "invalidJerseyNumbers": "La squadra {{team}} ha numeri di maglia non validi (deve essere 1-99): {{numbers}}",
     "playersWithoutNumbers": "La squadra {{team}} ha {{count}} giocatore/i senza numero di maglia",
+    "tooManyPlayers": "La squadra {{team}} ha più di {{max}} giocatori: {{count}}",
     "completeSignatures": "Completa tutte le firme prima di confermare il sorteggio.",
     "noMatchId": "Errore: ID partita non trovato. Riprova.",
     "duplicateNumbersDetailed": "La squadra {{team}} ha numeri di maglia duplicati: #{{numbers}}\n\nCorreggi i numeri duplicati prima di continuare.",
@@ -2431,7 +2432,9 @@
     "awayCoachMissing": "Squadra ospite: nessun allenatore impostato",
     "selectGenderFirst": "Selezionare prima il genere",
     "awayTwoLiberosRequired": "Ospite: 2 liberi richiesti per più di 12 giocatori",
-    "homeTwoLiberosRequired": "Casa: 2 liberi richiesti per più di 12 giocatori"
+    "homeTwoLiberosRequired": "Casa: 2 liberi richiesti per più di 12 giocatori",
+    "homeRosterTooMany": "Casa: al massimo {{max}} giocatori nella rosa (ora {{count}})",
+    "awayRosterTooMany": "Ospite: al massimo {{max}} giocatori nella rosa (ora {{count}})"
   },
   "tabletStatus": {
     "title": "Stato dei tablet",

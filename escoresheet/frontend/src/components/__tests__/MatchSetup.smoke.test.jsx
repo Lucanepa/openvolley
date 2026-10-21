@@ -5,6 +5,7 @@
  * once-per-match connection-PIN sync is queued only when it is needed.
  * The roster editor keeps a row in its place while its number is typed.
  * Choose players in the roster editor writes nothing before its Save.
+ * A roster of more than 14 players is not ready for the coin toss.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, cleanup, fireEvent, within } from '@testing-library/react'
@@ -324,5 +325,27 @@ describe('MatchSetup smoke render', () => {
     await new Promise((r) => setTimeout(r, 50))
     // nothing stored yet: the stored players are still the five
     expect([...store.tables.players.values()].map((p) => p.lastName)).toEqual(['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo'])
+  })
+
+  // Choose players with 18 ticked only warned, and 18 players reached the
+  // coin toss and the match (FIVB 4.1.1: at most 14)
+  it.each([[14, 'scoreboard.complete'], [15, 'scoreboard.incomplete']])('a roster of %i players: the home card is %s', async (count, badge) => {
+    store.tables.matches = new Map([[1, {
+      id: 1, status: 'setup', seed_key: 'match_1_max', matchInfoConfirmedAt: '2026-10-06T10:00:00Z',
+      homeTeamId: 11, awayTeamId: 12, game_n: 991408, ...PINS,
+      bench_home: [{ role: 'Coach', firstName: 'Carla', lastName: 'Coach' }]
+    }]])
+    store.tables.teams = new Map([[11, { id: 11, name: 'Home V' }], [12, { id: 12, name: 'Away V' }]])
+    store.tables.players = new Map(Array.from({ length: count }, (_, i) => [300 + i, {
+      id: 300 + i, teamId: 11, number: i + 1, lastName: `P${i + 1}`, firstName: 'X',
+      isCaptain: i === 0, libero: i === count - 1 ? 'libero1' : i === count - 2 ? 'libero2' : ''
+    }]))
+    render(<Setup matchId={1} />)
+    await screen.findAllByText('Home V')
+    await waitFor(() => {
+      // the team card's heading (the match info card names the team too)
+      const heading = [...document.querySelectorAll('h1')].find((h) => h.textContent.includes('HOME V'))
+      expect(heading.parentElement.querySelector('[aria-label^="scoreboard."]').getAttribute('aria-label')).toBe(badge)
+    })
   })
 })

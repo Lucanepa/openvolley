@@ -188,6 +188,7 @@
     "invalidBirthdate": "Einige Spielende oder Offizielle haben ein ungültiges Geburtsdatum (01.01.1900). Bitte korrigieren.",
     "invalidJerseyNumbers": "Team {{team}} hat ungültige Trikotnummern (muss 1-99 sein): {{numbers}}",
     "playersWithoutNumbers": "Team {{team}} hat {{count}} Spielende ohne Trikotnummer",
+    "tooManyPlayers": "Team {{team}} hat mehr als {{max}} Spielende: {{count}}",
     "completeSignatures": "Bitte alle Unterschriften vor Bestätigung der Seitenwahl vervollständigen.",
     "noMatchId": "Fehler: Spiel-ID nicht gefunden. Bitte erneut versuchen.",
     "duplicateNumbersDetailed": "Team {{team}} hat doppelte Trikotnummern: #{{numbers}}\n\nBitte korrigieren Sie die doppelten Nummern, bevor Sie fortfahren.",
@@ -2282,7 +2283,9 @@
     "awayCoachMissing": "Gastteam: kein Trainer gesetzt",
     "selectGenderFirst": "Zuerst Geschlecht auswählen",
     "awayTwoLiberosRequired": "Gast: 2 Liberos nötig bei mehr als 12 Spielern",
-    "homeTwoLiberosRequired": "Heim: 2 Liberos nötig bei mehr als 12 Spielern"
+    "homeTwoLiberosRequired": "Heim: 2 Liberos nötig bei mehr als 12 Spielern",
+    "homeRosterTooMany": "Heim: höchstens {{max}} Spielende im Kader (jetzt {{count}})",
+    "awayRosterTooMany": "Gast: höchstens {{max}} Spielende im Kader (jetzt {{count}})"
   },
   "matchEnd": {
     "errorClosing": "Fehler beim Abschliessen des Spiels: ",

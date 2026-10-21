@@ -8,6 +8,7 @@ import { apiFrom } from '../lib/apiClient'
 import SignaturePad from './SignaturePad'
 import { saveMatchSignature } from '../utils/saveSignature'
 import { phoneSignContext, signatureSource, signatureUpdate, SLOT_OF_ROLE, PRE_MATCH_SIGNATURE_FIELD as SIGNATURE_FIELD_OF_ROLE } from '../domain/phoneSignature'
+import { ROSTER_MAX } from '../domain/playerPool'
 import Modal from './Modal'
 import MenuList from './MenuList'
 import ballFallback from '../ball_fallback.png'
@@ -1267,6 +1268,14 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
       }
       if (awayNonLiberoWithNumbers.length < 6) {
         validationErrors.push(`Away team needs at least 6 players with numbers (not liberos). Currently: ${awayNonLiberoWithNumbers.length}`)
+      }
+
+      // 4a. At most 14 players on the scoresheet (FIVB 4.1.1)
+      if (homeRoster.length > ROSTER_MAX) {
+        validationErrors.push(t('validation.tooManyPlayers', { team: t('common.home'), max: ROSTER_MAX, count: homeRoster.length }))
+      }
+      if (awayRoster.length > ROSTER_MAX) {
+        validationErrors.push(t('validation.tooManyPlayers', { team: t('common.away'), max: ROSTER_MAX, count: awayRoster.length }))
       }
 
       // 4b. Check ALL players have jersey numbers (including liberos)
