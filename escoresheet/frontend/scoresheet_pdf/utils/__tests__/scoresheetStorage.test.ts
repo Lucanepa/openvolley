@@ -5,6 +5,10 @@ import {
 } from '../scoresheetStorage'
 
 describe('finalScoresheetPath / finalScoresheetUrl', () => {
+  it('an approved match opens too: approval uploads the _final JSON before the row says approved', () => {
+    expect(finalScoresheetUrl({ status: 'approved', game_n: 406970, scheduled_at: '2026-10-20T18:00:00+00:00' }))
+      .toBe('/scoresheet/?date=2026-10-20&game=406970')
+  })
   it('older key-less name ({UTC date}/game{n}_final.json)', () => {
     expect(finalScoresheetPath('2026-10-05', 991404)).toBe('2026-10-05/game991404_final.json')
   })
@@ -19,6 +23,8 @@ describe('finalScoresheetPath / finalScoresheetUrl', () => {
 
   it('no link for a match that is not final or cannot be located', () => {
     expect(finalScoresheetUrl({ status: 'live', game_n: 1, scheduled_at: '2026-10-05T18:00:00Z' })).toBe(null)
+    expect(finalScoresheetUrl({ status: 'ended', game_n: 1, scheduled_at: '2026-10-05T18:00:00Z' })).toBe(null)
+    expect(finalScoresheetUrl({ status: 'setup', game_n: 1, scheduled_at: '2026-10-05T18:00:00Z' })).toBe(null)
     expect(finalScoresheetUrl({ status: 'final', game_n: null, scheduled_at: '2026-10-05T18:00:00Z' })).toBe(null)
     expect(finalScoresheetUrl({ status: 'final', game_n: null, external_id: '', scheduled_at: '2026-10-05T18:00:00Z' })).toBe(null)
     expect(finalScoresheetUrl({ status: 'final', game_n: 1, scheduled_at: null })).toBe(null)
