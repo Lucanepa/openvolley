@@ -88,12 +88,14 @@
       "websocket": "WebSocket-Server",
       "supabase": "Cloud-Datebank",
       "matchData": "Spiildate i de Cloud",
-      "devices": "Verbundeni Grät"
+      "devices": "Verbundeni Grät",
+      "offlineNotChecked": "Offline-Modus: nöd prüeft"
     },
     "runningChecks": "Verbindig wird prüeft...",
     "checksIssues": "Es paar Prüefige händ Problem gmeldet",
     "checksWarnings": "Prüefige mit Warnige abgschlosse",
     "checksOk": "Alli Prüefige bestande",
+    "checksOffline": "Offline-Modus: d Cloud isch nöd prüeft worde",
     "connectionChecks": "Verbindigsprüefig",
     "proceedAnyway": "Glich wiitermache"
   },

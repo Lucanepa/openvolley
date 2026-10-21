@@ -88,12 +88,14 @@
       "websocket": "WebSocket server",
       "supabase": "Cloud database",
       "matchData": "Match data in cloud",
-      "devices": "Connected devices"
+      "devices": "Connected devices",
+      "offlineNotChecked": "Offline mode: not checked"
     },
     "runningChecks": "Running connection checks...",
     "checksIssues": "Some checks reported issues",
     "checksWarnings": "Checks completed with warnings",
     "checksOk": "All checks passed",
+    "checksOffline": "Offline mode: the cloud was not checked",
     "connectionChecks": "Connection checks",
     "proceedAnyway": "Proceed anyway"
   },

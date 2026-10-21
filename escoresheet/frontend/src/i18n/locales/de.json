@@ -72,12 +72,14 @@
       "websocket": "WebSocket-Server",
       "supabase": "Cloud-Datenbank",
       "matchData": "Spieldaten in der Cloud",
-      "devices": "Verbundene Geräte"
+      "devices": "Verbundene Geräte",
+      "offlineNotChecked": "Offline-Modus: nicht geprüft"
     },
     "runningChecks": "Verbindung wird geprüft...",
     "checksIssues": "Einige Prüfungen haben Probleme gemeldet",
     "checksWarnings": "Prüfungen mit Warnungen abgeschlossen",
     "checksOk": "Alle Prüfungen bestanden",
+    "checksOffline": "Offline-Modus: die Cloud wurde nicht geprüft",
     "connectionChecks": "Verbindungsprüfung",
     "proceedAnyway": "Trotzdem fortfahren",
     "syncingMatch": "Spieldaten werden synchronisiert...",
