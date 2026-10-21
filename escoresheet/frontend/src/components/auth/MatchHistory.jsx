@@ -40,6 +40,25 @@ export function matchStatusPill(status) {
   }
 }
 
+/**
+ * Role chip of a My matches row. The user_matches role is 'scorer' or an
+ * official's own role string (utils/syncIds userMatchRoles: '1st referee',
+ * 'assistant scorer', 'line judge 1', ...): each to its locale key, as the
+ * raw string fell through untranslated.
+ * @returns {{ key: string, fallback: string }}
+ */
+export function matchRoleLabel(role) {
+  const r = String(role || 'scorer').trim().toLowerCase().replace(/_/g, ' ')
+  const lineJudge = /^line judge ([1-4])$/.exec(r)
+  if (lineJudge) return { key: `matchSetup.lineJudge${lineJudge[1]}`, fallback: `Line judge ${lineJudge[1]}` }
+  switch (r) {
+    case '1st referee': return { key: 'matchEnd.referee1', fallback: '1st referee' }
+    case '2nd referee': return { key: 'matchEnd.referee2', fallback: '2nd referee' }
+    case 'assistant scorer': return { key: 'matchEnd.assistantScorer', fallback: 'Assistant scorer' }
+    default: return { key: `access.roles.${r}`, fallback: r }
+  }
+}
+
 /** '3-0' / '2:3' -> { home: 3, away: 0 }; null for anything else. */
 export function parseSetsWon(finalScore) {
   const m = /^\s*(\d+)\s*[-:–]\s*(\d+)\s*$/.exec(String(finalScore ?? ''))
@@ -199,6 +218,7 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
               {matches.map((match, index) => {
                 const openable = canOpen(match)
                 const pill = match.status ? matchStatusPill(match.status) : null
+                const roleLabel = matchRoleLabel(match.userRole)
                 const sets = parseSetsWon(match.final_score)
                 const winner = sets ? (sets.home > sets.away ? 'home' : sets.away > sets.home ? 'away' : null) : null
                 return (
@@ -256,7 +276,7 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
                         {formatDate(match.scheduled_at || match.created_at)}
                       </span>
                       <span className="inline-flex items-center whitespace-nowrap rounded border border-stone-200 bg-stone-50 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-stone-600" data-testid="match-history-role">
-                        {t(`access.roles.${match.userRole || 'scorer'}`, match.userRole || 'scorer')}
+                        {t(roleLabel.key, roleLabel.fallback)}
                       </span>
                       {pill && (
                         <span className={cn('inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium leading-none', pill.className)}>
