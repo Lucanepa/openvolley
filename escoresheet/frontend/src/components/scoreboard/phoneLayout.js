@@ -172,6 +172,14 @@ const isSubEvent = (event) => {
 
 const eventTime = (event) => (typeof event.ts === 'number' ? event.ts : new Date(event.ts).getTime())
 
+/** An event's local time as HH:MM (the log's lines), null without a usable ts. */
+export function clockTime(event) {
+  if (event?.ts === undefined || event?.ts === null || event?.ts === '') return null
+  const d = new Date(eventTime(event))
+  if (Number.isNaN(d.getTime())) return null
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
 /**
  * The newest `count` actions of the current set, newest first, as the
  * scoring screen's "Last action" line picks them: main events only (no N.1
@@ -181,7 +189,7 @@ const eventTime = (event) => (typeof event.ts === 'number' ? event.ts : new Date
  * @param {number} setIndex the current set
  * @param {(event: object) => string|null} describe the screen's getActionDescription
  * @param {number} [count]
- * @returns {Array<{ id: any, seq: number, text: string }>}
+ * @returns {Array<{ id: any, seq: number, text: string, time: string|null }>} time: HH:MM
  */
 export function recentActions(events, setIndex, describe, count = 3) {
   if (!Array.isArray(events) || !setIndex) return []
@@ -201,7 +209,7 @@ export function recentActions(events, setIndex, describe, count = 3) {
     if (e.type === 'lineup' && e.payload?.isInitial !== true && e.payload?.fromSubstitution !== true) continue
     const text = describe(e)
     if (!text || text === 'Unknown action') continue
-    out.push({ id: e.id ?? `${e.type}-${e.seq}`, seq: e.seq, text })
+    out.push({ id: e.id ?? `${e.type}-${e.seq}`, seq: e.seq, text, time: clockTime(e) })
   }
   return out
 }

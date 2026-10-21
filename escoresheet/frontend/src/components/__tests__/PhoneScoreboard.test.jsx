@@ -137,7 +137,9 @@ describe('Scoreboard: the phone layout', () => {
     expect(view.getByTestId('phone-serve-pill').getAttribute('aria-label')).toBe('Serve #1')
     // the last actions: the newest point first, the teams as their letters
     // (a team name pushed the rest of the line out, 2026-10-20)
-    expect(view.getByTestId('phone-recent').firstChild.textContent).toBe('Point B · Set 1 · A 1:1 B')
+    // each line: its time (HH:MM), then the action
+    expect(view.getByTestId('phone-recent').firstChild.textContent).toMatch(/^\d\d:\d\dPoint B · Set 1 · A 1:1 B$/)
+    expect(within(view.getByTestId('phone-recent').firstChild).getByTestId('phone-recent-time').textContent).toMatch(/^\d\d:\d\d$/)
     expect(view.getByTestId('phone-recent').textContent).not.toMatch(/Away VC|Home VC/)
     await settle()
 
@@ -211,7 +213,8 @@ describe('Scoreboard: the phone layout', () => {
   // 2026-10-20: the phone court showed the libero in the team colour, like
   // any player (the desktop court's disc paint was never used there); then
   // as a filled disc, which the owner found too heavy: now a plain number in
-  // the libero's colour with a small L at its foot
+  // the libero's colour with a small L at its foot; 2026-10-21: the L at the
+  // top left, the player the libero replaced at the foot (as a substitute's)
   it("shows the libero on court in its own colour, marked L", async () => {
     setViewport(390, 844)
     const matchId = await setUpMatch()
@@ -224,8 +227,10 @@ describe('Scoreboard: the phone layout', () => {
     mount(matchId)
     await waitFor(() => expect(phone()).toBeTruthy(), { timeout: 10000 })
     const number = await waitFor(() => within(phone()).getByTestId('phone-libero-right'))
-    expect(number.textContent).toBe('8L')
+    expect(number.textContent).toBe('8L5')
     expect(within(number).getByTestId('phone-mark-libero').textContent).toBe('L')
+    expect(within(number).getByTestId('phone-mark-libero').style.right).toBe('100%')
+    expect(within(number).getByTestId('phone-mark-replaced').textContent).toBe('5')
     // no disc any more
     expect(number.style.background).toBe('')
     // not the team's blue: the libero's own shirt, picked against both teams

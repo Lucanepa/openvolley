@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { COURT_CELLS, PHONE_COURT_MIN_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, POSITIONS, PHONE_COUNTER_HEIGHT_PX, PHONE_RECENT_HEIGHT_PX, PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, recentLinesFor, isPhoneScreen, officialRoleShort, phoneHeldSideways, phoneLayoutActive, phoneLayoutKept, recentActions, tintOf } from '../phoneLayout'
+import { COURT_CELLS, clockTime, PHONE_COURT_MIN_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, POSITIONS, PHONE_COUNTER_HEIGHT_PX, PHONE_RECENT_HEIGHT_PX, PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, recentLinesFor, isPhoneScreen, officialRoleShort, phoneHeldSideways, phoneLayoutActive, phoneLayoutKept, recentActions, tintOf } from '../phoneLayout'
 
 describe('detectDisplayMode (the automatic display mode)', () => {
   it.each([[390, 844], [360, 740], [412, 915], [599, 1000]])('a %ix%i portrait phone gets the phone layout', (w, h) => {
@@ -140,6 +140,14 @@ describe('recentActions', () => {
     ]
     expect(recentActions(events, 2, describe_).map(r => r.text)).toEqual(['substitution 9', 'timeout 5', 'point 4'])
     expect(recentActions(events, 2, describe_, 5).map(r => r.text)).toEqual(['substitution 9', 'timeout 5', 'point 4', 'lineup 2'])
+  })
+
+  it('each line has its local time, HH:MM', () => {
+    const at = new Date(2026, 9, 20, 19, 5).toISOString()
+    expect(recentActions([{ id: 1, seq: 1, type: 'point', payload: {}, setIndex: 1, ts: at }], 1, describe_)[0].time).toBe('19:05')
+    expect(clockTime({ ts: new Date(2026, 9, 20, 9, 7).getTime() })).toBe('09:07')
+    expect(clockTime({ ts: 'not a date' })).toBeNull()
+    expect(clockTime({})).toBeNull()
   })
 
   it('nothing to show', () => {

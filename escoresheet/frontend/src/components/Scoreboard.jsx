@@ -12806,14 +12806,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const bench = isLeft ? leftTeamBench : rightTeamBench
       const teamPlayers = (teamKey === 'home' ? data?.homePlayers : data?.awayPlayers) || []
       // Marks as on the desktop court: captain (team captain, or the acting
-      // game captain) and the player a substitute came in for
+      // game captain) and the player a substitute or the libero came in for
       const replacements = isLeft ? leftTeamActiveReplacements : rightTeamActiveReplacements
       const court = (team.playersOnCourt || []).map(pl => ({
         position: pl.position,
         number: pl.isPlaceholder ? '' : pl.number,
         isLibero: !!pl.isLibero,
         isCaptain: !pl.isPlaceholder && !!(pl.isCaptain || pl.isCourtCaptain),
-        replaced: pl.isPlaceholder || pl.isLibero ? null : resolveReplacementNumber(pl, replacements)
+        replaced: pl.isPlaceholder ? null : (pl.isLibero ? (pl.substitutedPlayerNumber ?? null) : resolveReplacementNumber(pl, replacements))
       }))
       const allLiberos = teamPlayers.filter(p => p.libero && p.libero !== '')
       const liberos = allLiberos
