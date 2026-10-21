@@ -237,9 +237,11 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   // ---- team actions -------------------------------------------------------
   // As the desktop counters: open between rallies, also while a time-out or
   // the interval runs (a consecutive time-out, a substitution right after a
-  // time-out); greyed once used up
-  const toDisabled = (team) => !idle || team.timeouts >= limits.timeouts
-  const subDisabled = (team) => !idle || team.subs >= limits.subs || !team.lineupSet
+  // time-out), and also with all used (the count reads red): a further
+  // request is an improper request (FIVB 15.11.1.4, 16.1.3), which the
+  // scoreboard's handlers record
+  const toDisabled = () => !idle
+  const subDisabled = (team) => !idle || !team.lineupSet
   // Only the count taken, as the desktop counters: red once the last one is
   // taken, amber at the substitution before the last (the 5th of 6)
   const countState = (taken, max, { warnBefore = false } = {}) => {
@@ -757,7 +759,8 @@ function LiberoColumn({ team, ink, title, actions, onDone }) {
         >
           <span style={{ fontSize: 15, fontWeight: 800 }}>{l.number}</span>
           <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ov-text-muted)' }}>
-            {l.libero === 'libero1' ? 'L1' : l.libero === 'redesignated' ? 'LR' : 'L2'}
+            {/* a libero declared unable keeps libero 'unable' (re-designation) */}
+            {l.libero === 'libero1' ? 'L1' : l.libero === 'libero2' ? 'L2' : l.libero === 'redesignated' ? 'LR' : l.libero === 'unable' ? t('scoreboard.reopenRoster.liberoUnable') : 'L'}
             {l.onCourt ? ` · ${t('scoreboard.phone.onCourt')}` : ''}
           </span>
         </button>
