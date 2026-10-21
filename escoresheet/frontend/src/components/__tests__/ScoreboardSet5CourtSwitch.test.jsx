@@ -86,8 +86,9 @@ const decisionOpen = () => document.body.textContent.includes('Replay the rally'
 // Team A (home) is on the left before the change of courts, on the right
 // after (the left team column comes first)
 const teamAOnLeft = () => {
+  // the team's own short names (teams.shortName), HOM and AWY
   const text = document.body.textContent
-  return text.indexOf('A-HOM') < text.indexOf('B-AWA')
+  return text.indexOf('A-HOM') < text.indexOf('B-AWY')
 }
 
 // A best-of-5 match at 2:2 in sets, set 5 under way at the score the `points`

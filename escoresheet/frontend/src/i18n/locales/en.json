@@ -538,8 +538,6 @@
         "none": "None",
         "player": "Game captain: player {{number}}",
         "enterFirst": "Choose once the players are entered",
-        "noCaptain": "No team captain on the roster",
-        "whenCaptainLeaves": "Takes over when captain {{captain}} leaves the court",
         "fromFirstRally": "Captain {{captain}} is not in the line-up: game captain from the first rally"
       },
       "easyLiberos": "Liberos (optional)",
@@ -895,8 +893,12 @@
     "phone": {
       "setInfo": "Set {{set}} · sets {{left}} : {{right}}",
       "setsWon": "Sets won: {{count}}",
+      "serveNumber": "Serve #{{number}}",
       "timeOut": "Time-out",
       "courtPlayer": "Player {{number}}, team {{team}}",
+      "markCaptain": "captain",
+      "markLibero": "libero",
+      "markReplaced": "in for {{number}}",
       "score": "Score",
       "court": "Court",
       "recentActions": "Last actions",
@@ -908,7 +910,7 @@
       "interval": "Interval between sets",
       "libero": "Libero",
       "replay": "Replay",
-      "decision": "Decision",
+      "decision": "Decision change",
       "remarks": "Remarks",
       "scoresheet": "Score\u00adsheet",
       "subTitle": "Substitution {{team}}",
@@ -3575,6 +3577,7 @@
     },
     "describe": {
       "point": "Point for {{team}}",
+      "pointShort": "Point {{team}}",
       "subInFor": "#{{in}} in for #{{out}}",
       "pointTo": "+1 point to {{team}}",
       "startingLineup": "Starting line-up",

@@ -74,6 +74,8 @@ const button = (text) => [...document.querySelectorAll('button')].find(b => b.te
 const events = async () => (await db.events.toArray()).sort((a, b) => a.seq - b.seq)
 const ofType = async (type) => (await events()).filter(e => e.type === type)
 const phone = () => screen.queryByTestId('phone-scoreboard')
+// A time-out / substitution counter's number (its last line)
+const count = (testId) => screen.getByTestId(testId).lastChild.textContent
 
 // Set 1 under way at 1:1, team A (home) on the left, both line-ups entered,
 // the home team with players 1-8 on its roster and the away team too
@@ -129,8 +131,14 @@ describe('Scoreboard: the phone layout', () => {
     // the ball next to the server: B won the last rally (right)
     expect(within(view.getByTestId('phone-court-right')).getByTestId('phone-serve-ball')).toBeTruthy()
     expect(within(view.getByTestId('phone-court-left')).queryByTestId('phone-serve-ball')).toBeNull()
-    // the last actions: the newest point first
-    expect(view.getByTestId('phone-recent').textContent).toMatch(/Away VC/)
+    // the serve pill names the server: B's player in position I
+    expect(view.getAllByTestId('phone-server-number')).toHaveLength(1)
+    expect(view.getByTestId('phone-server-number').textContent).toBe('#1')
+    expect(view.getByTestId('phone-serve-pill').getAttribute('aria-label')).toBe('Serve #1')
+    // the last actions: the newest point first, the teams as their letters
+    // (a team name pushed the rest of the line out, 2026-10-20)
+    expect(view.getByTestId('phone-recent').firstChild.textContent).toBe('Point B · Set 1 · A 1:1 B')
+    expect(view.getByTestId('phone-recent').textContent).not.toMatch(/Away VC|Home VC/)
     await settle()
 
     // ---- rally: Start rally, then the point buttons (as the desktop) ----
@@ -140,12 +148,16 @@ describe('Scoreboard: the phone layout', () => {
     await settle()
     // square, as wide as their column; lower (not narrower) on a short screen (styles.css)
     expect(view.getByRole('button', { name: 'Point A' }).classList.contains('phone-square')).toBe(true)
+    // "Point A", no "+1"
+    expect(view.getByRole('button', { name: 'Point A' }).textContent).toBe('Point A')
     expect(view.getByRole('button', { name: 'Point B' }).classList.contains('phone-square')).toBe(true)
     fireEvent.click(view.getByRole('button', { name: 'Point A' }))
     await waitFor(async () => expect((await ofType('point')).length).toBe(3))
     const lastPoint = (await ofType('point')).at(-1)
     expect(lastPoint.payload.team).toBe('home')
     await waitFor(() => expect(view.getByTestId('phone-score-left').textContent).toBe('2'))
+    // side-out: A rotates, its new server is the player from position II
+    await waitFor(() => expect(view.getByTestId('phone-server-number').textContent).toBe('#2'))
     await waitFor(() => expect(view.getByRole('button', { name: 'Start rally' })).toBeTruthy())
     await settle()
 
@@ -157,7 +169,8 @@ describe('Scoreboard: the phone layout', () => {
     await waitFor(async () => expect((await ofType('timeout')).length).toBe(1))
     expect((await ofType('timeout'))[0].payload.team).toBe('home')
     await waitFor(() => expect(view.getByTestId('phone-countdown')).toBeTruthy())
-    expect(view.getByTestId('phone-timeout-left').textContent).toMatch('1/2')
+    // only the count taken, no "/2"
+    expect(count('phone-timeout-left')).toBe('1')
     // as on the desktop, the counters stay open while the time-out runs
     // (a consecutive time-out, a substitution right after it)
     expect(view.getByTestId('phone-timeout-right').disabled).toBe(false)
@@ -183,7 +196,7 @@ describe('Scoreboard: the phone layout', () => {
     expect(sub.team).toBe('away')
     expect(String(sub.playerOut)).toBe('3')
     expect(String(sub.playerIn)).toBe('7')
-    await waitFor(() => expect(view.getByTestId('phone-sub-right').textContent).toMatch('1/6'))
+    await waitFor(() => expect(count('phone-sub-right')).toBe('1'))
     await settle()
 
     // ---- undo: the screen's undo confirmation takes the substitution back ----
@@ -192,12 +205,14 @@ describe('Scoreboard: the phone layout', () => {
     await settle()
     fireEvent.click(button('Yes'))
     await waitFor(async () => expect((await ofType('substitution')).length).toBe(0))
-    await waitFor(() => expect(view.getByTestId('phone-sub-right').textContent).toMatch('0/6'))
+    await waitFor(() => expect(count('phone-sub-right')).toBe('0'))
   }, 60000)
 
   // 2026-10-20: the phone court showed the libero in the team colour, like
-  // any player (the desktop court's disc paint was never used there)
-  it("shows the libero on court in its own shirt colour", async () => {
+  // any player (the desktop court's disc paint was never used there); then
+  // as a filled disc, which the owner found too heavy: now a plain number in
+  // the libero's colour with a small L at its foot
+  it("shows the libero on court in its own colour, marked L", async () => {
     setViewport(390, 844)
     const matchId = await setUpMatch()
     const away = (await db.matches.get(matchId)).awayTeamId
@@ -208,14 +223,71 @@ describe('Scoreboard: the phone layout', () => {
     await db.events.add({ matchId, setIndex: 1, type: 'lineup', payload: { team: 'away', lineup: { I: '1', II: '2', III: '3', IV: '4', V: '8', VI: '6' }, liberoSubstitution: { position: 'V', liberoNumber: 8, playerNumber: 5, liberoType: 'libero1' } }, seq: 20.1, ts: t })
     mount(matchId)
     await waitFor(() => expect(phone()).toBeTruthy(), { timeout: 10000 })
-    const disc = await waitFor(() => within(phone()).getByTestId('phone-libero-disc-right'))
-    expect(disc.textContent).toBe('8')
-    // not the team's blue: the libero's own shirt, picked against both teams and the court
-    const { liberoPair } = await import('../../utils/teamColours')
-    const hex = liberoPair('#dc2626', '#2563eb').away
+    const number = await waitFor(() => within(phone()).getByTestId('phone-libero-right'))
+    expect(number.textContent).toBe('8L')
+    expect(within(number).getByTestId('phone-mark-libero').textContent).toBe('L')
+    // no disc any more
+    expect(number.style.background).toBe('')
+    // not the team's blue: the libero's own shirt, picked against both teams
+    // and the court, shaded where it would not read on the court floor
+    const { liberoPair, teamTextPaint, COURT_SURFACE } = await import('../../utils/teamColours')
+    const hex = teamTextPaint(liberoPair('#dc2626', '#2563eb').away, COURT_SURFACE).color
     const rgb = `rgb(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)})`
-    expect(disc.style.background).toBe(rgb)
-    expect(within(phone()).queryByTestId('phone-libero-disc-left')).toBeNull()
+    expect(number.style.color).toBe(rgb)
+    expect(within(phone()).queryByTestId('phone-libero-left')).toBeNull()
+  }, 60000)
+
+  // The paper sheet's marks on the phone court: the captain's number circled
+  // (team captain on court, or the acting game captain), the replaced player's
+  // number at a substitute's foot; the counters red at the limit, amber at
+  // the 5th substitution
+  it('marks the captain and the substitutes, and colours the counters near the limit', async () => {
+    setViewport(390, 844)
+    const matchId = await setUpMatch()
+    const match = await db.matches.get(matchId)
+    // home: player 2 is the team captain (on court); away: captain 9 on the bench, 4 acting
+    const cap = await db.players.where({ teamId: match.homeTeamId, number: 2 }).first()
+    await db.players.update(cap.id, { isCaptain: true })
+    const awayCap = await db.players.where({ teamId: match.awayTeamId, number: 9 }).first()
+    await db.players.update(awayCap.id, { isCaptain: true })
+    await db.matches.update(matchId, { awayCourtCaptain: 4 })
+    const t = new Date(Date.now() - 20 * 60 * 1000).toISOString()
+    // home: five substitutions (#7 in for #3 among them), two time-outs
+    const subs = [[3, 7], [4, 8], [5, 9], [7, 3], [8, 4]]
+    let seq = 30
+    for (const [out, inn] of subs) {
+      await db.events.add({ matchId, setIndex: 1, type: 'substitution', payload: { team: 'home', playerOut: out, playerIn: inn, position: 'III' }, seq: seq++, ts: t })
+    }
+    await db.events.add({ matchId, setIndex: 1, type: 'lineup', payload: { team: 'home', lineup: { I: '1', II: '2', III: '3', IV: '4', V: '9', VI: '6' }, fromSubstitution: true }, seq: seq++, ts: t })
+    for (let i = 0; i < 2; i++) await db.events.add({ matchId, setIndex: 1, type: 'timeout', payload: { team: 'home' }, seq: seq++, ts: t })
+    mount(matchId)
+    await waitFor(() => expect(phone()).toBeTruthy(), { timeout: 10000 })
+    const left = within(phone()).getByTestId('phone-court-left')
+    const right = within(phone()).getByTestId('phone-court-right')
+    // the team captain on court: a thin ring in the number's colour, no "C"
+    await waitFor(() => expect(within(left).getAllByTestId('phone-mark-captain')).toHaveLength(1))
+    const ring = within(left).getByTestId('phone-mark-captain')
+    expect(ring.parentElement.firstChild.textContent).toBe('2')
+    expect(ring.textContent).toBe('')
+    expect(ring.style.borderStyle).toBe('solid')
+    expect(ring.style.borderWidth).toBe('2px')
+    expect(ring.style.borderColor).toBe(ring.parentElement.style.color)
+    expect(ring.style.background).toBe('')
+    expect(left.querySelector('[data-court-cell="II"]').getAttribute('aria-label')).toMatch(/captain/)
+    // #9 came in for #5 (#3 and #4 came back): only that one is marked
+    const replaced = within(left).getAllByTestId('phone-mark-replaced')
+    expect(replaced).toHaveLength(1)
+    expect(replaced[0].textContent).toBe('5')
+    expect(replaced[0].parentElement.firstChild.textContent).toBe('9')
+    expect(left.querySelector('[data-court-cell="V"]').getAttribute('aria-label')).toMatch(/in for 5/)
+    // the acting game captain of the other team
+    expect(within(right).getByTestId('phone-mark-captain').parentElement.firstChild.textContent).toBe('4')
+    // counters: only the number; red at 2 time-outs, amber at the 5th substitution
+    expect(count('phone-timeout-left')).toBe('2')
+    expect(screen.getByTestId('phone-timeout-left').lastChild.dataset.countState).toBe('max')
+    expect(count('phone-sub-left')).toBe('5')
+    expect(screen.getByTestId('phone-sub-left').lastChild.dataset.countState).toBe('warn')
+    expect(screen.getByTestId('phone-timeout-right').lastChild.dataset.countState).toBeUndefined()
   }, 60000)
 
   // An easy match plays without line-ups when it likes (domain/easyMatch.js)

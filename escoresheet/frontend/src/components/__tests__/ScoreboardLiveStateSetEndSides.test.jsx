@@ -86,8 +86,9 @@ const settle = () => new Promise(r => setTimeout(r, GHOST_CLICK_MS + 150))
 const button = (text) => [...document.querySelectorAll('button')].find(b => b.textContent.trim() === text && !b.disabled)
 // Team A (home) on the left: the left team column comes first
 const teamAOnLeft = () => {
+  // the team's own short names (teams.shortName), HOM and AWY
   const text = document.body.textContent
-  return text.indexOf('A-HOM') < text.indexOf('B-AWA')
+  return text.indexOf('A-HOM') < text.indexOf('B-AWY')
 }
 
 // A best-of-5 match, team A home. `won` the finished sets' winners, the

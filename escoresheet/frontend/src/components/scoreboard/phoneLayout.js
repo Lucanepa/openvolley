@@ -15,14 +15,45 @@ export const PHONE_MAX_WIDTH = 600
 // PHONE_SQUARE_MIN_PX, then the court gets lower down to PHONE_COURT_MIN_PX,
 // and only then the view scrolls.
 
-/** The last actions keep one height whatever they show: three 15px lines, two 3px gaps, 6px padding top and bottom. */
+/**
+ * The last actions at their lowest: three 15px lines, two 3px gaps, 6px
+ * padding top and bottom. They take the height left over (the screen is
+ * filled), showing as many whole lines as fit, up to PHONE_RECENT_MAX_LINES.
+ */
 export const PHONE_RECENT_HEIGHT_PX = 63
 /**
- * Everything but the court and the point buttons, top to bottom: header 52,
- * score cards 89, court padding 10, last actions 63 + 12, team actions at
- * their smallest 56 + 8, point-button padding 8, action grid 108.
+ * Lower still (two lines) only where the rest is taller than the height
+ * budget counts: Android's larger text (font scale 1.3 on a 360px phone made
+ * the counters' labels take two lines and the view scrolled).
  */
-export const PHONE_SQUARE_RESERVE_PX = 52 + 89 + 10 + PHONE_RECENT_HEIGHT_PX + 12 + 64 + 8 + 108
+export const PHONE_RECENT_MIN_PX = 45
+/** One line of the last actions with the gap before it (15 + 3). */
+export const PHONE_RECENT_LINE_PX = 18
+/** The most last actions the phone shows. */
+export const PHONE_RECENT_MAX_LINES = 8
+/**
+ * How many whole lines of last actions a box of `height` px shows (6px
+ * padding top and bottom), at least 1, at most PHONE_RECENT_MAX_LINES.
+ */
+export function recentLinesFor(height) {
+  const h = Number(height) || 0
+  const lines = Math.floor((h - 12 + 3) / PHONE_RECENT_LINE_PX)
+  return Math.max(1, Math.min(PHONE_RECENT_MAX_LINES, lines))
+}
+/**
+ * The time-out and substitution counters: this high (no longer growing into
+ * the height left over, which made them about 280px tall on a 412x915
+ * phone, 2026-10-20); taller only when Android's larger text needs it.
+ */
+export const PHONE_COUNTER_HEIGHT_PX = 56
+/**
+ * Everything but the court and the point buttons, top to bottom: header 52,
+ * score cards 89, court padding 10, last actions at their lowest 63 + 12,
+ * team actions 56 + 8, 8 more the court takes beyond its height (its 2px
+ * border and rounding; measured at 360x640), point-button padding 8, action
+ * grid 108.
+ */
+export const PHONE_SQUARE_RESERVE_PX = 52 + 89 + 10 + PHONE_RECENT_HEIGHT_PX + 12 + PHONE_COUNTER_HEIGHT_PX + 8 + 8 + 8 + 108
 /** Below this height the point buttons stop getting lower. */
 export const PHONE_SQUARE_MIN_PX = 56
 /** Below this height the court stops getting lower (three rows of shirt numbers still fit). */
@@ -93,6 +124,30 @@ export function phoneLayoutKept(displayMode, size, screenSize) {
  */
 export function phoneHeldSideways(displayMode, size, screenSize) {
   return !phoneLayoutActive(displayMode, size) && phoneLayoutKept(displayMode, size, screenSize)
+}
+
+/**
+ * Screens smaller than this (CSS px, short side x long side) get the scoring
+ * screen's court-anchored dialogs and menus centred: phones either way
+ * round, and small tablets (an 8" tablet held sideways is 962x601). A 10"
+ * tablet (1280x800) and a laptop, even in a short browser window
+ * (1366x650), keep them next to the tapped player.
+ */
+export const CENTRED_DIALOGS_BELOW = { short: 700, long: 1100 }
+
+/**
+ * True when the scoring screen centres its court-anchored dialogs and menus
+ * (player, substitution, libero and sanction menus, the libero dialogs):
+ * always in the phone layout, and on any screen smaller than
+ * CENTRED_DIALOGS_BELOW.
+ * @param {{ phoneView?: boolean, width: number, height: number }} opts
+ */
+export function dialogsCentred({ phoneView = false, width, height }) {
+  if (phoneView) return true
+  const w = Number(width) || 0
+  const h = Number(height) || 0
+  if (!w || !h) return false
+  return Math.min(w, h) < CENTRED_DIALOGS_BELOW.short && Math.max(w, h) < CENTRED_DIALOGS_BELOW.long
 }
 
 /**

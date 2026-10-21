@@ -29,6 +29,7 @@ import { phoneSignContext, signatureUpdate } from '../domain/phoneSignature'
 import LongPressProgressIndicator from './LongPressProgressIndicator'
 import DraggedPlayerOverlay from './DraggedPlayerOverlay'
 import { setPlayerDragImage } from '../utils/dragImage'
+import { teamShortLabels } from '../utils/teamShortLabels'
 import ballFallback from '../ball_fallback.png'
 
 // Primary ball image (with a bundled copy as fallback)
@@ -76,7 +77,7 @@ import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
 import { isNativeApp } from '../utils/backendConfig'
 import PhoneScoreboard from './scoreboard/PhoneScoreboard.jsx'
-import { detectDisplayMode, isPhoneScreen, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
+import { PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, isPhoneScreen, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
 import { WarningIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon } from './icons'
 import { cn } from '../ui/cn.js'
@@ -162,6 +163,21 @@ const SB_ROW_DELETE = `inline-flex items-center justify-center h-11 min-w-[64px]
 /** Anchored action menu / dropdown beside a player (kit anchored menu). The
  *  scale(1.5) and the position stay inline, so targets keep their size. */
 const SB_POPOVER = 'rounded-xl border border-stone-200 bg-white shadow-card-lg text-stone-800'
+
+// A court-anchored dialog drawn centred (phone, small tablet: centreDialogs):
+// the overlay centres it, the panel stays inside the screen and scrolls
+const CENTRED_OVERLAY = { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }
+const centredPanel = (maxWidth) => ({
+  position: 'relative',
+  top: 'auto',
+  left: 'auto',
+  boxSizing: 'border-box',
+  padding: '20px',
+  minWidth: 'min(320px, 100%)',
+  maxWidth: `min(${maxWidth}, 100%)`,
+  maxHeight: '100%',
+  overflowY: 'auto'
+})
 
 /**
  * One button spec for every row of the player / libero / official popovers
@@ -1027,6 +1043,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // it upright, rather than falling back to the landscape layout.
   const isPhoneSideways = phoneHeldSideways(displayMode, { width: viewportWidth, height: viewportHeight })
   const isPhoneView = activeDisplayMode === 'phone' || isPhoneSideways
+  // Phones and small tablets get the court-anchored dialogs and menus centred
+  // (styles.css .centre-dialogs; the libero dialogs below): anchored next to
+  // the court side, they ran off the screen there. A large screen keeps them
+  // next to the tapped player.
+  const centreDialogs = dialogsCentred({ phoneView: isPhoneView, width: viewportWidth, height: viewportHeight })
 
   // Update current datetime every second for fullscreen header display
   useEffect(() => {
@@ -6546,6 +6567,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (event.type === 'set_start') return t('corrections.describe.setStart', 'Set start')
     return null
   }, [data, t])
+
+  // The scoring screen's last actions: one line, so the teams are their
+  // letters ("Point B · Set 1 · A 5:11 B"), never their names, which pushed
+  // the rest of the line out on a phone (domain/describe.js, short form)
+  const getShortActionDescription = useCallback((event) => {
+    if (!event || !data) return 'Unknown action'
+    return describeEventText(event, data.events || [], { t, match: data.match, homeTeam: data.homeTeam, awayTeam: data.awayTeam, short: true }) || getActionDescription(event)
+  }, [data, t, getActionDescription])
 
   // Show undo confirmation
   const showUndoConfirm = useCallback(() => {
@@ -12606,12 +12635,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
   const teamALabel = leftTeam.isTeamA ? 'A' : 'B'
   const teamBLabel = rightTeam.isTeamA ? 'A' : 'B'
-  const teamAShortName = leftIsHome
-    ? (data?.match?.homeShortName || leftTeam.name?.substring(0, 3).toUpperCase() || 'A')
-    : (data?.match?.awayShortName || leftTeam.name?.substring(0, 3).toUpperCase() || 'A')
-  const teamBShortName = leftIsHome
-    ? (data?.match?.awayShortName || rightTeam.name?.substring(0, 3).toUpperCase() || 'B')
-    : (data?.match?.homeShortName || rightTeam.name?.substring(0, 3).toUpperCase() || 'B')
+  // The match's short name, else the team's, else one derived from the name
+  // without "VBC" / "VC" / ...; never the same for both teams
+  // (utils/teamShortLabels.js: the first 3 letters gave "VBC" to both teams of
+  // "VBC Einsiedeln D2 - VBC Rämi D1")
+  const [homeShortLabel, awayShortLabel] = teamShortLabels(
+    { shortName: data?.match?.homeShortName, teamShortName: data?.homeTeam?.shortName, name: data?.homeTeam?.name },
+    { shortName: data?.match?.awayShortName, teamShortName: data?.awayTeam?.shortName, name: data?.awayTeam?.name }
+  )
+  const teamAShortName = (leftIsHome ? homeShortLabel : awayShortLabel) || leftTeam.name || 'A'
+  const teamBShortName = (leftIsHome ? awayShortLabel : homeShortLabel) || rightTeam.name || 'B'
 
   // Help content function - deprecated, interactive help system replaces this
   const getHelpContent = () => {
@@ -12753,7 +12786,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const team = isLeft ? leftTeam : rightTeam
       const bench = isLeft ? leftTeamBench : rightTeamBench
       const teamPlayers = (teamKey === 'home' ? data?.homePlayers : data?.awayPlayers) || []
-      const court = (team.playersOnCourt || []).map(pl => ({ position: pl.position, number: pl.isPlaceholder ? '' : pl.number, isLibero: !!pl.isLibero }))
+      // Marks as on the desktop court: captain (team captain, or the acting
+      // game captain) and the player a substitute came in for
+      const replacements = isLeft ? leftTeamActiveReplacements : rightTeamActiveReplacements
+      const court = (team.playersOnCourt || []).map(pl => ({
+        position: pl.position,
+        number: pl.isPlaceholder ? '' : pl.number,
+        isLibero: !!pl.isLibero,
+        isCaptain: !pl.isPlaceholder && !!(pl.isCaptain || pl.isCourtCaptain),
+        replaced: pl.isPlaceholder || pl.isLibero ? null : resolveReplacementNumber(pl, replacements)
+      }))
       const allLiberos = teamPlayers.filter(p => p.libero && p.libero !== '')
       const liberos = allLiberos
         .slice()
@@ -12841,9 +12883,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         isRallyReplayed
       },
       centre,
-      recent: recentActions(data?.events, data?.set?.index, getActionDescription, 3),
+      recent: recentActions(data?.events, data?.set?.index, getShortActionDescription, PHONE_RECENT_MAX_LINES),
       canUndo,
       scoreFont: getScoreFont(),
+      limits: { timeouts: 2, subs: MAX_SUBSTITUTIONS_PER_SET },
       actions: {
         undo: showUndoConfirm,
         menu: () => setMenuModal(true),
@@ -12958,7 +13001,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }
 
   return (
-    <div className={isPhoneView ? 'match-record phone-layout' : 'match-record'}>
+    <div className={['match-record', isPhoneView && 'phone-layout', centreDialogs && 'centre-dialogs'].filter(Boolean).join(' ')}>
       {relayRejection && now - relayRejection.at < 45000 && (
         <div role="alert" className="no-print rounded-xl border border-red-200 bg-red-50 text-red-800 font-medium leading-snug shadow-lg" style={{
           position: 'fixed',
@@ -16672,7 +16715,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
                           if (!lastEvent) return null
 
-                          const description = getActionDescription(lastEvent)
+                          const description = getShortActionDescription(lastEvent)
 
                           return (
                             // One fixed line: a description that wrapped to two lines made the
@@ -21115,7 +21158,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const positionRef = isOnLeftSide ? leftCourtPositionVRef : rightCourtPositionIIRef
         const rect = positionRef.current?.getBoundingClientRect()
 
-        // Calculate modal position (top-left corner at the position box)
+        // Calculate modal position (top-left corner at the position box). On a
+        // phone or a small tablet (centreDialogs), and whenever that box is not
+        // on screen (the phone layout has no such court), it is centred
+        // instead: anchored, it ran off the right or the bottom edge
+        const centred = centreDialogs || !rect
         const modalTop = rect ? rect.top : (isOnLeftSide ? '50%' : '30%')
         const modalLeft = rect ? rect.left : (isOnLeftSide ? '10%' : '55%')
 
@@ -21128,7 +21175,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               right: 0,
               bottom: 0,
               background: 'rgba(0, 0, 0, 0.5)',
-              zIndex: 9999
+              zIndex: 9999,
+              ...(centred ? CENTRED_OVERLAY : null)
             }}
             {...backdropDismiss(cancelLiberoReentry)}
           >
@@ -21142,7 +21190,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 padding: '24px 32px',
                 minWidth: '320px',
                 maxWidth: '420px',
-                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)'
+                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+                ...(centred ? centredPanel('420px') : null)
               }}
               onClick={e => e.stopPropagation()}
             >
@@ -22480,7 +22529,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const positionRef = isOnLeftSide ? leftCourtPositionVRef : rightCourtPositionIIRef
         const rect = positionRef.current?.getBoundingClientRect()
 
-        // Calculate modal position (top-left corner at the position box)
+        // Calculate modal position (top-left corner at the position box). On a
+        // phone or a small tablet (centreDialogs), and whenever that box is not
+        // on screen (the phone layout has no such court), it is centred
+        // instead: anchored, it ran off the right or the bottom edge
+        const centred = centreDialogs || !rect
         const modalTop = rect ? rect.top : (isOnLeftSide ? '50%' : '30%')
         const modalLeft = rect ? rect.left : (isOnLeftSide ? '10%' : '55%')
 
@@ -22493,7 +22546,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               right: 0,
               bottom: 0,
               background: 'rgba(0, 0, 0, 0.5)',
-              zIndex: 9999
+              zIndex: 9999,
+              ...(centred ? CENTRED_OVERLAY : null)
             }}
             {...backdropDismiss(() => setLiberoRotationModal(null))}
           >
@@ -22507,7 +22561,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 padding: '24px 32px',
                 minWidth: '320px',
                 maxWidth: '400px',
-                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)'
+                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+                ...(centred ? centredPanel('400px') : null)
               }}
               onClick={e => e.stopPropagation()}
             >
@@ -23075,6 +23130,10 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
   // Optional game captain (FIVB 5.2), among the valid entries other than the
   // team captain. Opening on an existing line-up shows the current choice.
   // A choice whose player has left the six is simply not shown (nor saved).
+  // Only asked when the six are entered without the team captain: while the
+  // team captain is on court, the team captain is the game captain (FIVB
+  // 5.1.2), and the scoreboard asks for one when the captain leaves the court
+  // (checkAndRequestCaptainOnCourt, with "Manage captain on court" on)
   const [gameCaptainChoice, setGameCaptainChoice] = useState(() => (presetLineup
     ? initialGameCaptainChoice({ lineup, players, team, currentCourtCaptain: courtCaptain, rememberedCourtCaptain })
     : ''))
@@ -23082,15 +23141,13 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
     () => gameCaptainOptions({ lineup, players, events, team }),
     [lineup, players, events, team]
   )
-  const gameCaptain = gameCaptainChoices.includes(gameCaptainChoice) ? gameCaptainChoice : ''
   const captainStatus = lineupCaptainStatus({ lineup, players })
   const captainNumber = teamCaptainNumber(players)
-  const gameCaptainNote = (() => {
-    if (captainStatus === 'noCaptain') return t('scoreboard.lineupModal.gameCaptain.noCaptain', 'No team captain on the roster')
-    if (gameCaptainChoices.length === 0) return t('scoreboard.lineupModal.gameCaptain.enterFirst', 'Choose once the players are entered')
-    if (captainStatus === 'onCourt') return t('scoreboard.lineupModal.gameCaptain.whenCaptainLeaves', { captain: captainNumber, defaultValue: 'Takes over when captain {{captain}} leaves the court' })
-    return t('scoreboard.lineupModal.gameCaptain.fromFirstRally', { captain: captainNumber, defaultValue: 'Captain {{captain}} is not in the line-up: game captain from the first rally' })
-  })()
+  const askGameCaptain = !easy && captainStatus === 'offCourt' && lineup.every(v => String(v ?? '').trim() !== '')
+  const gameCaptain = askGameCaptain && gameCaptainChoices.includes(gameCaptainChoice) ? gameCaptainChoice : ''
+  const gameCaptainNote = gameCaptainChoices.length === 0
+    ? t('scoreboard.lineupModal.gameCaptain.enterFirst', 'Choose once the players are entered')
+    : t('scoreboard.lineupModal.gameCaptain.fromFirstRally', { captain: captainNumber, defaultValue: 'Captain {{captain}} is not in the line-up: game captain from the first rally' })
 
   const errorText = (code) => ({
     required: t('scoreboard.lineupModal.errors.required', 'Required'),
@@ -23468,9 +23525,10 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
             <div className="lineup-grid">
               {[0, 1, 2, 3, 4, 5].map(renderPosition)}
             </div>
-            {/* Optional game captain (FIVB 5.2): always rendered, fixed height
-                (not in an easy match: its teams have no captain) */}
-            {!easy && <div className="lineup-gcapt" role="group" aria-labelledby={`lineup-gcapt-${team}`} aria-describedby={`lineup-gcapt-note-${team}`}>
+            {/* Optional game captain (FIVB 5.2): only once the six are in
+                without the team captain (not in an easy match: its teams
+                have no captain) */}
+            {askGameCaptain && <div className="lineup-gcapt" role="group" aria-labelledby={`lineup-gcapt-${team}`} aria-describedby={`lineup-gcapt-note-${team}`}>
               <div className="lineup-gcapt__head">
                 <span className="lineup-gcapt__title" id={`lineup-gcapt-${team}`}>
                   {t('scoreboard.lineupModal.gameCaptain.title', 'Game captain')}
