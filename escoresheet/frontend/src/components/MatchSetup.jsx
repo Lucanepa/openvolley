@@ -4156,7 +4156,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div style={{ textAlign: 'center' }}>#</div>
             <div>{t('matchSetup.lastName')}</div>
             <div>{t('matchSetup.firstName')}</div>
-            <div>{t('matchSetup.dateOfBirth')}</div>
+            <div className="cell-dob">{t('matchSetup.dateOfBirth')}</div>
             <div style={{ textAlign: 'center' }}>{t('matchSetup.roleLibero')}</div>
             <div className="cell-captain">C</div>
             {lfpTrackingEnabled && <div style={{ textAlign: 'center' }}>LFP</div>}
@@ -4370,7 +4370,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div>{t('matchSetup.role')}</div>
             <div>{t('matchSetup.lastName')}</div>
             <div>{t('matchSetup.firstName')}</div>
-            <div>{t('matchSetup.dateOfBirth')}</div>
+            <div className="cell-dob">{t('matchSetup.dateOfBirth')}</div>
             <div></div>
           </div>
           {sortBenchByHierarchy(benchHome).map((m, i) => {
@@ -5316,7 +5316,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div style={{ textAlign: 'center' }}>#</div>
             <div>{t('matchSetup.lastName')}</div>
             <div>{t('matchSetup.firstName')}</div>
-            <div>{t('matchSetup.dateOfBirth')}</div>
+            <div className="cell-dob">{t('matchSetup.dateOfBirth')}</div>
             <div style={{ textAlign: 'center' }}>{t('matchSetup.roleLibero')}</div>
             <div className="cell-captain">C</div>
             {lfpTrackingEnabled && <div style={{ textAlign: 'center' }}>LFP</div>}
@@ -5523,7 +5523,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             <div>{t('matchSetup.role')}</div>
             <div>{t('matchSetup.lastName')}</div>
             <div>{t('matchSetup.firstName')}</div>
-            <div>{t('matchSetup.dateOfBirth')}</div>
+            <div className="cell-dob">{t('matchSetup.dateOfBirth')}</div>
             <div></div>
           </div>
           {sortBenchByHierarchy(benchAway).map((m, i) => {

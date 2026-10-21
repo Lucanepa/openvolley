@@ -1967,7 +1967,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     <tr>
                       <th>{t('roster.number')}</th>
                       <th>{t('roster.name')}</th>
-                      <th style={{ width: '90px' }}>{t('roster.dob')}</th>
+                      <th className="ct-dob" style={{ width: '90px' }}>{t('roster.dob')}</th>
                       <th>{t('roster.role')}</th>
                       {lfpTrackingEnabled && <th style={{ textAlign: 'center' }}>LFP</th>}
                       <th></th>
@@ -2189,7 +2189,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     <tr>
                       <th>{t('roster.role')}</th>
                       <th>{t('roster.name')}</th>
-                      <th style={{ width: '90px' }}>{t('roster.dob')}</th>
+                      <th className="ct-dob" style={{ width: '90px' }}>{t('roster.dob')}</th>
                       <th></th>
                     </tr>
                   </thead>

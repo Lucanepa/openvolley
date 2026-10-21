@@ -1896,7 +1896,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               disabled={isSaving || (!match.test && !allSignaturesDone)}
               loading={isSaving}
               data-help-id="matchend-export-json"
-              className="disabled:cursor-not-allowed"
+              // at least h-11, taller when Android's larger text wraps it
+              // (it touched the edges at 1.3 in a fixed 44px)
+              className="h-auto min-h-11 py-2 text-center leading-tight disabled:cursor-not-allowed"
               style={{ flex: 1, minWidth: '150px' }}
             >
               {isSaving ? t('matchEnd.downloading', 'Downloading...') : t('matchEnd.approveParams', 'Confirm and approve')}

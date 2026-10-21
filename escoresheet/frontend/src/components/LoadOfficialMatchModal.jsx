@@ -616,7 +616,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
       )}
 
       {/* Matches Table */}
-      <div className={cn('overflow-y-auto rounded-lg border border-stone-200 empty:border-0', filteredMatches.length > 0 && 'min-h-[9rem]')} data-testid="schedule-games">
+      <div className={cn('schedule-games overflow-y-auto rounded-lg border border-stone-200 empty:border-0', filteredMatches.length > 0 && 'min-h-[9rem]')} data-testid="schedule-games">
         {loading && (
           <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-sm text-stone-500">
             <Loader2 size={20} className="animate-spin text-stone-400" aria-hidden="true" />
@@ -643,7 +643,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
         )}
 
         {!loading && !error && filteredMatches.length > 0 && (
-          <div className="divide-y divide-stone-100">
+          <div className="schedule-rows divide-y divide-stone-100">
             {/* Table Header */}
             <div
               className="sticky top-0 z-10 grid items-center gap-2 border-b border-stone-200 bg-stone-50 px-2.5 py-2 text-[11px] font-bold uppercase tracking-wide text-stone-500"
@@ -672,10 +672,14 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
                 <span className="text-center">
                   {formatDisplayTime(match.dtstart)}
                 </span>
-                <span className="truncate">
-                  <span className="font-semibold text-stone-900">{match.home}</span>
-                  <span className="mx-1.5 text-stone-400">{t('common.vs', 'vs')}</span>
-                  <span className="font-semibold text-stone-900">{match.away}</span>
+                {/* One line where it fits; on a phone "Home" over "vs Away",
+                    each cut on its own line (one line left "VB..." at 360 px) */}
+                <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+                  <span className="max-w-full truncate font-semibold text-stone-900">{match.home}</span>
+                  <span className="max-w-full truncate">
+                    <span className="mr-1.5 text-stone-400">{t('common.vs', 'vs')}</span>
+                    <span className="font-semibold text-stone-900">{match.away}</span>
+                  </span>
                 </span>
               </div>
             ))}

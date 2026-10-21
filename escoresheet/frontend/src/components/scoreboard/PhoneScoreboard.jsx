@@ -256,7 +256,11 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
         onClick={onClick}
         disabled={disabled}
         style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, minHeight: PHONE_COUNTER_HEIGHT_PX, minWidth: 0, padding: '0 4px',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, minHeight: PHONE_COUNTER_HEIGHT_PX, minWidth: 0,
+          // 6px above and below: at Android's larger text (1.3) the label
+          // touched the top border with none; at 1.0 the content (37px)
+          // still fits the 56px, so the tiles only grow at large text
+          padding: '6px 4px',
           borderRadius: 14,
           border: `2px solid ${disabled ? 'var(--ov-hairline-strong)' : p.ink}`,
           background: disabled ? 'var(--ov-sunken-strong)' : p.soft,
