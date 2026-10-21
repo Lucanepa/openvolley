@@ -1,9 +1,9 @@
 import React from 'react';
 
 /**
- * A "Z" struck across an unused area of the sheet (a set grid or result rows
- * that were never played, a set awarded by default): field-spec 3, 9 and 11,
- * as the scorer strikes them off on paper (SC p.18).
+ * A "Z" struck across the grid of a set awarded by default (field-spec 11), as
+ * the scorer strikes it off on paper (SC p.18). The grids and RESULT rows of
+ * sets never played are left blank, not struck off (owner 2026-10-20).
  */
 export const StrikeZ: React.FC<{ className?: string }> = ({ className = '' }) => (
     <svg

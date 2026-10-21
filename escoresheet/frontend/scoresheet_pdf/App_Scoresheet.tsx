@@ -811,7 +811,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   const set3Data = getSetData(3, false);
   const set4Data = getSetData(4, true);
 
-  // Sets won, match over (also needed to strike off the unused grids)
+  // Sets won, match over (also needed to leave the unused grids empty)
   const bestOf = match?.bestOf === 3 ? 3 : 5;
   const neededToWin = bestOf === 3 ? 2 : 3;
   const finishedSets = sets.filter(s => s?.finished);
@@ -835,9 +835,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
     const info = sets.find(s => s?.index === setIndex);
     return !!info && (info.homePoints > 0 || info.awayPoints > 0 || !!info.startTime || info.finished === true);
   };
-  // Struck off with a Z: a set awarded by default, and once the result is known the
-  // grids that were never played (best-of-3: sets 3 and 4 always) (field-spec 6, 11)
-  const isStruckOff = (setIndex: number): boolean => {
+  // Drawn empty: a set awarded by default, and once the result is known the grids
+  // that were never played (best-of-3: sets 3 and 4 always) (field-spec 6, 11).
+  // Only a set awarded by default is struck off with a Z; the unplayed grids (and
+  // their RESULT rows) are just left blank (owner 2026-10-20).
+  const isEmptyGrid = (setIndex: number): boolean => {
     if (isDefaultSet(setIndex)) return true;
     if (bestOf === 3 && (setIndex === 3 || setIndex === 4)) return true;
     return isMatchFinished && !wasPlayed(setIndex);
@@ -900,7 +902,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   const set5FirstServeTeamKey = getFirstServeTeamKey(5, match, teamAKey, teamBKey);
   // The deciding set is drawn once its toss is known or it started, unless it was
   // awarded by default (then its grid is only struck off)
-  const set5Shown = !!(hasSet5CoinToss && set5Data && !isStruckOff(5));
+  const set5Shown = !!(hasSet5CoinToss && set5Data && !isEmptyGrid(5));
 
   // An empty set grid (unplayed set, or a set awarded by default)
   const emptySetData = {
@@ -1871,12 +1873,12 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                   <div className="flex-1">
                     <StandardSet
                       setNumber={1}
-                      teamNameLeft={shouldShowSet1 && !isStruckOff(1) ? teamAShortName : ''}
-                      teamNameRight={shouldShowSet1 && !isStruckOff(1) ? teamBShortName : ''}
-                      firstServeTeamA={shouldShowSet1 && !isStruckOff(1) ? set1ServeIsA : undefined}
+                      teamNameLeft={shouldShowSet1 && !isEmptyGrid(1) ? teamAShortName : ''}
+                      teamNameRight={shouldShowSet1 && !isEmptyGrid(1) ? teamBShortName : ''}
+                      firstServeTeamA={shouldShowSet1 && !isEmptyGrid(1) ? set1ServeIsA : undefined}
                       positionBoxRef={positionBoxSet1Ref}
-                      {...(isStruckOff(1) ? emptySetData : set1Data)}
-                      struckOff={isStruckOff(1)}
+                      {...(isEmptyGrid(1) ? emptySetData : set1Data)}
+                      struckOff={isDefaultSet(1)}
                     />
                   </div>
                 </div>
@@ -1893,11 +1895,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                     <StandardSet
                       setNumber={2}
                       isSwapped={true}
-                      teamNameLeft={shouldShowSet2 && !isStruckOff(2) ? teamBShortName : ''}
-                      teamNameRight={shouldShowSet2 && !isStruckOff(2) ? teamAShortName : ''}
-                      firstServeTeamA={shouldShowSet2 && !isStruckOff(2) ? set1ServeIsA : undefined}
-                      {...(isStruckOff(2) ? emptySetData : set2Data)}
-                      struckOff={isStruckOff(2)}
+                      teamNameLeft={shouldShowSet2 && !isEmptyGrid(2) ? teamBShortName : ''}
+                      teamNameRight={shouldShowSet2 && !isEmptyGrid(2) ? teamAShortName : ''}
+                      firstServeTeamA={shouldShowSet2 && !isEmptyGrid(2) ? set1ServeIsA : undefined}
+                      {...(isEmptyGrid(2) ? emptySetData : set2Data)}
+                      struckOff={isDefaultSet(2)}
                     />
                   </div>
                 </div>
@@ -1944,11 +1946,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                   <div className="flex-1">
                     <StandardSet
                       setNumber={3}
-                      teamNameLeft={shouldShowSet3 && !isStruckOff(3) ? teamAShortName : ''}
-                      teamNameRight={shouldShowSet3 && !isStruckOff(3) ? teamBShortName : ''}
-                      firstServeTeamA={shouldShowSet3 && !isStruckOff(3) ? set1ServeIsA : undefined}
-                      {...(isStruckOff(3) ? emptySetData : set3Data)}
-                      struckOff={isStruckOff(3)}
+                      teamNameLeft={shouldShowSet3 && !isEmptyGrid(3) ? teamAShortName : ''}
+                      teamNameRight={shouldShowSet3 && !isEmptyGrid(3) ? teamBShortName : ''}
+                      firstServeTeamA={shouldShowSet3 && !isEmptyGrid(3) ? set1ServeIsA : undefined}
+                      {...(isEmptyGrid(3) ? emptySetData : set3Data)}
+                      struckOff={isDefaultSet(3)}
                     />
                   </div>
                 </div>
@@ -1965,11 +1967,11 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                     <StandardSet
                       setNumber={4}
                       isSwapped={true}
-                      teamNameLeft={shouldShowSet4 && !isStruckOff(4) ? teamBShortName : ''}
-                      teamNameRight={shouldShowSet4 && !isStruckOff(4) ? teamAShortName : ''}
-                      firstServeTeamA={shouldShowSet4 && !isStruckOff(4) ? set1ServeIsA : undefined}
-                      {...(shouldShowSet4 && !isStruckOff(4) ? set4Data : emptySetData)}
-                      struckOff={isStruckOff(4)}
+                      teamNameLeft={shouldShowSet4 && !isEmptyGrid(4) ? teamBShortName : ''}
+                      teamNameRight={shouldShowSet4 && !isEmptyGrid(4) ? teamAShortName : ''}
+                      firstServeTeamA={shouldShowSet4 && !isEmptyGrid(4) ? set1ServeIsA : undefined}
+                      {...(shouldShowSet4 && !isEmptyGrid(4) ? set4Data : emptySetData)}
+                      struckOff={isDefaultSet(4)}
                     />
                   </div>
                 </div>
@@ -2074,7 +2076,7 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                       circledPointsA_Right={set5Shown ? circledPointsA_Right : []}
                       serviceRoundsA_Right={set5Shown ? set5ServiceRoundsLeftTeam_After : []}
                       pointsAtChangeA={set5Shown ? (set5Data.leftScoreAtCourtChange ?? null) : null}
-                      struckOff={isStruckOff(5)}
+                      struckOff={isDefaultSet(5)}
                       positionBoxRef={positionBoxSet5Ref}
                     />
                   </div>
