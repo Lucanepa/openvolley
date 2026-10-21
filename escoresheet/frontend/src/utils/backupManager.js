@@ -1249,6 +1249,16 @@ export function set5TossFromEvents(events, teamAKey) {
  * Import match data from Supabase to local Dexie
  * Uses JSONB columns for team/player data (teams/players tables were dropped)
  */
+/**
+ * Best of 3 or 5 of a cloud match row. The server keeps it only in
+ * match_info.best_of (MatchSetup writes it there); without it a restored
+ * best-of-3 match was scored as best of 5.
+ */
+export function cloudBestOf(match) {
+  const b = Number(match?.bestOf ?? match?.best_of ?? match?.match_info?.best_of)
+  return b === 3 ? 3 : 5
+}
+
 export async function importMatchFromSupabase(cloudData) {
   const { match, sets, events } = cloudData
   const courtSides = cloudData.courtSides || {}
@@ -1312,6 +1322,7 @@ export async function importMatchFromSupabase(cloudData) {
       city: matchInfo.city || match.city,
       league: matchInfo.league || match.league,
       championshipType: matchInfo.championship_type || match.championship_type,
+      bestOf: cloudBestOf(match),
       refereePin: match.referee_pin,
       gamePin: match.game_pin,
       gameN: match.game_n,

@@ -37,7 +37,7 @@ vi.mock('../../lib/apiClient', () => ({
   apiMatchRestoreByPin: async () => byPin.result
 }))
 
-import { fetchMatchByPin, importMatchFromSupabase, savedCourtSides } from '../backupManager'
+import { fetchMatchByPin, importMatchFromSupabase, savedCourtSides, cloudBestOf } from '../backupManager'
 import { getSideAForSet, getFirstServeForSet } from '../../domain/rules'
 
 const lineup = (base) => Object.fromEntries(['I', 'II', 'III', 'IV', 'V', 'VI'].map((p, i) => [p, { number: base + i }]))
@@ -532,5 +532,22 @@ describe('fetchMatchByPin after a Swap A/B at the match end', () => {
     expect(m.coinTossTeamA).toBe('away')
     // away (A) on the right: home on the left
     expect(homeLeft(m, 3)).toBe(true)
+  })
+})
+
+describe('importMatchFromSupabase: best of 3 from match_info', () => {
+  it('a best-of-3 match stays best of 3 (the server keeps it only in match_info.best_of)', async () => {
+    const cloud = await restoreWith({ match: { match_info: { best_of: 3, hall: 'Halle' } } })
+    await importMatchFromSupabase(cloud)
+    expect(store.matches[0].bestOf).toBe(3)
+    expect(cloudBestOf(cloud.match)).toBe(3)
+  })
+
+  it('without one (or with 5) it is best of 5', async () => {
+    const cloud = await restoreWith({ match: { match_info: { hall: 'Halle' } } })
+    await importMatchFromSupabase(cloud)
+    expect(store.matches[0].bestOf).toBe(5)
+    expect(cloudBestOf({ match_info: { best_of: '5' } })).toBe(5)
+    expect(cloudBestOf({ match_info: { best_of: '3' } })).toBe(3)
   })
 })

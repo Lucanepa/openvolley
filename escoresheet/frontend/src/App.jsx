@@ -55,7 +55,7 @@ import {
 } from './constants/testSeeds'
 import { apiFrom } from './lib/apiClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
-import { fetchMatchByPin, importMatchFromSupabase, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, listPocketBaseBackups, fetchPocketBaseMatch } from './utils/backupManager'
+import { fetchMatchByPin, importMatchFromSupabase, cloudBestOf, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, listPocketBaseBackups, fetchPocketBaseMatch } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
 import DesktopUpdateNotice from './components/DesktopUpdateNotice'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils/matchFormat'
@@ -1575,7 +1575,7 @@ export default function App() {
     const finishedSets = (cloudData.sets || []).filter(s => s.finished)
     const homeSetsWon = finishedSets.filter(s => (s.homePoints ?? s.home_points ?? 0) > (s.awayPoints ?? s.away_points ?? 0)).length
     const awaySetsWon = finishedSets.filter(s => (s.awayPoints ?? s.away_points ?? 0) > (s.homePoints ?? s.home_points ?? 0)).length
-    const isMatchFinished = isMatchFinishedUtil(homeSetsWon, awaySetsWon, cloudData.match?.bestOf ?? cloudData.match?.best_of)
+    const isMatchFinished = isMatchFinishedUtil(homeSetsWon, awaySetsWon, cloudBestOf(cloudData.match))
     if (isMatchFinished) {
       setShowMatchSetup(false)
       setShowMatchEnd(true)
