@@ -1,0 +1,7 @@
+OpenVolley 3.0.1
+- Choose players: load every known player of a team and tick who plays.
+- Saving a roster to a team keeps the team's other players.
+- Substitutions: an expelled or disqualified player is not offered back.
+- Restore and Take back keep best of 3; time-out and forfeit fixes.
+- Rosters no longer jump while a number is typed; offline coin toss skips cloud checks.
+- Scoresheet: long remarks never cut, the 48-point remark; more translations.
