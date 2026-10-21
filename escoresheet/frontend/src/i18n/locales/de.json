@@ -88,7 +88,7 @@
       "completeSignatures": "Bitte alle Unterschriften vervollständigen, bevor Sie die Seitenwahl bestätigen."
     },
     "noMatchData": "Keine Spieldaten verfügbar",
-    "failedToOpenScoresheet": "eMatchblatt konnte nicht geöffnet werden: {{error}}",
+    "failedToOpenScoresheet": "eScoresheet konnte nicht geöffnet werden: {{error}}",
     "initialized": "Spiel initialisiert",
     "initError": "Initialisierungsfehler",
     "initializing": "Spiel wird initialisiert",
@@ -220,7 +220,7 @@
     "scorerDobForCoinToss": "Geburtsdatum des Schreibers: für die Auslosung nötig",
     "dobRequiredForCoinToss": "Für die Auslosung erforderlich",
     "title": "Spieleinrichtung",
-    "scoresheet": "eMatchblatt",
+    "scoresheet": "eScoresheet",
     "options": "Optionen",
     "matchInfo": "Spielinfo",
     "matchOfficials": "Offizielle",
@@ -457,7 +457,7 @@
     },
     "captainToggle": "Mannschaftskapitän #{{number}}",
     "captainToggleNew": "Mannschaftskapitän (neuer Spieler)",
-    "allowPopups": "Bitte Popups erlauben, um das eMatchblatt anzuzeigen",
+    "allowPopups": "Bitte Popups erlauben, um das eScoresheet anzuzeigen",
     "completeSignatures": "Bitte alle Unterschriften vor Bestätigung der Seitenwahl vervollständigen.",
     "libero": "Libero",
     "matchNotFound": "Spiel nicht gefunden",
@@ -617,8 +617,8 @@
       "noLegalSubstitution": "Keine regelkonforme Auswechslung verfügbar",
       "liberoReminder": "Libero-Erinnerung",
       "reopenSet": "Satz wieder öffnen",
-      "scoresheetError": "eMatchblatt-Fehler",
-      "scoresheetAlreadyOpen": "eMatchblatt bereits geöffnet",
+      "scoresheetError": "eScoresheet-Fehler",
+      "scoresheetAlreadyOpen": "eScoresheet bereits geöffnet",
       "remarksRecording": "Bemerkungsaufzeichnung",
       "sanctionsAndResults": "Sanktionen und Ergebnisse",
       "liberoOut": "Libero RAUS",
@@ -676,7 +676,7 @@
       "areYouSureAwardPoint": "Sind Sie sicher, dass der Punkt an {{team}} vergeben werden soll?"
     },
     "menu": {
-      "scoresheet": "eMatchblatt",
+      "scoresheet": "eScoresheet",
       "menu": "Menü",
       "showActionLog": "Aktionsprotokoll anzeigen",
       "showSanctionsResults": "Sanktionen und Ergebnisse anzeigen",
@@ -843,8 +843,8 @@
       "noneSet": "Für dieses Spiel sind keine PINs gesetzt."
     },
     "relayRejected": {
-      "notOwner": "Verbindung Schiedsrichter/Bank: ein anderes eMatchblatt hält dieses Spiel auf dem Server. Schiedsrichter, Bank und Livescore erhalten die Updates dieses Geräts nicht.",
-      "rateLimited": "Verbindung Schiedsrichter/Bank: der Server hat dieses eMatchblatt für eine Minute abgelehnt (zu viele Fehlversuche).",
+      "notOwner": "Verbindung Schiedsrichter/Bank: ein anderes eScoresheet hält dieses Spiel auf dem Server. Schiedsrichter, Bank und Livescore erhalten die Updates dieses Geräts nicht.",
+      "rateLimited": "Verbindung Schiedsrichter/Bank: der Server hat dieses eScoresheet für eine Minute abgelehnt (zu viele Fehlversuche).",
       "tooMany": "Verbindung Schiedsrichter/Bank: dieses Gerät führt bereits zu viele Spiele auf dem Server."
     },
     "toolbar": {
@@ -904,7 +904,7 @@
       "replay": "Wieder\u00adholen",
       "decision": "Entscheid ändern",
       "remarks": "Bemerkungen",
-      "scoresheet": "eMatch\u00adblatt",
+      "scoresheet": "eScore\u00adsheet",
       "subTitle": "Auswechslung {{team}}",
       "subOut": "Spieler raus (auf dem Feld)",
       "subIn": "Spieler rein für {{number}}",
@@ -1009,11 +1009,11 @@
     "exit": "Beenden",
     "menu": "Menü",
     "language": "Sprache",
-    "scoresheet": "eMatchblatt",
+    "scoresheet": "eScoresheet",
     "preview": "Vorschau",
     "print": "Drucken",
     "savePdf": "PDF speichern",
-    "allowPopups": "Bitte erlauben Sie Popups, um das eMatchblatt anzuzeigen",
+    "allowPopups": "Bitte erlauben Sie Popups, um das eScoresheet anzuzeigen",
     "showHeader": "Kopfzeile anzeigen",
     "hideHeader": "Kopfzeile ausblenden",
     "menuTitle": "Menü",
@@ -1412,9 +1412,9 @@
     "previewRoster": "Vorschau",
     "rosterPreviewTitle": "Kadervorschau",
     "syncingToDatabase": "Synchronisiere zur Datenbank",
-    "syncingMessage": "Kader wird zur Genehmigung an den eMatchblatt gesendet...",
+    "syncingMessage": "Kader wird zur Genehmigung an das eScoresheet gesendet...",
     "sentToDatabase": "An Datenbank gesendet",
-    "rosterSentMessage": "Der Kader wurde an den eMatchblatt gesendet. Der Schreiber wird den Kader überprüfen und akzeptieren oder ablehnen.",
+    "rosterSentMessage": "Der Kader wurde an das eScoresheet gesendet. Der Schreiber wird den Kader überprüfen und akzeptieren oder ablehnen.",
     "signatures": "Unterschriften",
     "signaturesDescription": "Optional: Trainer und Kapitän können den Kader vor dem Einreichen unterschreiben.",
     "coachSignature": "Trainer-Unterschrift",
@@ -1455,10 +1455,10 @@
     "uploadSuccess": "Kader hochgeladen",
     "uploadError": "Speichern fehlgeschlagen. Bitte erneut versuchen.",
     "confirmTitle": "Upload bestätigen",
-    "confirmMessage": "Dies sendet den Kader zur Genehmigung an den eMatchblatt.",
+    "confirmMessage": "Dies sendet den Kader zur Genehmigung an das eScoresheet.",
     "uploading": "Hochladen",
     "uploadingMessage": "Kader wird gesendet...",
-    "rosterSentToScoresheet": "Der Kader wurde an den eMatchblatt gesendet. Der Schreiber wird den Kader überprüfen und akzeptieren oder ablehnen."
+    "rosterSentToScoresheet": "Der Kader wurde an das eScoresheet gesendet. Der Schreiber wird den Kader überprüfen und akzeptieren oder ablehnen."
   },
   "benchDashboard": {
     "title": "Team-Dashboard",
@@ -1497,7 +1497,7 @@
     "exitFullscreen": "Beenden",
     "fullscreen": "Vollbild",
     "noActiveGame": "Kein aktives Spiel gefunden",
-    "startMatchToConnect": "Starten Sie ein Spiel auf dem Haupt-eMatchblatt um sich zu verbinden",
+    "startMatchToConnect": "Starten Sie ein Spiel auf dem Haupt-eScoresheet um sich zu verbinden",
     "selectGame": "Spiel auswählen",
     "gamesAvailable": "{{count}} verfügbar",
     "gameNumber": "Spiel #{{number}}",
@@ -1530,7 +1530,7 @@
       "directDesc": "WebSocket direkt"
     },
     "awaitingCoinToss": "Warte auf Auslosung",
-    "awaitingCoinTossDesc": "Das Spiel beginnt, sobald die Auslosung auf dem eMatchblatt bestätigt wurde.",
+    "awaitingCoinTossDesc": "Das Spiel beginnt, sobald die Auslosung auf dem eScoresheet bestätigt wurde.",
     "matchHasEnded": "Das Spiel ist beendet",
     "lineupSet": "Aufstellung gesetzt",
     "showLineup": "Aufstellung anzeigen",
@@ -1667,9 +1667,9 @@
     "errors": {
       "enterGameNumber": "Bitte geben Sie eine Spielnummer ein",
       "matchNotFound": "Spiel mit dieser Nummer nicht gefunden",
-      "failedToFindMatch": "Spiel konnte nicht gefunden werden. Stellen Sie sicher, dass der Haupt-eMatchblatt läuft.",
+      "failedToFindMatch": "Spiel konnte nicht gefunden werden. Stellen Sie sicher, dass das Haupt-eScoresheet läuft.",
       "failedToLoadData": "Daten konnten nicht geladen werden",
-      "failedToLoadDataConnection": "Daten konnten nicht geladen werden. Stellen Sie sicher, dass der Haupt-eMatchblatt läuft."
+      "failedToLoadDataConnection": "Daten konnten nicht geladen werden. Stellen Sie sicher, dass das Haupt-eScoresheet läuft."
     },
     "final": "Endstand",
     "serving": "Aufschlag"
@@ -1896,7 +1896,7 @@
       "bench_away": "Gästebank",
       "bench_home": "Heimbank",
       "livescore": "Livescore",
-      "main": "eMatchblatt",
+      "main": "eScoresheet",
       "referee": "Schiedsrichter"
     },
     "serverHint": "Die Tablets brauchen Internet (WLAN der Halle oder mobile Daten).",
@@ -2285,7 +2285,7 @@
   "matchEnd": {
     "errorClosing": "Fehler beim Abschliessen des Spiels: ",
     "noWinner": "Kein Sieger (Spiel abgebrochen)",
-    "pdfGenerationFailed": "Spiel genehmigt, aber das PDF konnte nicht erstellt werden. Sie können es über die Schaltfläche eMatchblatt erstellen.",
+    "pdfGenerationFailed": "Spiel genehmigt, aber das PDF konnte nicht erstellt werden. Sie können es über die Schaltfläche eScoresheet erstellen.",
     "reopenMatch": "Spiel wieder öffnen",
     "closedOnServer": "Dieses Spiel ist auf dem Server abgeschlossen und kann hier nicht mehr geändert werden. Nur ein Admin kann es wieder öffnen («Spiel wieder öffnen»).",
     "reopenAdminOnlyTitle": "Nur ein Admin kann dieses Spiel wieder öffnen",
@@ -2344,13 +2344,13 @@
     "approveParams": "Bestätigen und genehmigen",
     "reopenLastSet": "Letzten Satz wieder öffnen",
     "manualAdjustments": "Manuelle Anpassungen",
-    "scoresheet": "eMatchblatt",
+    "scoresheet": "eScoresheet",
     "preview": "Vorschau",
     "print": "Drucken",
     "savePdf": "PDF speichern",
     "downloadLogs": "Protokolle herunterladen",
     "preparingExport": "Spielexport wird vorbereitet...",
-    "generatingPdf": "eMatchblatt wird erstellt (PDF)",
+    "generatingPdf": "eScoresheet wird erstellt (PDF)",
     "creatingZip": "ZIP wird erstellt und in die Cloud hochgeladen...",
     "waitCheck": "Bitte warten Sie, die Dateien werden vorbereitet...",
     "reopenSetConfirmTitle": "Letzten Satz wieder öffnen?",
@@ -2369,23 +2369,23 @@
       "approveWithoutPdf": "Ohne PDF genehmigen",
       "noPdfTitle": "Das PDF ist nicht fertig",
       "reason": {
-        "closed": "Das eMatchblatt-Fenster wurde geschlossen, bevor das PDF fertig war.",
-        "stalled": "Das eMatchblatt-Fenster antwortet nicht mehr.",
+        "closed": "Das eScoresheet-Fenster wurde geschlossen, bevor das PDF fertig war.",
+        "stalled": "Das eScoresheet-Fenster antwortet nicht mehr.",
         "timeout": "Das PDF hat zu lange gedauert.",
-        "blocked": "Das eMatchblatt-Fenster konnte nicht geöffnet werden.",
-        "failed": "Das eMatchblatt konnte das PDF nicht erstellen."
+        "blocked": "Das eScoresheet-Fenster konnte nicht geöffnet werden.",
+        "failed": "Das eScoresheet konnte das PDF nicht erstellen."
       },
-      "cancelKeepsUnapproved": "Abbrechen lässt das Spiel ungenehmigt. Ohne PDF genehmigen genehmigt es jetzt: Speichern Sie das PDF später aus dem eMatchblatt.",
-      "keepWindowOpen": "Lassen Sie das eMatchblatt-Fenster offen, bis das PDF fertig ist."
+      "cancelKeepsUnapproved": "Abbrechen lässt das Spiel ungenehmigt. Ohne PDF genehmigen genehmigt es jetzt: Speichern Sie das PDF später aus dem eScoresheet.",
+      "keepWindowOpen": "Lassen Sie das eScoresheet-Fenster offen, bis das PDF fertig ist."
     }
   },
   "scoresheetPdf": {
-    "backToScoresheet": "Zurück zum eMatchblatt",
+    "backToScoresheet": "Zurück zum eScoresheet",
     "lcs": "Libero-Kontrollblatt",
     "lcsTooltip": "Libero-Kontrollblatt anzeigen",
     "pdfFailed": "Das PDF konnte auf diesem Gerät nicht erstellt werden.",
     "generatingPdf": "PDF wird erstellt...",
-    "generatingPdfMessage": "Bitte warten Sie, während das eMatchblatt in ein PDF umgewandelt wird. Das kann einige Sekunden dauern.",
+    "generatingPdfMessage": "Bitte warten Sie, während das eScoresheet in ein PDF umgewandelt wird. Das kann einige Sekunden dauern.",
     "zoomOut": "Verkleinern",
     "resetZoom": "Zoom zurücksetzen (100%)",
     "fitToScreen": "An Bildschirm anpassen",
