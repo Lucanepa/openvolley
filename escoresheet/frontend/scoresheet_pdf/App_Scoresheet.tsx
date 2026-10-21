@@ -18,6 +18,7 @@ import {
   countAllSubstitutions,
   displaySetNumber,
   getScoreBeforeEvent,
+  isDefaultSet as isDefaultSetOf,
   getSet5LeftTeamLabel,
   getFirstServeTeamKey,
   consistencyWarnings
@@ -820,18 +821,10 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   const teamBSetsWon = finishedSets.filter(s => pointsOf(s, teamBKey) > pointsOf(s, teamAKey)).length;
   const isMatchFinished = teamASetsWon >= neededToWin || teamBSetsWon >= neededToWin;
 
-  // A set awarded by default / forfeit without a single rally: created by the
-  // forfeit (forfeitCreated), or every one of its points was awarded (a default
-  // before the start). Its grid stays empty, not struck off (owner 2026-10-21);
-  // its RESULT row and the remark say what was awarded; no start / end time,
-  // no duration (field-spec 11).
-  const isDefaultSet = (setIndex: number): boolean => {
-    const info = sets.find(s => s?.index === setIndex);
-    if (!info) return false;
-    if (info.forfeitCreated) return true;
-    const pts = events.filter(e => e?.setIndex === setIndex && e?.type === 'point');
-    return pts.length > 0 && pts.every(e => e.payload?.forfeitAwarded === true);
-  };
+  // A set awarded by default / forfeit without a single rally (scoresheetModel).
+  // Its grid stays empty, not struck off (owner 2026-10-21); its RESULT row and
+  // the remark say what was awarded; no start / end time, no duration (field-spec 11).
+  const isDefaultSet = (setIndex: number): boolean => isDefaultSetOf(sets, events, setIndex);
   const wasPlayed = (setIndex: number): boolean => {
     const info = sets.find(s => s?.index === setIndex);
     return !!info && (info.homePoints > 0 || info.awayPoints > 0 || !!info.startTime || info.finished === true);

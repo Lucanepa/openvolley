@@ -1,6 +1,8 @@
 /**
  * MatchEnd shows what the PDF the officials sign shows: the best-of-3
- * deciding set (index 5) as set 3 in RESULTS and SANCTIONS.
+ * deciding set (index 5) as set 3 in RESULTS and SANCTIONS; the remarks the
+ * sheet writes itself (a default); 9 sanction rows, the 10th in REMARKS; no
+ * time for a set awarded by default; a sanction's score from the event order.
  * The harness is MatchEndClosedOnServer.test.jsx's.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -187,5 +189,58 @@ describe('MatchEnd: the best-of-3 deciding set', () => {
     expect(rows).toHaveLength(1)
     const cells = [...rows[0].querySelectorAll('span')].map(s => s.textContent)
     expect(cells.slice(4)).toEqual(['B', '3', '0:1'])
+  })
+})
+
+const iso = (min) => new Date(t0 + min * 60000).toISOString()
+
+describe('MatchEnd as the PDF', () => {
+  it('a match lost by default: the generated remark is in REMARKS', async () => {
+    seed({
+      match: { forfeitTeam: 'away' },
+      sets: [1, 2, 3].map(index => ({ index, homePoints: 25, awayPoints: 0, finished: true, forfeitCreated: true })),
+      events: [ev('forfait', 1, { team: 'away', reason: 'forfait', scope: 'match', setIndex: 1 })]
+    })
+    render(<MatchEnd matchId={1} />)
+    await waitFor(() => expect(screen.getByTestId('matchend-generated-remark').textContent)
+      .toBe('Team B declared in default, match result 3:0 (25:0, 25:0, 25:0).'))
+  })
+
+  it('9 sanctions in the box, the 10th in REMARKS', async () => {
+    seed({
+      sets: [{ index: 1, homePoints: 25, awayPoints: 20, finished: true }],
+      events: Array.from({ length: 10 }, (_, i) => ev('sanction', 1, { team: 'home', type: 'warning', playerType: 'player', playerNumber: i + 1 }))
+    })
+    render(<MatchEnd matchId={1} />)
+    await waitFor(() => expect(resultsCard()?.textContent).toContain('Home V'))
+    const rows = [...cardOf(en.matchEnd.sanctions).querySelectorAll('div[style*="repeat(7, 1fr)"]')].slice(1)
+    expect(rows).toHaveLength(9)
+    expect(cardOf(en.matchEnd.remarks).textContent).toContain('#10')
+  })
+
+  it('a set awarded by default gets no duration, and the sanction score follows the event order', async () => {
+    const sameTs = iso(5)
+    seed({
+      match: { forfeitTeam: 'away' },
+      sets: [
+        { index: 1, homePoints: 25, awayPoints: 20, finished: true, startTime: iso(0), endTime: iso(22) },
+        { index: 2, homePoints: 25, awayPoints: 0, finished: true, forfeitCreated: true, startTime: iso(23), endTime: iso(40) },
+        { index: 3, homePoints: 25, awayPoints: 0, finished: true, forfeitCreated: true, startTime: iso(23), endTime: iso(40) }
+      ],
+      events: [
+        // the sanction is logged before the point, in the same millisecond
+        { id: 951, matchId: 1, type: 'sanction', setIndex: 1, seq: 1, ts: sameTs, payload: { team: 'home', type: 'warning', playerType: 'player', playerNumber: 4 } },
+        { id: 952, matchId: 1, type: 'point', setIndex: 1, seq: 2, ts: sameTs, payload: { team: 'home' } },
+        { id: 953, matchId: 1, type: 'forfait', setIndex: 2, seq: 3, ts: iso(23), payload: { team: 'away', reason: 'injury', scope: 'match', setIndex: 2 } }
+      ]
+    })
+    render(<MatchEnd matchId={1} />)
+    await waitFor(() => expect(resultsCard()?.textContent).toContain('Home V'))
+    const setRows = [...resultsCard().querySelectorAll('div[style*="1fr 60px 1fr"]')]
+      .map(r => [...r.children[1].querySelectorAll('span')].map(x => x.textContent))
+    // set 1 its 22', sets 2 and 3 (awarded) none
+    expect(setRows.filter(([n]) => ['1', '2', '3'].includes(n))).toEqual([['1', "22'"], ['2', ''], ['3', '']])
+    const sanction = [...cardOf(en.matchEnd.sanctions).querySelectorAll('div[style*="repeat(7, 1fr)"]')].slice(1)[0]
+    expect([...sanction.querySelectorAll('span')].map(x => x.textContent).slice(4)).toEqual(['A', '1', '0:0'])
   })
 })

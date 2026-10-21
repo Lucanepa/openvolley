@@ -21,7 +21,9 @@ import { Textarea } from '../ui/Textarea.jsx'
 import { uploadScoresheet, scoresheetUploadPath } from '../utils/scoresheetUploader'
 import { redactScoresheetPath } from '../../scoresheet_pdf/utils/scoresheetStorage'
 import { isoOf, matchTimes, setDurationMinutes } from '../../scoresheet_pdf/utils/matchTimes'
-import { displaySetNumber } from '../../scoresheet_pdf/utils/scoresheetModel'
+import { displaySetNumber, getScoreBeforeEvent, isDefaultSet } from '../../scoresheet_pdf/utils/scoresheetModel'
+import { generatedRemarks } from '../../scoresheet_pdf/utils/sheetRemarks'
+import { SANCTION_ROWS } from '../../scoresheet_pdf/components/FooterSection'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { exportLogsAsNDJSON } from '../utils/comprehensiveLogger'
 import { diagnosticLogQuery } from '../utils/activity/logQuery'
@@ -257,7 +259,7 @@ const SanctionsTable = ({ items = [], improperRequests = { teamA: false, teamB: 
 }
 
 // Standard Remarks component for MatchEnd page
-const RemarksBox = ({ overflowSanctions = [], remarks = '' }) => {
+const RemarksBox = ({ overflowSanctions = [], remarks = '', generated = [] }) => {
   const { t } = useTranslation()
 
   const formatSanction = (sanction) => {
@@ -275,13 +277,18 @@ const RemarksBox = ({ overflowSanctions = [], remarks = '' }) => {
     return `${t('coinToss.teamA', 'Team')} ${sanction.team}, ${t('matchEnd.set', 'Set')} ${sanction.set}, ${sanction.score}, ${typeLabel}${playerInfo}`
   }
 
-  const hasContent = remarks?.trim() || overflowSanctions.length > 0
+  const generatedLines = generated.filter(line => line.trim())
+  const hasContent = remarks?.trim() || overflowSanctions.length > 0 || generatedLines.length > 0
 
+  // As the PDF's REMARKS: the remarks the sheet writes itself (a default, an
+  // incomplete team), the sanctions beyond the box, then the scorer's own
   return (
     <div style={{ padding: '12px', fontSize: '12px', minHeight: '60px', background: '#fff', color: '#000' }}>
       {hasContent ? (
         <>
-          {remarks?.trim() && <div style={{ marginBottom: '8px', whiteSpace: 'pre-wrap', color: '#000' }}>{remarks.trim()}</div>}
+          {generatedLines.map((line, idx) => (
+            <div key={idx} data-testid="matchend-generated-remark" style={{ marginBottom: '4px', color: '#000' }}>{line.trim()}</div>
+          ))}
           {overflowSanctions.length > 0 && (
             <>
               <div style={{ fontWeight: 600, marginBottom: '4px', fontSize: '11px', color: '#000' }}>{t('matchEnd.sanctionsOverflow', 'Sanctions (overflow):')}</div>
@@ -290,6 +297,7 @@ const RemarksBox = ({ overflowSanctions = [], remarks = '' }) => {
               ))}
             </>
           )}
+          {remarks?.trim() && <div style={{ marginTop: overflowSanctions.length > 0 || generatedLines.length > 0 ? '8px' : 0, whiteSpace: 'pre-wrap', color: '#000' }}>{remarks.trim()}</div>}
         </>
       ) : (
         <div style={{ color: '#666', fontSize: '11px' }}>{t('matchEnd.noRemarks', 'No remarks')}</div>
@@ -541,7 +549,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
       // end - the set's ACTUAL start (its first rally), as on the PDF
       // (scoresheet_pdf/utils/matchTimes): never the schedule
-      const minutes = isSetFinished ? setDurationMinutes(setInfo, setEvents) : null
+      // (a set awarded by default has none, as on the PDF)
+      const minutes = isSetFinished && !isDefaultSet(sets, events, setNum) ? setDurationMinutes(setInfo, setEvents) : null
       const duration = minutes !== null && minutes > 0 ? `${minutes}'` : ''
 
       results.push({
@@ -584,31 +593,12 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         return new Date(a.ts).getTime() - new Date(b.ts).getTime()
       })
 
-    const getScoreAtEvent = (eventTimestamp, setIndex) => {
-      const pointEvents = events
-        .filter(e =>
-          e.setIndex === setIndex &&
-          e.type === 'point' &&
-          new Date(e.ts).getTime() <= eventTimestamp.getTime()
-        )
-        .sort((a, b) => {
-          const aSeq = a.seq || 0
-          const bSeq = b.seq || 0
-          if (aSeq !== 0 || bSeq !== 0) return aSeq - bSeq
-          return new Date(a.ts).getTime() - new Date(b.ts).getTime()
-        })
-
-      let homeScore = 0
-      let awayScore = 0
-
-      for (const e of pointEvents) {
-        if (e.payload?.team === 'home') homeScore++
-        else if (e.payload?.team === 'away') awayScore++
-      }
-
+    // Points before it in event order (seq), as on the PDF (a timestamp
+    // comparison counted a point logged in the same millisecond)
+    const getScoreAtEvent = (sanctionEvent) => {
+      const { home: homeScore, away: awayScore } = getScoreBeforeEvent(events, sanctionEvent)
       const teamAScore = teamAKey === 'home' ? homeScore : awayScore
       const teamBScore = teamBKey === 'home' ? homeScore : awayScore
-
       return `${teamAScore}:${teamBScore}`
     }
 
@@ -620,8 +610,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
       const teamLabel = (eventTeam === teamAKey) ? 'A' : 'B'
 
-      const eventTimestamp = new Date(event.ts)
-      const rawScore = getScoreAtEvent(eventTimestamp, setIndex)
+      const rawScore = getScoreAtEvent(event)
 
       const [teamAScoreStr, teamBScoreStr] = rawScore.split(':')
       const sanctionedTeamScore = teamLabel === 'A' ? teamAScoreStr : teamBScoreStr
@@ -707,14 +696,21 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   // Match start = set 1's actual start (its first rally), end = the last set's
   // end, duration = end - start: the PDF's values (scoresheet_pdf/utils/matchTimes),
   // never the scheduled time (owner 2026-10-07)
-  const times = matchTimes(sets, events)
-  const matchStart = times.startMs !== null ? formatTimeLocal(isoOf(times.startMs)) : ''
-  const matchEndTime = times.endMs !== null ? formatTimeLocal(isoOf(times.endMs)) : ''
-  const matchDuration = times.durationMinutes !== null && times.durationMinutes > 0 ? `${times.durationMinutes}'` : ''
+  // As on the PDF, a set awarded by default has no start of its own; the match
+  // ends with the last set, one the forfeit created included. A match decided
+  // by default before any rally has no times.
+  const defaultSet = s => isDefaultSet(sets, events, s.index)
+  const startMs = matchTimes(sets, events, { skip: defaultSet }).startMs
+  const endMs = startMs !== null ? matchTimes(sets, events, { skip: s => defaultSet(s) && !s.forfeitCreated }).endMs : null
+  const durationMinutes = startMs !== null && endMs !== null && endMs >= startMs ? Math.floor((endMs - startMs) / 60000) : null
+  const matchStart = startMs !== null ? formatTimeLocal(isoOf(startMs)) : ''
+  const matchEndTime = endMs !== null ? formatTimeLocal(isoOf(endMs)) : ''
+  const matchDuration = durationMinutes !== null && durationMinutes > 0 ? `${durationMinutes}'` : ''
 
-  // Split sanctions
-  const sanctionsInBox = processedSanctions.slice(0, 10)
-  const overflowSanctions = processedSanctions.slice(10)
+  // Split sanctions: the PDF's 9 rows, the rest in REMARKS
+  const sanctionsInBox = processedSanctions.slice(0, SANCTION_ROWS)
+  const overflowSanctions = processedSanctions.slice(SANCTION_ROWS)
+  const autoRemarks = generatedRemarks({ sets, events, teamAKey, bestOf: match?.bestOf })
 
   // Check if optional fields exist
   // Check if officials array has these roles
@@ -1810,7 +1806,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           )}
         </div>
         <div style={{ background: '#fff', borderRadius: '6px', overflow: 'hidden', border: '2px solid #333', minHeight: '60px' }}>
-          <RemarksBox overflowSanctions={overflowSanctions} remarks={match?.remarks || ''} />
+          <RemarksBox overflowSanctions={overflowSanctions} remarks={match?.remarks || ''} generated={autoRemarks} />
         </div>
       </div>
 

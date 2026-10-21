@@ -127,6 +127,19 @@ export function displaySetNumber(setIndex: number, bestOf: number | undefined): 
 }
 
 /**
+ * A set awarded by default / forfeit without a single rally: created by the
+ * forfeit (forfeitCreated), or every one of its points was awarded (a default
+ * before the start). It has no start / end time and no duration (field-spec 11).
+ */
+export function isDefaultSet(sets: any[], events: any[], setIndex: number): boolean {
+  const info = (sets || []).find(s => s?.index === setIndex);
+  if (!info) return false;
+  if (info.forfeitCreated) return true;
+  const pts = (events || []).filter(e => e?.setIndex === setIndex && e?.type === 'point');
+  return pts.length > 0 && pts.every(e => e.payload?.forfeitAwarded === true);
+}
+
+/**
  * Home/away score at the moment `target` was logged: points of the same set that
  * come before it in the event order (seq, timestamp only when seq is missing).
  */
