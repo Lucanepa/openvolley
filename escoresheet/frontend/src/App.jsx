@@ -3466,11 +3466,15 @@ export default function App() {
                   setCloudBackupError('')
                 }}
                 width={500}
+                // A flex column: the backups list is the one part that gives
+                // way (scrolls) when the dialog meets the window's height; the
+                // panel keeps its own overflow only as a last resort
+                panelStyle={{ display: 'flex', flexDirection: 'column' }}
               >
-                <div className="ov-kit p-2 sm:p-4">
+                <div className="ov-kit flex min-h-0 flex-1 flex-col">
                   {/* Restore from Cloud Backup */}
                   {!offlineMode && (
-                    <div className="mb-6">
+                    <div className="mb-6 flex min-h-0 flex-col">
                       <h3 className="text-sm font-semibold text-stone-800">
                         {t('settings.backup.restoreFromCloudBackup')}
                       </h3>
@@ -3575,7 +3579,7 @@ export default function App() {
                         <FormError className="mt-2">{cloudBackupError}</FormError>
                       )}
                       {cloudBackups.length > 0 && (
-                        <div className="mt-2 max-h-[300px] overflow-y-auto rounded-lg border border-stone-200">
+                        <div className="mt-2 min-h-[7.5rem] overflow-y-auto rounded-lg border border-stone-200" data-testid="restore-backup-list">
                           <BackupTable
                             backups={cloudBackups}
                             onBackupSelect={async (backup) => {
@@ -3662,7 +3666,8 @@ export default function App() {
                 open={true}
                 onClose={() => setRestorePreviewData(null)}
                 width={700}
-                panelStyle={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+                // The window's height, not 85vh: on a laptop the whole preview fits
+                panelStyle={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', maxHeight: 'calc(100dvh - 2rem)' }}
               >
                 {/* Scrolling body; the footer stays below it, in view on a phone */}
                 <div className="ov-kit -mx-5 min-h-0 flex-1 overflow-y-auto px-5 pb-4">

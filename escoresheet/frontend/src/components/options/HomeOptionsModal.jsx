@@ -358,12 +358,14 @@ export default function HomeOptionsModal({
       onClose={onClose}
       width={750}
       hideCloseButton={true}
+      // One scroller: the header stays, only the body below it scrolls
+      panelStyle={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
     >
-      <div className="ov-kit">
-      {/* Sticky Header */}
-      <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-stone-200/70 bg-white px-2 pb-3 sm:px-4">
+      <div className="ov-kit flex min-h-0 flex-1 flex-col">
+      {/* Header; wraps (actions under the title) where both do not fit, so the × stays on screen */}
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-stone-200/70 bg-white px-2 pb-3 sm:px-4">
         <h2 className="text-lg font-bold text-stone-900">{t('options.title')}</h2>
-        <div className="flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2">
           <Button variant="ghost" size="md" icon={LifeBuoy} onClick={() => setSupportFeedbackOpen(true)} className="h-11 whitespace-nowrap">
             {t('supportFeedback.button')}
           </Button>
@@ -377,7 +379,7 @@ export default function HomeOptionsModal({
         onClose={() => setSupportFeedbackOpen(false)}
         currentPage="options"
       />
-      <div className="max-h-[calc(80vh-60px)] overflow-y-auto px-2 pt-4 pb-2 text-stone-800 sm:px-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pt-4 pb-2 text-stone-800 sm:px-4">
         <Section title={null}>
           <Row style={{ marginBottom: '12px', alignItems: 'flex-start' }}>
             <div className="min-w-0 flex-1">

@@ -451,10 +451,14 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
       onClose={onClose}
       width={650}
       hideCloseButton={true}
+      // A flex column: header and filters stay, the games list is the one part
+      // that scrolls (it takes what the window leaves, no fixed 350px box
+      // inside a scrolling dialog); the panel's own overflow is a last resort
+      panelStyle={{ display: 'flex', flexDirection: 'column' }}
     >
-      <div className="ov-kit text-stone-800">
-      {/* Sticky Header */}
-      <div className="sticky -top-4 z-10 mb-4 flex items-center justify-between gap-3 border-b border-stone-200/70 bg-white py-2">
+      <div className="ov-kit flex min-h-0 flex-1 flex-col text-stone-800">
+      {/* Header */}
+      <div className="z-10 mb-4 flex shrink-0 items-center justify-between gap-3 border-b border-stone-200/70 bg-white py-2">
         <h2 className="text-lg font-bold text-stone-900">
           {t('loadOfficialMatch.title', 'Load match from schedule')}
         </h2>
@@ -612,7 +616,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
       )}
 
       {/* Matches Table */}
-      <div className="max-h-[350px] overflow-y-auto rounded-lg border border-stone-200 empty:border-0">
+      <div className={cn('overflow-y-auto rounded-lg border border-stone-200 empty:border-0', filteredMatches.length > 0 && 'min-h-[9rem]')} data-testid="schedule-games">
         {loading && (
           <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-sm text-stone-500">
             <Loader2 size={20} className="animate-spin text-stone-400" aria-hidden="true" />
