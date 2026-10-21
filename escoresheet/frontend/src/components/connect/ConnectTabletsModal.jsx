@@ -407,15 +407,17 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
         onClose={onClose}
         size="xl"
         layout="sections"
-        className="max-w-5xl lg:min-h-[min(85vh,40rem)]"
+        className="max-w-5xl min-[56.25rem]:min-h-[min(85vh,40rem)]"
         icon={Tablet}
         title={t('connectTablets.title', 'Connect tablets')}
         description={t('connectTablets.description', 'Referee and benches follow this match on their own tablet. Three steps: choose the connection, pick a tablet, scan and enter its PIN.')}
         closeLabel={t('common.close', 'Close')}
         footer={footer}
       >
-        <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_17rem] lg:grid-cols-[19rem_minmax(0,1fr)_17rem]">
-          <section className="min-w-0 md:col-span-2 lg:col-span-1" aria-labelledby={step1Id}>
+        {/* Three columns from 900px, so the desktop app's ~962px window
+            shows the QR code (step 3) without scrolling */}
+        <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_17rem] min-[56.25rem]:grid-cols-[17rem_minmax(0,1fr)_16rem] lg:grid-cols-[19rem_minmax(0,1fr)_17rem]">
+          <section className="min-w-0 md:col-span-2 min-[56.25rem]:col-span-1" aria-labelledby={step1Id}>
             <StepHeading n={1} id={step1Id}>{t('connectTablets.step.connect', 'How tablets connect')}</StepHeading>
             <TransportPicker options={options} value={transport} onChange={chooseTransport} labelledBy={step1Id} />
             <div className="mt-3">
@@ -495,7 +497,7 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
               </section>
             </>
           ) : (
-            <section className="min-w-0 lg:col-span-2" data-testid="no-match">
+            <section className="min-w-0 min-[56.25rem]:col-span-2" data-testid="no-match">
               <EmptyState icon={Tablet} title={t('connectTablets.noMatchTitle', 'Open a match first')}>
                 {t('connectTablets.noMatchText', 'Codes and PINs belong to a match.')}
               </EmptyState>

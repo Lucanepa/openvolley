@@ -35,6 +35,9 @@ const SEVERITY_LEVELS = [
 
 // Kit form recipes (svrz page form): form-tone label, h-11 controls, no
 // asterisks (the submit check names missing fields), kit focus ring.
+// The legacy Modal's panel as a flex column: the header stays put and only the
+// content scrolls (one scroller, no 80vh guess inside the panel's 85vh)
+const ONE_SCROLLER = { display: 'flex', flexDirection: 'column', overflow: 'hidden' }
 const LABEL_CLS = 'mb-1.5 block text-sm font-medium text-stone-700'
 const CONTROL_CLS = 'w-full rounded-xl border border-stone-300 bg-white px-3 text-base text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-red-500'
 
@@ -276,7 +279,7 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
   if (!open) return null
 
   const header = (title, tone) => (
-    <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-stone-200/70 bg-white px-2 pb-3 sm:px-4">
+    <div className="flex shrink-0 items-center justify-between gap-3 border-b border-stone-200/70 bg-white px-2 pb-3 sm:px-4">
       <h2 className={cn('text-lg font-bold', tone || 'text-stone-900')}>
         {title}
       </h2>
@@ -320,13 +323,13 @@ ${files.length > 0 ? `\nNote: ${files.length} file(s) were selected but cannot b
   )
 
   return (
-    <Modal open={true} title="" onClose={handleClose} width={450} hideCloseButton={true}>
-      <div className="ov-kit">
-      {/* Sticky Header */}
+    <Modal open={true} title="" onClose={handleClose} width={450} hideCloseButton={true} panelStyle={ONE_SCROLLER}>
+      <div className="ov-kit flex min-h-0 flex-1 flex-col">
+      {/* Header: stays in view, only the content below scrolls */}
       {header(t('supportFeedback.title'))}
 
       {/* Content */}
-      <div className="max-h-[calc(80vh-60px)] overflow-y-auto px-2 pt-4 pb-2 sm:px-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pt-4 pb-2 sm:px-4">
         {/* Contact Type */}
         <Dropdown
           label={t('supportFeedback.contactTypeLabel')}
