@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { officialsToArray, mergeOfficialsEdits } from '../officials'
+import { officialsToArray, mergeOfficialsEdits, officialsFromSchedule } from '../officials'
 
 const existing = [
   { role: '1st referee', firstName: 'Anna', lastName: 'Muster', country: 'CHE', dob: '01.02.1980' },
@@ -69,5 +69,24 @@ describe('mergeOfficialsEdits', () => {
     const copy = JSON.parse(JSON.stringify(existing))
     mergeOfficialsEdits(existing, { ref1: { firstName: 'Q', lastName: 'R' } })
     expect(existing).toEqual(copy)
+  })
+})
+
+describe('officialsFromSchedule', () => {
+  it('a game with referees: their names, CHE and the DOB as DD.MM.YYYY', () => {
+    expect(officialsFromSchedule({
+      referee1First: 'Carla', referee1Last: 'Moser', referee1Dob: '1985-04-03',
+      referee2First: 'Ben', referee2Last: 'Roth', linesman1: 'Lea Frei'
+    })).toEqual({
+      ref1: { first: 'Carla', last: 'Moser', country: 'CHE', dob: '03.04.1985' },
+      ref2: { first: 'Ben', last: 'Roth', country: 'CHE', dob: '' },
+      lineJudge1: 'Lea Frei',
+      lineJudge2: ''
+    })
+  })
+
+  it('a game without referees or line judges clears them all (none kept from an earlier game)', () => {
+    const none = { first: '', last: '', country: 'CHE', dob: '' }
+    expect(officialsFromSchedule({ home: 'A', away: 'B' })).toEqual({ ref1: none, ref2: none, lineJudge1: '', lineJudge2: '' })
   })
 })

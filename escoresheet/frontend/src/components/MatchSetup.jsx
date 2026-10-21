@@ -41,6 +41,7 @@ import SaveRosterToTeamModal from './SaveRosterToTeamModal'
 import { focusLeaves, sortedByNumber } from '../utils/rosterOrder'
 import PlayerPoolModal from './PlayerPoolModal'
 import { buildPlayerPool, poolToRoster, ROSTER_MAX } from '../domain/playerPool'
+import { officialsFromSchedule } from '../domain/officials'
 import { rememberedRosters } from '../db/rememberedPlayers'
 import CloudBlockNotice from './CloudBlockNotice'
 import { savedTeamToRoster, findSavedTeamSuggestions } from '../domain/savedTeams'
@@ -2979,30 +2980,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     setHomeShortName('')
     setAwayShortName('')
 
-    // Referees (from Supabase - separate first/last name fields)
-    if (matchData.referee1First || matchData.referee1Last) {
-      setRef1First(matchData.referee1First || '')
-      setRef1Last(matchData.referee1Last || '')
-      setRef1Country('CHE')
-      if (matchData.referee1Dob) {
-        // Convert YYYY-MM-DD to DD.MM.YYYY
-        const m = matchData.referee1Dob.match(/^(\d{4})-(\d{2})-(\d{2})/)
-        if (m) setRef1Dob(`${m[3]}.${m[2]}.${m[1]}`)
-      }
-    }
-    if (matchData.referee2First || matchData.referee2Last) {
-      setRef2First(matchData.referee2First || '')
-      setRef2Last(matchData.referee2Last || '')
-      setRef2Country('CHE')
-      if (matchData.referee2Dob) {
-        const m = matchData.referee2Dob.match(/^(\d{4})-(\d{2})-(\d{2})/)
-        if (m) setRef2Dob(`${m[3]}.${m[2]}.${m[1]}`)
-      }
-    }
-
-    // Line judges
-    if (matchData.linesman1) setLineJudge1(matchData.linesman1)
-    if (matchData.linesman2) setLineJudge2(matchData.linesman2)
+    // Referees and line judges: this game's, or none (a second game loaded
+    // kept the first game's referees, their DOB and line judges)
+    const { ref1, ref2, lineJudge1: lj1, lineJudge2: lj2 } = officialsFromSchedule(matchData)
+    setRef1First(ref1.first); setRef1Last(ref1.last); setRef1Country(ref1.country); setRef1Dob(ref1.dob)
+    setRef2First(ref2.first); setRef2Last(ref2.last); setRef2Country(ref2.country); setRef2Dob(ref2.dob)
+    setLineJudge1(lj1)
+    setLineJudge2(lj2)
 
     // Saved rosters for these teams, and whether another scorer has the game
     setSavedSuggestion(null)
