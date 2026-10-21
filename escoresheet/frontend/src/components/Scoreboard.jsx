@@ -8,6 +8,7 @@ import { queueMatchUpdate } from '../db/matchRepository'
 import { withActivityContext, currentActivityContext, maxVoidedSeq, rememberSeedKey } from '../db/eventHistory'
 import Modal from './Modal'
 import RostersPanel from './rosters/RostersPanel'
+import ReopenRosterModal from './rosters/ReopenRosterModal'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { useActionLiveQuery } from '../hooks/useActionLiveQuery'
 import { useScorerActions, pickLiveStateSnapshot, isReportedActionError, markActionErrorReported } from '../hooks/useScorerActions'
@@ -56,7 +57,6 @@ import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags, deferredPena
 import { classifyTimeoutRequest } from '../domain/timeouts'
 import { rallyStatusOf, currentSetOf } from '../domain/rally'
 import { useConfirmAction } from '../hooks/useConfirmAction'
-import { usePhoneWidth } from '../hooks/usePhoneWidth'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
 import { playerReplacedByLibero } from '../domain/liberos'
 import { planSubstitutionDeletion, countRegularSubstitutions, classifySubstitutionRequest, MAX_SUBSTITUTIONS_PER_SET } from '../domain/substitutions'
@@ -83,7 +83,7 @@ import { cn } from '../ui/cn.js'
 import { FOCUS_RING, Button } from '../ui/Button.jsx'
 import { ActionSheet, ActionSheetItem } from '../ui/Modal.jsx'
 import { SectionHeader } from '../ui/SectionHeader.jsx'
-import { DateField, DateTimeField } from '../ui/DateField.jsx'
+import { DateTimeField } from '../ui/DateField.jsx'
 import { askConfirm } from '../utils/askConfirm.js'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
 import { ArrowUpDown, ChevronDown, Cross } from 'lucide-react'
@@ -147,11 +147,6 @@ function SbSection(props) {
   )
 }
 
-/** Footer of a non-courtside dialog (Edit PIN): cancel on the left, commit on
- *  the right (volleyui). The courtside dialogs keep the base order, commit
- *  first and centred, so the scorer's muscle memory holds; that deviation
- *  waits for the owner's decision (P5 open issue). */
-const SB_FOOTER = 'flex flex-wrap items-center justify-end gap-2'
 /** Nested block inside a dialog (kit Block): hairline, sunken, no shadow. */
 const SB_BLOCK = 'rounded-xl border border-stone-200/70 bg-stone-50/60'
 /** Micro-label over a value (stone-500 for AA on white, R13). */
@@ -23879,249 +23874,6 @@ function SetEndTimeModal({ setIndex, winner, homePoints, awayPoints, defaultTime
             className="border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
           >
             Decision change
-          </SbButton>
-        </div>
-      </div>
-    </Modal>
-  )
-}
-
-// ==================== REOPEN ROSTER MODAL ====================
-function ReopenRosterModal({ teamKey, teamName, players, bench, onSave, onClose, t, benchRoles, toISODate }) {
-  const [editingPlayers, setEditingPlayers] = useState(() =>
-    players.map(p => ({ ...p })).sort((a, b) => (a.number || 0) - (b.number || 0))
-  )
-  const [editingBench, setEditingBench] = useState(() =>
-    bench.filter(b => b.firstName || b.lastName || b.role).map(b => ({ ...b }))
-  )
-  const [snapshotPlayers] = useState(() =>
-    players.map(p => ({ ...p }))
-  )
-  const [snapshotBench] = useState(() =>
-    bench.filter(b => b.firstName || b.lastName || b.role).map(b => ({ ...b }))
-  )
-
-  const updatePlayer = (idx, field, value) => {
-    setEditingPlayers(prev => prev.map((p, i) => i === idx ? { ...p, [field]: value } : p))
-  }
-
-  const addPlayer = () => {
-    setEditingPlayers(prev => [...prev, {
-      number: '', // must be entered (validated 1-99, unique) before saving
-      firstName: '',
-      lastName: '',
-      dob: '',
-      libero: '',
-      isCaptain: false,
-      isLfp: false
-    }])
-  }
-
-  const removePlayer = (idx) => {
-    setEditingPlayers(prev => prev.filter((_, i) => i !== idx))
-  }
-
-  const updateBench = (idx, field, value) => {
-    setEditingBench(prev => prev.map((b, i) => i === idx ? { ...b, [field]: value } : b))
-  }
-
-  const addBench = () => {
-    setEditingBench(prev => [...prev, { role: 'Coach', firstName: '', lastName: '', dob: '' }])
-  }
-
-  const removeBench = (idx) => {
-    setEditingBench(prev => prev.filter((_, i) => i !== idx))
-  }
-
-  const inputStyle = {
-    background: '#fff',
-    border: '1px solid #d6d3d1',
-    borderRadius: '8px',
-    color: '#292524',
-    fontSize: '13px',
-    outline: 'none'
-  }
-  // On a phone the rows wrap: names get the width, the date of birth (and a
-  // bench official's role) its own line. One line squeezed the names of the
-  // bench officials to 16 px (emulator audit 2026-10-14).
-  const phone = usePhoneWidth()
-  const playerGrid = phone
-    ? { gridTemplateColumns: '44px 1fr 1fr', gridTemplateAreas: '"num first last" ". dob dob"' }
-    : { gridTemplateColumns: '50px 1fr 1fr 100px' }
-  const benchGrid = phone
-    ? { gridTemplateColumns: '1fr 1fr 36px', gridTemplateAreas: '"role role del" "first last last" "dob dob ."' }
-    : { gridTemplateColumns: '140px 1fr 1fr 100px 36px' }
-  const area = (name) => (phone ? { gridArea: name } : null)
-
-  return (
-    <Modal
-      title={t('scoreboard.reopenRoster.title', { team: teamName })}
-      open={true}
-      onClose={onClose}
-      width={700}
-    >
-      <div style={{ padding: '4px 0', maxHeight: '70vh', overflowY: 'auto' }}>
-        {/* Players Section */}
-        <div style={{ marginBottom: '24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h3 className="m-0 text-sm font-semibold text-stone-800">{t('scoreboard.reopenRoster.players', 'Players')}</h3>
-            <SbButton onClick={addPlayer}>
-              {t('scoreboard.reopenRoster.addPlayer', '+ Add player')}
-            </SbButton>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {editingPlayers.map((player, idx) => (
-              <div key={player.id || `new-${idx}`} className={SB_BLOCK} style={{ padding: '10px' }}>
-                <div style={{ display: 'grid', ...playerGrid, gap: '6px', alignItems: 'center' }}>
-                  <input
-                    type="number"
-                    value={player.number || ''}
-                    onChange={(e) => updatePlayer(idx, 'number', e.target.value === '' ? '' : (parseInt(e.target.value, 10) || 0))}
-                    placeholder="#"
-                    style={{ ...inputStyle, textAlign: 'center', padding: '6px', minWidth: 0, ...area('num') }}
-                  />
-                  <input
-                    type="text"
-                    value={player.firstName || ''}
-                    onChange={(e) => updatePlayer(idx, 'firstName', e.target.value)}
-                    placeholder={t('scoreboard.reopenRoster.firstName', 'First name')}
-                    style={{ ...inputStyle, padding: '6px 8px', minWidth: 0, ...area('first') }}
-                  />
-                  <input
-                    type="text"
-                    value={player.lastName || ''}
-                    onChange={(e) => updatePlayer(idx, 'lastName', e.target.value)}
-                    placeholder={t('scoreboard.reopenRoster.lastName', 'Last name')}
-                    style={{ ...inputStyle, padding: '6px 8px', minWidth: 0, ...area('last') }}
-                  />
-                  <DateField
-                    size="bare"
-                    value={toISODate(player.dob)}
-                    onChange={(v) => updatePlayer(idx, 'dob', v)}
-                    wrapperClassName={phone ? '[grid-area:dob]' : undefined}
-                    style={{ ...inputStyle, padding: '4px', fontSize: '11px' }}
-                  />
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '6px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', cursor: 'pointer' }}>
-                    {t('scoreboard.reopenRoster.libero', 'Libero')}
-                    {/* L1 / L2 / none (as in roster setup); a re-designated or unable
-                        libero keeps that state unless changed explicitly */}
-                    <select
-                      value={player.libero === true ? 'libero1' : (player.libero || '')}
-                      onChange={(e) => updatePlayer(idx, 'libero', e.target.value)}
-                      style={{ ...inputStyle, padding: '2px 4px', fontSize: '11px' }}
-                    >
-                      <option value="">-</option>
-                      <option value="libero1">L1</option>
-                      <option value="libero2">L2</option>
-                      {player.libero === 'redesignated' && <option value="redesignated">LR</option>}
-                      {player.libero === 'unable' && <option value="unable">{t('scoreboard.reopenRoster.liberoUnable', 'Unable')}</option>}
-                    </select>
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={player.isCaptain || false}
-                      onChange={(e) => updatePlayer(idx, 'isCaptain', e.target.checked)}
-                    />
-                    {t('scoreboard.reopenRoster.captain', 'Captain')}
-                  </label>
-                  <button
-                    onClick={() => removePlayer(idx)}
-                    style={{
-                      marginLeft: 'auto',
-                      padding: '4px 8px',
-                      fontSize: '11px',
-                      background: '#fef2f2',
-                      color: '#b91c1c',
-                      border: '1px solid #fecaca',
-                      borderRadius: '4px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {t('scoreboard.reopenRoster.removePlayer', 'Remove')}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Bench Officials Section */}
-        <div style={{ marginBottom: '24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h3 className="m-0 text-sm font-semibold text-stone-800">{t('scoreboard.reopenRoster.benchOfficials', 'Bench officials')}</h3>
-            <SbButton onClick={addBench}>
-              {t('scoreboard.reopenRoster.addBenchOfficial', '+ Add bench official')}
-            </SbButton>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {editingBench.map((staff, idx) => (
-              <div key={idx} className={SB_BLOCK} style={{ padding: '8px' }}>
-                <div style={{ display: 'grid', ...benchGrid, gap: '6px', alignItems: 'center' }}>
-                  <select
-                    value={staff.role || 'Coach'}
-                    onChange={(e) => updateBench(idx, 'role', e.target.value)}
-                    style={{ ...inputStyle, padding: '6px 8px', fontSize: '12px', minWidth: 0, ...area('role') }}
-                  >
-                    {benchRoles.map(r => (
-                      <option key={r.value} value={r.value}>{r.value}</option>
-                    ))}
-                  </select>
-                  <input
-                    type="text"
-                    value={staff.firstName || ''}
-                    onChange={(e) => updateBench(idx, 'firstName', e.target.value)}
-                    placeholder={t('scoreboard.reopenRoster.firstName', 'First name')}
-                    style={{ ...inputStyle, padding: '6px 8px', minWidth: 0, ...area('first') }}
-                  />
-                  <input
-                    type="text"
-                    value={staff.lastName || ''}
-                    onChange={(e) => updateBench(idx, 'lastName', e.target.value)}
-                    placeholder={t('scoreboard.reopenRoster.lastName', 'Last name')}
-                    style={{ ...inputStyle, padding: '6px 8px', minWidth: 0, ...area('last') }}
-                  />
-                  <DateField
-                    size="bare"
-                    value={toISODate(staff.dob)}
-                    onChange={(v) => updateBench(idx, 'dob', v)}
-                    wrapperClassName={phone ? '[grid-area:dob]' : undefined}
-                    style={{ ...inputStyle, padding: '4px', fontSize: '11px' }}
-                  />
-                  <button
-                    onClick={() => removeBench(idx)}
-                    aria-label={t('scoreboard.reopenRoster.removePlayer', 'Remove')}
-                    style={{
-                      ...area('del'),
-                      padding: '4px 8px',
-                      fontSize: '14px',
-                      background: '#fef2f2',
-                      color: '#b91c1c',
-                      border: '1px solid #fecaca',
-                      borderRadius: '4px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    &times;
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Save / Cancel buttons */}
-        <div className={cn(SB_FOOTER, 'border-t border-stone-200 pt-4')}>
-          <SbButton onClick={onClose}>
-            {t('scoreboard.reopenRoster.cancel', 'Cancel')}
-          </SbButton>
-          <SbButton
-            variant="positive"
-            onClick={() => onSave(teamKey, editingPlayers, editingBench, snapshotPlayers, snapshotBench)}
-          >
-            {t('scoreboard.reopenRoster.save', 'Save changes')}
           </SbButton>
         </div>
       </div>

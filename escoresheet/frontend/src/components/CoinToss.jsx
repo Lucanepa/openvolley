@@ -29,6 +29,7 @@ import { Button } from '../ui/Button.jsx'
 import { DateField } from '../ui/DateField.jsx'
 import StackLabel from './StackLabel'
 import { useFormStack } from '../hooks/useFormStack'
+import { usePhoneWidth } from '../hooks/usePhoneWidth'
 
 // volleyui (RESTYLE-SPEC P3b). Sign A/B and the coach/captain sign buttons are
 // the kit outline button until signed, then the emerald success state: a
@@ -153,6 +154,9 @@ const sortBenchByHierarchy = (bench) => {
 
 const initBench = role => ({ role, firstName: '', lastName: '', dob: '' })
 
+// Team name in landscape: two lines, then the ellipsis
+const TEAM_NAME_CLAMP = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', overflowWrap: 'anywhere' }
+
 export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnabled = false }) {
   const { t, i18n } = useTranslation()
   const { showAlert } = useAlert()
@@ -162,6 +166,18 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
   // keyed on the orientation, so turning back replaces the node: a select
   // keeps the width of a longer text when only its option's text changes.
   const formStack = useFormStack()
+  // A phone held upright (under 640 px): the screen takes its content's
+  // height, sizes in rem (they follow the Android font size) and labels that
+  // fit on one line. It was the tablet layout squeezed: names cut to
+  // "VBC Züri…", Back over the title, buttons on three lines, the ball in a
+  // tall empty middle (the owner, 2026-10-21).
+  const phone = usePhoneWidth()
+  // The libero select's empty option in a portrait row (its column head is
+  // hidden there): "None", "-" on a phone with the LFP toggle on the same
+  // line (room for "L1" only). Keyed on the text: see formStack above.
+  const liberoNone = !formStack
+    ? { key: 'blank', text: '' }
+    : (phone && lfpTrackingEnabled ? { key: 'tight', text: '-' } : { key: 'stack', text: t('matchSetup.noLiberoShort') })
 
   // Compact mode disabled - always use full layout
   const isCompact = false
@@ -202,6 +218,18 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
     gap: Math.round(24 * vhScale),
     marginBottom: Math.round(32 * vhScale)
   }
+  if (phone) Object.assign(sizes, {
+    headerFont: '1.5rem',
+    teamButtonFont: '1.125rem',
+    teamButtonPadding: '10px 8px',
+    actionButtonFont: '0.9375rem',
+    actionButtonPadding: '10px',
+    actionButtonMinWidth: '100%',
+    actionButtonMinHeight: '48px',
+    confirmButtonFont: '1rem',
+    confirmButtonPadding: '14px 12px',
+    gap: 12
+  })
 
   // Team info state (loaded from DB)
   const [home, setHome] = useState(t('common.home'))
@@ -1553,35 +1581,47 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
 
   return (
     <div className="setup" style={{
-      // 95vw, but never past the panel's padding: on a phone 95vw + 2 x 10px
-      // was wider than the screen and the page scrolled sideways (2026-10-13)
-      width: 'min(95vw, 100%)',
+      // 95vw, but never past the padding of the panel and its container
+      // (2 x 10px + 2 x 5px): on a phone 95vw was wider than the screen and
+      // the page scrolled sideways (2026-10-13). No percentage: the container
+      // takes its width from this screen, so `100%` fell back to the content's
+      // width and a laptop got a 570 px column in the middle (2026-10-20).
+      width: 'min(95vw, calc(100vw - 30px))',
       maxWidth: '100vw',
-      height: '100%',
-      maxHeight: '100%',
-      padding: isCompact ? '0 12px' : '5px 24px',
+      // a phone: as tall as its content, which the page scrolls when a large
+      // font makes it taller than the screen (the panel centres it otherwise)
+      height: phone ? 'auto' : '100%',
+      maxHeight: phone ? 'none' : '100%',
+      padding: phone ? '12px' : (isCompact ? '0 12px' : '5px 24px'),
       boxSizing: 'border-box',
       display: 'flex',
       flexDirection: 'column',
-      overflow: 'hidden'
+      gap: phone ? 16 : undefined,
+      overflow: phone ? 'visible' : 'hidden'
     }}>
-      <div className="ov-kit" style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 12, marginBottom: Math.round(8 * vhScale), flexShrink: 0 }}>
-        <Button variant="toolbar" size="xl" icon={ArrowLeft} className="justify-self-start font-medium" onClick={onBack}>{t('common.back')}</Button>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-stone-900" style={{ margin: 0, textAlign: 'center' }}>{t('coinToss.title')}</h1>
-        <div />
+      {/* Back, title. On a phone the title follows Back: centred, it ran
+          under the button. */}
+      <div className="ov-kit" style={phone
+        ? { display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }
+        : { display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 12, marginBottom: Math.round(8 * vhScale), flexShrink: 0 }}>
+        <Button variant="toolbar" size="xl" icon={ArrowLeft} className="shrink-0 justify-self-start font-medium" onClick={onBack}>{t('common.back')}</Button>
+        <h1 className="min-w-0 text-2xl sm:text-3xl font-bold tracking-tight text-stone-900" style={{ margin: 0, textAlign: phone ? 'left' : 'center' }}>{t('coinToss.title')}</h1>
+        {!phone && <div />}
       </div>
 
       {/* Switch buttons row */}
       {/* The two coin-toss decisions: the kit's dark neutral key action
           (white on slate-900; was green on black), courtside-sized. */}
-      <div className="ov-kit" style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: Math.round(12 * vhScale), flexShrink: 0 }}>
+      {/* On a phone each button keeps its label on one line and takes half
+          the row, or the whole row when two do not fit (a large font) */}
+      <div className="ov-kit" style={{ display: 'flex', flexWrap: phone ? 'wrap' : undefined, justifyContent: 'center', gap: '12px', marginBottom: phone ? 0 : Math.round(12 * vhScale), flexShrink: 0 }}>
         <Button
           variant="dark"
           size="xl"
           data-help-id="cointoss-team-selector"
           onClick={switchTeams}
           icon={<ArrowLeftRight size={20} aria-hidden="true" />}
-          style={{ minHeight: sizes.actionButtonMinHeight, padding: '0 20px', fontSize: sizes.actionButtonFont }}
+          style={{ minHeight: sizes.actionButtonMinHeight, padding: phone ? '0 10px' : '0 20px', fontSize: sizes.actionButtonFont, ...(phone ? { flex: '1 1 auto', whiteSpace: 'nowrap' } : null) }}
         >
           {t('coinToss.switchTeams')}
         </Button>
@@ -1590,15 +1630,15 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
           size="xl"
           data-help-id="cointoss-serve-selector"
           onClick={switchServe}
-          style={{ minHeight: sizes.actionButtonMinHeight, padding: '0 20px 0 12px', fontSize: sizes.actionButtonFont }}
+          style={{ minHeight: sizes.actionButtonMinHeight, padding: phone ? '0 10px' : '0 20px 0 12px', fontSize: sizes.actionButtonFont, ...(phone ? { flex: '1 1 auto', whiteSpace: 'nowrap' } : null) }}
         >
-          <img src={ballImage} onError={(e) => { e.target.src = ballFallback }} alt="" style={{ width: '1.75em', height: '1.75em' }} /> {t('coinToss.switchServe')}
+          <img src={ballImage} onError={(e) => { e.target.src = ballFallback }} alt="" style={{ width: phone ? '1.5em' : '1.75em', height: phone ? '1.5em' : '1.75em' }} /> {t('coinToss.switchServe')}
         </Button>
       </div>
 
-      <div data-help-id="cointoss-side-selector" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 16px minmax(0, 1fr)', gap: sizes.gap, flex: 1, alignItems: 'stretch' }}>
+      <div data-help-id="cointoss-side-selector" style={{ display: 'grid', gridTemplateColumns: phone ? 'minmax(0, 1fr) minmax(0, 1fr)' : 'minmax(0, 1fr) 16px minmax(0, 1fr)', gap: sizes.gap, flex: phone ? 'none' : 1, alignItems: 'stretch' }}>
         {/* Team A */}
-        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', justifyContent: 'space-evenly' }}>
+        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', justifyContent: phone ? 'flex-start' : 'space-evenly' }}>
           {/* Row 1: Team label + Team name bar */}
           <div style={{ width: '100%' }}>
             <h1 className="text-stone-900 tracking-tight" style={{ margin: 0, marginBottom: Math.round(6 * vhScale), fontSize: sizes.headerFont, fontWeight: 700, textAlign: 'center' }}>{t('coinToss.teamA')}</h1>
@@ -1608,18 +1648,26 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   ...teamBoxStyle(teamAInfo.color),
                   flex: 1, padding: sizes.teamButtonPadding, fontSize: sizes.teamButtonFont, width: '100%',
                   fontWeight: 600, border: 'none', borderRadius: '8px',
-                  // Two lines before the ellipsis: one showed "VBC Z…" on a phone
-                  overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflowWrap: 'anywhere',
+                  // Upright (phone, tablet) the whole name, on as many lines as
+                  // it needs: there is room above the ball. Landscape: two lines
+                  // before the ellipsis (one showed "VBC Z…"), the clamp on an
+                  // inner box without padding: on this padded box the third
+                  // line peeked out below the second (an 820 px tablet).
+                  ...(formStack ? { overflowWrap: 'break-word', hyphens: 'auto', lineHeight: 1.25 } : { overflow: 'hidden' }),
                   cursor: 'default'
                 }}
                 title={teamAInfo.name}
               >
-                {getDisplayName(teamAInfo.name)}
+                {formStack
+                  ? getDisplayName(teamAInfo.name)
+                  : <span style={TEAM_NAME_CLAMP}>{getDisplayName(teamAInfo.name)}</span>}
               </div>
             </div>
           </div>
           {/* Row 2: Volleyball (vertically centered between team label and roster button) */}
-          <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          {/* on a phone it takes up what a two-line name adds in the other
+              column, so both roster and sign buttons stay level */}
+          <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', padding: phone ? '16px 0' : undefined }}>
             {serveA ? volleyballImage : volleyballPlaceholder}
           </div>
           {/* Row 3: Roster Button (an easy match has no roster) */}
@@ -1627,21 +1675,25 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             <Button
               variant="secondary"
               size="xl"
+              // h-auto: a long label (a narrow tablet, a large font) takes two
+              // lines, which ran out of the fixed h-11 box
+              className="h-auto"
               onClick={() => setRosterModal('teamA')}
-              style={{ padding: sizes.actionButtonPadding, fontSize: sizes.actionButtonFont, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight }}
+              style={{ padding: sizes.actionButtonPadding, fontSize: sizes.actionButtonFont, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight, whiteSpace: phone ? 'nowrap' : undefined }}
             >
-              {t('coinToss.showRoster')} ({teamAInfo.roster.length})
+              {phone ? t('roster.title', 'Roster') : t('coinToss.showRoster')} ({teamAInfo.roster.length})
             </Button>
           </div>
           {/* Row 4: Signatures */}
-          <div className="ov-kit" style={{ display: isEasyMatch ? 'none' : 'flex', justifyContent: 'center', width: '100%', position: 'relative', marginTop: '12px' }}>
+          <div className="ov-kit" style={{ display: isEasyMatch ? 'none' : 'flex', justifyContent: 'center', width: '100%', position: 'relative', marginTop: phone ? 8 : 12 }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
               <Button
                 variant="secondary"
                 size="xl"
                 onClick={() => { setSignatureMenuA(!signatureMenuA); setSignatureMenuB(false) }}
                 aria-expanded={signatureMenuA}
-                className={teamACoachSig && teamACaptainSig ? SIGNED_CLASS : undefined}
+                // h-auto on a phone: a long label (Signature équipe A) takes two lines
+                className={[phone && 'h-auto', teamACoachSig && teamACaptainSig && SIGNED_CLASS].filter(Boolean).join(' ') || undefined}
                 style={{ fontSize: sizes.actionButtonFont, padding: sizes.actionButtonPadding, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight }}
               >
                 {t('coinToss.signA')} {teamACoachSig && teamACaptainSig ? '✓' : `(${(teamACoachSig ? 1 : 0) + (teamACaptainSig ? 1 : 0)}/2)`}
@@ -1679,10 +1731,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
         </div>
 
         {/* Middle spacer */}
-        <div style={{ width: '16px' }} />
+        {!phone && <div style={{ width: '16px' }} />}
 
         {/* Team B */}
-        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', justifyContent: 'space-evenly' }}>
+        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', justifyContent: phone ? 'flex-start' : 'space-evenly' }}>
           {/* Row 1: Team label + Team name bar */}
           <div style={{ width: '100%' }}>
             <h1 className="text-stone-900 tracking-tight" style={{ margin: 0, marginBottom: Math.round(6 * vhScale), fontSize: sizes.headerFont, fontWeight: 700, textAlign: 'center' }}>{t('coinToss.teamB')}</h1>
@@ -1692,18 +1744,26 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   ...teamBoxStyle(teamBInfo.color),
                   flex: 1, padding: sizes.teamButtonPadding, fontSize: sizes.teamButtonFont, width: '100%',
                   fontWeight: 600, border: 'none', borderRadius: '8px',
-                  // Two lines before the ellipsis: one showed "VBC Z…" on a phone
-                  overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflowWrap: 'anywhere',
+                  // Upright (phone, tablet) the whole name, on as many lines as
+                  // it needs: there is room above the ball. Landscape: two lines
+                  // before the ellipsis (one showed "VBC Z…"), the clamp on an
+                  // inner box without padding: on this padded box the third
+                  // line peeked out below the second (an 820 px tablet).
+                  ...(formStack ? { overflowWrap: 'break-word', hyphens: 'auto', lineHeight: 1.25 } : { overflow: 'hidden' }),
                   cursor: 'default'
                 }}
                 title={teamBInfo.name}
               >
-                {getDisplayName(teamBInfo.name)}
+                {formStack
+                  ? getDisplayName(teamBInfo.name)
+                  : <span style={TEAM_NAME_CLAMP}>{getDisplayName(teamBInfo.name)}</span>}
               </div>
             </div>
           </div>
           {/* Row 2: Volleyball (vertically centered between team label and roster button) */}
-          <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          {/* on a phone it takes up what a two-line name adds in the other
+              column, so both roster and sign buttons stay level */}
+          <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', padding: phone ? '16px 0' : undefined }}>
             {serveB ? volleyballImage : volleyballPlaceholder}
           </div>
           {/* Row 3: Roster Button (an easy match has no roster) */}
@@ -1711,21 +1771,25 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             <Button
               variant="secondary"
               size="xl"
+              // h-auto: a long label (a narrow tablet, a large font) takes two
+              // lines, which ran out of the fixed h-11 box
+              className="h-auto"
               onClick={() => setRosterModal('teamB')}
-              style={{ padding: sizes.actionButtonPadding, fontSize: sizes.actionButtonFont, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight }}
+              style={{ padding: sizes.actionButtonPadding, fontSize: sizes.actionButtonFont, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight, whiteSpace: phone ? 'nowrap' : undefined }}
             >
-              {t('coinToss.showRoster')} ({teamBInfo.roster.length})
+              {phone ? t('roster.title', 'Roster') : t('coinToss.showRoster')} ({teamBInfo.roster.length})
             </Button>
           </div>
           {/* Row 3: Signatures */}
-          <div className="ov-kit" style={{ display: isEasyMatch ? 'none' : 'flex', justifyContent: 'center', width: '100%', position: 'relative', marginTop: '12px' }}>
+          <div className="ov-kit" style={{ display: isEasyMatch ? 'none' : 'flex', justifyContent: 'center', width: '100%', position: 'relative', marginTop: phone ? 8 : 12 }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
               <Button
                 variant="secondary"
                 size="xl"
                 onClick={() => { setSignatureMenuB(!signatureMenuB); setSignatureMenuA(false) }}
                 aria-expanded={signatureMenuB}
-                className={teamBCoachSig && teamBCaptainSig ? SIGNED_CLASS : undefined}
+                // h-auto on a phone: a long label (Signature équipe B) takes two lines
+                className={[phone && 'h-auto', teamBCoachSig && teamBCaptainSig && SIGNED_CLASS].filter(Boolean).join(' ') || undefined}
                 style={{ fontSize: sizes.actionButtonFont, padding: sizes.actionButtonPadding, minWidth: sizes.actionButtonMinWidth, minHeight: sizes.actionButtonMinHeight }}
               >
                 {t('coinToss.signB')} {teamBCoachSig && teamBCaptainSig ? '✓' : `(${(teamBCoachSig ? 1 : 0) + (teamBCaptainSig ? 1 : 0)}/2)`}
@@ -1765,7 +1829,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
 
       {/* Bottom buttons */}
 
-      <div style={{ display: 'flex', justifyContent: 'center', marginTop: Math.round(8 * vhScale), flexShrink: 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'center', marginTop: phone ? 0 : Math.round(8 * vhScale), flexShrink: 0 }}>
         <MenuList
           buttonLabel={<span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><FileTextIcon size={14} />{!isCompact && t('header.scoresheet')}</span>}
           buttonTitle={isCompact ? t('header.scoresheet') : ''}
@@ -1822,13 +1886,13 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
       </div>
       {/* The page's commit: emerald confirm (saves the toss); once confirmed,
           going back to the match is the neutral dark action. */}
-      <div className="ov-kit" data-help-id="cointoss-confirm-button" style={{ display: 'flex', justifyContent: 'center', marginTop: isCompact ? 8 : 12, paddingBottom: isCompact ? 12 : 20, flexShrink: 0 }}>
+      <div className="ov-kit" data-help-id="cointoss-confirm-button" style={{ display: 'flex', justifyContent: 'center', marginTop: phone ? 0 : (isCompact ? 8 : 12), paddingBottom: phone ? 0 : (isCompact ? 12 : 20), flexShrink: 0 }}>
         {isCoinTossConfirmed && !starting ? (
-          <Button variant="dark" size="xl" onClick={handleReturnToMatch} style={{ padding: sizes.confirmButtonPadding, fontSize: sizes.confirmButtonFont, height: 'auto' }}>
+          <Button variant="dark" size="xl" onClick={handleReturnToMatch} style={{ padding: sizes.confirmButtonPadding, fontSize: sizes.confirmButtonFont, height: 'auto', width: phone ? '100%' : undefined }}>
             {t('coinToss.returnToMatch')}
           </Button>
         ) : (
-          <Button variant="positive" size="xl" onClick={confirmCoinToss} disabled={starting} style={{ padding: sizes.confirmButtonPadding, fontSize: sizes.confirmButtonFont, height: 'auto' }}>
+          <Button variant="positive" size="xl" onClick={confirmCoinToss} disabled={starting} style={{ padding: sizes.confirmButtonPadding, fontSize: sizes.confirmButtonFont, height: 'auto', width: phone ? '100%' : undefined }}>
             {t('coinToss.confirmResult')}
           </Button>
         )}
@@ -1885,8 +1949,11 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             onClose={handleCloseOrModify}
             width={800}
             hideCloseButton={true}
+            // a column: the lists scroll, Close / Modify stays in view (it
+            // was under a 70vh body, below the dialog's edge on a phone)
+            panelStyle={{ display: 'flex', flexDirection: 'column' }}
           >
-            <div style={{ maxHeight: '70vh', overflowY: 'auto', padding: '0 16px' }}>
+            <div className="ct-roster-body" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '0 16px' }}>
               {/* Players Section */}
               <div style={{ marginBottom: 16 }}>
                 <div className={`ov-kit ${SECTION_HEAD}`}>
@@ -1895,7 +1962,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     {t('roster.addPlayer')}
                   </Button>
                 </div>
-                <table className="roster-table ct-cards" style={{ width: '100%' }}>
+                <table className={`roster-table ct-cards${lfpTrackingEnabled ? ' has-lfp' : ''}`} style={{ width: '100%' }}>
                   <thead>
                     <tr>
                       <th>{t('roster.number')}</th>
@@ -1963,7 +2030,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                               )}
                             </div>
                           </td>
-                          <td style={{ verticalAlign: 'middle', padding: '6px' }}>
+                          <td className="ct-name" style={{ verticalAlign: 'middle', padding: '6px' }}>
                             <StackLabel>{t('roster.name')}</StackLabel>
                             <input
                               aria-label={t('roster.name')}
@@ -1981,7 +2048,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                               style={{ width: '100%', padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px' }}
                             />
                           </td>
-                          <td style={{ verticalAlign: 'middle', padding: '6px', width: '90px' }}>
+                          <td className="ct-dob" style={{ verticalAlign: 'middle', padding: '6px', width: '90px' }}>
                             <StackLabel>{t('roster.dateOfBirth')}</StackLabel>
                             <DateField
                               size="bare"
@@ -1999,7 +2066,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                               style={{ width: '100%', padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px' }}
                             />
                           </td>
-                          <td style={{ verticalAlign: 'middle', padding: '6px' }}>
+                          <td className="ct-role" style={{ verticalAlign: 'middle', padding: '6px' }}>
                             <StackLabel>{t('roster.libero')} · {t('matchSetup.captain')}</StackLabel>
                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: '1 1 0' }}>
                               <select
@@ -2022,7 +2089,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                                 style={{ padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px' }}
                                 className="coin-toss-select"
                               >
-                                <option key={formStack ? 'no-libero' : 'blank'} value="" style={{ background: 'var(--bg)', color: 'var(--text)' }}>{formStack ? t('matchSetup.noLibero') : ''}</option>
+                                <option key={liberoNone.key} value="" style={{ background: 'var(--bg)', color: 'var(--text)' }}>{liberoNone.text}</option>
                                 {!roster.some((player, idx) => idx !== originalIdx && player.libero === 'libero1') && (
                                   <option value="libero1" style={{ background: 'var(--bg)', color: 'var(--text)' }}>L1</option>
                                 )}
@@ -2060,7 +2127,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                             </div>
                           </td>
                           {lfpTrackingEnabled && (
-                            <td style={{ verticalAlign: 'middle', padding: '4px', textAlign: 'center' }}>
+                            <td className="ct-lfp" style={{ verticalAlign: 'middle', padding: '4px', textAlign: 'center' }}>
                               <StackLabel>LFP</StackLabel>
                               <div
                                 role="button"
@@ -2117,7 +2184,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     {t('roster.addBench')}
                   </Button>
                 </div>
-                <table className="roster-table ct-cards" style={{ width: '100%' }}>
+                <table className="roster-table ct-cards ct-bench" style={{ width: '100%' }}>
                   <thead>
                     <tr>
                       <th>{t('roster.role')}</th>
@@ -2151,7 +2218,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                               ))}
                             </select>
                           </td>
-                          <td style={{ verticalAlign: 'middle', padding: '6px' }}>
+                          <td className="ct-name" style={{ verticalAlign: 'middle', padding: '6px' }}>
                             <StackLabel>{t('roster.name')}</StackLabel>
                             <input
                               aria-label={t('roster.name')}
@@ -2168,7 +2235,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                               style={{ width: '100%', padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px' }}
                             />
                           </td>
-                          <td style={{ verticalAlign: 'middle', padding: '6px', width: '90px' }}>
+                          <td className="ct-dob" style={{ verticalAlign: 'middle', padding: '6px', width: '90px' }}>
                             <StackLabel>{t('roster.dateOfBirth')}</StackLabel>
                             <DateField
                               size="bare"
@@ -2256,7 +2323,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             </div>
 
             {/* Custom Close/Modify Button */}
-            <div className="ov-kit border-t border-stone-200" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16, paddingTop: 12 }}>
+            <div className="ov-kit border-t border-stone-200" style={{ display: 'flex', flexShrink: 0, justifyContent: 'flex-end', gap: 8, marginTop: 16, paddingTop: 12 }}>
               {hasChanges && (
                 <Button
                   variant="secondary"

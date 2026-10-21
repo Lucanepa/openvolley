@@ -456,152 +456,298 @@
     margin-top: 0;
   }
 
-  /* Roster and bench editors (MatchSetup): each table row becomes a card of
-     its own (border, radius, white, 10 px apart), one field per row. The head
-     strip is hidden; every field carries its own .pf-label instead. Card:
-     [# label] / badge + number + Delete (bench: role + Delete) / one row per
-     field / libero select + captain toggle. Captain and libero rows keep their
-     inline green / grey border and tint. */
+  /* Roster and bench editors (MatchSetup): one row per player or official,
+     flat on the page card with a hairline between them. It was a card per
+     player with one field per line, a screen for every two players ("each
+     player row by row on a card rather than clumsy", the owner, 2026-10-20).
+     A row is a grid on the list's width (container query):
+       phone    # | last name     | first name | delete
+                date of birth | libero     | captain | (LFP)
+       >=600px  # | last | first | date of birth | libero | C | (LFP) | delete,
+                under the column head
+     The date of birth has a fixed track (# + 82 px = 136 px, the digits and
+     the calendar button), so the year is never cut ("12.03.19" read as 2019);
+     the libero select takes what is left of the second line. The last name,
+     which the scoresheet prints, gets the wider share of the first. Bench:
+     role + date of birth over last + first name + delete, so the names get
+     a line (three on one line left them 80 px each, the in-match editor's
+     emulator audit of 2026-10-14 had found the same); one line from 600 px.
+     The fields go by their placeholders and aria-labels (the .pf-labels stay
+     hidden in a row), the C/L badge by the libero select and the captain
+     toggle beside it. Captain and libero rows keep their inline green / grey
+     outline and tint, which reaches a little past the fields. */
   .ov-form-stack :is(.roster-grid, .bench-grid) {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+    display: block;
+    container-type: inline-size;
     width: 100%;
     margin: 0;
     border: 0;
     border-radius: 0;
     background: transparent;
   }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) {
+    display: grid;
+    grid-template-columns: 48px 82px minmax(0, 1fr) minmax(0, 3fr) 44px;
+    grid-template-areas:
+      "num last last first del"
+      "dob dob lib lib cap";
+    align-items: center;
+    gap: 6px;
+    padding: 10px 0;
+    border: 0;
+    border-top: 1px solid var(--color-stone-100);
+    border-radius: 0;
+  }
+  /* LFP: the first name reaches under the captain column; the libero
+     select (MatchSetup: "-" / "L1" / "L2" on a phone here) keeps the rest */
+  .ov-form-stack .roster-grid.has-lfp .roster-grid-row {
+    grid-template-columns: 48px 82px minmax(0, 1fr) minmax(0, 2fr) 44px 44px;
+    grid-template-areas:
+      "num last last first first del"
+      "dob dob lib lib cap lfp";
+  }
+  /* role | date of birth (86 + 44 px) over last | first | delete: the
+     names about half the line each, the role select the rest of the first
+     (173 px on a 360 px phone: "C - Coach", "AC1 - Assistant c..."). With the
+     delete on the first line the role got 104 px ("C - Co..."). */
+  .ov-form-stack .bench-grid-row {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 1fr) 86px 44px;
+    grid-template-areas:
+      "role role dob dob"
+      "last first first del";
+  }
+  /* the head strip names the columns of the one-line rows only */
   .ov-form-stack :is(.roster-grid-row, .bench-grid-row).grid-header {
     display: none;
   }
-  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    column-gap: 12px;
-    row-gap: 6px;
-    padding: 12px 14px 14px;
-    border: 1px solid var(--ov-hairline);
-    border-radius: 10px;
-    background: var(--ov-card);
+  .ov-form-stack :is(.roster-grid, .bench-grid) > .grid-header + * {
+    border-top-color: transparent;
   }
-  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > * {
-    order: 3;
+  .ov-form-stack .roster-grid-row:is(.row-captain, .row-libero) {
+    margin: 2px -8px;
+    padding-inline: 6px;
+    border-radius: var(--ov-radius);
   }
-  .ov-form-stack .roster-grid-row > div:empty {
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > :is(.pf-label, .roster-badge, div:empty) {
     display: none;
   }
   .ov-form-stack :is(.roster-grid-row, .bench-grid-row) :is(input, select) {
-    flex: 0 0 100%;
     width: 100%;
     min-width: 0;
     max-width: none;
+    margin: 0;
   }
-  .ov-form-stack .roster-grid-row > :is(.roster-badge, .cell-head, .cell-action),
-  .ov-form-stack .bench-grid-row > :is(.cell-head, .cell-action) {
-    order: 2;
-  }
-  .ov-form-stack .roster-grid-row > .roster-badge {
-    min-width: 32px;
-    height: 32px;
-    padding: 0 6px;
-    font-size: 13px;
-  }
+  .ov-form-stack .roster-grid-row > .cell-head { grid-area: num; }
+  .ov-form-stack .bench-grid-row > .cell-head { grid-area: role; }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > .cell-last { grid-area: last; }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > .cell-first { grid-area: first; }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > .cell-dob { grid-area: dob; }
+  .ov-form-stack .roster-grid-row > .cell-libero { grid-area: lib; }
+  .ov-form-stack .roster-grid-row > .cell-captain { grid-area: cap; }
+  .ov-form-stack .roster-grid-row > .cell-captain.cell-lfp { grid-area: lfp; }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > .cell-action { grid-area: del; }
   .ov-form-stack .roster-grid-row > input.cell-head {
-    flex: 0 0 96px;
-    width: 96px;
+    padding-inline: 4px;
     font-size: 18px;
   }
-  .ov-form-stack .bench-grid-row > select.cell-head,
   .ov-form-stack .roster-grid-row > select.cell-libero {
-    flex: 1 1 0;
+    padding-left: 8px;
   }
-  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > .cell-action {
-    margin-left: auto;
+  /* A smaller chevron box (14 px, 24 px of padding; the select rule's 1.9em
+     is 30 px): "Libero 1" / "Nessuno" fit the libero select on a 360 px
+     phone, "L1" with the LFP toggle beside it; the coin toss roster's
+     selects too. In the base layer: the legacy
+     layer's !important (styles.css) beats an unlayered or later one. */
+  @layer base {
+    .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > select:where(:not(.ov-select)),
+    .ov-form-stack table.ct-cards select:where(:not(.ov-select)) {
+      padding-right: 24px !important;
+      background-position: right 6px center !important;
+      background-size: 14px 14px !important;
+    }
   }
-  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > .cell-action button,
-  .ov-form-stack .bench-grid-row > button {
-    min-height: 44px;
-    padding-inline: 16px;
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > :is(.cell-last, .cell-first),
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > .cell-dob input {
+    padding-inline: 6px;
   }
-  /* captain and LFP toggles: 44 px tap targets (their size is inline) */
-  .ov-form-stack .roster-grid-row > .cell-captain > * {
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > :is(.cell-captain, .cell-action) {
+    justify-content: center;
+  }
+  /* captain, LFP and delete: 44 px squares (the toggles' size is inline) */
+  .ov-form-stack .roster-grid-row > .cell-captain > *,
+  .ov-form-stack :is(.roster-grid, .bench-grid):not(.roster-add) :is(.roster-grid-row, .bench-grid-row) > .cell-action button {
     width: 44px !important;
     min-width: 44px !important;
     height: 44px !important;
+    padding: 0 !important;
   }
-  /* Add-player card: it sits in its own stone box, so no second frame; Add
-     goes last, full width, under the fields it submits. */
+  /* "+ Add bench official" under the last official */
+  .ov-form-stack .bench-grid > .bench-add-row {
+    padding: 10px 0 0 !important;
+    border-top: 1px solid var(--color-stone-100) !important;
+  }
+  .ov-form-stack .bench-grid > .bench-add-row button {
+    min-height: 44px;
+    padding-inline: 16px;
+  }
+  /* One line: the date and the libero select as wide as their texts (136 px:
+     the digits and the calendar button; 120 px: "Libero 2", "Nessuno" and
+     the chevron), the names the rest, the last name the larger share. It was
+     150 + 150 px, which cut ordinary surnames on an 800 px tablet with LFP. */
+  @container (min-width: 600px) {
+    .ov-form-stack .roster-grid-row {
+      grid-template-columns: 56px minmax(0, 4fr) minmax(0, 3fr) 136px 120px 44px 44px;
+      grid-template-areas: "num last first dob lib cap del";
+    }
+    .ov-form-stack .roster-grid.has-lfp .roster-grid-row {
+      grid-template-columns: 56px minmax(0, 4fr) minmax(0, 3fr) 136px 120px 44px 44px 44px;
+      grid-template-areas: "num last first dob lib cap lfp del";
+    }
+    /* 232 px: "AC1 - Assistant coach 1" and the chevron */
+    .ov-form-stack .bench-grid-row {
+      grid-template-columns: 232px minmax(0, 1fr) minmax(0, 1fr) 136px 44px;
+      grid-template-areas: "role last first dob del";
+    }
+    .ov-form-stack :is(.roster-grid-row, .bench-grid-row).grid-header {
+      display: grid;
+      padding: 8px 0;
+      border-radius: 0;
+      background: transparent;
+    }
+    .ov-form-stack :is(.roster-grid, .bench-grid) > .grid-header + * {
+      border-top-color: var(--ov-hairline);
+    }
+  }
+  /* Add-player box: the same row in its own stone box (26 px narrower), the
+     captain toggle (and LFP) beside Add on a line under the fields they
+     submit, so the libero select keeps the rest of the second line (it had
+     78 px at 360). Beside the fields from 600 px. */
   .ov-form-stack .roster-add > .roster-grid-row {
-    padding: 4px 2px 2px;
+    grid-template-areas:
+      "num last last first first"
+      "dob dob lib lib lib"
+      "cap act act act act";
+    padding: 0;
     border: 0;
     background: transparent;
   }
+  .ov-form-stack .roster-add.has-lfp > .roster-grid-row {
+    grid-template-areas:
+      "num last last first first first"
+      "dob dob lib lib lib lib"
+      "cap lfp act act act act";
+  }
   .ov-form-stack .roster-add > .roster-grid-row > .cell-action {
-    order: 4;
-    flex: 0 0 100%;
-    margin: 10px 0 0;
+    grid-area: act;
   }
   .ov-form-stack .roster-add > .roster-grid-row > .cell-action button {
     width: 100%;
+    min-height: 44px;
+  }
+  /* One line of fields from 600 px, the names half each; Add under them up
+     to 860 px (an upright tablet: beside them it left "Nachnar" / "Vorname"
+     in the box, 26 px narrower than the list), beside them from there. */
+  @container (min-width: 600px) {
+    .ov-form-stack .roster-add > .roster-grid-row {
+      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) 136px 120px 44px;
+      grid-template-areas:
+        "num last first dob lib cap"
+        "act act act act act act";
+    }
+    .ov-form-stack .roster-add.has-lfp > .roster-grid-row {
+      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) 136px 120px 44px 44px;
+      grid-template-areas:
+        "num last first dob lib cap lfp"
+        "act act act act act act act";
+    }
+  }
+  @container (min-width: 860px) {
+    .ov-form-stack .roster-add > .roster-grid-row {
+      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) 136px 120px 44px max-content;
+      grid-template-areas: "num last first dob lib cap act";
+    }
+    .ov-form-stack .roster-add.has-lfp > .roster-grid-row {
+      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) 136px 120px 44px 44px max-content;
+      grid-template-areas: "num last first dob lib cap lfp act";
+    }
   }
 
-  /* Coin toss roster review (CoinToss, table.ct-cards): the same cards. Each
-     <tr> is a card, each <td> one line with its .pf-label; number + delete on
-     top. Its controls are text-styled inline edits, so the field look and the
-     44 px / 16 px sizes need !important here. */
+  /* Coin toss roster review (CoinToss, table.ct-cards): the same flat rows,
+     on the dialog. Each <tr> is a grid row, each <td> one cell:
+       phone    # (L1)        | name       | delete
+                date of birth | libero + C | (LFP)
+       >=560px  # | name | date of birth | libero + C | (LFP) | delete, under
+                the column head
+     The date has a fixed track (64 + 56 px = 126 px, its digits) so the year
+     is never cut; libero + C take the rest. Bench (.ct-bench): role + date of
+     birth + delete over the name, which gets the whole line. Its controls
+     are text-styled inline edits, so the field look and the 44 px / 16 px
+     sizes need !important here. */
   .ov-form-stack table.ct-cards {
     display: block;
-    border-radius: 0;
+    container-type: inline-size;
     overflow: visible;
+    border-radius: 0;
     background: transparent;
+  }
+  .ov-form-stack table.ct-cards :is(thead, tbody) {
+    display: block;
   }
   .ov-form-stack table.ct-cards thead {
     display: none;
   }
-  .ov-form-stack table.ct-cards tbody {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
   .ov-form-stack table.ct-cards tr {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    column-gap: 12px;
-    row-gap: 6px;
-    padding: 12px 14px 14px;
-    border: 1px solid var(--ov-hairline);
-    border-radius: 10px;
-    background: var(--ov-card);
-  }
-  .ov-form-stack table.ct-cards td {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: 64px 56px minmax(0, 1fr) 44px;
+    grid-template-areas:
+      "num name name del"
+      "dob dob role role";
     align-items: center;
-    gap: 6px 12px;
-    flex: 0 0 100%;
-    order: 3;
+    gap: 6px;
+    padding: 10px 0;
+    border-top: 1px solid var(--color-stone-100);
+  }
+  .ov-form-stack table.ct-cards.has-lfp tr {
+    grid-template-columns: 64px 56px minmax(0, 1fr) 44px 44px;
+    grid-template-areas:
+      "num name name name del"
+      "dob dob role role lfp";
+  }
+  .ov-form-stack table.ct-cards.ct-bench tr {
+    grid-template-columns: minmax(0, 1fr) 126px 44px;
+    grid-template-areas:
+      "role dob del"
+      "name name name";
+  }
+  .ov-form-stack table.ct-cards tbody tr:first-child {
+    border-top-color: transparent;
+  }
+  .ov-form-stack table.ct-cards tbody tr:hover {
+    background: transparent;
+  }
+  .ov-form-stack table.ct-cards :is(td, th) {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     width: auto !important;
     min-width: 0;
     padding: 0 !important;
     border: 0;
   }
-  .ov-form-stack table.ct-cards td.ct-head {
-    order: 1;
-    flex: 1 1 0;
-  }
-  .ov-form-stack table.ct-cards td.ct-action {
-    order: 2;
-    flex: 0 0 auto;
-  }
+  .ov-form-stack table.ct-cards td.ct-head { grid-area: num; }
+  .ov-form-stack table.ct-cards.ct-bench td.ct-head { grid-area: role; }
+  .ov-form-stack table.ct-cards td.ct-name { grid-area: name; }
+  .ov-form-stack table.ct-cards td.ct-dob { grid-area: dob; }
+  .ov-form-stack table.ct-cards td.ct-role { grid-area: role; }
+  .ov-form-stack table.ct-cards td.ct-lfp { grid-area: lfp; justify-content: center; }
+  .ov-form-stack table.ct-cards td.ct-action { grid-area: del; justify-content: center; }
   .ov-form-stack table.ct-cards .pf-label {
-    order: 0;
+    display: none;
   }
-  .ov-form-stack table.ct-cards td.ct-head > div {
+  .ov-form-stack table.ct-cards :is(td.ct-head, td.ct-role) > div {
     flex: 1 1 0;
-    gap: 12px !important;
+    min-width: 0;
+    gap: 6px !important;
   }
   .ov-form-stack table.ct-cards :is(input, select) {
     flex: 1 1 0;
@@ -621,9 +767,11 @@
   /* (no `appearance: auto` here any more: every select draws the kit chevron
      now, styles.css `select:where(:not(.ov-select))`, whose layered
      !important background and right padding beat the two rules above) */
+  .ov-form-stack table.ct-cards select {
+    padding-left: 8px !important;
+  }
   .ov-form-stack table.ct-cards input[type="number"] {
-    flex: 0 0 96px;
-    width: 96px !important;
+    padding: 0 4px !important;
     text-align: center !important;
     font-size: 18px !important;
     font-weight: 600;
@@ -638,6 +786,36 @@
   }
   .ov-form-stack table.ct-cards .ct-libero {
     font-size: 13px !important;
+  }
+  /* the dialog's own padding is enough: 16 px more left the second line of
+     a phone's row no room for the libero select */
+  .ov-form-stack .ct-roster-body {
+    padding: 0 !important;
+  }
+  @container (min-width: 560px) {
+    .ov-form-stack table.ct-cards thead {
+      display: block;
+      background: transparent;
+    }
+    .ov-form-stack table.ct-cards thead tr {
+      padding-block: 8px;
+      border-top: 0;
+    }
+    .ov-form-stack table.ct-cards tbody tr:first-child {
+      border-top-color: var(--ov-hairline);
+    }
+    .ov-form-stack table.ct-cards tr {
+      grid-template-columns: 64px minmax(0, 1fr) 130px 200px 44px;
+      grid-template-areas: "num name dob role del";
+    }
+    .ov-form-stack table.ct-cards.has-lfp tr {
+      grid-template-columns: 64px minmax(0, 1fr) 130px 200px 44px 44px;
+      grid-template-areas: "num name dob role lfp del";
+    }
+    .ov-form-stack table.ct-cards.ct-bench tr {
+      grid-template-columns: 232px minmax(0, 1fr) 130px 44px;
+      grid-template-areas: "role name dob del";
+    }
   }
   .ov-form-stack .ct-add-player :is(input, select) {
     font-size: 16px !important;
