@@ -33,7 +33,7 @@ import { COURT_CELLS, PHONE_COUNTER_HEIGHT_PX, PHONE_COURT_MIN_PX, PHONE_RECENT_
  *   |{ kind: 'interval', countdown: number, total: number }
  *   |{ kind: 'set5', countdown?: number, total?: number, confirmLabel: string }} props.centre
  *   (each countdown also comes as `countdownText`, formatted as the desktop shows it)
- * @param {Array<{ id: any, text: string }>} props.recent newest first
+ * @param {Array<{ id: any, text: string, time?: string|null }>} props.recent newest first
  * @param {boolean} props.canUndo
  * @param {string} [props.scoreFont] CSS font family of scores and countdowns
  * @param {{ timeouts: number, subs: number }} [props.limits] time-outs and substitutions per set
@@ -44,7 +44,7 @@ import { COURT_CELLS, PHONE_COUNTER_HEIGHT_PX, PHONE_COURT_MIN_PX, PHONE_RECENT_
  *   liberoPaint ({ background, color, textShadow?, ring } | null),
  *   court: [{ position, number, isLibero, isCaptain, replaced }] (isCaptain:
  *   the team captain or the acting game captain; replaced: the player a
- *   substitute came in for),
+ *   substitute or the libero came in for),
  *   liberos: [{ number, libero, unable, onCourt, position }], benchPlayers:
  *   [{ number }], officials: [{ role }], improperRequestDone, delayWarned,
  *   easy, formalWarned, needsRedesignation }
@@ -177,20 +177,21 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
           const hasBall = servesHere && position === 'I'
           // Marks as on the paper sheet: the captain's number circled (team
           // captain, or the acting game captain: a thin ring in the number's
-          // colour, sized to it), and small at the number's foot, bottom
-          // right, the libero's L or the number of the player a substitute
-          // came in for. The ball hangs halfway up on the outer side, level
-          // with the top of the number when a mark sits under it there; the
-          // marks and the ball stand off further round a ring.
+          // colour, sized to it); small beside the number, the libero's L at
+          // its top left and, at its foot bottom right, the number of the
+          // player a substitute or the libero came in for. The ball hangs
+          // halfway up on the outer side, level with the top of the number
+          // when a mark sits under it there; the marks and the ball stand off
+          // further round a ring.
           const isLibero = number !== null && !!pl?.isLibero
           const captain = number !== null && !!pl?.isCaptain
-          const replaced = number !== null && !isLibero && hasValue(pl?.replaced) ? String(pl.replaced) : null
+          const replaced = number !== null && hasValue(pl?.replaced) ? String(pl.replaced) : null
           const marks = [
             captain && t('scoreboard.phone.markCaptain', 'captain'),
             isLibero && t('scoreboard.phone.markLibero', 'libero'),
             replaced && t('scoreboard.phone.markReplaced', { number: replaced, defaultValue: 'in for {{number}}' })
           ].filter(Boolean)
-          const markUnderBall = team.side === 'right' && (isLibero || !!replaced)
+          const markUnderBall = team.side === 'right' && !!replaced
           // room for the ring between the number and what hangs beside it:
           // CAPTAIN_RING_PAD round two digits, more round one (the ring stays
           // a circle, wider than the digit; a digit is about 0.6em)
@@ -210,7 +211,7 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
               <span data-testid={isLibero ? `phone-libero-${team.side}` : undefined} style={{ position: 'relative', fontSize: 28, lineHeight: 1, fontWeight: 800, color: isLibero ? liberoInk : p.courtInk, fontVariantNumeric: 'tabular-nums' }}>
                 {number ?? '–'}
                 {captain && <span aria-hidden="true" data-testid="phone-mark-captain" style={{ ...captainRing, borderColor: isLibero ? liberoInk : p.courtInk }} />}
-                {isLibero && <span aria-hidden="true" data-testid="phone-mark-libero" style={{ ...courtMark, left: '100%', marginLeft: beside, color: liberoInk }}>L</span>}
+                {isLibero && <span aria-hidden="true" data-testid="phone-mark-libero" style={{ ...courtMark, bottom: undefined, top: -3, right: '100%', marginRight: beside, color: liberoInk }}>L</span>}
                 {replaced && <span aria-hidden="true" data-testid="phone-mark-replaced" style={{ ...courtMark, left: '100%', marginLeft: beside, color: 'var(--ov-text-secondary)' }}>{replaced}</span>}
                 {hasBall && (
                   <span data-testid="phone-serve-ball" aria-label={t('scoreboard.labels.serveLabel')} style={{ position: 'absolute', ...(markUnderBall ? { top: 0 } : { top: '50%', transform: 'translateY(-50%)' }), ...(team.side === 'left' ? { right: '100%', marginRight: beside + 4 } : { left: '100%', marginLeft: beside + 4 }), width: 12, height: 12, borderRadius: '50%', background: '#facc15', border: '2px solid #1c1917' }} />
@@ -268,10 +269,10 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
           cursor: disabled ? 'default' : 'pointer'
         }}
       >
-        {/* One line as the mockup (a touch smaller on a 360px phone); a label
-            longer than the button ("TEMPS MORT") goes on two lines rather than
-            out of it */}
-        <span style={{ maxWidth: '100%', fontSize: 'clamp(10px, 2.85vw, 11px)', lineHeight: 1.15, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', textAlign: 'center', textWrap: 'balance', overflowWrap: 'anywhere', color: disabled ? 'var(--ov-text-faint)' : p.ink }}>{label}</span>
+        {/* One line, small beside the count (it was 11px: the owner,
+            2026-10-21); a label longer than the button ("TEMPS MORT") goes
+            on two lines rather than out of it */}
+        <span style={{ maxWidth: '100%', fontSize: 9, lineHeight: 1.15, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', textAlign: 'center', textWrap: 'balance', overflowWrap: 'anywhere', color: disabled ? 'var(--ov-text-faint)' : p.ink }}>{label}</span>
         <span data-count-state={state || undefined} style={{ fontSize: 22, lineHeight: 1, fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: state ? COUNT_INK[state] : undefined }}>{value}</span>
       </button>
     )
@@ -423,7 +424,11 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
         {recent.length === 0 ? (
           <span style={{ fontSize: 12, color: 'var(--ov-text-muted)' }}>{t('scoreboard.phone.noActions')}</span>
         ) : recent.slice(0, recentLines).map((r, i) => (
-          <span key={r.id} title={r.text} style={{ fontSize: 12, lineHeight: '15px', color: i === 0 ? 'var(--ov-text)' : 'var(--ov-text-muted)', fontWeight: i === 0 ? 700 : 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.text}</span>
+          // the time first, small and muted, so the action's text keeps the line
+          <span key={r.id} title={r.time ? `${r.time} ${r.text}` : r.text} style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0, fontSize: 12, lineHeight: '15px', color: i === 0 ? 'var(--ov-text)' : 'var(--ov-text-muted)', fontWeight: i === 0 ? 700 : 500 }}>
+            {r.time && <span data-testid="phone-recent-time" style={{ flex: 'none', fontSize: 10, fontWeight: 600, color: 'var(--ov-text-muted)', fontVariantNumeric: 'tabular-nums' }}>{r.time}</span>}
+            <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.text}</span>
+          </span>
         ))}
       </section>
 
@@ -541,15 +546,16 @@ const hasValue = (v) => v !== undefined && v !== null && v !== ''
 // number's colour (borderColor, set where it is drawn), as wide as the number plus CAPTAIN_RING_PAD
 // each side and never narrower than it is high, so a 1-digit number gets a
 // circle and a 2-digit one a short oval
-const CAPTAIN_RING_PAD = 6
-const CAPTAIN_RING_SIZE = 38
+const CAPTAIN_RING_PAD = 9
+const CAPTAIN_RING_SIZE = 44
 const captainRing = {
   position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
   width: `calc(100% + ${2 * CAPTAIN_RING_PAD}px)`, minWidth: CAPTAIN_RING_SIZE, height: CAPTAIN_RING_SIZE,
   boxSizing: 'border-box', borderWidth: 2, borderStyle: 'solid', borderRadius: 999, pointerEvents: 'none'
 }
 
-// A court mark (L, the replaced player's number): small, at the number's foot
+// A court mark (the replaced player's number at the number's foot, the
+// libero's L at its top, set where it is drawn): small
 const courtMark = { position: 'absolute', bottom: -3, fontSize: 10, lineHeight: 1, fontWeight: 800, letterSpacing: 0, whiteSpace: 'nowrap', pointerEvents: 'none' }
 
 /**
