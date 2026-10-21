@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { db } from '../db/db'
-import { processJob, takeJobError, errorBackoffMs, DROP_JOB, AUTH_REQUIRED, PERMANENT_FAILURE, STOP_ERROR } from './useSyncQueue'
+import { processJob, takeJobError, takeSetAside, errorBackoffMs, DROP_JOB, AUTH_REQUIRED, PERMANENT_FAILURE, STOP_ERROR } from './useSyncQueue'
 
 const TIMED_OUT = 'timed_out'
 
@@ -19,6 +19,10 @@ async function settleJob(job, jobId, result) {
 
   if (result === DROP_JOB) {
     await db.sync_queue.update(jobId, { status: 'dropped' })
+    // Another device scores the match: the write is kept with the match's
+    // others (utils/matchHandover), a warning, not "Sync failed" behind the
+    // ScorerMovedModal at set end
+    if (takeSetAside(jobId)) return { success: false, offline: true, setAside: true, jobId }
     return { success: false, error: 'Job cannot be attributed to a match', jobId }
   }
 
