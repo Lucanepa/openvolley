@@ -8,7 +8,7 @@ import { apiFrom } from '../lib/apiClient'
 import SignaturePad from './SignaturePad'
 import { saveMatchSignature } from '../utils/saveSignature'
 import { phoneSignContext, signatureSource, signatureUpdate, SLOT_OF_ROLE, PRE_MATCH_SIGNATURE_FIELD as SIGNATURE_FIELD_OF_ROLE } from '../domain/phoneSignature'
-import { ROSTER_MAX } from '../domain/playerPool'
+import { coinTossConfirmIssues } from '../domain/coinTossChecks'
 import Modal from './Modal'
 import MenuList from './MenuList'
 import ballFallback from '../ball_fallback.png'
@@ -1226,140 +1226,12 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
 
     // Validation checks (skip for test matches)
     if (!match?.test) {
-      const validationErrors = []
-
-      // 1. Check team names are set (not default "Home"/"Away" or empty)
-      if (!home || home === 'Home' || home.trim() === '') {
-        validationErrors.push('Home team name is not set')
-      }
-      if (!away || away === 'Away' || away.trim() === '') {
-        validationErrors.push('Away team name is not set')
-      }
-
-      // 2. Check at least 1 referee and 1 scorer with names
-      const ref1 = match?.officials?.find(o => o.role === '1st referee')
-      const scorer = match?.officials?.find(o => o.role === 'scorer')
-      if (!ref1?.lastName || !ref1?.firstName) {
-        validationErrors.push('1st referee name is not set')
-      }
-      if (!scorer?.lastName || !scorer?.firstName) {
-        validationErrors.push('Scorer name is not set')
-      }
-
-      // 3. Check match info (hall, city, league, date)
-      if (!match?.hall || match.hall.trim() === '') {
-        validationErrors.push('Hall is not set')
-      }
-      if (!match?.city || match.city.trim() === '') {
-        validationErrors.push('City is not set')
-      }
-      if (!match?.league || match.league.trim() === '') {
-        validationErrors.push('League is not set')
-      }
-      if (!match?.scheduledAt) {
-        validationErrors.push('Match date/time is not set')
-      }
-
-      // 4. Check at least 6 non-libero players per team with numbers
-      const homeNonLiberoWithNumbers = homeRoster.filter(p => !p.libero && p.number != null && p.number !== '')
-      const awayNonLiberoWithNumbers = awayRoster.filter(p => !p.libero && p.number != null && p.number !== '')
-      if (homeNonLiberoWithNumbers.length < 6) {
-        validationErrors.push(`Home team needs at least 6 players with numbers (not liberos). Currently: ${homeNonLiberoWithNumbers.length}`)
-      }
-      if (awayNonLiberoWithNumbers.length < 6) {
-        validationErrors.push(`Away team needs at least 6 players with numbers (not liberos). Currently: ${awayNonLiberoWithNumbers.length}`)
-      }
-
-      // 4a. At most 14 players on the scoresheet (FIVB 4.1.1)
-      if (homeRoster.length > ROSTER_MAX) {
-        validationErrors.push(t('validation.tooManyPlayers', { team: t('common.home'), max: ROSTER_MAX, count: homeRoster.length }))
-      }
-      if (awayRoster.length > ROSTER_MAX) {
-        validationErrors.push(t('validation.tooManyPlayers', { team: t('common.away'), max: ROSTER_MAX, count: awayRoster.length }))
-      }
-
-      // 4b. Check ALL players have jersey numbers (including liberos)
-      const homePlayersWithoutNumbers = homeRoster.filter(p => p.number == null || p.number === '')
-      const awayPlayersWithoutNumbers = awayRoster.filter(p => p.number == null || p.number === '')
-      if (homePlayersWithoutNumbers.length > 0) {
-        validationErrors.push(`Home team: all players must have jersey numbers (${homePlayersWithoutNumbers.length} missing)`)
-      }
-      if (awayPlayersWithoutNumbers.length > 0) {
-        validationErrors.push(`Away team: all players must have jersey numbers (${awayPlayersWithoutNumbers.length} missing)`)
-      }
-
-      // 5. Check at least 1 coach per team
-      const homeCoach = benchHome.find(b => b.role === 'Coach' && (b.lastName || b.firstName))
-      const awayCoach = benchAway.find(b => b.role === 'Coach' && (b.lastName || b.firstName))
-      if (!homeCoach) {
-        validationErrors.push('Home team coach is not set')
-      }
-      if (!awayCoach) {
-        validationErrors.push('Away team coach is not set')
-      }
-
-      // 6. Check captain is set for each team
-      const homeCaptainPlayer = homeRoster.find(p => p.isCaptain)
-      const awayCaptainPlayer = awayRoster.find(p => p.isCaptain)
-      if (!homeCaptainPlayer) {
-        validationErrors.push('Home team captain is not set')
-      }
-      if (!awayCaptainPlayer) {
-        validationErrors.push('Away team captain is not set')
-      }
-
-      // 7. Check for duplicate jersey numbers
-      const homeNumbers = homeRoster.filter(p => p.number != null && p.number !== '').map(p => p.number)
-      const homeDuplicateNumbers = homeNumbers.filter((num, idx) => homeNumbers.indexOf(num) !== idx)
-      if (homeDuplicateNumbers.length > 0) {
-        validationErrors.push(`Home team has duplicate jersey numbers: ${[...new Set(homeDuplicateNumbers)].join(', ')}`)
-      }
-      const awayNumbers = awayRoster.filter(p => p.number != null && p.number !== '').map(p => p.number)
-      const awayDuplicateNumbers = awayNumbers.filter((num, idx) => awayNumbers.indexOf(num) !== idx)
-      if (awayDuplicateNumbers.length > 0) {
-        validationErrors.push(`Away team has duplicate jersey numbers: ${[...new Set(awayDuplicateNumbers)].join(', ')}`)
-      }
-
-      // 8. Check for duplicate players (same last name and first name)
-      const homePlayerNames = homeRoster.map(p => `${(p.lastName || '').toLowerCase()} ${(p.firstName || '').toLowerCase()}`.trim())
-      const homeDuplicatePlayers = homePlayerNames.filter((name, idx) => name && homePlayerNames.indexOf(name) !== idx)
-      if (homeDuplicatePlayers.length > 0) {
-        validationErrors.push(`Home team has duplicate players: ${[...new Set(homeDuplicatePlayers)].join(', ')}`)
-      }
-      const awayPlayerNames = awayRoster.map(p => `${(p.lastName || '').toLowerCase()} ${(p.firstName || '').toLowerCase()}`.trim())
-      const awayDuplicatePlayers = awayPlayerNames.filter((name, idx) => name && awayPlayerNames.indexOf(name) !== idx)
-      if (awayDuplicatePlayers.length > 0) {
-        validationErrors.push(`Away team has duplicate players: ${[...new Set(awayDuplicatePlayers)].join(', ')}`)
-      }
-
-      // 9. Check no birthdate is exactly 01.01.1900 (placeholder/error date)
+      // The checks (domain/coinTossChecks), in the scorer's language
+      const teamWord = { home: t('common.home'), away: t('common.away') }
+      const validationErrors = coinTossConfirmIssues({ match, home, away, homeRoster, awayRoster, benchHome, benchAway })
+        .map(({ key, params }) => t(key, params?.team ? { ...params, team: teamWord[params.team] } : params))
       const allRosterPlayers = [...homeRoster, ...awayRoster]
       const allBenchOfficials = [...benchHome, ...benchAway]
-      const playersWithBadDate = allRosterPlayers.filter(p => p.dob === '01.01.1900' || p.dob === '01/01/1900')
-      const benchWithBadDate = allBenchOfficials.filter(b => b.dob === '01.01.1900' || b.dob === '01/01/1900')
-      if (playersWithBadDate.length > 0 || benchWithBadDate.length > 0) {
-        validationErrors.push('Some players or officials have invalid birthdate (01.01.1900). Please correct these dates.')
-      }
-
-      // 10. Check for invalid player numbers (must be 1-99)
-      const homeInvalidNumbers = homeRoster.filter(p => p.number != null && (p.number < 1 || p.number > 99))
-      const awayInvalidNumbers = awayRoster.filter(p => p.number != null && (p.number < 1 || p.number > 99))
-      if (homeInvalidNumbers.length > 0) {
-        validationErrors.push(`Home team has invalid jersey numbers (must be 1-99): ${homeInvalidNumbers.map(p => p.number).join(', ')}`)
-      }
-      if (awayInvalidNumbers.length > 0) {
-        validationErrors.push(`Away team has invalid jersey numbers (must be 1-99): ${awayInvalidNumbers.map(p => p.number).join(', ')}`)
-      }
-
-      // 11. Check for players without numbers
-      const homeNoNumbers = homeRoster.filter(p => p.number == null || p.number === '')
-      const awayNoNumbers = awayRoster.filter(p => p.number == null || p.number === '')
-      if (homeNoNumbers.length > 0) {
-        validationErrors.push(`Home team has ${homeNoNumbers.length} player(s) without jersey numbers`)
-      }
-      if (awayNoNumbers.length > 0) {
-        validationErrors.push(`Away team has ${awayNoNumbers.length} player(s) without jersey numbers`)
-      }
 
       // Show validation errors if any
       if (validationErrors.length > 0) {
