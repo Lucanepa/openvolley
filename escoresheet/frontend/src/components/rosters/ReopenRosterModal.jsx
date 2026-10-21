@@ -25,18 +25,22 @@ import { cn } from '../../ui/cn.js'
 // Bench: role + date of birth over last + first name + remove, so the names
 // get a line; one line from 560 px. Every control is 44 px tall
 // (courtside). The number, captain and remove columns are 44-48 px at any
-// font size (a 2.75rem toggle in a 44 px track ran out of the row at 130 %),
-// the date's in rem, so it keeps its digits at a large Android font.
+// font size (a 2.75rem toggle in a 44 px track ran out of the row at 130 %).
+// The date's track is as wide as the date at the text size (.dob-sizer in
+// tailwind.css): Android's larger text enlarges the text but no rem or px
+// width, and a 9rem track cut the year at 1.3.
 
 const LIST = '@container border-y border-stone-200 divide-y divide-stone-100'
 const ROW = 'grid items-center gap-1.5 py-2.5'
 // The libero labels are short (-, L1, L2, LR): the date of birth gets the
 // number's track too. The last name, which the scoresheet prints, gets the
 // larger share of the names' line (4:3; 1:1 cut "Bachmann" at 360 px).
+// (phone: the last name's track gives the date what it needs, min auto)
 const PLAYER_GRID = cn(
-  'grid-cols-[48px_minmax(0,4fr)_minmax(0,3fr)_44px]',
+  'dob-sizer',
+  'grid-cols-[48px_minmax(auto,4fr)_minmax(0,3fr)_44px]',
   "[grid-template-areas:'num_last_first_del'_'dob_dob_lib_cap']",
-  '@[560px]:grid-cols-[56px_minmax(0,4fr)_minmax(0,3fr)_9rem_7rem_44px_44px]',
+  '@[560px]:grid-cols-[56px_minmax(0,4fr)_minmax(0,3fr)_minmax(9rem,max-content)_7rem_44px_44px]',
   "@[560px]:[grid-template-areas:'num_last_first_dob_lib_cap_del']"
 )
 // phone: role | date of birth (6.5rem + 44 px) over last | first | remove, the
@@ -44,9 +48,10 @@ const PLAYER_GRID = cn(
 // removed in-match code had given them a line of their own after the emulator
 // audit of 2026-10-14).
 const BENCH_GRID = cn(
-  'grid-cols-[minmax(0,5fr)_minmax(0,1fr)_6.5rem_44px]',
+  'dob-sizer',
+  'grid-cols-[minmax(0,5fr)_minmax(0,1fr)_minmax(6.5rem,max-content)_44px]',
   "[grid-template-areas:'role_role_dob_dob'_'last_first_first_del']",
-  '@[560px]:grid-cols-[15.5rem_minmax(0,1fr)_minmax(0,1fr)_9rem_44px]',
+  '@[560px]:grid-cols-[15.5rem_minmax(0,1fr)_minmax(0,1fr)_minmax(9rem,max-content)_44px]',
   "@[560px]:[grid-template-areas:'role_last_first_dob_del']"
 )
 // Column head: the one-line rows only.
@@ -141,7 +146,7 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
               <span className="text-center">#</span>
               <span>{lastNameLabel}</span>
               <span>{firstNameLabel}</span>
-              <span>{dobLabel}</span>
+              <span className="dob-cell [grid-area:dob]">{dobLabel}</span>
               <span>{t('scoreboard.reopenRoster.libero', 'Libero')}</span>
               <span className="text-center">C</span>
               <span />
@@ -180,7 +185,7 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
                   aria-label={dobLabel}
                   value={toISODate(player.dob)}
                   onChange={(v) => updatePlayer(idx, 'dob', v)}
-                  wrapperClassName="[grid-area:dob]"
+                  wrapperClassName="dob-cell [grid-area:dob]"
                   className={DATE}
                 />
                 {/* L1 / L2 / none (as in roster setup); a re-designated or unable
@@ -231,7 +236,7 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
               <span>{t('matchSetup.role', 'Role')}</span>
               <span>{lastNameLabel}</span>
               <span>{firstNameLabel}</span>
-              <span>{dobLabel}</span>
+              <span className="dob-cell [grid-area:dob]">{dobLabel}</span>
               <span />
             </div>
             {editingBench.map((staff, idx) => (
@@ -273,7 +278,7 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
                   aria-label={dobLabel}
                   value={toISODate(staff.dob)}
                   onChange={(v) => updateBench(idx, 'dob', v)}
-                  wrapperClassName="[grid-area:dob]"
+                  wrapperClassName="dob-cell [grid-area:dob]"
                   className={DATE}
                 />
                 <span className="flex justify-center [grid-area:del]">

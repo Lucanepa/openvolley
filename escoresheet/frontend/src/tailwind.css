@@ -482,9 +482,17 @@
                 date of birth | libero     | captain | (LFP)
        >=600px  # | last | first | date of birth | libero | C | (LFP) | delete,
                 under the column head
-     The date of birth has a fixed track (# + 82 px = 136 px, the digits and
-     the calendar button), so the year is never cut ("12.03.19" read as 2019);
-     the libero select takes what is left of the second line. The last name,
+     The date of birth's track is at least # + 82 px = 136 px (the digits and
+     the calendar button), and as wide as the date at the row's text size
+     (the .dob-sizer below), so the year is never cut ("12.03.19" read as
+     2019), also at Android's larger text (136 px cut "12.03.199" and the
+     placeholder at 1.3); the libero select takes what is left of the second
+     line. The first name's track is the 3/4 of the names' room it had with
+     a 1fr : 3fr split (the calc: the line less # 48, date 82, delete 44 and
+     the gaps), a maximum, not a share: when the date grows, the last name's
+     1fr part gives the room (it took a quarter from the last name and three
+     from the first, which kept 54 px on a 360 px phone at 1.3). Bench: the
+     last name keeps its 5/6 the same way. The last name,
      which the scoresheet prints, gets the wider share of the first. Bench:
      role + date of birth over last + first name + delete, so the names get
      a line (three on one line left them 80 px each, the in-match editor's
@@ -504,7 +512,7 @@
   }
   .ov-form-stack :is(.roster-grid-row, .bench-grid-row) {
     display: grid;
-    grid-template-columns: 48px 82px minmax(0, 1fr) minmax(0, 3fr) 44px;
+    grid-template-columns: 48px minmax(82px, max-content) minmax(0, 1fr) minmax(0, calc((100% - 198px) * 0.75)) 44px;
     grid-template-areas:
       "num last last first del"
       "dob dob lib lib cap";
@@ -518,7 +526,7 @@
   /* LFP: the first name reaches under the captain column; the libero
      select (MatchSetup: "-" / "L1" / "L2" on a phone here) keeps the rest */
   .ov-form-stack .roster-grid.has-lfp .roster-grid-row {
-    grid-template-columns: 48px 82px minmax(0, 1fr) minmax(0, 2fr) 44px 44px;
+    grid-template-columns: 48px minmax(82px, max-content) minmax(0, 1fr) minmax(0, calc((100% - 248px) * 2 / 3)) 44px 44px;
     grid-template-areas:
       "num last last first first del"
       "dob dob lib lib cap lfp";
@@ -528,7 +536,7 @@
      (173 px on a 360 px phone: "C - Coach", "AC1 - Assistant c..."). With the
      delete on the first line the role got 104 px ("C - Co..."). */
   .ov-form-stack .bench-grid-row {
-    grid-template-columns: minmax(0, 5fr) minmax(0, 1fr) 86px 44px;
+    grid-template-columns: minmax(0, calc((100% - 148px) * 5 / 6)) minmax(0, 1fr) minmax(86px, max-content) 44px;
     grid-template-areas:
       "role role dob dob"
       "last first first del";
@@ -563,6 +571,41 @@
   .ov-form-stack .roster-grid-row > .cell-captain { grid-area: cap; }
   .ov-form-stack .roster-grid-row > .cell-captain.cell-lfp { grid-area: lfp; }
   .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > .cell-action { grid-area: del; }
+  /* The date of birth's track (minmax(N px, max-content)) is as wide as a
+     hidden "DD.MM.YYYY" (the placeholder; the digits are narrower) in the
+     field's 16 px text plus its padding, border and calendar button:
+     Android's larger text (font scale 1.3) enlarges the text but no px or
+     rem width, so a fixed track cut the year. (2 px more on the right: the
+     caret's room, without it the placeholder's last Y was cut.) The date
+     cell itself counts for nothing (contain), its size="10" input would ask
+     170 px. The head rows' date label has the dob area too, so
+     auto-placement skips it. */
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) {
+    --dob-pad: 7px 31px;
+  }
+  .ov-form-stack table.ct-cards tr {
+    --dob-pad: 13px 15px;
+  }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row):not(.bench-add-row)::after,
+  .ov-form-stack table.ct-cards tr::after {
+    content: "DD.MM.YYYY";
+    grid-area: dob;
+    align-self: start;
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    white-space: nowrap;
+    font-size: 16px;
+    font-weight: 400;
+    letter-spacing: normal;
+    text-transform: none;
+    padding-inline: var(--dob-pad);
+    pointer-events: none;
+  }
+  .ov-form-stack :is(.roster-grid-row, .bench-grid-row) > .cell-dob,
+  .ov-form-stack table.ct-cards .ct-dob {
+    contain: inline-size;
+  }
   .ov-form-stack .roster-grid-row > input.cell-head {
     padding-inline: 4px;
     font-size: 18px;
@@ -613,16 +656,16 @@
      150 + 150 px, which cut ordinary surnames on an 800 px tablet with LFP. */
   @container (min-width: 600px) {
     .ov-form-stack .roster-grid-row {
-      grid-template-columns: 56px minmax(0, 4fr) minmax(0, 3fr) 136px 120px 44px 44px;
+      grid-template-columns: 56px minmax(0, 4fr) minmax(0, 3fr) minmax(136px, max-content) 120px 44px 44px;
       grid-template-areas: "num last first dob lib cap del";
     }
     .ov-form-stack .roster-grid.has-lfp .roster-grid-row {
-      grid-template-columns: 56px minmax(0, 4fr) minmax(0, 3fr) 136px 120px 44px 44px 44px;
+      grid-template-columns: 56px minmax(0, 4fr) minmax(0, 3fr) minmax(136px, max-content) 120px 44px 44px 44px;
       grid-template-areas: "num last first dob lib cap lfp del";
     }
     /* 232 px: "AC1 - Assistant coach 1" and the chevron */
     .ov-form-stack .bench-grid-row {
-      grid-template-columns: 232px minmax(0, 1fr) minmax(0, 1fr) 136px 44px;
+      grid-template-columns: 232px minmax(0, 1fr) minmax(0, 1fr) minmax(136px, max-content) 44px;
       grid-template-areas: "role last first dob del";
     }
     .ov-form-stack :is(.roster-grid-row, .bench-grid-row).grid-header {
@@ -666,13 +709,13 @@
      in the box, 26 px narrower than the list), beside them from there. */
   @container (min-width: 600px) {
     .ov-form-stack .roster-add > .roster-grid-row {
-      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) 136px 120px 44px;
+      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) minmax(136px, max-content) 120px 44px;
       grid-template-areas:
         "num last first dob lib cap"
         "act act act act act act";
     }
     .ov-form-stack .roster-add.has-lfp > .roster-grid-row {
-      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) 136px 120px 44px 44px;
+      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) minmax(136px, max-content) 120px 44px 44px;
       grid-template-areas:
         "num last first dob lib cap lfp"
         "act act act act act act act";
@@ -680,11 +723,11 @@
   }
   @container (min-width: 860px) {
     .ov-form-stack .roster-add > .roster-grid-row {
-      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) 136px 120px 44px max-content;
+      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) minmax(136px, max-content) 120px 44px max-content;
       grid-template-areas: "num last first dob lib cap act";
     }
     .ov-form-stack .roster-add.has-lfp > .roster-grid-row {
-      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) 136px 120px 44px 44px max-content;
+      grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1fr) minmax(136px, max-content) 120px 44px 44px max-content;
       grid-template-areas: "num last first dob lib cap lfp act";
     }
   }
@@ -695,8 +738,9 @@
                 date of birth | libero + C | (LFP)
        >=560px  # | name | date of birth | libero + C | (LFP) | delete, under
                 the column head
-     The date has a fixed track (64 + 56 px = 126 px, its digits) so the year
-     is never cut; libero + C take the rest. Bench (.ct-bench): role + date of
+     The date's track is at least 64 + 56 px = 126 px (its digits) and as
+     wide as the date at the row's text size (.dob-sizer), so the year is
+     never cut; libero + C take the rest. Bench (.ct-bench): role + date of
      birth + delete over the name, which gets the whole line. Its controls
      are text-styled inline edits, so the field look and the 44 px / 16 px
      sizes need !important here. */
@@ -715,7 +759,7 @@
   }
   .ov-form-stack table.ct-cards tr {
     display: grid;
-    grid-template-columns: 64px 56px minmax(0, 1fr) 44px;
+    grid-template-columns: 64px minmax(56px, max-content) minmax(0, 1fr) 44px;
     grid-template-areas:
       "num name name del"
       "dob dob role role";
@@ -725,13 +769,13 @@
     border-top: 1px solid var(--color-stone-100);
   }
   .ov-form-stack table.ct-cards.has-lfp tr {
-    grid-template-columns: 64px 56px minmax(0, 1fr) 44px 44px;
+    grid-template-columns: 64px minmax(56px, max-content) minmax(0, 1fr) 44px 44px;
     grid-template-areas:
       "num name name name del"
       "dob dob role role lfp";
   }
   .ov-form-stack table.ct-cards.ct-bench tr {
-    grid-template-columns: minmax(0, 1fr) 126px 44px;
+    grid-template-columns: minmax(0, 1fr) minmax(126px, max-content) 44px;
     grid-template-areas:
       "role dob del"
       "name name name";
@@ -754,7 +798,7 @@
   .ov-form-stack table.ct-cards td.ct-head { grid-area: num; }
   .ov-form-stack table.ct-cards.ct-bench td.ct-head { grid-area: role; }
   .ov-form-stack table.ct-cards td.ct-name { grid-area: name; }
-  .ov-form-stack table.ct-cards td.ct-dob { grid-area: dob; }
+  .ov-form-stack table.ct-cards :is(td, th).ct-dob { grid-area: dob; }
   .ov-form-stack table.ct-cards td.ct-role { grid-area: role; }
   .ov-form-stack table.ct-cards td.ct-lfp { grid-area: lfp; justify-content: center; }
   .ov-form-stack table.ct-cards td.ct-action { grid-area: del; justify-content: center; }
@@ -822,15 +866,15 @@
       border-top-color: var(--ov-hairline);
     }
     .ov-form-stack table.ct-cards tr {
-      grid-template-columns: 64px minmax(0, 1fr) 130px 200px 44px;
+      grid-template-columns: 64px minmax(0, 1fr) minmax(130px, max-content) 200px 44px;
       grid-template-areas: "num name dob role del";
     }
     .ov-form-stack table.ct-cards.has-lfp tr {
-      grid-template-columns: 64px minmax(0, 1fr) 130px 200px 44px 44px;
+      grid-template-columns: 64px minmax(0, 1fr) minmax(130px, max-content) 200px 44px 44px;
       grid-template-areas: "num name dob role lfp del";
     }
     .ov-form-stack table.ct-cards.ct-bench tr {
-      grid-template-columns: 232px minmax(0, 1fr) 130px 44px;
+      grid-template-columns: 232px minmax(0, 1fr) minmax(130px, max-content) 44px;
       grid-template-areas: "role name dob del";
     }
   }
@@ -845,6 +889,50 @@
     border-radius: 8px !important;
     font-size: 14px !important;
   }
+}
+
+/* Load match from schedule (LoadOfficialMatchModal): on a phone the game #,
+   date and time take their texts' width instead of 80 + 90 + 55 px, which
+   left the teams 30 px ("VB..." at 360 px). Each row is its own grid, so
+   they share the columns as subgrids of the list (the header too). Wider,
+   and where subgrid is missing, the rows keep their fixed columns. */
+.schedule-games {
+  container-type: inline-size;
+}
+@supports (grid-template-columns: subgrid) {
+  @container (max-width: 479.98px) {
+    .schedule-games > .schedule-rows {
+      display: grid;
+      grid-template-columns: auto auto auto minmax(0, 1fr);
+      column-gap: 8px;
+    }
+    .schedule-games > .schedule-rows > * {
+      grid-column: 1 / -1;
+      grid-template-columns: subgrid !important;
+    }
+  }
+}
+
+/* The in-match roster editor's date of birth track (ReopenRosterModal):
+   as the setup roster's .dob-sizer above, on its own rows, which are a grid
+   in any orientation. */
+.dob-sizer::after {
+  content: "DD.MM.YYYY";
+  grid-area: dob;
+  align-self: start;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  padding-inline: 11px 39px;
+  pointer-events: none;
+}
+.dob-sizer > .dob-cell {
+  contain: inline-size;
 }
 
 /* ---------------------------------------------------------------------------

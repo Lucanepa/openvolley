@@ -1611,8 +1611,8 @@ button:disabled {
   gap: 8px;
   align-content: start;
   height: calc(2 * var(--lineup-chip) + 8px + 10px);
-  padding: 5px 5px 5px 4px;
-  margin: 0 -5px 0 -4px;
+  padding: 5px 6px 5px 4px;
+  margin: 0 -6px 0 -4px;
   overflow-y: auto;
 }
 
@@ -1670,6 +1670,18 @@ button:disabled {
   align-items: center;
   justify-content: center;
   pointer-events: none;
+}
+
+/* On an available-players chip: 14px, further into the corner (6px past
+   the right edge, as far as the pool's right padding; 5px above, its top
+   padding), so it clears the digits of a two-digit number: at Android's
+   larger text (1.3) the 18px mark covered the top of the "2" of chip 12 */
+.lineup-chip > .lineup-cap {
+  right: -6px;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  font-size: 10px;
 }
 
 /* Game captain (not the team captain): the court's amber C */
@@ -1758,16 +1770,15 @@ button:disabled {
   outline-offset: 2px;
 }
 
+/* Two lines reserved (a one-line note does not move the chips), more when
+   Android's larger text needs them: a fixed 32px clipped the second line at
+   font scale 1.3. A unitless line height grows with that text. */
 .lineup-gcapt__note {
   margin: 0;
-  height: 32px;
+  min-height: 32px;
   font-size: 12px;
-  line-height: 16px;
+  line-height: 1.3334;
   color: var(--ov-text-muted);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 .lineup-lfp {
