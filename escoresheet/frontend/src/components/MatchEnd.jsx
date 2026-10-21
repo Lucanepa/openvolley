@@ -1908,7 +1908,9 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
               size="xl"
               onClick={() => setShowReopenConfirm(true)}
               data-help-id="matchend-reopen-set"
-              className="px-5"
+              // the size of Confirm and approve beside it (the owner, 2026-10-21)
+              className="h-auto min-h-11 px-5 py-2 text-center leading-tight"
+              style={{ flex: 1, minWidth: '150px' }}
             >
               {t('matchEnd.reopenLastSet', 'Reopen last set')}
             </Button>
