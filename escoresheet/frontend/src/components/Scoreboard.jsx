@@ -13116,7 +13116,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             color: '#ffffff',
             marginBottom: '16px'
           }}>
-            Please rotate your device
+            {t('scoreboard.rotateDeviceTitle')}
           </h2>
           <p style={{
             fontSize: '16px',
@@ -13125,7 +13125,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             lineHeight: 1.5,
             marginBottom: '24px'
           }}>
-            The Scoreboard works best in landscape mode. Please rotate your device horizontally to continue.
+            {t('scoreboard.rotateDeviceMessage')}
           </p>
           <div className="rounded-lg border border-sky-200 bg-sky-50" style={{
             padding: '12px 16px',
@@ -13136,7 +13136,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               lineHeight: 1.4,
               margin: 0
             }}>
-              <strong>Tip:</strong> For auto-backup features, use Chrome or Edge on a desktop/laptop computer.
+              {t('scoreboard.rotateDeviceTip')}
             </p>
           </div>
           <SbButton
@@ -20931,7 +20931,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 const requestingTeamColor = requestingTeamData?.color || (substitutionConfirm.team === 'home' ? '#ef4444' : '#3b82f6')
                 const otherTeamColor = otherTeamData?.color || (substitutionConfirm.team === 'home' ? '#3b82f6' : '#ef4444')
                 const currentSubs = substitutionsUsed[substitutionConfirm.team] || 0
-                const subLabel = substitutionConfirm.isExceptional ? '' : currentSubs === 4 ? '5th' : currentSubs === 5 ? '6th' : ''
+                const subLabel = substitutionConfirm.isExceptional ? '' : currentSubs === 4 ? t('scoreboard.modals.fifthSubstitution') : currentSubs === 5 ? t('scoreboard.modals.sixthSubstitution') : ''
                 return (
                   <>
                     <div style={{ marginBottom: '19px', fontSize: '24px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
@@ -20955,7 +20955,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     </div>
                     {subLabel && (
                       <div style={{ marginBottom: '10px', fontSize: '14px' }}>
-                        <span style={{ color: '#ef4444', fontWeight: 700 }}>{subLabel}</span> substitution
+                        <span style={{ color: '#ef4444', fontWeight: 700 }}>{subLabel}</span>
                       </div>
                     )}
                   </>
@@ -20963,7 +20963,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               })()}
               <div style={{ marginBottom: '29px', fontSize: '19px', fontWeight: 600 }}>
                 <div style={{ marginBottom: '10px', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                  <span>OUT: # {substitutionConfirm.playerOut}</span>
+                  <span>{t('scoreboard.modals.subOut', { number: substitutionConfirm.playerOut })}</span>
                   {(substitutionConfirm.isExpelled || substitutionConfirm.isDisqualified) ? (
                     <span style={{ fontSize: '29px', fontWeight: 700, color: '#ef4444' }}>✕</span>
                   ) : (
@@ -20971,7 +20971,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   )}
                 </div>
                 <div style={{ color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                  <span>IN: # {substitutionConfirm.playerIn}</span>
+                  <span>{t('scoreboard.modals.subIn', { number: substitutionConfirm.playerIn })}</span>
                   <span style={{ fontSize: '29px', fontWeight: 700 }}>↑</span>
                 </div>
               </div>
@@ -20979,12 +20979,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 <SbButton variant="positive"
                   onClick={confirmSubstitution}
                 >
-                  Yes
+                  {t('common.yes')}
                 </SbButton>
                 <SbButton variant="secondary"
                   onClick={cancelSubstitutionConfirm}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </SbButton>
               </div>
             </div>
@@ -22744,7 +22744,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         >
           <div style={{ padding: '4px 0', textAlign: 'center' }}>
             <p style={{ marginBottom: '16px', fontSize: '16px' }}>
-              Do you want to undo action?
+              {t('scoreboard.modals.undoQuestion')}
             </p>
             <p style={{ marginBottom: '24px', fontSize: '14px', color: 'var(--muted)', fontStyle: 'italic' }}>
               {undoConfirm.description}
@@ -22753,12 +22753,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
               <SbButton variant="positive"
                 onClick={handleUndo}
               >
-                Yes
+                {t('common.yes')}
               </SbButton>
               <SbButton variant="secondary"
                 onClick={cancelUndo}
               >
-                Cancel
+                {t('common.cancel')}
               </SbButton>
             </div>
           </div>
