@@ -20,6 +20,7 @@ import { exportMatchData } from '../utils/backupManager'
 import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
 import { getBackendUrl } from '../utils/backendConfig'
+import { runConnectionChecks, checksOutcome, readOfflineMode } from '../utils/preMatchChecks'
 import { setExtId, eventExtId } from '../utils/syncIds'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
 import { teamBoxStyle } from '../utils/teamColours'
@@ -1064,6 +1065,9 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
       awayCaptain: awayCaptainSignature
     })
 
+    // The app's offline mode (App: localStorage offlineMode): no cloud
+    const offlineMode = readOfflineMode()
+
     // Show initialization modal and wait for sync (only if Supabase is configured)
     let syncComplete = false
     setInitModal({ status: 'syncing', message: t('coinToss.syncingMatch', 'Syncing match data...') })
@@ -1077,7 +1081,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
     // mode) skip the wait entirely — the sync queue flushes automatically when
     // connectivity returns. Otherwise this loop burns the full 15s on every
     // offline match start because the queue never drains.
-    if (!navigator.onLine || localStorage.getItem('offlineMode') === 'true') {
+    if (!navigator.onLine || offlineMode) {
       syncComplete = true
     }
 
@@ -1098,7 +1102,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
     // This is non-blocking - if offline or error, we still proceed (local status is already 'live')
     let verificationSkipped = false
 
-    if (!match?.test) {
+    if (!match?.test && !offlineMode) {
       setInitModal({ status: 'verifying', message: t('coinToss.verifyingStatus', 'Verifying match status...') })
 
       try {
@@ -1144,93 +1148,25 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
       console.log('[CoinToss] Verification skipped (offline or no Supabase), proceeding with local status')
     }
 
-    // --- Pre-game connection checks (non-blocking, informational only) ---
-    const checks = {
-      websocket: { status: 'pending', label: t('coinToss.checks.websocket', 'WebSocket server') },
-      supabase: { status: 'pending', label: t('coinToss.checks.supabase', 'Cloud database') },
-      matchData: { status: 'pending', label: t('coinToss.checks.matchData', 'Match data in cloud') },
-      devices: { status: 'pending', label: t('coinToss.checks.devices', 'Connected devices') }
-    }
-
-    setInitModal({ status: 'checking', message: t('coinToss.runningChecks', 'Running connection checks...'), checks })
-
-    const backendUrl = getBackendUrl()
+    // --- Pre-game connection checks (non-blocking, informational only;
+    // offline mode skips the cloud ones: utils/preMatchChecks) ---
     const localMatch = await db.matches.get(matchId)
-    const seedKey = localMatch?.seed_key
-
-    const checkPromises = []
-
-    // 1. WebSocket Server health
-    if (backendUrl) {
-      checkPromises.push(
-        fetch(`${backendUrl}/health`, { method: 'GET', signal: AbortSignal.timeout(3000) })
-          .then(r => { checks.websocket.status = r.ok ? 'pass' : 'fail' })
-          .catch(() => { checks.websocket.status = 'fail' })
-      )
-    } else {
-      checks.websocket.status = 'skip'
-    }
-
-    // 2. Cloud database connectivity
-    if (!match?.test) {
-      checkPromises.push(
-        apiFrom('matches').select('id').limit(1)
-          .then(({ error }) => { checks.supabase.status = error ? 'fail' : 'pass' })
-          .catch(() => { checks.supabase.status = 'fail' })
-      )
-    } else {
-      checks.supabase.status = 'skip'
-    }
-
-    // 3. Match data in cloud
-    if (seedKey && !match?.test) {
-      checkPromises.push(
-        apiFrom('matches').select('status').eq('external_id', seedKey).maybeSingle()
-          .then(({ data: md, error }) => {
-            if (error || !md) { checks.matchData.status = 'warn' }
-            else if (md.status === 'live') { checks.matchData.status = 'pass' }
-            else { checks.matchData.status = 'warn' }
-          })
-          .catch(() => { checks.matchData.status = 'fail' })
-      )
-    } else {
-      checks.matchData.status = 'skip'
-    }
-
-    // 4. Connected devices
-    if (backendUrl) {
-      checkPromises.push(
-        fetch(`${backendUrl}/api/server/connections`, { signal: AbortSignal.timeout(3000) })
-          .then(r => r.json())
-          .then(data => {
-            const anyEnabled = localMatch?.refereeConnectionEnabled || localMatch?.homeTeamConnectionEnabled || localMatch?.awayTeamConnectionEnabled
-            if (!anyEnabled) { checks.devices.status = 'skip'; return }
-            const connected = Array.isArray(data.clients) ? data.clients.filter(c => c.matchId === String(matchId)).length : 0
-            checks.devices.status = connected > 0 ? 'pass' : 'warn'
-            checks.devices.detail = String(connected)
-          })
-          .catch(() => { checks.devices.status = 'fail' })
-      )
-    } else {
-      checks.devices.status = 'skip'
-    }
-
-    // Run all checks in parallel with 10s timeout
-    await Promise.race([
-      Promise.allSettled(checkPromises),
-      new Promise(resolve => setTimeout(resolve, 10000))
-    ])
-
-    // Mark any remaining pending checks as timed out
-    for (const key of Object.keys(checks)) {
-      if (checks[key].status === 'pending') checks[key].status = 'fail'
-    }
+    const checks = await runConnectionChecks({
+      t,
+      backendUrl: getBackendUrl(),
+      offlineMode,
+      isTest: !!match?.test,
+      seedKey: localMatch?.seed_key,
+      localMatch,
+      matchId,
+      apiFrom,
+      onUpdate: pendingChecks => setInitModal({ status: 'checking', message: t('coinToss.runningChecks', 'Running connection checks...'), checks: pendingChecks })
+    })
 
     // Update UI with results
-    const allPassed = Object.values(checks).every(c => c.status === 'pass' || c.status === 'skip')
-    const hasFails = Object.values(checks).some(c => c.status === 'fail')
+    const outcome = checksOutcome(checks)
 
-    if (hasFails) {
+    if (outcome === 'fail') {
       // Show results and wait for user to proceed
       setInitModal({
         status: 'check_results',
@@ -1243,13 +1179,16 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
         window.__coinTossCheckResolve = resolve
       })
       delete window.__coinTossCheckResolve
-    } else if (!allPassed) {
+    } else if (outcome === 'warn') {
       // Warnings only - show briefly then auto-proceed
       setInitModal({ status: 'check_results', message: t('coinToss.checksWarnings', 'Checks completed with warnings'), checks })
       await new Promise(resolve => setTimeout(resolve, 2000))
     } else {
-      // All passed - show briefly
-      setInitModal({ status: 'check_results', message: t('coinToss.checksOk', 'All checks passed'), checks })
+      // All passed (offline mode: those that ran) - show briefly
+      const message = outcome === 'offline'
+        ? t('coinToss.checksOffline', 'Offline mode: the cloud was not checked')
+        : t('coinToss.checksOk', 'All checks passed')
+      setInitModal({ status: 'check_results', message, checks })
       await new Promise(resolve => setTimeout(resolve, 1000))
     }
 
@@ -2623,17 +2562,23 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   <span style={{ fontSize: '28px' }}>✕</span>
                 </div>
               )}
-              {initModal.status === 'check_results' && (
-                <div className={Object.values(initModal.checks || {}).some(c => c.status === 'fail') ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'} style={{
-                  width: '56px', height: '56px', margin: '0 auto',
-                  borderRadius: '50%',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center'
-                }}>
-                  <span style={{ fontSize: '28px' }}>
-                    {Object.values(initModal.checks || {}).some(c => c.status === 'fail') ? '!' : '✓'}
-                  </span>
-                </div>
-              )}
+              {initModal.status === 'check_results' && (() => {
+                // Offline mode with nothing checked: neutral, not a pass
+                const outcome = checksOutcome(initModal.checks)
+                const noneRan = Object.values(initModal.checks || {}).every(c => c.status === 'skip')
+                const tone = outcome === 'fail' ? 'bg-amber-50 text-amber-600' : noneRan ? 'bg-stone-100 text-stone-500' : 'bg-emerald-50 text-emerald-600'
+                return (
+                  <div className={tone} data-outcome={outcome} style={{
+                    width: '56px', height: '56px', margin: '0 auto',
+                    borderRadius: '50%',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                  }}>
+                    <span style={{ fontSize: '28px' }}>
+                      {outcome === 'fail' ? '!' : noneRan ? '—' : '✓'}
+                    </span>
+                  </div>
+                )
+              })()}
             </div>
 
             {/* Message */}
@@ -2650,7 +2595,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
             {initModal.checks && (
               <div className="rounded-xl border border-stone-200 divide-y divide-stone-100" style={{ textAlign: 'left', marginBottom: '20px' }}>
                 {Object.entries(initModal.checks).map(([key, check]) => (
-                  <div key={key} style={{
+                  <div key={key} data-check={key} data-status={check.status} style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: 10,
@@ -2680,6 +2625,11 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     {check.detail && (
                       <span className="text-stone-500 tabular-nums" style={{ fontSize: 11, fontFamily: 'monospace' }}>
                         {check.detail}
+                      </span>
+                    )}
+                    {check.note && (
+                      <span className="text-stone-500" style={{ fontSize: 12, textAlign: 'right' }}>
+                        {check.note}
                       </span>
                     )}
                   </div>

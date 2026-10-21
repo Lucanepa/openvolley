@@ -88,12 +88,14 @@
       "websocket": "Serveur WebSocket",
       "supabase": "Base de données cloud",
       "matchData": "Données du match dans le cloud",
-      "devices": "Appareils connectés"
+      "devices": "Appareils connectés",
+      "offlineNotChecked": "Mode hors ligne : non vérifié"
     },
     "runningChecks": "Vérification des connexions...",
     "checksIssues": "Certaines vérifications ont signalé des problèmes",
     "checksWarnings": "Vérifications terminées avec des avertissements",
     "checksOk": "Toutes les vérifications sont réussies",
+    "checksOffline": "Mode hors ligne : le cloud n’a pas été vérifié",
     "connectionChecks": "Vérification des connexions",
     "proceedAnyway": "Continuer quand même"
   },

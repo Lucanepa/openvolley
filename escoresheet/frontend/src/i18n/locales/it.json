@@ -88,12 +88,14 @@
       "websocket": "Server WebSocket",
       "supabase": "Database cloud",
       "matchData": "Dati della partita nel cloud",
-      "devices": "Dispositivi connessi"
+      "devices": "Dispositivi connessi",
+      "offlineNotChecked": "Modalità offline: non verificato"
     },
     "runningChecks": "Verifica delle connessioni...",
     "checksIssues": "Alcune verifiche hanno segnalato problemi",
     "checksWarnings": "Verifiche completate con avvisi",
     "checksOk": "Tutte le verifiche superate",
+    "checksOffline": "Modalità offline: il cloud non è stato verificato",
     "connectionChecks": "Verifica delle connessioni",
     "proceedAnyway": "Procedi comunque"
   },
