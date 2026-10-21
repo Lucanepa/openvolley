@@ -213,6 +213,18 @@ describe('forfeitScope / playersAvailableForNextSet', () => {
     expect(ok).toEqual([2, 4, 5, 6, 7]) // 1 disq., 3 exceptional sub, 9 libero
     expect(playersAvailableForNextSet(roster, events, 'home', { exclude: [7] }).map(p => p.number)).toEqual([2, 4, 5, 6])
   })
+
+  it('a bench player disqualified counts too, so the next court disqualification ends the match', () => {
+    // 7 non-liberos: bench #7 disqualified (logged playerType 'bench'), then
+    // court #1 with no legal substitute: only 5 can play
+    const events = [
+      { type: 'sanction', payload: { team: 'home', type: 'disqualification', playerType: 'bench', playerNumber: 7 } },
+      { type: 'sanction', payload: { team: 'home', type: 'disqualification', playerType: 'official', playerNumber: 2 } }
+    ]
+    const ok = playersAvailableForNextSet(roster, events, 'home', { exclude: [1] })
+    expect(ok.map(p => p.number)).toEqual([2, 3, 4, 5, 6])
+    expect(forfeitScope('disqualification', { playersAvailableNextSet: ok.length })).toBe('match')
+  })
 })
 
 describe('planForfeitReversal', () => {

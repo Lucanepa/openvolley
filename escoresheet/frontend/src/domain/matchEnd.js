@@ -186,6 +186,10 @@ export function planForfeit({ sets, forfeitingTeam, currentSetIndex, bestOf = 5,
 
 const isLiberoPlayer = (p) => !!p?.libero && p.libero !== ''
 
+// Sanctions of a player (on court, on the bench, a libero), not of a bench
+// official; older events have no playerType
+const PLAYER_SANCTION_TYPES = new Set([undefined, null, 'player', 'bench', 'libero'])
+
 /**
  * Players of a team who may still take part in the NEXT set: non-liberos who
  * are not disqualified and were not taken out by an exceptional substitution
@@ -205,7 +209,7 @@ export function playersAvailableForNextSet(players, events, teamKey, { exclude =
     const p = e.payload
     if (!p || p.team !== teamKey) continue
     if (e.type === 'sanction' && p.type === 'disqualification' && p.playerNumber != null &&
-      (p.playerType === undefined || p.playerType === 'player')) {
+      PLAYER_SANCTION_TYPES.has(p.playerType)) {
       out.add(String(p.playerNumber))
     }
     if (e.type === 'substitution' && (p.isExceptional || p.isDisqualified) && p.playerOut != null) {
