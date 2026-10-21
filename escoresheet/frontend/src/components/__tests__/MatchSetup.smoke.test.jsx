@@ -4,6 +4,7 @@
  * crash once showed only "Something went wrong" in the browser), and the
  * once-per-match connection-PIN sync is queued only when it is needed.
  * The roster editor keeps a row in its place while its number is typed.
+ * Choose players in the roster editor writes nothing before its Save.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, cleanup, fireEvent, within } from '@testing-library/react'
@@ -290,5 +291,38 @@ describe('MatchSetup smoke render', () => {
     fireEvent.focusOut(charlieLast, { relatedTarget: null })
     await waitFor(() => expect(lastNames()).toEqual(['Alpha', 'Bravo', 'Delta', 'Echo', 'Charlie']))
     expect(numbers().map((i) => i.value)).toEqual(['2', '5', '11', '14', '15'])
+  })
+
+  // Edit roster > Choose players > Use 3 of 5, then Back: the card showed 5
+  // again, but the stored players were already the 3 (a reload, Continue
+  // match and the coin toss read them)
+  it('Choose players in the roster editor stores nothing before Save, so Back discards it', async () => {
+    store.tables.matches = new Map([[1, {
+      id: 1, status: 'setup', seed_key: 'match_1_pool', matchInfoConfirmedAt: '2026-10-06T10:00:00Z',
+      homeTeamId: 11, awayTeamId: 12, game_n: 991407, ...PINS
+    }]])
+    store.tables.teams = new Map([[11, { id: 11, name: 'Home V' }], [12, { id: 12, name: 'Away V' }]])
+    const players = [
+      [201, { id: 201, teamId: 11, number: 2, lastName: 'Alpha', firstName: 'A' }],
+      [202, { id: 202, teamId: 11, number: 5, lastName: 'Bravo', firstName: 'B' }],
+      [203, { id: 203, teamId: 11, number: 8, lastName: 'Charlie', firstName: 'C' }],
+      [204, { id: 204, teamId: 11, number: 11, lastName: 'Delta', firstName: 'D' }],
+      [205, { id: 205, teamId: 11, number: 14, lastName: 'Echo', firstName: 'E' }]
+    ]
+    store.tables.players = new Map(players)
+    render(<Setup matchId={1} />)
+    fireEvent.click((await screen.findAllByRole('button', { name: 'matchSetup.editRoster' }))[0])
+    await waitFor(() => expect(document.querySelectorAll('.roster-grid:not(.roster-add) input.cell-last')).toHaveLength(5))
+    fireEvent.click(screen.getByTestId('choose-players-home'))
+    const rows = await screen.findAllByTestId('player-pool-row')
+    expect(rows).toHaveLength(5)
+    // untick two
+    fireEvent.click(rows[3])
+    fireEvent.click(rows[4])
+    fireEvent.click(screen.getByTestId('player-pool-apply'))
+    await waitFor(() => expect(document.querySelectorAll('.roster-grid:not(.roster-add) input.cell-last')).toHaveLength(3))
+    await new Promise((r) => setTimeout(r, 50))
+    // nothing stored yet: the stored players are still the five
+    expect([...store.tables.players.values()].map((p) => p.lastName)).toEqual(['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo'])
   })
 })
