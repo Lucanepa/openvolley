@@ -822,8 +822,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
 
   // A set awarded by default / forfeit without a single rally: created by the
   // forfeit (forfeitCreated), or every one of its points was awarded (a default
-  // before the start). Its grid stays empty and is struck off; no start / end
-  // time, no duration (field-spec 11).
+  // before the start). Its grid stays empty, not struck off (owner 2026-10-21);
+  // its RESULT row and the remark say what was awarded; no start / end time,
+  // no duration (field-spec 11).
   const isDefaultSet = (setIndex: number): boolean => {
     const info = sets.find(s => s?.index === setIndex);
     if (!info) return false;
@@ -837,8 +838,9 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
   };
   // Drawn empty: a set awarded by default, and once the result is known the grids
   // that were never played (best-of-3: sets 3 and 4 always) (field-spec 6, 11).
-  // Only a set awarded by default is struck off with a Z; the unplayed grids (and
-  // their RESULT rows) are just left blank (owner 2026-10-20).
+  // Nothing is struck off: a set awarded by default keeps its RESULT row (the
+  // awarded points), the unplayed grids and their RESULT rows are left blank
+  // (owner 2026-10-20, 2026-10-21).
   const isEmptyGrid = (setIndex: number): boolean => {
     if (isDefaultSet(setIndex)) return true;
     if (bestOf === 3 && (setIndex === 3 || setIndex === 4)) return true;
@@ -1878,7 +1880,6 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                       firstServeTeamA={shouldShowSet1 && !isEmptyGrid(1) ? set1ServeIsA : undefined}
                       positionBoxRef={positionBoxSet1Ref}
                       {...(isEmptyGrid(1) ? emptySetData : set1Data)}
-                      struckOff={isDefaultSet(1)}
                     />
                   </div>
                 </div>
@@ -1899,7 +1900,6 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                       teamNameRight={shouldShowSet2 && !isEmptyGrid(2) ? teamAShortName : ''}
                       firstServeTeamA={shouldShowSet2 && !isEmptyGrid(2) ? set1ServeIsA : undefined}
                       {...(isEmptyGrid(2) ? emptySetData : set2Data)}
-                      struckOff={isDefaultSet(2)}
                     />
                   </div>
                 </div>
@@ -1950,7 +1950,6 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                       teamNameRight={shouldShowSet3 && !isEmptyGrid(3) ? teamBShortName : ''}
                       firstServeTeamA={shouldShowSet3 && !isEmptyGrid(3) ? set1ServeIsA : undefined}
                       {...(isEmptyGrid(3) ? emptySetData : set3Data)}
-                      struckOff={isDefaultSet(3)}
                     />
                   </div>
                 </div>
@@ -1971,7 +1970,6 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                       teamNameRight={shouldShowSet4 && !isEmptyGrid(4) ? teamAShortName : ''}
                       firstServeTeamA={shouldShowSet4 && !isEmptyGrid(4) ? set1ServeIsA : undefined}
                       {...(shouldShowSet4 && !isEmptyGrid(4) ? set4Data : emptySetData)}
-                      struckOff={isDefaultSet(4)}
                     />
                   </div>
                 </div>
@@ -2076,7 +2074,6 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
                       circledPointsA_Right={set5Shown ? circledPointsA_Right : []}
                       serviceRoundsA_Right={set5Shown ? set5ServiceRoundsLeftTeam_After : []}
                       pointsAtChangeA={set5Shown ? (set5Data.leftScoreAtCourtChange ?? null) : null}
-                      struckOff={isDefaultSet(5)}
                       positionBoxRef={positionBoxSet5Ref}
                     />
                   </div>

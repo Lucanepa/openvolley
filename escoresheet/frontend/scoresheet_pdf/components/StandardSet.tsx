@@ -2,7 +2,6 @@ import React from 'react';
 import { LINEUP_NUMBER_PT, MARK_STROKE } from './Marks';
 import { SubRecord } from '../types_scoresheet';
 import { PointsColumn } from './PointsColumn';
-import { StrikeZ } from './StrikeZ';
 import { FitText } from './FitText';
 import { ServiceBox, SubstitutionCells } from './ServiceBox';
 
@@ -47,8 +46,6 @@ interface StandardSetProps {
   positionBoxRef?: React.RefObject<HTMLDivElement>;
   // True when the set is finished — enables T-bar finalization of unused numbers
   setFinished?: boolean;
-  /** A set awarded by default: its empty grid is struck off with a Z (an unplayed set is just left blank). */
-  struckOff?: boolean;
 }
 
 
@@ -186,8 +183,7 @@ export const StandardSet: React.FC<StandardSetProps> = ({
     rightCircledPoints = [],
     rightServiceRounds = [],
     positionBoxRef,
-    setFinished = false,
-    struckOff = false
+    setFinished = false
 }) => {
   // A/B labels are always shown based on position (left=A when not swapped, left=B when swapped)
   const leftTeamLabel = isSwapped ? 'B' : 'A';
@@ -278,7 +274,6 @@ export const StandardSet: React.FC<StandardSetProps> = ({
                 <PointsColumn isLast={true} timeouts={rightTimeouts} markedPoints={rightMarkedPoints} circledPoints={rightCircledPoints} maxScore={maxScore} setFinished={setFinished} finalScore={typeof rightPoints === 'number' ? rightPoints : Number(rightPoints) || 0} />
             </div>
         </div>
-        {struckOff && <StrikeZ />}
     </div>
   );
 };
