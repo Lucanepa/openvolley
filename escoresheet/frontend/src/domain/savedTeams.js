@@ -141,9 +141,19 @@ export function savedTeamToRoster(team) {
 
 /**
  * MatchSetup roster + bench → the PUT /api/saved-teams/teams/:id/roster body.
- * Keeps the id and licence number of a saved player whose number and last name
- * match (staff: role + last name), and keeps the saved inactive players (they
- * were never loaded into the roster, so leaving them out would delete them).
+ *
+ * The roster is this match's players, often some of the team ("Choose
+ * players"): it updates the saved players it has and adds the others. The
+ * saved players not in it stay as they are, active or not (owner,
+ * 2026-10-21: saving a match roster must not delete the rest of the team).
+ * Two things give way so the server takes the body: a kept player whose
+ * number a roster player now wears loses the number, and a kept captain is
+ * not one when the roster names one.
+ *
+ * A saved player is the roster player with the same number and last name,
+ * else the same last and first name (a new number) and no other date of
+ * birth; it keeps its id and licence number. Staff: the bench replaces them
+ * (role + last name keeps the id and licence number).
  */
 export function rosterToSavedRoster(roster, bench, existingTeam = null) {
   const existingPlayers = Array.isArray(existingTeam?.players) ? existingTeam.players : []
@@ -151,13 +161,23 @@ export function rosterToSavedRoster(roster, bench, existingTeam = null) {
   const usedIds = new Set()
 
   const playerKey = (number, lastName) => `${toNumberOrNull(number) ?? ''}|${normalizeName(lastName)}`
-  const findPlayer = (number, lastName) => existingPlayers.find(p =>
-    p?.id && !usedIds.has(p.id) && playerKey(p.number, p.last_name) === playerKey(number, lastName))
+  const free = (p) => p?.id && !usedIds.has(p.id)
+  const findPlayer = (p) => {
+    const byNumber = existingPlayers.find(e => free(e) && playerKey(e.number, e.last_name) === playerKey(p.number, p.lastName))
+    if (byNumber) return byNumber
+    const last = normalizeName(p.lastName)
+    const first = normalizeName(p.firstName)
+    if (!last || !first) return null
+    const dob = displayDobToIso(p.dob)
+    return existingPlayers.find(e => free(e) &&
+      normalizeName(e.last_name) === last && normalizeName(e.first_name) === first &&
+      !(dob && e.dob && String(e.dob).slice(0, 10) !== dob)) || null
+  }
 
-  const players = (Array.isArray(roster) ? roster : [])
+  const chosen = (Array.isArray(roster) ? roster : [])
     .filter(p => p && (String(p.lastName || '').trim() || String(p.firstName || '').trim()))
     .map(p => {
-      const match = findPlayer(p.number, p.lastName)
+      const match = findPlayer(p)
       if (match) usedIds.add(match.id)
       const row = {
         number: toNumberOrNull(p.number),
@@ -173,21 +193,32 @@ export function rosterToSavedRoster(roster, bench, existingTeam = null) {
       return row
     })
 
-  for (const p of existingPlayers) {
-    if (p && p.active === false && !usedIds.has(p.id)) {
-      players.push({
+  const takenNumbers = new Set(chosen.map(p => p.number).filter(n => n !== null))
+  const rosterCaptain = chosen.some(p => p.is_captain)
+  const kept = existingPlayers
+    .filter(p => p && !(p.id && usedIds.has(p.id)))
+    .map(p => {
+      const active = p.active !== false
+      const number = toNumberOrNull(p.number)
+      return {
         ...(p.id ? { id: p.id } : {}),
-        number: toNumberOrNull(p.number),
+        number: active && number !== null && takenNumbers.has(number) ? null : number,
         first_name: p.first_name || '',
         last_name: p.last_name || '',
         dob: p.dob || null,
         license_number: p.license_number ?? null,
         is_libero: !!p.is_libero,
-        is_captain: false,
-        active: false
-      })
-    }
-  }
+        is_captain: active && !!p.is_captain && !rosterCaptain,
+        active
+      }
+    })
+
+  // The active players by number (without one last), then the inactive ones
+  const byNumber = (a, b) => (a.number ?? 1000) - (b.number ?? 1000)
+  const players = [
+    ...[...chosen, ...kept.filter(p => p.active)].sort(byNumber),
+    ...kept.filter(p => !p.active)
+  ]
 
   const usedStaff = new Set()
   const staff = (Array.isArray(bench) ? bench : [])

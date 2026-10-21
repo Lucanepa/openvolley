@@ -3,6 +3,8 @@
 //   bundle's competitions, not only those embedded in team rows);
 // - when the new team is created but its roster PUT fails, a retry must not
 //   create the team again (409 duplicate): the new team is selected instead.
+// - saving some of a saved team's players (Choose players) into it keeps the
+//   team's other players, and the confirm says so (owner, 2026-10-21).
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 
@@ -81,5 +83,30 @@ describe('SaveRosterToTeamModal', () => {
     await waitFor(() => expect(api.putRoster).toHaveBeenCalledTimes(2))
     expect(api.createTeam).toHaveBeenCalledTimes(1)
     expect(api.putRoster.mock.calls[1][0]).toBe('t-new')
+  })
+
+  it('saving some players into their saved team keeps the others, and the confirm says so', async () => {
+    const team = {
+      id: 't-1', name: 'VBC Alt', competitionId: 'c-empty', competition: EMPTY_COMP, svrzTeamName: '', staff: [],
+      players: [
+        { id: 'p-4', number: 4, first_name: 'Anna', last_name: 'Muster', dob: null, license_number: null, is_libero: false, is_captain: false, active: true },
+        { id: 'p-8', number: 8, first_name: 'Bea', last_name: 'Bravo', dob: null, license_number: 'L-8', is_libero: true, is_captain: true, active: true },
+        { id: 'p-9', number: 9, first_name: 'Cleo', last_name: 'Charlie', dob: null, license_number: null, is_libero: false, is_captain: false, active: false }
+      ]
+    }
+    cache.rows = [team]
+    api.putRoster.mockResolvedValue({ data: { team: { id: 't-1' } }, error: null, status: 200 })
+    render(<SaveRosterToTeamModal {...props} suggestedTeamId="t-1" />)
+    const save = await screen.findByTestId('save-roster-to-team')
+    await waitFor(() => expect(screen.getByRole('option', { name: 'VBC Alt' }).selected).toBe(true))
+    await waitFor(() => expect(save).not.toBeDisabled())
+    fireEvent.click(save)
+    await waitFor(() => expect(api.putRoster).toHaveBeenCalledTimes(1))
+    expect(confirm.fn).toHaveBeenCalledWith(expect.objectContaining({ title: 'savedTeams.saveConfirmTitle', message: 'savedTeams.saveConfirmBody' }))
+    const [id, body] = api.putRoster.mock.calls[0]
+    expect(id).toBe('t-1')
+    expect(body.players.map(p => [p.id, p.number, p.active])).toEqual([['p-4', 4, true], ['p-8', 8, true], ['p-9', 9, false]])
+    expect(body.players[1]).toMatchObject({ is_libero: true, is_captain: true, license_number: 'L-8' })
+    expect(api.createTeam).not.toHaveBeenCalled()
   })
 })
