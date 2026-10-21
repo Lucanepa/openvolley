@@ -15,7 +15,7 @@
  * ({ number, firstName, lastName, dob, libero, isCaptain, isLfp }).
  */
 
-import { normalizeName } from './savedTeams'
+import { normalizeName, displayDobToIso } from './savedTeams'
 
 // FIVB 4.1.1: up to 14 players on the scoresheet; with more than 12, two
 // liberos (19.1.1, MatchSetup liberosOk); never more than two liberos marked
@@ -46,6 +46,10 @@ export function poolKey(p) {
 
 const hasName = (p) => !!(String(p?.lastName || '').trim() || String(p?.firstName || '').trim())
 
+// A date of birth to compare: a saved team gives DD.MM.YYYY, an Einsatzliste
+// DD/MM/YYYY, the same day either way
+const dobId = (dob) => displayDobToIso(dob) || dob
+
 /**
  * Merge the sources into one list, sorted by number (players without a
  * number last, then by name).
@@ -64,9 +68,9 @@ export function buildPlayerPool({ current = [], imported = [], saved = [], earli
     if (!key) return
     const dob = String(p.dob || '').trim()
     const known = byKey.get(key)
-    if (known && dob && known.dob && known.dob !== dob) {
+    if (known && dob && known.dob && dobId(known.dob) !== dobId(dob)) {
       // Same name, another date of birth: another person
-      key = `${key}|${dob}`
+      key = `${key}|${dobId(dob)}`
     }
     const entry = byKey.get(key)
     if (!entry) {
@@ -90,6 +94,11 @@ export function buildPlayerPool({ current = [], imported = [], saved = [], earli
     if (entry.number === null) entry.number = numberOf(p.number)
     if (!entry.dob && dob) entry.dob = dob
     if (!entry.firstName && p.firstName) entry.firstName = String(p.firstName).trim()
+    if (!entry.isLibero && isLibero(p)) {
+      entry.isLibero = true
+      entry.liberoSlot = p.libero === 'libero1' || p.libero === 'libero2' ? p.libero : ''
+    }
+    if (!entry.isCaptain && p.isCaptain) entry.isCaptain = true
   }
   for (const p of current) add(p, 'current')
   for (const p of imported) add(p, 'imported')

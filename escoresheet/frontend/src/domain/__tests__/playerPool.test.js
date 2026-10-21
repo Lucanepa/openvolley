@@ -40,6 +40,39 @@ describe('buildPlayerPool', () => {
   })
 })
 
+describe('buildPlayerPool: dates of birth and marks across sources', () => {
+  it('the same date of birth written DD.MM.YYYY and DD/MM/YYYY is one player', () => {
+    const pool = buildPlayerPool({
+      imported: [p(5, 'Keller', 'Luca', { dob: '05/01/1998' })],
+      saved: [p(5, 'Keller', 'Luca', { dob: '05.01.1998' })]
+    })
+    expect(pool).toHaveLength(1)
+    expect(pool[0].sources).toEqual(['imported', 'saved'])
+  })
+
+  it('another date of birth is still another person', () => {
+    const pool = buildPlayerPool({
+      imported: [p(5, 'Keller', 'Luca', { dob: '05/01/1998' })],
+      saved: [p(6, 'Keller', 'Luca', { dob: '06.01.1999' })]
+    })
+    expect(pool).toHaveLength(2)
+  })
+
+  it('libero and captain marks come from a later source when the first has none', () => {
+    const pool = buildPlayerPool({
+      imported: [p(3, 'Meier', 'Lea'), p(9, 'Brunner', 'Mia')],
+      earlier: [[p(3, 'Meier', 'Lea', { libero: 'libero1' }), p(9, 'Brunner', 'Mia', { isCaptain: true })]]
+    })
+    const meier = pool.find(e => e.lastName === 'Meier')
+    const brunner = pool.find(e => e.lastName === 'Brunner')
+    expect([meier.isLibero, meier.liberoSlot]).toEqual([true, 'libero1'])
+    expect(brunner.isCaptain).toBe(true)
+    const roster = poolToRoster(pool)
+    expect(roster.find(r => r.number === 3).libero).toBe('libero1')
+    expect(roster.find(r => r.number === 9).isCaptain).toBe(true)
+  })
+})
+
 describe('preselectedKeys', () => {
   it('ticks the roster in the setup when there is one', () => {
     const pool = buildPlayerPool({ current: [p(1, 'A')], saved: [p(2, 'B')] })
