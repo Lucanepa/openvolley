@@ -28,7 +28,7 @@ vi.mock('../../lib/apiClient', () => ({
   }
 }))
 
-import MatchHistory from '../auth/MatchHistory'
+import MatchHistory, { matchRoleLabel } from '../auth/MatchHistory'
 
 describe('MatchHistory in the app\'s language', () => {
   it('the role chip is translated and the date follows the app language', async () => {
@@ -38,5 +38,16 @@ describe('MatchHistory in the app\'s language', () => {
     expect(chip.className).not.toMatch(/\bcapitalize\b/)
     const date = new Date('2026-10-05T18:00:00Z').toLocaleDateString('de', { day: '2-digit', month: 'short', year: 'numeric' })
     expect(screen.getByText(date)).toBeTruthy()
+  })
+
+  it('an official\'s own role string is translated too', () => {
+    const label = (role) => lookup(matchRoleLabel(role).key)
+    expect(label('1st referee')).toBe(de.matchEnd.referee1)
+    expect(label('2nd referee')).toBe(de.matchEnd.referee2)
+    expect(label('assistant scorer')).toBe(de.matchEnd.assistantScorer)
+    expect(label('line judge 3')).toBe(de.matchSetup.lineJudge3)
+    expect(label('scorer')).toBe(de.access.roles.scorer)
+    expect(label(undefined)).toBe(de.access.roles.scorer)
+    expect(matchRoleLabel('timekeeper')).toEqual({ key: 'access.roles.timekeeper', fallback: 'timekeeper' })
   })
 })
