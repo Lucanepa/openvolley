@@ -405,6 +405,22 @@
   }
 }
 
+/* Home screen (HomePage.jsx). home-wide: a wide but short window (the
+   desktop app's ~962x601 window, a laptop, a phone on its side) puts the
+   brand and the downloads beside the actions instead of above them.
+   home-short: a short window in one column gets a smaller lockup. */
+@custom-variant home-wide {
+  @media screen and (min-width: 900px) and (max-height: 820px) {
+    @slot;
+  }
+}
+
+@custom-variant home-short {
+  @media screen and (max-width: 899.98px) and (max-height: 820px) {
+    @slot;
+  }
+}
+
 /* ---------------------------------------------------------------------------
    Portrait data entry (scorer app). A tablet held upright gets one field per
    row: label above, full-width control, 44 px tall. Landscape is untouched:

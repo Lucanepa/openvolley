@@ -97,13 +97,21 @@ export default function HomePage({
   }, [desktopOS, inDesktopApp])
 
   return (
-    <div className="ov-kit flex w-full flex-1 flex-col items-center justify-center px-4 py-6 sm:py-8">
-      <div className="w-full max-w-md">
-        <h1 className="text-center text-2xl sm:text-3xl font-bold tracking-tight text-stone-900">{t('home.title')}</h1>
-        <div className="my-4 flex justify-center">
-          <img src={BRAND.lockupStacked} alt="OpenVolley" className="ov-ink h-24 w-auto sm:h-28" />
+    // Small vertical pad: the panel and the container around it pad already,
+    // and the column is centred, so the pad only counts when it overflows.
+    // A short window gets a smaller lockup (home-short); a wide but short one
+    // (the desktop app's window, a laptop, a phone on its side) two columns,
+    // brand and downloads left, the actions right (home-wide, tailwind.css).
+    <div className="ov-kit flex w-full flex-1 flex-col items-center justify-center px-4 py-2">
+      <div className="w-full max-w-md home-wide:grid home-wide:max-w-4xl home-wide:grid-cols-[minmax(0,1fr)_minmax(0,28rem)] home-wide:grid-rows-[1fr_auto_auto_1fr] home-wide:gap-x-12">
+        <div className="home-wide:col-start-1 home-wide:row-start-2">
+          <h1 className="text-center text-2xl sm:text-3xl font-bold tracking-tight text-stone-900">{t('home.title')}</h1>
+          <div className="my-4 flex justify-center home-short:my-2">
+            <img src={BRAND.lockupStacked} alt="OpenVolley" className="ov-ink h-24 w-auto sm:h-28 home-short:h-16 sm:home-short:h-16" />
+          </div>
         </div>
 
+        <div className="home-wide:col-start-2 home-wide:row-span-4 home-wide:row-start-1 home-wide:self-center">
         <PendingApprovalBanner className="mb-4" />
 
         <Card className="w-full space-y-3">
@@ -249,6 +257,7 @@ export default function HomePage({
             {t('supportFeedback.button')}
           </Button>
         </div>
+        </div>
 
         {/* Downloads (desktop app + server) - desktop browsers only, hidden inside the app */}
         {desktopOS && !inDesktopApp && (() => {
@@ -260,7 +269,7 @@ export default function HomePage({
             (desktopApp?.version ? ` (v${desktopApp.version})` : '')
           const quietLink = 'text-xs text-stone-600 underline decoration-stone-300 underline-offset-2 hover:text-stone-800 hover:decoration-stone-500 transition-colors'
           return (
-            <div className="mt-5 flex flex-col items-center gap-2 text-center">
+            <div className="mt-5 flex flex-col items-center gap-2 text-center home-wide:col-start-1 home-wide:row-start-3 home-wide:mt-2">
               <a
                 href={appHref}
                 target="_blank"
