@@ -1468,7 +1468,8 @@
     "showInFolder": "Im Ordner zeige",
     "dismiss": "Zuemache",
     "fileActionFailed": "D Datei hät vo do us nöd chöne ufgmacht werde. Si isch in: {{path}}",
-    "checkTheMatch": "Spiel vor de Bestätigung prüefe:"
+    "checkTheMatch": "Spiel vor de Bestätigung prüefe:",
+    "remarksClipped": "BEMERKIGE: De Text passt nöd is Feld; s PDF druckt en vollständig uf Siite 2."
   },
   "supportFeedback": {
     "title": "Support & Feedback",

@@ -1468,7 +1468,8 @@
     "showInFolder": "Mostra nella cartella",
     "dismiss": "Chiudi",
     "fileActionFailed": "Non è stato possibile aprire il file da qui. Si trova in: {{path}}",
-    "checkTheMatch": "Controlla la partita prima di approvarla:"
+    "checkTheMatch": "Controlla la partita prima di approvarla:",
+    "remarksClipped": "OSSERVAZIONI: il testo non entra nel riquadro; il PDF lo stampa per intero a pagina 2."
   },
   "supportFeedback": {
     "title": "Supporto & feedback",

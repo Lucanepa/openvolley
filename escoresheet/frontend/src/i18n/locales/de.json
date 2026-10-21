@@ -2413,7 +2413,8 @@
     "showInFolder": "Im Ordner zeigen",
     "dismiss": "Schliessen",
     "fileActionFailed": "Die Datei konnte von hier aus nicht geöffnet werden. Sie liegt in: {{path}}",
-    "checkTheMatch": "Spiel vor der Bestätigung prüfen:"
+    "checkTheMatch": "Spiel vor der Bestätigung prüfen:",
+    "remarksClipped": "BEMERKUNGEN: Der Text passt nicht ins Feld; das PDF druckt ihn vollständig auf Seite 2."
   },
   "tabletStatus": {
     "title": "Tablet-Status",
