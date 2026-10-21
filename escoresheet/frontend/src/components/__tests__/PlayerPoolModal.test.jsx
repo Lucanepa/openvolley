@@ -34,6 +34,18 @@ describe('PlayerPoolModal', () => {
     expect(screen.getAllByTestId('player-pool-row').every(b => b.checked)).toBe(true)
   })
 
+  // 360 px at 130 % text: "HOFMANN Jo…", "BRUNNER Da…" (one line, cut):
+  // the first name that tells namesakes apart was hidden
+  it('a name takes up to two lines, never cut to one', () => {
+    const pool = buildPlayerPool({ saved: [p(4, 'Hofmann', { firstName: 'Jonas-Maximilian' })] })
+    render(<PlayerPoolModal open pool={pool} onApply={() => {}} onClose={() => {}} />)
+    const name = screen.getByTestId('player-pool-name')
+    expect(name.textContent).toBe('HOFMANN Jonas-Maximilian')
+    expect(name.className).toContain('line-clamp-2')
+    expect(name.className).not.toMatch(/\btruncate\b/)
+    expect(name.getAttribute('title')).toBe('HOFMANN Jonas-Maximilian')
+  })
+
   it('says so when no player is known', () => {
     render(<PlayerPoolModal open pool={[]} onApply={() => {}} onClose={() => {}} />)
     expect(screen.getByText('playerPool.empty')).toBeTruthy()
