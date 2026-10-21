@@ -1,6 +1,7 @@
 /**
- * Remarks the sheet writes itself (field-spec 8 and 11): a default / forfeit
- * and an incomplete team. Scoreboard.handleForfait records them as a 'forfait'
+ * Remarks the sheet writes itself (field-spec 8 and 11): a default / forfeit,
+ * an incomplete team, and a set of sets 1-4 that went past the 48 points of
+ * its column (field-spec 4.4). Scoreboard.handleForfait records them as a 'forfait'
  * event (team, reason, scope 'match' | 'set', setsBefore) plus the awarded
  * points (payload.forfeitAwarded) and sets (forfeitCreated), but writes no
  * remark. Every remark names the team (A/B), the set and the score, the
@@ -93,6 +94,15 @@ export function generatedRemarks({ sets, events, teamAKey, bestOf }: {
         `Team ${letter(team)}, Set ${shown}, Result ${atForfeit}: declared in default${inBrackets(why)}. ` +
         `Match awarded to Team ${letter(opp)}, ${won}:${lost}${scores ? ` (${scores})` : ''}.`
       )
+    }
+  }
+
+  // Sets 1-4 have 48 points a team on paper (field-spec 4.4): the column is
+  // extended and the remark says so, Team A first
+  const teamBKey: TeamKey = teamAKey === 'home' ? 'away' : 'home'
+  for (const s of allSets.filter(x => x.finished && x.index >= 1 && x.index <= 4).sort((a, b) => a.index - b.index)) {
+    if (Math.max(pts(s, 'home'), pts(s, 'away')) > 48) {
+      lines.push(`Set ${s.index} continued beyond 48, final ${pts(s, teamAKey)}:${pts(s, teamBKey)}`)
     }
   }
   return lines

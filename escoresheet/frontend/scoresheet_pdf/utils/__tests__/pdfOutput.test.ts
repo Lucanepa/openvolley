@@ -108,4 +108,15 @@ describe('generated remarks: default / incomplete team (field-spec 8, 11)', () =
   it('nothing to say for a normal match', () => {
     expect(generatedRemarks({ sets: [], events: [], teamAKey: 'home' })).toEqual([])
   })
+
+  it('a set past 48 points: "Set n continued beyond 48", Team A first (field-spec 4.4)', () => {
+    const sets = [
+      { index: 1, homePoints: 50, awayPoints: 52, finished: true },
+      { index: 2, homePoints: 48, awayPoints: 46, finished: true },
+      { index: 3, homePoints: 49, awayPoints: 47, finished: false }
+    ]
+    expect(generatedRemarks({ sets, events: [], teamAKey: 'away', bestOf: 5 })).toEqual([
+      'Set 1 continued beyond 48, final 52:50'
+    ])
+  })
 })
