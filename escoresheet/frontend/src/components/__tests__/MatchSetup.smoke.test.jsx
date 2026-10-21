@@ -3,6 +3,7 @@
  * (matchInfoConfirmedAt) match mount without throwing (a use-before-declare
  * crash once showed only "Something went wrong" in the browser), and the
  * once-per-match connection-PIN sync is queued only when it is needed.
+ * The roster editor keeps a row in its place while its number is typed.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, cleanup, fireEvent, within } from '@testing-library/react'
@@ -56,7 +57,10 @@ vi.mock('../../db/db', () => {
     delete: async (id) => { rowsOf(name).delete(id) },
     toArray: async () => [...rowsOf(name).values()],
     count: async () => rowsOf(name).size,
-    where: () => collection([]),
+    // players: by team (the roster editor reads them); empty otherwise
+    where: (field) => name === 'players'
+      ? { equals: (v) => collection([...rowsOf(name).values()].filter((r) => r[field] === v)) }
+      : collection([]),
     orderBy: () => collection([]),
     filter: () => collection([]),
     clear: async () => rowsOf(name).clear(),
@@ -238,5 +242,53 @@ describe('MatchSetup smoke render', () => {
       await waitFor(() => expect(shirtsOf('#e2001a').length).toBeGreaterThan(0))
       expect((await screen.findAllByText('matchSetup.closeToOtherTeamColour')).length).toBeGreaterThan(0)
     })
+  })
+
+  // Typing "1" then "5" in a row's number moved the row (demo recording,
+  // 2026-10-21): it is sorted once focus leaves the list, so the Tab to its
+  // last name stays on that player
+  it('the roster editor keeps a row in place while its number is typed, and sorts when focus leaves the list', async () => {
+    store.tables.matches = new Map([[1, {
+      id: 1, status: 'setup', seed_key: 'match_1_roster', matchInfoConfirmedAt: '2026-10-06T10:00:00Z',
+      homeTeamId: 11, awayTeamId: 12, game_n: 991406, ...PINS
+    }]])
+    store.tables.teams = new Map([[11, { id: 11, name: 'Home V' }], [12, { id: 12, name: 'Away V' }]])
+    store.tables.players = new Map([
+      [201, { id: 201, teamId: 11, number: 2, lastName: 'Alpha', firstName: 'A' }],
+      [202, { id: 202, teamId: 11, number: 5, lastName: 'Bravo', firstName: 'B' }],
+      [203, { id: 203, teamId: 11, number: 8, lastName: 'Charlie', firstName: 'C' }],
+      [204, { id: 204, teamId: 11, number: 11, lastName: 'Delta', firstName: 'D' }],
+      [205, { id: 205, teamId: 11, number: 14, lastName: 'Echo', firstName: 'E' }]
+    ])
+    render(<Setup matchId={1} />)
+    fireEvent.click((await screen.findAllByRole('button', { name: 'matchSetup.editRoster' }))[0])
+    const grid = await waitFor(() => {
+      const g = document.querySelector('.roster-grid:not(.roster-add)')
+      expect(g.querySelectorAll('input.cell-last')).toHaveLength(5)
+      return g
+    })
+    const numbers = () => [...grid.querySelectorAll('input[aria-label="Player number"]')]
+    const lastNames = () => [...grid.querySelectorAll('input.cell-last')].map((i) => i.value)
+    expect(lastNames()).toEqual(['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo'])
+
+    const charlie = numbers()[2]
+    charlie.focus()
+    fireEvent.focusIn(charlie)
+    fireEvent.change(charlie, { target: { value: '1' } })
+    expect(lastNames()).toEqual(['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo'])
+    fireEvent.change(charlie, { target: { value: '15' } })
+    expect(numbers()[2]).toBe(charlie)
+    expect(charlie.value).toBe('15')
+    // On to its last name (focus stays in the list): still Charlie's row
+    const charlieLast = grid.querySelectorAll('input.cell-last')[2]
+    fireEvent.focusOut(charlie, { relatedTarget: charlieLast })
+    charlieLast.focus()
+    expect(lastNames()).toEqual(['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo'])
+    expect(document.activeElement.value).toBe('Charlie')
+
+    // Focus leaves the list: sorted by number
+    fireEvent.focusOut(charlieLast, { relatedTarget: null })
+    await waitFor(() => expect(lastNames()).toEqual(['Alpha', 'Bravo', 'Delta', 'Echo', 'Charlie']))
+    expect(numbers().map((i) => i.value)).toEqual(['2', '5', '11', '14', '15'])
   })
 })

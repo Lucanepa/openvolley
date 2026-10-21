@@ -38,6 +38,7 @@ import { AlertTriangle, Loader2 } from 'lucide-react'
 import { Button, DateField, Field, Input, Select, TimeField, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, cn, confirmDialog, toast } from '../ui'
 import SavedTeamPickerModal, { confirmReplaceRoster } from './SavedTeamPickerModal'
 import SaveRosterToTeamModal from './SaveRosterToTeamModal'
+import { focusLeaves, sortedByNumber } from '../utils/rosterOrder'
 import PlayerPoolModal from './PlayerPoolModal'
 import { buildPlayerPool, poolToRoster, ROSTER_MAX } from '../domain/playerPool'
 import { rememberedRosters } from '../db/rememberedPlayers'
@@ -4287,7 +4288,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </div>
           </div>
         )}
-        <div className={cn('roster-grid', lfpTrackingEnabled && 'has-lfp', ROSTER_TABLE)}>
+        {/* Sorted by number once focus leaves the list, not while a row is
+            edited (utils/rosterOrder) */}
+        <div className={cn('roster-grid', lfpTrackingEnabled && 'has-lfp', ROSTER_TABLE)} onBlur={e => { if (focusLeaves(e)) setHomeRoster(sortedByNumber) }}>
           {/* Roster Header Row */}
           <div className={cn('roster-grid-row grid-header', ROSTER_TABLE_HEAD)}>
             <div></div>
@@ -4358,11 +4361,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     const updated = [...homeRoster]
                     updated[i] = { ...updated[i], number: val }
                     setHomeRoster(updated)
-                  }}
-                  onBlur={() => {
-                    // Sort roster by player number when done editing
-                    const sorted = [...homeRoster].sort((a, b) => (a.number || 0) - (b.number || 0))
-                    setHomeRoster(sorted)
                   }}
                 />
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
@@ -5451,7 +5449,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             </div>
           </div>
         )}
-        <div className={cn('roster-grid', lfpTrackingEnabled && 'has-lfp', ROSTER_TABLE)}>
+        {/* Sorted by number once focus leaves the list (as the home one) */}
+        <div className={cn('roster-grid', lfpTrackingEnabled && 'has-lfp', ROSTER_TABLE)} onBlur={e => { if (focusLeaves(e)) setAwayRoster(sortedByNumber) }}>
           {/* Roster Header Row */}
           <div className={cn('roster-grid-row grid-header', ROSTER_TABLE_HEAD)}>
             <div></div>
@@ -5520,10 +5519,6 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     const updated = [...awayRoster]
                     updated[i] = { ...updated[i], number: val }
                     setAwayRoster(updated)
-                  }}
-                  onBlur={() => {
-                    const sorted = [...awayRoster].sort((a, b) => (a.number || 0) - (b.number || 0))
-                    setAwayRoster(sorted)
                   }}
                 />
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
