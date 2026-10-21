@@ -227,7 +227,10 @@ export function isLiveStateDirty(matchKey) {
 export const LIVE_STATE_REFUSAL_CODES = Object.freeze([
   'OV_SCORER_REQUIRED', 'OV_MATCH_CLOSED', 'OV_GAME_TAKEN', 'OV_NOT_MATCH_OWNER', 'OV_UNSCOPED_WRITE',
   // db/018: not a home game of the account's clubs
-  'OV_CLUB_REQUIRED', 'OV_NOT_YOUR_CLUB', 'OV_GAME_NOT_IN_SCHEDULE'
+  'OV_CLUB_REQUIRED', 'OV_NOT_YOUR_CLUB', 'OV_GAME_NOT_IN_SCHEDULE',
+  // db/019: another device scores the match (the Scoreboard asks the server
+  // whether this device lost it, ScorerMovedModal; no pause, see there)
+  'OV_SCORER_MOVED'
 ])
 export const LIVE_REFUSAL_PAUSE_MS = 5 * 60 * 1000
 const liveRefusals = new Map() // matchKey -> { code, at }

@@ -81,7 +81,7 @@ describe('officialGame on Postgres', { skip: SKIP_PG }, () => {
 
     const forBen = await findClaim(pool, { ...q, callerId: users.ben })
     assert.deepEqual(forBen, {
-      match_id: id, game_n: 51001, season: 2026, sport: 'indoor', status: 'live',
+      match_id: id, external_id: e, game_n: 51001, season: 2026, sport: 'indoor', status: 'live',
       scorer_name: 'Anna Muster', mine: false, scheduled_at: '2026-10-10T16:00:00.000Z'
     })
     assert.equal((await findClaim(pool, { ...q, callerId: users.anna })).mine, true)
@@ -89,10 +89,12 @@ describe('officialGame on Postgres', { skip: SKIP_PG }, () => {
     assert.equal((await findClaim(pool, { ...q, callerId: users.ben })).mine, true, 'editor')
     // The match itself (same external_id) is not a conflict with itself
     assert.equal(await findClaim(pool, { ...q, excludeExternalId: e }), null)
-    // No PIN, email, user id or external_id anywhere in the output
-    const text = JSON.stringify(forBen)
-    for (const secret of ['123456', '@example.ch', users.anna, e]) assert.equal(text.includes(secret), false, secret)
+    // No PIN, email, user id or (another account's) external_id in what a client sees
+    const text = JSON.stringify(publicClaim(forBen))
+    for (const secret of ['123456', '@example.ch', users.anna, e, id]) assert.equal(text.includes(secret), false, secret)
     assert.deepEqual(Object.keys(publicClaim(forBen)).sort(), ['game_n', 'mine', 'scheduled_at', 'scorer_name', 'season', 'sport', 'status'])
+    // The caller's own match is named (a device that joined it retires its own refused copy)
+    assert.equal(publicClaim(await findClaim(pool, { ...q, callerId: users.anna })).external_id, e)
   })
 
   it('ignores test and exempt matches, separates beach and seasons, null name without a profile name', async () => {

@@ -34,7 +34,10 @@ function fakeTable(rows = []) {
     clear: async () => { map.clear() },
     toArray: async () => [...map.values()],
     filter: (fn) => collection(fn),
-    where: (field) => ({ equals: (value) => collection(r => r[field] === value) })
+    where: (field) => ({
+      equals: (value) => collection(r => r[field] === value),
+      anyOf: (...values) => collection(r => values.flat().includes(r[field]))
+    })
   }
 }
 
@@ -217,5 +220,59 @@ describe('remarks (db/017)', () => {
     expect(fakeDb.matches.map.get(id).remarks).toBe(REMARKS)
     const none = await importMatchFromSupabase({ match: { external_id: OTHER, status: 'live' }, sets: [], events: [] })
     expect(fakeDb.matches.map.get(none).remarks).toBe('')
+  })
+})
+
+// 2026-10-20, game 406970: the phone's own copy was refused (OV_GAME_TAKEN)
+// and the scorer joined the PC's match with its game PIN
+describe('joining a cloud match on this device', () => {
+  const OWN = 'match_300_own'
+  beforeEach(() => {
+    fakeDb.matches = fakeTable([{ id: 1, seed_key: OWN, gameN: 406970, status: 'scheduled', matchInfoConfirmedAt: 'x',
+      cloudBlock: { code: 'OV_GAME_TAKEN', claim: { game_n: 406970, mine: true, status: 'live' }, at: 1 } }])
+    fakeDb.sync_queue = fakeTable([{ id: 1, resource: 'match', action: 'insert', status: 'failed', payload: { external_id: OWN } }])
+  })
+
+  it('a restore by game PIN makes this device the scorer and retires the refused copy of the game', async () => {
+    const id = await importMatchFromSupabase({ match: { external_id: SEED, game_n: 406970, status: 'live' }, sets: [], events: [] })
+    const claim = [...fakeDb.sync_queue.map.values()].find(j => j.action === 'scorer')
+    expect(claim).toMatchObject({ resource: 'match', payload: { id: SEED }, status: 'queued' })
+    expect(fakeDb.matches.map.get(1)).toMatchObject({ status: 'final', supersededBy: SEED })
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('superseded')
+    expect(fakeDb.matches.map.get(id)).toMatchObject({ seed_key: SEED, status: 'live' })
+  })
+
+  // review 2026-10-21: a join on a device that still had the match kept two
+  // local copies of one match key, the older one with its unsent writes
+  it('the cloud copy replaces this device\'s own copy of the match: its rows go, its unsent writes are superseded', async () => {
+    fakeDb.matches.map.set(20, { id: 20, seed_key: SEED, status: 'live', cloudBlock: { code: 'OV_SCORER_MOVED' } })
+    fakeDb.sets.map.set(7, { id: 7, matchId: 20, index: 1, homePoints: 11, awayPoints: 8 })
+    fakeDb.events.map.set(7, { id: 7, matchId: 20, type: 'point' })
+    fakeDb.sync_queue.map.set(5, { id: 5, resource: 'set', action: 'update', status: 'failed', payload: { external_id: `${SEED}:s:7`, home_points: 11 } })
+    fakeDb.sync_queue.map.set(6, { id: 6, resource: 'event', action: 'insert', status: 'sent', payload: { external_id: `${SEED}:e:7`, match_id: SEED } })
+    fakeDb.sync_queue.map.set(8, { id: 8, resource: 'user_match', action: 'upsert', status: 'queued', payload: { match_external_id: SEED } })
+    const id = await importMatchFromSupabase({ match: { external_id: SEED, game_n: 7, status: 'live' }, sets: [{ index: 1, home_points: 25, away_points: 20, finished: true }], events: [] })
+    const copies = [...fakeDb.matches.map.values()].filter(m => m.seed_key === SEED)
+    expect(copies.map(m => m.id)).toEqual([id])
+    expect(copies[0].cloudBlock).toBeUndefined()
+    expect(id).not.toBe(20)
+    expect([...fakeDb.sets.map.values()].filter(s => s.matchId === 20)).toEqual([])
+    expect([...fakeDb.events.map.values()].filter(e => e.matchId === 20)).toEqual([])
+    expect([...fakeDb.sets.map.values()].filter(s => s.matchId === id && s.homePoints != null)).toMatchObject([{ homePoints: 25, awayPoints: 20 }])
+    expect(fakeDb.sync_queue.map.get(5)).toMatchObject({ status: 'superseded', superseded_by: 'cloud-copy' })
+    expect(fakeDb.sync_queue.map.get(6).status).toBe('sent')
+    expect(fakeDb.sync_queue.map.get(8).status).toBe('queued')
+    // then this device claims the match
+    expect([...fakeDb.sync_queue.map.values()].filter(j => j.action === 'scorer' && j.status === 'queued')).toHaveLength(1)
+    // other matches untouched
+    expect(fakeDb.matches.map.get(1).seed_key).toBe(OWN)
+  })
+
+  it('a backup restore retires it too (its restore job is the take-over), a test match claims nothing', async () => {
+    await restoreMatchFromJson(backup({ gameN: 406970 }))
+    expect(fakeDb.matches.map.get(1).status).toBe('final')
+    expect([...fakeDb.sync_queue.map.values()].some(j => j.action === 'scorer')).toBe(false)
+    await importMatchFromSupabase({ match: { external_id: OTHER, game_n: 5, status: 'live', test: true }, sets: [], events: [] })
+    expect([...fakeDb.sync_queue.map.values()].some(j => j.action === 'scorer')).toBe(false)
   })
 })
