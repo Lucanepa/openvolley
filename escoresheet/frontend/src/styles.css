@@ -649,6 +649,11 @@ button:disabled {
   width: 100%;
   max-width: 100%;
   overflow: auto;
+  /* The containing block of what is absolutely positioned inside (the
+     sr-only "Delete" labels of the stacked roster rows): without it they hang
+     off the page container, out of this scroller, and stretch the page's
+     scroll area by the roster's height (an empty band under the card). */
+  position: relative;
   box-sizing: border-box;
   /* the page card around setup, coin toss and match end */
   border: 1px solid var(--ov-hairline-soft);
@@ -1818,6 +1823,45 @@ button:disabled {
   gap: 12px;
   padding-top: 16px;
   border-top: 1px solid var(--ov-hairline);
+  /* Confirm / Close stay in view while the dialog scrolls (a phone): pinned
+     to the panel's bottom edge, over its 20px padding (Modal p-5) */
+  position: sticky;
+  bottom: -20px;
+  z-index: 3;
+  margin: 0 -20px -20px;
+  padding: 16px 20px 20px;
+  background: var(--ov-card);
+}
+
+/* A phone: shorter position boxes (one size from open to confirm still) and,
+   below 400px, where five chips fill a row, a pool of three rows, so a full
+   roster's last chips are not hidden in a scroll inside the scrolling dialog */
+@media (max-width: 600px) {
+  .lineup-pos__label {
+    height: 26px;
+  }
+  .lineup-pos__field {
+    height: 56px;
+  }
+  .lineup-modal .lineup-pos__input {
+    font-size: 24px;
+  }
+  .lineup-pos__msg {
+    height: 30px;
+    padding-bottom: 2px;
+  }
+  .lineup-disc,
+  .lineup-disc-anchor {
+    width: 46px;
+    height: 46px;
+    margin: -23px 0 0 -23px;
+  }
+}
+
+@media (max-width: 400px) {
+  .lineup-pool__chips {
+    height: calc(3 * var(--lineup-chip) + 2 * 8px + 10px);
+  }
 }
 
 @keyframes lineupFlash {

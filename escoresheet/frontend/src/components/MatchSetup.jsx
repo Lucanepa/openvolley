@@ -268,6 +268,10 @@ const ROSTER_TABLE_HEAD = 'rounded-t-[7px] rounded-b-none bg-stone-50 text-[11px
 // One official (1st/2nd referee, scorer, assistant scorer): the kit Block
 // (stone-50/60, hairline, no shadow) with a heading strip, inside the setup
 // page card (volleyui: never a card in a card).
+// A footer row pinned to the bottom edge of the .setup card (its scroller)
+// while the content above scrolls: it covers the card's bottom padding
+// (16px * --scale-factor, styles.css) and draws a hairline above itself.
+const SETUP_STICKY_FOOTER = 'sticky bottom-[calc(-16px*var(--scale-factor))] z-20 -mx-[calc(16px*var(--scale-factor))] -mb-[calc(16px*var(--scale-factor))] flex flex-wrap items-center justify-end gap-x-3 gap-y-2 border-t border-stone-200/70 bg-[var(--ov-card)] px-[calc(16px*var(--scale-factor))] pt-3 pb-[calc(16px*var(--scale-factor))]'
 const OFFICIAL_BOX = 'rounded-xl border border-stone-200/70 bg-stone-50/60 overflow-hidden transition-colors'
 const OFFICIAL_BOX_COLLAPSED = 'rounded-xl border border-dashed border-stone-200 overflow-hidden transition-colors'
 // One head height for every box (h-8 Database button + py-2 + hairline), and a
@@ -3694,7 +3698,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           }}
         />
 
-        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
+        {/* Save / Create match: pinned to the card's bottom edge while the
+            form scrolls, so the action is in view on a laptop too */}
+        <div className={SETUP_STICKY_FOOTER}>
           {canConfirmMatchInfo && scorerDobMissing && (
             <p className="flex items-center gap-1.5 text-sm font-medium text-amber-800" role="note">
               <AlertTriangle size={16} className="shrink-0" aria-hidden />
@@ -3729,7 +3735,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             {matchInfoConfirmed ? t('matchSetup.save') : t('matchSetup.createMatch')}
             </Button>
           {!canConfirmMatchInfo && (
-            <WarningIndicator id="confirmMatchInfo" missingItems={[...getMissingFieldsList(), ...(scorerDobMissing ? [t('matchSetup.scorerDobForCoinToss')] : [])]} position="below" />
+            <WarningIndicator id="confirmMatchInfo" missingItems={[...getMissingFieldsList(), ...(scorerDobMissing ? [t('matchSetup.scorerDobForCoinToss')] : [])]} position="above" />
           )}
         </div>
 

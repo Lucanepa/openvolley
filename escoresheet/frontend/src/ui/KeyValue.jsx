@@ -15,11 +15,11 @@ export function KeyValue({ items, variant = 'split', className }) {
 
   if (variant === 'stats') {
     return (
-      <dl className={cn('grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3', className)}>
+      <dl className={cn('m-0 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-3', className)}>
         {items.map((it) => (
           <div key={String(it.label)}>
             <dt className="text-stone-400">{it.label}</dt>
-            <dd className={cn('text-stone-700', valueTone(it.tone))}>{it.value}</dd>
+            <dd className={cn('m-0 text-stone-700', valueTone(it.tone))}>{it.value}</dd>
           </div>
         ))}
       </dl>
@@ -28,11 +28,11 @@ export function KeyValue({ items, variant = 'split', className }) {
 
   if (variant === 'stacked') {
     return (
-      <dl className={cn('flex flex-col gap-3', className)}>
+      <dl className={cn('m-0 flex flex-col gap-3', className)}>
         {items.map((it) => (
           <div key={String(it.label)}>
             <dt className="text-xs text-stone-400 leading-snug">{it.label}</dt>
-            <dd className="text-sm text-stone-800 whitespace-pre-wrap mt-0.5">{it.value}</dd>
+            <dd className="m-0 mt-0.5 text-sm text-stone-800 whitespace-pre-wrap">{it.value}</dd>
           </div>
         ))}
       </dl>
@@ -41,11 +41,11 @@ export function KeyValue({ items, variant = 'split', className }) {
 
   if (variant === 'summary') {
     return (
-      <dl className={cn('px-5 py-4 grid grid-cols-3 gap-x-3 gap-y-2 text-sm border-b border-stone-200 bg-stone-50/60', className)}>
+      <dl className={cn('m-0 px-5 py-4 grid grid-cols-3 gap-x-3 gap-y-2 text-sm border-b border-stone-200 bg-stone-50/60', className)}>
         {items.map((it) => (
           <Fragment key={String(it.label)}>
             <dt className="col-span-1 text-stone-500">{it.label}</dt>
-            <dd className={cn('col-span-2 text-stone-800 break-words', valueTone(it.tone))}>{it.value}</dd>
+            <dd className={cn('m-0 col-span-2 text-stone-800 break-words', valueTone(it.tone))}>{it.value}</dd>
           </Fragment>
         ))}
       </dl>
@@ -54,7 +54,7 @@ export function KeyValue({ items, variant = 'split', className }) {
 
   if (variant === 'detail') {
     return (
-      <dl className={cn('grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs', className)}>
+      <dl className={cn('m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs', className)}>
         {items.map((it) => (
           <Fragment key={String(it.label)}>
             <dt className="text-stone-500">{it.label}</dt>
@@ -67,11 +67,11 @@ export function KeyValue({ items, variant = 'split', className }) {
 
   // 'split'
   return (
-    <dl className={cn('grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 text-xs', className)}>
+    <dl className={cn('m-0 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 text-xs', className)}>
       {items.map((it) => (
         <Fragment key={String(it.label)}>
           <dt className="text-stone-500 leading-snug">{it.label}</dt>
-          <dd className={cn('text-stone-800 font-medium tabular-nums text-right leading-snug', valueTone(it.tone))}>{it.value}</dd>
+          <dd className={cn('m-0 text-stone-800 font-medium tabular-nums text-right leading-snug', valueTone(it.tone))}>{it.value}</dd>
         </Fragment>
       ))}
     </dl>
