@@ -2825,6 +2825,33 @@
       "ruleIsOff": "Die Vereinsregel ist ausgeschaltet"
     }
   },
+  "playerPool": {
+    "open": "Spieler wählen",
+    "title": "Spieler wählen · {{team}}",
+    "description": "{{count}} Spieler bekannt: Wähle, wer dieses Spiel spielt.",
+    "ticked": "{{count}} von {{total}} gewählt",
+    "selectAll": "Alle",
+    "selectNone": "Keine",
+    "apply_one": "{{count}} Spieler übernehmen",
+    "apply_other": "{{count}} Spieler übernehmen",
+    "applied_one": "{{count}} Spieler im Kader",
+    "applied_other": "{{count}} Spieler im Kader",
+    "empty": "Für dieses Team sind noch keine Spieler bekannt: Erfasse sie im Kader, importiere eine Einsatzliste oder lade ein gespeichertes Team.",
+    "tooMany": "{{count}} gewählt: Höchstens {{max}} Spieler kommen auf das Matchblatt.",
+    "twoLiberos": "Mehr als {{max}} Spieler: Zwei Liberos sind Pflicht.",
+    "tooManyLiberos": "Mehr als zwei Liberos gewählt: Nur die ersten zwei werden markiert.",
+    "tooFew": "Nur {{count}} gewählt: Ein Team braucht mindestens {{min}} Spieler.",
+    "sourceCurrent": "Kader",
+    "sourceImported": "Einsatzliste",
+    "sourceSaved": "Gespeichertes Team",
+    "sourceEarlier": "Früheres Spiel",
+    "sourceLastMatch": "Letztes Spiel",
+    "suggestionTitle": "Spieler aus früheren Spielen",
+    "suggestionHome": "Heim: {{name}}, {{count}} Spieler bekannt",
+    "suggestionAway": "Gast: {{name}}, {{count}} Spieler bekannt",
+    "chooseHome": "Heimspieler wählen",
+    "chooseAway": "Gastspieler wählen"
+  },
   "savedTeams": {
     "title": "Gespeicherte Teams",
     "competitions": "Wettbewerbe",

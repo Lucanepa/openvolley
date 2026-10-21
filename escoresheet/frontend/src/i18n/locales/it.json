@@ -2830,6 +2830,33 @@
       "ruleIsOff": "La regola delle società è disattivata"
     }
   },
+  "playerPool": {
+    "open": "Scegli i giocatori",
+    "title": "Scegli i giocatori · {{team}}",
+    "description": "{{count}} giocatori noti: spunta chi gioca questa partita.",
+    "ticked": "{{count}} di {{total}} selezionati",
+    "selectAll": "Tutti",
+    "selectNone": "Nessuno",
+    "apply_one": "Usa {{count}} giocatore",
+    "apply_other": "Usa {{count}} giocatori",
+    "applied_one": "{{count}} giocatore nella rosa",
+    "applied_other": "{{count}} giocatori nella rosa",
+    "empty": "Nessun giocatore noto per questa squadra: aggiungili nella rosa, importa una Einsatzliste o carica una squadra salvata.",
+    "tooMany": "{{count}} selezionati: al massimo {{max}} giocatori vanno sul referto.",
+    "twoLiberos": "Più di {{max}} giocatori: servono due liberi.",
+    "tooManyLiberos": "Più di due liberi selezionati: solo i primi due sono segnati.",
+    "tooFew": "Solo {{count}} selezionati: una squadra ha bisogno di almeno {{min}} giocatori.",
+    "sourceCurrent": "Rosa",
+    "sourceImported": "Einsatzliste",
+    "sourceSaved": "Squadra salvata",
+    "sourceEarlier": "Partita precedente",
+    "sourceLastMatch": "Ultima partita",
+    "suggestionTitle": "Giocatori delle partite precedenti",
+    "suggestionHome": "Casa: {{name}}, {{count}} giocatori noti",
+    "suggestionAway": "Ospite: {{name}}, {{count}} giocatori noti",
+    "chooseHome": "Giocatori di casa",
+    "chooseAway": "Giocatori ospiti"
+  },
   "savedTeams": {
     "title": "Squadre salvate",
     "competitions": "Competizioni",
