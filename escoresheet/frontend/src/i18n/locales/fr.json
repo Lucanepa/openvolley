@@ -952,7 +952,22 @@
       "selectBackupFile": "Sélectionner le fichier de sauvegarde",
       "restorePreview": "Aperçu de la restauration",
       "fromDatabase": "Depuis la base de données",
-      "fromLocalFile": "Depuis un fichier local"
+      "fromLocalFile": "Depuis un fichier local",
+      "preview": {
+        "set": "Set {{n}}",
+        "serving": "Service",
+        "lineup": "Composition",
+        "noLineup": "Aucune composition enregistrée",
+        "timeouts": "Temps morts",
+        "substitutions": "Remplacements",
+        "none": "Aucun",
+        "subTitle": "n° {{playerIn}} pour n° {{playerOut}} à {{home}}:{{away}}",
+        "sanctions": "Sanctions",
+        "setScores": "Scores des sets",
+        "selectAnother": "En choisir une autre",
+        "confirmRestore": "Confirmer la restauration",
+        "restoring": "Restauration…"
+      }
     }
   },
   "languages": {
@@ -1873,6 +1888,7 @@
       "live": "En direct",
       "final": "Terminé",
       "approved": "Approuvé",
+      "ended": "À approuver",
       "setup": "Préparation"
     }
   },

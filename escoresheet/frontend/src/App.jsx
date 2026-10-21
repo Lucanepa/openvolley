@@ -15,6 +15,7 @@ import ConnectionStatus from './components/ConnectionStatus'
 import StartupConnectivityModal from './components/StartupConnectivityModal'
 import MainHeader from './components/MainHeader'
 import BackupTable from './components/BackupTable'
+import RestorePreview from './components/RestorePreview'
 import HomePage from './components/pages/HomePage'
 import EasyMatchModal from './components/EasyMatchModal'
 import { EASY_TEAM_SEED_KEYS, easyMatchPrefill } from './domain/easyMatch'
@@ -3587,323 +3588,99 @@ export default function App() {
                 open={true}
                 onClose={() => setRestorePreviewData(null)}
                 width={700}
+                panelStyle={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
               >
-                <div className="ov-kit max-h-[80vh] overflow-y-auto p-2 sm:p-4 text-sm text-stone-800">
-                  {(() => {
-                    // Normalize data from different sources
-                    const d = restorePreviewData.data
-                    const isDbFormat = d.match?.home_team || d.liveState
+                {/* Scrolling body; the footer stays below it, in view on a phone */}
+                <div className="ov-kit -mx-5 min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+                  <RestorePreview
+                    data={restorePreviewData.data}
+                    source={restorePreviewData.source}
+                    backupName={restorePreviewData.backupName}
+                  />
+                </div>
+                {/* Phone: Cancel | Select another, then Confirm restore full width.
+                    From sm one row: Cancel left, the two choices right. */}
+                <div className="ov-kit -mx-5 -mb-5 grid shrink-0 grid-cols-2 gap-2 border-t border-stone-100 px-5 py-3 sm:flex sm:items-center sm:justify-end">
+                  <button
+                    onClick={() => {
+                      setRestorePreviewData(null)
+                      setRestoreMatchModal(false)
+                      setRestoreMatchIdInput('')
+                      setRestorePin('')
+                      setCloudBackups([])
+                      setCloudBackupPin('')
+                      setCloudBackupGameN('')
+                      setCloudBackupError('')
+                    }}
+                    disabled={restoreLoading}
+                    className="inline-flex h-11 items-center justify-center rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-600 transition-colors hover:bg-stone-100 hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-50 sm:mr-auto sm:border-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
+                  >
+                    {t('common.cancel')}
+                  </button>
+                  <button
+                    onClick={() => setRestorePreviewData(null)}
+                    disabled={restoreLoading}
+                    className="inline-flex h-11 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
+                  >
+                    {t('settings.backup.preview.selectAnother')}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setRestoreLoading(true)
+                      try {
+                        const cloudData = restorePreviewData.data
+                        let newMatchId
 
-                    const homeTeamName = isDbFormat
-                      ? (d.match?.home_team?.name || d.match?.homeTeamName || 'Home')
-                      : (d.homeTeam?.name || d.match?.homeTeamName || 'Home')
-                    const awayTeamName = isDbFormat
-                      ? (d.match?.away_team?.name || d.match?.awayTeamName || 'Away')
-                      : (d.awayTeam?.name || d.match?.awayTeamName || 'Away')
+                        if (restorePreviewData.source === 'database') {
+                          newMatchId = await importMatchFromSupabase(cloudData)
+                        } else {
+                          newMatchId = await restoreMatchFromJson(cloudData)
+                        }
 
-                    const events = d.events || []
-                    const sets = d.sets || []
+                        // Close modals
+                        setRestorePreviewData(null)
+                        setRestoreMatchModal(false)
+                        setRestoreMatchIdInput('')
+                        setRestorePin('')
+                        setCloudBackups([])
+                        setCloudBackupPin('')
+                        setCloudBackupGameN('')
+                        setCloudBackupError('')
+                        setMatchId(newMatchId)
 
-                    // Get latest set
-                    const latestSet = [...sets].sort((a, b) => (b.index || 0) - (a.index || 0))[0]
-                    const currentSetIndex = latestSet?.index || d.liveState?.current_set || 1
-                    const homePoints = latestSet?.homePoints ?? latestSet?.home_points ?? d.liveState?.points_a ?? 0
-                    const awayPoints = latestSet?.awayPoints ?? latestSet?.away_points ?? d.liveState?.points_b ?? 0
+                        // Determine where to go based on match state
+                        const matchStatus = cloudData.match?.status
+                        const hasEvents = cloudData.events && cloudData.events.length > 0
+                        const hasSets = cloudData.sets && cloudData.sets.length > 0
+                        const finishedSets = (cloudData.sets || []).filter(s => s.finished)
+                        const homeSetsWon = finishedSets.filter(s => (s.homePoints ?? s.home_points ?? 0) > (s.awayPoints ?? s.away_points ?? 0)).length
+                        const awaySetsWon = finishedSets.filter(s => (s.awayPoints ?? s.away_points ?? 0) > (s.homePoints ?? s.home_points ?? 0)).length
+                        const isMatchFinished = isMatchFinishedUtil(homeSetsWon, awaySetsWon, cloudData.match?.bestOf ?? cloudData.match?.best_of)
 
-                    // Get lineups (from events or liveState)
-                    const lineupEvents = events.filter(e => e.type === 'lineup')
-                    const homeLineup = lineupEvents.find(e => e.payload?.team === 'home')?.payload?.lineup ||
-                      (isDbFormat ? d.liveState?.lineup_a : null)
-                    const awayLineup = lineupEvents.find(e => e.payload?.team === 'away')?.payload?.lineup ||
-                      (isDbFormat ? d.liveState?.lineup_b : null)
-
-                    // Get timeouts for current set
-                    const timeoutEvents = events.filter(e => e.type === 'timeout' && e.setIndex === currentSetIndex)
-                    const homeTimeouts = timeoutEvents.filter(e => e.payload?.team === 'home').length
-                    const awayTimeouts = timeoutEvents.filter(e => e.payload?.team === 'away').length
-
-                    // Get substitutions for current set
-                    const subEvents = events.filter(e => e.type === 'substitution' && e.setIndex === currentSetIndex)
-                    const homeSubs = subEvents.filter(e => e.payload?.team === 'home')
-                    const awaySubs = subEvents.filter(e => e.payload?.team === 'away')
-
-                    // Get sanctions
-                    const sanctionEvents = events.filter(e => e.type === 'sanction')
-
-                    // Get serving team
-                    const pointEvents = events.filter(e => e.type === 'point').sort((a, b) => (b.seq || 0) - (a.seq || 0))
-                    const lastPoint = pointEvents[0]
-                    const servingTeam = lastPoint?.payload?.scoringTeam || d.liveState?.serving_team || 'home'
-
-                    // Helper to render lineup
-                    const renderLineup = (lineup, teamName) => {
-                      if (!lineup) return <span className="text-xs text-stone-500">No lineup data</span>
-                      const positions = ['I', 'II', 'III', 'IV', 'V', 'VI']
-                      return (
-                        <div className="grid grid-cols-3 gap-1">
-                          {positions.map(pos => {
-                            const posData = lineup[pos]
-                            const num = typeof posData === 'object' ? posData?.number : posData
-                            const isServing = typeof posData === 'object' && posData?.isServing
-                            const isLibero = typeof posData === 'object' && posData?.isLibero
-                            return (
-                              <div key={pos} className={cn(
-                                'rounded-md border px-2 py-1.5 text-center text-[13px]',
-                                isServing ? 'border-green-200 bg-green-50' : isLibero ? 'border-orange-200 bg-orange-50' : 'border-stone-200/70 bg-stone-50'
-                              )}>
-                                <span className="text-[11px] text-stone-500">{pos}</span>
-                                <br />
-                                <span className="font-semibold tabular-nums text-stone-900">{num || '-'}</span>
-                                {isServing && <span style={{ color: '#22c55e', marginLeft: '4px' }}>●</span>}
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )
-                    }
-
-                    return (
-                      <>
-                        {/* Source indicator */}
-                        <div className="mb-4 flex flex-wrap justify-center gap-2">
-                          <span className={cn(
-                            'inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium',
-                            restorePreviewData.source === 'database' ? 'bg-sky-100 text-sky-800' :
-                              restorePreviewData.source === 'pocketbase' ? 'bg-emerald-100 text-emerald-800' :
-                              restorePreviewData.source === 'cloud' ? 'bg-violet-100 text-violet-800' : 'bg-amber-100 text-amber-800'
-                          )}>
-                            {restorePreviewData.source === 'database' ? t('settings.backup.fromDatabase', 'From database') :
-                              restorePreviewData.source === 'pocketbase' ? 'PocketBase backup' :
-                              restorePreviewData.source === 'cloud' ? t('settings.backup.restoreFromCloudBackup') : t('settings.backup.fromLocalFile')}
-                          </span>
-                          {restorePreviewData.backupName && (
-                            // One unbroken word: allowed to break anywhere, or it
-                            // ran off both edges of a phone's dialog (2026-10-13)
-                            <span className="inline-flex max-w-full items-center break-all rounded border border-stone-200 bg-stone-50 px-1.5 py-0.5 font-mono text-[11px] text-stone-600">
-                              {restorePreviewData.backupName.replace('.json', '')}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Teams header */}
-                        <div className="mb-4 flex items-center justify-between rounded-xl border border-stone-200/70 bg-stone-50/60 p-4">
-                          <div className="flex-1 text-center">
-                            <div className="text-base font-bold text-stone-900">{homeTeamName}</div>
-                            <div className="text-xs text-stone-500">Home</div>
-                          </div>
-                          <div className="px-4 text-center">
-                            <div className="text-2xl font-bold tabular-nums text-stone-900">{homePoints} - {awayPoints}</div>
-                            <div className="text-xs text-stone-500">Set {currentSetIndex}</div>
-                          </div>
-                          <div className="flex-1 text-center">
-                            <div className="text-base font-bold text-stone-900">{awayTeamName}</div>
-                            <div className="text-xs text-stone-500">Away</div>
-                          </div>
-                        </div>
-
-                        {/* Serving indicator */}
-                        <div className="mb-4 text-center text-sm text-stone-700">
-                          <span style={{ color: '#22c55e' }}>● </span>
-                          Serving: <strong>{servingTeam === 'home' ? homeTeamName : awayTeamName}</strong>
-                        </div>
-
-                        {/* Lineups */}
-                        <div className="mb-4 grid grid-cols-2 gap-4">
-                          <div>
-                            <h4 className="mb-2 text-sm font-semibold text-stone-700">
-                              {homeTeamName} Lineup
-                            </h4>
-                            {renderLineup(homeLineup)}
-                          </div>
-                          <div>
-                            <h4 className="mb-2 text-sm font-semibold text-stone-700">
-                              {awayTeamName} Lineup
-                            </h4>
-                            {renderLineup(awayLineup)}
-                          </div>
-                        </div>
-
-                        {/* Timeouts */}
-                        <div className="mb-4 grid grid-cols-2 gap-4">
-                          <div className="rounded-xl border border-stone-200/70 bg-stone-50/60 p-3 text-center">
-                            <div className="mb-1 text-xs text-stone-500">Timeouts</div>
-                            <div className="text-xl font-bold tabular-nums text-stone-900">{homeTimeouts}/2</div>
-                          </div>
-                          <div className="rounded-xl border border-stone-200/70 bg-stone-50/60 p-3 text-center">
-                            <div className="mb-1 text-xs text-stone-500">Timeouts</div>
-                            <div className="text-xl font-bold tabular-nums text-stone-900">{awayTimeouts}/2</div>
-                          </div>
-                        </div>
-
-                        {/* Substitutions */}
-                        {(homeSubs.length > 0 || awaySubs.length > 0) && (
-                          <div className="mb-4 grid grid-cols-2 gap-4">
-                            <div>
-                              <h4 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-stone-500">
-                                Substitutions ({homeSubs.length})
-                              </h4>
-                              {homeSubs.length === 0 ? (
-                                <span className="text-xs text-stone-500">None</span>
-                              ) : (
-                                homeSubs.map((sub, i) => (
-                                  <div key={i} className="mb-1 rounded-md border border-stone-200/70 bg-stone-50 px-2 py-1 text-xs tabular-nums text-stone-700">
-                                    #{sub.payload?.playerIn} ← #{sub.payload?.playerOut}
-                                    <span className="ml-2 text-stone-500">
-                                      @{sub.payload?.homeScore || 0}-{sub.payload?.awayScore || 0}
-                                    </span>
-                                  </div>
-                                ))
-                              )}
-                            </div>
-                            <div>
-                              <h4 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-stone-500">
-                                Substitutions ({awaySubs.length})
-                              </h4>
-                              {awaySubs.length === 0 ? (
-                                <span className="text-xs text-stone-500">None</span>
-                              ) : (
-                                awaySubs.map((sub, i) => (
-                                  <div key={i} className="mb-1 rounded-md border border-stone-200/70 bg-stone-50 px-2 py-1 text-xs tabular-nums text-stone-700">
-                                    #{sub.payload?.playerIn} ← #{sub.payload?.playerOut}
-                                    <span className="ml-2 text-stone-500">
-                                      @{sub.payload?.homeScore || 0}-{sub.payload?.awayScore || 0}
-                                    </span>
-                                  </div>
-                                ))
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Sanctions */}
-                        {sanctionEvents.length > 0 && (
-                          <div className="mb-4">
-                            <h4 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-stone-500">
-                              Sanctions ({sanctionEvents.length})
-                            </h4>
-                            <div className="flex flex-wrap gap-2">
-                              {sanctionEvents.map((s, i) => (
-                                <div key={i} className={cn(
-                                  'rounded border px-1.5 py-1 text-xs',
-                                  s.payload?.type === 'red' ? 'border-red-200 bg-red-100 text-red-800' :
-                                    s.payload?.type === 'yellow' ? 'border-yellow-200 bg-yellow-100 text-yellow-900' : 'border-stone-200 bg-white text-stone-700'
-                                )}>
-                                  {s.payload?.team === 'home' ? homeTeamName : awayTeamName}{s.payload?.playerNumber ? ` #${s.payload.playerNumber}` : ''} - {s.payload?.type || 'sanction'}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Set scores summary */}
-                        {sets.length > 0 && (
-                          <div className="mb-6">
-                            <h4 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-stone-500">
-                              Set scores
-                            </h4>
-                            <div className="flex flex-wrap gap-2">
-                              {[...sets].sort((a, b) => (a.index || 0) - (b.index || 0)).map(s => (
-                                <div key={s.index} className={cn(
-                                  'rounded-lg border px-3 py-2 text-center',
-                                  s.finished ? 'border-stone-200 bg-white' : 'border-sky-200 bg-sky-50'
-                                )}>
-                                  <div className="text-[11px] text-stone-500">Set {s.index}</div>
-                                  <div className="text-sm font-semibold tabular-nums text-stone-900">
-                                    {s.homePoints ?? s.home_points ?? 0} - {s.awayPoints ?? s.away_points ?? 0}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Actions: held at the bottom of the scrolling preview,
-                            so "Confirm restore" is in view on a phone too */}
-                        <div className="sticky bottom-0 -mx-2 -mb-2 flex flex-wrap justify-end gap-2 border-t border-stone-100 bg-white px-2 pt-4 pb-2 sm:-mx-4 sm:-mb-4 sm:px-4 sm:pb-4">
-                          <button
-                            onClick={() => {
-                              setRestorePreviewData(null)
-                              setRestoreMatchModal(false)
-                              setRestoreMatchIdInput('')
-                              setRestorePin('')
-                              setCloudBackups([])
-                              setCloudBackupPin('')
-                              setCloudBackupGameN('')
-                              setCloudBackupError('')
-                            }}
-                            disabled={restoreLoading}
-                            className="mr-auto inline-flex h-11 items-center justify-center rounded-lg px-3 text-sm font-medium text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-800 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            onClick={() => setRestorePreviewData(null)}
-                            disabled={restoreLoading}
-                            className="inline-flex h-11 items-center justify-center rounded-lg border border-stone-300 bg-white px-4 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
-                          >
-                            Select another
-                          </button>
-                          <button
-                            onClick={async () => {
-                              setRestoreLoading(true)
-                              try {
-                                const cloudData = restorePreviewData.data
-                                let newMatchId
-
-                                if (restorePreviewData.source === 'database') {
-                                  newMatchId = await importMatchFromSupabase(cloudData)
-                                } else {
-                                  newMatchId = await restoreMatchFromJson(cloudData)
-                                }
-
-                                // Close modals
-                                setRestorePreviewData(null)
-                                setRestoreMatchModal(false)
-                                setRestoreMatchIdInput('')
-                                setRestorePin('')
-                                setCloudBackups([])
-                                setCloudBackupPin('')
-                                setCloudBackupGameN('')
-                                setCloudBackupError('')
-                                setMatchId(newMatchId)
-
-                                // Determine where to go based on match state
-                                const matchStatus = cloudData.match?.status
-                                const hasEvents = cloudData.events && cloudData.events.length > 0
-                                const hasSets = cloudData.sets && cloudData.sets.length > 0
-                                const finishedSets = (cloudData.sets || []).filter(s => s.finished)
-                                const homeSetsWon = finishedSets.filter(s => (s.homePoints ?? s.home_points ?? 0) > (s.awayPoints ?? s.away_points ?? 0)).length
-                                const awaySetsWon = finishedSets.filter(s => (s.awayPoints ?? s.away_points ?? 0) > (s.homePoints ?? s.home_points ?? 0)).length
-                                const isMatchFinished = isMatchFinishedUtil(homeSetsWon, awaySetsWon, cloudData.match?.bestOf ?? cloudData.match?.best_of)
-
-                                // Priority: finished match → MatchEnd, live with activity → Scoreboard, else → Setup
-                                if (isMatchFinished) {
-                                  // Match is complete - go directly to MatchEnd
-                                  setShowMatchSetup(false)
-                                  setShowMatchEnd(true)
-                                } else if ((matchStatus === 'live' || hasEvents || hasSets) && (hasEvents || hasSets)) {
-                                  // Match in progress with activity - go to Scoreboard
-                                  setShowMatchSetup(false)
-                                } else {
-                                  // New or setup-phase match - go to MatchSetup
-                                  setShowMatchSetup(true)
-                                }
-                              } catch (err) {
-                                setRestoreError(err.message || 'Failed to restore match')
-                              } finally {
-                                setRestoreLoading(false)
-                              }
-                            }}
-                            disabled={restoreLoading}
-                            aria-busy={restoreLoading || undefined}
-                            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-emerald-700 px-5 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
-                          >
-                            {restoreLoading ? 'Restoring...' : 'Confirm restore'}
-                          </button>
-                        </div>
-                      </>
-                    )
-                  })()}
+                        // Priority: finished match → MatchEnd, live with activity → Scoreboard, else → Setup
+                        if (isMatchFinished) {
+                          // Match is complete - go directly to MatchEnd
+                          setShowMatchSetup(false)
+                          setShowMatchEnd(true)
+                        } else if ((matchStatus === 'live' || hasEvents || hasSets) && (hasEvents || hasSets)) {
+                          // Match in progress with activity - go to Scoreboard
+                          setShowMatchSetup(false)
+                        } else {
+                          // New or setup-phase match - go to MatchSetup
+                          setShowMatchSetup(true)
+                        }
+                      } catch (err) {
+                        setRestoreError(err.message || 'Failed to restore match')
+                      } finally {
+                        setRestoreLoading(false)
+                      }
+                    }}
+                    disabled={restoreLoading}
+                    aria-busy={restoreLoading || undefined}
+                    className="col-span-2 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
+                  >
+                    {restoreLoading ? t('settings.backup.preview.restoring') : t('settings.backup.preview.confirmRestore')}
+                  </button>
                 </div>
               </Modal>
             )}
