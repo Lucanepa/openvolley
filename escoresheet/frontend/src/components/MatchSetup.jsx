@@ -772,7 +772,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // Manage Captain on Court setting
   const [manageCaptainOnCourt, setManageCaptainOnCourt] = useState(() => {
     const saved = localStorage.getItem('manageCaptainOnCourt')
-    return saved === 'true'
+    return saved !== 'false' // on unless switched off in Options
   })
 
   // PDF upload state for each team

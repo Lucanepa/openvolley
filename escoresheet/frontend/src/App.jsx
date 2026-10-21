@@ -274,7 +274,8 @@ export default function App() {
   })
   const [manageCaptainOnCourt, setManageCaptainOnCourt] = useState(() => {
     const saved = localStorage.getItem('manageCaptainOnCourt')
-    return saved === 'true' // default false
+    // on unless switched off in Options (the owner, 2026-10-21; it was off)
+    return saved !== 'false'
   })
   const [liberoExitConfirmation, setLiberoExitConfirmation] = useState(() => {
     const saved = localStorage.getItem('liberoExitConfirmation')

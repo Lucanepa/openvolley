@@ -419,9 +419,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const [showOptionsInMenu, setShowOptionsInMenu] = useState(false)
   const [connectionSetupModal, setConnectionSetupModal] = useState(false)
   const [localManageCaptainOnCourt, setLocalManageCaptainOnCourt] = useState(() => {
-    // Load from localStorage, default to false
+    // Load from localStorage: on unless switched off in Options
     const saved = localStorage.getItem('manageCaptainOnCourt')
-    return saved === 'true'
+    return saved !== 'false'
   })
   const [checkAccidentalRallyStart, setCheckAccidentalRallyStart] = useState(() => {
     const saved = localStorage.getItem('checkAccidentalRallyStart')
