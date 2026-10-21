@@ -186,7 +186,7 @@ function DurationInput({ value, onChange, label }) {
   }
   const inputCls = cn(SMALL_FIELD, 'w-14 font-semibold')
   return (
-    <div className="ml-4 flex items-center gap-1">
+    <div className="ml-auto flex shrink-0 items-center gap-1 pl-4">
       <input type="number" min={0} max={10} value={minutes} onChange={handleMinutes} className={inputCls} aria-label={`${label} minutes`} />
       <span className="text-sm font-semibold text-stone-500">'</span>
       <input type="number" min={0} max={59} value={seconds.toString().padStart(2, '0')} onChange={handleSeconds} className={inputCls} aria-label={`${label} seconds`} />
@@ -498,7 +498,9 @@ export default function HomeOptionsModal({
             />
           </Row>
 
-          <Row style={{ marginBottom: '12px' }}>
+          {/* wraps: at large text on a phone the two fields go under the label
+              (they ran out of the dialog at 360 px, 130 %) */}
+          <Row style={{ marginBottom: '12px', flexWrap: 'wrap', rowGap: '8px' }}>
             <div className="flex items-center gap-1.5">
               <div className="text-sm font-semibold text-stone-900">{t('options.setIntervalDuration')}</div>
               <InfoDot title={t('options.setIntervalDurationInfo')} />
