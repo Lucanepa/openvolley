@@ -310,7 +310,7 @@ describe('set 5, defaults and sanctions on the sheet', () => {
     expect(container.querySelectorAll('.scoresheet-container svg polyline')).toHaveLength(0)
   })
 
-  it('a default before the start: the grids struck off, the result and the remark written', () => {
+  it('a default before the start: the grids left blank, not struck off (owner 2026-10-21), the result and the remark written', () => {
     seq = 0
     const base = fixture({ match: { status: 'ended', forfeitTeam: 'away', forfeitReason: 'forfeit' } })
     const data = {
@@ -321,13 +321,16 @@ describe('set 5, defaults and sanctions on the sheet', () => {
         ev('forfait', 1, { team: 'away', reason: 'forfeit', scope: 'match', setIndex: 1 })
       ]
     }
-    const { getAllByTestId, getByTestId, container } = render(<App matchData={data} autoAction="preview" />)
-    // sets 1-3 by default struck off; sets 4 and 5, never played, left blank
-    expect(getAllByTestId('strike-z')).toHaveLength(3)
+    const { queryAllByTestId, getByTestId, container } = render(<App matchData={data} autoAction="preview" />)
+    // sets 1-3 by default and sets 4 and 5, never played: no Z anywhere
+    expect(queryAllByTestId('strike-z')).toHaveLength(0)
+    expect(container.querySelectorAll('.scoresheet-container svg polyline')).toHaveLength(0)
     // no awarded point drawn as a rally (the grid stays empty)
     expect(container.querySelectorAll('[data-mark="tick"]')).toHaveLength(0)
     expect(getByTestId('remarks-text').textContent).toContain('Team B declared in default, match result 3:0 (25:0, 25:0, 25:0).')
     expect(getByTestId('results-winner').textContent).toBe('KSC Wiedikon H1')
+    // the RESULT rows hold the awarded sets: 3:0 for the team that did not default
+    expect(getByTestId('results-score').textContent?.replace(/\s/g, '')).toMatch(/3.*0/)
   })
 
   it('awarded points of an incomplete team are circled, not ticked', () => {

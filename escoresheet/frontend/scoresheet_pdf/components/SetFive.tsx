@@ -1,7 +1,6 @@
 import React from 'react';
 import { SubRecord } from '../types_scoresheet';
 import { PointsColumn5, PointsColumn30 } from './PointsColumn';
-import { StrikeZ } from './StrikeZ';
 import { FitText } from './FitText';
 import { ServiceBox, SubstitutionCells } from './ServiceBox';
 import { LINEUP_NUMBER_PT, MARK_STROKE } from './Marks';
@@ -54,8 +53,6 @@ interface SetFiveProps {
     pointsAtChangeA?: number | null;
     /** Not printed (the box holds the left team's points only, field-spec 6 step 1). */
     pointsAtChangeB?: number | null;
-    /** A deciding set awarded by default: the grid is struck off, nothing else drawn. */
-    struckOff?: boolean;
 
     // Ref for measuring position box width
     positionBoxRef?: React.RefObject<HTMLDivElement>;
@@ -200,8 +197,7 @@ export const SetFive: React.FC<SetFiveProps> = ({
     circledPointsA_Right = [],
     serviceRoundsA_Right = [],
     pointsAtChangeA = null,
-    positionBoxRef,
-    struckOff = false
+    positionBoxRef
 }) => {
   // Left (panel 1/3) team's full score: panel 1 holds 1-8, panel 3 the rest (pointsA_Right = score - 8)
   const finalScoreA = (pointsA_Left || 0) + (pointsA_Right || 0);
@@ -301,7 +297,6 @@ export const SetFive: React.FC<SetFiveProps> = ({
                  <PointsColumn30 ruleRight isPanel3={true} timeouts={timeoutsA_Right || timeoutsA || ["", ""]} markedPoints={markedPointsA_Right || []} circledPoints={circledPointsA_Right || []} preChangePoints={pointsAtChangeA ?? null} maxScore={maxScore} setFinished={setFinished} finalScore={finalScoreA} />
             </div>
        </div>
-       {struckOff && <StrikeZ />}
     </div>
   );
 };

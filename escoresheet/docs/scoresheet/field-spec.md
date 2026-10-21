@@ -537,7 +537,7 @@ Rows, from top to bottom:
 | Sanction to a bench player | Number circled in the sanction row (SC p.62). |
 | Coach or staff sanction | C / AC1 / AC2 / P / M in the sanction row. |
 | Incomplete team during a set (FIVB 6.4.3) | The opponent is given the points (and sets) needed to win. The incomplete team keeps its points and sets. **OV decision:** the awarded points are **circled** in the points column (they were not won in a rally), then T marks and finals follow 4.7, plus a remark with team, set, score and reason. |
-| Default / forfeit (FIVB 6.4.1-2) | The team that defaults loses 0:3, each set 0:25. **OV decision:** set grids empty and struck off. Result rows printed as 25 / 0 with W 1/0, durations empty. Winner `3:0`. Remark: `Team X declared in default (reason), match result 3:0 (25:0, 25:0, 25:0).` |
+| Default / forfeit (FIVB 6.4.1-2) | The team that defaults loses 0:3, each set 0:25. **OV decision** (owner 2026-10-21): set grids left empty, **not struck off** (no Z), the remark says what happened. Result rows filled with the awarded sets, printed as 25 / 0 with W 1/0, durations empty. Winner `3:0`. Remark: `Team X declared in default (reason), match result 3:0 (25:0, 25:0, 25:0).` |
 | Absent player | Roster row struck through (section 3). |
 | Delayed set or match start | Actual time in Beginn, plus a remark with the reason and the delay in minutes. |
 | Match ends 3:0 / 3:1 / 3:2 | **OV decision** (owner 2026-10-20): unused set grids and result rows are left blank, not struck off. Result, winner, captains' signatures as in sections 9 and 10. |
