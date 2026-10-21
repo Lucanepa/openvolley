@@ -38,12 +38,15 @@ import { AlertTriangle, Loader2 } from 'lucide-react'
 import { Button, DateField, Field, Input, Select, TimeField, SegmentedControl, SectionHeader, KeyValue, CountBadge, Switch, cn, confirmDialog, toast } from '../ui'
 import SavedTeamPickerModal, { confirmReplaceRoster } from './SavedTeamPickerModal'
 import SaveRosterToTeamModal from './SaveRosterToTeamModal'
+import PlayerPoolModal from './PlayerPoolModal'
+import { buildPlayerPool, poolToRoster, ROSTER_MAX } from '../domain/playerPool'
+import { rememberedRosters } from '../db/rememberedPlayers'
 import CloudBlockNotice from './CloudBlockNotice'
 import { savedTeamToRoster, findSavedTeamSuggestions } from '../domain/savedTeams'
 import { getSavedTeams, refreshSavedTeams } from '../db/savedTeams'
 import { officialCheck, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS } from '../lib/accountApi'
 import { openRestore } from '../utils/manageNav'
-import { Users, Save as SaveIcon, Trash2 } from 'lucide-react'
+import { Users, Save as SaveIcon, Trash2, ListChecks } from 'lucide-react'
 import CaptainToggle from './CaptainToggle'
 import StackLabel from './StackLabel'
 import TeamShirt from './TeamShirt'
@@ -743,6 +746,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const [savedPicker, setSavedPicker] = useState(null) // 'home' | 'away' | null
   const [saveToTeam, setSaveToTeam] = useState(null) // 'home' | 'away' | null
   const [savedSuggestion, setSavedSuggestion] = useState(null) // { home, away } | null
+  // "Choose the players" (domain/playerPool): { side, pool, teamLabel,
+  // savedTeam, summary } | null; and, after a schedule load, how many players
+  // earlier matches on this device know of each team ({ home, away } | null)
+  const [playerPool, setPlayerPool] = useState(null)
+  const [rememberedSuggestion, setRememberedSuggestion] = useState(null)
   const [officialClaim, setOfficialClaim] = useState(null) // claim of another account | null
   // db/018: the game is not a home game of the account's clubs (or it has none):
   // { code, home_team, clubs } | null. From the server's official check when
@@ -2750,10 +2758,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // Fill a side's roster and team officials from a saved team. Name, short
   // name and colour only where empty (the colour where it is the default).
   // Everything stays editable.
-  const applySavedTeam = (side, team) => {
+  const applySavedTeam = (side, team, chosen = null) => {
     if (!team) return
     const { roster, bench, meta, warnings } = savedTeamToRoster(team)
-    const sorted = [...roster].sort((a, b) => (a.number ?? 999) - (b.number ?? 999))
+    const sorted = [...(chosen || roster)].sort((a, b) => (a.number ?? 999) - (b.number ?? 999))
     if (side === 'home') {
       setHomeRoster(sorted)
       setBenchHome(bench)
@@ -2771,6 +2779,98 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     for (const w of warnings) toast.info(t(w.key, w.params))
   }
 
+  // ---- The player pool: load all the players of a team and tick who plays ----
+
+  // Every player known for a side: the roster now (unless it is replaced),
+  // an Einsatzliste just read, the saved team (the one picked, else the
+  // schedule suggestion) and earlier matches of the team on this device
+  const buildPoolFor = async (side, { savedTeam = null, imported = null, includeCurrent = true } = {}) => {
+    const name = side === 'home' ? home : away
+    const saved = savedTeam || savedSuggestion?.[side] || null
+    const names = [...new Set([name, saved?.name, saved?.svrzTeamName].filter(n => String(n || '').trim()))]
+    const earlier = []
+    for (const n of names) {
+      for (const r of await rememberedRosters(n, { excludeTeamIds: [match?.homeTeamId, match?.awayTeamId] })) {
+        if (!earlier.some(e => e.teamId === r.teamId)) earlier.push(r)
+      }
+    }
+    earlier.sort((a, b) => b.at - a.at)
+    return buildPlayerPool({
+      current: includeCurrent ? (side === 'home' ? homeRoster : awayRoster) : [],
+      imported: imported || [],
+      saved: saved ? savedTeamToRoster(saved).roster : [],
+      earlier: earlier.map(r => r.players)
+    })
+  }
+
+  const openPlayerPool = async (side, opts = {}) => {
+    const pool = await buildPoolFor(side, opts)
+    setPlayerPool({
+      side,
+      pool,
+      savedTeam: opts.savedTeam || null,
+      summary: opts.summary || null,
+      teamLabel: opts.savedTeam?.name || (side === 'home' ? home : away) || t(side === 'home' ? 'matchSetup.homeTeam' : 'matchSetup.awayTeam')
+    })
+    return pool
+  }
+
+  // The ticked players become the roster, as a saved-team load sets it, and
+  // the team's stored players of this match follow (as an Einsatzliste import)
+  const applyPlayerPool = async (entries) => {
+    const pending = playerPool
+    setPlayerPool(null)
+    if (!pending) return
+    const { side, savedTeam, summary } = pending
+    const roster = poolToRoster(entries)
+    if (savedTeam) applySavedTeam(side, savedTeam, roster)
+    else if (side === 'home') setHomeRoster(roster)
+    else setAwayRoster(roster)
+    const teamId = side === 'home' ? match?.homeTeamId : match?.awayTeamId
+    if (matchId && teamId) {
+      try {
+        await db.transaction('rw', db.players, async () => {
+          await db.players.where('teamId').equals(teamId).delete()
+          await db.players.bulkAdd(roster.map(p => ({
+            teamId,
+            number: p.number,
+            firstName: p.firstName,
+            lastName: p.lastName,
+            name: `${p.lastName} ${p.firstName}`,
+            dob: p.dob || null,
+            libero: p.libero || '',
+            isCaptain: !!p.isCaptain,
+            isLfp: !!p.isLfp,
+            role: null,
+            createdAt: new Date().toISOString()
+          })))
+        })
+      } catch (err) {
+        console.warn('[MatchSetup] Writing the chosen players failed:', err?.message)
+      }
+    }
+    if (summary) setImportSummaryModal({ ...summary, players: roster.length, errors: [] })
+    else if (!savedTeam) toast.success(t('playerPool.applied', { count: roster.length }))
+  }
+
+  const closePlayerPool = () => {
+    const pending = playerPool
+    setPlayerPool(null)
+    // An Einsatzliste stays imported whole when the choice is cancelled
+    if (pending?.summary) setImportSummaryModal({ ...pending.summary, errors: [] })
+  }
+
+  // A saved team picked (the picker or the schedule suggestion): straight in
+  // when it fits and nothing else is known of the team; else the choice,
+  // with all its players and those of earlier matches
+  const pickSavedTeam = async (side, team) => {
+    if (!team) return
+    const pool = await buildPoolFor(side, { savedTeam: team, includeCurrent: false })
+    const active = savedTeamToRoster(team).roster.length
+    if (active > ROSTER_MAX || pool.length > active) await openPlayerPool(side, { savedTeam: team, includeCurrent: false })
+    else applySavedTeam(side, team)
+  }
+
   const loadSuggestedTeam = async (side) => {
     const team = savedSuggestion?.[side]
     if (!team) return
@@ -2780,7 +2880,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       teamLabel: (side === 'home' ? home : away) || team.name,
       t
     })
-    if (ok) applySavedTeam(side, team)
+    if (ok) await pickSavedTeam(side, team)
+  }
+
+  // After a schedule load without a saved team: choose the players of a team
+  // that earlier matches on this device know
+  const chooseRememberedPlayers = async (side) => {
+    const ok = await confirmReplaceRoster({
+      roster: side === 'home' ? homeRoster : awayRoster,
+      bench: side === 'home' ? benchHome : benchAway,
+      teamLabel: (side === 'home' ? home : away) || '',
+      t
+    })
+    if (ok) await openPlayerPool(side, { includeCurrent: false })
   }
 
   // Is this official game already scored by another cloud match? null when
@@ -2829,6 +2941,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     } catch (err) {
       console.warn('[MatchSetup] Saved-team suggestions failed:', err?.message)
     }
+    // Players of these teams in earlier matches on this device (any scorer)
+    const exclude = { excludeTeamIds: [match?.homeTeamId, match?.awayTeamId] }
+    const [homeEarlier, awayEarlier] = await Promise.all([rememberedRosters(matchData.home, exclude), rememberedRosters(matchData.away, exclude)])
+    const count = (list) => buildPlayerPool({ earlier: list.map(r => r.players) }).length
+    const remembered = { home: count(homeEarlier), away: count(awayEarlier) }
+    setRememberedSuggestion(remembered.home || remembered.away ? remembered : null)
     serverClubRef.current = undefined
     scheduleHomeRef.current = matchData.home || null
     try {
@@ -2885,6 +3003,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
     // Saved rosters for these teams, and whether another scorer has the game
     setSavedSuggestion(null)
+    setRememberedSuggestion(null)
     setOfficialClaim(null)
     afterOfficialLoad(matchData)
   }
@@ -3091,13 +3210,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       }
       setHomePdfFile(null)
 
-      // Show import summary modal
-      setImportSummaryModal({
-        team: 'home',
-        players: mergedPlayers.length,
-        benchOfficials: importedBenchOfficials.length,
-        errors: []
-      })
+      // An Einsatzliste lists every eligible player: with more than 14, the
+      // scorer ticks who plays (the summary follows the choice)
+      const summary = { team: 'home', players: mergedPlayers.length, benchOfficials: importedBenchOfficials.length }
+      if (mergedPlayers.length > ROSTER_MAX) {
+        await openPlayerPool('home', { imported: mergedPlayers, includeCurrent: false, summary })
+      } else {
+        // Show import summary modal
+        setImportSummaryModal({ ...summary, errors: [] })
+      }
     } catch (err) {
       console.error('Error parsing PDF:', err)
       setHomePdfError(`Failed to parse PDF: ${err.message}`)
@@ -3196,13 +3317,15 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       }
       setAwayPdfFile(null)
 
-      // Show import summary modal
-      setImportSummaryModal({
-        team: 'away',
-        players: mergedPlayers.length,
-        benchOfficials: importedBenchOfficials.length,
-        errors: []
-      })
+      // An Einsatzliste lists every eligible player: with more than 14, the
+      // scorer ticks who plays (the summary follows the choice)
+      const summary = { team: 'away', players: mergedPlayers.length, benchOfficials: importedBenchOfficials.length }
+      if (mergedPlayers.length > ROSTER_MAX) {
+        await openPlayerPool('away', { imported: mergedPlayers, includeCurrent: false, summary })
+      } else {
+        // Show import summary modal
+        setImportSummaryModal({ ...summary, errors: [] })
+      }
     } catch (err) {
       console.error('Error parsing PDF:', err)
       setAwayPdfError(`Failed to parse PDF: ${err.message}`)
@@ -3220,6 +3343,17 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const handleOpenDatabase = useCallback((_e, selectorKey) => {
     setShowRefereeSelector(selectorKey)
   }, [])
+
+  // "Choose the players" (rendered by the roster views and the main view)
+  const playerPoolModal = (
+    <PlayerPoolModal
+      open={!!playerPool}
+      onClose={closePlayerPool}
+      onApply={applyPlayerPool}
+      pool={playerPool?.pool}
+      teamLabel={playerPool?.teamLabel}
+    />
+  )
 
   if (currentView === 'info') {
     return (
@@ -3820,6 +3954,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     {t('savedTeams.load')}
                   </Button>
                 )}
+                <Button variant="secondary" size="xl" icon={<ListChecks size={16} aria-hidden />} onClick={() => openPlayerPool('home')} data-testid="choose-players-home">
+                  {t('playerPool.open')}
+                </Button>
                 {access?.canManageTeams && isNavigatorOnline() && (
                   <Button variant="secondary" size="xl" icon={<SaveIcon size={16} aria-hidden />} onClick={() => setSaveToTeam('home')}>
                     {t('savedTeams.saveToTeam')}
@@ -4899,11 +5036,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </Modal>
         )}
 
+        {playerPoolModal}
         {/* Saved teams: load into this roster, or save it as a saved team */}
         <SavedTeamPickerModal
           open={savedPicker === 'home'}
           onClose={() => setSavedPicker(null)}
-          onPick={(team) => { setSavedPicker(null); applySavedTeam('home', team) }}
+          onPick={(team) => { setSavedPicker(null); pickSavedTeam('home', team) }}
           userId={user?.id ?? null}
           access={access}
           defaultCompetitionId={savedSuggestion?.home?.competitionId || ''}
@@ -4970,6 +5108,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     {t('savedTeams.load')}
                   </Button>
                 )}
+                <Button variant="secondary" size="xl" icon={<ListChecks size={16} aria-hidden />} onClick={() => openPlayerPool('away')} data-testid="choose-players-away">
+                  {t('playerPool.open')}
+                </Button>
                 {access?.canManageTeams && isNavigatorOnline() && (
                   <Button variant="secondary" size="xl" icon={<SaveIcon size={16} aria-hidden />} onClick={() => setSaveToTeam('away')}>
                     {t('savedTeams.saveToTeam')}
@@ -6053,11 +6194,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </Modal>
         )}
 
+        {playerPoolModal}
         {/* Saved teams: load into this roster, or save it as a saved team */}
         <SavedTeamPickerModal
           open={savedPicker === 'away'}
           onClose={() => setSavedPicker(null)}
-          onPick={(team) => { setSavedPicker(null); applySavedTeam('away', team) }}
+          onPick={(team) => { setSavedPicker(null); pickSavedTeam('away', team) }}
           userId={user?.id ?? null}
           access={access}
           defaultCompetitionId={savedSuggestion?.away?.competitionId || ''}
@@ -6488,22 +6630,32 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           </div>
         )}
 
-        {/* Saved rosters for the teams of a schedule game */}
-        {savedSuggestion && (savedSuggestion.home || savedSuggestion.away) && (
+        {/* Saved rosters for the teams of a schedule game, else the players
+            earlier matches on this device know of them */}
+        {(savedSuggestion?.home || savedSuggestion?.away || rememberedSuggestion) && (
           <div className="ov-kit mb-3">
             <div role="status" data-testid="saved-team-suggestion" className="rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-sky-900">
-              <p className="text-sm font-semibold">{t('savedTeams.suggestionTitle')}</p>
+              <p className="text-sm font-semibold">{t(savedSuggestion?.home || savedSuggestion?.away ? 'savedTeams.suggestionTitle' : 'playerPool.suggestionTitle')}</p>
               <div className="mt-0.5 flex flex-col gap-0.5 text-xs">
-                {savedSuggestion.home && <span>{t('savedTeams.suggestionHome', { name: savedSuggestion.home.name })}</span>}
-                {savedSuggestion.away && <span>{t('savedTeams.suggestionAway', { name: savedSuggestion.away.name })}</span>}
+                {savedSuggestion?.home
+                  ? <span>{t('savedTeams.suggestionHome', { name: savedSuggestion.home.name })}</span>
+                  : rememberedSuggestion?.home ? <span>{t('playerPool.suggestionHome', { name: home, count: rememberedSuggestion.home })}</span> : null}
+                {savedSuggestion?.away
+                  ? <span>{t('savedTeams.suggestionAway', { name: savedSuggestion.away.name })}</span>
+                  : rememberedSuggestion?.away ? <span>{t('playerPool.suggestionAway', { name: away, count: rememberedSuggestion.away })}</span> : null}
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
-                {savedSuggestion.home && <Button variant="secondary" size="md" onClick={() => loadSuggestedTeam('home')}>{t('savedTeams.loadHome')}</Button>}
-                {savedSuggestion.away && <Button variant="secondary" size="md" onClick={() => loadSuggestedTeam('away')}>{t('savedTeams.loadAway')}</Button>}
+                {savedSuggestion?.home
+                  ? <Button variant="secondary" size="md" onClick={() => loadSuggestedTeam('home')}>{t('savedTeams.loadHome')}</Button>
+                  : rememberedSuggestion?.home ? <Button variant="secondary" size="md" onClick={() => chooseRememberedPlayers('home')} data-testid="choose-remembered-home">{t('playerPool.chooseHome')}</Button> : null}
+                {savedSuggestion?.away
+                  ? <Button variant="secondary" size="md" onClick={() => loadSuggestedTeam('away')}>{t('savedTeams.loadAway')}</Button>
+                  : rememberedSuggestion?.away ? <Button variant="secondary" size="md" onClick={() => chooseRememberedPlayers('away')} data-testid="choose-remembered-away">{t('playerPool.chooseAway')}</Button> : null}
               </div>
             </div>
           </div>
         )}
+        {playerPoolModal}
 
         {/* Match Setup Summary Card */}
         <div
