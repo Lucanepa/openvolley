@@ -2816,8 +2816,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     return pool
   }
 
-  // The ticked players become the roster, as a saved-team load sets it, and
-  // the team's stored players of this match follow (as an Einsatzliste import)
+  // The ticked players become the roster, as a saved-team load sets it. From
+  // the main view the team's stored players of this match follow; in the
+  // roster editor only its Save writes them (its Back discards the choice)
   const applyPlayerPool = async (entries) => {
     const pending = playerPool
     setPlayerPool(null)
@@ -2828,7 +2829,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     else if (side === 'home') setHomeRoster(roster)
     else setAwayRoster(roster)
     const teamId = side === 'home' ? match?.homeTeamId : match?.awayTeamId
-    if (matchId && teamId) {
+    const inRosterEditor = currentView === 'home' || currentView === 'away'
+    if (matchId && teamId && !inRosterEditor) {
       try {
         await db.transaction('rw', db.players, async () => {
           await db.players.where('teamId').equals(teamId).delete()
@@ -3177,33 +3179,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
       setBenchHome(importedBenchOfficials)
 
-      // Save to database if match exists
-      if (matchId && match?.homeTeamId) {
-        const existingPlayers = await db.players.where('teamId').equals(match.homeTeamId).toArray()
-        for (const ep of existingPlayers) {
-          await db.players.delete(ep.id)
-        }
-
-        await db.players.bulkAdd(
-          mergedPlayers.map(p => ({
-            teamId: match.homeTeamId,
-            number: p.number,
-            firstName: p.firstName,
-            lastName: p.lastName,
-            name: `${p.lastName} ${p.firstName}`,
-            dob: p.dob || null,
-            libero: p.libero || '',
-            isCaptain: !!p.isCaptain,
-            isLfp: !!p.isLfp,
-            role: null,
-            createdAt: new Date().toISOString()
-          }))
-        )
-
-        await db.matches.update(matchId, {
-          bench_home: importedBenchOfficials
-        })
-      }
+      // Not written to the database here: the roster editor's Save writes
+      // the players and the bench, its Back discards the import
 
       // Clear file input and state
       if (homeFileInputRef.current) {
@@ -3284,33 +3261,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
 
       setBenchAway(importedBenchOfficials)
 
-      // Save to database if match exists
-      if (matchId && match?.awayTeamId) {
-        const existingPlayers = await db.players.where('teamId').equals(match.awayTeamId).toArray()
-        for (const ep of existingPlayers) {
-          await db.players.delete(ep.id)
-        }
-
-        await db.players.bulkAdd(
-          mergedPlayers.map(p => ({
-            teamId: match.awayTeamId,
-            number: p.number,
-            firstName: p.firstName,
-            lastName: p.lastName,
-            name: `${p.lastName} ${p.firstName}`,
-            dob: p.dob || null,
-            libero: p.libero || '',
-            isCaptain: !!p.isCaptain,
-            isLfp: !!p.isLfp,
-            role: null,
-            createdAt: new Date().toISOString()
-          }))
-        )
-
-        await db.matches.update(matchId, {
-          bench_away: importedBenchOfficials
-        })
-      }
+      // Not written to the database here: the roster editor's Save writes
+      // the players and the bench, its Back discards the import
 
       // Clear file input and state
       if (awayFileInputRef.current) {
