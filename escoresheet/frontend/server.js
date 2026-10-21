@@ -154,6 +154,14 @@ const requestHandler = (req, res) => {
     console.log(`[API] ${req.method} ${urlPath} from ${req.socket.remoteAddress}`)
   }
   
+  // Health check (the coin toss's WebSocket server check, the server
+  // connection screen), as the Electron and Tauri relays answer it
+  if (urlPath === '/health' || urlPath === '/api/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ status: 'ok', running: true }))
+    return
+  }
+
   // API endpoints
   if (urlPath === '/api/server/status') {
     const localIP = getLocalIP()
