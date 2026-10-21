@@ -247,6 +247,56 @@ describe('useScorerActions: one transaction, one screen change', () => {
     expect(api.mutexRef.current).toBe(false)
   })
 
+  // The match-winning point of a test match (Playwright on the dev server,
+  // 2026-10-21): "That was not saved" and "[action] failed, nothing was
+  // saved" with a PrematureCommitError, yet the point and the score were
+  // stored and Match End followed. Dexie raises PrematureCommitError only
+  // once the body has ended without an error, when the action's IndexedDB
+  // transaction had committed before that: every write the body awaited is
+  // stored (in the action's transaction, or, once the body ran on outside
+  // its transaction zone, in a transaction of its own). The action was
+  // treated as failed all the same: the scorer was told nothing was saved,
+  // and its dialog (the match end) and its side effects (the tablets', the
+  // livescore's push) were dropped.
+  it('a body that ran on outside its transaction (committed early) counts as done: no failure, its dialog and its effects follow', async () => {
+    const onError = vi.fn()
+    const effect = vi.fn()
+    const api = await mount({ onError })
+    const { runAction, deferUi, deferEffect } = api.actions
+    await runAction('point', async () => {
+      await db.sets.update(1, { away: 1 })
+      deferEffect({ run: effect })
+      deferUi(() => api.setDialog('match end'))
+      // the rest runs outside the action's transaction zone (what a lost
+      // zone does): its own transaction, which waits for the action's
+      await Dexie.ignoreTransaction(async () => {
+        await db.events.add({ seq: 2, type: 'point', team: 'away' })
+      })
+    })
+    expect(onError).not.toHaveBeenCalled()
+    expect((await db.sets.get(1)).away).toBe(1)
+    expect(await db.events.where('seq').equals(2).count()).toBe(1)
+    await waitFor(() => expect(api.renders[api.renders.length - 1]).toBe('0:1 server=1 events=2 dialog=match end'))
+    await waitFor(() => expect(effect).toHaveBeenCalledTimes(1))
+    expect(api.mutexRef.current).toBe(false)
+    // the key is free again
+    await waitFor(async () => expect(await runAction('point', async () => { await db.sets.update(1, { away: 2 }) })).toBeUndefined())
+    expect((await db.sets.get(1)).away).toBe(2)
+  })
+
+  it('a write after the early commit still fails the action (a body awaits Dexie only)', async () => {
+    const onError = vi.fn()
+    const api = await mount({ onError })
+    const { runAction } = api.actions
+    await expect(runAction('point', async () => {
+      await db.sets.update(1, { away: 1 })
+      await sleep(20) // a timer: the transaction commits here
+      await db.events.add({ seq: 2, type: 'point', team: 'away' })
+    })).rejects.toBeTruthy()
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(await db.events.where('seq').equals(2).count()).toBe(0)
+  })
+
   it('deferred effects get the final snapshot, captured inside the transaction after every write', async () => {
     const seen = []
     const api = await mount({
