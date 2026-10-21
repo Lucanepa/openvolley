@@ -30,6 +30,7 @@ import { DateField } from '../ui/DateField.jsx'
 import StackLabel from './StackLabel'
 import { useFormStack } from '../hooks/useFormStack'
 import { usePhoneWidth } from '../hooks/usePhoneWidth'
+import { focusLeaves, steadyOrder } from '../utils/rosterOrder'
 
 // volleyui (RESTYLE-SPEC P3b). Sign A/B and the coach/captain sign buttons are
 // the kit outline button until signed, then the emerald success state: a
@@ -268,6 +269,11 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
 
   // UI state
   const [rosterModal, setRosterModal] = useState(null) // 'teamA' | 'teamB' | null
+  // The roster's row order while focus is in it: a row keeps its place while
+  // its number is typed (utils/rosterOrder)
+  const [rosterEditOrder, setRosterEditOrder] = useState(null)
+  // (a list closed with focus in it fires no blur)
+  useEffect(() => { setRosterEditOrder(null) }, [rosterModal])
   const [signatureMenuA, setSignatureMenuA] = useState(false)
   const [signatureMenuB, setSignatureMenuB] = useState(false)
   const [addPlayerModal, setAddPlayerModal] = useState(null)
@@ -1546,14 +1552,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
   const teamBCoachSig = teamB === 'home' ? homeCoachSignature : awayCoachSignature
   const teamBCaptainSig = teamB === 'home' ? homeCaptainSignature : awayCaptainSignature
 
+  // By number, in the order taken when focus entered the list while it is
+  // in it (sorting on every digit moved the edited row away from the cursor)
   const sortRosterEntries = roster =>
-    (roster || [])
-      .map((player, index) => ({ player, index }))
-      .sort((a, b) => {
-        const an = Number(a.player?.number) || 0
-        const bn = Number(b.player?.number) || 0
-        return an - bn
-      })
+    steadyOrder(roster, rosterEditOrder).map(index => ({ player: roster[index], index }))
 
 
   // Volleyball images - responsive size
@@ -1963,7 +1965,12 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                     {t('roster.addPlayer')}
                   </Button>
                 </div>
-                <table className={`roster-table ct-cards${lfpTrackingEnabled ? ' has-lfp' : ''}`} style={{ width: '100%' }}>
+                <table
+                  className={`roster-table ct-cards${lfpTrackingEnabled ? ' has-lfp' : ''}`}
+                  style={{ width: '100%' }}
+                  onFocus={() => { if (!rosterEditOrder) setRosterEditOrder(steadyOrder(roster, null)) }}
+                  onBlur={e => { if (focusLeaves(e)) setRosterEditOrder(null) }}
+                >
                   <thead>
                     <tr>
                       <th>{t('roster.number')}</th>
