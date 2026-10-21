@@ -57,11 +57,17 @@ export function sportOf (sportType) {
   return sportType === 'beach' ? 'beach' : 'indoor'
 }
 
-/** The claim object a client may see (spec 5.2): no match id, PINs, emails, user ids or external_id. */
+/** The claim object a client may see (spec 5.2): no match id, PINs, emails or user ids; the external_id of the caller's own match only. */
 export function publicClaim (claim) {
   if (!claim) return null
   const { game_n, season, sport, status, scorer_name, mine, scheduled_at } = claim
-  return { game_n, season, sport, status, scorer_name, mine, scheduled_at }
+  const out = { game_n, season, sport, status, scorer_name, mine, scheduled_at }
+  // The caller's own match (it created it or edits it) is named: a device
+  // that joined that match retires its own refused copy of the game
+  // (frontend hooks/useSyncQueue retireSupersededMatches). Never another
+  // account's match key.
+  if (mine === true && typeof claim.external_id === 'string') out.external_id = claim.external_id
+  return out
 }
 
 /**
@@ -82,7 +88,7 @@ export async function findClaim (db, { gameN, scheduledAt = null, sportType = 'i
   const caller = typeof callerId === 'string' && UUID_RE.test(callerId) ? callerId : null
   const exclude = typeof excludeExternalId === 'string' && excludeExternalId ? excludeExternalId : null
   const { rows } = await db.query(
-    `SELECT m.id AS match_id, m.game_n, m.status, m.scheduled_at,
+    `SELECT m.id AS match_id, m.external_id, m.game_n, m.status, m.scheduled_at,
             ${SEASON_SQL('coalesce(m.scheduled_at, m.created_at)')} AS season,
             CASE WHEN m.sport_type IS NOT DISTINCT FROM 'beach' THEN 'beach' ELSE 'indoor' END AS sport,
             nullif(trim(coalesce(p.first_name, '') || ' ' || coalesce(p.last_name, '')), '') AS scorer_name,
@@ -101,6 +107,7 @@ export async function findClaim (db, { gameN, scheduledAt = null, sportType = 'i
   if (!r) return null
   return {
     match_id: r.match_id,
+    external_id: r.external_id ?? null,
     game_n: r.game_n,
     season: r.season,
     sport: r.sport,

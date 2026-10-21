@@ -1403,6 +1403,7 @@
     "noWinner": "Nessun vincitore (partita interrotta)",
     "pdfGenerationFailed": "Partita approvata, ma non è stato possibile creare il PDF. Puoi crearlo dal pulsante eScoresheet.",
     "reopenMatch": "Riapri partita",
+    "closedOnServer": "Questa partita è chiusa sul server: qui non può più essere modificata. Solo un admin può riaprirla (Riapri partita).",
     "reopenAdminOnlyTitle": "Solo un admin può riaprire questa partita",
     "reopenAdminOnlyBody": "La partita {{game}} è chiusa sul server. Chiedi a un admin di riaprirla, poi tocca di nuovo «Riapri partita».",
     "reopenNeedsConnection": "Per riaprire una partita chiusa serve una connessione al server.",
@@ -2672,6 +2673,7 @@
         "match_reopen": "Partita riaperta",
         "match_editor_add": "Editor aggiunto da un admin",
         "match_release_game": "Partita liberata",
+        "match_scorer_device": "Dispositivo del segnapunti cambiato",
         "account_password_reset_requested": "Ripristino password richiesto",
         "account_password_reset": "Password reimpostata tramite link e-mail",
         "account_email_confirmed": "Indirizzo e-mail confermato",
@@ -2926,6 +2928,7 @@
     "gameTakenMine": "Non sincronizzata: refertai già la partita {{game}} in un’altra partita. Apri quella partita con il suo PIN.",
     "gameTakenUnknown": "Non sincronizzata: questa partita ufficiale è già refertata da un altro account.",
     "matchClosed": "Non sincronizzata: questa partita è chiusa sul server. Solo un admin può riaprirla.",
+    "scorerMoved": "Non sincronizzata: questa partita ora è tenuta su un altro dispositivo.",
     "joinWithPin": "Unisciti con il PIN della partita",
     "clubRequired": "Non sincronizzata: il tuo account non ha ancora una società. Un admin la aggiunge; la partita è al sicuro su questo dispositivo.",
     "notYourClub": "Non sincronizzata: la partita {{game}} non è una partita in casa della tua società. La partita è al sicuro su questo dispositivo.",
@@ -3995,5 +3998,31 @@
     "format": "Formato",
     "bestOf": "Al meglio dei {{count}}",
     "start": "Coin toss"
+  },
+  "scorerMoved": {
+    "title": "Tenuta su un altro dispositivo",
+    "body": "Questa partita ora è tenuta su un altro dispositivo ({{platform}}, {{time}}). Questo dispositivo non la tiene più.",
+    "bodyUnknown": "Questa partita ora è tenuta su un altro dispositivo. Questo dispositivo non la tiene più.",
+    "bodyClosed": "Questa partita è stata continuata su un altro dispositivo ed è ora chiusa. Questo dispositivo non la tiene più.",
+    "takeBackHint": "Riprendila solo se segni di nuovo su questo dispositivo. Prima viene caricato il punteggio dell'altro dispositivo (serve una connessione); l'altro dispositivo viene poi avvisato e si ferma.",
+    "takeBack": "Riprendi la partita qui",
+    "showResult": "Carica il risultato finale",
+    "close": "Chiudi",
+    "errors": {
+      "offline": "Per riprenderla serve una connessione: questo dispositivo carica prima il punteggio dell'altro dispositivo.",
+      "noPin": "Su questo dispositivo manca il PIN di questa partita. Unisciti con il numero e il PIN della partita.",
+      "notFound": "La partita non è stata trovata nel cloud. Unisciti con il numero e il PIN della partita.",
+      "otherMatch": "Il PIN su questo dispositivo appartiene a un'altra partita. Unisciti con il numero e il PIN della partita.",
+      "failed": "Non è stato possibile caricare la partita dal cloud. Riprova."
+    },
+    "platforms": {
+      "android": "telefono o tablet Android",
+      "ios": "iPhone o iPad",
+      "linux": "computer Linux",
+      "windows": "computer Windows",
+      "macos": "Mac",
+      "desktop": "app desktop",
+      "web": "browser"
+    }
   }
 }

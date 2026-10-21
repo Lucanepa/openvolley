@@ -14,7 +14,7 @@ import JSZip from 'jszip'
 import { apiStorage, apiFrom } from '../lib/apiClient'
 import { admin as adminApi, approvalsApi, errorKeyOf, isApprovalUnavailable } from '../lib/accountApi'
 import { useAuth } from '../contexts/AuthContext'
-import { planReopen } from '../utils/matchReopen'
+import { planReopen, isKnownClosedOnServer } from '../utils/matchReopen'
 import KitModal from './manage/KitModal'
 import CloudBlockNotice from './CloudBlockNotice'
 import { Textarea } from '../ui/Textarea.jsx'
@@ -390,6 +390,16 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   // the write and the live query's next answer.
   const [approvedHere, setIsApproved] = useState(false)
   const isApproved = approvedHere || data?.match?.approved === true
+  // The server has closed the match (a closed match restored here, approved
+  // on another device: the server refuses every change). Its actions are the
+  // approved ones (Close match, Reopen match: an admin, spec 6.8) with the
+  // reason; no Reopen last set, Corrections, Approve or remarks edit, the
+  // signatures stay locked. 2026-10-20 23:32: Reopen last set on such a match
+  // reopened it here and cleared its signatures while the server refused
+  // every change.
+  const [serverClosed, setServerClosed] = useState(false)
+  const closedOnServer = serverClosed || isKnownClosedOnServer(data?.match)
+  const finalActions = isApproved || closedOnServer
   const [isSaving, setIsSaving] = useState(false)
   // showCloseConfirm modal removed - now using direct post-approval buttons
   const [showReopenConfirm, setShowReopenConfirm] = useState(false)
@@ -447,6 +457,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       return null
     }
     setApprovalFeature('available')
+    if (res.data?.match?.closed_at) setServerClosed(true)
     const bySlot = approvalsBySlot(res.data?.approvals)
     try {
       await db.matches.update(matchId, { accountApprovals: Object.keys(bySlot).length ? bySlot : null })
@@ -472,7 +483,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   // Prevent accidental navigation away before approval
   // Skip warning during save process (isSaving) to avoid dialog during PDF generation
   useEffect(() => {
-    if (isApproved || isSaving) return // Allow navigation after approval or during save
+    if (finalActions || isSaving) return // Allow navigation after approval (or closed on the server) or during save
 
     const handleBeforeUnload = (e) => {
       e.preventDefault()
@@ -482,7 +493,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [isApproved, isSaving])
+  }, [finalActions, isSaving])
 
   // Calculate set results for Results component - must be before early return to maintain hook order
   const calculateSetResults = useMemo(() => {
@@ -731,7 +742,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   // Only a scorer or referee account (or an admin) may send approvals (the server checks the same)
   const callerMayApprove = !!access?.isAdmin || !!access?.roles?.some(r => r === 'scorer' || r === 'referee')
   // Re-sign and Clear close once the result is approved or the match closed
-  const signaturesLocked = signatureEditLocked(match, { isApproved })
+  const signaturesLocked = signatureEditLocked(match, { isApproved: finalActions })
   // The PIN-approval line of an official's box: approved, offered, or why not
   const pinStateOf = (role) => pinApprovalState({
     role, approval: approvalFor(match, role), sets, locked: signaturesLocked, isBeach, hasSeedKey: !!match.seed_key,
@@ -1500,13 +1511,16 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     cLogger.logHandler('handleReopenMatch', { matchId, queue, voidApprovals })
 
     try {
-      // Clear approval state in database
+      // Clear approval state in database (and the closed notice: the server
+      // has it open again, or never had it closed)
       await db.matches.update(matchId, {
         approved: false,
         approvedAt: null,
         status: 'ended', // Match is finished but not final
+        ...(match?.cloudBlock?.code === 'OV_MATCH_CLOSED' ? { cloudBlock: null } : {}),
         ...(voidApprovals ? { accountApprovals: null } : {})
       })
+      setServerClosed(false)
 
       // Mirror the un-approval to the cloud (approve queued status 'approved')
       if (queue && !match?.test && match?.seed_key) {
@@ -1535,6 +1549,11 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   const handleReopenLastSet = async () => {
     cLogger.logHandler('handleReopenLastSet', { matchId })
     setShowReopenConfirm(false)
+    // Closed on the server: it would refuse every change (the button is not shown)
+    if (closedOnServer) {
+      showAlert(t('matchEnd.closedOnServer'), 'error')
+      return
+    }
 
     try {
       // Find the last (highest index) set
@@ -1773,7 +1792,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       <div className="card" style={{ marginBottom: '16px' }}>
         <div className={`ov-kit ${SECTION_HEAD}`}>
           <h3 className={SECTION_TITLE}>{t('matchEnd.remarks', 'Remarks')}</h3>
-          {!isApproved && (
+          {!finalActions && (
             <Button
               variant="secondary"
               size="md"
@@ -1837,8 +1856,14 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       {/* Page actions: the emerald commit fills the line; the destructive
           reopen is the soft red; the rest are outline / toolbar. All h-11
           (courtside, >= 44px). */}
+      {/* (a refusal as closed says so in the notice above already) */}
+      {closedOnServer && !isApproved && match?.cloudBlock?.code !== 'OV_MATCH_CLOSED' && (
+        <p className={NOTICE.info} data-testid="matchend-closed-on-server" style={{ margin: '0 0 12px 0' }}>
+          {t('matchEnd.closedOnServer')}
+        </p>
+      )}
       <div className="ov-kit" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-        {isApproved ? (
+        {finalActions ? (
           // Post-approval buttons: Close Match and Reopen Match
           <>
             <Button
@@ -1897,7 +1922,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         )}
         {/* The scoresheet, before and after approval (the server closes the
             match at approval; Close match then removes it from this device) */}
-        {(isApproved || !showReopenConfirm) && (
+        {(finalActions || !showReopenConfirm) && (
           <div data-help-id="matchend-export-pdf">
             <MenuList
               buttonLabel={<span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><FileTextIcon size={15} />{t('matchEnd.scoresheet')}</span>}

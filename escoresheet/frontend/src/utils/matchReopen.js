@@ -35,6 +35,24 @@ export function isClosingSyncJob(job) {
 }
 
 /**
+ * Is the local match known to be closed on the server? It carries the
+ * server's closed_at, the server refused a write of it as closed (cloudBlock
+ * OV_MATCH_CLOSED), it was closed on the
+ * device that took it over (OV_SCORER_MOVED, closed), or its local status is
+ * approved / final: this device only writes those from the server (a closed
+ * match restored or imported, useSyncQueue closesLocalCopy; an approval here
+ * keeps the status 'ended' and sets approved). Never a test match.
+ */
+export function isKnownClosedOnServer(match) {
+  if (!match || match.test === true) return false
+  if (match.closed_at) return true
+  const block = match.cloudBlock
+  if (block?.code === 'OV_MATCH_CLOSED') return true
+  if (block?.code === 'OV_SCORER_MOVED' && block.closed === true) return true
+  return CLOSING_STATUSES.includes(match.status)
+}
+
+/**
  * @param {object} args
  * @param {object} args.match the local match row
  * @param {object[]} args.queue every sync_queue row (or at least this match's)

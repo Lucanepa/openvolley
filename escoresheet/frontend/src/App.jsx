@@ -21,7 +21,9 @@ import EasyMatchModal from './components/EasyMatchModal'
 import { EASY_TEAM_SEED_KEYS, easyMatchPrefill } from './domain/easyMatch'
 import HomeOptionsModal from './components/options/HomeOptionsModal'
 import ConnectTabletsModal from './components/connect/ConnectTabletsModal'
-import { useSyncQueue, useUserMatchLink } from './hooks/useSyncQueue'
+import { useSyncQueue, useUserMatchLink, checkScorerMoved, matchEndUpdateNeeded, isClosedHere } from './hooks/useSyncQueue'
+import { isScorerMoved, takeBackScoring } from './utils/matchHandover'
+import ScorerMovedModal from './components/ScorerMovedModal'
 import SyncSignInBanner from './components/auth/SyncSignInBanner'
 import useAutoBackup from './hooks/useAutoBackup'
 import { pickNativeBackupFile } from './utils/nativeBackup'
@@ -527,6 +529,17 @@ export default function App() {
       return null
     }
   }, [])
+
+  // The open match's cloud block: OV_SCORER_MOVED shows ScorerMovedModal on
+  // every scoring screen of the match (another device scores it now, db/019)
+  const openMatchBlock = useLiveQuery(async () => {
+    if (!matchId) return null
+    try {
+      return (await db.matches.get(matchId))?.cloudBlock ?? null
+    } catch {
+      return null
+    }
+  }, [matchId])
 
   const currentOfficialMatch = useLiveQuery(async () => {
     try {
@@ -1177,6 +1190,9 @@ export default function App() {
       if (!relayKey) return
       // A test match: to a local relay only (mayPublishMatchData)
       if (!mayPublishMatchData(currentMatchData, scorerRelay.url)) return
+      // Another device scores this match now: its tablets follow that one,
+      // this device's older copy must not overwrite the room (db/019)
+      if (isScorerMoved(currentMatchData)) return
 
       try {
         // Before the reads: a live state numbered after this mark is newer
@@ -1390,6 +1406,10 @@ export default function App() {
           handleMatchDataRequest(message)
         } else if (message.type === 'game-number-request') {
           handleGameNumberRequest(message)
+        } else if (message.type === 'scorer-moved') {
+          // Another device took a match over (db/019): the server says whether
+          // it is this device's (ScorerMovedModal), the message names no device
+          checkScorerMoved(message.matchId)
         } else if (isRelayErrorFor(message, [relayKeyOfCurrent()])) {
           // The relay refused or lost this match: the next sync carries the PINs
           scorerRelay.pins.reset()
@@ -1442,11 +1462,16 @@ export default function App() {
         console.error('Error unlocking session:', error)
       }
 
+      // A match closed here (approved on this device, final, closed on the
+      // server) only shows its Match End again: its status and the server
+      // copy stay as they are (matchEndUpdateNeeded)
+      const closed = isClosedHere(matchRecord)
+
       // Update local match status to 'ended' (may already be set by Scoreboard)
-      await db.matches.update(cur.matchId, { status: 'ended' })
+      if (!closed) await db.matches.update(cur.matchId, { status: 'ended' })
 
       // Only sync official matches with seed_key
-      if (!isTestMatch && matchRecord?.seed_key) {
+      if (!isTestMatch && matchRecord?.seed_key && !closed) {
         // Build set results array
         const setResults = finishedSets
           .sort((a, b) => a.index - b.index)
@@ -1456,20 +1481,26 @@ export default function App() {
         const winner = getMatchWinner(sets, matchRecord?.bestOf, { forfeitTeam: matchRecord?.forfeitTeam })
         const finalScore = `${homeSetsWon}-${awaySetsWon}`
 
-        await db.sync_queue.add({
-          resource: 'match',
-          action: 'update',
-          payload: {
-            id: matchRecord.seed_key, // Use seed_key (external_id) for Supabase lookup
-            status: 'ended', // Match ended, awaiting approval
-            set_results: setResults,
-            winner,
-            final_score: finalScore,
-            sanctions: matchRecord?.sanctions || null
-          },
-          ts: new Date().toISOString(),
-          status: 'queued'
-        })
+        const endPayload = {
+          id: matchRecord.seed_key, // Use seed_key (external_id) for Supabase lookup
+          status: 'ended', // Match ended, awaiting approval
+          set_results: setResults,
+          winner,
+          final_score: finalScore,
+          sanctions: matchRecord?.sanctions || null
+        }
+        // Once per result: the Scoreboard's "already finished" effect can
+        // call this again on every render until Match End shows
+        const pendingOfMatch = await db.sync_queue.where('status').anyOf('queued', 'sending', 'error').toArray()
+        if (matchEndUpdateNeeded(matchRecord, pendingOfMatch, endPayload)) {
+          await db.sync_queue.add({
+            resource: 'match',
+            action: 'update',
+            payload: endPayload,
+            ts: new Date().toISOString(),
+            status: 'queued'
+          })
+        }
       }
 
       // The match stays on the relay: the referee and bench keep showing the
@@ -1531,6 +1562,30 @@ export default function App() {
   }
 
   const returnToMatch = () => setShowMatchSetup(false)
+
+  // A match restored or joined from the cloud: the screen its state needs.
+  // Priority: finished match → MatchEnd, live with activity → Scoreboard,
+  // else → Setup
+  const openRestoredMatch = (newMatchId, cloudData) => {
+    setMatchId(newMatchId)
+    const matchStatus = cloudData.match?.status
+    const hasEvents = cloudData.events && cloudData.events.length > 0
+    const hasSets = cloudData.sets && cloudData.sets.length > 0
+    const finishedSets = (cloudData.sets || []).filter(s => s.finished)
+    const homeSetsWon = finishedSets.filter(s => (s.homePoints ?? s.home_points ?? 0) > (s.awayPoints ?? s.away_points ?? 0)).length
+    const awaySetsWon = finishedSets.filter(s => (s.awayPoints ?? s.away_points ?? 0) > (s.homePoints ?? s.home_points ?? 0)).length
+    const isMatchFinished = isMatchFinishedUtil(homeSetsWon, awaySetsWon, cloudData.match?.bestOf ?? cloudData.match?.best_of)
+    if (isMatchFinished) {
+      setShowMatchSetup(false)
+      setShowMatchEnd(true)
+    } else if ((matchStatus === 'live' || hasEvents || hasSets) && (hasEvents || hasSets)) {
+      setShowMatchEnd(false)
+      setShowMatchSetup(false)
+    } else {
+      setShowMatchEnd(false)
+      setShowMatchSetup(true)
+    }
+  }
 
   const goHome = async () => {
     // Unlock session if match was open
@@ -3309,6 +3364,25 @@ export default function App() {
               )}
             </div>
 
+            {/* Another device scores this match now (db/019): this one stops
+                here until the scorer takes it back or goes home */}
+            {matchId && isScorerMoved({ cloudBlock: openMatchBlock }) && (
+              <ScorerMovedModal
+                scorer={openMatchBlock?.scorer || null}
+                closed={openMatchBlock?.closed === true}
+                onTakeBack={async () => {
+                  // The other device's score from the cloud first, then the claim
+                  const online = typeof navigator === 'undefined' || navigator.onLine !== false
+                  const r = await takeBackScoring(db, matchId, { fetchCloud: fetchMatchByPin, importCloud: importMatchFromSupabase, online })
+                  if (!r.ok) return { error: r.reason }
+                  openRestoredMatch(r.matchId, r.cloud)
+                  try { window.dispatchEvent(new Event('sync-queue-write')) } catch { /* no window */ }
+                  return { ok: true }
+                }}
+                onClose={goHome}
+              />
+            )}
+
             {/* Easy match: the teams and the format, then the coin toss */}
             {easyMatchForm && (
               <EasyMatchModal
@@ -3646,29 +3720,7 @@ export default function App() {
                         setCloudBackupPin('')
                         setCloudBackupGameN('')
                         setCloudBackupError('')
-                        setMatchId(newMatchId)
-
-                        // Determine where to go based on match state
-                        const matchStatus = cloudData.match?.status
-                        const hasEvents = cloudData.events && cloudData.events.length > 0
-                        const hasSets = cloudData.sets && cloudData.sets.length > 0
-                        const finishedSets = (cloudData.sets || []).filter(s => s.finished)
-                        const homeSetsWon = finishedSets.filter(s => (s.homePoints ?? s.home_points ?? 0) > (s.awayPoints ?? s.away_points ?? 0)).length
-                        const awaySetsWon = finishedSets.filter(s => (s.awayPoints ?? s.away_points ?? 0) > (s.homePoints ?? s.home_points ?? 0)).length
-                        const isMatchFinished = isMatchFinishedUtil(homeSetsWon, awaySetsWon, cloudData.match?.bestOf ?? cloudData.match?.best_of)
-
-                        // Priority: finished match → MatchEnd, live with activity → Scoreboard, else → Setup
-                        if (isMatchFinished) {
-                          // Match is complete - go directly to MatchEnd
-                          setShowMatchSetup(false)
-                          setShowMatchEnd(true)
-                        } else if ((matchStatus === 'live' || hasEvents || hasSets) && (hasEvents || hasSets)) {
-                          // Match in progress with activity - go to Scoreboard
-                          setShowMatchSetup(false)
-                        } else {
-                          // New or setup-phase match - go to MatchSetup
-                          setShowMatchSetup(true)
-                        }
+                        openRestoredMatch(newMatchId, cloudData)
                       } catch (err) {
                         setRestoreError(err.message || 'Failed to restore match')
                       } finally {

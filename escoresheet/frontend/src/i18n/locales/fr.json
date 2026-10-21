@@ -1402,6 +1402,7 @@
     "noWinner": "Pas de vainqueur (match arrêté)",
     "pdfGenerationFailed": "Match approuvé, mais le PDF n'a pas pu être créé. Vous pouvez le créer depuis le bouton eScoresheet.",
     "reopenMatch": "Rouvrir le match",
+    "closedOnServer": "Ce match est clôturé sur le serveur : il ne peut plus être modifié ici. Seul un admin peut le rouvrir (Rouvrir le match).",
     "reopenAdminOnlyTitle": "Seul un admin peut rouvrir ce match",
     "reopenAdminOnlyBody": "Le match {{game}} est clôturé sur le serveur. Demande à un admin de le rouvrir, puis touche à nouveau « Rouvrir le match ».",
     "reopenNeedsConnection": "Rouvrir un match clôturé nécessite une connexion au serveur.",
@@ -2666,6 +2667,7 @@
         "match_reopen": "Match rouvert",
         "match_editor_add": "Éditeur ajouté par un admin",
         "match_release_game": "Match libéré",
+        "match_scorer_device": "Appareil du marqueur changé",
         "account_password_reset_requested": "Réinitialisation du mot de passe demandée",
         "account_password_reset": "Mot de passe réinitialisé par lien e-mail",
         "account_email_confirmed": "Adresse e-mail confirmée",
@@ -2920,6 +2922,7 @@
     "gameTakenMine": "Non synchronisé : tu tiens déjà le match {{game}} dans un autre match. Ouvre ce match avec son PIN.",
     "gameTakenUnknown": "Non synchronisé : ce match officiel est déjà tenu par un autre compte.",
     "matchClosed": "Non synchronisé : ce match est clôturé sur le serveur. Seul un admin peut le rouvrir.",
+    "scorerMoved": "Non synchronisé : ce match est désormais tenu sur un autre appareil.",
     "joinWithPin": "Rejoindre avec le PIN du match",
     "clubRequired": "Non synchronisé : ton compte n'a pas encore de club. Un admin l'ajoute ; le match est en sécurité sur cet appareil.",
     "notYourClub": "Non synchronisé : le match {{game}} n'est pas un match à domicile de ton club. Le match est en sécurité sur cet appareil.",
@@ -3989,5 +3992,31 @@
     "format": "Format",
     "bestOf": "Au meilleur des {{count}}",
     "start": "Tirage au sort"
+  },
+  "scorerMoved": {
+    "title": "Tenu sur un autre appareil",
+    "body": "Ce match est désormais tenu sur un autre appareil ({{platform}}, {{time}}). Cet appareil ne le tient plus.",
+    "bodyUnknown": "Ce match est désormais tenu sur un autre appareil. Cet appareil ne le tient plus.",
+    "bodyClosed": "Ce match a été poursuivi sur un autre appareil et il est maintenant clôturé. Cet appareil ne le tient plus.",
+    "takeBackHint": "Reprends-le seulement si tu marques à nouveau sur cet appareil. Le score de l'autre appareil est d'abord chargé (connexion nécessaire) ; l'autre appareil en est alors informé et s'arrête.",
+    "takeBack": "Reprendre le match ici",
+    "showResult": "Charger le résultat final",
+    "close": "Fermer",
+    "errors": {
+      "offline": "Pour le reprendre, il faut une connexion : cet appareil charge d'abord le score de l'autre appareil.",
+      "noPin": "Cet appareil n'a pas le PIN de ce match. Rejoins-le avec le numéro et le PIN du match.",
+      "notFound": "Le match est introuvable dans le cloud. Rejoins-le avec le numéro et le PIN du match.",
+      "otherMatch": "Le PIN enregistré sur cet appareil appartient à un autre match. Rejoins-le avec le numéro et le PIN du match.",
+      "failed": "Le match n'a pas pu être chargé depuis le cloud. Réessaie."
+    },
+    "platforms": {
+      "android": "téléphone ou tablette Android",
+      "ios": "iPhone ou iPad",
+      "linux": "ordinateur Linux",
+      "windows": "ordinateur Windows",
+      "macos": "Mac",
+      "desktop": "application de bureau",
+      "web": "navigateur"
+    }
   }
 }
