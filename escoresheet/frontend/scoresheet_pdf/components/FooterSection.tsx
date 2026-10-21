@@ -64,9 +64,13 @@ export const Sanctions: React.FC<SanctionsProps> = ({ items = [], improperReques
                 <div className="border-r border-black flex items-center justify-center" title="Expulsion">E</div>
                 <div className="border-r border-black flex items-center justify-center" title="Disqualification">DQ</div>
                 <div className="border-r border-black flex items-center justify-center h-full">
+                    {/* The letters half a pixel up (a transform: a padding moved
+                        nothing, the text snaps to whole pixels), so they look
+                        centred in their circles (they read low: the owner,
+                        2026-10-21) */}
                     <div className="flex flex-col items-center justify-center min-h-0 py-0.5 gap-0.5">
-                        <div className="w-2.5 h-2.5 rounded-full border border-black flex items-center justify-center text-[7px] font-bold bg-white">A</div>
-                        <div className="w-2.5 h-2.5 rounded-full border border-black flex items-center justify-center text-[7px] font-bold bg-white">B</div>
+                        <div className="w-2.5 h-2.5 rounded-full border border-black flex items-center justify-center text-[7px] font-bold bg-white"><span className="inline-block -translate-y-[0.5px]">A</span></div>
+                        <div className="w-2.5 h-2.5 rounded-full border border-black flex items-center justify-center text-[7px] font-bold bg-white"><span className="inline-block -translate-y-[0.5px]">B</span></div>
                     </div>
                     <div className="flex flex-col items-center justify-center h-full ml-1">
                         <span className="text-[8px] font-normal text-gray-700" style={{ lineHeight: '100%' }}>or</span>
