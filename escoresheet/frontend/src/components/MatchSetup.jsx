@@ -3865,7 +3865,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           <div>
             <Button variant="ghost" size="xl" className="bg-white" onClick={() => { restoreHomeTeam(); setCurrentView('main') }}>← {t('common.back')}</Button>
           </div>
-          <h2 className="m-0 text-base font-semibold text-stone-700">{home || t('matchSetup.homeTeam')}</h2>
+          {/* a long team name wraps, never widens the page */}
+          <h2 className="m-0 min-w-0 text-center text-base font-semibold text-stone-700 [overflow-wrap:anywhere]">{home || t('matchSetup.homeTeam')}</h2>
           <div />
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -5016,7 +5017,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           <div>
             <Button variant="ghost" size="xl" className="bg-white" onClick={() => { restoreAwayTeam(); setCurrentView('main') }}>← {t('common.back')}</Button>
           </div>
-          <h2 className="m-0 text-base font-semibold text-stone-700">{away || t('matchSetup.awayTeam')}</h2>
+          {/* a long team name wraps, never widens the page */}
+          <h2 className="m-0 min-w-0 text-center text-base font-semibold text-stone-700 [overflow-wrap:anywhere]">{away || t('matchSetup.awayTeam')}</h2>
           <div />
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -6648,17 +6650,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             ]} />
           </div>
 
-          {/* on a phone the two share a row when they fit, else each takes a row of its own */}
+          {/* on a phone the two share a row when they fit, else each takes a row
+              of its own, and a label longer than the row wraps (130 % text:
+              "Load match from schedule" widened the card past the column) */}
           <div className="mt-4 flex flex-wrap justify-end gap-2">
             {/* opens the info page with the schedule on top: the snapshot for
                 Back is taken before a game is picked, so Back still discards it */}
-            <Button variant="secondary" size="xl" className="whitespace-nowrap max-sm:flex-auto" onClick={() => { setCurrentView('info'); setLoadOfficialMatchModal(true) }}>
+            <Button variant="secondary" size="xl" className="whitespace-nowrap max-sm:flex-auto max-sm:h-auto max-sm:min-h-11 max-sm:py-2 max-sm:whitespace-normal max-sm:text-center" onClick={() => { setCurrentView('info'); setLoadOfficialMatchModal(true) }}>
               {t('loadOfficialMatch.button')}
             </Button>
             {matchInfoConfirmed ? (
-              <Button variant="secondary" size="xl" className="whitespace-nowrap max-sm:flex-auto" onClick={() => setCurrentView('info')}>{t('common.edit')}</Button>
+              <Button variant="secondary" size="xl" className="whitespace-nowrap max-sm:flex-auto max-sm:h-auto max-sm:min-h-11 max-sm:py-2 max-sm:whitespace-normal max-sm:text-center" onClick={() => setCurrentView('info')}>{t('common.edit')}</Button>
             ) : (
-              <Button variant="primary" size="xl" className="whitespace-nowrap max-sm:flex-auto" onClick={() => setCurrentView('info')}>
+              <Button variant="primary" size="xl" className="whitespace-nowrap max-sm:flex-auto max-sm:h-auto max-sm:min-h-11 max-sm:py-2 max-sm:whitespace-normal max-sm:text-center" onClick={() => setCurrentView('info')}>
                 {t('matchSetup.createMatch')}
               </Button>
             )}
