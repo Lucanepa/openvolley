@@ -9,7 +9,10 @@
  *   POST   /api/account/join { app }                  any signed-in account (joins indoor|beach)
  *   POST   /api/account/redeem-invite                 any signed-in account
  *   POST   /api/match/official-check                  canScore in body.sport_type (else 403 OV_SCORER_REQUIRED)
- *   *      /api/admin/*[?app=indoor|beach]            isAdmin  (else 403 OV_FORBIDDEN)
+ *   *      /api/admin/*[?app=indoor|beach]            isAdmin  (else 403 OV_FORBIDDEN), except:
+ *   POST   /api/admin/matches/:id/reopen             isAdmin, or beach canManageTeams for a BEACH
+ *                                                    match (beach:competition_manager; the sport of
+ *                                                    the match row, lib/accounts.js reopenMatch)
  *   GET    /api/saved-teams[?sport=indoor|beach|all]  canReadTeams of that sport (no sport = indoor;
  *                                                     all = the sports the account may read)
  *   POST/PATCH/DELETE/PUT /api/saved-teams/*         canManageTeams of the competition's sport
@@ -56,6 +59,12 @@ const APPROVALS_OFF = () => fail(503, 'OV_APPROVAL_UNAVAILABLE', 'Approval with 
 const FORBIDDEN = () => fail(403, 'OV_FORBIDDEN', 'You do not have access to this')
 const SCORER_REQUIRED = () => fail(403, 'OV_SCORER_REQUIRED', 'Your account is not approved for official matches yet')
 const METHOD_NOT_ALLOWED = () => fail(405, 'OV_METHOD_NOT_ALLOWED', 'Method not allowed')
+
+// The one admin route a beach competition manager may call (owner,
+// 2026-10-21): reopening a closed beach match. accounts.reopenMatch checks the
+// match's own sport under its row lock; an indoor match stays admin-only.
+const REOPEN_RE = /^\/api\/admin\/matches\/[^/]+\/reopen$/
+const beachManager = (access) => accessForSport(access, 'beach').canManageTeams === true
 const ID = '([0-9a-fA-F-]{36})'
 
 /** Which family a path belongs to, or null (also used by server.js, before the module loads). */
@@ -139,7 +148,8 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['POST', new RegExp(`^/api/admin/invites/${ID}/revoke$`), 'admin', (m, c) => accounts.revokeInvite({ actorId: c.user.id, id: m[1] })],
     ['GET', /^\/api\/admin\/official-games$/, 'admin', (m, c) => accounts.listOfficialGames({ from: q(c.query, 'from'), to: q(c.query, 'to'), q: q(c.query, 'q') ?? '' })],
     ['GET', /^\/api\/admin\/matches$/, 'admin', (m, c) => accounts.listMatches({ state: q(c.query, 'state') || 'closed', q: q(c.query, 'q') ?? '', limit: q(c.query, 'limit'), app: q(c.query, 'app') })],
-    ['POST', new RegExp(`^/api/admin/matches/${ID}/reopen$`), 'admin', (m, c) => accounts.reopenMatch({ actorId: c.user.id, matchId: m[1], body: c.body })],
+    ['POST', new RegExp(`^/api/admin/matches/${ID}/reopen$`), (m, c) => (c.access?.isAdmin || beachManager(c.access) ? null : FORBIDDEN()),
+      (m, c) => accounts.reopenMatch({ actorId: c.user.id, matchId: m[1], body: c.body, access: c.access })],
     ['POST', new RegExp(`^/api/admin/matches/${ID}/editors$`), 'admin', (m, c) => accounts.addMatchEditor({ actorId: c.user.id, matchId: m[1], body: c.body })],
     ['POST', new RegExp(`^/api/admin/matches/${ID}/release-game$`), 'admin', (m, c) => accounts.releaseGame({ actorId: c.user.id, matchId: m[1], body: c.body })],
     // The activity log (db/016, lib/activityLog.js); the export is streamed by server.js
@@ -188,8 +198,11 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
   }
 
   /** The role a whole family needs before anything about the path is revealed (saved teams: in some sport). */
-  function familyRefusal (family, method, access) {
-    if (family === 'admin') return refuse('admin', access)
+  function familyRefusal (family, method, access, pathname) {
+    if (family === 'admin') {
+      if (method === 'POST' && REOPEN_RE.test(pathname) && beachManager(access)) return null
+      return refuse('admin', access)
+    }
     if (family === 'savedTeams') return sportsWith(access, method === 'GET' ? 'canReadTeams' : 'canManageTeams').length ? null : FORBIDDEN()
     // tournaments (lib/beachTournaments.js): some beach right first
     if (family === 'beach') return accessForSport(access, 'beach').canReadTeams ? null : FORBIDDEN()
@@ -201,7 +214,7 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
   async function route ({ method, pathname, query, body, user, access, ip, lang }) {
     const family = manageFamilyOf(pathname)
     if (!family) return notFound()
-    const early = familyRefusal(family, method, access)
+    const early = familyRefusal(family, method, access, pathname)
     if (early) return early
     if (family === 'beach') return beach ? beach.route({ method, pathname, query, body, user, access }) : notFound()
     let pathKnown = false

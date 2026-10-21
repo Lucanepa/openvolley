@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Download, Eye } from 'lucide-react'
-import { scoresheetsApi } from '../../lib/accountApi'
+import { Download, Eye, RotateCcw } from 'lucide-react'
+import { admin, scoresheetsApi } from '../../lib/accountApi'
 import { openAppWindow, openPendingTab } from '../../utils/openAppWindow'
-import { usePanelData, useOnline, OfflineBanner, PanelHead, MatchStatusPill, useErrorText } from './common'
+import { usePanelData, useOnline, OfflineBanner, PanelHead, MatchStatusPill, ReasonModal, useErrorText } from './common'
 import { SegmentedControl, SearchInput, RowList, Row, RowTool, Chip, EmptyInset, SkeletonRows, Notice, dayTimeLabel, toast } from '../../ui'
 
 // A viewed PDF stays readable (and saveable from the browser's viewer) this long
@@ -30,6 +30,10 @@ const pdfOf = (blob) => (blob.type === 'application/pdf' ? blob : new Blob([blob
  * and the sport's competition managers; lib/scoresheets.js on the server):
  * view it in a new tab or download it. Each open is in the audit log.
  * `app`: 'indoor' | 'beach' (the brand's scope).
+ * OpenBeach: a closed match can be reopened here too, by the beach competition
+ * managers as well as the admin (owner, 2026-10-21; the server checks the
+ * match's sport, lib/accounts.js reopenMatch). OpenVolley keeps reopening in
+ * the admins' Matches tab.
  */
 export default function ScoresheetsPanel({ app = 'indoor' }) {
   const { t } = useTranslation()
@@ -39,7 +43,9 @@ export default function ScoresheetsPanel({ app = 'indoor' }) {
   const [q, setQ] = useState('')
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState(null) // `${id}:view` | `${id}:download`
-  const { data, error, loading } = usePanelData(
+  const [reopenFor, setReopenFor] = useState(null)
+  const canReopen = app === 'beach'
+  const { data, error, loading, reload } = usePanelData(
     () => scoresheetsApi.list({ app, state, q: query || undefined, limit: 200 }),
     [app, state, query],
     { enabled: online }
@@ -143,19 +149,42 @@ export default function ScoresheetsPanel({ app = 'indoor' }) {
                 chips={noPdf
                   ? <Chip>{t('manage.scoresheets.noPdfYet')}</Chip>
                   : m.pdf_updated_at && <span className="text-xs text-stone-600">{t('manage.scoresheets.storedAt', { date: dayTimeLabel(m.pdf_updated_at) })}</span>}
-                tools={!noPdf && <>
-                  <RowTool primary className={TOOL_OFF} disabled={!online || !!busy} onClick={() => open(m, false)} aria-busy={busy === `${m.id}:view` || undefined}>
-                    <Eye size={13} aria-hidden />{t('manage.scoresheets.view')}
-                  </RowTool>
-                  <RowTool className={TOOL_OFF} disabled={!online || !!busy} onClick={() => open(m, true)} aria-busy={busy === `${m.id}:download` || undefined}>
-                    <Download size={13} aria-hidden />{t('manage.scoresheets.download')}
-                  </RowTool>
+                tools={(!noPdf || (canReopen && m.closed_at)) && <>
+                  {!noPdf && <>
+                    <RowTool primary className={TOOL_OFF} disabled={!online || !!busy} onClick={() => open(m, false)} aria-busy={busy === `${m.id}:view` || undefined}>
+                      <Eye size={13} aria-hidden />{t('manage.scoresheets.view')}
+                    </RowTool>
+                    <RowTool className={TOOL_OFF} disabled={!online || !!busy} onClick={() => open(m, true)} aria-busy={busy === `${m.id}:download` || undefined}>
+                      <Download size={13} aria-hidden />{t('manage.scoresheets.download')}
+                    </RowTool>
+                  </>}
+                  {canReopen && m.closed_at && (
+                    <RowTool className={TOOL_OFF} disabled={!online || !!busy} onClick={() => setReopenFor(m)}>
+                      <RotateCcw size={13} aria-hidden />{t('manage.matches.reopen')}
+                    </RowTool>
+                  )}
                 </>}
               />
             )
           })}
         </RowList>
       )}
+      <ReasonModal
+        open={!!reopenFor}
+        title={t('manage.matches.reopenTitle', { game: reopenFor?.game_n ?? '' })}
+        body={t('manage.matches.reopenBody')}
+        label={t('manage.matches.reopenReason')}
+        confirmLabel={t('manage.matches.reopen')}
+        onClose={() => setReopenFor(null)}
+        onSubmit={async (reason) => {
+          const res = await admin.reopenMatch(reopenFor.id, { reason })
+          if (res.error && res.error.code !== 'OV_NOT_CLOSED') return errorText(res.error)
+          setReopenFor(null)
+          toast.success(t('manage.matches.reopened'))
+          reload()
+          return null
+        }}
+      />
     </section>
   )
 }

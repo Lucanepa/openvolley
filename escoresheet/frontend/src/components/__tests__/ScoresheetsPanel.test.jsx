@@ -5,8 +5,11 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key, opts) => (typeof opts === 'string' ? opts : key), i18n: { language: 'en' } })
 }))
 
-const api = vi.hoisted(() => ({ list: vi.fn(), pdf: vi.fn(), viewLink: vi.fn() }))
-vi.mock('../../lib/accountApi', async (orig) => ({ ...(await orig()), scoresheetsApi: { list: (...a) => api.list(...a), pdf: (...a) => api.pdf(...a), viewLink: (...a) => api.viewLink(...a) } }))
+const api = vi.hoisted(() => ({ list: vi.fn(), pdf: vi.fn(), viewLink: vi.fn(), reopen: vi.fn() }))
+vi.mock('../../lib/accountApi', async (orig) => {
+  const real = await orig()
+  return { ...real, admin: { ...real.admin, reopenMatch: (...a) => api.reopen(...a) }, scoresheetsApi: { list: (...a) => api.list(...a), pdf: (...a) => api.pdf(...a), viewLink: (...a) => api.viewLink(...a) } }
+})
 const toasts = vi.hoisted(() => ({ error: [] }))
 vi.mock('../../ui', async (orig) => {
   const real = await orig()
@@ -120,5 +123,26 @@ describe('ScoresheetsPanel', () => {
     // the tab opened at the click is closed again; nothing else was opened
     expect(opened.close).toHaveBeenCalled()
     expect(window.open).toHaveBeenCalledTimes(1)
+  })
+
+  it('OpenBeach: a closed match has Reopen (beach competition managers too), which asks for a reason', async () => {
+    api.list.mockResolvedValue({ data: { matches: [{ ...MATCHES[0], sport: 'beach', closed_at: '2026-10-10T16:40:00Z' }, { ...MATCHES[1], sport: 'beach' }] }, error: null, status: 200 })
+    api.reopen.mockResolvedValue({ data: { match: { id: 'm-1' } }, error: null, status: 200 })
+    render(<ScoresheetsPanel app="beach" />)
+    await screen.findByText('Voléro vs Smash')
+    // the open match has none
+    expect(within(rowOf('Wiedikon vs Züri')).queryByRole('button', { name: 'manage.matches.reopen' })).toBeNull()
+    fireEvent.click(within(rowOf('Voléro vs Smash')).getByRole('button', { name: 'manage.matches.reopen' }))
+    fireEvent.change(await screen.findByRole('textbox'), { target: { value: 'Wrong pair' } })
+    fireEvent.click(screen.getByTestId('reason-confirm'))
+    await waitFor(() => expect(api.reopen).toHaveBeenCalledWith('m-1', { reason: 'Wrong pair' }))
+    await waitFor(() => expect(api.list.mock.calls.length).toBeGreaterThan(1))
+  })
+
+  it('OpenVolley: no Reopen in the scoresheets (the admins reopen in Matches)', async () => {
+    api.list.mockResolvedValue({ data: { matches: [{ ...MATCHES[0], closed_at: '2026-10-10T16:40:00Z' }] }, error: null, status: 200 })
+    render(<ScoresheetsPanel app="indoor" />)
+    await screen.findByText('Voléro vs Smash')
+    expect(screen.queryByRole('button', { name: 'manage.matches.reopen' })).toBeNull()
   })
 })
