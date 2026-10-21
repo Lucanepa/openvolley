@@ -15669,40 +15669,64 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           const isDropTarget = dropTargetPosition?.team === teamKey && dropTargetPosition?.position === player.position
                           const isDragging = draggedPlayer?.type === 'court' && draggedPlayer?.team === teamKey && draggedPlayer?.position === player.position
 
+                          // Check if this position is a valid touch drop target (RIGHT TEAM FRONT ROW)
+                          const isTouchDropTargetCourt = touchDragState.isDragging && validDropTargets.some(t =>
+                            t.type === 'court' && t.team === teamKey && t.position === player.position
+                          )
+                          const isInvalidTouchDropZone = touchDragState.isDragging && draggedPlayer?.team === teamKey && !isTouchDropTargetCourt
+
                           return (
                             <div
                               key={`${teamKey}-court-front-${player.position}-${player.id || player.number || idx}`}
                               ref={player.position === 'II' ? rightCourtPositionIIRef : undefined}
-                              className="court-player"
+                              data-court-position={player.position}
+                              data-team={teamKey}
+                              data-player-number={player.number}
+                              className={`court-player${isRecentlySub ? ' recently-substituted' : ''}`}
                               draggable={canSubstitute && !player.isLibero}
                               onDragStart={(e) => canSubstitute && handleCourtDragStart(e, teamKey, player.position, player.number, player.isLibero)}
                               onDragEnd={handleCourtDragEnd}
-                              onClick={(e) => handlePlayerClick(teamKey, player.position, player.number, e)}
+                              onClick={(e) => !touchDragState.isDragging && handlePlayerClick(teamKey, player.position, player.number, e)}
                               onDragOver={(e) => handleCourtDragOver(e, teamKey, player.position)}
                               onDragLeave={handleCourtDragLeave}
                               onDrop={(e) => handleCourtDrop(e, teamKey, player.position, player.number)}
+                              onTouchStart={(e) => canSubstitute && !player.isLibero && handleTouchDragStart(e, { team: teamKey, playerNumber: player.number, position: player.position, type: 'court', isLibero: player.isLibero })}
+                              onTouchMove={handleTouchMove}
+                              onTouchEnd={handleTouchEnd}
+                              onTouchCancel={handleTouchCancel}
                               style={{
                                 cursor: canSubstitute && !player.isLibero ? 'grab' : 'pointer',
-                                opacity: isDragging ? 0.5 : undefined,
+                                opacity: isDragging ? 0.5 : isInvalidTouchDropZone ? 0.5 : undefined,
                                 transition: 'transform 0.2s, background 0.15s, box-shadow 0.15s',
-                                background: isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : getPlayerCircleColors('right', player.isLibero).bg,
+                                touchAction: canSubstitute && !player.isLibero ? 'none' : undefined,
+                                background: isTouchDropTargetCourt
+                                  ? 'rgba(74, 222, 128, 0.5)'  // Bright green for valid touch target
+                                  : isInvalidTouchDropZone
+                                    ? 'rgba(239, 68, 68, 0.2)'  // Red tint for invalid
+                                    : isDropTarget ? 'rgba(74, 222, 128, 0.4)' : isRecentlySub ? '#86efac' : getPlayerCircleColors('right', player.isLibero).bg,
                                 color: isRecentlySub ? '#000' : getPlayerCircleColors('right', player.isLibero).text,
                                 ...TEAM_COLOUR_MARK,
                                 textShadow: isRecentlySub ? undefined : getPlayerCircleColors('right', player.isLibero).textShadow,
                                 animation: isRecentlySub ? 'recentSubFlash 0.5s ease-in-out infinite' : undefined,
                                 fontWeight: isRecentlySub ? 900 : undefined,
-                                border: isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #22c55e' : getPlayerCircleColors('right', player.isLibero).border,
-                                boxShadow: isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined,
+                                border: isTouchDropTargetCourt
+                                  ? '3px solid #22c55e'
+                                  : isInvalidTouchDropZone
+                                    ? '2px dashed rgba(239, 68, 68, 0.5)'
+                                    : isDropTarget ? '3px solid #4ade80' : isRecentlySub ? '3px solid #22c55e' : getPlayerCircleColors('right', player.isLibero).border,
+                                boxShadow: isTouchDropTargetCourt
+                                  ? '0 0 16px rgba(74, 222, 128, 0.6)'
+                                  : isDropTarget ? '0 0 12px rgba(74, 222, 128, 0.5)' : undefined,
                                 position: 'relative'
                               }}
                               onMouseEnter={(e) => {
-                                if (!isDropTarget) {
+                                if (!isDropTarget && !isTouchDropTargetCourt) {
                                   e.currentTarget.style.transform = 'scale(1.05)'
                                   e.currentTarget.style.boxShadow = '0 4px 12px rgba(255,255,255,0.2)'
                                 }
                               }}
                               onMouseLeave={(e) => {
-                                if (!isDropTarget) {
+                                if (!isDropTarget && !isTouchDropTargetCourt) {
                                   e.currentTarget.style.transform = 'scale(1)'
                                   e.currentTarget.style.boxShadow = 'none'
                                 }
