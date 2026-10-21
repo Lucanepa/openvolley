@@ -66,13 +66,13 @@
     "captain": "Captain",
     "confirmResult": "Usloosig bestätige",
     "returnToMatch": "Zrugg zum Spiil",
-    "scoresheet": "eMatchblatt",
+    "scoresheet": "eScoresheet",
     "preview": "Vorschau",
     "print": "Drucke",
     "savePdf": "PDF speichere",
-    "allowPopups": "Bitte erlaubed Sie Popups zum s eMatchblatt aazeige",
+    "allowPopups": "Bitte erlaubed Sie Popups zum s eScoresheet aazeige",
     "noMatchData": "Kei Spiildate verfüegbar",
-    "failedToOpenScoresheet": "eMatchblatt hät nöd chönne göffnet werde: {{error}}",
+    "failedToOpenScoresheet": "eScoresheet hät nöd chönne göffnet werde: {{error}}",
     "validation": {
       "completeSignatures": "Bitte alli Underschrifte vor Bestätigung vo de Sitewahl vervollständige."
     },
@@ -227,7 +227,7 @@
     "scorerDobForCoinToss": "Geburtsdatum vom Schriber: für d Usloosig nötig",
     "dobRequiredForCoinToss": "Für d Usloosig nötig",
     "title": "Spiiliihrichtig",
-    "scoresheet": "eMatchblatt",
+    "scoresheet": "eScoresheet",
     "options": "Optione",
     "matchInfo": "Spiilinfo",
     "matchOfficials": "Spiiloffizielli",
@@ -464,7 +464,7 @@
     },
     "captainToggle": "Mannschaftscaptain #{{number}}",
     "captainToggleNew": "Mannschaftscaptain (neue Spieler)",
-    "allowPopups": "Bitte erlaubed Sie Popups zum s eMatchblatt aazeige",
+    "allowPopups": "Bitte erlaubed Sie Popups zum s eScoresheet aazeige",
     "completeSignatures": "Bitte alli Underschrifte vor Bestätigung vo de Sitewahl vervollständige.",
     "libero": "Libero",
     "matchNotFound": "Spiil nöd gfunde",
@@ -625,7 +625,7 @@
       "liberoReminder": "Libero-Erinnerig",
       "reopenSet": "Satz wieder öffne",
       "scoresheetError": "eScoresheetfähler",
-      "scoresheetAlreadyOpen": "eMatchblatt bereits offe",
+      "scoresheetAlreadyOpen": "eScoresheet bereits offe",
       "remarksRecording": "Bemerkigserfassig",
       "sanctionsAndResults": "Sanktione und Ergebnis",
       "liberoOut": "Libero USE",
@@ -683,7 +683,7 @@
       "areYouSureAwardPoint": "Sind Sie sicher, dass de Punkt a {{team}} vergäh werde söll?"
     },
     "menu": {
-      "scoresheet": "eMatchblatt",
+      "scoresheet": "eScoresheet",
       "menu": "Menü",
       "showActionLog": "Aktionsprotokoll aazeige",
       "showSanctionsResults": "Sanktione und Ergebnis aazeige",
@@ -850,8 +850,8 @@
       "noneSet": "Für das Spiil sind kei PINs gsetzt."
     },
     "relayRejected": {
-      "notOwner": "Verbindig Schiri/Bank: es anders eMatchblatt hebt das Spiil uf em Server. Schiri, Bank und Livescore überchömed d Updates vo dem Grät nöd.",
-      "rateLimited": "Verbindig Schiri/Bank: de Server hät das eMatchblatt für e Minute abglehnt (z vill Fehlversüech).",
+      "notOwner": "Verbindig Schiri/Bank: es anders eScoresheet hebt das Spiil uf em Server. Schiri, Bank und Livescore überchömed d Updates vo dem Grät nöd.",
+      "rateLimited": "Verbindig Schiri/Bank: de Server hät das eScoresheet für e Minute abglehnt (z vill Fehlversüech).",
       "tooMany": "Verbindig Schiri/Bank: das Grät füehrt scho z vill Spiil uf em Server."
     },
     "toolbar": {
@@ -911,7 +911,7 @@
       "replay": "Wieder\u00adhole",
       "decision": "Entscheids\u00adänderig",
       "remarks": "Bemerkige",
-      "scoresheet": "eMatch\u00adblatt",
+      "scoresheet": "eScore\u00adsheet",
       "subTitle": "Uswächslig {{team}}",
       "subOut": "Spieler use (ufem Fäld)",
       "subIn": "Spieler ine für {{number}}",
@@ -1016,11 +1016,11 @@
     "exit": "Verlah",
     "menu": "Menü",
     "language": "Sprache",
-    "scoresheet": "eMatchblatt",
+    "scoresheet": "eScoresheet",
     "preview": "Vorschau",
     "print": "Drucke",
     "savePdf": "PDF speichere",
-    "allowPopups": "Bitte erlaubed Sie Popups, um s eMatchblatt aazeige",
+    "allowPopups": "Bitte erlaubed Sie Popups, um s eScoresheet aazeige",
     "showHeader": "Kopfzeile anzeigen",
     "hideHeader": "Kopfzeile ausblenden",
     "menuTitle": "Menü",
@@ -1347,7 +1347,7 @@
     "referee2": "2. Schiri",
     "referee1": "1. Schiri",
     "allSignaturesCollected": "Alli Underschrifte gsammlet",
-    "scoresheet": "eMatchblatt",
+    "scoresheet": "eScoresheet",
     "preview": "Vorschau",
     "print": "Drucke",
     "savePdf": "PDF speichere",
@@ -1365,7 +1365,7 @@
     "yesReopen": "Ja, Satz wieder öffne",
     "cancel": "Abbräche",
     "preparingExport": "Match Export vorbereite...",
-    "generatingPdf": "eMatchblatt generiere (PDF)",
+    "generatingPdf": "eScoresheet generiere (PDF)",
     "creatingZip": "ZIP erstelle und in Cloud ufelade...",
     "waitCheck": "Bitte warte...",
     "waiting": "Warte...",
@@ -1401,7 +1401,7 @@
     },
     "errorClosing": "Fehler bim Abschliesse vom Spiil: ",
     "noWinner": "Kein Sieger (Spiil abbroche)",
-    "pdfGenerationFailed": "Spiil gnehmigt, aber s PDF hät nöd chöne erstellt werde. Sie chönd s über de Chnopf eMatchblatt erstelle.",
+    "pdfGenerationFailed": "Spiil gnehmigt, aber s PDF hät nöd chöne erstellt werde. Sie chönd s über de Chnopf eScoresheet erstelle.",
     "reopenMatch": "Spiil wieder ufmache",
     "closedOnServer": "Dieses Spiel ist auf dem Server abgeschlossen und kann hier nicht mehr geändert werden. Nur ein Admin kann es wieder öffnen («Spiel wieder öffnen»).",
     "reopenAdminOnlyTitle": "Nur ein Admin kann dieses Spiel wieder öffnen",
@@ -1421,14 +1421,14 @@
       "approveWithoutPdf": "Ohni PDF genehmige",
       "noPdfTitle": "S PDF isch nöd fertig",
       "reason": {
-        "closed": "S eMatchblatt-Fänschter isch zuegmacht worde, bevor s PDF fertig gsii isch.",
-        "stalled": "S eMatchblatt-Fänschter git kei Antwort meh.",
+        "closed": "S eScoresheet-Fänschter isch zuegmacht worde, bevor s PDF fertig gsii isch.",
+        "stalled": "S eScoresheet-Fänschter git kei Antwort meh.",
         "timeout": "S PDF hät z lang gha.",
-        "blocked": "S eMatchblatt-Fänschter hät nöd chöne ufgah.",
-        "failed": "S eMatchblatt hät s PDF nöd chöne erstelle."
+        "blocked": "S eScoresheet-Fänschter hät nöd chöne ufgah.",
+        "failed": "S eScoresheet hät s PDF nöd chöne erstelle."
       },
-      "cancelKeepsUnapproved": "Abbräche laht s Spiil ungnehmigt. Ohni PDF genehmige gnehmigt s jetzt: Sie chönd s PDF spöter us em eMatchblatt speichere.",
-      "keepWindowOpen": "Bitte s eMatchblatt-Fänschter offe la, bis s PDF fertig isch."
+      "cancelKeepsUnapproved": "Abbräche laht s Spiil ungnehmigt. Ohni PDF genehmige gnehmigt s jetzt: Sie chönd s PDF spöter us em eScoresheet speichere.",
+      "keepWindowOpen": "Bitte s eScoresheet-Fänschter offe la, bis s PDF fertig isch."
     }
   },
   "scoresheetPdf": {
@@ -1451,7 +1451,7 @@
     "importJson": "JSON importiere",
     "importJsonTooltip": "Spiildaate us JSON-Datei importiere",
     "importJsonFile": "JSON-Datei importiere",
-    "backToScoresheet": "Zrugg zum eMatchblatt",
+    "backToScoresheet": "Zrugg zum eScoresheet",
     "lcs": "Libero-Kontrollblatt",
     "lcsTooltip": "Libero-Kontrollblatt aazeige",
     "pdfFailed": "S PDF hät uf dem Grät nöd chöne erstellt werde.",
@@ -2040,7 +2040,7 @@
       "bench_away": "Gaschtbank",
       "bench_home": "Heimbank",
       "livescore": "Livescore",
-      "main": "eMatchblatt",
+      "main": "eScoresheet",
       "referee": "Schiri"
     },
     "serverHint": "D Tablets bruuched Internet (WLAN vo de Halle oder mobili Date).",
