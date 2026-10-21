@@ -784,7 +784,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       await client.query("SELECT set_config('ov.allow_closed', 'on', true)")
       if (isUuid(actorId)) await client.query("SELECT set_config('ov.user_id', $1, true)", [actorId])
       const { rows: [m] } = await client.query(
-        'SELECT id, external_id, game_n, status, closed_at, official_game_exempt FROM public.matches WHERE id = $1 FOR UPDATE', [matchId])
+        `SELECT id, external_id, game_n, status, closed_at, official_game_exempt, to_jsonb(matches) ->> 'sport_type' AS sport_type
+           FROM public.matches WHERE id = $1 FOR UPDATE`, [matchId])
       if (!m) throw abort(notFound())
       const refusal = check?.(m)
       if (refusal) throw abort(refusal)
@@ -802,15 +803,27 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     return { res, changes }
   }
 
-  async function reopenMatch ({ actorId, matchId, body } = {}) {
+  /**
+   * POST /api/admin/matches/:id/reopen. `access` (the caller's, from
+   * manageApi): a global admin reopens any match; a beach competition manager
+   * (beach canManageTeams) only a beach match, by the row's sport_type (owner,
+   * 2026-10-21). Without `access` (internal callers) it is an admin action.
+   */
+  async function reopenMatch ({ actorId, matchId, body, access } = {}) {
     if (!isUuid(matchId)) return notFound()
     const reason = trimmedText(isPlainObject(body) ? body.reason : undefined, { min: 3, max: 500 })
     if (reason === undefined) return invalid('reason: 3 to 500 characters')
+    const admin = access === undefined || access?.isAdmin === true
     const { res, changes } = await adminMatchUpdate({
       where: 'reopen',
       actorId,
       matchId,
-      check: (m) => (m.closed_at ? null : fail(409, 'OV_NOT_CLOSED', 'This match is not closed')),
+      check: (m) => {
+        if (!admin && !(m.sport_type === 'beach' && accessForSport(access, 'beach').canManageTeams === true)) {
+          return fail(403, 'OV_FORBIDDEN', 'You do not have access to this')
+        }
+        return m.closed_at ? null : fail(409, 'OV_NOT_CLOSED', 'This match is not closed')
+      },
       data: () => ({ status: 'ended', approval: null, closed_at: null, closed_by: null }),
       action: 'match.reopen',
       details: (m) => ({ reason, from_status: m.status, external_id: m.external_id, game_n: m.game_n })

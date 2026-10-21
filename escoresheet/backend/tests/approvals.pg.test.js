@@ -902,6 +902,29 @@ describe('account approvals on Postgres', { skip: SKIP_PG }, () => {
       assert.deepEqual(pinSet.map((r) => r.app), [null])
     })
 
+    it('reopen: a beach competition manager reopens a closed beach match, never an indoor one; scorers never (owner, 2026-10-21)', async () => {
+      const mgr = await user('bMgr', ['beach:competition_manager'], { first: 'Mia', last: 'Strand' })
+      const mgrAccess = await access.get(mgr.id)
+      const scorerAccess = await access.get(B.bOwner.id)
+      const beach = await newMatch('bOwner', { sport: 'beach' })
+      const indoor = await newMatch('owner')
+      await closeMatch(beach)
+      await closeMatch(indoor)
+      expectErr(await accounts.reopenMatch({ actorId: B.bOwner.id, matchId: beach.id, body: { reason: 'Wrong pair' }, access: scorerAccess }), 403, 'OV_FORBIDDEN')
+      expectErr(await accounts.reopenMatch({ actorId: mgr.id, matchId: indoor.id, body: { reason: 'Wrong score' }, access: mgrAccess }), 403, 'OV_FORBIDDEN')
+      const { rows: [still] } = await pool.query('SELECT closed_at FROM public.matches WHERE id = $1', [indoor.id])
+      assert.ok(still.closed_at, 'the indoor match stays closed')
+      const re = await accounts.reopenMatch({ actorId: mgr.id, matchId: beach.id, body: { reason: 'Wrong pair' }, access: mgrAccess })
+      assert.equal(re.status, 200, JSON.stringify(re.body))
+      const [a] = await auditOf('match.reopen', beach.id)
+      assert.equal(a.actor_id, mgr.id)
+      assert.equal(a.app, 'beach')
+      assert.equal(a.details.reason, 'Wrong pair')
+      // an admin still reopens the indoor one
+      const admin = await accounts.reopenMatch({ actorId: U.admin.id, matchId: indoor.id, body: { reason: 'Wrong score' }, access: await access.get(U.admin.id) })
+      assert.equal(admin.status, 200, JSON.stringify(admin.body))
+    })
+
     it('a beach match: the result is its sets\' team1 / team2 points (OpenBeach\'s resultKey), never home / away', async () => {
       const m = await newMatch('bOwner', { sport: 'beach', sets: [[1, 21, 19], [2, 18, 21], [3, 15, 12]] })
       const BEACH_KEY = 'ov-result-v1|1:21:19,2:18:21,3:15:12'
