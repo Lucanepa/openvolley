@@ -112,10 +112,67 @@ describe('rosterToSavedRoster', () => {
     expect(body.staff).toEqual([{ id: 's1', role: 'Coach', first_name: 'C', last_name: 'trainer', dob: null, license_number: 'T-1' }])
   })
 
-  it('does not reuse an id when the number changed', () => {
+  it('does not reuse an id when the number changed and the first name is another', () => {
     const body = rosterToSavedRoster([{ number: 6, firstName: 'A', lastName: 'Muster' }], [], existing)
-    expect(body.players[0].id).toBeUndefined()
-    expect(body.players[0].license_number).toBeNull()
+    const six = body.players.find(p => p.number === 6)
+    expect(six.id).toBeUndefined()
+    expect(six.license_number).toBeNull()
+  })
+
+  // Owner, 2026-10-21: "Save roster to team" after choosing some players of
+  // a saved team keeps the players not chosen, as they were
+  describe('a roster of some of the team (Choose players)', () => {
+    const team = {
+      players: [
+        player({ id: 'a', number: 1, first_name: 'Ada', last_name: 'Alpha', license_number: 'L-1', sort_order: 0 }),
+        player({ id: 'b', number: 4, first_name: 'Bea', last_name: 'Bravo', is_libero: true, sort_order: 1 }),
+        player({ id: 'c', number: 7, first_name: 'Cleo', last_name: 'Charlie', is_captain: true, sort_order: 2 }),
+        player({ id: 'd', number: 9, first_name: 'Dora', last_name: 'Delta', sort_order: 3 }),
+        player({ id: 'e', number: 12, first_name: 'Eve', last_name: 'Echo', active: false, sort_order: 4 })
+      ],
+      staff: []
+    }
+
+    it('updates the chosen players and keeps the others unchanged, active or not', () => {
+      const body = rosterToSavedRoster([
+        { number: 1, firstName: 'Ada', lastName: 'Alpha', dob: '04.03.2001', libero: '', isCaptain: false },
+        { number: 9, firstName: 'Dora', lastName: 'Delta', dob: '01.02.2003', libero: 'libero1', isCaptain: false }
+      ], [], team)
+      expect(body.players.map(p => p.id)).toEqual(['a', 'b', 'c', 'd', 'e'])
+      expect(body.players.find(p => p.id === 'd')).toMatchObject({ dob: '2003-02-01', is_libero: true, active: true })
+      // not chosen: as saved (Bea a libero, Cleo the captain, Eve inactive)
+      expect(body.players.find(p => p.id === 'b')).toEqual({ id: 'b', number: 4, first_name: 'Bea', last_name: 'Bravo', dob: '2001-03-04', license_number: null, is_libero: true, is_captain: false, active: true })
+      expect(body.players.find(p => p.id === 'c')).toMatchObject({ number: 7, is_captain: true, active: true })
+      expect(body.players.find(p => p.id === 'e')).toMatchObject({ number: 12, active: false })
+      expect(validateSavedRoster(body)).toEqual([])
+    })
+
+    it('adds a new player; a chosen player with a new number is the same saved player', () => {
+      const body = rosterToSavedRoster([
+        { number: 15, firstName: 'Ada', lastName: 'alpha', dob: '', libero: '', isCaptain: false },
+        { number: 3, firstName: 'Fay', lastName: 'Foxtrot', dob: '', libero: '', isCaptain: false }
+      ], [], team)
+      expect(body.players.find(p => p.number === 15)).toMatchObject({ id: 'a', license_number: 'L-1' })
+      expect(body.players.find(p => p.number === 3).id).toBeUndefined()
+      expect(body.players).toHaveLength(6)
+      // a same-name player with another date of birth is someone else
+      const other = rosterToSavedRoster([{ number: 15, firstName: 'Ada', lastName: 'Alpha', dob: '01.01.2010' }], [], team)
+      expect(other.players.find(p => p.number === 15).id).toBeUndefined()
+      expect(other.players.find(p => p.id === 'a')).toMatchObject({ number: 1, active: true })
+    })
+
+    it('a kept player gives way on the number and the captaincy the roster now has', () => {
+      const body = rosterToSavedRoster([
+        { number: 7, firstName: 'Gia', lastName: 'Golf', dob: '', libero: '', isCaptain: true }
+      ], [], team)
+      expect(body.players.find(p => p.last_name === 'Golf')).toMatchObject({ number: 7, is_captain: true })
+      expect(body.players.find(p => p.id === 'c')).toMatchObject({ number: null, is_captain: false, active: true })
+      expect(validateSavedRoster(body)).toEqual([])
+      // an inactive player keeps its number (the server checks active ones)
+      const twelve = rosterToSavedRoster([{ number: 12, firstName: 'Hal', lastName: 'Hotel' }], [], team)
+      expect(twelve.players.find(p => p.id === 'e')).toMatchObject({ number: 12, active: false })
+      expect(validateSavedRoster(twelve)).toEqual([])
+    })
   })
 
   it('works without an existing team', () => {
