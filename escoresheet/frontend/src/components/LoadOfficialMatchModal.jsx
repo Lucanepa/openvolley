@@ -646,7 +646,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
           <div className="schedule-rows divide-y divide-stone-100">
             {/* Table Header */}
             <div
-              className="sticky top-0 z-10 grid items-center gap-2 border-b border-stone-200 bg-stone-50 px-2.5 py-2 text-[11px] font-bold uppercase tracking-wide text-stone-500"
+              className="sg-head sticky top-0 z-10 grid items-center gap-2 border-b border-stone-200 bg-stone-50 px-2.5 py-2 text-[11px] font-bold uppercase tracking-wide text-stone-500"
               style={{ gridTemplateColumns: gridColumns }}
             >
               <span className="text-center">{t('loadOfficialMatch.gameN', 'Game #')}</span>
@@ -660,21 +660,22 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
               <div
                 key={match.gameN}
                 onClick={() => handleSelectMatch(match)}
-                className="grid min-h-11 cursor-pointer items-center gap-2 px-2.5 py-2 text-xs tabular-nums text-stone-800 transition-colors hover:bg-stone-50"
+                className="sg-row grid min-h-11 cursor-pointer items-center gap-2 px-2.5 py-2 text-xs tabular-nums text-stone-800 transition-colors hover:bg-stone-50"
                 style={{ gridTemplateColumns: gridColumns }}
               >
-                <span className="text-center font-semibold">
+                <span className="sg-num text-center font-semibold">
                   {match.gameN}
                 </span>
-                <span className="text-center">
+                <span className="sg-when text-center">
                   {formatDisplayDate(match.dtstart)}
                 </span>
-                <span className="text-center">
+                <span className="sg-when text-center">
                   {formatDisplayTime(match.dtstart)}
                 </span>
-                {/* One line where it fits; on a phone "Home" over "vs Away",
-                    each cut on its own line (one line left "VB..." at 360 px) */}
-                <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+                {/* One line where it fits; on a phone each game is a card
+                    (tailwind.css, "Load match from schedule"): game #, date
+                    and time over the home team over "vs" the away team */}
+                <span className="sg-teams flex min-w-0 flex-wrap items-baseline gap-x-1.5">
                   <span className="max-w-full truncate font-semibold text-stone-900">{match.home}</span>
                   <span className="max-w-full truncate">
                     <span className="mr-1.5 text-stone-400">{t('common.vs', 'vs')}</span>
