@@ -1,0 +1,6 @@
+OpenVolley 3.0.0
+- Now also on the phone: a phone scoring screen with court marks, serve number, log and counters.
+- A match continued on another device moves scoring there; the first device is told and stops.
+- Set end on a match now scored on another device no longer shows "Sync failed".
+- Easier rosters, coin toss, line-up and schedule; restore preview; My matches opens the scoresheet.
+- Scoresheet: unused and forfeited sets left blank.
