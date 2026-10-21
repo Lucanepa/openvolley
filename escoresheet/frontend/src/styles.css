@@ -1900,9 +1900,15 @@ button:disabled {
     gap: 4px;
     padding: 6px 10px 4px;
   }
-  /* None and six numbers in the row at 360px with Android's larger text */
+  /* None and six numbers in the row at 360px with Android's larger text:
+     the numbers share what None leaves (the sixth was cut at 360px) */
   .lineup-gcapt__choices {
     gap: 5px;
+  }
+  .lineup-gcapt__choice:not(.lineup-gcapt__choice--none) {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0;
   }
   .lineup-gcapt__choice--none {
     padding: 0 8px;
