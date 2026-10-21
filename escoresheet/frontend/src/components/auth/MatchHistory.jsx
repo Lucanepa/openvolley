@@ -47,7 +47,7 @@ export function parseSetsWon(finalScore) {
 }
 
 export default function MatchHistory({ open, onClose, onSelectMatch }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { user } = useAuth()
 
   const [matches, setMatches] = useState([])
@@ -141,7 +141,8 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
   const formatDate = (dateStr) => {
     if (!dateStr) return ''
     const date = new Date(dateStr)
-    return date.toLocaleDateString(undefined, {
+    // in the app's language, not the browser's
+    return date.toLocaleDateString(i18n?.language || undefined, {
       day: '2-digit',
       month: 'short',
       year: 'numeric'
@@ -254,8 +255,8 @@ export default function MatchHistory({ open, onClose, onSelectMatch }) {
                       <span className="mr-auto text-xs tabular-nums text-stone-500">
                         {formatDate(match.scheduled_at || match.created_at)}
                       </span>
-                      <span className="inline-flex items-center whitespace-nowrap rounded border border-stone-200 bg-stone-50 px-1.5 py-0.5 text-[11px] font-semibold capitalize leading-none text-stone-600">
-                        {match.userRole || 'scorer'}
+                      <span className="inline-flex items-center whitespace-nowrap rounded border border-stone-200 bg-stone-50 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-stone-600" data-testid="match-history-role">
+                        {t(`access.roles.${match.userRole || 'scorer'}`, match.userRole || 'scorer')}
                       </span>
                       {pill && (
                         <span className={cn('inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium leading-none', pill.className)}>
