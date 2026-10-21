@@ -232,8 +232,8 @@ export function vitePluginApiRoutes(options = {}) {
 
       // Register the middleware - use unshift to add it first
       // This ensures it runs before Vite's default handlers
-      server.middlewares.use('/api', apiMiddleware)
       server.middlewares.use('/health', healthMiddleware)
+      server.middlewares.use('/api', apiMiddleware)
     },
     
     boundWsPort,
