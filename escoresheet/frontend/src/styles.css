@@ -697,6 +697,20 @@ button:disabled {
   margin: 0 auto;
 }
 
+/* The roster editors (MatchSetup): the card's one column is as wide as the
+   card, not as its widest table (at 800-1050 px the bench table widened it:
+   the "Choose players" button, the counts and the Delete column ran off the
+   card). The tables shrink to fit, their inputs down to their min-width (a
+   date of birth keeps room for DD.MM.YYYY: MatchSetup DOB_CELL); narrower
+   still, the card scrolls sideways as before. */
+.setup.setup-roster {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.setup-roster :is(.roster-grid, .bench-grid) {
+  max-width: 100%;
+}
+
 /* Subgrid row — spans all parent columns, inherits column tracks */
 .roster-grid-row,
 .bench-grid-row {
