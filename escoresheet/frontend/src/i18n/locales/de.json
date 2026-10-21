@@ -530,8 +530,6 @@
         "none": "Keiner",
         "player": "Spielkapitän: Spieler {{number}}",
         "enterFirst": "Wählbar, sobald die Spieler eingetragen sind",
-        "noCaptain": "Kein Kapitän auf der Mannschaftsliste",
-        "whenCaptainLeaves": "Übernimmt, wenn Kapitän {{captain}} das Feld verlässt",
         "fromFirstRally": "Kapitän {{captain}} ist nicht in der Aufstellung: Spielkapitän ab dem ersten Ballwechsel"
       },
       "easyLiberos": "Liberos (optional)",
@@ -887,8 +885,12 @@
     "phone": {
       "setInfo": "Satz {{set}} · Sätze {{left}} : {{right}}",
       "setsWon": "Sätze: {{count}}",
+      "serveNumber": "Aufschlag #{{number}}",
       "timeOut": "Timeout",
       "courtPlayer": "Spieler {{number}}, Team {{team}}",
+      "markCaptain": "Captain",
+      "markLibero": "Libero",
+      "markReplaced": "für {{number}}",
       "score": "Spielstand",
       "court": "Spielfeld",
       "recentActions": "Letzte Aktionen",
@@ -900,7 +902,7 @@
       "interval": "Satzpause",
       "libero": "Libero",
       "replay": "Wieder\u00adholen",
-      "decision": "Entscheid",
+      "decision": "Entscheid ändern",
       "remarks": "Bemerkungen",
       "scoresheet": "eMatch\u00adblatt",
       "subTitle": "Auswechslung {{team}}",
@@ -3557,6 +3559,7 @@
     },
     "describe": {
       "point": "Punkt für {{team}}",
+      "pointShort": "Punkt {{team}}",
       "subInFor": "#{{in}} für #{{out}}",
       "pointTo": "+1 Punkt für {{team}}",
       "startingLineup": "Startaufstellung",

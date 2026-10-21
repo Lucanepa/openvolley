@@ -12,7 +12,7 @@ import MainHeader from '../MainHeader'
 vi.mock('../auth/UserButton', () => ({ default: () => null }))
 
 // The thin bar that opens the folded header again
-const foldedBar = (root) => [...root.querySelectorAll('div.h-4')].find(d => d.querySelector('svg'))
+const foldedBar = (root) => [...root.querySelectorAll('button.h-4')].find(d => d.querySelector('svg'))
 
 describe('MainHeader startCollapsed (phone scoring layout)', () => {
   it('is folded in the first commit: no open frame, no fold afterwards', () => {
@@ -40,5 +40,22 @@ describe('MainHeader startCollapsed (phone scoring layout)', () => {
     const open = render(<ScaleProvider><MainHeader collapsible matchId={1} /></ScaleProvider>)
     expect(foldedBar(open.container)).toBeFalsy()
     expect(screen.getAllByRole('button').length).toBeGreaterThan(0)
+  })
+
+  // 2026-10-20: the 16px bar was hard to hit on a phone. It stays 16px (the
+  // phone layout counts on it) but is a labelled button whose middle takes
+  // taps 48px down; a tap there opens the header
+  it('is a labelled button with a 48px tall tap target over the phone layout', () => {
+    const { container } = render(<ScaleProvider><MainHeader collapsible startCollapsed matchId={1} /></ScaleProvider>)
+    const bar = foldedBar(container)
+    expect(bar.getAttribute('aria-label')).toBe('Show header')
+    const target = screen.getByTestId('header-expand-target')
+    expect(bar.contains(target)).toBe(true)
+    expect(target.className).toMatch(/\bh-12\b/)
+    // narrower than the header minus the phone header's Undo + Menu buttons
+    // (106px from the right edge), or it covers Undo on a 340px phone
+    expect(target.className).toContain('w-[min(40%,calc(100%_-_224px),200px)]')
+    fireEvent.click(target)
+    expect(foldedBar(container)).toBeFalsy()
   })
 })

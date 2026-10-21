@@ -537,8 +537,6 @@
         "none": "Nessuno",
         "player": "Capitano in gioco: giocatore {{number}}",
         "enterFirst": "Da scegliere dopo aver inserito i giocatori",
-        "noCaptain": "Nessun capitano nell’elenco squadra",
-        "whenCaptainLeaves": "Subentra quando il capitano {{captain}} lascia il campo",
         "fromFirstRally": "Il capitano {{captain}} non è nella formazione: capitano in gioco dal primo scambio"
       },
       "easyLiberos": "Liberi (facoltativo)",
@@ -894,8 +892,12 @@
     "phone": {
       "setInfo": "Set {{set}} · set {{left}} : {{right}}",
       "setsWon": "Set: {{count}}",
+      "serveNumber": "Servizio #{{number}}",
       "timeOut": "Timeout",
       "courtPlayer": "Giocatore {{number}}, squadra {{team}}",
+      "markCaptain": "capitano",
+      "markLibero": "libero",
+      "markReplaced": "al posto di {{number}}",
       "score": "Punteggio",
       "court": "Campo",
       "recentActions": "Ultime azioni",
@@ -907,7 +909,7 @@
       "interval": "Intervallo tra i set",
       "libero": "Libero",
       "replay": "Ripeti",
-      "decision": "Decisione",
+      "decision": "Cambio decisione",
       "remarks": "Osservazioni",
       "scoresheet": "eScore\u00adsheet",
       "subTitle": "Sostituzione {{team}}",
@@ -3574,6 +3576,7 @@
     },
     "describe": {
       "point": "Punto per {{team}}",
+      "pointShort": "Punto {{team}}",
       "subInFor": "#{{in}} per #{{out}}",
       "pointTo": "+1 punto a {{team}}",
       "startingLineup": "Formazione iniziale",

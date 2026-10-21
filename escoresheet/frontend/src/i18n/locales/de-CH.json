@@ -537,8 +537,6 @@
         "none": "Kei",
         "player": "Spiilcaptain: Spieler {{number}}",
         "enterFirst": "Chasch uswähle, sobald d Spieler iitreit sind",
-        "noCaptain": "Kei Captain uf de Mannschaftslischte",
-        "whenCaptainLeaves": "Übernimmt, wänn Captain {{captain}} s Feld verlaat",
         "fromFirstRally": "Captain {{captain}} isch nöd i de Ufstellig: Spiilcaptain ab em erschte Ballwächsel"
       },
       "easyLiberos": "Liberos (optional)",
@@ -894,8 +892,12 @@
     "phone": {
       "setInfo": "Satz {{set}} · Sätz {{left}} : {{right}}",
       "setsWon": "Sätz: {{count}}",
+      "serveNumber": "Ufschlag #{{number}}",
       "timeOut": "Timeout",
       "courtPlayer": "Spieler {{number}}, Team {{team}}",
+      "markCaptain": "Captain",
+      "markLibero": "Libero",
+      "markReplaced": "für {{number}}",
       "score": "Spielstand",
       "court": "Spielfäld",
       "recentActions": "Letschti Aktione",
@@ -907,7 +909,7 @@
       "interval": "Satzpause",
       "libero": "Libero",
       "replay": "Wieder\u00adhole",
-      "decision": "Entscheid",
+      "decision": "Entscheids\u00adänderig",
       "remarks": "Bemerkige",
       "scoresheet": "eMatch\u00adblatt",
       "subTitle": "Uswächslig {{team}}",
@@ -3569,6 +3571,7 @@
     },
     "describe": {
       "point": "Punkt für {{team}}",
+      "pointShort": "Punkt {{team}}",
       "subInFor": "#{{in}} für #{{out}}",
       "pointTo": "+1 Punkt für {{team}}",
       "startingLineup": "Startufstellig",

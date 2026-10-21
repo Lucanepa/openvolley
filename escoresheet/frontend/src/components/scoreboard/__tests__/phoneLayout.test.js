@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { COURT_CELLS, PHONE_COURT_MIN_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, POSITIONS, detectDisplayMode, isPhoneScreen, officialRoleShort, phoneHeldSideways, phoneLayoutActive, phoneLayoutKept, recentActions, tintOf } from '../phoneLayout'
+import { COURT_CELLS, PHONE_COURT_MIN_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, POSITIONS, PHONE_COUNTER_HEIGHT_PX, PHONE_RECENT_HEIGHT_PX, PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, recentLinesFor, isPhoneScreen, officialRoleShort, phoneHeldSideways, phoneLayoutActive, phoneLayoutKept, recentActions, tintOf } from '../phoneLayout'
 
 describe('detectDisplayMode (the automatic display mode)', () => {
   it.each([[390, 844], [360, 740], [412, 915], [599, 1000]])('a %ix%i portrait phone gets the phone layout', (w, h) => {
@@ -17,6 +17,20 @@ describe('detectDisplayMode (the automatic display mode)', () => {
 
   it.each([[1280, 800], [1920, 1080], [1024, 768]])('a %ix%i screen without touch stays desktop', (w, h) => {
     expect(detectDisplayMode({ width: w, height: h, hasTouch: false })).toBe('desktop')
+  })
+})
+
+describe('dialogsCentred (court-anchored dialogs and menus)', () => {
+  it('always in the phone layout', () => {
+    expect(dialogsCentred({ phoneView: true, width: 1280, height: 800 })).toBe(true)
+  })
+
+  it.each([[412, 915], [915, 412], [962, 601], [1024, 600]])('a %ix%i phone or small tablet centres them', (w, h) => {
+    expect(dialogsCentred({ width: w, height: h })).toBe(true)
+  })
+
+  it.each([[1280, 800], [800, 1280], [1366, 650], [1920, 1080]])('a %ix%i tablet or laptop keeps them anchored', (w, h) => {
+    expect(dialogsCentred({ width: w, height: h })).toBe(false)
   })
 })
 
@@ -91,6 +105,21 @@ describe('COURT_CELLS', () => {
   })
 })
 
+describe('recentLinesFor (the last actions fill the height left over)', () => {
+  it('three lines at their lowest, whole lines only, at most PHONE_RECENT_MAX_LINES', () => {
+    expect(recentLinesFor(PHONE_RECENT_HEIGHT_PX)).toBe(3)
+    expect(recentLinesFor(PHONE_RECENT_HEIGHT_PX + 17)).toBe(3)
+    expect(recentLinesFor(PHONE_RECENT_HEIGHT_PX + 18)).toBe(4)
+    expect(recentLinesFor(117)).toBe(6)
+    expect(recentLinesFor(1000)).toBe(PHONE_RECENT_MAX_LINES)
+    expect(recentLinesFor(0)).toBe(1)
+  })
+
+  it('the counters keep a tappable height of their own', () => {
+    expect(PHONE_COUNTER_HEIGHT_PX).toBeGreaterThanOrEqual(48)
+  })
+})
+
 describe('recentActions', () => {
   const describe_ = (e) => (e.type === 'mystery' ? null : `${e.type} ${e.seq}`)
   const ev = (seq, type, payload = {}, setIndex = 2) => ({ id: seq * 10, seq, type, payload, setIndex, ts: seq })
@@ -147,6 +176,20 @@ describe('phone action grid labels (a 4-column grid on a 360px phone)', () => {
         for (const word of label.split(/\s+/)) {
           if (word.replaceAll(SHY, '').length >= 10) expect(word, `${lang}: ${label}`).toContain(SHY)
         }
+      }
+    }
+  })
+
+  // The decision label is set smaller (10.5px) and its button is about 70px
+  // wide inside on a 360px phone (60px on a 320px one): a piece of 13
+  // letters ("Entscheidungs-") did not fit and broke mid-word, "Entscheidung
+  // / sänderung" (2026-10-21). Every piece between spaces and soft hyphens
+  // stays at 11 letters or fewer
+  it('the small decision label has no piece too wide for its button', async () => {
+    for (const lang of ['en', 'de', 'de-CH', 'fr', 'it']) {
+      const { default: locale } = await import(`../../../i18n/locales/${lang}.json`)
+      for (const piece of locale.scoreboard.phone.decision.split(/[\s\u00ad]+/)) {
+        expect(piece.length, `${lang}: ${piece}`).toBeLessThanOrEqual(11)
       }
     }
   })
