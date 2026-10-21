@@ -23535,6 +23535,8 @@ function LineupModal({ team, teamData, players, matchId, setIndex, mode = 'initi
       onClose={onClose}
       width={900}
       hideCloseButton={true}
+      // the window's height, not 85vh (a phone keeps Confirm in view)
+      panelStyle={{ maxHeight: 'calc(100dvh - 2rem)' }}
     >
       <div className="lineup-modal">
         <div className="lineup-modal__body">
