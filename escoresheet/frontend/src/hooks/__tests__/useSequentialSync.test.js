@@ -13,10 +13,11 @@ function fakeTable() {
 const fakeDb = vi.hoisted(() => ({}))
 vi.mock('../../db/db', () => ({ db: fakeDb }))
 
-const sync = vi.hoisted(() => ({ processJob: null, errors: new Map() }))
+const sync = vi.hoisted(() => ({ processJob: null, errors: new Map(), setAside: new Set() }))
 vi.mock('../useSyncQueue', () => ({
   processJob: (job) => sync.processJob(job),
   takeJobError: (id) => { const e = sync.errors.get(id) ?? null; sync.errors.delete(id); return e },
+  takeSetAside: (id) => sync.setAside.delete(id),
   errorBackoffMs: () => 30000,
   DROP_JOB: 'drop',
   AUTH_REQUIRED: 'auth_required',
@@ -131,5 +132,19 @@ describe('sendJobNow', () => {
     expect(sync.processJob).not.toHaveBeenCalled()
     expect(result).toMatchObject({ offline: true })
     expect(fakeDb.sync_queue.map.get(result.jobId).status).toBe('queued')
+  })
+
+  it('reports a write set aside for another scoring device as kept (a warning), not failed', async () => {
+    sync.processJob = async (job) => { sync.setAside.add(job.id); return 'drop' }
+    const result = await sendJobNow(JOB)
+    expect(result).toMatchObject({ success: false, offline: true, setAside: true })
+    expect(result.error).toBeUndefined()
+  })
+
+  it('still reports a job that cannot be attributed to a match as an error', async () => {
+    sync.processJob = async () => 'drop'
+    const result = await sendJobNow(JOB)
+    expect(result).toMatchObject({ success: false, error: 'Job cannot be attributed to a match' })
+    expect(result.offline).toBeUndefined()
   })
 })

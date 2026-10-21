@@ -842,6 +842,15 @@ async function isNeedlessAfterClose(job) {
 // pass must not send the match's other jobs it read before they were set aside
 const setAsideJobIds = new Set()
 
+/**
+ * Whether processJob set this job aside because another device scores its
+ * match (OV_SCORER_MOVED): the direct sender (useSequentialSync) reports it as
+ * kept, not failed. Forgets the job.
+ */
+export function takeSetAside(jobId) {
+  return setAsideJobIds.delete(jobId)
+}
+
 async function processJobOnce(job) {
   const ctx = { error: null }
   const result = await processJobInner(job, ctx)
