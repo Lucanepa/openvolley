@@ -76,3 +76,29 @@ export function mergeOfficialsEdits(existing, edited = {}, { snakeCase = false }
   }
   return result
 }
+
+const isoDobToDisplay = (dob) => {
+  const m = String(dob || '').match(/^(\d{4})-(\d{2})-(\d{2})/)
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : ''
+}
+
+/**
+ * The referees and line judges of a game loaded from the schedule
+ * (LoadOfficialMatchModal's match), as MatchSetup's form fields. Every field
+ * is the game's value or '': loading a second game must not keep the first
+ * game's referees, their dates of birth or line judges.
+ */
+export function officialsFromSchedule(game = {}) {
+  const referee = (n) => ({
+    first: game[`referee${n}First`] || '',
+    last: game[`referee${n}Last`] || '',
+    country: 'CHE',
+    dob: isoDobToDisplay(game[`referee${n}Dob`])
+  })
+  return {
+    ref1: referee(1),
+    ref2: referee(2),
+    lineJudge1: game.linesman1 || '',
+    lineJudge2: game.linesman2 || ''
+  }
+}
