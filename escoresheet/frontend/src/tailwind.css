@@ -906,25 +906,36 @@
   }
 }
 
-/* Load match from schedule (LoadOfficialMatchModal): on a phone the game #,
-   date and time take their texts' width instead of 80 + 90 + 55 px, which
-   left the teams 30 px ("VB..." at 360 px). Each row is its own grid, so
-   they share the columns as subgrids of the list (the header too). Wider,
-   and where subgrid is missing, the rows keep their fixed columns. */
+/* Load match from schedule (LoadOfficialMatchModal): on a phone each game is
+   a card, game #, date and time on its first line and each team on a line
+   of its own below, so the names get the dialog's width (a row of four
+   columns cut both names, "VBC Einsiedel..." / "vs Volley Luz...": the owner,
+   2026-10-21). Wider, the rows keep the table and its head. */
 .schedule-games {
   container-type: inline-size;
 }
-@supports (grid-template-columns: subgrid) {
-  @container (max-width: 479.98px) {
-    .schedule-games > .schedule-rows {
-      display: grid;
-      grid-template-columns: auto auto auto minmax(0, 1fr);
-      column-gap: 8px;
-    }
-    .schedule-games > .schedule-rows > * {
-      grid-column: 1 / -1;
-      grid-template-columns: subgrid !important;
-    }
+@container (max-width: 479.98px) {
+  .schedule-games > .schedule-rows > .sg-head {
+    display: none;
+  }
+  .schedule-games > .schedule-rows > .sg-row {
+    grid-template-columns: auto auto minmax(0, 1fr) !important;
+    row-gap: 2px;
+    column-gap: 10px;
+    padding: 10px 12px;
+  }
+  .schedule-games .sg-row > :is(.sg-num, .sg-when) {
+    text-align: left;
+  }
+  .schedule-games .sg-row > .sg-when {
+    color: var(--ov-text-muted);
+  }
+  .schedule-games .sg-row > .sg-teams {
+    grid-column: 1 / -1;
+    flex-direction: column;
+    align-items: stretch;
+    font-size: 14px;
+    line-height: 1.3;
   }
 }
 
