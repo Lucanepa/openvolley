@@ -8194,7 +8194,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         if (!hasComeBack) {
           // Only the original player can substitute back
           const originalPlayer = benchPlayers.find(p => String(p.number) === String(originalPlayerOut))
-          if (originalPlayer && !originalPlayer.libero) {
+          // ...unless they left expelled, disqualified or exceptionally
+          // replaced (FIVB 15.7, 21.3.2, 21.3.3)
+          if (originalPlayer && !originalPlayer.libero && canPlayerReEnter(teamKey, originalPlayer.number, data.set.index)) {
             return [originalPlayer] // Only this player is available
           }
         }
