@@ -191,6 +191,7 @@
     "invalidBirthdate": "Some players or officials have invalid birthdate (01.01.1900). Please correct these dates.",
     "invalidJerseyNumbers": "{{team}} team has invalid jersey numbers (must be 1-99): {{numbers}}",
     "playersWithoutNumbers": "{{team}} team has {{count}} player(s) without jersey numbers",
+    "tooManyPlayers": "{{team}} team has more than {{max}} players: {{count}}",
     "completeSignatures": "Please complete all signatures before confirming the coin toss.",
     "noMatchId": "Error: No match ID found. Please try again.",
     "duplicateNumbersDetailed": "{{team}} team has duplicate player numbers: #{{numbers}}\n\nPlease fix duplicate numbers before proceeding.",
@@ -2432,7 +2433,9 @@
     "awayCoachMissing": "Away team: no coach set",
     "selectGenderFirst": "Select a gender first",
     "awayTwoLiberosRequired": "Away: 2 liberos required for more than 12 players",
-    "homeTwoLiberosRequired": "Home: 2 liberos required for more than 12 players"
+    "homeTwoLiberosRequired": "Home: 2 liberos required for more than 12 players",
+    "homeRosterTooMany": "Home: at most {{max}} players on the roster (now {{count}})",
+    "awayRosterTooMany": "Away: at most {{max}} players on the roster (now {{count}})"
   },
   "tabletStatus": {
     "title": "Tablet status",

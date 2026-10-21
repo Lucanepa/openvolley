@@ -191,6 +191,7 @@
     "invalidBirthdate": "Einigi Spieler oder Offizielli händ es ungültigs Geburtsdatum (01.01.1900). Bitte korrigiere.",
     "invalidJerseyNumbers": "Team {{team}} hät ungültigi Trikotnummere (muess 1-99 sii): {{numbers}}",
     "playersWithoutNumbers": "Team {{team}} hät {{count}} Spieler ohni Trikotnummere",
+    "tooManyPlayers": "Team {{team}} hät meh als {{max}} Spieler: {{count}}",
     "completeSignatures": "Bitte alli Underschrifte vor Bestätigung vo de Sitewahl vervollständige.",
     "noMatchId": "Fähler: Spiil-ID nöd gfunde. Bitte nomal probiere.",
     "duplicateNumbersDetailed": "Team {{team}} hat doppelte Trikotnummern: #{{numbers}}\n\nBitte korrigieren Sie die doppelten Nummern bevor Sie fortfahren.",
@@ -2426,7 +2427,9 @@
     "awayCoachMissing": "Gastteam: kein Trainer gsetzt",
     "selectGenderFirst": "Zerscht Gschlächt uswähle",
     "awayTwoLiberosRequired": "Gascht: 2 Liberos nötig bi meh als 12 Spieler",
-    "homeTwoLiberosRequired": "Heim: 2 Liberos nötig bi meh als 12 Spieler"
+    "homeTwoLiberosRequired": "Heim: 2 Liberos nötig bi meh als 12 Spieler",
+    "homeRosterTooMany": "Heim: höchstens {{max}} Spieler im Kader (jetzt {{count}})",
+    "awayRosterTooMany": "Gascht: höchstens {{max}} Spieler im Kader (jetzt {{count}})"
   },
   "tabletStatus": {
     "title": "Tablet-Status",
