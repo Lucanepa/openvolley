@@ -21,6 +21,7 @@ import { Textarea } from '../ui/Textarea.jsx'
 import { uploadScoresheet, scoresheetUploadPath } from '../utils/scoresheetUploader'
 import { redactScoresheetPath } from '../../scoresheet_pdf/utils/scoresheetStorage'
 import { isoOf, matchTimes, setDurationMinutes } from '../../scoresheet_pdf/utils/matchTimes'
+import { displaySetNumber } from '../../scoresheet_pdf/utils/scoresheetModel'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { exportLogsAsNDJSON } from '../utils/comprehensiveLogger'
 import { diagnosticLogQuery } from '../utils/activity/logQuery'
@@ -132,7 +133,7 @@ const ResultsTable = ({ teamAName, teamBName, setResults, matchStart, matchEnd, 
                 <span style={{ fontWeight: 700 }}>{setData.teamAPoints ?? ''}</span>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', fontSize: '11px', textAlign: 'center', color: '#000' }}>
-                <span style={{ fontWeight: 600 }}>{setNum}</span>
+                <span style={{ fontWeight: 600 }}>{setData.label ?? setNum}</span>
                 <span>{setData?.duration || ''}</span>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', fontSize: '11px', textAlign: 'center', fontWeight: 500, color: '#000' }}>
@@ -545,6 +546,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
       results.push({
         setNumber: setNum,
+        // the printed set number (best of 3: the deciding set, index 5, is set 3)
+        label: displaySetNumber(setNum, match?.bestOf),
         teamATimeouts,
         teamASubstitutions,
         teamAWon,
@@ -636,7 +639,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
           team: teamLabel,
           playerNr: 'D',
           type: sanctionType === 'delay_warning' ? 'warning' : 'penalty',
-          set: setIndex,
+          set: displaySetNumber(setIndex, match?.bestOf),
           score: score
         })
         continue
@@ -665,7 +668,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
             team: teamLabel,
             playerNr: playerNr,
             type: sanctionType,
-            set: setIndex,
+            set: displaySetNumber(setIndex, match?.bestOf),
             score: score
           })
         }
