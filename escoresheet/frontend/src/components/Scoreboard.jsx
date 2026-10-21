@@ -2184,7 +2184,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0]
         keptIntervalStartedAt = setEndEvent?.ts || previousSet?.endTime || null
       }
-      const activeTimeout = timeoutModalRef.current
+      // (a time-out request made while one runs keeps that one: running)
+      const activeTimeout = timeoutModalRef.current?.started ? timeoutModalRef.current : timeoutModalRef.current?.running
       const isTimeout = eventType === 'timeout' || (eventType !== 'end_timeout' && !!activeTimeout?.started)
 
       // If it's a timeout, we need a stable start time
@@ -7157,6 +7158,32 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
       }
 
+      // The time-out undone while it runs: its countdown stops, and the
+      // referee's with it (the closing modal sends end_timeout)
+      if (lastEvent.type === 'timeout') {
+        const team = lastEvent.payload?.team
+        const runs = timeoutModal?.started ? timeoutModal : timeoutModal?.running
+        if (runs?.team === team) {
+          timeoutStartTimestampRef.current = null
+          timeoutInitialCountdownRef.current = 30
+          // under a request the modal stays open: end_timeout is sent here
+          if (!timeoutModal.started) {
+            deferEffect({
+              run: () => {
+                sendActionToReferee('end_timeout', {})
+                syncLiveStateToSupabase('end_timeout', null, null)
+              }
+            })
+          }
+          deferUi(() => setTimeoutModal(prev => {
+            if (prev?.started) return prev.team === team ? null : prev
+            if (prev?.running?.team !== team) return prev
+            const { running: _undone, ...request } = prev
+            return request
+          }))
+        }
+      }
+
       // A team back on 8 in the deciding set without the change of courts
       // gets its dialog
       await settleCourtSwitchAfterUndo(undoneSetIndex)
@@ -7171,7 +7198,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       syncLiveStateToSupabase('undo', null, undoLiveData)
       notifyScoresheetUpdate('undo')
     }
-  }, { reason: 'undo' })), [runUndoConfirm, undoConfirm, data?.set, matchId, restoreStateFromSnapshot, discardEvents, applyForfeitReversal, resyncSetScoreFromEvents, settleCourtSwitchAfterUndo, set5IntervalAfterUndo, showAlert, syncToReferee, sendActionToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, runAction, deferUi])
+  }, { reason: 'undo' })), [runUndoConfirm, undoConfirm, data?.set, matchId, restoreStateFromSnapshot, discardEvents, applyForfeitReversal, resyncSetScoreFromEvents, settleCourtSwitchAfterUndo, set5IntervalAfterUndo, showAlert, syncToReferee, sendActionToReferee, syncLiveStateToSupabase, notifyScoresheetUpdate, runAction, deferUi, deferEffect, timeoutModal])
 
   // OLD UNDO LOGIC REMOVED - The following complex per-event-type logic has been replaced
   // by the snapshot-based undo system above. Keeping this comment for reference.
@@ -7572,13 +7599,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         if (rallyStatus === 'idle') openTeamSanctionConfirm(side, 'improper_request', 'third_timeout')
         return
       }
-      setTimeoutModal({
+      // A request made while a time-out runs keeps that one (running): Cancel
+      // puts it back, it is not lost with the request
+      setTimeoutModal(prev => ({
         team: teamKey,
         countdown: 30,
         started: false,
         ordinal: request.ordinal,
-        consecutive: request.consecutive
-      })
+        consecutive: request.consecutive,
+        ...(prev?.started ? { running: prev } : prev?.running ? { running: prev.running } : {})
+      }))
     },
     [mapSideToTeamKey, data?.events, data?.set, rallyStatus, openTeamSanctionConfirm]
   )
@@ -7588,8 +7618,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // One action: the countdown starts with the new time-out count (the request
   // dialog never redraws from it: "Confirm 2nd time-out" on the first one)
   const confirmTimeout = useCallback(() => runTimeoutConfirm(() => runAction('timeout', async () => {
-    const request = timeoutModal
-    if (!request || request.started) return
+    const { running: _replaced, ...request } = timeoutModal || {}
+    if (!timeoutModal || request.started) return
 
     // Debug: Check for stale refs that would cause countdown to fail
     console.log('[TO_DEBUG] confirmTimeout called', {
@@ -7643,6 +7673,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     if (!timeoutModal || timeoutModal.started) return
     console.log('[TO_DEBUG] cancelTimeout called - resetting refs')
     debugLogger.log('TO_CANCEL', { team: timeoutModal?.team })
+    // A time-out that ran when the request was made runs on (its countdown
+    // goes on from its own start)
+    if (timeoutModal.running) {
+      setTimeoutModal(timeoutModal.running)
+      return
+    }
     // Reset refs in case they were set (safety measure)
     timeoutStartTimestampRef.current = null
     timeoutInitialCountdownRef.current = 30
@@ -12306,7 +12342,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }
         if (timeoutModal) {
           e.preventDefault()
-          setTimeoutModal(null)
+          // a request over a running time-out: that one runs on
+          setTimeoutModal(timeoutModal.started ? null : (timeoutModal.running || null))
           return
         }
         // Don't close decision modals with Escape
