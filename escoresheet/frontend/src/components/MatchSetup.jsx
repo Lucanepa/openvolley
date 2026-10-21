@@ -43,12 +43,13 @@ import { savedTeamToRoster, findSavedTeamSuggestions } from '../domain/savedTeam
 import { getSavedTeams, refreshSavedTeams } from '../db/savedTeams'
 import { officialCheck, OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS } from '../lib/accountApi'
 import { openRestore } from '../utils/manageNav'
-import { Users, Save as SaveIcon } from 'lucide-react'
+import { Users, Save as SaveIcon, Trash2 } from 'lucide-react'
 import CaptainToggle from './CaptainToggle'
 import StackLabel from './StackLabel'
 import TeamShirt from './TeamShirt'
 import TeamColourPicker, { CloseColourNote, recallCustomColour, rememberCustomColour } from './TeamColourPicker'
 import { useFormStack } from '../hooks/useFormStack'
+import { usePhoneWidth } from '../hooks/usePhoneWidth'
 import { askText } from '../utils/askText.js'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
 import { preload, usePreloaded } from '../utils/preload'
@@ -460,11 +461,21 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const { showAlert } = useAlert()
   const { user, profile, getCachedProfile, access } = useAuth()
   const { scaleFactor: baseScaleFactor } = useScaledLayout()
-  // Portrait: the libero select's empty option reads "No libero" (its column
-  // head is hidden there); landscape keeps the blank option. The option is
-  // keyed on the orientation, so turning back replaces the node: a select
-  // keeps the width of a longer text when only its option's text changes.
+  // Portrait: the libero select's empty option has a text (its column head is
+  // hidden there): "None" (noLiberoShort; "Nessun libero" did not fit a
+  // phone's row); landscape keeps the blank option. A phone with LFP tracking
+  // has a 44 px LFP toggle more on the row's second line, which leaves the
+  // select room for "-" / "L1" / "L2" only (as the in-match roster editor).
+  // The options are keyed on the labels, so a change replaces the nodes: a
+  // select keeps the width of a longer text when only its option's text
+  // changes.
   const formStack = useFormStack()
+  const phoneWidth = usePhoneWidth()
+  const liberoLabels = !formStack
+    ? { key: 'blank', none: '', l1: t('matchSetup.libero1'), l2: t('matchSetup.libero2') }
+    : (phoneWidth && lfpTrackingEnabled
+      ? { key: 'tight', none: '-', l1: 'L1', l2: 'L2' }
+      : { key: 'stack', none: t('matchSetup.noLiberoShort'), l1: t('matchSetup.libero1'), l2: t('matchSetup.libero2') })
   // MatchSetup uses 25% larger scale by default
   const scaleFactor = baseScaleFactor * 1.25
   // Helper for scaled pixel values
@@ -3814,8 +3825,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           {/* Left: Upload section */}
           <div className="flex-1 rounded-xl border border-stone-200 bg-stone-50/60 p-3">
             <div className="flex flex-col gap-2">
-              {/* Upload button row with Local/Remote toggle */}
-              <div className="flex items-center gap-2">
+              {/* Upload button row with Local/Remote toggle. It wraps: Local /
+                  Remote goes under the button (and takes the line) when both
+                  do not fit, as at 130 % font on a phone, where its min-content
+                  widened the whole roster section past the card. */}
+              <div className="flex flex-wrap items-center gap-2">
                 <input
                   ref={homeFileInputRef}
                   type="file"
@@ -3835,14 +3849,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     }
                   }}
                   disabled={homePdfLoading || homeRosterSearching}
-                    className="flex-1"
+                    className="min-w-0 flex-[999_1_auto]"
                   >
                   {homeUploadMode === 'local' ? t('matchSetup.uploadPdf') : (homeRosterSearching ? t('common.loading') : t('matchSetup.searchForRoster'))}
                   </Button>
                 {/* Local/Remote Toggle */}
                 <SegmentedControl
                   ariaLabel={t('matchSetup.uploadPdf')}
-                  className="w-44 shrink-0 [&_button]:p-0 stack:[&_button]:h-11"
+                  className="w-44 max-w-full shrink-0 grow [&_button]:p-0 stack:[&_button]:h-11"
                   value={homeUploadMode}
                   onChange={setHomeUploadMode}
                   options={[
@@ -4020,7 +4034,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             const homeHasError = !homeCaptain || homeNonLiberoCount < 6
             return (
               <div className={cn(
-                'flex flex-1 items-center justify-center gap-4 rounded-xl border p-3',
+                'flex flex-1 flex-wrap items-center justify-center gap-x-4 gap-y-1 rounded-xl border p-3',
                 homeHasError ? 'border-red-200 bg-red-50' : 'border-stone-200 bg-stone-50/60'
               )}>
                 <div className="flex items-baseline gap-1.5">
@@ -4063,11 +4077,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StackLabel head>{t('matchSetup.playerNumber', 'Player number')}</StackLabel>
                 <input aria-label={t('matchSetup.playerNumber', 'Player number')} className="cell-head" placeholder={t('matchSetup.numberPlaceholder')} type="number" inputMode="numeric" value={homeNum} onChange={e => setHomeNum(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
-                <input aria-label={t('matchSetup.lastName')} className="capitalize" placeholder={t('matchSetup.lastName')} value={homeLast} onChange={e => setHomeLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input aria-label={t('matchSetup.lastName')} className="capitalize cell-last" placeholder={t('matchSetup.lastName')} value={homeLast} onChange={e => setHomeLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
-                <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={homeFirst} onChange={e => setHomeFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input aria-label={t('matchSetup.firstName')} className="capitalize cell-first" placeholder={t('matchSetup.firstName')} value={homeFirst} onChange={e => setHomeFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
-                <DateField size="bare" aria-label={t('matchSetup.dateOfBirth')} value={homeDob ? formatDateToISO(homeDob) : ''} onChange={v => setHomeDob(v ? formatDateToDDMMYYYY(v) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <DateField size="bare" wrapperClassName="cell-dob" aria-label={t('matchSetup.dateOfBirth')} value={homeDob ? formatDateToISO(homeDob) : ''} onChange={v => setHomeDob(v ? formatDateToDDMMYYYY(v) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.roleLibero')} · {t('matchSetup.captain')}</StackLabel>
                 <select aria-label={t('matchSetup.libero', 'Libero')} className="cell-libero" data-help-id="setup-libero-toggle" value={homeLibero} onChange={e => {
                   let newValue = e.target.value
@@ -4076,19 +4090,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }
                   setHomeLibero(newValue)
                 }}>
-                  <option key={formStack ? 'no-libero' : 'blank'} value="">{formStack ? t('matchSetup.noLibero') : ''}</option>
+                  <option key={`none-${liberoLabels.key}`} value="">{liberoLabels.none}</option>
                   {!homeRoster.some(p => p.libero === 'libero1') && (
-                    <option value="libero1">{t('matchSetup.libero1')}</option>
+                    <option key={`l1-${liberoLabels.key}`} value="libero1">{liberoLabels.l1}</option>
                   )}
                   {!homeRoster.some(p => p.libero === 'libero2') && (
-                    <option value="libero2">{t('matchSetup.libero2')}</option>
+                    <option key={`l2-${liberoLabels.key}`} value="libero2">{liberoLabels.l2}</option>
                   )}
                 </select>
                 <div data-help-id="setup-captain-toggle" className="cell-captain">
                   <CaptainToggle pressed={homeCaptain} number={homeNum} onToggle={() => setHomeCaptain(!homeCaptain)} />
                 </div>
                 {lfpTrackingEnabled && (
-                  <div className="cell-captain">
+                  <div className="cell-captain cell-lfp">
                     <div
                       onClick={() => setHomeLfp(!homeLfp)}
                       style={{
@@ -4172,7 +4186,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             }
 
             return (
-              <div key={`h-${i}`} className="roster-grid-row" style={borderStyle}>
+              <div key={`h-${i}`} className={cn('roster-grid-row', isCaptain && 'row-captain', isLibero && 'row-libero')} style={borderStyle}>
                 <div className={`roster-badge${isCaptain ? ' badge-captain' : isLibero ? ' badge-libero' : ''}`}>
                   {isCaptain ? 'C' : p.libero === 'libero1' ? (homeLiberoCount > 1 ? 'L1' : 'L') : p.libero === 'libero2' ? (homeLiberoCount > 1 ? 'L2' : 'L') : ''}
                 </div>
@@ -4210,7 +4224,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.lastName')}
-                  className="capitalize"
+                  className="capitalize cell-last"
                   placeholder={t('matchSetup.placeholders.lastName')}
                   value={p.lastName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -4223,7 +4237,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.firstName')}
-                  className="capitalize"
+                  className="capitalize cell-first"
                   placeholder={t('matchSetup.placeholders.firstName')}
                   value={p.firstName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -4236,6 +4250,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
                 <DateField
                   size="bare"
+                  wrapperClassName="cell-dob"
                   aria-label={t('matchSetup.dateOfBirth')}
                   value={p.dob ? formatDateToISO(p.dob) : ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -4283,12 +4298,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     }
                   }}
                 >
-                  <option key={formStack ? 'no-libero' : 'blank'} value="">{formStack ? t('matchSetup.noLibero') : ''}</option>
+                  <option key={`none-${liberoLabels.key}`} value="">{liberoLabels.none}</option>
                   {!homeRoster.some((player, idx) => idx !== i && player.libero === 'libero1') && (
-                    <option value="libero1">{t('matchSetup.libero1')}</option>
+                    <option key={`l1-${liberoLabels.key}`} value="libero1">{liberoLabels.l1}</option>
                   )}
                   {!homeRoster.some((player, idx) => idx !== i && player.libero === 'libero2') && (
-                    <option value="libero2">{t('matchSetup.libero2')}</option>
+                    <option key={`l2-${liberoLabels.key}`} value="libero2">{liberoLabels.l2}</option>
                   )}
                 </select>
                 <div className="cell-captain">
@@ -4305,7 +4320,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   />
                 </div>
                 {lfpTrackingEnabled && (
-                  <div className="cell-captain">
+                  <div className="cell-captain cell-lfp">
                     <div
                       onClick={() => {
                         const updated = [...homeRoster]
@@ -4331,8 +4346,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   </div>
                 )}
                 <div className="cell-action">
-                  <Button variant="danger-outline" size="md" onClick={() => setHomeRoster(list => list.filter((_, idx) => idx !== i))}>
-                    {t('common.delete')}
+                  <Button variant="danger-outline" size="md" title={t('common.delete')} onClick={() => setHomeRoster(list => list.filter((_, idx) => idx !== i))}>
+                    <Trash2 size={16} className="hidden stack:block" aria-hidden="true" /><span className="stack:sr-only">{t('common.delete')}</span>
                   </Button>
                 </div>
               </div>
@@ -4377,24 +4392,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   })}
                 </select>
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
-                <input aria-label={t('matchSetup.lastName')} className="capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.lastName')} className="capitalize cell-last" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
-                <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.firstName')} className="capitalize cell-first" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
                 <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
-                <DateField size="bare" aria-label={t('matchSetup.dateOfBirth')} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
+                <DateField size="bare" wrapperClassName="cell-dob" aria-label={t('matchSetup.dateOfBirth')} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchHome(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
                 <div className="cell-action">
-                  <Button variant="danger-outline" size="md" onClick={() => {
+                  <Button variant="danger-outline" size="md" title={t('common.delete')} onClick={() => {
                     const updated = benchHome.filter((_, idx) => idx !== originalIdx)
                     setBenchHome(updated)
                     setTimeout(() => saveDraft(true), 100)
                     }}>
-                      {t('common.delete')}
+                      <Trash2 size={16} className="hidden stack:block" aria-hidden="true" /><span className="stack:sr-only">{t('common.delete')}</span>
                     </Button>
                 </div>
               </div>
             )
           })}
-          <div className="bench-grid-row" style={{ border: 'none', padding: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <div className="bench-grid-row bench-add-row" style={{ border: 'none', padding: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
             <Button
               variant="ghost"
               size="md"
@@ -4960,8 +4975,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           {/* Left: Upload section */}
           <div className="flex-1 rounded-xl border border-stone-200 bg-stone-50/60 p-3">
             <div className="flex flex-col gap-2">
-              {/* Upload button row with Local/Remote toggle */}
-              <div className="flex items-center gap-2">
+              {/* Upload button row with Local/Remote toggle. It wraps: Local /
+                  Remote goes under the button (and takes the line) when both
+                  do not fit, as at 130 % font on a phone, where its min-content
+                  widened the whole roster section past the card. */}
+              <div className="flex flex-wrap items-center gap-2">
                 <input
                   ref={awayFileInputRef}
                   type="file"
@@ -4980,14 +4998,14 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     }
                   }}
                   disabled={awayPdfLoading || awayRosterSearching}
-                    className="flex-1"
+                    className="min-w-0 flex-[999_1_auto]"
                   >
                   {awayUploadMode === 'local' ? t('matchSetup.uploadPdf') : (awayRosterSearching ? t('common.loading') : t('matchSetup.searchForRoster'))}
                   </Button>
                 {/* Local/Remote Toggle */}
                 <SegmentedControl
                   ariaLabel={t('matchSetup.uploadPdf')}
-                  className="w-44 shrink-0 [&_button]:p-0 stack:[&_button]:h-11"
+                  className="w-44 max-w-full shrink-0 grow [&_button]:p-0 stack:[&_button]:h-11"
                   value={awayUploadMode}
                   onChange={setAwayUploadMode}
                   options={[
@@ -5165,7 +5183,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             const awayHasError = !awayCaptain || awayNonLiberoCount < 6
             return (
               <div className={cn(
-                'flex flex-1 items-center justify-center gap-4 rounded-xl border p-3',
+                'flex flex-1 flex-wrap items-center justify-center gap-x-4 gap-y-1 rounded-xl border p-3',
                 awayHasError ? 'border-red-200 bg-red-50' : 'border-stone-200 bg-stone-50/60'
               )}>
                 <div className="flex items-baseline gap-1.5">
@@ -5219,11 +5237,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                 />
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
-                <input aria-label={t('matchSetup.lastName')} className="capitalize" placeholder={t('matchSetup.lastName')} value={awayLast} onChange={e => setAwayLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input aria-label={t('matchSetup.lastName')} className="capitalize cell-last" placeholder={t('matchSetup.lastName')} value={awayLast} onChange={e => setAwayLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
-                <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={awayFirst} onChange={e => setAwayFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input aria-label={t('matchSetup.firstName')} className="capitalize cell-first" placeholder={t('matchSetup.firstName')} value={awayFirst} onChange={e => setAwayFirst(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
-                <DateField size="bare" aria-label={t('matchSetup.dateOfBirth')} value={awayDob ? formatDateToISO(awayDob) : ''} onChange={v => setAwayDob(v ? formatDateToDDMMYYYY(v) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <DateField size="bare" wrapperClassName="cell-dob" aria-label={t('matchSetup.dateOfBirth')} value={awayDob ? formatDateToISO(awayDob) : ''} onChange={v => setAwayDob(v ? formatDateToDDMMYYYY(v) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.roleLibero')} · {t('matchSetup.captain')}</StackLabel>
                 <select aria-label={t('matchSetup.libero', 'Libero')} className="cell-libero" value={awayLibero} onChange={e => {
                   let newValue = e.target.value
@@ -5232,19 +5250,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   }
                   setAwayLibero(newValue)
                 }}>
-                  <option key={formStack ? 'no-libero' : 'blank'} value="">{formStack ? t('matchSetup.noLibero') : ''}</option>
+                  <option key={`none-${liberoLabels.key}`} value="">{liberoLabels.none}</option>
                   {!awayRoster.some(p => p.libero === 'libero1') && (
-                    <option value="libero1">{t('matchSetup.libero1')}</option>
+                    <option key={`l1-${liberoLabels.key}`} value="libero1">{liberoLabels.l1}</option>
                   )}
                   {!awayRoster.some(p => p.libero === 'libero2') && (
-                    <option value="libero2">{t('matchSetup.libero2')}</option>
+                    <option key={`l2-${liberoLabels.key}`} value="libero2">{liberoLabels.l2}</option>
                   )}
                 </select>
                 <div className="cell-captain">
                   <CaptainToggle pressed={awayCaptain} number={awayNum} onToggle={() => setAwayCaptain(!awayCaptain)} />
                 </div>
                 {lfpTrackingEnabled && (
-                  <div className="cell-captain">
+                  <div className="cell-captain cell-lfp">
                     <div
                       onClick={() => setAwayLfp(!awayLfp)}
                       style={{
@@ -5326,7 +5344,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             }
 
             return (
-              <div key={`a-${i}`} className="roster-grid-row" style={borderStyle}>
+              <div key={`a-${i}`} className={cn('roster-grid-row', isCaptain && 'row-captain', isLibero && 'row-libero')} style={borderStyle}>
                 <div className={`roster-badge${isCaptain ? ' badge-captain' : isLibero ? ' badge-libero' : ''}`}>
                   {isCaptain ? 'C' : p.libero === 'libero1' ? (awayLiberoCount > 1 ? 'L1' : 'L') : p.libero === 'libero2' ? (awayLiberoCount > 1 ? 'L2' : 'L') : ''}
                 </div>
@@ -5363,7 +5381,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.lastName')}
-                  className="capitalize"
+                  className="capitalize cell-last"
                   placeholder={t('matchSetup.placeholders.lastName')}
                   value={p.lastName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -5376,7 +5394,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
                 <input
                   aria-label={t('matchSetup.firstName')}
-                  className="capitalize"
+                  className="capitalize cell-first"
                   placeholder={t('matchSetup.placeholders.firstName')}
                   value={p.firstName || ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -5389,6 +5407,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
                 <DateField
                   size="bare"
+                  wrapperClassName="cell-dob"
                   aria-label={t('matchSetup.dateOfBirth')}
                   value={p.dob ? formatDateToISO(p.dob) : ''}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
@@ -5432,12 +5451,12 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     }
                   }}
                 >
-                  <option key={formStack ? 'no-libero' : 'blank'} value="">{formStack ? t('matchSetup.noLibero') : ''}</option>
+                  <option key={`none-${liberoLabels.key}`} value="">{liberoLabels.none}</option>
                   {!awayRoster.some((player, idx) => idx !== i && player.libero === 'libero1') && (
-                    <option value="libero1">{t('matchSetup.libero1')}</option>
+                    <option key={`l1-${liberoLabels.key}`} value="libero1">{liberoLabels.l1}</option>
                   )}
                   {!awayRoster.some((player, idx) => idx !== i && player.libero === 'libero2') && (
-                    <option value="libero2">{t('matchSetup.libero2')}</option>
+                    <option key={`l2-${liberoLabels.key}`} value="libero2">{liberoLabels.l2}</option>
                   )}
                 </select>
                 <div className="cell-captain">
@@ -5454,7 +5473,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   />
                 </div>
                 {lfpTrackingEnabled && (
-                  <div className="cell-captain">
+                  <div className="cell-captain cell-lfp">
                     <div
                       onClick={() => {
                         const updated = [...awayRoster]
@@ -5480,8 +5499,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   </div>
                 )}
                 <div className="cell-action">
-                  <Button variant="danger-outline" size="md" onClick={() => setAwayRoster(list => list.filter((_, idx) => idx !== i))}>
-                    {t('common.delete')}
+                  <Button variant="danger-outline" size="md" title={t('common.delete')} onClick={() => setAwayRoster(list => list.filter((_, idx) => idx !== i))}>
+                    <Trash2 size={16} className="hidden stack:block" aria-hidden="true" /><span className="stack:sr-only">{t('common.delete')}</span>
                   </Button>
                 </div>
               </div>
@@ -5526,24 +5545,24 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   })}
                 </select>
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
-                <input aria-label={t('matchSetup.lastName')} className="capitalize" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.lastName')} className="capitalize cell-last" placeholder={t('matchSetup.lastName')} value={m.lastName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], lastName: e.target.value }; return a })} />
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
-                <input aria-label={t('matchSetup.firstName')} className="capitalize" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
+                <input aria-label={t('matchSetup.firstName')} className="capitalize cell-first" placeholder={t('matchSetup.firstName')} value={m.firstName} onChange={e => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], firstName: e.target.value }; return a })} />
                 <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
-                <DateField size="bare" aria-label={t('matchSetup.dateOfBirth')} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
+                <DateField size="bare" wrapperClassName="cell-dob" aria-label={t('matchSetup.dateOfBirth')} value={m.dob ? formatDateToISO(m.dob) : ''} onChange={v => setBenchAway(arr => { const a = [...arr]; a[originalIdx] = { ...a[originalIdx], dob: v ? formatDateToDDMMYYYY(v) : '' }; return a })} />
                 <div className="cell-action">
-                  <Button variant="danger-outline" size="md" onClick={() => {
+                  <Button variant="danger-outline" size="md" title={t('common.delete')} onClick={() => {
                     const updated = benchAway.filter((_, idx) => idx !== originalIdx)
                     setBenchAway(updated)
                     setTimeout(() => saveDraft(true), 100)
                     }}>
-                      {t('common.delete')}
+                      <Trash2 size={16} className="hidden stack:block" aria-hidden="true" /><span className="stack:sr-only">{t('common.delete')}</span>
                     </Button>
                 </div>
               </div>
             )
           })}
-          <div className="bench-grid-row" style={{ border: 'none', padding: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <div className="bench-grid-row bench-add-row" style={{ border: 'none', padding: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
             <Button
               variant="ghost"
               size="md"
