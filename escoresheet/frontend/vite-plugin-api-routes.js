@@ -117,11 +117,22 @@ export function vitePluginApiRoutes(options = {}) {
       }
       console.log(`📡 API routes enabled for dev server`)
 
+      // Health check (the coin toss's WebSocket server check), as the relays
+      // answer it: the dev server answered 404 and the check failed
+      const sendHealth = (res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ status: 'ok', running: true }))
+      }
+      // connect strips the prefix: '/health' arrives as '/'
+      const healthMiddleware = (req, res, next) => {
+        if ((req.url || '/').split('?')[0] !== '/') return next()
+        sendHealth(res)
+      }
       // Add API middleware - must be added before Vite's default middleware
       // Use a function to ensure it's called for every request
       const apiMiddleware = (req, res, next) => {
         // Early return if not an API request (shouldn't happen due to .use('/api'), but just in case)
-        if (!req.url.startsWith('/match/') && !req.url.startsWith('/server/') && !req.url.startsWith('/sign/')) {
+        if (!req.url.startsWith('/match/') && !req.url.startsWith('/server/') && !req.url.startsWith('/sign/') && req.url.split('?')[0] !== '/health') {
           return next()
         }
         // Vite's connect middleware strips the prefix when using .use('/api', ...)
@@ -155,6 +166,11 @@ export function vitePluginApiRoutes(options = {}) {
           return
         }
         
+        if (urlPath === '/health') {
+          sendHealth(res)
+          return
+        }
+
         // Server status
         if (urlPath === '/server/status') {
           const localIP = getLocalIP()
@@ -217,6 +233,7 @@ export function vitePluginApiRoutes(options = {}) {
       // Register the middleware - use unshift to add it first
       // This ensures it runs before Vite's default handlers
       server.middlewares.use('/api', apiMiddleware)
+      server.middlewares.use('/health', healthMiddleware)
     },
     
     boundWsPort,
