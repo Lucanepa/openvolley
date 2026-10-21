@@ -101,7 +101,9 @@ function PoolBody({ onClose, onApply, pool, teamLabel }) {
                   />
                   <span className="w-7 shrink-0 text-right text-base font-bold tabular-nums">{e.number ?? '–'}</span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold">{name || '–'}</span>
+                    {/* two lines, not one cut short: at large text on a phone
+                        the first name that tells namesakes apart was hidden */}
+                    <span className="line-clamp-2 text-sm font-semibold [overflow-wrap:anywhere]" title={name || undefined} data-testid="player-pool-name">{name || '–'}</span>
                     <span className="flex flex-wrap items-center gap-x-2 text-[11px] text-stone-400">
                       {e.dob && <span className="tabular-nums">{e.dob}</span>}
                       <span>{(e.lastMatch ? [...e.sources.filter(s => s !== 'earlier'), 'last'] : e.sources)
