@@ -32,7 +32,7 @@ import { cn } from '../../ui/cn.js'
 
 const LIST = '@container border-y border-stone-200 divide-y divide-stone-100'
 const ROW = 'grid items-center gap-1.5 py-2.5'
-// The libero labels are short (-, L1, L2, LR): the date of birth gets the
+// The libero labels are short ("Libero" small and grey when none, L1, L2, LR): the date of birth gets the
 // number's track too. The last name, which the scoresheet prints, gets the
 // larger share of the names' line (4:3; 1:1 cut "Bachmann" at 360 px).
 // (phone: the last name's track gives the date what it needs, min auto)
@@ -196,13 +196,13 @@ export default function ReopenRosterModal({ teamKey, teamName, players, bench, o
                   aria-label={t('scoreboard.reopenRoster.libero', 'Libero')}
                   value={player.libero === true ? 'libero1' : (player.libero || '')}
                   onChange={(e) => updatePlayer(idx, 'libero', e.target.value)}
-                  className="[grid-area:lib] pl-2.5"
+                  className={cn('[grid-area:lib] pl-2.5', !player.libero && 'text-xs text-stone-500 focus:text-base')}
                 >
-                  <option value="">-</option>
-                  <option value="libero1">L1</option>
-                  <option value="libero2">L2</option>
-                  {player.libero === 'redesignated' && <option value="redesignated">LR</option>}
-                  {player.libero === 'unable' && <option value="unable">{t('scoreboard.reopenRoster.liberoUnable', 'Unable')}</option>}
+                  <option value="" className="text-stone-500">{t('scoreboard.reopenRoster.libero', 'Libero')}</option>
+                  <option value="libero1" className="text-base text-stone-800">L1</option>
+                  <option value="libero2" className="text-base text-stone-800">L2</option>
+                  {player.libero === 'redesignated' && <option value="redesignated" className="text-base text-stone-800">LR</option>}
+                  {player.libero === 'unable' && <option value="unable" className="text-base text-stone-800">{t('scoreboard.reopenRoster.liberoUnable', 'Unable')}</option>}
                 </Select>
                 <span className={CAPTAIN_CELL}>
                   <CaptainToggle

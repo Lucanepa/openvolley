@@ -613,6 +613,21 @@
   .ov-form-stack .roster-grid-row > select.cell-libero {
     padding-left: 8px;
   }
+  /* No libero chosen: the empty option reads "Libero" (the row has no column
+     head), small and grey as a placeholder (the owner, 2026-10-21); the list
+     keeps its normal text. Setup roster and coin toss rows (the in-match
+     editor: ReopenRosterModal). !important over the 16 px of the stacked
+     controls; back to 16 px on focus, so iOS does not zoom when it opens. */
+  .ov-form-stack select.libero-unset {
+    color: var(--ov-text-muted) !important;
+    font-size: 12px !important;
+  }
+  .ov-form-stack select.libero-unset:focus {
+    font-size: 16px !important;
+  }
+  .ov-form-stack select.libero-unset option {
+    color: var(--ov-text-body);
+  }
   /* A smaller chevron box (14 px, 24 px of padding; the select rule's 1.9em
      is 30 px): "Libero 1" / "Nessuno" fit the libero select on a 360 px
      phone, "L1" with the LFP toggle beside it; the coin toss roster's

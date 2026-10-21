@@ -173,11 +173,12 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
   // tall empty middle (the owner, 2026-10-21).
   const phone = usePhoneWidth()
   // The libero select's empty option in a portrait row (its column head is
-  // hidden there): "None", "-" on a phone with the LFP toggle on the same
-  // line (room for "L1" only). Keyed on the text: see formStack above.
+  // hidden there): "Libero", small and grey while nothing is chosen
+  // (.libero-unset, as the setup roster). Keyed on the text: see formStack
+  // above.
   const liberoNone = !formStack
     ? { key: 'blank', text: '' }
-    : (phone && lfpTrackingEnabled ? { key: 'tight', text: '-' } : { key: 'stack', text: t('matchSetup.noLiberoShort') })
+    : { key: 'stack', text: t('roster.libero') }
 
   // Compact mode disabled - always use full layout
   const isCompact = false
@@ -2086,8 +2087,8 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                                   }
                                   setRoster(updated)
                                 }}
-                                style={{ padding: '0', background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px' }}
-                                className="coin-toss-select"
+                                style={{ padding: '0', background: 'transparent', border: 'none', ...(p.libero ? { color: 'var(--text)', fontSize: '12px' } : {}) }}
+                                className={`coin-toss-select${p.libero ? '' : ' libero-unset'}`}
                               >
                                 <option key={liberoNone.key} value="" style={{ background: 'var(--bg)', color: 'var(--text)' }}>{liberoNone.text}</option>
                                 {!roster.some((player, idx) => idx !== originalIdx && player.libero === 'libero1') && (

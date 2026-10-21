@@ -466,10 +466,11 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const { user, profile, getCachedProfile, access } = useAuth()
   const { scaleFactor: baseScaleFactor } = useScaledLayout()
   // Portrait: the libero select's empty option has a text (its column head is
-  // hidden there): "None" (noLiberoShort; "Nessun libero" did not fit a
-  // phone's row); landscape keeps the blank option. A phone with LFP tracking
-  // has a 44 px LFP toggle more on the row's second line, which leaves the
-  // select room for "-" / "L1" / "L2" only (as the in-match roster editor).
+  // hidden there): "Libero", small and grey while nothing is chosen
+  // (.libero-unset; it was "None": the owner, 2026-10-21); landscape keeps
+  // the blank option. A phone with LFP tracking has a 44 px LFP toggle more
+  // on the row's second line, which leaves the select room for "L1" / "L2"
+  // only (as the in-match roster editor).
   // The options are keyed on the labels, so a change replaces the nodes: a
   // select keeps the width of a longer text when only its option's text
   // changes.
@@ -478,8 +479,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   const liberoLabels = !formStack
     ? { key: 'blank', none: '', l1: t('matchSetup.libero1'), l2: t('matchSetup.libero2') }
     : (phoneWidth && lfpTrackingEnabled
-      ? { key: 'tight', none: '-', l1: 'L1', l2: 'L2' }
-      : { key: 'stack', none: t('matchSetup.noLiberoShort'), l1: t('matchSetup.libero1'), l2: t('matchSetup.libero2') })
+      ? { key: 'tight', none: t('matchSetup.libero'), l1: 'L1', l2: 'L2' }
+      : { key: 'stack', none: t('matchSetup.libero'), l1: t('matchSetup.libero1'), l2: t('matchSetup.libero2') })
   // MatchSetup uses 25% larger scale by default
   const scaleFactor = baseScaleFactor * 1.25
   // Helper for scaled pixel values
@@ -4089,7 +4090,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
                 <DateField size="bare" wrapperClassName="cell-dob" aria-label={t('matchSetup.dateOfBirth')} value={homeDob ? formatDateToISO(homeDob) : ''} onChange={v => setHomeDob(v ? formatDateToDDMMYYYY(v) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.roleLibero')} · {t('matchSetup.captain')}</StackLabel>
-                <select aria-label={t('matchSetup.libero', 'Libero')} className="cell-libero" data-help-id="setup-libero-toggle" value={homeLibero} onChange={e => {
+                <select aria-label={t('matchSetup.libero', 'Libero')} className={`cell-libero${homeLibero ? '' : ' libero-unset'}`} data-help-id="setup-libero-toggle" value={homeLibero} onChange={e => {
                   let newValue = e.target.value
                   if (newValue === 'libero2' && !homeRoster.some(p => p.libero === 'libero1')) {
                     newValue = 'libero1'
@@ -4269,7 +4270,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StackLabel>{t('matchSetup.roleLibero')} · {t('matchSetup.captain')}</StackLabel>
                 <select
                   aria-label={t('matchSetup.libero', 'Libero')}
-                  className="cell-libero"
+                  className={`cell-libero${p.libero ? '' : ' libero-unset'}`}
                   value={p.libero || ''}
                   onChange={async e => {
                     const updated = [...homeRoster]
@@ -5249,7 +5250,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StackLabel>{t('matchSetup.dateOfBirth')}</StackLabel>
                 <DateField size="bare" wrapperClassName="cell-dob" aria-label={t('matchSetup.dateOfBirth')} value={awayDob ? formatDateToISO(awayDob) : ''} onChange={v => setAwayDob(v ? formatDateToDDMMYYYY(v) : '')} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.roleLibero')} · {t('matchSetup.captain')}</StackLabel>
-                <select aria-label={t('matchSetup.libero', 'Libero')} className="cell-libero" value={awayLibero} onChange={e => {
+                <select aria-label={t('matchSetup.libero', 'Libero')} className={`cell-libero${awayLibero ? '' : ' libero-unset'}`} value={awayLibero} onChange={e => {
                   let newValue = e.target.value
                   if (newValue === 'libero2' && !awayRoster.some(p => p.libero === 'libero1')) {
                     newValue = 'libero1'
@@ -5426,7 +5427,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                 <StackLabel>{t('matchSetup.roleLibero')} · {t('matchSetup.captain')}</StackLabel>
                 <select
                   aria-label={t('matchSetup.libero', 'Libero')}
-                  className="cell-libero"
+                  className={`cell-libero${p.libero ? '' : ' libero-unset'}`}
                   value={p.libero || ''}
                   onChange={async e => {
                     const updated = [...awayRoster]
