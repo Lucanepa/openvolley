@@ -84,16 +84,19 @@ export default function PhoneScoreboard({ setNumber, teams, serving, rally, cent
   }
   const paint = { left: paintOf(left), right: paintOf(right) }
   const teamTitle = (team) => `${team.label} · ${team.shortName || team.name}`
+  // The header names the match as it is listed, home – away, and counts the
+  // sets in that order: it does not swap with the court sides (the cards do)
+  const [home, away] = right.teamKey === 'home' ? [right, left] : [left, right]
 
   // ---- header -------------------------------------------------------------
   const header = (
     <header style={{ flex: 'none', height: 52, display: 'flex', alignItems: 'center', gap: 8, padding: '0 10px 0 14px', borderBottom: '1px solid var(--ov-hairline)', background: 'var(--ov-card)' }}>
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-        <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ov-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {t('scoreboard.phone.setInfo', { set: setNumber, left: left.setsWon, right: right.setsWon })}
+        <span data-testid="phone-header-sets" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ov-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {t('scoreboard.phone.setInfo', { set: setNumber, home: home.setsWon, away: away.setsWon })}
         </span>
-        <span style={{ fontSize: 14, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {left.name} – {right.name}
+        <span data-testid="phone-header-teams" style={{ fontSize: 14, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {home.name} – {away.name}
         </span>
       </div>
       <IconSquare label={t('scoreboard.buttons.undo')} onClick={() => actions.undo()} disabled={!canUndo}>

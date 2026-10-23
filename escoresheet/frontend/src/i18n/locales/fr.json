@@ -897,7 +897,7 @@
       "legend": "T temps morts · S remplacements · W sets gagnés · P points · Durée durée du set"
     },
     "phone": {
-      "setInfo": "Set {{set}} · sets {{left}} : {{right}}",
+      "setInfo": "Set {{set}} · sets {{home}} : {{away}}",
       "setsWon": "Sets : {{count}}",
       "serveNumber": "Service #{{number}}",
       "timeOut": "Temps mort",
