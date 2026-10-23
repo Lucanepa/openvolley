@@ -7,7 +7,7 @@ import TabletStatusIndicator from './TabletStatusIndicator'
 import ConnectTabletsModal from './connect/ConnectTabletsModal'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { BellIcon, SatelliteDishIcon, ClipboardIcon, ZoomInIcon, HomeIcon } from './icons'
-import { ChevronDown, ChevronUp, Maximize, Menu, Minimize, Power, Tablet, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, Maximize, Menu, Minimize, Power, Tablet, Wifi, WifiOff, X } from 'lucide-react'
 import { isDesktopScoretable, requestDesktopQuit } from '../utils/appLifecycle'
 import { cn } from '../ui/cn.js'
 import { useCollapseTransition } from '../hooks/useCollapseTransition'
@@ -702,8 +702,18 @@ export default function MainHeader({
               className={cn(HEADER_SWITCH, isCompactBar && 'pl-1.5')}
             >
               <span className={isCompactBar ? 'sr-only' : undefined}>{offlineMode ? t('header.offline') : t('header.online')}</span>
-              {/* Toggle Switch: emerald when online (no brand red on the scoreboard, R4) */}
-              <SwitchTrack checked={!offlineMode} className={!offlineMode ? 'bg-emerald-500' : undefined} />
+              {/* Toggle Switch: emerald when online (no brand red on the scoreboard, R4).
+                  The Wi-Fi icon in its thumb says what it switches: on a phone
+                  its word is hidden and a bare switch top left said nothing
+                  (owner, 2026-10-23). In the thumb, not beside it: beside it,
+                  it cut the match chip to "#40..." at 360 px. */}
+              <SwitchTrack
+                checked={!offlineMode}
+                className={!offlineMode ? 'bg-emerald-500' : undefined}
+                thumbIcon={offlineMode
+                  ? <WifiOff size={11} strokeWidth={2.75} aria-hidden="true" data-testid="header-online-icon" className="text-stone-400" />
+                  : <Wifi size={11} strokeWidth={2.75} aria-hidden="true" data-testid="header-online-icon" className="text-emerald-600" />}
+              />
             </button>
           </span>
 
