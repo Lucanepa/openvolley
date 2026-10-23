@@ -46,7 +46,9 @@ vi.mock('../../db/db', () => ({ db: fakeDb }))
 vi.mock('../backendConfig', () => ({ getApiUrl: (p) => `http://backend.test${p}`, getCloudApiUrl: (p) => `http://backend.test${p}` }))
 vi.mock('../../lib/apiClient', () => ({ apiFrom: vi.fn(), apiStorage: { from: vi.fn() } }))
 
-import { restoreMatchFromJson, restoreMatchInPlace, importMatchFromSupabase } from '../backupManager'
+import { restoreMatchFromJson, restoreMatchInPlace, importMatchFromSupabase, serverClosedState } from '../backupManager'
+import { apiFrom } from '../../lib/apiClient'
+import { isStaleClosedCopy } from '../matchReopen'
 
 const SEED = 'match_100_aaa'
 const OTHER = 'match_200_bbb'
@@ -274,5 +276,173 @@ describe('joining a cloud match on this device', () => {
     expect([...fakeDb.sync_queue.map.values()].some(j => j.action === 'scorer')).toBe(false)
     await importMatchFromSupabase({ match: { external_id: OTHER, game_n: 5, status: 'live', test: true }, sets: [], events: [] })
     expect([...fakeDb.sync_queue.map.values()].some(j => j.action === 'scorer')).toBe(false)
+  })
+})
+
+// 2026-10-20, match 406970: a backup of a match the server had closed was
+// restored as a live copy; its restore job was refused (409 OV_MATCH_CLOSED)
+// on every retry and held back every newer write of the match.
+describe('restoring a match closed on the server', () => {
+  const snapshot = () => ({
+    matches: structuredClone([...fakeDb.matches.map.values()]),
+    sets: structuredClone([...fakeDb.sets.map.values()]),
+    events: structuredClone([...fakeDb.events.map.values()]),
+    sync_queue: structuredClone([...fakeDb.sync_queue.map.values()])
+  })
+  const restoreJobs = () => [...fakeDb.sync_queue.map.values()].filter(j => j.action === 'restore')
+
+  it('the server says closed: refused before anything is replaced or queued', async () => {
+    const before = snapshot()
+    const checkServer = vi.fn(async () => true)
+    const err = await restoreMatchFromJson(backup(), { checkServer }).catch(e => e)
+    expect(err).toBeInstanceOf(Error)
+    expect(err).toMatchObject({ code: 'OV_MATCH_CLOSED', externalId: SEED, gameN: 7 })
+    expect(checkServer).toHaveBeenCalledWith(SEED)
+    expect(snapshot()).toEqual(before)
+    expect(restoreJobs()).toEqual([])
+  })
+
+  it('the server says open (an admin reopened it): a copy blocked as closed here is restored', async () => {
+    fakeDb.matches.map.set(2, { id: 2, seed_key: SEED, status: 'live', cloudBlock: { code: 'OV_MATCH_CLOSED', at: 1 } })
+    const newId = await restoreMatchFromJson(backup(), { checkServer: async () => false })
+    expect(fakeDb.matches.map.get(2)).toBeUndefined()
+    expect(fakeDb.matches.map.get(newId)).toMatchObject({ seed_key: SEED, status: 'live' })
+    expect(restoreJobs()).toHaveLength(1)
+  })
+
+  it('the server says open: a backup taken after the refusal comes back without its closed evidence (scoring screen, not the closed-copy notice)', async () => {
+    const closedBackup = backup({ cloudBlock: { code: 'OV_MATCH_CLOSED', claim: null, at: 1 }, closed_at: '2026-10-20T21:09:00Z' })
+    const newId = await restoreMatchFromJson(closedBackup, { checkServer: async () => false })
+    const restored = fakeDb.matches.map.get(newId)
+    expect(restored).toMatchObject({ seed_key: SEED, status: 'live', cloudBlock: null, closed_at: null })
+    expect(isStaleClosedCopy(restored)).toBe(false)
+    expect(restoreJobs()).toHaveLength(1)
+    // another block is the backup's own
+    const moved = { code: 'OV_SCORER_MOVED', claim: null, at: 2 }
+    const otherId = await restoreMatchFromJson(backup({ cloudBlock: moved }), { checkServer: async () => false })
+    expect(fakeDb.matches.map.get(otherId).cloudBlock).toEqual(moved)
+  })
+
+  it('the server cannot be asked: local evidence decides', async () => {
+    const offline = async () => null
+    // the backup itself is approved
+    await expect(restoreMatchFromJson(backup({ status: 'approved' }), { checkServer: offline }))
+      .rejects.toMatchObject({ code: 'OV_MATCH_CLOSED' })
+    // the local copy it would replace carries the server's closed_at
+    fakeDb.matches.map.set(2, { id: 2, seed_key: SEED, status: 'live', closed_at: '2026-10-20T21:09:00Z' })
+    await expect(restoreMatchFromJson(backup(), { checkServer: offline }))
+      .rejects.toMatchObject({ code: 'OV_MATCH_CLOSED' })
+    expect(fakeDb.matches.map.get(2)).toMatchObject({ seed_key: SEED, closed_at: '2026-10-20T21:09:00Z' })
+    expect(restoreJobs()).toEqual([])
+    // nothing says closed: the restore goes ahead
+    fakeDb.matches.map.set(2, { id: 2, seed_key: SEED, status: 'live' })
+    const newId = await restoreMatchFromJson(backup(), { checkServer: offline })
+    expect(fakeDb.matches.map.get(newId)).toMatchObject({ seed_key: SEED, status: 'live' })
+    expect(restoreJobs()).toHaveLength(1)
+  })
+
+  it('a test backup never asks the server', async () => {
+    const checkServer = vi.fn(async () => true)
+    await restoreMatchFromJson(backup({ test: true, status: 'approved' }), { checkServer })
+    await restoreMatchInPlace([...fakeDb.matches.map.values()].find(m => m.seed_key === SEED).id, backup({ test: true }), { checkServer })
+    expect(checkServer).not.toHaveBeenCalled()
+  })
+
+  it('restoreMatchInPlace: refused before the open match is overwritten', async () => {
+    fakeDb.matches.map.set(2, { id: 2, seed_key: SEED, status: 'live', gameN: 7 })
+    const before = snapshot()
+    const checkServer = vi.fn(async () => true)
+    await expect(restoreMatchInPlace(2, backup({ status: 'ended' }), { checkServer }))
+      .rejects.toMatchObject({ code: 'OV_MATCH_CLOSED', externalId: SEED, gameN: 7 })
+    expect(checkServer).toHaveBeenCalledWith(SEED)
+    expect(snapshot()).toEqual(before)
+    expect(fakeDb.matches.map.get(2).status).toBe('live')
+  })
+
+  it('restoreMatchInPlace: the server cannot be asked and the open copy is known closed', async () => {
+    fakeDb.matches.map.set(2, { id: 2, seed_key: SEED, status: 'live', cloudBlock: { code: 'OV_MATCH_CLOSED', at: 1 } })
+    await expect(restoreMatchInPlace(2, backup(), { checkServer: async () => null }))
+      .rejects.toMatchObject({ code: 'OV_MATCH_CLOSED' })
+    await restoreMatchInPlace(2, backup(), { checkServer: async () => false })
+    expect(restoreJobs()).toHaveLength(1)
+    // the server said open: the current row's block does not survive the merge
+    expect(fakeDb.matches.map.get(2)).toMatchObject({ status: 'live', cloudBlock: null })
+    expect(isStaleClosedCopy(fakeDb.matches.map.get(2))).toBe(false)
+  })
+
+  it('restoreMatchInPlace: the server says open, a backup and a copy that carry closed evidence restore an open copy', async () => {
+    fakeDb.matches.map.set(2, { id: 2, seed_key: SEED, status: 'live', closed_at: '2026-10-20T21:09:00Z' })
+    await restoreMatchInPlace(2, backup({ cloudBlock: { code: 'OV_MATCH_CLOSED', at: 1 } }), { checkServer: async () => false })
+    expect(fakeDb.matches.map.get(2)).toMatchObject({ status: 'live', cloudBlock: null, closed_at: null })
+    expect(isStaleClosedCopy(fakeDb.matches.map.get(2))).toBe(false)
+    expect(restoreJobs()).toHaveLength(1)
+  })
+
+  it('without checkServer the default probe is used; a probe that cannot answer falls back to local evidence', async () => {
+    // apiFrom is a bare vi.fn() here: the probe fails and answers null
+    const newId = await restoreMatchFromJson(backup())
+    expect(fakeDb.matches.map.get(newId)).toMatchObject({ seed_key: SEED })
+    await expect(restoreMatchFromJson(backup({ status: 'final' }))).rejects.toMatchObject({ code: 'OV_MATCH_CLOSED' })
+  })
+})
+
+describe('serverClosedState', () => {
+  const answer = (result) => async () => result
+
+  it('closed: a non-test match at approved / final', async () => {
+    expect(await serverClosedState(SEED, { read: answer({ data: { external_id: SEED, status: 'approved' }, error: null }) })).toBe(true)
+    expect(await serverClosedState(SEED, { read: answer({ data: { external_id: SEED, status: 'final', test: false }, error: null }) })).toBe(true)
+    expect(await serverClosedState(SEED, { read: answer({ data: { external_id: SEED, status: 'approved', test: true }, error: null }) })).toBe(false)
+    // an admin reopen writes 'ended'
+    expect(await serverClosedState(SEED, { read: answer({ data: { external_id: SEED, status: 'ended' }, error: null }) })).toBe(false)
+    expect(await serverClosedState(SEED, { read: answer({ data: { external_id: SEED, status: 'live' }, error: null }) })).toBe(false)
+  })
+
+  it('a match the server does not have is not closed', async () => {
+    expect(await serverClosedState(SEED, { read: answer({ data: null, error: null }) })).toBe(false)
+  })
+
+  it('unknown (null): no key, offline, a read error or a failed request', async () => {
+    const read = vi.fn(answer({ data: { status: 'approved' }, error: null }))
+    expect(await serverClosedState(null, { read })).toBe(null)
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    try {
+      expect(await serverClosedState(SEED, { read })).toBe(null)
+    } finally {
+      online.mockRestore()
+    }
+    expect(read).not.toHaveBeenCalled()
+    expect(await serverClosedState(SEED, { read: answer({ data: null, error: { message: 'Backend not available' } }) })).toBe(null)
+    expect(await serverClosedState(SEED, { read: answer(undefined) })).toBe(null)
+    expect(await serverClosedState(SEED, { read: async () => { throw new Error('boom') } })).toBe(null)
+    expect(await serverClosedState(SEED, { read: () => { throw new Error('boom') } })).toBe(null)
+  })
+
+  it('gives up after 4 s by default: unknown, never a refusal', async () => {
+    vi.useFakeTimers()
+    try {
+      let settled = false
+      const state = serverClosedState(SEED, { read: () => new Promise(() => {}) })
+      state.then(() => { settled = true })
+      await vi.advanceTimersByTimeAsync(3999)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(await state).toBe(null)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('the default read asks for public columns of this match only', async () => {
+    const query = {
+      select: vi.fn(() => query),
+      eq: vi.fn(() => query),
+      maybeSingle: vi.fn(async () => ({ data: { external_id: SEED, status: 'approved', test: false }, error: null }))
+    }
+    apiFrom.mockReturnValueOnce(query)
+    expect(await serverClosedState(SEED)).toBe(true)
+    expect(apiFrom).toHaveBeenCalledWith('matches')
+    expect(query.select).toHaveBeenCalledWith('external_id, status, test')
+    expect(query.eq).toHaveBeenCalledWith('external_id', SEED)
   })
 })

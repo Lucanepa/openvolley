@@ -2949,7 +2949,22 @@
     "joinWithPin": "Mit Spiel-PIN beitreten",
     "clubRequired": "Nicht synchronisiert: Deinem Konto ist noch kein Verein zugeordnet. Ein Admin ordnet ihn zu; das Spiel ist auf diesem Gerät sicher.",
     "notYourClub": "Nicht synchronisiert: Spiel {{game}} ist kein Heimspiel deines Vereins. Das Spiel ist auf diesem Gerät sicher.",
-    "gameNotInSchedule": "Nicht synchronisiert: Spiel {{game}} steht nicht im VolleyManager-Spielplan. Das Spiel ist auf diesem Gerät sicher."
+    "gameNotInSchedule": "Nicht synchronisiert: Spiel {{game}} steht nicht im VolleyManager-Spielplan. Das Spiel ist auf diesem Gerät sicher.",
+    "matchClosedDiffers": "Nicht synchronisiert: Dieses Spiel ist auf dem Server abgeschlossen und die Kopie auf diesem Gerät weicht ab. Öffne es, um die offizielle Version zu laden oder diese Kopie zu entfernen.",
+    "closedCopy": {
+      "title": "Auf dem Server abgeschlossen",
+      "body": "Dieses Spiel ist auf dem Server abgeschlossen. Die Kopie auf diesem Gerät weicht von der offiziellen Version ab und kann weder weitergeführt noch synchronisiert werden.",
+      "loadOfficial": "Offizielle Version laden",
+      "remove": "Von diesem Gerät entfernen",
+      "usePin": "Spielnummer und PIN eingeben",
+      "errors": {
+        "offline": "Zum Laden der offiziellen Version braucht es eine Verbindung.",
+        "needsPin": "Mit dem Spiel-PIN auf diesem Gerät lässt sich die offizielle Version nicht laden. Gib Spielnummer und Spiel-PIN ein.",
+        "failed": "Die offizielle Version konnte nicht geladen werden. Versuche es nochmals oder gib Spielnummer und Spiel-PIN ein."
+      }
+    },
+    "removeLocalOnly": "Nur die Kopie auf diesem Gerät wird gelöscht. Die offizielle Version bleibt auf dem Server.",
+    "restoreRefused": "Dieses Spiel ist auf dem Server abgeschlossen, darum lässt sich dieses Backup nicht wiederherstellen. Lade die offizielle Version mit Spielnummer und Spiel-PIN."
   },
   "androidUpdate": {
     "available": "OpenVolley {{version}} ist verfügbar",

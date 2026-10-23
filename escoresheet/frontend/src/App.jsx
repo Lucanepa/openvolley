@@ -24,6 +24,8 @@ import ConnectTabletsModal from './components/connect/ConnectTabletsModal'
 import { useSyncQueue, useUserMatchLink, checkScorerMoved, matchEndUpdateNeeded, isClosedHere } from './hooks/useSyncQueue'
 import { isScorerMoved, takeBackScoring } from './utils/matchHandover'
 import ScorerMovedModal from './components/ScorerMovedModal'
+import ClosedOnServerModal from './components/ClosedOnServerModal'
+import { isKnownClosedOnServer, isStaleClosedCopy } from './utils/matchReopen'
 import SyncSignInBanner from './components/auth/SyncSignInBanner'
 import useAutoBackup from './hooks/useAutoBackup'
 import { pickNativeBackupFile } from './utils/nativeBackup'
@@ -61,7 +63,7 @@ import DesktopUpdateNotice from './components/DesktopUpdateNotice'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils/matchFormat'
 import { getMatchWinner } from './domain/matchEnd'
 import { setExtId } from './utils/syncIds'
-import { deviceMatchRows, jobsOfMatch } from './utils/deviceMatches'
+import { deviceMatchRows, jobsOfMatch, matchGameNumber } from './utils/deviceMatches'
 import { PhoneIcon } from './components/icons'
 import { Maximize } from 'lucide-react'
 import { Button, cn, FormError, Input } from './ui'
@@ -73,7 +75,7 @@ import AndroidUpdateNotice from './components/AndroidUpdateNotice'
 import { detectAppPlatform } from './utils/openAppWindow'
 import ManageConsole from './components/manage/ManageConsole'
 import ManagerSiteLink from './components/ManagerSiteLink'
-import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, restorePrefill } from './utils/manageNav'
+import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, openRestore, restorePrefill } from './utils/manageNav'
 import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
 import { needsEventCheck, pickCurrentMatch } from './utils/currentMatch'
 import { isRelayErrorFor, mayPublishMatchData, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
@@ -122,6 +124,9 @@ export default function App() {
   // Delete match' showed for a frame first (OpenBeach OB-2, laptop run
   // 2026-10-08)
   const [homeWhilePreparing, setHomeWhilePreparing] = useState(null)
+  // A copy closed on the server that Continue asked for (ClosedOnServerModal
+  // over the home screen); the open match's own copy needs no id here
+  const [closedCopyId, setClosedCopyId] = useState(null)
   const [deleteMatchModal, setDeleteMatchModal] = useState(null)
   const [deletePinInput, setDeletePinInput] = useState('')
   const [deletePinError, setDeletePinError] = useState('')
@@ -482,11 +487,15 @@ export default function App() {
     }
   }, [matchId, showMatchSetup, showMatchEnd])
 
+  // Never a copy the server has closed (isStaleClosedCopy): a phone reopened
+  // one on its scoring screen at every start (2026-10-23). It is not the
+  // live match either, for the update check and the Back / close prompts.
   const activeMatch = useLiveQuery(async () => {
     try {
       return await db.matches
         .where('status')
         .equals('live')
+        .filter(m => !isStaleClosedCopy(m))
         .first()
     } catch (error) {
       console.error('Unable to load active match', error)
@@ -542,12 +551,32 @@ export default function App() {
     }
   }, [matchId])
 
+  // A copy the server has closed (utils/matchReopen isStaleClosedCopy): the
+  // one Continue asked for, else the open match (scored here when the first
+  // OV_MATCH_CLOSED came). ClosedOnServerModal shows in place of its scoring
+  // screen, and goes away once the copy is removed or replaced.
+  const shownClosedCopy = useLiveQuery(async () => {
+    const id = closedCopyId ?? matchId
+    if (id == null) return null
+    try {
+      const m = await db.matches.get(id)
+      return isStaleClosedCopy(m) ? { id: m.id, gameN: matchGameNumber(m) } : null
+    } catch {
+      return null
+    }
+  }, [closedCopyId, matchId], null)
+  // the live query keeps its last answer until it has read the new id
+  const closedCopy = shownClosedCopy && shownClosedCopy.id === (closedCopyId ?? matchId) ? shownClosedCopy : null
+  const closedCopyOpen = matchId != null && closedCopy?.id === matchId
+
   const currentOfficialMatch = useLiveQuery(async () => {
     try {
       const matches = await db.matches.orderBy('createdAt').reverse().toArray()
       // Only consider matches that have been confirmed (matchInfoConfirmedAt set)
       // This prevents showing Continue/Delete for matches where user hasn't clicked "Create Match"
-      return matches.find(m => m.test !== true && m.status !== 'final' && m.matchInfoConfirmedAt) || null
+      // A copy closed on the server is always reachable (Load the official
+      // version, Remove), even a restored row without matchInfoConfirmedAt
+      return matches.find(m => m.test !== true && m.status !== 'final' && (m.matchInfoConfirmedAt || isStaleClosedCopy(m))) || null
     } catch (error) {
       console.error('Unable to load official match', error)
       return null
@@ -899,7 +928,9 @@ export default function App() {
     )
 
     let status = 'No data'
-    if (currentMatch.status === 'final' || (sets.length > 0 && sets.every(s => s.finished))) {
+    // A copy the server has closed is no match being recorded: the header
+    // does not say so, and New match warns instead of doing nothing
+    if (currentMatch.status === 'final' || (sets.length > 0 && sets.every(s => s.finished)) || isStaleClosedCopy(currentMatch)) {
       status = 'Match ended'
     } else if ((currentMatch.status === 'live' || hasActiveSet || hasEventActivity) && matchReadyForPlay) {
       status = 'Match recording'
@@ -1192,8 +1223,9 @@ export default function App() {
       // A test match: to a local relay only (mayPublishMatchData)
       if (!mayPublishMatchData(currentMatchData, scorerRelay.url)) return
       // Another device scores this match now: its tablets follow that one,
-      // this device's older copy must not overwrite the room (db/019)
-      if (isScorerMoved(currentMatchData)) return
+      // this device's older copy must not overwrite the room (db/019). Nor
+      // does a copy of a match the server has closed (2026-10-23).
+      if (isScorerMoved(currentMatchData) || isStaleClosedCopy(currentMatchData)) return
 
       try {
         // Before the reads: a live state numbered after this mark is newer
@@ -1568,6 +1600,8 @@ export default function App() {
   // Priority: finished match → MatchEnd, live with activity → Scoreboard,
   // else → Setup
   const openRestoredMatch = (newMatchId, cloudData) => {
+    // the loaded match replaced any closed copy the dialog was about
+    setClosedCopyId(null)
     setMatchId(newMatchId)
     const matchStatus = cloudData.match?.status
     const hasEvents = cloudData.events && cloudData.events.length > 0
@@ -1576,7 +1610,9 @@ export default function App() {
     const homeSetsWon = finishedSets.filter(s => (s.homePoints ?? s.home_points ?? 0) > (s.awayPoints ?? s.away_points ?? 0)).length
     const awaySetsWon = finishedSets.filter(s => (s.awayPoints ?? s.away_points ?? 0) > (s.homePoints ?? s.home_points ?? 0)).length
     const isMatchFinished = isMatchFinishedUtil(homeSetsWon, awaySetsWon, cloudBestOf(cloudData.match))
-    if (isMatchFinished) {
+    // An approved or final match is closed even when its sets do not count
+    // as finished (a forfeit): its Match End, never the scoring screen
+    if (isMatchFinished || ['approved', 'final'].includes(matchStatus)) {
       setShowMatchSetup(false)
       setShowMatchEnd(true)
     } else if ((matchStatus === 'live' || hasEvents || hasSets) && (hasEvents || hasSets)) {
@@ -1601,6 +1637,19 @@ export default function App() {
     setShowMatchSetup(false)
     setShowManualAdjustments(false)
     setShowMatchEnd(false)
+  }
+
+  // The server's copy of a match in place of this device's (take back
+  // scoring, Load the official version): fetched with the game PIN this
+  // device kept, imported over the local copy (its jobs set aside), then the
+  // screen the loaded match needs
+  const loadOfficialVersion = async (id) => {
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false
+    const r = await takeBackScoring(db, id, { fetchCloud: fetchMatchByPin, importCloud: importMatchFromSupabase, online })
+    if (!r.ok) return { error: r.reason }
+    openRestoredMatch(r.matchId, r.cloud)
+    try { window.dispatchEvent(new Event('sync-queue-write')) } catch { /* no window */ }
+    return { ok: true }
   }
 
   async function clearLocalTestData() {
@@ -2109,7 +2158,9 @@ export default function App() {
     setDeleteMatchModal({
       matchName,
       matchId: matchToDelete.id,
-      gamePin: matchToDelete.gamePin || null
+      gamePin: matchToDelete.gamePin || null,
+      // the server keeps its closed record: only this device's copy goes
+      closedOnServer: isKnownClosedOnServer(matchToDelete)
     })
   }
 
@@ -2132,7 +2183,9 @@ export default function App() {
 
     // Get match before deleting to check status and seed_key
     const matchToDelete = await db.matches.get(matchIdToDelete)
-    const shouldDeleteFromSupabase = matchToDelete && matchToDelete.status !== 'final' && matchToDelete.seed_key
+    // Never for a match known closed on the server: it keeps the closed
+    // record and refused every request of such a delete job
+    const shouldDeleteFromSupabase = matchToDelete && matchToDelete.status !== 'final' && matchToDelete.seed_key && !isKnownClosedOnServer(matchToDelete)
     console.log('[Delete Match] 🗑️ Preparing to delete match:', {
       matchId: matchIdToDelete,
       status: matchToDelete?.status,
@@ -2217,10 +2270,11 @@ export default function App() {
         console.error('[App] Error queuing Supabase match deletion:', err)
       }
     } else {
-      console.log('[Delete Match] ⏭️ Skipping Supabase delete (final status or no seed_key)')
+      console.log('[Delete Match] ⏭️ Skipping Supabase delete (final status, no seed_key or closed on the server)')
     }
 
     setDeleteMatchModal(null)
+    setClosedCopyId(null)
     setMatchId(null)
     setShowMatchSetup(false)
     setShowManualAdjustments(false)
@@ -2241,7 +2295,9 @@ export default function App() {
     // Check if there's a CONFIRMED match (has matchInfoConfirmedAt)
     // Unconfirmed matches (user started but didn't click "Create Match") should be silently deleted
     if (currentMatch) {
-      if (currentMatch.matchInfoConfirmedAt) {
+      // a copy closed on the server counts as confirmed (a restored row may
+      // lack matchInfoConfirmedAt): never deleted without a word
+      if (currentMatch.matchInfoConfirmedAt || isStaleClosedCopy(currentMatch)) {
         // This is a real confirmed match - warn the user
         setNewMatchModal({
           type: 'official',
@@ -2961,6 +3017,13 @@ export default function App() {
       const match = await db.matches.get(targetMatchId)
       if (!match) return
 
+      // A copy the server has closed: no session lock, no scoring screen;
+      // the dialog offers the official version or removing it (2026-10-23)
+      if (isStaleClosedCopy(match)) {
+        setClosedCopyId(match.id)
+        return
+      }
+
       // Check session lock (only for non-test matches)
       if (!match.test) {
         const sessionCheck = await checkMatchSession(targetMatchId)
@@ -3005,7 +3068,7 @@ export default function App() {
 
       // Determine where to continue based on status
       // Note: status flow is live -> ended -> final (after approval)
-      if (match.status === 'live' || match.status === 'ended' || match.status === 'final') {
+      if (match.status === 'live' || match.status === 'ended' || match.status === 'approved' || match.status === 'final') {
         // Check if match is finished - go to MatchEnd
         const match = await db.matches.get(targetMatchId)
         const sets = await db.sets.where('matchId').equals(targetMatchId).toArray()
@@ -3018,12 +3081,14 @@ export default function App() {
         setShowMatchSetup(false)
         setShowCoinToss(false)
 
-        // 'ended' without the sets won = forfeit or stopped match: also Match End
-        if (((match.status === 'live' && isMatchFinished) || match.status === 'ended') && !match.approved) {
-          // Match finished but not yet approved - go to MatchEnd
+        // 'ended' without the sets won = forfeit or stopped match: also Match End.
+        // An approved or final match is closed: its Match End too, not the
+        // scoring screen (which only bounced it back there)
+        const closed = match.approved === true || match.status === 'approved' || match.status === 'final'
+        if ((match.status === 'live' && isMatchFinished) || match.status === 'ended' || closed) {
           setShowMatchEnd(true)
         } else {
-          // Match in progress or already approved - go to scoreboard
+          // Match in progress - go to scoreboard
           setShowMatchEnd(false)
         }
       } else {
@@ -3044,12 +3109,14 @@ export default function App() {
   // It is kept on a phone turned sideways: the scoring screen stays mounted
   // under its "hold the phone upright" notice, with its dialogs and countdowns
   const phoneLayoutOn = phoneLayoutKept(readStoredDisplayMode(), viewportSize)
-  const phoneScoringShown = phoneLayoutOn && !!matchId && !showCoinToss && !showMatchSetup && !showMatchEnd && !showManualAdjustments
+  // A copy closed on the server shows its dialog in place of the scoring
+  // screen (closedCopyOpen): no phone scoring layout, no size gate over it
+  const phoneScoringShown = phoneLayoutOn && !!matchId && !showCoinToss && !showMatchSetup && !showMatchEnd && !showManualAdjustments && !closedCopyOpen
   const phoneMatchEndShown = phoneLayoutOn && !!matchId && showMatchEnd && !showManualAdjustments
   // the screens a phone cannot show (the size gate below). The corrections fit
   // a phone since 2.4.10; the gate had trapped a phone in them (no way back
   // but closing the app, emulator audit 2026-10-14).
-  const smallScreenBlocked = !!matchId && !showMatchSetup && !showCoinToss && !showManualAdjustments && !phoneScoringShown && !phoneMatchEndShown
+  const smallScreenBlocked = !!matchId && !showMatchSetup && !showCoinToss && !showManualAdjustments && !phoneScoringShown && !phoneMatchEndShown && !closedCopyOpen
   // On a phone the gate only shows for the scoring screen with Screen mode
   // Tablet or Desktop: its button switches to the phone layout (Options,
   // which the hint used to point to, is not reachable from the gate)
@@ -3352,6 +3419,11 @@ export default function App() {
                     onRestoreMatch={() => setRestoreMatchModal(true)}
                   />
                 </>
+              ) : closedCopyOpen ? (
+                // Scored here when the server closed it: the scoring screen
+                // goes at once (its shortcuts, live state and relay with it),
+                // ClosedOnServerModal below takes its place
+                null
               ) : (
                 <Scoreboard
                   matchId={matchId}
@@ -3371,16 +3443,25 @@ export default function App() {
               <ScorerMovedModal
                 scorer={openMatchBlock?.scorer || null}
                 closed={openMatchBlock?.closed === true}
-                onTakeBack={async () => {
-                  // The other device's score from the cloud first, then the claim
-                  const online = typeof navigator === 'undefined' || navigator.onLine !== false
-                  const r = await takeBackScoring(db, matchId, { fetchCloud: fetchMatchByPin, importCloud: importMatchFromSupabase, online })
-                  if (!r.ok) return { error: r.reason }
-                  openRestoredMatch(r.matchId, r.cloud)
-                  try { window.dispatchEvent(new Event('sync-queue-write')) } catch { /* no window */ }
-                  return { ok: true }
-                }}
+                // The other device's score from the cloud first, then the claim
+                onTakeBack={() => loadOfficialVersion(matchId)}
                 onClose={goHome}
+              />
+            )}
+
+            {/* A copy the server has closed (2026-10-23): no scoring screen,
+                only the official version or removing the copy. Never over a
+                Match End (a copy approved here is no stale copy anyway), the
+                corrections or the dialogs it opens itself. */}
+            {closedCopy && !showMatchEnd && !showManualAdjustments && !deleteMatchModal && !restoreMatchModal && !restorePreviewData && (
+              <ClosedOnServerModal
+                onLoadOfficial={() => loadOfficialVersion(closedCopy.id)}
+                onRemove={() => showDeleteMatchModal(closedCopy.id)}
+                onUsePin={() => openRestore({ gameN: closedCopy.gameN })}
+                onClose={() => {
+                  setClosedCopyId(null)
+                  goHome()
+                }}
               />
             )}
 
@@ -3408,7 +3489,9 @@ export default function App() {
                     Are you sure you want to delete all data for: <strong className="font-semibold text-stone-900">{deleteMatchModal.matchName}</strong>?
                   </p>
                   <p className="mt-2 text-sm text-stone-600">
-                    This will delete all sets, events, players, and team data for this match from local storage and from the cloud database.
+                    {deleteMatchModal.closedOnServer
+                      ? t('cloudBlock.removeLocalOnly')
+                      : 'This will delete all sets, events, players, and team data for this match from local storage and from the cloud database.'}
                   </p>
 
                   {/* PIN confirmation for matches with gamePin */}
@@ -3728,7 +3811,16 @@ export default function App() {
                         setCloudBackupError('')
                         openRestoredMatch(newMatchId, cloudData)
                       } catch (err) {
-                        setRestoreError(err.message || 'Failed to restore match')
+                        // backupManager refuses a backup of a match the server
+                        // has closed, before it writes anything: a restored
+                        // closed copy left a sync error nothing could clear
+                        // (2026-10-23). Said here; back to the backup list.
+                        if (err?.code === 'OV_MATCH_CLOSED') {
+                          setRestorePreviewData(null)
+                          setAlertModal(t('cloudBlock.restoreRefused'))
+                        } else {
+                          setRestoreError(err.message || 'Failed to restore match')
+                        }
                       } finally {
                         setRestoreLoading(false)
                       }

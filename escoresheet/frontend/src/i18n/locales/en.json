@@ -2971,7 +2971,22 @@
     "joinWithPin": "Join with game PIN",
     "clubRequired": "Not synced: your account has no club yet. An admin adds it; the match is safe on this device.",
     "notYourClub": "Not synced: game {{game}} is not a home game of your club. The match is safe on this device.",
-    "gameNotInSchedule": "Not synced: game {{game}} is not in the VolleyManager schedule. The match is safe on this device."
+    "gameNotInSchedule": "Not synced: game {{game}} is not in the VolleyManager schedule. The match is safe on this device.",
+    "matchClosedDiffers": "Not synced: this match is closed on the server and this device's copy differs. Open it to load the official version or remove this copy.",
+    "closedCopy": {
+      "title": "Closed on the server",
+      "body": "This match is closed on the server. The copy on this device differs from the official version and can no longer be scored or synced.",
+      "loadOfficial": "Load the official version",
+      "remove": "Remove from this device",
+      "usePin": "Enter game number and PIN",
+      "errors": {
+        "offline": "Loading the official version needs a connection.",
+        "needsPin": "The game PIN on this device does not load the official version. Enter the game number and game PIN.",
+        "failed": "The official version could not be loaded. Try again or enter the game number and game PIN."
+      }
+    },
+    "removeLocalOnly": "Only the copy on this device is deleted. The official version stays on the server.",
+    "restoreRefused": "This match is closed on the server, so this backup cannot be restored. Load the official version with the game number and game PIN."
   },
   "androidUpdate": {
     "available": "OpenVolley {{version}} is available",

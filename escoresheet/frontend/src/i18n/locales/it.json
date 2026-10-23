@@ -2970,7 +2970,22 @@
     "joinWithPin": "Unisciti con il PIN della partita",
     "clubRequired": "Non sincronizzata: il tuo account non ha ancora una società. Un admin la aggiunge; la partita è al sicuro su questo dispositivo.",
     "notYourClub": "Non sincronizzata: la partita {{game}} non è una partita in casa della tua società. La partita è al sicuro su questo dispositivo.",
-    "gameNotInSchedule": "Non sincronizzata: la partita {{game}} non è nel calendario VolleyManager. La partita è al sicuro su questo dispositivo."
+    "gameNotInSchedule": "Non sincronizzata: la partita {{game}} non è nel calendario VolleyManager. La partita è al sicuro su questo dispositivo.",
+    "matchClosedDiffers": "Non sincronizzata: questa partita è chiusa sul server e la copia di questo dispositivo è diversa. Aprila per caricare la versione ufficiale o rimuovere questa copia.",
+    "closedCopy": {
+      "title": "Chiusa sul server",
+      "body": "Questa partita è chiusa sul server. La copia di questo dispositivo è diversa dalla versione ufficiale e non può più essere refertata né sincronizzata.",
+      "loadOfficial": "Carica la versione ufficiale",
+      "remove": "Rimuovi da questo dispositivo",
+      "usePin": "Inserisci numero e PIN della partita",
+      "errors": {
+        "offline": "Per caricare la versione ufficiale serve una connessione.",
+        "needsPin": "Il PIN su questo dispositivo non carica la versione ufficiale. Inserisci il numero e il PIN della partita.",
+        "failed": "Non è stato possibile caricare la versione ufficiale. Riprova o inserisci il numero e il PIN della partita."
+      }
+    },
+    "removeLocalOnly": "Viene eliminata solo la copia di questo dispositivo. La versione ufficiale resta sul server.",
+    "restoreRefused": "Questa partita è chiusa sul server: questo backup non può più essere ripristinato. Carica la versione ufficiale con il numero e il PIN della partita."
   },
   "androidUpdate": {
     "available": "OpenVolley {{version}} è disponibile",
