@@ -10,7 +10,7 @@ import { filterMatchPayload, JSONB_COLUMNS } from '../db/matchRepository'
 import { parseExtId, resolveJobExternalId, jobMatchKey, USER_MATCH_RESOURCE, userMatchRoles, userMatchJob } from '../utils/syncIds'
 import { buildConnectionPins } from '../utils/connectionPins'
 import { ACCESS_CHANGED_EVENT } from '../lib/access'
-import { SCORER_CLAIM_ACTION, SCORER_MOVED, isScorerMoved, noteScorerMoved, markScorerMoved, hasUnsentClaim, closeMovedMatches, retireIfSuperseded, retireStaleGameCopies } from '../utils/matchHandover'
+import { SCORER_CLAIM_ACTION, SCORER_MOVED, MATCH_CLOSED, SERVER_CLOSED_BY, isScorerMoved, noteScorerMoved, markScorerMoved, hasUnsentClaim, closeMovedMatches, retireIfSuperseded, retireStaleGameCopies, setAsideClosedJobs, setAsideClosedCopies } from '../utils/matchHandover'
 
 /**
  * ============================================================================
@@ -597,21 +597,33 @@ export function resetCloudBlockCache() {
 // another device, or a backup of it restored here) is the server's official
 // record: the local copy is finished too and no longer counts as an open
 // match on the home screen (2026-10-19: a restored, closed match stayed open
-// next to a new match of the same game). A match still being scored here is
-// left open: its notice says why it does not sync.
+// next to a new match of the same game). A copy still being scored here
+// (scheduled, live) keeps its status and gets the block: marked final it
+// would leave the home screen, and with it the way to remove it or to load
+// the official version. Either way its unsent writes are set aside
+// (recordCloudBlock).
 const FINISHED_HERE = ['ended', 'approved']
 export const closesLocalCopy = (local, code) => code === 'OV_MATCH_CLOSED' && local?.test !== true && FINISHED_HERE.includes(local?.status)
 
 /**
  * @returns {Promise<{ setAside?: boolean }>} setAside: the match moved to
- *   another device, its unsent writes (this job too) are set aside
+ *   another device or the server has closed it; its unsent writes (this job
+ *   too) are set aside
  */
 async function recordCloudBlock(job, error) {
   const seedKey = jobMatchKey(job)
   if (!seedKey || !error?.code) return {}
   try {
     const local = await findLocalMatchBySeed(seedKey)
-    if (!local) return {}
+    if (!local) {
+      // Closed and no local copy (Close match removed it while older writes
+      // of the match were still queued): nothing to mark, but the server
+      // refuses every one of them. Set aside, never a lasting refusal.
+      if (error.code !== MATCH_CLOSED) return {}
+      const n = await setAsideClosed(job, seedKey)
+      safeLog.log(`[SyncQueue] Match ${seedKey} is closed on the server and has no local copy: ${n} unsent write(s) set aside`)
+      return { setAside: true }
+    }
     // db/019: another device scores the match. The notice stays whatever the
     // server refuses later (a closed match is no longer checked for its
     // device: OV_MATCH_CLOSED must not bring this device's old scoreboard
@@ -641,13 +653,33 @@ async function recordCloudBlock(job, error) {
       const by = await retireIfSuperseded(db, { ...local, ...mods })
       if (by) safeLog.log('[SyncQueue] Refused copy of the game retired, continued as', by)
     }
+    // Closed on the server: this write and every other unsent one of the
+    // match are set aside (utils/matchHandover), whatever the local status.
+    // The server refuses each of them; 2026-10-23 (match 406970) a refused
+    // restore stayed 'failed' and held back every newer write of the match.
+    const closed = error.code === MATCH_CLOSED && local.test !== true
+    if (closed) {
+      const n = await setAsideClosed(job, seedKey)
+      safeLog.log(`[SyncQueue] Match ${seedKey} is closed on the server: ${n} unsent write(s) of this device set aside`)
+    }
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent(CLOUD_BLOCK_EVENT, { detail: { seedKey, code: error.code } }))
     }
+    if (closed) return { setAside: true }
   } catch (err) {
     safeLog.warn('[SyncQueue] Could not record the cloud block of a match:', err?.message)
   }
   return {}
+}
+
+// setAsideClosedJobs, and the mark on the refused job's own row: a direct
+// send (useSequentialSync) holds it as 'sending', which the set-aside leaves
+// alone. Stored as 'dropped' with the mark, it goes out again with the
+// others when the server has the match open again (requeueClosedJobs).
+async function setAsideClosed(job, seedKey) {
+  const n = await setAsideClosedJobs(db, seedKey)
+  if (job?.id != null) await db.sync_queue.update(job.id, { superseded_by: SERVER_CLOSED_BY })
+  return n
 }
 
 /**
@@ -672,14 +704,27 @@ export async function checkScorerMoved(seedKey) {
   }
 }
 
+// A sent job that proves the server has the match open: a closed match
+// refuses every set, event and revision row written (db/007, db/015) and
+// every restore. Not a claim or a match delete (both answered "closed" count
+// as sent), not a match update (a no-op rewrite, or approved -> final, passes
+// on a closed match), and not a set/event update or delete: one of a row the
+// server does not have touches nothing and passes too.
+const provesMatchOpen = (job) => job?.resource === 'match'
+  ? job.action === 'restore'
+  : (job?.resource === 'set' || job?.resource === 'event') && job.action !== 'update' && job.action !== 'delete'
+
 async function clearCloudBlock(job) {
   const seedKey = jobMatchKey(job)
   if (!seedKey) return
   try {
     const seeds = await getBlockedSeeds()
     if (!seeds.has(seedKey)) return
-    seeds.delete(seedKey)
     const local = await findLocalMatchBySeed(seedKey)
+    // "Closed on the server" stays until a write proves the match open again
+    // (an admin reopened it): the closed-copy notice depends on it
+    if (local?.cloudBlock?.code === MATCH_CLOSED && !provesMatchOpen(job)) return
+    seeds.delete(seedKey)
     if (local?.cloudBlock) await db.matches.update(local.id, { cloudBlock: null })
   } catch (err) {
     safeLog.warn('[SyncQueue] Could not clear the cloud block of a match:', err?.message)
@@ -773,8 +818,9 @@ export async function processJob(job) {
       const dropAfterClose = error?.code === 'OV_MATCH_CLOSED' && await isNeedlessAfterClose(job)
       const recorded = CLOUD_BLOCK_CODES.includes(error?.code) ? await recordCloudBlock(job, error) : {}
       if (recorded.setAside) {
-        // Another device scores the match: this write is set aside with the
-        // match's others (utils/matchHandover setAsideMovedJobs), not refused
+        // Another device scores the match, or the server has closed it: this
+        // write is set aside with the match's others (utils/matchHandover
+        // setAsideMovedJobs, setAsideClosedJobs), not refused
         result = DROP_JOB
         if (job?.id != null) setAsideJobIds.add(job.id)
       } else if (dropAfterClose) {
@@ -825,9 +871,11 @@ export function matchEndUpdateNeeded(match, pendingJobs, payload) {
  * match that is closed here too: the server's closed copy is the official
  * record, which this device approved with every set and event before it
  * (closingMustWait), so a later update of the match row (status, results,
- * signatures, remarks, connections) has nothing left to deliver. Dropped
- * instead of staying a permanent "refused by the server". Sets, events and
- * restores refused as closed are never dropped: they carry the score.
+ * signatures, remarks, connections) has nothing left to deliver. Only a
+ * fallback now: recordCloudBlock sets aside every write refused as closed
+ * (sets, events, restores and updates alike, of a copy closed here or still
+ * live), and the local rows keep the score. This drops the update when that
+ * could not be recorded.
  */
 async function isNeedlessAfterClose(job) {
   if (job?.resource !== 'match' || job.action !== 'update') return false
@@ -838,14 +886,16 @@ async function isNeedlessAfterClose(job) {
   }
 }
 
-// Jobs whose match moved to another device while they were processed: the
-// pass must not send the match's other jobs it read before they were set aside
+// Jobs whose match moved to another device, or was closed on the server,
+// while they were processed: the pass must not send the match's other jobs it
+// read before they were set aside
 const setAsideJobIds = new Set()
 
 /**
  * Whether processJob set this job aside because another device scores its
- * match (OV_SCORER_MOVED): the direct sender (useSequentialSync) reports it as
- * kept, not failed. Forgets the job.
+ * match (OV_SCORER_MOVED) or the server has closed it (OV_MATCH_CLOSED): the
+ * direct sender (useSequentialSync) reports it as kept, not failed. Forgets
+ * the job.
  */
 export function takeSetAside(jobId) {
   return setAsideJobIds.delete(jobId)
@@ -1523,8 +1573,9 @@ export async function runQueuePass() {
       if (result === DROP_JOB) {
         await db.sync_queue.update(job.id, { status: 'dropped' })
         // A dropped match creation (its match retired, utils/matchHandover),
-        // or a match that moved to another device (its jobs set aside): the
-        // rest of the match is not sent in this pass either
+        // or a match that moved to another device or was closed on the server
+        // (its jobs set aside): the rest of the match is not sent in this
+        // pass either
         const setAside = setAsideJobIds.delete(job.id)
         if (matchKey && (blocksWholeMatch(job) || setAside)) blocked.add(`whole:${matchKey}`)
         continue
@@ -1628,12 +1679,20 @@ let lastPruneAt = 0
 // 'failed' jobs are requeued once per page load (the first connected mount)
 let startupFailedRetryDone = false
 // Refused copies of a game this device continued in its cloud match are
-// retired once per page load, before the startup retry sends them again
+// retired once per page load, before the startup retry sends them again.
+// Then the unsent writes of matches closed on the server are set aside, also
+// the ones an older version parked as 'failed' (utils/matchHandover
+// setAsideClosedCopies): the startup retry would send them only to be
+// refused again (2026-10-23, match 406970: a refused restore was retried at
+// every start and held the match's newer writes back).
 let staleCopiesSweep = null
 function sweepStaleGameCopiesOnce() {
   staleCopiesSweep ??= retireStaleGameCopies(db)
     .then((n) => { if (n) safeLog.log(`[SyncQueue] Retired ${n} refused local cop${n === 1 ? 'y' : 'ies'} of games continued in their cloud match`) })
     .catch((err) => safeLog.warn('[SyncQueue] Could not check the refused local matches:', err?.message))
+    .then(() => setAsideClosedCopies(db))
+    .then((n) => { if (n) safeLog.log(`[SyncQueue] Set aside ${n} unsent write(s) of matches closed on the server`) })
+    .catch((err) => safeLog.warn('[SyncQueue] Could not set aside the writes of matches closed on the server:', err?.message))
   return staleCopiesSweep
 }
 // Matches this device lost to another one (OV_SCORER_MOVED) are asked about

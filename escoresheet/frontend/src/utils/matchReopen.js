@@ -53,6 +53,23 @@ export function isKnownClosedOnServer(match) {
 }
 
 /**
+ * A copy this device was still scoring (not ended / approved / final here)
+ * whose match the server has closed: it can no longer be scored or synced,
+ * so it is never resumed on its own; the user loads the official version or
+ * removes it (ClosedOnServerModal). A phone kept such a copy of match 406970
+ * 'live' and reopened it on its scoring screen at every start (2026-10-23).
+ * Reads only local evidence, so it holds offline too. Never a test match;
+ * never a match another device took over (ScorerMovedModal). Match End keeps
+ * the closed view of a copy that ended or was approved here.
+ */
+export function isStaleClosedCopy(match) {
+  if (!match || match.test === true) return false
+  if (match.cloudBlock?.code === 'OV_SCORER_MOVED') return false
+  if (['ended', 'approved', 'final'].includes(match.status)) return false
+  return !!match.closed_at || match.cloudBlock?.code === 'OV_MATCH_CLOSED'
+}
+
+/**
  * @param {object} args
  * @param {object} args.match the local match row
  * @param {object[]} args.queue every sync_queue row (or at least this match's)

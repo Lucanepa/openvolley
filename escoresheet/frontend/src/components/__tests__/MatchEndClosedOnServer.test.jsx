@@ -44,21 +44,28 @@ vi.mock('../../utils/backendConfig', async (orig) => ({ ...(await orig()), getCl
 const asked = vi.hoisted(() => ({ fn: null }))
 vi.mock('../../utils/askConfirm.js', () => ({ askConfirm: (...a) => asked.fn(...a), default: (...a) => asked.fn(...a) }))
 
-const api = vi.hoisted(() => ({ approve: null, list: null, undo: null }))
-vi.mock('../../lib/accountApi', async (orig) => ({
-  ...(await orig()),
-  approvalsApi: {
-    approve: (...a) => api.approve(...a),
-    list: (...a) => api.list(...a),
-    undo: (...a) => api.undo(...a)
+const api = vi.hoisted(() => ({ approve: null, list: null, undo: null, reopen: null }))
+vi.mock('../../lib/accountApi', async (orig) => {
+  const actual = await orig()
+  return {
+    ...actual,
+    admin: { ...actual.admin, reopenMatch: (...a) => api.reopen(...a) },
+    approvalsApi: {
+      approve: (...a) => api.approve(...a),
+      list: (...a) => api.list(...a),
+      undo: (...a) => api.undo(...a)
+    }
   }
-}))
+})
+// server.row: the server's answer to a read of the matches table (Reopen
+// match asks whether the server has the match closed)
+const server = vi.hoisted(() => ({ row: null }))
 vi.mock('../../lib/apiClient', () => {
-  const chain = () => {
-    const b = new Proxy({}, { get: (_, prop) => (prop === 'then' ? (r) => Promise.resolve({ data: null, error: null }).then(r) : () => b) })
+  const chain = (table) => {
+    const b = new Proxy({}, { get: (_, prop) => (prop === 'then' ? (r) => Promise.resolve({ data: table === 'matches' ? server.row : null, error: null }).then(r) : () => b) })
     return b
   }
-  return { apiFrom: () => chain(), apiStorage: { from: () => chain() }, apiRequest: vi.fn() }
+  return { apiFrom: (table) => chain(table), apiStorage: { from: () => chain() }, apiRequest: vi.fn() }
 })
 vi.mock('../SignaturePad', () => ({
   default: ({ open, onSave, title }) => (open ? <button type="button" onClick={() => onSave('data:image/png;base64,SIG')}>draw {title}</button> : null)
@@ -118,7 +125,10 @@ vi.mock('../../db/db', () => {
     toArray: async () => [...rowsOf(name).values()],
     where: (field) => {
       if (typeof field === 'object') return collection([...rowsOf(name).values()])
-      return { equals: (v) => collection([...rowsOf(name).values()].filter(r => r[field] === v)), anyOf: () => collection([]) }
+      return {
+        equals: (v) => collection([...rowsOf(name).values()].filter(r => r[field] === v)),
+        anyOf: (...vs) => collection([...rowsOf(name).values()].filter(r => vs.flat().includes(r[field])))
+      }
     },
     hook: () => {}
   })
@@ -133,6 +143,7 @@ vi.mock('../../db/db', () => {
 })
 
 import MatchEnd from '../MatchEnd'
+import { db } from '../../db/db'
 
 const SEED = 'match_1_acc'
 const SETS = [
@@ -199,6 +210,8 @@ beforeEach(() => {
   api.list = vi.fn(async () => ({ data: { match: { status: 'ended', closed_at: null, result_key: KEY }, approvals: [] }, error: null, status: 200 }))
   api.approve = vi.fn()
   api.undo = vi.fn(async () => ({ data: { approval: {}, already: false }, error: null, status: 200 }))
+  api.reopen = vi.fn(async () => ({ data: { reopened: true }, error: null, status: 200 }))
+  server.row = null
   auth.value = { user: { id: 'u-scorer', email: 'scorer@club.ch', email_confirmed_at: '2026-10-01T08:00:00Z' }, access: { roles: ['scorer'], isAdmin: false } }
   Object.defineProperty(window.navigator, 'onLine', { configurable: true, get: () => true })
   globalThis.ResizeObserver ||= class { observe() {} unobserve() {} disconnect() {} }
@@ -252,5 +265,75 @@ describe('MatchEnd of a match closed on the server', () => {
     // nothing was changed here
     expect(store.tables.matches.get(1)).toMatchObject({ status: 'ended', homePostGameCaptainSignature: 'data:cap-a' })
     expect([...store.tables.sync_queue.values()]).toEqual([])
+  })
+})
+
+// 2026-10-23, match 406970: the writes the server refused as closed are set
+// aside (utils/matchHandover), and sent again only once the server has the
+// match open again
+describe('Reopen match and the writes set aside as closed', () => {
+  const block = { code: 'OV_MATCH_CLOSED', claim: null, at: 1 }
+  const aside = (id, over = {}) => ({ id, resource: 'event', action: 'insert', status: 'superseded', superseded_by: 'server-closed', ts: '2026-10-21T10:00:00.000Z', payload: { external_id: `${SEED}:e:${id}`, match_id: SEED }, ...over })
+  const queueRows = () => {
+    store.tables.sync_queue = new Map([
+      [1, aside(1)],
+      // the refused write itself, stored as 'dropped' with the mark
+      [2, aside(2, { resource: 'set', action: 'update', status: 'dropped', payload: { external_id: `${SEED}:s:12`, match_id: SEED, finished: true } })],
+      [3, aside(3, { payload: { external_id: 'match_9_other:e:3', match_id: 'match_9_other' } })],
+      // a closing write stays aside: it would close the reopened match again
+      [4, aside(4, { resource: 'match', action: 'update', payload: { id: SEED, status: 'approved' } })]
+    ])
+  }
+  const statuses = () => Object.fromEntries([...store.tables.sync_queue.values()].map(j => [j.id, j.status]))
+
+  it('the server has it open again: the match\'s set-aside writes are queued again, nothing else', async () => {
+    seed({ approved: true, cloudBlock: block })
+    queueRows()
+    server.row = { id: 'uuid-1', status: 'ended', closed_at: null }
+    render(<MatchEnd matchId={1} />)
+    fireEvent.click(await findButton(en.matchEnd.reopenMatch))
+    await waitFor(() => expect(store.tables.matches.get(1)).toMatchObject({ approved: false, status: 'ended', cloudBlock: null }))
+    await waitFor(() => expect(statuses()).toEqual({ 1: 'queued', 2: 'queued', 3: 'superseded', 4: 'superseded' }))
+    expect(store.tables.sync_queue.get(1)).toMatchObject({ retry_count: 0, superseded_by: null })
+    expect(store.tables.sync_queue.size).toBe(4)
+  })
+
+  it('an admin reopen queues them again too', async () => {
+    seed({ approved: true, cloudBlock: block })
+    queueRows()
+    server.row = { id: 'uuid-1', status: 'approved', closed_at: '2026-10-20T21:09:00Z' }
+    auth.value = { ...auth.value, access: { roles: ['scorer'], isAdmin: true } }
+    render(<MatchEnd matchId={1} />)
+    fireEvent.click(await findButton(en.matchEnd.reopenMatch))
+    fireEvent.change(await screen.findByLabelText(en.matchEnd.reopenReason), { target: { value: 'Wrong result entered' } })
+    fireEvent.click(await screen.findByTestId('admin-reopen-confirm'))
+    await waitFor(() => expect(api.reopen).toHaveBeenCalledWith('uuid-1', { reason: 'Wrong result entered' }))
+    await waitFor(() => expect(statuses()).toEqual({ 1: 'queued', 2: 'queued', 3: 'superseded', 4: 'superseded' }))
+  })
+
+  it('an approval that never reached the server reopens here: nothing set aside goes out', async () => {
+    seed({ approved: true })
+    queueRows()
+    store.tables.sync_queue.set(5, { id: 5, resource: 'match', action: 'update', status: 'queued', ts: '2026-10-21T11:00:00.000Z', payload: { id: SEED, status: 'approved' } })
+    render(<MatchEnd matchId={1} />)
+    fireEvent.click(await findButton(en.matchEnd.reopenMatch))
+    await waitFor(() => expect(store.tables.matches.get(1)).toMatchObject({ approved: false, status: 'ended' }))
+    await waitFor(() => expect(statuses()[5]).toBe('superseded'))
+    expect(statuses()).toEqual({ 1: 'superseded', 2: 'dropped', 3: 'superseded', 4: 'superseded', 5: 'superseded' })
+  })
+
+  it('Reopen last set refuses on a match approved here (a confirmation left open while it was approved)', async () => {
+    render(<MatchEnd matchId={1} />)
+    await refreshed()
+    fireEvent.click(await findButton(en.matchEnd.reopenLastSet))
+    const confirm = await findButton(en.matchEnd.yesReopen)
+    await act(async () => { await db.matches.update(1, { approved: true, approvedAt: '2026-10-23T10:00:00Z' }) })
+    await settled()
+    fireEvent.click(confirm.isConnected ? confirm : await findButton(en.matchEnd.yesReopen))
+    await waitFor(() => expect(queryAllButtons(en.matchEnd.yesReopen)).toHaveLength(0))
+    expect(store.tables.matches.get(1)).toMatchObject({ status: 'ended', approved: true, homePostGameCaptainSignature: 'data:cap-a' })
+    expect([...store.tables.sets.values()].every(set => set.finished)).toBe(true)
+    expect([...store.tables.sync_queue.values()]).toEqual([])
+    expect(alerts.showAlert).not.toHaveBeenCalled()
   })
 })

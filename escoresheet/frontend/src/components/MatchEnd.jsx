@@ -15,6 +15,7 @@ import { apiStorage, apiFrom } from '../lib/apiClient'
 import { admin as adminApi, approvalsApi, errorKeyOf, isApprovalUnavailable } from '../lib/accountApi'
 import { useAuth } from '../contexts/AuthContext'
 import { planReopen, isKnownClosedOnServer } from '../utils/matchReopen'
+import { requeueClosedJobs } from '../utils/matchHandover'
 import KitModal from './manage/KitModal'
 import CloudBlockNotice from './CloudBlockNotice'
 import { Textarea } from '../ui/Textarea.jsx'
@@ -1462,7 +1463,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         }
         return handleReopenMatch({ queue: false })
       case 'serverOpen':
-        return handleReopenMatch({ queue: false })
+        return handleReopenMatch({ queue: false, requeueSetAside: true })
       case 'needsConnection':
         showAlert(t('matchEnd.reopenNeedsConnection'), 'error')
         return
@@ -1496,7 +1497,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     }
     setReopenDialog(null)
     // The admin reopen voided the account approvals on the server (db/011)
-    await handleReopenMatch({ queue: false, voidApprovals: true })
+    await handleReopenMatch({ queue: false, voidApprovals: true, requeueSetAside: true })
   }
 
   // Handle reopening match after approval - allows re-approval or adjustments
@@ -1506,8 +1507,10 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   // changed, and the server keeps them on approved -> ended (db/011). A
   // result change afterwards (Reopen last set, Manual adjustments) drops
   // them. voidApprovals: the admin reopen, which voided them on the server.
-  const handleReopenMatch = async ({ queue = true, voidApprovals = false } = {}) => {
-    cLogger.logHandler('handleReopenMatch', { matchId, queue, voidApprovals })
+  // requeueSetAside: the server is known to have the match open, so the
+  // writes it refused as closed and this device set aside go out again.
+  const handleReopenMatch = async ({ queue = true, voidApprovals = false, requeueSetAside = false } = {}) => {
+    cLogger.logHandler('handleReopenMatch', { matchId, queue, voidApprovals, requeueSetAside })
 
     try {
       // Clear approval state in database (and the closed notice: the server
@@ -1520,6 +1523,14 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
         ...(voidApprovals ? { accountApprovals: null } : {})
       })
       setServerClosed(false)
+
+      // The writes set aside when the server refused them as closed go out
+      // again (utils/matchHandover requeueClosedJobs), except a closing one
+      // and those of a local copy this one replaced
+      if (requeueSetAside && !match?.test && match?.seed_key) {
+        const n = await requeueClosedJobs(db, match.seed_key, { since: match.restoredAt || match.importedAt || null })
+        if (n) console.log(`[MatchEnd] Reopened on the server: ${n} write(s) set aside as closed queued again`)
+      }
 
       // Mirror the un-approval to the cloud (approve queued status 'approved')
       if (queue && !match?.test && match?.seed_key) {
@@ -1548,9 +1559,11 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
   const handleReopenLastSet = async () => {
     cLogger.logHandler('handleReopenLastSet', { matchId })
     setShowReopenConfirm(false)
-    // Closed on the server: it would refuse every change (the button is not shown)
-    if (closedOnServer) {
-      showAlert(t('matchEnd.closedOnServer'), 'error')
+    // Approved here or closed on the server: the button is not shown, and the
+    // handler refuses too (a confirmation left open while the match was
+    // approved). Closed on the server, every change would be refused.
+    if (finalActions) {
+      if (closedOnServer) showAlert(t('matchEnd.closedOnServer'), 'error')
       return
     }
 

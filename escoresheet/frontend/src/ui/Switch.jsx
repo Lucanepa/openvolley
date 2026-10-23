@@ -22,11 +22,17 @@ const THUMB_ON = { md: 'translate-x-4.5', lg: 'translate-x-5' };
 const ON = { brand: 'bg-red-600', amber: 'bg-amber-500' };
 const OFF = 'bg-stone-300';
 
-/** The visual track + thumb only; for use inside another control (SwitchCard). */
-export function SwitchTrack({ checked, size = 'md', tone = 'brand', className }) {
+/**
+ * The visual track + thumb only; for use inside another control (SwitchCard).
+ * `thumbIcon`: a small icon inside the thumb that says what the switch is
+ * for, at no extra width (the header's online switch on a phone).
+ */
+export function SwitchTrack({ checked, size = 'md', tone = 'brand', className, thumbIcon = null }) {
   return (
     <span aria-hidden="true" className={cn(TRACK[size], checked ? ON[tone] : OFF, className)}>
-      <span className={cn(THUMB[size], checked ? THUMB_ON[size] : 'translate-x-0.5')} />
+      <span className={cn(THUMB[size], thumbIcon && 'inline-flex items-center justify-center', checked ? THUMB_ON[size] : 'translate-x-0.5')}>
+        {thumbIcon}
+      </span>
     </span>
   );
 }

@@ -897,7 +897,7 @@
       "legend": "T temps morts · S remplacements · W sets gagnés · P points · Durée durée du set"
     },
     "phone": {
-      "setInfo": "Set {{set}} · sets {{left}} : {{right}}",
+      "setInfo": "Set {{set}} · sets {{home}} : {{away}}",
       "setsWon": "Sets : {{count}}",
       "serveNumber": "Service #{{number}}",
       "timeOut": "Temps mort",
@@ -2964,7 +2964,22 @@
     "joinWithPin": "Rejoindre avec le PIN du match",
     "clubRequired": "Non synchronisé : ton compte n'a pas encore de club. Un admin l'ajoute ; le match est en sécurité sur cet appareil.",
     "notYourClub": "Non synchronisé : le match {{game}} n'est pas un match à domicile de ton club. Le match est en sécurité sur cet appareil.",
-    "gameNotInSchedule": "Non synchronisé : le match {{game}} n'est pas dans le calendrier VolleyManager. Le match est en sécurité sur cet appareil."
+    "gameNotInSchedule": "Non synchronisé : le match {{game}} n'est pas dans le calendrier VolleyManager. Le match est en sécurité sur cet appareil.",
+    "matchClosedDiffers": "Non synchronisé : ce match est clôturé sur le serveur et la copie de cet appareil diffère. Ouvre-le pour charger la version officielle ou supprimer cette copie.",
+    "closedCopy": {
+      "title": "Clôturé sur le serveur",
+      "body": "Ce match est clôturé sur le serveur. La copie de cet appareil diffère de la version officielle et ne peut plus être tenue ni synchronisée.",
+      "loadOfficial": "Charger la version officielle",
+      "remove": "Supprimer de cet appareil",
+      "usePin": "Saisir le numéro et le PIN du match",
+      "errors": {
+        "offline": "Le chargement de la version officielle nécessite une connexion.",
+        "needsPin": "Le PIN enregistré sur cet appareil ne charge pas la version officielle. Saisis le numéro et le PIN du match.",
+        "failed": "La version officielle n'a pas pu être chargée. Réessaie ou saisis le numéro et le PIN du match."
+      }
+    },
+    "removeLocalOnly": "Seule la copie de cet appareil est supprimée. La version officielle reste sur le serveur.",
+    "restoreRefused": "Ce match est clôturé sur le serveur : cette sauvegarde ne peut plus être restaurée. Charge la version officielle avec le numéro et le PIN du match."
   },
   "androidUpdate": {
     "available": "OpenVolley {{version}} est disponible",

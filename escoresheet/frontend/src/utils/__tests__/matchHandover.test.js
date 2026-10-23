@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import {
   retireSupersededMatches, retireIfSuperseded, retireStaleGameCopies, takeBackScoring,
   noteScorerMoved, scorerClaimJob, isScorerMoved, SCORER_MOVED, markScorerMoved, setAsideMovedJobs,
-  hasUnsentClaim, closeMovedMatches
+  hasUnsentClaim, closeMovedMatches, setAsideClosedJobs, setAsideClosedCopies, requeueClosedJobs, MATCH_CLOSED, SERVER_CLOSED_BY
 } from '../matchHandover'
 
 // A Dexie table stand-in: what utils/matchHandover uses of it
@@ -212,5 +212,105 @@ describe('the scoring device', () => {
     expect(db.matches.map.get(2).cloudBlock).toEqual({ code: SCORER_MOVED, claim: null, scorer: { platform: 'android', at: 'T' }, at: 5 })
     // and its unsent writes are set aside
     expect(db.sync_queue.map.get(3).status).toBe('superseded')
+  })
+})
+
+// 2026-10-23, match 406970 (PCS): a live copy of a match the server had closed
+describe('a match closed on the server', () => {
+  const ev = (id, status, seed = PCS, extra = {}) => ({ id, resource: 'event', action: 'insert', status, payload: { external_id: `${seed}:e:${id}`, match_id: seed }, ...extra })
+  const aside = { status: 'superseded', superseded_by: SERVER_CLOSED_BY }
+
+  beforeEach(() => {
+    db.sync_queue = fakeTable([
+      { id: 1, resource: 'match', action: 'restore', status: 'failed', payload: { match: { external_id: PCS, status: 'live' } } },
+      { id: 2, resource: 'set', action: 'update', status: 'error', payload: { external_id: `${PCS}:s:3`, match_id: PCS } },
+      ev(3, 'queued'),
+      { id: 4, resource: 'match', action: 'update', status: 'queued', payload: { id: PCS, status: 'live' } },
+      { id: 5, resource: 'match', action: 'scorer', status: 'queued', payload: { id: PCS } },
+      { id: 6, resource: 'match', action: 'delete', status: 'queued', payload: { id: PCS } },
+      ev(7, 'sending'),
+      { id: 8, resource: 'user_match', action: 'upsert', status: 'queued', payload: { match_external_id: PCS, role: 'scorer' } },
+      ev(9, 'queued', OWN),
+      ev(10, 'sent')
+    ])
+  })
+
+  it('every unsent write of the match is set aside: restores, sets, events, updates; never a claim, a delete, a write in flight, a link or another match', async () => {
+    expect(await setAsideClosedJobs(db, PCS)).toBe(4)
+    for (const id of [1, 2, 3, 4]) expect(db.sync_queue.map.get(id)).toMatchObject(aside)
+    expect(db.sync_queue.map.get(5).status).toBe('queued')
+    expect(db.sync_queue.map.get(6).status).toBe('queued')
+    expect(db.sync_queue.map.get(7).status).toBe('sending')
+    expect(db.sync_queue.map.get(8).status).toBe('queued')
+    expect(db.sync_queue.map.get(9).status).toBe('queued')
+    expect(db.sync_queue.map.get(10).status).toBe('sent')
+    expect(await setAsideClosedJobs(db, PCS)).toBe(0)
+    expect(await setAsideClosedJobs(db, null)).toBe(0)
+  })
+
+  it('never a closing write: Close match\'s queued \'final\' still goes (the server takes approved -> final on a closed match)', async () => {
+    db.sync_queue.map.set(11, { id: 11, resource: 'match', action: 'update', status: 'queued', payload: { id: PCS, status: 'final' } })
+    db.sync_queue.map.set(12, { id: 12, resource: 'match', action: 'update', status: 'error', payload: { id: PCS, status: 'approved' } })
+    expect(await setAsideClosedJobs(db, PCS)).toBe(4)
+    expect(db.sync_queue.map.get(11).status).toBe('queued')
+    expect(db.sync_queue.map.get(12).status).toBe('error')
+    expect(db.sync_queue.map.get(4)).toMatchObject(aside)
+  })
+
+  it('at app start: the writes of copies blocked as closed, and writes an older version parked as refused-as-closed', async () => {
+    db.matches.map.get(2).cloudBlock = { code: MATCH_CLOSED, claim: null, at: 1 }
+    // a test match and another block are left alone
+    db.matches.map.set(4, { id: 4, seed_key: 'match_4_test', status: 'live', test: true, cloudBlock: { code: MATCH_CLOSED } })
+    db.sync_queue.map.set(11, ev(11, 'queued', 'match_4_test'))
+    db.sync_queue.map.set(12, ev(12, 'queued', 'match_9_other'))
+    // OWN has no block: its parked refusal goes, its queued write stays
+    db.sync_queue.map.set(13, ev(13, 'failed', OWN, { last_error: { status: 409, code: MATCH_CLOSED } }))
+    db.sync_queue.map.set(14, ev(14, 'failed', OWN, { last_error: { status: 403, code: 'OV_SCORER_REQUIRED' } }))
+    db.sync_queue.map.set(15, { id: 15, resource: 'match', action: 'scorer', status: 'failed', payload: { id: OWN }, last_error: { code: MATCH_CLOSED } })
+    expect(await setAsideClosedCopies(db)).toBe(5)
+    for (const id of [1, 2, 3, 4, 13]) expect(db.sync_queue.map.get(id)).toMatchObject(aside)
+    expect(db.sync_queue.map.get(9).status).toBe('queued')
+    expect(db.sync_queue.map.get(11).status).toBe('queued')
+    expect(db.sync_queue.map.get(12).status).toBe('queued')
+    expect(db.sync_queue.map.get(14).status).toBe('failed')
+    expect(db.sync_queue.map.get(15).status).toBe('failed')
+    // the copy itself is not touched
+    expect(db.matches.map.get(2)).toMatchObject({ status: 'live', cloudBlock: { code: MATCH_CLOSED } })
+  })
+
+  it('open again on the server: the writes set aside as closed are queued again in place, the refused one too; other set-asides stay', async () => {
+    await setAsideClosedJobs(db, PCS)
+    // the refused write itself, stored as 'dropped' by the queue with the mark
+    db.sync_queue.map.set(11, ev(11, 'dropped', PCS, { superseded_by: SERVER_CLOSED_BY }))
+    db.sync_queue.map.set(12, ev(12, 'superseded', PCS, { superseded_by: 'scorer-moved' }))
+    db.sync_queue.map.set(13, ev(13, 'superseded', PCS, { superseded_by: 'cloud-copy' }))
+    db.sync_queue.map.set(14, ev(14, 'superseded', OWN, { superseded_by: SERVER_CLOSED_BY }))
+    db.sync_queue.map.set(15, ev(15, 'dropped', PCS))
+    expect(await requeueClosedJobs(db, PCS)).toBe(5)
+    for (const id of [1, 2, 3, 4, 11]) expect(db.sync_queue.map.get(id)).toMatchObject({ id, status: 'queued', retry_count: 0, superseded_by: null })
+    expect(db.sync_queue.map.get(12)).toMatchObject({ status: 'superseded', superseded_by: 'scorer-moved' })
+    expect(db.sync_queue.map.get(13)).toMatchObject({ status: 'superseded', superseded_by: 'cloud-copy' })
+    expect(db.sync_queue.map.get(14)).toMatchObject({ status: 'superseded', superseded_by: SERVER_CLOSED_BY })
+    expect(db.sync_queue.map.get(15).status).toBe('dropped')
+    expect(await requeueClosedJobs(db, PCS)).toBe(0)
+  })
+
+  it('never a closing write (it would close the reopened match again), nor the writes of a copy loaded or restored after them', async () => {
+    db.sync_queue = fakeTable([
+      { id: 1, resource: 'match', action: 'update', status: 'superseded', superseded_by: SERVER_CLOSED_BY, ts: '2026-10-20T21:00:00.000Z', payload: { id: PCS, status: 'approved' } },
+      { id: 2, resource: 'match', action: 'restore', status: 'superseded', superseded_by: SERVER_CLOSED_BY, ts: '2026-10-20T21:01:00.000Z', payload: { match: { external_id: PCS, status: 'final' } } },
+      ev(3, 'superseded', PCS, { superseded_by: SERVER_CLOSED_BY, ts: '2026-10-20T23:32:00.000Z' }),
+      ev(4, 'dropped', PCS, { superseded_by: SERVER_CLOSED_BY, ts: Date.parse('2026-10-23T09:05:00.000Z') }),
+      ev(5, 'superseded', PCS, { superseded_by: SERVER_CLOSED_BY })
+    ])
+    // the official version loaded on 2026-10-23 at 09:00 replaced the rows of event 3
+    expect(await requeueClosedJobs(db, PCS, { since: '2026-10-23T09:00:00.000Z' })).toBe(1)
+    expect(db.sync_queue.map.get(4).status).toBe('queued')
+    for (const id of [1, 2, 3, 5]) expect(db.sync_queue.map.get(id).status).not.toBe('queued')
+    expect(await requeueClosedJobs(db, PCS)).toBe(2)
+    expect(db.sync_queue.map.get(3).status).toBe('queued')
+    expect(db.sync_queue.map.get(5).status).toBe('queued')
+    expect(db.sync_queue.map.get(1).status).toBe('superseded')
+    expect(db.sync_queue.map.get(2).status).toBe('superseded')
   })
 })
