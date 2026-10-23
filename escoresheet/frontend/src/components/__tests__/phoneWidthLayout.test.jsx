@@ -43,6 +43,25 @@ describe('the header on a phone', () => {
     expect(screen.getByTestId('user-button').dataset.compact).toBe('true')
   })
 
+  // A bare switch top left said nothing (owner, 2026-10-23): its Wi-Fi icon
+  // shows what it switches, crossed out in offline mode
+  it('the switch shows a Wi-Fi icon: emerald when online, crossed out and grey offline', () => {
+    setWidth(384)
+    const { unmount } = header()
+    const on = screen.getByRole('switch').querySelector('[data-testid="header-online-icon"]')
+    expect(on).toHaveClass('lucide-wifi', 'text-emerald-600')
+    expect(on.getAttribute('aria-hidden')).toBe('true')
+    unmount()
+    render(
+      <ScaleProvider>
+        <MainHeader offlineMode matchStatus={{ match }} currentOfficialMatch={match} isFullscreen matchInfoMenuOpen={false} setMatchInfoMenuOpen={() => {}} />
+      </ScaleProvider>
+    )
+    const off = screen.getByRole('switch').querySelector('[data-testid="header-online-icon"]')
+    expect(off).toHaveClass('lucide-wifi-off', 'text-stone-400')
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false')
+  })
+
   it('keeps its words on a tablet; the chip sits in the row between two groups that share the room', () => {
     setWidth(1024)
     const { container } = header()

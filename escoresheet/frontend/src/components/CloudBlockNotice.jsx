@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { CloudOff } from 'lucide-react'
 import { openRestore } from '../utils/manageNav'
+import { isStaleClosedCopy } from '../utils/matchReopen'
 import { cn, FOCUS_RING } from '../ui'
 
 /**
@@ -15,8 +16,11 @@ export function cloudBlockMessage(block, match, t) {
   switch (block.code) {
     case 'OV_SCORER_REQUIRED':
       return { key: 'cloudBlock.scorerRequired', params: {}, join: false }
+    // A copy still scored here differs from the server's closed one (it was
+    // reopened or restored after the close, 2026-10-23): say what to do.
+    // Match End of a copy that ended here keeps the plain sentence.
     case 'OV_MATCH_CLOSED':
-      return { key: 'cloudBlock.matchClosed', params: {}, join: false }
+      return { key: isStaleClosedCopy(match) ? 'cloudBlock.matchClosedDiffers' : 'cloudBlock.matchClosed', params: {}, join: false }
     // db/019: another device scores the match now (ScorerMovedModal on the scoring screens)
     case 'OV_SCORER_MOVED':
       return { key: 'cloudBlock.scorerMoved', params: {}, join: false }
