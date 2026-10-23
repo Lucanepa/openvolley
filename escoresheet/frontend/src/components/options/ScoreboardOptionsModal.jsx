@@ -198,7 +198,12 @@ export default function ScoreboardOptionsModal({
       await restoreBackupData(backupData)
     } catch (err) {
       console.error('Failed to restore backup:', err)
-      showAlert(t('options.alerts.failedToRestoreBackup', { error: err.message }), 'error')
+      // backupManager refuses a backup of a match the server has closed
+      // before it writes anything: say so plainly (a restored closed copy
+      // left a sync error nothing could clear, 2026-10-23)
+      showAlert(err?.code === 'OV_MATCH_CLOSED'
+        ? t('cloudBlock.restoreRefused')
+        : t('options.alerts.failedToRestoreBackup', { error: err.message }), 'error')
     }
   }
 

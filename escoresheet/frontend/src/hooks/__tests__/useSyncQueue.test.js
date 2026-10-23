@@ -155,6 +155,7 @@ import {
   matchEndUpdateNeeded,
   checkScorerMoved
 } from '../useSyncQueue'
+import { sendJobNow } from '../useSequentialSync'
 
 const MATCH_UUID = '11111111-2222-4333-8444-555555555555'
 const ok = (data = null) => ({ data, error: null })
@@ -554,11 +555,13 @@ describe('event history jobs (void / edit / restore)', () => {
     expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'queued', retry_count: 1 })
   })
 
-  it('a closed match (409) is a refusal like any event write', async () => {
+  it('a closed match (409) sets the revision aside like any event write, no lasting refusal', async () => {
+    resetCloudBlockCache()
     fakeDb.sync_queue.reset([voidJob(1)])
     api.respond = (call) => (call.table === '__revisions' ? { data: null, error: { message: 'closed', status: 409, code: 'OV_MATCH_CLOSED' }, status: 409 } : defaultRespond(call))
     await runQueuePass()
-    expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'dropped', superseded_by: 'server-closed' })
+    expect(await getSyncQueueStats()).toEqual({ pending: 0, error: 0, failed: 0 })
   })
 
   it('a closing update waits for a pending void of its match', async () => {
@@ -1275,15 +1278,21 @@ describe('cloud blocks (OV_SCORER_REQUIRED, OV_GAME_TAKEN, OV_MATCH_CLOSED)', ()
     expect(seen).toEqual([{ seedKey: 'match_100_aaa', code: 'OV_GAME_TAKEN' }])
   })
 
-  it.each(['OV_SCORER_REQUIRED', 'OV_MATCH_CLOSED'])('%s sets the block with no claim', async (code) => {
+  it('OV_SCORER_REQUIRED sets the block with no claim, the job stays refused', async () => {
     fakeDb.sync_queue.reset([eventJob(1)])
-    api.respond = (call) => {
-      if (call.table === 'events') return { data: null, error: { message: 'no', code, status: code === 'OV_SCORER_REQUIRED' ? 403 : 409 } }
-      return defaultRespond(call)
-    }
+    api.respond = (call) => (call.table === 'events' ? { data: null, error: { message: 'no', code: 'OV_SCORER_REQUIRED', status: 403 } } : defaultRespond(call))
     await runQueuePass()
     expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
-    expect(fakeDb.matches.map.get(1).cloudBlock).toMatchObject({ code, claim: null })
+    expect(fakeDb.matches.map.get(1).cloudBlock).toMatchObject({ code: 'OV_SCORER_REQUIRED', claim: null })
+  })
+
+  it('OV_MATCH_CLOSED sets the block with no claim, the job is set aside (not refused)', async () => {
+    fakeDb.sync_queue.reset([eventJob(1)])
+    api.respond = (call) => (call.table === 'events' ? { data: null, error: { message: 'no', code: 'OV_MATCH_CLOSED', status: 409 } } : defaultRespond(call))
+    const outcome = await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('dropped')
+    expect(outcome.hasFailed).toBeFalsy()
+    expect(fakeDb.matches.map.get(1).cloudBlock).toMatchObject({ code: 'OV_MATCH_CLOSED', claim: null })
   })
 
   // 2026-10-19: a backup of a match the server had closed was restored next to
@@ -1301,12 +1310,13 @@ describe('cloud blocks (OV_SCORER_REQUIRED, OV_GAME_TAKEN, OV_MATCH_CLOSED)', ()
     expect(fakeDb.matches.map.get(1)).toMatchObject({ status: 'final', cloudBlock: { code: 'OV_MATCH_CLOSED' } })
   })
 
-  it.each(['scheduled', 'live'])('OV_MATCH_CLOSED leaves a match still scored here (%s) open', async (status) => {
+  it.each(['scheduled', 'live'])('OV_MATCH_CLOSED leaves a match still scored here (%s) open, its restore set aside', async (status) => {
     fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', status }])
     fakeDb.sync_queue.reset([restoreJob(1)])
     api.respond = closedRestore
     await runQueuePass()
     expect(fakeDb.matches.map.get(1)).toMatchObject({ status, cloudBlock: { code: 'OV_MATCH_CLOSED' } })
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('dropped')
   })
 
   it('other blocks leave an ended match open', async () => {
@@ -1373,19 +1383,24 @@ describe('a match continued on another device', () => {
     expect(fakeDb.matches.map.get(1)).toMatchObject({ status: 'final', cloudBlock: { code: 'OV_MATCH_CLOSED' } })
   })
 
-  it('a set or event refused as closed stays visible (it carries the score), as does an update of a match still open here', async () => {
+  // 2026-10-23: refused sets and events stayed 'failed' ("they carry the
+  // score"); the local rows keep it, the server's closed copy is the record
+  it('a set, event or update refused as closed is set aside, whatever the local status', async () => {
     fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', status: 'final', approved: true }])
     fakeDb.sync_queue.reset([eventJob(1)])
     api.respond = (call) => (call.table === 'events' ? refuse('OV_MATCH_CLOSED') : defaultRespond(call))
     await runQueuePass()
-    expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'dropped', superseded_by: 'server-closed' })
 
     resetCloudBlockCache()
     fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', status: 'live' }])
     fakeDb.sync_queue.reset([update(1, { status: 'live' })])
     api.respond = (call) => (call.table === 'matches' && call.action === 'update' ? refuse('OV_MATCH_CLOSED') : defaultRespond(call))
     await runQueuePass()
-    expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('dropped')
+    // the copy still scored here keeps its status, with the block
+    expect(fakeDb.matches.map.get(1)).toMatchObject({ status: 'live', cloudBlock: { code: 'OV_MATCH_CLOSED' } })
+    expect(await getSyncQueueStats()).toEqual({ pending: 0, error: 0, failed: 0 })
   })
 
   it('the match-end update is not queued for a match closed here, nor twice for the same result', () => {
@@ -1592,5 +1607,194 @@ describe('a match continued on another device', () => {
     expect(await checkScorerMoved('match_100_aaa')).toBe(true)
     expect(fakeDb.matches.map.get(1).cloudBlock).toMatchObject({ code: 'OV_SCORER_MOVED', scorer: { platform: 'android', at: 'T' } })
     expect(api.calls.filter(c => c.table === '__scorer').every(c => c.action === 'status')).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 2026-10-23, match 406970: the owner's phone kept a live copy of a match the
+// server had approved and closed. Its restore, refused as closed, stayed
+// 'failed' ("Refused by the server: 1", Retry all did nothing) and held back
+// every newer write of the match (pending 4 -> 9).
+// ---------------------------------------------------------------------------
+describe('a match closed on the server', () => {
+  const SEED = 'match_1792518507614_u2sbmb'
+  const closed = { data: null, error: { message: 'Match is closed', code: 'OV_MATCH_CLOSED', status: 409 }, status: 409 }
+  const restore = (id, extra = {}) => ({ id, resource: 'match', action: 'restore', status: 'queued', retry_count: 0, ts: '2026-10-20T21:30:00.000Z', payload: { match: { external_id: SEED, status: 'live' }, sets: [], events: [] }, ...extra })
+  const setUpdate = (id) => ({ id, resource: 'set', action: 'update', status: 'queued', retry_count: 0, payload: { external_id: `${SEED}:s:3`, match_id: SEED, finished: false, end_time: null } })
+  const eventInsert = (id) => ({ id, resource: 'event', action: 'insert', status: 'queued', retry_count: 0, payload: { external_id: `${SEED}:e:${id}`, match_id: SEED, type: 'point' } })
+  const matchUpdate = (id) => ({ id, resource: 'match', action: 'update', status: 'queued', retry_count: 0, payload: { id: SEED, status: 'live' } })
+  const link = (id) => ({ id, resource: 'user_match', action: 'upsert', status: 'queued', retry_count: 0, payload: { match_external_id: SEED, role: 'scorer' } })
+  const block = { code: 'OV_MATCH_CLOSED', claim: null, at: 1 }
+
+  beforeEach(() => {
+    resetCloudBlockCache()
+    fakeDb.matches.reset([{ id: 1, seed_key: SEED, gameN: 406970, status: 'live', gamePin: '583920' }])
+  })
+
+  it('the incident: the refused restore sets aside every unsent write of the match; no error, the link still goes, Retry all has nothing to send', async () => {
+    fakeDb.sync_queue.reset([restore(1), setUpdate(2), eventInsert(3), matchUpdate(4), link(5)])
+    api.respond = (call) => (call.table === '__restore' ? closed : defaultRespond(call))
+
+    const outcome = await runQueuePass()
+    expect(outcome.hasFailed).toBeFalsy()
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'dropped', superseded_by: 'server-closed' })
+    for (const id of [2, 3, 4]) expect(fakeDb.sync_queue.map.get(id)).toMatchObject({ status: 'superseded', superseded_by: 'server-closed' })
+    // nothing else of the match went out in that pass
+    expect(api.calls.map(c => c.table)).toEqual(['__restore'])
+    expect(await getSyncQueueStats()).toEqual({ pending: 1, error: 0, failed: 0 })
+    // the copy keeps its status and gets the block (the closed-copy notice)
+    expect(fakeDb.matches.map.get(1)).toMatchObject({ status: 'live', cloudBlock: { code: 'OV_MATCH_CLOSED' } })
+
+    // the next pass sends the "My Matches" link
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(5).status).toBe('sent')
+    expect(await getSyncQueueStats()).toEqual({ pending: 0, error: 0, failed: 0 })
+
+    // Retry all (and the startup / hourly retry) has nothing to send
+    expect(await retryErrorsInternal({ force: true, includeFailed: true })).toBe(false)
+    expect([...fakeDb.sync_queue.map.values()].filter(j => j.status === 'queued')).toEqual([])
+    await runQueuePass()
+    expect(api.calls.filter(c => c.table === '__restore')).toHaveLength(1)
+  })
+
+  it('a direct send (set end) refused as closed is kept, not "Sync failed"; the match\'s queued writes are set aside', async () => {
+    fakeDb.sync_queue.reset([eventInsert(1)])
+    api.respond = (call) => (call.table === 'sets' ? closed : defaultRespond(call))
+    const result = await sendJobNow({ resource: 'set', action: 'update', payload: { external_id: `${SEED}:s:3`, match_id: SEED, finished: true } })
+    expect(result).toMatchObject({ success: false, offline: true, setAside: true })
+    expect(fakeDb.sync_queue.map.get(result.jobId)).toMatchObject({ status: 'dropped', superseded_by: 'server-closed' })
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'superseded', superseded_by: 'server-closed' })
+    expect(fakeDb.matches.map.get(1).cloudBlock).toMatchObject({ code: 'OV_MATCH_CLOSED' })
+    expect(await getSyncQueueStats()).toEqual({ pending: 0, error: 0, failed: 0 })
+  })
+
+  it('a refused write whose local copy is gone (Close match removed it) is set aside with the match\'s others', async () => {
+    fakeDb.matches.reset([])
+    fakeDb.sync_queue.reset([eventInsert(1), eventInsert(2), { id: 3, resource: 'match', action: 'delete', status: 'queued', payload: { id: SEED } }])
+    api.respond = (call) => (call.table === 'events' ? closed : defaultRespond(call))
+    const outcome = await runQueuePass()
+    expect(outcome.hasFailed).toBeFalsy()
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'dropped', superseded_by: 'server-closed' })
+    expect(fakeDb.sync_queue.map.get(2)).toMatchObject({ status: 'superseded', superseded_by: 'server-closed' })
+    // a delete is never set aside: answered "closed", it is done
+    expect(fakeDb.sync_queue.map.get(3).status).toBe('sent')
+  })
+
+  it('Close match\'s queued \'final\' still goes after an older write of the match is refused as closed', async () => {
+    // The approval went out (the server is 'approved'), an older event waited
+    // as 'failed', and Close match queued 'final' and removed the local copy
+    fakeDb.matches.reset([])
+    fakeDb.sync_queue.reset([
+      { ...eventInsert(1), status: 'failed', last_error: { status: 422, code: 'OV_INVALID_REQUEST' } },
+      { id: 2, resource: 'match', action: 'update', status: 'sent', payload: { id: SEED, status: 'approved' } },
+      { id: 3, resource: 'match', action: 'update', status: 'queued', retry_count: 0, payload: { id: SEED, status: 'final' } }
+    ])
+    // db/007: a closed match still takes approved -> final, no other write
+    api.respond = (call) => (call.table === 'events' || (call.table === 'matches' && call.action === 'update' && call.data?.status !== 'final')
+      ? closed : defaultRespond(call))
+    // the startup retry requeues the old write; 'final' waits for it (closingMustWait)
+    await retryErrorsInternal({ force: true, includeFailed: true })
+    const outcome = await runQueuePass()
+    expect(outcome.hasFailed).toBeFalsy()
+    expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'dropped', superseded_by: 'server-closed' })
+    expect(fakeDb.sync_queue.map.get(3).status).toBe('queued')
+    await runQueuePass()
+    expect(api.calls.some(c => c.table === 'matches' && c.action === 'update' && c.data?.status === 'final')).toBe(true)
+    expect(fakeDb.sync_queue.map.get(3).status).toBe('sent')
+    expect(await getSyncQueueStats()).toEqual({ pending: 0, error: 0, failed: 0 })
+  })
+
+  it('the block stays through a claim, a delete or an update the server accepts; an accepted event clears it', async () => {
+    fakeDb.matches.reset([{ id: 1, seed_key: SEED, status: 'live', cloudBlock: block }])
+    // a claim answered "closed" counts as sent (nothing to take over)
+    fakeDb.sync_queue.reset([{ id: 1, resource: 'match', action: 'scorer', status: 'queued', payload: { id: SEED } }])
+    api.respond = (call) => (call.table === '__scorer' ? closed : defaultRespond(call))
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    expect(fakeDb.matches.map.get(1).cloudBlock).toEqual(block)
+
+    // a match delete answered "closed" is done as well
+    fakeDb.sync_queue.reset([{ id: 2, resource: 'match', action: 'delete', status: 'queued', payload: { id: SEED } }])
+    api.respond = (call) => (call.table === 'matches' && call.action === 'delete' ? closed : defaultRespond(call))
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+    expect(fakeDb.matches.map.get(1).cloudBlock).toEqual(block)
+
+    // a match update passes on a closed match when it changes nothing, a set
+    // update when the server has no such row: neither proves it open
+    fakeDb.sync_queue.reset([matchUpdate(3), setUpdate(4)])
+    api.respond = defaultRespond
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(3).status).toBe('sent')
+    expect(fakeDb.sync_queue.map.get(4).status).toBe('sent')
+    expect(fakeDb.matches.map.get(1).cloudBlock).toEqual(block)
+
+    // an accepted event insert does: an admin reopened the match
+    fakeDb.sync_queue.reset([eventInsert(5)])
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(5).status).toBe('sent')
+    expect(fakeDb.matches.map.get(1).cloudBlock).toBeNull()
+  })
+
+  it('an accepted restore clears the block too', async () => {
+    fakeDb.matches.reset([{ id: 1, seed_key: SEED, status: 'live', cloudBlock: block }])
+    fakeDb.sync_queue.reset([restore(1)])
+    api.respond = (call) => (call.table === '__restore' ? ok({ id: MATCH_UUID, counts: {} }) : defaultRespond(call))
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    expect(fakeDb.matches.map.get(1).cloudBlock).toBeNull()
+  })
+
+  describe('at app start (devices stuck before this version)', () => {
+    // The phone as it was: the restore parked as 'failed', four writes held behind it
+    const stuck = () => [
+      restore(1, { status: 'failed', attempts: 9, last_error: { status: 409, code: 'OV_MATCH_CLOSED', message: 'Match is closed' } }),
+      { ...eventInsert(2), resource: 'set', action: 'insert', payload: { external_id: `${SEED}:s:3`, match_id: SEED, index: 3 } },
+      setUpdate(3), eventInsert(4), matchUpdate(5)
+    ]
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+      localStorage.setItem('api_auth_token', JSON.stringify({ access_token: 't' }))
+      fakeDb.matches.reset([{ id: 1, seed_key: SEED, gameN: 406970, status: 'live', cloudBlock: block }])
+      fakeDb.sync_queue.reset(stuck())
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+      vi.restoreAllMocks()
+      localStorage.removeItem('api_auth_token')
+    })
+
+    it('offline: the writes are set aside before anything is sent; the copy is unchanged', async () => {
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+      const before = { ...fakeDb.matches.map.get(1) }
+      const { unmount } = renderHook(() => useSyncQueue())
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+      expect(await getSyncQueueStats()).toEqual({ pending: 0, error: 0, failed: 0 })
+      for (const id of [1, 2, 3, 4, 5]) expect(fakeDb.sync_queue.map.get(id)).toMatchObject({ status: 'superseded', superseded_by: 'server-closed' })
+      expect(fakeDb.matches.map.get(1)).toEqual(before)
+      expect(api.calls).toEqual([])
+      unmount()
+    })
+
+    it('online: the startup retry sends no restore (the refused one is set aside first)', async () => {
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+      const { unmount } = renderHook(() => useSyncQueue())
+      await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
+      expect(api.calls.filter(c => c.table === '__restore')).toEqual([])
+      expect(api.calls.filter(c => c.action !== 'select')).toEqual([])
+      expect(await getSyncQueueStats()).toEqual({ pending: 0, error: 0, failed: 0 })
+      unmount()
+    })
+
+    it('a match without the block: only a write parked as refused-as-closed is set aside, its queued writes still go', async () => {
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+      fakeDb.matches.reset([{ id: 1, seed_key: SEED, gameN: 406970, status: 'live' }])
+      const { unmount } = renderHook(() => useSyncQueue())
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+      expect(fakeDb.sync_queue.map.get(1)).toMatchObject({ status: 'superseded', superseded_by: 'server-closed' })
+      for (const id of [2, 3, 4, 5]) expect(fakeDb.sync_queue.map.get(id).status).toBe('queued')
+      unmount()
+    })
   })
 })
