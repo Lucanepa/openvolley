@@ -71,6 +71,17 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.2" date="2026-10-23">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.2</url>
+      <description>
+        <ul>
+          <li>A match the server has closed no longer keeps a sync error that Retry cannot clear, and is never reopened on its own: load the official version or remove the copy.</li>
+          <li>Restoring a backup of a closed match is refused before anything changes.</li>
+          <li>Phone: the scoring header lists home – away.</li>
+          <li>The online switch shows a Wi-Fi icon.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.4.14" date="2026-10-19">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v2.4.14</url>
       <description>
