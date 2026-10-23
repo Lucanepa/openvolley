@@ -891,7 +891,7 @@
       "legend": "T Auszeiten · S Wechsel · W gewonnene Sätze · P Punkte · Dauer Satzdauer"
     },
     "phone": {
-      "setInfo": "Satz {{set}} · Sätze {{left}} : {{right}}",
+      "setInfo": "Satz {{set}} · Sätze {{home}} : {{away}}",
       "setsWon": "Sätze: {{count}}",
       "serveNumber": "Aufschlag #{{number}}",
       "timeOut": "Timeout",

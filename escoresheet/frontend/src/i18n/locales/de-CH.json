@@ -898,7 +898,7 @@
       "legend": "T Timeouts · S Wächsel · W gwunneni Sätz · P Pünkt · Duur Satzduur"
     },
     "phone": {
-      "setInfo": "Satz {{set}} · Sätz {{left}} : {{right}}",
+      "setInfo": "Satz {{set}} · Sätz {{home}} : {{away}}",
       "setsWon": "Sätz: {{count}}",
       "serveNumber": "Ufschlag #{{number}}",
       "timeOut": "Timeout",

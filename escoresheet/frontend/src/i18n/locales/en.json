@@ -899,7 +899,7 @@
       "legend": "T timeouts · S substitutions · W sets won · P points · Dur set duration"
     },
     "phone": {
-      "setInfo": "Set {{set}} · sets {{left}} : {{right}}",
+      "setInfo": "Set {{set}} · sets {{home}} : {{away}}",
       "setsWon": "Sets won: {{count}}",
       "serveNumber": "Serve #{{number}}",
       "timeOut": "Time-out",

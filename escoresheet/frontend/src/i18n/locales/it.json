@@ -898,7 +898,7 @@
       "legend": "T timeout · S sostituzioni · W set vinti · P punti · Durata durata del set"
     },
     "phone": {
-      "setInfo": "Set {{set}} · set {{left}} : {{right}}",
+      "setInfo": "Set {{set}} · set {{home}} : {{away}}",
       "setsWon": "Set: {{count}}",
       "serveNumber": "Servizio #{{number}}",
       "timeOut": "Timeout",
