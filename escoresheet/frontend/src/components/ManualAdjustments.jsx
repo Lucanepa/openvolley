@@ -9,7 +9,7 @@ import { swapTeamDesignation as swapTeamDesignationPatch } from '../domain/coinT
 import { mergeOfficialsEdits } from '../domain/officials'
 import { approvedSheetChanged } from '../domain/accountApproval'
 import { clearedPostMatchSignatures } from '../domain/matchEnd'
-import { queueMatchUpdate } from '../db/matchRepository'
+import { matchInfoFromLocal, queueMatchUpdate } from '../db/matchRepository'
 import { approvalsApi } from '../lib/accountApi'
 import { Button } from '../ui/Button.jsx'
 import { confirmDialog } from '../ui/uiStore.js'
@@ -428,7 +428,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           championshipType: editedMatch.championshipType,
           gameN: editedMatch.gameN,
           scheduledAt: editedMatch.scheduledAt,
+          match_type_1: editedMatch.match_type_1,
           match_type_2: editedMatch.match_type_2,
+          match_type_3: editedMatch.match_type_3,
           // Swap A/B: the designation and every A/B-labelled field with it,
           // from the match as stored now (a correction made on this page
           // since it opened, e.g. a set reopened, is kept)
@@ -553,12 +555,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
       // Update the cloud match through the sync queue: kept while offline and
       // retried (a direct write was lost when the device was offline)
       await queueMatchUpdate(db, editedMatch.seed_key, {
-        match_info: {
-          hall: editedMatch.hall || '',
-          city: editedMatch.city || '',
-          league: editedMatch.league || '',
-          championship_type: editedMatch.championshipType || ''
-        },
+        // every key: the server replaces match_info whole (four keys wiped
+        // the match type, gender and level)
+        match_info: matchInfoFromLocal(editedMatch),
         set_results: setResults,
         players_home: playersHome,
         players_away: playersAway,
@@ -959,17 +958,50 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     style={{ ...inputStyle, width: '100%' }}
                   />
                 </div>
+                {/* the sheet's category boxes (Header.tsx): the values Match setup
+                    stores. The gender used M/W/X, which no box matches, and showed
+                    "Men" for a women's match. */}
+                <div>
+                  <label style={labelStyle}>{t('matchSetup.matchType')}</label>
+                  <select
+                    value={editedMatch.match_type_1 || ''}
+                    onChange={(e) => updateMatchInfo('match_type_1', e.target.value)}
+                    aria-label={t('matchSetup.matchType')}
+                    style={{ ...inputStyle, width: '100%' }}
+                  >
+                    <option value="">–</option>
+                    <option value="championship">{t('matchSetup.championship')}</option>
+                    <option value="cup">{t('matchSetup.cup')}</option>
+                    <option value="friendly">{t('matchSetup.friendly')}</option>
+                    <option value="tournament">{t('matchSetup.tournament')}</option>
+                    {editedMatch.match_type_1 === 'other' && <option value="other">{t('matchSetup.other')}</option>}
+                  </select>
+                </div>
                 <div>
                   <label style={labelStyle}>{t('manualAdjustmentsEditor.matchTypeGender', 'Match type (gender)')}</label>
                   <select
-                    value={editedMatch.match_type_2 || 'M'}
+                    value={editedMatch.match_type_2 || ''}
                     onChange={(e) => updateMatchInfo('match_type_2', e.target.value)}
                     aria-label={t('manualAdjustmentsEditor.matchTypeGender', 'Match type (gender)')}
                     style={{ ...inputStyle, width: '100%' }}
                   >
-                    <option value="M">{t('manualAdjustmentsEditor.genderMen', 'Men')}</option>
-                    <option value="W">{t('manualAdjustmentsEditor.genderWomen', 'Women')}</option>
-                    <option value="X">{t('manualAdjustmentsEditor.genderMixed', 'Mixed')}</option>
+                    <option value="">–</option>
+                    <option value="men">{t('manualAdjustmentsEditor.genderMen', 'Men')}</option>
+                    <option value="women">{t('manualAdjustmentsEditor.genderWomen', 'Women')}</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>{t('matchSetup.matchLevel')}</label>
+                  <select
+                    value={editedMatch.match_type_3 || ''}
+                    onChange={(e) => updateMatchInfo('match_type_3', e.target.value)}
+                    aria-label={t('matchSetup.matchLevel')}
+                    style={{ ...inputStyle, width: '100%' }}
+                  >
+                    <option value="">–</option>
+                    <option value="senior">{t('matchSetup.senior')}</option>
+                    {['U23', 'U21', 'U19', 'U17'].map(v => <option key={v} value={v}>{v}</option>)}
+                    {editedMatch.match_type_3 === 'other' && <option value="other">{editedMatch.match_type_3_other || t('matchSetup.other')}</option>}
                   </select>
                 </div>
                 {/* date and time are two fields: a whole row on a phone */}

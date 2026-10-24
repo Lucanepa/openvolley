@@ -284,6 +284,25 @@ describe('OpenBeach\'s console panels', () => {
     expect(screen.getByAltText('OpenVolley')).toBeInTheDocument()
   })
 
+  it('opened from the app, the console covers the app\'s header (z 1000) and Back leaves it (owner 2026-10-24: cut off at the top)', () => {
+    setAuth({ roles: ['admin'] })
+    const onClose = vi.fn()
+    render(<ManageConsole tab="accounts" onTab={() => {}} onClose={onClose} />)
+    const consoleEl = screen.getByTestId('manage-console')
+    const z = Number(consoleEl.className.match(/z-\[(\d+)\]/)?.[1])
+    expect(z).toBeGreaterThan(1000)
+    expect(consoleEl.getAttribute('aria-modal')).toBe('true')
+    // Android Back clicks a dialog's [data-modal-close] (appLifecycle closeOpenDialog)
+    fireEvent.click(consoleEl.querySelector('[data-modal-close]'))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('on the manager site the console is the page, not a dialog', () => {
+    setAuth({ roles: ['admin'] })
+    render(<ManageConsole tab="accounts" onTab={() => {}} />)
+    expect(screen.getByTestId('manage-console').getAttribute('aria-modal')).toBeNull()
+  })
+
   it('audit: "Joined this app" has a label, and OpenBeach\'s console names beach roles plainly', async () => {
     const entries = [
       { id: 2, at: '2026-10-02T08:00:00Z', action: 'account.roles', details: { added: ['beach:scorer'], removed: ['beach:referee'] } },

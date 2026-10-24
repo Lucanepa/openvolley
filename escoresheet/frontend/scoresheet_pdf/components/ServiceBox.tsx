@@ -1,6 +1,17 @@
 import React from 'react';
 import { SubRecord } from '../types_scoresheet';
-import { CrossMark, LINEUP_NUMBER_PT, MARK_STROKE, NumberCircle, SERVICE_NUMBER_PX, SUB_CIRCLE_MM } from './Marks';
+import { CrossMark, LINEUP_NUMBER_PT, MARK_STROKE, NumberCircle, SERVICE_NUMBER_DROP_MM, SERVICE_NUMBER_PX, SUB_CIRCLE_MM } from './Marks';
+
+/** A thin white edge round written digits (~0.25 mm), so a stroke under them stops short of their ink. */
+const DIGIT_HALO = ['1px 0', '-1px 0', '0 1px', '0 -1px', '0.7px 0.7px', '-0.7px 0.7px', '0.7px -0.7px', '-0.7px -0.7px'].map((o) => `${o} 0 #fff`).join(', ');
+
+/**
+ * Where the tick through the round number starts in its 2.4 mm square (viewBox
+ * 0-100, from the bottom left): it crosses the small number and stops short of
+ * the score below (owner 2026-10-24: shorter from the bottom left; it started
+ * at 12 before, and ran into the score).
+ */
+export const TICK_START = 30;
 
 export interface ServiceRoundMark {
   position: number; // 0-5 for I-VI
@@ -32,12 +43,22 @@ export const ServiceBox: React.FC<{
       {round?.ticked && !showX && (
         // the tick through the round number (~0.3 mm pen, as a hand stroke)
         <svg className="absolute pointer-events-none" style={{ top: '-0.2mm', right: '-0.1mm', width: '2.4mm', height: '2.4mm' }} viewBox="0 0 100 100" aria-hidden="true" data-mark="round-tick">
-          <line x1="12" y1="88" x2="88" y2="12" stroke="black" strokeWidth={MARK_STROKE} vectorEffect="non-scaling-stroke" />
+          <line x1={TICK_START} y1={100 - TICK_START} x2="88" y2="12" stroke="black" strokeWidth={MARK_STROKE} vectorEffect="non-scaling-stroke" />
         </svg>
       )}
       {showX && <CrossMark />}
       {hasPoints && !showX && (
-        <span className="absolute inset-0 flex items-center justify-center font-bold text-black pointer-events-none tabular-nums" style={{ fontSize: `${SERVICE_NUMBER_PX}px` }}>{round!.points}</span>
+        <span
+          className="absolute inset-0 flex items-center justify-center font-bold text-black pointer-events-none tabular-nums"
+          // below the round number's tick; a circled final stays in its ring, and a
+          // white edge stops the tick at its digits (the ring is drawn over it)
+          style={{
+            fontSize: `${SERVICE_NUMBER_PX}px`,
+            transform: round!.circled ? undefined : `translateY(${SERVICE_NUMBER_DROP_MM}mm)`,
+            textShadow: round!.circled ? DIGIT_HALO : undefined
+          }}
+          data-mark="service-points"
+        >{round!.points}</span>
       )}
       {round?.circled && <NumberCircle />}
     </div>

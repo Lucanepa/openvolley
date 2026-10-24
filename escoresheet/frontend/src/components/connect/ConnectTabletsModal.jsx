@@ -10,6 +10,7 @@ import { useRelayTablets } from '../../hooks/useRealtimeConnection'
 import { getCloudApiBaseUrl, getLocalServerStatusUrl, isCloudBlockedOnThisPort } from '../../utils/backendConfig'
 import { relayMatchKey, matchTeamNames } from '../../utils/serverDataSync'
 import { buildConnectionPins } from '../../utils/connectionPins'
+import { detectDevice } from '../../utils/deviceKind'
 import { db } from '../../db/db'
 import {
   LAN_UNAVAILABLE_ROLES, TABLET_ROLES, cloudRoleUrl, firstOfKind, hallInterfaces, lanRoleUrl, roleAccess, wifiQrString
@@ -89,12 +90,14 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
   const statusUrl = getLocalServerStatusUrl()
   const served = !!statusUrl
   const cloudBlocked = isCloudBlockedOnThisPort()
+  // a phone or tablet is offered only the ways it can use (connectView offeredHere)
+  const device = useMemo(() => detectDevice(win), [win])
 
   // { tab, lanMode, hallIp }: the saved shape (connectView); a saved
   // connection that cannot work on this device opens on the recommendation
   const [view, setView] = useState(() => {
     const saved = readView()
-    const options = transportOptions({ served, desktop, relayLoading: served, cloudBlocked })
+    const options = transportOptions({ served, desktop, relayLoading: served, cloudBlocked, device })
     return { ...viewFor(saved, initialTransport(transportOf(saved), options)), hallIp: saved.hallIp }
   })
   const updateView = (fn) => setView(v => { const next = fn(v); saveView(next); return next })
@@ -335,7 +338,8 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
     bluetooth: bt.status,
     bluetoothFound: !!firstOfKind(relay.status, 'bluetooth'),
     platform: hs.status?.platform || fw?.platform || null,
-    cloudBlocked
+    cloudBlocked,
+    device
   })
 
   // -- steps 2 and 3: each tablet's state --
@@ -420,6 +424,11 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
           <section className="min-w-0 md:col-span-2 min-[56.25rem]:col-span-1" aria-labelledby={step1Id}>
             <StepHeading n={1} id={step1Id}>{t('connectTablets.step.connect', 'How tablets connect')}</StepHeading>
             <TransportPicker options={options} value={transport} onChange={chooseTransport} labelledBy={step1Id} />
+            {device.mobile && (
+              <p className="mt-2 text-xs text-stone-500" data-testid="connect-mobile-note">
+                {t('connectTablets.mobileNote', 'On a computer, the desktop app also offers Wi-Fi from that computer and Bluetooth.')}
+              </p>
+            )}
             <div className="mt-3">
               {transport === 'hall' && (
                 <HallPanel
@@ -430,6 +439,7 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
                   onSelectIp={setHallIp}
                   firewallStep={firewallStep}
                   network={hs.status?.leavesNetwork || null}
+                  laptopOffered={options.some(o => o.id === 'laptop')}
                 />
               )}
               {transport === 'laptop' && (

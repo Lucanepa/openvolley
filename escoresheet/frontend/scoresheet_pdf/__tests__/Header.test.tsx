@@ -34,3 +34,26 @@ describe('Header "other" fields', () => {
     expect((getByLabelText('Other age category') as HTMLInputElement).value).toBe('U15')
   })
 })
+
+// owner 2026-10-24: the category boxes of a women's championship game
+describe('Header category boxes', () => {
+  afterEach(() => cleanup())
+  const xd = (c: HTMLElement) => [...c.querySelectorAll('header span')]
+    .filter(s => s.textContent === 'X')
+    .map(s => s.parentElement?.nextElementSibling?.textContent || (s.parentElement?.nextElementSibling?.querySelector('input') as HTMLInputElement | null)?.value)
+
+  it('X the match type, the championship type, the gender and the age box', () => {
+    const { container } = render(<Header match={{ match_type_1: 'championship', championshipType: 'regional', match_type_2: 'women', match_type_3: 'U19' }} />)
+    expect(xd(container)).toEqual(['Championship', 'Regional', 'Women', 'U19'])
+  })
+
+  it('senior has no box; an age without one (U21, U20) goes under Other with the age written', () => {
+    const senior = render(<Header match={{ match_type_1: 'cup', match_type_2: 'men', match_type_3: 'senior' }} />)
+    expect(xd(senior.container)).toEqual(['Cup', 'Men'])
+    cleanup()
+    const { container, getByLabelText } = render(<Header match={{ match_type_2: 'women', match_type_3: 'U21' }} />)
+    expect(container.textContent).toContain('Women')
+    expect((getByLabelText('Other age category') as HTMLInputElement).value).toBe('U21')
+    expect(xd(container)).toHaveLength(2)
+  })
+})
