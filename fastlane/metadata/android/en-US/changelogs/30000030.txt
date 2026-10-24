@@ -1,0 +1,6 @@
+OpenVolley 3.0.3
+- Scoresheet: the score in a service box sits below the round number's tick, and the tick is shorter.
+- Scoresheet: the match type, gender and level are X'd on a match finished on another device; youth games get their age box.
+- Manual adjustments: the gender is right for women's matches; match type and level can be corrected.
+- Connect tablets offers only the ways this device can use (a phone: Internet).
+- The manage console is no longer cut off at the top; Back leaves it.
