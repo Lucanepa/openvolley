@@ -19,6 +19,16 @@ export const NUMBER_CIRCLE_MM = 4.0;
 export const SERVICE_NUMBER_PX = 10.5;
 
 /**
+ * How far below the box's centre the team score at the loss of service sits
+ * (owner 2026-10-24: the tick through the round number ran into the score's top
+ * right). With the shorter tick (ServiceBox TICK_START) 0.7 mm lower keeps every
+ * score >= 0.1 mm clear of it (measured in Chromium: 0.66 mm needed by 12, 16
+ * and 22) and its ink (~1.9 mm tall) ~0.6 mm above the box's bottom rule. A
+ * circled final stays centred in its ring: the ring fills the box and cannot move.
+ */
+export const SERVICE_NUMBER_DROP_MM = 0.7;
+
+/**
  * Starting line-up and substitute numbers, the circled substitute included
  * (owner 2026-10-13: one size in those rows; of 9.5, 9 and 8.5 pt the owner
  * chose 8.5 pt, the size at which the ring can clear both digits and rules).
