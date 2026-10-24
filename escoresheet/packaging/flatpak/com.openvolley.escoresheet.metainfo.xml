@@ -71,6 +71,18 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.3" date="2026-10-24">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.3</url>
+      <description>
+        <ul>
+          <li>Scoresheet: the score in a service box sits below the round number's tick, and the tick is shorter.</li>
+          <li>Scoresheet: the match type, gender and level are X'd on a match finished on another device; youth games get their age box.</li>
+          <li>Manual adjustments: the gender is right for women's matches; match type and level can be corrected.</li>
+          <li>Connect tablets offers only the ways this device can use (a phone: Internet).</li>
+          <li>The manage console is no longer cut off at the top; Back leaves it.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0.2" date="2026-10-23">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.2</url>
       <description>
