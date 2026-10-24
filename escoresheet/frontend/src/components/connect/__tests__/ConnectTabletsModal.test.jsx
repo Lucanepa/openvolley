@@ -357,18 +357,31 @@ describe('ConnectTabletsModal', () => {
     expect(screen.queryByRole('button', { name: 'Copy link' })).toBeNull()
   })
 
-  it('bluetooth: Windows says it cannot serve a Bluetooth network', async () => {
+  // owner 2026-10-24: only the ways this device can use are offered
+  it('bluetooth: not offered on Windows, which cannot serve a Bluetooth network', async () => {
     const win = tauri({
       hotspot_status: () => ({ supported: true, active: false, platform: 'windows', ssid: 'a', password: 'b' }),
       bluetooth_status: () => ({ supported: false, reason: 'windows-cannot-serve', platform: 'windows' })
     })
     renderModal({ match: MATCH, fetchImpl: okFetch(), win })
-    await waitFor(() => expect(within(screen.getByTestId('transport-bluetooth')).getByText('Windows cannot host a Bluetooth network')).toBeInTheDocument())
-    choose('Bluetooth')
-    await waitFor(() => expect(screen.getByText(/Windows cannot host a Bluetooth network for tablets/)).toBeInTheDocument())
-    expect(screen.queryByText(/Planned: a direct Bluetooth link/)).toBeNull()
-    expect(screen.getByText(/Wi-Fi from this computer” instead/)).toBeInTheDocument()
-    expect(screen.getByTestId('scan-no-link')).toHaveTextContent('Not available on this computer')
+    await waitFor(() => expect(screen.queryByTestId('transport-bluetooth')).toBeNull())
+    expect(screen.getByTestId('transport-laptop')).toBeInTheDocument()
+    expect(screen.queryByTestId('connect-mobile-note')).toBeNull()
+  })
+
+  const ANDROID_PHONE = { navigator: { userAgent: 'Mozilla/5.0 (Linux; Android 16; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Mobile Safari/537.36' }, screen: { width: 412, height: 915 } }
+
+  it('on a phone: Internet only, no desktop-app ways, and a note where they are', async () => {
+    backend.statusUrl = null // the app, or app.openvolley.app: no venue box serves the page
+    renderModal({ match: MATCH, fetchImpl: okFetch(), win: ANDROID_PHONE })
+    expect([...document.querySelectorAll('[role="radio"][data-testid^="transport-"]')].map(r => r.getAttribute('data-testid'))).toEqual(['transport-server'])
+    expect(screen.getByRole('radio', { name: /Internet/ })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByTestId('connect-mobile-note')).toHaveTextContent('desktop app')
+  })
+
+  it('on a phone opened from a venue box: the hall Wi-Fi too', async () => {
+    renderModal({ match: MATCH, fetchImpl: okFetch(), win: ANDROID_PHONE })
+    expect([...document.querySelectorAll('[role="radio"][data-testid^="transport-"]')].map(r => r.getAttribute('data-testid'))).toEqual(['transport-hall', 'transport-server'])
   })
 
   it('bluetooth: Linux starts the network and links its address', async () => {
