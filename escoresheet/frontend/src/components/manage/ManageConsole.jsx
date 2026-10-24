@@ -100,15 +100,24 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
     icon: <x.icon size={15} aria-hidden />
   }))
 
+  // Above the scorer app's header (MainHeader, z 1000): at 900 it covered the
+  // console's own header row, logo and "Back to the app" (owner 2026-10-24,
+  // "cut off at the top"). Opened from the app (onClose), the console is a
+  // dialog: Android Back leaves it like any other (appLifecycle closeOpenDialog).
+  const inApp = !!onClose
   return (
-    <div className="ov-kit fixed inset-0 z-[900] overflow-y-auto bg-stone-100" data-testid="manage-console">
+    <div
+      className="ov-kit fixed inset-0 z-[1100] overflow-y-auto bg-stone-100"
+      data-testid="manage-console"
+      {...(inApp ? { role: 'dialog', 'aria-modal': 'true', 'aria-label': t('manage.title') } : {})}
+    >
       <ConsoleShell
         logo={<img src={brand.lockup} alt={brand.name} className="ov-ink h-7 w-auto" />}
         eyebrow={t('manage.title')}
         actions={<>
           {headerActions}
           {onClose && (
-            <button type="button" className={consoleHeaderBtn} onClick={onClose} aria-label={t('manage.backToApp')}>
+            <button type="button" className={consoleHeaderBtn} onClick={onClose} aria-label={t('manage.backToApp')} data-modal-close>
               <ArrowLeft size={14} aria-hidden />
               <span className="hidden sm:inline">{t('manage.backToApp')}</span>
             </button>
