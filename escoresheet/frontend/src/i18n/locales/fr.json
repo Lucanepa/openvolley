@@ -2107,6 +2107,7 @@
     "howToJoin": "Comment se connecter",
     "howToPair": "Comment associer",
     "isolationTip": "La page ne se charge pas sur la tablette ? Certains Wi-Fi de salle isolent les appareils : choisissez plutôt « Wi-Fi de cet ordinateur » ou « Internet ».",
+    "isolationTipInternet": "La page ne se charge pas sur la tablette ? Certains Wi-Fi de salle isolent les appareils : choisissez plutôt « Internet ».",
     "mobileNote": "Sur un ordinateur, l’app pour ordinateur propose aussi « Wi-Fi de cet ordinateur » et Bluetooth.",
     "noMatchText": "Les codes et PIN appartiennent à un match.",
     "noMatchTitle": "Ouvrez d’abord un match",

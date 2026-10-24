@@ -382,6 +382,10 @@ describe('ConnectTabletsModal', () => {
   it('on a phone opened from a venue box: the hall Wi-Fi too', async () => {
     renderModal({ match: MATCH, fetchImpl: okFetch(), win: ANDROID_PHONE })
     expect([...document.querySelectorAll('[role="radio"][data-testid^="transport-"]')].map(r => r.getAttribute('data-testid'))).toEqual(['transport-hall', 'transport-server'])
+    choose(/Hall Wi-Fi/)
+    // the tip names only what a phone is offered
+    await waitFor(() => expect(screen.getByTestId('isolation-tip')).toHaveTextContent('choose Internet instead'))
+    expect(screen.getByTestId('isolation-tip')).not.toHaveTextContent('Wi-Fi from this computer')
   })
 
   it('bluetooth: Linux starts the network and links its address', async () => {

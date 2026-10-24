@@ -439,6 +439,7 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
                   onSelectIp={setHallIp}
                   firewallStep={firewallStep}
                   network={hs.status?.leavesNetwork || null}
+                  laptopOffered={options.some(o => o.id === 'laptop')}
                 />
               )}
               {transport === 'laptop' && (

@@ -121,7 +121,7 @@ export function useKindLabel() {
  * Hall Wi-Fi: which Wi-Fi the tablets join (its name where the system says
  * it) and this computer's address on it.
  */
-export function HallPanel({ served, loading, interfaces, selectedIp, onSelectIp, firewallStep = false, network = null }) {
+export function HallPanel({ served, loading, interfaces, selectedIp, onSelectIp, firewallStep = false, network = null, laptopOffered = true }) {
   const { t } = useTranslation()
   const kindLabel = useKindLabel()
 
@@ -168,7 +168,10 @@ export function HallPanel({ served, loading, interfaces, selectedIp, onSelectIp,
         </p>
       )}
       <Tip icon={Users} testId="isolation-tip">
-        {t('connectTablets.isolationTip', 'Page does not load on the tablet? Some hall Wi-Fis keep devices apart: choose Wi-Fi from this computer or Internet instead.')}
+        {laptopOffered
+          ? t('connectTablets.isolationTip', 'Page does not load on the tablet? Some hall Wi-Fis keep devices apart: choose Wi-Fi from this computer or Internet instead.')
+          // a phone has no Wi-Fi of its own to offer (connectView offeredHere)
+          : t('connectTablets.isolationTipInternet', 'Page does not load on the tablet? Some hall Wi-Fis keep devices apart: choose Internet instead.')}
       </Tip>
       {firewallStep && <FirewallTip />}
     </div>
