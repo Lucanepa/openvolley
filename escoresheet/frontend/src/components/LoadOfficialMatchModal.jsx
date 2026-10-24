@@ -126,10 +126,31 @@ function isLeagueActive(l) {
   return l.upcoming == null || l.upcoming > 0
 }
 
+/** The age levels Match setup offers (the sheet has boxes for U23, U19 and U17; others go in "Other"). */
+const SETUP_LEVELS = ['U23', 'U21', 'U19', 'U17']
+
+/**
+ * Match setup's level (type3 / type3Other) from a schedule row. The schedule
+ * says only "junior" for youth games: the age is in the league ("U23 2. Liga",
+ * "SM Quali U18", "U20 Ligamodus"), so it is read from there. An age Match
+ * setup does not offer is "other" with the age as its text.
+ * @param {string|null|undefined} level svrz_games.match_level
+ * @param {string|null|undefined} league svrz_games.league
+ * @returns {{ type3: string|undefined, type3Other: string }}
+ */
+export function levelFromSchedule(level, league) {
+  if (level !== 'junior') return { type3: level || undefined, type3Other: '' }
+  const age = /\bU ?(\d{2})\b/i.exec(String(league || ''))
+  if (!age) return { type3: 'other', type3Other: '' }
+  const u = `U${age[1]}`
+  return SETUP_LEVELS.includes(u) ? { type3: u, type3Other: '' } : { type3: 'other', type3Other: u }
+}
+
 /**
  * Map a svrz_games row to the internal match format
  */
-function mapSupabaseToMatchFormat(row) {
+export function mapSupabaseToMatchFormat(row) {
+  const { type3, type3Other } = levelFromSchedule(row.match_level, row.league)
   return {
     gameN: row.game_number,
     dtstart: row.datetime,
@@ -140,7 +161,8 @@ function mapSupabaseToMatchFormat(row) {
     city: row.city,
     type1: row.match_type,
     type2: row.gender,
-    type3: row.match_level,
+    type3,
+    type3Other,
     championshipType: row.championship_type,
     bestOf: row.match_format,
     referee1First: row.referee_1_first_name,
@@ -398,6 +420,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
       championshipType: match.championshipType,
       type2: match.type2,
       type3: match.type3,
+      type3Other: match.type3Other,
 
       // Game details
       gameN: match.gameN,

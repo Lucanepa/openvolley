@@ -10,7 +10,7 @@ import { wipeMatchEvents } from '../db/eventHistory'
 import { apiFrom, apiStorage, apiMatchRestoreByPin } from '../lib/apiClient'
 import { sanitizeSimple } from './stringUtils'
 import { getCloudApiUrl } from './backendConfig'
-import { filterMatchPayload, remarksForServer } from '../db/matchRepository'
+import { filterMatchPayload, localFromMatchInfo, matchInfoFromLocal, remarksForServer } from '../db/matchRepository'
 import { getSideAForSet, getLeftTeamLabelForSet } from '../domain/rules'
 import { swappedSides, liveRowTeamA } from '../domain/coinToss'
 import { setExtId, eventExtId, jobMatchKey } from './syncIds'
@@ -579,10 +579,8 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
         ...restoreRemarks(match),
         // Include match_info fields (stored as JSONB)
         match_info: {
-          hall: match.hall,
-          city: match.city,
-          league: match.league,
-          championship_type: match.championshipType || match.championship_type,
+          // every key: the server replaces match_info whole
+          ...matchInfoFromLocal(match),
           ...(match.matchInfo || match.match_info || {})
         },
         coin_toss: {
@@ -777,10 +775,8 @@ export async function restoreMatchInPlace(matchId, jsonData, { checkServer = ser
         ...restoreRemarks(match),
         // Include match_info fields (stored as JSONB)
         match_info: {
-          hall: match.hall,
-          city: match.city,
-          league: match.league,
-          championship_type: match.championshipType || match.championship_type,
+          // every key: the server replaces match_info whole
+          ...matchInfoFromLocal(match),
           ...(match.matchInfo || match.match_info || {})
         },
         coin_toss: {
@@ -1416,11 +1412,10 @@ export async function importMatchFromSupabase(cloudData) {
       awayTeamId,
       status: match.status,
       scheduledAt: match.scheduled_at,
-      // Match info: prefer JSONB, fallback to legacy
-      hall: matchInfo.hall || match.hall,
-      city: matchInfo.city || match.city,
-      league: matchInfo.league || match.league,
-      championshipType: matchInfo.championship_type || match.championship_type,
+      // Match info: prefer JSONB, fallback to legacy. All of it: the match
+      // type, gender and level too (they were left out, and the sheet of a
+      // match taken over on another device had only "Regional" X'd)
+      ...localFromMatchInfo(matchInfo, match),
       bestOf: cloudBestOf(match),
       refereePin: match.referee_pin,
       gamePin: match.game_pin,

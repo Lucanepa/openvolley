@@ -77,6 +77,8 @@ const OtherField: React.FC<{
 // (gap-4) and the 93px "OpenVolley eScoresheet" strip, so the Date|Time rule
 // meets the right edge of the sets.
 const HEADER_DATE_WIDTH = '35mm';
+/** The age levels with their own box. */
+const LEVEL_BOXES = ['U23', 'U19', 'U17'];
 const HEADER_TIME_WIDTH = 'calc(16px + 93px)';
 
 export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, coinTossConfirmed }) => {
@@ -90,10 +92,13 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, coinT
   const matchType = match?.matchType || match?.match_type_1;
   const gender = match?.gender || match?.match_type_2;
   const level = match?.level || match?.match_type_3;
-  const isOtherLevel = level === 'other';
+  // An age without its own box (U21 from Match setup, U20 / U18 / U16 from the
+  // schedule's youth leagues) is "Other" with the age written on its line
+  const isOtherLevel = level === 'other' || (!!level && level !== 'senior' && !LEVEL_BOXES.includes(level));
+  const otherLevelText = level === 'other' ? (match?.match_type_3_other || '') : (isOtherLevel ? String(level) : '');
   const isOtherChampionship = match?.championshipType === 'other';
   const setChampionshipOther = typeof match?.setChampionshipTypeOther === 'function' ? match.setChampionshipTypeOther : undefined;
-  const setLevelOther = typeof match?.setMatchType3Other === 'function' ? match.setMatchType3Other : undefined;
+  const setLevelOther = level === 'other' && typeof match?.setMatchType3Other === 'function' ? match.setMatchType3Other : undefined;
 
   return (
     <header className="border border-black bg-white">
@@ -142,7 +147,7 @@ export const Header: React.FC<HeaderProps> = ({ match, homeTeam, awayTeam, coinT
               <CategoryBox checked={level === 'U19'} label="U19" />
               <CategoryBox
                 checked={isOtherLevel}
-                label={<OtherField value={match?.match_type_3_other || ''} ariaLabel="Other age category" onChange={setLevelOther} />}
+                label={<OtherField value={otherLevelText} ariaLabel="Other age category" onChange={setLevelOther} />}
               />
             </div>
           </div>

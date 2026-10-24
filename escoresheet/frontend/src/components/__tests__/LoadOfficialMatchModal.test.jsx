@@ -40,7 +40,7 @@ vi.mock('../../lib/apiClient', () => ({
   }
 }))
 
-import LoadOfficialMatchModal from '../LoadOfficialMatchModal'
+import LoadOfficialMatchModal, { levelFromSchedule, mapSupabaseToMatchFormat } from '../LoadOfficialMatchModal'
 
 // svrz_games.datetime is TEXT like "2026-10-17T11:30:00.000000+00:00"
 const isoInDays = (days) => {
@@ -173,5 +173,24 @@ describe('LoadOfficialMatchModal league list', () => {
     fireEvent.change(select, { target: { value: '4L B' } })
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('league=4L B')))
     expect(leagueSelect().value).toBe('4L B')
+  })
+})
+
+// owner 2026-10-24: the sheet's U23 / U19 / U17 / Other boxes stayed empty for
+// youth games; the schedule says "junior" and the age is in the league
+describe('the level from a schedule row', () => {
+  it('senior and the setup ages as they are; junior from the league name', () => {
+    expect(levelFromSchedule('senior', '2L')).toEqual({ type3: 'senior', type3Other: '' })
+    expect(levelFromSchedule('junior', 'U23 2. Liga')).toEqual({ type3: 'U23', type3Other: '' })
+    expect(levelFromSchedule('junior', 'SM Quali U23 A')).toEqual({ type3: 'U23', type3Other: '' })
+    expect(levelFromSchedule('junior', 'U20 Ligamodus')).toEqual({ type3: 'other', type3Other: 'U20' })
+    expect(levelFromSchedule('junior', 'Finalissima U16')).toEqual({ type3: 'other', type3Other: 'U16' })
+    expect(levelFromSchedule('junior', 'Juniorinnen')).toEqual({ type3: 'other', type3Other: '' })
+    expect(levelFromSchedule(null, '2L')).toEqual({ type3: undefined, type3Other: '' })
+  })
+
+  it('a row of game 406970 maps to championship, women, senior, regional', () => {
+    const m = mapSupabaseToMatchFormat({ game_number: 406970, league: '2L', gender: 'women', match_type: 'championship', match_level: 'senior', championship_type: 'regional' })
+    expect(m).toMatchObject({ type1: 'championship', type2: 'women', type3: 'senior', type3Other: '', championshipType: 'regional' })
   })
 })
