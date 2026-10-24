@@ -2575,11 +2575,19 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           test: false,
           sport_type: 'indoor',
           created_at: new Date().toISOString(),
-          // JSONB columns
+          // JSONB columns: match_info with every key (the server replaces it whole)
           match_info: {
             hall: hall || '',
             city: city || '',
-            league: league || ''
+            league: league || '',
+            championship_type: championshipType || '',
+            championship_type_other: championshipTypeOther || '',
+            match_type_1: type1 || '',
+            match_type_1_other: type1Other || '',
+            match_type_2: type2 || '',
+            match_type_3: type3 || '',
+            match_type_3_other: type3Other || '',
+            best_of: bestOf
           },
           home_team: { name: home.trim(), short_name: homeShortName || generateShortName(home.trim()), color: homeColor || DEFAULT_HOME_COLOUR },
           away_team: { name: away.trim(), short_name: awayShortName || generateShortName(away.trim()), color: awayColor || DEFAULT_AWAY_COLOUR },
@@ -2966,10 +2974,13 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     setTime(matchData.time)
     setCity(matchData.city)
     setHall(matchData.hall)
-    setType1(matchData.type1)
-    setChampionshipType(matchData.championshipType)
-    setType2(matchData.type2)
-    setType3(matchData.type3)
+    // a schedule row without a value keeps a usable one (the sheet's category
+    // boxes stay empty for a missing one)
+    setType1(matchData.type1 || 'championship')
+    setChampionshipType(matchData.championshipType || 'regional')
+    if (matchData.type2) setType2(matchData.type2)
+    setType3(matchData.type3 || 'senior')
+    setType3Other(matchData.type3 === 'other' ? (matchData.type3Other || '') : '')
     if (matchData.bestOf) setBestOf(matchData.bestOf)
     setGameN(matchData.gameN)
     setLeague(matchData.league)

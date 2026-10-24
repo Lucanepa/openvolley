@@ -5,6 +5,8 @@ import {
   filterMatchPayload,
   hasJsonbColumns,
   mergeJsonbColumns,
+  matchInfoFromLocal,
+  localFromMatchInfo,
 } from '../matchRepository'
 
 describe('matchRepository', () => {
@@ -77,5 +79,36 @@ describe('queueMatchUpdate', () => {
     expect(await queueMatchUpdate(database, null, { manual_changes: [] })).toBeNull()
     expect(await queueMatchUpdate(database, 'match_1_a', { nope: 1 })).toBeNull()
     expect(database.rows).toHaveLength(0)
+  })
+})
+
+// owner 2026-10-24 (game 406970): match_info is replaced whole on the server,
+// so every writer sends all of it, and a device taking a match over reads all of it
+describe('match_info both ways', () => {
+  const local = {
+    hall: 'Halle G', city: 'Zürich', league: '2L', championshipType: 'regional',
+    match_type_1: 'championship', match_type_2: 'women', match_type_3: 'U23', bestOf: 3
+  }
+
+  it('matchInfoFromLocal: every key, empty strings for what is not set', () => {
+    expect(matchInfoFromLocal(local)).toEqual({
+      hall: 'Halle G', city: 'Zürich', league: '2L', championship_type: 'regional', championship_type_other: '',
+      match_type_1: 'championship', match_type_1_other: '', match_type_2: 'women',
+      match_type_3: 'U23', match_type_3_other: '', best_of: 3
+    })
+    expect(Object.keys(matchInfoFromLocal())).toHaveLength(11)
+  })
+
+  it('localFromMatchInfo is its reverse, without empty keys', () => {
+    expect(localFromMatchInfo(matchInfoFromLocal(local))).toEqual({
+      hall: 'Halle G', city: 'Zürich', league: '2L', championshipType: 'regional',
+      match_type_1: 'championship', match_type_2: 'women', match_type_3: 'U23'
+    })
+  })
+
+  it('older rows: the legacy columns when match_info lacks them', () => {
+    expect(localFromMatchInfo({}, { hall: 'H', city: 'C', league: 'L', championship_type: 'national' }))
+      .toEqual({ hall: 'H', city: 'C', league: 'L', championshipType: 'national' })
+    expect(localFromMatchInfo(undefined, undefined)).toEqual({})
   })
 })
