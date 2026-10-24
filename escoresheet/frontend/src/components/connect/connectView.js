@@ -86,11 +86,14 @@ export function viewFor(view, transport) {
  * @param {boolean} [env.bluetoothFound] the local server reports a Bluetooth network (not desktop)
  * @param {string|null} [env.platform] 'windows' | 'linux' | … when the desktop app said
  * @param {boolean} [env.cloudBlocked] cloud sync is off in this window
+ * @param {{ os: string|null, mobile: boolean }|null} [env.device] utils/deviceKind detectDevice
  * @returns {{ id: string, available: boolean, reasonKey: string|null, recommended: boolean, experimental: boolean }[]}
+ *   Only the connections this device can ever use (offeredHere); one that is
+ *   offered but cannot work right now is dimmed with its reason.
  */
 export function transportOptions({
   served, desktop, relayLoading = false, halls = [], hotspot = null, bluetooth = null,
-  bluetoothFound = false, platform = null, cloudBlocked = false
+  bluetoothFound = false, platform = null, cloudBlocked = false, device = null
 }) {
   const hallKnown = served && !relayLoading
   const reasons = {
@@ -111,13 +114,40 @@ export function transportOptions({
   else if (!cloudBlocked) recommended = 'server'
   else recommended = 'hall'
 
-  return TRANSPORT_IDS.map(id => ({
+  const offered = offeredHere({ served, desktop, bluetoothFound, platform, device })
+  return TRANSPORT_IDS.filter(id => offered[id]).map(id => ({
     id,
     available: !reasons[id],
     reasonKey: reasons[id],
     recommended: id === recommended,
     experimental: id === 'bluetooth'
   }))
+}
+
+/**
+ * Which connections this device can ever use, so a phone is not offered the
+ * desktop app's ways (owner 2026-10-24: "if a phone, no Linux desktop app,
+ * Bluetooth etc."). Without a device every one is offered (dimmed when it
+ * cannot work), as before.
+ *
+ *   phone / tablet (Android, iOS, the app): Internet; the hall Wi-Fi only on a
+ *     page a venue box serves; Bluetooth only when such a box has one.
+ *   computer: the hall Wi-Fi always (desktop app or venue box); a Wi-Fi of its
+ *     own with the desktop app on Windows or Linux (offered, dimmed, in their
+ *     browsers: the app can do it); Bluetooth on Linux only (Windows cannot
+ *     serve one, macOS has no desktop network support).
+ */
+export function offeredHere({ served, desktop, bluetoothFound = false, platform = null, device = null }) {
+  if (!device) return { hall: true, laptop: true, server: true, bluetooth: true }
+  const os = platform || device.os
+  if (device.mobile) return { hall: !!served, laptop: false, server: true, bluetooth: !!bluetoothFound }
+  const noNetworks = os === 'macos' || os === 'chromeos'
+  return {
+    hall: true,
+    laptop: desktop ? os !== 'macos' : !noNetworks,
+    server: true,
+    bluetooth: !!bluetoothFound || (os !== 'windows' && !noNetworks)
+  }
 }
 
 /** The connection to open on: the saved one when it can work here, else the recommendation. */

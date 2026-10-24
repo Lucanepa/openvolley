@@ -8,9 +8,8 @@ import DesktopUpdateSection from './DesktopUpdateSection'
 import { useDesktopUpdate } from '../../hooks/useDesktopUpdate'
 import { copyToClipboard } from '../../utils/networkInfo'
 import { QRCodeSVG } from 'qrcode.react'
-import { SatelliteDishIcon } from '../icons'
 import { clearCachesAndReload, applyServiceWorkerUpdate } from '../../hooks/useServiceWorker'
-import { Info, LifeBuoy, X } from 'lucide-react'
+import { Info, LifeBuoy, Tablet, X } from 'lucide-react'
 import { Button, cn, IconButton, Select, SegmentedControl, Switch } from '../../ui'
 import { isAndroidApp } from '../../utils/androidUpdate'
 import AndroidVersionRows from './AndroidVersionRows'
@@ -786,14 +785,16 @@ export default function HomeOptionsModal({
           <div className="mb-6 flex flex-col gap-3">
             <button
               type="button"
+              // the header menu's name and icon: one dialog, one name (owner 2026-10-24)
+              data-testid="options-connect-tablets"
               onClick={() => {
                 onClose?.()
                 onOpenConnectionSetup?.()
               }}
               className={cn('flex w-full min-h-12 items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-semibold text-stone-800 shadow-sm transition-colors hover:bg-stone-50', 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1')}
             >
-              <SatelliteDishIcon size={20} />
-              <span>{t('options.setupConnections')}</span>
+              <Tablet size={20} aria-hidden />
+              <span>{t('connectTablets.title', 'Connect tablets')}</span>
             </button>
           </div>
         )}
