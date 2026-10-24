@@ -39,6 +39,56 @@ export function remarksForServer(remarks) {
   return chars.length <= REMARKS_MAX ? text : chars.slice(0, REMARKS_MAX).join('')
 }
 
+/**
+ * The server's `match_info` (JSONB) from a local match record, with every key.
+ * The server replaces match_info whole on every write: a writer that sent only
+ * hall/city/league/championship_type wiped the match type, gender and level, and
+ * a device that took the match over then had none (owner 2026-10-24, game
+ * 406970: only "Regional" was X'd on the sheet). Every writer sends this.
+ * @param {Record<string, any>} [m] the local match (camelCase, as in Dexie)
+ */
+export function matchInfoFromLocal(m = {}) {
+  return {
+    hall: m.hall || '',
+    city: m.city || '',
+    league: m.league || '',
+    championship_type: m.championshipType || m.championship_type || '',
+    championship_type_other: m.championshipTypeOther || '',
+    match_type_1: m.match_type_1 || '',
+    match_type_1_other: m.match_type_1_other || '',
+    match_type_2: m.match_type_2 || '',
+    match_type_3: m.match_type_3 || '',
+    match_type_3_other: m.match_type_3_other || '',
+    best_of: Number(m.bestOf) === 3 ? 3 : 5
+  }
+}
+
+/**
+ * The local match fields from the server's `match_info` (the other way round
+ * from matchInfoFromLocal), legacy top-level columns as the fallback. Empty
+ * values stay out, so a device's own value is never replaced by nothing.
+ * @param {Record<string, any>} [info] match_info
+ * @param {Record<string, any>} [legacy] the server row (older rows had hall, city... as columns)
+ */
+export function localFromMatchInfo(matchInfo, legacyRow) {
+  const info = matchInfo || {}
+  const legacy = legacyRow || {}
+  const pick = (...vs) => vs.find(v => v !== undefined && v !== null && v !== '')
+  const out = {
+    hall: pick(info.hall, legacy.hall),
+    city: pick(info.city, legacy.city),
+    league: pick(info.league, legacy.league),
+    championshipType: pick(info.championship_type, legacy.championship_type),
+    championshipTypeOther: pick(info.championship_type_other),
+    match_type_1: pick(info.match_type_1),
+    match_type_1_other: pick(info.match_type_1_other),
+    match_type_2: pick(info.match_type_2),
+    match_type_3: pick(info.match_type_3),
+    match_type_3_other: pick(info.match_type_3_other)
+  }
+  return Object.fromEntries(Object.entries(out).filter(([, v]) => v !== undefined))
+}
+
 // JSONB columns that must be MERGED with existing values on update (not replaced),
 // so concurrent writers of different fields don't clobber each other.
 export const JSONB_COLUMNS = [

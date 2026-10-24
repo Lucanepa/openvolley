@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   VIEW_KEY, connectedSummary, defaultRole, formatPin, initialTransport, ipTail, readView, roleClients, roleStatus,
-  saveView, transportOf, transportOptions, viewFor
+  offeredHere, saveView, transportOf, transportOptions, viewFor
 } from '../connectView'
 
 function memoryStorage(init = {}) {
@@ -189,5 +189,49 @@ describe('connectView: PIN and default tablet', () => {
     expect(defaultRole(access(['bench_away']))).toBe('bench_away')
     expect(defaultRole(access(['referee']), { referee: { status: 'many' } })).toBe('referee')
     expect(defaultRole(access([]))).toBe('referee')
+  })
+})
+
+// owner 2026-10-24: a phone was offered the desktop app's Wi-Fi and Bluetooth
+describe('connectView: the ways this device can use', () => {
+  const ids = (o) => o.map(x => x.id)
+  const PHONE = { os: 'android', mobile: true }
+
+  it('without a device every way is offered, as before', () => {
+    expect(ids(transportOptions({ served: false, desktop: false }))).toEqual(['hall', 'laptop', 'server', 'bluetooth'])
+  })
+
+  it('a phone or tablet: Internet; the hall Wi-Fi from a venue box; Bluetooth when that box has one', () => {
+    expect(ids(transportOptions({ served: false, desktop: false, device: PHONE }))).toEqual(['server'])
+    expect(ids(transportOptions({ served: false, desktop: false, device: { os: 'ios', mobile: true } }))).toEqual(['server'])
+    expect(ids(transportOptions({ served: true, desktop: false, device: PHONE }))).toEqual(['hall', 'server'])
+    expect(ids(transportOptions({ served: true, desktop: false, bluetoothFound: true, device: PHONE }))).toEqual(['hall', 'server', 'bluetooth'])
+    expect(opt(transportOptions({ served: false, desktop: false, device: PHONE }), 'server')).toMatchObject({ available: true, recommended: true })
+  })
+
+  it('a computer\'s browser: what the desktop app could do there stays offered, dimmed', () => {
+    const linux = transportOptions({ served: false, desktop: false, device: { os: 'linux', mobile: false } })
+    expect(ids(linux)).toEqual(['hall', 'laptop', 'server', 'bluetooth'])
+    expect(opt(linux, 'laptop')).toMatchObject({ available: false, reasonKey: 'needsDesktop' })
+    expect(ids(transportOptions({ served: false, desktop: false, device: { os: 'windows', mobile: false } }))).toEqual(['hall', 'laptop', 'server'])
+    expect(ids(transportOptions({ served: false, desktop: false, device: { os: 'macos', mobile: false } }))).toEqual(['hall', 'server'])
+    expect(ids(transportOptions({ served: false, desktop: false, device: { os: 'chromeos', mobile: false } }))).toEqual(['hall', 'server'])
+  })
+
+  it('the desktop app: the OS it reports wins over the browser\'s guess', () => {
+    const device = { os: null, mobile: false }
+    expect(ids(transportOptions({ served: true, desktop: true, platform: 'linux', device }))).toEqual(['hall', 'laptop', 'server', 'bluetooth'])
+    expect(ids(transportOptions({ served: true, desktop: true, platform: 'windows', device }))).toEqual(['hall', 'laptop', 'server'])
+    expect(ids(transportOptions({ served: true, desktop: true, platform: 'macos', device }))).toEqual(['hall', 'server'])
+  })
+
+  it('a saved way this device cannot use opens on the recommendation', () => {
+    const o = transportOptions({ served: false, desktop: false, device: PHONE })
+    expect(initialTransport('laptop', o)).toBe('server')
+    expect(initialTransport('bluetooth', o)).toBe('server')
+  })
+
+  it('offeredHere without a device offers all', () => {
+    expect(offeredHere({ served: false, desktop: false })).toEqual({ hall: true, laptop: true, server: true, bluetooth: true })
   })
 })

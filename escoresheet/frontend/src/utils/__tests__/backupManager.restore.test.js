@@ -225,6 +225,43 @@ describe('remarks (db/017)', () => {
   })
 })
 
+// 2026-10-20, game 406970: started on the PC, finished on a phone. The phone's
+// copy came from importMatchFromSupabase, which kept only championship_type:
+// on the sheet only "Regional" was X'd (owner 2026-10-24)
+describe('the match type, gender and level', () => {
+  const INFO = {
+    hall: 'Kantonsschule Rämibühl Halle G', city: 'Zürich', league: '2L',
+    championship_type: 'regional', championship_type_other: '',
+    match_type_1: 'championship', match_type_1_other: '',
+    match_type_2: 'women', match_type_3: 'senior', match_type_3_other: '', best_of: 5
+  }
+  const restoreJob = () => [...fakeDb.sync_queue.map.values()].find(j => j.action === 'restore')
+
+  it('importMatchFromSupabase keeps all of match_info on this device', async () => {
+    const id = await importMatchFromSupabase({ match: { external_id: SEED, game_n: 406970, status: 'live', match_info: INFO }, sets: [], events: [] })
+    expect(fakeDb.matches.map.get(id)).toMatchObject({
+      hall: INFO.hall, city: 'Zürich', league: '2L', championshipType: 'regional',
+      match_type_1: 'championship', match_type_2: 'women', match_type_3: 'senior'
+    })
+  })
+
+  it('a server row without them adds no empty keys, older rows keep their columns', async () => {
+    const id = await importMatchFromSupabase({ match: { external_id: SEED, status: 'live', hall: 'Halle', championship_type: 'national' }, sets: [], events: [] })
+    const m = fakeDb.matches.map.get(id)
+    expect(m).toMatchObject({ hall: 'Halle', championshipType: 'national' })
+    expect('match_type_2' in m).toBe(false)
+  })
+
+  it('a restore sends every match_info key (the server replaces match_info whole)', async () => {
+    await restoreMatchFromJson(backup({ hall: 'H', league: '2L', championshipType: 'regional', match_type_1: 'championship', match_type_2: 'women', match_type_3: 'senior', bestOf: 5 }))
+    expect(restoreJob().payload.match.match_info).toEqual({
+      hall: 'H', city: '', league: '2L', championship_type: 'regional', championship_type_other: '',
+      match_type_1: 'championship', match_type_1_other: '', match_type_2: 'women',
+      match_type_3: 'senior', match_type_3_other: '', best_of: 5
+    })
+  })
+})
+
 // 2026-10-20, game 406970: the phone's own copy was refused (OV_GAME_TAKEN)
 // and the scorer joined the PC's match with its game PIN
 describe('joining a cloud match on this device', () => {
