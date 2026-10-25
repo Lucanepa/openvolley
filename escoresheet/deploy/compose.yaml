@@ -198,7 +198,7 @@ services:
       traefik.enable: "false"
 
   ov-tunnel:
-    image: ${OV_CLOUDFLARED_IMAGE:-cloudflare/cloudflared:2026.5.2}
+    image: ${OV_CLOUDFLARED_IMAGE:-cloudflare/cloudflared:2026.10.3}
     restart: unless-stopped
     command: ["tunnel", "--config", "/etc/cloudflared/config.yml", "run"]
     environment:
