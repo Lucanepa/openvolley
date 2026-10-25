@@ -6,7 +6,7 @@
 #
 # Validate without connecting:
 #   docker run --rm -v "$PWD/cloudflared:/etc/cloudflared:ro" \
-#     cloudflare/cloudflared:2026.5.2 tunnel --config /etc/cloudflared/config.yml ingress validate
+#     cloudflare/cloudflared:2026.10.3 tunnel --config /etc/cloudflared/config.yml ingress validate
 #
 # The backend hostnames reach ov-backend and get.openvolley.app reaches ov-pkgs,
 # both on the compose network "ov-edge". No host port is involved.
