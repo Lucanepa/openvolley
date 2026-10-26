@@ -403,6 +403,54 @@ function withoutClosedEvidence(...rows) {
   return changes
 }
 
+// A JSON file that is not a match backup, and a file that cannot be read
+// (damaged, cut off): restoreErrorText says these in the user's words.
+export const BACKUP_FORMAT_ERROR = 'OV_BACKUP_FORMAT'
+export const BACKUP_UNREADABLE_ERROR = 'OV_BACKUP_UNREADABLE'
+
+/**
+ * The match backup inside a whole-database export: the set-end download,
+ * "match stopped" and the Match menu's export (Scoreboard) write every table
+ * of the device as { exportDate, matchId, matches, teams, players, sets,
+ * events, ... }. The set-end one is a browser's only automatic backup
+ * offline, and the restore refused it (stress test 2026-10-25).
+ * The match of its `matchId` with its teams, players, sets and events, in
+ * exportMatchData's shape; null for any other file.
+ * @param {object} jsonData a parsed backup file
+ */
+export function matchBackupFromDatabaseExport(jsonData) {
+  if (!jsonData || jsonData.match || !Array.isArray(jsonData.matches)) return null
+  const match = jsonData.matches.find(m => m && m.id != null && String(m.id) === String(jsonData.matchId))
+  if (!match) return null
+  const rows = (list) => (Array.isArray(list) ? list.filter(Boolean) : [])
+  const teamOf = (id) => (id != null ? rows(jsonData.teams).find(t => t.id === id) || null : null)
+  const playersOf = (id) => (id != null ? rows(jsonData.players).filter(p => p.teamId === id) : [])
+  return {
+    version: 1,
+    lastUpdated: jsonData.exportDate || null,
+    match,
+    homeTeam: teamOf(match.homeTeamId),
+    awayTeam: teamOf(match.awayTeamId),
+    homePlayers: playersOf(match.homeTeamId),
+    awayPlayers: playersOf(match.awayTeamId),
+    sets: rows(jsonData.sets).filter(r => r.matchId === match.id),
+    events: rows(jsonData.events).filter(r => r.matchId === match.id)
+  }
+}
+
+/**
+ * What the Restore dialogs say when a backup cannot be loaded or restored:
+ * a file that cannot be read and a file that is not a match backup in the
+ * user's words, anything else with the error's own text.
+ * @param {Error} err
+ * @param {(key: string, opts?: object) => string} t
+ */
+export function restoreErrorText(err, t) {
+  if (err?.code === BACKUP_UNREADABLE_ERROR || err?.name === 'SyntaxError') return t('settings.backup.restoreErrors.unreadable')
+  if (err?.code === BACKUP_FORMAT_ERROR) return t('settings.backup.restoreErrors.notABackup')
+  return t('settings.backup.restoreErrors.failed', { error: err?.message || String(err ?? '') })
+}
+
 /**
  * Restore match from JSON backup data
  * REPLACE: removes this match's local rows (other local matches are kept),
@@ -413,9 +461,11 @@ function withoutClosedEvidence(...rows) {
  * @param {{checkServer?: (externalId: string) => Promise<boolean|null>}} [options]
  */
 export async function restoreMatchFromJson(jsonData, { checkServer = serverClosedState } = {}) {
+  // A whole-database export holds the match it was written for
+  jsonData = matchBackupFromDatabaseExport(jsonData) || jsonData
   // Validate schema
-  if (!jsonData.version || !jsonData.match) {
-    throw new Error('Invalid backup file format')
+  if (!jsonData?.version || !jsonData.match) {
+    throw Object.assign(new Error('Invalid backup file format'), { code: BACKUP_FORMAT_ERROR })
   }
 
   const { homeTeam, awayTeam, homePlayers, awayPlayers, sets, events } = jsonData
@@ -1607,6 +1657,16 @@ async function afterJoin(localMatchId, { claim = false } = {}) {
   }
 }
 
+// A backup file's JSON; a file that is not JSON (damaged, cut off by a full
+// disk) throws BACKUP_UNREADABLE_ERROR
+function parseBackupText(text) {
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw Object.assign(new Error('Invalid JSON file'), { code: BACKUP_UNREADABLE_ERROR })
+  }
+}
+
 /**
  * Select a backup file using file picker
  * Returns parsed JSON data or null if cancelled
@@ -1624,7 +1684,7 @@ export async function selectBackupFile() {
       })
       const file = await fileHandle.getFile()
       const text = await file.text()
-      return JSON.parse(text)
+      return parseBackupText(text)
     } catch (error) {
       if (error.name === 'AbortError') {
         return null // User cancelled
@@ -1648,10 +1708,9 @@ export async function selectBackupFile() {
 
       try {
         const text = await file.text()
-        const data = JSON.parse(text)
-        resolve(data)
+        resolve(parseBackupText(text))
       } catch (error) {
-        reject(new Error('Invalid JSON file'))
+        reject(error)
       }
     }
 

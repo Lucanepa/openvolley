@@ -46,7 +46,7 @@ vi.mock('../../db/db', () => ({ db: fakeDb }))
 vi.mock('../backendConfig', () => ({ getApiUrl: (p) => `http://backend.test${p}`, getCloudApiUrl: (p) => `http://backend.test${p}` }))
 vi.mock('../../lib/apiClient', () => ({ apiFrom: vi.fn(), apiStorage: { from: vi.fn() } }))
 
-import { restoreMatchFromJson, restoreMatchInPlace, importMatchFromSupabase, serverClosedState } from '../backupManager'
+import { restoreMatchFromJson, restoreMatchInPlace, importMatchFromSupabase, serverClosedState, matchBackupFromDatabaseExport, restoreErrorText, BACKUP_FORMAT_ERROR, BACKUP_UNREADABLE_ERROR } from '../backupManager'
 import { apiFrom } from '../../lib/apiClient'
 import { isStaleClosedCopy } from '../matchReopen'
 import { signaturesPayload, signaturesSyncJob } from '../../domain/signatureEdits'
@@ -373,6 +373,69 @@ describe('the closing signatures of a match restored by game PIN', () => {
       expect(m[field] ?? null).toBeNull()
     }
     for (const legacy of ['homeCaptainPostGameSignature', 'awayCaptainPostGameSignature', 'refereeSignature']) expect(legacy in m).toBe(false)
+  })
+})
+
+// Stress test 2026-10-25 (setend-backup-not-restorable-silent-restore-errors):
+// offline in a browser, the set-end download is the only automatic backup.
+// It holds every table of the device ({ exportDate, matchId, matches, ... }),
+// and the restore refused anything without `version` and `match`.
+describe('a whole-database export (the set-end download)', () => {
+  const dump = () => ({
+    exportDate: '2026-10-25T18:40:00.000Z',
+    exportReason: 'set_1_end',
+    matchId: 9,
+    matches: [
+      { id: 4, seed_key: OTHER, status: 'final', homeTeamId: 1, awayTeamId: 2 },
+      { id: 9, seed_key: SEED, status: 'live', gameN: 7, homeTeamId: 3, awayTeamId: 4, refereePin: '111111' }
+    ],
+    teams: [{ id: 1, name: 'Old home' }, { id: 2, name: 'Old away' }, { id: 3, name: 'Home' }, { id: 4, name: 'Away' }],
+    players: [
+      { id: 1, teamId: 1, number: 10, lastName: 'Old' },
+      { id: 2, teamId: 3, number: 1, lastName: 'Hof' },
+      { id: 3, teamId: 4, number: 12, lastName: 'Weg' }
+    ],
+    sets: [{ id: 1, matchId: 4, index: 1, homePoints: 25, awayPoints: 3, finished: true }, { id: 2, matchId: 9, index: 1, homePoints: 25, awayPoints: 7, finished: true }, { id: 3, matchId: 9, index: 2, homePoints: 2, awayPoints: 3 }],
+    events: [{ id: 1, matchId: 4, setIndex: 1, type: 'point', seq: 1 }, { id: 2, matchId: 9, setIndex: 1, type: 'point', seq: 1 }, { id: 3, matchId: 9, setIndex: 2, type: 'point', seq: 2 }],
+    referees: [],
+    scorers: []
+  })
+
+  it('holds the match it was written for, in the backup file shape', () => {
+    const b = matchBackupFromDatabaseExport(dump())
+    expect(b).toMatchObject({ version: 1, match: { id: 9, seed_key: SEED }, homeTeam: { name: 'Home' }, awayTeam: { name: 'Away' } })
+    expect(b.homePlayers.map(p => p.lastName)).toEqual(['Hof'])
+    expect(b.awayPlayers.map(p => p.lastName)).toEqual(['Weg'])
+    expect(b.sets.map(x => x.id)).toEqual([2, 3])
+    expect(b.events.map(x => x.id)).toEqual([2, 3])
+    // a backup file, or an export without its match, is not one
+    expect(matchBackupFromDatabaseExport(backup())).toBeNull()
+    expect(matchBackupFromDatabaseExport({ ...dump(), matchId: 99 })).toBeNull()
+    expect(matchBackupFromDatabaseExport(null)).toBeNull()
+  })
+
+  it('is restored: that match only, with its sets and events', async () => {
+    const id = await restoreMatchFromJson(dump())
+    expect(fakeDb.matches.map.get(id)).toMatchObject({ seed_key: SEED, status: 'live', gameN: 7 })
+    const sets = [...fakeDb.sets.map.values()].filter(x => x.matchId === id)
+    expect(sets.map(x => `${x.index}:${x.homePoints}-${x.awayPoints}`)).toEqual(['1:25-7', '2:2-3'])
+    expect([...fakeDb.events.map.values()].filter(x => x.matchId === id)).toHaveLength(2)
+    expect(fakeDb.teams.map.get(fakeDb.matches.map.get(id).homeTeamId).name).toBe('Home')
+    // the other match of the export is not restored over this device's
+    expect([...fakeDb.matches.map.values()].filter(m => m.seed_key === OTHER)).toHaveLength(1)
+  })
+
+  it('a file that is not a backup is refused with a code the dialog can say', async () => {
+    await expect(restoreMatchFromJson({ hello: 'world' })).rejects.toMatchObject({ code: BACKUP_FORMAT_ERROR })
+    await expect(restoreMatchFromJson({ ...dump(), matchId: 99 })).rejects.toMatchObject({ code: BACKUP_FORMAT_ERROR })
+  })
+
+  it('restoreErrorText: an unreadable file, a file that is not a backup, anything else', () => {
+    const t = (key, opts) => (opts ? `${key} ${JSON.stringify(opts)}` : key)
+    expect(restoreErrorText(Object.assign(new Error('x'), { code: BACKUP_UNREADABLE_ERROR }), t)).toBe('settings.backup.restoreErrors.unreadable')
+    expect(restoreErrorText(new SyntaxError('Unexpected end of JSON input'), t)).toBe('settings.backup.restoreErrors.unreadable')
+    expect(restoreErrorText(Object.assign(new Error('x'), { code: BACKUP_FORMAT_ERROR }), t)).toBe('settings.backup.restoreErrors.notABackup')
+    expect(restoreErrorText(new Error('QuotaExceededError'), t)).toBe('settings.backup.restoreErrors.failed {"error":"QuotaExceededError"}')
   })
 })
 
