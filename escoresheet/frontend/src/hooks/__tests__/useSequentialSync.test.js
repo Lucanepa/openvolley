@@ -122,6 +122,23 @@ describe('useSequentialSync.syncSetEnd', () => {
     expect([...fakeDb.sync_queue.map.values()].map(r => r.resource)).toEqual(['set', 'match'])
   })
 
+  // Stress test 2026-10-25: on a hung backend the whole scoreboard stayed
+  // behind "Syncing to cloud..." for up to 22 s at every set end
+  it('waits at most about 2 s in all for a cloud that does not answer', async () => {
+    vi.useFakeTimers()
+    stop = queueAnswers(() => null)
+    const { result, unmount } = renderHook(() => useSequentialSync())
+    let out = null
+    await act(async () => {
+      result.current.syncSetEnd({ lastPointPayload: null, setPayload: SET_END.payload, matchPayload: MATCH_END.payload }).then(r => { out = r })
+      await vi.advanceTimersByTimeAsync(2500)
+    })
+    expect(out).toEqual({ success: true, hasWarning: true })
+    // saved on the device, still queued for the background queue
+    expect([...fakeDb.sync_queue.map.values()].map(r => r.status)).toEqual(['queued', 'queued'])
+    unmount()
+  })
+
   it('a match update still waiting is a warning, a refused set update an error', async () => {
     vi.useFakeTimers()
     stop = queueAnswers((row) => (row.resource === 'set' ? 'sent' : null))
