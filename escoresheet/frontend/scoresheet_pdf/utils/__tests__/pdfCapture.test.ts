@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { hideImages, imageBox, isWebKitEngine, isWebKitGtk, styleListFor, usedStyleProperties } from '../pdfCapture'
+import { hideImages, imageBox, isWebKitEngine, isWebKitGtk, styleListFor, usedStyleProperties, wellFormedSheet } from '../pdfCapture'
 
 describe('isWebKitEngine', () => {
   it('every WebKit: Safari, the macOS app, WebKitGTK and all iPhone / iPad browsers; never Chromium or Firefox', () => {
@@ -98,5 +98,33 @@ describe('hideImages', () => {
     show()
     expect(a.style.visibility).toBe('')
     expect(b.style.visibility).toBe('visible')
+  })
+})
+
+describe('wellFormedSheet', () => {
+  it('replaces half an emoji in the text and attributes for the capture, and puts it back', () => {
+    // a name cut through an emoji before the fix is still in the stored match:
+    // html-to-image throws "URI malformed" on it and no PDF is made
+    const root = document.createElement('div')
+    root.innerHTML = '<span title="Damen 2 \ud83c">Damen 2 \ud83c</span><b>Hofmann, \ud83c. M.</b><i>🏐 Max</i>'
+    const span = root.querySelector('span')!
+    const undo = wellFormedSheet(root)
+    expect(span.textContent).toBe('Damen 2 \ufffd')
+    expect(span.getAttribute('title')).toBe('Damen 2 \ufffd')
+    expect(root.querySelector('b')!.textContent).toBe('Hofmann, \ufffd. M.')
+    expect(root.querySelector('i')!.textContent).toBe('🏐 Max')
+    expect(() => encodeURIComponent(new XMLSerializer().serializeToString(root))).not.toThrow()
+    undo()
+    expect(span.textContent).toBe('Damen 2 \ud83c')
+    expect(span.getAttribute('title')).toBe('Damen 2 \ud83c')
+    expect(root.querySelector('b')!.textContent).toBe('Hofmann, \ud83c. M.')
+  })
+
+  it('touches nothing on a sheet without half emojis', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<span title="Zürich">🏐 Max</span>'
+    const html = root.innerHTML
+    wellFormedSheet(root)()
+    expect(root.innerHTML).toBe(html)
   })
 })

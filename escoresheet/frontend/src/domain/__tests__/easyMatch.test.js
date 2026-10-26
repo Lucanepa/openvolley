@@ -32,6 +32,9 @@ describe('defaultShortName', () => {
     expect(defaultShortName('Wiedikon')).toBe('WIED')
     expect(defaultShortName('')).toBe('')
   })
+  it('never cuts an emoji in half (a lone surrogate made Save PDF fail)', () => {
+    expect(defaultShortName('A🏐🏐')).toBe('A🏐')
+  })
 })
 
 describe('lineupEntryErrors with allowUnknown (easy match)', () => {
@@ -219,5 +222,12 @@ describe('easyMatchPrefill', () => {
   })
   it('best of 5 unless it says 3', () => {
     expect(easyMatchPrefill('?easy&bestOf=7').bestOf).toBe(5)
+  })
+  it('cuts a long name before an emoji, never through it (a lone surrogate made Save PDF fail)', () => {
+    const name = 'Volleyballclub Schaffhausen-Neuhausen am Rheinfall Damen 2 🏐'
+    expect(name.length).toBe(61)
+    const p = easyMatchPrefill(`?easy=1&home=${encodeURIComponent(name)}&homeShort=${encodeURIComponent('VBCSHAF🏐')}`)
+    expect(p.homeName).toBe('Volleyballclub Schaffhausen-Neuhausen am Rheinfall Damen 2 ')
+    expect(p.homeShort).toBe('VBCSHAF')
   })
 })

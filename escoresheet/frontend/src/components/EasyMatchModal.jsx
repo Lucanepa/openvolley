@@ -6,6 +6,7 @@ import TeamColourPicker from './TeamColourPicker'
 import { Button, Field, Input, cn, FOCUS_RING, backdropDismiss } from '../ui'
 import { DEFAULT_AWAY_COLOUR, DEFAULT_HOME_COLOUR } from '../utils/teamColours'
 import { defaultShortName } from '../domain/easyMatch'
+import { cutText } from '../utils/stringUtils'
 
 /**
  * The few things an easy match needs before the coin toss: the two teams
@@ -76,7 +77,7 @@ export default function EasyMatchModal({ open, prefill = null, busy = false, onC
               <Input
                 id={`easy-${team}-name`}
                 value={teams[team].name}
-                onChange={e => set(team, 'name', e.target.value.slice(0, 60))}
+                onChange={e => set(team, 'name', cutText(e.target.value, 60))}
                 autoComplete="off"
                 invalid={tried && missing(team)}
               />
@@ -86,7 +87,7 @@ export default function EasyMatchModal({ open, prefill = null, busy = false, onC
                 id={`easy-${team}-short`}
                 value={teams[team].short}
                 placeholder={defaultShortName(teams[team].name)}
-                onChange={e => set(team, 'short', e.target.value.toUpperCase().slice(0, 8))}
+                onChange={e => set(team, 'short', cutText(e.target.value.toUpperCase(), 8))}
                 autoComplete="off"
               />
             </Field>

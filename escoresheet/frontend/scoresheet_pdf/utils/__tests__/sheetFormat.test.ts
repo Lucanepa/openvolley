@@ -127,6 +127,11 @@ describe('names and officials', () => {
     expect(formatPersonName(null, undefined)).toBe('')
   })
 
+  it('an initial is a whole character, never half an emoji (a lone surrogate made Save PDF fail)', () => {
+    expect(formatPersonName('Hofmann', '🏐 Max')).toBe('Hofmann, 🏐. M.')
+    expect(formatPersonName('Hofmann', 'Max-𝒜nna')).toBe('Hofmann, M.-𝒜.')
+  })
+
   it('reads every stored shape of match.officials, never throws', () => {
     const array = normalizeOfficials([
       { role: '1st referee', firstName: 'Claudia', lastName: 'Moser', country: 'CHE', dob: '19.04.1982' },
