@@ -440,6 +440,11 @@ describe('beach on the shared backend', { skip: SKIP }, () => {
       const u = await live.waitFor((m) => m.type === 'db-change' && m.table === 'match_live_state' && m.new?.points_a === 9, 5000, 'relayed beach live state')
       assert.equal(u.new.match_id, beachUuid)
       assert.equal(u.new.sport_type, 'beach', 'carried from the matches row')
+      // what the OpenBeach scorer sends: match_id is its relay key, the seed key (matches.external_id)
+      scoreboard.send({ type: 'live-state-update', matchId: 1, liveState: { points_a: 10, points_b: 7, server_number: 2, match_id: ext, updated_at: new Date(Date.now() + 61000).toISOString() } })
+      const u2 = await live.waitFor((m) => m.type === 'db-change' && m.table === 'match_live_state' && m.new?.points_a === 10, 5000, 'relayed beach live state keyed by the seed key')
+      assert.equal(u2.new.match_id, beachUuid, 'published under matches.id')
+      assert.equal(u2.new.sport_type, 'beach')
 
       for (const c of [viewer, referee, benchByPin, benchByToken, live]) {
         assert.equal(containsPin(c.raw.join('')), false, 'a PIN was relayed')
