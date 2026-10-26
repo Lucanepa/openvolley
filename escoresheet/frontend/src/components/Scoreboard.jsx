@@ -12562,10 +12562,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         return
       }
 
-      // Undo key
-      if (key === keyBindings.undo && rallyStatus === 'idle') {
+      // Undo key: asks the undo question, as the Undo button does, whenever
+      // that button can be pressed (Enter is its Yes, above). It called the
+      // question's Yes (handleUndo), which does nothing while the question
+      // is not open: Backspace did nothing at all.
+      if (key === keyBindings.undo && canUndo) {
         e.preventDefault()
-        handleUndo()
+        showUndoConfirm()
         return
       }
     }
@@ -12574,7 +12577,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [
     keybindingsEnabled, keyBindings, editingKey, showOptionsInMenu, keybindingsModalOpen,
-    rallyStatus, handleStartRally, handlePoint, handleTimeout, handleExchangeLibero, handleUndo,
+    rallyStatus, handleStartRally, handlePoint, handleTimeout, handleExchangeLibero, handleUndo, canUndo, showUndoConfirm,
     playerActionMenu, benchPlayerActionMenu, liberoDropdown, liberoInDropdown, sanctionDropdown,
     timeoutModal, lineupModal, menuModal,
     substitutionConfirm, liberoConfirm, sanctionConfirmModal, accidentalRallyConfirmModal,
