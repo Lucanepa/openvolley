@@ -817,7 +817,7 @@
       "selectTitle": "Capitaine de jeu"
     },
     "duplicateTabTitle": "Feuille de match déjà ouverte",
-    "duplicateTabMessage": "La feuille de match est déjà ouverte dans un autre onglet ou navigateur. Veuillez fermer cet onglet et utiliser celui existant pour éviter les conflits de données.",
+    "duplicateTabMessage": "La feuille de match est déjà ouverte dans un autre onglet ou navigateur. Pour éviter les conflits de données, tenez-la dans un seul onglet : fermez celui-ci, ou appuyez sur « Continuer dans cet onglet » pour la reprendre ici (l’autre onglet cesse alors de la tenir).",
     "closeThisTab": "Fermer cet onglet",
     "scoreInThisTab": "Continuer dans cet onglet",
     "rotateDeviceTitle": "Veuillez tourner votre appareil",

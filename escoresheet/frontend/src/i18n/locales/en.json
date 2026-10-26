@@ -819,7 +819,7 @@
       "selectTitle": "Game captain"
     },
     "duplicateTabTitle": "Scoresheet already open",
-    "duplicateTabMessage": "This match scoresheet is already open in another tab or browser window. Please close this tab and use the existing one to avoid data conflicts.",
+    "duplicateTabMessage": "This match scoresheet is already open in another tab or browser window. Score it in one tab only, to avoid data conflicts: close this tab, or press “Score in this tab” to move scoring here (the other tab then stops scoring).",
     "closeThisTab": "Close this tab",
     "scoreInThisTab": "Score in this tab",
     "rotateDeviceTitle": "Please rotate your device",
