@@ -12,6 +12,7 @@
  */
 
 import { createServer } from 'http'
+import { gzip } from 'zlib'
 import { WebSocketServer } from 'ws'
 import nodemailer from 'nodemailer'
 import ical from 'node-ical'
@@ -1367,6 +1368,41 @@ function sendJson(res, status, body, headers = {}) {
   res.end(JSON.stringify(body))
 }
 
+/** Does the request's Accept-Encoding take gzip (not refused with q=0)? */
+function acceptsGzip(req) {
+  return String(req.headers['accept-encoding'] || '').split(',').some((part) => {
+    const [name, ...params] = part.split(';').map((s) => s.trim().toLowerCase())
+    if (name !== 'gzip' && name !== '*') return false
+    const q = params.find((p) => p.startsWith('q='))
+    return !q || Number(q.slice(2)) > 0
+  })
+}
+
+// Gzip a JSON answer above this size for a client that accepts it.
+const GZIP_MIN_BYTES = 8 * 1024
+
+/**
+ * A JSON text answer, gzipped (level 1, off the event loop) when it is big
+ * and the client accepts it, else as it is. A referee's or bench's GET
+ * /api/match/:id carries the whole match, and a bench refetches it after
+ * every database change of its match: every byte went through the tunnel
+ * uncompressed (national peak load test 2026-10-26).
+ */
+function sendJsonText(req, res, status, text) {
+  const plain = () => {
+    if (res.headersSent) return
+    res.writeHead(status, { 'Content-Type': 'application/json' })
+    res.end(text)
+  }
+  if (text.length < GZIP_MIN_BYTES || !acceptsGzip(req)) return plain()
+  gzip(text, { level: 1 }, (err, body) => {
+    if (err) return plain()
+    if (res.headersSent) return
+    res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' })
+    res.end(body)
+  })
+}
+
 // --- Proportionate operational logs (lib/opsLog.js) ---
 // Rejected /api/db requests: one value-free line each (status, code, table,
 // action, request id), at most 30 a minute per error code, so anonymous probes
@@ -2322,8 +2358,7 @@ const server = createServer((req, res) => {
       const homeTeam = typeof bundle.homeTeam === 'object' && bundle.homeTeam ? bundle.homeTeam : { name: matchData.homeTeam || 'Home' }
       const awayTeam = typeof bundle.awayTeam === 'object' && bundle.awayTeam ? bundle.awayTeam : { name: matchData.awayTeam || 'Away' }
 
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({
+      sendJsonText(req, res, 200, JSON.stringify({
         success: true,
         // Never PINs; personal data never; rosters/events only with access.
         ...bundle,
