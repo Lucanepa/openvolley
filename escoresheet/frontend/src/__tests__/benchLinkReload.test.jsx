@@ -33,6 +33,11 @@ vi.mock('../components/UpdateBanner', () => ({ default: () => null }))
 vi.mock('../components/DashboardHeader', () => ({ default: () => null }))
 vi.mock('../components/ServerConnectionScreen', () => ({ default: () => <div>server screen</div> }))
 vi.mock('../utils/backendConfig', async (importOriginal) => ({ ...(await importOriginal()), isServedFromLocalServer: () => true }))
+// The bench's connection check (every 15 s): never a real backend from a test
+vi.mock('../lib/apiClient', async (importOriginal) => ({
+  ...(await importOriginal()),
+  apiFrom: () => ({ select: () => ({ limit: async () => ({ data: [], error: null }) }) })
+}))
 
 import BenchApp from '../BenchApp'
 
