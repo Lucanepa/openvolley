@@ -110,4 +110,30 @@ describe('bench opened through its match link', () => {
     await screen.findByText('bench match view', {}, { timeout: 10000 })
     expect(JSON.parse(localStorage.getItem('bench_session'))).toMatchObject({ matchId: SEED, team: 'home', pin: PIN })
   }, 20000)
+
+  // 2026-10-27 re-verification: a test match is only on the relay, and a
+  // backend that has just restarted knows it once its scorer publishes it
+  // again. The bench's retry after the outage landed in that gap: the relay's
+  // 404 (with the cloud's, which never knows a test match) read as a wrong
+  // PIN, and the session was deleted, 2 runs in 3
+  it('after an outage, a match the relay does not know yet keeps the session until its scorer is back', async () => {
+    storeSession()
+    sync.validatePinSupabase.mockResolvedValue({ success: false, error: 'Failed to fetch', unreachable: true })
+    sync.validatePin.mockRejectedValue(new TypeError('Failed to fetch'))
+    render(<BenchApp />)
+    await waitFor(() => expect(sync.validatePin).toHaveBeenCalledTimes(1))
+    // the backend is back, the scorer not yet
+    sync.validatePinSupabase.mockResolvedValue({ success: false, error: 'Invalid PIN code', status: 404 })
+    sync.validatePin.mockRejectedValue(Object.assign(new Error('No match found with this PIN.'), { status: 404 }))
+    await waitFor(() => expect(sync.validatePin).toHaveBeenCalledTimes(2), { timeout: 8000 })
+    await new Promise(r => setTimeout(r, 100))
+    expect(JSON.parse(localStorage.getItem('bench_session'))).toMatchObject({ matchId: SEED, team: 'home', pin: PIN })
+    expect(sync.getMatchData).not.toHaveBeenCalled()
+    expect(screen.getByText('The server is back. The bench rejoins its match as soon as the scoresheet has reconnected.')).toBeTruthy()
+
+    // the scorer published it again: the bench joins
+    sync.validatePin.mockResolvedValue({ success: true, match: { id: SEED, gameNumber: 12, homeTeamConnectionEnabled: true, status: 'live' } })
+    await screen.findByText('bench match view', {}, { timeout: 8000 })
+    expect(JSON.parse(localStorage.getItem('bench_session'))).toMatchObject({ matchId: SEED, team: 'home', pin: PIN })
+  }, 25000)
 })

@@ -1642,6 +1642,7 @@
     "invalidPin": "Invalid PIN. Please try again.",
     "tooManyAttempts": "Too many wrong PINs from this network. Wait a few minutes, then try again.",
     "reconnecting": "No connection to the server. The bench reconnects to its match as soon as it is back.",
+    "waitingForScoresheet": "The server is back. The bench rejoins its match as soon as the scoresheet has reconnected.",
     "roster": "Roster",
     "match": "Match",
     "back": "Back",
