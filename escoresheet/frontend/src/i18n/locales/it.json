@@ -1686,6 +1686,8 @@
       "matchEnded": "La partita è terminata.",
       "connectionDisabled": "La connessione è stata disabilitata.",
       "serverUnreachable": "Nessuna connessione al server – controlla il Wi-Fi e riprova.",
+      "reconnecting": "Nessuna connessione al server. La dashboard arbitro si ricollega alla sua partita appena torna disponibile.",
+      "waitingForScoresheet": "Il server è di nuovo disponibile. La dashboard arbitro si ricollega alla sua partita appena il foglio segnapunti si è ricollegato.",
       "tooManyAttempts": "Troppi PIN errati da questa rete. Attendi qualche minuto, poi riprova."
     },
     "connection": {
