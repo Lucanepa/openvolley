@@ -63,7 +63,27 @@ async function safeJsonResponse(response, fallbackError = 'Request failed') {
 
 // Network failures (fetch rejects) carry no HTTP status.
 function networkError(err) {
+  noteBackendUnreachable()
   return { message: err?.message || 'Network unavailable', status: 0, network: true }
+}
+
+/**
+ * Dispatched on window when the cloud backend answers again after requests
+ * failed to reach it. An outage of the uplink or of the cloud while the hall
+ * Wi-Fi stays up fires no 'online' event, so the sync queue's probe and the
+ * scorer's relay socket waited out their backoff (up to 60 s) although the
+ * scoreboard's own writes already got through (stress test 2026-10-25).
+ */
+export const BACKEND_REACHED_EVENT = 'ov-backend-reached'
+let backendUnreachable = false
+function noteBackendUnreachable() {
+  backendUnreachable = true
+}
+// Any answer of the backend itself (not a 5xx of a proxy or tunnel in front of it)
+function noteBackendAnswered(response) {
+  if (!backendUnreachable || !response || response.status >= 500) return
+  backendUnreachable = false
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(BACKEND_REACHED_EVENT))
 }
 
 // Upper bound for one /api/db round trip.
@@ -221,6 +241,7 @@ class QueryBuilder {
     } catch (err) {
       return { data: null, error: networkError(err), count: undefined, status: 0 }
     }
+    noteBackendAnswered(response)
 
     const result = await safeJsonResponse(response, 'Database operation failed')
     return { data: result.data ?? null, error: result.error ?? null, count: result.count, status: result.status }
@@ -278,6 +299,7 @@ async function postJson(path, body, { auth = true, timeoutMs = DB_REQUEST_TIMEOU
   } catch (err) {
     return { data: null, error: networkError(err), status: 0 }
   }
+  noteBackendAnswered(response)
   const result = await safeJsonResponse(response, fallbackError)
   return { data: result.data ?? null, error: result.error ?? null, status: result.status }
 }
@@ -304,6 +326,7 @@ export async function apiRequest(method, path, body, { timeoutMs = DB_REQUEST_TI
   } catch (err) {
     return { data: null, error: networkError(err), status: 0 }
   }
+  noteBackendAnswered(response)
   let result
   try {
     result = await safeJsonResponse(response, fallbackError)

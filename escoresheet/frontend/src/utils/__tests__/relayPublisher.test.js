@@ -247,6 +247,29 @@ describe('the scorer\'s one relay connection (App + Scoreboard)', () => {
     expect(app.onOpen).toHaveBeenLastCalledWith(sockets[2])
   })
 
+  // Stress test 2026-10-25: the internet back while the Wi-Fi stayed up (no
+  // 'online' event): referee and benches waited 28-34 s for the scorer's socket
+  it('reconnects at once when the backend answers again after an outage', () => {
+    const relay = make()
+    const app = { onOpen: vi.fn() }
+    relay.attach('wss://relay', app)
+    sockets[0].open()
+    sockets[0].drop()
+    vi.advanceTimersByTime(5000)
+    sockets[1].drop()
+    vi.advanceTimersByTime(10000)
+    sockets[2].drop()
+    expect(sockets).toHaveLength(3)
+    // (apiClient: a request got an answer again; the 20 s backoff is not waited out)
+    events.dispatchEvent(new Event('ov-backend-reached'))
+    expect(sockets).toHaveLength(4)
+    sockets[3].open()
+    expect(app.onOpen).toHaveBeenLastCalledWith(sockets[3])
+    // an open socket is left alone
+    events.dispatchEvent(new Event('ov-backend-reached'))
+    expect(sockets).toHaveLength(4)
+  })
+
   it('replaces a socket that stops answering pings (Wi-Fi without uplink keeps it OPEN)', () => {
     const relay = make({ pingIntervalMs: 1000, pongTimeoutMs: 500 })
     relay.attach('wss://relay', {})

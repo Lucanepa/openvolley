@@ -5,7 +5,7 @@ vi.mock('../../utils/backendConfig', () => ({
   getCloudApiUrl: (path) => `http://backend.test${path}`
 }))
 
-import { apiFrom, apiAuth, apiStorage, apiMatchRestore, apiMatchRestoreByPin, apiMatchClaim, apiMatchScorer, apiPostEventRevisions, ageOf, isSessionRejected, normalizeError, toBase64 } from '../apiClient'
+import { apiFrom, apiAuth, apiStorage, apiMatchRestore, apiMatchRestoreByPin, apiMatchClaim, apiMatchScorer, apiPostEventRevisions, ageOf, isSessionRejected, normalizeError, toBase64, BACKEND_REACHED_EVENT } from '../apiClient'
 
 function jsonResponse(body, status = 200) {
   return {
@@ -18,6 +18,37 @@ function jsonResponse(body, status = 200) {
 // Returns the parsed JSON body of the n-th fetch call
 const sentBody = (n = 0) => JSON.parse(globalThis.fetch.mock.calls[n][1].body)
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+// Stress test 2026-10-25: the cloud back while the Wi-Fi stayed up fired no
+// 'online' event; the sync queue and the relay socket waited out their backoff
+describe('BACKEND_REACHED_EVENT', () => {
+  let seen
+  const count = () => { seen++ }
+  beforeEach(() => {
+    seen = 0
+    window.addEventListener(BACKEND_REACHED_EVENT, count)
+  })
+  afterEach(() => {
+    window.removeEventListener(BACKEND_REACHED_EVENT, count)
+    vi.restoreAllMocks()
+  })
+
+  it('is dispatched once when the backend answers again after requests failed to reach it', async () => {
+    globalThis.fetch = vi.fn(async () => { throw new TypeError('Failed to fetch') })
+    await apiFrom('match_live_state').upsert({ match_id: 'm' })
+    await apiMatchScorer('match_1_a', { claim: false })
+    expect(seen).toBe(0)
+    // a tunnel / proxy answering 502 is not the backend
+    globalThis.fetch = vi.fn(async () => jsonResponse({ error: 'bad gateway' }, 502))
+    await apiFrom('matches').select('id').limit(1)
+    expect(seen).toBe(0)
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: null }))
+    await apiFrom('match_live_state').upsert({ match_id: 'm' })
+    expect(seen).toBe(1)
+    await apiFrom('match_live_state').upsert({ match_id: 'm' })
+    expect(seen).toBe(1)
+  })
+})
 
 describe('apiClient QueryBuilder', () => {
   beforeEach(() => {

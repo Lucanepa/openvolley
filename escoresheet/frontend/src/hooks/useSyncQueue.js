@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
-import { apiFrom, apiMatchRestore, apiMatchClaim, apiMatchScorer, apiPostEventRevisions, AUTH_TOKEN_CHANGE_EVENT, AUTH_TOKEN_STORAGE_KEY } from '../lib/apiClient'
+import { apiFrom, apiMatchRestore, apiMatchClaim, apiMatchScorer, apiPostEventRevisions, AUTH_TOKEN_CHANGE_EVENT, AUTH_TOKEN_STORAGE_KEY, BACKEND_REACHED_EVENT } from '../lib/apiClient'
 import { REVISION_OPS, revisionOfJob } from '../domain/eventRevisions'
 import { emitActivity, noteSyncPass } from '../utils/activity/bus'
 import { uploadActivityBatch, activityFlushJob } from '../utils/activity/upload'
@@ -91,9 +91,12 @@ const AUTH_RECHECK_MS = 5 * 60 * 1000
 const ERROR_BACKOFF_BASE = 30000
 const ERROR_BACKOFF_MAX = 10 * 60 * 1000
 
-// Backoff for the connection probe after a failure: 5s, 10s, 20s ... capped at 60s
+// Backoff for the connection probe after a failure: 5s, 10s, then every 15s.
+// (Capped at 60 s, a cloud back after a 2-minute outage waited up to a minute
+// for the next probe, the scorer's pill on "Offline" all along.) Any answer
+// of the backend in between (BACKEND_REACHED_EVENT) probes at once.
 const PROBE_BACKOFF_BASE = 5000
-const PROBE_BACKOFF_MAX = 60000
+const PROBE_BACKOFF_MAX = 15000
 
 // A 'sending' job (claimed by useSequentialSync's direct sends, before the
 // set end went through the queue) older than this is assumed abandoned (tab
@@ -2012,6 +2015,9 @@ export function useSyncQueue() {
       else flush()
     }
     window.addEventListener('sync-queue-flush-now', handleFlushNow)
+    // The backend answered another request after failing ones (a live-state
+    // write, a status read): it is back, no need to wait out the backoff
+    window.addEventListener(BACKEND_REACHED_EVENT, handleFlushNow)
 
     // Fallback poll every 5s to catch any missed items (e.g., tab focus, retries)
     const interval = setInterval(() => {
@@ -2021,6 +2027,7 @@ export function useSyncQueue() {
     return () => {
       window.removeEventListener('sync-queue-write', handleQueueWrite)
       window.removeEventListener('sync-queue-flush-now', handleFlushNow)
+      window.removeEventListener(BACKEND_REACHED_EVENT, handleFlushNow)
       clearInterval(interval)
       if (flushTimerRef.current) clearTimeout(flushTimerRef.current)
     }

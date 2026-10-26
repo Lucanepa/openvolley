@@ -98,6 +98,7 @@ vi.mock('../../lib/apiClient', () => {
   return {
     AUTH_TOKEN_CHANGE_EVENT: 'api-auth-token-change',
     AUTH_TOKEN_STORAGE_KEY: 'api_auth_token',
+    BACKEND_REACHED_EVENT: 'ov-backend-reached',
     apiFrom: (table) => builder(table),
     apiMatchRestore: async (payload) => {
       const call = { table: '__restore', action: 'restore', data: payload, filters: [] }
@@ -1228,6 +1229,40 @@ describe('set end after a cloud outage', () => {
     // the match row ends at set 3 with both sets
     const matchUpdates = writes.filter(c => c.table === 'matches')
     expect(matchUpdates.map(c => c.data.current_set)).toEqual([2, 3])
+    expect([...fakeDb.sync_queue.map.values()].every(j => j.status === 'sent')).toBe(true)
+    unmount()
+  })
+
+  // Stress test 2026-10-25: after the outage the pill stayed on "Offline (N
+  // waiting)" and nothing was sent for 20-53 s, waiting out the probe backoff
+  it('the queue drains as soon as the backend answers another request, without an online event', async () => {
+    fakeDb.sync_queue.reset(outageQueue())
+    let cloudUp = false
+    api.respond = (call) => (cloudUp ? defaultRespond(call) : { data: null, error: { message: 'Failed to fetch', status: 0, network: true } })
+    const { result, unmount } = renderHook(() => useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(80000) })
+    expect(result.current.syncStatus).toBe('offline')
+
+    cloudUp = true
+    await act(async () => {
+      // (apiClient: a live-state write got through)
+      window.dispatchEvent(new Event('ov-backend-reached'))
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    expect([...fakeDb.sync_queue.map.values()].every(j => j.status === 'sent')).toBe(true)
+    expect(result.current.syncStatus).toBe('synced')
+    unmount()
+  })
+
+  it('a failed probe is retried at least every 15 s', async () => {
+    fakeDb.sync_queue.reset(outageQueue())
+    let cloudUp = false
+    api.respond = (call) => (cloudUp ? defaultRespond(call) : { data: null, error: { message: 'Failed to fetch', status: 0, network: true } })
+    const { unmount } = renderHook(() => useSyncQueue())
+    // (probes at 0, 5, 15, 30, 45 ... 255 s; with a 60 s cap the next one was at 315 s)
+    await act(async () => { await vi.advanceTimersByTimeAsync(256000) })
+    cloudUp = true
+    await act(async () => { await vi.advanceTimersByTimeAsync(15000) })
     expect([...fakeDb.sync_queue.map.values()].every(j => j.status === 'sent')).toBe(true)
     unmount()
   })

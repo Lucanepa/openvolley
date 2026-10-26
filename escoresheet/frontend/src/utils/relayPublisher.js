@@ -6,6 +6,7 @@
  */
 import { relayMatchPayload, getRelayServerStatus } from './serverDataSync'
 import { getRelayWebSocketUrl } from './backendConfig'
+import { BACKEND_REACHED_EVENT } from '../lib/apiClient'
 
 let knownScorerWsPort = null
 
@@ -190,7 +191,10 @@ export function createScorerRelay({
     }
   }
 
-  // Back online / tab visible again: reconnect now instead of after the backoff
+  // Back online / tab visible again / the backend answers again after an
+  // outage (no 'online' event when only the uplink was down): reconnect now
+  // instead of after the backoff (up to 60 s, the referee and benches
+  // following the scorer only through this socket meanwhile)
   function reconnectNow() {
     if (users.length === 0) return
     if (doc && doc.visibilityState === 'hidden') return
@@ -207,6 +211,7 @@ export function createScorerRelay({
     listening = on
     const method = on ? 'addEventListener' : 'removeEventListener'
     events?.[method]?.('online', reconnectNow)
+    events?.[method]?.(BACKEND_REACHED_EVENT, reconnectNow)
     doc?.[method]?.('visibilitychange', reconnectNow)
   }
 
