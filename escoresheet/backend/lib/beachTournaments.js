@@ -27,6 +27,15 @@
  * matches have already been called, started or ended cannot be changed or
  * withdrawn (409 OV_BRACKET_LOCKED): the bracket is never rewritten under a
  * running match.
+ *
+ * On court: until a court tablet links its scored match (phase T3), the
+ * server learns that a match was called or started only from the manager
+ * (POST tmatches/:id/status, manager-beach's Start). A re-plan also keeps
+ * the slot of a match whose slot has begun and whose pairs are known, even
+ * when nobody pressed Start: it is most likely being played. Corrections
+ * do not take the clock for a start (results typed in after the day from
+ * paper sheets would be locked for good): only a started match locks its
+ * pairs.
  */
 
 import { fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
@@ -1229,6 +1238,12 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
       const placing = !!f.out.court_id || !!f.out.scheduled_at || f.out.duration_min !== undefined
       if (placing && !force) {
         const conflicts = await slotConflicts(client, t, { ...m, ...f.out })
+        // its slot has begun: it may be on court already (nobody pressed Start);
+        // the slot editor also sends an unchanged slot with a new referee
+        const moves = (f.out.court_id !== undefined && f.out.court_id !== (m.court_id ?? null)) ||
+          (f.out.scheduled_at !== undefined && f.out.scheduled_at !== iso(m.scheduled_at)) ||
+          (f.out.duration_min !== undefined && f.out.duration_min !== m.duration_min)
+        if (moves && slotBegun(t, m)) conflicts.unshift({ reason: 'begun', game_n: m.game_n, code: m.code })
         if (conflicts.length) {
           throw abort(fail(409, 'OV_SLOT_CONFLICT', 'This slot clashes with the schedule; send force: true to keep it anyway', { conflicts }))
         }
@@ -1242,6 +1257,38 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
   }
 
   /**
+   * POST tmatches/:id/status { status: 'called' | 'in_progress' | 'open' }:
+   * the manager's word that the pairs were called to the court, that the
+   * match started, or that it has not started after all ('open': 'ready' or
+   * 'scheduled' again). A called or started match keeps its court and time
+   * in a re-plan, its slot is not moved (started) and the results it
+   * depends on are locked (OV_BRACKET_LOCKED), like a match a court tablet
+   * scores. Its result is entered as for any match.
+   */
+  async function setStatus ({ user, access, id, body }) {
+    const want = isPlainObject(body) ? body.status : undefined
+    if (!['called', 'in_progress', 'open'].includes(want)) return invalid('status: called, in_progress or open')
+    return guarded('tmatch-status', () => withTx(async (client) => {
+      const t = await requireVia(client, 'tmatch', id, user, access, { edit: true })
+      const { rows: [m0] } = await client.query('SELECT draw_id FROM public.beach_tmatches WHERE id = $1', [id])
+      if (!m0) throw abort(notFound())
+      const d = await lockDraw(client, m0.draw_id)
+      const { rows: [m] } = await client.query('SELECT * FROM public.beach_tmatches WHERE id = $1 FOR UPDATE', [id])
+      if (!m) throw abort(notFound())
+      if (m.status === 'finished' || m.status === 'walkover') throw abort(fail(409, 'OV_MATCH_ENDED', 'This match has a result', { match: tmatchOut(m) }))
+      if (m.match_id) throw abort(fail(409, 'OV_MATCH_LINKED', 'This match is scored on a court tablet'))
+      if (want !== 'open' && (!m.entry1_id || !m.entry2_id)) throw abort(fail(409, 'OV_MATCH_NOT_READY', 'Both teams of this match are not known yet'))
+      const next = want === 'open' ? (m.entry1_id && m.entry2_id ? 'ready' : 'scheduled') : want
+      if (next !== m.status) {
+        await client.query('UPDATE public.beach_tmatches SET status = $2 WHERE id = $1', [id, next])
+        await audit(client, user.id, 'tournament.schedule', { tournament_id: t.id, draw_id: d.id, tmatch_id: id, game_n: m.game_n, code: m.code, op: 'status', status: next })
+      }
+      const { rows: [u] } = await client.query('SELECT * FROM public.beach_tmatches WHERE id = $1', [id])
+      return ok({ match: tmatchOut(u) })
+    }))
+  }
+
+  /**
    * What a slot (court, start, duration) of tournament match `m` clashes
    * with: [{ reason, game_n?, code? }], reason one of
    *   court            another match on the same court at the same time
@@ -1249,6 +1296,7 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
    *   hours            outside the play hours (day_start .. day_end, Zurich)
    *   before_source    before a match it waits for has ended plus the rest
    *   after_dependent  a match that waits for this one starts before it has ended plus the rest
+   *   (updateTmatch adds 'begun': the match's own slot has begun, see slotBegun)
    * Only matches that have a start time count. The same rules as
    * lib/beachSchedule.js, so a hand move cannot put a pair on two courts at once.
    */
@@ -1271,6 +1319,18 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
   }
   /** The days and play hours of a tournament row, as slotIssues() and the import read them. */
   const tournamentClock = (t) => ({ starts_on: day(t.starts_on), ends_on: day(t.ends_on), day_start: hhmm(t.day_start), day_end: hhmm(t.day_end) })
+  /**
+   * Whether an open match is probably on court although nobody said so: it
+   * is 'ready' (both pairs known), it has a court and its slot has begun,
+   * and now is a day of the tournament (a past or future tournament is
+   * re-planned as a whole).
+   */
+  function slotBegun (t, m) {
+    if (m.status !== 'ready' || !m.court_id || !m.scheduled_at) return false
+    const at = new Date(m.scheduled_at).getTime()
+    const today = new Date(now()).toLocaleDateString('en-CA', { timeZone: 'Europe/Zurich' })
+    return at <= now() && daysBetween(day(t.starts_on), day(t.ends_on)).includes(today)
+  }
 
   // ------------------------------------------------------------------ schedule
   /**
@@ -1278,8 +1338,11 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
    * the drawn draws that has not begun over the active courts and the
    * tournament's days (lib/beachSchedule.js). Begun matches keep their slot.
    * During the tournament (now on one of its days) no match is put before
-   * now. A re-plan places every match that has not begun again: a slot moved
-   * by hand (PATCH tmatches/:id) is not kept unless the match has begun.
+   * now, and a match whose slot has begun counts as begun when both its
+   * pairs are known (slotBegun): nobody may have pressed Start, but it is
+   * most likely on court. A re-plan places every match that has not begun
+   * again: a slot moved by hand (PATCH tmatches/:id) is not kept unless the
+   * match has begun.
    */
   async function schedule ({ user, access, id, body }) {
     const b = isPlainObject(body) ? body : {}
@@ -1304,7 +1367,9 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
         wave: m.wave,
         source1: m.source1,
         source2: m.source2,
-        fixed: OPEN_STATUSES.includes(m.status) && m.match_id == null ? null : { court_id: m.court_id, scheduled_at: iso(m.scheduled_at), duration_min: m.duration_min }
+        fixed: OPEN_STATUSES.includes(m.status) && m.match_id == null && !slotBegun(t, m)
+          ? null
+          : { court_id: m.court_id, scheduled_at: iso(m.scheduled_at), duration_min: m.duration_min }
       }))
       // during the tournament nothing that has not begun goes before now
       const r = scheduleMatches({
@@ -1418,6 +1483,7 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     ['PATCH', new RegExp(`^/api/beach/entries/${ID}$`), (m, c) => updateEntry({ ...c, id: m[1] })],
     ['DELETE', new RegExp(`^/api/beach/entries/${ID}$`), (m, c) => deleteEntry({ ...c, id: m[1] })],
     ['PATCH', new RegExp(`^/api/beach/tmatches/${ID}$`), (m, c) => updateTmatch({ ...c, id: m[1] })],
+    ['POST', new RegExp(`^/api/beach/tmatches/${ID}/status$`), (m, c) => setStatus({ ...c, id: m[1] })],
     ['POST', new RegExp(`^/api/beach/tmatches/${ID}/result$`), (m, c) => enterResult({ ...c, id: m[1] })],
     ['DELETE', new RegExp(`^/api/beach/tmatches/${ID}/result$`), (m, c) => withdrawResult({ ...c, id: m[1] })]
   ]
@@ -1453,6 +1519,7 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     importTournament,
     enterResult,
     withdrawResult,
+    setStatus,
     ranking
   }
 }

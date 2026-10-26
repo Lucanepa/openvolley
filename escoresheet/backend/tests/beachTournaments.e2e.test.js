@@ -545,6 +545,82 @@ describe('beach tournaments end to end', { skip: SKIP }, () => {
     expectCode(await withdraw(w1, screen(ms.get('W1'))), 409, 'OV_RESULT_CHANGED')
   })
 
+  it('a match on court keeps its court, its time and its pairs: Start, and a slot that has begun', async () => {
+    // yesterday to tomorrow (Zurich), all day: "now" is always on a tournament day
+    const zurichDay = (ms) => new Date(ms).toLocaleDateString('en-CA', { timeZone: 'Europe/Zurich' })
+    const t = okData(await call(users.max, 'POST', '/api/beach/tournaments', {
+      title: 'Court Cup', starts_on: zurichDay(Date.now() - 86400000), ends_on: zurichDay(Date.now() + 86400000), day_start: '00:00', day_end: '23:55', courts: 4
+    }), 201).tournament
+    const d = okData(await call(users.max, 'POST', `/api/beach/tournaments/${t.id}/draws`, { gender: 'men', category: 'C1' }), 201).draw
+    for (let i = 1; i <= 8; i++) {
+      okData(await call(users.max, 'POST', `/api/beach/draws/${d.id}/entries`, { player1: { last: `C${i}a` }, player2: { last: `C${i}b` } }), 201)
+    }
+    okData(await call(users.max, 'POST', `/api/beach/draws/${d.id}/generate`, {}))
+    const tour = async () => okData(await get(users.max, `/api/beach/tournaments/${t.id}`))
+    const matches = async () => new Map((await tour()).matches.map((m) => [m.code, m]))
+    const courts = (await tour()).courts
+    const status = (m, s) => call(users.max, 'POST', `/api/beach/tmatches/${m.id}/status`, { status: s })
+    const win = (m, winner) => call(users.max, 'POST', `/api/beach/tmatches/${m.id}/result`, { winner, sets: winner === 1 ? [[21, 15], [21, 15]] : [[15, 21], [15, 21]] })
+    const place = (m, court, at, force = true) => call(users.max, 'PATCH', `/api/beach/tmatches/${m.id}`, { court_id: court.id, scheduled_at: at, force })
+    const at = (min) => new Date(Math.floor(Date.now() / 300000) * 300000 + min * 60000).toISOString()
+    let ms = await matches()
+
+    // W1 ended; W2 started by the manager (its slot later than planned: started early);
+    // W3 on court since its slot began 30 minutes ago, nobody pressed Start
+    okData(await place(ms.get('W1'), courts[0], at(-60)))
+    okData(await place(ms.get('W2'), courts[1], at(120)))
+    okData(await place(ms.get('W3'), courts[2], at(-30)))
+    okData(await place(ms.get('W4'), courts[3], at(90)))
+    okData(await win(ms.get('W1'), 1))
+    assert.equal(okData(await status(ms.get('W2'), 'in_progress')).match.status, 'in_progress')
+    ms = await matches()
+    const before = (c) => ({ court_id: ms.get(c).court_id, scheduled_at: ms.get(c).scheduled_at })
+    const keep = { W2: before('W2'), W3: before('W3') }
+    const w4 = before('W4')
+    okData(await call(users.max, 'POST', `/api/beach/tournaments/${t.id}/schedule`, {}))
+    ms = await matches()
+    assert.deepEqual(before('W2'), keep.W2, 'a started match keeps its court and time')
+    assert.deepEqual(before('W3'), keep.W3, 'a ready match whose slot has begun keeps its court and time')
+    assert.notDeepEqual(before('W4'), w4, 'a match whose slot lies ahead is placed again')
+    for (const m of ms.values()) {
+      if (['W1', 'W2', 'W3'].includes(m.code) || !m.scheduled_at || m.court_id !== keep.W3.court_id) continue
+      assert.ok(Date.parse(m.scheduled_at) >= Date.parse(keep.W3.scheduled_at) + 50 * 60000, `${m.code} is not put on W3's court while W3 is played`)
+    }
+    // a hand move of a match whose slot has begun asks first (it may be on court)
+    const moved = await place(ms.get('W3'), courts[2], at(60), false)
+    expectCode(moved, 409, 'OV_SLOT_CONFLICT')
+    assert.ok(moved.json.error.details.conflicts.some((c) => c.reason === 'begun'), moved.text)
+    // a started match is not moved at all (as before)
+    expectCode(await place(ms.get('W2'), courts[1], at(180)), 409, 'OV_MATCH_BEGUN')
+
+    // W1's winner X plays the next match; once it is started, a correction of W1 is refused
+    const dep = [...ms.values()].find((m) => m.source1 === 'winner:W1' || m.source2 === 'winner:W1')
+    const feeder = (dep.source1 === 'winner:W1' ? dep.source2 : dep.source1).slice('winner:'.length)
+    expectCode(await status(dep, 'in_progress'), 409, 'OV_MATCH_NOT_READY')
+    okData(await status(ms.get(feeder), 'open'))
+    okData(await win(ms.get(feeder), 1))
+    ms = await matches()
+    okData(await status(ms.get(dep.code), 'called'))
+    assert.equal(okData(await status(ms.get(dep.code), 'in_progress')).match.status, 'in_progress')
+    expectCode(await win(ms.get('W1'), 2), 409, 'OV_BRACKET_LOCKED')
+    expectCode(await call(users.max, 'DELETE', `/api/beach/tmatches/${ms.get('W1').id}/result`), 409, 'OV_BRACKET_LOCKED')
+    // not started after all: back to open, and the correction goes through
+    assert.equal(okData(await status(ms.get(dep.code), 'open')).match.status, 'ready')
+    okData(await win(ms.get('W1'), 2))
+    // the result of a started match is entered as usual
+    ms = await matches()
+    okData(await status(ms.get(dep.code), 'in_progress'))
+    assert.equal(okData(await win(ms.get(dep.code), 1)).match.status, 'finished')
+    expectCode(await status(ms.get(dep.code), 'in_progress'), 409, 'OV_MATCH_ENDED')
+    expectCode(await status(ms.get(dep.code), 'open'), 409, 'OV_MATCH_ENDED')
+    // checked input, editors only
+    expectCode(await status(ms.get('W4'), 'finished'), 400, 'OV_INVALID_REQUEST')
+    expectCode(await call(users.max, 'POST', `/api/beach/tmatches/${ms.get('W4').id}/status`, {}), 400, 'OV_INVALID_REQUEST')
+    expectCode(await call(users.bea, 'POST', `/api/beach/tmatches/${ms.get('W4').id}/status`, { status: 'in_progress' }), 404)
+    const audit = okData(await get(users.admin, '/api/admin/audit?app=beach&limit=200')).entries
+    assert.ok(audit.some((e) => e.action === 'tournament.schedule' && e.details?.op === 'status' && e.details?.status === 'in_progress'))
+  })
+
   it('deleting a tournament that has not begun removes everything', async () => {
     const t = okData(await call(users.max, 'POST', '/api/beach/tournaments', { title: 'Kurz', starts_on: '2026-08-01', ends_on: '2026-08-01', courts: 1 }), 201).tournament
     expectCode(await call(users.mia, 'DELETE', `/api/beach/tournaments/${t.id}`), 404)

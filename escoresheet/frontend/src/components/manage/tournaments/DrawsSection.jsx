@@ -417,6 +417,13 @@ function BracketCard({ draw, matches, entries, edit, reload }) {
     if (res.error) return toast.error(errorText(res.error))
     reload()
   }
+  // On court: a started match keeps its court and time in a re-plan, and the
+  // results it depends on cannot be changed under it (the server checks).
+  const setStatus = async (m, status) => {
+    const res = await tournamentApi.setMatchStatus(m.id, status)
+    if (res.error) toast.error(errorText(res.error))
+    reload()
+  }
 
   return (
     <Card>
@@ -458,9 +465,21 @@ function BracketCard({ draw, matches, entries, edit, reload }) {
                       meta={ended ? <span className="font-mono tabular-nums">{m.result === 'walkover' ? t('tournaments.kinds.walkover') : setsText(m.sets)}{m.result && m.result !== 'played' && m.result !== 'walkover' ? ` · ${t(`tournaments.kinds.${m.result}`)}` : ''}</span> : null}
                       status={<StatusPill tone={MATCH_TONE[m.status] || 'neutral'}>{t(`tournaments.matchStatus.${m.status}`)}</StatusPill>}
                       action={canEnter && (
-                        <Button variant="ghost" size="sm" onClick={() => setResultFor(m)} data-testid={`result-${m.code}`}>
-                          {ended ? t('tournaments.correctResult') : t('tournaments.enterResult')}
-                        </Button>
+                        <div className="flex flex-wrap items-center justify-end gap-1">
+                          {!ended && m.status !== 'in_progress' && (
+                            <Button variant="ghost" size="sm" onClick={() => setStatus(m, 'in_progress')} data-testid={`start-${m.code}`}>
+                              {t('tournaments.startMatch')}
+                            </Button>
+                          )}
+                          {(m.status === 'called' || m.status === 'in_progress') && (
+                            <Button variant="ghost" size="sm" onClick={() => setStatus(m, 'open')} data-testid={`unstart-${m.code}`}>
+                              {t('tournaments.unstartMatch')}
+                            </Button>
+                          )}
+                          <Button variant="ghost" size="sm" onClick={() => setResultFor(m)} data-testid={`result-${m.code}`}>
+                            {ended ? t('tournaments.correctResult') : t('tournaments.enterResult')}
+                          </Button>
+                        </div>
                       )}
                     />
                   )
