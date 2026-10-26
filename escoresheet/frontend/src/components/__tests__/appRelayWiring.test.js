@@ -72,7 +72,7 @@ describe('Scoreboard relay connection', () => {
     expect(start).toBeGreaterThan(-1)
     const onOpen = scoreboardSrc.slice(start, scoreboardSrc.indexOf('onMessage:', start))
     expect(onOpen).toMatch(/const initialSync = syncMatchData\(\)/)
-    expect(onOpen).toMatch(/initialSync\.then\(\(\) => syncLiveStateRef\.current\?\.\('reconnect', null, null\)/)
+    expect(onOpen).toMatch(/initialSync\.then\(\(\) => syncLiveStateRef\.current\?\.\(RECONNECT_PUSH, null, null\)/)
   })
 })
 
