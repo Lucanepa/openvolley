@@ -1071,6 +1071,33 @@ async function hallCrowdScenario({ wsUrl }) {
   }
 }
 
+// POST /api/match/validate-pin limits wrong PINs, not checks: every check
+// counted (10 a minute per address), and a tablet reloading with its stored
+// PIN was told it had typed too many wrong ones (2026-10-26). Exhausts this
+// address's wrong-PIN budget for a minute: run it last. (Node relays; the
+// Tauri relay keeps its own limit.)
+async function pinCheckBudgetScenario({ httpBase, wsUrl }) {
+  const board = await openClient(wsUrl)
+  board.send(syncMessage(makeMatch({ id: 31, seed_key: 'seed-pin-budget', refereePin: '424242', gamePin: '434343' })))
+  board.send({ type: 'ping' })
+  await board.waitFor((m) => m.type === 'pong')
+  const validate = (pin) => fetch(`${httpBase}/api/match/validate-pin`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pin, type: 'referee' })
+  })
+  for (let i = 0; i < 15; i++) expect((await validate('424242')).status).toBe(200)
+  let wrong = 0
+  let r
+  do { r = await validate('000002'); wrong++ } while (r.status === 404 && wrong < 30)
+  expect(r.status).toBe(429)
+  expect((await r.json()).error).toMatch(/wrong PINs/)
+  expect(wrong).toBeLessThanOrEqual(11)
+  // no PIN is compared beyond the limit, the right one neither
+  expect((await validate('424242')).status).toBe(429)
+  board.ws.close()
+}
+
 async function relayScenario({ httpBase, wsUrl }) {
   const scoreboard = await openClient(wsUrl)
   const referee = await openClient(wsUrl)
@@ -1239,6 +1266,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await runBeachVenueContract({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'server-js' })
       await hostileFrameScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await hallCrowdScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
+      await pinCheckBudgetScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       const unknown = await fetch(`http://127.0.0.1:${port}/api/nope`)
       expect(unknown.status).toBe(404)
       expect(unknown.headers.get('content-type')).toMatch(/json/)
@@ -1300,6 +1328,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await runBeachVenueContract({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'electron' })
       await hostileFrameScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await hallCrowdScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
+      await pinCheckBudgetScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
     } finally {
       await relayServer.stop()
     }
@@ -1371,6 +1400,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await runBeachVenueContract({ httpBase, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'vite' })
       await hostileFrameScenario({ httpBase, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await hallCrowdScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
+      await pinCheckBudgetScenario({ httpBase, wsUrl: `ws://127.0.0.1:${wsPort}` })
     })
   })
 })

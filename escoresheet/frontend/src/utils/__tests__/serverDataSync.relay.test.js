@@ -474,7 +474,9 @@ describe('match access after the PIN step', () => {
     })
     await getMatchData(SEED)
     const check = calls.find((c) => c.url.includes('validate-connection-pin'))
-    expect(JSON.parse(check.init.body)).toEqual({ pin: '314159', type: 'bench_home' })
+    // against this match only: its own scope of the backend's PIN budget,
+    // apart from the hall's typos for other matches (2026-10-26)
+    expect(JSON.parse(check.init.body)).toEqual({ pin: '314159', type: 'bench_home', matchExternalId: SEED })
     expect(matchAccessFor(SEED).token).toBe('v1.new.sig')
     expect(dbReads).toBe(2)
     // Within the minute: no second PIN check

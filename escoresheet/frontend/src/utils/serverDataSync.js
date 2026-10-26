@@ -89,7 +89,9 @@ async function renewMatchToken(matchId, row) {
   const last = tokenRenewedAt.get(key)
   if (last !== undefined && Date.now() - last < TOKEN_RENEW_MS) return false
   tokenRenewedAt.set(key, Date.now())
-  const r = await validatePinSupabase(a.pin, a.type)
+  // Checked against this match only: its own brute-force scope on the
+  // backend, apart from the hall's typos for other matches (2026-10-26)
+  const r = await validatePinSupabase(a.pin, a.type, { matchExternalId: key })
   return !!(r?.success && r.token && String(r.match?.id) === key)
 }
 

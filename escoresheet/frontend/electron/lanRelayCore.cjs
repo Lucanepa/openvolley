@@ -194,6 +194,10 @@ const FINISHED_STATUSES = new Set(['final', 'ended', 'completed', 'finished'])
 // Wrong PINs offered for a match's bundle (subscribe-match, GET /api/match/:id)
 // per socket and per IP and minute.
 const PIN_FAILURE_LIMIT = 5
+// POST /api/match/validate-pin per IP and minute: wrong PINs (the limit the
+// whole endpoint had before), and every check (reloads, renewals)
+const VALIDATE_PIN_FAILURES = 10
+const VALIDATE_PIN_REQUESTS = 60
 const MAX_ACCESS_KEYS = 16
 
 // PIN types accepted by POST /api/match/validate-pin
@@ -861,6 +865,8 @@ function createLanRelay(options = {}) {
   const claimFailures = createFailureCounter({ max: options.claimFailureLimit ?? CLAIM_FAILURE_LIMIT })
   // Wrong subscribe-match PINs per socket / IP and minute (no PIN compared beyond)
   const pinFailures = createFailureCounter({ max: options.pinFailureLimit ?? PIN_FAILURE_LIMIT })
+  // Wrong POST /api/match/validate-pin PINs per IP and minute
+  const validatePinFailures = createFailureCounter({ max: VALIDATE_PIN_FAILURES })
   const isNewClaimLimited = (ownLimiters[ownLimiters.length] = createRateLimiter({ max: options.newClaimLimit ?? NEW_CLAIM_LIMIT }))
   const signCore = options.signCore || null
   const isLocalAddr = options.isLocal || isLoopbackAddress
@@ -1739,11 +1745,24 @@ function createLanRelay(options = {}) {
 
     if (path === '/api/match/validate-pin') {
       if (method !== 'POST') return false
-      if (isRateLimited(ip)) {
+      // Wrong PINs are limited (VALIDATE_PIN_FAILURES a minute per address,
+      // no PIN compared beyond), right ones are not: every check used to
+      // count, and a tablet reloading with its stored PIN was told it had
+      // typed too many wrong ones. A generous cap on all checks stays.
+      const failKey = `vp:${ip || 'unknown'}`
+      if (validatePinFailures.blocked(failKey)) {
+        sendJson(res, 429, { success: false, error: 'Too many wrong PINs. Wait a minute.' })
+        return true
+      }
+      if (isRateLimited(failKey, VALIDATE_PIN_REQUESTS)) {
         sendJson(res, 429, { success: false, error: 'Too many attempts. Please wait a minute before trying again.' })
         return true
       }
-      reply(readJsonBody(req).then(validatePin))
+      reply(readJsonBody(req).then((body) => {
+        const r = validatePin(body)
+        if (r.status === 404) validatePinFailures.fail(failKey)
+        return r
+      }))
       return true
     }
     if (path === '/api/match/list' && method === 'GET') {
