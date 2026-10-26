@@ -362,6 +362,32 @@ describe('relay subscription (tablets)', () => {
     unsubscribe()
   })
 
+  // useRealtimeConnection tells a new bundle from a re-delivery by its events
+  // array (RELAY_BUNDLE_COVERS_MS): only a new bundle spares the bench a read
+  it('a live state re-delivers the last bundle with the same events array; a new bundle brings a new one', () => {
+    const updates = []
+    const unsubscribe = subscribeToMatchData('match_redeliver', (p) => updates.push(p))
+    const ws = FakeWebSocket.instances.at(-1)
+    ws.open()
+    const at = (ms) => new Date(Date.UTC(2026, 9, 5, 18, 6, 0) + ms).toISOString()
+    const bundle = (ms, events) => ({
+      type: 'match-data-update', matchId: 'match_redeliver', access: 'full',
+      match: { id: 1, coinTossTeamA: 'home', _syncedAt: Date.parse(at(ms)) },
+      sets: [{ index: 1, homePoints: events.length, awayPoints: 0, finished: false }], events
+    })
+    ws.receive(bundle(0, [{ seq: 1 }]))
+    const first = updates.at(-1)
+    ws.receive({ type: 'live-state-update', matchId: 'match_redeliver', liveState: { current_set: 1, points_a: 2, points_b: 0, updated_at: at(800) } })
+    vi.advanceTimersByTime(LIVE_STATE_HOLD_MS)
+    ws.receive({ ...bundle(0, []), access: 'summary', liveState: { current_set: 1, points_a: 3, points_b: 0, updated_at: at(900) } })
+    expect(updates).toHaveLength(3)
+    expect(updates[1].events).toBe(first.events)
+    expect(updates[2].events).toBe(first.events)
+    ws.receive(bundle(1000, [{ seq: 1 }, { seq: 2 }]))
+    expect(updates.at(-1).events).not.toBe(first.events)
+    unsubscribe()
+  })
+
   // A side-out on the referee: the new score first, the new server and the
   // rotation one sync later (~200 ms on the desktop app) looked like the ball
   // and the teams moving on their own. The push waits for the sync.
