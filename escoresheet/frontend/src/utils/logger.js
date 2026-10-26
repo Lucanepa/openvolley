@@ -38,6 +38,7 @@ const MAX_BUFFER_SIZE = 1000
 // Last backup tracking to avoid duplicate uploads
 let lastBackupTime = 0
 let isBackupInProgress = false
+let trailingBackup = null // { timer, matchId, getBackupData }: the every-action backup due at the end of the interval
 
 // ── Debug flag ──────────────────────────────────────────────────────────────
 
@@ -523,6 +524,8 @@ export function resetLoggerForTests() {
   queuedLogUpload = null
   lastBackupTime = 0
   isBackupInProgress = false
+  if (trailingBackup) clearTimeout(trailingBackup.timer)
+  trailingBackup = null
   debugOverride = null
   debugEnabled = false
 }
@@ -561,7 +564,8 @@ export async function uploadBackupToCloud(matchId, backupData) {
   try {
     const { data, error } = await apiStorage
       .from('backup')
-      .upload(filename, JSON.stringify(backupData, null, 2), {
+      // Compact: a match's snapshots pretty-printed were about a third bigger
+      .upload(filename, JSON.stringify(backupData), {
         contentType: 'application/json',
         upsert: false // Don't overwrite - create new file
       })
@@ -687,38 +691,74 @@ export function formatBackupTimestamp(date, time, ms) {
 }
 
 /**
- * Trigger backup on every action (non-blocking, with minimal delay between uploads)
+ * The every-action cloud backup goes up at most this often. An action inside
+ * the interval sets one up for its end, which exports the match as it is then:
+ * the bucket's newest copy is at most a minute behind the device. Every event
+ * also reaches the database through the sync queue, and set and match ends
+ * upload at once (uploadBackupToCloud). Each backup is the whole match as a
+ * new file: one per action (a 2 s throttle) wrote about 105 MB per 5-set
+ * match, a 13-match evening 1.4 GB of the 15 GB storage volume, which refuses
+ * backups below 2 GiB free and sweeps them after 30 days (national peak load
+ * test 2026-10-26).
+ */
+export const BACKUP_MIN_INTERVAL_MS = 60 * 1000
+
+/**
+ * Backup after an action (non-blocking): at once when the last one is a
+ * minute old, else at the end of that minute (BACKUP_MIN_INTERVAL_MS). The
+ * logs go up alongside, at most once a minute.
  * @param {number} matchId - Match ID
  * @param {function} getBackupData - Async function that returns backup data
  * @param {string|number|null} gameNumber - Game number for human-readable paths
  */
 export async function triggerContinuousBackup(matchId, getBackupData, gameNumber = null) {
-  // Skip if backup already in progress, or signed out (the cloud would refuse it)
-  if (isBackupInProgress || !hasStoredSession()) {
+  // Signed out: the cloud would refuse it
+  if (!hasStoredSession()) {
     return
   }
 
-  // Minimum 2 seconds between backups to avoid flooding
-  const now = Date.now()
-  if (now - lastBackupTime < 2000) {
+  // Logs: only the new lines, at most once a minute (set/match end send
+  // at once), or at once when the buffer is filling up
+  uploadLogsToCloud(matchId, gameNumber, {
+    minIntervalMs: getUnsentLogs().length >= EARLY_UPLOAD_UNSENT ? 0 : LOG_UPLOAD_MIN_INTERVAL_MS
+  }).catch(() => {
+    // Silent fail - don't block UI
+  })
+
+  const wait = lastBackupTime + BACKUP_MIN_INTERVAL_MS - Date.now()
+  if (isBackupInProgress || wait > 0) {
+    // The newest state goes up at the end of the interval
+    if (trailingBackup) {
+      trailingBackup.matchId = matchId
+      trailingBackup.getBackupData = getBackupData
+    } else {
+      trailingBackup = { matchId, getBackupData, timer: setTimeout(runTrailingBackup, Math.max(wait, 1000)) }
+    }
     return
   }
+  await runContinuousBackup(matchId, getBackupData)
+}
 
+function runTrailingBackup() {
+  const due = trailingBackup
+  trailingBackup = null
+  if (!due || !hasStoredSession()) return
+  if (isBackupInProgress) {
+    trailingBackup = { ...due, timer: setTimeout(runTrailingBackup, 1000) }
+    return
+  }
+  runContinuousBackup(due.matchId, due.getBackupData)
+}
+
+async function runContinuousBackup(matchId, getBackupData) {
   isBackupInProgress = true
-  lastBackupTime = now
+  lastBackupTime = Date.now()
 
   try {
     const backupData = await getBackupData()
     if (backupData) {
-      // Upload in parallel (non-blocking)
-      Promise.all([
-        uploadBackupToCloud(matchId, backupData),
-        // Logs: only the new lines, at most once a minute (set/match end send
-        // at once), or at once when the buffer is filling up
-        uploadLogsToCloud(matchId, gameNumber, {
-          minIntervalMs: getUnsentLogs().length >= EARLY_UPLOAD_UNSENT ? 0 : LOG_UPLOAD_MIN_INTERVAL_MS
-        })
-      ]).catch(() => {
+      // Upload in the background (non-blocking)
+      uploadBackupToCloud(matchId, backupData).catch(() => {
         // Silent fail - don't block UI
       })
     }
