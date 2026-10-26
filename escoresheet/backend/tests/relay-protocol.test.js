@@ -430,6 +430,64 @@ describe('backend WebSocket relay protocol', () => {
     for (const c of [scoreboard, referee]) c.ws.close()
   })
 
+  // National peak load test 2026-10-26: every role socket that received a
+  // bundle kept its own zlib deflate context (about 150 KB in the production
+  // image; 1,000 tablets 224 MB of RSS against 76 MB without), and each bundle
+  // was deflated once per tablet. A scorer's compressed upload is still
+  // accepted (older scorers send whole bundles).
+  it('takes compressed syncs, sends the tablets plain frames', async () => {
+    const wsUrl = `ws://127.0.0.1:${port}`
+    const seed = 'match_1791215210060_deflat'
+    const match = makeMatch({ id: 44, seed_key: seed, gamePin: '444444' })
+    const events = Array.from({ length: 200 }, (_, i) => ({ id: i + 1, seq: i + 1, setIndex: 1, type: 'point', payload: { team: i % 2 ? 'home' : 'away', note: 'same text every time '.repeat(10) }, ts: '2026-11-29T10:00:00.000Z' }))
+    const scoreboard = await openClient(wsUrl)
+    const referee = await openClient(wsUrl)
+    assert.equal(scoreboard.ws.extensions, 'permessage-deflate', 'compressed uploads are negotiated')
+    scoreboard.send(syncMessage(match, { events }))
+    scoreboard.send({ type: 'ping' })
+    await scoreboard.waitFor((m) => m.type === 'pong')
+    const before = referee.ws._socket.bytesRead
+    referee.send({ type: 'subscribe-match', matchId: seed, pin: PINS.refereePin })
+    const full = await referee.waitFor((m) => m.type === 'match-full-data')
+    assert.equal(full.events.length, 200)
+    const text = referee.raw[referee.raw.length - 1]
+    assert.ok(referee.ws._socket.bytesRead - before >= Buffer.byteLength(text), 'the bundle arrived as a plain frame')
+    scoreboard.send({ type: 'delete-match', matchId: 44 })
+    await referee.waitFor((m) => m.type === 'match-deleted')
+    for (const c of [scoreboard, referee]) c.ws.close()
+  })
+
+  // A tablet that stopped reading (a dead Wi-Fi link the heartbeat has not
+  // caught yet) kept every bundle queued in the backend's memory; the live
+  // hub drops such sockets, the role sockets did not.
+  it('drops a tablet whose unsent bundles pile up', async () => {
+    const wsUrl = `ws://127.0.0.1:${port}`
+    const seed = 'match_1791215210060_stalls'
+    const match = makeMatch({ id: 45, seed_key: seed, gamePin: '454545' })
+    const big = 'b'.repeat(1024 * 1024)
+    const scoreboard = await openClient(wsUrl)
+    const referee = await openClient(wsUrl)
+    scoreboard.send(syncMessage(match))
+    scoreboard.send({ type: 'ping' })
+    await scoreboard.waitFor((m) => m.type === 'pong')
+    referee.send({ type: 'subscribe-match', matchId: seed, pin: PINS.refereePin })
+    await referee.waitFor((m) => m.type === 'match-full-data')
+    const closed = new Promise((resolve) => referee.ws.once('close', () => resolve(true)))
+    // the tablet stops reading; the scorer goes on (30 bundles of 1 MB)
+    referee.ws._socket.pause()
+    for (let i = 0; i < 30; i++) {
+      scoreboard.send(syncMessage(match, { events: [{ id: i + 1, seq: i + 1, setIndex: 1, type: 'remark', payload: { text: big }, ts: '2026-11-29T10:00:00.000Z' }] }))
+      scoreboard.send({ type: 'ping' })
+      await scoreboard.waitFor((m) => m.type === 'pong' && !m.seen && (m.seen = true))
+    }
+    referee.ws._socket.resume()
+    const outcome = await Promise.race([closed, new Promise((resolve) => setTimeout(() => resolve(false), 5000))])
+    assert.equal(outcome, true, 'the stalled tablet was dropped (it reconnects and gets the latest bundle)')
+    assert.ok(referee.messages.filter((m) => m.type === 'match-data-update').length < 30)
+    scoreboard.send({ type: 'delete-match', matchId: 45 })
+    scoreboard.ws.close()
+  })
+
   it('GET /api/match/list: every published scheduled/live match, referee connection or not, public fields only', async () => {
     const wsUrl = `ws://127.0.0.1:${port}`
     const courtA = await openClient(wsUrl)
