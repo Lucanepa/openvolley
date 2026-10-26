@@ -1004,9 +1004,16 @@ export function createLiveStateRelay({
     if (!match) return { ok: false, reason: 'unknown_match' }
     if (verifyMatch && !verifyMatch(match, synced)) return { ok: false, reason: 'pin_mismatch' }
     // The scoreboard computed match_id itself; a mismatch means its view of
-    // the match differs from the synced one, so publish nothing.
-    if (liveState[fkColumn] != null && String(liveState[fkColumn]).toLowerCase() !== String(match.id).toLowerCase()) {
-      return { ok: false, reason: 'match_mismatch' }
+    // the match differs from the synced one, so publish nothing. The
+    // OpenBeach scorer sends its relay key there (the seed key, the
+    // external_id the synced match was resolved by), the indoor one
+    // matches.id: both name the same row. The row is published under
+    // matches.id either way (below).
+    const claimed = liveState[fkColumn]
+    if (claimed != null) {
+      const sameId = String(claimed).toLowerCase() === String(match.id).toLowerCase()
+      const sameSeed = key.column === 'external_id' && String(claimed) === key.value
+      if (!sameId && !sameSeed) return { ok: false, reason: 'match_mismatch' }
     }
 
     const row = {}

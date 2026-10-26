@@ -3287,6 +3287,8 @@
     },
     "enterResult": "Enter result",
     "correctResult": "Correct result",
+    "startMatch": "Start",
+    "unstartMatch": "Undo start",
     "resultTitle": "Game {{n}} · {{code}}",
     "resultKind": "Result",
     "kinds": {
@@ -3328,7 +3330,8 @@
       "days": "The start is not on a tournament day.",
       "hours": "The match is outside the play hours.",
       "before_source": "It starts before game {{n}} ({{code}}), whose result it waits for, has ended plus the rest time.",
-      "after_dependent": "Game {{n}} ({{code}}) waits for this result and starts before this match has ended plus the rest time."
+      "after_dependent": "Game {{n}} ({{code}}) waits for this result and starts before this match has ended plus the rest time.",
+      "begun": "Its slot has begun: game {{n}} ({{code}}) may be on court already."
     },
     "rankingHint": "The final ranking for MyBeach (enter it by 12:00 the next day, Art. 29).",
     "rank": "Rank",
@@ -3356,9 +3359,11 @@
       "matchBegun": "This match has already begun: its court and time stay.",
       "noCourts": "Add a court first.",
       "notFound": "Not found, or not yours to see.",
+      "courtInUse": "A match was played on this court: switch \"In use\" off instead of removing it.",
       "noManager": "No OpenBeach competition manager has this email.",
       "slotConflict": "This slot does not fit the schedule.",
       "resultChanged": "Someone else changed this result meanwhile. Have another look.",
+      "teamsChanged": "The pairs of this match changed meanwhile: a result before it was corrected. Have another look.",
       "drawExists": "The tournament already has a draw of this category and gender."
     },
     "import": {

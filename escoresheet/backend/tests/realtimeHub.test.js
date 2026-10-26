@@ -745,6 +745,20 @@ describe('createLiveStateRelay', () => {
     assert.equal(published[0].rows[0].match_id, MATCH_A)
   })
 
+  it('accepts a liveState match_id that is the synced seed key (OpenBeach sends its relay key)', async () => {
+    const { relay, published } = setup()
+    // Scoreboard_beach.jsx: liveState(relayKey, { ...broadcastData, match_id: relayKey })
+    const res = await relay.handle(scoreboard, message({ match_id: SEED }))
+    assert.deepEqual(res, { ok: true, sent: 1 })
+    assert.equal(published[0].rows[0].match_id, MATCH_A, 'published under matches.id')
+    // another seed key is still another match
+    assert.equal((await relay.handle(scoreboard, message({ match_id: 'match_1759665600000_other' }))).reason, 'match_mismatch')
+    // a synced match keyed by its UUID: only that UUID is its id
+    const uuid = setup()
+    uuid.activeMatches.get('7').match = { id: 7, externalId: MATCH_B, seed_key: SEED }
+    assert.equal((await uuid.relay.handle(scoreboard, message({ match_id: SEED }))).reason, 'match_mismatch')
+  })
+
   it('verifyMatch binds the synced relay entry to the looked-up row (pin_mismatch otherwise)', async () => {
     const seen = []
     const { relay, published, activeMatches } = setup({

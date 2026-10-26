@@ -3286,6 +3286,8 @@
     },
     "enterResult": "Inserisci risultato",
     "correctResult": "Correggi risultato",
+    "startMatch": "Avvia",
+    "unstartMatch": "Annulla avvio",
     "resultTitle": "Partita {{n}} · {{code}}",
     "resultKind": "Risultato",
     "kinds": {
@@ -3327,7 +3329,8 @@
       "days": "L’inizio non cade in un giorno del torneo.",
       "hours": "La partita è fuori dagli orari di gioco.",
       "before_source": "Inizia prima che la partita {{n}} ({{code}}), di cui attende il risultato, sia finita più il tempo di pausa.",
-      "after_dependent": "La partita {{n}} ({{code}}) attende questo risultato e inizia prima che questa partita sia finita più il tempo di pausa."
+      "after_dependent": "La partita {{n}} ({{code}}) attende questo risultato e inizia prima che questa partita sia finita più il tempo di pausa.",
+      "begun": "Il suo orario è già iniziato: la partita {{n}} ({{code}}) è forse già in campo."
     },
     "rankingHint": "La classifica finale per MyBeach (da inserire entro le 12:00 del giorno dopo, art. 29).",
     "rank": "Rango",
@@ -3355,9 +3358,11 @@
       "matchBegun": "Questa partita è già iniziata: campo e orario restano.",
       "noCourts": "Aggiungi prima un campo.",
       "notFound": "Non trovato, o non visibile per te.",
+      "courtInUse": "Su questo campo si è già giocato: disattiva «In uso» invece di rimuoverlo.",
       "noManager": "Nessun responsabile di competizione OpenBeach ha questa e-mail.",
       "slotConflict": "Questo orario non si adatta al programma.",
       "resultChanged": "Qualcun altro ha cambiato questo risultato nel frattempo. Ricontrollalo.",
+      "teamsChanged": "Le squadre di questa partita sono cambiate nel frattempo: un risultato precedente è stato corretto. Ricontrollala.",
       "drawExists": "Il torneo ha già un tabellone di questa categoria e di questo genere."
     },
     "import": {
