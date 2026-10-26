@@ -153,7 +153,8 @@ describe('typed tablet PINs are checked against the match the page knows', () =>
   const refereeSrc = readFileSync(resolve(__dirname, '../../RefereeApp.jsx'), 'utf8')
   const benchSrc = readFileSync(resolve(__dirname, '../../BenchApp.jsx'), 'utf8')
   it('the referee: its link, or the game picked in the list', () => {
-    expect(refereeSrc).toMatch(/const picked = linkedMatch\?\.id \?\? availableMatches\.find\(m => String\(m\.gameNumber\) === selectedGameNumber\)\?\.id/)
+    // (a game picked after a link replaces it: refereeLink.test.jsx)
+    expect(refereeSrc).toMatch(/const picked = linkedMatch\?\.id \?\? \(listed\.length === 1 \? listed\[0\]\.id : null\)/)
     expect(refereeSrc).toMatch(/validateRefereePin\(pinInput\.trim\(\), \{ matchExternalId: typeof picked === 'string' && picked \? picked : null \}\)/)
   })
   it('the bench: the match picked (its link or the list)', () => {

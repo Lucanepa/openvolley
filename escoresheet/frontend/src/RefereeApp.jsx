@@ -404,8 +404,12 @@ export default function RefereeApp() {
     }
   }, [])
   
-  const handleSelectGame = (gameNumber) => {
-    setSelectedGameNumber(gameNumber)
+  const handleSelectGame = (game) => {
+    setSelectedGameNumber(String(game.gameNumber))
+    // A game picked in the list replaces the link's (a wrong court's QR
+    // code): the PIN is then checked against the picked game. With the link
+    // kept, its right PIN went out naming the linked match and was refused.
+    if (linkedMatch && String(game.id) !== linkedMatch.id) setLinkedMatch(null)
     setShowGameModal(false)
   }
 
@@ -444,8 +448,11 @@ export default function RefereeApp() {
 
     try {
       // Backend database check first, then the LAN relay; against the match
-      // the page knows (its link, the game picked in the list), if any
-      const picked = linkedMatch?.id ?? availableMatches.find(m => String(m.gameNumber) === selectedGameNumber)?.id
+      // the page knows (its link, the game picked in the list), if any. A
+      // game number two listed matches share names neither: the check
+      // against every match finds the right one.
+      const listed = availableMatches.filter(m => String(m.gameNumber) === selectedGameNumber)
+      const picked = linkedMatch?.id ?? (listed.length === 1 ? listed[0].id : null)
       const result = await validateRefereePin(pinInput.trim(), { matchExternalId: typeof picked === 'string' && picked ? picked : null })
 
       if (result.match) {
@@ -704,7 +711,7 @@ export default function RefereeApp() {
                   away={m.awayTeam}
                   gameLabel={t('refereeDashboard.gameNumber', { number: m.gameNumber })}
                   noDate={m.dateTime || t('refereeDashboard.tbd')}
-                  onOpen={() => handleSelectGame(m.gameNumber)}
+                  onOpen={() => handleSelectGame(m)}
                   selectedLabel={selectedGameNumber === String(m.gameNumber) ? t('refereeDashboard.selected', 'Selected') : undefined}
                   status={selectedGameNumber === String(m.gameNumber)
                     ? <Check size={16} className="text-stone-900" aria-hidden />
