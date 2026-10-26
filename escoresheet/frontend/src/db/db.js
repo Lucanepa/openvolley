@@ -27,7 +27,7 @@ import { installRemarksSyncHook } from './remarksSync'
  * - payload: Data to sync, includes external_id for deduplication
  * - ts: Timestamp when queued (for ordering)
  * - status: 'queued' | 'sending' | 'sent' | 'error' | 'failed' | 'superseded' | 'dropped' - processing state
- *   ('sending': claimed by useSequentialSync; 'error': retried with backoff;
+ *   ('sending': claimed by the direct set-end sends of older versions; 'error': retried with backoff;
  *   'failed': refused by the backend (4xx), retried only by hand; 'superseded'/'dropped': never sent)
  *
  * Processing order: match → set → event (respects foreign key dependencies)

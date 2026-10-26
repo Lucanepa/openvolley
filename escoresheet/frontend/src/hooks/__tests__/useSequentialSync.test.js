@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { renderHook, act } from '@testing-library/react'
 
 function fakeTable() {
   const map = new Map()
@@ -6,145 +7,139 @@ function fakeTable() {
   return {
     map,
     add: async (row) => { const id = nextId++; map.set(id, { ...row, id }); return id },
-    update: async (id, changes) => { map.set(id, { ...map.get(id), ...changes }); return 1 }
+    update: async (id, changes) => { map.set(id, { ...map.get(id), ...changes }); return 1 },
+    bulkGet: async (ids) => ids.map(id => map.get(id))
   }
 }
 
 const fakeDb = vi.hoisted(() => ({}))
 vi.mock('../../db/db', () => ({ db: fakeDb }))
 
-const sync = vi.hoisted(() => ({ processJob: null, errors: new Map(), setAside: new Set() }))
-vi.mock('../useSyncQueue', () => ({
-  processJob: (job) => sync.processJob(job),
-  takeJobError: (id) => { const e = sync.errors.get(id) ?? null; sync.errors.delete(id); return e },
-  takeSetAside: (id) => sync.setAside.delete(id),
-  errorBackoffMs: () => 30000,
-  DROP_JOB: 'drop',
-  AUTH_REQUIRED: 'auth_required',
-  PERMANENT_FAILURE: 'permanent',
-  STOP_ERROR: 'stop_error'
-}))
+import { queueAndWait, useSequentialSync } from '../useSequentialSync'
 
-import { sendJobNow } from '../useSequentialSync'
+const SET_END = { resource: 'set', action: 'update', payload: { external_id: 'match_1_a:s:1', finished: true } }
+const MATCH_END = { resource: 'match', action: 'update', payload: { id: 'match_1_a', current_set: 2, set_results: [] } }
 
-const JOB = { resource: 'set', action: 'update', payload: { external_id: 'match_1_a:s:1', finished: true } }
+// The mounted sync queue (useSyncQueue) answers a flush request: `settle`
+// gives each queued row the status the queue would have left it in
+let flushes
+function queueAnswers(settle) {
+  const onFlush = () => {
+    flushes++
+    for (const row of fakeDb.sync_queue.map.values()) {
+      const status = settle(row)
+      if (status) fakeDb.sync_queue.map.set(row.id, { ...row, status })
+    }
+  }
+  window.addEventListener('sync-queue-flush-now', onFlush)
+  return () => window.removeEventListener('sync-queue-flush-now', onFlush)
+}
 
+let stop = () => {}
 beforeEach(() => {
   fakeDb.sync_queue = fakeTable()
+  fakeDb.transaction = async (...args) => args[args.length - 1]()
+  flushes = 0
   vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
 })
 afterEach(() => {
+  stop()
   vi.useRealTimers()
   vi.restoreAllMocks()
 })
 
-describe('sendJobNow', () => {
-  it('claims the job as "sending" while the call is in flight, then marks it sent', async () => {
-    let statusDuringCall
-    sync.processJob = async (job) => {
-      statusDuringCall = fakeDb.sync_queue.map.get(job.id).status
-      return true
-    }
-    const result = await sendJobNow(JOB)
-    expect(statusDuringCall).toBe('sending')
-    expect(result).toMatchObject({ success: true })
-    expect(fakeDb.sync_queue.map.get(result.jobId).status).toBe('sent')
+describe('queueAndWait', () => {
+  it('queues the writes together, in order, and asks the queue to send them now', async () => {
+    let atFlush
+    stop = queueAnswers(() => { atFlush ??= [...fakeDb.sync_queue.map.values()].map(r => [r.resource, r.status]); return 'sent' })
+    const results = await queueAndWait([SET_END, MATCH_END])
+    expect(atFlush).toEqual([['set', 'queued'], ['match', 'queued']])
+    expect(flushes).toBe(1)
+    expect(results).toEqual([{ success: true, jobId: 1 }, { success: true, jobId: 2 }])
   })
 
-  it('on timeout returns at once but keeps the row "sending" until the call settles', async () => {
+  it('a write the queue left unsent at the deadline is reported as saved locally, and stays queued', async () => {
     vi.useFakeTimers()
-    let finish
-    sync.processJob = () => new Promise(resolve => { finish = resolve })
-
-    const pending = sendJobNow(JOB, 1000)
+    stop = queueAnswers(() => null) // waiting behind older writes, or the cloud is down
+    const pending = queueAndWait([SET_END], 1000)
     await vi.advanceTimersByTimeAsync(1000)
-    const result = await pending
-
-    expect(result).toMatchObject({ success: false, offline: true })
-    // not handed back to the background queue while the original call runs
-    expect(fakeDb.sync_queue.map.get(result.jobId).status).toBe('sending')
-
-    finish(true)
-    await vi.runAllTimersAsync()
-    expect(fakeDb.sync_queue.map.get(result.jobId).status).toBe('sent')
+    const [result] = await pending
+    expect(result).toEqual({ success: false, offline: true, jobId: 1 })
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('queued')
   })
 
-  it('a late failure after the timeout still parks the job as an error', async () => {
+  it('reports a write sent by a later pass within the wait as sent', async () => {
     vi.useFakeTimers()
-    let finish
-    sync.processJob = () => new Promise(resolve => { finish = resolve })
-    const pending = sendJobNow(JOB, 1000)
-    await vi.advanceTimersByTimeAsync(1000)
-    const { jobId } = await pending
-    finish(false)
-    await vi.runAllTimersAsync()
-    expect(fakeDb.sync_queue.map.get(jobId)).toMatchObject({ status: 'error', attempts: 1 })
+    stop = queueAnswers(() => null)
+    const pending = queueAndWait([SET_END], 1000)
+    await vi.advanceTimersByTimeAsync(400)
+    fakeDb.sync_queue.map.set(1, { ...fakeDb.sync_queue.map.get(1), status: 'sent' })
+    await vi.advanceTimersByTimeAsync(200)
+    expect(await pending).toEqual([{ success: true, jobId: 1 }])
   })
 
-  it('a deferred result (match not in the cloud yet) goes back to the queue', async () => {
-    sync.processJob = async () => null
-    const result = await sendJobNow(JOB)
-    expect(result).toMatchObject({ success: false, offline: true })
-    expect(fakeDb.sync_queue.map.get(result.jobId).status).toBe('queued')
+  it('a write the backend refused (failed) or that failed (error) is an error', async () => {
+    stop = queueAnswers((row) => (row.resource === 'set' ? 'failed' : 'error'))
+    const [set, match] = await queueAndWait([SET_END, MATCH_END])
+    expect(set).toMatchObject({ success: false, error: 'set update refused' })
+    expect(set.offline).toBeUndefined()
+    expect(match).toMatchObject({ success: false, error: 'match update failed' })
   })
 
-  it('a job the backend refuses (4xx) is parked as failed, not retried with backoff', async () => {
-    sync.processJob = async () => 'permanent'
-    const result = await sendJobNow(JOB)
-    expect(result).toMatchObject({ success: false })
-    expect(result.offline).toBeUndefined()
-    expect(fakeDb.sync_queue.map.get(result.jobId)).toMatchObject({ status: 'failed', attempts: 1 })
-  })
-
-  it('a refused set-end job keeps the reason it was refused', async () => {
-    const reason = { status: 400, code: 'OV_UNSCOPED_EXTERNAL_ID', message: 'Database operation failed' }
-    sync.processJob = async (job) => { sync.errors.set(job.id, reason); return 'permanent' }
-    const result = await sendJobNow(JOB)
-    expect(fakeDb.sync_queue.map.get(result.jobId)).toMatchObject({ status: 'failed', last_error: reason })
-  })
-
-  it('a 4xx page without a backend error code is retried with backoff, with its reason', async () => {
-    const reason = { status: 403, code: null, message: 'Request failed (403)' }
-    sync.processJob = async (job) => { sync.errors.set(job.id, reason); return 'stop_error' }
-    const result = await sendJobNow(JOB)
-    expect(result.offline).toBeUndefined()
-    expect(fakeDb.sync_queue.map.get(result.jobId)).toMatchObject({ status: 'error', attempts: 1, last_error: reason })
-  })
-
-  it('a missing session leaves the job queued and reports it as deferred', async () => {
-    sync.processJob = async () => 'auth_required'
-    const result = await sendJobNow(JOB)
-    expect(result).toMatchObject({ success: false, offline: true, authRequired: true })
-    expect(fakeDb.sync_queue.map.get(result.jobId).status).toBe('queued')
-  })
-
-  it('an exception requeues the job and reports the error', async () => {
-    sync.processJob = async () => { throw new Error('boom') }
-    const result = await sendJobNow(JOB)
-    expect(result).toMatchObject({ success: false, error: 'boom' })
-    expect(fakeDb.sync_queue.map.get(result.jobId)).toMatchObject({ status: 'queued', error_message: 'boom' })
-  })
-
-  it('offline: queued without calling the backend', async () => {
-    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
-    sync.processJob = vi.fn()
-    const result = await sendJobNow(JOB)
-    expect(sync.processJob).not.toHaveBeenCalled()
-    expect(result).toMatchObject({ offline: true })
-    expect(fakeDb.sync_queue.map.get(result.jobId).status).toBe('queued')
-  })
-
-  it('reports a write set aside for another scoring device as kept (a warning), not failed', async () => {
-    sync.processJob = async (job) => { sync.setAside.add(job.id); return 'drop' }
-    const result = await sendJobNow(JOB)
+  it('a write set aside for another scoring device is kept (a warning), not failed', async () => {
+    stop = queueAnswers(() => 'dropped')
+    const [result] = await queueAndWait([SET_END])
     expect(result).toMatchObject({ success: false, offline: true, setAside: true })
     expect(result.error).toBeUndefined()
   })
 
-  it('still reports a job that cannot be attributed to a match as an error', async () => {
-    sync.processJob = async () => 'drop'
-    const result = await sendJobNow(JOB)
-    expect(result).toMatchObject({ success: false, error: 'Job cannot be attributed to a match' })
-    expect(result.offline).toBeUndefined()
+  it('offline: queued, nothing asked of the queue, reported as saved locally at once', async () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    stop = queueAnswers(() => 'sent')
+    const results = await queueAndWait([SET_END, MATCH_END])
+    expect(flushes).toBe(0)
+    expect(results).toEqual([{ success: false, offline: true, jobId: 1 }, { success: false, offline: true, jobId: 2 }])
+    expect([...fakeDb.sync_queue.map.values()].map(r => r.status)).toEqual(['queued', 'queued'])
+  })
+})
+
+describe('useSequentialSync.syncSetEnd', () => {
+  const run = async (params) => {
+    const { result, unmount } = renderHook(() => useSequentialSync())
+    let out
+    await act(async () => { out = await result.current.syncSetEnd(params) })
+    const state = result.current.syncState
+    unmount()
+    return { out, state }
+  }
+
+  it('sends the set and the match update, then reports the steps done', async () => {
+    stop = queueAnswers(() => 'sent')
+    const { out, state } = await run({ lastPointPayload: null, setPayload: SET_END.payload, matchPayload: MATCH_END.payload })
+    expect(out).toEqual({ success: true, hasWarning: false })
+    expect(state.steps.map(s => s.status)).toEqual(['done', 'done', 'done'])
+    expect(state.isComplete).toBe(true)
+    expect([...fakeDb.sync_queue.map.values()].map(r => r.resource)).toEqual(['set', 'match'])
+  })
+
+  it('a match update still waiting is a warning, a refused set update an error', async () => {
+    vi.useFakeTimers()
+    stop = queueAnswers((row) => (row.resource === 'set' ? 'sent' : null))
+    const { result, unmount } = renderHook(() => useSequentialSync())
+    let out
+    await act(async () => {
+      const pending = result.current.syncSetEnd({ lastPointPayload: null, setPayload: SET_END.payload, matchPayload: MATCH_END.payload })
+      await vi.advanceTimersByTimeAsync(15000)
+      out = await pending
+    })
+    expect(out).toEqual({ success: true, hasWarning: true })
+    unmount()
+
+    stop()
+    stop = queueAnswers(() => 'failed')
+    vi.useRealTimers()
+    const refused = await run({ lastPointPayload: null, setPayload: SET_END.payload, matchPayload: null })
+    expect(refused.out).toEqual({ success: false, hasWarning: false })
+    expect(refused.state.steps[1].status).toBe('error')
   })
 })
