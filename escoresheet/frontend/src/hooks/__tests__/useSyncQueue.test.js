@@ -1190,7 +1190,8 @@ describe('useSyncQueue flush loop', () => {
   })
 
   // 2026-10-26: the flush starts the scoresheet files' lane and does not
-  // wait for it; the score shows synced while a file still uploads
+  // wait for it. 2026-10-27 review: the badge then said synced while the
+  // approval's file was still uploading; it says syncing until it is up
   it('sends the scoresheet files beside the score, without waiting for them', async () => {
     let release
     const hanging = new Promise((resolve) => { release = resolve })
@@ -1202,10 +1203,13 @@ describe('useSyncQueue flush loop', () => {
     const { result, unmount } = renderHook(() => useSyncQueue())
     await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
     expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
-    expect(result.current.syncStatus).toBe('synced')
+    expect(result.current.syncStatus).toBe('syncing')
     expect(api.calls.filter(c => c.table === '__storage')).toHaveLength(1)
     await act(async () => { release(); await vi.advanceTimersByTimeAsync(10) })
     expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    // the next flush (the 5 s poll) finds nothing left
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
+    expect(result.current.syncStatus).toBe('synced')
     unmount()
   })
 

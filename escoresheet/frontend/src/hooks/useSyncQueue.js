@@ -1728,6 +1728,20 @@ export async function runUploadLane() {
   }
 }
 
+/**
+ * A scoresheet file is still waiting in its lane (queued, or being sent).
+ * The score's pass alone being through is no "synced" then: the badge said
+ * synced while the approval's PDF / JSON was still uploading, and a scorer
+ * could close the device thinking the cloud had it (2026-10-27 review).
+ */
+async function uploadLaneHasWork() {
+  try {
+    return (await db.sync_queue.where('status').anyOf('queued', 'sending').and(j => UPLOAD_LANE.includes(j.resource)).count()) > 0
+  } catch {
+    return false
+  }
+}
+
 // One flusher per page. App, Scoreboard and Referee each mount this hook; a
 // per-instance flag let two instances process the same queued rows at once
 // (restore/delete are not idempotent).
@@ -1955,7 +1969,7 @@ export function useSyncQueue() {
       }
 
       if (outcome.processed === 0) {
-        setSyncStatus('synced')
+        setSyncStatus(await uploadLaneHasWork() ? 'syncing' : 'synced')
         return
       }
 
@@ -1969,7 +1983,7 @@ export function useSyncQueue() {
         // Some items need retry - will be processed next cycle
         setSyncStatus('syncing')
       } else {
-        setSyncStatus('synced')
+        setSyncStatus(await uploadLaneHasWork() ? 'syncing' : 'synced')
       }
     } catch (err) {
       safeLog.error('[SyncQueue] Flush error:', err)
