@@ -20,6 +20,7 @@ import {
   matchAccessFor,
   matchAccessHeaders,
   validatePinSupabase,
+  validatePin,
   getMatchData,
   uploadRosterToCloud,
   LIVE_STATE_HOLD_MS
@@ -414,6 +415,24 @@ describe('match access after the PIN step', () => {
     globalThis.fetch = vi.fn(async () => json({ success: false, error: 'Invalid PIN code' }, 404))
     await validatePinSupabase('000000', 'referee')
     expect(matchAccessFor(SEED)).toBeNull()
+  })
+
+  it('a PIN check refused for too many wrong PINs (429) says rateLimited, not a wrong PIN', async () => {
+    globalThis.fetch = vi.fn(async () => json({ success: false, error: 'Too many failed attempts. Please wait 10 minutes before trying again.' }, 429))
+    expect(await validatePinSupabase('314159', 'referee')).toMatchObject({ success: false, rateLimited: true })
+    globalThis.fetch = vi.fn(async () => json({ success: false, error: 'Invalid PIN code' }, 404))
+    expect((await validatePinSupabase('314159', 'referee')).rateLimited).toBeUndefined()
+    // the relay's check throws; the status tells the two apart
+    globalThis.fetch = vi.fn(async () => json({ success: false, error: 'Too many failed attempts.' }, 429))
+    await expect(validatePin('314159', 'referee')).rejects.toMatchObject({ status: 429 })
+  })
+
+  it('a PIN check for one match sends its id', async () => {
+    const bodies = []
+    globalThis.fetch = vi.fn(async (url, init) => { bodies.push(JSON.parse(init.body)); return json({ success: true, match: { id: SEED } }) })
+    await validatePinSupabase('314159', 'referee', { matchExternalId: SEED })
+    await validatePinSupabase('314159', 'referee')
+    expect(bodies).toEqual([{ pin: '314159', type: 'referee', matchExternalId: SEED }, { pin: '314159', type: 'referee' }])
   })
 
   it('getMatchData sends the access headers; a summary after the PIN step falls back to the API with the token', async () => {

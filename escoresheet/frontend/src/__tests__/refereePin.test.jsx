@@ -38,6 +38,16 @@ describe('referee PIN check', () => {
       .toEqual({ match: null, reason: 'invalid' })
   })
 
+  it('a check refused for too many wrong PINs (429) is "rate-limited", not a wrong PIN', async () => {
+    const limitedCloud = vi.fn().mockResolvedValue({ success: false, rateLimited: true, error: 'Too many failed attempts. Please wait 10 minutes before trying again.' })
+    expect(await validateRefereePin('372449', { checkCloud: limitedCloud, checkLan: relayNoMatch }))
+      .toEqual({ match: null, reason: 'rate-limited' })
+    const cloudWrong = vi.fn().mockResolvedValue({ success: false, error: 'Invalid PIN code' })
+    const limitedLan = vi.fn().mockRejectedValue(Object.assign(new Error('Too many failed attempts.'), { status: 429 }))
+    expect(await validateRefereePin('372449', { checkCloud: cloudWrong, checkLan: limitedLan }))
+      .toEqual({ match: null, reason: 'rate-limited' })
+  })
+
   it('a throwing cloud check still reaches the relay', async () => {
     const checkCloud = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'))
     const checkLan = vi.fn().mockResolvedValue({ success: true, match: { id: SEED } })

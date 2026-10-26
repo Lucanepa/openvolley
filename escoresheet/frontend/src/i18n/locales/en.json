@@ -1628,6 +1628,7 @@
     "connect": "Connect",
     "connecting": "Connecting...",
     "invalidPin": "Invalid PIN. Please try again.",
+    "tooManyAttempts": "Too many wrong PINs from this network. Wait a few minutes, then try again.",
     "roster": "Roster",
     "match": "Match",
     "back": "Back",
@@ -1671,7 +1672,8 @@
       "connectionLost": "Connection lost. Please reconnect.",
       "matchEnded": "Match has ended.",
       "connectionDisabled": "Connection has been disabled.",
-      "serverUnreachable": "No connection to the server – check the Wi-Fi and try again."
+      "serverUnreachable": "No connection to the server – check the Wi-Fi and try again.",
+      "tooManyAttempts": "Too many wrong PINs from this network. Wait a few minutes, then try again."
     },
     "connection": {
       "title": "Connection",

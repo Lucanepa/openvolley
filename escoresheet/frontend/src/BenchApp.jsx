@@ -59,19 +59,28 @@ function writeBenchSession(session) {
  * Validate a bench PIN server-side: the backend's database check (cloud) and
  * the LAN relay, in the order the connection mode / match source suggests. The
  * cloud check is skipped in WebSocket mode and gives up after 3 s, so an
- * offline venue never waits.
+ * offline venue never waits. matchExternalId (a stored session's match): the
+ * backend checks the PIN against that match only, apart from other tablets'
+ * typos behind the same venue address. A failed result says rateLimited: true
+ * when a server refused to compare (too many wrong PINs from this address).
  */
-export async function validateBenchPin(pin, team, { connectionMode = CONNECTION_MODES.AUTO, preferLan = false } = {}) {
+export async function validateBenchPin(pin, team, { connectionMode = CONNECTION_MODES.AUTO, preferLan = false, matchExternalId } = {}) {
   const pinType = team === 'home' ? 'homeTeam' : 'awayTeam'
+  let rateLimited = false
   const checkSupabase = async () => {
-    const r = await validatePinSupabase(pin, team === 'home' ? 'bench_home' : 'bench_away')
+    const type = team === 'home' ? 'bench_home' : 'bench_away'
+    const r = matchExternalId ? await validatePinSupabase(pin, type, { matchExternalId }) : await validatePinSupabase(pin, type)
+    if (r?.rateLimited) rateLimited = true
     if (!r.success || !r.match) return r
     // The server only accepts a bench PIN while that bench is enabled; older
     // backends don't echo the flag, which would trip the disconnect check.
     const flag = team === 'home' ? 'homeTeamConnectionEnabled' : 'awayTeamConnectionEnabled'
     return r.match[flag] === undefined ? { ...r, match: { ...r.match, [flag]: true } } : r
   }
-  const checkLan = () => validatePin(pin, pinType).catch((err) => ({ success: false, error: err.message }))
+  const checkLan = () => validatePin(pin, pinType).catch((err) => {
+    if (err?.status === 429) rateLimited = true
+    return { success: false, error: err.message }
+  })
   const ok = (r) => r?.success && r.match
   let result
   if (connectionMode === CONNECTION_MODES.WEBSOCKET) {
@@ -83,7 +92,7 @@ export async function validateBenchPin(pin, team, { connectionMode = CONNECTION_
     result = await checkSupabase()
     if (!ok(result)) result = await checkLan()
   }
-  return result
+  return !ok(result) && rateLimited ? { ...result, success: false, rateLimited: true } : result
 }
 
 /** "Game 12", or undefined while the game number is unknown (never "Game null"). */
@@ -139,13 +148,21 @@ export default function BenchApp() {
       applyServerParam(serverParam)
     }
 
-    if (matchParam) {
+    // A bench that joined through a link (QR code) still has ?match=&team= in
+    // its address after a reload: nothing removes them, and the app's own
+    // reloads keep the query on purpose. Its stored session for that match
+    // and team is restored as on a plain /bench/; it used to ask for the PIN
+    // again after every reload. The link's PIN step is for a tablet that has
+    // not joined that match yet.
+    const session = readBenchSession()
+    const joinedThisLink = !!(matchParam && session && String(session.matchId) === matchParam && (!teamParam || teamParam === session.team))
+    if (matchParam && !joinedThisLink) {
       setAutoConnectMatch(matchParam)
       if (teamParam === 'home' || teamParam === 'away') {
         setAutoConnectTeam(teamParam)
       }
       setServerReady(true)
-    } else if (readBenchSession()) {
+    } else if (session) {
       // Reconnect a bench that was connected before the reload
       setRestoringSession(true)
       setServerReady(true)
@@ -163,7 +180,7 @@ export default function BenchApp() {
     let cancelled = false
     ;(async () => {
       try {
-        const result = await validateBenchPin(session.pin, session.team, { connectionMode })
+        const result = await validateBenchPin(session.pin, session.team, { connectionMode, matchExternalId: session.matchId })
         if (cancelled) return
         if (result?.success && result.match && String(result.match.id) === String(session.matchId)) {
           const names = matchTeamNames(result.match)
@@ -178,8 +195,19 @@ export default function BenchApp() {
           setMatchId(result.match.id)
           setMatch(result.match)
           setView('match')
+        } else if (result?.rateLimited) {
+          // Refused without comparing (too many wrong PINs from this
+          // network): keep the session for the next load
+          setError(t('benchDashboard.tooManyAttempts', 'Too many wrong PINs from this network. Wait a few minutes, then try again.'))
         } else {
           writeBenchSession(null)
+          // Opened through the match's link: its PIN step, match preselected
+          const params = new URLSearchParams(window.location.search)
+          if (params.get('match')) {
+            setAutoConnectMatch(params.get('match'))
+            const teamParam = params.get('team')
+            if (teamParam === 'home' || teamParam === 'away') setAutoConnectTeam(teamParam)
+          }
         }
       } catch {
         // Server unreachable right now: keep the session for the next load
@@ -582,6 +610,9 @@ export default function BenchApp() {
           awayTeamName: names.away || selectedMatch?.awayTeamName || null
         })
         setView('match') // Go directly to match view (like RefereeApp)
+      } else if (result?.rateLimited) {
+        // Refused without comparing: the PIN may well be right
+        setError(t('benchDashboard.tooManyAttempts', 'Too many wrong PINs from this network. Wait a few minutes, then try again.'))
       } else {
         setError('Invalid PIN code. Please check and try again.')
         setPinInput('')

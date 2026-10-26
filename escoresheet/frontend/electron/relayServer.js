@@ -88,7 +88,6 @@ function start(opts = {}) {
     // Sign on phone (/api/sign/*): the desktop app itself may start a session
     const relay = createLanRelay({ signCore, isLocal: isLocalAddress })
     activeRelay = relay
-    const wsClients = new Set()
     const mainGate = createMainInstanceGate({ isLocal: isLocalAddress })
 
     const requestHandler = (req, res) => {
@@ -257,21 +256,16 @@ function start(opts = {}) {
         reject(err)
       })
       wss.on('connection', (ws, req) => {
-        if (wsClients.size >= 20) {
-          ws.close(1013, 'Maximum connections reached')
+        // Connection limits, in all and per address (lanRelayCore admit)
+        const refused = relay.admit(req.socket.remoteAddress)
+        if (refused) {
+          ws.close(refused.code, refused.reason)
           return
         }
-        wsClients.add(ws)
         relay.addClient(ws, { ip: req.socket.remoteAddress }) // sends 'connected'
         ws.on('message', (msg) => relay.handleMessage(ws, msg))
-        ws.on('close', () => {
-          wsClients.delete(ws)
-          relay.removeClient(ws)
-        })
-        ws.on('error', () => {
-          wsClients.delete(ws)
-          relay.removeClient(ws)
-        })
+        ws.on('close', () => relay.removeClient(ws))
+        ws.on('error', () => relay.removeClient(ws))
       })
       wss.on('listening', () => {
         status = { running: true, port: PORT, wsPort: WS_PORT, hostname: HOSTNAME, localIP: getLocalIP(), protocol: 'http', wsProtocol: 'ws' }
