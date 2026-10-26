@@ -9,6 +9,7 @@
  * The phone never sends an image: a signature from a phone and one drawn here
  * end up as the same kind of value in the same field, so the PDF is unchanged.
  */
+import { dayTimeLabel } from '../ui/format'
 
 export const PAD_W = 4000
 const PAD_H_MIN = 1000
@@ -169,16 +170,10 @@ const personName = (p) => {
   return [p.firstName ?? p.first_name, p.lastName ?? p.last_name].filter(Boolean).join(' ').trim()
 }
 
-function pad2(n) {
-  return String(n).padStart(2, '0')
-}
-
-/** "12.10.2026 20:15" from an ISO time, in the device's time zone; '' when none. */
+/** "12.10.2026 20:15" from an ISO time, on the Zürich clock; '' when none. */
 export function displayWhen(iso) {
   if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}.${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+  return dayTimeLabel(iso)
 }
 
 /**

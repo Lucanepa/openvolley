@@ -70,6 +70,34 @@ export function zonedParts(value) {
 
 const pad = (n) => String(n).padStart(2, '0');
 
+const MINUTE = 60 * 1000;
+
+/** How far Zürich's clock is ahead of UTC at an instant (ms: 1 h or 2 h). */
+function zurichOffsetAt(ms) {
+  const p = fromInstant(new Date(ms));
+  return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute) - Math.floor(ms / MINUTE) * MINUTE;
+}
+
+/**
+ * The instant (ms) of a Zürich wall-clock time: the inverse of zonedParts.
+ * A time typed on the scorer's device, or the schedule's zone-less kick-off,
+ * is a time on the gym's clock, whatever zone the device is in. new Date(
+ * '2026-10-26T10:20') reads it in the device's zone: a laptop left on a fixed
+ * GMT+2 stored the 10:20 kick-off as 08:20Z (stress test 2026-10-25).
+ *
+ * Month is 1-12; the fields overflow as in Date.UTC (day 0 is the last day of
+ * the month before). On the summer-time changes the hour skipped in March is
+ * the hour after (02:30 is 03:30 summer time) and the hour repeated in October
+ * is its second occurrence (winter time). NaN for no number.
+ */
+export function zurichWallTimeMs(year, month, day, hour = 0, minute = 0) {
+  const wall = Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute));
+  if (!Number.isFinite(wall)) return NaN;
+  // The offset at the wall time read as UTC is the offset at the instant,
+  // except within an hour of a summer-time change: one more step settles it
+  return wall - zurichOffsetAt(wall - zurichOffsetAt(wall));
+}
+
 /** 'DE' | 'EN' (or a BCP-47 tag) -> the locale used for words (weekday, month). */
 export const localeOf = (lang) => {
   const l = String(lang || 'DE').toLowerCase();
