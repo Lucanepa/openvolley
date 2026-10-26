@@ -20,6 +20,7 @@ import KitModal from './manage/KitModal'
 import CloudBlockNotice from './CloudBlockNotice'
 import { Textarea } from '../ui/Textarea.jsx'
 import { scoresheetUploadPath, scoresheetUploadJob, scoresheetJsonBlob, uploadQueuedScoresheet } from '../utils/scoresheetUploader'
+import { publishMatchEndLiveState } from '../utils/matchEndLiveState'
 import { isoOf, matchTimes, setDurationMinutes } from '../../scoresheet_pdf/utils/matchTimes'
 import { displaySetNumber, getScoreBeforeEvent, isDefaultSet } from '../../scoresheet_pdf/utils/scoresheetModel'
 import { generatedRemarks } from '../../scoresheet_pdf/utils/sheetRemarks'
@@ -488,6 +489,39 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       window.removeEventListener('offline', off)
     }
   }, [refreshAccountApprovals, isApproved])
+
+  // The cloud live state says the match ended (utils/matchEndLiveState): an
+  // app killed between the last rally and the scoreboard's 'match_end' push
+  // reopens here, and the livescore kept the game running for good. Tried
+  // once a Match End shows, again when the queue drains or the device comes
+  // back online, until it is done.
+  const officialSeedKey = data?.match && data.match.test !== true ? seedKey : null
+  useEffect(() => {
+    if (!officialSeedKey) return undefined
+    let done = false
+    let running = false
+    const attempt = async () => {
+      if (done || running) return
+      running = true
+      try {
+        const current = await db.matches.get(matchId)
+        const matchSets = await db.sets.where('matchId').equals(matchId).toArray()
+        if (await publishMatchEndLiveState(current, matchSets)) done = true
+      } catch (err) {
+        console.warn('[MatchEnd] Could not publish the match end to the live state:', err?.message)
+      } finally {
+        running = false
+      }
+    }
+    attempt()
+    window.addEventListener('online', attempt)
+    window.addEventListener('sync-queue-drained', attempt)
+    return () => {
+      done = true
+      window.removeEventListener('online', attempt)
+      window.removeEventListener('sync-queue-drained', attempt)
+    }
+  }, [officialSeedKey, matchId])
 
   // Prevent accidental navigation away before approval
   // Skip warning during save process (isSaving) to avoid dialog during PDF generation
