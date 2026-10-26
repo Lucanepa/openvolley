@@ -230,6 +230,61 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
       }
     })
 
+    // 2026-10-26: a hand-over on a device whose local ids were taken by its
+    // older matches queued a whole-match restore to move the cloud rows to
+    // its own ids; it deleted the match's voided events and the rows the
+    // previous device sent after the read
+    it('rekey: renames the rows named in place and deletes nothing else', async () => {
+      const ext = uniq('REKEY')
+      const made = await restore.restoreMatch(backup(ext, { sets: 2, events: 5 }), W)
+      const id = made.body.data.id
+      const row = async (key) => (await raw.query('SELECT id, external_id, voided_at, payload FROM events WHERE match_id = $1 AND external_id = $2', [id, key])).rows[0]
+      const e1 = await row(`${ext}:e:1`)
+      // event 3 voided after the device read the match; 6 voided before
+      // (never read); 7 sent by the previous device after the read
+      await raw.query('UPDATE events SET voided_at = now(), void_reason = $3 WHERE match_id = $1 AND external_id = $2', [id, `${ext}:e:3`, 'undo'])
+      await raw.query(`INSERT INTO events (match_id, external_id, set_index, type, seq, payload, sport_type, voided_at, void_reason)
+                       VALUES ($1, $2, 1, 'point', 6, '{}', 'indoor', now(), 'undo'), ($1, $3, 1, 'point', 7, '{}', 'indoor', NULL, NULL),
+                              ($1, $4, 1, 'point', 99, '{"stale":true}', 'indoor', NULL, NULL)`,
+      [id, `${ext}:e:6`, `${ext}:e:7`, `${ext}:e:205`])
+
+      // what the device read: sets 1-2, events 1-5 (and 9, gone since), moved to its own ids
+      const b = backup(ext, { sets: 2, events: 5 })
+      b.events.push({ external_id: `${ext}:e:9`, set_index: 1, type: 'point', seq: 9, payload: {}, sport_type: 'indoor' })
+      const to = (key) => key.replace(/:(s|e):(\d+)$/, (_, k, n) => `:${k}:${Number(n) + (k === 's' ? 100 : 200)}`)
+      const rekey = { sets: {}, events: {} }
+      b.sets = b.sets.map((r) => { rekey.sets[to(r.external_id)] = r.external_id; return { ...r, external_id: to(r.external_id) } })
+      b.events = b.events.map((r) => { rekey.events[to(r.external_id)] = r.external_id; return { ...r, external_id: to(r.external_id) } })
+      b.liveState = { ...b.liveState, points_a: 0, points_b: 0 }
+      const r = await restore.restoreMatch({ ...b, rekey }, W)
+      assert.equal(r.status, 200, JSON.stringify(r.body))
+      assert.deepEqual(r.body.data.counts, { sets: 2, events: 6, liveState: 0, rekeyed: 7 })
+
+      const keys = (await raw.query('SELECT external_id, voided_at IS NOT NULL AS voided FROM events WHERE match_id = $1 ORDER BY seq', [id])).rows
+      assert.deepEqual(keys, [
+        { external_id: `${ext}:e:201`, voided: false },
+        { external_id: `${ext}:e:202`, voided: false },
+        { external_id: `${ext}:e:203`, voided: true },
+        { external_id: `${ext}:e:204`, voided: false },
+        { external_id: `${ext}:e:205`, voided: false },
+        { external_id: `${ext}:e:6`, voided: true },
+        { external_id: `${ext}:e:7`, voided: false },
+        { external_id: `${ext}:e:209`, voided: false }
+      ])
+      // in place: the same row under its new id; the stale row under the new id is gone
+      assert.equal((await row(`${ext}:e:201`)).id, e1.id)
+      assert.deepEqual((await row(`${ext}:e:205`)).payload, { n: 4 })
+      assert.deepEqual((await raw.query('SELECT external_id FROM sets WHERE match_id = $1 ORDER BY index', [id])).rows.map((x) => x.external_id), [`${ext}:s:101`, `${ext}:s:102`])
+      // the live state is not keyed by the device's ids: left as it is
+      assert.equal((await raw.query('SELECT points_a FROM match_live_state WHERE match_id = $1', [id])).rows[0].points_a, 3)
+      assert.ok(r.changes.some((c) => c.table === 'events' && c.eventType === 'UPDATE' && c.row.external_id === `${ext}:e:201`))
+
+      // a rekey naming another match's id or an unscoped new id is refused as a whole
+      const bad = { ...b, rekey, events: [...b.events, { external_id: '12', set_index: 1, type: 'point', seq: 12, payload: {}, sport_type: 'indoor' }] }
+      assert.equal((await restore.restoreMatch(bad, W)).body.error.code, 'OV_UNSCOPED_EXTERNAL_ID')
+      assert.equal(await count('events', id), 8)
+    })
+
     it('restores a match without sets, events or live state', async () => {
       const ext = uniq()
       const r = await restore.restoreMatch({ match: { external_id: ext } }, W)

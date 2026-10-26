@@ -367,12 +367,14 @@ export async function apiDownload(path, { timeoutMs = 120000 } = {}) {
  * @param {{match: object, sets?: object[], events?: object[], liveState?: object|null}} payload
  * @returns {Promise<{data: {id: string, counts: {sets: number, events: number, liveState: number}, dropped?: object}|null, error: object|null, status: number}>}
  */
-export function apiMatchRestore({ match, sets = [], events = [], liveState = null, queuedAt = null }) {
+export function apiMatchRestore({ match, sets = [], events = [], liveState = null, queuedAt = null, rekey = null }) {
   // The device: a backup restored here is this device's take-over (db/019),
   // unless another device took the match over after the restore was made
-  // (age_ms: how long ago, by this device's own clock, so no clock skew)
+  // (age_ms: how long ago, by this device's own clock, so no clock skew).
+  // rekey: a hand-over's move of the cloud rows to this device's ids
+  // (backupManager.importMatchFromSupabase), renamed in place on the server
   const ageMs = ageOf(queuedAt)
-  return postJson('/api/match/restore', { match, sets, events, liveState, ...deviceField(), ...(ageMs != null ? { age_ms: ageMs } : {}) }, {
+  return postJson('/api/match/restore', { match, sets, events, liveState, ...(rekey ? { rekey } : {}), ...deviceField(), ...(ageMs != null ? { age_ms: ageMs } : {}) }, {
     timeoutMs: RESTORE_REQUEST_TIMEOUT_MS,
     fallbackError: 'Match restore failed'
   })
