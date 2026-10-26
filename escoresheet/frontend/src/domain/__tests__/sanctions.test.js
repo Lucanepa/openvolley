@@ -7,6 +7,7 @@ import {
   awardsPoint,
   deriveTeamSanctionFlags,
   deferredPenaltyPoints,
+  penaltyOfPoint,
 } from '../sanctions'
 
 describe('nextDelaySanction (FIVB 16.2)', () => {
@@ -119,5 +120,27 @@ describe('deferredPenaltyPoints (FIVB 16.2.3 / 21.3.1: a penalty gives the oppon
     // a corrected (non-initial) line-up does not stand for a starting line-up
     const corrected = { ...lineup(2, 'away'), payload: { team: 'away', lineup: {}, isInitial: false } }
     expect(deferredPenaltyPoints([lineup(1, 'home'), corrected, sanction(3, 'away', 'penalty')], 2)).toEqual([])
+  })
+})
+
+describe('penaltyOfPoint (Undo takes a penalty back with its point)', () => {
+  const sanction = (seq, team, type, setIndex = 1) => ({ id: seq, seq, setIndex, type: 'sanction', payload: { team, type } })
+  const point = (seq, team, penaltySeq, setIndex = 1) => ({ id: seq, seq, setIndex, type: 'point', payload: { team, ...(penaltySeq !== undefined ? { penaltySeq } : {}) } })
+
+  it('finds the penalty or delay penalty the point names', () => {
+    const events = [sanction(10, 'home', 'penalty'), point(11, 'away', 10), sanction(12, 'away', 'delay_penalty'), point(13, 'home', 12)]
+    expect(penaltyOfPoint(events, events[1])).toBe(events[0])
+    expect(penaltyOfPoint(events, events[3])).toBe(events[2])
+  })
+
+  it('null for a rally point, an unlinked (older or deferred) penalty point and a link that does not fit', () => {
+    const events = [sanction(10, 'home', 'penalty'), point(11, 'away'), sanction(12, 'home', 'warning'), sanction(14, 'home', 'penalty', 2)]
+    expect(penaltyOfPoint(events, events[1])).toBeNull()
+    // a warning gives no point, a penalty of the scoring team or another set is not this point's
+    expect(penaltyOfPoint(events, point(13, 'away', 12))).toBeNull()
+    expect(penaltyOfPoint(events, point(13, 'home', 10))).toBeNull()
+    expect(penaltyOfPoint(events, point(13, 'away', 14))).toBeNull()
+    expect(penaltyOfPoint(events, events[0])).toBeNull()
+    expect(penaltyOfPoint(events, null)).toBeNull()
   })
 })
