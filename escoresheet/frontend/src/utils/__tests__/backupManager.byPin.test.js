@@ -26,12 +26,15 @@ describe('fetchMatchByPin (POST /api/match/restore-by-pin)', () => {
         match: { id: 'uuid', external_id: 'seed', game_n: 12, status: 'live' },
         sets: [{ index: 1, home_points: 25, away_points: 20, finished: true }],
         events: [{ seq: 1, set_index: 1, type: 'point', payload: { team: 'home' } }],
-        liveState: { points_a: 3, points_b: 1, current_set: 2 }
+        liveState: { points_a: 3, points_b: 1, current_set: 2 },
+        idFloor: { set: 4, event: 160 }
       },
       error: null,
       status: 200
     }
     const out = await fetchMatchByPin(' 123456 ', '12')
+    // the ids the importing device must stay above
+    expect(out.idFloor).toEqual({ set: 4, event: 160 })
     expect(byPin.calls).toEqual([{ gameN: 12, pin: '123456' }])
     expect(out.match.id).toBe('uuid')
     expect(out.match.game_pin).toBe('123456') // the server strips it; the caller proved it

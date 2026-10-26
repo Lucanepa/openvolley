@@ -28,6 +28,11 @@
  *     secret columns stripped, plus its sets, events and live state. With
  *     `editorUserId` (the caller is signed in) that account becomes an editor
  *     of the match (match_editors): proving the game PIN is the take-over.
+ *     `idFloor` { set, event }: the highest local id the match's set / event
+ *     external_ids carry (`<match>:s:<n>`, `<match>:e:<n>`), voided events and
+ *     the revisions of events never uploaded included. The device continuing
+ *     the match gives out ids above it: a new event under the id of a voided
+ *     one would be born voided (db/015).
  *
  *   POST /api/match/claim { externalId, pin }                           (session, attempt-limited)
  *     The take-over alone: game PIN of that match -> the caller becomes an
@@ -341,6 +346,31 @@ export function createMatchRestore (db, options = {}) {
     }
   }
 
+  /**
+   * Highest `<n>` of the match's `<ext>:s:<n>` set and `<ext>:e:<n>` event ids
+   * (voided events and event_revisions too): { set, event }, null when none.
+   * Never throws: without it the device keeps the ids it imported (null).
+   */
+  async function idFloor (cat, matchUuid, ext) {
+    const table = (name) => `${quote(db.config.schema || 'public')}.${quote(name)}`
+    const n = (col) => `substr(${col}, length($2::text) + 4)`
+    const own = (col, kind) => `left(${col}, length($2::text) + 3) = $2::text || '${kind}' AND ${n(col)} ~ '^[0-9]{1,15}$'`
+    const maxOf = (tbl, col, kind) => `SELECT ${n(col)}::bigint AS n FROM ${table(tbl)} WHERE ${quote(cfg.childFk)} = $1 AND ${own(col, kind)}`
+    const eventSources = [maxOf(cfg.eventsTable, 'external_id', ':e:')]
+    if (cat.tables.has('event_revisions')) eventSources.push(maxOf('event_revisions', 'event_external_id', ':e:'))
+    try {
+      const r = await db.pool.query(
+        `SELECT (SELECT max(n) FROM (${maxOf(cfg.setsTable, 'external_id', ':s:')}) s) AS "set",
+                (SELECT max(n) FROM (${eventSources.join(' UNION ALL ')}) e) AS "event"`,
+        [matchUuid, ext])
+      const toNum = (v) => (v == null ? null : Number(v))
+      return { set: toNum(r.rows[0]?.set), event: toNum(r.rows[0]?.event) }
+    } catch (err) {
+      log.warn?.(`[matchRestore] could not read the id floor: ${err.code || err.message}`)
+      return null
+    }
+  }
+
   /** Attempt limits shared by restore-by-pin and claim. Returns a 429 result or null. */
   function overLimit (callerKey, gameKey) {
     if (callerLimiter.isLimited(callerKey) || pinLimiter.isLimited(gameKey)) {
@@ -450,12 +480,13 @@ export function createMatchRestore (db, options = {}) {
         if (r.body.error) throw Object.assign(new Error('child read failed'), { result: r })
         return r
       }
-      const [s, e, l] = await Promise.all([
+      const [s, e, l, floor] = await Promise.all([
         read(cfg.setsTable, { order: childOrder(cfg.setsTable, ['index']) }),
         read(cfg.eventsTable, { order: childOrder(cfg.eventsTable, ['seq', 'ts', 'id']) }),
-        read(cfg.liveStateTable, { maybeSingle: true })
+        read(cfg.liveStateTable, { maybeSingle: true }),
+        idFloor(cat, matchUuid, row[cfg.matchKey])
       ])
-      return { status: 200, body: { data: { match, sets: s.body.data, events: e.body.data, liveState: l.body.data, ...(editor ? { access: editor } : {}) }, error: null } }
+      return { status: 200, body: { data: { match, sets: s.body.data, events: e.body.data, liveState: l.body.data, ...(floor ? { idFloor: floor } : {}), ...(editor ? { access: editor } : {}) }, error: null } }
     } catch (err) {
       if (err?.result) return { status: err.result.status, body: err.result.body }
       const r = db.toErrorResult(err, { action: 'restore-by-pin', table: cfg.matchTable })
