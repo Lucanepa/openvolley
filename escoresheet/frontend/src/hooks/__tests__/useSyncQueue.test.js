@@ -164,7 +164,8 @@ import {
   isClosingJob,
   CLOUD_BLOCK_EVENT,
   matchEndUpdateNeeded,
-  checkScorerMoved
+  checkScorerMoved,
+  runUploadLane
 } from '../useSyncQueue'
 import { queueAndWait, useSequentialSync } from '../useSequentialSync'
 
@@ -655,13 +656,13 @@ describe('scoresheet upload job', () => {
     api.respond = (call) => call.table === '__storage'
       ? { data: null, error: { message: 'Failed to fetch', status: 0, network: true } }
       : ok()
-    const offline = await runQueuePass()
+    const offline = await runUploadLane()
     expect(offline.stopped).toBe(true)
     expect([...fakeDb.sync_queue.map.values()].map(j => j.status)).toEqual(['queued', 'queued'])
 
     api.calls = []
     api.respond = defaultRespond
-    const outcome = await runQueuePass()
+    const outcome = await runUploadLane()
     expect(outcome.sent).toBe(2)
     const uploads = api.calls.filter(c => c.table === '__storage')
     expect(uploads.map(c => c.data.path)).toEqual(['2026-10-25/game903703_k1_final.json', '2026-10-25/game903703_k1.pdf'])
@@ -677,9 +678,36 @@ describe('scoresheet upload job', () => {
     api.respond = (call) => call.table === '__storage' && call.data.path === 'a/game1_k1.pdf'
       ? { data: null, error: { message: 'Forbidden', code: 'OV_FORBIDDEN', status: 403 } }
       : ok()
-    await runQueuePass()
+    await runUploadLane()
     expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
     expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+  })
+
+  // 2026-10-26: on an uplink too slow for the storage timeout every pass
+  // spent ~90 s on the upload, then stopped as offline, and the rallies of
+  // the next match waited each time (44 s in one stress run)
+  it('goes in its own lane: the score\'s pass never waits for a slow upload', async () => {
+    const eventJob = (id) => ({ id, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: `match_100_aaa:e:${id}`, match_id: 'match_100_aaa' } })
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'scoresheet', action: 'upload', status: 'queued', payload: { path: 'a/game1_k1.pdf', file: new Blob(['x']), contentType: 'application/pdf' } },
+      eventJob(2)
+    ])
+    let release
+    const hanging = new Promise((resolve) => { release = resolve })
+    api.respond = (call) => (call.table === '__storage' ? hanging.then(() => ok()) : defaultRespond(call))
+    const pass = await Promise.race([runQueuePass(), new Promise((resolve) => setTimeout(() => resolve('still uploading'), 500))])
+    expect(pass).toMatchObject({ sent: 1, stopped: false })
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+    expect(api.calls.some(c => c.table === '__storage')).toBe(false)
+
+    // the lane sends it, one pass at a time, while the score goes on
+    const lane = runUploadLane()
+    expect(await runUploadLane()).toBeNull()
+    fakeDb.sync_queue.map.set(3, { ...eventJob(3) })
+    expect((await runQueuePass()).sent).toBe(1)
+    release()
+    expect((await lane).sent).toBe(1)
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
   })
 })
 
@@ -1158,6 +1186,26 @@ describe('useSyncQueue flush loop', () => {
     })
     expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
     expect(result.current.syncStatus).toBe('synced')
+    unmount()
+  })
+
+  // 2026-10-26: the flush starts the scoresheet files' lane and does not
+  // wait for it; the score shows synced while a file still uploads
+  it('sends the scoresheet files beside the score, without waiting for them', async () => {
+    let release
+    const hanging = new Promise((resolve) => { release = resolve })
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'scoresheet', action: 'upload', status: 'queued', payload: { path: 'a/game1_k1.pdf', file: new Blob(['x']), contentType: 'application/pdf' } },
+      { id: 2, resource: 'match', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa' } }
+    ])
+    api.respond = (call) => (call.table === '__storage' ? hanging.then(() => ok()) : defaultRespond(call))
+    const { result, unmount } = renderHook(() => useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+    expect(result.current.syncStatus).toBe('synced')
+    expect(api.calls.filter(c => c.table === '__storage')).toHaveLength(1)
+    await act(async () => { release(); await vi.advanceTimersByTimeAsync(10) })
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
     unmount()
   })
 
