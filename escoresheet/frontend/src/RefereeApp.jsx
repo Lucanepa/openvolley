@@ -32,6 +32,13 @@ const isUnreachable = (r) => !!r && (r.unreachable === true || UNREACHABLE_RE.te
 // refusal without comparing, too many wrong PINs from this address
 const failedCheck = (err) => ({ success: false, error: err?.message, unreachable: err?.name === 'TypeError', rateLimited: err?.status === 429 })
 
+// Stored credentials no server could check yet are checked again this often;
+// after such an outage a refusal is believed only after the grace (a backend
+// or venue relay that has just restarted knows a match that is only on the
+// relay once its scorer publishes it again). As the bench's (BenchApp).
+const REFEREE_RESTORE_RETRY_MS = 5000
+const REFEREE_RESTORE_GRACE_MS = 2 * 60 * 1000
+
 /**
  * Re-check a stored referee PIN (after a reload) the way handlePinSubmit checks
  * a typed one: the backend's database check first, then the LAN relay. The
@@ -107,6 +114,7 @@ export default function RefereeApp() {
   const [testModeClicks, setTestModeClicks] = useState(0)
   const wakeLockRef = useRef(null)
   const testModeTimeoutRef = useRef(null)
+  const stopRestoreRef = useRef(null) // ends the stored credentials' re-checks
 
   const [connectionStatuses, setConnectionStatuses] = useState({
     api: 'unknown',
@@ -372,38 +380,75 @@ export default function RefereeApp() {
     }
   }, [wakeLockActive])
 
-  // Auto-connect on mount if we have stored credentials
+  // Auto-connect on mount if we have stored credentials. When no server
+  // compared the stored PIN (down, offline, timed out) they stay and are
+  // checked again every REFEREE_RESTORE_RETRY_MS until one answers; after
+  // such an outage a refusal waits REFEREE_RESTORE_GRACE_MS for the scorer to
+  // publish the match again. A referee reloading during an outage kept its
+  // credentials but stayed on the PIN step once the server was back, and one
+  // checking in the gap before the scorer was back lost them (2026-10-27).
   useEffect(() => {
-    const storedMatchId = localStorage.getItem('refereeMatchId')
-    const storedPin = localStorage.getItem('refereePin')
     const storedMasterMode = localStorage.getItem('refereeMasterMode')
-    
     if (storedMasterMode === 'true') {
       setIsMasterMode(true)
       setMatchId(-1) // Use -1 as a sentinel for master mode
-    } else if (storedMatchId && storedPin) {
-      revalidateRefereeSession(storedMatchId, storedPin)
-        .then(restored => {
-          if (restored) {
-            // Numeric LAN ids stay numbers, seed keys stay strings
-            setMatchId(/^\d+$/.test(String(restored.id)) ? Number(restored.id) : restored.id)
-            setMatch(restored)
-            setPinInput(storedPin)
-            // The backend chosen before the reload is still configured
-            setServerReady(true)
-          } else {
-            localStorage.removeItem('refereeMatchId')
-            localStorage.removeItem('refereePin')
-          }
-        })
-        .catch((err) => {
-          // Nothing was compared (unreachable now, or too many wrong PINs
-          // from this network): keep the credentials for the next load
-          if (err?.rateLimited) setError(t('refereeDashboard.errors.tooManyAttempts', 'Too many wrong PINs from this network. Wait a few minutes, then try again.'))
-        })
+      return
     }
+    let cancelled = false
+    let retry = null
+    let sawNoAnswer = false
+    let firstRefusalAt = null
+    const check = async () => {
+      // (again at each retry: an exit meanwhile ends them)
+      const storedMatchId = localStorage.getItem('refereeMatchId')
+      const storedPin = localStorage.getItem('refereePin')
+      if (!storedMatchId || !storedPin) return
+      let again = false
+      try {
+        const restored = await revalidateRefereeSession(storedMatchId, storedPin)
+        if (cancelled) return
+        if (restored) {
+          // Numeric LAN ids stay numbers, seed keys stay strings
+          setMatchId(/^\d+$/.test(String(restored.id)) ? Number(restored.id) : restored.id)
+          setMatch(restored)
+          setPinInput(storedPin)
+          setError('')
+          // The backend chosen before the reload is still configured
+          setServerReady(true)
+        } else if (sawNoAnswer && Date.now() - (firstRefusalAt ??= Date.now()) < REFEREE_RESTORE_GRACE_MS) {
+          // Refused right after an outage: the relay may not know the match
+          // again yet (its scorer reconnects after it), check again shortly
+          setError(t('refereeDashboard.errors.waitingForScoresheet', 'The server is back. The referee dashboard rejoins its match as soon as the scoresheet has reconnected.'))
+          again = true
+        } else {
+          localStorage.removeItem('refereeMatchId')
+          localStorage.removeItem('refereePin')
+          if (sawNoAnswer) setError('')
+        }
+      } catch (err) {
+        if (cancelled) return
+        // Nothing was compared: keep the credentials. Too many wrong PINs from
+        // this network: for the next load; unreachable now: again shortly
+        if (err?.rateLimited) {
+          setError(t('refereeDashboard.errors.tooManyAttempts', 'Too many wrong PINs from this network. Wait a few minutes, then try again.'))
+        } else {
+          setError(t('refereeDashboard.errors.reconnecting', 'No connection to the server. The referee dashboard reconnects to its match as soon as it is back.'))
+          sawNoAnswer = true
+          firstRefusalAt = null
+          again = true
+        }
+      }
+      if (again && !cancelled) retry = setTimeout(check, REFEREE_RESTORE_RETRY_MS)
+    }
+    const stop = () => {
+      cancelled = true
+      if (retry) clearTimeout(retry)
+    }
+    stopRestoreRef.current = stop
+    check()
+    return stop
   }, [])
-  
+
   const handleSelectGame = (game) => {
     setSelectedGameNumber(String(game.gameNumber))
     // A game picked in the list replaces the link's (a wrong court's QR
@@ -429,6 +474,8 @@ export default function RefereeApp() {
 
   const handlePinSubmit = async (e) => {
     e.preventDefault()
+    // A typed PIN ends the stored credentials' re-checks
+    stopRestoreRef.current?.()
     setError('')
     setIsLoading(true)
 

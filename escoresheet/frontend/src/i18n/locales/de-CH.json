@@ -1686,6 +1686,8 @@
       "matchEnded": "S Spiil isch beendet.",
       "connectionDisabled": "D Verbindig isch deaktiviert worde.",
       "serverUnreachable": "Keine Verbindung zum Server – bitte WLAN prüfen und erneut versuchen.",
+      "reconnecting": "Kei Verbindig zum Server. S Schiri-Dashboard verbindet sich wieder mit sim Spiil, sobald er wieder da isch.",
+      "waitingForScoresheet": "De Server isch wieder da. S Schiri-Dashboard verbindet sich wieder mit sim Spiil, sobald s Matchblatt wieder verbunde isch.",
       "tooManyAttempts": "Zu viele falsche PINs aus diesem Netzwerk. Bitte einige Minuten warten und erneut versuchen."
     },
     "connection": {

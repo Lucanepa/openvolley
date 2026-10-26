@@ -1685,6 +1685,8 @@
       "matchEnded": "Le match est fini.",
       "connectionDisabled": "Connexion désactivée.",
       "serverUnreachable": "Pas de connexion au serveur – vérifiez le Wi-Fi et réessayez.",
+      "reconnecting": "Pas de connexion au serveur. Le tableau de bord arbitre se reconnecte à son match dès qu’il est de retour.",
+      "waitingForScoresheet": "Le serveur est de retour. Le tableau de bord arbitre se reconnecte à son match dès que la feuille de match est reconnectée.",
       "tooManyAttempts": "Trop de PIN erronés depuis ce réseau. Patientez quelques minutes, puis réessayez."
     },
     "connection": {
