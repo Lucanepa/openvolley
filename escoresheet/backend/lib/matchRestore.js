@@ -307,6 +307,10 @@ export function createMatchRestore (db, options = {}) {
    * is replaced (the device's own row, as its next write of it would). A
    * row whose old one is gone, or that names none, is written under its id.
    * Rows the payload does not name are left alone. Returns the rows renamed.
+   * In two steps (each row to a parked name, then to its new one): the
+   * device's new ids continue its own counter and may be old ids of this
+   * same match (cloud e:1..e:5 to e:3..e:7), and renaming one by one deleted
+   * rows still to be moved and moved others twice.
    */
   async function rekeyRows (client, run, table, rows, from, matchUuid, withFk) {
     if (!rows.length) return 0
@@ -318,18 +322,22 @@ export function createMatchRestore (db, options = {}) {
       [matchUuid, keys])
     const there = new Set(found.map(r => r.external_id))
     const renames = rows.filter(r => there.has(from.get(r.external_id)))
-    const taken = renames.map(r => r.external_id).filter(k => there.has(k))
+    const rename = (step, fromKey, toKey) => run(`rekey ${table} ${step}`, {
+      table,
+      action: 'update',
+      params: { data: { external_id: toKey }, filters: [byMatch, { type: 'eq', column: 'external_id', value: fromKey }] }
+    })
+    // (the match's own prefix and separator: inside the id scope guard)
+    const parked = (key) => `${key}#rekey`
+    for (const r of renames) await rename('park', from.get(r.external_id), parked(r.external_id))
+    // A row still under a new id is none of the rows moved: the device's replaces it
+    const moved = new Set(renames.map(r => from.get(r.external_id)))
+    const taken = renames.map(r => r.external_id).filter(k => there.has(k) && !moved.has(k))
     if (taken.length) {
       await run(`rekey ${table}`, { table, action: 'delete', params: { filters: [byMatch, { type: 'in', column: 'external_id', value: taken }] } },
         { changeColumns: cfg.deleteChangeColumns })
     }
-    for (const r of renames) {
-      await run(`rekey ${table}`, {
-        table,
-        action: 'update',
-        params: { data: { external_id: r.external_id }, filters: [byMatch, { type: 'eq', column: 'external_id', value: from.get(r.external_id) }] }
-      })
-    }
+    for (const r of renames) await rename('move', parked(r.external_id), r.external_id)
     const rest = rows.filter(r => !there.has(from.get(r.external_id)))
     if (rest.length) {
       await run(table, { table, action: 'upsert', params: { data: rest.map(withFk), onConflict: 'external_id' } })
