@@ -860,6 +860,7 @@
     "relayRejected": {
       "notOwner": "Verbindig Schiri/Bank: es anders eScoresheet hebt das Spiil uf em Server. Schiri, Bank und Livescore überchömed d Updates vo dem Grät nöd.",
       "rateLimited": "Verbindig Schiri/Bank: de Server hät das eScoresheet für e Minute abglehnt (z vill Fehlversüech).",
+      "scorerMoved": "Verbindig Schiri/Bank: das Spiil wird jetzt uf emne andere Grät gfüehrt. Schiri, Bank und Livescore folged em andere Grät, nüme dem.",
       "tooMany": "Verbindig Schiri/Bank: das Grät füehrt scho z vill Spiil uf em Server."
     },
     "toolbar": {

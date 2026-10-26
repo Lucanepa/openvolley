@@ -118,6 +118,11 @@ describe('importMatchFromSupabase: the device continues the cloud rows', () => {
     expect(restore.payload.sets[0]).toMatchObject({ index: 1, home_points: 12, away_points: 15, finished: false })
     expect(restore.payload.sets[0].id).toBeUndefined()
     expect(restore.payload.liveState).toEqual({ current_set: 1, points_a: 12, points_b: 15 })
+    // each moved row names its cloud id: the server renames those rows in
+    // place and deletes nothing else (the voided events, 2026-10-26)
+    expect(restore.payload.rekey.sets).toEqual({ [`${seed}:s:${sets[0].id}`]: `${seed}:s:6` })
+    expect(Object.keys(restore.payload.rekey.events)).toEqual(events.map(e => `${seed}:e:${e.id}`))
+    expect(Object.values(restore.payload.rekey.events)).toEqual(Array.from({ length: 31 }, (_, i) => `${seed}:e:${121 + i}`))
 
     // later writes use the same ids as the re-keyed rows
     await queueSetScoreSync(db, { matchId: localMatchId, setIndex: 1 })
@@ -140,6 +145,16 @@ describe('importMatchFromSupabase: the device continues the cloud rows', () => {
     behind.liveState = { ...behind.liveState, updated_at: new Date(Date.now() - 60000).toISOString() }
     const other = await db.matches.get(await importMatchFromSupabase(behind))
     expect(other.liveClockOffsetMs).toBe(0)
+  })
+
+  // 2026-10-26: restore-by-pin with claim made this device the scorer
+  // already; a queued claim would wait for a sign-in for nothing (and, kept
+  // unsent, hide a later move of the match from this device)
+  it('a claim already made by restore-by-pin is not queued again; without one it is', async () => {
+    await importMatchFromSupabase({ ...cloudMatch(), scorerClaimed: true })
+    expect((await db.sync_queue.toArray()).filter(j => j.action === 'scorer')).toEqual([])
+    await importMatchFromSupabase(cloudMatch())
+    expect((await db.sync_queue.toArray()).filter(j => j.action === 'scorer').map(j => j.payload)).toEqual([{ id: seed }])
   })
 
   it('a device that had its own copy of the match replaces it and keeps the cloud ids', async () => {

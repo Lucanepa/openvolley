@@ -89,7 +89,9 @@ async function renewMatchToken(matchId, row) {
   const last = tokenRenewedAt.get(key)
   if (last !== undefined && Date.now() - last < TOKEN_RENEW_MS) return false
   tokenRenewedAt.set(key, Date.now())
-  const r = await validatePinSupabase(a.pin, a.type)
+  // Checked against this match only: its own brute-force scope on the
+  // backend, apart from the hall's typos for other matches (2026-10-26)
+  const r = await validatePinSupabase(a.pin, a.type, { matchExternalId: key })
   return !!(r?.success && r.token && String(r.match?.id) === key)
 }
 
@@ -338,8 +340,18 @@ export function newerLiveState(current, incoming) {
  */
 export function liveClockOffset(match) {
   const v = Number(match?.liveClockOffsetMs)
-  return Number.isFinite(v) && v > 0 ? v : 0
+  return Number.isFinite(v) && v > 0 ? Math.min(v, MAX_LIVE_CLOCK_OFFSET_MS) : 0
 }
+
+/**
+ * The largest live-state clock offset a device takes on (10 min). The clocks
+ * of two devices in a hall differ by seconds when they keep network time and
+ * by minutes when one has none for a while; a clock further off is wrong (a
+ * laptop set to the wrong time zone is a whole hour off). Followed, it put
+ * every live state of the rest of the match, and the time-out and break
+ * starts the website and Point Hub count from, that far in the future.
+ */
+export const MAX_LIVE_CLOCK_OFFSET_MS = 10 * 60 * 1000
 
 /** Now on the live-state clock of `match` (ms): see liveClockOffset. */
 export function liveStateNow(match, now = Date.now()) {
@@ -350,11 +362,11 @@ export function liveStateNow(match, now = Date.now()) {
  * The live-state clock offset of a device that continues a match whose last
  * state in the cloud is `cloudLiveState`: what makes its first state newer
  * than that one. 0 when this device's clock is ahead already or the state
- * names no time.
+ * names no time; at most MAX_LIVE_CLOCK_OFFSET_MS.
  */
 export function liveClockOffsetAfter(cloudLiveState, now = Date.now()) {
   const last = liveStateTime(cloudLiveState)
-  return Number.isNaN(last) ? 0 : Math.max(0, last - now + 1)
+  return Number.isNaN(last) ? 0 : Math.min(MAX_LIVE_CLOCK_OFFSET_MS, Math.max(0, last - now + 1))
 }
 
 /**
@@ -1855,6 +1867,8 @@ export function relayMatchPayload(match, lastPinSignature = null, { now = Date.n
   // (on the match's live-state clock, as the live states' updated_at)
   out._syncedAt = (Number.isFinite(mark?.at) ? mark.at : now) + liveClockOffset(match)
   delete out.liveClockOffsetMs
+  // (sent as device.claim, matchHandover relaySyncDevice)
+  delete out.scorerClaim
   if (mark && Number.isFinite(mark.seq) && typeof mark.session === 'string' && mark.session) {
     out._syncedSeq = mark.seq
     out._syncSession = mark.session

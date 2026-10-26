@@ -114,6 +114,16 @@ describe('Scoreboard: the live state keeps the break between sets', () => {
     expect(Math.abs(Date.parse(state.set_interval_started_at) - Date.parse(end1))).toBeLessThan(2000)
     // the scorer's own interval runs on
     expect(countdownText()).toBeTruthy()
+
+    // 2026-10-26: the push after a reconnect wrote last_event_type
+    // 'reconnect', an event the livescore, the website and Point Hub do not
+    // know (and over a finished match's 'match_end'): it keeps the last one
+    const before = upserts.length
+    window.dispatchEvent(new Event('online'))
+    await waitFor(() => expect(upserts.slice(before).some(u => u.table === 'match_live_state')).toBe(true), { timeout: 10000 })
+    const again = upserts.slice(before).filter(u => u.table === 'match_live_state').at(-1).row
+    expect(again).toMatchObject({ last_event_type: 'lineup', last_event_ts: state.last_event_ts, set_interval_active: true, current_set: 2 })
+    expect(upserts.some(u => u.table === 'match_live_state' && u.row.last_event_type === 'reconnect')).toBe(false)
     cleanup()
   }, 60000)
 })

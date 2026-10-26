@@ -860,6 +860,7 @@
     "relayRejected": {
       "notOwner": "Collegamento arbitro/panchina: un'altra eScoresheet gestisce questa partita sul server. Arbitro, panchina e livescore non ricevono gli aggiornamenti di questo dispositivo.",
       "rateLimited": "Collegamento arbitro/panchina: il server ha rifiutato questa eScoresheet per un minuto (troppi tentativi falliti).",
+      "scorerMoved": "Collegamento arbitro/panchina: questa partita è ora gestita su un altro dispositivo. Arbitro, panchina e livescore seguono l'altro dispositivo, non più questo.",
       "tooMany": "Collegamento arbitro/panchina: questo dispositivo gestisce già troppe partite sul server."
     },
     "toolbar": {
