@@ -33,6 +33,7 @@ import StackLabel from './StackLabel'
 import { useFormStack } from '../hooks/useFormStack'
 import { usePhoneWidth } from '../hooks/usePhoneWidth'
 import { focusLeaves, steadyOrder } from '../utils/rosterOrder'
+import { isShirtNumber, shirtNumberDigits } from '../domain/roster'
 
 // volleyui (RESTYLE-SPEC P3b). Sign A/B and the coach/captain sign buttons are
 // the kit outline button until signed, then the emerald success state: a
@@ -1755,9 +1756,16 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
         const setCoachSig = currentTeam === 'home' ? setHomeCoachSignature : setAwayCoachSignature
         const setCaptainSig = currentTeam === 'home' ? setHomeCaptainSignature : setAwayCaptainSignature
 
-        // Handle close/modify
+        // Handle close/modify. A shirt number is a whole number 1-99, as the
+        // match setup's roster Confirm checks (domain/roster isShirtNumber): a
+        // decimal one reached the court and the sheet from here
         const handleCloseOrModify = async () => {
           if (hasChanges) {
+            const invalid = roster.filter(p => p.number != null && p.number !== '' && !isShirtNumber(p.number))
+            if (invalid.length > 0) {
+              showAlert(t('matchSetup.validation.invalidNumbers', { numbers: invalid.map(p => p.number).join(', ') }), 'warning')
+              return
+            }
             await syncRosterToDatabase(currentTeam, roster, bench)
           }
           originalRosterDataRef.current = null
@@ -1830,7 +1838,9 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                                 min="1" max="99"
                                 value={p.number ?? ''}
                                 onChange={e => {
-                                  const val = e.target.value ? Number(e.target.value) : null
+                                  // the digits typed: '1.5' is 15 (domain/roster shirtNumberDigits)
+                                  const digits = shirtNumberDigits(e.target.value)
+                                  const val = digits ? Number(digits) : null
                                   if (val !== null && (val < 1 || val > 99)) return
                                   const updated = [...roster]
                                   updated[originalIdx] = { ...updated[originalIdx], number: val }
@@ -2212,7 +2222,7 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                   type="number"
                   inputMode="numeric"
                   value={num}
-                  onChange={e => currentTeam === 'home' ? setHomeNum(e.target.value) : setAwayNum(e.target.value)}
+                  onChange={e => currentTeam === 'home' ? setHomeNum(shirtNumberDigits(e.target.value)) : setAwayNum(shirtNumberDigits(e.target.value))}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                   style={{ width: '100%', minHeight: 44, padding: '8px 12px', fontSize: '14px' }}
                 />
@@ -2311,6 +2321,10 @@ export default function CoinToss({ matchId, onConfirm, onBack, lfpTrackingEnable
                 <Button variant="positive" size="xl" onClick={() => {
                   if (!last || !first) {
                     showAlert(t('roster.enterNames'), 'warning')
+                    return
+                  }
+                  if (num && !isShirtNumber(num)) {
+                    showAlert(t('matchSetup.validation.invalidNumbers', { numbers: num }), 'warning')
                     return
                   }
                   const newPlayer = { number: num ? Number(num) : null, lastName: last, firstName: first, dob, libero, isCaptain: captain }
