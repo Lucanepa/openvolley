@@ -363,14 +363,14 @@ setInterval(() => {
 }, 60_000).unref()
 
 wss.on('connection', (ws, req) => {
-  // Connection limit for LAN server
-  if (wsClients.size >= 20) {
-    console.warn('[WebSocket] Connection rejected: max clients (20) reached')
-    ws.close(1013, 'Maximum connections reached')
+  const clientIp = req.socket.remoteAddress
+  // Connection limits, in all and per address (lanRelayCore admit)
+  const refused = relay.admit(clientIp)
+  if (refused) {
+    console.warn(`[WebSocket] Connection rejected: ${refused.reason}`)
+    ws.close(refused.code, refused.reason)
     return
   }
-
-  const clientIp = req.socket.remoteAddress
   wsChurn.opened++
   if (LOG_EACH_CONNECTION) console.log(`[WebSocket] Client connected (total ${wsClients.size + 1})`)
 
