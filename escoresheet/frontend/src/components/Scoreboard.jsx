@@ -22,7 +22,7 @@ import NativeBackupAlert from './options/NativeBackupAlert'
 import ConnectTabletsModal from './connect/ConnectTabletsModal'
 import { useSyncQueue, isAuthBlocked, checkScorerMoved } from '../hooks/useSyncQueue'
 import { isScorerMoved, SCORER_MOVED } from '../utils/matchHandover'
-import { useSequentialSync } from '../hooks/useSequentialSync'
+import { useSequentialSync, setEndBackupPlan, setEndStillUndelivered, SET_END_DOWNLOAD_GRACE_MS } from '../hooks/useSequentialSync'
 import SyncProgressModal from './SyncProgressModal'
 import SignaturePad from './SignaturePad'
 import { saveMatchSignature } from '../utils/saveSignature'
@@ -6401,18 +6401,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }).catch(() => { })
         }
 
-        // Auto-download game data at set end if enabled AND sync failed/offline
-        // If sync succeeded and we're online, data is safe in cloud - no need to download
-        const syncSucceeded = syncResult?.success && !syncResult?.hasWarning
-        const isOffline = !navigator.onLine
-
-        if (autoDownloadAtSetEnd && (!syncSucceeded || isOffline)) {
-          console.log('[SET_END] Downloading backup - sync failed/skipped or offline:', {
-            syncSucceeded,
-            isOffline,
-            syncResult
-          })
-          setSetTransitionLoading({ step: 'Downloading backup...' })
+        // Auto-download game data at set end if enabled AND the set end is
+        // not reaching the cloud (failed, offline, set aside, not synced). Only
+        // slower than the set end's wait (online, still queued): once the
+        // grace period is over, and only if still not delivered; it was a
+        // download (a prompt on a mobile browser) at every set end on a slow
+        // hall link, while the queue delivered it (setEndBackupPlan)
+        const backupPlan = autoDownloadAtSetEnd
+          ? setEndBackupPlan(syncResult, { online: navigator.onLine !== false })
+          : 'none'
+        const downloadSetEndBackup = async () => {
           try {
             // This match only, in the backup file format Restore match reads
             // (exportMatchData), unindented. It was every table of the device,
@@ -6432,6 +6430,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           } catch (error) {
             console.error('Auto-download at set end failed:', error)
           }
+        }
+
+        if (backupPlan === 'now') {
+          console.log('[SET_END] Downloading backup - sync failed/skipped or offline:', { syncResult })
+          setSetTransitionLoading({ step: 'Downloading backup...' })
+          await downloadSetEndBackup()
+        } else if (backupPlan === 'later') {
+          const waitingJobIds = syncResult.waitingJobIds
+          setTimeout(async () => {
+            try {
+              if (!(await setEndStillUndelivered(waitingJobIds))) return
+              console.log('[SET_END] Downloading backup - set end still not delivered after the grace period')
+              await downloadSetEndBackup()
+            } catch (error) {
+              console.error('Auto-download at set end failed:', error)
+            }
+          }, SET_END_DOWNLOAD_GRACE_MS)
         }
 
         // Start countdown immediately when set ends (not match end)
