@@ -488,17 +488,26 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
 
   // Start transaction - REPLACE this match only
   await db.transaction('rw', db.matches, db.teams, db.players, db.sets, db.events, db.sync_queue, async () => {
-    // STEP A: remove THIS match's local copy (by seed_key) with its sets and
-    // events. Other local matches, and teams/players/referees/scorers, are kept.
+    // STEP A: remove THIS match's local copy (by seed_key) with its sets,
+    // events, teams and players. Other local matches (and a team row one of
+    // them still uses), referees and scorers are kept.
     const previous = externalId ? await db.matches.filter(m => localMatchKey(m) === externalId).toArray() : []
     // An app backup file has no PINs: keep the replaced copy's, or make new ones
     match = { ...match, ...pinsForRestore(jsonData, previous[0] || null) }
     if (externalId) {
+      const replacedIds = new Set(previous.map(old => old.id))
       for (const old of previous) {
         // replaced, not undone: the restored events are not voided (db/eventHistory)
         await wipeMatchEvents(db, old.id)
         await db.sets.where('matchId').equals(old.id).delete()
         await db.matches.delete(old.id)
+        for (const teamId of [old.homeTeamId, old.awayTeamId]) {
+          if (teamId == null) continue
+          const usedElsewhere = await db.matches.filter(m => !replacedIds.has(m.id) && (m.homeTeamId === teamId || m.awayTeamId === teamId)).toArray()
+          if (usedElsewhere.length) continue
+          await db.players.where('teamId').equals(teamId).delete()
+          await db.teams.delete(teamId)
+        }
       }
       if (previous.length) console.log(`[Restore] Replaced ${previous.length} local copy/copies of match ${externalId}`)
     }
@@ -510,44 +519,28 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
     const keepJob = (j) => !!jobMatchKey(j) && jobMatchKey(j) !== externalId
     await db.sync_queue.bulkDelete(queuedJobs.filter(j => !keepJob(j)).map(j => j.id))
 
-    // STEP B: Create teams (reuse existing or create new)
+    // STEP B: the restored match's own team rows, always new. A team found
+    // by name belonged to another local match (last week's home match of the
+    // same club): the restore overwrote it and replaced its roster, and both
+    // matches shared one row, which deleting either match then removed
+    // (stress test 2026-10-25).
     let homeTeamId = null
     let awayTeamId = null
 
     if (homeTeam) {
-      const existingHome = await db.teams.where('name').equals(homeTeam.name).first()
-      if (existingHome) {
-        homeTeamId = existingHome.id
-        await db.teams.update(homeTeamId, {
-          ...homeTeam,
-          id: homeTeamId,
-          updatedAt: new Date().toISOString()
-        })
-      } else {
-        homeTeamId = await db.teams.add({
-          ...homeTeam,
-          id: undefined,
-          createdAt: new Date().toISOString()
-        })
-      }
+      homeTeamId = await db.teams.add({
+        ...homeTeam,
+        id: undefined,
+        createdAt: new Date().toISOString()
+      })
     }
 
     if (awayTeam) {
-      const existingAway = await db.teams.where('name').equals(awayTeam.name).first()
-      if (existingAway) {
-        awayTeamId = existingAway.id
-        await db.teams.update(awayTeamId, {
-          ...awayTeam,
-          id: awayTeamId,
-          updatedAt: new Date().toISOString()
-        })
-      } else {
-        awayTeamId = await db.teams.add({
-          ...awayTeam,
-          id: undefined,
-          createdAt: new Date().toISOString()
-        })
-      }
+      awayTeamId = await db.teams.add({
+        ...awayTeam,
+        id: undefined,
+        createdAt: new Date().toISOString()
+      })
     }
 
     // New auto-increment id: other local matches keep theirs
@@ -563,15 +556,7 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
 
     restoredMatchId = matchId
 
-    // Delete existing players for these teams and recreate
-    if (homeTeamId) {
-      await db.players.where('teamId').equals(homeTeamId).delete()
-    }
-    if (awayTeamId) {
-      await db.players.where('teamId').equals(awayTeamId).delete()
-    }
-
-    // Create players
+    // Create players (the teams are new: no players to replace)
     if (homePlayers?.length && homeTeamId) {
       for (const player of homePlayers) {
         await db.players.add({
@@ -753,6 +738,9 @@ export async function restoreMatchInPlace(matchId, jsonData, { checkServer = ser
       ...match,
       ...(guarded ? withoutClosedEvidence(match, currentMatch) : {}),
       id: matchId,
+      // The backup's team ids are local ids of the device that wrote it
+      // (another match's teams here, or none): the open match keeps its own
+      ...(currentMatch ? { homeTeamId: currentMatch.homeTeamId, awayTeamId: currentMatch.awayTeamId } : {}),
       seed_key: externalId, // Ensure seed_key is set for sync
       restoredAt: new Date().toISOString()
     })
