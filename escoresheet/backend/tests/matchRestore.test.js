@@ -447,5 +447,34 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
       const p = await restore.restoreByPin({ gameN: 5150, pin: '515151' }, { limitKey: 'ip-long' })
       assert.equal(p.body.data.events.length, 1200)
     })
+
+    // The device continuing the match keeps the cloud ids and gives out new
+    // ones above idFloor (frontend importMatchFromSupabase): a rally under the
+    // id of a voided event, or of an undo that reached the server before its
+    // event, would be born voided (db/015)
+    it('idFloor: the highest set / event ids the match used, voided events and revisions included', async () => {
+      const ext3 = uniq('FLOOR')
+      const b = backup(ext3, { gameN: 6160, pin: '616161', sets: 2, events: 3 })
+      b.events.push({ external_id: `${ext3}_legacy`, set_index: 1, type: 'point', seq: 9, payload: {}, sport_type: 'indoor' })
+      const r = await restore.restoreMatch(b, W)
+      const matchId = r.body.data.id
+      const floorOf = async (key) => (await restore.restoreByPin({ gameN: 6160, pin: '616161' }, { limitKey: key })).body.data.idFloor
+      assert.deepEqual(await floorOf('ip-floor-1'), { set: 2, event: 3 })
+
+      // event 12 voided on the server: left out of the events, not of the floor
+      await raw.query(`INSERT INTO events (match_id, external_id, set_index, type, seq, payload, sport_type, voided_at, void_reason)
+                       VALUES ($1, $2, 1, 'point', 12, '{}', 'indoor', now(), 'undo')`, [matchId, `${ext3}:e:12`])
+      // event 40 undone before it was uploaded: only its revision is there
+      await raw.query(`INSERT INTO event_revisions (rev_uid, match_id, event_external_id, op, reason, applied, client_ts)
+                       VALUES (gen_random_uuid(), $1, $2, 'void', 'undo', false, now())`, [matchId, `${ext3}:e:40`])
+      // another match's ids do not count
+      const other = await restore.restoreMatch(backup(uniq('OTHER'), { gameN: 6161, events: 2 }), W)
+      await raw.query(`INSERT INTO event_revisions (rev_uid, match_id, event_external_id, op, reason, applied, client_ts)
+                       VALUES (gen_random_uuid(), $1, $2, 'void', 'undo', false, now())`, [other.body.data.id, `${ext3}:e:900`])
+
+      const p = await restore.restoreByPin({ gameN: 6160, pin: '616161' }, { limitKey: 'ip-floor-2' })
+      assert.deepEqual(p.body.data.events.map(e => e.seq).sort((x, y) => x - y), [1, 2, 3, 9])
+      assert.deepEqual(p.body.data.idFloor, { set: 2, event: 40 })
+    })
   })
 })

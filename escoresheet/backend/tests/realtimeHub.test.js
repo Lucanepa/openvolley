@@ -472,6 +472,24 @@ describe('realtimeHub ordering and cascades', () => {
     c.close(); await c.closed
   })
 
+  // Stress test 2026-10-25: the match moved to a device 3 min behind; all its
+  // rows were dropped as stale until its clock passed the previous device's
+  it('forgetOrder (a scorer-device take-over) lets the next row through, then orders again', async () => {
+    const c = await liveClient(srv.url)
+    await subscribe(c, 'l', [{ table: 'match_live_state', event: '*', column: 'match_id', value: MATCH_B }])
+    const t = (s) => `2026-10-05T14:00:${s}.000Z`
+    srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_B, points_a: 2, points_b: 1, updated_at: t('50') }])
+    assert.equal((await c.next()).new.points_a, 2)
+    srv.hub.forgetOrder('match_live_state', MATCH_B)
+    srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_B, points_a: 2, points_b: 2, updated_at: t('10') }])
+    assert.equal((await c.next()).new.points_b, 2)
+    srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_B, points_a: 2, points_b: 3, updated_at: t('11') }])
+    assert.equal((await c.next()).new.points_b, 3)
+    // the new device's order from then on
+    assert.equal(srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_B, points_a: 2, points_b: 2, updated_at: t('10') }]), 0)
+    c.close(); await c.closed
+  })
+
   it('tracks ordering even without subscribers', async () => {
     srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: 'pre', updated_at: '2026-10-05T13:00:00.000Z' }])
     const c = await liveClient(srv.url)

@@ -225,13 +225,17 @@ export function createScorerDevices ({ pool, db = null, audit = null } = {}) {
             details: { external_id: match.external_id, platform: device.platform, previous_platform: held.platform || null }
           })
         }
-        return ok({
-          external_id: match.external_id,
-          mine: true,
-          moved: !!held,
-          scorer: publicScorer(row),
-          previous: held ? publicScorer(held) : null
-        })
+        return {
+          ...ok({
+            external_id: match.external_id,
+            mine: true,
+            moved: !!held,
+            scorer: publicScorer(row),
+            previous: held ? publicScorer(held) : null
+          }),
+          // for server.js (the realtime hub's ordering), not in the answer
+          matchId: match.id
+        }
       })
     } catch (err) {
       if (isMissingTable(err)) return fail(503, 'OV_SCORER_UNAVAILABLE', 'Scoring-device handover is not available on this server (db/019 missing)')

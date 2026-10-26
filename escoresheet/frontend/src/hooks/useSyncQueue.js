@@ -1,14 +1,16 @@
 import { useEffect, useCallback, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db/db'
-import { apiFrom, apiMatchRestore, apiMatchClaim, apiMatchScorer, apiPostEventRevisions, AUTH_TOKEN_CHANGE_EVENT, AUTH_TOKEN_STORAGE_KEY } from '../lib/apiClient'
+import { apiFrom, apiMatchRestore, apiMatchClaim, apiMatchScorer, apiPostEventRevisions, AUTH_TOKEN_CHANGE_EVENT, AUTH_TOKEN_STORAGE_KEY, BACKEND_REACHED_EVENT } from '../lib/apiClient'
 import { REVISION_OPS, revisionOfJob } from '../domain/eventRevisions'
 import { emitActivity, noteSyncPass } from '../utils/activity/bus'
 import { uploadActivityBatch, activityFlushJob } from '../utils/activity/upload'
 import { getCloudApiUrl } from '../utils/backendConfig'
 import { filterMatchPayload, JSONB_COLUMNS } from '../db/matchRepository'
-import { parseExtId, resolveJobExternalId, jobMatchKey, USER_MATCH_RESOURCE, userMatchRoles, userMatchJob } from '../utils/syncIds'
+import { parseExtId, resolveJobExternalId, jobMatchKey, USER_MATCH_RESOURCE, SCORESHEET_UPLOAD_RESOURCE, userMatchRoles, userMatchJob } from '../utils/syncIds'
 import { buildConnectionPins } from '../utils/connectionPins'
+import { isShirtNumber } from '../domain/roster'
+import { uploadQueuedScoresheet } from '../utils/scoresheetUploader'
 import { ACCESS_CHANGED_EVENT } from '../lib/access'
 import { SCORER_CLAIM_ACTION, SCORER_MOVED, MATCH_CLOSED, SERVER_CLOSED_BY, isScorerMoved, noteScorerMoved, markScorerMoved, hasUnsentClaim, closeMovedMatches, retireIfSuperseded, retireStaleGameCopies, setAsideClosedJobs, setAsideClosedCopies } from '../utils/matchHandover'
 
@@ -77,7 +79,7 @@ import { SCORER_CLAIM_ACTION, SCORER_MOVED, MATCH_CLOSED, SERVER_CLOSED_BY, isSc
 // Resource processing order - matches must be synced before sets/events (FK
 // dependency); the account links ("My Matches") come last
 // 'activity': the activity log upload (utils/activity/upload), needs no match row
-const RESOURCE_ORDER = ['match', 'set', 'event', USER_MATCH_RESOURCE, 'activity']
+const RESOURCE_ORDER = ['match', 'set', 'event', USER_MATCH_RESOURCE, SCORESHEET_UPLOAD_RESOURCE, 'activity']
 
 // Max retries for jobs waiting on dependencies (e.g., event waiting for match to sync)
 const MAX_DEPENDENCY_RETRIES = 10
@@ -91,12 +93,16 @@ const AUTH_RECHECK_MS = 5 * 60 * 1000
 const ERROR_BACKOFF_BASE = 30000
 const ERROR_BACKOFF_MAX = 10 * 60 * 1000
 
-// Backoff for the connection probe after a failure: 5s, 10s, 20s ... capped at 60s
+// Backoff for the connection probe after a failure: 5s, 10s, then every 15s.
+// (Capped at 60 s, a cloud back after a 2-minute outage waited up to a minute
+// for the next probe, the scorer's pill on "Offline" all along.) Any answer
+// of the backend in between (BACKEND_REACHED_EVENT) probes at once.
 const PROBE_BACKOFF_BASE = 5000
-const PROBE_BACKOFF_MAX = 60000
+const PROBE_BACKOFF_MAX = 15000
 
-// A 'sending' job (claimed by useSequentialSync) older than this is assumed
-// abandoned (tab closed mid-request) and handed back to the queue.
+// A 'sending' job (claimed by useSequentialSync's direct sends, before the
+// set end went through the queue) older than this is assumed abandoned (tab
+// closed mid-request) and handed back to the queue.
 const SENDING_STALE_MS = 2 * 60 * 1000
 
 // Jobs the backend refused ('failed') come back on their own once an hour, at
@@ -788,10 +794,8 @@ installAuthListener()
  * failure reason is available once through takeJobError(job.id).
  *
  * A write refused as OV_NOT_MATCH_OWNER is taken over here (once per match
- * and CLAIM_RETRY_MS, see claimMatchWithLocalPin) and sent again, for the
- * background queue and the direct set-end / match-end syncs (sendJobNow)
- * alike. After a successful take-over the match's other parked jobs are
- * queued again.
+ * and CLAIM_RETRY_MS, see claimMatchWithLocalPin) and sent again. After a
+ * successful take-over the match's other parked jobs are queued again.
  */
 export async function processJob(job) {
   let result = await processJobOnce(job)
@@ -1279,6 +1283,11 @@ async function processJobInner(job, ctx) {
     if (job.resource === 'event' && job.action === 'insert') {
       // Resolve match_id from external_id
       let eventPayload = { ...job.payload, sport_type: 'indoor' }
+      // serve_player is an integer column: a shirt number stored as '1.5' by
+      // an older roster editor (queued, or already parked as refused) was
+      // refused (22P02) at every retry and the rally never reached the
+      // cloud. Sent without its server, the rally counts.
+      if (eventPayload.serve_player != null && !isShirtNumber(eventPayload.serve_player)) eventPayload.serve_player = null
 
       if (eventPayload.match_id && typeof eventPayload.match_id === 'string') {
         const { data: matchData, error: lookupError } = await apiFrom('matches')
@@ -1388,6 +1397,18 @@ async function processJobInner(job, ctx) {
       return true
     }
 
+    // ==================== SCORESHEET FILES ====================
+    // The approval's PDF and final JSON (MatchEnd): the job carries the file
+    if (job.resource === SCORESHEET_UPLOAD_RESOURCE && job.action === 'upload') {
+      if (!job.payload?.path || !job.payload?.file) return DROP_JOB
+      const { error } = await uploadQueuedScoresheet(job.payload)
+      if (error) {
+        safeLog.warn('[SyncQueue] Scoresheet upload error:', error.code || error.status || error.message)
+        return failureResult(error, ctx)
+      }
+      return true
+    }
+
     // Unknown resource/action - mark as done to avoid infinite loop
     safeLog.warn('[SyncQueue] Unknown job type:', job.resource, job.action)
     return true
@@ -1405,6 +1426,7 @@ async function processJobInner(job, ctx) {
 function entityKey(job) {
   if (job.resource === 'match') return `match:${jobMatchKey(job)}`
   if (job.resource === USER_MATCH_RESOURCE) return `${job.resource}:${jobMatchKey(job)}:${job.payload?.role}`
+  if (job.resource === SCORESHEET_UPLOAD_RESOURCE) return `${job.resource}:${job.payload?.path}`
   return `${job.resource}:${job.payload?.external_id}`
 }
 
@@ -1505,7 +1527,7 @@ export async function runQueuePass() {
   const queued = await db.sync_queue.where('status').equals('queued').toArray()
   const outcome = { processed: queued.length, sent: 0, hasError: false, hasFailed: false, hasRetry: false, stopped: false, authRequired: false }
   if (queued.length === 0) return outcome
-  // (marks left by direct sends, sendJobNow, which have no pass to block)
+  // (marks left by an earlier pass)
   setAsideJobIds.clear()
 
   safeLog.log(`[SyncQueue] Processing ${queued.length} queued items`)
@@ -1672,6 +1694,9 @@ export async function runQueuePass() {
 // per-instance flag let two instances process the same queued rows at once
 // (restore/delete are not idempotent).
 let flushInProgress = false
+// A flush asked for while one ran (the set end's writes, queued after that
+// pass read the queue): run again as soon as it is done
+let flushAgain = false
 
 // Last run of flush's throttled housekeeping (requeue of errored jobs, prune)
 let lastRequeueAt = 0
@@ -1911,6 +1936,10 @@ export function useSyncQueue() {
       setSyncStatus('error')
     } finally {
       flushInProgress = false
+      if (flushAgain) {
+        flushAgain = false
+        setTimeout(() => { if (!flushInProgress) flush() }, 0)
+      }
     }
   }, [checkSupabaseConnection])
 
@@ -1994,6 +2023,22 @@ export function useSyncQueue() {
     }
     window.addEventListener('sync-queue-write', handleQueueWrite)
 
+    // Writes the scorer waits for (the set end, useSequentialSync): sent now,
+    // behind the older jobs, even while a failed probe backs off (only the
+    // 'online' event resets that backoff, and it does not fire when the
+    // internet comes back while the Wi-Fi stays up)
+    const handleFlushNow = () => {
+      probeFailures.current = 0
+      nextProbeAt.current = 0
+      if (flushTimerRef.current) clearTimeout(flushTimerRef.current)
+      if (flushInProgress) flushAgain = true
+      else flush()
+    }
+    window.addEventListener('sync-queue-flush-now', handleFlushNow)
+    // The backend answered another request after failing ones (a live-state
+    // write, a status read): it is back, no need to wait out the backoff
+    window.addEventListener(BACKEND_REACHED_EVENT, handleFlushNow)
+
     // Fallback poll every 5s to catch any missed items (e.g., tab focus, retries)
     const interval = setInterval(() => {
       if (!flushInProgress) flush()
@@ -2001,6 +2046,8 @@ export function useSyncQueue() {
 
     return () => {
       window.removeEventListener('sync-queue-write', handleQueueWrite)
+      window.removeEventListener('sync-queue-flush-now', handleFlushNow)
+      window.removeEventListener(BACKEND_REACHED_EVENT, handleFlushNow)
       clearInterval(interval)
       if (flushTimerRef.current) clearTimeout(flushTimerRef.current)
     }

@@ -40,8 +40,8 @@ const ballImage = ballFallback
 import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
 import { TEAM_COLOUR_MARK, discPaint, effectiveTeamColour, matchDiscPaint, teamLiberoColour, markColourOn, teamBoxStyle, teamTextStyle, HEADER_SURFACE } from '../utils/teamColours'
 import { useComponentLogging } from '../contexts/LoggingContext'
-import { apiFrom } from '../lib/apiClient'
-import { relayMatchKey, relayMatchPayload } from '../utils/serverDataSync'
+import { apiFrom, writingDevice } from '../lib/apiClient'
+import { relayMatchKey, relayMatchPayload, liveStateNow } from '../utils/serverDataSync'
 import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveState, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { exportMatchData } from '../utils/backupManager'
@@ -64,7 +64,7 @@ import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../doma
 import { playerReplacedByLibero } from '../domain/liberos'
 import { planSubstitutionDeletion, countRegularSubstitutions, classifySubstitutionRequest, MAX_SUBSTITUTIONS_PER_SET } from '../domain/substitutions'
 import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, syncJobsForSets, scoreAfterUndo } from '../domain/corrections'
-import { validateReopenedRoster, referencedPlayerNumbers, renumberPlayerInEvents } from '../domain/roster'
+import { validateReopenedRoster, referencedPlayerNumbers, renumberPlayerInEvents, isShirtNumber } from '../domain/roster'
 import { appendRemark, removeRemarkLine, eventRemark, remarkClock, setActualStartRemark } from '../domain/remarks'
 import { LINEUP_POSITIONS, lineupEntryErrors, lineupCandidates, lineupCaptainStatus, teamCaptainNumber, gameCaptainOptions, initialGameCaptainChoice, lineupGameCaptainDecision } from '../domain/lineupEntry'
 import { easyLiberoNumbers, easyLiberoErrors, easyRosterChanges, liberoSlotEditable, MAX_LIBEROS, easyPlayerRow, newPlayerMayEnter, newPlayerError, NEW_PLAYER_ERRORS, easyReferencedNumbers, isEasyStray } from '../domain/easyMatch'
@@ -1721,6 +1721,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           initialSync.finally(() => {
             if (initialSyncRef.current === initialSync) initialSyncRef.current = null
           })
+          // Then the live state: the bundle carries none, a relay keeps it
+          // in memory only (one that restarted has none), and the pushes made
+          // while this socket was down were dropped. The livescore, which
+          // takes the score from it, stayed on the score from before a relay
+          // restart until the next rally (stress test 2026-10-25).
+          initialSync.then(() => syncLiveStateRef.current?.('reconnect', null, null), () => {})
         },
         onMessage: (message) => {
           if (message.type === 'pin-validation-request') {
@@ -1802,6 +1808,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           awayPlayers: freshAwayPlayers || [],
           sets: freshSets || [],
           events: freshEvents || [],
+          // This installation: the cloud relay refuses a device the match
+          // has moved away from (db/019, see App.jsx)
+          device: writingDevice(),
           _timestamp: sendTimestamp // Track when sent from scoreboard
         }
 
@@ -2408,7 +2417,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         game_n: match.gameN || match.game_n || null,
         league: match.league || null,
         gender: match.match_type_2 || null,
-        updated_at: new Date().toISOString(),
+        // (the match's live-state clock: a device that continues a match
+        // stamps after the previous device's last state, liveClockOffset)
+        updated_at: new Date(liveStateNow(match)).toISOString(),
         sport_type: 'indoor'
       }
 
@@ -4750,9 +4761,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         .sort((a, b) => (b.seq || 0) - (a.seq || 0))
       const servingTeam = pointEventsForSync.length > 0 ? (pointEventsForSync[0].payload?.team || currentSetFirstServe) : currentSetFirstServe
 
-      // Get server number from position I of serving team's lineup
+      // Get server number from position I of serving team's lineup. Only a
+      // whole number: events.serve_player is an integer column, and one
+      // refused value (a shirt number typed as '1.5') parked every rally that
+      // player served as failed for good
       const servingTeamLineup = getLineupForTeamFresh(servingTeam)
-      const serverNumber = servingTeamLineup?.['I'] ? Number(servingTeamLineup['I']) : null
+      const serverNumber = isShirtNumber(servingTeamLineup?.['I']) ? Number(servingTeamLineup['I']) : null
 
       // Reuse sets from snapshot (avoids redundant db.sets query)
       const currentSetForScore = snapshotSets.find(s => s.index === setIndex)

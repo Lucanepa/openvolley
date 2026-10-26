@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { referencedPlayerNumbers, validateReopenedRoster, renumberPlayerInEvents } from '../roster'
+import { referencedPlayerNumbers, validateReopenedRoster, renumberPlayerInEvents, isShirtNumber, shirtNumberDigits } from '../roster'
 
 const P = (id, number, extra = {}) => ({ id, number, lastName: `P${number}`, libero: '', isCaptain: false, ...extra })
 
@@ -111,5 +111,22 @@ describe('renumberPlayerInEvents', () => {
   it('does nothing without renumbers and never touches the other team', () => {
     expect(renumberPlayerInEvents(events, 'home', [])).toEqual([])
     expect(renumberPlayerInEvents(events, 'home', [{ from: '2', to: '22' }]).some(u => u.id === 6)).toBe(false)
+  })
+})
+
+// Stress test 2026-10-25: a shirt number '1.5' reached the events
+// (serve_player, an integer column) and the cloud refused them for good
+describe('shirt numbers', () => {
+  it('isShirtNumber: whole numbers 1-99 only', () => {
+    for (const n of [1, 15, 99, '7', '99']) expect(isShirtNumber(n)).toBe(true)
+    for (const n of [0, 100, 1.5, '1.5', '', null, undefined, 'x', -1, NaN]) expect(isShirtNumber(n)).toBe(false)
+  })
+
+  it('shirtNumberDigits keeps the digits as typed', () => {
+    expect(shirtNumberDigits('1.5')).toBe('15')
+    expect(shirtNumberDigits(' 7 ')).toBe('7')
+    expect(shirtNumberDigits('1,2')).toBe('12')
+    expect(shirtNumberDigits('')).toBe('')
+    expect(shirtNumberDigits(null)).toBe('')
   })
 })
