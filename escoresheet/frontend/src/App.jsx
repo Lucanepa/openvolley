@@ -57,7 +57,7 @@ import {
 } from './constants/testSeeds'
 import { apiFrom, writingDevice } from './lib/apiClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
-import { fetchMatchByPin, importMatchFromSupabase, cloudBestOf, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, listPocketBaseBackups, fetchPocketBaseMatch, matchBackupFromDatabaseExport, restoreErrorText } from './utils/backupManager'
+import { fetchMatchByPin, fetchMatchToContinue, importMatchFromSupabase, cloudBestOf, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, listPocketBaseBackups, fetchPocketBaseMatch, matchBackupFromDatabaseExport, restoreErrorText } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
 import DesktopUpdateNotice from './components/DesktopUpdateNotice'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils/matchFormat'
@@ -3785,10 +3785,13 @@ export default function App() {
                       setRestoreLoading(true)
                       setRestoreError('')
                       try {
-                        const cloudData = restorePreviewData.data
+                        let cloudData = restorePreviewData.data
                         let newMatchId
 
                         if (restorePreviewData.source === 'database') {
+                          // Read again with the claim: this device scores the
+                          // match from here on (backupManager.fetchMatchToContinue)
+                          cloudData = await fetchMatchToContinue(cloudData)
                           newMatchId = await importMatchFromSupabase(cloudData)
                         } else {
                           newMatchId = await restoreMatchFromJson(cloudData)

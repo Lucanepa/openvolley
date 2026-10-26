@@ -212,7 +212,7 @@ export async function markScorerMoved(database, local, { scorer = null, closed =
  * scoring screens open the replaced match. Needs a connection and the game
  * PIN the device kept; a match closed meanwhile loads as closed (its Match
  * End), the claim then has nothing to take.
- * @param {{ fetchCloud: (pin: string, gameN: number|string) => Promise<object>, importCloud: (cloudData: object) => Promise<number>, online?: boolean }} deps
+ * @param {{ fetchCloud: (pin: string, gameN: number|string, options: { claim: boolean, externalId: string }) => Promise<object>, importCloud: (cloudData: object) => Promise<number>, online?: boolean }} deps
  * @returns {Promise<{ ok: true, matchId: number, cloud: object } | { ok: false, reason: 'offline'|'noPin'|'notFound'|'otherMatch'|'failed', message?: string }>}
  */
 export async function takeBackScoring(database, matchId, { fetchCloud, importCloud, online = true } = {}) {
@@ -224,7 +224,9 @@ export async function takeBackScoring(database, matchId, { fetchCloud, importClo
   if (!online) return { ok: false, reason: 'offline' }
   let cloud
   try {
-    cloud = await fetchCloud(String(pin).trim(), gameN)
+    // with the claim: the server makes this device the scorer before it
+    // reads the match (signed in or not), this match only
+    cloud = await fetchCloud(String(pin).trim(), gameN, { claim: true, externalId: match.seed_key })
   } catch (err) {
     return { ok: false, reason: err?.network || err?.status === 0 ? 'offline' : 'failed', message: err?.message }
   }

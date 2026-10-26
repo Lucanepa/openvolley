@@ -1094,13 +1094,16 @@ function rowLeftIsHome(row) {
  * server (game_pin can no longer be used as a /api/db filter). Returns the
  * match (secrets stripped), its sets (by index), events (by seq) and live state.
  * Uses JSONB columns for team/player data (teams/players tables were dropped)
+ * `claim` (and `externalId`, apiMatchRestoreByPin): this device continues the
+ * match; `scorerClaimed` in the result: the server made it the scoring
+ * device already (importMatchFromSupabase then queues no claim).
  */
-export async function fetchMatchByPin(gamePin, gameN) {
+export async function fetchMatchByPin(gamePin, gameN, { claim = false, externalId = null } = {}) {
   const pin = String(gamePin ?? '').trim()
   const n = parseInt(gameN, 10)
   if (!pin || !Number.isInteger(n)) throw new Error('Game number and game PIN are required')
 
-  const { data, error } = await apiMatchRestoreByPin(n, pin)
+  const { data, error } = await apiMatchRestoreByPin(n, pin, { claim, externalId })
   if (error) {
     if (error.code === 'OV_NOT_FOUND' || error.status === 404) throw new Error('Match not found with this ID and PIN')
     if (error.code === 'OV_TOO_MANY_ATTEMPTS' || error.status === 429) {
@@ -1360,7 +1363,35 @@ export async function fetchMatchByPin(gamePin, gameN) {
     courtSides,
     // The highest set / event ids the match has used on the server (voided
     // events included): the ids the importing device gives out stay above
-    idFloor: data.idFloor || null
+    idFloor: data.idFloor || null,
+    // This device scores the match already (asked with claim, db/019)
+    scorerClaimed: data.scorer?.mine === true
+  }
+}
+
+/**
+ * The restore dialog's Confirm on the match found by game number and PIN:
+ * this device continues it. The match is read again, with the claim: the
+ * server makes the device its scorer first (signed in or not; signed out,
+ * the queued claim never went through and the relay refused the device's
+ * syncs, 2026-10-26), then reads it, so a rally of the previous device is
+ * either in what is imported or refused - not sent between the read and
+ * the claim and then overwritten. The preview was read when the scorer
+ * searched; the match as it is now is imported. Offline, refused, or another
+ * match found: the preview, and the claim is queued as before.
+ * @param {object} preview  fetchMatchByPin's result shown in the preview
+ * @returns {Promise<object>} cloudData for importMatchFromSupabase
+ */
+export async function fetchMatchToContinue(preview) {
+  const m = preview?.match
+  const ext = m?.external_id
+  if (!ext || m.game_pin == null || m.game_n == null) return preview
+  try {
+    const fresh = await fetchMatchByPin(m.game_pin, m.game_n, { claim: true, externalId: ext })
+    return fresh?.match?.external_id === ext ? fresh : preview
+  } catch (err) {
+    console.warn('[Restore] Could not read the match again to continue it, restoring what was previewed:', err?.message)
+    return preview
   }
 }
 
@@ -1672,7 +1703,8 @@ export async function importMatchFromSupabase(cloudData) {
     })
   })
 
-  await afterJoin(importedMatchId, { claim: true })
+  // (restore-by-pin with claim made this device the scorer already)
+  await afterJoin(importedMatchId, { claim: cloudData.scorerClaimed !== true })
   return importedMatchId
 }
 

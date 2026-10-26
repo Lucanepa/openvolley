@@ -7,13 +7,14 @@ const byPin = vi.hoisted(() => ({ calls: [], result: null }))
 vi.mock('../../lib/apiClient', () => ({
   apiFrom: vi.fn(() => { throw new Error('fetchMatchByPin must not use /api/db') }),
   apiStorage: { from: vi.fn() },
-  apiMatchRestoreByPin: async (gameN, pin) => {
-    byPin.calls.push({ gameN, pin })
+  apiMatchRestoreByPin: async (gameN, pin, options) => {
+    byPin.calls.push(options?.claim ? { gameN, pin, ...options } : { gameN, pin })
+    if (typeof byPin.result === 'function') return byPin.result(options)
     return byPin.result
   }
 }))
 
-import { fetchMatchByPin } from '../backupManager'
+import { fetchMatchByPin, fetchMatchToContinue } from '../backupManager'
 
 describe('fetchMatchByPin (POST /api/match/restore-by-pin)', () => {
   beforeEach(() => {
@@ -53,5 +54,44 @@ describe('fetchMatchByPin (POST /api/match/restore-by-pin)', () => {
     await expect(fetchMatchByPin('123456', undefined)).rejects.toThrow(/required/)
     await expect(fetchMatchByPin('', 12)).rejects.toThrow(/required/)
     expect(byPin.calls).toEqual([])
+  })
+
+  // 2026-10-26: a device that continued a match signed out never got its
+  // queued claim through, and the relay refused its syncs. Confirm reads the
+  // match again with the claim: the server makes the device the scorer first.
+  describe('fetchMatchToContinue (the restore dialog\'s Confirm)', () => {
+    const row = (extra = {}) => ({ match: { id: 'uuid', external_id: 'seed', game_n: 12, status: 'live', ...extra }, sets: [], events: [], liveState: null })
+    const preview = { match: { id: 'uuid', external_id: 'seed', game_n: 12, game_pin: '123456', status: 'live' }, sets: [], events: [{ seq: 1 }], liveState: null }
+
+    it('reads the match again with the claim for this match, and imports that', async () => {
+      byPin.result = (options) => ({ data: { ...row({ status: 'live' }), events: [{ seq: 1 }, { seq: 2 }], ...(options?.claim ? { scorer: { mine: true, moved: true } } : {}) }, error: null, status: 200 })
+      const out = await fetchMatchToContinue(preview)
+      expect(byPin.calls).toEqual([{ gameN: 12, pin: '123456', claim: true, externalId: 'seed' }])
+      expect(out.events).toHaveLength(2)
+      expect(out.scorerClaimed).toBe(true)
+      expect(out.match.game_pin).toBe('123456')
+    })
+
+    it('an older backend answers without scorer: not claimed (the import queues the claim)', async () => {
+      byPin.result = { data: row(), error: null, status: 200 }
+      expect((await fetchMatchToContinue(preview)).scorerClaimed).toBe(false)
+      // ... and the search itself never claims
+      expect((await fetchMatchByPin('123456', 12)).scorerClaimed).toBe(false)
+      expect(byPin.calls[1]).toEqual({ gameN: 12, pin: '123456' })
+    })
+
+    it('offline, refused or another match: what was previewed', async () => {
+      byPin.result = { data: null, error: { network: true, status: 0, message: 'offline' }, status: 0 }
+      expect(await fetchMatchToContinue(preview)).toBe(preview)
+      byPin.result = { data: null, error: { code: 'OV_TOO_MANY_ATTEMPTS', status: 429 }, status: 429 }
+      expect(await fetchMatchToContinue(preview)).toBe(preview)
+      byPin.result = { data: row({ external_id: 'another' }), error: null, status: 200 }
+      expect(await fetchMatchToContinue(preview)).toBe(preview)
+      // without the PIN nothing is asked
+      byPin.calls = []
+      const noPin = { ...preview, match: { ...preview.match, game_pin: null } }
+      expect(await fetchMatchToContinue(noPin)).toBe(noPin)
+      expect(byPin.calls).toEqual([])
+    })
   })
 })

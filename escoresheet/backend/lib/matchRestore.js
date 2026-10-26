@@ -28,6 +28,10 @@
  *     secret columns stripped, plus its sets, events and live state. With
  *     `editorUserId` (the caller is signed in) that account becomes an editor
  *     of the match (match_editors): proving the game PIN is the take-over.
+ *     `takeOver(match)` (server.js, a device that continues the match: the
+ *     scoring device, db/019) runs once the PIN is proved and BEFORE the
+ *     sets, events and live state are read; what it returns is the answer's
+ *     `scorer` (nothing when it returns null or fails).
  *     `idFloor` { set, event }: the highest local id the match's set / event
  *     external_ids carry (`<match>:s:<n>`, `<match>:e:<n>`), voided events and
  *     the revisions of events never uploaded included. The device continuing
@@ -489,7 +493,7 @@ export function createMatchRestore (db, options = {}) {
     }
   }
 
-  async function restoreByPin (input, { limitKey = 'anon', editorUserId = null } = {}) {
+  async function restoreByPin (input, { limitKey = 'anon', editorUserId = null, takeOver = null } = {}) {
     if (!isPlainObject(input)) return errorBody(400, 'OV_INVALID_REQUEST', 'Invalid request')
     const gameN = typeof input.gameN === 'string' && /^\d+$/.test(input.gameN.trim()) ? Number(input.gameN.trim()) : input.gameN
     const pin = typeof input.pin === 'number' ? String(input.pin) : (typeof input.pin === 'string' ? input.pin.trim() : '')
@@ -536,6 +540,16 @@ export function createMatchRestore (db, options = {}) {
       // A signed-in caller who proved the game PIN may now write the match.
       const editor = editorUserId ? await addEditor(matchUuid, editorUserId, 'restore-by-pin') : null
       for (const k of cfg.restoreByPinHidden) delete match[k]
+      // The caller scores the match from here on (before the read: a write
+      // of the device it leaves is in what is read, or refused after it)
+      let scorer = null
+      if (typeof takeOver === 'function') {
+        try {
+          scorer = await takeOver({ id: matchUuid, external_id: row[cfg.matchKey] })
+        } catch (err) {
+          log.warn?.(`[matchRestore] scoring-device take-over failed: ${err?.code || err?.message}`)
+        }
+      }
       const byMatch = [{ type: 'eq', column: cfg.childFk, value: matchUuid }]
       const childOrder = (table, cols) => {
         const t = cat.tables.get(table)
@@ -554,7 +568,7 @@ export function createMatchRestore (db, options = {}) {
         read(cfg.liveStateTable, { maybeSingle: true }),
         idFloor(cat, matchUuid, row[cfg.matchKey])
       ])
-      return { status: 200, body: { data: { match, sets: s.body.data, events: e.body.data, liveState: l.body.data, ...(floor ? { idFloor: floor } : {}), ...(editor ? { access: editor } : {}) }, error: null } }
+      return { status: 200, body: { data: { match, sets: s.body.data, events: e.body.data, liveState: l.body.data, ...(floor ? { idFloor: floor } : {}), ...(editor ? { access: editor } : {}), ...(scorer ? { scorer } : {}) }, error: null } }
     } catch (err) {
       if (err?.result) return { status: err.result.status, body: err.result.body }
       const r = db.toErrorResult(err, { action: 'restore-by-pin', table: cfg.matchTable })

@@ -415,6 +415,20 @@ describe('self-hosted backend contract', () => {
     expect(globalThis.fetch.mock.calls[1][1].headers.Authorization).toBeUndefined()
   })
 
+  // 2026-10-26: a device that continued a match signed out never got its
+  // queued claim through; the game PIN proved here makes it the scorer
+  it('apiMatchRestoreByPin claims the match for this device only when it continues it', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { match: { external_id: 'm1' }, sets: [], events: [], liveState: null, scorer: { mine: true, moved: true } }, error: null }))
+    localStorage.removeItem('api_auth_token')
+    const r = await apiMatchRestoreByPin(12, '123456', { claim: true, externalId: 'm1' })
+    expect(sentBody()).toEqual({ gameN: 12, pin: '123456', claim: true, device: { id: expect.stringMatching(UUID_RE), platform: 'web' }, external_id: 'm1' })
+    expect(globalThis.fetch.mock.calls[0][1].headers.Authorization).toBeUndefined()
+    expect(r.data.scorer.mine).toBe(true)
+    // the search for backups only looks it up
+    await apiMatchRestoreByPin(12, '123456')
+    expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body)).toEqual({ gameN: 12, pin: '123456' })
+  })
+
   it('apiMatchClaim proves the game PIN with the session', async () => {
     globalThis.fetch = vi.fn(async () => jsonResponse({ data: { id: 'u', external_id: 'match_1', role: 'editor' }, error: null }))
     const r = await apiMatchClaim('match_1', '864201')

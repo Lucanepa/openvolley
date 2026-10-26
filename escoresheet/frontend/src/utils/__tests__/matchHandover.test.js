@@ -162,11 +162,13 @@ describe('the scoring device', () => {
     const fetched = []
     const imported = []
     const r = await takeBackScoring(db, 2, {
-      fetchCloud: async (pin, gameN) => { fetched.push([pin, gameN]); return cloud },
+      fetchCloud: async (pin, gameN, options) => { fetched.push([pin, gameN, options]); return cloud },
       importCloud: async (data) => { imported.push(data); return 42 }
     })
     expect(r).toEqual({ ok: true, matchId: 42, cloud })
-    expect(fetched).toEqual([['583920', 406970]])
+    // read with the claim of this match: the server makes this device the
+    // scorer before it reads it, signed in or not (2026-10-26)
+    expect(fetched).toEqual([['583920', 406970, { claim: true, externalId: PCS }]])
     expect(imported).toEqual([cloud])
   })
 

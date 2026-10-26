@@ -142,6 +142,16 @@ describe('importMatchFromSupabase: the device continues the cloud rows', () => {
     expect(other.liveClockOffsetMs).toBe(0)
   })
 
+  // 2026-10-26: restore-by-pin with claim made this device the scorer
+  // already; a queued claim would wait for a sign-in for nothing (and, kept
+  // unsent, hide a later move of the match from this device)
+  it('a claim already made by restore-by-pin is not queued again; without one it is', async () => {
+    await importMatchFromSupabase({ ...cloudMatch(), scorerClaimed: true })
+    expect((await db.sync_queue.toArray()).filter(j => j.action === 'scorer')).toEqual([])
+    await importMatchFromSupabase(cloudMatch())
+    expect((await db.sync_queue.toArray()).filter(j => j.action === 'scorer').map(j => j.payload)).toEqual([{ id: seed }])
+  })
+
   it('a device that had its own copy of the match replaces it and keeps the cloud ids', async () => {
     const stale = await db.matches.add({ seed_key: seed, status: 'live' })
     await db.sets.add({ id: 6, matchId: stale, index: 1, homePoints: 10, awayPoints: 12, finished: false })

@@ -382,12 +382,19 @@ export function apiMatchRestore({ match, sets = [], events = [], liveState = nul
  * Look a match up by game number and game PIN (exact match, attempt-limited).
  * Anonymous. 404 (error.code OV_NOT_FOUND) = no match with this number and PIN;
  * 429 (OV_TOO_MANY_ATTEMPTS) = too many wrong guesses, wait a few minutes.
- * @returns {Promise<{data: {match: object, sets: object[], events: object[], liveState: object|null}|null, error: object|null, status: number}>}
+ * `claim`: this device continues the match (the restore dialog's Confirm,
+ * "Take back scoring here"): the game PIN makes it the match's scoring
+ * device (db/019), signed in or not, and data.scorer says so ({ mine: true,
+ * moved }); `externalId`: only that match is claimed. An older backend
+ * ignores both (no data.scorer: the claim is queued as before).
+ * @returns {Promise<{data: {match: object, sets: object[], events: object[], liveState: object|null, scorer?: {mine: boolean, moved: boolean}}|null, error: object|null, status: number}>}
  */
-export function apiMatchRestoreByPin(gameN, pin) {
+export function apiMatchRestoreByPin(gameN, pin, { claim = false, externalId = null } = {}) {
   // With a session the backend also makes this account an editor of the match
   // (proving the game PIN is the take-over); without one it is a plain lookup.
-  return postJson('/api/match/restore-by-pin', { gameN, pin }, { fallbackError: 'Match lookup failed' })
+  const device = claim ? writingDevice() : null
+  const body = device ? { gameN, pin, claim: true, device, ...(externalId ? { external_id: externalId } : {}) } : { gameN, pin }
+  return postJson('/api/match/restore-by-pin', body, { fallbackError: 'Match lookup failed' })
 }
 
 /**
