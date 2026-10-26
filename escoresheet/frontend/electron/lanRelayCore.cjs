@@ -113,6 +113,10 @@
  * (room key = seed_key), /api/match/list lists them all, and the
  * main-instance lock only guards the "/" page (createMainInstanceGate).
  *
+ * Liveness: the relay pings every socket every HEARTBEAT_MS (30 s, as the
+ * cloud relay) and ends one that did not answer the previous ping; the
+ * runtime's 'close' handler then removes it (removeClient).
+ *
  * Match ids are always String(matchId). PINs never leave the relay: PIN
  * validation is answered from the relay's own store, never by a WS client.
  *
@@ -158,6 +162,13 @@ const MAX_MATCH_ID_LENGTH = 128
 // another scoreboard: a second scorer device / reset browser reusing the same
 // Dexie id on a long-running relay. Far longer than a Wi-Fi blip (clients
 // reconnect within ~5 s), so a live scoreboard is never displaced.
+// Server-side ping of every socket (the cloud relay's createHeartbeat,
+// backend/lib/realtimeHub.js): a socket that has not answered the previous
+// ping is ended. A phone that leaves the hall's Wi-Fi sends no close, and its
+// socket kept its slot (MAX_SOCKETS, MAX_SOCKETS_PER_IP) and its rooms until
+// TCP gave up, minutes or hours later. Browsers, the desktop apps and the
+// LedBox bridge answer pings on their own.
+const HEARTBEAT_MS = 30 * 1000
 const ORPHAN_TAKEOVER_MS = 60 * 1000
 // An UNFINISHED match is only claimable after a much longer absence (a scorer
 // tablet asleep through a set break must not lose its match), and its own game
@@ -831,6 +842,8 @@ const isJsonRequest = (req) => /^application\/json\b/i.test(String((req.headers 
  * `isLocal(addr)`: the relay host itself may start a session; anyone else
  * proves the match's game PIN (X-OV-Match-Pin). Defaults to loopback only.
  *
+ * `heartbeatMs`: the ping interval (HEARTBEAT_MS; 0 turns it off).
+ *
  * @param {{ log?: Console, requestTimeoutMs?: number, isRateLimited?: Function,
  *   signCore?: object, isLocal?: (addr: string) => boolean, signOptions?: object }} [options]
  */
@@ -842,6 +855,7 @@ function createLanRelay(options = {}) {
   const maxOwnedPerIp = options.maxOwnedPerIp ?? MAX_OWNED_PER_IP
   const maxSockets = options.maxSockets ?? MAX_SOCKETS
   const maxSocketsPerIp = options.maxSocketsPerIp ?? MAX_SOCKETS_PER_IP
+  const heartbeatMs = options.heartbeatMs ?? HEARTBEAT_MS
   const ownLimiters = []
   const isRateLimited = options.isRateLimited || (ownLimiters[ownLimiters.length] = createRateLimiter())
   const claimFailures = createFailureCounter({ max: options.claimFailureLimit ?? CLAIM_FAILURE_LIMIT })
@@ -961,6 +975,41 @@ function createLanRelay(options = {}) {
     return null
   }
 
+  // --- Heartbeat (HEARTBEAT_MS) -----------------------------------------------
+  // ws -> pong seen since the last ping. Sockets without ping() (tests' fakes)
+  // are not watched. The timer starts with the first socket and never keeps
+  // a process alive (unref): a module-level relay must not hold `vite build`.
+  const alive = new Map()
+  let heartbeatTimer = null
+
+  /** One heartbeat round: end the sockets that missed the last ping, ping the rest. */
+  function heartbeat() {
+    for (const [ws, seen] of alive) {
+      if (ws.readyState !== 1) {
+        if (ws.readyState === 3) alive.delete(ws)
+        continue
+      }
+      if (!seen) {
+        alive.delete(ws)
+        // the runtime's 'close' handler removes it (removeClient)
+        try { ws.terminate() } catch { /* already gone */ }
+        continue
+      }
+      alive.set(ws, false)
+      try { ws.ping() } catch { /* went away between checks */ }
+    }
+  }
+
+  function watch(ws) {
+    if (!(heartbeatMs > 0) || typeof ws.ping !== 'function' || typeof ws.terminate !== 'function' || typeof ws.on !== 'function') return
+    alive.set(ws, true)
+    ws.on('pong', () => { if (alive.has(ws)) alive.set(ws, true) })
+    if (!heartbeatTimer) {
+      heartbeatTimer = setInterval(heartbeat, heartbeatMs)
+      if (heartbeatTimer.unref) heartbeatTimer.unref()
+    }
+  }
+
   function addClient(ws, info = {}) {
     const meta = {
       id: `c${nextClientId++}`,
@@ -975,11 +1024,13 @@ function createLanRelay(options = {}) {
       access: new Map(), // room key -> { pin, verified }: the PIN offered in subscribe-match
     }
     clients.set(ws, meta)
+    watch(ws)
     send(ws, { type: 'connected', message: 'Connected to eScoresheet WebSocket server', timestamp: Date.now() })
     return meta
   }
 
   function removeClient(ws) {
+    alive.delete(ws)
     const meta = clients.get(ws)
     if (!meta) return
     for (const id of meta.subscribed) {
@@ -1746,6 +1797,8 @@ function createLanRelay(options = {}) {
     get clientCount() { return clients.size },
     hasMatch: (id) => store.has(normalizeMatchId(id)),
     isScoreboard: (ws) => (clients.get(ws)?.owned.size || 0) > 0,
+    /** Run one heartbeat round now (tests). */
+    heartbeat,
     /** Sign session counts (tests): null before the first sign request. */
     signStats: () => (signSessions ? signSessions.stats() : null),
     /**
@@ -1757,6 +1810,9 @@ function createLanRelay(options = {}) {
       signSessions = null
       for (const limiter of ownLimiters) limiter.dispose()
       for (const p of pending.values()) clearTimeout(p.timer)
+      if (heartbeatTimer) clearInterval(heartbeatTimer)
+      heartbeatTimer = null
+      alive.clear()
     },
   }
 }
