@@ -48,6 +48,24 @@ describe('bench session (survives a reload)', () => {
     expect(sync.validatePin).not.toHaveBeenCalled()
   })
 
+  it('a restored session checks its PIN against its own match', async () => {
+    sync.validatePinSupabase.mockResolvedValue({ success: true, match: { id: SEED, homeTeamConnectionEnabled: true } })
+    await validateBenchPin('372449', 'home', { matchExternalId: SEED })
+    expect(sync.validatePinSupabase).toHaveBeenCalledWith('372449', 'bench_home', { matchExternalId: SEED })
+  })
+
+  it('says rateLimited when a server refused to compare (429), not just a failed check', async () => {
+    sync.validatePinSupabase.mockResolvedValue({ success: false, rateLimited: true, error: 'Too many failed attempts.' })
+    sync.validatePin.mockRejectedValue(Object.assign(new Error('No match found with this PIN.'), { status: 404 }))
+    expect(await validateBenchPin('372449', 'home')).toMatchObject({ success: false, rateLimited: true })
+    sync.validatePinSupabase.mockResolvedValue({ success: false, error: 'Invalid PIN code' })
+    sync.validatePin.mockRejectedValue(Object.assign(new Error('Too many failed attempts.'), { status: 429 }))
+    expect(await validateBenchPin('372449', 'home')).toMatchObject({ success: false, rateLimited: true })
+    // a wrong PIN is no rate limit
+    sync.validatePin.mockRejectedValue(Object.assign(new Error('No match found with this PIN.'), { status: 404 }))
+    expect((await validateBenchPin('372449', 'home')).rateLimited).toBeUndefined()
+  })
+
   it('WebSocket mode never waits for the cloud', async () => {
     sync.validatePin.mockResolvedValue({ success: false })
     await validateBenchPin('372449', 'home', { connectionMode: 'websocket' })
@@ -61,6 +79,29 @@ describe('referee session restore', () => {
     const lan = vi.fn()
     expect(await revalidateRefereeSession(SEED, '314159', { checkCloud: cloud, checkLan: lan })).toEqual({ id: SEED })
     expect(lan).not.toHaveBeenCalled()
+  })
+
+  it('asks the backend about the stored match only', async () => {
+    const cloud = vi.fn().mockResolvedValue({ success: true, match: { id: SEED } })
+    await revalidateRefereeSession(SEED, '314159', { checkCloud: cloud, checkLan: vi.fn() })
+    expect(cloud).toHaveBeenCalledWith('314159', 'referee', { matchExternalId: SEED })
+  })
+
+  it('a re-check refused for too many wrong PINs (429) keeps the stored PIN: it throws instead of answering null', async () => {
+    const limited = vi.fn().mockResolvedValue({ success: false, rateLimited: true, error: 'Too many failed attempts.' })
+    const lanLimited = vi.fn().mockRejectedValue(Object.assign(new Error('Too many failed attempts.'), { status: 429 }))
+    await expect(revalidateRefereeSession(SEED, '314159', { checkCloud: limited, checkLan: lanLimited })).rejects.toMatchObject({ rateLimited: true })
+    const lanWrong = vi.fn().mockRejectedValue(Object.assign(new Error('No match found with this PIN.'), { status: 404 }))
+    await expect(revalidateRefereeSession(SEED, '314159', { checkCloud: limited, checkLan: lanWrong })).rejects.toMatchObject({ rateLimited: true })
+  })
+
+  it('no server reachable keeps the stored PIN too; a wrong PIN drops it (null)', async () => {
+    const offline = vi.fn().mockResolvedValue({ success: false, error: 'Failed to fetch' })
+    const lanOffline = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'))
+    await expect(revalidateRefereeSession(SEED, '314159', { checkCloud: offline, checkLan: lanOffline })).rejects.toThrow()
+    const wrong = vi.fn().mockResolvedValue({ success: false, error: 'Invalid PIN code' })
+    const lanWrong = vi.fn().mockRejectedValue(Object.assign(new Error('No match found with this PIN.'), { status: 404 }))
+    expect(await revalidateRefereeSession(SEED, '314159', { checkCloud: wrong, checkLan: lanWrong })).toBeNull()
   })
 
   it('falls back to the LAN relay and refuses another match', async () => {

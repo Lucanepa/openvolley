@@ -1627,6 +1627,7 @@
     "connect": "Connetti",
     "connecting": "Connessione...",
     "invalidPin": "PIN non valido. Riprova.",
+    "tooManyAttempts": "Troppi PIN errati da questa rete. Attendi qualche minuto, poi riprova.",
     "roster": "Rosa",
     "match": "Partita",
     "back": "Indietro",
@@ -1670,7 +1671,8 @@
       "connectionLost": "Connessione persa. Riconnettiti.",
       "matchEnded": "La partita è terminata.",
       "connectionDisabled": "La connessione è stata disabilitata.",
-      "serverUnreachable": "Nessuna connessione al server – controlla il Wi-Fi e riprova."
+      "serverUnreachable": "Nessuna connessione al server – controlla il Wi-Fi e riprova.",
+      "tooManyAttempts": "Troppi PIN errati da questa rete. Attendi qualche minuto, poi riprova."
     },
     "connection": {
       "title": "Connessione",

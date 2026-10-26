@@ -1482,6 +1482,7 @@
     "connect": "Verbinden",
     "connecting": "Verbinde...",
     "invalidPin": "Ungültiger PIN. Bitte erneut versuchen.",
+    "tooManyAttempts": "Zu viele falsche PINs aus diesem Netzwerk. Bitte einige Minuten warten und erneut versuchen.",
     "roster": "Kader",
     "match": "Spiel",
     "back": "Zurück",
@@ -1525,7 +1526,8 @@
       "connectionLost": "Verbindung verloren. Bitte erneut verbinden.",
       "matchEnded": "Das Spiel ist beendet.",
       "connectionDisabled": "Die Verbindung wurde deaktiviert.",
-      "serverUnreachable": "Keine Verbindung zum Server – bitte WLAN prüfen und erneut versuchen."
+      "serverUnreachable": "Keine Verbindung zum Server – bitte WLAN prüfen und erneut versuchen.",
+      "tooManyAttempts": "Zu viele falsche PINs aus diesem Netzwerk. Bitte einige Minuten warten und erneut versuchen."
     },
     "connection": {
       "title": "Verbindung",

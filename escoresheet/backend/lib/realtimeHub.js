@@ -140,6 +140,44 @@ export function isLiveRequest(req) {
 }
 
 /**
+ * Role-socket frames nested deeper are refused (server.js, jsonTooDeep), the
+ * depth the venue relays refuse too; real bundles nest about ten.
+ */
+export const MAX_JSON_DEPTH = 128
+
+/**
+ * Is this parsed JSON value nested deeper than MAX_JSON_DEPTH? Iterative, so
+ * the check itself cannot overflow the stack. JSON.parse takes any depth, but
+ * JSON.stringify throws RangeError at a few thousand levels (about 10 KB of
+ * brackets): a relayed bundle like that throws wherever it is sent on or read
+ * back, request handlers included, where the throw ends the process.
+ */
+export function jsonTooDeep(value) {
+  if (!value || typeof value !== 'object') return false
+  // Two plain stacks instead of [value, depth] pairs: no allocation per
+  // object, so a whole bundle (thousands of events) costs well under a ms
+  const values = [value]
+  const depths = [1]
+  while (values.length > 0) {
+    const v = values.pop()
+    const depth = depths.pop()
+    if (depth > MAX_JSON_DEPTH) return true
+    if (Array.isArray(v)) {
+      for (let i = 0; i < v.length; i++) {
+        const child = v[i]
+        if (child !== null && typeof child === 'object') { values.push(child); depths.push(depth + 1) }
+      }
+    } else {
+      for (const k in v) {
+        const child = v[k]
+        if (child !== null && typeof child === 'object') { values.push(child); depths.push(depth + 1) }
+      }
+    }
+  }
+  return false
+}
+
+/**
  * Map a /api/db action to the eventType argument of broadcastDbChange.
  * @param {'insert'|'update'|'upsert'|'delete'|string} action
  * @returns {'INSERT'|'UPDATE'|'UPSERT'|'DELETE'|null}
@@ -552,11 +590,21 @@ export function createRealtimeHub(options = {}) {
       let msg
       try { msg = JSON.parse(data.toString()) } catch { return ws.close(1008, 'Invalid JSON') }
       if (!msg || typeof msg !== 'object') return ws.close(1008, 'Invalid message')
-      switch (msg.type) {
-        case 'subscribe-db': return handleSubscribe(ws, state, msg)
-        case 'unsubscribe-db': return handleUnsubscribe(ws, state, msg)
-        case 'ping': return send(ws, { type: 'pong', timestamp: Date.now() })
-        default: return ws.close(1008, 'Message type not allowed on live sockets')
+      // A throw here reaches no handler and ends the backend (every court's
+      // live viewers, scorers and relays with it). A value the handlers cannot
+      // take (String() of {"toString":1} throws) closes this socket only;
+      // parseSub fails before handleSubscribe changes anything.
+      try {
+        switch (msg.type) {
+          case 'subscribe-db': return handleSubscribe(ws, state, msg)
+          case 'unsubscribe-db': return handleUnsubscribe(ws, state, msg)
+          case 'ping': return send(ws, { type: 'pong', timestamp: Date.now() })
+          default: return ws.close(1008, 'Message type not allowed on live sockets')
+        }
+      } catch (err) {
+        counters.rejected++
+        logger?.warn?.('[realtimeHub] message failed:', err?.message || err)
+        return ws.close(1008, 'Invalid message')
       }
     })
     ws.on('close', () => dropSocket(ws))
