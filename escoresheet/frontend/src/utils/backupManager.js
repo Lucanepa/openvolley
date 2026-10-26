@@ -22,7 +22,7 @@ import { queueScorerClaim, retireSupersededMatches } from './matchHandover'
 import { isKnownClosedOnServer, CLOSING_STATUSES } from './matchReopen'
 import { postMatchSignaturesFromServer } from '../domain/signatureEdits'
 import { signatureSourcesFromApproval } from '../domain/phoneSignature'
-import { liveClockOffsetAfter } from './serverDataSync'
+import { liveClockOffset, liveClockOffsetAfter, liveStateNow } from './serverDataSync'
 
 // IndexedDB key for storing file system directory handle
 const BACKUP_DB_NAME = 'escoresheet_backup'
@@ -365,6 +365,37 @@ export async function serverClosedState(externalId, { read = readServerStatus, t
   }
 }
 
+// The match's live state in the cloud (its updated_at): matches.id by the
+// key, then match_live_state by it (public columns, no session needed)
+async function readServerLiveState(key) {
+  const m = await apiFrom('matches').select('id').eq('external_id', key).maybeSingle()
+  if (m?.error || !m?.data?.id) return { data: null, error: m?.error || null }
+  return apiFrom('match_live_state').select('updated_at').eq('match_id', m.data.id).maybeSingle()
+}
+
+/**
+ * The cloud's live state of a match (`{ updated_at }`), or null: no key,
+ * offline, none there, the read failed or did not answer within timeoutMs.
+ * A backup restored on a device continues the match there: its live states
+ * must be stamped after this one (serverDataSync.liveClockOffsetAfter).
+ * @returns {Promise<object|null>}
+ */
+export async function serverLiveState(externalId, { read = readServerLiveState, timeoutMs = SERVER_CLOSED_TIMEOUT_MS } = {}) {
+  if (!externalId) return null
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return null
+  let timer
+  try {
+    const timeout = new Promise(resolve => { timer = setTimeout(() => resolve(TIMED_OUT), timeoutMs) })
+    const result = await Promise.race([read(externalId), timeout])
+    if (result === TIMED_OUT || !result || result.error) return null
+    return result.data || null
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /** The error a restore of a match closed on the server is refused with. */
 export function closedOnServerError(externalId, gameN) {
   const err = new Error('This match is closed on the server')
@@ -462,7 +493,7 @@ export function restoreErrorText(err, t) {
  * @param {object} jsonData the backup
  * @param {{checkServer?: (externalId: string) => Promise<boolean|null>}} [options]
  */
-export async function restoreMatchFromJson(jsonData, { checkServer = serverClosedState } = {}) {
+export async function restoreMatchFromJson(jsonData, { checkServer = serverClosedState, cloudLiveState = serverLiveState } = {}) {
   // A whole-database export holds the match it was written for
   jsonData = matchBackupFromDatabaseExport(jsonData) || jsonData
   // Validate schema
@@ -481,10 +512,14 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
 
   // Before anything is deleted, added or queued (test matches never sync)
   const guarded = !!externalId && !match.test
+  // The cloud's last live state, read alongside: this device stamps its own
+  // after it (the previous device's clock may be ahead of this one's)
+  const cloudLive = guarded ? cloudLiveState(externalId).catch(() => null) : Promise.resolve(null)
   if (guarded) {
     const localCopies = await db.matches.filter(m => localMatchKey(m) === externalId).toArray()
     await refuseIfClosedOnServer(externalId, match, localCopies, checkServer)
   }
+  const liveClockOffsetMs = liveClockOffsetAfter(await cloudLive)
 
   let restoredMatchId = null
 
@@ -553,6 +588,12 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
       homeTeamId,
       awayTeamId,
       seed_key: externalId, // Ensure seed_key is set for sync
+      // This device's own live-state clock (serverDataSync.liveClockOffset),
+      // never the one of the device that wrote the backup: its states come
+      // after the cloud's last one. 2026-10-26: a match continued from a
+      // backup row kept the file's offset (or none), and with the previous
+      // device's clock ahead the referee and benches dropped every new state.
+      liveClockOffsetMs,
       restoredAt: new Date().toISOString()
     })
 
@@ -670,7 +711,12 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
         points_b: latestSet?.awayPoints ?? latestSet?.away_points ?? 0,
         sets_won_a: homeSetsWon,
         sets_won_b: awaySetsWon,
-        match_status: match.status || 'live'
+        match_status: match.status || 'live',
+        // On this device's live-state clock, as its next states: stamped by
+        // the server's clock instead (the column default), the restored score
+        // looked newer than this device's next states whenever its clock is
+        // behind the server's, and the realtime hub and the viewers kept it
+        updated_at: new Date(Date.now() + liveClockOffsetMs).toISOString()
       }
 
       // Queue the restore job (filter payload to valid columns only)
@@ -743,6 +789,9 @@ export async function restoreMatchInPlace(matchId, jsonData, { checkServer = ser
       // The backup's team ids are local ids of the device that wrote it
       // (another match's teams here, or none): the open match keeps its own
       ...(currentMatch ? { homeTeamId: currentMatch.homeTeamId, awayTeamId: currentMatch.awayTeamId } : {}),
+      // ... and its own live-state clock (a backup made on another device
+      // carries that one's, serverDataSync.liveClockOffset)
+      liveClockOffsetMs: liveClockOffset(currentMatch),
       seed_key: externalId, // Ensure seed_key is set for sync
       restoredAt: new Date().toISOString()
     })
@@ -866,7 +915,10 @@ export async function restoreMatchInPlace(matchId, jsonData, { checkServer = ser
         points_b: latestSet?.awayPoints ?? latestSet?.away_points ?? 0,
         sets_won_a: homeSetsWon,
         sets_won_b: awaySetsWon,
-        match_status: match.status || 'live'
+        match_status: match.status || 'live',
+        // on the match's live-state clock, as the device's next states
+        // (restoreMatchFromJson)
+        updated_at: new Date(liveStateNow(restoredLocal)).toISOString()
       }
 
       // Queue the restore job (filter payload to valid columns only)

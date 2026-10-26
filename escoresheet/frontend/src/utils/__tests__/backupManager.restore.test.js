@@ -95,6 +95,32 @@ beforeEach(() => {
 })
 
 describe('restoreMatchFromJson', () => {
+  // 2026-10-26: a match continued from a backup row got no live-state clock
+  // offset (or kept the file's, another device's): with the previous
+  // device's clock ahead, the referee and benches dropped every new state
+  it('stamps its live states after the cloud\'s last one, never on the backup file\'s offset', async () => {
+    const ahead = Date.now() + 120000
+    const asked = []
+    const cloudLiveState = async (key) => { asked.push(key); return { updated_at: new Date(ahead).toISOString() } }
+    const newId = await restoreMatchFromJson(backup({ liveClockOffsetMs: 3000000 }), { checkServer: async () => false, cloudLiveState })
+    expect(asked).toEqual([SEED])
+    const off = fakeDb.matches.map.get(newId).liveClockOffsetMs
+    expect(off).toBeGreaterThan(110000)
+    expect(off).toBeLessThanOrEqual(120001)
+    // the restored live state goes out on that clock too: stamped by the
+    // server's clock, it looked newer than the device's next states
+    const job = (await fakeDb.sync_queue.toArray()).find(j => j.action === 'restore')
+    expect(Date.parse(job.payload.liveState.updated_at)).toBeGreaterThan(ahead)
+    // the cloud unknown (offline) or behind this clock: none, whatever the file says
+    const offline = await restoreMatchFromJson(backup({ liveClockOffsetMs: 3000000 }), { checkServer: async () => null, cloudLiveState: async () => null })
+    expect(fakeDb.matches.map.get(offline).liveClockOffsetMs).toBe(0)
+    // a test match never syncs: not asked
+    asked.length = 0
+    const t = await restoreMatchFromJson(backup({ test: true, liveClockOffsetMs: 5000 }), { cloudLiveState })
+    expect(asked).toEqual([])
+    expect(fakeDb.matches.map.get(t).liveClockOffsetMs).toBe(0)
+  })
+
   it('replaces only this match: other local matches, their rows and jobs stay', async () => {
     const newId = await restoreMatchFromJson(backup())
 
@@ -164,6 +190,17 @@ describe('restoreMatchFromJson', () => {
 })
 
 describe('restoreMatchInPlace', () => {
+  it('keeps this device\'s live-state clock, not the one the backup carries', async () => {
+    fakeDb.matches.map.get(2).liveClockOffsetMs = 60000
+    const before = Date.now()
+    await restoreMatchInPlace(2, backup({ liveClockOffsetMs: 3000000 }))
+    expect(fakeDb.matches.map.get(2).liveClockOffsetMs).toBe(60000)
+    const job = (await fakeDb.sync_queue.toArray()).find(j => j.action === 'restore')
+    const at = Date.parse(job.payload.liveState.updated_at)
+    expect(at).toBeGreaterThanOrEqual(before + 60000)
+    expect(at).toBeLessThan(before + 120000)
+  })
+
   it('keeps pending match insert/update jobs; drops only this match\'s set/event jobs', async () => {
     await restoreMatchInPlace(2, backup())
 
