@@ -20,6 +20,8 @@ import { generateSecurePin } from './stringUtils'
 import { isScorerEntry } from './appEntry'
 import { queueScorerClaim, retireSupersededMatches } from './matchHandover'
 import { isKnownClosedOnServer, CLOSING_STATUSES } from './matchReopen'
+import { postMatchSignaturesFromServer } from '../domain/signatureEdits'
+import { signatureSourcesFromApproval } from '../domain/phoneSignature'
 
 // IndexedDB key for storing file system directory handle
 const BACKUP_DB_NAME = 'escoresheet_backup'
@@ -1435,12 +1437,13 @@ export async function importMatchFromSupabase(cloudData) {
       homeCaptainSignature: signatures.home_captain || match.home_captain_signature,
       awayCoachSignature: signatures.away_coach || match.away_coach_signature,
       awayCaptainSignature: signatures.away_captain || match.away_captain_signature,
-      homeCoachPostGameSignature: signatures.home_coach_post_game || match.home_coach_post_game_signature,
-      homeCaptainPostGameSignature: signatures.home_captain_post_game || match.home_captain_post_game_signature,
-      awayCoachPostGameSignature: signatures.away_coach_post_game || match.away_coach_post_game_signature,
-      awayCaptainPostGameSignature: signatures.away_captain_post_game || match.away_captain_post_game_signature,
-      refereeSignature: signatures.referee || match.referee_signature,
-      scorerSignature: signatures.scorer || match.scorer_signature,
+      // The closing ones (captains, assistant scorer, scorer, referees) in
+      // the fields Match end and the sheet read: a slot missing here would
+      // show "Tap to sign" again, and the next signature drawn on this
+      // device sends the whole object back, which erased it on the server
+      ...postMatchSignaturesFromServer(signatures),
+      // Where they were made ("Signed on phone"), kept only by an approval
+      signatureSources: signatureSourcesFromApproval(approval, coinToss.team_a || match.coin_toss_team_a),
       // Coin toss: prefer JSONB, fallback to legacy
       coinTossConfirmed: coinToss.confirmed !== undefined ? coinToss.confirmed : match.coin_toss_confirmed,
       coinTossTeamA: coinToss.team_a || match.coin_toss_team_a,
