@@ -61,6 +61,17 @@ describe('App.jsx relay wiring', () => {
     expect(start).toBeGreaterThan(-1)
     expect(scoreboardSrc.slice(start, scoreboardSrc.indexOf('}', start))).toMatch(/device: writingDevice\(\)/)
   })
+
+  // National peak load test 2026-10-26: the undo snapshots were about 90% of
+  // every bundle (2.4 MB at the end of a 5-set match), sent twice per rally.
+  it('sync-match-data leaves the undo snapshots out, from App and Scoreboard alike', () => {
+    const body = slice('const syncMatchData = async () => {', 'const handlePinValidationRequest')
+    expect(body).toMatch(/events: relayEvents\(events\),/)
+    expect(src).toMatch(/import \{[^}]*\brelayEvents\b[^}]*\} from '\.\/utils\/relayPublisher'/)
+    const start = scoreboardSrc.indexOf("type: 'sync-match-data',")
+    expect(scoreboardSrc.slice(start, scoreboardSrc.indexOf('}', start))).toMatch(/events: relayEvents\(freshEvents \|\| \[\]\),/)
+    expect(scoreboardSrc).toMatch(/import \{[^}]*\brelayEvents\b[^}]*\} from '\.\.\/utils\/relayPublisher'/)
+  })
 })
 
 // Stress test 2026-10-25: after a venue relay restart (live states in memory

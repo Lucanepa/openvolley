@@ -9,6 +9,7 @@ import {
   mayPublishMatchData,
   publishLiveState,
   relayReconnectDelay,
+  relayEvents,
   relayConnectionStatus,
   scorerRelayUrl,
   resetScorerRelayUrl
@@ -173,6 +174,8 @@ describe('the scorer\'s one relay connection (App + Scoreboard)', () => {
       },
       events,
       doc: null,
+      // the top of each jittered step: the timings below stay exact
+      reconnectDelay: (n) => relayReconnectDelay(n, () => 1),
       ...opts
     })
   }
@@ -356,7 +359,19 @@ describe('test (rehearsal) matches: live state to a local relay only', () => {
 
 describe('scorer relay publishing: reconnect backoff', () => {
   it('backs off from 5 s to a 60 s cap', () => {
-    expect([0, 1, 2, 3, 4, 5, 50].map(relayReconnectDelay)).toEqual([5000, 10000, 20000, 40000, 60000, 60000, 60000])
+    expect([0, 1, 2, 3, 4, 5, 50].map((n) => relayReconnectDelay(n, () => 1))).toEqual([5000, 10000, 20000, 40000, 60000, 60000, 60000])
+  })
+
+  // National peak load test 2026-10-26: after a backend restart every scorer
+  // reconnected and re-sent its whole match after exactly 5 s, all at once,
+  // and the burst refilled the backend's memory within seconds.
+  it('spreads the reconnects over the second half of each step', () => {
+    expect([0, 1, 4].map((n) => relayReconnectDelay(n, () => 0))).toEqual([2500, 5000, 30000])
+    expect(relayReconnectDelay(0, () => 0.5)).toBe(3750)
+    const many = Array.from({ length: 200 }, () => relayReconnectDelay(0))
+    expect(Math.min(...many)).toBeGreaterThanOrEqual(2500)
+    expect(Math.max(...many)).toBeLessThanOrEqual(5000)
+    expect(new Set(many).size).toBeGreaterThan(20)
   })
 })
 
@@ -495,5 +510,29 @@ describe('live-state order marks (what a relay sync records)', () => {
   it('each order has its own session id', () => {
     expect(createLiveStateOrder().session).not.toBe(createLiveStateOrder().session)
     expect(typeof createLiveStateOrder().session).toBe('string')
+  })
+})
+
+// National peak load test 2026-10-26: the scorer sent every event with its
+// undo snapshot (stateSnapshot on every point, stateBefore on rally starts,
+// rotations, substitutions) twice per rally; no relay subscriber reads them.
+describe('relayEvents (what sync-match-data carries of the events)', () => {
+  it('leaves the undo snapshots out, everything else as it is', () => {
+    const snap = { pointsA: 3, pointsB: 2, lineupA: { I: 1 } }
+    const events = [
+      { id: 1, matchId: 4, seq: 1, setIndex: 1, type: 'rally_start', payload: {}, ts: '2026-11-29T10:00:00.000Z', stateBefore: snap },
+      { id: 2, matchId: 4, seq: 2, setIndex: 1, type: 'point', payload: { team: 'home' }, ts: '2026-11-29T10:00:20.000Z', stateSnapshot: snap },
+      { id: 3, matchId: 4, seq: 3, setIndex: 1, type: 'timeout', payload: { team: 'away' }, ts: '2026-11-29T10:01:00.000Z' }
+    ]
+    const out = relayEvents(events)
+    expect(out).toEqual([
+      { id: 1, matchId: 4, seq: 1, setIndex: 1, type: 'rally_start', payload: {}, ts: '2026-11-29T10:00:00.000Z' },
+      { id: 2, matchId: 4, seq: 2, setIndex: 1, type: 'point', payload: { team: 'home' }, ts: '2026-11-29T10:00:20.000Z' },
+      events[2]
+    ])
+    // the device's own events are untouched (copies only)
+    expect(events[0].stateBefore).toBe(snap)
+    expect(events[1].stateSnapshot).toBe(snap)
+    expect(relayEvents(null)).toEqual([])
   })
 })

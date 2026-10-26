@@ -10,6 +10,8 @@ import { createServer } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import WebSocket from 'ws'
+import { get as httpGet } from 'node:http'
+import { gunzipSync } from 'node:zlib'
 
 const BACKEND_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -63,9 +65,9 @@ function freePort() {
   })
 }
 
-function openClient(url) {
+function openClient(url, headers = null) {
   return new Promise((res, rej) => {
-    const ws = new WebSocket(url)
+    const ws = new WebSocket(url, headers ? { headers } : undefined)
     const client = { ws, messages: [], raw: [] }
     client.send = (m) => ws.send(JSON.stringify(m))
     client.waitFor = (pred, timeoutMs = 3000) => new Promise((ok, fail) => {
@@ -393,6 +395,116 @@ describe('backend WebSocket relay protocol', () => {
     for (const c of [fresh, second, third]) c.ws.close()
   })
 
+  // National peak load test 2026-10-26: the scorer's undo snapshots
+  // (stateSnapshot on every point, stateBefore on rally starts, rotations,
+  // substitutions) were about 90% of a bundle, 2.4 MB at the end of a 5-set
+  // match. The relay kept them parsed per match and sent them whole to every
+  // tablet twice per rally; no subscriber reads them. Older scorers still
+  // send them.
+  it('stores and relays the events without the scorer\'s undo snapshots', async () => {
+    const wsUrl = `ws://127.0.0.1:${port}`
+    const seed = 'match_1791215210060_snapsh'
+    const match = makeMatch({ id: 43, seed_key: seed, gamePin: '434343' })
+    const snap = { pointsA: 3, pointsB: 2, lineupA: { I: 1, II: 2 }, marker: 'SNAPSHOT-BYTES' }
+    const events = [
+      { id: 1, seq: 1, setIndex: 1, type: 'rally_start', payload: {}, ts: '2026-11-29T10:00:00.000Z', stateBefore: snap },
+      { id: 2, seq: 2, setIndex: 1, type: 'point', payload: { team: 'home' }, ts: '2026-11-29T10:00:20.000Z', stateSnapshot: snap },
+      { id: 3, seq: 3, setIndex: 1, type: 'timeout', payload: { team: 'away' }, ts: '2026-11-29T10:01:00.000Z' }
+    ]
+    const thin = events.map(({ stateBefore, stateSnapshot, ...rest }) => rest)
+    const scoreboard = await openClient(wsUrl)
+    const referee = await openClient(wsUrl)
+    scoreboard.send(syncMessage(match, { events }))
+    scoreboard.send({ type: 'ping' })
+    await scoreboard.waitFor((m) => m.type === 'pong')
+    referee.send({ type: 'subscribe-match', matchId: seed, pin: PINS.refereePin })
+    const full = await referee.waitFor((m) => m.type === 'match-full-data')
+    assert.equal(full.access, 'full')
+    assert.deepEqual(full.events, thin)
+    scoreboard.send(syncMessage(match, { events: [...events, { id: 4, seq: 4, setIndex: 1, type: 'point', payload: { team: 'away' }, ts: '2026-11-29T10:01:30.000Z', stateSnapshot: snap }] }))
+    const update = await referee.waitFor((m) => m.type === 'match-data-update')
+    assert.deepEqual(update.events.map((e) => e.id), [1, 2, 3, 4])
+    const viaHttp = await (await fetch(`http://127.0.0.1:${port}/api/match/${seed}`, { headers: { 'X-OV-Match-Pin': PINS.refereePin } })).json()
+    assert.deepEqual(viaHttp.events.slice(0, 3), thin)
+    for (const text of [referee.raw.join(''), JSON.stringify(viaHttp)]) assert.equal(text.includes('SNAPSHOT-BYTES'), false)
+    scoreboard.send({ type: 'delete-match', matchId: 43 })
+    await referee.waitFor((m) => m.type === 'match-deleted')
+    for (const c of [scoreboard, referee]) c.ws.close()
+  })
+
+  // A venue relay has a hall's few tablets on its Wi-Fi: a whole bundle above
+  // 1 KB goes compressed (the cloud sends plain frames, see its suite). A
+  // scorer's compressed upload is accepted (older scorers send whole bundles).
+  it('takes compressed syncs, and compresses the bundles it sends the tablets', async () => {
+    const { wire, bytes } = await bundleOnTheWire(`ws://127.0.0.1:${port}`, { id: 44, seed: 'match_1791215210060_deflat', gamePin: '444444' })
+    assert.ok(wire < bytes / 4, `the bundle arrived compressed (${wire} bytes on the wire for ${bytes})`)
+  })
+
+  // National peak load test 2026-10-26: a bench refetches the whole bundle
+  // after every database change of its match (about 2-3 per rally), and
+  // every byte of it went uncompressed through the tunnel.
+  it('GET /api/match/:id answers gzipped to a client that accepts it', async () => {
+    const wsUrl = `ws://127.0.0.1:${port}`
+    const seed = 'match_1791215210060_gzipme'
+    const match = makeMatch({ id: 46, seed_key: seed, gamePin: '464646' })
+    const events = Array.from({ length: 300 }, (_, i) => ({ id: i + 1, seq: i + 1, setIndex: 1, type: 'point', payload: { team: i % 2 ? 'home' : 'away' }, ts: '2026-11-29T10:00:00.000Z' }))
+    const scoreboard = await openClient(wsUrl)
+    scoreboard.send(syncMessage(match, { events }))
+    scoreboard.send({ type: 'ping' })
+    await scoreboard.waitFor((m) => m.type === 'pong')
+    const get = (headers) => new Promise((resolve, reject) => {
+      httpGet({ host: '127.0.0.1', port, path: `/api/match/${seed}`, headers: { 'X-OV-Match-Pin': PINS.refereePin, ...headers } }, (res) => {
+        const chunks = []
+        res.on('data', (c) => chunks.push(c))
+        res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }))
+      }).on('error', reject)
+    })
+    const zipped = await get({ 'Accept-Encoding': 'gzip, deflate, br' })
+    assert.equal(zipped.status, 200)
+    assert.equal(zipped.headers['content-encoding'], 'gzip')
+    assert.match(String(zipped.headers.vary || ''), /Accept-Encoding/i)
+    const plain = await get({})
+    assert.equal(plain.headers['content-encoding'], undefined)
+    assert.deepEqual(JSON.parse(gunzipSync(zipped.body).toString()), JSON.parse(plain.body.toString()))
+    assert.equal(JSON.parse(plain.body.toString()).events.length, 300)
+    assert.ok(zipped.body.length * 4 < plain.body.length, `${zipped.body.length} vs ${plain.body.length}`)
+    // refused: plain as before
+    assert.equal((await get({ 'Accept-Encoding': 'gzip;q=0' })).headers['content-encoding'], undefined)
+    scoreboard.send({ type: 'delete-match', matchId: 46 })
+    scoreboard.ws.close()
+  })
+
+  // A tablet that stopped reading (a dead Wi-Fi link the heartbeat has not
+  // caught yet) kept every bundle queued in the backend's memory; the live
+  // hub drops such sockets, the role sockets did not.
+  it('drops a tablet whose unsent bundles pile up', async () => {
+    const wsUrl = `ws://127.0.0.1:${port}`
+    const seed = 'match_1791215210060_stalls'
+    const match = makeMatch({ id: 45, seed_key: seed, gamePin: '454545' })
+    const big = 'b'.repeat(1024 * 1024)
+    const scoreboard = await openClient(wsUrl)
+    const referee = await openClient(wsUrl)
+    scoreboard.send(syncMessage(match))
+    scoreboard.send({ type: 'ping' })
+    await scoreboard.waitFor((m) => m.type === 'pong')
+    referee.send({ type: 'subscribe-match', matchId: seed, pin: PINS.refereePin })
+    await referee.waitFor((m) => m.type === 'match-full-data')
+    const closed = new Promise((resolve) => referee.ws.once('close', () => resolve(true)))
+    // the tablet stops reading; the scorer goes on (30 bundles of 1 MB)
+    referee.ws._socket.pause()
+    for (let i = 0; i < 30; i++) {
+      scoreboard.send(syncMessage(match, { events: [{ id: i + 1, seq: i + 1, setIndex: 1, type: 'remark', payload: { text: big }, ts: '2026-11-29T10:00:00.000Z' }] }))
+      scoreboard.send({ type: 'ping' })
+      await scoreboard.waitFor((m) => m.type === 'pong' && !m.seen && (m.seen = true))
+    }
+    referee.ws._socket.resume()
+    const outcome = await Promise.race([closed, new Promise((resolve) => setTimeout(() => resolve(false), 5000))])
+    assert.equal(outcome, true, 'the stalled tablet was dropped (it reconnects and gets the latest bundle)')
+    assert.ok(referee.messages.filter((m) => m.type === 'match-data-update').length < 30)
+    scoreboard.send({ type: 'delete-match', matchId: 45 })
+    scoreboard.ws.close()
+  })
+
   it('GET /api/match/list: every published scheduled/live match, referee connection or not, public fields only', async () => {
     const wsUrl = `ws://127.0.0.1:${port}`
     const courtA = await openClient(wsUrl)
@@ -528,6 +640,29 @@ describe('backend WebSocket relay protocol', () => {
   })
 })
 
+// A scorer's compressed whole bundle (200 events), then what one referee
+// receives for it: the bytes on the wire and the frame's size.
+async function bundleOnTheWire(wsUrl, { id, seed, gamePin }) {
+  const match = makeMatch({ id, seed_key: seed, gamePin })
+  const events = Array.from({ length: 200 }, (_, i) => ({ id: i + 1, seq: i + 1, setIndex: 1, type: 'point', payload: { team: i % 2 ? 'home' : 'away', note: 'same text every time '.repeat(10) }, ts: '2026-11-29T10:00:00.000Z' }))
+  const scoreboard = await openClient(wsUrl)
+  const referee = await openClient(wsUrl)
+  assert.equal(scoreboard.ws.extensions, 'permessage-deflate', 'compressed uploads are negotiated')
+  scoreboard.send(syncMessage(match, { events }))
+  scoreboard.send({ type: 'ping' })
+  await scoreboard.waitFor((m) => m.type === 'pong')
+  const before = referee.ws._socket.bytesRead
+  referee.send({ type: 'subscribe-match', matchId: seed, pin: PINS.refereePin })
+  const full = await referee.waitFor((m) => m.type === 'match-full-data')
+  assert.equal(full.events.length, 200)
+  const wire = referee.ws._socket.bytesRead - before
+  const bytes = Buffer.byteLength(referee.raw[referee.raw.length - 1])
+  scoreboard.send({ type: 'delete-match', matchId: id })
+  await referee.waitFor((m) => m.type === 'match-deleted')
+  for (const c of [scoreboard, referee]) c.ws.close()
+  return { wire, bytes }
+}
+
 describe('backend relay in cloud mode (IS_CLOUD)', () => {
   let child
   let port
@@ -582,5 +717,79 @@ describe('backend relay in cloud mode (IS_CLOUD)', () => {
     assert.equal(display.messages.some((m) => m.type === 'live-state-update' && m.matchId === 'cloud-test'), false)
 
     for (const c of [rehearsal, official, display]) c.ws.close()
+  })
+
+  // National peak load test 2026-10-26: every role socket that received a
+  // bundle kept its own zlib deflate context (about 150 KB in the production
+  // image; 1,000 tablets 224 MB of RSS against 76 MB without), and each bundle
+  // was deflated once per tablet. A scorer's compressed upload is still
+  // accepted (older scorers send whole bundles).
+  it('takes compressed syncs, sends the tablets plain frames', async () => {
+    const { wire, bytes } = await bundleOnTheWire(`ws://127.0.0.1:${port}`, { id: 44, seed: 'match_1791215210060_cdefla', gamePin: '444444' })
+    assert.ok(wire >= bytes, 'the bundle arrived as a plain frame')
+  })
+})
+
+describe('backend relay in cloud mode behind Cloudflare: a hall behind one address', () => {
+  let child
+  let port
+  const HALL = { 'cf-connecting-ip': '203.0.113.77' }
+
+  before(async () => {
+    port = await freePort()
+    const env = { ...process.env, PORT: String(port), IS_CLOUD: '1', TRUST_PROXY: 'cloudflare' }
+    for (const k of ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'POCKETBASE_URL', 'TRUST_PROXY_FROM']) delete env[k]
+    child = spawn(process.execPath, ['server.js', '--local'], { cwd: BACKEND_DIR, env, stdio: 'ignore' })
+    const start = Date.now()
+    for (;;) {
+      try {
+        if ((await fetch(`http://127.0.0.1:${port}/health`)).ok) break
+      } catch { /* not up yet */ }
+      if (Date.now() - start > 10000) throw new Error('backend did not start')
+      await new Promise((r) => setTimeout(r, 100))
+    }
+  })
+
+  after(() => {
+    child?.kill('SIGKILL')
+  })
+
+  // National peak load test 2026-10-26 (literal halls): a hall's 32 matches
+  // behind one public address (a school network, mobile CGNAT). From the 21st
+  // on the scorers could not own their match (too-many-matches), so their
+  // referee and bench tablets got no bundle for the whole set, and the
+  // address's 200 relay reads a minute (tablet status polls, referee and bench
+  // fetches) ran out at about 12 matches.
+  it('one public address carries a hall of 32 matches: their rooms and their relay reads', async () => {
+    const wsUrl = `ws://127.0.0.1:${port}`
+    const scorers = []
+    for (let i = 0; i < 32; i++) {
+      const c = await openClient(wsUrl, HALL)
+      c.send(syncMessage(makeMatch({ id: 1, seed_key: `hall-${i}`, gamePin: String(600000 + i), refereeConnectionEnabled: true })))
+      scorers.push(c)
+    }
+    for (const c of scorers) {
+      c.send({ type: 'ping' })
+      await c.waitFor((m) => m.type === 'pong')
+    }
+    assert.deepEqual(scorers.flatMap((c) => c.messages.filter((m) => m.type === 'error').map((m) => m.code)), [])
+    // and one with the referee connection off: listed to its own venue only
+    // (its owners' address, cloudListsMatch)
+    const off = await openClient(wsUrl, HALL)
+    off.send(syncMessage(makeMatch({ id: 1, seed_key: 'hall-off', gamePin: '699999', refereeConnectionEnabled: false })))
+    off.send({ type: 'ping' })
+    await off.waitFor((m) => m.type === 'pong')
+    scorers.push(off)
+    const list = await (await fetch(`http://127.0.0.1:${port}/api/match/list`, { headers: HALL })).json()
+    assert.equal(list.matches.filter((m) => m.id.startsWith('hall-')).length, 33)
+    const elsewhere = await (await fetch(`http://127.0.0.1:${port}/api/match/list`, { headers: { 'cf-connecting-ip': '198.51.100.9' } })).json()
+    assert.deepEqual(elsewhere.matches.filter((m) => m.id === 'hall-off'), [])
+    assert.equal(elsewhere.matches.filter((m) => m.id.startsWith('hall-')).length, 32)
+    // a minute of the hall's relay reads (32 matches: the scorers' tablet
+    // status every 10 s, referee and bench fetches)
+    const codes = []
+    for (let i = 0; i < 600; i++) codes.push((await fetch(`http://127.0.0.1:${port}/api/server/connections?matchId=hall-${i % 32}`, { headers: HALL })).status)
+    assert.equal(codes.filter((c) => c === 429).length, 0)
+    for (const c of scorers) c.ws.close()
   })
 })

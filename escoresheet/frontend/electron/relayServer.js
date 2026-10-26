@@ -23,7 +23,7 @@ const { join, extname, basename, sep } = require('path')
 const { WebSocketServer } = require('ws')
 const { networkInterfaces } = require('os')
 
-const { createLanRelay, createLocalAddressCheck, createMainInstanceGate, WS_MAX_PAYLOAD } = require('./lanRelayCore.cjs')
+const { createLanRelay, createLocalAddressCheck, createMainInstanceGate, WS_MAX_PAYLOAD, WS_PER_MESSAGE_DEFLATE } = require('./lanRelayCore.cjs')
 const signCore = require('./signSessionCore.cjs')
 
 const MIME_TYPES = {
@@ -247,7 +247,7 @@ function start(opts = {}) {
 
     httpServer.listen(PORT, '0.0.0.0', () => {
       // WS server only after HTTP is up, so a port clash rejects cleanly.
-      wss = new WebSocketServer({ port: WS_PORT, host: '0.0.0.0', perMessageDeflate: false, maxPayload: WS_MAX_PAYLOAD })
+      wss = new WebSocketServer({ port: WS_PORT, host: '0.0.0.0', perMessageDeflate: WS_PER_MESSAGE_DEFLATE, maxPayload: WS_MAX_PAYLOAD })
       wss.on('error', (err) => {
         // HTTP already listening; surface WS failure by tearing down.
         try { httpServer.close() } catch { /* ignore */ }

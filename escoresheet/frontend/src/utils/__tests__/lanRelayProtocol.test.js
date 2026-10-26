@@ -924,9 +924,13 @@ function freePort() {
   })
 }
 
+// Scenario clients send plain frames unless they ask (deflateScenario): they
+// send a frame and read on another socket or over HTTP at once, and a
+// compressed frame is inflated off the relay's event loop, so a frame on
+// another socket could overtake it (real devices are seconds apart).
 function openClient(url, wsOptions) {
   return new Promise((res, rej) => {
-    const ws = new WebSocket(url, wsOptions)
+    const ws = new WebSocket(url, { perMessageDeflate: false, ...wsOptions })
     const client = { ws, messages: [], raw: [] }
     client.waitFor = (pred, timeoutMs = 3000) => new Promise((ok, fail) => {
       const found = client.messages.find(pred)
@@ -1007,6 +1011,33 @@ async function hostileFrameScenario({ httpBase, wsUrl }) {
  * total, so the 21st (a referee or bench tablet, the scorer coming back) was
  * closed with 1013 before its hello.
  */
+/**
+ * A tablet on the hall Wi-Fi (or the scorer's own hotspot) gets the scorer's
+ * whole match on every sync, two per rally: a bundle above 1 KB goes
+ * compressed when the tablet offers permessage-deflate (browsers do), and the
+ * scorer's compressed upload is taken.
+ */
+async function deflateScenario({ wsUrl }) {
+  const events = Array.from({ length: 200 }, (_, i) => ({ id: i + 1, seq: i + 1, setIndex: 1, type: 'point', payload: { team: i % 2 ? 'home' : 'away', note: 'same text every time '.repeat(10) }, ts: '2026-11-29T10:00:00.000Z' }))
+  // as a browser does: permessage-deflate offered, uploads above 1 KB compressed
+  const scoreboard = await openClient(wsUrl, { perMessageDeflate: true })
+  const referee = await openClient(wsUrl, { perMessageDeflate: true })
+  try {
+    expect(referee.ws.extensions).toBe('permessage-deflate')
+    scoreboard.send(syncMessage(makeMatch({ id: 7, seed_key: 'seed-deflate' }), { events }))
+    scoreboard.send({ type: 'ping' })
+    await scoreboard.waitFor((m) => m.type === 'pong')
+    const before = referee.ws._socket.bytesRead
+    referee.send({ type: 'subscribe-match', matchId: 'seed-deflate', pin: PINS.refereePin })
+    const full = await referee.waitFor((m) => m.type === 'match-full-data')
+    expect(readRelayBundle(full).events).toHaveLength(200)
+    const wire = referee.ws._socket.bytesRead - before
+    expect(wire).toBeLessThan(Buffer.byteLength(referee.raw.at(-1)) / 4)
+  } finally {
+    for (const c of [scoreboard, referee]) c.ws.close()
+  }
+}
+
 async function hallCrowdScenario({ wsUrl }) {
   const scoreboard = await openClient(wsUrl)
   const clients = [scoreboard]
@@ -1197,6 +1228,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await runBeachVenueContract({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'server-js' })
       await hostileFrameScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await hallCrowdScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
+      await deflateScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
       const unknown = await fetch(`http://127.0.0.1:${port}/api/nope`)
       expect(unknown.status).toBe(404)
       expect(unknown.headers.get('content-type')).toMatch(/json/)
@@ -1258,6 +1290,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await runBeachVenueContract({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'electron' })
       await hostileFrameScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await hallCrowdScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
+      await deflateScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
     } finally {
       await relayServer.stop()
     }

@@ -48,7 +48,7 @@ vi.mock('../../utils/serverDataSync', async (importOriginal) => {
   }
 })
 
-import { useRealtimeConnection, useRelayTablets } from '../useRealtimeConnection'
+import { useRealtimeConnection, useRelayTablets, RELAY_BUNDLE_COVERS_MS } from '../useRealtimeConnection'
 
 const flush = async () => { for (let i = 0; i < 5; i++) await Promise.resolve() }
 
@@ -110,6 +110,39 @@ describe('useRealtimeConnection AUTO mode', () => {
     await act(async () => { h.state.fetchResolvers.shift()({ success: true, match: { id: SEED, from: 'fetch' }, sets: [] }) })
     expect(onData).toHaveBeenCalledTimes(1)
     expect(onData.mock.calls[0][0].match.from).toBe('relay')
+  })
+
+  it('does not read the bundle again for a db change while the relay room pushes new bundles', async () => {
+    const onData = vi.fn()
+    renderHook(() => useRealtimeConnection({ matchId: SEED, onData }))
+    await act(flush)
+    const ch = h.state.channels.at(-1)
+    const events = ch.bindings.find((b) => b.filter.table === 'events')
+    // The scorer's sync: a new bundle on the relay socket, then its db rows
+    act(() => h.state.relayCallback({ match: { id: SEED }, sets: [], events: [{ seq: 1 }] }))
+    act(() => events.cb({ table: 'events', eventType: 'INSERT' }))
+    await act(async () => { vi.advanceTimersByTime(300) })
+    expect(h.getMatchData).not.toHaveBeenCalled()
+    expect(onData).toHaveBeenCalledTimes(1)
+
+    // A re-delivery of the same bundle with a live state is no new bundle:
+    // once the last new one is old, a db change is read as before
+    await act(async () => { vi.advanceTimersByTime(RELAY_BUNDLE_COVERS_MS) })
+    act(() => h.state.relayCallback({ ...onData.mock.calls[0][0], liveState: { pointsA: 1 } }))
+    act(() => events.cb({ table: 'events', eventType: 'INSERT' }))
+    await act(async () => { vi.advanceTimersByTime(300) })
+    expect(h.getMatchData).toHaveBeenCalledTimes(1)
+  })
+
+  it('still refetches when the db stream (re)subscribes right after a relay bundle', async () => {
+    renderHook(() => useRealtimeConnection({ matchId: SEED, onData: vi.fn() }))
+    await act(flush)
+    const ch = h.state.channels.at(-1)
+    act(() => h.state.relayCallback({ match: { id: SEED }, sets: [], events: [] }))
+    act(() => ch.bindings.find((b) => b.filter.table === 'sets').cb({ table: 'sets', eventType: 'UPDATE' }))
+    act(() => ch.statusCb('SUBSCRIBED'))
+    await act(async () => { vi.advanceTimersByTime(300) })
+    expect(h.getMatchData).toHaveBeenCalledTimes(1)
   })
 
   it('looks up a match missing from the database with backoff, and stops on a server without a db stream', async () => {

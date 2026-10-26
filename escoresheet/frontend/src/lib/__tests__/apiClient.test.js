@@ -452,3 +452,43 @@ describe('self-hosted backend contract', () => {
     expect(JSON.parse(localStorage.getItem('api_auth_token')).expires_at).toBe(later)
   })
 })
+
+// National peak load test 2026-10-26: hundreds of scorers signing in within
+// two minutes; the server's sign-in gate (a few per second for the whole
+// server) answered one in ten with 503 auth_busy, which the app showed as an
+// error the scorer had to tap away and retry by hand.
+describe('apiAuth.signInWithPassword when sign-in is busy', () => {
+  const busy = () => jsonResponse({ data: null, error: { message: 'Sign-in is busy right now. Please try again in a few seconds.', code: 'auth_busy' } }, 503)
+  const ok = () => jsonResponse({ data: { session: { access_token: 'n', user: { id: 'u2' } }, user: { id: 'u2' } }, error: null })
+
+  beforeEach(() => { localStorage.clear(); vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
+
+  it('asks again after 2-4 s, a few times, before showing the error', async () => {
+    const answers = [busy(), busy(), ok()]
+    globalThis.fetch = vi.fn(async () => answers.shift())
+    const pending = apiAuth.signInWithPassword({ email: 'a@b.ch', password: 'x' })
+    await vi.advanceTimersByTimeAsync(1999)
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(10000)
+    const r = await pending
+    expect(globalThis.fetch).toHaveBeenCalledTimes(3)
+    expect(r.error).toBeNull()
+    expect(JSON.parse(localStorage.getItem('api_auth_token')).access_token).toBe('n')
+  })
+
+  it('gives up after three more tries; other refusals are never retried', async () => {
+    globalThis.fetch = vi.fn(async () => busy())
+    const pending = apiAuth.signInWithPassword({ email: 'a@b.ch', password: 'x' })
+    await vi.advanceTimersByTimeAsync(30000)
+    const r = await pending
+    expect(globalThis.fetch).toHaveBeenCalledTimes(4)
+    expect(r.error.code).toBe('auth_busy')
+    expect(r.status).toBe(503)
+
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: { message: 'Invalid login credentials' } }, 400))
+    const wrong = await apiAuth.signInWithPassword({ email: 'a@b.ch', password: 'y' })
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+    expect(wrong.error.message).toBe('Invalid login credentials')
+  })
+})

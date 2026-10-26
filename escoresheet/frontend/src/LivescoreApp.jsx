@@ -147,8 +147,9 @@ export default function LivescoreApp() {
     }
   }, [])
 
-  // Initial fetch and subscribe to realtime updates, once the server is known
-  // (a server chosen on the connection screen is used by both).
+  // Initial fetch once the server is known (a server chosen on the connection
+  // screen is used by both); on a venue relay, its own feed. The database's
+  // realtime channel: next effect.
   useEffect(() => {
     if (!serverReady) return undefined
 
@@ -188,10 +189,19 @@ export default function LivescoreApp() {
     }
 
     fetchLiveGames()
+    return undefined
+  }, [fetchLiveGames, serverReady])
 
-    if (!supabase) return undefined
+  // The database feed (relay realtime shim): the list follows every indoor
+  // match, the fullscreen view the game on screen only. Every live-state frame
+  // of every match went to every viewer, also to the ones looking at one game
+  // (national peak load test 2026-10-26: about 24,000 frames a second to 1,355
+  // viewers at 404 matches, the backend's CPU and the tunnel's main load).
+  // Back on the list, SUBSCRIBED refetches what it did not follow meanwhile.
+  const liveFilter = selectedGame ? `match_id=eq.${selectedGame}` : 'sport_type=eq.indoor'
+  useEffect(() => {
+    if (!serverReady || relayLivescoreNow() || !supabase) return undefined
 
-    // Subscribe to every indoor match_live_state change (relay realtime shim)
     const channel = supabase
       .channel('livescore-all-games')
       .on(
@@ -200,7 +210,7 @@ export default function LivescoreApp() {
           event: '*',
           schema: 'public',
           table: 'match_live_state',
-          filter: 'sport_type=eq.indoor'
+          filter: liveFilter
         },
         (payload) => {
           // INSERT/UPDATE upsert by match_id and merge into the loaded row (keeps
@@ -246,7 +256,7 @@ export default function LivescoreApp() {
         channelRef.current = null
       }
     }
-  }, [fetchLiveGames, serverReady])
+  }, [fetchLiveGames, serverReady, liveFilter])
 
   // Only started (or finished) matches are listed: a match appears when it is
   // under way, not at the first lineup confirm. See utils/livescoreModel.js.
