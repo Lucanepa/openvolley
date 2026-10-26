@@ -77,7 +77,7 @@ import ManageConsole from './components/manage/ManageConsole'
 import ManagerSiteLink from './components/ManagerSiteLink'
 import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, openRestore, restorePrefill } from './utils/manageNav'
 import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
-import { needsEventCheck, pickCurrentMatch } from './utils/currentMatch'
+import { needsEventCheck, pickCurrentMatch, newOfficialMatchStep } from './utils/currentMatch'
 import { isRelayErrorFor, mayPublishMatchData, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
 import { PHONE_MAX_WIDTH, isPhoneScreen, phoneLayoutKept } from './components/scoreboard/phoneLayout'
 import { useSystemBarsHidden } from './utils/nativeSystemBars'
@@ -2287,28 +2287,32 @@ export default function App() {
   }
 
   async function createNewOfficialMatch() {
-    // Check if match is ongoing
-    if (matchStatus?.status === 'Match recording') {
-      return // Don't allow creating new match when one is ongoing
+    // utils/currentMatch newOfficialMatchStep. An official match being
+    // recorded is not replaced; a test or easy match is, after the question
+    // (this button did nothing at all while one was being recorded). A copy
+    // closed on the server counts as confirmed (a restored row may lack
+    // matchInfoConfirmedAt): never deleted without a word. Unconfirmed
+    // matches (user started but didn't click "Create Match") are silently
+    // deleted.
+    const step = newOfficialMatchStep(currentMatch, matchStatus?.status, { closedCopy: isStaleClosedCopy(currentMatch) })
+    if (step === 'recording') {
+      setAlertModal(t('home.modals.officialMatchStillRecording', 'An official match is still recording on this device. Continue it, or delete it with "Delete match", before creating a new official match.'))
+      return
     }
-
-    // Check if there's a CONFIRMED match (has matchInfoConfirmedAt)
-    // Unconfirmed matches (user started but didn't click "Create Match") should be silently deleted
-    if (currentMatch) {
-      // a copy closed on the server counts as confirmed (a restored row may
-      // lack matchInfoConfirmedAt): never deleted without a word
-      if (currentMatch.matchInfoConfirmedAt || isStaleClosedCopy(currentMatch)) {
-        // This is a real confirmed match - warn the user
-        setNewMatchModal({
-          type: 'official',
-          message: t('home.modals.existingMatchWarning')
-        })
-        return
-      } else {
-        // This is an unconfirmed match - delete it silently
-        console.log('[New Match] Deleting unconfirmed match:', currentMatch.id)
-        await db.matches.delete(currentMatch.id)
-      }
+    if (step === 'replace') {
+      setNewMatchModal({
+        type: 'official',
+        message: currentMatch.test !== true
+          ? t('home.modals.existingMatchWarning')
+          : currentMatch.easy === true
+            ? t('home.modals.officialMatchReplaceEasy', 'The easy match on this device is replaced by the official match and its data deleted. Continue?')
+            : t('home.modals.officialMatchReplaceTest', 'The test match on this device is replaced by the official match and its data deleted. Continue?')
+      })
+      return
+    }
+    if (step === 'discard') {
+      console.log('[New Match] Deleting unconfirmed match:', currentMatch.id)
+      await db.matches.delete(currentMatch.id)
     }
 
     // Clear any stray draft data from previous sessions

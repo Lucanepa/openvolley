@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { ABANDONED_LOCAL_MATCH_MS, isAbandonedLocalMatch, needsEventCheck, pickCurrentMatch } from '../currentMatch'
+import { ABANDONED_LOCAL_MATCH_MS, isAbandonedLocalMatch, needsEventCheck, pickCurrentMatch, newOfficialMatchStep } from '../currentMatch'
 
 const NOW = Date.parse('2026-10-07T12:00:00Z')
 const DAY = 24 * 60 * 60 * 1000
@@ -66,5 +66,29 @@ describe('current match of the scorer app', () => {
     expect(pickCurrentMatch([], { now: NOW })).toBeNull()
     expect(pickCurrentMatch(null, { now: NOW })).toBeNull()
     expect(pickCurrentMatch([{ id: 1, status: 'final', createdAt: at(NOW) }], { now: NOW })).toBeNull()
+  })
+})
+
+// "New match → Official match" did nothing at all, no dialog, no message,
+// while a test match was being recorded (stress test 2026-10-25): the
+// button returned on any match being recorded, test and easy ones too.
+describe('New match → Official match with the current match', () => {
+  const confirmed = { matchInfoConfirmedAt: at(NOW - DAY) }
+
+  it('a test (or easy) match being recorded is replaced after a question, as one not being recorded is', () => {
+    expect(newOfficialMatchStep({ id: 1, test: true, ...confirmed }, 'Match recording')).toBe('replace')
+    expect(newOfficialMatchStep({ id: 1, test: true, easy: true, ...confirmed }, 'Match recording')).toBe('replace')
+    expect(newOfficialMatchStep({ id: 1, test: true, ...confirmed }, 'Coin toss')).toBe('replace')
+  })
+
+  it('an official match being recorded is not replaced: the scorer is told why', () => {
+    expect(newOfficialMatchStep({ id: 1, ...confirmed }, 'Match recording')).toBe('recording')
+  })
+
+  it('otherwise as before: a confirmed match is asked about, a draft deleted, none opens the setup', () => {
+    expect(newOfficialMatchStep({ id: 1, ...confirmed }, 'Setup')).toBe('replace')
+    expect(newOfficialMatchStep({ id: 1 }, 'No data', { closedCopy: true })).toBe('replace')
+    expect(newOfficialMatchStep({ id: 1 }, 'Setup')).toBe('discard')
+    expect(newOfficialMatchStep(null, undefined)).toBe('new')
   })
 })

@@ -1056,6 +1056,9 @@
     "modals": {
       "existingMatchWarning": "Es git scho es Spiil. Möchted Sie es lösche und es neus offiziells Spiil erstelle?",
       "testMatchOverwriteWarning": "Es offiziells Spiil wird ufzeichnet. S Starte vomene Testspiil löscht die vorherig Sitzig. Wiiterfahre?",
+      "officialMatchStillRecording": "Uf dem Gerät lauft no es offiziells Spiil. Füehred Sie es wiiter oder löschet Sie es mit \"Spiil lösche\", bevor Sie es neus offiziells Spiil erstelled.",
+      "officialMatchReplaceTest": "S Testspiil uf dem Gerät wird dur s offizielle Spiil ersetzt und sini Date glöscht. Wiiterfahre?",
+      "officialMatchReplaceEasy": "S eifache Spiil uf dem Gerät wird dur s offizielle Spiil ersetzt und sini Date glöscht. Wiiterfahre?",
       "deleteTestMatchConfirm": "Das löscht s Testspiil und alli Date. Wiiterfahre?",
       "noTestMatchFound": "Keis Testspiil gfunde. Bitte erstelled Sie zersch es neus Testspiil.",
       "testMatchDeleted": "Testspiil erfolgriich glöscht.",

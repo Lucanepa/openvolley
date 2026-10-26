@@ -1056,6 +1056,9 @@
     "modals": {
       "existingMatchWarning": "Esiste già una partita. Vuoi eliminarla e creare una nuova partita ufficiale?",
       "testMatchOverwriteWarning": "Una partita ufficiale è in corso. Iniziare una partita test cancellerà la sessione precedente. Continuare?",
+      "officialMatchStillRecording": "Su questo dispositivo è ancora in registrazione una partita ufficiale. Continuala, o eliminala con \"Elimina partita\", prima di creare una nuova partita ufficiale.",
+      "officialMatchReplaceTest": "La partita test di questo dispositivo viene sostituita dalla partita ufficiale e i suoi dati eliminati. Continuare?",
+      "officialMatchReplaceEasy": "La partita semplice di questo dispositivo viene sostituita dalla partita ufficiale e i suoi dati eliminati. Continuare?",
       "deleteTestMatchConfirm": "Questo eliminerà la partita test e tutti i suoi dati. Continuare?",
       "noTestMatchFound": "Nessuna partita test trovata. Crea prima una nuova partita test.",
       "testMatchDeleted": "Partita test eliminata con successo.",
