@@ -818,7 +818,7 @@
       "selectTitle": "Spielführer"
     },
     "duplicateTabTitle": "Matchblatt bereits geöffnet",
-    "duplicateTabMessage": "Das Matchblatt ist bereits in einem anderen Tab oder Browserfenster geöffnet. Bitte schliessen Sie diesen Tab und verwenden Sie den bestehenden, um Datenkonflikte zu vermeiden.",
+    "duplicateTabMessage": "Das Matchblatt ist bereits in einem anderen Tab oder Browserfenster geöffnet. Führen Sie es nur in einem Tab, um Datenkonflikte zu vermeiden: Schliessen Sie diesen Tab, oder holen Sie es mit «In diesem Tab weiterführen» hierher (der andere Tab führt es dann nicht mehr).",
     "closeThisTab": "Diesen Tab schliessen",
     "scoreInThisTab": "In diesem Tab weiterführen",
     "rotateDeviceTitle": "Bitte drehen Sie Ihr Gerät",

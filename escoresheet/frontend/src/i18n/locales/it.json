@@ -818,7 +818,7 @@
       "selectTitle": "Capitano del gioco"
     },
     "duplicateTabTitle": "Foglio segnapunti già aperto",
-    "duplicateTabMessage": "Il foglio segnapunti è già aperto in un'altra scheda o finestra del browser. Chiudi questa scheda e usa quella esistente per evitare conflitti di dati.",
+    "duplicateTabMessage": "Il foglio segnapunti è già aperto in un'altra scheda o finestra del browser. Per evitare conflitti di dati, tienilo in una sola scheda: chiudi questa, oppure premi «Continua in questa scheda» per riprenderlo qui (l'altra scheda smette allora di tenerlo).",
     "closeThisTab": "Chiudi questa scheda",
     "scoreInThisTab": "Continua in questa scheda",
     "rotateDeviceTitle": "Ruota il dispositivo",
