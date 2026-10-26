@@ -70,6 +70,7 @@ import { easyLiberoNumbers, easyLiberoErrors, easyRosterChanges, liberoSlotEdita
 import { describeEventText } from '../domain/describe'
 import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal } from '../domain/matchEnd'
+import { signaturesPayload } from '../domain/signatureEdits'
 import { savedSidesOfRegularSets } from '../domain/coinToss'
 import { liveStateNeedsFreshSnapshot } from '../utils/livescoreModel'
 import { displaySetNumber, setsWonWithFinishedSet, finishedSetMissingFromSnapshot } from '../utils/matchFormat'
@@ -21563,7 +21564,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       await db.sync_queue.add({
                         resource: 'match',
                         action: 'update',
-                        payload: { id: matchRecord.seed_key, status: 'live' },
+                        payload: {
+                          id: matchRecord.seed_key,
+                          status: 'live',
+                          // the post-match signatures cleared above, on the
+                          // server too (as MatchEnd's Reopen last set)
+                          signatures: signaturesPayload({ ...matchRecord, ...clearedPostMatchSignatures() })
+                        },
                         ts: new Date().toISOString(),
                         status: 'queued'
                       })

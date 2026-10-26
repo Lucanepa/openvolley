@@ -9,6 +9,7 @@ import { swapTeamDesignation as swapTeamDesignationPatch } from '../domain/coinT
 import { mergeOfficialsEdits } from '../domain/officials'
 import { approvedSheetChanged } from '../domain/accountApproval'
 import { clearedPostMatchSignatures } from '../domain/matchEnd'
+import { signaturesPayload } from '../domain/signatureEdits'
 import { matchInfoFromLocal, queueMatchUpdate } from '../db/matchRepository'
 import { approvalsApi } from '../lib/accountApi'
 import { Button } from '../ui/Button.jsx'
@@ -488,7 +489,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
       // Sync to Supabase if available
       if (editedMatch?.seed_key) {
-        await syncToSupabase(designationSaved)
+        await syncToSupabase(designationSaved, { signaturesCleared: sheetChanged })
       }
 
       // Notify scoresheet window (and any other listeners) about the changes
@@ -510,7 +511,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   })
 
   // Sync changes to Supabase
-  const syncToSupabase = async (designation = null) => {
+  const syncToSupabase = async (designation = null, { signaturesCleared = false } = {}) => {
     if (!editedMatch?.seed_key) return
 
     try {
@@ -575,7 +576,11 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           }
         } : {}),
         // stored first (with this save's entries), then sent as stored
-        manual_changes: [...((await db.matches.get(matchId))?.manualChanges || [])]
+        manual_changes: [...((await db.matches.get(matchId))?.manualChanges || [])],
+        // the post-match signatures cleared above, cleared on the server too
+        // (it kept them, attached to the changed sheet): the whole object, the
+        // server replaces the column, so the pre-match ones travel along
+        ...(signaturesCleared ? { signatures: signaturesPayload(await db.matches.get(matchId)) } : {})
       }, { test: data?.match?.test === true || editedMatch.test === true })
 
       console.log('[ManualAdjustments] Cloud update queued')
