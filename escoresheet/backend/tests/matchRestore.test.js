@@ -94,6 +94,24 @@ describe('createPinFailureBudget', () => {
     assert.equal(b.repeated('other', 'any:indoor:referee', '111111'), false)
   })
 
+  // 2026-10-26: a hall's wrong PINs for other matches spent the address's
+  // ceiling, and the scoreboard re-proving its own match was refused
+  it('scopeOnly: the scope\'s limit alone, the ceiling neither asked nor counted', () => {
+    const b = createPinFailureBudget({ max: 3, ipMax: 3, windowMs: 60000 })
+    for (const scope of ['a', 'b', 'c']) assert.equal(b.isLimited('hall', scope), false)
+    assert.equal(b.isLimited('hall', 'm:game:1'), true, 'the ceiling is spent')
+    // the trusted check of that scope still goes, and is still limited by it
+    for (let i = 0; i < 3; i++) assert.equal(b.isLimited('hall', 'm:game:1', { scopeOnly: true }), false)
+    assert.equal(b.isLimited('hall', 'm:game:1', { scopeOnly: true }), true)
+    // its refunds give the ceiling nothing back it did not take
+    const c = createPinFailureBudget({ max: 3, ipMax: 2, windowMs: 60000 })
+    assert.equal(c.isLimited('hall', 'a'), false)
+    assert.equal(c.isLimited('hall', 'm:game:1', { scopeOnly: true }), false)
+    c.refund('hall', 'm:game:1', { scopeOnly: true })
+    assert.equal(c.isLimited('hall', 'b'), false)
+    assert.equal(c.isLimited('hall', 'c'), true)
+  })
+
   it('opens again after the window', async () => {
     const b = createPinFailureBudget({ max: 1, ipMax: 1, windowMs: 20 })
     assert.equal(b.isLimited('hall', 'a'), false)
