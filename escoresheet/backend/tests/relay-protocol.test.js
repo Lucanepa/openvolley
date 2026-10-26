@@ -10,6 +10,8 @@ import { createServer } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import WebSocket from 'ws'
+import { get as httpGet } from 'node:http'
+import { gunzipSync } from 'node:zlib'
 
 const BACKEND_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -455,6 +457,40 @@ describe('backend WebSocket relay protocol', () => {
     scoreboard.send({ type: 'delete-match', matchId: 44 })
     await referee.waitFor((m) => m.type === 'match-deleted')
     for (const c of [scoreboard, referee]) c.ws.close()
+  })
+
+  // National peak load test 2026-10-26: a bench refetches the whole bundle
+  // after every database change of its match (about 2-3 per rally), and
+  // every byte of it went uncompressed through the tunnel.
+  it('GET /api/match/:id answers gzipped to a client that accepts it', async () => {
+    const wsUrl = `ws://127.0.0.1:${port}`
+    const seed = 'match_1791215210060_gzipme'
+    const match = makeMatch({ id: 46, seed_key: seed, gamePin: '464646' })
+    const events = Array.from({ length: 300 }, (_, i) => ({ id: i + 1, seq: i + 1, setIndex: 1, type: 'point', payload: { team: i % 2 ? 'home' : 'away' }, ts: '2026-11-29T10:00:00.000Z' }))
+    const scoreboard = await openClient(wsUrl)
+    scoreboard.send(syncMessage(match, { events }))
+    scoreboard.send({ type: 'ping' })
+    await scoreboard.waitFor((m) => m.type === 'pong')
+    const get = (headers) => new Promise((resolve, reject) => {
+      httpGet({ host: '127.0.0.1', port, path: `/api/match/${seed}`, headers: { 'X-OV-Match-Pin': PINS.refereePin, ...headers } }, (res) => {
+        const chunks = []
+        res.on('data', (c) => chunks.push(c))
+        res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }))
+      }).on('error', reject)
+    })
+    const zipped = await get({ 'Accept-Encoding': 'gzip, deflate, br' })
+    assert.equal(zipped.status, 200)
+    assert.equal(zipped.headers['content-encoding'], 'gzip')
+    assert.match(String(zipped.headers.vary || ''), /Accept-Encoding/i)
+    const plain = await get({})
+    assert.equal(plain.headers['content-encoding'], undefined)
+    assert.deepEqual(JSON.parse(gunzipSync(zipped.body).toString()), JSON.parse(plain.body.toString()))
+    assert.equal(JSON.parse(plain.body.toString()).events.length, 300)
+    assert.ok(zipped.body.length * 4 < plain.body.length, `${zipped.body.length} vs ${plain.body.length}`)
+    // refused: plain as before
+    assert.equal((await get({ 'Accept-Encoding': 'gzip;q=0' })).headers['content-encoding'], undefined)
+    scoreboard.send({ type: 'delete-match', matchId: 46 })
+    scoreboard.ws.close()
   })
 
   // A tablet that stopped reading (a dead Wi-Fi link the heartbeat has not
