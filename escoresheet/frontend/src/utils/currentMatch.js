@@ -69,3 +69,26 @@ export function pickCurrentMatch(matches, { now = Date.now(), hasEvents = () => 
     })
   return candidates.length ? candidates[0].m : null
 }
+
+/**
+ * What "New match → Official match" does with the current match
+ * (App.jsx createNewOfficialMatch), from its home-screen status:
+ * - 'recording': an official match is being recorded. It is not replaced;
+ *   the scorer is told to continue or delete it first.
+ * - 'replace': a confirmed match (or a copy closed on the server) is deleted
+ *   after a question, a test or easy match also while it is being recorded.
+ *   The button used to do nothing at all then, no dialog, no message, while
+ *   Test match in the same menu asked to replace the match.
+ * - 'discard': a match never confirmed (Create Match not pressed) is deleted
+ *   without a word.
+ * - 'new': no current match; the official match setup opens.
+ * @param {object|null} match the current match
+ * @param {string|undefined} status its home-screen status ('Match recording', ...)
+ * @param {{ closedCopy?: boolean }} [opts] closedCopy: closed on the server
+ * @returns {'recording'|'replace'|'discard'|'new'}
+ */
+export function newOfficialMatchStep(match, status, { closedCopy = false } = {}) {
+  if (!match) return 'new'
+  if (status === 'Match recording') return match.test === true ? 'replace' : 'recording'
+  return match.matchInfoConfirmedAt || closedCopy ? 'replace' : 'discard'
+}

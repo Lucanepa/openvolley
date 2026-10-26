@@ -146,7 +146,9 @@ export async function validatePin(pin, type = 'referee') {
         // If response is not JSON, use status text
         errorMessage = response.statusText || errorMessage
       }
-      throw new Error(errorMessage)
+      // The status tells a refusal without comparing (429: too many wrong
+      // PINs from this address) from a wrong PIN
+      throw Object.assign(new Error(errorMessage), { status: response.status })
     }
 
     // Check if response has content
@@ -324,6 +326,38 @@ export function newerLiveState(current, incoming) {
 }
 
 /**
+ * The live-state clock of a match on the scorer's device. The viewers and the
+ * realtime hub order the states of different scorer sessions by updated_at,
+ * the scorer's own clock: after a hand-over to a device whose clock was
+ * behind the previous one's (no internet time in the hall), every state of
+ * the new device looked older than the previous device's last, and the
+ * referee, benches and livescore stayed on that score for as long as the
+ * clocks differed (stress test 2026-10-25). A device that continues a match
+ * stamps its live states (updated_at, a relay bundle's _syncedAt) this far
+ * ahead of its clock: liveClockOffsetAfter the last cloud state.
+ */
+export function liveClockOffset(match) {
+  const v = Number(match?.liveClockOffsetMs)
+  return Number.isFinite(v) && v > 0 ? v : 0
+}
+
+/** Now on the live-state clock of `match` (ms): see liveClockOffset. */
+export function liveStateNow(match, now = Date.now()) {
+  return now + liveClockOffset(match)
+}
+
+/**
+ * The live-state clock offset of a device that continues a match whose last
+ * state in the cloud is `cloudLiveState`: what makes its first state newer
+ * than that one. 0 when this device's clock is ahead already or the state
+ * names no time.
+ */
+export function liveClockOffsetAfter(cloudLiveState, now = Date.now()) {
+  const last = liveStateTime(cloudLiveState)
+  return Number.isNaN(last) ? 0 : Math.max(0, last - now + 1)
+}
+
+/**
  * Was `liveState` computed after the relay bundle was read on the scorer?
  * - Same scorer session: its sequence number is higher than the bundle's
  *   match._syncedSeq (the last number issued before the sync read IndexedDB).
@@ -342,6 +376,26 @@ export function isLiveStateNewerThanBundle(liveState, bundle) {
   const syncedAt = Number(match?._syncedAt)
   const liveAt = liveStateTime(liveState)
   return Number.isFinite(syncedAt) && !Number.isNaN(liveAt) && liveAt > syncedAt
+}
+
+/**
+ * The other way round: was the relay bundle read on the scorer after actions
+ * that `liveState` does not show? Same scorer session: the bundle's
+ * match._syncedSeq is past the state's sequence number; otherwise its
+ * _syncedAt is later than the state's updated_at. False when the bundle
+ * carries neither (an older scorer) or the state is not older.
+ */
+export function isBundleNewerThanLiveState(liveState, bundle) {
+  if (!liveState || !bundle) return false
+  const match = bundle.match
+  const order = liveStateOrderOf(liveState)
+  const syncedSeq = Number(match?._syncedSeq)
+  if (order && Number.isFinite(syncedSeq) && match?._syncSession === order.session) {
+    return syncedSeq > order.seq
+  }
+  const syncedAt = Number(match?._syncedAt)
+  const liveAt = liveStateTime(liveState)
+  return Number.isFinite(syncedAt) && !Number.isNaN(liveAt) && syncedAt > liveAt
 }
 
 /**
@@ -1509,8 +1563,13 @@ export async function listAvailableMatchesForBenchSupabase({ now = Date.now() } 
 /**
  * Validate PIN against Supabase database
  * Returns match data if PIN is valid
+ * With matchExternalId the PIN is checked against that match only: a tablet
+ * re-checking its stored PIN after a reload, whose check the backend then
+ * counts apart from other tablets' typos behind the same address.
+ * A refusal without comparing (too many wrong PINs from this address) comes
+ * back with rateLimited: true, never as a wrong PIN.
  */
-export async function validatePinSupabase(pin, type = 'referee', { timeoutMs = 3000 } = {}) {
+export async function validatePinSupabase(pin, type = 'referee', { timeoutMs = 3000, matchExternalId } = {}) {
   // Bounded: on a venue network that drops packets to the internet this check
   // must fail fast so the caller can fall back to the LAN relay.
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
@@ -1531,7 +1590,7 @@ export async function validatePinSupabase(pin, type = 'referee', { timeoutMs = 3
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: pinStr, type }),
+      body: JSON.stringify({ pin: pinStr, type, ...(matchExternalId ? { matchExternalId: String(matchExternalId) } : {}) }),
       ...(controller ? { signal: controller.signal } : {})
     })
 
@@ -1539,9 +1598,12 @@ export async function validatePinSupabase(pin, type = 'referee', { timeoutMs = 3
     try {
       result = await response.json()
     } catch {
-      return { success: false, error: 'Validation failed' }
+      return { success: false, error: 'Validation failed', ...(response.status === 429 ? { rateLimited: true } : {}) }
     }
 
+    if (response.status === 429) {
+      return { success: false, rateLimited: true, error: result?.error || 'Too many attempts' }
+    }
     if (!response.ok || !result?.success) {
       return { success: false, error: result?.error || 'Invalid PIN code' }
     }
@@ -1778,7 +1840,9 @@ export function relayMatchPayload(match, lastPinSignature = null, { now = Date.n
   const out = { ...(match || {}) }
   delete out._syncedSeq
   delete out._syncSession
-  out._syncedAt = Number.isFinite(mark?.at) ? mark.at : now
+  // (on the match's live-state clock, as the live states' updated_at)
+  out._syncedAt = (Number.isFinite(mark?.at) ? mark.at : now) + liveClockOffset(match)
+  delete out.liveClockOffsetMs
   if (mark && Number.isFinite(mark.seq) && typeof mark.session === 'string' && mark.session) {
     out._syncedSeq = mark.seq
     out._syncSession = mark.session

@@ -123,9 +123,15 @@ export function jobMatchKey(job) {
     if (typeof p.match_id === 'string' && p.match_id && !UUID.test(p.match_id)) return p.match_id
     return parseExtId(p.external_id)?.seedKey || null
   }
-  if (job?.resource === USER_MATCH_RESOURCE) return p.match_external_id || null
+  if (job?.resource === USER_MATCH_RESOURCE || job?.resource === SCORESHEET_UPLOAD_RESOURCE) return p.match_external_id || null
   return null
 }
+
+/**
+ * sync_queue resource of a scoresheet file upload (action 'upload'):
+ * utils/scoresheetUploader scoresheetUploadJob.
+ */
+export const SCORESHEET_UPLOAD_RESOURCE = 'scoresheet'
 
 // ---------------------------------------------------------------------------
 // user_matches ("My Matches"): which account scored / officiated which match

@@ -13,6 +13,7 @@ import { ScaleProvider } from '../../contexts/ScaleContext'
 import { LoggingProvider } from '../../contexts/LoggingContext'
 import { db } from '../../db/db'
 import Scoreboard from '../Scoreboard'
+import { GHOST_CLICK_MS } from '../../hooks/useConfirmAction'
 
 class OfflineSocket {
   constructor() { this.readyState = 3 }
@@ -99,6 +100,8 @@ describe('Scoreboard: the interval after the set end', () => {
     await waitFor(() => expect(button('Start rally')).toBeTruthy())
     fireEvent.click(button('Start rally'))
     await waitFor(() => expect(button('Point A')).toBeTruthy())
+    // a rally, not the second tap of a double tap on Start rally
+    await new Promise(r => setTimeout(r, GHOST_CLICK_MS + 50))
     fireEvent.click(button('Point A'))
     await waitFor(() => expect(button('Confirm')).toBeTruthy())
 

@@ -867,6 +867,8 @@
       "show": "Wärchzüügliischte iiblände"
     },
     "confirmFailed": "Das isch nöd gspeicheret worde. Bitte s Matchblatt prüefe und nomal probiere.",
+    "storageFull": "Nöd gspeicheret: De Speicher vo dem Grät isch voll. Platz freimache (alti Downloads oder anderi Dateie lösche) und nomal tippe. Alles, wo bis jetzt erfasst isch, bliibt erhalte.",
+    "storageLow": "De Speicher vo dem Grät isch fascht voll: no {{mb}} MB für OpenVolley. Jetzt Platz freimache (alti Downloads oder anderi Dateie lösche): Wenn er voll isch, cha nüt meh erfasst werde.",
     "timeoutRequest": {
       "title": "Timeout — {{team}}",
       "first": "Timeout 1 vo 2 i dem Satz für {{team}}.",
@@ -965,6 +967,11 @@
       "restorePreview": "Widerherstelligs-Vorschau",
       "fromDatabase": "Vo Datebank",
       "fromLocalFile": "Vo lokaler Datei",
+      "restoreErrors": {
+        "unreadable": "Die Datei cha nöd gläse werde: Sie isch beschädigt oder unvollständig. Wähl en anderi Backup-Datei.",
+        "notABackup": "Die Datei isch kei OpenVolley-Spiilbackup. Wähl en anderi Datei.",
+        "failed": "S Spiil het nöd chöne widerhergstellt werde: {{error}}"
+      },
       "preview": {
         "set": "Satz {{n}}",
         "serving": "Ufschlag",
@@ -1056,6 +1063,9 @@
     "modals": {
       "existingMatchWarning": "Es git scho es Spiil. Möchted Sie es lösche und es neus offiziells Spiil erstelle?",
       "testMatchOverwriteWarning": "Es offiziells Spiil wird ufzeichnet. S Starte vomene Testspiil löscht die vorherig Sitzig. Wiiterfahre?",
+      "officialMatchStillRecording": "Uf dem Gerät lauft no es offiziells Spiil. Füehred Sie es wiiter oder löschet Sie es mit \"Spiil lösche\", bevor Sie es neus offiziells Spiil erstelled.",
+      "officialMatchReplaceTest": "S Testspiil uf dem Gerät wird dur s offizielle Spiil ersetzt und sini Date glöscht. Wiiterfahre?",
+      "officialMatchReplaceEasy": "S eifache Spiil uf dem Gerät wird dur s offizielle Spiil ersetzt und sini Date glöscht. Wiiterfahre?",
       "deleteTestMatchConfirm": "Das löscht s Testspiil und alli Date. Wiiterfahre?",
       "noTestMatchFound": "Keis Testspiil gfunde. Bitte erstelled Sie zersch es neus Testspiil.",
       "testMatchDeleted": "Testspiil erfolgriich glöscht.",
@@ -1627,6 +1637,7 @@
     "connect": "Verbinde",
     "connecting": "Verbinde...",
     "invalidPin": "Ungültige PIN. Bitte nomal probiere.",
+    "tooManyAttempts": "Zu viele falsche PINs aus diesem Netzwerk. Bitte einige Minuten warten und erneut versuchen.",
     "roster": "Kader",
     "match": "Spiil",
     "back": "Zrugg",
@@ -1670,7 +1681,8 @@
       "connectionLost": "Verbindig verlore. Bitte neu verbinde.",
       "matchEnded": "S Spiil isch beendet.",
       "connectionDisabled": "D Verbindig isch deaktiviert worde.",
-      "serverUnreachable": "Keine Verbindung zum Server – bitte WLAN prüfen und erneut versuchen."
+      "serverUnreachable": "Keine Verbindung zum Server – bitte WLAN prüfen und erneut versuchen.",
+      "tooManyAttempts": "Zu viele falsche PINs aus diesem Netzwerk. Bitte einige Minuten warten und erneut versuchen."
     },
     "connection": {
       "title": "Verbindig",

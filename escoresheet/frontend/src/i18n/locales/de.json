@@ -860,6 +860,8 @@
       "show": "Werkzeugleiste einblenden"
     },
     "confirmFailed": "Das wurde nicht gespeichert. Bitte das Matchblatt prüfen und erneut versuchen.",
+    "storageFull": "Nicht gespeichert: Der Speicher dieses Geräts ist voll. Platz freigeben (alte Downloads oder andere Dateien löschen) und erneut tippen. Alles bisher Erfasste bleibt erhalten.",
+    "storageLow": "Der Speicher dieses Geräts ist fast voll: noch {{mb}} MB für OpenVolley. Jetzt Platz freigeben (alte Downloads oder andere Dateien löschen): Ist er voll, kann nichts mehr erfasst werden.",
     "timeoutRequest": {
       "title": "Timeout — {{team}}",
       "first": "Timeout 1 von 2 in diesem Satz für {{team}}.",
@@ -958,6 +960,11 @@
       "restorePreview": "Wiederherstellungs-Vorschau",
       "fromDatabase": "Aus Datenbank",
       "fromLocalFile": "Aus lokaler Datei",
+      "restoreErrors": {
+        "unreadable": "Diese Datei kann nicht gelesen werden: Sie ist beschädigt oder unvollständig. Wählen Sie eine andere Backup-Datei.",
+        "notABackup": "Diese Datei ist kein OpenVolley-Spielbackup. Wählen Sie eine andere Datei.",
+        "failed": "Das Spiel konnte nicht wiederhergestellt werden: {{error}}"
+      },
       "preview": {
         "set": "Satz {{n}}",
         "serving": "Aufschlag",
@@ -1049,6 +1056,9 @@
     "modals": {
       "existingMatchWarning": "Es existiert bereits ein Spiel. Möchten Sie es löschen und ein neues offizielles Spiel erstellen?",
       "testMatchOverwriteWarning": "Ein offizielles Spiel wird aufgezeichnet. Das Starten eines Testspiels löscht die vorherige Sitzung. Fortfahren?",
+      "officialMatchStillRecording": "Auf diesem Gerät wird noch ein offizielles Spiel aufgezeichnet. Setzen Sie es fort oder löschen Sie es mit \"Spiel löschen\", bevor Sie ein neues offizielles Spiel erstellen.",
+      "officialMatchReplaceTest": "Das Testspiel auf diesem Gerät wird durch das offizielle Spiel ersetzt und seine Daten gelöscht. Fortfahren?",
+      "officialMatchReplaceEasy": "Das einfache Spiel auf diesem Gerät wird durch das offizielle Spiel ersetzt und seine Daten gelöscht. Fortfahren?",
       "deleteTestMatchConfirm": "Dies löscht das Testspiel und alle seine Daten. Fortfahren?",
       "noTestMatchFound": "Kein Testspiel gefunden. Bitte erstellen Sie zuerst ein neues Testspiel.",
       "testMatchDeleted": "Testspiel erfolgreich gelöscht.",
@@ -1482,6 +1492,7 @@
     "connect": "Verbinden",
     "connecting": "Verbinde...",
     "invalidPin": "Ungültiger PIN. Bitte erneut versuchen.",
+    "tooManyAttempts": "Zu viele falsche PINs aus diesem Netzwerk. Bitte einige Minuten warten und erneut versuchen.",
     "roster": "Kader",
     "match": "Spiel",
     "back": "Zurück",
@@ -1525,7 +1536,8 @@
       "connectionLost": "Verbindung verloren. Bitte erneut verbinden.",
       "matchEnded": "Das Spiel ist beendet.",
       "connectionDisabled": "Die Verbindung wurde deaktiviert.",
-      "serverUnreachable": "Keine Verbindung zum Server – bitte WLAN prüfen und erneut versuchen."
+      "serverUnreachable": "Keine Verbindung zum Server – bitte WLAN prüfen und erneut versuchen.",
+      "tooManyAttempts": "Zu viele falsche PINs aus diesem Netzwerk. Bitte einige Minuten warten und erneut versuchen."
     },
     "connection": {
       "title": "Verbindung",

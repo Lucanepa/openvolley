@@ -38,13 +38,28 @@ vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => null }))
 vi.mock('../../hooks/useScaledLayout', () => ({ useScaledLayout: () => ({ vmin: (n) => `${n}vmin` }), default: () => ({ vmin: (n) => `${n}vmin` }) }))
 vi.mock('../../utils/comprehensiveLogger', () => ({ exportLogsAsNDJSON: async () => '', downloadLogs: async () => {} }))
 vi.mock('../../utils/backendConfig', async (orig) => ({ ...(await orig()), getCloudApiUrl: () => null }))
+// Storage uploads: answered at once, or never (uploads.hang)
+const uploads = vi.hoisted(() => ({ hang: false, paths: [] }))
 vi.mock('../../lib/apiClient', () => {
   const chain = () => {
     const b = new Proxy({}, { get: (_, prop) => (prop === 'then' ? (r) => Promise.resolve({ data: null, error: null }).then(r) : () => b) })
     return b
   }
-  return { apiFrom: () => chain(), apiStorage: { from: () => chain() }, apiRequest: vi.fn() }
+  const upload = (path) => {
+    uploads.paths.push(path)
+    return uploads.hang ? new Promise(() => {}) : Promise.resolve({ data: null, error: null })
+  }
+  return { apiFrom: () => chain(), apiStorage: { from: () => ({ upload }) }, apiRequest: vi.fn() }
 })
+
+// The match end in the cloud live state: not done (offline) until liveEnd.done
+const liveEnd = vi.hoisted(() => ({ done: false, calls: [] }))
+vi.mock('../../utils/matchEndLiveState', () => ({
+  publishMatchEndLiveState: vi.fn(async (match, sets) => {
+    liveEnd.calls.push({ match, sets })
+    return liveEnd.done
+  })
+}))
 
 // The scoresheet window: each open gets a fresh fake window the test can close
 const opened = vi.hoisted(() => [])
@@ -169,6 +184,10 @@ async function approve() {
 beforeEach(() => {
   seed()
   opened.length = 0
+  uploads.hang = false
+  uploads.paths.length = 0
+  liveEnd.done = false
+  liveEnd.calls.length = 0
   alerts.showAlert = vi.fn()
   URL.createObjectURL = vi.fn(() => 'blob:x')
   HTMLAnchorElement.prototype.click = () => {}
@@ -262,6 +281,46 @@ describe('MatchEnd: the approval PDF', () => {
     expect(store.tables.matches.get(1).approved).toBe(true)
   })
 
+  // Stress test 2026-10-25: on a connection that passed no data the overlay
+  // stayed on "Creating ZIP and uploading to cloud..." for minutes, with no
+  // Cancel, nothing approved and no ZIP
+  it('a scoresheet upload that never answers does not hold the approval', async () => {
+    uploads.hang = true
+    seed({ gameNumber: 4242 })
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+    await findButton(en.matchEnd.closeMatch)
+    expect(store.tables.matches.get(1).approved).toBe(true)
+    expect(approvedJobs()).toHaveLength(1)
+    expect(screen.queryByTestId('export-modal')).toBeNull()
+  })
+
+  // Stress test 2026-10-25: approved offline (most halls) or with one
+  // connection reset, the PDF and the final JSON never reached the cloud;
+  // they went up once, at the approval, and nothing retried them
+  it('the approval queues the PDF and the final JSON for the cloud, with the files', async () => {
+    uploads.hang = true
+    seed({ gameNumber: 4242 })
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+    await findButton(en.matchEnd.closeMatch)
+    await waitFor(() => expect([...store.tables.sync_queue.values()].filter(j => j.resource === 'scoresheet')).toHaveLength(2))
+    const files = [...store.tables.sync_queue.values()].filter(j => j.resource === 'scoresheet')
+    expect(files.map(j => [j.action, j.status, j.payload.contentType])).toEqual([
+      ['upload', 'queued', 'application/pdf'],
+      ['upload', 'queued', 'application/json']
+    ])
+    expect(files[0].payload.path).toMatch(/^\d{4}-\d{2}-\d{2}\/game4242_[^/]+\.pdf$/)
+    expect(files[1].payload.path).toMatch(/^\d{4}-\d{2}-\d{2}\/game4242_[^/]+_final\.json$/)
+    expect(files.map(j => j.payload.match_external_id)).toEqual(['match_1_pdf', 'match_1_pdf'])
+    expect(files[0].payload.file).toBeInstanceOf(Blob)
+    expect(JSON.parse(await files[1].payload.file.text()).sets).toHaveLength(3)
+    // nothing went up directly (the queue sends them)
+    expect(uploads.paths).toHaveLength(0)
+  })
+
   it('the export modal sits above the header (z 1000) and its open menu', async () => {
     render(<MatchEnd matchId={1} />)
     await approve()
@@ -284,5 +343,32 @@ describe('MatchEnd: the approval PDF', () => {
     fireEvent.click(await screen.findByRole('menuitem', { name: new RegExp(en.matchEnd.preview) }))
     await waitFor(() => expect(opened).toHaveLength(1))
     expect(opened[0].url).toBe('/scoresheet/?matchId=1')
+  })
+})
+
+// Stress test 2026-10-25: the app killed right after "Match end" was
+// confirmed reopened here, and the livescore kept the game running (last set
+// 25:0, sets 1-0) for good: the scoreboard's 'match_end' push never came
+describe('MatchEnd: the match end in the cloud live state', () => {
+  it('is published when Match End shows, and again when the queue drains until it is done', async () => {
+    render(<MatchEnd matchId={1} />)
+    await waitFor(() => expect(liveEnd.calls).toHaveLength(1))
+    expect(liveEnd.calls[0].match.seed_key).toBe('match_1_pdf')
+    expect(liveEnd.calls[0].sets.filter(st => st.finished)).toHaveLength(3)
+    // offline: tried again when the queue drains, and no more once done
+    liveEnd.done = true
+    await act(async () => { window.dispatchEvent(new Event('sync-queue-drained')) })
+    await waitFor(() => expect(liveEnd.calls).toHaveLength(2))
+    await act(async () => { window.dispatchEvent(new Event('online')) })
+    await new Promise(r => setTimeout(r, 50))
+    expect(liveEnd.calls).toHaveLength(2)
+  })
+
+  it('never for a test match', async () => {
+    seed({ test: true })
+    render(<MatchEnd matchId={1} />)
+    await findButton(en.matchEnd.approveParams)
+    await new Promise(r => setTimeout(r, 50))
+    expect(liveEnd.calls).toHaveLength(0)
   })
 })

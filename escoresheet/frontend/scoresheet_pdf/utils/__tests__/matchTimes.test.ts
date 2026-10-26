@@ -32,6 +32,23 @@ describe('actual set and match times (owner 2026-10-07)', () => {
     expect(setStartMs(set1, withDialog)).toBe(min(16, 5))
   })
 
+  // Stress test 2026-10-25 (restored-sheet-times-and-lfp-differ): rally_start
+  // events stay on the scoring device, so a copy restored from the server
+  // printed the dialog's scheduled 14:30 where the original printed 16:05
+  it('a copy restored from the server (no rally_start) prints the same times, from its set_start', () => {
+    const synced = [
+      { type: 'set_start', setIndex: 1, seq: 1, ts: iso(14, 30), payload: { startTime: iso(14, 30), firstRallyAt: iso(16, 5, 41) } },
+      ...events.slice(1)
+    ]
+    const restored = synced.filter(e => e.type !== 'rally_start')
+    expect(setStartMs(set1, restored)).toBe(min(16, 5))
+    expect(setStartMs(set1, restored)).toBe(setStartMs(set1, synced))
+    expect(matchTimes([set1, set2], restored).startMs).toBe(matchTimes([set1, set2], synced).startMs)
+    expect(setDurationMinutes(set1, restored)).toBe(9)
+    // a start corrected after the dialog still wins
+    expect(setStartMs({ ...set1, startTime: iso(16, 3) }, restored)).toBe(min(16, 3))
+  })
+
   it('falls back to the confirmed start, then to the first point', () => {
     expect(setStartMs(set1, [])).toBe(min(14, 30))
     expect(setStartMs({ index: 3 }, [{ type: 'point', setIndex: 3, ts: iso(17, 1, 59) }])).toBe(min(17, 1))

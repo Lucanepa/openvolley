@@ -307,6 +307,36 @@ describe('createRelayLivescoreFeed', () => {
     feed.stop()
   })
 
+  // Stress test 2026-10-25: the venue relay restarted (it keeps live states in
+  // memory only) and the scorer resynced its sets; the livescore stayed on the
+  // score from before the restart until the next rally (90 s and more)
+  it('a bundle newer than the kept live state shows its score; an older or equal one keeps the live state', async () => {
+    make()
+    feed.start()
+    await flush()
+    const ws = sockets[0]
+    ws.open()
+    const match = (extra) => ({ id: 1, status: 'live', seed_key: 'seed-1', coinTossTeamA: 'away', test: false, ...extra })
+    // before the restart: set 2 at 1:2 (team A = away), live state of push 10
+    ws.receive(summary('match-full-data', 'seed-1', {
+      match: match({ _syncedSeq: 10, _syncSession: 's1' }),
+      liveState: liveState({ points_a: 2, points_b: 1, sets_won_a: 0, sets_won_b: 1, _seq: 10 })
+    }))
+    expect(last()[0]).toMatchObject({ points_a: 2, points_b: 1 })
+    // the relay is back without live states; the scorer's resync, read after
+    // push 14: set 2 at 1:4 (home 1, away 4)
+    const sets = [{ id: 1, index: 1, homePoints: 25, awayPoints: 20, finished: true }, { id: 2, index: 2, homePoints: 1, awayPoints: 4, finished: false }]
+    ws.receive(summary('match-data-update', 'seed-1', { match: match({ _syncedSeq: 14, _syncSession: 's1' }), sets }))
+    expect(last()[0]).toMatchObject({ current_set: 2, points_a: 4, points_b: 1, sets_won_a: 0, sets_won_b: 1 })
+    // the scorer's next push wins again
+    ws.receive({ type: 'live-state-update', matchId: 'seed-1', liveState: liveState({ points_a: 5, points_b: 1, sets_won_a: 0, sets_won_b: 1, _seq: 15 }) })
+    expect(last()[0]).toMatchObject({ points_a: 5, points_b: 1 })
+    // a bundle read before that push changes nothing
+    ws.receive(summary('match-data-update', 'seed-1', { match: match({ _syncedSeq: 15, _syncSession: 's1' }), sets }))
+    expect(feed.rows()[0]).toMatchObject({ points_a: 5, points_b: 1 })
+    feed.stop()
+  })
+
   it('polls the list, follows new matches and resubscribes after a reconnect', async () => {
     const onList = vi.fn()
     make({ onList })

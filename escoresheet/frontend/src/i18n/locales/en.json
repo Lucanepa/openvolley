@@ -868,6 +868,8 @@
       "show": "Show toolbar"
     },
     "confirmFailed": "That was not saved. Check the scoresheet and try again.",
+    "storageFull": "Not saved: this device's storage is full. Free up space (delete old downloads or other files), then tap again. Everything recorded so far is kept.",
+    "storageLow": "This device's storage is almost full: {{mb}} MB left for OpenVolley. Free up space now (delete old downloads or other files): once it is full, nothing more can be recorded.",
     "timeoutRequest": {
       "title": "Time-out — {{team}}",
       "first": "Time-out 1 of 2 in this set for {{team}}.",
@@ -966,6 +968,11 @@
       "restorePreview": "Restore preview",
       "fromDatabase": "From database",
       "fromLocalFile": "From local file",
+      "restoreErrors": {
+        "unreadable": "This file cannot be read: it is damaged or incomplete. Choose another backup file.",
+        "notABackup": "This file is not an OpenVolley match backup. Choose another file.",
+        "failed": "The match could not be restored: {{error}}"
+      },
       "preview": {
         "set": "Set {{n}}",
         "serving": "Serving",
@@ -1057,6 +1064,9 @@
     "modals": {
       "existingMatchWarning": "There is an existing match. Do you want to delete it and create a new official match?",
       "testMatchOverwriteWarning": "An official match is still recording. Starting a new test match will wipe the previous test session. Continue?",
+      "officialMatchStillRecording": "An official match is still recording on this device. Continue it, or delete it with \"Delete match\", before creating a new official match.",
+      "officialMatchReplaceTest": "The test match on this device is replaced by the official match and its data deleted. Continue?",
+      "officialMatchReplaceEasy": "The easy match on this device is replaced by the official match and its data deleted. Continue?",
       "deleteTestMatchConfirm": "This will delete the test match and all its data. Continue?",
       "noTestMatchFound": "No test match found. Please create a new test match first.",
       "testMatchDeleted": "Test match deleted successfully.",
@@ -1628,6 +1638,7 @@
     "connect": "Connect",
     "connecting": "Connecting...",
     "invalidPin": "Invalid PIN. Please try again.",
+    "tooManyAttempts": "Too many wrong PINs from this network. Wait a few minutes, then try again.",
     "roster": "Roster",
     "match": "Match",
     "back": "Back",
@@ -1671,7 +1682,8 @@
       "connectionLost": "Connection lost. Please reconnect.",
       "matchEnded": "Match has ended.",
       "connectionDisabled": "Connection has been disabled.",
-      "serverUnreachable": "No connection to the server – check the Wi-Fi and try again."
+      "serverUnreachable": "No connection to the server – check the Wi-Fi and try again.",
+      "tooManyAttempts": "Too many wrong PINs from this network. Wait a few minutes, then try again."
     },
     "connection": {
       "title": "Connection",

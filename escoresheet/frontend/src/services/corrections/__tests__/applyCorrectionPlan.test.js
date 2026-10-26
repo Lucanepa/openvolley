@@ -85,6 +85,31 @@ describe('applyCorrectionPlan', () => {
     expect(setJob.payload).toMatchObject({ home_points: 25, away_points: 23 })
   })
 
+  // Stress test 2026-10-25 (correction-clears-signatures-only-locally): the
+  // signatures were cleared on the device only; the server kept all of them,
+  // attached to the corrected sheet
+  it('signatures cleared by a correction are cleared on the server too, the pre-match ones kept', async () => {
+    const { matchId, events, sets } = await seed({ signed: true })
+    await db.matches.update(matchId, { homeCoachSignature: 'data:coach' })
+    const plan = planAdjustFinalScore(events, sets, { setIndex: 1, team: 'away', delta: 1 }, ctx(matchId))
+    const res = await applyCorrectionPlan(plan, { matchId, db, mode: 'review' })
+    expect(res.signaturesCleared).toBe(true)
+    const job = (await db.sync_queue.toArray()).find(j => j.resource === 'match' && j.action === 'update' && j.payload.signatures)
+    expect(job?.payload.signatures).toMatchObject({
+      home_coach: 'data:coach',
+      home_captain_post_game: null, away_captain_post_game: null, asst_scorer: null, scorer: null, ref2: null, ref1: null
+    })
+  })
+
+  it('a correction that leaves the signatures alone sends none', async () => {
+    const { matchId, events } = await seed({ signed: true })
+    const tl = scoreTimeline(events, 1)
+    const plan = planAddTimeout(events, { setIndex: 1, team: 'away', at: tl.findIndex(x => x.home === 12) }, ctx(matchId))
+    const res = await applyCorrectionPlan(plan, { matchId, db, mode: 'live' })
+    expect(res.signaturesCleared).toBeFalsy()
+    expect((await db.sync_queue.toArray()).some(j => j.resource === 'match' && j.payload.signatures)).toBe(false)
+  })
+
   it('removes a group: one void revision per removed row, no delete job, queued inserts of the removed rows dropped', async () => {
     const { matchId, events } = await seed()
     // the loser's last point of set 2 (25:20 -> 25:19 stays a possible result)

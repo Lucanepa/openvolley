@@ -39,6 +39,7 @@ import { Button, DateField, Field, Input, Select, TimeField, SegmentedControl, S
 import SavedTeamPickerModal, { confirmReplaceRoster } from './SavedTeamPickerModal'
 import SaveRosterToTeamModal from './SaveRosterToTeamModal'
 import { focusLeaves, sortedByNumber } from '../utils/rosterOrder'
+import { isShirtNumber, shirtNumberDigits } from '../domain/roster'
 import PlayerPoolModal from './PlayerPoolModal'
 import { buildPlayerPool, poolToRoster, ROSTER_MAX } from '../domain/playerPool'
 import { officialsFromSchedule } from '../domain/officials'
@@ -4168,7 +4169,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               <div className="roster-grid-row" style={{ border: 'none' }}>
                 <div></div>
                 <StackLabel head>{t('matchSetup.playerNumber', 'Player number')}</StackLabel>
-                <input aria-label={t('matchSetup.playerNumber', 'Player number')} className="cell-head" placeholder={t('matchSetup.numberPlaceholder')} type="number" inputMode="numeric" value={homeNum} onChange={e => setHomeNum(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
+                <input aria-label={t('matchSetup.playerNumber', 'Player number')} className="cell-head" placeholder={t('matchSetup.numberPlaceholder')} type="number" inputMode="numeric" value={homeNum} onChange={e => setHomeNum(shirtNumberDigits(e.target.value))} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
                 <input aria-label={t('matchSetup.lastName')} className="capitalize cell-last" placeholder={t('matchSetup.lastName')} value={homeLast} onChange={e => setHomeLast(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }} />
                 <StackLabel>{t('matchSetup.firstName')}</StackLabel>
@@ -4304,7 +4305,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     }
                   }}
                   onChange={e => {
-                    const val = e.target.value ? Number(e.target.value) : null
+                    const digits = shirtNumberDigits(e.target.value)
+                    const val = digits ? Number(digits) : null
                     if (val !== null && (val < 1 || val > 99)) return
                     const updated = [...homeRoster]
                     updated[i] = { ...updated[i], number: val }
@@ -4626,8 +4628,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               validationErrors.push(t('matchSetup.validation.duplicateNumbers', { numbers: [...new Set(duplicateNumbers)].join(', ') }))
             }
 
-            // Check for invalid numbers (must be 1-99) - critical - must block
-            const invalidNumbers = homeRoster.filter(p => p.number != null && p.number !== '' && (p.number < 1 || p.number > 99))
+            // Check for invalid numbers (whole numbers 1-99) - critical - must block
+            const invalidNumbers = homeRoster.filter(p => p.number != null && p.number !== '' && !isShirtNumber(p.number))
             if (invalidNumbers.length > 0) {
               console.log('[MatchSetup] Home invalid numbers:', invalidNumbers.map(p => p.number))
               validationErrors.push(t('matchSetup.validation.invalidNumbers', { numbers: invalidNumbers.map(p => p.number).join(', ') }))
@@ -5328,7 +5330,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                   min="1"
                   max="99"
                   value={awayNum}
-                  onChange={e => setAwayNum(e.target.value)}
+                  onChange={e => setAwayNum(shirtNumberDigits(e.target.value))}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                 />
                 <StackLabel>{t('matchSetup.lastName')}</StackLabel>
@@ -5463,7 +5465,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                     }
                   }}
                   onChange={e => {
-                    const val = e.target.value ? Number(e.target.value) : null
+                    const digits = shirtNumberDigits(e.target.value)
+                    const val = digits ? Number(digits) : null
                     if (val !== null && (val < 1 || val > 99)) return
                     const updated = [...awayRoster]
                     updated[i] = { ...updated[i], number: val }
@@ -5781,8 +5784,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               validationErrors.push(t('matchSetup.validation.duplicateNumbers', { numbers: [...new Set(duplicateNumbers)].join(', ') }))
             }
 
-            // Check for invalid numbers (must be 1-99) - critical - must block
-            const invalidNumbers = awayRoster.filter(p => p.number != null && p.number !== '' && (p.number < 1 || p.number > 99))
+            // Check for invalid numbers (whole numbers 1-99) - critical - must block
+            const invalidNumbers = awayRoster.filter(p => p.number != null && p.number !== '' && !isShirtNumber(p.number))
             if (invalidNumbers.length > 0) {
               console.log('[MatchSetup] Away invalid numbers:', invalidNumbers.map(p => p.number))
               validationErrors.push(t('matchSetup.validation.invalidNumbers', { numbers: invalidNumbers.map(p => p.number).join(', ') }))

@@ -27,6 +27,16 @@ describe('Start Set pushes the live state', () => {
     expect(rally).toBeGreaterThan(sync)
   })
 
+  // Stress test 2026-10-25: rally_start is never synced; the synced set_start
+  // carries the first rally's time (matchTimes setStartMs) for restored copies
+  it("the set_start event carries the first rally's start, the same time as its rally_start", () => {
+    const body = confirmSetStartTimeBody()
+    const setStart = body.slice(body.indexOf("type: 'set_start'"), body.indexOf('queueEventSync(db, setStartEventId)'))
+    expect(setStart).toMatch(/payload: \{[^}]*\bfirstRallyAt,/)
+    const rally = body.slice(body.indexOf("type: 'rally_start'"))
+    expect(rally).toMatch(/ts: firstRallyAt,/)
+  })
+
   it('confirmSetStartTime lists syncLiveStateToSupabase in its deps', () => {
     const body = confirmSetStartTimeBody()
     const deps = body.slice(body.search(/\n  \}\)+, \[/))

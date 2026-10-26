@@ -2,7 +2,7 @@ import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import pg from 'pg'
 import { createPgQuery } from '../lib/pgQuery.js'
-import { createMatchRestore, createAttemptLimiter } from '../lib/matchRestore.js'
+import { createMatchRestore, createAttemptLimiter, createPinFailureBudget } from '../lib/matchRestore.js'
 import { SKIP_PG, createTestDatabase, quietLogger } from './helpers/pgTestDb.js'
 
 describe('createAttemptLimiter', () => {
@@ -39,6 +39,67 @@ describe('createAttemptLimiter', () => {
     assert.equal(l.isLimited('k'), true)
     await new Promise(resolve => setTimeout(resolve, 30))
     assert.equal(l.isLimited('k'), false)
+  })
+})
+
+describe('createPinFailureBudget', () => {
+  it('locks one scope of an address, for the right PIN too; other scopes and addresses go on', () => {
+    const b = createPinFailureBudget({ max: 3, ipMax: 10, windowMs: 60000 })
+    for (let i = 0; i < 3; i++) assert.equal(b.isLimited('hall', 'any:indoor:referee'), false)
+    // the 4th attempt of that scope is refused before anything is compared
+    assert.equal(b.isLimited('hall', 'any:indoor:referee'), true)
+    assert.equal(b.isLimited('hall', 'any:indoor:bench_home'), false)
+    assert.equal(b.isLimited('hall', 'm:game:match-1'), false)
+    assert.equal(b.isLimited('elsewhere', 'any:indoor:referee'), false)
+  })
+
+  it('a ceiling per address across scopes; refused attempts do not count toward it', () => {
+    const b = createPinFailureBudget({ max: 3, ipMax: 5, windowMs: 60000 })
+    for (let i = 0; i < 3; i++) b.isLimited('hall', 'a')
+    // refused by the scope: not compared, not counted in the ceiling
+    for (let i = 0; i < 10; i++) assert.equal(b.isLimited('hall', 'a'), true)
+    assert.equal(b.isLimited('hall', 'b'), false)
+    assert.equal(b.isLimited('hall', 'c'), false)
+    // 5 counted: every scope of the address is refused now
+    assert.equal(b.isLimited('hall', 'd'), true)
+    assert.equal(b.isLimited('elsewhere', 'd'), false)
+  })
+
+  it('refund gives the attempt back to the scope and the ceiling', () => {
+    const b = createPinFailureBudget({ max: 1, ipMax: 1, windowMs: 60000 })
+    assert.equal(b.isLimited('hall', 'a'), false)
+    b.refund('hall', 'a')
+    assert.equal(b.isLimited('hall', 'b'), false)
+    b.refund('hall', 'b')
+    assert.equal(b.isLimited('hall', 'a'), false)
+    assert.equal(b.isLimited('hall', 'a'), true)
+  })
+
+  it('the same wrong PIN again in the same scope is not a new guess', () => {
+    const b = createPinFailureBudget({ max: 3, ipMax: 10, windowMs: 60000 })
+    // one typo checked twice (the backend, then the relay)
+    for (const pin of ['111111', '222222']) {
+      assert.equal(b.isLimited('hall', 'any:indoor:referee'), false)
+      assert.equal(b.repeated('hall', 'any:indoor:referee', pin), false)
+      assert.equal(b.isLimited('hall', 'any:indoor:referee'), false)
+      assert.equal(b.repeated('hall', 'any:indoor:referee', pin), true)
+    }
+    // two typos counted, not four: one more attempt, then the scope is locked
+    assert.equal(b.isLimited('hall', 'any:indoor:referee'), false)
+    assert.equal(b.isLimited('hall', 'any:indoor:referee'), true)
+    // the same PIN in another scope, or from another address, is a guess of its own
+    assert.equal(b.isLimited('hall', 'any:indoor:bench_home'), false)
+    assert.equal(b.repeated('hall', 'any:indoor:bench_home', '111111'), false)
+    assert.equal(b.isLimited('other', 'any:indoor:referee'), false)
+    assert.equal(b.repeated('other', 'any:indoor:referee', '111111'), false)
+  })
+
+  it('opens again after the window', async () => {
+    const b = createPinFailureBudget({ max: 1, ipMax: 1, windowMs: 20 })
+    assert.equal(b.isLimited('hall', 'a'), false)
+    assert.equal(b.isLimited('hall', 'a'), true)
+    await new Promise(resolve => setTimeout(resolve, 30))
+    assert.equal(b.isLimited('hall', 'a'), false)
   })
 })
 
@@ -385,6 +446,35 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(r.body.data.counts.events, 1200)
       const p = await restore.restoreByPin({ gameN: 5150, pin: '515151' }, { limitKey: 'ip-long' })
       assert.equal(p.body.data.events.length, 1200)
+    })
+
+    // The device continuing the match keeps the cloud ids and gives out new
+    // ones above idFloor (frontend importMatchFromSupabase): a rally under the
+    // id of a voided event, or of an undo that reached the server before its
+    // event, would be born voided (db/015)
+    it('idFloor: the highest set / event ids the match used, voided events and revisions included', async () => {
+      const ext3 = uniq('FLOOR')
+      const b = backup(ext3, { gameN: 6160, pin: '616161', sets: 2, events: 3 })
+      b.events.push({ external_id: `${ext3}_legacy`, set_index: 1, type: 'point', seq: 9, payload: {}, sport_type: 'indoor' })
+      const r = await restore.restoreMatch(b, W)
+      const matchId = r.body.data.id
+      const floorOf = async (key) => (await restore.restoreByPin({ gameN: 6160, pin: '616161' }, { limitKey: key })).body.data.idFloor
+      assert.deepEqual(await floorOf('ip-floor-1'), { set: 2, event: 3 })
+
+      // event 12 voided on the server: left out of the events, not of the floor
+      await raw.query(`INSERT INTO events (match_id, external_id, set_index, type, seq, payload, sport_type, voided_at, void_reason)
+                       VALUES ($1, $2, 1, 'point', 12, '{}', 'indoor', now(), 'undo')`, [matchId, `${ext3}:e:12`])
+      // event 40 undone before it was uploaded: only its revision is there
+      await raw.query(`INSERT INTO event_revisions (rev_uid, match_id, event_external_id, op, reason, applied, client_ts)
+                       VALUES (gen_random_uuid(), $1, $2, 'void', 'undo', false, now())`, [matchId, `${ext3}:e:40`])
+      // another match's ids do not count
+      const other = await restore.restoreMatch(backup(uniq('OTHER'), { gameN: 6161, events: 2 }), W)
+      await raw.query(`INSERT INTO event_revisions (rev_uid, match_id, event_external_id, op, reason, applied, client_ts)
+                       VALUES (gen_random_uuid(), $1, $2, 'void', 'undo', false, now())`, [other.body.data.id, `${ext3}:e:900`])
+
+      const p = await restore.restoreByPin({ gameN: 6160, pin: '616161' }, { limitKey: 'ip-floor-2' })
+      assert.deepEqual(p.body.data.events.map(e => e.seq).sort((x, y) => x - y), [1, 2, 3, 9])
+      assert.deepEqual(p.body.data.idFloor, { set: 2, event: 40 })
     })
   })
 })

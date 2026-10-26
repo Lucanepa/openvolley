@@ -20,7 +20,7 @@
  * on it unchanged. match_id is the relay key (the match's seed key).
  */
 import { getBackendOverride, getLocalServerStatusUrl, getRelayWebSocketUrl, isLanBackendUrl, learnRelayWsPort, relayWsPortFor } from './backendConfig'
-import { newerLiveState } from './serverDataSync'
+import { newerLiveState, isBundleNewerThanLiveState } from './serverDataSync'
 import { settleLiveChange } from './livescoreModel'
 
 /** How often the match list is asked for again (new matches appear). */
@@ -104,6 +104,40 @@ export function relayLiveRow(matchId, entry) {
     match_id: String(matchId),
     test: match.test === true || entry.listed?.test === true,
     matches: joined
+  }
+}
+
+/**
+ * A kept live state with the score of a newer bundle (isBundleNewerThanLiveState):
+ * the open set (else the last one) with its points and the sets won, by team
+ * A/B (the coin toss's team A, as the scorer's pushes). A venue relay that
+ * restarted has no live state (it keeps them in memory only) and the
+ * scorer's resync carries none: the livescore kept the score from before the
+ * restart until the next rally, 90 s and more after the relay was back,
+ * while the referee and benches (which drop an older live state) had caught
+ * up (stress test 2026-10-25).
+ * @param {object} liveState
+ * @param {{ match?: object|null, sets?: Array<object> }} entry
+ */
+export function liveStateWithBundleScore(liveState, entry) {
+  const sets = (Array.isArray(entry?.sets) ? entry.sets : [])
+    .filter((s) => s && typeof s === 'object' && num(s.index) != null)
+    .sort((a, b) => num(a.index) - num(b.index))
+  if (!sets.length) return liveState
+  const home = (s) => num(s.homePoints ?? s.home_points) ?? 0
+  const away = (s) => num(s.awayPoints ?? s.away_points) ?? 0
+  const finished = sets.filter((s) => s.finished === true)
+  const current = sets.filter((s) => s.finished !== true).pop() || finished[finished.length - 1]
+  const homeWon = finished.filter((s) => home(s) > away(s)).length
+  const awayWon = finished.filter((s) => away(s) > home(s)).length
+  const teamAIsHome = entry?.match?.coinTossTeamA !== 'away'
+  return {
+    ...liveState,
+    current_set: num(current.index),
+    points_a: teamAIsHome ? home(current) : away(current),
+    points_b: teamAIsHome ? away(current) : home(current),
+    sets_won_a: teamAIsHome ? homeWon : awayWon,
+    sets_won_b: teamAIsHome ? awayWon : homeWon
   }
 }
 
@@ -257,6 +291,8 @@ export function createRelayLivescoreFeed({
       entry.homeTeam = message.homeTeam ?? entry.homeTeam
       entry.sets = Array.isArray(message.sets) ? message.sets : entry.sets
       if (message.liveState && typeof message.liveState === 'object') entry.liveState = newerLiveState(entry.liveState, message.liveState)
+      // A bundle newer than the kept live state shows its own score
+      if (isBundleNewerThanLiveState(entry.liveState, entry)) entry.liveState = liveStateWithBundleScore(entry.liveState, entry)
       update(id)
       emit()
     } else if (message.type === 'live-state-update') {

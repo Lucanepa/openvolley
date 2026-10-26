@@ -867,6 +867,8 @@
       "show": "Mostra barra degli strumenti"
     },
     "confirmFailed": "Non è stato salvato. Controlla il referto e riprova.",
+    "storageFull": "Non salvato: la memoria di questo dispositivo è piena. Libera spazio (elimina vecchi download o altri file), poi tocca di nuovo. Tutto ciò che è stato registrato finora resta salvato.",
+    "storageLow": "La memoria di questo dispositivo è quasi piena: restano {{mb}} MB per OpenVolley. Libera spazio ora (elimina vecchi download o altri file): quando è piena, non si può registrare più nulla.",
     "timeoutRequest": {
       "title": "Timeout — {{team}}",
       "first": "Timeout 1 di 2 in questo set per {{team}}.",
@@ -965,6 +967,11 @@
       "restorePreview": "Anteprima ripristino",
       "fromDatabase": "Dal database",
       "fromLocalFile": "Da file locale",
+      "restoreErrors": {
+        "unreadable": "Impossibile leggere questo file: è danneggiato o incompleto. Scegli un altro file di backup.",
+        "notABackup": "Questo file non è un backup di partita OpenVolley. Scegli un altro file.",
+        "failed": "Impossibile ripristinare la partita: {{error}}"
+      },
       "preview": {
         "set": "Set {{n}}",
         "serving": "Servizio",
@@ -1056,6 +1063,9 @@
     "modals": {
       "existingMatchWarning": "Esiste già una partita. Vuoi eliminarla e creare una nuova partita ufficiale?",
       "testMatchOverwriteWarning": "Una partita ufficiale è in corso. Iniziare una partita test cancellerà la sessione precedente. Continuare?",
+      "officialMatchStillRecording": "Su questo dispositivo è ancora in registrazione una partita ufficiale. Continuala, o eliminala con \"Elimina partita\", prima di creare una nuova partita ufficiale.",
+      "officialMatchReplaceTest": "La partita test di questo dispositivo viene sostituita dalla partita ufficiale e i suoi dati eliminati. Continuare?",
+      "officialMatchReplaceEasy": "La partita semplice di questo dispositivo viene sostituita dalla partita ufficiale e i suoi dati eliminati. Continuare?",
       "deleteTestMatchConfirm": "Questo eliminerà la partita test e tutti i suoi dati. Continuare?",
       "noTestMatchFound": "Nessuna partita test trovata. Crea prima una nuova partita test.",
       "testMatchDeleted": "Partita test eliminata con successo.",
@@ -1627,6 +1637,7 @@
     "connect": "Connetti",
     "connecting": "Connessione...",
     "invalidPin": "PIN non valido. Riprova.",
+    "tooManyAttempts": "Troppi PIN errati da questa rete. Attendi qualche minuto, poi riprova.",
     "roster": "Rosa",
     "match": "Partita",
     "back": "Indietro",
@@ -1670,7 +1681,8 @@
       "connectionLost": "Connessione persa. Riconnettiti.",
       "matchEnded": "La partita è terminata.",
       "connectionDisabled": "La connessione è stata disabilitata.",
-      "serverUnreachable": "Nessuna connessione al server – controlla il Wi-Fi e riprova."
+      "serverUnreachable": "Nessuna connessione al server – controlla il Wi-Fi e riprova.",
+      "tooManyAttempts": "Troppi PIN errati da questa rete. Attendi qualche minuto, poi riprova."
     },
     "connection": {
       "title": "Connessione",

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { defaultSetStartTime, scheduledStartOnDay, actualStartRemark, startsFromSchedule, startScheduleOf, typedStartNear } from '../setStartTime'
 import { setActualStartRemark } from '../../domain/remarks'
 import { setDurationMinutes, matchTimes } from '../../../scoresheet_pdf/utils/matchTimes'
@@ -151,5 +151,41 @@ describe('the typed start time is on the day nearest to the proposal (typedStart
     expect(typedStartNear(proposed, '9:05')).toBe(iso(2026, 10, 8, 9, 5))
     expect(typedStartNear(proposed, '')).toBeNull()
     expect(typedStartNear(proposed, '25:00')).toBeNull()
+  })
+})
+
+// Stress test 2026-10-25 (device-timezone-shifts-official-times): the proposal
+// and the typed start are Zürich clock times, whatever zone the device is in
+describe('set 1 start on a device outside Europe/Zurich', () => {
+  const deviceTz = process.env.TZ
+  afterEach(() => {
+    if (deviceTz === undefined) delete process.env.TZ
+    else process.env.TZ = deviceTz
+  })
+
+  it('the scheduled kick-off on the day played is its Zürich time of day', () => {
+    process.env.TZ = 'UTC'
+    // scheduled 10:20 summer time a week ago, played today in winter time
+    expect(scheduledStartOnDay('2026-10-19T08:20:00.000Z', new Date('2026-10-26T09:05:00.000Z'))).toBe('2026-10-26T09:20:00.000Z')
+    // a date entered without a time is Zürich midnight: no scheduled time
+    process.env.TZ = 'Etc/GMT-2'
+    expect(scheduledStartOnDay('2026-10-25T23:00:00.000Z', new Date('2026-10-26T09:05:00.000Z'))).toBe(null)
+    // 23:30 Zürich confirmed at 00:10 Zürich: the day before
+    expect(scheduledStartOnDay('2026-10-19T21:30:00.000Z', new Date('2026-10-26T23:10:00.000Z'))).toBe('2026-10-26T22:30:00.000Z')
+  })
+
+  it('a typed start is a Zürich time on the day nearest to the proposal', () => {
+    process.env.TZ = 'Etc/GMT-2'
+    expect(typedStartNear('2026-10-26T09:20:00.000Z', '10:23')).toBe('2026-10-26T09:23:00.000Z')
+    // proposed 23:50, typed 00:05: the next day
+    expect(typedStartNear('2026-10-26T22:50:00.000Z', '00:05')).toBe('2026-10-26T23:05:00.000Z')
+    process.env.TZ = 'America/New_York'
+    expect(typedStartNear('2026-10-26T09:20:00.000Z', '10:23')).toBe('2026-10-26T09:23:00.000Z')
+  })
+
+  it('the "Actual start time" remark is a Zürich time', () => {
+    process.env.TZ = 'UTC'
+    expect(actualStartRemark({ setIndex: 1, scheduledAt: '2026-10-26T09:20:00.000Z', startTime: '2026-10-26T09:33:00.000Z' }))
+      .toBe('Actual start time: 10:33')
   })
 })

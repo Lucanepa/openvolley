@@ -24,43 +24,58 @@ import { EntryPage, EntryCard, PinInput, ListLabel, GameRow } from './components
 // Master PIN for testing without a match
 const MASTER_PIN = '123456'
 
-/**
- * Re-check a stored referee PIN (after a reload) the way handlePinSubmit checks
- * a typed one: the backend's database check first, then the LAN relay. The
- * match must still be the stored one. Ids stay strings: they are seed keys
- * ('match_…'), and Number() of one is NaN.
- * @returns {Promise<object|null>} the match, or null
- */
-export async function revalidateRefereeSession(storedMatchId, storedPin, { checkCloud = validatePinSupabase, checkLan = validatePin } = {}) {
-  const same = (r) => r?.success && r.match && String(r.match.id) === String(storedMatchId)
-  let result = null
-  try { result = await checkCloud(storedPin, 'referee') } catch { result = null }
-  if (same(result)) return result.match
-  try { result = await checkLan(storedPin, 'referee') } catch { result = null }
-  return same(result) ? result.match : null
-}
-
 // A failed check that never reached a server (offline, timeout, no backend),
 // as opposed to a server answering that the PIN is wrong.
 const UNREACHABLE_RE = /failed to fetch|networkerror|load failed|timed out|not available|network request failed/i
 const isUnreachable = (r) => !!r && (r.unreachable === true || UNREACHABLE_RE.test(String(r.error || '')))
+// A thrown check (the relay's validatePin throws on any refusal): 429 is a
+// refusal without comparing, too many wrong PINs from this address
+const failedCheck = (err) => ({ success: false, error: err?.message, unreachable: err?.name === 'TypeError', rateLimited: err?.status === 429 })
+
+/**
+ * Re-check a stored referee PIN (after a reload) the way handlePinSubmit checks
+ * a typed one: the backend's database check first, then the LAN relay. The
+ * match must still be the stored one; the backend checks the PIN against that
+ * match only, so other tablets' typos behind the same venue address do not
+ * count against it. Ids stay strings: they are seed keys ('match_…'), and
+ * Number() of one is NaN.
+ * A re-check that compared nothing is no answer: when a server refused to
+ * compare (too many wrong PINs from this address: err.rateLimited) or none
+ * was reachable, it throws, and the caller keeps the stored PIN for the next
+ * load. It used to drop it like a wrong PIN.
+ * @returns {Promise<object|null>} the match, or null (the PIN no longer opens it)
+ */
+export async function revalidateRefereeSession(storedMatchId, storedPin, { checkCloud = validatePinSupabase, checkLan = validatePin } = {}) {
+  const same = (r) => r?.success && r.match && String(r.match.id) === String(storedMatchId)
+  let cloud
+  try { cloud = await checkCloud(storedPin, 'referee', { matchExternalId: String(storedMatchId) }) } catch (err) { cloud = failedCheck(err) }
+  if (same(cloud)) return cloud.match
+  let lan
+  try { lan = await checkLan(storedPin, 'referee') } catch (err) { lan = failedCheck(err) }
+  if (same(lan)) return lan.match
+  if (cloud?.rateLimited || lan?.rateLimited) throw Object.assign(new Error('Too many failed attempts'), { rateLimited: true })
+  if (isUnreachable(cloud) && isUnreachable(lan)) throw new Error('Server unreachable')
+  return null
+}
 
 /**
  * Check a typed referee PIN: the backend's database check, then the LAN relay
  * (relay-only matches are known there only). A thrown relay error is a failed
  * check, not the message to show: the relay's "No match found ... make sure
  * the main scoresheet is running" sent referees to check the scoresheet when
- * they had only mistyped the PIN.
- * @returns {Promise<{ match: object|null, source?: 'supabase'|'websocket', reason?: 'invalid'|'unreachable' }>}
+ * they had only mistyped the PIN. A refusal without comparing (too many wrong
+ * PINs from this address) is 'rate-limited', not a wrong PIN.
+ * @returns {Promise<{ match: object|null, source?: 'supabase'|'websocket', reason?: 'invalid'|'unreachable'|'rate-limited' }>}
  */
 export async function validateRefereePin(pin, { checkCloud = validatePinSupabase, checkLan = validatePin } = {}) {
   const ok = (r) => r?.success && r.match
   let cloud
-  try { cloud = await checkCloud(pin, 'referee') } catch (err) { cloud = { success: false, error: err?.message, unreachable: err?.name === 'TypeError' } }
+  try { cloud = await checkCloud(pin, 'referee') } catch (err) { cloud = failedCheck(err) }
   if (ok(cloud)) return { match: cloud.match, source: 'supabase' }
   let lan
-  try { lan = await checkLan(pin, 'referee') } catch (err) { lan = { success: false, error: err?.message, unreachable: err?.name === 'TypeError' } }
+  try { lan = await checkLan(pin, 'referee') } catch (err) { lan = failedCheck(err) }
   if (ok(lan)) return { match: lan.match, source: 'websocket' }
+  if (cloud?.rateLimited || lan?.rateLimited) return { match: null, reason: 'rate-limited' }
   return { match: null, reason: isUnreachable(cloud) && isUnreachable(lan) ? 'unreachable' : 'invalid' }
 }
 
@@ -377,7 +392,11 @@ export default function RefereeApp() {
             localStorage.removeItem('refereePin')
           }
         })
-        .catch(() => { /* unreachable now: keep the credentials for the next load */ })
+        .catch((err) => {
+          // Nothing was compared (unreachable now, or too many wrong PINs
+          // from this network): keep the credentials for the next load
+          if (err?.rateLimited) setError(t('refereeDashboard.errors.tooManyAttempts', 'Too many wrong PINs from this network. Wait a few minutes, then try again.'))
+        })
     }
   }, [])
   
@@ -432,6 +451,10 @@ export default function RefereeApp() {
         localStorage.setItem('refereePin', pinInput)
       } else if (pinInput === MASTER_PIN) {
         enterMasterMode()
+      } else if (result.reason === 'rate-limited') {
+        // Refused without comparing: the PIN may well be right, and a stored
+        // one stays for the next load
+        setError(t('refereeDashboard.errors.tooManyAttempts', 'Too many wrong PINs from this network. Wait a few minutes, then try again.'))
       } else {
         setError(result.reason === 'unreachable'
           ? t('refereeDashboard.errors.serverUnreachable', 'No connection to the server – check the Wi-Fi and try again.')

@@ -19,6 +19,7 @@ import {
 } from '../../domain/describe'
 import { awardsPoint } from '../../domain/sanctions'
 import { startScheduleOf } from '../../utils/setStartTime'
+import { zonedParts, zurichWallTimeMs } from '../../ui/format'
 import { scoreFromPointEvents } from '../../domain/rules'
 import {
   CorrectionForm, SetPicker, TeamPicker, ScoreAtPicker, PlayerPicker, FieldGroup, CourtMini, withRemark
@@ -466,20 +467,21 @@ export function RemarkForm({ ctx, events, sets, mode, liveSetIndex, match, editL
 
 // ─────────────────────────────── set times ───────────────────────────────
 
+// Zürich clock times, as the sheet prints them, on a device in any zone
+// (stress test 2026-10-25: a laptop on GMT+2 showed and stored them 1 h off)
 function toClock(iso) {
   const ms = Date.parse(iso)
   if (!Number.isFinite(ms)) return ''
-  const d = new Date(ms)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const p = zonedParts(ms)
+  return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`
 }
 
 function withClock(iso, clock, fallbackIso) {
   if (!/^\d{1,2}:\d{2}$/.test(clock || '')) return undefined
   const baseMs = Date.parse(iso || fallbackIso || '')
-  const d = Number.isFinite(baseMs) ? new Date(baseMs) : new Date()
+  const p = zonedParts(Number.isFinite(baseMs) ? baseMs : Date.now())
   const [h, m] = clock.split(':').map(Number)
-  d.setHours(h, m, 0, 0)
-  return d.toISOString()
+  return new Date(zurichWallTimeMs(p.year, p.month, p.day, h, m)).toISOString()
 }
 
 export function SetTimesForm({ ctx, events, sets, setRow, match, busy, onCancel, onConfirm }) {

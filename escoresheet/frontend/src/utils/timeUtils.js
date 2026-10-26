@@ -3,138 +3,114 @@
  *
  * TIMEZONE PHILOSOPHY:
  * - Storage: Always UTC with 'Z' suffix (e.g., "2024-01-15T13:00:00Z")
- * - Display: Always local timezone (browser time)
- * - Input: User enters local time (what they see on gym clock)
+ * - Display: Always the Zürich clock (ui/format.js APP_TZ), the gym's clock
+ * - Input: User enters Zürich time (what they see on the gym clock)
  *
- * This module handles all conversions between UTC storage and local display.
+ * Not the device's zone: a scorer laptop left on a fixed GMT+2 after the
+ * October change, or on UTC, stored the official 10:20 kick-off as 08:20Z
+ * (on the server too) and printed set 1 at 11:20 on the official sheet
+ * (stress test 2026-10-25). On a device in Zürich nothing changes.
+ *
+ * This module handles all conversions between UTC storage and Zürich display.
+ * A zone-less "YYYY-MM-DDTHH:MM" given to the formatters (the schedule's
+ * kick-off) is already Zürich wall time and is shown as it is.
  */
+import { zonedParts, zurichWallTimeMs } from '../ui/format'
+
+const pad2 = (n) => String(n).padStart(2, '0')
+
+/** The Zürich wall clock of a stored value, or null when it has no clock. */
+function zurichClock(value) {
+  if (!value) return null
+  const p = zonedParts(value)
+  return p.valid && p.timed ? p : null
+}
 
 /**
- * Format UTC ISO string to local time HH:MM
+ * The ISO instant of a Zürich date and time, or null when either does not
+ * exist (2026-02-30, 24:00): Date.UTC would roll them over to another day.
+ */
+function zurichIso(date, time) {
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(date || '').trim())
+  const t = /^(\d{1,2}):(\d{2})$/.exec(String(time || '').trim())
+  if (!d || !t) return null
+  const [year, month, day, hour, minute] = [d[1], d[2], d[3], t[1], t[2]].map(Number)
+  const calendar = new Date(Date.UTC(year, month - 1, day))
+  if (calendar.getUTCMonth() !== month - 1 || calendar.getUTCDate() !== day || hour > 23 || minute > 59) return null
+  const ms = zurichWallTimeMs(year, month, day, hour, minute)
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : null
+}
+
+/**
+ * Format UTC ISO string to Zürich time HH:MM
  * @param {string} isoString - ISO 8601 string with Z suffix (e.g., "2024-01-15T13:00:00Z")
- * @returns {string} Local time in HH:MM format (e.g., "14:00" in UTC+1)
+ * @returns {string} Zürich time in HH:MM format (e.g., "14:00" in winter)
  *
  * @example
- * formatTimeLocal("2024-01-15T11:00:00Z") // Returns "12:00" in UTC+1
+ * formatTimeLocal("2024-01-15T11:00:00Z") // Returns "12:00"
  */
 export function formatTimeLocal(isoString) {
-  if (!isoString) return ''
-  try {
-    const date = new Date(isoString)
-    if (isNaN(date.getTime())) return ''
-
-    // Use LOCAL time methods (not UTC)
-    const hours = String(date.getHours()).padStart(2, '0')
-    const minutes = String(date.getMinutes()).padStart(2, '0')
-    return `${hours}:${minutes}`
-  } catch {
-    return ''
-  }
+  const p = zurichClock(isoString)
+  return p ? `${pad2(p.hour)}:${pad2(p.minute)}` : ''
 }
 
 /**
- * Format UTC ISO string to local datetime for datetime-local input
+ * Format UTC ISO string to Zürich datetime for datetime-local input
  * @param {string} isoString - ISO 8601 string with Z suffix
- * @returns {string} Local datetime in YYYY-MM-DDTHH:MM format for datetime-local input
+ * @returns {string} Zürich datetime in YYYY-MM-DDTHH:MM format for datetime-local input
  *
  * @example
- * formatDateTimeLocal("2024-01-15T11:00:00Z") // Returns "2024-01-15T12:00" in UTC+1
+ * formatDateTimeLocal("2024-01-15T11:00:00Z") // Returns "2024-01-15T12:00"
  */
 export function formatDateTimeLocal(isoString) {
-  if (!isoString) return ''
-  try {
-    const date = new Date(isoString)
-    if (isNaN(date.getTime())) return ''
-
-    // Use LOCAL time methods
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    const hours = String(date.getHours()).padStart(2, '0')
-    const minutes = String(date.getMinutes()).padStart(2, '0')
-
-    return `${year}-${month}-${day}T${hours}:${minutes}`
-  } catch {
-    return ''
-  }
+  const p = zurichClock(isoString)
+  return p ? `${p.year}-${pad2(p.month)}-${pad2(p.day)}T${pad2(p.hour)}:${pad2(p.minute)}` : ''
 }
 
 /**
- * Parse local datetime-local input to UTC ISO string
- * @param {string} dateTimeLocal - Local datetime from datetime-local input (YYYY-MM-DDTHH:MM)
+ * Parse Zürich datetime-local input to UTC ISO string
+ * @param {string} dateTimeLocal - Zürich datetime from datetime-local input (YYYY-MM-DDTHH:MM)
  * @returns {string|null} UTC ISO string with Z suffix (e.g., "2024-01-15T11:00:00Z")
  *
  * @example
- * parseLocalToISO("2024-01-15T12:00") // Returns "2024-01-15T11:00:00Z" in UTC+1
+ * parseLocalToISO("2024-01-15T12:00") // Returns "2024-01-15T11:00:00.000Z"
  */
 export function parseLocalToISO(dateTimeLocal) {
-  if (!dateTimeLocal) return null
-  try {
-    // datetime-local input gives us local time as "YYYY-MM-DDTHH:MM"
-    // When we create Date from this, it interprets as LOCAL time
-    const date = new Date(dateTimeLocal)
-    if (isNaN(date.getTime())) return null
-
-    // toISOString() converts to UTC and adds 'Z' suffix
-    return date.toISOString()
-  } catch {
-    return null
-  }
+  const m = /^(\d{4}-\d{2}-\d{2})T(\d{1,2}:\d{2})(?::\d{2}(?:\.\d+)?)?$/.exec(String(dateTimeLocal || '').trim())
+  return m ? zurichIso(m[1], m[2]) : null
 }
 
 /**
- * Parse separate date and time inputs (local) to UTC ISO string
+ * Parse separate date and time inputs (Zürich) to UTC ISO string
  * Used for match setup scheduled time
  * @param {string} date - Date in YYYY-MM-DD format
- * @param {string} time - Time in HH:MM format (local time)
+ * @param {string} time - Time in HH:MM format (Zürich time)
  * @returns {string|null} UTC ISO string with Z suffix
  *
  * @example
- * parseLocalDateTimeToISO("2024-01-15", "12:00") // Returns "2024-01-15T11:00:00Z" in UTC+1
+ * parseLocalDateTimeToISO("2024-01-15", "12:00") // Returns "2024-01-15T11:00:00.000Z"
  */
 export function parseLocalDateTimeToISO(date, time = '00:00') {
   if (!date) return null
-  try {
-    // Combine date and time, interpret as local time
-    const dateTimeLocal = `${date}T${time}`
-    const dateObj = new Date(dateTimeLocal)
-    if (isNaN(dateObj.getTime())) return null
-
-    // Convert to UTC ISO string
-    return dateObj.toISOString()
-  } catch {
-    return null
-  }
+  return zurichIso(date, time)
 }
 
 /**
- * Format UTC ISO string to local date and time components
+ * Format UTC ISO string to Zürich date and time components
  * Used for splitting scheduled time back into date/time inputs
  * @param {string} isoString - ISO 8601 string with Z suffix
- * @returns {{date: string, time: string}} Object with date (YYYY-MM-DD) and time (HH:MM) in local timezone
+ * @returns {{date: string, time: string}} Object with date (YYYY-MM-DD) and time (HH:MM) in Zürich
  *
  * @example
- * splitLocalDateTime("2024-01-15T11:00:00Z") // Returns {date: "2024-01-15", time: "12:00"} in UTC+1
+ * splitLocalDateTime("2024-01-15T11:00:00Z") // Returns {date: "2024-01-15", time: "12:00"}
  */
 export function splitLocalDateTime(isoString) {
-  if (!isoString) return { date: '', time: '' }
-  try {
-    const date = new Date(isoString)
-    if (isNaN(date.getTime())) return { date: '', time: '' }
-
-    // Extract LOCAL time components
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    const hours = String(date.getHours()).padStart(2, '0')
-    const minutes = String(date.getMinutes()).padStart(2, '0')
-
-    return {
-      date: `${year}-${month}-${day}`,
-      time: `${hours}:${minutes}`
-    }
-  } catch {
-    return { date: '', time: '' }
+  const p = isoString ? zonedParts(isoString) : null
+  if (!p?.valid) return { date: '', time: '' }
+  return {
+    date: `${p.year}-${pad2(p.month)}-${pad2(p.day)}`,
+    // a bare date has no clock: never invent one (it was UTC midnight's)
+    time: p.timed ? `${pad2(p.hour)}:${pad2(p.minute)}` : ''
   }
 }
 

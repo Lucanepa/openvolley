@@ -341,7 +341,7 @@ describe('Phase 7: ownership, PIN-gated data, backups, PINs at rest', { skip: SK
     assert.deepEqual(statuses, [200, 422, 422, 429])
   })
 
-  it('relay: a referee/bench role on join_match proves nothing; wrong PINs share the /64 budget with the HTTP checks', async () => {
+  it('relay: a referee/bench role on join_match proves nothing; wrong PINs count in the /64 budget of the HTTP checks', async () => {
     const room = `relay_guess_${randomBytes(3).toString('hex')}`
     const scoreboard = await openSocket(srv.wsUrl)
     const sockets = []
@@ -377,7 +377,8 @@ describe('Phase 7: ownership, PIN-gated data, backups, PINs at rest', { skip: SK
       guesser.send({ type: 'join_match', matchId: room, role: 'referee', pin: '642097' })
       await guesser.waitFor((m) => m.type === 'error' && m.code === 'rate-limited')
       assert.equal(guesser.messages.some((m) => m.access === 'full'), false, 'over the limit the right PIN must not be compared')
-      // ... and per IPv6 /64 across sockets, in the budget the HTTP PIN checks use
+      // ... and per IPv6 /64 across sockets, in the budget the HTTP PIN checks
+      // use (this match's PINs: GET /api/match/:id with X-OV-Match-Pin)
       for (let s = 3; s <= 5; s++) {
         const c = await from(`2001:db8:77::${s}`)
         for (let i = 0; i < 5; i++) c.send({ type: 'join_match', matchId: room, role: 'bench', team: 'home', pin: String(200000 + s * 10 + i) })
@@ -387,10 +388,12 @@ describe('Phase 7: ownership, PIN-gated data, backups, PINs at rest', { skip: SK
       late.send({ type: 'join_match', matchId: room, role: 'referee', pin: '642097' })
       assert.equal((await late.waitFor((m) => m.type === 'error')).code, 'rate-limited')
       assert.equal(late.messages.some((m) => m.access === 'full'), false)
-      const http = await api(srv.base, '/api/match/validate-connection-pin', { proto: null, headers: { 'cf-connecting-ip': '2001:db8:77::abcd' }, body: { pin: PINS.referee, type: 'referee' } })
-      assert.equal(http.status, 429, 'the relay guesses used up the HTTP budget of the /64')
+      const http = await api(srv.base, `/api/match/${room}`, { method: 'GET', proto: null, headers: { 'cf-connecting-ip': '2001:db8:77::abcd', 'X-OV-Match-Pin': '642097' } })
+      assert.equal(http.status, 429, 'the relay guesses used up the HTTP budget of the /64 for this match')
+      // What was not guessed stays open to the /64: a PIN looked up among all
+      // matches (another device of the hall connecting)
       const validate = await api(srv.base, '/api/match/validate-pin', { proto: null, headers: { 'cf-connecting-ip': '2001:db8:77::abce' }, body: { pin: '642097', type: 'referee' } })
-      assert.equal(validate.status, 429)
+      assert.equal(validate.status, 200, validate.text)
       // Another network is not affected; the right PIN joins with the bundle
       const ref = await from('203.0.113.77')
       ref.send({ type: 'join_match', matchId: room, role: 'referee', pin: '642097' })

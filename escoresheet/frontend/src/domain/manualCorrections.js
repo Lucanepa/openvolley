@@ -34,7 +34,7 @@ import {
 } from './describe'
 import { getSetResult, scoreFromPointEvents, getFirstServeForSet, isDecidingSet } from './rules'
 import { rotateLineup } from './rotation'
-import { actualStartLines } from './remarks'
+import { actualStartLines, remarkClock } from './remarks'
 import { actualStartRemark, scheduledStartOnDay } from '../utils/setStartTime'
 import { validateManualTimeout, validateManualSubstitution, planSubstitutionDeletion, classifySubstitutionRequest } from './substitutions'
 import { resolveSanction, isDelaySanction, awardsPoint, validateMemberSanction } from './sanctions'
@@ -844,10 +844,9 @@ export function planSetTimes(events, sets, { setIndex, startTime, endTime, sched
   if (startMs && refMs) {
     const minutes = Math.round((startMs - refMs) / 60000)
     if (minutes > 5) {
-      const d = new Date(startMs)
       plan.suggestedRemark = remarkText('delayedStart', {
         set,
-        time: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`,
+        time: remarkClock(new Date(startMs)),
         minutes,
         reason: '…'
       }, ctx.t)
