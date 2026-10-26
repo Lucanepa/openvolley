@@ -136,4 +136,27 @@ describe('/api/match/restore: the concurrency gate never loses a slot', { skip: 
     }
     assert.equal(await probe(), 400)
   })
+
+  // 2026-10-26: a byte every few seconds never trips the idle timeout, and
+  // a signed-in client held a slot until Node's requestTimeout (5 min)
+  it('an upload that trickles loses its slot after the total time limit (2 min)', async () => {
+    const trickling = [stalledRestore(), stalledRestore()]
+    const drip = setInterval(() => { for (const s of trickling) if (!s.destroyed) s.write(' ') }, 10_000)
+    try {
+      await sleep(800)
+      const t0 = Date.now()
+      const status = await probe(150_000)
+      const waited = Date.now() - t0
+      assert.equal(status, 400, 'the queued restore ran')
+      assert.ok(waited > 100_000, `it waited for the total limit, not the idle timeout (${waited} ms)`)
+      for (const s of trickling) {
+        if (!s.destroyed) await new Promise((resolve) => s.once('close', resolve))
+        assert.match(s.answer, /^HTTP\/1\.1 408 /)
+        assert.match(s.answer, /OV_BODY_TIMEOUT/)
+      }
+    } finally {
+      clearInterval(drip)
+    }
+    assert.equal(await probe(), 400)
+  })
 })
