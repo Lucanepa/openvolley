@@ -3279,6 +3279,8 @@
     },
     "enterResult": "Saisir le résultat",
     "correctResult": "Corriger le résultat",
+    "startMatch": "Démarrer",
+    "unstartMatch": "Annuler le début",
     "resultTitle": "Match {{n}} · {{code}}",
     "resultKind": "Résultat",
     "kinds": {
@@ -3320,7 +3322,8 @@
       "days": "Le début ne tombe pas sur un jour du tournoi.",
       "hours": "Le match est en dehors des heures de jeu.",
       "before_source": "Il commence avant la fin du match {{n}} ({{code}}), dont il attend le résultat, plus le temps de repos.",
-      "after_dependent": "Le match {{n}} ({{code}}) attend ce résultat et commence avant la fin de ce match plus le temps de repos."
+      "after_dependent": "Le match {{n}} ({{code}}) attend ce résultat et commence avant la fin de ce match plus le temps de repos.",
+      "begun": "Son créneau a déjà commencé : le match {{n}} ({{code}}) est peut-être déjà sur le terrain."
     },
     "rankingHint": "Le classement final pour MyBeach (à saisir avant 12h00 le lendemain, art. 29).",
     "rank": "Rang",

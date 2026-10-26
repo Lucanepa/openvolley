@@ -3280,6 +3280,8 @@
     },
     "enterResult": "Resultat eingeben",
     "correctResult": "Resultat korrigieren",
+    "startMatch": "Starten",
+    "unstartMatch": "Start zurücknehmen",
     "resultTitle": "Spiel {{n}} · {{code}}",
     "resultKind": "Resultat",
     "kinds": {
@@ -3321,7 +3323,8 @@
       "days": "Die Startzeit liegt an keinem Turniertag.",
       "hours": "Das Spiel liegt ausserhalb der Spielzeiten.",
       "before_source": "Es beginnt, bevor Spiel {{n}} ({{code}}) samt Pause vorbei ist, auf dessen Resultat es wartet.",
-      "after_dependent": "Spiel {{n}} ({{code}}) wartet auf dieses Resultat und beginnt, bevor dieses Spiel samt Pause vorbei ist."
+      "after_dependent": "Spiel {{n}} ({{code}}) wartet auf dieses Resultat und beginnt, bevor dieses Spiel samt Pause vorbei ist.",
+      "begun": "Seine Zeit hat schon begonnen: Spiel {{n}} ({{code}}) wird vielleicht schon gespielt."
     },
     "rankingHint": "Die Schlussrangliste für MyBeach (bis 12:00 Uhr am Folgetag eintragen, Art. 29).",
     "rank": "Rang",

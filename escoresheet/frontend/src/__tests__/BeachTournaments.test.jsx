@@ -23,6 +23,7 @@ const api = vi.hoisted(() => ({
   generate: vi.fn(),
   putSeeds: vi.fn(),
   enterResult: vi.fn(),
+  setMatchStatus: vi.fn(),
   withdrawResult: vi.fn(),
   putCourts: vi.fn(),
   updateMatch: vi.fn(),
@@ -204,6 +205,22 @@ describe('Tournaments tab', () => {
     }))
     await waitFor(() => expect(screen.queryByTestId('result-save')).toBeNull())
     await waitFor(() => expect(api.get.mock.calls.length).toBeGreaterThan(loads))
+  })
+
+  it('Start tells the server a match is on court; Undo start takes it back', async () => {
+    api.get.mockResolvedValue(ok(bundle({ draws: [{ ...DRAW, status: 'playing' }], matches: [READY_W5, { ...READY_W5, id: 'm6', game_n: 6, code: 'W6', status: 'in_progress' }] })))
+    api.setMatchStatus.mockResolvedValue(ok({ match: {} }))
+    await openDraw()
+    expect(screen.queryByTestId('unstart-W5')).toBeNull()
+    expect(screen.queryByTestId('start-W6')).toBeNull()
+    const loads = api.get.mock.calls.length
+    fireEvent.click(await screen.findByTestId('start-W5'))
+    await waitFor(() => expect(api.setMatchStatus).toHaveBeenCalledWith('m5', 'in_progress'))
+    await waitFor(() => expect(api.get.mock.calls.length).toBeGreaterThan(loads))
+    fireEvent.click(screen.getByTestId('unstart-W6'))
+    await waitFor(() => expect(api.setMatchStatus).toHaveBeenCalledWith('m6', 'open'))
+    // the result of a started match is entered as usual
+    expect(screen.getByTestId('result-W6')).toBeInTheDocument()
   })
 
   it('reads the tournament again in the background: when the page comes back and every 30 s', async () => {
