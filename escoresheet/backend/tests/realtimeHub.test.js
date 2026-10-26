@@ -383,6 +383,23 @@ describe('realtimeHub over real sockets', () => {
     assert.equal((await a.closed).code, 1008)
   })
 
+  it('closes on a frame it cannot handle, and serves every other socket on', async () => {
+    // String() of {"toString":1} throws TypeError: one such frame on an
+    // anonymous live socket used to end the whole backend
+    for (const sub of [
+      '{"schema":{"toString":1},"table":"matches"}',
+      '{"table":{"toString":1}}',
+      '{"table":"events","event":{"toString":1}}',
+      `{"table":"events","column":"match_id","value":"${MATCH_A}","op":{"toString":1}}`
+    ]) {
+      const a = await open()
+      a.ws.send(`{"type":"subscribe-db","id":"x","subs":[${sub}]}`)
+      assert.equal((await a.closed).code, 1008, sub)
+    }
+    const b = await open()
+    assert.deepEqual(await subscribe(b, 'ch-b', [{ table: 'events', column: 'match_id', value: MATCH_A }]), { type: 'subscribe-db-ack', id: 'ch-b' })
+  })
+
   it('closes on binary frames with 1003', async () => {
     const a = await open()
     a.ws.send(Buffer.from(JSON.stringify({ type: 'ping' })), { binary: true })

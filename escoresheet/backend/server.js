@@ -27,7 +27,7 @@ import PocketBase from 'pocketbase'
 import { SECRET_COLUMNS, redactSecrets } from './lib/secrets.js'
 // realtimeHub only needs `ws` and node core, so the LAN/SEA bundle can import it
 // statically. It is only *instantiated* in DATABASE_URL mode.
-import { createRealtimeHub, createLiveStateRelay, createHeartbeat, isLiveRequest, matchKeyFromSyncedMatch } from './lib/realtimeHub.js'
+import { createRealtimeHub, createLiveStateRelay, createHeartbeat, isLiveRequest, matchKeyFromSyncedMatch, jsonTooDeep } from './lib/realtimeHub.js'
 // What anonymous readers (live sockets, /api/db without a session) may see.
 import { projectLiveRow, hasAnonPolicy, anonSelectCheck, publicRelayMatch, publicPeople, relaySummaryBundle, relayMatchListRow, cloudListsMatch, projectAnonDbRows, projectNonOwnerRows } from './lib/publicColumns.js'
 // PIN-proved access to a relayed match (full bundle) and its capability tokens.
@@ -4238,6 +4238,15 @@ function handleSocketMessage(clientInfo, data) {
   const ws = clientInfo.ws
   try {
     const message = JSON.parse(data.toString())
+    // Refused before anything keeps or sends it on: the relay stores what a
+    // socket syncs (activeMatches, liveState) and stringifies it for every
+    // subscriber and every GET /api/match/:id. JSON.stringify of a value nested
+    // a few thousand levels deep throws RangeError, and in the request handler
+    // that throw ends the backend.
+    if (jsonTooDeep(message)) {
+      ws.send(JSON.stringify({ type: 'error', code: 'bad-request', message: 'Message nested too deeply' }))
+      return undefined
+    }
 
     // Handle different message types
     switch (message.type) {
