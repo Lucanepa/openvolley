@@ -1064,9 +1064,9 @@
     "modals": {
       "existingMatchWarning": "Es git scho es Spiil. Möchted Sie es lösche und es neus offiziells Spiil erstelle?",
       "testMatchOverwriteWarning": "Es offiziells Spiil wird ufzeichnet. S Starte vomene Testspiil löscht die vorherig Sitzig. Wiiterfahre?",
-      "officialMatchStillRecording": "Uf dem Gerät lauft no es offiziells Spiil. Füehred Sie es wiiter oder löschet Sie es mit \"Spiil lösche\", bevor Sie es neus offiziells Spiil erstelled.",
-      "officialMatchReplaceTest": "S Testspiil uf dem Gerät wird dur s offizielle Spiil ersetzt und sini Date glöscht. Wiiterfahre?",
-      "officialMatchReplaceEasy": "S eifache Spiil uf dem Gerät wird dur s offizielle Spiil ersetzt und sini Date glöscht. Wiiterfahre?",
+      "officialMatchStillRecording": "Uf dem Grät lauft no es offiziells Spiil. Füehred Sie es wiiter oder löschet Sie es mit \"Spiil lösche\", bevor Sie es neus offiziells Spiil erstelled.",
+      "officialMatchReplaceTest": "S Testspiil uf dem Grät wird dur s offizielle Spiil ersetzt und sini Date glöscht. Wiiterfahre?",
+      "officialMatchReplaceEasy": "S eifache Spiil uf dem Grät wird dur s offizielle Spiil ersetzt und sini Date glöscht. Wiiterfahre?",
       "deleteTestMatchConfirm": "Das löscht s Testspiil und alli Date. Wiiterfahre?",
       "noTestMatchFound": "Keis Testspiil gfunde. Bitte erstelled Sie zersch es neus Testspiil.",
       "testMatchDeleted": "Testspiil erfolgriich glöscht.",
@@ -1078,9 +1078,9 @@
       "failedToRestoreFromFile": "Widerherstellig us Datei fehlgschlage",
       "enter6DigitPin": "Bitte gänd Sie en 6-stellige PIN ii",
       "matchNotFound": "Spiil nöd gfunde",
-      "easyMatchOverwriteWarning": "Es offiziells Spiil lauft no. Es eifachs Spiil ersetzt s Test- oder eifache Spiil uf dem Gerät. Wiiterfahre?",
-      "easyMatchReplaceEasy": "S eifache Spiil uf dem Gerät wird dur s neue ersetzt und sini Date glöscht. Wiiterfahre?",
-      "easyMatchReplaceTest": "S Testspiil uf dem Gerät wird dur s eifache Spiil ersetzt und sini Date glöscht. Wiiterfahre?",
+      "easyMatchOverwriteWarning": "Es offiziells Spiil lauft no. Es eifachs Spiil ersetzt s Test- oder eifache Spiil uf dem Grät. Wiiterfahre?",
+      "easyMatchReplaceEasy": "S eifache Spiil uf dem Grät wird dur s neue ersetzt und sini Date glöscht. Wiiterfahre?",
+      "easyMatchReplaceTest": "S Testspiil uf dem Grät wird dur s eifache Spiil ersetzt und sini Date glöscht. Wiiterfahre?",
       "unableToPrepareEasyMatch": "S eifache Spiil het nöd chönne starte: {{error}}",
       "deleteEasyMatchConfirm": "Das löscht s eifache Spiil und alli Date. Wiiterfahre?",
       "easyMatchDeleted": "Eifachs Spiil glöscht."
@@ -1093,14 +1093,14 @@
     "easyMatch": "Eifachs Spiil",
     "easyMatchHint": "Inoffiziell · ohni Kader und Underschrifte",
     "deviceMatches": {
-      "title": "Uf däm Gerät",
+      "title": "Uf däm Grät",
       "game": "Spiil {{game}}",
       "home": "Heim",
       "away": "Gast",
       "noTeams": "Teams nonig erfasst",
       "notSynced": "Nöd synchronisiert",
       "sameGame": "Gliichs Spiil zwöimal",
-      "duplicateNotice": "Spiil {{game}} isch zwöimal uf däm Gerät. De Server füehrt eis Match pro Spiil: füehr das wiiter, wo du zellt häsch, und lösch s andere.",
+      "duplicateNotice": "Spiil {{game}} isch zwöimal uf däm Grät. De Server füehrt eis Match pro Spiil: füehr das wiiter, wo du zellt häsch, und lösch s andere.",
       "continue": "Wiiterfüehre",
       "delete": "Lösche",
       "status": {
@@ -1473,7 +1473,7 @@
     "lcs": "Libero-Kontrollblatt",
     "lcsTooltip": "Libero-Kontrollblatt aazeige",
     "pdfFailed": "S PDF hät uf dem Grät nöd chöne erstellt werde.",
-    "matchNotFound": "Das Spiel isch nöd uf däm Gerät: Es git keis Matchblatt zum Speichere.",
+    "matchNotFound": "Das Spiel isch nöd uf däm Grät: Es git keis Matchblatt zum Speichere.",
     "pdfInvalid": "S PDF hät nöd richtig chöne erstellt werde. Bitte nomal probiere.",
     "pdfSavedAt": "PDF gspeicheret:",
     "savingFile": "{{fileName}} wird im Ordner Downloads gspeicheret...",
@@ -1946,10 +1946,10 @@
     }
   },
   "syncBanner": {
-    "title": "Nöd aagmäldet: Das Spiil isch nur uf däm Gerät gspeicheret",
+    "title": "Nöd aagmäldet: Das Spiil isch nur uf däm Grät gspeicheret",
     "body": "S Erfasse funktioniert wiiter. Mälded Sie sich aa, zum es i de Cloud z speichere (Schiri, Livescore, Backup); wartendi Änderige werded dänn sofort gschickt.",
     "later": "Spöter",
-    "expiredTitle": "Sitzig abglaufe: Änderige sind nur uf däm Gerät gspeicheret",
+    "expiredTitle": "Sitzig abglaufe: Änderige sind nur uf däm Grät gspeicheret",
     "expiredBody": "S Erfasse funktioniert wiiter. Mälded Sie sich nomal aa, zum i de Cloud z speichere; wartendi Änderige werded dänn sofort gschickt.",
     "signInAgain": "Nomal aamälde"
   },
@@ -1977,7 +1977,7 @@
     "supabase": "Cloud-Synchronisierig",
     "cloud": "Cloud-Synchronisierig",
     "signInToSync": "Zum Synchronisiere aamälde",
-    "signInToSyncHint": "Nöd aagmäldet: Änderige bliibed uf däm Gerät, bis Sie sich aamälded.",
+    "signInToSyncHint": "Nöd aagmäldet: Änderige bliibed uf däm Grät, bis Sie sich aamälded.",
     "offlinePending": "Offline ({{count}} usstehend)",
     "refusedByServer": "Vom Server abglehnt:",
     "syncingDots": "Synchronisiere...",
@@ -2175,7 +2175,7 @@
     "wifiQrCaption": "Zersch scanne, zum i das WLAN gah"
   },
   "startupConnectivity": {
-    "cloudWaits": "Kei Internet: D Cloud-Synchronisation startet, sobald das Gerät online isch. D Spiel blibed da und uf em lokale Server gspeicheret.",
+    "cloudWaits": "Kei Internet: D Cloud-Synchronisation startet, sobald das Grät online isch. D Spiel blibed da und uf em lokale Server gspeicheret.",
     "connecting": "Verbindig wird hergstellt...",
     "goOffline": "Offline gah",
     "continueAnyway": "Trotzdem witerfahre",
@@ -3565,7 +3565,7 @@
       "unavailable": "D Genehmigung mit Konto isch uf däm Server nöd verfüegbar.",
       "emailUnconfirmed": "De Offizielli hät d E-Mail-Adresse vom Konto no nöd bestätigt.",
       "scorerNotReferee": "S Konto, wo das Spiil schriibt, chan nöd als Schiri genehmige.",
-      "callerRole": "Für d Genehmigung mit Konto bruucht das Gerät es Schriiber- oder Schirikonto."
+      "callerRole": "Für d Genehmigung mit Konto bruucht das Grät es Schriiber- oder Schirikonto."
     },
     "mine": {
       "title": "Ihri Genehmigunge",
@@ -3590,10 +3590,10 @@
       "locked": "Spiil genehmigt oder abgschlosse: d Genehmigunge sind fix",
       "beach": "D Genehmigung mit PIN gits bi Beachvolleyball-Spiil nöd",
       "localMatch": "Das Spiil isch nöd online gspeicheret: d Genehmigung mit PIN bruucht es Online-Spiil",
-      "noCloud": "Kei Online-Verbindig uf dem Gerät: vo Hand underschriibe",
+      "noCloud": "Kei Online-Verbindig uf dem Grät: vo Hand underschriibe",
       "serverOff": "D Genehmigung mit PIN isch uf dem Server abgschaltet",
-      "signedOut": "Mälded Sie sich uf dem Gerät aa, zum mit PIN genehmige",
-      "callerRole": "S Konto uf dem Gerät cha kei Genehmigunge schicke: es bruucht d Rolle Schriiber oder Schiri",
+      "signedOut": "Mälded Sie sich uf dem Grät aa, zum mit PIN genehmige",
+      "callerRole": "S Konto uf dem Grät cha kei Genehmigunge schicke: es bruucht d Rolle Schriiber oder Schiri",
       "offline": "Offline: d Genehmigung mit PIN chunnt wieder, sobald Sie online sind"
     }
   },
