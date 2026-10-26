@@ -5090,6 +5090,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const dedupedSets = Array.from(setsByIndex.values()).sort((a, b) => a.index - b.index)
       const freshCurrentSet = dedupedSets.find(s => !s.finished) || dedupedSets[dedupedSets.length - 1]
       if (!freshCurrentSet) return
+      // A set its score has won takes no point more: its Set end dialog is
+      // open, its end not confirmed yet (a 26th point under it was kept in
+      // the events while the dialog stored 25:22)
+      if (getSetResult(freshCurrentSet.homePoints, freshCurrentSet.awayPoints, freshCurrentSet.index).isSetWon) {
+        console.warn('[Scoreboard] Point on a set its score has already won: ignored')
+        return
+      }
 
       const field = teamKey === 'home' ? 'homePoints' : 'awayPoints'
       const newPoints = (freshCurrentSet[field] || 0) + 1
@@ -5563,6 +5570,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     cLogger.logHandler('handleStartRally', { skipConfirmation: skipCheck })
     if (await readRallyStatus() === 'in_play') {
       console.warn('[Scoreboard] Start rally with a rally in play (the screen was behind): ignored')
+      return
+    }
+    // Nor in a set its score has won (its Set end dialog is open)
+    const playedSet = currentSetOf(await db.sets.where('matchId').equals(matchId).toArray())
+    if (playedSet && getSetResult(playedSet.homePoints, playedSet.awayPoints, playedSet.index).isSetWon) {
+      console.warn('[Scoreboard] Start rally in a set its score has already won: ignored')
       return
     }
     // Check for accidental rally start (if enabled and point was just awarded)
@@ -12303,10 +12316,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // These modals need a decision - don't allow Escape to close them
       // The set-5 change of courts (or the change back) too: no rally and no
       // point under it (a point at 7:7 under the change back made it stale)
+      // The set end (and match end), the set start time, the libero reminder,
+      // the deciding set's sides and the "no legal substitution" choice too:
+      // Enter then A under "Set 1 end" wrote a rally start and a 26th point
+      // the dialog never showed (stress test 2026-10-25). And any other
+      // dialog on screen: no scoring key acts under one.
       const hasDecisionModal = substitutionConfirm || liberoConfirm || sanctionConfirmModal ||
         accidentalRallyConfirmModal || accidentalPointConfirmModal || undoConfirm || replayConfirm ||
         replayRallyConfirm || liberoRotationModal || liberoReentryModal || sanctionSubstitutionModal ||
-        courtSwitchModal
+        courtSwitchModal || setEndTimeModal || setStartTimeModal || liberoReminder || set5SideServiceModal ||
+        exceptionalSubstitutionModal || !!document.querySelector('[aria-modal="true"]')
 
       // Confirm key (Enter)
       if (key === keyBindings.confirm) {
@@ -12448,7 +12467,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     timeoutModal, lineupModal, menuModal,
     substitutionConfirm, liberoConfirm, sanctionConfirmModal, accidentalRallyConfirmModal,
     accidentalPointConfirmModal, undoConfirm, replayConfirm, replayRallyConfirm, liberoRotationModal, liberoReentryModal,
-    courtSwitchModal, confirmSubstitution, confirmLibero, confirmReplay, handleReplayRally, handleDecisionChange
+    courtSwitchModal, setEndTimeModal, setStartTimeModal, liberoReminder, set5SideServiceModal, exceptionalSubstitutionModal,
+    confirmSubstitution, confirmLibero, confirmReplay, handleReplayRally, handleDecisionChange
   ])
 
   // Courtside chips: px floors on the cqw sizes so a 200 px side column still
