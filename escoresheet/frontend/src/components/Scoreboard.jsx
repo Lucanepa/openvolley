@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAlert } from '../contexts/AlertContext'
 import { useLiveQuery } from 'dexie-react-hooks'
@@ -58,7 +58,7 @@ import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet
 import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags, deferredPenaltyPoints } from '../domain/sanctions'
 import { classifyTimeoutRequest } from '../domain/timeouts'
 import { rallyStatusOf, currentSetOf } from '../domain/rally'
-import { useConfirmAction } from '../hooks/useConfirmAction'
+import { useConfirmAction, GHOST_CLICK_MS } from '../hooks/useConfirmAction'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
 import { playerReplacedByLibero } from '../domain/liberos'
 import { planSubstitutionDeletion, countRegularSubstitutions, classifySubstitutionRequest, MAX_SUBSTITUTIONS_PER_SET } from '../domain/substitutions'
@@ -2988,6 +2988,29 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     [data?.events, data?.set]
   )
 
+  // Start rally and Point A | Point B take turns in the same place (and the
+  // phone's rally buttons theirs): the second tap of a double tap, a finger
+  // bouncing or a tablet registering one tap twice, landed on the button that
+  // had just replaced the first one. A double tap on Start rally gave the
+  // rally to the team under the finger, a triple tap on Point B gave one
+  // rally two points (stress test 2026-10-25, every tap 40 to 250 ms apart).
+  // For GHOST_CLICK_MS after the buttons change (drawn: a layout effect,
+  // before the next tap can reach them), a tap on them or their key is the
+  // end of the tap that changed them, as after a confirm (useConfirmAction):
+  // a rally never ends that soon after its start, nor starts that soon after
+  // its point. Not when the screen first shows them. Monotonic clock: a
+  // device clock set back must not hold them.
+  const rallyButtonsRef = useRef({ status: null, changedAt: -Infinity })
+  useLayoutEffect(() => {
+    const buttons = rallyButtonsRef.current
+    if (buttons.status !== null && buttons.status !== rallyStatus) buttons.changedAt = performance.now()
+    buttons.status = rallyStatus
+  }, [rallyStatus])
+  const rallyButtonsJustShown = useCallback(
+    () => performance.now() - rallyButtonsRef.current.changedAt < GHOST_CLICK_MS,
+    []
+  )
+
   // The rally of the set being played, read from the database (inside an
   // action: its transaction). A tap is checked against it, not against the
   // screen, which on a slow tablet can be seconds behind
@@ -5610,6 +5633,25 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
     deferUi(() => setRecentlySubstitutedPlayers([]))
   }), [logEvent, isFirstRally, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration, runAction, deferUi, readRallyStatus])
+
+  // A tap on the rally buttons (Start rally, Point A | Point B) or their keys,
+  // on every layout: none the moment they changed (rallyButtonsJustShown),
+  // that is the second tap of the one that changed them. The accidental-start
+  // and accidental-point questions' Yes call the handlers themselves.
+  const tapStartRally = useCallback(() => {
+    if (rallyButtonsJustShown()) {
+      console.warn('[Scoreboard] Start rally tap as the rally buttons changed (a double tap): ignored')
+      return
+    }
+    handleStartRally()
+  }, [handleStartRally, rallyButtonsJustShown])
+  const tapPoint = useCallback((side) => {
+    if (rallyButtonsJustShown()) {
+      console.warn('[Scoreboard] Point tap as the rally buttons changed (a double tap): ignored')
+      return
+    }
+    handlePoint(side, false, { tap: true })
+  }, [handlePoint, rallyButtonsJustShown])
 
   const handleReplay = useCallback(async () => {
     // During rally: ask first, confirmReplay logs the replay event (no point to undo)
@@ -12271,7 +12313,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Start rally if idle and no modals
         if (!hasDecisionModal && rallyStatus === 'idle') {
           e.preventDefault()
-          handleStartRally()
+          tapStartRally()
           return
         }
         // Confirm modals
@@ -12356,12 +12398,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Point keys
       if (key === keyBindings.pointLeft && rallyStatus === 'in_play') {
         e.preventDefault()
-        handlePoint('left', false, { tap: true })
+        tapPoint('left')
         return
       }
       if (key === keyBindings.pointRight && rallyStatus === 'in_play') {
         e.preventDefault()
-        handlePoint('right', false, { tap: true })
+        tapPoint('right')
         return
       }
 
@@ -12401,7 +12443,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [
     keybindingsEnabled, keyBindings, editingKey, showOptionsInMenu, keybindingsModalOpen,
-    rallyStatus, handleStartRally, handlePoint, handleTimeout, handleExchangeLibero, handleUndo,
+    rallyStatus, tapStartRally, tapPoint, handleTimeout, handleExchangeLibero, handleUndo,
     playerActionMenu, benchPlayerActionMenu, liberoDropdown, liberoInDropdown, sanctionDropdown,
     timeoutModal, lineupModal, menuModal,
     substitutionConfirm, liberoConfirm, sanctionConfirmModal, accidentalRallyConfirmModal,
@@ -12948,8 +12990,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       actions: {
         undo: showUndoConfirm,
         menu: () => setMenuModal(true),
-        point: (side) => handlePoint(side, false, { tap: true }),
-        startRally: () => handleStartRally(),
+        point: (side) => tapPoint(side),
+        startRally: () => tapStartRally(),
         timeout: (side) => handleTimeout(side),
         openLineup: (side) => setLineupModal({ team: mapSideToTeamKey(side), mode: 'initial' }),
         playerClick: handlePlayerClick,
@@ -16679,7 +16721,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       <button
                         data-help-id="scoreboard-start-rally"
                         className="secondary start-rally-button"
-                        onClick={() => handleStartRally()}
+                        onClick={() => tapStartRally()}
                         disabled={isFirstRally && !lineupsOptional && (!leftTeamLineupSet || !rightTeamLineupSet)}
                       >
                         {isFirstRally ? t('scoreboard.buttons.startSet') : t('scoreboard.buttons.startRally')}
@@ -16687,10 +16729,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     ) : (
                       <>
                         <div className="rally-controls-row">
-                          <button data-help-id="scoreboard-point-left" className="rally-point-button" onClick={() => handlePoint('left', false, { tap: true })}>
+                          <button data-help-id="scoreboard-point-left" className="rally-point-button" onClick={() => tapPoint('left')}>
                             {t('scoreboard.buttons.pointTeam', { team: teamALabel })}
                           </button>
-                          <button data-help-id="scoreboard-point-right" className="rally-point-button" onClick={() => handlePoint('right', false, { tap: true })}>
+                          <button data-help-id="scoreboard-point-right" className="rally-point-button" onClick={() => tapPoint('right')}>
                             {t('scoreboard.buttons.pointTeam', { team: teamBLabel })}
                           </button>
                         </div>
