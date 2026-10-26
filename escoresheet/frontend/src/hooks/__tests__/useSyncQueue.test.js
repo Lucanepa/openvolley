@@ -517,6 +517,31 @@ describe('runQueuePass', () => {
   })
 })
 
+// Stress test 2026-10-25: a shirt number '1.5' in serve_player (an integer
+// column) was refused (22P02) at every retry, with the rally it carried
+describe('event insert with a decimal shirt number', () => {
+  it('is sent without serve_player instead of being refused for good, also when already parked', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'event', action: 'insert', status: 'failed', retry_count: 0, payload: { external_id: 'match_100_aaa:e:6', match_id: 'match_100_aaa', type: 'point', seq: 7, serve_player: 1.5, score_a: 1, score_b: 1 } },
+      { id: 2, resource: 'event', action: 'insert', status: 'queued', retry_count: 0, payload: { external_id: 'match_100_aaa:e:7', match_id: 'match_100_aaa', type: 'point', seq: 8, serve_player: 1.5, score_a: 2, score_b: 1 } },
+      { id: 3, resource: 'event', action: 'insert', status: 'queued', retry_count: 0, payload: { external_id: 'match_100_aaa:e:8', match_id: 'match_100_aaa', type: 'point', seq: 9, serve_player: 15 } }
+    ])
+    api.respond = (call) => {
+      const sp = call.data?.serve_player
+      if (call.table === 'events' && sp != null && !Number.isInteger(sp)) {
+        return { data: null, error: { message: 'invalid input syntax for type integer: "1.5"', code: '22P02', status: 400 } }
+      }
+      return defaultRespond(call)
+    }
+    await retryErrorsInternal({ force: true, includeFailed: true })
+    await runQueuePass()
+    const sent = api.calls.filter(c => c.table === 'events' && c.action === 'upsert').map(c => c.data)
+    expect(sent.map(d => d.serve_player)).toEqual([null, null, 15])
+    expect(sent[1]).toMatchObject({ score_a: 2, score_b: 1, type: 'point' })
+    expect([1, 2, 3].map(id => fakeDb.sync_queue.map.get(id).status)).toEqual(['sent', 'sent', 'sent'])
+  })
+})
+
 describe('event history jobs (void / edit / restore)', () => {
   const voidJob = (id, extra = {}) => ({
     id, resource: 'event', action: 'void', status: 'queued',

@@ -63,7 +63,7 @@ import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../doma
 import { playerReplacedByLibero } from '../domain/liberos'
 import { planSubstitutionDeletion, countRegularSubstitutions, classifySubstitutionRequest, MAX_SUBSTITUTIONS_PER_SET } from '../domain/substitutions'
 import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, syncJobsForSets, scoreAfterUndo } from '../domain/corrections'
-import { validateReopenedRoster, referencedPlayerNumbers, renumberPlayerInEvents } from '../domain/roster'
+import { validateReopenedRoster, referencedPlayerNumbers, renumberPlayerInEvents, isShirtNumber } from '../domain/roster'
 import { appendRemark, removeRemarkLine, eventRemark, remarkClock, setActualStartRemark } from '../domain/remarks'
 import { LINEUP_POSITIONS, lineupEntryErrors, lineupCandidates, lineupCaptainStatus, teamCaptainNumber, gameCaptainOptions, initialGameCaptainChoice, lineupGameCaptainDecision } from '../domain/lineupEntry'
 import { easyLiberoNumbers, easyLiberoErrors, easyRosterChanges, liberoSlotEditable, MAX_LIBEROS, easyPlayerRow, newPlayerMayEnter, newPlayerError, NEW_PLAYER_ERRORS, easyReferencedNumbers, isEasyStray } from '../domain/easyMatch'
@@ -4676,9 +4676,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         .sort((a, b) => (b.seq || 0) - (a.seq || 0))
       const servingTeam = pointEventsForSync.length > 0 ? (pointEventsForSync[0].payload?.team || currentSetFirstServe) : currentSetFirstServe
 
-      // Get server number from position I of serving team's lineup
+      // Get server number from position I of serving team's lineup. Only a
+      // whole number: events.serve_player is an integer column, and one
+      // refused value (a shirt number typed as '1.5') parked every rally that
+      // player served as failed for good
       const servingTeamLineup = getLineupForTeamFresh(servingTeam)
-      const serverNumber = servingTeamLineup?.['I'] ? Number(servingTeamLineup['I']) : null
+      const serverNumber = isShirtNumber(servingTeamLineup?.['I']) ? Number(servingTeamLineup['I']) : null
 
       // Reuse sets from snapshot (avoids redundant db.sets query)
       const currentSetForScore = snapshotSets.find(s => s.index === setIndex)

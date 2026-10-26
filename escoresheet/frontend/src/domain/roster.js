@@ -9,6 +9,24 @@
 
 const ACTIVE_LIBERO = new Set(['libero1', 'libero2', 'redesignated'])
 
+/** A shirt number: a whole number from 1 to 99 (number or digit string). */
+export function isShirtNumber(n) {
+  if (n === null || n === undefined || n === '') return false
+  const v = Number(n)
+  return Number.isInteger(v) && v >= 1 && v <= 99
+}
+
+/**
+ * The digits of a shirt number as typed. The number inputs filtered keys in
+ * onKeyPress only, which touch keyboards (IME), autofill and paste never
+ * fire: '1.5' (the '.' next to the digits on a tablet keypad, meant as 15)
+ * was stored as 1.5, and the cloud refused every rally that player served
+ * (events.serve_player is an integer column) for good.
+ */
+export function shirtNumberDigits(value) {
+  return String(value ?? '').replace(/\D/g, '')
+}
+
 /** Player numbers of a team referred to by the match events. */
 export function referencedPlayerNumbers(events, teamKey) {
   const nums = new Set()
