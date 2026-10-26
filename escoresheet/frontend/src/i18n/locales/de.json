@@ -1493,6 +1493,7 @@
     "connecting": "Verbinde...",
     "invalidPin": "Ungültiger PIN. Bitte erneut versuchen.",
     "tooManyAttempts": "Zu viele falsche PINs aus diesem Netzwerk. Bitte einige Minuten warten und erneut versuchen.",
+    "reconnecting": "Keine Verbindung zum Server. Die Bank verbindet sich wieder mit ihrem Spiel, sobald er zurück ist.",
     "roster": "Kader",
     "match": "Spiel",
     "back": "Zurück",

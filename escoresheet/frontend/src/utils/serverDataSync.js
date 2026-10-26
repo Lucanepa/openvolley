@@ -1567,7 +1567,10 @@ export async function listAvailableMatchesForBenchSupabase({ now = Date.now() } 
  * re-checking its stored PIN after a reload, whose check the backend then
  * counts apart from other tablets' typos behind the same address.
  * A refusal without comparing (too many wrong PINs from this address) comes
- * back with rateLimited: true, never as a wrong PIN.
+ * back with rateLimited: true, never as a wrong PIN. A failed check says what
+ * the backend answered (status) or, when it did not answer at all (network
+ * error, timed out), unreachable: true: a tablet re-checking its stored PIN
+ * keeps it when nothing was compared.
  */
 export async function validatePinSupabase(pin, type = 'referee', { timeoutMs = 3000, matchExternalId } = {}) {
   // Bounded: on a venue network that drops packets to the internet this check
@@ -1598,22 +1601,22 @@ export async function validatePinSupabase(pin, type = 'referee', { timeoutMs = 3
     try {
       result = await response.json()
     } catch {
-      return { success: false, error: 'Validation failed', ...(response.status === 429 ? { rateLimited: true } : {}) }
+      return { success: false, error: 'Validation failed', status: response.status, ...(response.status === 429 ? { rateLimited: true } : {}) }
     }
 
     if (response.status === 429) {
-      return { success: false, rateLimited: true, error: result?.error || 'Too many attempts' }
+      return { success: false, rateLimited: true, error: result?.error || 'Too many attempts', status: 429 }
     }
     if (!response.ok || !result?.success) {
-      return { success: false, error: result?.error || 'Invalid PIN code' }
+      return { success: false, error: result?.error || 'Invalid PIN code', status: response.status }
     }
 
     if (result.match?.id != null) rememberMatchAccess(result.match.id, { pin: pinStr, token: result.token || null, type })
     return { success: true, match: result.match, token: result.token || null }
   } catch (error) {
-    if (error?.name === 'AbortError') return { success: false, error: 'Server PIN check timed out' }
+    if (error?.name === 'AbortError') return { success: false, error: 'Server PIN check timed out', unreachable: true }
     console.error('[validatePinSupabase] Exception:', error)
-    return { success: false, error: error.message }
+    return { success: false, error: error.message, unreachable: true }
   } finally {
     if (timer) clearTimeout(timer)
   }

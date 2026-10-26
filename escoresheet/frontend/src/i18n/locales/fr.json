@@ -1637,6 +1637,7 @@
     "connecting": "Connexion...",
     "invalidPin": "Code incorrect. Veuillez réessayer.",
     "tooManyAttempts": "Trop de PIN erronés depuis ce réseau. Patientez quelques minutes, puis réessayez.",
+    "reconnecting": "Pas de connexion au serveur. Le banc se reconnecte à son match dès qu’il est de retour.",
     "roster": "Effectif",
     "match": "Match",
     "back": "Retour",
