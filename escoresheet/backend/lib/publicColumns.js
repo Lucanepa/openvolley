@@ -454,14 +454,19 @@ function teamNameOf(team, fallback) {
   return typeof name === 'string' && name.trim() ? name : fallback
 }
 
+// Built once: Date#toLocaleDateString / #toLocaleTimeString with options build
+// a new Intl formatter on every call (about 66 us), and GET /api/match/list
+// formats every match the relay holds on every call. Same text.
+const LIST_DATE_FORMAT = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+const LIST_TIME_FORMAT = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+
 function formatListDateTime(scheduledAt) {
   if (!scheduledAt) return 'TBD'
   try {
     const d = new Date(scheduledAt)
-    const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
-    return `${dateStr} ${timeStr}`
+    return `${LIST_DATE_FORMAT.format(d)} ${LIST_TIME_FORMAT.format(d)}`
   } catch {
+    // an unparseable date (format throws RangeError)
     return 'TBD'
   }
 }
