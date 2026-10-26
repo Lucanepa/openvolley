@@ -10,7 +10,7 @@ import { Player, SanctionRecord } from './types_scoresheet';
 import { asArray, buildScoresheetFilename, buildScoresheetTitle, displayShortName, findOfficial, formatDob, formatHoursMinutes, formatClockHoursMinutes, formatPersonName, normalizeOfficials } from './utils/sheetFormat';
 import { formatTimeLocal } from '../src/utils/timeUtils';
 import { extractLiberoData } from './utils/extractLiberoData';
-import { allStyleProperties, drawableImages, drawImagesOnto, hideImages, isWebKitEngine, styleListFor, usedStyleProperties } from './utils/pdfCapture';
+import { allStyleProperties, drawableImages, drawImagesOnto, hideImages, isWebKitEngine, styleListFor, usedStyleProperties, wellFormedSheet } from './utils/pdfCapture';
 import {
   getStartingLineup,
   assignSubsToColumns,
@@ -1436,15 +1436,21 @@ const App: React.FC<AppScoresheetProps> = ({ matchData, autoAction, dataReady = 
         return c;
       };
       let canvas: HTMLCanvasElement;
-      if (isWebKitEngine()) {
-        canvas = await leanWithPictures();
-      } else {
-        try {
-          canvas = await capture(allStyleProperties());
-        } catch (err) {
-          console.warn('[Scoresheet] Full capture failed, retrying with the used styles only:', err);
+      // half an emoji on the sheet made both captures throw (utils/pdfCapture.ts)
+      const restoreText = wellFormedSheet(sheet!);
+      try {
+        if (isWebKitEngine()) {
           canvas = await leanWithPictures();
+        } else {
+          try {
+            canvas = await capture(allStyleProperties());
+          } catch (err) {
+            console.warn('[Scoresheet] Full capture failed, retrying with the used styles only:', err);
+            canvas = await leanWithPictures();
+          }
         }
+      } finally {
+        restoreText();
       }
       assertCanvas(canvas);
 

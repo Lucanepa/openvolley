@@ -70,6 +70,7 @@ import { easyLiberoNumbers, easyLiberoErrors, easyRosterChanges, liberoSlotEdita
 import { describeEventText } from '../domain/describe'
 import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal } from '../domain/matchEnd'
+import { signaturesPayload } from '../domain/signatureEdits'
 import { savedSidesOfRegularSets } from '../domain/coinToss'
 import { liveStateNeedsFreshSnapshot } from '../utils/livescoreModel'
 import { displaySetNumber, setsWonWithFinishedSet, finishedSetMissingFromSnapshot } from '../utils/matchFormat'
@@ -87,6 +88,7 @@ import { ActionSheet, ActionSheetItem } from '../ui/Modal.jsx'
 import { SectionHeader } from '../ui/SectionHeader.jsx'
 import { DateTimeField } from '../ui/DateField.jsx'
 import { askConfirm } from '../utils/askConfirm.js'
+import { freeStorageBytes, isStorageFullError, LOW_STORAGE_BYTES } from '../utils/storageSpace'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
 import { ArrowUpDown, ChevronDown, Cross } from 'lucide-react'
 import { useDiagCommits } from '../diagnostics/commits'
@@ -595,13 +597,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     console.error('[confirm] action failed after its dialog closed', err)
     // A scorer action shows its own failure (onActionFailed): once is enough
     if (isReportedActionError(err)) return
-    showAlert(t('scoreboard.confirmFailed'), 'error')
+    showAlert(t(isStorageFullError(err) ? 'scoreboard.storageFull' : 'scoreboard.confirmFailed'), 'error')
   }, [showAlert, t])
   // A scorer action (runAction) that failed wrote nothing: say so, or the tap
-  // just seems to do nothing
+  // just seems to do nothing. The storage full is said as such: "try again"
+  // never helps there (utils/storageSpace.js)
   const onActionFailed = useCallback((err) => {
     console.error('[action] failed, nothing was saved', err)
-    showAlert(t('scoreboard.confirmFailed'), 'error')
+    showAlert(t(isStorageFullError(err) ? 'scoreboard.storageFull' : 'scoreboard.confirmFailed'), 'error')
   }, [showAlert, t])
   const runReopenSet = useConfirmAction(onConfirmFailed)
   const [setStartTimeModal, setSetStartTimeModal] = useState(null) // { setIndex: number, defaultTime: string } | null
@@ -1127,6 +1130,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   useConnectionHealthMonitor(data?.match, handleDeviceDisconnected, {
     enabled: !!(data?.match && (data.match.refereeConnectionEnabled || data.match.homeTeamConnectionEnabled || data.match.awayTeamConnectionEnabled))
   })
+
+  // The device storage nearly full: said when the scoreboard opens and at a
+  // set start, while the scorer can still free space, not first by a refused
+  // tap mid-rally (utils/storageSpace.js). Once per scoreboard.
+  const storageWarnedRef = useRef(false)
+  useEffect(() => {
+    if (storageWarnedRef.current || !data?.set?.index) return
+    let cancelled = false
+    freeStorageBytes().then(free => {
+      if (cancelled || storageWarnedRef.current || free == null || free >= LOW_STORAGE_BYTES) return
+      storageWarnedRef.current = true
+      showAlert(t('scoreboard.storageLow', { mb: Math.floor(free / (1024 * 1024)) }), 'warning')
+    })
+    return () => { cancelled = true }
+  }, [data?.set?.index, showAlert, t])
 
   // Check if Set 5 was already confirmed (on mount or when entering Set 5)
   useEffect(() => {
@@ -5805,6 +5823,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const nextSeq1 = await getNextSeq()
     const nextSeq2 = nextSeq1 + 1
     const setStartStateBefore = getStateSnapshot()
+    // The set's first rally starts now. Its rally_start stays on this device
+    // (eventRevisions LOCAL_ONLY_EVENT_TYPES), so the synced set_start
+    // carries the time too: the sheet's actual set start (matchTimes
+    // setStartMs) on a copy restored from the server, which printed the
+    // dialog's (scheduled) time instead (stress test 2026-10-25)
+    const firstRallyAt = new Date().toISOString()
 
     // Log set_start event
     const setStartEventId = await db.events.add({
@@ -5814,6 +5838,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       payload: {
         setIndex: setStartTimeModal.setIndex,
         startTime: roundToMinute(time),
+        firstRallyAt,
         ...(autoRemark ? { autoRemark } : {})
       },
       ts: roundToMinute(time),
@@ -5846,7 +5871,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       setIndex: data.set.index,
       type: 'rally_start',
       payload: {},
-      ts: new Date().toISOString(),
+      ts: firstRallyAt,
       seq: nextSeq2,
       stateBefore: rallyStartStateBefore
     })
@@ -6268,28 +6293,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           })
           setSetTransitionLoading({ step: 'Downloading backup...' })
           try {
-            const allMatches = await db.matches.toArray()
-            const allTeams = await db.teams.toArray()
-            const allPlayers = await db.players.toArray()
-            const allSets = await db.sets.toArray()
-            const allEvents = await db.events.toArray()
-            const allReferees = await db.referees.toArray()
-            const allScorers = await db.scorers.toArray()
-
-            const exportData = {
-              exportDate: new Date().toISOString(),
-              exportReason: `set_${setIndex}_end`,
-              matchId: matchId,
-              matches: allMatches,
-              teams: allTeams,
-              players: allPlayers,
-              sets: allSets,
-              events: allEvents,
-              referees: allReferees,
-              scorers: allScorers
-            }
-
-            const jsonString = JSON.stringify(exportData, null, 2)
+            // This match only, in the backup file format Restore match reads
+            // (exportMatchData), unindented. It was every table of the device,
+            // pretty-printed: on a laptop that kept a season's matches 89 to
+            // 297 MB per set end, behind this overlay for 2 to 8 s, and a file
+            // the restore refused (stress test 2026-10-25).
+            const jsonString = JSON.stringify(await exportMatchData(matchId))
             const blob = new Blob([jsonString], { type: 'application/json' })
             const url = URL.createObjectURL(blob)
             const link = document.createElement('a')
@@ -7648,7 +7657,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       console.error('[TO] time-out not recorded', err)
       timeoutStartTimestampRef.current = null
       timeoutInitialCountdownRef.current = 30
-      showAlert(t('scoreboard.timeoutRequest.notRecorded'), 'error')
+      showAlert(t(isStorageFullError(err) ? 'scoreboard.storageFull' : 'scoreboard.timeoutRequest.notRecorded'), 'error')
       throw markActionErrorReported(err)
     }
 
@@ -21572,7 +21581,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       await db.sync_queue.add({
                         resource: 'match',
                         action: 'update',
-                        payload: { id: matchRecord.seed_key, status: 'live' },
+                        payload: {
+                          id: matchRecord.seed_key,
+                          status: 'live',
+                          // the post-match signatures cleared above, on the
+                          // server too (as MatchEnd's Reopen last set)
+                          signatures: signaturesPayload({ ...matchRecord, ...clearedPostMatchSignatures() })
+                        },
                         ts: new Date().toISOString(),
                         status: 'queued'
                       })

@@ -14,6 +14,7 @@
 // changed as long as that libero has done nothing yet.
 
 import { MAX_SUBSTITUTIONS_PER_SET } from './substitutions'
+import { cutText } from '../utils/stringUtils'
 
 /** The teams' seed keys: "test-" so that clearing the test data removes them */
 export const EASY_TEAM_SEED_KEYS = { home: 'test-easy-home', away: 'test-easy-away' }
@@ -54,7 +55,7 @@ export function defaultShortName(name) {
   const cleaned = String(name).trim().toUpperCase()
   const words = cleaned.split(/\s+/)
   if (words.length > 1 && words[0].length <= 4) return words[0]
-  return cleaned.substring(0, 4)
+  return cutText(cleaned, 4)
 }
 
 /** The team's current libero for a slot ('libero1' / 'libero2'), or null */
@@ -287,7 +288,8 @@ export function easyMatchPrefill(search) {
     return null
   }
   if (!params.has('easy')) return null
-  const text = (key, max = 60) => (params.get(key) || '').trim().slice(0, max)
+  // cut on a character boundary: half an emoji made Save PDF fail (cutText)
+  const text = (key, max = 60) => cutText((params.get(key) || '').trim(), max)
   const colour = (key) => (COLOUR.test(params.get(key) || '') ? params.get(key).toLowerCase() : null)
   const bestOf = params.get('bestOf') === '3' ? 3 : 5
   return {

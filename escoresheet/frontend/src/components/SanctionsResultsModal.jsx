@@ -6,6 +6,7 @@ import { compareEvents, scoreAtEvent } from '../domain/rosterLive'
 import { isMatchOverStatus, getMatchWinner } from '../domain/matchEnd'
 import { teamBoxStyle } from '../utils/teamColours'
 import { matchTimes, setDurationMinutes } from '../../scoresheet_pdf/utils/matchTimes'
+import { zonedParts } from '../ui/format'
 
 // The scorer's "Sanctions and results" dialog (Match menu): every sanction of
 // the match as the referee's cards, the set results seen from the current
@@ -35,11 +36,13 @@ const ROLE_SHORT = {
 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V']
 const toRoman = (n) => ROMAN[n - 1] || String(n)
-// Local wall-clock time, as the match end page (formatTimeLocal) shows the
-// same start / end (it was UTC here: 2 h early in summer in Switzerland)
-const hhmmss = (d) => d
-  ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
-  : '—'
+// Zürich wall-clock time, as the match end page (formatTimeLocal) and the sheet
+// show the same start / end (it was UTC here: 2 h early in summer in Switzerland)
+const pad2 = (n) => String(n).padStart(2, '0')
+const hhmmss = (d) => {
+  const p = d ? zonedParts(d) : null
+  return p?.valid ? `${pad2(p.hour)}:${pad2(p.minute)}:${pad2(d.getSeconds())}` : '—'
+}
 
 // The kit SectionHeader face (a name on the dark 1.5px rule), sized with the dialog
 const HEAD = 'm-0 mb-[0.6em] flex items-center justify-between gap-2 border-b-[1.5px] border-stone-800 pb-[0.35em] text-[0.78em] font-bold uppercase tracking-wider text-stone-800'

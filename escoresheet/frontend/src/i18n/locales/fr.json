@@ -866,6 +866,8 @@
       "show": "Afficher la barre d'outils"
     },
     "confirmFailed": "Cela n'a pas été enregistré. Vérifiez la feuille de match et réessayez.",
+    "storageFull": "Non enregistré : le stockage de cet appareil est plein. Libérez de l'espace (supprimez d'anciens téléchargements ou d'autres fichiers), puis touchez à nouveau. Tout ce qui a été enregistré jusqu'ici est conservé.",
+    "storageLow": "Le stockage de cet appareil est presque plein : il reste {{mb}} Mo pour OpenVolley. Libérez de l'espace maintenant (supprimez d'anciens téléchargements ou d'autres fichiers) : une fois plein, plus rien ne pourra être enregistré.",
     "timeoutRequest": {
       "title": "Temps mort — {{team}}",
       "first": "Temps mort 1 sur 2 de ce set pour {{team}}.",
@@ -964,6 +966,11 @@
       "restorePreview": "Aperçu de la restauration",
       "fromDatabase": "Depuis la base de données",
       "fromLocalFile": "Depuis un fichier local",
+      "restoreErrors": {
+        "unreadable": "Ce fichier ne peut pas être lu : il est endommagé ou incomplet. Choisissez un autre fichier de sauvegarde.",
+        "notABackup": "Ce fichier n’est pas une sauvegarde de match OpenVolley. Choisissez un autre fichier.",
+        "failed": "Le match n’a pas pu être restauré : {{error}}"
+      },
       "preview": {
         "set": "Set {{n}}",
         "serving": "Service",

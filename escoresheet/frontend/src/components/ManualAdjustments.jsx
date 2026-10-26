@@ -9,11 +9,13 @@ import { swapTeamDesignation as swapTeamDesignationPatch } from '../domain/coinT
 import { mergeOfficialsEdits } from '../domain/officials'
 import { approvedSheetChanged } from '../domain/accountApproval'
 import { clearedPostMatchSignatures } from '../domain/matchEnd'
+import { signaturesPayload } from '../domain/signatureEdits'
 import { matchInfoFromLocal, queueMatchUpdate } from '../db/matchRepository'
 import { approvalsApi } from '../lib/accountApi'
 import { Button } from '../ui/Button.jsx'
 import { confirmDialog } from '../ui/uiStore.js'
 import { DateField, DateTimeField } from '../ui/DateField.jsx'
+import { formatDateTimeLocal, parseLocalToISO } from '../utils/timeUtils'
 import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
 import { usePhoneWidth } from '../hooks/usePhoneWidth'
 import { TEAM_COLOUR_MARK, discRing, HEADER_SURFACE, isCustomColour } from '../utils/teamColours'
@@ -58,19 +60,6 @@ const BENCH_ROLES = [
 /** The index of the last set row (the set being played, or the last one played). */
 function lastSetIndex(sets) {
   return (sets || []).reduce((max, s) => Math.max(max, Number(s?.index) || 0), 0) || null
-}
-
-/**
- * A stored instant as the local 'YYYY-MM-DDTHH:MM' the date + time field shows.
- * Local, because the field's value goes back through new Date(value) (local)
- * when saved: a UTC slice here made the time jump by the UTC offset on every edit.
- */
-function toLocalDateTime(value) {
-  if (!value) return ''
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return ''
-  const p = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
 /**
@@ -488,7 +477,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
 
       // Sync to Supabase if available
       if (editedMatch?.seed_key) {
-        await syncToSupabase(designationSaved)
+        await syncToSupabase(designationSaved, { signaturesCleared: sheetChanged })
       }
 
       // Notify scoresheet window (and any other listeners) about the changes
@@ -510,7 +499,7 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   })
 
   // Sync changes to Supabase
-  const syncToSupabase = async (designation = null) => {
+  const syncToSupabase = async (designation = null, { signaturesCleared = false } = {}) => {
     if (!editedMatch?.seed_key) return
 
     try {
@@ -575,7 +564,11 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
           }
         } : {}),
         // stored first (with this save's entries), then sent as stored
-        manual_changes: [...((await db.matches.get(matchId))?.manualChanges || [])]
+        manual_changes: [...((await db.matches.get(matchId))?.manualChanges || [])],
+        // the post-match signatures cleared above, cleared on the server too
+        // (it kept them, attached to the changed sheet): the whole object, the
+        // server replaces the column, so the pre-match ones travel along
+        ...(signaturesCleared ? { signatures: signaturesPayload(await db.matches.get(matchId)) } : {})
       }, { test: data?.match?.test === true || editedMatch.test === true })
 
       console.log('[ManualAdjustments] Cloud update queued')
@@ -1004,13 +997,16 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
                     {editedMatch.match_type_3 === 'other' && <option value="other">{editedMatch.match_type_3_other || t('matchSetup.other')}</option>}
                   </select>
                 </div>
-                {/* date and time are two fields: a whole row on a phone */}
+                {/* date and time are two fields: a whole row on a phone. The
+                    Zürich 'YYYY-MM-DDTHH:MM' both ways (timeUtils): one zone
+                    in and out (a UTC slice made the time jump by the offset on
+                    every edit), the gym's on a device in any zone */}
                 <div style={phone ? { gridColumn: '1 / -1' } : undefined}>
                   <label style={labelStyle}>{t('manualAdjustmentsEditor.scheduledDateTime', 'Scheduled date/time')}</label>
                   <DateTimeField
                     size="bare"
-                    value={toLocalDateTime(editedMatch.scheduledAt)}
-                    onChange={(v) => updateMatchInfo('scheduledAt', v ? new Date(v).toISOString() : null)}
+                    value={formatDateTimeLocal(editedMatch.scheduledAt)}
+                    onChange={(v) => updateMatchInfo('scheduledAt', v ? parseLocalToISO(v) : null)}
                     aria-label={t('manualAdjustmentsEditor.scheduledDateTime', 'Scheduled date/time')}
                     style={{ ...inputStyle, width: '100%' }}
                   />

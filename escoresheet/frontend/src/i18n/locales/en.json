@@ -868,6 +868,8 @@
       "show": "Show toolbar"
     },
     "confirmFailed": "That was not saved. Check the scoresheet and try again.",
+    "storageFull": "Not saved: this device's storage is full. Free up space (delete old downloads or other files), then tap again. Everything recorded so far is kept.",
+    "storageLow": "This device's storage is almost full: {{mb}} MB left for OpenVolley. Free up space now (delete old downloads or other files): once it is full, nothing more can be recorded.",
     "timeoutRequest": {
       "title": "Time-out — {{team}}",
       "first": "Time-out 1 of 2 in this set for {{team}}.",
@@ -966,6 +968,11 @@
       "restorePreview": "Restore preview",
       "fromDatabase": "From database",
       "fromLocalFile": "From local file",
+      "restoreErrors": {
+        "unreadable": "This file cannot be read: it is damaged or incomplete. Choose another backup file.",
+        "notABackup": "This file is not an OpenVolley match backup. Choose another file.",
+        "failed": "The match could not be restored: {{error}}"
+      },
       "preview": {
         "set": "Set {{n}}",
         "serving": "Serving",

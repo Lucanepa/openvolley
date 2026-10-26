@@ -38,4 +38,18 @@ describe('eventRemark (owner 2026-10-07: the sheet convention, local time)', () 
       .toBe('Set 3, 14:28, B 15:5, #4 injured (bench)')
     expect(remarkClock(new Date('nope'))).toBe('')
   })
+
+  it('a Zürich time on a device in another zone (stress test 2026-10-25)', async () => {
+    const { remarkClock } = await import('../remarks.js')
+    const deviceTz = process.env.TZ
+    try {
+      for (const tz of ['Etc/GMT-2', 'UTC', 'Asia/Tokyo']) {
+        process.env.TZ = tz
+        expect(remarkClock(new Date('2026-10-26T09:23:00.000Z')), tz).toBe('10:23')
+      }
+    } finally {
+      if (deviceTz === undefined) delete process.env.TZ
+      else process.env.TZ = deviceTz
+    }
+  })
 })

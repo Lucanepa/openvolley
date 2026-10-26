@@ -9,12 +9,12 @@ import { Switch } from '../../ui/Switch.jsx'
 import { describeEvent, compareBySeq, humanize, tr, tsMs, formatScore, scoreBeforeEvent } from '../../domain/describe'
 import { isRemovableEntry } from '../../domain/manualCorrections'
 import { HIT } from './shared.jsx'
+import { timeLabel } from '../../ui/format'
 
 function clock(ts) {
   const ms = tsMs(ts)
   if (!ms) return ''
-  const d = new Date(ms)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return timeLabel(ms)
 }
 
 export default function EventLogAdvanced({ events, filterSet, ctx, readOnly, onRemove }) {
