@@ -76,7 +76,7 @@ import { detectAppPlatform } from './utils/openAppWindow'
 import ManageConsole from './components/manage/ManageConsole'
 import ManagerSiteLink from './components/ManagerSiteLink'
 import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, openRestore, restorePrefill } from './utils/manageNav'
-import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
+import { relayMatchKey, relayMatchPayload, liveStateNow } from './utils/serverDataSync'
 import { needsEventCheck, pickCurrentMatch } from './utils/currentMatch'
 import { isRelayErrorFor, mayPublishMatchData, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
 import { PHONE_MAX_WIDTH, isPhoneScreen, phoneLayoutKept } from './components/scoreboard/phoneLayout'
@@ -3266,8 +3266,9 @@ export default function App() {
               try {
                 // updated_at too: the realtime hub orders match_live_state by
                 // updated_at and drops a row older than the last relayed one.
+                // (on the match's live-state clock: liveClockOffset)
                 const { error } = await apiFrom('match_live_state')
-                  .update({ scorer_attention_trigger: trigger, updated_at: trigger })
+                  .update({ scorer_attention_trigger: trigger, updated_at: new Date(liveStateNow(currentMatch)).toISOString() })
                   .eq('match_id', supabaseMatchId)
                 if (error) throw error
                 if (typeof navigator !== 'undefined' && navigator.vibrate) {

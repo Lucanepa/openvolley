@@ -22,6 +22,8 @@ import {
   validatePinSupabase,
   getMatchData,
   uploadRosterToCloud,
+  liveClockOffsetAfter,
+  liveStateNow,
   LIVE_STATE_HOLD_MS
 } from '../serverDataSync'
 
@@ -576,6 +578,49 @@ describe('newest live state wins over an older relay copy (referee / bench)', ()
       vi.advanceTimersByTime(LIVE_STATE_HOLD_MS)
       expect(third).not.toHaveBeenCalled()
     })
+  })
+})
+
+// Stress test 2026-10-25: the match moved to a tablet whose clock was 3 min
+// behind the laptop's. Every state of the tablet looked older than the
+// laptop's last, and the referee, benches and livescore stayed on 2:1 while
+// the tablet scored to 4:7.
+describe('hand-over to a device whose clock is behind', () => {
+  const A_NOW = Date.UTC(2026, 9, 25, 19, 30, 0) // the laptop's clock
+  const B_NOW = A_NOW - 180000 // the tablet's, 3 min behind
+  const iso = (ms) => new Date(ms).toISOString()
+  const laptopLast = { current_set: 1, points_a: 2, points_b: 1, updated_at: iso(A_NOW), _seq: 40, _session: 'A' }
+
+  it('the device that continues the match stamps its live states after the last one in the cloud', () => {
+    const offset = liveClockOffsetAfter(laptopLast, B_NOW)
+    expect(offset).toBe(180001)
+    const tabletMatch = { id: 1, seed_key: SEED, liveClockOffsetMs: offset }
+    expect(liveStateNow(tabletMatch, B_NOW)).toBeGreaterThan(A_NOW)
+    // its relay bundles on the same clock; the offset itself is not relayed
+    const { match } = relayMatchPayload(tabletMatch, null, { now: B_NOW, mark: { seq: 1, session: 'B', at: B_NOW } })
+    expect(match._syncedAt).toBe(B_NOW + offset)
+    expect(match.liveClockOffsetMs).toBeUndefined()
+    // a device ahead already, or a cloud state with no time: no offset
+    expect(liveClockOffsetAfter(laptopLast, A_NOW + 5000)).toBe(0)
+    expect(liveClockOffsetAfter(null, B_NOW)).toBe(0)
+    expect(liveStateNow({ id: 1 }, B_NOW)).toBe(B_NOW)
+  })
+
+  it('the referee and benches follow the new device at its first bundle and live state', () => {
+    const tabletMatch = { id: 1, seed_key: SEED, coinTossTeamA: 'home', liveClockOffsetMs: liveClockOffsetAfter(laptopLast, B_NOW) }
+    const tracker = createLiveStateTracker()
+    tracker.bundle({ success: true, match: { id: 1, coinTossTeamA: 'home', _syncedSeq: 39, _syncSession: 'A', _syncedAt: A_NOW - 100 }, sets: [{ index: 1, homePoints: 2, awayPoints: 0, finished: false }] })
+    expect(tracker.liveState(laptopLast)).toBe(true)
+
+    // The tablet restored 2:1 and scores 2:2
+    const { match } = relayMatchPayload(tabletMatch, null, { now: B_NOW + 1000, mark: { seq: 0, session: 'B', at: B_NOW + 1000 } })
+    const shown = tracker.bundle({ success: true, match, sets: [{ index: 1, homePoints: 2, awayPoints: 2, finished: false }] })
+    expect(shown.sets[0]).toMatchObject({ homePoints: 2, awayPoints: 2 })
+    const next = { current_set: 1, points_a: 2, points_b: 3, updated_at: iso(liveStateNow(tabletMatch, B_NOW + 2000)), _seq: 1, _session: 'B' }
+    expect(tracker.liveState(next)).toBe(true)
+    expect(tracker.newest).toBe(next)
+    // the database row order (the realtime hub, the referee's row check) too
+    expect(isNewerLiveState(next, laptopLast.updated_at)).toBe(true)
   })
 })
 

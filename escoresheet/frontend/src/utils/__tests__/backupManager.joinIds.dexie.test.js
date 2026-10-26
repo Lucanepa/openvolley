@@ -21,6 +21,7 @@ import { db } from '../../db/db'
 import { importMatchFromSupabase } from '../backupManager'
 import { queueSetScoreSync, buildEventInsertJob } from '../eventSync'
 import { withActivityContext, eventHistorySettled } from '../../db/eventHistory'
+import { liveStateNow } from '../serverDataSync'
 
 const seed = 'match_1792931096817_22rkmmhm'
 // Device A had scored before (its Dexie counters at 120 events / 5 sets)
@@ -122,6 +123,23 @@ describe('importMatchFromSupabase: the device continues the cloud rows', () => {
     await queueSetScoreSync(db, { matchId: localMatchId, setIndex: 1 })
     const setJob = (await db.sync_queue.where('resource').equals('set').toArray()).pop()
     expect(setJob.payload.external_id).toBe(`${seed}:s:${sets[0].id}`)
+  })
+
+  // Stress test 2026-10-25: a tablet 3 min behind the laptop it took over
+  // from; its live states all looked older than the laptop's last one, and the
+  // referee, benches and livescore stayed on the laptop's score
+  it('a device whose clock is behind stamps its live states after the last one in the cloud', async () => {
+    const ahead = Date.now() + 180000
+    const data = cloudMatch()
+    data.liveState = { ...data.liveState, updated_at: new Date(ahead).toISOString() }
+    const localMatchId = await importMatchFromSupabase(data)
+    const match = await db.matches.get(localMatchId)
+    expect(liveStateNow(match)).toBeGreaterThan(ahead)
+    // a clock ahead of the cloud's last state already: as it is
+    const behind = cloudMatch()
+    behind.liveState = { ...behind.liveState, updated_at: new Date(Date.now() - 60000).toISOString() }
+    const other = await db.matches.get(await importMatchFromSupabase(behind))
+    expect(other.liveClockOffsetMs).toBe(0)
   })
 
   it('a device that had its own copy of the match replaces it and keeps the cloud ids', async () => {

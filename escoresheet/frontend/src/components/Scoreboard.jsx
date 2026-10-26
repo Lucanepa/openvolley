@@ -41,7 +41,7 @@ import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
 import { TEAM_COLOUR_MARK, discPaint, effectiveTeamColour, matchDiscPaint, teamLiberoColour, markColourOn, teamBoxStyle, teamTextStyle, HEADER_SURFACE } from '../utils/teamColours'
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom, writingDevice } from '../lib/apiClient'
-import { relayMatchKey, relayMatchPayload } from '../utils/serverDataSync'
+import { relayMatchKey, relayMatchPayload, liveStateNow } from '../utils/serverDataSync'
 import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveState, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { exportMatchData } from '../utils/backupManager'
@@ -2372,7 +2372,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         game_n: match.gameN || match.game_n || null,
         league: match.league || null,
         gender: match.match_type_2 || null,
-        updated_at: new Date().toISOString(),
+        // (the match's live-state clock: a device that continues a match
+        // stamps after the previous device's last state, liveClockOffset)
+        updated_at: new Date(liveStateNow(match)).toISOString(),
         sport_type: 'indoor'
       }
 
