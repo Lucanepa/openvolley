@@ -3357,6 +3357,7 @@
       "noManager": "Nessun responsabile di competizione OpenBeach ha questa e-mail.",
       "slotConflict": "Questo orario non si adatta al programma.",
       "resultChanged": "Qualcun altro ha cambiato questo risultato nel frattempo. Ricontrollalo.",
+      "teamsChanged": "Le squadre di questa partita sono cambiate nel frattempo: un risultato precedente è stato corretto. Ricontrollala.",
       "drawExists": "Il torneo ha già un tabellone di questa categoria e di questo genere."
     },
     "import": {

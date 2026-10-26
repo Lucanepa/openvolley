@@ -3340,6 +3340,7 @@
       "noManager": "Keine OpenBeach-Wettbewerbsverantwortliche Person hat diese E-Mail.",
       "slotConflict": "Dieser Platz passt nicht in den Spielplan.",
       "resultChanged": "Jemand anderes hat dieses Resultat inzwischen geändert. Schau es dir nochmals an.",
+      "teamsChanged": "Die Teams dieses Spiels haben inzwischen gewechselt: ein Resultat davor wurde korrigiert. Schau es dir nochmals an.",
       "drawExists": "Das Turnier hat schon ein Tableau dieser Kategorie und dieses Geschlechts."
     },
     "import": {
