@@ -148,13 +148,21 @@ export default function BenchApp() {
       applyServerParam(serverParam)
     }
 
-    if (matchParam) {
+    // A bench that joined through a link (QR code) still has ?match=&team= in
+    // its address after a reload: nothing removes them, and the app's own
+    // reloads keep the query on purpose. Its stored session for that match
+    // and team is restored as on a plain /bench/; it used to ask for the PIN
+    // again after every reload. The link's PIN step is for a tablet that has
+    // not joined that match yet.
+    const session = readBenchSession()
+    const joinedThisLink = !!(matchParam && session && String(session.matchId) === matchParam && (!teamParam || teamParam === session.team))
+    if (matchParam && !joinedThisLink) {
       setAutoConnectMatch(matchParam)
       if (teamParam === 'home' || teamParam === 'away') {
         setAutoConnectTeam(teamParam)
       }
       setServerReady(true)
-    } else if (readBenchSession()) {
+    } else if (session) {
       // Reconnect a bench that was connected before the reload
       setRestoringSession(true)
       setServerReady(true)
@@ -193,6 +201,13 @@ export default function BenchApp() {
           setError(t('benchDashboard.tooManyAttempts', 'Too many wrong PINs from this network. Wait a few minutes, then try again.'))
         } else {
           writeBenchSession(null)
+          // Opened through the match's link: its PIN step, match preselected
+          const params = new URLSearchParams(window.location.search)
+          if (params.get('match')) {
+            setAutoConnectMatch(params.get('match'))
+            const teamParam = params.get('team')
+            if (teamParam === 'home' || teamParam === 'away') setAutoConnectTeam(teamParam)
+          }
         }
       } catch {
         // Server unreachable right now: keep the session for the next load
