@@ -2246,6 +2246,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         ? new Date().toISOString()
         : (match?.intervalStartedAt || null)
 
+      // The break's start on this device's clock (a later push in the break
+      // keeps it: intervalStartedAtRef)
+      const breakStartedAt = isSetInterval ? (match?.intervalStartedAt || intervalStartedAt) : keptIntervalStartedAt
+      // A countdown's start goes out on the live-state clock, as updated_at
+      // does: the referee counts a time-out or the break on from their
+      // difference (utils/countdownClock elapsedWhenSent). On a match this
+      // device continued (liveClockOffset) the start was on its own clock
+      // and the difference grew by the offset: the referee's 30 s and 3 min
+      // read 0 from the start.
+      const onLiveClock = (at) => {
+        const ms = typeof at === 'number' ? at : Date.parse(at ?? '')
+        return Number.isFinite(ms) ? new Date(liveStateNow(match, ms)).toISOString() : (at ?? null)
+      }
+
       // Calculate updated set scores including the just-finished set
       // eventData.winner is 'home' or 'away' from the set_end event
       // Fallback: if eventData.winner is undefined, calculate from snapshot points
@@ -2406,11 +2420,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         last_event_data: eventData || null,
         last_event_ts: new Date().toISOString(),
         timeout_active: isTimeout,
-        timeout_started_at: isTimeout ? (activeTimeout?.startedAt || timeoutStartedAt) : null,
+        timeout_started_at: isTimeout ? onLiveClock(activeTimeout?.startedAt || timeoutStartedAt) : null,
         set_interval_active: isSetInterval || keepInterval,
-        set_interval_started_at: isSetInterval
-          ? (match?.intervalStartedAt || intervalStartedAt)
-          : keptIntervalStartedAt,
+        set_interval_started_at: onLiveClock(breakStartedAt),
         match_status: matchStatus,
         scorer_attention_trigger: scorerAttentionTriggerRef.current,
         // Match metadata (from IndexedDB match record)
@@ -2423,7 +2435,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         sport_type: 'indoor'
       }
 
-      if (eventType === 'set_end') intervalStartedAtRef.current = liveStateData.set_interval_started_at
+      if (eventType === 'set_end') intervalStartedAtRef.current = breakStartedAt
 
       // Also push the computed live-state over the LAN relay so offline consumers
       // (referee dashboard, LedBox bridge) receive it without needing Supabase.
