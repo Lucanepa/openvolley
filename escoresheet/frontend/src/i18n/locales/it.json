@@ -965,6 +965,11 @@
       "restorePreview": "Anteprima ripristino",
       "fromDatabase": "Dal database",
       "fromLocalFile": "Da file locale",
+      "restoreErrors": {
+        "unreadable": "Impossibile leggere questo file: è danneggiato o incompleto. Scegli un altro file di backup.",
+        "notABackup": "Questo file non è un backup di partita OpenVolley. Scegli un altro file.",
+        "failed": "Impossibile ripristinare la partita: {{error}}"
+      },
       "preview": {
         "set": "Set {{n}}",
         "serving": "Servizio",

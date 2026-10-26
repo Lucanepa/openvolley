@@ -965,6 +965,11 @@
       "restorePreview": "Widerherstelligs-Vorschau",
       "fromDatabase": "Vo Datebank",
       "fromLocalFile": "Vo lokaler Datei",
+      "restoreErrors": {
+        "unreadable": "Die Datei cha nöd gläse werde: Sie isch beschädigt oder unvollständig. Wähl en anderi Backup-Datei.",
+        "notABackup": "Die Datei isch kei OpenVolley-Spiilbackup. Wähl en anderi Datei.",
+        "failed": "S Spiil het nöd chöne widerhergstellt werde: {{error}}"
+      },
       "preview": {
         "set": "Satz {{n}}",
         "serving": "Ufschlag",

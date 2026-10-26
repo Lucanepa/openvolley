@@ -966,6 +966,11 @@
       "restorePreview": "Restore preview",
       "fromDatabase": "From database",
       "fromLocalFile": "From local file",
+      "restoreErrors": {
+        "unreadable": "This file cannot be read: it is damaged or incomplete. Choose another backup file.",
+        "notABackup": "This file is not an OpenVolley match backup. Choose another file.",
+        "failed": "The match could not be restored: {{error}}"
+      },
       "preview": {
         "set": "Set {{n}}",
         "serving": "Serving",

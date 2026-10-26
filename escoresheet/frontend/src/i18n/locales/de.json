@@ -958,6 +958,11 @@
       "restorePreview": "Wiederherstellungs-Vorschau",
       "fromDatabase": "Aus Datenbank",
       "fromLocalFile": "Aus lokaler Datei",
+      "restoreErrors": {
+        "unreadable": "Diese Datei kann nicht gelesen werden: Sie ist beschädigt oder unvollständig. Wählen Sie eine andere Backup-Datei.",
+        "notABackup": "Diese Datei ist kein OpenVolley-Spielbackup. Wählen Sie eine andere Datei.",
+        "failed": "Das Spiel konnte nicht wiederhergestellt werden: {{error}}"
+      },
       "preview": {
         "set": "Satz {{n}}",
         "serving": "Aufschlag",
