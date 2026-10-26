@@ -59,6 +59,7 @@ import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags, deferredPena
 import { classifyTimeoutRequest } from '../domain/timeouts'
 import { rallyStatusOf, currentSetOf } from '../domain/rally'
 import { useConfirmAction, GHOST_CLICK_MS } from '../hooks/useConfirmAction'
+import { countdownAnchor, secondsLeft } from '../utils/countdownClock'
 import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../domain/rotation'
 import { playerReplacedByLibero } from '../domain/liberos'
 import { planSubstitutionDeletion, countRegularSubstitutions, classifySubstitutionRequest, MAX_SUBSTITUTIONS_PER_SET } from '../domain/substitutions'
@@ -562,6 +563,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   const timeoutStartTimestampRef = useRef(null) // Timestamp when timeout started
   const timeoutInitialCountdownRef = useRef(30) // Initial timeout duration
   const betweenSetsStartTimestampRef = useRef(null) // Timestamp when between-sets interval started
+  const betweenSetsAnchorRef = useRef(null) // its start on the monotonic clock: what the countdown counts from
   const betweenSetsInitialCountdownRef = useRef(180) // Initial between-sets duration
   const [lineupModal, setLineupModal] = useState(null) // { team: 'home'|'away', mode?: 'initial'|'manual' } | null
   const [peekingLineup, setPeekingLineup] = useState({ left: false, right: false }) // Track which team's lineup is being peeked
@@ -3172,7 +3174,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const endTime = new Date(intervalStart).getTime()
         const now = Date.now()
         const elapsedSeconds = Math.floor((now - endTime) / 1000)
-        remainingTime = Math.max(0, setIntervalDuration - elapsedSeconds)
+        // never more than the interval (a clock set back since the set end)
+        remainingTime = Math.min(setIntervalDuration, Math.max(0, setIntervalDuration - elapsedSeconds))
       }
 
       // If time has already elapsed, mark as dismissed
@@ -3199,9 +3202,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
     if (!betweenSetsCountdown.started) return
 
-    // Initialize refs when interval starts
+    // Initialize refs when interval starts. The countdown runs on the
+    // monotonic clock (utils/countdownClock): counted against Date.now(), a
+    // clock set back an hour added an hour to it. The wall-clock start is
+    // only what the tablets are told.
     if (!betweenSetsStartTimestampRef.current) {
       betweenSetsStartTimestampRef.current = Date.now()
+      betweenSetsAnchorRef.current = countdownAnchor(0)
       betweenSetsInitialCountdownRef.current = betweenSetsCountdown.countdown || 180
     }
 
@@ -3213,8 +3220,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Update every 100ms for smooth visuals (instead of 1000ms)
     const timer = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - betweenSetsStartTimestampRef.current) / 1000)
-      const remaining = Math.max(0, betweenSetsInitialCountdownRef.current - elapsed)
+      const remaining = secondsLeft(betweenSetsAnchorRef.current, betweenSetsInitialCountdownRef.current)
 
       if (remaining <= 0) {
         // Auto-end the set interval when countdown reaches 0
@@ -7010,8 +7016,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const startMs = Date.parse(setEndEvent?.ts || previousSet.endTime || '')
     if (Number.isNaN(startMs)) return null
     // 0: the break's time ran out; the tablets keep it all the same until
-    // the setup is confirmed (as before the confirmation)
-    const remaining = Math.max(0, setIntervalDuration - Math.floor((Date.now() - startMs) / 1000))
+    // the setup is confirmed (as before the confirmation). Never more than
+    // the break (a clock set back since the set end).
+    const remaining = Math.min(setIntervalDuration, Math.max(0, setIntervalDuration - Math.floor((Date.now() - startMs) / 1000)))
     const winner = previousSet.homePoints > previousSet.awayPoints ? 'home' : 'away'
     const finished = sets.filter(s => s.finished)
     return {
@@ -7732,9 +7739,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       staleTimestampRef: timeoutStartTimestampRef.current
     })
 
-    // The countdown starts with the time-out count (deferUi: same render)
+    // The countdown starts with the time-out count (deferUi: same render).
+    // It runs on the monotonic clock (anchor, utils/countdownClock): counted
+    // against Date.now(), it read 3624 once the clock was set back an hour
+    // during the time-out. startedAt is what the tablets are told.
     const startTimestamp = Date.now()
-    deferUi(() => setTimeoutModal({ ...request, started: true, startedAt: new Date(startTimestamp).toISOString() }))
+    const anchor = countdownAnchor(0)
+    deferUi(() => setTimeoutModal({ ...request, started: true, startedAt: new Date(startTimestamp).toISOString(), anchor }))
 
     try {
       await logEvent('timeout', { team: request.team })
@@ -7818,6 +7829,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Use startedAt from state if available, otherwise fallback to ref or Date.now()
     const startTimestamp = timeoutModal.startedAt ? new Date(timeoutModal.startedAt).getTime() : (timeoutStartTimestampRef.current || Date.now())
     const initialCountdown = timeoutInitialCountdownRef.current || 30
+    // On the monotonic clock (without its anchor: from the start, within the length)
+    const anchor = timeoutModal.anchor ?? countdownAnchor(Math.min(Math.max(0, Date.now() - startTimestamp), initialCountdown * 1000))
 
     // Sync refs for legacy support/internal tracking
     if (!timeoutStartTimestampRef.current) timeoutStartTimestampRef.current = startTimestamp
@@ -7828,9 +7841,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Update every 100ms for smooth visuals
     const timer = setInterval(() => {
-      const now = Date.now()
-      const elapsed = Math.floor((now - startTimestamp) / 1000)
-      const remaining = Math.max(0, initialCountdown - elapsed)
+      const remaining = secondsLeft(anchor, initialCountdown)
 
       if (remaining <= 0) {
         setTimeoutModal(null)
@@ -7845,7 +7856,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }, 100)
 
     return () => clearInterval(timer)
-  }, [timeoutModal?.started, timeoutModal?.startedAt])
+  }, [timeoutModal?.started, timeoutModal?.startedAt, timeoutModal?.anchor])
 
   const getTimeoutsUsed = useCallback(
     side => {

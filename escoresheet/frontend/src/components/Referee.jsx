@@ -37,6 +37,7 @@ import { layoutReception, pointToFormation } from './referee/receptionLayout.js'
 import { getSideAForSet } from '../domain/rules'
 import { liveRowTeamA } from '../domain/coinToss'
 import { BRAND } from '../brand'
+import { monotonicNow, elapsedWhenSent, countdownAnchor, secondsLeft } from '../utils/countdownClock'
 
 // A lineup position: the rich format's { number, ... } or the legacy plain number
 const lineupNumber = (pos) => (pos && typeof pos === 'object') ? pos.number : (pos || '')
@@ -658,8 +659,13 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   useEffect(() => { timeoutModalRef.current = timeoutModal }, [timeoutModal])
   useEffect(() => { betweenSetsCountdownRef.current = betweenSetsCountdown }, [betweenSetsCountdown])
 
-  // Handle realtime actions (timeout, substitution, set_end)
-  const handleRealtimeAction = useCallback((action, actionData) => {
+  // Handle realtime actions (timeout, substitution, set_end). The countdowns
+  // they start run on this tablet's own clock (utils/countdownClock): their
+  // start is the scorer's clock, as is the action's send time (meta.sentAt,
+  // the relay's _scoreboardTimestamp), and the difference of the two is how
+  // long the countdown had run when it was sent. Counted against this
+  // tablet's Date.now(), a tablet 2 minutes slow showed 150, one fast none.
+  const handleRealtimeAction = useCallback((action, actionData, meta = {}) => {
     const receiveTimestamp = Date.now()
     console.log(`[Referee] 📥 Received action '${action}' at ${new Date(receiveTimestamp).toISOString()}:`, actionData)
 
@@ -671,11 +677,14 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         receiveTimestamp
       })
       timeoutActiveRef.current = true
+      const duration = actionData.countdown || 30
       const newTimeoutModal = {
         team: actionData.team,
-        countdown: actionData.countdown || 30,
+        countdown: duration,
+        // the scorer's clock: which time-out this is (the database row's is compared)
         startTimestamp: actionData.startTimestamp || Date.now(), // Fallback for backward compat
-        initialCountdown: actionData.countdown || 30,
+        anchor: countdownAnchor(elapsedWhenSent(actionData.startTimestamp, meta?.sentAt, duration * 1000)),
+        initialCountdown: duration,
         started: true
       }
       console.log('[REF_TO_DEBUG] Setting timeoutModal state', newTimeoutModal)
@@ -718,10 +727,12 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         // The scorer's break runs (again: an undo of the set 5 setup's
         // confirmation reopens it): no longer dismissed
         intervalDismissedRef.current = false
+        const duration = actionData.countdown || 180
         setBetweenSetsCountdown({
-          countdown: actionData.countdown || 180,
+          countdown: duration,
           startTimestamp: actionData.startTimestamp || Date.now(), // Fallback for backward compat
-          initialCountdown: actionData.countdown || 180,
+          anchor: countdownAnchor(elapsedWhenSent(actionData.startTimestamp, meta?.sentAt, duration * 1000)),
+          initialCountdown: duration,
           started: true,
           setIndex: actionData.setIndex,
           winner: actionData.winner
@@ -946,12 +957,16 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             const currentTimeout = timeoutModalRef.current
             if (!currentTimeout || Math.abs(currentTimeout.startTimestamp - serverStartTs) > 2000) {
               const team = getTeamFromSide(state.last_event_team)
+              const duration = state.last_event_data?.duration || 30
               timeoutActiveRef.current = true
               setTimeoutModal({
                 team,
-                countdown: state.last_event_data?.duration || 30,
+                countdown: duration,
                 startTimestamp: serverStartTs,
-                initialCountdown: state.last_event_data?.duration || 30,
+                // on this tablet's clock: the row's start and its push time
+                // (updated_at) are both the scorer's
+                anchor: countdownAnchor(elapsedWhenSent(state.timeout_started_at, state.updated_at, duration * 1000)),
+                initialCountdown: duration,
                 started: true
               })
               setShowTimeoutModal(true)
@@ -1045,6 +1060,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 setBetweenSetsCountdown({
                   countdown: 180,
                   startTimestamp: serverStartTs,
+                  anchor: countdownAnchor(elapsedWhenSent(state.set_interval_started_at, state.updated_at, 180 * 1000)),
                   initialCountdown: 180,
                   started: true,
                   setIndex: state.last_event_data?.setIndex || state.current_set,
@@ -1116,6 +1132,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
     const startTimestamp = timeoutModal.startTimestamp
     const initialCountdown = timeoutModal.initialCountdown || 30
+    // On this tablet's monotonic clock (the anchor set on receipt; without
+    // one, from the start as this tablet's clock sees it, within the length)
+    const anchor = timeoutModal.anchor ?? countdownAnchor(Math.min(Math.max(0, Date.now() - startTimestamp), initialCountdown * 1000))
 
     if (timeoutModal.countdown <= 0) {
       // Don't auto-clear here, wait for tick to hit 0 to avoid rapid state flickering
@@ -1125,14 +1144,12 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
     // Update every 100ms for smooth visuals
     const timer = setInterval(() => {
-      const now = Date.now()
-      const elapsed = Math.floor((now - startTimestamp) / 1000)
-      const remaining = Math.max(0, initialCountdown - elapsed)
+      const remaining = secondsLeft(anchor, initialCountdown)
 
       if (remaining <= 0) {
         // If it was already 0 for a bit, clear it
         setTimeoutModal(prev => {
-          if (prev && prev.countdown === 0 && (Date.now() - (prev.startTimestamp + prev.initialCountdown * 1000)) > 2000) {
+          if (prev && prev.countdown === 0 && (monotonicNow() - (anchor + initialCountdown * 1000)) > 2000) {
             return null
           }
           if (!prev) return null
@@ -1149,7 +1166,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     }, 100)
 
     return () => clearInterval(timer)
-  }, [timeoutModal?.started, timeoutModal?.startTimestamp, timeoutModal?.initialCountdown])
+  }, [timeoutModal?.started, timeoutModal?.startTimestamp, timeoutModal?.anchor, timeoutModal?.initialCountdown])
 
   // Track last point count to detect when points change (rally ends)
   const lastPointsRef = useRef({ home: 0, away: 0 })
@@ -2026,6 +2043,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         countdown: 180,
         started: true,
         startTimestamp: Date.now(),
+        anchor: countdownAnchor(0),
         initialCountdown: 180
       })
       setShowIntervalModal(true)
@@ -2043,16 +2061,16 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
     const startTimestamp = betweenSetsCountdown.startTimestamp || Date.now()
     const initialCountdown = betweenSetsCountdown.initialCountdown || 180
+    // On this tablet's monotonic clock, as the time-out's
+    const anchor = betweenSetsCountdown.anchor ?? countdownAnchor(Math.min(Math.max(0, Date.now() - startTimestamp), initialCountdown * 1000))
 
     // Update every 100ms for smooth visuals
     const timer = setInterval(() => {
-      const now = Date.now()
-      const elapsed = Math.floor((now - startTimestamp) / 1000)
-      const remaining = Math.max(0, initialCountdown - elapsed)
+      const remaining = secondsLeft(anchor, initialCountdown)
 
       if (remaining <= 0) {
         setBetweenSetsCountdown(prev => {
-          if (prev && prev.countdown === 0 && (Date.now() - (prev.startTimestamp + prev.initialCountdown * 1000)) > 2000) {
+          if (prev && prev.countdown === 0 && (monotonicNow() - (anchor + initialCountdown * 1000)) > 2000) {
             return prev // Keep it at 0
           }
           if (!prev) return null
@@ -2068,7 +2086,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     }, 100)
 
     return () => clearInterval(timer)
-  }, [betweenSetsCountdown?.started, betweenSetsCountdown?.startTimestamp, betweenSetsCountdown?.initialCountdown])
+  }, [betweenSetsCountdown?.started, betweenSetsCountdown?.startTimestamp, betweenSetsCountdown?.anchor, betweenSetsCountdown?.initialCountdown])
 
   // Check if match is waiting for coin toss (status is 'setup' or no data yet)
   // This must be checked BEFORE the !data return to show awaiting screen
