@@ -49,6 +49,8 @@ vi.mock('../../lib/apiClient', () => ({ apiFrom: vi.fn(), apiStorage: { from: vi
 import { restoreMatchFromJson, restoreMatchInPlace, importMatchFromSupabase, serverClosedState } from '../backupManager'
 import { apiFrom } from '../../lib/apiClient'
 import { isStaleClosedCopy } from '../matchReopen'
+import { signaturesPayload, signaturesSyncJob } from '../../domain/signatureEdits'
+import { approvalSignatureSources, signedOnPhone } from '../../domain/phoneSignature'
 
 const SEED = 'match_100_aaa'
 const OTHER = 'match_200_bbb'
@@ -313,6 +315,64 @@ describe('joining a cloud match on this device', () => {
     expect([...fakeDb.sync_queue.map.values()].some(j => j.action === 'scorer')).toBe(false)
     await importMatchFromSupabase({ match: { external_id: OTHER, game_n: 5, status: 'live', test: true }, sets: [], events: [] })
     expect([...fakeDb.sync_queue.map.values()].some(j => j.action === 'scorer')).toBe(false)
+  })
+})
+
+// Stress test 2026-10-25 (restore-drops-and-erases-closing-signatures): the
+// captains, scorer and referees had signed on the tablet, the tablet died,
+// the match was restored on a laptop by game number and Game PIN. The import
+// stored the closing signatures under names nothing reads
+// (homeCaptainPostGameSignature, refereeSignature) and dropped ref1, ref2 and
+// asst_scorer: Match end asked both captains to sign again, and the first
+// signature drawn there sent the whole `signatures` object with those slots
+// null, which the server stores as is (it replaces the column).
+describe('the closing signatures of a match restored by game PIN', () => {
+  const SIGNATURES = {
+    home_coach: 'data:hc', home_captain: 'data:hk', away_coach: 'data:ac', away_captain: 'data:ak',
+    home_captain_post_game: 'data:hp', away_captain_post_game: 'data:ap',
+    asst_scorer: 'data:as', scorer: 'data:sc', ref2: 'data:r2', ref1: 'data:r1'
+  }
+  const restore = (match = {}) => importMatchFromSupabase({
+    match: { external_id: SEED, game_n: 7, status: 'ended', coin_toss: { team_a: 'away', team_b: 'home', confirmed: true }, signatures: SIGNATURES, ...match },
+    sets: [],
+    events: []
+  })
+
+  it('every signature is where Match end and the sheet read it', async () => {
+    const m = fakeDb.matches.map.get(await restore())
+    expect(m).toMatchObject({
+      homePostGameCaptainSignature: 'data:hp', awayPostGameCaptainSignature: 'data:ap',
+      asstScorerSignature: 'data:as', scorerSignature: 'data:sc', ref2Signature: 'data:r2', ref1Signature: 'data:r1',
+      homeCoachSignature: 'data:hc', homeCaptainSignature: 'data:hk', awayCoachSignature: 'data:ac', awayCaptainSignature: 'data:ak'
+    })
+  })
+
+  it('a signature drawn on the restored copy sends the others back unchanged', async () => {
+    const m = fakeDb.matches.map.get(await restore())
+    expect(signaturesPayload(m)).toEqual(SIGNATURES)
+    const job = signaturesSyncJob({ ...m, homePostGameCaptainSignature: 'data:new' })
+    expect(job.payload.signatures).toEqual({ ...SIGNATURES, home_captain_post_game: 'data:new' })
+  })
+
+  it('an approved match keeps where each closing signature was made', async () => {
+    const approval = {
+      approvedAt: '2026-10-25T14:00:00.000Z',
+      signatures: {},
+      signatureSources: { captainA: 'phone', captainB: 'device', scorer: 'device', asstScorer: null, ref1: 'phone', ref2: 'device' }
+    }
+    const m = fakeDb.matches.map.get(await restore({ status: 'approved', approval }))
+    // Team A is away here: captain A's image is the away captain's
+    expect(approvalSignatureSources(m)).toEqual({ captainA: 'phone', captainB: 'device', scorer: 'device', asstScorer: 'device', ref1: 'phone', ref2: 'device' })
+    expect(signedOnPhone(m, 'awayPostGameCaptainSignature')).toBe(true)
+    expect(signedOnPhone(m, 'homePostGameCaptainSignature')).toBe(false)
+  })
+
+  it('a match without signatures restores empty slots, not names nothing reads', async () => {
+    const m = fakeDb.matches.map.get(await restore({ signatures: null }))
+    for (const field of ['homePostGameCaptainSignature', 'awayPostGameCaptainSignature', 'scorerSignature', 'ref1Signature', 'ref2Signature']) {
+      expect(m[field] ?? null).toBeNull()
+    }
+    for (const legacy of ['homeCaptainPostGameSignature', 'awayCaptainPostGameSignature', 'refereeSignature']) expect(legacy in m).toBe(false)
   })
 })
 

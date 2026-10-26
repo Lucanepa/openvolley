@@ -67,6 +67,19 @@ export function signaturesPayload(match) {
 }
 
 /**
+ * The post-match signature fields of a match row from the server's
+ * `signatures` JSONB, the inverse of signaturesPayload (null when missing).
+ * A copy restored from the server (backupManager importMatchFromSupabase)
+ * must hold every one of them in the field the app reads: its next
+ * signature sends the whole object back, and a slot missing here would be
+ * erased on the server.
+ */
+export function postMatchSignaturesFromServer(signatures) {
+  const s = signatures || {}
+  return Object.fromEntries(Object.entries(POST_MATCH_SIGNATURE_KEYS).map(([field, key]) => [field, s[key] || null]))
+}
+
+/**
  * The sync-queue job that sends the signatures of `match` (the row AFTER the
  * change), or null when the match does not sync: no seed_key, or a test match
  * (as MatchSetup and the approval job, which never send test signatures).

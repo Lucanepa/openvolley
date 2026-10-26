@@ -276,6 +276,34 @@ export function approvalSignatureSources(match) {
   }
 }
 
+/**
+ * The "signed on phone" records of a match restored from the server, from
+ * its approval JSON (approvalSignatureSources, the only copy the server
+ * keeps; a match not yet approved has none): a record for each 'phone'
+ * slot. The approval does not say which transport carried the image.
+ * @param {object|null} approval  the server's `approval` JSON
+ * @param {'home'|'away'} [teamA]  the coin toss's Team A
+ */
+export function signatureSourcesFromApproval(approval, teamA = 'home') {
+  const sources = approval?.signatureSources
+  if (!sources || typeof sources !== 'object') return {}
+  const aIsHome = (teamA || 'home') === 'home'
+  const fieldOf = {
+    captainA: aIsHome ? 'homePostGameCaptainSignature' : 'awayPostGameCaptainSignature',
+    captainB: aIsHome ? 'awayPostGameCaptainSignature' : 'homePostGameCaptainSignature',
+    scorer: 'scorerSignature',
+    asstScorer: 'asstScorerSignature',
+    ref1: 'ref1Signature',
+    ref2: 'ref2Signature',
+  }
+  const at = approval.approvedAt || approval.approved_at || null
+  const out = {}
+  for (const [slot, field] of Object.entries(fieldOf)) {
+    if (sources[slot] === 'phone') out[field] = { via: 'phone', at }
+  }
+  return out
+}
+
 /** The match field of each pre-match signature (CoinToss, MatchSetup). */
 export const PRE_MATCH_SIGNATURE_FIELD = Object.freeze({
   'home-coach': 'homeCoachSignature',
