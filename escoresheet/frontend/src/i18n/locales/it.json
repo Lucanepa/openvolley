@@ -3357,6 +3357,7 @@
       "matchBegun": "Questa partita è già iniziata: campo e orario restano.",
       "noCourts": "Aggiungi prima un campo.",
       "notFound": "Non trovato, o non visibile per te.",
+      "courtInUse": "Su questo campo si è già giocato: disattiva «In uso» invece di rimuoverlo.",
       "noManager": "Nessun responsabile di competizione OpenBeach ha questa e-mail.",
       "slotConflict": "Questo orario non si adatta al programma.",
       "resultChanged": "Qualcun altro ha cambiato questo risultato nel frattempo. Ricontrollalo.",
