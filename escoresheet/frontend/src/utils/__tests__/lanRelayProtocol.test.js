@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createServer as createNetServer } from 'node:net'
 import { createServer as createHttpServer } from 'node:http'
@@ -1202,6 +1202,43 @@ describe('relay runtimes speak the shared protocol', () => {
       expect(unknown.headers.get('content-type')).toMatch(/json/)
     } finally {
       child.kill('SIGKILL')
+    }
+  })
+
+  it('standalone server.js opens an OpenBeach build\'s role pages, an OpenVolley build\'s as before', async () => {
+    const page = (dir, file, text) => {
+      mkdirSync(dirname(resolve(dir, file)), { recursive: true })
+      writeFileSync(resolve(dir, file), `<!doctype html><title>${text}</title>`)
+    }
+    const beach = mkdtempSync(resolve(tmpdir(), 'ov-relay-beach-'))
+    const indoor = mkdtempSync(resolve(tmpdir(), 'ov-relay-indoor-'))
+    for (const [f, t] of [['index.html', 'scorer'], ['referee_beach.html', 'beach referee'], ['livescore_beach.html', 'beach livescore'], ['scoreboard_beach.html', 'beach scoreboard']]) page(beach, f, t)
+    for (const [f, t] of [['index.html', 'scorer'], ['referee/index.html', 'referee'], ['referee_beach.html', 'stray']]) page(indoor, f, t)
+    const serve = async (dist, paths) => {
+      const [port, wsPort] = [await freePort(), await freePort()]
+      const child = spawn(process.execPath, ['server.js'], {
+        cwd: FRONTEND_DIR,
+        env: { ...process.env, PORT: String(port), WS_PORT: String(wsPort), HTTPS: 'false', NODE_ENV: 'test', OV_RELAY_DIST_DIR: dist },
+        stdio: 'ignore'
+      })
+      try {
+        await waitForHttp(`http://127.0.0.1:${port}/api/server/status`)
+        const out = {}
+        for (const p of paths) out[p] = (/<title>(.*)<\/title>/.exec(await (await fetch(`http://127.0.0.1:${port}${p}`)).text()) || [])[1]
+        return out
+      } finally {
+        child.kill('SIGKILL')
+      }
+    }
+    try {
+      expect(await serve(beach, ['/', '/referee', '/referee/', '/referee.html', '/livescore', '/scoreboard', '/elsewhere'])).toEqual({
+        '/': 'scorer', '/referee': 'beach referee', '/referee/': 'beach referee', '/referee.html': 'beach referee',
+        '/livescore': 'beach livescore', '/scoreboard': 'beach scoreboard', '/elsewhere': 'scorer'
+      })
+      expect(await serve(indoor, ['/referee', '/referee/', '/referee.html'])).toEqual({ '/referee': 'referee', '/referee/': 'referee', '/referee.html': 'referee' })
+    } finally {
+      rmSync(beach, { recursive: true, force: true })
+      rmSync(indoor, { recursive: true, force: true })
     }
   })
 
