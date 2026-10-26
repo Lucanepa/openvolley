@@ -1627,6 +1627,7 @@
     "connect": "Verbinde",
     "connecting": "Verbinde...",
     "invalidPin": "Ungültige PIN. Bitte nomal probiere.",
+    "tooManyAttempts": "Zu viele falsche PINs aus diesem Netzwerk. Bitte einige Minuten warten und erneut versuchen.",
     "roster": "Kader",
     "match": "Spiil",
     "back": "Zrugg",
@@ -1670,7 +1671,8 @@
       "connectionLost": "Verbindig verlore. Bitte neu verbinde.",
       "matchEnded": "S Spiil isch beendet.",
       "connectionDisabled": "D Verbindig isch deaktiviert worde.",
-      "serverUnreachable": "Keine Verbindung zum Server – bitte WLAN prüfen und erneut versuchen."
+      "serverUnreachable": "Keine Verbindung zum Server – bitte WLAN prüfen und erneut versuchen.",
+      "tooManyAttempts": "Zu viele falsche PINs aus diesem Netzwerk. Bitte einige Minuten warten und erneut versuchen."
     },
     "connection": {
       "title": "Verbindig",
