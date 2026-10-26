@@ -181,6 +181,23 @@ describe('pgQuery match ownership', { skip: SKIP_PG }, () => {
     assert.equal(prof.body.data.some((x) => '__owned' in x), false)
   })
 
+  it('a head count (count, head: true) of a signed-in reader works on matches and their children', async () => {
+    // the match delete job counts events, sets and the live state before and after (head: true)
+    const mine = await matchOf(alice, { status: 'setup' })
+    await raw.query("INSERT INTO events (external_id, match_id, type) VALUES ($1, $2, 'point'), ($3, $2, 'point')", [`${mine.external_id}:h:1`, mine.id, `${mine.external_id}:h:2`])
+    for (const restrict of [false, true]) {
+      const ev = await q('events', 'select', { columns: '*', count: 'exact', head: true, filters: [{ type: 'eq', column: 'match_id', value: mine.id }] }, { readOwner: { userId: alice, restrict } })
+      assert.equal(ev.status, 200, JSON.stringify(ev.body))
+      assert.deepEqual([ev.body.data, ev.body.count], [null, 2])
+      const m = await q('matches', 'select', { columns: '*', count: 'exact', head: true, filters: [{ type: 'eq', column: 'id', value: mine.id }] }, { readOwner: { userId: alice, restrict } })
+      assert.equal(m.status, 200, JSON.stringify(m.body))
+      assert.deepEqual([m.body.data, m.body.count], [null, 1])
+    }
+    // someone else's match: counted unless restricted (as the rows themselves)
+    const other = await q('matches', 'select', { columns: 'id', count: 'exact', head: true, filters: [{ type: 'eq', column: 'id', value: mine.id }] }, { readOwner: { userId: bob, restrict: true } })
+    assert.deepEqual([other.status, other.body.count], [200, 0])
+  })
+
   it('a bad user id never writes unguarded', async () => {
     assertNotOwner(await q('matches', 'insert', { data: { external_id: uniq('B') } }, { proto: 2, matchOwner: { userId: 'not-a-uuid' } }))
   })
