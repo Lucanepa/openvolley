@@ -452,6 +452,36 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
     // ones above idFloor (frontend importMatchFromSupabase): a rally under the
     // id of a voided event, or of an undo that reached the server before its
     // event, would be born voided (db/015)
+    // 2026-10-26: the device that continues the match becomes its scorer
+    // (server.js takeOverByPin) before the match is read for it: a rally of
+    // the previous device is in what it reads, or refused after the claim
+    it('takeOver runs once the PIN is proved, before the sets and events are read; its answer is `scorer`', async () => {
+      const ext4 = uniq('TAKE')
+      const made = await restore.restoreMatch(backup(ext4, { gameN: 7170, pin: '717171', sets: 1, events: 2 }), W)
+      const seen = []
+      const takeOver = async (m) => {
+        seen.push(m)
+        // the previous device's rally that reached the server just before the claim
+        await raw.query(`INSERT INTO events (match_id, external_id, set_index, type, seq, payload, sport_type)
+                         VALUES ($1, $2, 1, 'point', 3, '{}', 'indoor')`, [m.id, `${ext4}:e:3`])
+        return { mine: true, moved: true }
+      }
+      const r = await restore.restoreByPin({ gameN: 7170, pin: '717171' }, { limitKey: 'ip-take', takeOver })
+      assert.equal(r.status, 200, JSON.stringify(r.body))
+      assert.deepEqual(seen, [{ id: made.body.data.id, external_id: ext4 }])
+      assert.deepEqual(r.body.data.events.map(e => e.seq), [1, 2, 3])
+      assert.deepEqual(r.body.data.scorer, { mine: true, moved: true })
+
+      // a wrong PIN never gets that far; a failing take-over leaves the lookup as it was
+      assert.equal((await restore.restoreByPin({ gameN: 7170, pin: '000000' }, { limitKey: 'ip-take-2', takeOver })).status, 404)
+      assert.equal(seen.length, 1)
+      const failing = await restore.restoreByPin({ gameN: 7170, pin: '717171' }, { limitKey: 'ip-take-3', takeOver: async () => { throw new Error('db down') } })
+      assert.equal(failing.status, 200)
+      assert.equal(failing.body.data.scorer, undefined)
+      const none = await restore.restoreByPin({ gameN: 7170, pin: '717171' }, { limitKey: 'ip-take-4', takeOver: async () => null })
+      assert.equal(none.body.data.scorer, undefined)
+    })
+
     it('idFloor: the highest set / event ids the match used, voided events and revisions included', async () => {
       const ext3 = uniq('FLOOR')
       const b = backup(ext3, { gameN: 6160, pin: '616161', sets: 2, events: 3 })

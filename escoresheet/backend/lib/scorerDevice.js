@@ -20,6 +20,10 @@
  *            game PIN, a backup restore) and "Take back scoring here". The
  *            device becomes the scorer whoever it was; server.js then tells
  *            the previous one over the relay (scorer-moved).
+ *   claimProved()  the same take-over, authorised by the game PIN the caller
+ *            has just proved (POST /api/match/restore-by-pin with claim):
+ *            no session needed, so a signed-out device that continues a
+ *            match scores it at once, and before the match is read for it.
  *
  * A write that names no device (an app from before the handover) is neither
  * checked nor recorded. Test matches and closed matches are never checked:
@@ -183,6 +187,72 @@ export function createScorerDevices ({ pool, db = null, audit = null } = {}) {
   }
 
   /**
+   * `device` scores `match` ({ id, external_id }, locked by the caller's
+   * transaction) from now on. The previous scorer's row is replaced and the
+   * change audited; a device that already scores it changes nothing.
+   * @returns {Promise<{ data: object, matchId: string }>} data: the answer of
+   *   claim() (mine, moved, scorer, previous); matchId for server.js
+   */
+  async function takeOver (client, match, device, userId, via = null) {
+    const { rows: [held] } = await client.query(
+      'SELECT device_id, platform, claimed_at FROM public.match_scorer_devices WHERE match_id = $1 FOR UPDATE', [match.id])
+    if (held && held.device_id === device.id) {
+      return { data: { external_id: match.external_id, mine: true, moved: false, scorer: publicScorer(held), previous: null }, matchId: match.id }
+    }
+    const { rows: [row] } = await client.query(
+      `INSERT INTO public.match_scorer_devices (match_id, device_id, platform, claimed_by, claimed_at)
+       VALUES ($1, $2, $3, $4::uuid, now())
+       ON CONFLICT (match_id) DO UPDATE
+         SET device_id = EXCLUDED.device_id, platform = EXCLUDED.platform,
+             claimed_by = EXCLUDED.claimed_by, claimed_at = EXCLUDED.claimed_at
+       RETURNING device_id, platform, claimed_at`,
+      [match.id, device.id, device.platform, UUID_RE.test(String(userId)) ? userId : null])
+    if (audit && held) {
+      await audit(client, {
+        actorId: userId,
+        action: 'match.scorer_device',
+        matchId: match.id,
+        details: { external_id: match.external_id, platform: device.platform, previous_platform: held.platform || null, ...(via ? { via } : {}) }
+      })
+    }
+    return {
+      data: { external_id: match.external_id, mine: true, moved: !!held, scorer: publicScorer(row), previous: held ? publicScorer(held) : null },
+      matchId: match.id
+    }
+  }
+
+  /**
+   * The take-over of a caller who has just proved the match's game PIN
+   * (restore-by-pin with claim; `matchId`: the row it found). The game PIN is
+   * the match's own secret, the proof the relay asked of a scorer before
+   * db/019: no session and no editor role are needed. 2026-10-26: a device
+   * that continued a match signed out never got its queued claim through
+   * (POST /api/match/scorer needs a session), so the relay refused its syncs
+   * as coming from the device the match had left, and the referee and
+   * benches froze. Made before the match is read for the caller, so a write
+   * of the previous device is either in what it reads or refused (409
+   * OV_SCORER_MOVED) - never sent in between and overwritten.
+   * A test match is never checked, a closed one has nothing left to score:
+   * neither is claimed (null). Never throws for a database without db/019.
+   * @returns {Promise<{ data: object, matchId: string }|null>}
+   */
+  async function claimProved ({ matchId, device, userId = null }) {
+    if (!device || !UUID_RE.test(String(matchId)) || !db?.withTransaction) return null
+    try {
+      return await db.withTransaction(async (client) => {
+        const { rows: [match] } = await client.query(
+          `SELECT id::text AS id, external_id, closed_at IS NOT NULL AS closed, test IS TRUE AS test
+             FROM public.matches WHERE id = $1 FOR SHARE`, [matchId])
+        if (!match || match.closed || match.test) return null
+        return takeOver(client, match, device, userId, 'game-pin')
+      })
+    } catch (err) {
+      if (isMissingTable(err)) return null
+      throw err
+    }
+  }
+
+  /**
    * POST /api/match/scorer { external_id, device: { id, platform }, claim }.
    * claim true: `device` becomes the match's scorer (the creator, an editor or
    * an admin of the match only: pgQuery assertMatchWritable). claim false:
@@ -201,41 +271,15 @@ export function createScorerDevices ({ pool, db = null, audit = null } = {}) {
     try {
       return await db.withTransaction(async (client) => {
         const match = await db.assertMatchWritable(client, externalId, matchOwner)
-        const { rows: [held] } = await client.query(
-          'SELECT device_id, platform, claimed_at FROM public.match_scorer_devices WHERE match_id = $1 FOR UPDATE', [match.id])
-        const mine = !!held && held.device_id === device.id
         if (!wantClaim) {
-          return ok({ external_id: match.external_id, mine: held ? mine : null, closed: match.closed, scorer: publicScorer(held) })
+          const { rows: [held] } = await client.query(
+            'SELECT device_id, platform, claimed_at FROM public.match_scorer_devices WHERE match_id = $1', [match.id])
+          return ok({ external_id: match.external_id, mine: held ? held.device_id === device.id : null, closed: match.closed, scorer: publicScorer(held) })
         }
         if (match.closed) return fail(409, 'OV_MATCH_CLOSED', 'This match is closed')
-        if (mine) return ok({ external_id: match.external_id, mine: true, moved: false, scorer: publicScorer(held), previous: null })
-        const { rows: [row] } = await client.query(
-          `INSERT INTO public.match_scorer_devices (match_id, device_id, platform, claimed_by, claimed_at)
-           VALUES ($1, $2, $3, $4::uuid, now())
-           ON CONFLICT (match_id) DO UPDATE
-             SET device_id = EXCLUDED.device_id, platform = EXCLUDED.platform,
-                 claimed_by = EXCLUDED.claimed_by, claimed_at = EXCLUDED.claimed_at
-           RETURNING device_id, platform, claimed_at`,
-          [match.id, device.id, device.platform, UUID_RE.test(String(userId)) ? userId : null])
-        if (audit && held) {
-          await audit(client, {
-            actorId: userId,
-            action: 'match.scorer_device',
-            matchId: match.id,
-            details: { external_id: match.external_id, platform: device.platform, previous_platform: held.platform || null }
-          })
-        }
-        return {
-          ...ok({
-            external_id: match.external_id,
-            mine: true,
-            moved: !!held,
-            scorer: publicScorer(row),
-            previous: held ? publicScorer(held) : null
-          }),
-          // for server.js (the realtime hub's ordering), not in the answer
-          matchId: match.id
-        }
+        const r = await takeOver(client, match, device, userId)
+        // matchId: for server.js (the realtime hub's ordering), not in the answer
+        return { ...ok(r.data), matchId: r.matchId }
       })
     } catch (err) {
       if (isMissingTable(err)) return fail(503, 'OV_SCORER_UNAVAILABLE', 'Scoring-device handover is not available on this server (db/019 missing)')
@@ -276,7 +320,7 @@ export function createScorerDevices ({ pool, db = null, audit = null } = {}) {
     }
   }
 
-  return { check, adopt, claim, movedSince }
+  return { check, adopt, claim, claimProved, movedSince }
 }
 
 function ok (data) {
