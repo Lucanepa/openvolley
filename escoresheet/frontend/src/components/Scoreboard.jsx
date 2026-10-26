@@ -55,7 +55,7 @@ import { splitLocalDateTime, parseLocalDateTimeToISO, roundToMinute } from '../u
 import { defaultSetStartTime, actualStartRemark, startsFromSchedule, startScheduleOf, typedStartNear } from '../utils/setStartTime'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from '../utils/matchFormat'
 import { getSetResult, getFirstServeForSet, scoreFromPointEvents, getSideAForSet, getLeftTeamLabelForSet } from '../domain/rules'
-import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags, deferredPenaltyPoints } from '../domain/sanctions'
+import { resolveSanction, isDelaySanction, deriveTeamSanctionFlags, deferredPenaltyPoints, penaltyOfPoint } from '../domain/sanctions'
 import { classifyTimeoutRequest } from '../domain/timeouts'
 import { rallyStatusOf, currentSetOf } from '../domain/rally'
 import { useConfirmAction, GHOST_CLICK_MS } from '../hooks/useConfirmAction'
@@ -5076,7 +5076,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // still showing) gave a second point for the same rally. A penalty point
   // or a correction is no tap.
   const handlePoint = useCallback(
-    (side, skipConfirmation = false, { tap = false } = {}) => runAction('point', async () => {
+    (side, skipConfirmation = false, { tap = false, penaltySeq = null } = {}) => runAction('point', async () => {
       cLogger.logHandler('handlePoint', { side, skipConfirmation, tap })
       if (!data?.set) return
       if (tap && await readRallyStatus() !== 'in_play') {
@@ -5166,7 +5166,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       await db.sets.update(freshCurrentSet.id, {
         [field]: newPoints
       })
-      const pointSeq = await logEvent('point', { team: teamKey, score: { home: homePoints, away: awayPoints } }, { setIndexOverride: setIndex })
+      // A penalty's point names its sanction: Undo takes the two back together
+      const pointPayload = { team: teamKey, score: { home: homePoints, away: awayPoints }, ...(penaltySeq != null ? { penaltySeq } : {}) }
+      const pointSeq = await logEvent('point', pointPayload, { setIndexOverride: setIndex })
 
       // Debug log: point awarded
       debugLogger.log('POINT_AWARDED', {
@@ -5803,7 +5805,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     }
 
     // Log the sanction event
-    await logEvent('sanction', {
+    const sanctionSeq = await logEvent('sanction', {
       team: teamKey,
       type: type
     })
@@ -5835,7 +5837,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if ((homeLineupSet && awayLineupSet) || data.match?.easy === true) {
         // Both lineups are set - award point immediately (same transaction)
         const otherSide = side === 'left' ? 'right' : 'left'
-        await handlePoint(otherSide)
+        await handlePoint(otherSide, false, { penaltySeq: sanctionSeq })
       } else {
         // Lineups not set - show message
         deferUi(() => showAlert('Delay penalty recorded. Point will be awarded after both teams set their lineups.', 'info'))
@@ -6788,7 +6790,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return
     }
 
-    const description = getActionDescription(lastUndoableEvent)
+    // A penalty's point is undone with its penalty: the dialog names the
+    // penalty ("Penalty — #3 · +1 point to B")
+    const description = getActionDescription(penaltyOfPoint(currentSetEvents, lastUndoableEvent) || lastUndoableEvent)
     // If we can't get a description, still allow undo but show the event type
     const displayDescription = description && description !== 'Unknown action'
       ? description
@@ -7103,8 +7107,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const allEvents = await db.events.where('matchId').equals(matchId).toArray()
       const eventsToDelete = allEvents.filter(e => Math.floor(e.seq || 0) === baseSeq)
 
+      // A penalty's point goes with its penalty, one action as it was given
+      // (one Undo took back the point only: the red card stayed on the
+      // scoresheet, on the server too, without its point). The rally_start
+      // before them stays: the penalty point won no rally, and one given
+      // during a rally leaves that rally in play again.
+      const penalty = lastEvent.type === 'point' ? penaltyOfPoint(allEvents, lastEvent) : null
+      if (penalty) {
+        const penaltyBaseSeq = Math.floor(penalty.seq || 0)
+        eventsToDelete.push(...allEvents.filter(e => Math.floor(e.seq || 0) === penaltyBaseSeq))
+      }
+
       // For point events, also delete the preceding rally_start
-      if (lastEvent.type === 'point') {
+      if (lastEvent.type === 'point' && !penalty) {
         const rallyStartEvent = allEvents
           .filter(e => e.type === 'rally_start' && e.setIndex === data.set.index && (e.seq || 0) < lastEventSeq)
           .sort((a, b) => (b.seq || 0) - (a.seq || 0))[0]
@@ -11132,7 +11147,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     } else {
       // Regular sanction (warning or penalty)
-      await logEvent('sanction', {
+      const sanctionSeq = await logEvent('sanction', {
         team,
         type: sanctionType,
         playerType: type,
@@ -11165,7 +11180,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           // Both lineups are set - award point immediately
           const otherTeam = team === 'home' ? 'away' : 'home'
           const otherSide = mapTeamKeyToSide(otherTeam)
-          await handlePoint(otherSide)
+          await handlePoint(otherSide, false, { penaltySeq: sanctionSeq })
         } else {
           // Lineups not set - show message
           deferUi(() => showAlert('Penalty recorded. Point will be awarded after both teams set their lineups.', 'info'))

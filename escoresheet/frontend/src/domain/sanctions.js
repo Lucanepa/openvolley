@@ -66,6 +66,27 @@ export function awardsPoint(type) {
 }
 
 /**
+ * The misconduct penalty or delay penalty a point was awarded for, when the
+ * two were written in one action: the point carries the sanction's seq
+ * (payload.penaltySeq). Undo takes them back together; one Undo used to take
+ * back only the point and leave the penalty on the scoresheet without it.
+ * Null for a rally's point, for a penalty point awarded later with the
+ * starting line-ups (deferredPenaltyPoints) and for points written before
+ * the link (2026-10).
+ * @param {Array} events
+ * @param {object} point
+ * @returns {object|null} the sanction event
+ */
+export function penaltyOfPoint(events, point) {
+  const seq = point?.type === 'point' ? point.payload?.penaltySeq : undefined
+  if (seq === undefined || seq === null) return null
+  return (events || []).find(e =>
+    e && e.type === 'sanction' && e.seq === seq && e.setIndex === point.setIndex &&
+    awardsPoint(e.payload?.type) && e.payload?.team !== point.payload?.team
+  ) || null
+}
+
+/**
  * The team-sanction flags shown on the scoreboard (match.sanctions), derived
  * from the sanction events — the single source of truth. The flags used to be
  * set once when the sanction was given and never cleared, so an undone or
