@@ -12,7 +12,7 @@ import { fileURLToPath } from 'url'
 import { dirname, join, extname, basename, sep } from 'path'
 import { WebSocketServer } from 'ws'
 import { networkInterfaces } from 'os'
-import { createLanRelay, createLocalAddressCheck, createMainInstanceGate, WS_MAX_PAYLOAD, signCore } from './lanRelayCore.js'
+import { createLanRelay, createLocalAddressCheck, createMainInstanceGate, WS_MAX_PAYLOAD, WS_PER_MESSAGE_DEFLATE, signCore } from './lanRelayCore.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -312,7 +312,7 @@ const httpServer = httpsOptions
 // ws://127.0.0.1:8080 — keep working with zero setup.
 const wss = new WebSocketServer({
   noServer: true,
-  perMessageDeflate: false, // Disable compression for better performance
+  perMessageDeflate: WS_PER_MESSAGE_DEFLATE, // bundles to the tablets (lanRelayCore)
   maxPayload: WS_MAX_PAYLOAD
 })
 const wsOnly = (req, res) => {
