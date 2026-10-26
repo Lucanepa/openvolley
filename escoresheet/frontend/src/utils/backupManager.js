@@ -20,6 +20,7 @@ import { generateSecurePin } from './stringUtils'
 import { isScorerEntry } from './appEntry'
 import { queueScorerClaim, retireSupersededMatches } from './matchHandover'
 import { isKnownClosedOnServer, CLOSING_STATUSES } from './matchReopen'
+import { liveClockOffsetAfter } from './serverDataSync'
 
 // IndexedDB key for storing file system directory handle
 const BACKUP_DB_NAME = 'escoresheet_backup'
@@ -1426,6 +1427,10 @@ export async function importMatchFromSupabase(cloudData) {
       gameNumber: match.game_n ? String(match.game_n) : null, // Also set gameNumber
       test: match.test || false,
       seed_key: match.external_id,
+      // Its live states are stamped after the last one in the cloud, also
+      // when this device's clock is behind the previous one's
+      // (serverDataSync.liveClockOffset)
+      liveClockOffsetMs: liveClockOffsetAfter(cloudData.liveState),
       // Short names at match level (for easy access)
       homeShortName: homeTeamData.short_name || null,
       awayShortName: awayTeamData.short_name || null,

@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
 import pg from 'pg'
-import { SKIP, bootServer, api, provisionDatabase, sleep, openSocket } from './helpers/e2eServer.js'
+import { SKIP, bootServer, api, provisionDatabase, sleep, openSocket, subscribe } from './helpers/e2eServer.js'
 import { grantRoles } from './helpers/pgTestDb.js'
 
 const GAME_PIN = '583920'
@@ -285,6 +285,27 @@ describe('scoring-device handover end to end', { skip: SKIP }, () => {
       assert.equal(legacy.messages.some((msg) => msg.type === 'scorer-moved' || msg.type === 'error'), false, JSON.stringify(legacy.messages))
     } finally {
       for (const sock of socks) sock.ws.close()
+    }
+  })
+
+  // Stress test 2026-10-25: the match moved to a tablet whose clock was 3 min
+  // behind; the live feed dropped all its states as older than the laptop's last
+  it('the live feed follows a new scoring device whose clock is behind the previous one', async () => {
+    const m = await newMatch(users.anna, PC)
+    const live = await openSocket(`${srv.wsUrl}/?purpose=live`)
+    const state = (device, a, b, at) => dbCall(users.anna, 'match_live_state', 'upsert', { data: { match_id: m.id, points_a: a, points_b: b, updated_at: new Date(at).toISOString() }, onConflict: 'match_id' }, device)
+    try {
+      await subscribe(live, 'skew', [{ table: 'match_live_state', event: '*', column: 'match_id', value: m.id }])
+      const now = Date.now()
+      assert.equal((await state(PC, 2, 1, now)).status, 200)
+      await live.waitFor((msg) => msg.type === 'db-change' && msg.new?.points_b === 1, 5000, "the PC's 2:1")
+      assert.equal((await scorer(users.anna, { external_id: m.ext, device: PHONE })).status, 200)
+      assert.equal((await state(PHONE, 2, 2, now - 180000)).status, 200)
+      await live.waitFor((msg) => msg.type === 'db-change' && msg.new?.points_b === 2, 5000, "the phone's 2:2")
+      assert.equal((await state(PHONE, 2, 3, now - 179000)).status, 200)
+      await live.waitFor((msg) => msg.type === 'db-change' && msg.new?.points_b === 3, 5000, "the phone's 2:3")
+    } finally {
+      live.ws.close()
     }
   })
 

@@ -756,6 +756,21 @@ export function createRealtimeHub(options = {}) {
     return sent
   }
 
+  /**
+   * Forget the ordering value of `key` in `table`: its next row passes
+   * whatever its ordering value. A scorer-device take-over (db/019): the
+   * value is the scoring device's own clock, and a device whose clock is
+   * behind the previous one's had every row dropped as stale until its clock
+   * passed the previous device's last value (stress test 2026-10-25). The
+   * previous device's writes are refused from then on (409 OV_SCORER_MOVED).
+   */
+  function forgetOrder(table, key) {
+    if (key == null) return
+    const id = `${table}\0${key}`
+    newest.delete(id)
+    recentRows.delete(id)
+  }
+
   /** Numbers for /health and logs. */
   function stats() {
     let channels = 0
@@ -791,6 +806,7 @@ export function createRealtimeHub(options = {}) {
     handleConnection,
     broadcastDbChange,
     publish: broadcastDbChange,
+    forgetOrder,
     heartbeat,
     stats,
     close

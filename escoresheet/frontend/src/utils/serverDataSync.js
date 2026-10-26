@@ -324,6 +324,38 @@ export function newerLiveState(current, incoming) {
 }
 
 /**
+ * The live-state clock of a match on the scorer's device. The viewers and the
+ * realtime hub order the states of different scorer sessions by updated_at,
+ * the scorer's own clock: after a hand-over to a device whose clock was
+ * behind the previous one's (no internet time in the hall), every state of
+ * the new device looked older than the previous device's last, and the
+ * referee, benches and livescore stayed on that score for as long as the
+ * clocks differed (stress test 2026-10-25). A device that continues a match
+ * stamps its live states (updated_at, a relay bundle's _syncedAt) this far
+ * ahead of its clock: liveClockOffsetAfter the last cloud state.
+ */
+export function liveClockOffset(match) {
+  const v = Number(match?.liveClockOffsetMs)
+  return Number.isFinite(v) && v > 0 ? v : 0
+}
+
+/** Now on the live-state clock of `match` (ms): see liveClockOffset. */
+export function liveStateNow(match, now = Date.now()) {
+  return now + liveClockOffset(match)
+}
+
+/**
+ * The live-state clock offset of a device that continues a match whose last
+ * state in the cloud is `cloudLiveState`: what makes its first state newer
+ * than that one. 0 when this device's clock is ahead already or the state
+ * names no time.
+ */
+export function liveClockOffsetAfter(cloudLiveState, now = Date.now()) {
+  const last = liveStateTime(cloudLiveState)
+  return Number.isNaN(last) ? 0 : Math.max(0, last - now + 1)
+}
+
+/**
  * Was `liveState` computed after the relay bundle was read on the scorer?
  * - Same scorer session: its sequence number is higher than the bundle's
  *   match._syncedSeq (the last number issued before the sync read IndexedDB).
@@ -1778,7 +1810,9 @@ export function relayMatchPayload(match, lastPinSignature = null, { now = Date.n
   const out = { ...(match || {}) }
   delete out._syncedSeq
   delete out._syncSession
-  out._syncedAt = Number.isFinite(mark?.at) ? mark.at : now
+  // (on the match's live-state clock, as the live states' updated_at)
+  out._syncedAt = (Number.isFinite(mark?.at) ? mark.at : now) + liveClockOffset(match)
+  delete out.liveClockOffsetMs
   if (mark && Number.isFinite(mark.seq) && typeof mark.session === 'string' && mark.session) {
     out._syncedSeq = mark.seq
     out._syncSession = mark.session
