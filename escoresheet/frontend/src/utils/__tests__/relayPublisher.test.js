@@ -9,6 +9,7 @@ import {
   mayPublishMatchData,
   publishLiveState,
   relayReconnectDelay,
+  relayEvents,
   relayConnectionStatus,
   scorerRelayUrl,
   resetScorerRelayUrl
@@ -495,5 +496,29 @@ describe('live-state order marks (what a relay sync records)', () => {
   it('each order has its own session id', () => {
     expect(createLiveStateOrder().session).not.toBe(createLiveStateOrder().session)
     expect(typeof createLiveStateOrder().session).toBe('string')
+  })
+})
+
+// National peak load test 2026-10-26: the scorer sent every event with its
+// undo snapshot (stateSnapshot on every point, stateBefore on rally starts,
+// rotations, substitutions) twice per rally; no relay subscriber reads them.
+describe('relayEvents (what sync-match-data carries of the events)', () => {
+  it('leaves the undo snapshots out, everything else as it is', () => {
+    const snap = { pointsA: 3, pointsB: 2, lineupA: { I: 1 } }
+    const events = [
+      { id: 1, matchId: 4, seq: 1, setIndex: 1, type: 'rally_start', payload: {}, ts: '2026-11-29T10:00:00.000Z', stateBefore: snap },
+      { id: 2, matchId: 4, seq: 2, setIndex: 1, type: 'point', payload: { team: 'home' }, ts: '2026-11-29T10:00:20.000Z', stateSnapshot: snap },
+      { id: 3, matchId: 4, seq: 3, setIndex: 1, type: 'timeout', payload: { team: 'away' }, ts: '2026-11-29T10:01:00.000Z' }
+    ]
+    const out = relayEvents(events)
+    expect(out).toEqual([
+      { id: 1, matchId: 4, seq: 1, setIndex: 1, type: 'rally_start', payload: {}, ts: '2026-11-29T10:00:00.000Z' },
+      { id: 2, matchId: 4, seq: 2, setIndex: 1, type: 'point', payload: { team: 'home' }, ts: '2026-11-29T10:00:20.000Z' },
+      events[2]
+    ])
+    // the device's own events are untouched (copies only)
+    expect(events[0].stateBefore).toBe(snap)
+    expect(events[1].stateSnapshot).toBe(snap)
+    expect(relayEvents(null)).toEqual([])
   })
 })

@@ -393,6 +393,43 @@ describe('backend WebSocket relay protocol', () => {
     for (const c of [fresh, second, third]) c.ws.close()
   })
 
+  // National peak load test 2026-10-26: the scorer's undo snapshots
+  // (stateSnapshot on every point, stateBefore on rally starts, rotations,
+  // substitutions) were about 90% of a bundle, 2.4 MB at the end of a 5-set
+  // match. The relay kept them parsed per match and sent them whole to every
+  // tablet twice per rally; no subscriber reads them. Older scorers still
+  // send them.
+  it('stores and relays the events without the scorer\'s undo snapshots', async () => {
+    const wsUrl = `ws://127.0.0.1:${port}`
+    const seed = 'match_1791215210060_snapsh'
+    const match = makeMatch({ id: 43, seed_key: seed, gamePin: '434343' })
+    const snap = { pointsA: 3, pointsB: 2, lineupA: { I: 1, II: 2 }, marker: 'SNAPSHOT-BYTES' }
+    const events = [
+      { id: 1, seq: 1, setIndex: 1, type: 'rally_start', payload: {}, ts: '2026-11-29T10:00:00.000Z', stateBefore: snap },
+      { id: 2, seq: 2, setIndex: 1, type: 'point', payload: { team: 'home' }, ts: '2026-11-29T10:00:20.000Z', stateSnapshot: snap },
+      { id: 3, seq: 3, setIndex: 1, type: 'timeout', payload: { team: 'away' }, ts: '2026-11-29T10:01:00.000Z' }
+    ]
+    const thin = events.map(({ stateBefore, stateSnapshot, ...rest }) => rest)
+    const scoreboard = await openClient(wsUrl)
+    const referee = await openClient(wsUrl)
+    scoreboard.send(syncMessage(match, { events }))
+    scoreboard.send({ type: 'ping' })
+    await scoreboard.waitFor((m) => m.type === 'pong')
+    referee.send({ type: 'subscribe-match', matchId: seed, pin: PINS.refereePin })
+    const full = await referee.waitFor((m) => m.type === 'match-full-data')
+    assert.equal(full.access, 'full')
+    assert.deepEqual(full.events, thin)
+    scoreboard.send(syncMessage(match, { events: [...events, { id: 4, seq: 4, setIndex: 1, type: 'point', payload: { team: 'away' }, ts: '2026-11-29T10:01:30.000Z', stateSnapshot: snap }] }))
+    const update = await referee.waitFor((m) => m.type === 'match-data-update')
+    assert.deepEqual(update.events.map((e) => e.id), [1, 2, 3, 4])
+    const viaHttp = await (await fetch(`http://127.0.0.1:${port}/api/match/${seed}`, { headers: { 'X-OV-Match-Pin': PINS.refereePin } })).json()
+    assert.deepEqual(viaHttp.events.slice(0, 3), thin)
+    for (const text of [referee.raw.join(''), JSON.stringify(viaHttp)]) assert.equal(text.includes('SNAPSHOT-BYTES'), false)
+    scoreboard.send({ type: 'delete-match', matchId: 43 })
+    await referee.waitFor((m) => m.type === 'match-deleted')
+    for (const c of [scoreboard, referee]) c.ws.close()
+  })
+
   it('GET /api/match/list: every published scheduled/live match, referee connection or not, public fields only', async () => {
     const wsUrl = `ws://127.0.0.1:${port}`
     const courtA = await openClient(wsUrl)
