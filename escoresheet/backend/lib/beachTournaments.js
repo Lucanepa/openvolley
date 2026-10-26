@@ -412,6 +412,10 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
       if (!slug) {
         const base = slugify(`${out.title} ${out.starts_on.slice(0, 4)}`) || `tournament-${out.starts_on}`
         slug = base.length >= 3 ? base : `${base}-cup`
+        // the same title created at the same moment: one after the other (until
+        // the commit), so the second sees the first's address and takes the
+        // next one instead of failing on the unique key as "already taken"
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`beach_tournaments.slug:${slug}`])
         const { rows } = await client.query("SELECT slug FROM public.beach_tournaments WHERE slug = $1 OR slug LIKE $1 || '-%'", [slug])
         const taken = new Set(rows.map((r) => r.slug))
         for (let i = 2; taken.has(slug); i++) slug = `${base}-${i}`

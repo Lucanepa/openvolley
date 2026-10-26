@@ -113,6 +113,13 @@ describe('beach tournaments end to end', { skip: SKIP }, () => {
     // the same title again gets the next free address; a taken address is 409
     assert.equal(okData(await call(users.mia, 'POST', '/api/beach/tournaments', body), 201).tournament.slug, 'zuri-open-2026-2')
     expectCode(await call(users.max, 'POST', '/api/beach/tournaments', { ...body, slug: 'zuri-open-2026' }), 409, 'OV_SLUG_TAKEN')
+    // the same title created at the same moment (two organisers, a double submit): each gets its own address
+    const same = { ...body, title: `Race Cup ${tag}` }
+    const raced = await Promise.all(Array.from({ length: 5 }, () => call(users.mia, 'POST', '/api/beach/tournaments', same)))
+    for (const r of raced) assert.equal(r.status, 201, r.text)
+    const slugs = raced.map((r) => r.json.data.tournament.slug).sort()
+    assert.deepEqual(slugs, [`race-cup-${tag}-2026`, ...[2, 3, 4, 5].map((n) => `race-cup-${tag}-2026-${n}`)])
+    for (const r of raced) okData(await call(users.mia, 'DELETE', `/api/beach/tournaments/${r.json.data.tournament.id}`))
   })
 
   it('drafts are their editors\' only; co-managers edit; the admin edits everything', async () => {
