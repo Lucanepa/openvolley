@@ -52,6 +52,15 @@ vi.mock('../../lib/apiClient', () => {
   return { apiFrom: () => chain(), apiStorage: { from: () => ({ upload }) }, apiRequest: vi.fn() }
 })
 
+// The match end in the cloud live state: not done (offline) until liveEnd.done
+const liveEnd = vi.hoisted(() => ({ done: false, calls: [] }))
+vi.mock('../../utils/matchEndLiveState', () => ({
+  publishMatchEndLiveState: vi.fn(async (match, sets) => {
+    liveEnd.calls.push({ match, sets })
+    return liveEnd.done
+  })
+}))
+
 // The scoresheet window: each open gets a fresh fake window the test can close
 const opened = vi.hoisted(() => [])
 vi.mock('../../utils/openAppWindow', async (orig) => ({
@@ -177,6 +186,8 @@ beforeEach(() => {
   opened.length = 0
   uploads.hang = false
   uploads.paths.length = 0
+  liveEnd.done = false
+  liveEnd.calls.length = 0
   alerts.showAlert = vi.fn()
   URL.createObjectURL = vi.fn(() => 'blob:x')
   HTMLAnchorElement.prototype.click = () => {}
@@ -332,5 +343,32 @@ describe('MatchEnd: the approval PDF', () => {
     fireEvent.click(await screen.findByRole('menuitem', { name: new RegExp(en.matchEnd.preview) }))
     await waitFor(() => expect(opened).toHaveLength(1))
     expect(opened[0].url).toBe('/scoresheet/?matchId=1')
+  })
+})
+
+// Stress test 2026-10-25: the app killed right after "Match end" was
+// confirmed reopened here, and the livescore kept the game running (last set
+// 25:0, sets 1-0) for good: the scoreboard's 'match_end' push never came
+describe('MatchEnd: the match end in the cloud live state', () => {
+  it('is published when Match End shows, and again when the queue drains until it is done', async () => {
+    render(<MatchEnd matchId={1} />)
+    await waitFor(() => expect(liveEnd.calls).toHaveLength(1))
+    expect(liveEnd.calls[0].match.seed_key).toBe('match_1_pdf')
+    expect(liveEnd.calls[0].sets.filter(st => st.finished)).toHaveLength(3)
+    // offline: tried again when the queue drains, and no more once done
+    liveEnd.done = true
+    await act(async () => { window.dispatchEvent(new Event('sync-queue-drained')) })
+    await waitFor(() => expect(liveEnd.calls).toHaveLength(2))
+    await act(async () => { window.dispatchEvent(new Event('online')) })
+    await new Promise(r => setTimeout(r, 50))
+    expect(liveEnd.calls).toHaveLength(2)
+  })
+
+  it('never for a test match', async () => {
+    seed({ test: true })
+    render(<MatchEnd matchId={1} />)
+    await findButton(en.matchEnd.approveParams)
+    await new Promise(r => setTimeout(r, 50))
+    expect(liveEnd.calls).toHaveLength(0)
   })
 })
