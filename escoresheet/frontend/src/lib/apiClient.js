@@ -718,9 +718,21 @@ export function isSessionRejected(result) {
   return false
 }
 
+// Sign-in busy (503 auth_busy: the server's sign-in gate lets a few through
+// per second for the whole server, Retry-After 2 s). Asked again this many
+// times, each after 2-4 s, before the error is shown: at a national peak
+// hundreds of scorers sign in within two minutes and one in ten got it
+// (load test 2026-10-26).
+const SIGN_IN_BUSY_RETRIES = 3
+const isAuthBusy = (result) => result?.status === 503 && result?.error?.code === 'auth_busy'
+
 export const apiAuth = {
   async signInWithPassword({ email, password }) {
-    const result = await authRequest('sign-in', { email, password })
+    let result = await authRequest('sign-in', { email, password })
+    for (let i = 0; i < SIGN_IN_BUSY_RETRIES && isAuthBusy(result); i++) {
+      await new Promise((resolve) => setTimeout(resolve, Math.round(2000 * (1 + Math.random()))))
+      result = await authRequest('sign-in', { email, password })
+    }
     if (!result.error && result.data?.session) {
       storeToken(result.data.session)
     }
