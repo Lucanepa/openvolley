@@ -409,11 +409,12 @@ export const BACKUP_FORMAT_ERROR = 'OV_BACKUP_FORMAT'
 export const BACKUP_UNREADABLE_ERROR = 'OV_BACKUP_UNREADABLE'
 
 /**
- * The match backup inside a whole-database export: the set-end download,
- * "match stopped" and the Match menu's export (Scoreboard) write every table
- * of the device as { exportDate, matchId, matches, teams, players, sets,
- * events, ... }. The set-end one is a browser's only automatic backup
- * offline, and the restore refused it (stress test 2026-10-25).
+ * The match backup inside a whole-database export: "match stopped" and the
+ * Match menu's export (Scoreboard), and the set-end download of the app
+ * before 2026-10-26, write every table of the device as { exportDate,
+ * matchId, matches, teams, players, sets, events, ... }. The set-end one is
+ * a browser's only automatic backup offline, and the restore refused it
+ * (stress test 2026-10-25).
  * The match of its `matchId` with its teams, players, sets and events, in
  * exportMatchData's shape; null for any other file.
  * @param {object} jsonData a parsed backup file

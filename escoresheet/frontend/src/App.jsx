@@ -193,7 +193,7 @@ export default function App() {
   const backup = useAutoBackup(matchId)
   // Backup file for a restore: the desktop app opens its own dialog in the
   // backup folder; elsewhere the browser file picker. A whole-database export
-  // (the set-end download) is previewed and restored as the match it holds.
+  // (an older set-end download) is previewed and restored as the match it holds.
   const pickBackupFile = useCallback(async () => {
     const native = await pickNativeBackupFile()
     const data = native === undefined ? await selectBackupFile() : native
