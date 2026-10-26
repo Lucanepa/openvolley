@@ -201,3 +201,45 @@ describe('Scoreboard: a double tap on the rally buttons', () => {
     expect(await score()).toEqual([1, 1])
   }, 60000)
 })
+
+// Keys do not bounce: a keyboard scorer pressing Enter at the whistle and A a
+// moment later lost the point, with only a console line (review of #37)
+describe('Scoreboard: the rally keys right after the buttons changed', () => {
+  // the next key press: KEY_GAP_MS after `text` is on screen (a quick
+  // scorer), well inside the buttons' double-tap window
+  const KEY_GAP_MS = 60
+  function pressSoonAfterShown(text, key) {
+    return new Promise((resolve) => {
+      const shown = () => {
+        if (!button(text)) return false
+        setTimeout(() => { fireEvent.keyDown(window, { key }); resolve() }, KEY_GAP_MS)
+        return true
+      }
+      if (shown()) return
+      const observer = new MutationObserver(() => { if (shown()) observer.disconnect() })
+      observer.observe(document.body, { childList: true, subtree: true, characterData: true })
+    })
+  }
+
+  it('Enter then A in quick succession: the rally starts and A scores it; Enter right after starts the next one', async () => {
+    localStorage.setItem('keybindingsEnabled', 'true')
+    try {
+      setViewport(1280, 800)
+      mount(await setUpMatch())
+      await waitFor(() => expect(button('Start rally')).toBeTruthy(), { timeout: 10000 })
+      await settle()
+      const points = (await ofType('point')).length
+      const rallies = (await ofType('rally_start')).length
+      fireEvent.keyDown(window, { key: 'Enter' })
+      await pressSoonAfterShown('Point A', 'a')
+      await waitFor(async () => expect((await ofType('point')).length).toBe(points + 1), { timeout: 5000 })
+      expect(await score()).toEqual([2, 1])
+      expect((await ofType('rally_start')).length).toBe(rallies + 1)
+
+      await pressSoonAfterShown('Start rally', 'Enter')
+      await waitFor(async () => expect((await ofType('rally_start')).length).toBe(rallies + 2), { timeout: 5000 })
+    } finally {
+      localStorage.removeItem('keybindingsEnabled')
+    }
+  }, 60000)
+})
