@@ -439,6 +439,27 @@ describe('a whole-database export (the set-end download)', () => {
   })
 })
 
+// Stress test 2026-10-25 (restored-sheet-times-and-lfp-differ): every LFP
+// mark was gone from the sheet of a copy restored by game PIN
+describe('the players of a match restored by game PIN', () => {
+  it('keep their LFP flag', async () => {
+    const id = await importMatchFromSupabase({
+      match: {
+        external_id: SEED, game_n: 7, status: 'ended',
+        home_team: { name: 'H' }, away_team: { name: 'A' },
+        players_home: [{ number: 1, first_name: 'Ana', last_name: 'Hof', is_lfp: true }, { number: 2, first_name: 'Bea', last_name: 'Ris', is_lfp: false }],
+        players_away: [{ number: 9, first_name: 'Cleo', last_name: 'Weg', is_lfp: true, is_captain: true }]
+      },
+      sets: [],
+      events: []
+    })
+    const m = fakeDb.matches.map.get(id)
+    const flags = (teamId) => [...fakeDb.players.map.values()].filter(p => p.teamId === teamId).map(p => `${p.number}:${p.isLfp}`)
+    expect(flags(m.homeTeamId)).toEqual(['1:true', '2:false'])
+    expect(flags(m.awayTeamId)).toEqual(['9:true'])
+  })
+})
+
 // Stress test 2026-10-25 (restore-reuses-other-matchs-team-by-name): the
 // club laptop still held last week's home match. Today's match of the same
 // club was restored from a backup: the restore found last week's team row by

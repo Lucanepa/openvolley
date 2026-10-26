@@ -1530,7 +1530,8 @@ export async function importMatchFromSupabase(cloudData) {
 
     importedMatchId = localMatchId
 
-    // Create players from JSONB arrays (fresh teams, so no duplicates)
+    // Create players from JSONB arrays (fresh teams, so no duplicates). With
+    // their LFP flag: the restored sheet had lost every LFP mark
     if (playersHome.length && homeTeamId) {
       for (const p of playersHome) {
         await db.players.add({
@@ -1542,6 +1543,7 @@ export async function importMatchFromSupabase(cloudData) {
           dob: p.dob,
           libero: p.libero,
           isCaptain: p.is_captain,
+          isLfp: !!p.is_lfp,
           createdAt: new Date().toISOString()
         })
       }
@@ -1558,6 +1560,7 @@ export async function importMatchFromSupabase(cloudData) {
           dob: p.dob,
           libero: p.libero,
           isCaptain: p.is_captain,
+          isLfp: !!p.is_lfp,
           createdAt: new Date().toISOString()
         })
       }

@@ -5805,6 +5805,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     const nextSeq1 = await getNextSeq()
     const nextSeq2 = nextSeq1 + 1
     const setStartStateBefore = getStateSnapshot()
+    // The set's first rally starts now. Its rally_start stays on this device
+    // (eventRevisions LOCAL_ONLY_EVENT_TYPES), so the synced set_start
+    // carries the time too: the sheet's actual set start (matchTimes
+    // setStartMs) on a copy restored from the server, which printed the
+    // dialog's (scheduled) time instead (stress test 2026-10-25)
+    const firstRallyAt = new Date().toISOString()
 
     // Log set_start event
     const setStartEventId = await db.events.add({
@@ -5814,6 +5820,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       payload: {
         setIndex: setStartTimeModal.setIndex,
         startTime: roundToMinute(time),
+        firstRallyAt,
         ...(autoRemark ? { autoRemark } : {})
       },
       ts: roundToMinute(time),
@@ -5846,7 +5853,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       setIndex: data.set.index,
       type: 'rally_start',
       payload: {},
-      ts: new Date().toISOString(),
+      ts: firstRallyAt,
       seq: nextSeq2,
       stateBefore: rallyStartStateBefore
     })
