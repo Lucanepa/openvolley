@@ -234,4 +234,81 @@ describe('scoring-device handover end to end', { skip: SKIP }, () => {
       board.ws.close()
     }
   })
+
+  // Stress test 2026-10-25: the laptop the match moved away from came back
+  // online and re-synced its older copy at once; referee and benches showed
+  // its score until the phone's next rally
+  const relaySync = (m, device) => ({ type: 'sync-match-data', matchId: 1, match: { id: 1, seed_key: m.ext, status: 'live', gamePin: GAME_PIN }, sets: [], events: [], ...(device ? { device } : {}) })
+  const liveUpdate = (a, b) => ({ type: 'live-state-update', matchId: 1, liveState: { points_a: a, points_b: b } })
+  const roundTrip = async (sock) => {
+    const n = sock.messages.filter((msg) => msg.type === 'pong').length
+    sock.send({ type: 'ping' })
+    await sock.waitFor(() => sock.messages.filter((msg) => msg.type === 'pong').length > n, 5000, 'pong')
+  }
+
+  it('the device the match moved away from cannot put its copy back in the relay room when it reconnects', async () => {
+    const m = await newMatch(users.anna, PC)
+    // The phone continues the match while the PC is offline
+    assert.equal((await scorer(users.anna, { external_id: m.ext, device: PHONE })).status, 200)
+    const phone = await openSocket(srv.wsUrl)
+    const viewer = await openSocket(srv.wsUrl)
+    const socks = [phone, viewer]
+    try {
+      phone.send(relaySync(m, PHONE))
+      await roundTrip(phone)
+      viewer.send({ type: 'subscribe-match', matchId: m.ext, device: 'livescore' })
+      await roundTrip(viewer)
+      phone.send(liveUpdate(1, 3))
+      await viewer.waitFor((msg) => msg.type === 'live-state-update' && msg.liveState?.points_b === 3, 5000, "the phone's 1:3")
+
+      // The PC is back: its new socket re-syncs its older copy at once
+      const seen = viewer.messages.length
+      const pc = await openSocket(srv.wsUrl)
+      socks.push(pc)
+      pc.send(relaySync(m, PC))
+      pc.send(liveUpdate(2, 1))
+      const told = await pc.waitFor((msg) => msg.type === 'scorer-moved', 5000, 'scorer-moved')
+      assert.equal(told.matchId, m.ext)
+      await pc.waitFor((msg) => msg.type === 'error' && msg.code === 'not-match-owner', 5000, 'not-match-owner')
+
+      phone.send(liveUpdate(1, 4))
+      await viewer.waitFor((msg) => msg.type === 'live-state-update' && msg.liveState?.points_b === 4, 5000, "the phone's 1:4")
+      // nothing of the PC's reached the room: neither its sync nor its score
+      assert.deepEqual(viewer.messages.slice(seen).map((msg) => [msg.type, msg.liveState?.points_a, msg.liveState?.points_b]), [['live-state-update', 1, 4]])
+
+      // An app that names no device is not checked (as on /api/db)
+      const legacy = await openSocket(srv.wsUrl)
+      socks.push(legacy)
+      legacy.send(relaySync(m))
+      await roundTrip(legacy)
+      await sleep(300)
+      assert.equal(legacy.messages.some((msg) => msg.type === 'scorer-moved' || msg.type === 'error'), false, JSON.stringify(legacy.messages))
+    } finally {
+      for (const sock of socks) sock.ws.close()
+    }
+  })
+
+  it('a socket of the previous device that stayed connected stops speaking for the room when the match moves', async () => {
+    const m = await newMatch(users.anna, PC)
+    const pc = await openSocket(srv.wsUrl)
+    try {
+      pc.send(relaySync(m, PC))
+      await roundTrip(pc)
+      await sleep(300)
+      pc.send(liveUpdate(1, 0))
+      await roundTrip(pc)
+      assert.equal(pc.messages.some((msg) => msg.type === 'error'), false, JSON.stringify(pc.messages))
+
+      assert.equal((await scorer(users.anna, { external_id: m.ext, device: PHONE })).status, 200)
+      await pc.waitFor((msg) => msg.type === 'scorer-moved', 5000, 'scorer-moved')
+      pc.send(liveUpdate(2, 0))
+      await pc.waitFor((msg) => msg.type === 'error' && msg.code === 'not-match-owner', 5000, 'not-match-owner')
+      // ... and its next sync is checked again and refused
+      const before = pc.messages.filter((msg) => msg.type === 'scorer-moved').length
+      pc.send(relaySync(m, PC))
+      await pc.waitFor(() => pc.messages.filter((msg) => msg.type === 'scorer-moved').length > before, 5000, 'scorer-moved again')
+    } finally {
+      pc.ws.close()
+    }
+  })
 })

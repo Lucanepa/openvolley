@@ -55,7 +55,7 @@ import {
   getTestAwayTeamShortName,
   getTestTeamByExternalId
 } from './constants/testSeeds'
-import { apiFrom } from './lib/apiClient'
+import { apiFrom, writingDevice } from './lib/apiClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
 import { fetchMatchByPin, importMatchFromSupabase, cloudBestOf, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, listPocketBaseBackups, fetchPocketBaseMatch } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
@@ -1266,7 +1266,11 @@ export default function App() {
           homePlayers,
           awayPlayers,
           sets,
-          events
+          events,
+          // This installation (db/019): the cloud relay refuses the copy of a
+          // device the match has moved away from ('scorer-moved'), which
+          // re-syncs at once when it comes back online
+          device: writingDevice()
         }
 
         // Periodic sync - don't log every time to reduce noise

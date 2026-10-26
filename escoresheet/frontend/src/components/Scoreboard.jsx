@@ -40,7 +40,7 @@ const ballImage = ballFallback
 import { debugLogger, createStateSnapshot } from '../utils/debugLogger'
 import { TEAM_COLOUR_MARK, discPaint, effectiveTeamColour, matchDiscPaint, teamLiberoColour, markColourOn, teamBoxStyle, teamTextStyle, HEADER_SURFACE } from '../utils/teamColours'
 import { useComponentLogging } from '../contexts/LoggingContext'
-import { apiFrom } from '../lib/apiClient'
+import { apiFrom, writingDevice } from '../lib/apiClient'
 import { relayMatchKey, relayMatchPayload } from '../utils/serverDataSync'
 import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveState, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
@@ -1763,6 +1763,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           awayPlayers: freshAwayPlayers || [],
           sets: freshSets || [],
           events: freshEvents || [],
+          // This installation: the cloud relay refuses a device the match
+          // has moved away from (db/019, see App.jsx)
+          device: writingDevice(),
           _timestamp: sendTimestamp // Track when sent from scoreboard
         }
 
