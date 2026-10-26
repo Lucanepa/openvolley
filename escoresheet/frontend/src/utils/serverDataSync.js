@@ -146,7 +146,9 @@ export async function validatePin(pin, type = 'referee') {
         // If response is not JSON, use status text
         errorMessage = response.statusText || errorMessage
       }
-      throw new Error(errorMessage)
+      // The status tells a refusal without comparing (429: too many wrong
+      // PINs from this address) from a wrong PIN
+      throw Object.assign(new Error(errorMessage), { status: response.status })
     }
 
     // Check if response has content
@@ -1509,8 +1511,13 @@ export async function listAvailableMatchesForBenchSupabase({ now = Date.now() } 
 /**
  * Validate PIN against Supabase database
  * Returns match data if PIN is valid
+ * With matchExternalId the PIN is checked against that match only: a tablet
+ * re-checking its stored PIN after a reload, whose check the backend then
+ * counts apart from other tablets' typos behind the same address.
+ * A refusal without comparing (too many wrong PINs from this address) comes
+ * back with rateLimited: true, never as a wrong PIN.
  */
-export async function validatePinSupabase(pin, type = 'referee', { timeoutMs = 3000 } = {}) {
+export async function validatePinSupabase(pin, type = 'referee', { timeoutMs = 3000, matchExternalId } = {}) {
   // Bounded: on a venue network that drops packets to the internet this check
   // must fail fast so the caller can fall back to the LAN relay.
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
@@ -1531,7 +1538,7 @@ export async function validatePinSupabase(pin, type = 'referee', { timeoutMs = 3
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: pinStr, type }),
+      body: JSON.stringify({ pin: pinStr, type, ...(matchExternalId ? { matchExternalId: String(matchExternalId) } : {}) }),
       ...(controller ? { signal: controller.signal } : {})
     })
 
@@ -1539,9 +1546,12 @@ export async function validatePinSupabase(pin, type = 'referee', { timeoutMs = 3
     try {
       result = await response.json()
     } catch {
-      return { success: false, error: 'Validation failed' }
+      return { success: false, error: 'Validation failed', ...(response.status === 429 ? { rateLimited: true } : {}) }
     }
 
+    if (response.status === 429) {
+      return { success: false, rateLimited: true, error: result?.error || 'Too many attempts' }
+    }
     if (!response.ok || !result?.success) {
       return { success: false, error: result?.error || 'Invalid PIN code' }
     }
