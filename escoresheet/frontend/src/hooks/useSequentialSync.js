@@ -15,6 +15,42 @@ const SETTLED = new Set(['sent', 'superseded', 'failed', 'error', 'dropped'])
 // what is not sent by then.
 export const SET_END_WAIT_MS = 2000
 
+// How long a set end only slower than SET_END_WAIT_MS (online, still queued)
+// gets before the scoreboard downloads its backup after all
+// (setEndBackupPlan 'later', setEndStillUndelivered)
+export const SET_END_DOWNLOAD_GRACE_MS = 30000
+
+// Delivered: sent, or replaced by a newer write of the same row. A row no
+// longer in the queue was pruned, which only happens to delivered ones (and
+// set-aside ones, long after).
+const DELIVERED = new Set(['sent', 'superseded'])
+
+/**
+ * The set end's backup download ("Download backup at set end", on by
+ * default): 'now' when the set end is not reaching the cloud (offline,
+ * refused, set aside for another scoring device, not synced at all), 'later'
+ * when it was only slower than the set end's wait (online, its writes still
+ * queued: download only if they are still not delivered after
+ * SET_END_DOWNLOAD_GRACE_MS), 'none' when it was delivered. With one 2 s
+ * budget for all the writes, a slow hall link ended more set ends as a
+ * warning, and each downloaded the match: a prompt at every set end on a
+ * mobile browser, while the queue was delivering it.
+ * @param {{ success: boolean, hasWarning: boolean, waitingJobIds?: number[], setAside?: boolean }|null} syncResult
+ * @param {{ online: boolean }} state
+ * @returns {'now'|'later'|'none'}
+ */
+export function setEndBackupPlan(syncResult, { online }) {
+  if (!online || !syncResult?.success) return 'now'
+  if (!syncResult.hasWarning) return 'none'
+  return !syncResult.setAside && syncResult.waitingJobIds?.length > 0 ? 'later' : 'now'
+}
+
+/** Is one of these queued writes still not delivered (setEndBackupPlan 'later')? */
+export async function setEndStillUndelivered(jobIds) {
+  const rows = await db.sync_queue.bulkGet(jobIds || [])
+  return rows.some(row => row && !DELIVERED.has(row.status))
+}
+
 /**
  * Ask the background queue (useSyncQueue) to send what it holds now, even
  * while a failed connection probe is backing off: the cloud may be back
@@ -112,7 +148,10 @@ export function useSequentialSync() {
    * @param {Object|null} params.lastPointPayload - Event payload for last point (or null if no point to sync)
    * @param {Object} params.setPayload - Set update payload
    * @param {Object|null} params.matchPayload - Match update payload (current_set, set_results; the result at the match end)
-   * @returns {Promise<{ success: boolean, hasWarning: boolean }>}
+   * @returns {Promise<{ success: boolean, hasWarning: boolean, waitingJobIds?: number[], setAside?: boolean }>}
+   *   with a warning: the writes still waiting in the queue (not refused, not
+   *   set aside) and whether one was set aside for another scoring device
+   *   (setEndBackupPlan)
    */
   const syncSetEnd = useCallback(async ({ lastPointPayload, setPayload, matchPayload }) => {
     const steps = [
@@ -148,7 +187,13 @@ export function useSequentialSync() {
 
     const hasError = steps.some(s => s.status === 'error')
     const hasWarning = steps.some(s => s.status === 'warning')
-    return { success: !hasError, hasWarning }
+    if (!hasWarning) return { success: !hasError, hasWarning }
+    return {
+      success: !hasError,
+      hasWarning,
+      waitingJobIds: results.filter(r => !r.success && r.offline && !r.setAside).map(r => r.jobId),
+      setAside: results.some(r => r.setAside === true)
+    }
   }, [])
 
   /**

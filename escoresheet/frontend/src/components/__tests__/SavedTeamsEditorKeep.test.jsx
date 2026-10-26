@@ -72,3 +72,23 @@ describe('saved team editor keeps unsaved edits of the other section', () => {
     expect(api.savedTeamsApi.putRoster).not.toHaveBeenCalled()
   })
 })
+
+// review of #37: the number input took '1.5' (the '.' next to the digits on a
+// tablet keypad, meant as 15), and the server refused the whole roster with a
+// generic error; the match rosters keep only the digits typed
+describe('saved team editor: shirt numbers', () => {
+  it('a number typed as 1.5 is 15, and the roster saves it', async () => {
+    api.savedTeamsApi.fetchBundle.mockImplementation(async () => bundle())
+    api.savedTeamsApi.putRoster.mockImplementation(async () => ({ data: { team: null }, error: null, status: 200 }))
+    render(<SavedTeamsPanel userId="u1" />)
+    fireEvent.click(await findButton('Liga'))
+    fireEvent.click(await findButton(state.teamName))
+
+    const number = await screen.findByDisplayValue('7')
+    fireEvent.change(number, { target: { value: '1.5' } })
+    await waitFor(() => expect(screen.getByLabelText('savedTeams.number').value).toBe('15'))
+    fireEvent.click(getButton('savedTeams.saveRoster'))
+    await waitFor(() => expect(api.savedTeamsApi.putRoster).toHaveBeenCalled())
+    expect(api.savedTeamsApi.putRoster.mock.calls[0][1].players[0].number).toBe(15)
+  })
+})

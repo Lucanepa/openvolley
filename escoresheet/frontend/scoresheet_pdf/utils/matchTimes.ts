@@ -60,13 +60,17 @@ export function setStartMs(set: TimedSet | null | undefined, events?: TimedEvent
     .map(e => ms(e.payload?.startTime ?? e.ts))
     .find((n): n is number => n !== null) ?? null
   if (confirmed !== null && dialog !== null && toMinute(confirmed) !== toMinute(dialog)) return toMinute(confirmed)
-  const rallies = [
-    ...timesOf(events, set.index, 'rally_start'),
-    ...(Array.isArray(events) ? events : [])
+  // The rally starts stay on the scoring device: there they tell the start.
+  // set_start's firstRallyAt is for a copy from the server, which has none;
+  // on the device it can be older than every rally start left (the set's
+  // first rally undone or corrected) and printed a start that never was
+  const rallyStarts = timesOf(events, set.index, 'rally_start')
+  const rallies = rallyStarts.length > 0
+    ? rallyStarts
+    : (Array.isArray(events) ? events : [])
       .filter(e => e && e.setIndex === set.index && e.type === 'set_start')
       .map(e => ms(e.payload?.firstRallyAt))
       .filter((n): n is number => n !== null)
-  ]
   if (rallies.length > 0) return toMinute(Math.min(...rallies))
   if (confirmed !== null) return toMinute(confirmed)
   const points = timesOf(events, set.index, 'point')

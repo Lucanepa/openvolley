@@ -36,6 +36,8 @@ const CONNECTION_MODES = {
 // refereePin): { matchId, team, pin, gameNumber, homeTeamName, awayTeamName }.
 // Re-validated against the server on load.
 const BENCH_SESSION_KEY = 'bench_session'
+// A stored session no server could check yet is checked again this often
+const BENCH_RESTORE_RETRY_MS = 5000
 
 export function readBenchSession() {
   try {
@@ -55,6 +57,12 @@ function writeBenchSession(session) {
   } catch { /* storage unavailable: the bench just asks again after a reload */ }
 }
 
+// A server's answer that it compared the PIN and refused it: a wrong PIN, a
+// match that ended or a bench switched off (4xx, 404 from both). Not 429 (too
+// many wrong PINs: nothing compared), and not a network error, a time-out or a
+// server error (5xx).
+const isRefusal = (status) => status >= 400 && status < 500 && status !== 429
+
 /**
  * Validate a bench PIN server-side: the backend's database check (cloud) and
  * the LAN relay, in the order the connection mode / match source suggests. The
@@ -62,23 +70,36 @@ function writeBenchSession(session) {
  * offline venue never waits. matchExternalId (a stored session's match): the
  * backend checks the PIN against that match only, apart from other tablets'
  * typos behind the same venue address. A failed result says rateLimited: true
- * when a server refused to compare (too many wrong PINs from this address).
+ * when a server refused to compare (too many wrong PINs from this address),
+ * and noAnswer: true when no server compared it at all: none answered (down,
+ * offline, timed out), or the backend failed (5xx), where the relay not
+ * knowing the match says nothing either (it is that backend's relay in the
+ * cloud). A stored session is kept then: only a refusal is a wrong PIN.
  */
 export async function validateBenchPin(pin, team, { connectionMode = CONNECTION_MODES.AUTO, preferLan = false, matchExternalId } = {}) {
   const pinType = team === 'home' ? 'homeTeam' : 'awayTeam'
   let rateLimited = false
+  let cloudRefused = false
+  let cloudFailed = false
+  let lanRefused = false
   const checkSupabase = async () => {
     const type = team === 'home' ? 'bench_home' : 'bench_away'
     const r = matchExternalId ? await validatePinSupabase(pin, type, { matchExternalId }) : await validatePinSupabase(pin, type)
     if (r?.rateLimited) rateLimited = true
+    if (isRefusal(r?.status) || (r?.status >= 200 && r?.status < 300 && !r.success)) cloudRefused = true
+    if (r?.status >= 500) cloudFailed = true
     if (!r.success || !r.match) return r
     // The server only accepts a bench PIN while that bench is enabled; older
     // backends don't echo the flag, which would trip the disconnect check.
     const flag = team === 'home' ? 'homeTeamConnectionEnabled' : 'awayTeamConnectionEnabled'
     return r.match[flag] === undefined ? { ...r, match: { ...r.match, [flag]: true } } : r
   }
-  const checkLan = () => validatePin(pin, pinType).catch((err) => {
+  const checkLan = () => validatePin(pin, pinType).then((r) => {
+    if (!r?.success) lanRefused = true
+    return r
+  }, (err) => {
     if (err?.status === 429) rateLimited = true
+    if (isRefusal(err?.status)) lanRefused = true
     return { success: false, error: err.message }
   })
   const ok = (r) => r?.success && r.match
@@ -92,7 +113,10 @@ export async function validateBenchPin(pin, team, { connectionMode = CONNECTION_
     result = await checkSupabase()
     if (!ok(result)) result = await checkLan()
   }
-  return !ok(result) && rateLimited ? { ...result, success: false, rateLimited: true } : result
+  if (ok(result)) return result
+  if (rateLimited) return { ...result, success: false, rateLimited: true }
+  const refused = cloudRefused || (lanRefused && !cloudFailed)
+  return refused ? result : { ...result, success: false, noAnswer: true }
 }
 
 /** "Game 12", or undefined while the game number is unknown (never "Game null"). */
@@ -169,16 +193,28 @@ export default function BenchApp() {
     }
   }, [])
 
-  // Restore the stored bench session: same PIN check as a fresh connect
+  // Restore the stored bench session: same PIN check as a fresh connect.
+  // Only a refusal (a wrong PIN, the match ended, the bench switched off)
+  // drops it. When no server compared the PIN (down, offline, timed out, a
+  // server error) the session stays and is checked again every
+  // BENCH_RESTORE_RETRY_MS until a server answers: a bench reloading during an
+  // outage deleted it and asked for the PIN, also once the server was back.
   useEffect(() => {
     if (!restoringSession) return
-    const session = readBenchSession()
-    if (!session) {
+    if (!readBenchSession()) {
       setRestoringSession(false)
       return
     }
     let cancelled = false
-    ;(async () => {
+    let retry = null
+    const check = async () => {
+      // (the stored session, again at each retry: a PIN typed meanwhile wins)
+      const session = readBenchSession()
+      if (!session) {
+        setRestoringSession(false)
+        return
+      }
+      let again = false
       try {
         const result = await validateBenchPin(session.pin, session.team, { connectionMode, matchExternalId: session.matchId })
         if (cancelled) return
@@ -194,13 +230,19 @@ export default function BenchApp() {
           setRelayDevice('bench', session.team)
           setMatchId(result.match.id)
           setMatch(result.match)
+          setError('')
           setView('match')
         } else if (result?.rateLimited) {
           // Refused without comparing (too many wrong PINs from this
           // network): keep the session for the next load
           setError(t('benchDashboard.tooManyAttempts', 'Too many wrong PINs from this network. Wait a few minutes, then try again.'))
+        } else if (result?.noAnswer) {
+          // Nothing compared: keep the session, check again shortly
+          setError(t('benchDashboard.reconnecting', 'No connection to the server. The bench reconnects to its match as soon as it is back.'))
+          again = true
         } else {
           writeBenchSession(null)
+          setError('')
           // Opened through the match's link: its PIN step, match preselected
           const params = new URLSearchParams(window.location.search)
           if (params.get('match')) {
@@ -210,12 +252,18 @@ export default function BenchApp() {
           }
         }
       } catch {
-        // Server unreachable right now: keep the session for the next load
-      } finally {
-        if (!cancelled) setRestoringSession(false)
+        // Server unreachable right now: keep the session, check again shortly
+        again = !cancelled
       }
-    })()
-    return () => { cancelled = true }
+      if (cancelled) return
+      if (again) retry = setTimeout(check, BENCH_RESTORE_RETRY_MS)
+      else setRestoringSession(false)
+    }
+    check()
+    return () => {
+      cancelled = true
+      if (retry) clearTimeout(retry)
+    }
   }, [restoringSession, connectionMode])
 
   // Auto-connect to match from URL params
@@ -605,6 +653,8 @@ export default function BenchApp() {
         setRelayDevice('bench', selectedTeam)
         setMatchId(result.match.id)
         setMatch(result.match)
+        // (a stored session still waiting for a server is replaced)
+        setRestoringSession(false)
         writeBenchSession({
           matchId: result.match.id,
           team: selectedTeam,
