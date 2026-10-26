@@ -22,7 +22,7 @@ import { EASY_TEAM_SEED_KEYS, easyMatchPrefill } from './domain/easyMatch'
 import HomeOptionsModal from './components/options/HomeOptionsModal'
 import ConnectTabletsModal from './components/connect/ConnectTabletsModal'
 import { useSyncQueue, useUserMatchLink, checkScorerMoved, matchEndUpdateNeeded, isClosedHere } from './hooks/useSyncQueue'
-import { isScorerMoved, takeBackScoring } from './utils/matchHandover'
+import { isScorerMoved, takeBackScoring, relaySyncDevice } from './utils/matchHandover'
 import ScorerMovedModal from './components/ScorerMovedModal'
 import ClosedOnServerModal from './components/ClosedOnServerModal'
 import { isKnownClosedOnServer, isStaleClosedCopy } from './utils/matchReopen'
@@ -1234,13 +1234,14 @@ export default function App() {
         // than what this sync carries (applyNewerLiveState on the tablets)
         const syncMark = scorerLiveOrder.mark()
         // Load full match data
-        const [homeTeam, awayTeam, sets, events, homePlayers, awayPlayers] = await Promise.all([
+        const [homeTeam, awayTeam, sets, events, homePlayers, awayPlayers, device] = await Promise.all([
           currentMatchData.homeTeamId ? db.teams.get(currentMatchData.homeTeamId) : null,
           currentMatchData.awayTeamId ? db.teams.get(currentMatchData.awayTeamId) : null,
           db.sets.where('matchId').equals(currentActiveMatchId).sortBy('index'),
           db.events.where('matchId').equals(currentActiveMatchId).toArray(),
           currentMatchData.homeTeamId ? db.players.where('teamId').equals(currentMatchData.homeTeamId).sortBy('number') : [],
-          currentMatchData.awayTeamId ? db.players.where('teamId').equals(currentMatchData.awayTeamId).sortBy('number') : []
+          currentMatchData.awayTeamId ? db.players.where('teamId').equals(currentMatchData.awayTeamId).sortBy('number') : [],
+          relaySyncDevice(db, currentActiveMatchId, writingDevice())
         ])
 
         if (scorerRelay.socket !== ws || relayMatchKey(currentMatchRef.current) !== relayKey) return
@@ -1271,8 +1272,9 @@ export default function App() {
           events,
           // This installation (db/019): the cloud relay refuses the copy of a
           // device the match has moved away from ('scorer-moved'), which
-          // re-syncs at once when it comes back online
-          device: writingDevice()
+          // re-syncs at once when it comes back online; a venue relay, the
+          // copy of a claim another device took over (device.claim)
+          device
         }
 
         // Periodic sync - don't log every time to reduce noise

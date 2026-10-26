@@ -21,7 +21,7 @@ import ScoreboardOptionsModal from './options/ScoreboardOptionsModal'
 import NativeBackupAlert from './options/NativeBackupAlert'
 import ConnectTabletsModal from './connect/ConnectTabletsModal'
 import { useSyncQueue, isAuthBlocked, checkScorerMoved } from '../hooks/useSyncQueue'
-import { isScorerMoved, SCORER_MOVED } from '../utils/matchHandover'
+import { isScorerMoved, SCORER_MOVED, relaySyncDevice } from '../utils/matchHandover'
 import { useSequentialSync } from '../hooks/useSequentialSync'
 import SyncProgressModal from './SyncProgressModal'
 import SignaturePad from './SignaturePad'
@@ -1753,10 +1753,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             if (message.code === 'pins-required') {
               // The relay lost the match while this socket left the PINs out
               if (syncFunctionRef.current) syncFunctionRef.current()
-            } else if (['not-match-owner', 'rate-limited', 'too-many-matches'].includes(message.code)) {
+            } else if (['not-match-owner', 'rate-limited', 'too-many-matches', 'scorer-moved'].includes(message.code)) {
               // The relay refused our scoreboard role: referee/bench/livescore
               // get no updates from this device until it is resolved.
               // Refused again on every sync; the banner expires when that stops.
+              // ('scorer-moved': a venue relay, another device continued the
+              // match; the cloud relay says it with a scorer-moved message)
               setRelayRejection({ code: message.code, message: message.message || '', at: Date.now() })
             }
           }
@@ -1787,13 +1789,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Another device scores it now: its tablets follow that one (db/019)
         if (isScorerMoved(freshMatch)) return
 
-        const [freshHomeTeam, freshAwayTeam, freshSets, freshEvents, freshHomePlayers, freshAwayPlayers] = await Promise.all([
+        const [freshHomeTeam, freshAwayTeam, freshSets, freshEvents, freshHomePlayers, freshAwayPlayers, device] = await Promise.all([
           db.teams.get(freshMatch?.homeTeamId),
           db.teams.get(freshMatch?.awayTeamId),
           db.sets.where('matchId').equals(matchId).toArray(),
           db.events.where('matchId').equals(matchId).toArray(),
           freshMatch?.homeTeamId ? db.players.where('teamId').equals(freshMatch.homeTeamId).toArray() : [],
-          freshMatch?.awayTeamId ? db.players.where('teamId').equals(freshMatch.awayTeamId).toArray() : []
+          freshMatch?.awayTeamId ? db.players.where('teamId').equals(freshMatch.awayTeamId).toArray() : [],
+          relaySyncDevice(db, matchId, writingDevice())
         ])
 
         if (scorerRelay.socket !== currentWs) return
@@ -1815,8 +1818,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           sets: freshSets || [],
           events: freshEvents || [],
           // This installation: the cloud relay refuses a device the match
-          // has moved away from (db/019, see App.jsx)
-          device: writingDevice(),
+          // has moved away from (db/019, see App.jsx), a venue relay the
+          // copy of a claim another device took over (device.claim)
+          device,
           _timestamp: sendTimestamp // Track when sent from scoreboard
         }
 
@@ -13262,7 +13266,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             ? t('scoreboard.relayRejected.notOwner', 'Referee/bench link: another scoresheet holds this match on the server. Referee, bench and livescore do not receive this device\'s updates.')
             : relayRejection.code === 'too-many-matches'
               ? t('scoreboard.relayRejected.tooMany', 'Referee/bench link: this device already drives too many matches on the server.')
-              : t('scoreboard.relayRejected.rateLimited', 'Referee/bench link: the server refused this scoresheet for a minute (too many failed attempts).')}
+              : relayRejection.code === 'scorer-moved'
+                ? t('scoreboard.relayRejected.scorerMoved', 'Referee/bench link: this match is now scored on another device. Referee, bench and livescore follow the other device, no longer this one.')
+                : t('scoreboard.relayRejected.rateLimited', 'Referee/bench link: the server refused this scoresheet for a minute (too many failed attempts).')}
         </div>
       )}
       {/* Portrait mode warning overlay for devices that don't support orientation lock (iOS).

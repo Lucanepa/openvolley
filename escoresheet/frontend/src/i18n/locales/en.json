@@ -861,6 +861,7 @@
     "relayRejected": {
       "notOwner": "Referee/bench link: another scoresheet holds this match on the server. Referee, bench and livescore do not receive this device's updates.",
       "rateLimited": "Referee/bench link: the server refused this scoresheet for a minute (too many failed attempts).",
+      "scorerMoved": "Referee/bench link: this match is now scored on another device. Referee, bench and livescore follow the other device, no longer this one.",
       "tooMany": "Referee/bench link: this device already drives too many matches on the server."
     },
     "toolbar": {

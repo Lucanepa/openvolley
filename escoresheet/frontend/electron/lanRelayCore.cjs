@@ -50,6 +50,17 @@
  *                     id never opens a second, frozen room. Subscribers (tablets, the
  *                     point-hub LedBox bridge) must use the seed key: MATCH_ID=<seed key>,
  *                     or resolve it via /api/match/list or /api/match/by-game-number.
+ *                     device { id, claim } (optional): the installation and its claim of
+ *                     the match (a random id, new each time the device continues the
+ *                     match: restore, take back). The game PIN is known to every device
+ *                     the match was scored on; once another device's sync took the room
+ *                     over, a sync that still carries a claim it took over gets
+ *                     { code:'scorer-moved' } (nothing compared, not counted), unless the
+ *                     device that took it over left STALE_TAKEOVER_MS ago (finished:
+ *                     ORPHAN_TAKEOVER_MS). The take-over ends the room ownership of the
+ *                     sockets that named the previous device and tells them
+ *                     { type:'scorer-moved', matchId }. A sync without a claim (older
+ *                     apps) is not checked and changes nothing of this.
  *   match-action      { matchId, action, data, timestamp }   proven scoreboard of matchId only
  *   live-state-update { matchId, liveState }                 proven scoreboard of matchId only
  *   delete-match      { matchId }                            proven scoreboard of matchId only
@@ -199,6 +210,23 @@ const PIN_FAILURE_LIMIT = 5
 const VALIDATE_PIN_FAILURES = 10
 const VALIDATE_PIN_REQUESTS = 60
 const MAX_ACCESS_KEYS = 16
+// Devices a room remembers as having lost it to another (sync device.claim)
+const MAX_MOVED_DEVICES = 16
+const DEVICE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const MAX_CLAIM_LENGTH = 64
+
+/**
+ * The scoring device a sync names with its claim of the match ({ id, claim },
+ * see sync-match-data `device`), or null: no device, or one without a claim
+ * (older apps), is not checked.
+ */
+function syncDeviceClaim(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const { id, claim } = raw
+  if (typeof id !== 'string' || !DEVICE_ID_RE.test(id)) return null
+  if (typeof claim !== 'string' || !claim || claim.length > MAX_CLAIM_LENGTH) return null
+  return { id: id.toLowerCase(), claim }
+}
 
 // PIN types accepted by POST /api/match/validate-pin
 const PIN_TYPES = {
@@ -878,6 +906,8 @@ function createLanRelay(options = {}) {
   const pending = new Map() // requestId -> { type, matchId, targets:Set<ws>, resolve, timer }
   const orphanedSince = new Map() // matchId -> when its last owning socket left
   const displaced = new Map() // matchId -> game PIN an unfinished match had before a stale takeover
+  const scorers = new Map() // matchId -> { id, claim }: the device whose claim scores the room
+  const movedClaims = new Map() // matchId -> Map<device id, claim> another device's claim took over
   let nextClientId = 1
 
   function send(ws, msg) {
@@ -1028,6 +1058,7 @@ function createLanRelay(options = {}) {
       aliases: new Map(), // id this socket synced under -> room key (seed_key)
       pinKeys: new Set(), // room keys this socket sent PINs for (see 'pins-required')
       access: new Map(), // room key -> { pin, verified }: the PIN offered in subscribe-match
+      scorerDevice: null, // the device its syncs named with a claim (see noteScorer)
     }
     clients.set(ws, meta)
     watch(ws)
@@ -1179,6 +1210,49 @@ function createLanRelay(options = {}) {
     'too-many-matches': 'This device already drives the maximum number of matches',
     'bad-request': 'Unknown connection',
     'pins-required': 'Send this match again with its PINs (the relay lost it, or this connection has not proved it yet)',
+    'scorer-moved': 'This match is now scored on another device',
+  }
+
+  /**
+   * The room moved away from `device`'s claim: another device's sync took it
+   * over, and this one has not continued the match since (a new claim). The
+   * game PIN cannot tell: every device the match was scored on knows it, and
+   * a laptop back on the Wi-Fi re-synced its older copy over the room, the
+   * referee and benches jumping back to it (the cloud relay asks its
+   * database, see backend verifyRelayClaim). Once the device that took it
+   * over has been gone as long as a stale take-over waits, the match is the
+   * old one's again.
+   */
+  function isMovedClaim(matchId, device) {
+    const scorer = scorers.get(matchId)
+    if (!scorer || scorer.id === device.id) return false
+    if (movedClaims.get(matchId)?.get(device.id) !== device.claim) return false
+    return !isAbandoned(matchId, store.get(matchId))
+  }
+
+  /**
+   * A granted sync of `device` (sync-match-data with a claim): it scores the
+   * room. When it took it over from another device, that device's claim is
+   * remembered as moved (isMovedClaim), and the sockets that named it stop
+   * speaking for the room and are told ('scorer-moved'), so its copy cannot
+   * replace the room on their next sync. A take-over by another match (a
+   * reused id) starts afresh.
+   */
+  function noteScorer(ws, meta, matchId, device, kind) {
+    if (kind === 'takeover' || kind === 'new') movedClaims.delete(matchId)
+    if (meta) meta.scorerDevice = device.id
+    const prev = kind === 'takeover' || kind === 'new' ? null : scorers.get(matchId)
+    scorers.set(matchId, device)
+    let moved = movedClaims.get(matchId)
+    if (moved) moved.delete(device.id)
+    if (!prev || prev.id === device.id) return
+    if (!moved) movedClaims.set(matchId, (moved = new Map()))
+    moved.set(prev.id, prev.claim)
+    while (moved.size > MAX_MOVED_DEVICES) moved.delete(moved.keys().next().value)
+    for (const [other, om] of clients) {
+      if (other === ws || om.scorerDevice !== prev.id || !om.owned.delete(matchId)) continue
+      send(other, { type: 'scorer-moved', matchId, timestamp: Date.now() })
+    }
   }
 
   /**
@@ -1210,6 +1284,8 @@ function createLanRelay(options = {}) {
     store.delete(matchId)
     orphanedSince.delete(matchId)
     displaced.delete(matchId)
+    scorers.delete(matchId)
+    movedClaims.delete(matchId)
     for (const meta of clients.values()) meta.owned.delete(matchId)
   }
 
@@ -1313,6 +1389,13 @@ function createLanRelay(options = {}) {
         return
       }
     }
+    // A claim another device took over: refused before any PIN is compared
+    const device = syncDeviceClaim(msg.device)
+    if (device && isMovedClaim(matchId, device)) {
+      if (meta) meta.owned.delete(matchId)
+      sendError(ws, 'scorer-moved', CLAIM_ERRORS['scorer-moved'], matchId)
+      return
+    }
     const claimed = claim(ws, matchId, bundle.match)
     if (!claimed.ok) {
       sendError(ws, claimed.code, CLAIM_ERRORS[claimed.code] || 'Refused', matchId)
@@ -1323,6 +1406,7 @@ function createLanRelay(options = {}) {
       if (meta.aliases.size >= MAX_ALIASES) meta.aliases.delete(meta.aliases.keys().next().value)
       meta.aliases.set(rawId, matchId)
     }
+    if (device) noteScorer(ws, meta, matchId, device, claimed.kind)
     const stored = storeBundle(matchId, bundle, claimed.kind)
     sendMatchData(matchId, 'match-data-update', stored, msg._timestamp, ws)
   }

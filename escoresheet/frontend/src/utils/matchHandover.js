@@ -42,6 +42,7 @@
 import { jobMatchKey } from './syncIds'
 import { matchGameNumber } from './deviceMatches'
 import { isClosingSyncJob } from './matchReopen'
+import { randomUuid } from './deviceId'
 
 export const SCORER_MOVED = 'OV_SCORER_MOVED'
 export const SCORER_CLAIM_ACTION = 'scorer'
@@ -74,6 +75,47 @@ export async function queueScorerClaim(database, match) {
   const job = scorerClaimJob(match)
   if (!job || !database?.sync_queue) return null
   return database.sync_queue.add(job)
+}
+
+/**
+ * This device's claim of `matchId` on the venue relays: a random id kept on
+ * the local match (scorerClaim) and sent with each relay sync (device.claim,
+ * see relaySyncDevice). A venue relay has no database to tell the scorer
+ * from the device it left (the game PIN is known to both): it remembers which
+ * claim each device scored the room with, and once another device took the
+ * room over, refuses a sync that still carries the claim it took over
+ * (lanRelayCore, backend --local). The claim is made on the first sync and
+ * kept; continuing a match makes a new one: a restore by game PIN and "Take
+ * back scoring here" import a new local match, and a backup restore clears
+ * it. One transaction, so the scoreboard's and the app's syncs never make
+ * two. null: no such match (or no storage).
+ */
+export async function scorerClaimOf(database, matchId) {
+  if (matchId == null || !database?.matches) return null
+  try {
+    return await database.transaction('rw', database.matches, async () => {
+      const row = await database.matches.get(matchId)
+      if (!row) return null
+      if (typeof row.scorerClaim === 'string' && row.scorerClaim) return row.scorerClaim
+      const claim = randomUuid()
+      await database.matches.update(matchId, { scorerClaim: claim })
+      return claim
+    })
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The `device` of a relay sync of `matchId`: this installation (`device`,
+ * apiClient writingDevice: the cloud relay checks it against the database,
+ * db/019) with its claim of the match for the venue relays (scorerClaimOf).
+ * null without a device id; without a claim, the device alone.
+ */
+export async function relaySyncDevice(database, matchId, device) {
+  if (!device) return null
+  const claim = await scorerClaimOf(database, matchId)
+  return claim ? { ...device, claim } : device
 }
 
 // The jobs that write a match's score (the server checks the scoring device

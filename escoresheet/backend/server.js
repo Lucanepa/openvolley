@@ -4934,6 +4934,62 @@ async function verifyRelayClaim(clientInfo, matchId, match, device = null) {
   return { ok: true, dbProved: stored.length > 0 }
 }
 
+// Venue relay (--local, no database): the scoring device of a room comes
+// from the syncs themselves. A sync names its device with a claim of the
+// match (`device.claim`: a random id the app makes anew each time the device
+// continues the match: restore, take back). Once another device's sync took
+// the room over, a sync that still carries a claim it took over is refused
+// ('scorer-moved'), until the device that took it over has been gone as long
+// as a stale take-over waits. The game PIN cannot tell (every device the
+// match was scored on knows it): a laptop back on the Wi-Fi re-synced its
+// older copy over the phone that continued the match, and the referee and
+// benches jumped back to it. Same rules as the LAN relays
+// (frontend/electron/lanRelayCore.cjs isMovedClaim / noteScorer). A sync
+// without a claim (older apps) is not checked. The room's entry keeps
+// scorerClaim ({ id, claim }) and movedClaims (device id -> claim).
+const MAX_MOVED_DEVICES = 16
+const MAX_CLAIM_LENGTH = 64
+
+/** A sync's device with its claim ({ id, claim }), or null (not checked). */
+function venueDeviceClaim(raw) {
+  const device = deviceOf(raw)
+  const claim = raw && typeof raw === 'object' ? raw.claim : null
+  if (!device || typeof claim !== 'string' || !claim || claim.length > MAX_CLAIM_LENGTH) return null
+  return { id: device.id, claim }
+}
+
+function isMovedVenueClaim(matchId, device) {
+  const entry = activeMatches.get(matchId)
+  const scorer = entry?.scorerClaim
+  if (!scorer || scorer.id === device.id) return false
+  if (entry.movedClaims?.get(device.id) !== device.claim) return false
+  const grace = isFinishedMatch(entry.match) ? ORPHAN_TAKEOVER_MS : STALE_TAKEOVER_MS
+  return !(ownersOf(matchId).length === 0 && entry.orphanedAt && Date.now() - entry.orphanedAt >= grace)
+}
+
+/**
+ * The room's scorerClaim / movedClaims after a granted sync of `device`
+ * (claim kind `kind`); `previous` is the room's entry before it. A take-over
+ * by another device remembers that one's claim as moved, and its sockets stop
+ * speaking for the room and are told ('scorer-moved').
+ */
+function venueScorerAfter(clientInfo, matchId, previous, device, kind) {
+  const fresh = kind === 'takeover' || kind === 'new'
+  const prev = fresh ? null : previous?.scorerClaim
+  const moved = new Map(fresh ? [] : previous?.movedClaims || [])
+  moved.delete(device.id)
+  if (prev && prev.id !== device.id) {
+    moved.set(prev.id, prev.claim)
+    while (moved.size > MAX_MOVED_DEVICES) moved.delete(moved.keys().next().value)
+    const data = JSON.stringify({ type: 'scorer-moved', matchId, timestamp: Date.now() })
+    for (const c of connections.values()) {
+      if (c === clientInfo || c.scorerDevice !== prev.id || !c.ownedMatches.delete(matchId)) continue
+      if (c.ws.readyState === 1) { try { c.ws.send(data) } catch { /* closing */ } }
+    }
+  }
+  return { scorerClaim: device, movedClaims: moved }
+}
+
 const CLAIM_ERRORS = {
   'not-match-owner': 'Match is owned by another scoreboard (game PIN mismatch)',
   'rate-limited': 'Too many failed scoreboard claims. Wait a few minutes.',
@@ -5014,6 +5070,15 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     })
   }
 
+  // Venue relay: a claim another device took over, refused before any PIN
+  // is compared (isMovedVenueClaim)
+  const venueDevice = DB_MODE ? null : venueDeviceClaim(message.device)
+  if (venueDevice && isMovedVenueClaim(matchId, venueDevice)) {
+    clientInfo.ownedMatches.delete(matchId)
+    clientInfo.ws.send(JSON.stringify({ type: 'error', code: 'scorer-moved', message: CLAIM_ERRORS['scorer-moved'], matchId }))
+    return
+  }
+
   const claimed = claimMatch(clientInfo, matchId, match, { dbProved: opts.dbProved === true })
   if (!claimed.ok) {
     clientInfo.ws.send(JSON.stringify({
@@ -5060,7 +5125,11 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     ? 'beach'
     : ((claimed.kind === 'owner' || claimed.kind === 'proved') && previous?.sportType) || 'indoor'
   if (device) clientInfo.scorerDevice = device.id
+  const venueScorer = venueDevice
+    ? venueScorerAfter(clientInfo, matchId, previous, venueDevice, claimed.kind)
+    : (claimed.kind === 'takeover' || claimed.kind === 'new' ? {} : { scorerClaim: previous?.scorerClaim, movedClaims: previous?.movedClaims })
   activeMatches.set(matchId, {
+    ...venueScorer,
     matchId,
     sportType,
     match,

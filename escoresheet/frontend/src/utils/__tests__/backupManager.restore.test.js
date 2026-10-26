@@ -121,6 +121,17 @@ describe('restoreMatchFromJson', () => {
     expect(fakeDb.matches.map.get(t).liveClockOffsetMs).toBe(0)
   })
 
+  // 2026-10-26: the venue relays tell the scorer from the device it left by
+  // its claim of the match (matchHandover scorerClaimOf): a restored match
+  // makes its own at its next relay sync, never the file's
+  it('a restored match makes a new claim on the venue relays, in either restore', async () => {
+    const restored = await restoreMatchFromJson(backup({ scorerClaim: 'claim-of-the-device-that-wrote-it' }), { checkServer: async () => false, cloudLiveState: async () => null })
+    expect(fakeDb.matches.map.get(restored).scorerClaim).toBeNull()
+    fakeDb.matches.map.get(restored).scorerClaim = 'own-claim'
+    await restoreMatchInPlace(restored, backup({ scorerClaim: 'claim-of-the-device-that-wrote-it' }), { checkServer: async () => false })
+    expect(fakeDb.matches.map.get(restored).scorerClaim).toBeNull()
+  })
+
   it('replaces only this match: other local matches, their rows and jobs stay', async () => {
     const newId = await restoreMatchFromJson(backup())
 

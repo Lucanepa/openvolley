@@ -53,13 +53,20 @@ describe('App.jsx relay wiring', () => {
   // Stress test 2026-10-25: the laptop a match moved away from re-synced its
   // older copy into the room when it came back online. The cloud relay
   // refuses a device the database does not name as the scorer, so both syncs
-  // name this installation.
-  it('sync-match-data names this installation, from App and Scoreboard alike', () => {
+  // name this installation; 2026-10-26: with its claim of the match, which
+  // the venue relays check (matchHandover relaySyncDevice).
+  it('sync-match-data names this installation and its claim, from App and Scoreboard alike', () => {
     const body = slice('const syncMatchData = async () => {', 'const handlePinValidationRequest')
-    expect(body).toMatch(/device: writingDevice\(\)/)
+    expect(body).toMatch(/relaySyncDevice\(db, currentActiveMatchId, writingDevice\(\)\)/)
+    expect(body).toMatch(/\n\s*device\n\s*\}/)
     const start = scoreboardSrc.indexOf("type: 'sync-match-data',")
     expect(start).toBeGreaterThan(-1)
-    expect(scoreboardSrc.slice(start, scoreboardSrc.indexOf('}', start))).toMatch(/device: writingDevice\(\)/)
+    expect(scoreboardSrc.slice(start, scoreboardSrc.indexOf('}', start))).toMatch(/\n\s*device,\n/)
+    const reads = scoreboardSrc.slice(scoreboardSrc.lastIndexOf('await Promise.all([', start), start)
+    expect(reads).toMatch(/relaySyncDevice\(db, matchId, writingDevice\(\)\)/)
+    // a venue relay's refusal of a claim taken over is shown to the scorer
+    expect(scoreboardSrc).toMatch(/'too-many-matches', 'scorer-moved'\]\.includes\(message\.code\)/)
+    expect(scoreboardSrc).toMatch(/relayRejection\.code === 'scorer-moved'\n\s*\? t\('scoreboard\.relayRejected\.scorerMoved'/)
   })
 })
 
