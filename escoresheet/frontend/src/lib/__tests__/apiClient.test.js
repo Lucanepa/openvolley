@@ -391,6 +391,14 @@ describe('self-hosted backend contract', () => {
     expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body).claim).toBe(false)
   })
 
+  it('apiMatchRestore sends a hand-over re-key only when there is one', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { id: 'u', counts: {} }, error: null }))
+    await apiMatchRestore({ match: { external_id: 'm1' }, rekey: { sets: {}, events: { 'm1:e:9': 'm1:e:1' } } })
+    expect(sentBody().rekey).toEqual({ sets: {}, events: { 'm1:e:9': 'm1:e:1' } })
+    await apiMatchRestore({ match: { external_id: 'm1' } })
+    expect('rekey' in JSON.parse(globalThis.fetch.mock.calls[1][1].body)).toBe(false)
+  })
+
   it('apiMatchRestore reports 426 with its status (retry later, not fatal)', async () => {
     globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: { message: 'too old', code: 'OV_CLIENT_TOO_OLD' } }, 426))
     const r = await apiMatchRestore({ match: { external_id: 'm1' } })

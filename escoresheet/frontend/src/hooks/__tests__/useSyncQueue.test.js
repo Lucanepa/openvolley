@@ -491,6 +491,23 @@ describe('runQueuePass', () => {
     expect(sent.liveState).toEqual({ match_status: 'live' })
   })
 
+  // 2026-10-26: a hand-over's re-key replaced the whole match on the server
+  // (voided events and rows sent after the read gone); the rows it moves are
+  // named, so the server renames them in place
+  it('a hand-over re-key sends the cloud id of each row it moves', async () => {
+    const job = restoreJob()
+    job.payload.rekey = { sets: { 'match_100_aaa:s:1': 'match_100_aaa:s:6' }, events: { 'match_100_aaa:e:1': 'match_100_aaa:e:121' } }
+    fakeDb.sync_queue.reset([job])
+    api.respond = (call) => (call.table === '__restore' ? ok({ id: MATCH_UUID, counts: { rekeyed: 2 } }) : defaultRespond(call))
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    expect(api.calls[0].data.rekey).toEqual(job.payload.rekey)
+    // a backup restore names none
+    fakeDb.sync_queue.reset([restoreJob()])
+    await runQueuePass()
+    expect('rekey' in api.calls[1].data).toBe(false)
+  })
+
   it('restore refused by the server (400, rolled back) is parked as failed', async () => {
     fakeDb.sync_queue.reset([restoreJob()])
     api.respond = (call) => (call.table === '__restore'

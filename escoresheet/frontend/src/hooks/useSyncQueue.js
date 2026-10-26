@@ -1180,7 +1180,7 @@ async function processJobInner(job, ctx) {
     // events and live state). Nothing half-restored is ever left behind; a
     // failure rolls back and the job is retried (local IndexedDB stays the source).
     if (job.resource === 'match' && job.action === 'restore') {
-      const { match, sets, events, liveState } = job.payload
+      const { match, sets, events, liveState, rekey } = job.payload
 
       // SAFETY CHECK: external_id is required - identifies THIS specific match
       if (!match?.external_id) {
@@ -1201,7 +1201,10 @@ async function processJobInner(job, ctx) {
           liveState: liveState || null,
           // When the restore was made (db/019): another device that took the
           // match over after that keeps it (409 OV_SCORER_MOVED)
-          queuedAt: job.ts
+          queuedAt: job.ts,
+          // A hand-over's re-key (importMatchFromSupabase): only the rows it
+          // names are renamed, nothing is deleted
+          ...(rekey ? { rekey } : {})
         })
         if (error) {
           safeLog.error('[SyncQueue] Restore failed:', error.code || error.status, error.message, error.details || '')

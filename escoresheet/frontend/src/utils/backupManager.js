@@ -1685,16 +1685,25 @@ export async function importMatchFromSupabase(cloudData) {
         // Another local match holds one of the ids (or a cloud id is not this
         // match's own): the cloud rows move to this device's new ids instead,
         // in one server transaction (POST /api/match/restore, as a backup
-        // restore does; test matches never sync)
+        // restore does; test matches never sync). `rekey` names the cloud id
+        // each row had: the server renames those rows in place and deletes
+        // nothing else (the match's voided events, a row sent after this
+        // read); an older server ignores it and replaces the whole match.
         console.warn(`[Import] ${seedKey}: the cloud ids cannot be kept on this device; re-keying the cloud rows`)
+        const newSetExt = sets.map((s, i) => setExtId(seedKey, newSetIds[i]))
+        const newEventExt = cloudEvents.map((e, i) => eventExtId(seedKey, newEventIds[i]))
         await db.sync_queue.add({
           resource: 'match',
           action: 'restore',
           payload: {
             match: filterMatchPayload({ external_id: seedKey, status: match.status }),
-            sets: sets.map((s, i) => ({ ...cloudChildRow(s), external_id: setExtId(seedKey, newSetIds[i]) })),
-            events: cloudEvents.map((e, i) => ({ ...cloudChildRow(e), external_id: eventExtId(seedKey, newEventIds[i]) })),
-            liveState: cloudData.liveState ? cloudChildRow(cloudData.liveState) : null
+            sets: sets.map((s, i) => ({ ...cloudChildRow(s), external_id: newSetExt[i] })),
+            events: cloudEvents.map((e, i) => ({ ...cloudChildRow(e), external_id: newEventExt[i] })),
+            liveState: cloudData.liveState ? cloudChildRow(cloudData.liveState) : null,
+            rekey: {
+              sets: Object.fromEntries(sets.map((s, i) => [newSetExt[i], s.external_id])),
+              events: Object.fromEntries(cloudEvents.map((e, i) => [newEventExt[i], e.external_id]))
+            }
           },
           ts: new Date().toISOString(),
           status: 'queued'
