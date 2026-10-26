@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Plus, Trash2, UserPlus } from 'lucide-react'
 import { usePanelData, useOnline, OfflineBanner, InlineError } from '../common'
@@ -16,6 +16,8 @@ import RankingSection from './RankingSection'
 import ImportModal from './ImportModal'
 
 const STATUSES = ['draft', 'published', 'live', 'finished', 'archived']
+// a background read of the tournament while it is shown (other managers' results, bracket, schedule)
+const REFRESH_MS = 30000
 
 function DetailsSection({ bundle, reload, onDeleted }) {
   const { t } = useTranslation()
@@ -154,8 +156,11 @@ function CourtsSection({ bundle, reload }) {
   const [rows, setRows] = useState(toRows)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // the stored courts changed (a save here or elsewhere); a background
+  // refresh of the same courts keeps what is being typed
+  const stored = JSON.stringify(toRows())
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { setRows(toRows()) }, [bundle.courts])
+  useEffect(() => { setRows(toRows()) }, [stored])
   const change = (i, patch) => { setRows(r => r.map((x, j) => (j === i ? { ...x, ...patch } : x))); setError('') }
   const add = () => setRows(r => [...r, { number: Math.max(0, ...r.map(x => x.number)) + 1, name: '', active: true, flex: false }])
   const save = async () => {
@@ -216,6 +221,32 @@ export default function TournamentView({ id, onBack, initialImport = false }) {
   // the Excel/CSV import (T2): from the Draws section, or right after "New tournament" from a file
   const [importing, setImporting] = useState(initialImport)
   const { data, error, loading, reload } = usePanelData(() => tournamentApi.get(id), [id], { enabled: online })
+  // Nothing pushes another manager's changes here (a co-manager, or this one
+  // on a second device: results, corrections, the bracket, the schedule), so
+  // the view reads the tournament again when the page comes back to the
+  // front and every 30 s while it is shown. Quietly: a failed read keeps
+  // what is shown, and an open dialog keeps what it holds (the server
+  // refuses a result saved from an outdated screen). Not during an import,
+  // whose preview is made against what was loaded.
+  const lastRefresh = useRef(0)
+  useEffect(() => {
+    if (!online || importing) return undefined
+    const refresh = (event) => {
+      if (document.visibilityState === 'hidden') return
+      // focus and visibilitychange come together when a tab comes back
+      if (event && Date.now() - lastRefresh.current < 5000) return
+      lastRefresh.current = Date.now()
+      reload({ quiet: true })
+    }
+    const timer = setInterval(() => refresh(null), REFRESH_MS)
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [online, importing, reload])
 
   const sections = ['details', 'courts', 'draws', 'schedule', ...(data?.tournament?.can_edit ? ['ranking'] : [])]
   return (

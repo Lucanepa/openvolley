@@ -202,6 +202,14 @@ function ResultModal({ match, entriesById, scoring, onClose, onSaved }) {
   const chosen = fromSets ? String(fromSets) : winner
   const valid = !!chosen && (kind === 'walkover' || sets !== null) && (kind !== 'played' || (sets && sets.length >= 2))
   const ended = match.status === 'finished' || match.status === 'walkover'
+  // The match as this screen showed it: the server refuses when someone else
+  // changed its result, or a correction upstream put another pair into it
+  // (the winner is sent as a side, which would then be that other pair).
+  const expect = {
+    winner_entry_id: match.winner_entry_id ?? null, result: match.result ?? null, sets: match.sets ?? null,
+    entry1_id: match.entry1_id ?? null, entry2_id: match.entry2_id ?? null
+  }
+  const outdated = (error) => error?.code === 'OV_RESULT_CHANGED' || error?.code === 'OV_MATCH_TEAMS_CHANGED'
   const submit = async (e) => {
     e?.preventDefault()
     if (!valid || busy) return
@@ -210,13 +218,12 @@ function ResultModal({ match, entriesById, scoring, onClose, onSaved }) {
       winner: Number(chosen),
       result: kind,
       sets: kind === 'walkover' ? null : (sets.length ? sets : null),
-      // the result this screen showed: the server refuses when someone else changed it meanwhile
-      expect: { winner_entry_id: match.winner_entry_id ?? null, result: match.result ?? null, sets: match.sets ?? null }
+      expect
     })
     setBusy(false)
-    if (res.error?.code === 'OV_RESULT_CHANGED') {
+    if (outdated(res.error)) {
       toast.error(errorText(res.error))
-      return onSaved() // closes and reloads, so the other result shows
+      return onSaved() // closes and reloads, so the match as it is now shows
     }
     if (res.error) return setError(errorText(res.error) + (res.error.details && typeof res.error.details === 'string' ? ` (${res.error.details})` : ''))
     toast.success(t('tournaments.resultSaved'))
@@ -230,8 +237,12 @@ function ResultModal({ match, entriesById, scoring, onClose, onSaved }) {
       tone: 'danger'
     }))) return
     setBusy(true)
-    const res = await tournamentApi.withdrawResult(match.id)
+    const res = await tournamentApi.withdrawResult(match.id, expect)
     setBusy(false)
+    if (outdated(res.error)) {
+      toast.error(errorText(res.error))
+      return onSaved()
+    }
     if (res.error) return setError(errorText(res.error))
     onSaved()
   }
@@ -286,7 +297,10 @@ function EntriesCard({ draw, entries, edit, reload }) {
   const { t } = useTranslation()
   const errorText = useTournamentError()
   const open = draw.status === 'entries' || draw.status === 'seeded'
-  const ordered = useMemo(() => seedOrderOf(entries), [entries])
+  // the seed order typed here stays through a background refresh of the same pairs
+  const stored = entries.map(e => `${e.id}:${e.seed}:${e.status}`).join()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const ordered = useMemo(() => seedOrderOf(entries), [stored])
   const [order, setOrder] = useState(() => ordered.map(e => e.id))
   const [adding, setAdding] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -403,6 +417,13 @@ function BracketCard({ draw, matches, entries, edit, reload }) {
     if (res.error) return toast.error(errorText(res.error))
     reload()
   }
+  // On court: a started match keeps its court and time in a re-plan, and the
+  // results it depends on cannot be changed under it (the server checks).
+  const setStatus = async (m, status) => {
+    const res = await tournamentApi.setMatchStatus(m.id, status)
+    if (res.error) toast.error(errorText(res.error))
+    reload()
+  }
 
   return (
     <Card>
@@ -444,9 +465,21 @@ function BracketCard({ draw, matches, entries, edit, reload }) {
                       meta={ended ? <span className="font-mono tabular-nums">{m.result === 'walkover' ? t('tournaments.kinds.walkover') : setsText(m.sets)}{m.result && m.result !== 'played' && m.result !== 'walkover' ? ` · ${t(`tournaments.kinds.${m.result}`)}` : ''}</span> : null}
                       status={<StatusPill tone={MATCH_TONE[m.status] || 'neutral'}>{t(`tournaments.matchStatus.${m.status}`)}</StatusPill>}
                       action={canEnter && (
-                        <Button variant="ghost" size="sm" onClick={() => setResultFor(m)} data-testid={`result-${m.code}`}>
-                          {ended ? t('tournaments.correctResult') : t('tournaments.enterResult')}
-                        </Button>
+                        <div className="flex flex-wrap items-center justify-end gap-1">
+                          {!ended && m.status !== 'in_progress' && (
+                            <Button variant="ghost" size="sm" onClick={() => setStatus(m, 'in_progress')} data-testid={`start-${m.code}`}>
+                              {t('tournaments.startMatch')}
+                            </Button>
+                          )}
+                          {(m.status === 'called' || m.status === 'in_progress') && (
+                            <Button variant="ghost" size="sm" onClick={() => setStatus(m, 'open')} data-testid={`unstart-${m.code}`}>
+                              {t('tournaments.unstartMatch')}
+                            </Button>
+                          )}
+                          <Button variant="ghost" size="sm" onClick={() => setResultFor(m)} data-testid={`result-${m.code}`}>
+                            {ended ? t('tournaments.correctResult') : t('tournaments.enterResult')}
+                          </Button>
+                        </div>
                       )}
                     />
                   )

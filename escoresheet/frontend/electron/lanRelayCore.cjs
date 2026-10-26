@@ -119,6 +119,12 @@
  *   POST /api/match/validate-pin { pin, type, sport? }  sport 'beach' (openbeach)
  *                     finds beach matches only, 'indoor' (the default) indoor
  *                     ones only.
+ *   /api/match/validate-connection-pin  the backend's (cloud) PIN check, not a
+ *                     relay's: 501. openbeach's referee asks it at its page's
+ *                     origin first, which on a venue LAN is this relay, and
+ *                     takes a JSON 4xx as the final "wrong PIN"; a 5xx sends it
+ *                     on to validate-pin (as the Tauri relay's 405 and the
+ *                     backend --local's 503 do).
  *
  * Venue mode: one relay serves every court. Each scorer claims its own match
  * (room key = seed_key), /api/match/list lists them all, and the
@@ -1840,6 +1846,10 @@ function createLanRelay(options = {}) {
       return true
     }
 
+    if (path === '/api/match/validate-connection-pin') {
+      sendJson(res, 501, { success: false, error: 'Not a venue relay endpoint: use /api/match/validate-pin' })
+      return true
+    }
     if (path === '/api/match/validate-pin') {
       if (method !== 'POST') return false
       // Wrong PINs are limited (VALIDATE_PIN_FAILURES a minute per address,

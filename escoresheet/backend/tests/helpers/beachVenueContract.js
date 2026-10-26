@@ -21,6 +21,8 @@
  *     not learn the other PINs of its match), nor a date of birth
  *   - POST /api/match/validate-pin { sport: 'beach' } finds beach courts only,
  *     an indoor PIN check never finds a beach court
+ *   - POST /api/match/validate-connection-pin (the cloud's check) is no final
+ *     answer here: a 5xx or not JSON, so the OpenBeach referee asks validate-pin
  *   - each court's live state reaches that court's subscribers only
  *
  * Plain node:assert, no test framework: the caller passes its `openClient(url)`
@@ -245,6 +247,21 @@ export async function runBeachVenueContract ({ httpBase, wsUrl, openClient, tag 
     const indoorOk = await validate({ pin: P.indoor.refereePin, type: 'referee' })
     assert.equal(indoorOk.status, 200)
     assert.equal((await indoorOk.json()).match.id, seedIndoor)
+
+    // --- The cloud's PIN check is not a venue relay's ------------------------
+    // The OpenBeach referee asks validate-connection-pin at its page's origin
+    // first (on a venue LAN that origin is this relay) and takes a JSON 4xx as
+    // the final "wrong PIN"; a 5xx or an answer that is not JSON sends it on
+    // to validate-pin above, which knows the court.
+    const cloudCheck = await fetch(`${httpBase}/api/match/validate-connection-pin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: P.court1.refereePin, type: 'referee' })
+    })
+    const cloudText = await cloudCheck.text()
+    let cloudJson = true
+    try { JSON.parse(cloudText) } catch { cloudJson = false }
+    assert.ok(cloudCheck.status >= 500 || (cloudCheck.status >= 400 && !cloudJson), `validate-connection-pin on a venue relay: ${cloudCheck.status} ${cloudText}`)
 
     // --- Live state: each court to its own subscribers ----------------------
     const live1 = { points_a: 15, points_b: 13, sets_won_a: 1, serve_player: 2 }
