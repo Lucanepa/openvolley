@@ -6268,28 +6268,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           })
           setSetTransitionLoading({ step: 'Downloading backup...' })
           try {
-            const allMatches = await db.matches.toArray()
-            const allTeams = await db.teams.toArray()
-            const allPlayers = await db.players.toArray()
-            const allSets = await db.sets.toArray()
-            const allEvents = await db.events.toArray()
-            const allReferees = await db.referees.toArray()
-            const allScorers = await db.scorers.toArray()
-
-            const exportData = {
-              exportDate: new Date().toISOString(),
-              exportReason: `set_${setIndex}_end`,
-              matchId: matchId,
-              matches: allMatches,
-              teams: allTeams,
-              players: allPlayers,
-              sets: allSets,
-              events: allEvents,
-              referees: allReferees,
-              scorers: allScorers
-            }
-
-            const jsonString = JSON.stringify(exportData, null, 2)
+            // This match only, in the backup file format Restore match reads
+            // (exportMatchData), unindented. It was every table of the device,
+            // pretty-printed: on a laptop that kept a season's matches 89 to
+            // 297 MB per set end, behind this overlay for 2 to 8 s, and a file
+            // the restore refused (stress test 2026-10-25).
+            const jsonString = JSON.stringify(await exportMatchData(matchId))
             const blob = new Blob([jsonString], { type: 'application/json' })
             const url = URL.createObjectURL(blob)
             const link = document.createElement('a')
