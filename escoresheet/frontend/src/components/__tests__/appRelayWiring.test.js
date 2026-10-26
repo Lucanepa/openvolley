@@ -127,3 +127,21 @@ describe('MatchSetup live-state writes', () => {
     for (const write of writes) expect(write).toMatch(/updated_at: new Date\(liveStateNow\(match\)\)\.toISOString\(\)/)
   })
 })
+
+// RefereeApp / BenchApp cannot be mounted here: the typed PIN checks pinned.
+// 2026-10-26: checked against every live match, a hall's wrong PINs for other
+// matches (one venue address) made a new referee wait 10 minutes
+describe('typed tablet PINs are checked against the match the page knows', () => {
+  const refereeSrc = readFileSync(resolve(__dirname, '../../RefereeApp.jsx'), 'utf8')
+  const benchSrc = readFileSync(resolve(__dirname, '../../BenchApp.jsx'), 'utf8')
+  it('the referee: its link, or the game picked in the list', () => {
+    expect(refereeSrc).toMatch(/const picked = linkedMatch\?\.id \?\? availableMatches\.find\(m => String\(m\.gameNumber\) === selectedGameNumber\)\?\.id/)
+    expect(refereeSrc).toMatch(/validateRefereePin\(pinInput\.trim\(\), \{ matchExternalId: typeof picked === 'string' && picked \? picked : null \}\)/)
+  })
+  it('the bench: the match picked (its link or the list)', () => {
+    const at = benchSrc.indexOf('const result = await validateBenchPin(pin, selectedTeam, {')
+    expect(at).toBeGreaterThan(-1)
+    expect(benchSrc.slice(at, benchSrc.indexOf('})', at))).toMatch(/matchExternalId: picked/)
+    expect(benchSrc).toMatch(/const picked = selectedMatch\?\.id/)
+  })
+})

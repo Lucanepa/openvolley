@@ -65,12 +65,16 @@ export async function revalidateRefereeSession(storedMatchId, storedPin, { check
  * the main scoresheet is running" sent referees to check the scoresheet when
  * they had only mistyped the PIN. A refusal without comparing (too many wrong
  * PINs from this address) is 'rate-limited', not a wrong PIN.
+ * `matchExternalId`: the match the page knows (a link, the game picked in the
+ * list): the backend checks the PIN against it only, in its own brute-force
+ * scope. Without it, the wrong PINs of a whole hall (one venue address) for
+ * other matches made a new referee with the right PIN wait up to 10 minutes.
  * @returns {Promise<{ match: object|null, source?: 'supabase'|'websocket', reason?: 'invalid'|'unreachable'|'rate-limited' }>}
  */
-export async function validateRefereePin(pin, { checkCloud = validatePinSupabase, checkLan = validatePin } = {}) {
+export async function validateRefereePin(pin, { checkCloud = validatePinSupabase, checkLan = validatePin, matchExternalId = null } = {}) {
   const ok = (r) => r?.success && r.match
   let cloud
-  try { cloud = await checkCloud(pin, 'referee') } catch (err) { cloud = failedCheck(err) }
+  try { cloud = await (matchExternalId ? checkCloud(pin, 'referee', { matchExternalId: String(matchExternalId) }) : checkCloud(pin, 'referee')) } catch (err) { cloud = failedCheck(err) }
   if (ok(cloud)) return { match: cloud.match, source: 'supabase' }
   let lan
   try { lan = await checkLan(pin, 'referee') } catch (err) { lan = failedCheck(err) }
@@ -439,8 +443,10 @@ export default function RefereeApp() {
     }
 
     try {
-      // Backend database check first, then the LAN relay
-      const result = await validateRefereePin(pinInput.trim())
+      // Backend database check first, then the LAN relay; against the match
+      // the page knows (its link, the game picked in the list), if any
+      const picked = linkedMatch?.id ?? availableMatches.find(m => String(m.gameNumber) === selectedGameNumber)?.id
+      const result = await validateRefereePin(pinInput.trim(), { matchExternalId: typeof picked === 'string' && picked ? picked : null })
 
       if (result.match) {
         console.log(`[RefereeApp] PIN validated via ${result.source}`)

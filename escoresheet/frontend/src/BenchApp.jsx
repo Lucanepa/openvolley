@@ -583,9 +583,13 @@ export default function BenchApp() {
       // relay. LAN first when the user chose WebSocket mode or the match
       // came from the LAN relay (its row in a merged list, else the list).
       const pin = pinInput.trim()
+      // Against the match picked (its link or the list): its own brute-force
+      // scope on the backend, apart from the hall's typos for other matches
+      const picked = selectedMatch?.id
       const result = await validateBenchPin(pin, selectedTeam, {
         connectionMode,
-        preferLan: (selectedMatch?.listSource || activeConnection) === 'websocket'
+        preferLan: (selectedMatch?.listSource || activeConnection) === 'websocket',
+        ...(typeof picked === 'string' && picked ? { matchExternalId: picked } : {})
       })
 
       if (result?.success && result.match) {
