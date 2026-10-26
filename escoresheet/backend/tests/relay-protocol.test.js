@@ -723,8 +723,18 @@ describe('backend relay in cloud mode behind Cloudflare: a hall behind one addre
       await c.waitFor((m) => m.type === 'pong')
     }
     assert.deepEqual(scorers.flatMap((c) => c.messages.filter((m) => m.type === 'error').map((m) => m.code)), [])
+    // and one with the referee connection off: listed to its own venue only
+    // (its owners' address, cloudListsMatch)
+    const off = await openClient(wsUrl, HALL)
+    off.send(syncMessage(makeMatch({ id: 1, seed_key: 'hall-off', gamePin: '699999', refereeConnectionEnabled: false })))
+    off.send({ type: 'ping' })
+    await off.waitFor((m) => m.type === 'pong')
+    scorers.push(off)
     const list = await (await fetch(`http://127.0.0.1:${port}/api/match/list`, { headers: HALL })).json()
-    assert.equal(list.matches.filter((m) => m.id.startsWith('hall-')).length, 32)
+    assert.equal(list.matches.filter((m) => m.id.startsWith('hall-')).length, 33)
+    const elsewhere = await (await fetch(`http://127.0.0.1:${port}/api/match/list`, { headers: { 'cf-connecting-ip': '198.51.100.9' } })).json()
+    assert.deepEqual(elsewhere.matches.filter((m) => m.id === 'hall-off'), [])
+    assert.equal(elsewhere.matches.filter((m) => m.id.startsWith('hall-')).length, 32)
     // a minute of the hall's relay reads (32 matches: the scorers' tablet
     // status every 10 s, referee and bench fetches)
     const codes = []
