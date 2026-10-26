@@ -7,7 +7,7 @@
 import 'fake-indexeddb/auto'
 import { describe, it, expect, beforeEach } from 'vitest'
 import { db } from '../../db/db'
-import { scorerClaimOf, relaySyncDevice } from '../matchHandover'
+import { scorerClaimOf, relaySyncDevice, supersededClaimsOf } from '../matchHandover'
 
 const DEVICE = { id: '00000000-0000-4000-8000-000000000001', platform: 'web' }
 
@@ -35,6 +35,21 @@ describe('the claim of a match on the venue relays', () => {
     expect(again).not.toBe(first)
     const imported = await db.matches.add({ seed_key: 'match_1_a', status: 'live' })
     expect(await scorerClaimOf(db, imported)).not.toBe(again)
+  })
+
+  // 2026-10-27: after a restart a venue relay no longer knew which device
+  // took the room over from which; a match continued from a backup names the
+  // file's claims with every sync, so the relay refuses those older copies
+  it('a match continued from a backup names the claims of the copies it was continued from', async () => {
+    const id = await db.matches.add({ seed_key: 'match_1_a', status: 'live', supersededClaims: ['phone-1', 'laptop-1'] })
+    const device = await relaySyncDevice(db, id, DEVICE)
+    expect(device).toEqual({ ...DEVICE, claim: expect.stringMatching(/^[0-9a-f-]{36}$/), supersedes: ['phone-1', 'laptop-1'] })
+    expect(supersededClaimsOf({ scorerClaim: 'tablet-1', supersededClaims: device.supersedes })).toEqual(['tablet-1', 'phone-1', 'laptop-1'])
+    expect(supersededClaimsOf({ scorerClaim: 'x', supersededClaims: Array.from({ length: 20 }, (_, i) => `c-${i}`) })).toHaveLength(8)
+    expect(supersededClaimsOf(null)).toEqual([])
+    // none: the claim alone, as before
+    const plain = await db.matches.add({ seed_key: 'match_1_b', status: 'live' })
+    expect(Object.keys(await relaySyncDevice(db, plain, DEVICE)).sort()).toEqual(['claim', 'id', 'platform'])
   })
 
   it('no device id: no device; no match: the device alone', async () => {

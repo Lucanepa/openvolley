@@ -132,6 +132,21 @@ describe('restoreMatchFromJson', () => {
     expect(fakeDb.matches.map.get(restored).scorerClaim).toBeNull()
   })
 
+  // 2026-10-27: a venue relay kept the take-over in memory only; after its
+  // restart the older copy synced after the newer one took the room for
+  // good. The restored match names the file's claims as older copies
+  // (device.supersedes), which the relay refuses whenever it hears them.
+  it('a restored match names the file\'s claims as older copies, in either restore', async () => {
+    const restored = await restoreMatchFromJson(backup({ scorerClaim: 'laptop-1' }), { checkServer: async () => false, cloudLiveState: async () => null })
+    expect(fakeDb.matches.map.get(restored).supersededClaims).toEqual(['laptop-1'])
+    // a file of a copy that was itself continued from another: both, newest first
+    await restoreMatchInPlace(restored, backup({ scorerClaim: 'phone-1', supersededClaims: ['laptop-1'] }), { checkServer: async () => false })
+    expect(fakeDb.matches.map.get(restored).supersededClaims).toEqual(['phone-1', 'laptop-1'])
+    // a file of an older app: none
+    const old = await restoreMatchFromJson(backup({ scorerClaim: undefined }), { checkServer: async () => false, cloudLiveState: async () => null })
+    expect(fakeDb.matches.map.get(old).supersededClaims).toEqual([])
+  })
+
   it('replaces only this match: other local matches, their rows and jobs stay', async () => {
     const newId = await restoreMatchFromJson(backup())
 

@@ -52,6 +52,7 @@ describe('relay key and payload (scorer)', () => {
   // the claim goes out as device.claim to the relay alone, never to the room's tablets
   it('leaves the device\'s venue claim out of the match the relay hands on', () => {
     expect(relayMatchPayload({ id: 1, seed_key: SEED, scorerClaim: 'c-1' }, null).match).not.toHaveProperty('scorerClaim')
+    expect(relayMatchPayload({ id: 1, seed_key: SEED, supersededClaims: ['c-0'] }, null).match).not.toHaveProperty('supersededClaims')
   })
 
   it('stamps the sync with the live-state order marked before the reads', () => {

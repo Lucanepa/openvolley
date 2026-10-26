@@ -30,6 +30,10 @@
 //!     the device that took it over has been gone as long as a stale takeover
 //!     waits; the sockets of the previous device stop owning the room and are
 //!     told ({ type: 'scorer-moved' }). A sync without a claim is not checked;
+//!     the claims a sync names as the copies its device continued the match
+//!     from (`device.supersedes`, a backup restore) are refused the same way,
+//!     and since every sync of the newer copy names them, a restart of the
+//!     relay does not forget them;
 //!   - the liveState is kept across syncs only for the same owner / game PIN and
 //!     is mirrored as `data: { liveState }` for the LedBox bridge;
 //!   - only the relay host itself may take / release the main-instance lock, a
@@ -187,6 +191,10 @@ const HEARTBEAT: Duration = Duration::from_millis(300);
 /// Devices a room remembers as having lost it to another (sync `device.claim`).
 const MAX_MOVED_DEVICES: usize = 16;
 const MAX_CLAIM_LEN: usize = 64;
+/// Claims a sync names as the copies it continued from (`device.supersedes`),
+/// and those a room remembers.
+const MAX_SUPERSEDED_CLAIMS: usize = 8;
+const MAX_SUPERSEDED_PER_ROOM: usize = 32;
 /// Rate-limit window shared by every per-IP / per-connection counter.
 const RATE_WINDOW: Duration = Duration::from_secs(60);
 /// Wrong game-PIN claims per IP / connection per window before claims needing
@@ -277,6 +285,8 @@ pub struct AppState {
     scorers: Mutex<HashMap<String, (String, String)>>,
     /// match id -> (device id, claim) another device's sync took the room over from, oldest first
     moved_claims: Mutex<HashMap<String, Vec<(String, String)>>>,
+    /// match id -> claims the scorers' copies were continued from (sync `device.supersedes`), oldest first
+    superseded_claims: Mutex<HashMap<String, Vec<String>>>,
     pending: Mutex<HashMap<String, Pending>>,
     next_id: AtomicU64,
     /// Sign on phone sessions (memory only; the sweeper starts with the first one)
@@ -298,6 +308,7 @@ pub fn new_state(http_port: u16, ws_port: u16) -> Arc<AppState> {
         displaced: Mutex::new(HashMap::new()),
         scorers: Mutex::new(HashMap::new()),
         moved_claims: Mutex::new(HashMap::new()),
+        superseded_claims: Mutex::new(HashMap::new()),
         pending: Mutex::new(HashMap::new()),
         next_id: AtomicU64::new(1),
         sign: crate::sign::SignSessions::lan(),
@@ -1918,22 +1929,45 @@ fn sync_device_claim(v: Option<&Value>) -> Option<(String, String)> {
     Some((id.to_ascii_lowercase(), claim.to_string()))
 }
 
+/// The claims a sync names as the copies its device continued the match from
+/// (`device.supersedes`, a backup restore): older copies of the room's match,
+/// never its own claim; empty when none. Port of lanRelayCore `syncDeviceClaim`.
+fn sync_superseded_claims(v: Option<&Value>, own: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let Some(list) = v.and_then(|d| d.get("supersedes")).and_then(|l| l.as_array()) else {
+        return out;
+    };
+    for c in list.iter().take(MAX_SUPERSEDED_CLAIMS).filter_map(|c| c.as_str()) {
+        if !c.is_empty() && c.len() <= MAX_CLAIM_LEN && c != own && !out.iter().any(|o| o == c) {
+            out.push(c.to_string());
+        }
+    }
+    out
+}
+
 /// The room moved away from `device`'s claim: another device's sync took it
 /// over, and this one has not continued the match since (a new claim). The
 /// game PIN cannot tell (every device the match was scored on knows it). Once
 /// the device that took it over has been gone as long as a stale takeover
-/// waits, the match is the old one's again. Port of lanRelayCore `isMovedClaim`.
+/// waits, the match is the old one's again. Also moved: a claim the room's
+/// scorers name as one their copy was continued from (`device.supersedes`):
+/// the takeovers live in memory only, and after a restart of the relay a
+/// laptop's older copy synced after the phone that had continued the match
+/// took the room from it for good (2026-10-27). Port of lanRelayCore `isMovedClaim`.
 async fn is_moved_claim(state: &Arc<AppState>, match_id: &str, device: &(String, String)) -> bool {
     let finished = is_finished(state.matches.lock().await.get(match_id).and_then(|b| b.get("match")));
-    // Lock order: owners -> orphaned -> (conn_meta -> limits -> displaced) -> scorers -> moved_claims
+    // Lock order: owners -> orphaned -> (conn_meta -> limits -> displaced) -> scorers -> moved_claims -> superseded_claims
     let owners = state.owners.lock().await;
     let orphaned = state.orphaned_since.lock().await;
     let scorers = state.scorers.lock().await;
     let moved = state.moved_claims.lock().await;
+    let superseded = state.superseded_claims.lock().await;
     if !matches!(scorers.get(match_id), Some((id, _)) if *id != device.0) {
         return false;
     }
-    if !moved.get(match_id).map_or(false, |list| list.iter().any(|m| *m == *device)) {
+    if !moved.get(match_id).map_or(false, |list| list.iter().any(|m| *m == *device))
+        && !superseded.get(match_id).map_or(false, |list| list.iter().any(|c| *c == device.1))
+    {
         return false;
     }
     let grace = if finished { ORPHAN_TAKEOVER } else { STALE_TAKEOVER };
@@ -1946,15 +1980,27 @@ async fn is_moved_claim(state: &Arc<AppState>, match_id: &str, device: &(String,
 /// it over from another device, that device's claim is remembered as moved and
 /// its connections stop owning the room; returns them, to be told
 /// ('scorer-moved'). A takeover by another match (a reused id) starts afresh.
-/// Port of lanRelayCore `noteScorer`.
-async fn note_scorer(state: &Arc<AppState>, conn_id: u64, match_id: &str, device: (String, String), kind: ClaimKind) -> Vec<u64> {
+/// The claims its copy was continued from (`supersedes`) are older copies from
+/// now on, its own claim never. Port of lanRelayCore `noteScorer`.
+async fn note_scorer(state: &Arc<AppState>, conn_id: u64, match_id: &str, device: (String, String), supersedes: Vec<String>, kind: ClaimKind) -> Vec<u64> {
     let fresh = matches!(kind, ClaimKind::Takeover | ClaimKind::New);
     let mut owners = state.owners.lock().await;
     let mut meta = state.conn_meta.lock().await;
     let mut scorers = state.scorers.lock().await;
     let mut moved = state.moved_claims.lock().await;
+    let mut superseded = state.superseded_claims.lock().await;
     if fresh {
         moved.remove(match_id);
+        superseded.remove(match_id);
+    }
+    if !supersedes.is_empty() || superseded.contains_key(match_id) {
+        let older = superseded.entry(match_id.to_string()).or_default();
+        older.retain(|c| *c != device.1 && !supersedes.contains(c));
+        // re-added as the newest
+        older.extend(supersedes);
+        while older.len() > MAX_SUPERSEDED_PER_ROOM {
+            older.remove(0);
+        }
     }
     if let Some(m) = meta.get_mut(&conn_id) {
         m.scorer_device = Some(device.0.clone());
@@ -2021,6 +2067,7 @@ async fn delete_match(state: &Arc<AppState>, match_id: &str) {
     state.displaced.lock().await.remove(match_id);
     state.scorers.lock().await.remove(match_id);
     state.moved_claims.lock().await.remove(match_id);
+    state.superseded_claims.lock().await.remove(match_id);
     for owned in state.owners.lock().await.values_mut() {
         owned.remove(match_id);
     }
@@ -2075,6 +2122,7 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
             }
             // A claim another device took over: refused before any PIN is compared
             let device = sync_device_claim(data.get("device"));
+            let supersedes = device.as_ref().map_or_else(Vec::new, |d| sync_superseded_claims(data.get("device"), &d.1));
             if let Some(d) = &device {
                 if is_moved_claim(state, &match_id, d).await {
                     if let Some(owned) = state.owners.lock().await.get_mut(&conn_id) {
@@ -2103,7 +2151,7 @@ async fn handle_ws_message(state: &Arc<AppState>, conn_id: u64, tx: &Tx, text: &
                 }
             }
             if let Some(d) = device {
-                for cid in note_scorer(state, conn_id, &match_id, d, kind).await {
+                for cid in note_scorer(state, conn_id, &match_id, d, supersedes, kind).await {
                     send_to(state, cid, &json!({ "type": "scorer-moved", "matchId": match_id, "timestamp": now_ms() })).await;
                 }
             }
@@ -2891,6 +2939,67 @@ mod tests {
         leave(&state, 2, "1", STALE_TAKEOVER + Duration::from_secs(1)).await;
         handle_ws_message(&state, 3, &tx, &sync(json!({ "id": PHONE, "claim": "a" }), 3)).await;
         assert!(errors(&all(&mut rx)).is_empty());
+    }
+
+    // 2026-10-27 review: the takeover lived in memory only. After a restart
+    // of the relay (a new state) the phone that had continued the match from
+    // the laptop's backup synced first, the laptop's older copy took the
+    // room, and every later phone sync was refused ('scorer-moved')
+    #[tokio::test]
+    async fn after_a_restart_the_copy_a_device_continued_from_cannot_take_the_room() {
+        const LAPTOP: &str = "0a0a0a0a-1111-4111-8111-000000000001";
+        const PHONE: &str = "0b0b0b0b-2222-4222-8222-000000000002";
+        let all = |rx: &mut mpsc::UnboundedReceiver<Message>| -> Vec<Value> {
+            let mut out = Vec::new();
+            while let Ok(Message::Text(t)) = rx.try_recv() {
+                out.push(serde_json::from_str(&t).unwrap());
+            }
+            out
+        };
+        let sync = |device: Value, home: u32| json!({
+            "type": "sync-match-data", "matchId": "1", "match": bundle(1, "111111", "live")["match"].clone(),
+            "sets": [{ "index": 1, "homePoints": home, "awayPoints": 0 }], "device": device
+        }).to_string();
+        let errors = |msgs: &[Value]| msgs.iter().filter(|m| m["type"] == json!("error")).map(|m| m["code"].clone()).collect::<Vec<_>>();
+        // The phone restored the laptop's backup: its claim names the laptop's
+        let phone_device = json!({ "id": PHONE, "claim": "phone-1", "supersedes": ["laptop-1"] });
+        let laptop_device = json!({ "id": LAPTOP, "claim": "laptop-1" });
+
+        for phone_first in [true, false] {
+            let state = new_state(0, 0);
+            let mut rxs = HashMap::new();
+            let mut txs = HashMap::new();
+            for (id, ip) in [(1u64, "192.168.1.10"), (2, "192.168.1.11"), (3, "192.168.1.20")] {
+                connect(&state, id, ip).await;
+                let (tx, rx) = mpsc::unbounded_channel::<Message>();
+                state.clients.lock().await.insert(id, tx.clone());
+                txs.insert(id, tx);
+                rxs.insert(id, rx);
+            }
+            if phone_first {
+                handle_ws_message(&state, 2, &txs[&2], &sync(phone_device.clone(), 20)).await;
+            }
+            handle_ws_message(&state, 1, &txs[&1], &sync(laptop_device.clone(), 3)).await;
+            if !phone_first {
+                // the laptop has the room until the phone's next sync
+                handle_ws_message(&state, 2, &txs[&2], &sync(phone_device.clone(), 20)).await;
+                handle_ws_message(&state, 1, &txs[&1], &sync(laptop_device.clone(), 3)).await;
+            }
+            assert_eq!(errors(&all(rxs.get_mut(&1).unwrap())).last(), Some(&json!("scorer-moved")), "phone first: {phone_first}");
+            handle_ws_message(&state, 3, &txs[&3], &json!({ "type": "subscribe-match", "matchId": "1", "pin": "314159" }).to_string()).await;
+            all(rxs.get_mut(&3).unwrap());
+            handle_ws_message(&state, 2, &txs[&2], &sync(phone_device.clone(), 21)).await;
+            assert!(errors(&all(rxs.get_mut(&2).unwrap())).is_empty(), "phone first: {phone_first}");
+            assert_eq!(all(rxs.get_mut(&3).unwrap()).last().unwrap()["sets"][0]["homePoints"], json!(21));
+
+            // the laptop continues it again from the phone's backup: its new
+            // claim takes the room, the phone's is the older copy now
+            handle_ws_message(&state, 1, &txs[&1], &sync(json!({ "id": LAPTOP, "claim": "laptop-2", "supersedes": ["phone-1", "laptop-1"] }), 22)).await;
+            assert!(errors(&all(rxs.get_mut(&1).unwrap())).is_empty());
+            handle_ws_message(&state, 2, &txs[&2], &sync(phone_device.clone(), 21)).await;
+            assert_eq!(errors(&all(rxs.get_mut(&2).unwrap())), vec![json!("scorer-moved")]);
+            assert_eq!(all(rxs.get_mut(&3).unwrap()).last().unwrap()["sets"][0]["homePoints"], json!(22));
+        }
     }
 
     #[tokio::test]
