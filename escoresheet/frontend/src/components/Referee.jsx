@@ -28,6 +28,7 @@ import { backdropDismiss } from '../ui/backdropDismiss.js'
 import PlayerDisc from './referee/PlayerDisc.jsx'
 import ScoreServeRow from './referee/ScoreServeRow.jsx'
 import { matchDiscPaint, teamLiberoColour, teamBoxStyle } from '../utils/teamColours.js'
+import { compareBySeq } from '../domain/describe'
 import { useTheme } from '../utils/theme'
 import { themeMenuItems } from './themeMenuItems'
 import { discCapPx, discMetrics } from './referee/discSizing.js'
@@ -184,6 +185,11 @@ function useSyncedFontSize(texts, containerWidth, baseFontSize, minFontSize, isS
 
   return result
 }
+
+// Newest first in the order the scorer recorded the events (seq), not by
+// their time: the scorer's clock set back mid-set made every event after the
+// change look older than the last one before it (stress test 2026-10-25)
+const newestFirst = (a, b) => compareBySeq(b, a)
 
 export default function Referee({ matchId, onExit, isMasterMode }) {
   const { t } = useTranslation()
@@ -1406,11 +1412,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
     const pointEvents = data.events
       .filter(e => e.type === 'point' && e.setIndex === data.currentSet.index)
-      .sort((a, b) => {
-        const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-        const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-        return bTime - aTime
-      })
+      .sort(newestFirst)
 
     if (pointEvents.length === 0) {
       return currentSetFirstServe
@@ -1681,7 +1683,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
     const currentSetSubs = data.events
       .filter(e => e.type === 'substitution' && e.payload?.team === teamKey && e.setIndex === data.currentSet.index)
-      .sort((a, b) => new Date(b.ts) - new Date(a.ts))
+      .sort(newestFirst)
 
     // Find if this player came in as a substitute
     const subIn = currentSetSubs.find(s => String(s.payload?.playerIn) === String(playerNumber))

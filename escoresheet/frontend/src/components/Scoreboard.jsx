@@ -67,7 +67,7 @@ import { validateReopenedRoster, referencedPlayerNumbers, renumberPlayerInEvents
 import { appendRemark, removeRemarkLine, eventRemark, remarkClock, setActualStartRemark } from '../domain/remarks'
 import { LINEUP_POSITIONS, lineupEntryErrors, lineupCandidates, lineupCaptainStatus, teamCaptainNumber, gameCaptainOptions, initialGameCaptainChoice, lineupGameCaptainDecision } from '../domain/lineupEntry'
 import { easyLiberoNumbers, easyLiberoErrors, easyRosterChanges, liberoSlotEditable, MAX_LIBEROS, easyPlayerRow, newPlayerMayEnter, newPlayerError, NEW_PLAYER_ERRORS, easyReferencedNumbers, isEasyStray } from '../domain/easyMatch'
-import { describeEventText } from '../domain/describe'
+import { describeEventText, compareBySeq } from '../domain/describe'
 import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal } from '../domain/matchEnd'
 import { savedSidesOfRegularSets } from '../domain/coinToss'
@@ -369,6 +369,12 @@ const scoreboardKey = (matchId) => `scoreboard:${matchId}`
  * screen before it stays until then.
  */
 export const preloadScoreboard = (matchId) => preload(scoreboardKey(matchId), () => readScoreboard(matchId))
+
+// Newest first in the order the events were recorded (seq), not by their
+// time: the device clock set back mid-set made every event recorded after
+// the change look older than the last one before it, and the serve and the
+// side-out rotations followed those (stress test 2026-10-25)
+const newestFirst = (a, b) => compareBySeq(b, a)
 
 export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onFinishSet, onOpenSetup, onOpenMatchSetup, onOpenCoinToss, onTriggerEventBackup }) {
   // diagnostics mode: React commits per user action (nothing while it is off)
@@ -3823,7 +3829,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           e.setIndex === data.set.index &&
           e.payload?.isInitial
         )
-        .sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
+        .sort(newestFirst) // Most recent first
 
       const initialLineup = initialLineups[0]
       if (!initialLineup || !initialLineup.payload?.lineup) return null
@@ -4922,11 +4928,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Find the last point event in the current set to determine serve
     const pointEvents = data.events
       .filter(e => e.type === 'point' && e.setIndex === data.set.index)
-      .sort((a, b) => {
-        const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-        const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-        return bTime - aTime // Most recent first
-      })
+      .sort(newestFirst) // Most recent first
 
     if (pointEvents.length === 0) {
       return currentSetFirstServe
@@ -5111,11 +5113,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         .toArray()
       const pointEventsBefore = allEventsBeforePoint
         .filter(e => e.type === 'point' && e.setIndex === freshCurrentSet.index)
-        .sort((a, b) => {
-          const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-          const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-          return bTime - aTime // Most recent first
-        })
+        .sort(newestFirst) // Most recent first
 
       // Calculate first serve for current set based on alternation pattern
       // Set 1: firstServe, Set 2: opposite, Set 3: same as Set 1, etc.
@@ -5175,7 +5173,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           .toArray()
         const teamLineupEvents = allLineupEvents
           .filter(e => e.type === 'lineup' && e.payload?.team === teamKey && e.setIndex === setIndex)
-          .sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
+          .sort(newestFirst) // Most recent first
 
         let currentLineup = null
         let liberoSubstitution = null
@@ -5245,7 +5243,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   e.payload?.team === teamKey &&
                   e.setIndex === setIndex
                 )
-                .sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
+                .sort(newestFirst) // Most recent first
 
               let originalPlayerNumber = null
 
@@ -5480,7 +5478,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         e.payload?.team === otherTeamKey &&
         e.setIndex === data.set.index &&
         e.payload?.reason === 'rotation_to_front_row'
-      ).sort((a, b) => new Date(b.ts) - new Date(a.ts))
+      ).sort(newestFirst)
 
       if (otherTeamLiberoExits.length > 0) {
         const lastLiberoExit = otherTeamLiberoExits[0]
@@ -5495,7 +5493,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             e.type === 'lineup' &&
             e.payload?.team === otherTeamKey &&
             e.setIndex === data.set.index
-          ).sort((a, b) => new Date(b.ts) - new Date(a.ts))
+          ).sort(newestFirst)
 
           if (otherTeamLineupEvents.length > 0) {
             const otherTeamLineup = otherTeamLineupEvents[0].payload?.lineup
@@ -7918,7 +7916,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // Check if there was a point change between two events
   const hasPointChangeBetween = useCallback((event1Index, event2Index, setIndex) => {
     if (!data?.events) return false
-    const setEvents = data.events.filter(e => (e.setIndex || 1) === setIndex).sort((a, b) => new Date(a.ts) - new Date(b.ts))
+    const setEvents = data.events.filter(e => (e.setIndex || 1) === setIndex).sort(compareBySeq)
 
     let pointsBefore = { home: 0, away: 0 }
     let pointsAfter = { home: 0, away: 0 }
@@ -7947,7 +7945,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     const substitutions = data.events
       .filter(e => e.type === 'substitution' && e.payload?.team === teamKey && e.setIndex === data.set.index)
-      .sort((a, b) => new Date(a.ts) - new Date(b.ts))
+      .sort(compareBySeq)
       .map((e, idx) => ({
         ...e,
         index: idx,
@@ -8145,7 +8143,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const hasComeBack = substitutions.some(s =>
         String(s.payload?.playerOut) === String(playerWhoCameIn) &&
         String(s.payload?.playerIn) === String(playerNumber) &&
-        new Date(s.ts) > new Date(lastSubOut.ts)
+        compareBySeq(s, lastSubOut) > 0
       )
 
       if (hasComeBack) {
@@ -8166,7 +8164,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const lastSubstitutionIndex = lastSubIn.eventIndex
       const eventsAfterSub = data.events
         .filter((e, idx) => idx > lastSubstitutionIndex && (e.setIndex || 1) === data.set.index)
-        .sort((a, b) => new Date(a.ts) - new Date(b.ts))
+        .sort(compareBySeq)
 
       const pointAfterSub = eventsAfterSub.find(e => e.type === 'point')
 
@@ -8176,7 +8174,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const hasComeBack = substitutions.some(s =>
           String(s.payload?.playerOut) === String(playerNumber) &&
           String(s.payload?.playerIn) === String(originalPlayerOut) &&
-          new Date(s.ts) > new Date(lastSubIn.ts)
+          compareBySeq(s, lastSubIn) > 0
         )
 
         if (hasComeBack) {
@@ -8269,7 +8267,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const lastSubstitutionIndex = lastSubstitution.eventIndex
       const eventsAfterSub = data.events
         .filter((e, idx) => idx > lastSubstitutionIndex && (e.setIndex || 1) === data.set.index)
-        .sort((a, b) => new Date(a.ts) - new Date(b.ts))
+        .sort(compareBySeq)
 
       const pointAfterSub = eventsAfterSub.find(e => e.type === 'point')
 
@@ -8279,7 +8277,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const hasComeBack = substitutions.some(s =>
           String(s.payload?.playerOut) === String(playerOutNumber) &&
           String(s.payload?.playerIn) === String(originalPlayerOut) &&
-          new Date(s.ts) > new Date(lastSubstitution.ts)
+          compareBySeq(s, lastSubstitution) > 0
         )
 
         if (!hasComeBack) {
@@ -8348,7 +8346,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const hasComeBackForSpecificPlayer = substitutions.some(s =>
         String(s.payload?.playerOut) === String(playerTheyWereSubstitutedFor) &&
         String(s.payload?.playerIn) === String(player.number) &&
-        new Date(s.ts) > new Date(lastSubstitutionOut.ts)
+        compareBySeq(s, lastSubstitutionOut) > 0
       )
 
       // If they came back, they've completed a cycle and cannot be substituted again (except exceptional)
@@ -8368,7 +8366,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       const lastSubstitutionIndex = lastSubstitutionOut.eventIndex
       const eventsAfterSub = data.events
         .filter((e, idx) => idx > lastSubstitutionIndex && (e.setIndex || 1) === data.set.index)
-        .sort((a, b) => new Date(a.ts) - new Date(b.ts))
+        .sort(compareBySeq)
 
       const pointAfterSub = eventsAfterSub.find(e => e.type === 'point')
 
@@ -8471,7 +8469,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Check if there was a point change since substitution
     const eventsAfterSub = data.events
       .filter((e, idx) => idx > lastSubstitutionIndex && (e.setIndex || 1) === data.set.index)
-      .sort((a, b) => new Date(a.ts) - new Date(b.ts))
+      .sort(compareBySeq)
 
     const pointAfterSub = eventsAfterSub.find(e => e.type === 'point')
 
@@ -8480,7 +8478,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Check if player has already come back
     const hasComeBack = substitutions.some(s =>
       String(s.payload?.playerIn) === String(playerNumber) &&
-      new Date(s.ts) > new Date(lastSubstitution.ts)
+      compareBySeq(s, lastSubstitution) > 0
     )
 
     if (hasComeBack) return false // Already came back
@@ -8711,7 +8709,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       (e.type === 'libero_entry' || e.type === 'libero_exit' || e.type === 'libero_exchange') &&
       e.payload?.team === teamKey &&
       e.setIndex === data.set.index
-    ).sort((a, b) => new Date(b.ts) - new Date(a.ts))
+    ).sort(newestFirst)
 
     if (liberoEvents.length === 0) return true // No libero exchange yet, allow
 
@@ -8736,19 +8734,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           e.payload?.reason !== 'declared' &&
           e.payload?.reason !== undefined)
       )
-    ).sort((a, b) => new Date(b.ts) - new Date(a.ts))
+    ).sort(newestFirst)
 
     if (specialEvents.length > 0) {
       const lastSpecialEvent = specialEvents[0]
 
-      if (new Date(lastSpecialEvent.ts) > new Date(lastLiberoEvent.ts)) {
+      if (compareBySeq(lastSpecialEvent, lastLiberoEvent) > 0) {
         // If this is a redesignation, only allow immediate entry for FIRST entry
         if (lastSpecialEvent.type === 'libero_redesignation') {
           const entriesSinceRedesignation = data.events.filter(e =>
             e.setIndex === data.set.index &&
             e.type === 'libero_entry' &&
             e.payload?.team === teamKey &&
-            new Date(e.ts) > new Date(lastSpecialEvent.ts)
+            compareBySeq(e, lastSpecialEvent) > 0
           )
 
           // If redesignated libero already entered, require point for subsequent entries
@@ -11819,7 +11817,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         e.payload?.team === team &&
         e.setIndex === data.set.index &&
         e.payload?.reason === 'rotation_to_front_row'
-      ).sort((a, b) => new Date(b.ts) - new Date(a.ts))[0]
+      ).sort(newestFirst)[0]
 
       if (exitEvent) {
         setLiberoSuggestionDismissedForExit(prev => ({
@@ -11865,7 +11863,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     let originalPlayerNumber = liberoOnCourt.playerNumber
     if (!originalPlayerNumber && lineupEvents.length > 0) {
       // Look through previous lineup events to find the most recent non-libero player at this position
-      const sortedLineupEvents = [...lineupEvents].sort((a, b) => new Date(b.ts) - new Date(a.ts)) // Most recent first
+      const sortedLineupEvents = [...lineupEvents].sort(newestFirst) // Most recent first
       const teamPlayers = teamKey === 'home' ? data.homePlayers : data.awayPlayers
       for (const event of sortedLineupEvents) {
         const lineup = event.payload?.lineup
@@ -14029,14 +14027,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         // Find which player on court this bench player replaced (if they were substituted in)
                         const substitutionWherePlayerIn = substitutions
                           .filter(s => String(s.payload?.playerIn) === String(player.number))
-                          .sort((a, b) => new Date(b.ts) - new Date(a.ts))[0] // Get most recent
+                          .sort(newestFirst)[0] // Get most recent
                         const playerOnCourtReplaced = substitutionWherePlayerIn?.payload?.playerOut || null
 
                         // Find who replaced this player when they were substituted out (for yellow-background display)
                         const playerWhoReplacedThem = wasSubstitutedOut ? (() => {
                           const subEvent = substitutions
                             .filter(s => String(s.payload?.playerOut) === String(player.number))
-                            .sort((a, b) => new Date(b.ts) - new Date(a.ts))[0]
+                            .sort(newestFirst)[0]
                           return subEvent?.payload?.playerIn || null
                         })() : null
 
@@ -14102,7 +14100,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           // Player was substituted out - can only swap with the player who replaced them
                           const subEvent = substitutions
                             .filter(s => String(s.payload?.playerOut) === String(player.number))
-                            .sort((a, b) => new Date(b.ts) - new Date(a.ts))[0]
+                            .sort(newestFirst)[0]
                           if (subEvent?.payload?.playerIn) {
                             // Get the CURRENT position of the player who replaced them (not the original position from the sub event)
                             // The position may have changed due to rotations
@@ -17451,14 +17449,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         // Find which player on court this bench player replaced (if they were substituted in)
                         const substitutionWherePlayerIn = substitutions
                           .filter(s => String(s.payload?.playerIn) === String(player.number))
-                          .sort((a, b) => new Date(b.ts) - new Date(a.ts))[0] // Get most recent
+                          .sort(newestFirst)[0] // Get most recent
                         const playerOnCourtReplaced = substitutionWherePlayerIn?.payload?.playerOut || null
 
                         // Find who replaced this player when they were substituted out (for yellow-background display)
                         const playerWhoReplacedThem = wasSubstitutedOut ? (() => {
                           const subEvent = substitutions
                             .filter(s => String(s.payload?.playerOut) === String(player.number))
-                            .sort((a, b) => new Date(b.ts) - new Date(a.ts))[0]
+                            .sort(newestFirst)[0]
                           return subEvent?.payload?.playerIn || null
                         })() : null
 
@@ -17524,7 +17522,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           // Player was substituted out - can only swap with the player who replaced them
                           const subEvent = substitutions
                             .filter(s => String(s.payload?.playerOut) === String(player.number))
-                            .sort((a, b) => new Date(b.ts) - new Date(a.ts))[0]
+                            .sort(newestFirst)[0]
                           if (subEvent?.payload?.playerIn) {
                             // Get the CURRENT position of the player who replaced them (not the original position from the sub event)
                             // The position may have changed due to rotations
