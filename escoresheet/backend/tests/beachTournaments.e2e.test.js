@@ -491,6 +491,60 @@ describe('beach tournaments end to end', { skip: SKIP }, () => {
     assert.deepEqual(games, Array.from({ length: games.length }, (_, i) => i + 1))
   })
 
+  it('a result or a withdrawal from an outdated screen is refused, never credited to another pair', async () => {
+    const t = okData(await call(users.max, 'POST', '/api/beach/tournaments', { title: 'Stale Cup', starts_on: '2026-07-18', ends_on: '2026-07-18', courts: 2 }), 201).tournament
+    const d = okData(await call(users.max, 'POST', `/api/beach/tournaments/${t.id}/draws`, { gender: 'women', category: 'S1' }), 201).draw
+    for (let i = 1; i <= 8; i++) {
+      okData(await call(users.max, 'POST', `/api/beach/draws/${d.id}/entries`, { player1: { last: `S${i}a` }, player2: { last: `S${i}b` } }), 201)
+    }
+    okData(await call(users.max, 'POST', `/api/beach/draws/${d.id}/generate`, {}))
+    const matches = async () => new Map(okData(await get(users.max, `/api/beach/tournaments/${t.id}`)).matches.map((m) => [m.code, m]))
+    // what manager-beach's ResultModal sends: the match as its screen shows it
+    const screen = (m) => ({ winner_entry_id: m.winner_entry_id, result: m.result, sets: m.sets, entry1_id: m.entry1_id, entry2_id: m.entry2_id })
+    const result = (m, winner, expect) => call(users.max, 'POST', `/api/beach/tmatches/${m.id}/result`, {
+      winner, sets: winner === 1 ? [[21, 15], [21, 15]] : [[15, 21], [15, 21]], ...(expect ? { expect } : {})
+    })
+    const withdraw = (m, expect) => call(users.max, 'DELETE', `/api/beach/tmatches/${m.id}/result${expect ? `?expect=${encodeURIComponent(JSON.stringify(expect))}` : ''}`)
+    let ms = await matches()
+    const w1 = ms.get('W1')
+    const dep = [...ms.values()].find((m) => m.source1 === 'winner:W1' || m.source2 === 'winner:W1')
+    const feeder = (dep.source1 === 'winner:W1' ? dep.source2 : dep.source1).slice('winner:'.length)
+    okData(await result(w1, 1, screen(w1)))
+    okData(await result(ms.get(feeder), 1))
+    ms = await matches()
+    const w1first = ms.get('W1')
+    // manager A's screen: the dependent match with W1's winner X in it, no result yet
+    const seen = ms.get(dep.code)
+    const sideX = seen.source1 === 'winner:W1' ? 1 : 2
+    const x = sideX === 1 ? seen.entry1_id : seen.entry2_id
+    // co-manager B corrects W1: Z won, so Z replaces X in the dependent match
+    okData(await result(w1first, 2, screen(w1first)))
+    ms = await matches()
+    assert.equal([ms.get(dep.code).entry1_id, ms.get(dep.code).entry2_id].includes(x), false, 'X is no longer in the match')
+    // A saves "X won" from the outdated screen: refused, with the match as it is now
+    const r = await result(seen, sideX, screen(seen))
+    expectCode(r, 409, 'OV_MATCH_TEAMS_CHANGED')
+    assert.equal(r.json.error.details.match.id, seen.id)
+    assert.deepEqual([r.json.error.details.match.entry1_id, r.json.error.details.match.entry2_id], [ms.get(dep.code).entry1_id, ms.get(dep.code).entry2_id])
+    ms = await matches()
+    assert.equal(ms.get(dep.code).winner_entry_id, null, 'nothing stored')
+    assert.equal(ms.get(dep.code).status, 'ready')
+    expectCode(await result(seen, sideX, { ...screen(seen), entry1_id: 'not-an-id' }), 400, 'OV_INVALID_REQUEST')
+    // a screen with the current teams saves; a withdrawal without expect (an older app) still works
+    okData(await result(ms.get(dep.code), sideX, screen(ms.get(dep.code))))
+    okData(await call(users.max, 'DELETE', `/api/beach/tmatches/${ms.get(dep.code).id}/result`))
+
+    // a withdrawal from a screen that still shows W1's first result: B's correction stays
+    expectCode(await withdraw(w1, screen(w1first)), 409, 'OV_RESULT_CHANGED')
+    ms = await matches()
+    assert.equal(ms.get('W1').winner_entry_id, w1first.entry2_id, 'the correction is kept')
+    expectCode(await call(users.max, 'DELETE', `/api/beach/tmatches/${w1.id}/result?expect=%7Bnope`), 400, 'OV_INVALID_REQUEST')
+    expectCode(await withdraw(w1, { ...screen(ms.get('W1')), sets: 'x' }), 400, 'OV_INVALID_REQUEST')
+    // from the current screen it goes; the same outdated screen again is refused
+    assert.equal(okData(await withdraw(w1, screen(ms.get('W1')))).match.winner_entry_id, null)
+    expectCode(await withdraw(w1, screen(ms.get('W1'))), 409, 'OV_RESULT_CHANGED')
+  })
+
   it('deleting a tournament that has not begun removes everything', async () => {
     const t = okData(await call(users.max, 'POST', '/api/beach/tournaments', { title: 'Kurz', starts_on: '2026-08-01', ends_on: '2026-08-01', courts: 1 }), 201).tournament
     expectCode(await call(users.mia, 'DELETE', `/api/beach/tournaments/${t.id}`), 404)

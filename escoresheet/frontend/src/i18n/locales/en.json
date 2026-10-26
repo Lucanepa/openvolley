@@ -3358,6 +3358,7 @@
       "noManager": "No OpenBeach competition manager has this email.",
       "slotConflict": "This slot does not fit the schedule.",
       "resultChanged": "Someone else changed this result meanwhile. Have another look.",
+      "teamsChanged": "The pairs of this match changed meanwhile: a result before it was corrected. Have another look.",
       "drawExists": "The tournament already has a draw of this category and gender."
     },
     "import": {

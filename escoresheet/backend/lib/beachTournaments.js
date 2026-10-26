@@ -1079,13 +1079,48 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     if (has(expect, 'sets') && JSON.stringify(expect.sets ?? null) !== JSON.stringify(cur.sets)) return true
     return false
   }
+  /**
+   * Whether the teams of the match differ from `expect` (entry1_id and
+   * entry2_id, only when given). A correction upstream puts another pair
+   * into a match that has no result yet; `winner` names a side, so a screen
+   * loaded before it would credit a pair that never played the match.
+   */
+  function teamsChangedSince (m, expect) {
+    return ['entry1_id', 'entry2_id'].some((k) => has(expect, k) && (expect[k]?.toLowerCase() ?? null) !== (m[k] ?? null))
+  }
+  /** `expect` of a result or a withdrawal: null when well-formed, else the 400 answer. */
+  function expectError (expect) {
+    if (!isPlainObject(expect)) return invalid('expect: an object { winner_entry_id, result, sets, entry1_id, entry2_id }')
+    for (const k of ['winner_entry_id', 'entry1_id', 'entry2_id']) {
+      if (has(expect, k) && expect[k] !== null && !isUuid(expect[k])) return invalid(`expect.${k}: an entry id or null`)
+    }
+    if (has(expect, 'result') && expect.result !== null && !RESULT_KINDS.includes(expect.result)) return invalid(`expect.result: ${RESULT_KINDS.join(', ')} or null`)
+    if (has(expect, 'sets') && expect.sets !== null && !Array.isArray(expect.sets)) return invalid('expect.sets: a list or null')
+    return null
+  }
+  /** Refuses (409) when the match the caller's screen showed (`expect`) is no longer the stored one. */
+  function checkExpect (m, expect) {
+    if (expect === undefined) return
+    if (teamsChangedSince(m, expect)) {
+      throw abort(fail(409, 'OV_MATCH_TEAMS_CHANGED', 'The teams of this match changed meanwhile', { match: tmatchOut(m) }))
+    }
+    // the result the caller last saw: someone else's result entered or
+    // withdrawn meanwhile is never overwritten silently
+    if (changedSince(m, expect)) {
+      throw abort(fail(409, 'OV_RESULT_CHANGED', 'The result of this match was changed meanwhile', { match: tmatchOut(m) }))
+    }
+  }
 
   /**
    * POST result { winner: 1|2, result: played|retired|forfeit|walkover, sets?, expect? }
    * (1 = entry1). A new result or a correction; refused when a match that
    * uses this one's winner or loser has begun. `expect` { winner_entry_id,
-   * result, sets } is the result the caller's screen showed (all null for a
-   * first entry): 409 OV_RESULT_CHANGED when the stored one differs.
+   * result, sets, entry1_id, entry2_id } is the match the caller's screen
+   * showed (the result all null for a first entry): 409
+   * OV_MATCH_TEAMS_CHANGED when its teams are no longer the stored ones,
+   * 409 OV_RESULT_CHANGED when the stored result differs (both with the
+   * match as it is now). Older apps send no entry ids: their teams are not
+   * compared.
    */
   async function enterResult ({ user, access, id, body }) {
     if (!isPlainObject(body)) return invalid('body: must be an object')
@@ -1095,10 +1130,8 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     if (!RESULT_KINDS.includes(kind)) return invalid(`result: ${RESULT_KINDS.join(', ')}`)
     const expect = body.expect
     if (expect !== undefined) {
-      if (!isPlainObject(expect)) return invalid('expect: an object { winner_entry_id, result, sets }')
-      if (has(expect, 'winner_entry_id') && expect.winner_entry_id !== null && !isUuid(expect.winner_entry_id)) return invalid('expect.winner_entry_id: an entry id or null')
-      if (has(expect, 'result') && expect.result !== null && !RESULT_KINDS.includes(expect.result)) return invalid(`expect.result: ${RESULT_KINDS.join(', ')} or null`)
-      if (has(expect, 'sets') && expect.sets !== null && !Array.isArray(expect.sets)) return invalid('expect.sets: a list or null')
+      const e = expectError(expect)
+      if (e) return e
     }
     return guarded('result', () => withTx(async (client) => {
       const t = await requireVia(client, 'tmatch', id, user, access, { edit: true })
@@ -1108,13 +1141,9 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
       if (err) throw abort(invalid(`sets: ${err}`))
       const { rows: list } = await client.query('SELECT * FROM public.beach_tmatches WHERE draw_id = $1 ORDER BY game_n FOR UPDATE', [d.id])
       const m = list.find((x) => x.id === id)
+      checkExpect(m, expect)
       if (!m.entry1_id || !m.entry2_id) throw abort(fail(409, 'OV_MATCH_NOT_READY', 'Both teams of this match are not known yet'))
       if (m.match_id) throw abort(fail(409, 'OV_MATCH_LINKED', 'This match is scored on a court tablet'))
-      // the result the caller last saw (optional): someone else's result
-      // entered meanwhile is never overwritten silently
-      if (expect !== undefined && changedSince(m, expect)) {
-        throw abort(fail(409, 'OV_RESULT_CHANGED', 'The result of this match was changed meanwhile', { match: tmatchOut(m) }))
-      }
       const winnerId = winner === 1 ? m.entry1_id : m.entry2_id
       const wasEnded = m.status === 'finished' || m.status === 'walkover'
       if (wasEnded && m.winner_entry_id !== winnerId) {
@@ -1136,14 +1165,27 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     }))
   }
 
-  /** DELETE result: the match is open again (refused when a dependent match has begun). */
-  async function withdrawResult ({ user, access, id }) {
+  /**
+   * DELETE result[?expect=<JSON>]: the match is open again (refused when a
+   * dependent match has begun). `expect` is the same as a result's, as JSON
+   * in the query (a DELETE has no body): a screen that showed another
+   * result, or other teams, does not remove a correction it never saw.
+   */
+  async function withdrawResult ({ user, access, id, query }) {
+    let expect
+    const raw = query?.get?.('expect')
+    if (raw != null) {
+      try { expect = JSON.parse(raw) } catch { return invalid('expect: JSON') }
+      const e = expectError(expect)
+      if (e) return e
+    }
     return guarded('withdraw', () => withTx(async (client) => {
       const t = await requireVia(client, 'tmatch', id, user, access, { edit: true })
       const { rows: [m0] } = await client.query('SELECT draw_id FROM public.beach_tmatches WHERE id = $1', [id])
       const d = await lockDraw(client, m0.draw_id)
       const { rows: list } = await client.query('SELECT * FROM public.beach_tmatches WHERE draw_id = $1 ORDER BY game_n FOR UPDATE', [d.id])
       const m = list.find((x) => x.id === id)
+      checkExpect(m, expect)
       if (m.status !== 'finished' && m.status !== 'walkover') throw abort(fail(409, 'OV_NO_RESULT', 'This match has no result'))
       if (m.match_id) throw abort(fail(409, 'OV_MATCH_LINKED', 'This match is scored on a court tablet'))
       const locked = lockedDependents(list, m.code)
