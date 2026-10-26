@@ -462,10 +462,17 @@ export const RELAY_RECONNECT_MAX_MS = 60000
  * Delay before reconnect attempt `attempt` (0 = first after a drop): 5 s,
  * 10 s, 20 s, 40 s, then 60 s. A relay that is not there (offline hall on a
  * cloud build) is not hammered with a new socket every few seconds.
+ * Each step is spread over its second half (2.5-5 s, 5-10 s, ...): after a
+ * backend restart every scorer of the country lost its socket at the same
+ * instant and reconnected, re-sending its whole match, at the same instant
+ * (national peak load test 2026-10-26). Never later than before.
+ * @param {number} attempt
+ * @param {() => number} [random] jitter source in [0, 1) (tests)
  */
-export function relayReconnectDelay(attempt) {
+export function relayReconnectDelay(attempt, random = Math.random) {
   const n = Math.max(0, Math.min(Number(attempt) || 0, 16))
-  return Math.min(RELAY_RECONNECT_BASE_MS * 2 ** n, RELAY_RECONNECT_MAX_MS)
+  const step = Math.min(RELAY_RECONNECT_BASE_MS * 2 ** n, RELAY_RECONNECT_MAX_MS)
+  return Math.round(step * (0.5 + 0.5 * (typeof random === 'function' ? random() : Math.random())))
 }
 
 /**

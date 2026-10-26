@@ -15,6 +15,7 @@ import {
   setRelayDevice,
   subscribeMessage,
   subscribeToMatchData,
+  viewerReconnectDelay,
   rememberMatchAccess,
   forgetMatchAccess,
   matchAccessFor,
@@ -738,5 +739,18 @@ describe('desktop app: cloud endpoints in the cloud, relay endpoints on the loca
     const relay = vi.fn(async () => json({ connections: [] }))
     await fetchRelayConnections('match_desktop_case', { fetchImpl: relay })
     expect(relay.mock.calls[0][0]).toBe('http://localhost:5173/api/server/connections?matchId=match_desktop_case')
+  })
+})
+
+// National peak load test 2026-10-26: after a backend restart every referee
+// and bench tablet reconnected after exactly 3 s, all at once.
+describe('relay subscription: reconnect backoff (tablets)', () => {
+  it('3 s more per attempt up to 10 s, spread over the second half of each step', () => {
+    expect([1, 2, 3, 4, 9].map((n) => viewerReconnectDelay(n, () => 1))).toEqual([3000, 6000, 9000, 10000, 10000])
+    expect([1, 2, 4].map((n) => viewerReconnectDelay(n, () => 0))).toEqual([1500, 3000, 5000])
+    const many = Array.from({ length: 200 }, () => viewerReconnectDelay(1))
+    expect(Math.min(...many)).toBeGreaterThanOrEqual(1500)
+    expect(Math.max(...many)).toBeLessThanOrEqual(3000)
+    expect(new Set(many).size).toBeGreaterThan(20)
   })
 })
