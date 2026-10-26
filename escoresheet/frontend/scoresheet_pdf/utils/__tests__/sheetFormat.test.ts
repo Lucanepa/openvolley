@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
+import { zurichWallTimeMs } from '../../../src/ui/format.js'
 import {
   buildScoresheetFilename,
   buildScoresheetTitle,
@@ -16,8 +17,8 @@ import {
   sanitizeFilenamePart
 } from '../sheetFormat'
 
-// Dates built from LOCAL parts: the expectations hold in any time zone
-const local = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).toISOString()
+// Dates built from Zürich parts: the sheet prints the Zürich clock
+const local = (y: number, m: number, d: number, h = 0, min = 0) => new Date(zurichWallTimeMs(y, m, d, h, min)).toISOString()
 
 describe('formatDob (field-spec 12.3)', () => {
   it('prints every stored format as DD.MM.YYYY', () => {
@@ -39,7 +40,7 @@ describe('formatDob (field-spec 12.3)', () => {
 })
 
 describe('dates and times of the sheet', () => {
-  it('the header date is the LOCAL day, DD.MM.YYYY (a match at 00:30 is not the day before)', () => {
+  it('the header date is the Zürich day, DD.MM.YYYY (a match at 00:30 is not the day before)', () => {
     expect(formatSheetDate(local(2026, 10, 8, 0, 30))).toBe('08.10.2026')
     expect(formatSheetDate(local(2026, 10, 7, 23, 59))).toBe('07.10.2026')
     expect(formatSheetDate(undefined)).toBe('')
@@ -52,6 +53,25 @@ describe('dates and times of the sheet', () => {
     expect(formatHoursMinutes(59)).toBe('0 h 59 min')
     expect(formatHoursMinutes(0)).toBe('')
     expect(formatHoursMinutes(-5)).toBe('')
+  })
+
+  // Stress test 2026-10-25 (device-timezone-shifts-official-times): a laptop
+  // left on GMT+2 printed a 10:20 start as 11:20 on the official sheet
+  describe('on a device outside Europe/Zurich', () => {
+    const deviceTz = process.env.TZ
+    afterEach(() => {
+      if (deviceTz === undefined) delete process.env.TZ
+      else process.env.TZ = deviceTz
+    })
+    for (const tz of ['Etc/GMT-2', 'UTC', 'America/New_York']) {
+      it(`${tz}: the Zürich day and clock`, () => {
+        process.env.TZ = tz
+        expect(formatClockHoursMinutes('2026-10-26T09:20:00.000Z')).toBe('10 h 20 min')
+        expect(formatSheetDate('2026-10-26T23:30:00.000Z')).toBe('27.10.2026')
+        expect(localDateStamp('2026-10-26T23:30:00.000Z')).toBe('20261027')
+        expect(formatSheetDate('2026-10-26T04:30:00.000Z')).toBe('26.10.2026')
+      })
+    }
   })
 })
 

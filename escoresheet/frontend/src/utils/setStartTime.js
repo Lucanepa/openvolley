@@ -1,17 +1,21 @@
 import { roundToMinute } from './timeUtils'
+import { zonedParts, zurichWallTimeMs } from '../ui/format'
 import { actualStartLine, remarkClock } from '../domain/remarks'
 
 const HOUR = 3600 * 1000
 
 /**
- * The match's scheduled time of day (local HH:MM) on the day it is played:
- * `now`'s local date, never the scheduled DATE (a match scheduled 12.03.2025
+ * The match's scheduled time of day (Zürich HH:MM) on the day it is played:
+ * `now`'s Zürich date, never the scheduled DATE (a match scheduled 12.03.2025
  * 12:30 and played today starts today at 12:30, not in 2025: that gave set
  * durations of 827890 minutes). When today's occurrence is more than 12 hours
  * ahead (a 23:30 match confirmed at 00:10) it is the day before.
  *
+ * Zürich, the gym's clock, on a device in any zone: the device's getHours put
+ * a 10:20 kick-off at 11:20 on a laptop left on GMT+2 (stress test 2026-10-25).
+ *
  * A date without a time is no scheduled time: a bare "YYYY-MM-DD", or the
- * local midnight MatchSetup's createScheduledAt stores for a date entered
+ * Zürich midnight MatchSetup's createScheduledAt stores for a date entered
  * without a time (set 1 would otherwise be proposed at 00:00). A match
  * really scheduled at midnight is proposed now, as OpenBeach does.
  *
@@ -22,13 +26,14 @@ const HOUR = 3600 * 1000
 export function scheduledStartOnDay(scheduledAt, now = new Date()) {
   if (!scheduledAt) return null
   if (typeof scheduledAt === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(scheduledAt.trim())) return null
-  const scheduled = new Date(scheduledAt)
-  if (Number.isNaN(scheduled.getTime())) return null
-  if (scheduled.getHours() === 0 && scheduled.getMinutes() === 0) return null
-  const day = new Date(now.getTime())
-  day.setHours(scheduled.getHours(), scheduled.getMinutes(), 0, 0)
-  if (day.getTime() - now.getTime() > 12 * HOUR) day.setDate(day.getDate() - 1)
-  return day.toISOString()
+  const scheduled = zonedParts(scheduledAt)
+  const today = zonedParts(now)
+  if (!scheduled.valid || !scheduled.timed || !today.valid) return null
+  if (scheduled.hour === 0 && scheduled.minute === 0) return null
+  const onDay = (offset) => zurichWallTimeMs(today.year, today.month, today.day + offset, scheduled.hour, scheduled.minute)
+  let day = onDay(0)
+  if (day - now.getTime() > 12 * HOUR) day = onDay(-1)
+  return new Date(day).toISOString()
 }
 
 /**
@@ -99,7 +104,7 @@ export function actualStartRemark({ setIndex, scheduledAt, startTime }) {
 }
 
 /**
- * The start the "Set N start time" dialog confirms: the typed local HH:MM on
+ * The start the "Set N start time" dialog confirms: the typed Zürich HH:MM on
  * the day nearest to the proposed time (within 12 hours of it). The dialog
  * shows only HH:MM; taking the proposal's date put a typed time a day off
  * whenever the proposal is on the day before (a 23:30 match confirmed at
@@ -114,10 +119,11 @@ export function typedStartNear(proposedIso, clock) {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(clock || '').trim())
   const ref = new Date(proposedIso)
   if (!m || Number.isNaN(ref.getTime()) || Number(m[1]) > 23 || Number(m[2]) > 59) return null
-  const d = new Date(ref.getTime())
-  d.setHours(Number(m[1]), Number(m[2]), 0, 0)
-  const diff = d.getTime() - ref.getTime()
-  if (diff > 12 * 3600 * 1000) d.setDate(d.getDate() - 1)
-  else if (diff < -12 * 3600 * 1000) d.setDate(d.getDate() + 1)
-  return d.toISOString()
+  const p = zonedParts(ref)
+  const onDay = (offset) => zurichWallTimeMs(p.year, p.month, p.day + offset, Number(m[1]), Number(m[2]))
+  let d = onDay(0)
+  const diff = d - ref.getTime()
+  if (diff > 12 * HOUR) d = onDay(-1)
+  else if (diff < -12 * HOUR) d = onDay(1)
+  return new Date(d).toISOString()
 }

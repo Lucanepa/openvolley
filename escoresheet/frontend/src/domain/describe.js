@@ -18,6 +18,7 @@
  * `t` is i18next's t (or nothing in tests): every string has its English text
  * as the default, so the en locale and the tests read the same.
  */
+import { timeLabel } from '../ui/format'
 
 /** The sanction types the app records, in ladder order. */
 export const SANCTION_TYPES = Object.freeze([
@@ -258,11 +259,11 @@ function scoreAfterPoint(events, point) {
   return s
 }
 
+/** The Zürich "HH:MM" of a time, as the sheet prints it. */
 function clock(value) {
   const ms = tsMs(value)
   if (!ms) return ''
-  const d = new Date(ms)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return timeLabel(ms)
 }
 
 /** "19:42–20:07 (25 min)" for a set's start and end time, '' when unknown. */

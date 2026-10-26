@@ -4,6 +4,7 @@
  * court, and which events make the "last actions" list. Display only: no
  * scoring rule lives here.
  */
+import { timeLabel } from '../../ui/format'
 
 /** Viewports narrower than this, held upright, get the phone layout (CSS px). */
 export const PHONE_MAX_WIDTH = 600
@@ -172,12 +173,10 @@ const isSubEvent = (event) => {
 
 const eventTime = (event) => (typeof event.ts === 'number' ? event.ts : new Date(event.ts).getTime())
 
-/** An event's local time as HH:MM (the log's lines), null without a usable ts. */
+/** An event's Zürich time as HH:MM (the log's lines), null without a usable ts. */
 export function clockTime(event) {
   if (event?.ts === undefined || event?.ts === null || event?.ts === '') return null
-  const d = new Date(eventTime(event))
-  if (Number.isNaN(d.getTime())) return null
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return timeLabel(eventTime(event)) || null
 }
 
 /**
