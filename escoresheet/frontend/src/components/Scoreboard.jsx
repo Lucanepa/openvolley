@@ -105,6 +105,10 @@ const CLEARED_SET5_SETUP = { set5LeftTeam: null, set5FirstServe: null, set5Court
 // setup's (they say whether it goes on: duringInterval)
 const BREAK_ENDING_PUSHES = new Set(['set_end', 'end_interval', 'set_start', 'manual_set5_setup'])
 
+// The scoring tab reloaded takes its Web Lock back (the single-tab guard)
+// when its new page loads within this long of the old one going away
+const SCORING_TAB_RELOAD_MS = 60000
+
 // ── volleyui chrome for the scoreboard (RESTYLE-SPEC P5) ──────────────────────
 // Only the chrome around the court takes these: the toolbar, the side-column
 // surfaces, menus, dialogs and the lineup panel. The court, score digits, serve
@@ -850,24 +854,66 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // its answers, so a later tab opened the same live match as well and both
   // scored (stress test 2026-10-25). A tab that finds the lock held shows
   // "Scoresheet already open" and scores once the other tab is gone.
+  // The scoring tab reloaded takes the lock back: freed by its reload, it
+  // went to a forgotten tab waiting behind it, which scored from then on,
+  // while the reloaded one showed "already open" (review of #37). Its page
+  // notes on the way out (pagehide), in this tab's sessionStorage (which a
+  // reload keeps and no other tab reads), that it held the lock, and the
+  // page after the reload steals it. "Score in this tab" steals it too: the
+  // other tab goes to "already open" and waits.
+  const takeOverScoringRef = useRef(null)
   useEffect(() => {
     if (!matchId) return
     if (typeof navigator === 'undefined' || !navigator.locks?.request) return
-    const abort = new AbortController()
+    const lockName = `scoresheet-${matchId}`
+    const reloadKey = `scoresheet-reload-${matchId}`
+    let current = 0 // the request that counts: a take-over replaces a queued one
+    let abort = null
+    let busy = null
     let release = null
-    // Queued, not ifAvailable: the screen remounting in this tab (React's
-    // development double mount) frees the lock a moment after asking again
-    const busy = setTimeout(() => setDuplicateTabError(true), 1000)
-    navigator.locks.request(`scoresheet-${matchId}`, { signal: abort.signal }, () => {
-      // granted just after the screen unmounted: hand it straight back
-      if (abort.signal.aborted) return undefined
+    let unmounted = false
+    const request = (steal) => {
+      const id = ++current
       clearTimeout(busy)
-      setDuplicateTabError(false)
-      return new Promise(resolve => { release = resolve })
-    }).catch(() => {}) // aborted: the screen unmounted before it got the lock
+      if (abort) abort.abort()
+      // (a steal takes no signal: it never waits)
+      abort = steal ? null : new AbortController()
+      // Queued, not ifAvailable: the screen remounting in this tab (React's
+      // development double mount) frees the lock a moment after asking again
+      busy = steal ? null : setTimeout(() => setDuplicateTabError(true), 1000)
+      navigator.locks.request(lockName, steal ? { steal: true } : { signal: abort.signal }, () => {
+        // granted just after the screen unmounted, or replaced: hand it straight back
+        if (unmounted || id !== current) return undefined
+        clearTimeout(busy)
+        setDuplicateTabError(false)
+        return new Promise(resolve => { release = resolve })
+      }).catch(() => {
+        // aborted (the screen unmounted, a take-over replaced it), or stolen
+        // by another tab's take-over: "already open", and wait again
+        if (unmounted || id !== current) return
+        release = null
+        setDuplicateTabError(true)
+        request(false)
+      })
+    }
+    let reloaded = false
+    try {
+      const at = Number(sessionStorage.getItem(reloadKey))
+      sessionStorage.removeItem(reloadKey)
+      reloaded = at > 0 && Date.now() - at < SCORING_TAB_RELOAD_MS
+    } catch { /* no sessionStorage: wait for the lock */ }
+    request(reloaded)
+    takeOverScoringRef.current = () => request(true)
+    const noteReload = () => {
+      try { if (release) sessionStorage.setItem(reloadKey, String(Date.now())) } catch { /* ignore */ }
+    }
+    window.addEventListener('pagehide', noteReload)
     return () => {
+      unmounted = true
+      takeOverScoringRef.current = null
+      window.removeEventListener('pagehide', noteReload)
       clearTimeout(busy)
-      abort.abort()
+      if (abort) abort.abort()
       if (release) release()
     }
   }, [matchId])
@@ -936,9 +982,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
     window.addEventListener('pagehide', clearMark)
+    // "Score in this tab": the mark is this tab's (the other one sees it
+    // change, storage event, and shows "already open")
+    takeOverScoringRef.current = () => {
+      if (probe) clearTimeout(probe)
+      probe = null
+      duplicate = false
+      localStorage.setItem(storageKey, tabId)
+      setDuplicateTabError(false)
+    }
 
     return () => {
       if (probe) clearTimeout(probe)
+      takeOverScoringRef.current = null
       window.removeEventListener('storage', handleStorage)
       window.removeEventListener('pagehide', clearMark)
       if (channel) channel.close()
@@ -13231,8 +13287,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }}>
           {t('scoreboard.duplicateTabMessage')}
         </p>
+        {/* It was "Close this tab" (window.close()), which browsers ignore
+            for a tab the user opened: it did nothing */}
         <button
-          onClick={() => window.close()}
+          onClick={() => takeOverScoringRef.current?.()}
           style={{
             padding: '12px 24px',
             fontSize: '16px',
@@ -13244,7 +13302,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             cursor: 'pointer'
           }}
         >
-          {t('scoreboard.closeThisTab')}
+          {t('scoreboard.scoreInThisTab')}
         </button>
       </div>
     )

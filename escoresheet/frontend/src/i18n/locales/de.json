@@ -813,6 +813,7 @@
     "duplicateTabTitle": "Matchblatt bereits geöffnet",
     "duplicateTabMessage": "Das Matchblatt ist bereits in einem anderen Tab oder Browserfenster geöffnet. Bitte schliessen Sie diesen Tab und verwenden Sie den bestehenden, um Datenkonflikte zu vermeiden.",
     "closeThisTab": "Diesen Tab schliessen",
+    "scoreInThisTab": "In diesem Tab weiterführen",
     "rotateDeviceTitle": "Bitte drehen Sie Ihr Gerät",
     "rotateDeviceMessage": "Das Scoreboard funktioniert am besten im Querformat. Bitte drehen Sie Ihr Gerät horizontal, um fortzufahren.",
     "rotateDeviceTip": "Tipp: Für automatische Backup-Funktionen verwenden Sie Chrome oder Edge auf einem Desktop-/Laptop-Computer.",

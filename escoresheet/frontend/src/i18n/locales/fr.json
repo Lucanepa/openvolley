@@ -819,6 +819,7 @@
     "duplicateTabTitle": "Feuille de match déjà ouverte",
     "duplicateTabMessage": "La feuille de match est déjà ouverte dans un autre onglet ou navigateur. Veuillez fermer cet onglet et utiliser celui existant pour éviter les conflits de données.",
     "closeThisTab": "Fermer cet onglet",
+    "scoreInThisTab": "Continuer dans cet onglet",
     "rotateDeviceTitle": "Veuillez tourner votre appareil",
     "rotateDeviceMessage": "Le tableau de bord fonctionne mieux en mode paysage. Veuillez tourner votre appareil horizontalement pour continuer.",
     "rotateDeviceTip": "Conseil : Pour les fonctions de sauvegarde automatique, utilisez Chrome ou Edge sur un ordinateur de bureau/portable.",
