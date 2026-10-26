@@ -439,6 +439,65 @@ describe('a whole-database export (the set-end download)', () => {
   })
 })
 
+// Stress test 2026-10-25 (restore-reuses-other-matchs-team-by-name): the
+// club laptop still held last week's home match. Today's match of the same
+// club was restored from a backup: the restore found last week's team row by
+// name, overwrote it, replaced its roster with today's and pointed both
+// matches at it.
+describe('the teams of a restored match', () => {
+  const rosterOf = (teamId) => [...fakeDb.players.map.values()].filter(p => p.teamId === teamId).map(p => `${p.number}:${p.lastName}`)
+  beforeEach(() => {
+    fakeDb.matches.map.get(1).homeTeamId = 3
+    fakeDb.matches.map.get(1).awayTeamId = 4
+    fakeDb.teams = fakeTable([{ id: 3, name: 'VBC Wiedikon', shortName: 'WIE' }, { id: 4, name: 'Volley 05' }])
+    fakeDb.players = fakeTable([
+      { id: 1, teamId: 3, number: 10, lastName: 'Baumann' },
+      { id: 2, teamId: 3, number: 11, lastName: 'Arnold' },
+      { id: 3, teamId: 4, number: 7, lastName: 'Gast' }
+    ])
+  })
+
+  it('another local match with a team of the same name keeps its team row and roster', async () => {
+    const today = backup()
+    today.homeTeam = { id: 3, name: 'VBC Wiedikon', shortName: 'VBCW' }
+    today.homePlayers = [{ id: 1, teamId: 3, number: 10, lastName: 'Today10' }, { id: 2, teamId: 3, number: 11, lastName: 'Today11' }]
+    const id = await restoreMatchFromJson(today)
+    const restored = fakeDb.matches.map.get(id)
+    expect(restored.homeTeamId).not.toBe(3)
+    expect(fakeDb.teams.map.get(restored.homeTeamId)).toMatchObject({ name: 'VBC Wiedikon', shortName: 'VBCW' })
+    expect(rosterOf(restored.homeTeamId)).toEqual(['10:Today10', '11:Today11'])
+    // last week's match: unchanged
+    expect(fakeDb.matches.map.get(1)).toMatchObject({ homeTeamId: 3, awayTeamId: 4 })
+    expect(fakeDb.teams.map.get(3)).toMatchObject({ name: 'VBC Wiedikon', shortName: 'WIE' })
+    expect(rosterOf(3)).toEqual(['10:Baumann', '11:Arnold'])
+    expect(rosterOf(4)).toEqual(['7:Gast'])
+  })
+
+  it('the replaced copy of the match takes its own teams and players along, never another match\'s', async () => {
+    await fakeDb.teams.add({ id: 5, name: 'Home' })
+    await fakeDb.teams.add({ id: 6, name: 'Away' })
+    await fakeDb.players.add({ id: 9, teamId: 5, number: 1, lastName: 'Old copy' })
+    // the copy shares team 4 with last week's match (an earlier restore did that)
+    fakeDb.matches.map.get(2).homeTeamId = 5
+    fakeDb.matches.map.get(2).awayTeamId = 4
+    const id = await restoreMatchFromJson(backup())
+    expect(fakeDb.teams.map.has(5)).toBe(false)
+    expect(rosterOf(5)).toEqual([])
+    expect(fakeDb.teams.map.get(4)).toMatchObject({ name: 'Volley 05' })
+    expect(rosterOf(4)).toEqual(['7:Gast'])
+    expect(fakeDb.teams.map.has(6)).toBe(true) // no match of its own, not the copy's
+    const restored = fakeDb.matches.map.get(id)
+    expect([restored.homeTeamId, restored.awayTeamId].some(t => [3, 4, 5].includes(t))).toBe(false)
+  })
+
+  it('restoreMatchInPlace keeps the open match\'s own team rows, not the writing device\'s ids', async () => {
+    fakeDb.matches.map.get(2).homeTeamId = 7
+    fakeDb.matches.map.get(2).awayTeamId = 8
+    await restoreMatchInPlace(2, backup({ homeTeamId: 3, awayTeamId: 4 }))
+    expect(fakeDb.matches.map.get(2)).toMatchObject({ homeTeamId: 7, awayTeamId: 8 })
+  })
+})
+
 // 2026-10-20, match 406970: a backup of a match the server had closed was
 // restored as a live copy; its restore job was refused (409 OV_MATCH_CLOSED)
 // on every retry and held back every newer write of the match.
