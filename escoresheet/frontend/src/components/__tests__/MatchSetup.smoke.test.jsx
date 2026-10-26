@@ -294,6 +294,45 @@ describe('MatchSetup smoke render', () => {
     expect(numbers().map((i) => i.value)).toEqual(['2', '5', '11', '14', '15'])
   })
 
+  // Stress test 2026-10-25: '1.5' typed with a tablet keypad's '.' (meant as
+  // 15) passed the editor and its Confirm; the cloud then refused every rally
+  // that player served (events.serve_player is an integer column)
+  it('a shirt number keeps only its digits, and Confirm refuses one that is not a whole number', async () => {
+    store.tables.matches = new Map([[1, {
+      id: 1, status: 'setup', seed_key: 'match_1_decimal', matchInfoConfirmedAt: '2026-10-06T10:00:00Z',
+      homeTeamId: 11, awayTeamId: 12, game_n: 991407, ...PINS
+    }]])
+    store.tables.teams = new Map([[11, { id: 11, name: 'Home V' }], [12, { id: 12, name: 'Away V' }]])
+    // (a number stored by an earlier version, a saved team or an import)
+    store.tables.players = new Map([
+      [201, { id: 201, teamId: 11, number: 2, lastName: 'Alpha', firstName: 'A' }],
+      [202, { id: 202, teamId: 11, number: 7.5, lastName: 'Bravo', firstName: 'B' }],
+      [203, { id: 203, teamId: 11, number: 8, lastName: 'Charlie', firstName: 'C' }]
+    ])
+    render(<Setup matchId={1} />)
+    fireEvent.click((await screen.findAllByRole('button', { name: 'matchSetup.editRoster' }))[0])
+    const grid = await waitFor(() => {
+      const g = document.querySelector('.roster-grid:not(.roster-add)')
+      expect(g.querySelectorAll('input.cell-last')).toHaveLength(3)
+      return g
+    })
+    const numbers = () => [...grid.querySelectorAll('input[aria-label="Player number"]')]
+
+    // typed through a touch keyboard or pasted (no keypress): the digits only
+    fireEvent.change(numbers()[0], { target: { value: '1.5' } })
+    expect(numbers()[0].value).toBe('15')
+    const addRow = document.querySelector('.roster-grid.roster-add') || document
+    const addNumber = addRow.querySelector('input[aria-label="Player number"]')
+    if (addNumber && !numbers().includes(addNumber)) {
+      fireEvent.change(addNumber, { target: { value: '2.3' } })
+      expect(addNumber.value).toBe('23')
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: 'common.confirm' }))
+    expect(await screen.findByText(/matchSetup.validation.fixIssues/)).toBeTruthy()
+    expect(store.tables.players.get(201).number).toBe(2)
+  })
+
   // Edit roster > Choose players > Use 3 of 5, then Back: the card showed 5
   // again, but the stored players were already the 3 (a reload, Continue
   // match and the coin toss read them)

@@ -9,6 +9,7 @@ import { getCloudApiUrl } from '../utils/backendConfig'
 import { filterMatchPayload, JSONB_COLUMNS } from '../db/matchRepository'
 import { parseExtId, resolveJobExternalId, jobMatchKey, USER_MATCH_RESOURCE, userMatchRoles, userMatchJob } from '../utils/syncIds'
 import { buildConnectionPins } from '../utils/connectionPins'
+import { isShirtNumber } from '../domain/roster'
 import { ACCESS_CHANGED_EVENT } from '../lib/access'
 import { SCORER_CLAIM_ACTION, SCORER_MOVED, MATCH_CLOSED, SERVER_CLOSED_BY, isScorerMoved, noteScorerMoved, markScorerMoved, hasUnsentClaim, closeMovedMatches, retireIfSuperseded, retireStaleGameCopies, setAsideClosedJobs, setAsideClosedCopies } from '../utils/matchHandover'
 
@@ -1281,6 +1282,11 @@ async function processJobInner(job, ctx) {
     if (job.resource === 'event' && job.action === 'insert') {
       // Resolve match_id from external_id
       let eventPayload = { ...job.payload, sport_type: 'indoor' }
+      // serve_player is an integer column: a shirt number stored as '1.5' by
+      // an older roster editor (queued, or already parked as refused) was
+      // refused (22P02) at every retry and the rally never reached the
+      // cloud. Sent without its server, the rally counts.
+      if (eventPayload.serve_player != null && !isShirtNumber(eventPayload.serve_player)) eventPayload.serve_player = null
 
       if (eventPayload.match_id && typeof eventPayload.match_id === 'string') {
         const { data: matchData, error: lookupError } = await apiFrom('matches')
