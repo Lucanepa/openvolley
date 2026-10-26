@@ -730,6 +730,25 @@ function publicMatch(match) {
   return publicRelayMatch(stripMatchSecrets(match))
 }
 
+// The scorer's undo snapshots on its events: stateSnapshot on every point,
+// stateBefore on rally starts, rotations and substitutions. Its own undo and
+// corrections use them; no relay subscriber reads them (referee, bench,
+// livescore, the LedBox bridge). They were about 90% of a bundle (2.5 KB per
+// point, 2.4 MB at the end of a 5-set match), kept parsed per match in
+// activeMatches and sent to every tablet twice per rally: at a national peak
+// that alone filled the backend's 256 MiB. Dropped when a sync is stored;
+// scorers since 2026-10-26 leave them out themselves (frontend relayEvents).
+const RELAY_EVENT_OMIT = ['stateSnapshot', 'stateBefore']
+function relayEvents(events) {
+  if (!Array.isArray(events)) return events
+  return events.map((e) => {
+    if (!e || typeof e !== 'object' || !RELAY_EVENT_OMIT.some((k) => k in e)) return e
+    const out = {}
+    for (const k of Object.keys(e)) if (!RELAY_EVENT_OMIT.includes(k)) out[k] = e[k]
+    return out
+  })
+}
+
 // The PIN-free, personal-data-free bundle every match-full-data /
 // match-data-update and GET /api/match/:id carries — the same flat shape the
 // LAN relays send (frontend/electron/lanRelayCore.cjs). Only the scorer, who
@@ -5004,7 +5023,7 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     homePlayers,
     awayPlayers,
     sets,
-    events,
+    events: relayEvents(events),
     liveState: carryLiveState ? previous?.liveState : undefined,
     gameNumber: match?.gameN || match?.gameNumber || match?.game_n,
     updatedAt: new Date().toISOString(),

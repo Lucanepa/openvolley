@@ -409,6 +409,30 @@ export function mayPublishMatchData(match, relayUrl) {
   return !!match && (match.test !== true || isLocalRelayUrl(relayUrl))
 }
 
+// Kept on the device only: the undo snapshots (stateSnapshot on every point,
+// stateBefore on rally starts, rotations and substitutions), about 90% of a
+// match's events (2.5 KB per point). No relay subscriber reads them (referee,
+// bench, livescore, the LedBox bridge), and every sync carried them all, twice
+// per rally (national peak load test 2026-10-26). The cloud relay drops them
+// from older scorers' syncs too.
+const RELAY_EVENT_OMIT = ['stateSnapshot', 'stateBefore']
+
+/**
+ * The events as sync-match-data carries them: copies without the undo
+ * snapshots; the device's own events are not changed.
+ * @param {Array<object>|null|undefined} events
+ * @returns {Array<object>}
+ */
+export function relayEvents(events) {
+  if (!Array.isArray(events)) return []
+  return events.map((e) => {
+    if (!e || typeof e !== 'object' || !RELAY_EVENT_OMIT.some((k) => k in e)) return e
+    const out = {}
+    for (const k of Object.keys(e)) if (!RELAY_EVENT_OMIT.includes(k)) out[k] = e[k]
+    return out
+  })
+}
+
 export function liveStateTargets({ isTest = false, relayKey = null, relayUrl = null } = {}) {
   return {
     relay: !!relayKey && (!isTest || isLocalRelayUrl(relayUrl)),

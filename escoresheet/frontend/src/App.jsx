@@ -78,7 +78,7 @@ import ManagerSiteLink from './components/ManagerSiteLink'
 import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, openRestore, restorePrefill } from './utils/manageNav'
 import { relayMatchKey, relayMatchPayload, liveStateNow } from './utils/serverDataSync'
 import { needsEventCheck, pickCurrentMatch, newOfficialMatchStep } from './utils/currentMatch'
-import { isRelayErrorFor, mayPublishMatchData, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
+import { isRelayErrorFor, mayPublishMatchData, relayConnectionStatus, relayEvents, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
 import { PHONE_MAX_WIDTH, isPhoneScreen, phoneLayoutKept } from './components/scoreboard/phoneLayout'
 import { useSystemBarsHidden } from './utils/nativeSystemBars'
 
@@ -1268,7 +1268,8 @@ export default function App() {
           homePlayers,
           awayPlayers,
           sets,
-          events,
+          // without the undo snapshots (relayEvents)
+          events: relayEvents(events),
           // This installation (db/019): the cloud relay refuses the copy of a
           // device the match has moved away from ('scorer-moved'), which
           // re-syncs at once when it comes back online
