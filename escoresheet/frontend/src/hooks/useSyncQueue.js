@@ -95,8 +95,9 @@ const ERROR_BACKOFF_MAX = 10 * 60 * 1000
 const PROBE_BACKOFF_BASE = 5000
 const PROBE_BACKOFF_MAX = 60000
 
-// A 'sending' job (claimed by useSequentialSync) older than this is assumed
-// abandoned (tab closed mid-request) and handed back to the queue.
+// A 'sending' job (claimed by useSequentialSync's direct sends, before the
+// set end went through the queue) older than this is assumed abandoned (tab
+// closed mid-request) and handed back to the queue.
 const SENDING_STALE_MS = 2 * 60 * 1000
 
 // Jobs the backend refused ('failed') come back on their own once an hour, at
@@ -788,10 +789,8 @@ installAuthListener()
  * failure reason is available once through takeJobError(job.id).
  *
  * A write refused as OV_NOT_MATCH_OWNER is taken over here (once per match
- * and CLAIM_RETRY_MS, see claimMatchWithLocalPin) and sent again, for the
- * background queue and the direct set-end / match-end syncs (sendJobNow)
- * alike. After a successful take-over the match's other parked jobs are
- * queued again.
+ * and CLAIM_RETRY_MS, see claimMatchWithLocalPin) and sent again. After a
+ * successful take-over the match's other parked jobs are queued again.
  */
 export async function processJob(job) {
   let result = await processJobOnce(job)
@@ -1505,7 +1504,7 @@ export async function runQueuePass() {
   const queued = await db.sync_queue.where('status').equals('queued').toArray()
   const outcome = { processed: queued.length, sent: 0, hasError: false, hasFailed: false, hasRetry: false, stopped: false, authRequired: false }
   if (queued.length === 0) return outcome
-  // (marks left by direct sends, sendJobNow, which have no pass to block)
+  // (marks left by an earlier pass)
   setAsideJobIds.clear()
 
   safeLog.log(`[SyncQueue] Processing ${queued.length} queued items`)
@@ -1672,6 +1671,9 @@ export async function runQueuePass() {
 // per-instance flag let two instances process the same queued rows at once
 // (restore/delete are not idempotent).
 let flushInProgress = false
+// A flush asked for while one ran (the set end's writes, queued after that
+// pass read the queue): run again as soon as it is done
+let flushAgain = false
 
 // Last run of flush's throttled housekeeping (requeue of errored jobs, prune)
 let lastRequeueAt = 0
@@ -1911,6 +1913,10 @@ export function useSyncQueue() {
       setSyncStatus('error')
     } finally {
       flushInProgress = false
+      if (flushAgain) {
+        flushAgain = false
+        setTimeout(() => { if (!flushInProgress) flush() }, 0)
+      }
     }
   }, [checkSupabaseConnection])
 
@@ -1994,6 +2000,19 @@ export function useSyncQueue() {
     }
     window.addEventListener('sync-queue-write', handleQueueWrite)
 
+    // Writes the scorer waits for (the set end, useSequentialSync): sent now,
+    // behind the older jobs, even while a failed probe backs off (only the
+    // 'online' event resets that backoff, and it does not fire when the
+    // internet comes back while the Wi-Fi stays up)
+    const handleFlushNow = () => {
+      probeFailures.current = 0
+      nextProbeAt.current = 0
+      if (flushTimerRef.current) clearTimeout(flushTimerRef.current)
+      if (flushInProgress) flushAgain = true
+      else flush()
+    }
+    window.addEventListener('sync-queue-flush-now', handleFlushNow)
+
     // Fallback poll every 5s to catch any missed items (e.g., tab focus, retries)
     const interval = setInterval(() => {
       if (!flushInProgress) flush()
@@ -2001,6 +2020,7 @@ export function useSyncQueue() {
 
     return () => {
       window.removeEventListener('sync-queue-write', handleQueueWrite)
+      window.removeEventListener('sync-queue-flush-now', handleFlushNow)
       clearInterval(interval)
       if (flushTimerRef.current) clearTimeout(flushTimerRef.current)
     }

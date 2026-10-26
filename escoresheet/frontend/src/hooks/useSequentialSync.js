@@ -1,149 +1,109 @@
 import { useState, useCallback } from 'react'
 import { db } from '../db/db'
-import { processJob, takeJobError, takeSetAside, errorBackoffMs, DROP_JOB, AUTH_REQUIRED, PERMANENT_FAILURE, STOP_ERROR } from './useSyncQueue'
 
-const TIMED_OUT = 'timed_out'
+// How often the queue rows of the writes being waited for are read
+const POLL_MS = 150
 
-// Store the outcome of a direct processJob call on its sync_queue row and map it
-// to the executeAndWait result.
-async function settleJob(job, jobId, result) {
-  // Why it failed (status/code/message, never the payload), stored on the row
-  // so a parked set-end or match-end job can be explained
-  const lastError = takeJobError(jobId)
-
-  if (result === true) {
-    await db.sync_queue.update(jobId, { status: 'sent', last_error: null })
-    console.log(`[SequentialSync] ${job.resource} ${job.action} successful`)
-    return { success: true, jobId }
-  }
-
-  if (result === DROP_JOB) {
-    await db.sync_queue.update(jobId, { status: 'dropped' })
-    // Another device scores the match: the write is kept with the match's
-    // others (utils/matchHandover), a warning, not "Sync failed" behind the
-    // ScorerMovedModal at set end
-    if (takeSetAside(jobId)) return { success: false, offline: true, setAside: true, jobId }
-    return { success: false, error: 'Job cannot be attributed to a match', jobId }
-  }
-
-  if (result === PERMANENT_FAILURE) {
-    // Refused by the backend (4xx): not retried automatically, shown in the
-    // sync indicator with a manual retry
-    console.error(`[SequentialSync] ${job.resource} ${job.action} refused by the backend`)
-    await db.sync_queue.update(jobId, { status: 'failed', attempts: 1, failed_at: Date.now(), last_error: lastError })
-    return { success: false, error: `${job.resource} ${job.action} refused`, jobId }
-  }
-
-  if (result === AUTH_REQUIRED) {
-    // No session: saved locally, sent once the scorer signs in
-    console.warn(`[SequentialSync] ${job.resource} ${job.action} needs a sign-in; left in the sync queue`)
-    await db.sync_queue.update(jobId, { status: 'queued' })
-    return { success: false, offline: true, authRequired: true, jobId }
-  }
-
-  if (result === false || result === STOP_ERROR) {
-    // Failed (details logged by processJob), or a 4xx page from a proxy/WAF in
-    // front of the backend: the background queue retries it with backoff
-    console.error(`[SequentialSync] Cloud sync FAILED for ${job.resource} ${job.action}:`, lastError?.code || lastError?.status || '')
-    await db.sync_queue.update(jobId, { status: 'error', attempts: 1, next_attempt_at: Date.now() + errorBackoffMs(1), last_error: lastError })
-    return { success: false, error: `${job.resource} ${job.action} failed`, jobId }
-  }
-
-  // Retry later (match not in the cloud yet, 5xx), rate limited or unreachable:
-  // the data is saved locally and the background queue sends it.
-  console.warn(`[SequentialSync] ${job.resource} ${job.action} deferred to the sync queue:`, result)
-  await db.sync_queue.update(jobId, { status: 'queued', ...(lastError ? { last_error: lastError } : {}) })
-  return { success: false, offline: true, jobId }
-}
-
-async function settleException(job, jobId, error) {
-  console.error(`[SequentialSync] Supabase sync EXCEPTION for ${job.resource}:`, {
-    action: job.action,
-    error: error?.message,
-    stack: error?.stack,
-    payload: job.payload
-  })
-  await db.sync_queue.update(jobId, { status: 'queued', error_message: error?.message })
-  return { success: false, error: error?.message, jobId }
-}
+// Queue rows that will not be sent soon: the wait for them is over
+const SETTLED = new Set(['sent', 'superseded', 'failed', 'error', 'dropped'])
 
 /**
- * Send one sync job now and wait for it (bounded by `timeout`).
- * Returns: { success: boolean, offline?: boolean, error?: string, jobId: number }
- *
- * The job is stored as 'sending' so the background queue (useSyncQueue) neither
- * picks it up nor lets newer jobs of the same entity overtake it while this
- * direct call is in flight. On timeout the caller gets { offline: true } at
- * once, but the row stays 'sending' until the original call settles: putting it
- * back to 'queued' earlier would let the background flush send it a second time
- * concurrently. useSyncQueue reclaims 'sending' rows abandoned by a closed tab.
- * Processing reuses useSyncQueue's processJob, so both paths send the same thing.
+ * Ask the background queue (useSyncQueue) to send what it holds now, even
+ * while a failed connection probe is backing off: the cloud may be back
+ * without the browser telling (no 'online' event while the Wi-Fi stays up).
  */
-export async function sendJobNow(job, timeout = 10000) {
-  // 1. Write to IndexedDB sync_queue first (for retry if app closes)
-  const jobId = await db.sync_queue.add({
-    ...job,
-    ts: Date.now(),
-    status: 'sending',
-    sending_since: Date.now()
-  })
+export function requestQueueFlush() {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new Event('sync-queue-flush-now'))
+}
 
-  // 2. If offline, return warning (data saved locally)
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-    await db.sync_queue.update(jobId, { status: 'queued' })
-    console.warn('[SequentialSync] Offline - job queued for later:', job.resource, job.action)
-    return { success: false, offline: true, jobId }
-  }
-
-  // 3. Execute API call directly; the set-end modal waits at most `timeout`
-  const inFlight = Promise.resolve()
-    .then(() => processJob({ ...job, id: jobId }))
-    .then(
-      (result) => settleJob(job, jobId, result),
-      (error) => settleException(job, jobId, error)
-    )
-    .catch((err) => {
-      console.error('[SequentialSync] Could not store the sync outcome:', err)
-      return { success: false, error: err?.message, jobId }
-    })
-
-  let timer = null
-  const timedOut = new Promise(resolve => {
-    timer = setTimeout(() => resolve(TIMED_OUT), timeout)
-  })
-  try {
-    const outcome = await Promise.race([inFlight, timedOut])
-    if (outcome === TIMED_OUT) {
-      console.warn(`[SequentialSync] ${job.resource} ${job.action} still in flight after ${timeout} ms; continuing in the background`)
-      return { success: false, offline: true, jobId }
-    }
-    return outcome
-  } finally {
-    if (timer) clearTimeout(timer)
+// The outcome of one queued write for the set-end progress modal
+function outcomeOf(row) {
+  switch (row?.status) {
+    case 'sent':
+    case 'superseded':
+      return { success: true }
+    case 'failed':
+      // Refused by the backend (4xx): shown in the sync indicator with a manual retry
+      return { success: false, error: `${row.resource} ${row.action} refused` }
+    case 'error':
+      return { success: false, error: `${row.resource} ${row.action} failed` }
+    case 'dropped':
+      // Another device scores the match (utils/matchHandover) or it cannot be
+      // attributed: kept with the match's other writes, a warning
+      return { success: false, offline: true, setAside: true }
+    default:
+      // Still queued (backend unreachable, waiting for older writes, no
+      // session): saved locally, the background queue sends it
+      return { success: false, offline: true }
   }
 }
 
 /**
- * useSequentialSync - Hook for sequential sync operations at set end
+ * Queue writes the scorer waits for (the set end) and wait for them, at most
+ * `timeout` ms in total.
  *
- * Unlike the background sync queue (useSyncQueue), this hook:
- * - Executes sync operations directly and waits for completion
- * - Provides step-by-step progress feedback
- * - Logs detailed errors when sync fails
+ * They are written to sync_queue together, in one transaction, as ordinary
+ * 'queued' jobs, and the background queue sends them: behind every older job
+ * of the same set and match (runQueuePass keeps them in order per entity).
+ * They were once sent directly, past the queue: after a cloud outage the set
+ * end reached the server before the queued insert of its own set (0 rows
+ * updated, counted as sent), the insert then wrote the set as unfinished for
+ * good, and the previous set end's match update, still queued, rolled
+ * current_set and set_results back. Written one by one at the moment they were
+ * sent, the match update of a set end was lost when the page died during the
+ * set update (stress test 2026-10-25).
+ *
+ * @param {Array<{resource: string, action: string, payload: object}>} jobs in sending order
+ * @returns {Promise<Array<{ success: boolean, offline?: boolean, setAside?: boolean, error?: string, jobId: number }>>}
+ */
+export async function queueAndWait(jobs, timeout = 10000) {
+  const ts = Date.now()
+  const jobIds = await db.transaction('rw', db.sync_queue, async () => {
+    const ids = []
+    for (const job of jobs) ids.push(await db.sync_queue.add({ ...job, ts, status: 'queued' }))
+    return ids
+  })
+
+  // Offline: saved locally, nothing to wait for
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    console.warn('[SequentialSync] Offline - queued for later:', jobs.map(j => `${j.resource} ${j.action}`).join(', '))
+    return jobIds.map(jobId => ({ success: false, offline: true, jobId }))
+  }
+
+  requestQueueFlush()
+  const deadline = Date.now() + timeout
+  let rows = []
+  for (;;) {
+    rows = await db.sync_queue.bulkGet(jobIds)
+    if (rows.every(row => !row || SETTLED.has(row.status))) break
+    const left = deadline - Date.now()
+    if (left <= 0) {
+      console.warn(`[SequentialSync] not sent within ${timeout} ms; the sync queue sends it in the background`)
+      break
+    }
+    await new Promise(resolve => setTimeout(resolve, Math.min(POLL_MS, left)))
+  }
+  return rows.map((row, i) => ({ ...outcomeOf(row), jobId: jobIds[i] }))
+}
+
+/**
+ * useSequentialSync - set end sync with progress feedback
+ *
+ * The set-end writes go through the background sync queue (queueAndWait):
+ * this hook queues them, waits a bounded time for them and reports the steps
+ * to the progress modal.
  */
 export function useSequentialSync() {
   const [syncState, setSyncState] = useState(null)
 
-  /** See sendJobNow. */
-  const executeAndWait = useCallback((job, timeout = 10000) => sendJobNow(job, timeout), [])
-
   /**
-   * Main function: Sync set end sequentially with UI progress
+   * Main function: Sync set end with UI progress
    *
    * @param {Object} params
    * @param {Object|null} params.lastPointPayload - Event payload for last point (or null if no point to sync)
    * @param {Object} params.setPayload - Set update payload
-   * @param {Object|null} params.matchPayload - Match update payload (if match end)
+   * @param {Object|null} params.matchPayload - Match update payload (current_set, set_results; the result at the match end)
    * @returns {Promise<{ success: boolean, hasWarning: boolean }>}
    */
   const syncSetEnd = useCallback(async ({ lastPointPayload, setPayload, matchPayload }) => {
@@ -152,49 +112,36 @@ export function useSequentialSync() {
       { id: 'set', label: 'syncingSetCompletion', status: 'pending' },
       { id: 'done', label: 'done', status: 'pending' }
     ]
+    const publish = (isComplete = false) => setSyncState({
+      steps: [...steps],
+      hasError: steps.some(s => s.status === 'error'),
+      hasWarning: steps.some(s => s.status === 'warning'),
+      isComplete
+    })
 
-    setSyncState({ steps: [...steps], hasError: false, hasWarning: false, isComplete: false })
-
-    // Step 1: Sync last point
     steps[0].status = 'in_progress'
-    setSyncState({ steps: [...steps], hasError: false, hasWarning: false, isComplete: false })
-
-    if (lastPointPayload) {
-      const result = await executeAndWait({ resource: 'event', action: 'insert', payload: lastPointPayload })
-      steps[0].status = result.success ? 'done' : (result.offline ? 'warning' : 'error')
-    } else {
-      // No point to sync (e.g., set already synced)
-      steps[0].status = 'done'
-    }
-
-    setSyncState({ steps: [...steps], hasError: steps[0].status === 'error', hasWarning: steps[0].status === 'warning', isComplete: false })
-
-    // Step 2: Sync set completion (+ match if match end)
     steps[1].status = 'in_progress'
-    setSyncState({ steps: [...steps], hasError: steps[0].status === 'error', hasWarning: steps[0].status === 'warning', isComplete: false })
+    publish()
 
-    const setResult = await executeAndWait({ resource: 'set', action: 'update', payload: setPayload })
-    steps[1].status = setResult.success ? 'done' : (setResult.offline ? 'warning' : 'error')
-
-    // If match end, also sync match update
-    if (matchPayload) {
-      const matchResult = await executeAndWait({ resource: 'match', action: 'update', payload: matchPayload })
-      if (!matchResult.success && !matchResult.offline) {
-        steps[1].status = 'error'
-      } else if (!matchResult.success && matchResult.offline && steps[1].status !== 'error') {
-        steps[1].status = 'warning'
-      }
-    }
-
-    // Step 3: Done
+    // All of them queued at once: a page that dies now still sends them all
+    const jobs = [
+      ...(lastPointPayload ? [{ resource: 'event', action: 'insert', payload: lastPointPayload }] : []),
+      { resource: 'set', action: 'update', payload: setPayload },
+      ...(matchPayload ? [{ resource: 'match', action: 'update', payload: matchPayload }] : [])
+    ]
+    const results = await queueAndWait(jobs)
+    const stepOf = (list) => list.some(r => !r.success && !r.offline) ? 'error'
+      : list.some(r => !r.success) ? 'warning' : 'done'
+    // (no point to sync: the set's last point went with its rally)
+    steps[0].status = lastPointPayload ? stepOf(results.slice(0, 1)) : 'done'
+    steps[1].status = stepOf(lastPointPayload ? results.slice(1) : results)
     steps[2].status = 'done'
+    publish(true)
+
     const hasError = steps.some(s => s.status === 'error')
     const hasWarning = steps.some(s => s.status === 'warning')
-
-    setSyncState({ steps: [...steps], hasError, hasWarning, isComplete: true })
-
     return { success: !hasError, hasWarning }
-  }, [executeAndWait])
+  }, [])
 
   /**
    * Reset sync state (call when modal closes)
@@ -203,5 +150,5 @@ export function useSequentialSync() {
     setSyncState(null)
   }, [])
 
-  return { syncState, setSyncState, syncSetEnd, executeAndWait, resetSyncState }
+  return { syncState, setSyncState, syncSetEnd, resetSyncState }
 }
