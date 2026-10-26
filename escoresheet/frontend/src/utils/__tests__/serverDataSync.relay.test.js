@@ -25,6 +25,7 @@ import {
   getMatchData,
   uploadRosterToCloud,
   liveClockOffsetAfter,
+  MAX_LIVE_CLOCK_OFFSET_MS,
   liveStateNow,
   LIVE_STATE_HOLD_MS
 } from '../serverDataSync'
@@ -46,6 +47,11 @@ describe('relay key and payload (scorer)', () => {
 
   it('stamps the sync with the scorer\'s clock (tablets compare live-state pushes with it)', () => {
     expect(relayMatchPayload({ id: 1, seed_key: SEED }, null, { now: 1234 }).match._syncedAt).toBe(1234)
+  })
+
+  // the claim goes out as device.claim to the relay alone, never to the room's tablets
+  it('leaves the device\'s venue claim out of the match the relay hands on', () => {
+    expect(relayMatchPayload({ id: 1, seed_key: SEED, scorerClaim: 'c-1' }, null).match).not.toHaveProperty('scorerClaim')
   })
 
   it('stamps the sync with the live-state order marked before the reads', () => {
@@ -500,7 +506,9 @@ describe('match access after the PIN step', () => {
     })
     await getMatchData(SEED)
     const check = calls.find((c) => c.url.includes('validate-connection-pin'))
-    expect(JSON.parse(check.init.body)).toEqual({ pin: '314159', type: 'bench_home' })
+    // against this match only: its own scope of the backend's PIN budget,
+    // apart from the hall's typos for other matches (2026-10-26)
+    expect(JSON.parse(check.init.body)).toEqual({ pin: '314159', type: 'bench_home', matchExternalId: SEED })
     expect(matchAccessFor(SEED).token).toBe('v1.new.sig')
     expect(dbReads).toBe(2)
     // Within the minute: no second PIN check
@@ -650,6 +658,18 @@ describe('hand-over to a device whose clock is behind', () => {
     expect(liveClockOffsetAfter(laptopLast, A_NOW + 5000)).toBe(0)
     expect(liveClockOffsetAfter(null, B_NOW)).toBe(0)
     expect(liveStateNow({ id: 1 }, B_NOW)).toBe(B_NOW)
+  })
+
+  // 2026-10-26: following a clock an hour ahead (a laptop in the wrong time
+  // zone) stamped every state of the rest of the match, and the time-out and
+  // break starts the website and Point Hub count from, an hour ahead
+  it('the offset a device takes on is at most 10 minutes, a stored one too', () => {
+    const hourAhead = { ...laptopLast, updated_at: iso(B_NOW + 3600000) }
+    expect(liveClockOffsetAfter(hourAhead, B_NOW)).toBe(MAX_LIVE_CLOCK_OFFSET_MS)
+    expect(MAX_LIVE_CLOCK_OFFSET_MS).toBe(600000)
+    expect(liveStateNow({ id: 1, liveClockOffsetMs: 3600001 }, B_NOW)).toBe(B_NOW + MAX_LIVE_CLOCK_OFFSET_MS)
+    // a realistic skew is followed whole
+    expect(liveClockOffsetAfter(laptopLast, B_NOW)).toBe(180001)
   })
 
   it('the referee and benches follow the new device at its first bundle and live state', () => {

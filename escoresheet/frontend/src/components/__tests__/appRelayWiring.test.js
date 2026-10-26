@@ -53,13 +53,20 @@ describe('App.jsx relay wiring', () => {
   // Stress test 2026-10-25: the laptop a match moved away from re-synced its
   // older copy into the room when it came back online. The cloud relay
   // refuses a device the database does not name as the scorer, so both syncs
-  // name this installation.
-  it('sync-match-data names this installation, from App and Scoreboard alike', () => {
+  // name this installation; 2026-10-26: with its claim of the match, which
+  // the venue relays check (matchHandover relaySyncDevice).
+  it('sync-match-data names this installation and its claim, from App and Scoreboard alike', () => {
     const body = slice('const syncMatchData = async () => {', 'const handlePinValidationRequest')
-    expect(body).toMatch(/device: writingDevice\(\)/)
+    expect(body).toMatch(/relaySyncDevice\(db, currentActiveMatchId, writingDevice\(\)\)/)
+    expect(body).toMatch(/\n\s*device\n\s*\}/)
     const start = scoreboardSrc.indexOf("type: 'sync-match-data',")
     expect(start).toBeGreaterThan(-1)
-    expect(scoreboardSrc.slice(start, scoreboardSrc.indexOf('}', start))).toMatch(/device: writingDevice\(\)/)
+    expect(scoreboardSrc.slice(start, scoreboardSrc.indexOf('}', start))).toMatch(/\n\s*device,\n/)
+    const reads = scoreboardSrc.slice(scoreboardSrc.lastIndexOf('await Promise.all([', start), start)
+    expect(reads).toMatch(/relaySyncDevice\(db, matchId, writingDevice\(\)\)/)
+    // a venue relay's refusal of a claim taken over is shown to the scorer
+    expect(scoreboardSrc).toMatch(/'too-many-matches', 'scorer-moved'\]\.includes\(message\.code\)/)
+    expect(scoreboardSrc).toMatch(/relayRejection\.code === 'scorer-moved'\n\s*\? t\('scoreboard\.relayRejected\.scorerMoved'/)
   })
 
   // National peak load test 2026-10-26: the undo snapshots were about 90% of
@@ -83,7 +90,7 @@ describe('Scoreboard relay connection', () => {
     expect(start).toBeGreaterThan(-1)
     const onOpen = scoreboardSrc.slice(start, scoreboardSrc.indexOf('onMessage:', start))
     expect(onOpen).toMatch(/const initialSync = syncMatchData\(\)/)
-    expect(onOpen).toMatch(/initialSync\.then\(\(\) => syncLiveStateRef\.current\?\.\('reconnect', null, null\)/)
+    expect(onOpen).toMatch(/initialSync\.then\(\(\) => syncLiveStateRef\.current\?\.\(RECONNECT_PUSH, null, null\)/)
   })
 })
 
@@ -121,5 +128,38 @@ describe('health checks', () => {
     for (const s of [src, scoreboardSrc]) expect(s).not.toMatch(/fetch\([^)]*\/api\/match\/list/)
     expect(src).toMatch(/fetch\('\/api\/server\/status'/)
     expect(scoreboardSrc).toMatch(/`\$\{backendUrl\}\/api\/server\/status` : '\/api\/server\/status'/)
+  })
+})
+
+// MatchSetup cannot be mounted here either: its live-state write pinned.
+// 2026-10-26: a team colour changed on a device that continued the match
+// went out on its own clock, behind the states it had stamped ahead
+describe('MatchSetup live-state writes', () => {
+  const setupSrc = readFileSync(resolve(__dirname, '../MatchSetup.jsx'), 'utf8')
+  it('a team name, short name or colour change stamps updated_at on the match\'s live-state clock', () => {
+    const writes = []
+    for (let at = setupSrc.indexOf("await apiFrom('match_live_state')"); at > -1; at = setupSrc.indexOf("await apiFrom('match_live_state')", at + 1)) {
+      writes.push(setupSrc.slice(at, setupSrc.indexOf('.eq(', at)))
+    }
+    expect(writes).toHaveLength(3)
+    for (const write of writes) expect(write).toMatch(/updated_at: new Date\(liveStateNow\(match\)\)\.toISOString\(\)/)
+  })
+})
+
+// RefereeApp / BenchApp cannot be mounted here: the typed PIN checks pinned.
+// 2026-10-26: checked against every live match, a hall's wrong PINs for other
+// matches (one venue address) made a new referee wait 10 minutes
+describe('typed tablet PINs are checked against the match the page knows', () => {
+  const refereeSrc = readFileSync(resolve(__dirname, '../../RefereeApp.jsx'), 'utf8')
+  const benchSrc = readFileSync(resolve(__dirname, '../../BenchApp.jsx'), 'utf8')
+  it('the referee: its link, or the game picked in the list', () => {
+    expect(refereeSrc).toMatch(/const picked = linkedMatch\?\.id \?\? availableMatches\.find\(m => String\(m\.gameNumber\) === selectedGameNumber\)\?\.id/)
+    expect(refereeSrc).toMatch(/validateRefereePin\(pinInput\.trim\(\), \{ matchExternalId: typeof picked === 'string' && picked \? picked : null \}\)/)
+  })
+  it('the bench: the match picked (its link or the list)', () => {
+    const at = benchSrc.indexOf('const result = await validateBenchPin(pin, selectedTeam, {')
+    expect(at).toBeGreaterThan(-1)
+    expect(benchSrc.slice(at, benchSrc.indexOf('})', at))).toMatch(/matchExternalId: picked/)
+    expect(benchSrc).toMatch(/const picked = selectedMatch\?\.id/)
   })
 })

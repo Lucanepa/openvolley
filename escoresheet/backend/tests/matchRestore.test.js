@@ -94,6 +94,24 @@ describe('createPinFailureBudget', () => {
     assert.equal(b.repeated('other', 'any:indoor:referee', '111111'), false)
   })
 
+  // 2026-10-26: a hall's wrong PINs for other matches spent the address's
+  // ceiling, and the scoreboard re-proving its own match was refused
+  it('scopeOnly: the scope\'s limit alone, the ceiling neither asked nor counted', () => {
+    const b = createPinFailureBudget({ max: 3, ipMax: 3, windowMs: 60000 })
+    for (const scope of ['a', 'b', 'c']) assert.equal(b.isLimited('hall', scope), false)
+    assert.equal(b.isLimited('hall', 'm:game:1'), true, 'the ceiling is spent')
+    // the trusted check of that scope still goes, and is still limited by it
+    for (let i = 0; i < 3; i++) assert.equal(b.isLimited('hall', 'm:game:1', { scopeOnly: true }), false)
+    assert.equal(b.isLimited('hall', 'm:game:1', { scopeOnly: true }), true)
+    // its refunds give the ceiling nothing back it did not take
+    const c = createPinFailureBudget({ max: 3, ipMax: 2, windowMs: 60000 })
+    assert.equal(c.isLimited('hall', 'a'), false)
+    assert.equal(c.isLimited('hall', 'm:game:1', { scopeOnly: true }), false)
+    c.refund('hall', 'm:game:1', { scopeOnly: true })
+    assert.equal(c.isLimited('hall', 'b'), false)
+    assert.equal(c.isLimited('hall', 'c'), true)
+  })
+
   it('opens again after the window', async () => {
     const b = createPinFailureBudget({ max: 1, ipMax: 1, windowMs: 20 })
     assert.equal(b.isLimited('hall', 'a'), false)
@@ -228,6 +246,88 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
         const r = await restore.restoreMatch(p, W)
         assert.equal(r.status, 400, JSON.stringify(p))
       }
+    })
+
+    // 2026-10-26: a hand-over on a device whose local ids were taken by its
+    // older matches queued a whole-match restore to move the cloud rows to
+    // its own ids; it deleted the match's voided events and the rows the
+    // previous device sent after the read
+    it('rekey: renames the rows named in place and deletes nothing else', async () => {
+      const ext = uniq('REKEY')
+      const made = await restore.restoreMatch(backup(ext, { sets: 2, events: 5 }), W)
+      const id = made.body.data.id
+      const row = async (key) => (await raw.query('SELECT id, external_id, voided_at, payload FROM events WHERE match_id = $1 AND external_id = $2', [id, key])).rows[0]
+      const e1 = await row(`${ext}:e:1`)
+      // event 3 voided after the device read the match; 6 voided before
+      // (never read); 7 sent by the previous device after the read
+      await raw.query('UPDATE events SET voided_at = now(), void_reason = $3 WHERE match_id = $1 AND external_id = $2', [id, `${ext}:e:3`, 'undo'])
+      await raw.query(`INSERT INTO events (match_id, external_id, set_index, type, seq, payload, sport_type, voided_at, void_reason)
+                       VALUES ($1, $2, 1, 'point', 6, '{}', 'indoor', now(), 'undo'), ($1, $3, 1, 'point', 7, '{}', 'indoor', NULL, NULL),
+                              ($1, $4, 1, 'point', 99, '{"stale":true}', 'indoor', NULL, NULL)`,
+      [id, `${ext}:e:6`, `${ext}:e:7`, `${ext}:e:205`])
+
+      // what the device read: sets 1-2, events 1-5 (and 9, gone since), moved to its own ids
+      const b = backup(ext, { sets: 2, events: 5 })
+      b.events.push({ external_id: `${ext}:e:9`, set_index: 1, type: 'point', seq: 9, payload: {}, sport_type: 'indoor' })
+      const to = (key) => key.replace(/:(s|e):(\d+)$/, (_, k, n) => `:${k}:${Number(n) + (k === 's' ? 100 : 200)}`)
+      const rekey = { sets: {}, events: {} }
+      b.sets = b.sets.map((r) => { rekey.sets[to(r.external_id)] = r.external_id; return { ...r, external_id: to(r.external_id) } })
+      b.events = b.events.map((r) => { rekey.events[to(r.external_id)] = r.external_id; return { ...r, external_id: to(r.external_id) } })
+      b.liveState = { ...b.liveState, points_a: 0, points_b: 0 }
+      const r = await restore.restoreMatch({ ...b, rekey }, W)
+      assert.equal(r.status, 200, JSON.stringify(r.body))
+      assert.deepEqual(r.body.data.counts, { sets: 2, events: 6, liveState: 0, rekeyed: 7 })
+
+      const keys = (await raw.query('SELECT external_id, voided_at IS NOT NULL AS voided FROM events WHERE match_id = $1 ORDER BY seq', [id])).rows
+      assert.deepEqual(keys, [
+        { external_id: `${ext}:e:201`, voided: false },
+        { external_id: `${ext}:e:202`, voided: false },
+        { external_id: `${ext}:e:203`, voided: true },
+        { external_id: `${ext}:e:204`, voided: false },
+        { external_id: `${ext}:e:205`, voided: false },
+        { external_id: `${ext}:e:6`, voided: true },
+        { external_id: `${ext}:e:7`, voided: false },
+        { external_id: `${ext}:e:209`, voided: false }
+      ])
+      // in place: the same row under its new id; the stale row under the new id is gone
+      assert.equal((await row(`${ext}:e:201`)).id, e1.id)
+      assert.deepEqual((await row(`${ext}:e:205`)).payload, { n: 4 })
+      assert.deepEqual((await raw.query('SELECT external_id FROM sets WHERE match_id = $1 ORDER BY index', [id])).rows.map((x) => x.external_id), [`${ext}:s:101`, `${ext}:s:102`])
+      // the live state is not keyed by the device's ids: left as it is
+      assert.equal((await raw.query('SELECT points_a FROM match_live_state WHERE match_id = $1', [id])).rows[0].points_a, 3)
+      assert.ok(r.changes.some((c) => c.table === 'events' && c.eventType === 'UPDATE' && c.row.external_id === `${ext}:e:201`))
+
+      // a rekey naming another match's id or an unscoped new id is refused as a whole
+      const bad = { ...b, rekey, events: [...b.events, { external_id: '12', set_index: 1, type: 'point', seq: 12, payload: {}, sport_type: 'indoor' }] }
+      assert.equal((await restore.restoreMatch(bad, W)).body.error.code, 'OV_UNSCOPED_EXTERNAL_ID')
+      assert.equal(await count('events', id), 8)
+    })
+
+    // the device's new ids continue its own counter: they may be old ids of
+    // this same match (renamed one by one, rows still to be moved were
+    // deleted and others moved twice)
+    it('rekey: new ids that are old ids of the same match move every row once', async () => {
+      const ext = uniq('REKEY2')
+      const made = await restore.restoreMatch(backup(ext, { sets: 2, events: 5 }), W)
+      const id = made.body.data.id
+      await raw.query('UPDATE events SET voided_at = now(), void_reason = $3 WHERE match_id = $1 AND external_id = $2', [id, `${ext}:e:3`, 'undo'])
+      const before = (await raw.query('SELECT id, external_id FROM events WHERE match_id = $1', [id])).rows
+      const idOf = Object.fromEntries(before.map((r) => [r.external_id, r.id]))
+      // cloud e:1..e:5 and s:1..s:2 to the device's e:3..e:7 and s:2..s:3
+      const b = backup(ext, { sets: 2, events: 5 })
+      const to = (key) => key.replace(/:(s|e):(\d+)$/, (_, k, n) => `:${k}:${Number(n) + (k === 's' ? 1 : 2)}`)
+      const rekey = { sets: {}, events: {} }
+      b.sets = b.sets.map((r) => { rekey.sets[to(r.external_id)] = r.external_id; return { ...r, external_id: to(r.external_id) } })
+      b.events = b.events.map((r) => { rekey.events[to(r.external_id)] = r.external_id; return { ...r, external_id: to(r.external_id) } })
+      const r = await restore.restoreMatch({ ...b, rekey }, W)
+      assert.equal(r.status, 200, JSON.stringify(r.body))
+      assert.equal(r.body.data.counts.rekeyed, 7)
+      const after = (await raw.query('SELECT id, external_id, voided_at IS NOT NULL AS voided FROM events WHERE match_id = $1 ORDER BY seq', [id])).rows
+      assert.deepEqual(after.map((x) => [x.external_id, x.voided]), [3, 4, 5, 6, 7].map((n) => [`${ext}:e:${n}`, n === 5]))
+      // each row in place: the row of cloud e:n is the device's e:n+2
+      for (let n = 1; n <= 5; n++) assert.equal(after.find((x) => x.external_id === `${ext}:e:${n + 2}`).id, idOf[`${ext}:e:${n}`], `e:${n}`)
+      assert.deepEqual((await raw.query('SELECT external_id, index FROM sets WHERE match_id = $1 ORDER BY index', [id])).rows.map((x) => [x.external_id, x.index]), [[`${ext}:s:2`, 1], [`${ext}:s:3`, 2]])
+      assert.equal(await count('events', id), 5)
     })
 
     it('restores a match without sets, events or live state', async () => {
@@ -452,6 +552,36 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
     // ones above idFloor (frontend importMatchFromSupabase): a rally under the
     // id of a voided event, or of an undo that reached the server before its
     // event, would be born voided (db/015)
+    // 2026-10-26: the device that continues the match becomes its scorer
+    // (server.js takeOverByPin) before the match is read for it: a rally of
+    // the previous device is in what it reads, or refused after the claim
+    it('takeOver runs once the PIN is proved, before the sets and events are read; its answer is `scorer`', async () => {
+      const ext4 = uniq('TAKE')
+      const made = await restore.restoreMatch(backup(ext4, { gameN: 7170, pin: '717171', sets: 1, events: 2 }), W)
+      const seen = []
+      const takeOver = async (m) => {
+        seen.push(m)
+        // the previous device's rally that reached the server just before the claim
+        await raw.query(`INSERT INTO events (match_id, external_id, set_index, type, seq, payload, sport_type)
+                         VALUES ($1, $2, 1, 'point', 3, '{}', 'indoor')`, [m.id, `${ext4}:e:3`])
+        return { mine: true, moved: true }
+      }
+      const r = await restore.restoreByPin({ gameN: 7170, pin: '717171' }, { limitKey: 'ip-take', takeOver })
+      assert.equal(r.status, 200, JSON.stringify(r.body))
+      assert.deepEqual(seen, [{ id: made.body.data.id, external_id: ext4 }])
+      assert.deepEqual(r.body.data.events.map(e => e.seq), [1, 2, 3])
+      assert.deepEqual(r.body.data.scorer, { mine: true, moved: true })
+
+      // a wrong PIN never gets that far; a failing take-over leaves the lookup as it was
+      assert.equal((await restore.restoreByPin({ gameN: 7170, pin: '000000' }, { limitKey: 'ip-take-2', takeOver })).status, 404)
+      assert.equal(seen.length, 1)
+      const failing = await restore.restoreByPin({ gameN: 7170, pin: '717171' }, { limitKey: 'ip-take-3', takeOver: async () => { throw new Error('db down') } })
+      assert.equal(failing.status, 200)
+      assert.equal(failing.body.data.scorer, undefined)
+      const none = await restore.restoreByPin({ gameN: 7170, pin: '717171' }, { limitKey: 'ip-take-4', takeOver: async () => null })
+      assert.equal(none.body.data.scorer, undefined)
+    })
+
     it('idFloor: the highest set / event ids the match used, voided events and revisions included', async () => {
       const ext3 = uniq('FLOOR')
       const b = backup(ext3, { gameN: 6160, pin: '616161', sets: 2, events: 3 })

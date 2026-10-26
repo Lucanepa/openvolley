@@ -164,7 +164,8 @@ import {
   isClosingJob,
   CLOUD_BLOCK_EVENT,
   matchEndUpdateNeeded,
-  checkScorerMoved
+  checkScorerMoved,
+  runUploadLane
 } from '../useSyncQueue'
 import { queueAndWait, useSequentialSync } from '../useSequentialSync'
 
@@ -491,6 +492,23 @@ describe('runQueuePass', () => {
     expect(sent.liveState).toEqual({ match_status: 'live' })
   })
 
+  // 2026-10-26: a hand-over's re-key replaced the whole match on the server
+  // (voided events and rows sent after the read gone); the rows it moves are
+  // named, so the server renames them in place
+  it('a hand-over re-key sends the cloud id of each row it moves', async () => {
+    const job = restoreJob()
+    job.payload.rekey = { sets: { 'match_100_aaa:s:1': 'match_100_aaa:s:6' }, events: { 'match_100_aaa:e:1': 'match_100_aaa:e:121' } }
+    fakeDb.sync_queue.reset([job])
+    api.respond = (call) => (call.table === '__restore' ? ok({ id: MATCH_UUID, counts: { rekeyed: 2 } }) : defaultRespond(call))
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+    expect(api.calls[0].data.rekey).toEqual(job.payload.rekey)
+    // a backup restore names none
+    fakeDb.sync_queue.reset([restoreJob()])
+    await runQueuePass()
+    expect('rekey' in api.calls[1].data).toBe(false)
+  })
+
   it('restore refused by the server (400, rolled back) is parked as failed', async () => {
     fakeDb.sync_queue.reset([restoreJob()])
     api.respond = (call) => (call.table === '__restore'
@@ -638,13 +656,13 @@ describe('scoresheet upload job', () => {
     api.respond = (call) => call.table === '__storage'
       ? { data: null, error: { message: 'Failed to fetch', status: 0, network: true } }
       : ok()
-    const offline = await runQueuePass()
+    const offline = await runUploadLane()
     expect(offline.stopped).toBe(true)
     expect([...fakeDb.sync_queue.map.values()].map(j => j.status)).toEqual(['queued', 'queued'])
 
     api.calls = []
     api.respond = defaultRespond
-    const outcome = await runQueuePass()
+    const outcome = await runUploadLane()
     expect(outcome.sent).toBe(2)
     const uploads = api.calls.filter(c => c.table === '__storage')
     expect(uploads.map(c => c.data.path)).toEqual(['2026-10-25/game903703_k1_final.json', '2026-10-25/game903703_k1.pdf'])
@@ -660,9 +678,36 @@ describe('scoresheet upload job', () => {
     api.respond = (call) => call.table === '__storage' && call.data.path === 'a/game1_k1.pdf'
       ? { data: null, error: { message: 'Forbidden', code: 'OV_FORBIDDEN', status: 403 } }
       : ok()
-    await runQueuePass()
+    await runUploadLane()
     expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
     expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+  })
+
+  // 2026-10-26: on an uplink too slow for the storage timeout every pass
+  // spent ~90 s on the upload, then stopped as offline, and the rallies of
+  // the next match waited each time (44 s in one stress run)
+  it('goes in its own lane: the score\'s pass never waits for a slow upload', async () => {
+    const eventJob = (id) => ({ id, resource: 'event', action: 'insert', status: 'queued', payload: { external_id: `match_100_aaa:e:${id}`, match_id: 'match_100_aaa' } })
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'scoresheet', action: 'upload', status: 'queued', payload: { path: 'a/game1_k1.pdf', file: new Blob(['x']), contentType: 'application/pdf' } },
+      eventJob(2)
+    ])
+    let release
+    const hanging = new Promise((resolve) => { release = resolve })
+    api.respond = (call) => (call.table === '__storage' ? hanging.then(() => ok()) : defaultRespond(call))
+    const pass = await Promise.race([runQueuePass(), new Promise((resolve) => setTimeout(() => resolve('still uploading'), 500))])
+    expect(pass).toMatchObject({ sent: 1, stopped: false })
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+    expect(api.calls.some(c => c.table === '__storage')).toBe(false)
+
+    // the lane sends it, one pass at a time, while the score goes on
+    const lane = runUploadLane()
+    expect(await runUploadLane()).toBeNull()
+    fakeDb.sync_queue.map.set(3, { ...eventJob(3) })
+    expect((await runQueuePass()).sent).toBe(1)
+    release()
+    expect((await lane).sent).toBe(1)
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
   })
 })
 
@@ -1141,6 +1186,26 @@ describe('useSyncQueue flush loop', () => {
     })
     expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
     expect(result.current.syncStatus).toBe('synced')
+    unmount()
+  })
+
+  // 2026-10-26: the flush starts the scoresheet files' lane and does not
+  // wait for it; the score shows synced while a file still uploads
+  it('sends the scoresheet files beside the score, without waiting for them', async () => {
+    let release
+    const hanging = new Promise((resolve) => { release = resolve })
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'scoresheet', action: 'upload', status: 'queued', payload: { path: 'a/game1_k1.pdf', file: new Blob(['x']), contentType: 'application/pdf' } },
+      { id: 2, resource: 'match', action: 'insert', status: 'queued', payload: { external_id: 'match_100_aaa' } }
+    ])
+    api.respond = (call) => (call.table === '__storage' ? hanging.then(() => ok()) : defaultRespond(call))
+    const { result, unmount } = renderHook(() => useSyncQueue())
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
+    expect(result.current.syncStatus).toBe('synced')
+    expect(api.calls.filter(c => c.table === '__storage')).toHaveLength(1)
+    await act(async () => { release(); await vi.advanceTimersByTimeAsync(10) })
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
     unmount()
   })
 

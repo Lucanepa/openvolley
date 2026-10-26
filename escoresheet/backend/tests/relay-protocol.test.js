@@ -611,6 +611,88 @@ describe('backend WebSocket relay protocol', () => {
     anyone.ws.close()
   })
 
+  // 2026-10-26: the cloud relay asks its database which device scores a
+  // match; this venue relay let any device with the game PIN replace the
+  // room, so a laptop back on the Wi-Fi put its older copy over the phone
+  // that had continued the match (lanRelayCore has the same rules)
+  it('a device whose claim another device took over cannot put its copy back on the room', async () => {
+    const wsUrl = `ws://127.0.0.1:${port}`
+    const LAPTOP = '0a0a0a0a-1111-4111-8111-000000000001'
+    const PHONE = '0b0b0b0b-2222-4222-8222-000000000002'
+    const sync = (device, home) => syncMessage(makeMatch({ id: 41 }), {
+      sets: [{ id: 1, index: 1, homePoints: home, awayPoints: 0 }], device
+    })
+    const settle = async (c) => {
+      const n = c.messages.filter((m) => m.type === 'pong').length
+      c.send({ type: 'ping' })
+      await c.waitFor(() => c.messages.filter((m) => m.type === 'pong').length > n)
+    }
+    const laptop = await openClient(wsUrl)
+    const phone = await openClient(wsUrl)
+    const referee = await openClient(wsUrl)
+    laptop.send(sync({ id: LAPTOP, platform: 'web', claim: 'laptop-1' }, 3))
+    await settle(laptop)
+    referee.send({ type: 'subscribe-match', matchId: '41', pin: PINS.refereePin })
+    await referee.waitFor((m) => m.type === 'match-full-data')
+
+    // the phone continues the match: the laptop's socket is told
+    phone.send(sync({ id: PHONE, platform: 'android', claim: 'phone-1' }, 5))
+    await settle(phone)
+    await laptop.waitFor((m) => m.type === 'scorer-moved' && m.matchId === '41')
+    assert.equal((await referee.waitFor((m) => m.type === 'match-data-update' && m.sets?.[0]?.homePoints === 5)).matchId, '41')
+
+    // its older copy, on that socket or a new one: refused, the referee keeps the phone's
+    laptop.send(sync({ id: LAPTOP, platform: 'web', claim: 'laptop-1' }, 3))
+    await settle(laptop)
+    assert.equal(laptop.messages.filter((m) => m.type === 'error').at(-1)?.code, 'scorer-moved')
+    const laptopAgain = await openClient(wsUrl)
+    laptopAgain.send(sync({ id: LAPTOP, platform: 'web', claim: 'laptop-1' }, 3))
+    await settle(laptopAgain)
+    assert.equal(laptopAgain.messages.filter((m) => m.type === 'error').at(-1)?.code, 'scorer-moved')
+    await settle(referee)
+    assert.equal(referee.messages.filter((m) => m.type === 'match-data-update').at(-1).sets[0].homePoints, 5)
+
+    // the laptop takes it back (a new claim): now the phone's claim is refused
+    laptopAgain.send(sync({ id: LAPTOP, platform: 'web', claim: 'laptop-2' }, 6))
+    await settle(laptopAgain)
+    assert.equal(laptopAgain.messages.filter((m) => m.type === 'error').length, 1)
+    await phone.waitFor((m) => m.type === 'scorer-moved')
+    phone.send(sync({ id: PHONE, platform: 'android', claim: 'phone-1' }, 7))
+    await settle(phone)
+    assert.equal(phone.messages.filter((m) => m.type === 'error').at(-1)?.code, 'scorer-moved')
+
+    // an older app names no claim: not checked, as before
+    const oldApp = await openClient(wsUrl)
+    oldApp.send(sync({ id: PHONE, platform: 'android' }, 8))
+    await settle(oldApp)
+    assert.equal(oldApp.messages.some((m) => m.type === 'error'), false)
+    await referee.waitFor((m) => m.type === 'match-data-update' && m.sets?.[0]?.homePoints === 8)
+
+    for (const c of [laptop, laptopAgain, phone, referee, oldApp]) c.ws.close()
+  })
+
+  // 2026-10-26: a phone that left the hall's Wi-Fi sent no close frame, and
+  // its socket kept its slot and its rooms until TCP gave up (the cloud relay
+  // pinged, this venue relay did not)
+  it('ends a socket that stops answering pings, never one that answers', { timeout: 90_000 }, async () => {
+    const wsUrl = `ws://127.0.0.1:${port}`
+    const live = await openClient(wsUrl)
+    const gone = new WebSocket(wsUrl, { autoPong: false })
+    await new Promise((resolve, reject) => { gone.once('open', resolve); gone.once('error', reject) })
+    let pinged = 0
+    gone.on('ping', () => { pinged++ })
+    const t0 = Date.now()
+    await new Promise((resolve) => gone.once('close', resolve))
+    const after = Date.now() - t0
+    assert.ok(pinged >= 1, 'it was pinged first')
+    assert.ok(after >= 25_000 && after <= 75_000, `ended after the ping it missed (${after} ms)`)
+    assert.equal(live.ws.readyState, WebSocket.OPEN)
+    await live.waitFor((m) => m.type === 'pong', 100).catch(() => {})
+    live.send({ type: 'ping' })
+    await live.waitFor((m) => m.type === 'pong')
+    live.ws.close()
+  })
+
   it('stops game-PIN guessing without revealing a hit', async () => {
     const wsUrl = `ws://127.0.0.1:${port}`
     const scoreboard = await openClient(wsUrl)
