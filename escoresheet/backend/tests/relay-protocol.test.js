@@ -671,6 +671,54 @@ describe('backend WebSocket relay protocol', () => {
     for (const c of [laptop, laptopAgain, phone, referee, oldApp]) c.ws.close()
   })
 
+  // 2026-10-27 review: the take-over lived in memory only. After a restart
+  // of this relay (a room it does not know yet, here a new match id) the
+  // phone that had continued the match from the laptop's backup synced first,
+  // the laptop's older copy took the room, and every later phone sync was
+  // refused ('scorer-moved'), the referee left on the laptop's score
+  it('after a restart, the copy a device continued from cannot take the room from it', async () => {
+    const wsUrl = `ws://127.0.0.1:${port}`
+    const LAPTOP = '0a0a0a0a-1111-4111-8111-000000000001'
+    const PHONE = '0b0b0b0b-2222-4222-8222-000000000002'
+    const sync = (device, home) => syncMessage(makeMatch({ id: 43 }), {
+      sets: [{ id: 1, index: 1, homePoints: home, awayPoints: 0 }], device
+    })
+    const settle = async (c) => {
+      const n = c.messages.filter((m) => m.type === 'pong').length
+      c.send({ type: 'ping' })
+      await c.waitFor(() => c.messages.filter((m) => m.type === 'pong').length > n)
+    }
+    // The phone restored the laptop's backup: its claim names the laptop's
+    const phoneDevice = { id: PHONE, platform: 'android', claim: 'phone-1', supersedes: ['laptop-1'] }
+    const laptop = await openClient(wsUrl)
+    const phone = await openClient(wsUrl)
+    const referee = await openClient(wsUrl)
+    phone.send(sync(phoneDevice, 20))
+    await settle(phone)
+    referee.send({ type: 'subscribe-match', matchId: '43', pin: PINS.refereePin })
+    await referee.waitFor((m) => m.type === 'match-full-data')
+
+    laptop.send(sync({ id: LAPTOP, platform: 'web', claim: 'laptop-1' }, 3))
+    await settle(laptop)
+    assert.equal(laptop.messages.filter((m) => m.type === 'error').at(-1)?.code, 'scorer-moved')
+    phone.send(sync(phoneDevice, 21))
+    await settle(phone)
+    assert.equal(phone.messages.some((m) => m.type === 'error'), false)
+    await referee.waitFor((m) => m.type === 'match-data-update' && m.sets?.[0]?.homePoints === 21)
+    await settle(referee)
+    assert.equal(referee.messages.some((m) => m.type === 'match-data-update' && m.sets?.[0]?.homePoints === 3), false)
+
+    // the laptop continues it again from the phone's backup: its new claim
+    // takes the room, the phone's is the older copy now
+    laptop.send(sync({ id: LAPTOP, platform: 'web', claim: 'laptop-2', supersedes: ['phone-1', 'laptop-1'] }, 22))
+    await referee.waitFor((m) => m.type === 'match-data-update' && m.sets?.[0]?.homePoints === 22)
+    phone.send(sync(phoneDevice, 21))
+    await settle(phone)
+    assert.equal(phone.messages.filter((m) => m.type === 'error').at(-1)?.code, 'scorer-moved')
+
+    for (const c of [laptop, phone, referee]) c.ws.close()
+  })
+
   // 2026-10-26: a phone that left the hall's Wi-Fi sent no close frame, and
   // its socket kept its slot and its rooms until TCP gave up (the cloud relay
   // pinged, this venue relay did not)

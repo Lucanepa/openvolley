@@ -945,6 +945,63 @@ describe('lanRelayCore protocol', () => {
     expect(referee.last('match-data-update').sets[0].homePoints).toBe(8)
   })
 
+  // 2026-10-27 review: the relay kept who took the room over in memory only.
+  // After a restart of the relay (the desktop app, the Point Hub board) the
+  // first sync was granted 'new' and the second 'proved': the phone that had
+  // continued the match from the laptop's backup synced first, the laptop's
+  // periodic sync of its older copy took the room, and every later phone sync
+  // was refused ('scorer-moved'), the referee left on the laptop's score
+  it('after a restart, the copy a device continued from cannot take the room from it', () => {
+    const LAPTOP = '0a0a0a0a-1111-4111-8111-000000000001'
+    const PHONE = '0b0b0b0b-2222-4222-8222-000000000002'
+    const sync = (device, home) => syncMessage(makeMatch({ id: 1 }), {
+      sets: [{ id: 1, matchId: 1, index: 1, homePoints: home, awayPoints: 0 }], device
+    })
+    // The phone restored the laptop's backup: its claim names the laptop's
+    const phoneDevice = { id: PHONE, platform: 'android', claim: 'phone-1', supersedes: ['laptop-1'] }
+    const laptopDevice = { id: LAPTOP, platform: 'web', claim: 'laptop-1' }
+
+    // phone first after the restart, then the laptop's older copy
+    let relay = createLanRelay()
+    let referee = connect(relay, '192.168.1.20')
+    msg(relay, referee, { type: 'subscribe-match', matchId: '1', pin: PINS.refereePin })
+    let phone = connect(relay, '192.168.1.11')
+    let laptop = connect(relay, '192.168.1.10')
+    msg(relay, phone, sync(phoneDevice, 20))
+    msg(relay, laptop, sync(laptopDevice, 3))
+    expect(laptop.last('error')).toMatchObject({ code: 'scorer-moved', matchId: '1' })
+    msg(relay, phone, sync(phoneDevice, 21))
+    expect(phone.last('error')).toBeUndefined()
+    expect(referee.last('match-data-update').sets[0].homePoints).toBe(21)
+
+    // the laptop first: it has the room until the phone's next sync, then
+    // never again
+    relay = createLanRelay()
+    referee = connect(relay, '192.168.1.20')
+    msg(relay, referee, { type: 'subscribe-match', matchId: '1', pin: PINS.refereePin })
+    phone = connect(relay, '192.168.1.11')
+    laptop = connect(relay, '192.168.1.10')
+    msg(relay, laptop, sync(laptopDevice, 3))
+    msg(relay, phone, sync(phoneDevice, 20))
+    expect(phone.last('error')).toBeUndefined()
+    expect(laptop.last('scorer-moved')).toMatchObject({ matchId: '1' })
+    msg(relay, laptop, sync(laptopDevice, 3))
+    expect(laptop.last('error')).toMatchObject({ code: 'scorer-moved' })
+    msg(relay, phone, sync(phoneDevice, 21))
+    expect(phone.last('error')).toBeUndefined()
+    expect(referee.last('match-data-update').sets[0].homePoints).toBe(21)
+
+    // the laptop continues the match again (a backup of the phone's): its
+    // new claim takes the room, the phone's is the older copy now
+    laptop.sent.length = 0
+    msg(relay, laptop, sync({ id: LAPTOP, platform: 'web', claim: 'laptop-2', supersedes: ['phone-1', 'laptop-1'] }, 22))
+    expect(laptop.last('error')).toBeUndefined()
+    expect(referee.last('match-data-update').sets[0].homePoints).toBe(22)
+    msg(relay, phone, sync(phoneDevice, 21))
+    expect(phone.last('error')).toMatchObject({ code: 'scorer-moved' })
+    expect(referee.last('match-data-update').sets[0].homePoints).toBe(22)
+  })
+
   it('a device whose claim was taken over gets the room back once the other device has been gone 10 min', () => {
     const A = '0a0a0a0a-1111-4111-8111-000000000001'
     const B = '0b0b0b0b-2222-4222-8222-000000000002'

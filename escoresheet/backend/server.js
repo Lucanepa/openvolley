@@ -5048,37 +5048,59 @@ async function verifyRelayClaim(clientInfo, matchId, match, device = null) {
 // (frontend/electron/lanRelayCore.cjs isMovedClaim / noteScorer). A sync
 // without a claim (older apps) is not checked. The room's entry keeps
 // scorerClaim ({ id, claim }) and movedClaims (device id -> claim).
+// A sync also names the claims of the copies its device continued the match
+// from (`device.supersedes`, a backup restore): older copies, refused like a
+// claim taken over. The take-overs live in memory only: after a restart of
+// this relay a laptop's older copy synced after the phone that had continued
+// the match took the room from it for good (2026-10-27); every sync of the
+// newer copy names the older claims, so the relay knows them again from its
+// first one. The entry keeps them in supersededClaims (Set of claims).
 const MAX_MOVED_DEVICES = 16
 const MAX_CLAIM_LENGTH = 64
+const MAX_SUPERSEDED_CLAIMS = 8
+const MAX_SUPERSEDED_PER_ROOM = 32
 
-/** A sync's device with its claim ({ id, claim }), or null (not checked). */
+const isVenueClaimString = (c) => typeof c === 'string' && c.length > 0 && c.length <= MAX_CLAIM_LENGTH
+
+/** A sync's device with its claim ({ id, claim, supersedes }), or null (not checked). */
 function venueDeviceClaim(raw) {
   const device = deviceOf(raw)
   const claim = raw && typeof raw === 'object' ? raw.claim : null
-  if (!device || typeof claim !== 'string' || !claim || claim.length > MAX_CLAIM_LENGTH) return null
-  return { id: device.id, claim }
+  if (!device || !isVenueClaimString(claim)) return null
+  const supersedes = Array.isArray(raw.supersedes)
+    ? [...new Set(raw.supersedes.slice(0, MAX_SUPERSEDED_CLAIMS).filter((c) => isVenueClaimString(c) && c !== claim))]
+    : []
+  return { id: device.id, claim, supersedes }
 }
 
 function isMovedVenueClaim(matchId, device) {
   const entry = activeMatches.get(matchId)
   const scorer = entry?.scorerClaim
   if (!scorer || scorer.id === device.id) return false
-  if (entry.movedClaims?.get(device.id) !== device.claim) return false
+  if (entry.movedClaims?.get(device.id) !== device.claim && !entry.supersededClaims?.has(device.claim)) return false
   const grace = isFinishedMatch(entry.match) ? ORPHAN_TAKEOVER_MS : STALE_TAKEOVER_MS
   return !(ownersOf(matchId).length === 0 && entry.orphanedAt && Date.now() - entry.orphanedAt >= grace)
 }
 
 /**
- * The room's scorerClaim / movedClaims after a granted sync of `device`
- * (claim kind `kind`); `previous` is the room's entry before it. A take-over
- * by another device remembers that one's claim as moved, and its sockets stop
- * speaking for the room and are told ('scorer-moved').
+ * The room's scorerClaim / movedClaims / supersededClaims after a granted
+ * sync of `device` (claim kind `kind`); `previous` is the room's entry before
+ * it. A take-over by another device remembers that one's claim as moved, and
+ * its sockets stop speaking for the room and are told ('scorer-moved'). The
+ * claims its copy was continued from are older copies, its own claim never.
  */
 function venueScorerAfter(clientInfo, matchId, previous, device, kind) {
   const fresh = kind === 'takeover' || kind === 'new'
   const prev = fresh ? null : previous?.scorerClaim
   const moved = new Map(fresh ? [] : previous?.movedClaims || [])
   moved.delete(device.id)
+  const older = new Set(fresh ? [] : previous?.supersededClaims || [])
+  older.delete(device.claim)
+  for (const c of device.supersedes) {
+    older.delete(c) // re-added as the newest
+    older.add(c)
+  }
+  while (older.size > MAX_SUPERSEDED_PER_ROOM) older.delete(older.values().next().value)
   if (prev && prev.id !== device.id) {
     moved.set(prev.id, prev.claim)
     while (moved.size > MAX_MOVED_DEVICES) moved.delete(moved.keys().next().value)
@@ -5088,7 +5110,7 @@ function venueScorerAfter(clientInfo, matchId, previous, device, kind) {
       if (c.ws.readyState === 1) { try { c.ws.send(data) } catch { /* closing */ } }
     }
   }
-  return { scorerClaim: device, movedClaims: moved }
+  return { scorerClaim: device, movedClaims: moved, supersededClaims: older }
 }
 
 const CLAIM_ERRORS = {
@@ -5228,7 +5250,7 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
   if (device) clientInfo.scorerDevice = device.id
   const venueScorer = venueDevice
     ? venueScorerAfter(clientInfo, matchId, previous, venueDevice, claimed.kind)
-    : (claimed.kind === 'takeover' || claimed.kind === 'new' ? {} : { scorerClaim: previous?.scorerClaim, movedClaims: previous?.movedClaims })
+    : (claimed.kind === 'takeover' || claimed.kind === 'new' ? {} : { scorerClaim: previous?.scorerClaim, movedClaims: previous?.movedClaims, supersededClaims: previous?.supersededClaims })
   activeMatches.set(matchId, {
     ...venueScorer,
     matchId,

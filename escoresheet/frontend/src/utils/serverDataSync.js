@@ -1870,8 +1870,9 @@ export function relayMatchPayload(match, lastPinSignature = null, { now = Date.n
   // (on the match's live-state clock, as the live states' updated_at)
   out._syncedAt = (Number.isFinite(mark?.at) ? mark.at : now) + liveClockOffset(match)
   delete out.liveClockOffsetMs
-  // (sent as device.claim, matchHandover relaySyncDevice)
+  // (sent as device.claim and device.supersedes, matchHandover relaySyncDevice)
   delete out.scorerClaim
+  delete out.supersededClaims
   if (mark && Number.isFinite(mark.seq) && typeof mark.session === 'string' && mark.session) {
     out._syncedSeq = mark.seq
     out._syncSession = mark.session

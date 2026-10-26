@@ -91,31 +91,64 @@ export async function queueScorerClaim(database, match) {
  * two. null: no such match (or no storage).
  */
 export async function scorerClaimOf(database, matchId) {
+  return (await scorerClaimRecord(database, matchId))?.claim ?? null
+}
+
+/** scorerClaimOf with the claims the match was continued from: { claim, supersedes } or null. */
+async function scorerClaimRecord(database, matchId) {
   if (matchId == null || !database?.matches) return null
   try {
     return await database.transaction('rw', database.matches, async () => {
       const row = await database.matches.get(matchId)
       if (!row) return null
-      if (typeof row.scorerClaim === 'string' && row.scorerClaim) return row.scorerClaim
+      const supersedes = olderClaims(row.supersededClaims)
+      if (typeof row.scorerClaim === 'string' && row.scorerClaim) return { claim: row.scorerClaim, supersedes }
       const claim = randomUuid()
       await database.matches.update(matchId, { scorerClaim: claim })
-      return claim
+      return { claim, supersedes }
     })
   } catch {
     return null
   }
 }
 
+// The claims a sync names as the copies the match was continued from (the
+// venue relays read at most 8)
+const MAX_SUPERSEDED_CLAIMS = 8
+const olderClaims = (list) => (Array.isArray(list)
+  ? [...new Set(list.filter(c => typeof c === 'string' && c && c.length <= 64))].slice(0, MAX_SUPERSEDED_CLAIMS)
+  : [])
+
+/**
+ * The claims a match continued from the copy `match` (a backup file's match
+ * row) supersedes: that copy's claim, then the ones it superseded itself,
+ * newest first. Kept on the restored match (supersededClaims) and sent with
+ * each relay sync (device.supersedes): a venue relay refuses those older
+ * copies even after a restart of the relay, when it no longer remembers
+ * which device took the room over from which (2026-10-27: after a restart,
+ * a laptop's older copy synced after the phone that had continued the match
+ * from its backup took the room for good).
+ * @param {object|null} match
+ * @returns {string[]}
+ */
+export function supersededClaimsOf(match) {
+  return olderClaims([match?.scorerClaim, ...(Array.isArray(match?.supersededClaims) ? match.supersededClaims : [])])
+}
+
 /**
  * The `device` of a relay sync of `matchId`: this installation (`device`,
  * apiClient writingDevice: the cloud relay checks it against the database,
- * db/019) with its claim of the match for the venue relays (scorerClaimOf).
- * null without a device id; without a claim, the device alone.
+ * db/019) with its claim of the match for the venue relays (scorerClaimOf)
+ * and the claims of the copies it continued the match from (supersedes, see
+ * supersededClaimsOf). null without a device id; without a claim, the device
+ * alone.
  */
 export async function relaySyncDevice(database, matchId, device) {
   if (!device) return null
-  const claim = await scorerClaimOf(database, matchId)
-  return claim ? { ...device, claim } : device
+  const record = await scorerClaimRecord(database, matchId)
+  if (!record?.claim) return device
+  const supersedes = record.supersedes.filter(c => c !== record.claim)
+  return supersedes.length ? { ...device, claim: record.claim, supersedes } : { ...device, claim: record.claim }
 }
 
 // The jobs that write a match's score (the server checks the scoring device

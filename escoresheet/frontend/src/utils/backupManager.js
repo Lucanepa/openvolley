@@ -18,7 +18,7 @@ import { buildConnectionPins } from './connectionPins'
 import { missingConnectionPins } from './remoteRoster'
 import { generateSecurePin } from './stringUtils'
 import { isScorerEntry } from './appEntry'
-import { queueScorerClaim, retireSupersededMatches } from './matchHandover'
+import { queueScorerClaim, retireSupersededMatches, supersededClaimsOf } from './matchHandover'
 import { isKnownClosedOnServer, CLOSING_STATUSES } from './matchReopen'
 import { postMatchSignaturesFromServer } from '../domain/signatureEdits'
 import { signatureSourcesFromApproval } from '../domain/phoneSignature'
@@ -596,8 +596,10 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
       liveClockOffsetMs,
       // A claim of its own on the venue relays (made at the next relay sync,
       // matchHandover scorerClaimOf): never the file's, which may be a claim
-      // another device has taken over since
+      // another device has taken over since. The file's claims are older
+      // copies from now on: a venue relay refuses them even after a restart
       scorerClaim: null,
+      supersededClaims: supersededClaimsOf(match),
       restoredAt: new Date().toISOString()
     })
 
@@ -797,8 +799,10 @@ export async function restoreMatchInPlace(matchId, jsonData, { checkServer = ser
       // carries that one's, serverDataSync.liveClockOffset)
       liveClockOffsetMs: liveClockOffset(currentMatch),
       // ... and a new claim on the venue relays: this device continues the
-      // match from the backup (matchHandover scorerClaimOf)
+      // match from the backup (matchHandover scorerClaimOf), whose claims
+      // are older copies from now on (supersededClaimsOf)
       scorerClaim: null,
+      supersededClaims: supersededClaimsOf(match),
       seed_key: externalId, // Ensure seed_key is set for sync
       restoredAt: new Date().toISOString()
     })

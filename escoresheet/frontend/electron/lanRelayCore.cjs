@@ -61,6 +61,11 @@
  *                     sockets that named the previous device and tells them
  *                     { type:'scorer-moved', matchId }. A sync without a claim (older
  *                     apps) is not checked and changes nothing of this.
+ *                     device.supersedes (optional, up to MAX_SUPERSEDED_CLAIMS): the claims
+ *                     of the copies this device continued the match from (a backup
+ *                     restore): older copies of the room's match. Refused like a claim
+ *                     taken over, and since every sync of the newer copy names them, a
+ *                     restart of the relay does not forget them.
  *   match-action      { matchId, action, data, timestamp }   proven scoreboard of matchId only
  *   live-state-update { matchId, liveState }                 proven scoreboard of matchId only
  *   delete-match      { matchId }                            proven scoreboard of matchId only
@@ -233,18 +238,28 @@ const MAX_ACCESS_KEYS = 16
 const MAX_MOVED_DEVICES = 16
 const DEVICE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MAX_CLAIM_LENGTH = 64
+// Claims a sync names as the copies it continued from (device.supersedes),
+// and those a room remembers
+const MAX_SUPERSEDED_CLAIMS = 8
+const MAX_SUPERSEDED_PER_ROOM = 32
+
+const isClaimString = (c) => typeof c === 'string' && c.length > 0 && c.length <= MAX_CLAIM_LENGTH
 
 /**
- * The scoring device a sync names with its claim of the match ({ id, claim },
- * see sync-match-data `device`), or null: no device, or one without a claim
- * (older apps), is not checked.
+ * The scoring device a sync names with its claim of the match ({ id, claim,
+ * supersedes }, see sync-match-data `device`), or null: no device, or one
+ * without a claim (older apps), is not checked. `supersedes`: the claims of
+ * the copies it continued the match from (never its own), [] when none.
  */
 function syncDeviceClaim(raw) {
   if (!raw || typeof raw !== 'object') return null
   const { id, claim } = raw
   if (typeof id !== 'string' || !DEVICE_ID_RE.test(id)) return null
-  if (typeof claim !== 'string' || !claim || claim.length > MAX_CLAIM_LENGTH) return null
-  return { id: id.toLowerCase(), claim }
+  if (!isClaimString(claim)) return null
+  const supersedes = Array.isArray(raw.supersedes)
+    ? [...new Set(raw.supersedes.slice(0, MAX_SUPERSEDED_CLAIMS).filter((c) => isClaimString(c) && c !== claim))]
+    : []
+  return { id: id.toLowerCase(), claim, supersedes }
 }
 
 // PIN types accepted by POST /api/match/validate-pin
@@ -927,6 +942,7 @@ function createLanRelay(options = {}) {
   const displaced = new Map() // matchId -> game PIN an unfinished match had before a stale takeover
   const scorers = new Map() // matchId -> { id, claim }: the device whose claim scores the room
   const movedClaims = new Map() // matchId -> Map<device id, claim> another device's claim took over
+  const supersededClaims = new Map() // matchId -> Set<claim> the scorers' copies were continued from
   let nextClientId = 1
 
   function send(ws, msg) {
@@ -1241,11 +1257,19 @@ function createLanRelay(options = {}) {
    * database, see backend verifyRelayClaim). Once the device that took it
    * over has been gone as long as a stale take-over waits, the match is the
    * old one's again.
+   * Also moved: a claim the room's scorers name as one their copy was
+   * continued from (device.supersedes, a backup restore). The take-overs are
+   * kept in memory only: after a restart of this relay the first sync was
+   * granted, the second proved the PIN, and a laptop's older copy synced
+   * after the phone that had continued the match took the room from it for
+   * good (2026-10-27). Every sync of the newer copy names the older claims,
+   * so the relay knows them again from the newer copy's first sync.
    */
   function isMovedClaim(matchId, device) {
     const scorer = scorers.get(matchId)
     if (!scorer || scorer.id === device.id) return false
-    if (movedClaims.get(matchId)?.get(device.id) !== device.claim) return false
+    if (movedClaims.get(matchId)?.get(device.id) !== device.claim &&
+      !supersededClaims.get(matchId)?.has(device.claim)) return false
     return !isAbandoned(matchId, store.get(matchId))
   }
 
@@ -1255,13 +1279,27 @@ function createLanRelay(options = {}) {
    * remembered as moved (isMovedClaim), and the sockets that named it stop
    * speaking for the room and are told ('scorer-moved'), so its copy cannot
    * replace the room on their next sync. A take-over by another match (a
-   * reused id) starts afresh.
+   * reused id) starts afresh. The claims its copy was continued from are
+   * older copies from now on (isMovedClaim), its own claim never.
    */
   function noteScorer(ws, meta, matchId, device, kind) {
-    if (kind === 'takeover' || kind === 'new') movedClaims.delete(matchId)
+    if (kind === 'takeover' || kind === 'new') {
+      movedClaims.delete(matchId)
+      supersededClaims.delete(matchId)
+    }
     if (meta) meta.scorerDevice = device.id
     const prev = kind === 'takeover' || kind === 'new' ? null : scorers.get(matchId)
     scorers.set(matchId, device)
+    let older = supersededClaims.get(matchId)
+    if (device.supersedes.length && !older) supersededClaims.set(matchId, (older = new Set()))
+    if (older) {
+      older.delete(device.claim)
+      for (const c of device.supersedes) {
+        older.delete(c) // re-added as the newest
+        older.add(c)
+      }
+      while (older.size > MAX_SUPERSEDED_PER_ROOM) older.delete(older.values().next().value)
+    }
     let moved = movedClaims.get(matchId)
     if (moved) moved.delete(device.id)
     if (!prev || prev.id === device.id) return
@@ -1305,6 +1343,7 @@ function createLanRelay(options = {}) {
     displaced.delete(matchId)
     scorers.delete(matchId)
     movedClaims.delete(matchId)
+    supersededClaims.delete(matchId)
     for (const meta of clients.values()) meta.owned.delete(matchId)
   }
 
