@@ -71,6 +71,8 @@ const FORBIDDEN = () => fail(403, 'OV_FORBIDDEN', 'You do not have access to thi
 const METHOD_NOT_ALLOWED = () => fail(405, 'OV_METHOD_NOT_ALLOWED', 'Method not allowed')
 const LOCKED = (details) => fail(409, 'OV_BRACKET_LOCKED', 'A match that depends on this one has already begun', details)
 const STARTED = () => fail(409, 'OV_DRAW_STARTED', 'Matches of this draw have already begun')
+// the bracket was drawn again (or reset) while the request waited for the draw: its matches have new ids
+const REPLACED = () => notFound('This match was replaced (the bracket was drawn again); reload')
 
 function validDay (s) {
   if (typeof s !== 'string' || !DATE_RE.test(s)) return false
@@ -1149,11 +1151,13 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     return guarded('result', () => withTx(async (client) => {
       const t = await requireVia(client, 'tmatch', id, user, access, { edit: true })
       const { rows: [m0] } = await client.query('SELECT draw_id FROM public.beach_tmatches WHERE id = $1', [id])
+      if (!m0) throw abort(REPLACED())
       const d = await lockDraw(client, m0.draw_id)
       const err = setsError(body.sets ?? null, winner, kind, Array.isArray(d.scoring?.points) ? d.scoring.points : undefined)
       if (err) throw abort(invalid(`sets: ${err}`))
       const { rows: list } = await client.query('SELECT * FROM public.beach_tmatches WHERE draw_id = $1 ORDER BY game_n FOR UPDATE', [d.id])
       const m = list.find((x) => x.id === id)
+      if (!m) throw abort(REPLACED())
       checkExpect(m, expect)
       if (!m.entry1_id || !m.entry2_id) throw abort(fail(409, 'OV_MATCH_NOT_READY', 'Both teams of this match are not known yet'))
       if (m.match_id) throw abort(fail(409, 'OV_MATCH_LINKED', 'This match is scored on a court tablet'))
@@ -1195,9 +1199,11 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     return guarded('withdraw', () => withTx(async (client) => {
       const t = await requireVia(client, 'tmatch', id, user, access, { edit: true })
       const { rows: [m0] } = await client.query('SELECT draw_id FROM public.beach_tmatches WHERE id = $1', [id])
+      if (!m0) throw abort(REPLACED())
       const d = await lockDraw(client, m0.draw_id)
       const { rows: list } = await client.query('SELECT * FROM public.beach_tmatches WHERE draw_id = $1 ORDER BY game_n FOR UPDATE', [d.id])
       const m = list.find((x) => x.id === id)
+      if (!m) throw abort(REPLACED())
       checkExpect(m, expect)
       if (m.status !== 'finished' && m.status !== 'walkover') throw abort(fail(409, 'OV_NO_RESULT', 'This match has no result'))
       if (m.match_id) throw abort(fail(409, 'OV_MATCH_LINKED', 'This match is scored on a court tablet'))
@@ -1275,10 +1281,10 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     return guarded('tmatch-status', () => withTx(async (client) => {
       const t = await requireVia(client, 'tmatch', id, user, access, { edit: true })
       const { rows: [m0] } = await client.query('SELECT draw_id FROM public.beach_tmatches WHERE id = $1', [id])
-      if (!m0) throw abort(notFound())
+      if (!m0) throw abort(REPLACED())
       const d = await lockDraw(client, m0.draw_id)
       const { rows: [m] } = await client.query('SELECT * FROM public.beach_tmatches WHERE id = $1 FOR UPDATE', [id])
-      if (!m) throw abort(notFound())
+      if (!m) throw abort(REPLACED())
       if (m.status === 'finished' || m.status === 'walkover') throw abort(fail(409, 'OV_MATCH_ENDED', 'This match has a result', { match: tmatchOut(m) }))
       if (m.match_id) throw abort(fail(409, 'OV_MATCH_LINKED', 'This match is scored on a court tablet'))
       if (want !== 'open' && (!m.entry1_id || !m.entry2_id)) throw abort(fail(409, 'OV_MATCH_NOT_READY', 'Both teams of this match are not known yet'))

@@ -552,6 +552,31 @@ describe('beach tournaments end to end', { skip: SKIP }, () => {
     expectCode(await withdraw(w1, screen(ms.get('W1'))), 409, 'OV_RESULT_CHANGED')
   })
 
+  it('a result or a withdrawal for a match the bracket drawn again has replaced: 404, not "database unavailable"', async () => {
+    const t = okData(await call(users.max, 'POST', '/api/beach/tournaments', { title: 'Redraw Cup', starts_on: '2026-07-25', ends_on: '2026-07-25', courts: 1 }), 201).tournament
+    const d = okData(await call(users.max, 'POST', `/api/beach/tournaments/${t.id}/draws`, { gender: 'mixed', category: 'R1' }), 201).draw
+    for (let i = 1; i <= 4; i++) {
+      okData(await call(users.max, 'POST', `/api/beach/draws/${d.id}/entries`, { player1: { last: `R${i}a` }, player2: { last: `R${i}b` } }), 201)
+    }
+    okData(await call(users.max, 'POST', `/api/beach/draws/${d.id}/generate`, {}))
+    const list = okData(await get(users.max, `/api/beach/tournaments/${t.id}`)).matches
+    const w1 = list.find((m) => m.code === 'W1')
+    const w2 = list.find((m) => m.code === 'W2')
+    okData(await call(users.max, 'POST', `/api/beach/tmatches/${w2.id}/result`, { winner: 1, sets: [[21, 15], [21, 15]] }))
+    // the request waits for the draw (as behind another manager's "Draw the bracket"); meanwhile the match goes
+    const replaced = async (id, send) => {
+      await sql.query('BEGIN')
+      await sql.query('SELECT 1 FROM public.beach_draws WHERE id = $1 FOR UPDATE', [d.id])
+      const pending = send()
+      await sleep(300)
+      await sql.query('DELETE FROM public.beach_tmatches WHERE id = $1', [id])
+      await sql.query('COMMIT')
+      return pending
+    }
+    expectCode(await replaced(w1.id, () => call(users.max, 'POST', `/api/beach/tmatches/${w1.id}/result`, { winner: 1, sets: [[21, 15], [21, 15]] })), 404, 'OV_NOT_FOUND')
+    expectCode(await replaced(w2.id, () => call(users.max, 'DELETE', `/api/beach/tmatches/${w2.id}/result`)), 404, 'OV_NOT_FOUND')
+  })
+
   it('a match on court keeps its court, its time and its pairs: Start, and a slot that has begun', async () => {
     // yesterday to tomorrow (Zurich), all day: "now" is always on a tournament day
     const zurichDay = (ms) => new Date(ms).toLocaleDateString('en-CA', { timeZone: 'Europe/Zurich' })
