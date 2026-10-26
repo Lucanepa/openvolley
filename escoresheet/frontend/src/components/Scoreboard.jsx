@@ -104,6 +104,9 @@ const CLEARED_SET5_SETUP = { set5LeftTeam: null, set5FirstServe: null, set5Court
 // (its own push opens it), "End set interval", the set's start, the set 5
 // setup's (they say whether it goes on: duringInterval)
 const BREAK_ENDING_PUSHES = new Set(['set_end', 'end_interval', 'set_start', 'manual_set5_setup'])
+// The live-state push that sends the state again after a reconnect, a reload
+// or a sign-in: no event of its own (it keeps the last one's last_event_*)
+const RECONNECT_PUSH = 'reconnect'
 
 // ── volleyui chrome for the scoreboard (RESTYLE-SPEC P5) ──────────────────────
 // Only the chrome around the court takes these: the toolbar, the side-column
@@ -738,6 +741,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // set_interval_started_at of the last set_end push: a set 5 setup push
   // during the interval keeps it, so the tablets' countdown does not restart
   const intervalStartedAtRef = useRef(null)
+  // The last event a live-state push named ({ matchId, type, team, data, ts }):
+  // a reconnect push (no event, the state again) names it again
+  const lastPushedEventRef = useRef(null)
   // Relay refused this scoreboard (another device holds the match id, or too
   // many failed claims): shown to the scorer instead of failing silently.
   const [relayRejection, setRelayRejection] = useState(null) // { code, message, at } | null
@@ -1726,7 +1732,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           // while this socket was down were dropped. The livescore, which
           // takes the score from it, stayed on the score from before a relay
           // restart until the next rally (stress test 2026-10-25).
-          initialSync.then(() => syncLiveStateRef.current?.('reconnect', null, null), () => {})
+          initialSync.then(() => syncLiveStateRef.current?.(RECONNECT_PUSH, null, null), () => {})
         },
         onMessage: (message) => {
           if (message.type === 'pin-validation-request') {
@@ -2381,6 +2387,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         })
       }
 
+      // The event this push names. A reconnect push is none: it sends the
+      // state again, with the last event it had (the livescore, the website
+      // and Point Hub read last_event_type, and 'reconnect' is no event they
+      // know; it also overwrote a finished match's 'match_end'). Not known
+      // since a reload: left out, the stored row keeps its own.
+      const pushedEvent = eventType === RECONNECT_PUSH
+        ? (lastPushedEventRef.current?.matchId === matchId ? lastPushedEventRef.current : null)
+        : { matchId, type: eventType || null, team: eventTeam || null, data: eventData || null, ts: new Date().toISOString() }
+      if (eventType !== RECONNECT_PUSH) lastPushedEventRef.current = pushedEvent
+
       // Map directly from snapshot to Supabase table
       const liveStateData = {
         match_id: supabaseMatchId,
@@ -2415,10 +2431,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Serving team (convert to left/right) - use next set values for set_end
         serving_team: nextServingTeam === snapshot.teamAKey ? nextSideA : (nextSideA === 'left' ? 'right' : 'left'),
         // Event info
-        last_event_type: eventType || null,
-        last_event_team: eventTeam || null,
-        last_event_data: eventData || null,
-        last_event_ts: new Date().toISOString(),
+        ...(pushedEvent ? {
+          last_event_type: pushedEvent.type,
+          last_event_team: pushedEvent.team,
+          last_event_data: pushedEvent.data,
+          last_event_ts: pushedEvent.ts
+        } : {}),
         timeout_active: isTimeout,
         timeout_started_at: isTimeout ? onLiveClock(activeTimeout?.startedAt || timeoutStartedAt) : null,
         set_interval_active: isSetInterval || keepInterval,
@@ -2560,7 +2578,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (timer) clearTimeout(timer)
       timer = setTimeout(() => {
         timer = null
-        syncLiveStateRef.current?.('reconnect', null, null)
+        syncLiveStateRef.current?.(RECONNECT_PUSH, null, null)
       }, 1500)
     }
     const onOnline = () => push()
