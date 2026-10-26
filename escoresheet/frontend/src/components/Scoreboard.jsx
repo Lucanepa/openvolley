@@ -3057,11 +3057,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // rally to the team under the finger, a triple tap on Point B gave one
   // rally two points (stress test 2026-10-25, every tap 40 to 250 ms apart).
   // For GHOST_CLICK_MS after the buttons change (drawn: a layout effect,
-  // before the next tap can reach them), a tap on them or their key is the
-  // end of the tap that changed them, as after a confirm (useConfirmAction):
-  // a rally never ends that soon after its start, nor starts that soon after
-  // its point. Not when the screen first shows them. Monotonic clock: a
-  // device clock set back must not hold them.
+  // before the next tap can reach them), a tap on them is the end of the tap
+  // that changed them, as after a confirm (useConfirmAction): a rally never
+  // ends that soon after its start, nor starts that soon after its point. Not
+  // when the screen first shows them, and not their keys: a key does not
+  // bounce, and a keyboard scorer pressing Enter at the whistle and A a moment
+  // later lost the point. Monotonic clock: a device clock set back must not
+  // hold them.
   const rallyButtonsRef = useRef({ status: null, changedAt: -Infinity })
   useLayoutEffect(() => {
     const buttons = rallyButtonsRef.current
@@ -5718,10 +5720,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     deferUi(() => setRecentlySubstitutedPlayers([]))
   }), [logEvent, isFirstRally, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration, runAction, deferUi, readRallyStatus])
 
-  // A tap on the rally buttons (Start rally, Point A | Point B) or their keys,
-  // on every layout: none the moment they changed (rallyButtonsJustShown),
-  // that is the second tap of the one that changed them. The accidental-start
-  // and accidental-point questions' Yes call the handlers themselves.
+  // A tap on the rally buttons (Start rally, Point A | Point B), on every
+  // layout: none the moment they changed (rallyButtonsJustShown), that is the
+  // second tap of the one that changed them. Their keys call the handlers
+  // themselves (no bounce to drop), as do the accidental-start and
+  // accidental-point questions' Yes.
   const tapStartRally = useCallback(() => {
     if (rallyButtonsJustShown()) {
       console.warn('[Scoreboard] Start rally tap as the rally buttons changed (a double tap): ignored')
@@ -12439,7 +12442,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Start rally if idle and no modals
         if (!hasDecisionModal && rallyStatus === 'idle') {
           e.preventDefault()
-          tapStartRally()
+          handleStartRally()
           return
         }
         // Confirm modals
@@ -12522,14 +12525,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (hasDecisionModal || timeoutModal || lineupModal || menuModal) return
 
       // Point keys
+      // (a key, no tap: never held by the rally buttons' double-tap window;
+      // `tap`: written only while the rally is in play in the database)
       if (key === keyBindings.pointLeft && rallyStatus === 'in_play') {
         e.preventDefault()
-        tapPoint('left')
+        handlePoint('left', false, { tap: true })
         return
       }
       if (key === keyBindings.pointRight && rallyStatus === 'in_play') {
         e.preventDefault()
-        tapPoint('right')
+        handlePoint('right', false, { tap: true })
         return
       }
 
@@ -12569,7 +12574,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [
     keybindingsEnabled, keyBindings, editingKey, showOptionsInMenu, keybindingsModalOpen,
-    rallyStatus, tapStartRally, tapPoint, handleTimeout, handleExchangeLibero, handleUndo,
+    rallyStatus, handleStartRally, handlePoint, handleTimeout, handleExchangeLibero, handleUndo,
     playerActionMenu, benchPlayerActionMenu, liberoDropdown, liberoInDropdown, sanctionDropdown,
     timeoutModal, lineupModal, menuModal,
     substitutionConfirm, liberoConfirm, sanctionConfirmModal, accidentalRallyConfirmModal,
