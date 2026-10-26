@@ -111,6 +111,70 @@ export function connectionPinType (sport, type) {
 }
 
 /**
+ * validate-connection-pin's lookup: the setup / live match of `sport` that
+ * holds `pin` under one of cfg.pinKeys with cfg.enabledKey on, newest
+ * scheduled first; null when none. `runQuery` is pgQuery's (internal),
+ * `pins` the PIN hasher (lib/pinHash.js).
+ *
+ * The database is asked only for the rows that hold the PIN: one exact
+ * filter per key on every stored form the PIN may have (pins.candidates:
+ * the HMAC, legacy plaintext). It used to read every setup / live match of
+ * the sport with its whole connections JSON, which carries the coach roster
+ * uploads with their signatures (about 41 KB per match), as one json_agg
+ * datum, and scan it here: at the national peak (404 matches) 16 MB per
+ * check, and a few concurrent referee / bench joins OOM-killed Postgres and
+ * the backend. A wrong PIN now reads no row at all. The rows found are
+ * still checked here, in constant time, as before.
+ * @returns {Promise<{ ok: boolean, row?: object|null }>} ok false: the database failed
+ */
+export async function findMatchByConnectionPin ({ runQuery, pins, sport, cfg, pin, matchExternalId = null, maxRows }) {
+  const isBeach = sport === 'beach'
+  const pinStr = pinText(pin)
+  const found = new Map()
+  for (const key of cfg.pinKeys) {
+    const stored = pins.candidates(key, pinStr)
+    if (stored.length === 0) continue
+    const { status, body: out } = await runQuery({
+      table: 'matches',
+      action: 'select',
+      params: {
+        columns: isBeach
+          ? 'id, external_id, game_n, status, scheduled_at, team1_data, team2_data, connections, connection_pins'
+          : 'id, external_id, game_n, status, scheduled_at, home_team, away_team, connections, connection_pins',
+        filters: [
+          { type: 'in', column: 'status', value: ['setup', 'live'] },
+          { type: 'eq', column: 'sport_type', value: isBeach ? 'beach' : 'indoor' },
+          { type: 'in', column: `connection_pins->>${key}`, value: stored },
+          // Optional: the match the caller is about to write to (roster
+          // upload). The PIN must then belong to THAT match, not any.
+          ...(matchExternalId !== null ? [{ type: 'eq', column: 'external_id', value: matchExternalId }] : [])
+        ],
+        order: [{ column: 'scheduled_at', ascending: false, nullsFirst: false }]
+      }
+    }, { internal: true, maxRows })
+    if (status !== 200) return { ok: false }
+    for (const m of out.data || []) if (!found.has(m.id)) found.set(m.id, m)
+  }
+  // The order of one scan of every key: newest scheduled first, none last
+  const at = (m) => {
+    const t = m.scheduled_at ? Date.parse(m.scheduled_at) : NaN
+    return Number.isNaN(t) ? -Infinity : t
+  }
+  const data = [...found.values()].sort((a, b) => at(b) - at(a))
+  // constant time; the stored PIN may be hashed (lib/pinHash.js, hashed
+  // under its connection_pins key): the typed PIN's hash is computed
+  // once per key
+  const pinMatchers = cfg.pinKeys.map((k) => [k, pins.matcher(k, pinStr)])
+  const row = data.find(m => {
+    const stored = m.connection_pins || {}
+    const conns = m.connections || {}
+    if (cfg.enabledKey && !conns[cfg.enabledKey]) return false
+    return pinMatchers.some(([k, matches]) => matches(stored[k]))
+  })
+  return { ok: true, row: row || null }
+}
+
+/**
  * The match token secret of this environment: OV_MATCH_TOKEN_SECRET, else one
  * derived from OV_PIN_SECRET (tokens then survive restarts with no extra
  * setting), else null (random per process). Throws on a set but too short
