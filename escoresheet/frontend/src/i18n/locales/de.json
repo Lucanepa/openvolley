@@ -860,6 +860,8 @@
       "show": "Werkzeugleiste einblenden"
     },
     "confirmFailed": "Das wurde nicht gespeichert. Bitte das Matchblatt prüfen und erneut versuchen.",
+    "storageFull": "Nicht gespeichert: Der Speicher dieses Geräts ist voll. Platz freigeben (alte Downloads oder andere Dateien löschen) und erneut tippen. Alles bisher Erfasste bleibt erhalten.",
+    "storageLow": "Der Speicher dieses Geräts ist fast voll: noch {{mb}} MB für OpenVolley. Jetzt Platz freigeben (alte Downloads oder andere Dateien löschen): Ist er voll, kann nichts mehr erfasst werden.",
     "timeoutRequest": {
       "title": "Timeout — {{team}}",
       "first": "Timeout 1 von 2 in diesem Satz für {{team}}.",
