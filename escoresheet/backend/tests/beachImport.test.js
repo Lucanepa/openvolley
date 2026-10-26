@@ -430,3 +430,34 @@ describe('import hash', () => {
     assert.notEqual(importHash(plan({ ...st, entries: [entry('e1', 'd1', 1, 'A', 'B', { name: 'Renamed' })] }, body)), h)
   })
 })
+
+describe('import cost', () => {
+  // The plan runs on the backend's one event loop, inside a transaction:
+  // a preview of the largest file the API takes against a large draw must
+  // not hold up the scorers' syncs and the livescore (it took ~0.75 s).
+  it('plans the largest file against a draw of as many other pairs in well under a second', () => {
+    const d = draw('d1', 'A1', 'men')
+    const unlicensed = (last, first) => ({ first, last, licence: null, country: null })
+    const entries = Array.from({ length: IMPORT_MAX_ENTRIES }, (_, i) => ({
+      id: `e${i}`, draw_id: 'd1', seed: null, team_id: null, name: `E${i}`, wildcard: false, status: i % 7 ? 'registered' : 'withdrawn',
+      player1: unlicensed(`Öldlast${i}a`, `F${i}`), player2: unlicensed(`Öldlast${i}b`, `G${i}`)
+    }))
+    const st = state({ draws: [d], entries })
+    const rows = (licences) => Array.from({ length: IMPORT_MAX_ENTRIES }, (_, i) => ({
+      row: i + 2, draw: 'A1', gender: 'men', p1_last: `Nëwlast${i}a`, p1_first: `First${i}`, p2_last: `Nëwlast${i}b`, p2_first: `Second${i}`,
+      ...(licences ? { p1_licence: `N${i}A`, p2_licence: `N${i}B` } : {})
+    }))
+    for (const licences of [false, true]) {
+      const input = normalizeImport({ entries: rows(licences) })
+      let best = Infinity
+      let p
+      for (let i = 0; i < 2; i++) {
+        const t0 = performance.now()
+        p = planImport(st, input)
+        best = Math.min(best, performance.now() - t0)
+      }
+      assert.equal(p.summary.entries_new, IMPORT_MAX_ENTRIES)
+      assert.ok(best < 250, `${Math.round(best)} ms (licences: ${licences})`)
+    }
+  })
+})
