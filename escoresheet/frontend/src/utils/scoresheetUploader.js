@@ -1,6 +1,7 @@
 import { apiStorage } from '../lib/apiClient'
 import { scoresheetGameId, scoresheetObjectPath, redactScoresheetPath } from '../../scoresheet_pdf/utils/scoresheetStorage'
 import { getScoresheetKey } from './scoresheetKey'
+import { SCORESHEET_UPLOAD_RESOURCE } from './syncIds'
 
 /**
  * Where a match's scoresheet file goes in the 'scoresheets' bucket:
@@ -14,6 +15,46 @@ export function scoresheetUploadPath(match, { final = false, ext = 'json' } = {}
   const when = match.scheduledAt ? new Date(match.scheduledAt) : new Date()
   const date = (Number.isNaN(when.getTime()) ? new Date() : when).toISOString().slice(0, 10)
   return scoresheetObjectPath(date, game, getScoresheetKey(match), { final, ext })
+}
+
+/** The scoresheet JSON file of a match (what uploadScoresheet stores). */
+export function scoresheetJsonBlob({ match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events }) {
+  const scoresheetData = {
+    match,
+    homeTeam,
+    awayTeam,
+    homePlayers,
+    awayPlayers,
+    sets,
+    events,
+    uploadedAt: new Date().toISOString()
+  }
+  return new Blob([JSON.stringify(scoresheetData)], { type: 'application/json' })
+}
+
+/**
+ * A sync_queue job that stores one scoresheet file (the approval's PDF or
+ * final JSON) in the 'scoresheets' bucket. The job carries the file itself (a
+ * Blob, kept by IndexedDB), so the queue retries it like the match's other
+ * writes until it is stored, also after Close match has removed the match
+ * from this device. They were uploaded once, at the approval: an approval
+ * made offline (most halls) or a connection reset left the cloud without the
+ * PDF for good, with nothing but a console warning (stress test 2026-10-25).
+ */
+export function scoresheetUploadJob(match, path, file, contentType) {
+  return {
+    resource: SCORESHEET_UPLOAD_RESOURCE,
+    action: 'upload',
+    // match_external_id: the match the file belongs to (jobMatchKey)
+    payload: { path, file, contentType, match_external_id: match?.seed_key || null },
+    ts: new Date().toISOString(),
+    status: 'queued'
+  }
+}
+
+/** Store the file of a scoresheetUploadJob ({ data, error } as apiStorage). */
+export function uploadQueuedScoresheet({ path, file, contentType } = {}) {
+  return apiStorage.from('scoresheets').upload(path, file, { contentType, upsert: true })
 }
 
 /**
@@ -55,21 +96,7 @@ export async function uploadScoresheet({
   }
 
   try {
-    // Prepare scoresheet data as JSON
-    const scoresheetData = {
-      match,
-      homeTeam,
-      awayTeam,
-      homePlayers,
-      awayPlayers,
-      sets,
-      events,
-      uploadedAt: new Date().toISOString()
-    }
-
-    // Convert to JSON string
-    const jsonString = JSON.stringify(scoresheetData)
-    const jsonBlob = new Blob([jsonString], { type: 'application/json' })
+    const jsonBlob = scoresheetJsonBlob({ match, homeTeam, awayTeam, homePlayers, awayPlayers, sets, events })
 
     const storagePath = scoresheetUploadPath(match, { final })
     if (!storagePath) {
