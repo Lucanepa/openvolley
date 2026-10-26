@@ -327,4 +327,20 @@ describe('scoresheets end to end', { skip: SKIP }, () => {
     expectCode(await get(users.cm, `/api/scoresheets/${none.id}/pdf`), 404, 'OV_SCORESHEET_NOT_FOUND')
     expectCode(await get(users.cm, '/api/scoresheets/00000000-0000-4000-8000-000000000000/pdf'), 404, 'OV_NOT_FOUND')
   })
+
+  it('a beach match is listed and searched under its pairs (team1_data / team2_data), and its file named so', async () => {
+    // OpenBeach writes team1_data / team2_data and leaves home_team / away_team empty
+    const ext = `match_${Date.now()}_${randomBytes(3).toString('hex')}`
+    const data = { external_id: ext, status: 'live', sport_type: 'beach', scheduled_at: '2026-10-12T09:00:00Z', team1_data: { name: 'Muster / Beispiel' }, team2_data: { name: 'Rossi / Bianchi' } }
+    const r = await api(srv.base, '/api/db', { token: users.bea.token, body: { table: 'matches', action: 'insert', params: { data, returning: 'id', single: true } } })
+    assert.equal(r.status, 200, r.text)
+    const id = r.json.data.id
+    await uploadPdf(users.bea, `beach/2026-10-12/game_${ext}.pdf`, 'beach')
+    const row = (await get(users.bcm, '/api/scoresheets?app=beach')).json.data.matches.find((m) => m.id === id)
+    assert.deepEqual([row?.home_name, row?.away_name], ['Muster / Beispiel', 'Rossi / Bianchi'])
+    assert.deepEqual((await get(users.bcm, '/api/scoresheets?app=beach&q=bianchi')).json.data.matches.map((m) => m.id), [id])
+    const pdf = await get(users.bcm, `/api/scoresheets/${id}/pdf?download=1`)
+    assert.equal(pdf.status, 200, pdf.text)
+    assert.match(pdf.headers.get('content-disposition'), /filename="Muster-Beispiel_vs_Rossi-Bianchi/)
+  })
 })
