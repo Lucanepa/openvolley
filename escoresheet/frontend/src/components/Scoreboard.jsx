@@ -838,75 +838,82 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   }, [])
 
   // Single-tab enforcement - prevent opening scoresheet in multiple tabs for same match
+  // A Web Lock held for the screen's life: the browser frees it when the tab
+  // reloads, closes or crashes. The localStorage mark below is cleared only
+  // when the screen unmounts, which none of those do: after any reload the
+  // tab found its old page's mark, claimed it and returned before setting up
+  // its answers, so a later tab opened the same live match as well and both
+  // scored (stress test 2026-10-25). A tab that finds the lock held shows
+  // "Scoresheet already open" and scores once the other tab is gone.
   useEffect(() => {
     if (!matchId) return
+    if (typeof navigator === 'undefined' || !navigator.locks?.request) return
+    const abort = new AbortController()
+    let release = null
+    // Queued, not ifAvailable: the screen remounting in this tab (React's
+    // development double mount) frees the lock a moment after asking again
+    const busy = setTimeout(() => setDuplicateTabError(true), 1000)
+    navigator.locks.request(`scoresheet-${matchId}`, { signal: abort.signal }, () => {
+      // granted just after the screen unmounted: hand it straight back
+      if (abort.signal.aborted) return undefined
+      clearTimeout(busy)
+      setDuplicateTabError(false)
+      return new Promise(resolve => { release = resolve })
+    }).catch(() => {}) // aborted: the screen unmounted before it got the lock
+    return () => {
+      clearTimeout(busy)
+      abort.abort()
+      if (release) release()
+    }
+  }, [matchId])
+
+  // Without Web Locks: the mark in localStorage and a BroadcastChannel. Every
+  // tab answers a new tab's question, including one that found a mark left by
+  // a page that is gone (a reload, a closed tab, a crash) and took it over,
+  // and a tab clears its mark when its page goes away.
+  useEffect(() => {
+    if (!matchId) return
+    if (typeof navigator !== 'undefined' && navigator.locks?.request) return
 
     const channelName = `scoresheet-${matchId}`
     const storageKey = `scoresheet-active-${matchId}`
     const tabId = tabIdRef.current
+    let probe = null
+    let duplicate = false
 
-    // Try to claim this tab as active
-    const existingTab = localStorage.getItem(storageKey)
-    if (existingTab && existingTab !== tabId) {
-      // Another tab might be active, check via BroadcastChannel
-      try {
-        const channel = new BroadcastChannel(channelName)
-
-        // Ask if any other tab is active
-        const checkTimeout = setTimeout(() => {
-          // No response, claim the tab
-          localStorage.setItem(storageKey, tabId)
-          channel.close()
-        }, 200)
-
-        channel.onmessage = (event) => {
-          if (event.data.type === 'PING') {
-            // Another tab is checking, respond
-            channel.postMessage({ type: 'PONG', tabId: tabId })
-          } else if (event.data.type === 'PONG' && event.data.tabId !== tabId) {
-            // Another tab responded, this is a duplicate
-            clearTimeout(checkTimeout)
-            setDuplicateTabError(true)
-            channel.close()
-          } else if (event.data.type === 'NEW_TAB' && event.data.tabId !== tabId) {
-            // A new tab just opened, tell it we're here
-            channel.postMessage({ type: 'PONG', tabId: tabId })
-          }
-        }
-
-        // Announce ourselves
-        channel.postMessage({ type: 'NEW_TAB', tabId: tabId })
-
-        return () => {
-          clearTimeout(checkTimeout)
-          channel.close()
-          // Only remove from storage if we're the active tab
-          if (localStorage.getItem(storageKey) === tabId) {
-            localStorage.removeItem(storageKey)
-          }
-        }
-      } catch {
-        // BroadcastChannel not supported, fall back to localStorage only
-        localStorage.setItem(storageKey, tabId)
-      }
-    } else {
-      // Claim this tab as active
-      localStorage.setItem(storageKey, tabId)
-    }
-
-    // Set up BroadcastChannel for ongoing communication
-    let channel
+    let channel = null
     try {
       channel = new BroadcastChannel(channelName)
-
       channel.onmessage = (event) => {
-        if (event.data.type === 'PING' || event.data.type === 'NEW_TAB') {
+        const { type, tabId: from } = event.data || {}
+        if (from === tabId || duplicate) return
+        if (type === 'PING' || type === 'NEW_TAB') {
           // Another tab is checking or just opened, respond
-          channel.postMessage({ type: 'PONG', tabId: tabId })
+          channel.postMessage({ type: 'PONG', tabId })
+        } else if (type === 'PONG' && probe) {
+          // Another tab answered our question: this one is the duplicate
+          clearTimeout(probe)
+          probe = null
+          duplicate = true
+          setDuplicateTabError(true)
         }
       }
     } catch {
       // BroadcastChannel not supported
+    }
+
+    const existingTab = localStorage.getItem(storageKey)
+    if (existingTab && existingTab !== tabId && channel) {
+      // Another tab might be active, or the mark is left over: ask, and take
+      // it when nobody answers
+      probe = setTimeout(() => {
+        probe = null
+        localStorage.setItem(storageKey, tabId)
+      }, 200)
+      channel.postMessage({ type: 'NEW_TAB', tabId })
+    } else {
+      // Claim this tab as active
+      localStorage.setItem(storageKey, tabId)
     }
 
     // Listen for storage events (when another tab changes localStorage)
@@ -917,14 +924,20 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
     window.addEventListener('storage', handleStorage)
-
-    return () => {
-      window.removeEventListener('storage', handleStorage)
-      if (channel) channel.close()
+    const clearMark = () => {
       // Only remove from storage if we're the active tab
       if (localStorage.getItem(storageKey) === tabId) {
         localStorage.removeItem(storageKey)
       }
+    }
+    window.addEventListener('pagehide', clearMark)
+
+    return () => {
+      if (probe) clearTimeout(probe)
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener('pagehide', clearMark)
+      if (channel) channel.close()
+      clearMark()
     }
   }, [matchId])
 
@@ -3284,6 +3297,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
   }, [data?.set, data?.sets, setEndTimeModal])
+
+  // A set end confirmed in another tab (the set rows are shared): this tab's
+  // dialog closes, there is nothing left to confirm
+  useEffect(() => {
+    if (!setEndTimeModal || !data?.sets) return
+    const rowsOfSet = data.sets.filter(s => s.index === setEndTimeModal.setIndex)
+    if (rowsOfSet.length > 0 && rowsOfSet.every(s => s.finished)) setSetEndTimeModal(null)
+  }, [setEndTimeModal, data?.sets])
 
   // Format countdown time: mm:ss format, but only seconds when < 60
   const formatCountdown = useCallback((seconds) => {
@@ -5944,6 +5965,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
 
     // Mark this set as being confirmed
     confirmedSetEndRef.current.add(setIndex)
+
+    // Ended already: in another tab of this device (the set rows are shared),
+    // this tab's dialog still open. Its set_end went into the set being
+    // played (set 2), once with a second set 2 (stress test 2026-10-25)
+    const rowsOfSet = (await db.sets.where('matchId').equals(matchId).toArray()).filter(s => s.index === setIndex)
+    if (rowsOfSet.length > 0 && rowsOfSet.every(s => s.finished)) {
+      console.log('[SET_END] Set', setIndex, 'already finished (in another tab) - nothing to write')
+      setSetEndTimeModal(null)
+      return
+    }
 
     console.log('[SET_END_DEBUG] STEP 2: Modal data:', JSON.stringify({
       setIndex,
