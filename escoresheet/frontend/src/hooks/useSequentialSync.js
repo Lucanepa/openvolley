@@ -7,6 +7,14 @@ const POLL_MS = 150
 // Queue rows that will not be sent soon: the wait for them is over
 const SETTLED = new Set(['sent', 'superseded', 'failed', 'error', 'dropped'])
 
+// How long the set end waits for its writes, all of them together. The
+// whole scoreboard is behind the "Syncing to cloud..." overlay meanwhile:
+// with 10 s per write it stayed there up to 21.5 s on a hung backend (12 s
+// at 2 s latency), and a scorer who thinks the app froze reloads or taps
+// around. Everything is saved on the device first, and the queue delivers
+// what is not sent by then.
+export const SET_END_WAIT_MS = 2000
+
 /**
  * Ask the background queue (useSyncQueue) to send what it holds now, even
  * while a failed connection probe is backing off: the cloud may be back
@@ -129,7 +137,7 @@ export function useSequentialSync() {
       { resource: 'set', action: 'update', payload: setPayload },
       ...(matchPayload ? [{ resource: 'match', action: 'update', payload: matchPayload }] : [])
     ]
-    const results = await queueAndWait(jobs)
+    const results = await queueAndWait(jobs, SET_END_WAIT_MS)
     const stepOf = (list) => list.some(r => !r.success && !r.offline) ? 'error'
       : list.some(r => !r.success) ? 'warning' : 'done'
     // (no point to sync: the set's last point went with its rally)
