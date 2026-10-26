@@ -38,12 +38,18 @@ vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => null }))
 vi.mock('../../hooks/useScaledLayout', () => ({ useScaledLayout: () => ({ vmin: (n) => `${n}vmin` }), default: () => ({ vmin: (n) => `${n}vmin` }) }))
 vi.mock('../../utils/comprehensiveLogger', () => ({ exportLogsAsNDJSON: async () => '', downloadLogs: async () => {} }))
 vi.mock('../../utils/backendConfig', async (orig) => ({ ...(await orig()), getCloudApiUrl: () => null }))
+// Storage uploads: answered at once, or never (uploads.hang)
+const uploads = vi.hoisted(() => ({ hang: false, paths: [] }))
 vi.mock('../../lib/apiClient', () => {
   const chain = () => {
     const b = new Proxy({}, { get: (_, prop) => (prop === 'then' ? (r) => Promise.resolve({ data: null, error: null }).then(r) : () => b) })
     return b
   }
-  return { apiFrom: () => chain(), apiStorage: { from: () => chain() }, apiRequest: vi.fn() }
+  const upload = (path) => {
+    uploads.paths.push(path)
+    return uploads.hang ? new Promise(() => {}) : Promise.resolve({ data: null, error: null })
+  }
+  return { apiFrom: () => chain(), apiStorage: { from: () => ({ upload }) }, apiRequest: vi.fn() }
 })
 
 // The scoresheet window: each open gets a fresh fake window the test can close
@@ -169,6 +175,8 @@ async function approve() {
 beforeEach(() => {
   seed()
   opened.length = 0
+  uploads.hang = false
+  uploads.paths.length = 0
   alerts.showAlert = vi.fn()
   URL.createObjectURL = vi.fn(() => 'blob:x')
   HTMLAnchorElement.prototype.click = () => {}
@@ -260,6 +268,22 @@ describe('MatchEnd: the approval PDF', () => {
     await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf', req: secondReq })
     await findButton(en.matchEnd.closeMatch)
     expect(store.tables.matches.get(1).approved).toBe(true)
+  })
+
+  // Stress test 2026-10-25: on a connection that passed no data the overlay
+  // stayed on "Creating ZIP and uploading to cloud..." for minutes, with no
+  // Cancel, nothing approved and no ZIP
+  it('a scoresheet upload that never answers does not hold the approval', async () => {
+    uploads.hang = true
+    seed({ gameNumber: 4242 })
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+    await findButton(en.matchEnd.closeMatch)
+    expect(store.tables.matches.get(1).approved).toBe(true)
+    expect(approvedJobs()).toHaveLength(1)
+    expect(screen.queryByTestId('export-modal')).toBeNull()
+    expect(uploads.paths.some(p => String(p).endsWith('.pdf'))).toBe(true)
   })
 
   it('the export modal sits above the header (z 1000) and its open menu', async () => {

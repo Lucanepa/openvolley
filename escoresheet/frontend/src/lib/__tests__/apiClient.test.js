@@ -5,7 +5,7 @@ vi.mock('../../utils/backendConfig', () => ({
   getCloudApiUrl: (path) => `http://backend.test${path}`
 }))
 
-import { apiFrom, apiAuth, apiStorage, apiMatchRestore, apiMatchRestoreByPin, apiMatchClaim, apiMatchScorer, apiPostEventRevisions, ageOf, isSessionRejected, normalizeError, toBase64, BACKEND_REACHED_EVENT } from '../apiClient'
+import { apiFrom, apiAuth, apiStorage, apiMatchRestore, apiMatchRestoreByPin, apiMatchClaim, apiMatchScorer, apiPostEventRevisions, ageOf, isSessionRejected, normalizeError, toBase64, BACKEND_REACHED_EVENT, DB_REQUEST_TIMEOUT_MS } from '../apiClient'
 
 function jsonResponse(body, status = 200) {
   return {
@@ -277,6 +277,30 @@ describe('storage upload encoding', () => {
     const result = await apiStorage.from('backup').upload('logs/x.txt', 'ü 🏐', { contentType: 'text/plain' })
     expect(result.error).toBeNull()
     expect(decode(sentBody().fileBase64)).toBe('ü 🏐')
+  })
+
+  // Stress test 2026-10-25: an upload on a connection that passed no data held
+  // "Confirm and approve" (and with it the approval) for minutes
+  it('an upload that gets no answer ends as a network error within its bound', async () => {
+    vi.useFakeTimers()
+    // (AbortSignal.timeout runs on Node's own timers, not the fake ones)
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
+      const ctrl = new AbortController()
+      setTimeout(() => ctrl.abort(), ms)
+      return ctrl.signal
+    })
+    try {
+      globalThis.fetch = vi.fn((url, init) => new Promise((resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation timed out.', 'TimeoutError')))
+      }))
+      let result = null
+      apiStorage.from('scoresheets').upload('2026-10-25/game1_k.pdf', new Uint8Array(100000), { contentType: 'application/pdf' }).then(r => { result = r })
+      await vi.advanceTimersByTimeAsync(DB_REQUEST_TIMEOUT_MS + 30000)
+      expect(result?.error).toMatchObject({ network: true, status: 0 })
+    } finally {
+      timeoutSpy.mockRestore()
+      vi.useRealTimers()
+    }
   })
 })
 

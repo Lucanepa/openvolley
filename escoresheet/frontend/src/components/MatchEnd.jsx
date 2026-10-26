@@ -1134,6 +1134,46 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     }
   }
 
+  // The approval's PDF and final JSON in the 'scoresheets' bucket (see
+  // handleApprove)
+  const uploadApprovalFiles = async ({ pdfResult, sets: allSets, events: allEvents }) => {
+    // Same name scheme as the JSON (random part: only this scorer
+    // account can read it, nobody can claim the name first)
+    const pdfStoragePath = scoresheetUploadPath(match, { ext: 'pdf' })
+
+    // Upload PDF (only if generation succeeded)
+    if (pdfResult && pdfStoragePath) {
+      const { error: uploadError } = await apiStorage
+        .from('scoresheets')
+        .upload(pdfStoragePath, pdfResult.blob, {
+          contentType: 'application/pdf',
+          upsert: true
+        })
+      if (uploadError) {
+        console.warn('Failed to upload PDF to cloud:', uploadError)
+      } else {
+        console.log('PDF uploaded to cloud:', redactScoresheetPath(pdfStoragePath))
+      }
+    }
+
+    // Upload final JSON (with _final suffix for approved matches)
+    const jsonResult = await uploadScoresheet({
+      match,
+      homeTeam,
+      awayTeam,
+      homePlayers,
+      awayPlayers,
+      sets: allSets,
+      events: allEvents,
+      final: true
+    })
+    if (jsonResult.success) {
+      console.log('Final JSON uploaded to cloud:', redactScoresheetPath(jsonResult.path))
+    } else {
+      console.warn('Failed to upload final JSON:', jsonResult.error)
+    }
+  }
+
   const handleApprove = async () => {
     cLogger.logHandler('handleApprove', { matchId, allSignaturesDone })
     setIsSaving(true)
@@ -1265,49 +1305,6 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       const zipBlob = await zip.generateAsync({ type: 'blob' })
       const zipFilename = `Match_${sanitizeForFilename(homeTeam?.name || t('common.home'))}_vs_${sanitizeForFilename(awayTeam?.name || t('common.away'))}_${matchDate}.zip`
 
-      // Upload PDF and final JSON to Supabase storage "scoresheets" bucket
-      if (!match?.test) {
-        try {
-          // Same name scheme as the JSON (random part: only this scorer
-          // account can read it, nobody can claim the name first)
-          const pdfStoragePath = scoresheetUploadPath(match, { ext: 'pdf' })
-
-          // Upload PDF (only if generation succeeded)
-          if (pdfResult && pdfStoragePath) {
-            const { error: uploadError } = await apiStorage
-              .from('scoresheets')
-              .upload(pdfStoragePath, pdfResult.blob, {
-                contentType: 'application/pdf',
-                upsert: true
-              })
-            if (uploadError) {
-              console.warn('Failed to upload PDF to cloud:', uploadError)
-            } else {
-              console.log('PDF uploaded to cloud:', redactScoresheetPath(pdfStoragePath))
-            }
-          }
-
-          // Upload final JSON (with _final suffix for approved matches)
-          const jsonResult = await uploadScoresheet({
-            match,
-            homeTeam,
-            awayTeam,
-            homePlayers,
-            awayPlayers,
-            sets: allSets,
-            events: allEvents,
-            final: true
-          })
-          if (jsonResult.success) {
-            console.log('Final JSON uploaded to cloud:', redactScoresheetPath(jsonResult.path))
-          } else {
-            console.warn('Failed to upload final JSON:', jsonResult.error)
-          }
-        } catch (uploadErr) {
-          console.warn('Error uploading scoresheet:', uploadErr)
-        }
-      }
-
       // Download ZIP
       const zipLink = document.createElement('a')
       zipLink.download = zipFilename
@@ -1365,6 +1362,16 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       setDownloadProgress(null)
       setIsSaving(false)
       setIsApproved(true)
+
+      // The cloud copies of the PDF and the final JSON go up after the
+      // approval, in the background. Awaited before it, an upload on a
+      // connection that passed no data held "Confirm and approve" (no Cancel
+      // at that step), and with it the approval and the ZIP, for minutes
+      // (stress test 2026-10-25). Each upload is bounded (apiStorage).
+      if (!match?.test) {
+        uploadApprovalFiles({ pdfResult, sets: allSets, events: allEvents })
+          .catch(uploadErr => console.warn('Error uploading scoresheet:', uploadErr))
+      }
 
       // Warn if PDF was not generated (approval still succeeded)
       if (!pdfResult) {
