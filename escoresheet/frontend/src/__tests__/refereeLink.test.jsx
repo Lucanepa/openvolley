@@ -69,7 +69,8 @@ describe('referee match link', () => {
 
     const dashboard = await screen.findByTestId('dashboard')
     expect(dashboard.textContent).toBe(SEED)
-    expect(sync.validatePinSupabase).toHaveBeenCalledWith('786270', 'referee')
+    // the typed PIN is checked for the match of the link (its own PIN budget)
+    expect(sync.validatePinSupabase).toHaveBeenCalledWith('786270', 'referee', { matchExternalId: SEED })
     expect(localStorage.getItem('refereeMatchId')).toBe(SEED)
   })
 
