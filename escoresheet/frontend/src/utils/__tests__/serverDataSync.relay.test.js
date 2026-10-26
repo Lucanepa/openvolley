@@ -48,6 +48,11 @@ describe('relay key and payload (scorer)', () => {
     expect(relayMatchPayload({ id: 1, seed_key: SEED }, null, { now: 1234 }).match._syncedAt).toBe(1234)
   })
 
+  // the claim goes out as device.claim to the relay alone, never to the room's tablets
+  it('leaves the device\'s venue claim out of the match the relay hands on', () => {
+    expect(relayMatchPayload({ id: 1, seed_key: SEED, scorerClaim: 'c-1' }, null).match).not.toHaveProperty('scorerClaim')
+  })
+
   it('stamps the sync with the live-state order marked before the reads', () => {
     const { match } = relayMatchPayload({ id: 1, seed_key: SEED }, null, { now: 9999, mark: { seq: 7, session: 's1', at: 1234 } })
     expect(match).toMatchObject({ _syncedSeq: 7, _syncSession: 's1', _syncedAt: 1234 })

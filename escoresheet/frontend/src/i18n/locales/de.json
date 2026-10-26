@@ -853,6 +853,7 @@
     "relayRejected": {
       "notOwner": "Verbindung Schiedsrichter/Bank: ein anderes eScoresheet hält dieses Spiel auf dem Server. Schiedsrichter, Bank und Livescore erhalten die Updates dieses Geräts nicht.",
       "rateLimited": "Verbindung Schiedsrichter/Bank: der Server hat dieses eScoresheet für eine Minute abgelehnt (zu viele Fehlversuche).",
+      "scorerMoved": "Verbindung Schiedsrichter/Bank: dieses Spiel wird jetzt auf einem anderen Gerät geführt. Schiedsrichter, Bank und Livescore folgen dem anderen Gerät, nicht mehr diesem.",
       "tooMany": "Verbindung Schiedsrichter/Bank: dieses Gerät führt bereits zu viele Spiele auf dem Server."
     },
     "toolbar": {

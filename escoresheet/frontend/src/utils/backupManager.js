@@ -594,6 +594,10 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
       // backup row kept the file's offset (or none), and with the previous
       // device's clock ahead the referee and benches dropped every new state.
       liveClockOffsetMs,
+      // A claim of its own on the venue relays (made at the next relay sync,
+      // matchHandover scorerClaimOf): never the file's, which may be a claim
+      // another device has taken over since
+      scorerClaim: null,
       restoredAt: new Date().toISOString()
     })
 
@@ -792,6 +796,9 @@ export async function restoreMatchInPlace(matchId, jsonData, { checkServer = ser
       // ... and its own live-state clock (a backup made on another device
       // carries that one's, serverDataSync.liveClockOffset)
       liveClockOffsetMs: liveClockOffset(currentMatch),
+      // ... and a new claim on the venue relays: this device continues the
+      // match from the backup (matchHandover scorerClaimOf)
+      scorerClaim: null,
       seed_key: externalId, // Ensure seed_key is set for sync
       restoredAt: new Date().toISOString()
     })

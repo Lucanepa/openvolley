@@ -859,6 +859,7 @@
     "relayRejected": {
       "notOwner": "Lien arbitre/banc : une autre eScoresheet détient ce match sur le serveur. L'arbitre, le banc et le livescore ne reçoivent pas les mises à jour de cet appareil.",
       "rateLimited": "Lien arbitre/banc : le serveur a refusé cette eScoresheet pendant une minute (trop de tentatives échouées).",
+      "scorerMoved": "Lien arbitre/banc : ce match est maintenant tenu sur un autre appareil. L'arbitre, le banc et le livescore suivent l'autre appareil, plus celui-ci.",
       "tooMany": "Lien arbitre/banc : cet appareil gère déjà trop de matchs sur le serveur."
     },
     "toolbar": {

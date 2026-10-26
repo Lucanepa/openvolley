@@ -889,6 +889,79 @@ describe('lanRelayCore protocol', () => {
     }
   })
 
+  // 2026-10-26: the cloud relay asks its database which device scores a
+  // match (8359f59a); the venue relays let any device with the game PIN
+  // replace the room, so a laptop back on the Wi-Fi put its older copy over
+  // the phone that had continued the match
+  it('a device whose claim another device took over cannot put its copy back on the room', () => {
+    const LAPTOP = '0a0a0a0a-1111-4111-8111-000000000001'
+    const PHONE = '0b0b0b0b-2222-4222-8222-000000000002'
+    const sync = (device, home, away, extra = {}) => syncMessage(makeMatch({ id: 1 }), {
+      sets: [{ id: 1, matchId: 1, index: 1, homePoints: home, awayPoints: away }], device, ...extra
+    })
+    const relay = createLanRelay()
+    const laptop = connect(relay, '192.168.1.10')
+    const phone = connect(relay, '192.168.1.11')
+    const referee = connect(relay, '192.168.1.20')
+    msg(relay, referee, { type: 'subscribe-match', matchId: '1', pin: PINS.refereePin })
+    msg(relay, laptop, sync({ id: LAPTOP, platform: 'web', claim: 'laptop-1' }, 3, 1))
+    expect(laptop.last('error')).toBeUndefined()
+
+    // the phone continues the match (its own claim) while the laptop's socket
+    // is still up: the laptop no longer speaks for the room and is told
+    msg(relay, phone, sync({ id: PHONE, platform: 'android', claim: 'phone-1' }, 5, 3))
+    expect(phone.last('error')).toBeUndefined()
+    expect(referee.last('match-data-update').sets[0].homePoints).toBe(5)
+    expect(laptop.last('scorer-moved')).toMatchObject({ matchId: '1' })
+
+    // the laptop syncs its older copy, on that socket or a new one: refused,
+    // nothing reaches the referee
+    referee.sent.length = 0
+    msg(relay, laptop, sync({ id: LAPTOP, platform: 'web', claim: 'laptop-1' }, 3, 1))
+    expect(laptop.last('error')).toMatchObject({ code: 'scorer-moved', matchId: '1' })
+    const laptopAgain = connect(relay, '192.168.1.10')
+    msg(relay, laptopAgain, sync({ id: LAPTOP, platform: 'web', claim: 'laptop-1' }, 3, 1))
+    expect(laptopAgain.last('error')).toMatchObject({ code: 'scorer-moved' })
+    msg(relay, laptopAgain, { type: 'match-action', matchId: '1', action: 'timeout', data: {} })
+    expect(referee.sent).toHaveLength(0)
+    msg(relay, phone, sync({ id: PHONE, platform: 'android', claim: 'phone-1' }, 6, 3))
+    expect(referee.last('match-data-update').sets[0].homePoints).toBe(6)
+
+    // the laptop takes the match back (a new claim): it scores the room, and
+    // now the phone's claim is the one refused
+    laptopAgain.sent.length = 0
+    msg(relay, laptopAgain, sync({ id: LAPTOP, platform: 'web', claim: 'laptop-2' }, 6, 4))
+    expect(laptopAgain.last('error')).toBeUndefined()
+    expect(referee.last('match-data-update').sets[0].awayPoints).toBe(4)
+    expect(phone.last('scorer-moved')).toMatchObject({ matchId: '1' })
+    msg(relay, phone, sync({ id: PHONE, platform: 'android', claim: 'phone-1' }, 7, 3))
+    expect(phone.last('error')).toMatchObject({ code: 'scorer-moved' })
+    expect(referee.last('match-data-update').sets[0].homePoints).toBe(6)
+
+    // older apps name no claim: not checked, as before
+    const oldApp = connect(relay, '192.168.1.12')
+    msg(relay, oldApp, sync({ id: PHONE, platform: 'android' }, 8, 3))
+    expect(oldApp.last('error')).toBeUndefined()
+    expect(referee.last('match-data-update').sets[0].homePoints).toBe(8)
+  })
+
+  it('a device whose claim was taken over gets the room back once the other device has been gone 10 min', () => {
+    const A = '0a0a0a0a-1111-4111-8111-000000000001'
+    const B = '0b0b0b0b-2222-4222-8222-000000000002'
+    for (const { staleTakeoverMs, allowed } of [{ staleTakeoverMs: undefined, allowed: false }, { staleTakeoverMs: 0, allowed: true }]) {
+      const relay = createLanRelay({ staleTakeoverMs })
+      const a = connect(relay, '192.168.1.10')
+      const b = connect(relay, '192.168.1.11')
+      msg(relay, a, syncMessage(makeMatch({ id: 1 }), { device: { id: A, claim: 'a' } }))
+      msg(relay, b, syncMessage(makeMatch({ id: 1 }), { device: { id: B, claim: 'b' } }))
+      relay.removeClient(b) // the phone's battery
+      relay.removeClient(a)
+      const back = connect(relay, '192.168.1.10')
+      msg(relay, back, syncMessage(makeMatch({ id: 1 }), { device: { id: A, claim: 'a' } }))
+      expect(back.sent.some((m) => m.type === 'error'), String(staleTakeoverMs)).toBe(!allowed)
+    }
+  })
+
   it('accepts the legacy nested `data` shape in the client reader', () => {
     const legacy = { type: 'match-data-update', matchId: '7', data: { match: { id: 7 }, sets: [{ id: 1 }] } }
     expect(readRelayBundle(legacy).sets).toHaveLength(1)
