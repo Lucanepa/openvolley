@@ -7,9 +7,10 @@ import { emitActivity, noteSyncPass } from '../utils/activity/bus'
 import { uploadActivityBatch, activityFlushJob } from '../utils/activity/upload'
 import { getCloudApiUrl } from '../utils/backendConfig'
 import { filterMatchPayload, JSONB_COLUMNS } from '../db/matchRepository'
-import { parseExtId, resolveJobExternalId, jobMatchKey, USER_MATCH_RESOURCE, userMatchRoles, userMatchJob } from '../utils/syncIds'
+import { parseExtId, resolveJobExternalId, jobMatchKey, USER_MATCH_RESOURCE, SCORESHEET_UPLOAD_RESOURCE, userMatchRoles, userMatchJob } from '../utils/syncIds'
 import { buildConnectionPins } from '../utils/connectionPins'
 import { isShirtNumber } from '../domain/roster'
+import { uploadQueuedScoresheet } from '../utils/scoresheetUploader'
 import { ACCESS_CHANGED_EVENT } from '../lib/access'
 import { SCORER_CLAIM_ACTION, SCORER_MOVED, MATCH_CLOSED, SERVER_CLOSED_BY, isScorerMoved, noteScorerMoved, markScorerMoved, hasUnsentClaim, closeMovedMatches, retireIfSuperseded, retireStaleGameCopies, setAsideClosedJobs, setAsideClosedCopies } from '../utils/matchHandover'
 
@@ -78,7 +79,7 @@ import { SCORER_CLAIM_ACTION, SCORER_MOVED, MATCH_CLOSED, SERVER_CLOSED_BY, isSc
 // Resource processing order - matches must be synced before sets/events (FK
 // dependency); the account links ("My Matches") come last
 // 'activity': the activity log upload (utils/activity/upload), needs no match row
-const RESOURCE_ORDER = ['match', 'set', 'event', USER_MATCH_RESOURCE, 'activity']
+const RESOURCE_ORDER = ['match', 'set', 'event', USER_MATCH_RESOURCE, SCORESHEET_UPLOAD_RESOURCE, 'activity']
 
 // Max retries for jobs waiting on dependencies (e.g., event waiting for match to sync)
 const MAX_DEPENDENCY_RETRIES = 10
@@ -1396,6 +1397,18 @@ async function processJobInner(job, ctx) {
       return true
     }
 
+    // ==================== SCORESHEET FILES ====================
+    // The approval's PDF and final JSON (MatchEnd): the job carries the file
+    if (job.resource === SCORESHEET_UPLOAD_RESOURCE && job.action === 'upload') {
+      if (!job.payload?.path || !job.payload?.file) return DROP_JOB
+      const { error } = await uploadQueuedScoresheet(job.payload)
+      if (error) {
+        safeLog.warn('[SyncQueue] Scoresheet upload error:', error.code || error.status || error.message)
+        return failureResult(error, ctx)
+      }
+      return true
+    }
+
     // Unknown resource/action - mark as done to avoid infinite loop
     safeLog.warn('[SyncQueue] Unknown job type:', job.resource, job.action)
     return true
@@ -1413,6 +1426,7 @@ async function processJobInner(job, ctx) {
 function entityKey(job) {
   if (job.resource === 'match') return `match:${jobMatchKey(job)}`
   if (job.resource === USER_MATCH_RESOURCE) return `${job.resource}:${jobMatchKey(job)}:${job.payload?.role}`
+  if (job.resource === SCORESHEET_UPLOAD_RESOURCE) return `${job.resource}:${job.payload?.path}`
   return `${job.resource}:${job.payload?.external_id}`
 }
 

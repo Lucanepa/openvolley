@@ -11,7 +11,7 @@ import MenuList from './MenuList'
 import Modal from './Modal'
 import ballFallback from '../ball_fallback.png'
 import JSZip from 'jszip'
-import { apiStorage, apiFrom } from '../lib/apiClient'
+import { apiFrom } from '../lib/apiClient'
 import { admin as adminApi, approvalsApi, errorKeyOf, isApprovalUnavailable } from '../lib/accountApi'
 import { useAuth } from '../contexts/AuthContext'
 import { planReopen, isKnownClosedOnServer } from '../utils/matchReopen'
@@ -19,8 +19,7 @@ import { requeueClosedJobs } from '../utils/matchHandover'
 import KitModal from './manage/KitModal'
 import CloudBlockNotice from './CloudBlockNotice'
 import { Textarea } from '../ui/Textarea.jsx'
-import { uploadScoresheet, scoresheetUploadPath } from '../utils/scoresheetUploader'
-import { redactScoresheetPath } from '../../scoresheet_pdf/utils/scoresheetStorage'
+import { scoresheetUploadPath, scoresheetUploadJob, scoresheetJsonBlob, uploadQueuedScoresheet } from '../utils/scoresheetUploader'
 import { isoOf, matchTimes, setDurationMinutes } from '../../scoresheet_pdf/utils/matchTimes'
 import { displaySetNumber, getScoreBeforeEvent, isDefaultSet } from '../../scoresheet_pdf/utils/scoresheetModel'
 import { generatedRemarks } from '../../scoresheet_pdf/utils/sheetRemarks'
@@ -1134,43 +1133,42 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     }
   }
 
-  // The approval's PDF and final JSON in the 'scoresheets' bucket (see
-  // handleApprove)
-  const uploadApprovalFiles = async ({ pdfResult, sets: allSets, events: allEvents }) => {
+  // The approval's PDF and final JSON for the 'scoresheets' bucket, queued
+  // as sync jobs that carry the files (see handleApprove)
+  const queueApprovalFiles = async ({ pdfResult, sets: allSets, events: allEvents }) => {
+    const jobs = []
     // Same name scheme as the JSON (random part: only this scorer
     // account can read it, nobody can claim the name first)
     const pdfStoragePath = scoresheetUploadPath(match, { ext: 'pdf' })
-
-    // Upload PDF (only if generation succeeded)
-    if (pdfResult && pdfStoragePath) {
-      const { error: uploadError } = await apiStorage
-        .from('scoresheets')
-        .upload(pdfStoragePath, pdfResult.blob, {
-          contentType: 'application/pdf',
-          upsert: true
-        })
-      if (uploadError) {
-        console.warn('Failed to upload PDF to cloud:', uploadError)
-      } else {
-        console.log('PDF uploaded to cloud:', redactScoresheetPath(pdfStoragePath))
-      }
+    // (only if generation succeeded)
+    if (pdfResult && pdfStoragePath) jobs.push(scoresheetUploadJob(match, pdfStoragePath, pdfResult.blob, 'application/pdf'))
+    // The final JSON (with _final suffix for approved matches)
+    const jsonStoragePath = scoresheetUploadPath(match, { final: true })
+    if (jsonStoragePath) {
+      jobs.push(scoresheetUploadJob(match, jsonStoragePath, scoresheetJsonBlob({
+        match,
+        homeTeam,
+        awayTeam,
+        homePlayers,
+        awayPlayers,
+        sets: allSets,
+        events: allEvents
+      }), 'application/json'))
     }
-
-    // Upload final JSON (with _final suffix for approved matches)
-    const jsonResult = await uploadScoresheet({
-      match,
-      homeTeam,
-      awayTeam,
-      homePlayers,
-      awayPlayers,
-      sets: allSets,
-      events: allEvents,
-      final: true
-    })
-    if (jsonResult.success) {
-      console.log('Final JSON uploaded to cloud:', redactScoresheetPath(jsonResult.path))
-    } else {
-      console.warn('Failed to upload final JSON:', jsonResult.error)
+    if (!jobs.length) return
+    try {
+      await db.transaction('rw', db.sync_queue, async () => {
+        for (const job of jobs) await db.sync_queue.add(job)
+      })
+    } catch (queueErr) {
+      // IndexedDB refused the files (storage full): one try now, in the
+      // background, as before the queue took them
+      console.warn('[MatchEnd] Could not queue the scoresheet uploads, uploading them once now:', queueErr?.message)
+      for (const job of jobs) {
+        uploadQueuedScoresheet(job.payload)
+          .then(({ error }) => { if (error) console.warn('Failed to upload scoresheet to cloud:', error) })
+          .catch(uploadErr => console.warn('Error uploading scoresheet:', uploadErr))
+      }
     }
   }
 
@@ -1364,14 +1362,12 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       setIsApproved(true)
 
       // The cloud copies of the PDF and the final JSON go up after the
-      // approval, in the background. Awaited before it, an upload on a
+      // approval, through the sync queue, which retries them until they are
+      // stored (scoresheetUploadJob). Awaited before it, an upload on a
       // connection that passed no data held "Confirm and approve" (no Cancel
       // at that step), and with it the approval and the ZIP, for minutes
-      // (stress test 2026-10-25). Each upload is bounded (apiStorage).
-      if (!match?.test) {
-        uploadApprovalFiles({ pdfResult, sets: allSets, events: allEvents })
-          .catch(uploadErr => console.warn('Error uploading scoresheet:', uploadErr))
-      }
+      // (stress test 2026-10-25).
+      if (!match?.test) await queueApprovalFiles({ pdfResult, sets: allSets, events: allEvents })
 
       // Warn if PDF was not generated (approval still succeeded)
       if (!pdfResult) {
