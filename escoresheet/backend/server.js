@@ -197,7 +197,12 @@ const READ_ONLY_TABLES = new Set(['svrz_games'])
 // deleting anything else is for admins.
 const REFEREE_DIRECTORY = 'referee_database'
 const REFEREE_DIRECTORY_UPDATABLE = new Set(['sport_type'])
-const DB_RATE_LIMIT_MAX = 200 // relay reads (/api/match/list, /api/match/:id, ...)
+// Relay reads (/api/match/list, /api/match/:id, /api/server/connections, ...)
+// per IP and minute, sized for a hall of 64 matches behind one address (see
+// MAX_OWNED_PER_IP): about 16 a minute per match (the scorer's tablet status
+// every 10 s, referee and bench fetches). 200 ran out at about 12 matches in
+// the national peak load test (2026-10-26, literal halls).
+const DB_RATE_LIMIT_MAX = 1000
 const AUTH_RATE_LIMIT_MAX = 10 // PocketBase PIN proof
 const EMAIL_RATE_LIMIT_MAX = 3
 const ICAL_RATE_LIMIT_MAX = 10
@@ -976,9 +981,14 @@ const STALE_TAKEOVER_MS = 10 * 60 * 1000
 // so every scorer of a venue NAT may reconnect at once.
 const CLAIM_FAILURE_LIMIT = 5
 // Distinct match ids one IP's sockets may own at once / claim per minute
-// (higher than the LAN relays: a club's courts can share one NAT address).
-const MAX_OWNED_PER_IP = 20
-const NEW_CLAIM_LIMIT = 30
+// (higher than the LAN relays: a club's courts can share one NAT address, a
+// whole hall a school network or a mobile CGNAT address). 20 refused the
+// 21st scorer of a 32-match hall for the whole set, so its referee and bench
+// tablets got no bundle (national peak load test 2026-10-26). Claims per
+// minute as many: after a relay restart a hall reclaims all its matches at
+// once.
+const MAX_OWNED_PER_IP = 64
+const NEW_CLAIM_LIMIT = 64
 const FINISHED_STATUSES = new Set(['final', 'ended', 'completed', 'finished'])
 
 // --- PocketBase sync (5s trailing-edge debounce) ---

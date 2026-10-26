@@ -63,9 +63,9 @@ function freePort() {
   })
 }
 
-function openClient(url) {
+function openClient(url, headers = null) {
   return new Promise((res, rej) => {
-    const ws = new WebSocket(url)
+    const ws = new WebSocket(url, headers ? { headers } : undefined)
     const client = { ws, messages: [], raw: [] }
     client.send = (m) => ws.send(JSON.stringify(m))
     client.waitFor = (pred, timeoutMs = 3000) => new Promise((ok, fail) => {
@@ -677,5 +677,59 @@ describe('backend relay in cloud mode (IS_CLOUD)', () => {
     assert.equal(display.messages.some((m) => m.type === 'live-state-update' && m.matchId === 'cloud-test'), false)
 
     for (const c of [rehearsal, official, display]) c.ws.close()
+  })
+})
+
+describe('backend relay in cloud mode behind Cloudflare: a hall behind one address', () => {
+  let child
+  let port
+  const HALL = { 'cf-connecting-ip': '203.0.113.77' }
+
+  before(async () => {
+    port = await freePort()
+    const env = { ...process.env, PORT: String(port), IS_CLOUD: '1', TRUST_PROXY: 'cloudflare' }
+    for (const k of ['DATABASE_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'POCKETBASE_URL', 'TRUST_PROXY_FROM']) delete env[k]
+    child = spawn(process.execPath, ['server.js', '--local'], { cwd: BACKEND_DIR, env, stdio: 'ignore' })
+    const start = Date.now()
+    for (;;) {
+      try {
+        if ((await fetch(`http://127.0.0.1:${port}/health`)).ok) break
+      } catch { /* not up yet */ }
+      if (Date.now() - start > 10000) throw new Error('backend did not start')
+      await new Promise((r) => setTimeout(r, 100))
+    }
+  })
+
+  after(() => {
+    child?.kill('SIGKILL')
+  })
+
+  // National peak load test 2026-10-26 (literal halls): a hall's 32 matches
+  // behind one public address (a school network, mobile CGNAT). From the 21st
+  // on the scorers could not own their match (too-many-matches), so their
+  // referee and bench tablets got no bundle for the whole set, and the
+  // address's 200 relay reads a minute (tablet status polls, referee and bench
+  // fetches) ran out at about 12 matches.
+  it('one public address carries a hall of 32 matches: their rooms and their relay reads', async () => {
+    const wsUrl = `ws://127.0.0.1:${port}`
+    const scorers = []
+    for (let i = 0; i < 32; i++) {
+      const c = await openClient(wsUrl, HALL)
+      c.send(syncMessage(makeMatch({ id: 1, seed_key: `hall-${i}`, gamePin: String(600000 + i), refereeConnectionEnabled: true })))
+      scorers.push(c)
+    }
+    for (const c of scorers) {
+      c.send({ type: 'ping' })
+      await c.waitFor((m) => m.type === 'pong')
+    }
+    assert.deepEqual(scorers.flatMap((c) => c.messages.filter((m) => m.type === 'error').map((m) => m.code)), [])
+    const list = await (await fetch(`http://127.0.0.1:${port}/api/match/list`, { headers: HALL })).json()
+    assert.equal(list.matches.filter((m) => m.id.startsWith('hall-')).length, 32)
+    // a minute of the hall's relay reads (32 matches: the scorers' tablet
+    // status every 10 s, referee and bench fetches)
+    const codes = []
+    for (let i = 0; i < 600; i++) codes.push((await fetch(`http://127.0.0.1:${port}/api/server/connections?matchId=hall-${i % 32}`, { headers: HALL })).status)
+    assert.equal(codes.filter((c) => c === 429).length, 0)
+    for (const c of scorers) c.ws.close()
   })
 })
