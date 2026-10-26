@@ -88,6 +88,7 @@ import { ActionSheet, ActionSheetItem } from '../ui/Modal.jsx'
 import { SectionHeader } from '../ui/SectionHeader.jsx'
 import { DateTimeField } from '../ui/DateField.jsx'
 import { askConfirm } from '../utils/askConfirm.js'
+import { freeStorageBytes, isStorageFullError, LOW_STORAGE_BYTES } from '../utils/storageSpace'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
 import { ArrowUpDown, ChevronDown, Cross } from 'lucide-react'
 import { useDiagCommits } from '../diagnostics/commits'
@@ -596,13 +597,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     console.error('[confirm] action failed after its dialog closed', err)
     // A scorer action shows its own failure (onActionFailed): once is enough
     if (isReportedActionError(err)) return
-    showAlert(t('scoreboard.confirmFailed'), 'error')
+    showAlert(t(isStorageFullError(err) ? 'scoreboard.storageFull' : 'scoreboard.confirmFailed'), 'error')
   }, [showAlert, t])
   // A scorer action (runAction) that failed wrote nothing: say so, or the tap
-  // just seems to do nothing
+  // just seems to do nothing. The storage full is said as such: "try again"
+  // never helps there (utils/storageSpace.js)
   const onActionFailed = useCallback((err) => {
     console.error('[action] failed, nothing was saved', err)
-    showAlert(t('scoreboard.confirmFailed'), 'error')
+    showAlert(t(isStorageFullError(err) ? 'scoreboard.storageFull' : 'scoreboard.confirmFailed'), 'error')
   }, [showAlert, t])
   const runReopenSet = useConfirmAction(onConfirmFailed)
   const [setStartTimeModal, setSetStartTimeModal] = useState(null) // { setIndex: number, defaultTime: string } | null
@@ -1128,6 +1130,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   useConnectionHealthMonitor(data?.match, handleDeviceDisconnected, {
     enabled: !!(data?.match && (data.match.refereeConnectionEnabled || data.match.homeTeamConnectionEnabled || data.match.awayTeamConnectionEnabled))
   })
+
+  // The device storage nearly full: said when the scoreboard opens and at a
+  // set start, while the scorer can still free space, not first by a refused
+  // tap mid-rally (utils/storageSpace.js). Once per scoreboard.
+  const storageWarnedRef = useRef(false)
+  useEffect(() => {
+    if (storageWarnedRef.current || !data?.set?.index) return
+    let cancelled = false
+    freeStorageBytes().then(free => {
+      if (cancelled || storageWarnedRef.current || free == null || free >= LOW_STORAGE_BYTES) return
+      storageWarnedRef.current = true
+      showAlert(t('scoreboard.storageLow', { mb: Math.floor(free / (1024 * 1024)) }), 'warning')
+    })
+    return () => { cancelled = true }
+  }, [data?.set?.index, showAlert, t])
 
   // Check if Set 5 was already confirmed (on mount or when entering Set 5)
   useEffect(() => {
@@ -7640,7 +7657,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       console.error('[TO] time-out not recorded', err)
       timeoutStartTimestampRef.current = null
       timeoutInitialCountdownRef.current = 30
-      showAlert(t('scoreboard.timeoutRequest.notRecorded'), 'error')
+      showAlert(t(isStorageFullError(err) ? 'scoreboard.storageFull' : 'scoreboard.timeoutRequest.notRecorded'), 'error')
       throw markActionErrorReported(err)
     }
 

@@ -867,6 +867,8 @@
       "show": "Wärchzüügliischte iiblände"
     },
     "confirmFailed": "Das isch nöd gspeicheret worde. Bitte s Matchblatt prüefe und nomal probiere.",
+    "storageFull": "Nöd gspeicheret: De Speicher vo dem Grät isch voll. Platz freimache (alti Downloads oder anderi Dateie lösche) und nomal tippe. Alles, wo bis jetzt erfasst isch, bliibt erhalte.",
+    "storageLow": "De Speicher vo dem Grät isch fascht voll: no {{mb}} MB für OpenVolley. Jetzt Platz freimache (alti Downloads oder anderi Dateie lösche): Wenn er voll isch, cha nüt meh erfasst werde.",
     "timeoutRequest": {
       "title": "Timeout — {{team}}",
       "first": "Timeout 1 vo 2 i dem Satz für {{team}}.",
