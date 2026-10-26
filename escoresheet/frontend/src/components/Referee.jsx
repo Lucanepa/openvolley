@@ -514,7 +514,14 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
   // No heartbeat needed - Referee just listens for WebSocket updates from Scoreboard
 
-  // Check connection statuses
+  // Check connection statuses: on mount, every 60 s and when the match's
+  // status changes. Only primitives as deps: every relay bundle (two per
+  // rally) builds a new data.match, and with the object as a dep the effect
+  // below ran again, and called GET /api/match/list, on every bundle. That
+  // list holds every published match of the relay and spends the venue's
+  // shared relay-read budget.
+  const hasMatchData = !!data?.match
+  const matchStatus = data?.match?.status
   const checkConnectionStatuses = useCallback(async () => {
     const statuses = { api: 'unknown', server: 'unknown', websocket: 'unknown', scoreboard: 'unknown', match: 'unknown', db: 'unknown' }
     const debugInfo = {}
@@ -547,8 +554,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
     if (isMasterMode) {
       statuses.match = 'test_mode'
       debugInfo.match = { status: 'test_mode', message: 'Running in test mode' }
-    } else if (matchId && data?.match) {
-      statuses.match = data.match.status === 'live' ? 'live' : data.match.status === 'scheduled' ? 'scheduled' : 'final'
+    } else if (matchId && hasMatchData) {
+      statuses.match = matchStatus === 'live' ? 'live' : matchStatus === 'scheduled' ? 'scheduled' : 'final'
     } else {
       statuses.match = 'no_match'
     }
@@ -562,7 +569,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
     setConnectionStatuses(statuses)
     setConnectionDebugInfo(debugInfo)
-  }, [matchId, data?.match, isMasterMode])
+  }, [matchId, hasMatchData, matchStatus, isMasterMode])
 
   useEffect(() => {
     checkConnectionStatuses()
