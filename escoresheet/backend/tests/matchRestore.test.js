@@ -303,6 +303,33 @@ describe('matchRestore on Postgres', { skip: SKIP_PG }, () => {
       assert.equal(await count('events', id), 8)
     })
 
+    // the device's new ids continue its own counter: they may be old ids of
+    // this same match (renamed one by one, rows still to be moved were
+    // deleted and others moved twice)
+    it('rekey: new ids that are old ids of the same match move every row once', async () => {
+      const ext = uniq('REKEY2')
+      const made = await restore.restoreMatch(backup(ext, { sets: 2, events: 5 }), W)
+      const id = made.body.data.id
+      await raw.query('UPDATE events SET voided_at = now(), void_reason = $3 WHERE match_id = $1 AND external_id = $2', [id, `${ext}:e:3`, 'undo'])
+      const before = (await raw.query('SELECT id, external_id FROM events WHERE match_id = $1', [id])).rows
+      const idOf = Object.fromEntries(before.map((r) => [r.external_id, r.id]))
+      // cloud e:1..e:5 and s:1..s:2 to the device's e:3..e:7 and s:2..s:3
+      const b = backup(ext, { sets: 2, events: 5 })
+      const to = (key) => key.replace(/:(s|e):(\d+)$/, (_, k, n) => `:${k}:${Number(n) + (k === 's' ? 1 : 2)}`)
+      const rekey = { sets: {}, events: {} }
+      b.sets = b.sets.map((r) => { rekey.sets[to(r.external_id)] = r.external_id; return { ...r, external_id: to(r.external_id) } })
+      b.events = b.events.map((r) => { rekey.events[to(r.external_id)] = r.external_id; return { ...r, external_id: to(r.external_id) } })
+      const r = await restore.restoreMatch({ ...b, rekey }, W)
+      assert.equal(r.status, 200, JSON.stringify(r.body))
+      assert.equal(r.body.data.counts.rekeyed, 7)
+      const after = (await raw.query('SELECT id, external_id, voided_at IS NOT NULL AS voided FROM events WHERE match_id = $1 ORDER BY seq', [id])).rows
+      assert.deepEqual(after.map((x) => [x.external_id, x.voided]), [3, 4, 5, 6, 7].map((n) => [`${ext}:e:${n}`, n === 5]))
+      // each row in place: the row of cloud e:n is the device's e:n+2
+      for (let n = 1; n <= 5; n++) assert.equal(after.find((x) => x.external_id === `${ext}:e:${n + 2}`).id, idOf[`${ext}:e:${n}`], `e:${n}`)
+      assert.deepEqual((await raw.query('SELECT external_id, index FROM sets WHERE match_id = $1 ORDER BY index', [id])).rows.map((x) => [x.external_id, x.index]), [[`${ext}:s:2`, 1], [`${ext}:s:3`, 2]])
+      assert.equal(await count('events', id), 5)
+    })
+
     it('restores a match without sets, events or live state', async () => {
       const ext = uniq()
       const r = await restore.restoreMatch({ match: { external_id: ext } }, W)
