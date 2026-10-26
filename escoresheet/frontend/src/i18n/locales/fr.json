@@ -1062,6 +1062,9 @@
     "modals": {
       "existingMatchWarning": "Un match existe déjà. Voulez-vous le supprimer et créer un nouveau match officiel ?",
       "testMatchOverwriteWarning": "Un match officiel est en cours. Démarrer un match amical effacera la session précédente. Continuer ?",
+      "officialMatchStillRecording": "Un match officiel est encore en cours d'enregistrement sur cet appareil. Continuez-le, ou supprimez-le avec \"Supprimer le match\", avant de créer un nouveau match officiel.",
+      "officialMatchReplaceTest": "Le match amical de cet appareil est remplacé par le match officiel et ses données supprimées. Continuer ?",
+      "officialMatchReplaceEasy": "Le match simplifié de cet appareil est remplacé par le match officiel et ses données supprimées. Continuer ?",
       "deleteTestMatchConfirm": "Cela supprimera le match amical et toutes ses données. Continuer ?",
       "noTestMatchFound": "Aucun match amical trouvé. Veuillez d'abord créer un nouveau match amical.",
       "testMatchDeleted": "Match amical supprimé avec succès.",

@@ -1056,6 +1056,9 @@
     "modals": {
       "existingMatchWarning": "Es existiert bereits ein Spiel. Möchten Sie es löschen und ein neues offizielles Spiel erstellen?",
       "testMatchOverwriteWarning": "Ein offizielles Spiel wird aufgezeichnet. Das Starten eines Testspiels löscht die vorherige Sitzung. Fortfahren?",
+      "officialMatchStillRecording": "Auf diesem Gerät wird noch ein offizielles Spiel aufgezeichnet. Setzen Sie es fort oder löschen Sie es mit \"Spiel löschen\", bevor Sie ein neues offizielles Spiel erstellen.",
+      "officialMatchReplaceTest": "Das Testspiel auf diesem Gerät wird durch das offizielle Spiel ersetzt und seine Daten gelöscht. Fortfahren?",
+      "officialMatchReplaceEasy": "Das einfache Spiel auf diesem Gerät wird durch das offizielle Spiel ersetzt und seine Daten gelöscht. Fortfahren?",
       "deleteTestMatchConfirm": "Dies löscht das Testspiel und alle seine Daten. Fortfahren?",
       "noTestMatchFound": "Kein Testspiel gefunden. Bitte erstellen Sie zuerst ein neues Testspiel.",
       "testMatchDeleted": "Testspiel erfolgreich gelöscht.",
