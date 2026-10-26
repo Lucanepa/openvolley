@@ -10240,8 +10240,25 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       await handleForfait(team, reason, { scope: getForfaitScope(team, reason, playerOut) })
     } else if (choice === 'cancel') {
       setExceptionalSubstitutionModal(null)
+      // An expulsion or disqualification is written before this dialog opens
+      // (confirmPlayerSanction looks for a substitute after logging it).
+      // "Correct the sanction first" takes it back, as the substitution list's
+      // "Cancel sanction" does: kept, the scoresheet had the expulsion while
+      // the expelled player played on, Start rally offered (stress test
+      // 2026-10-25). An injury writes nothing before this dialog.
+      if (reason === 'expulsion' || reason === 'disqualification') {
+        const sanction = (await db.events.where('matchId').equals(matchId).toArray())
+          .filter(e => e.type === 'sanction' && e.payload?.team === team &&
+            String(e.payload?.playerNumber) === String(playerOut) && e.payload?.type === reason)
+          .sort(compareBySeq)
+          .pop()
+        if (sanction) {
+          await db.events.delete(sanction.id)
+          syncToReferee()
+        }
+      }
     }
-  }, [exceptionalSubstitutionModal, getAvailableExceptionalSubstitutes, handleForfait, getForfaitScope, easyNewSubstituteOpen])
+  }, [exceptionalSubstitutionModal, getAvailableExceptionalSubstitutes, handleForfait, getForfaitScope, easyNewSubstituteOpen, matchId, syncToReferee])
 
   // Confirm substitution
   const runSubstitutionConfirm = useConfirmAction(onConfirmFailed)
