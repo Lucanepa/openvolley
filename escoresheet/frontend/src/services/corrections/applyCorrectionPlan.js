@@ -16,7 +16,7 @@
  *  7. queued insert jobs of removed events are dropped (only inserts:
  *     domain/corrections syncJobsForEvents)
  *  8. at the match end, a change of the sheet clears the post-match
- *     signatures (they certified the old sheet)
+ *     signatures (they certified the old sheet), here and on the server
  *
  * The event history (db/eventHistory) is the one record of what the
  * correction removed or changed: its db.events hooks write an event_history
@@ -33,6 +33,7 @@ import { deriveTeamSanctionFlags } from '../../domain/sanctions'
 import { appendRemark, removeRemarkLine } from '../../domain/remarks'
 import { syncJobsForEvents } from '../../domain/corrections'
 import { clearedPostMatchSignatures, POST_MATCH_SIGNATURE_FIELDS } from '../../domain/matchEnd'
+import { signaturesPayload } from '../../domain/signatureEdits'
 import { buildEventInsertJob } from '../../utils/eventSync'
 import { setExtId } from '../../utils/syncIds'
 import { withActivityContext, EVENT_HISTORY_SCOPE, rememberSeedKey } from '../../db/eventHistory'
@@ -192,6 +193,10 @@ async function writePlan(plan, { matchId, db, mode = 'live', hooks = {}, now = n
       const matchPayload = { id: match.seed_key }
       if (patch.manualChanges) matchPayload.manual_changes = patch.manualChanges
       if (patch.sanctions) matchPayload.sanctions = patch.sanctions
+      // 8. the cleared signatures on the server too, as Reopen last set does
+      // (the server kept them all, attached to the corrected sheet): the whole
+      // object, it replaces the column, so the pre-match ones travel along
+      if (result.signaturesCleared) matchPayload.signatures = signaturesPayload({ ...match, ...patch })
       if (Object.keys(matchPayload).length > 1) {
         await db.sync_queue.add({ resource: 'match', action: 'update', payload: matchPayload, ts, status: 'queued' })
       }

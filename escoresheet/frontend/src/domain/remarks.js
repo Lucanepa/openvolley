@@ -5,6 +5,7 @@
  * a line records it in its payload (autoRemark) so that undoing the event can
  * take exactly that line out again.
  */
+import { zonedParts } from '../ui/format'
 
 /** Append one line to the remarks text. */
 export function appendRemark(remarks, line) {
@@ -29,11 +30,15 @@ export function removeRemarkLine(remarks, line) {
 
 const pad2 = (n) => String(n).padStart(2, '0')
 
-/** The local wall-clock time "HH:MM" of a remark (24 h), as the sheet prints times. */
+/**
+ * The Zürich wall-clock time "HH:MM" of a remark (24 h), as the sheet prints
+ * times: the gym's clock on a device in any zone (stress test 2026-10-25).
+ */
 export function remarkClock(at = new Date()) {
   const d = at instanceof Date ? at : new Date(at)
-  if (Number.isNaN(d.getTime())) return ''
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+  const p = zonedParts(d)
+  if (!p.valid) return ''
+  return `${pad2(p.hour)}:${pad2(p.minute)}`
 }
 
 /**
@@ -55,7 +60,7 @@ export function eventRemark({ set, at = new Date(), team, teamScore = 0, oppScor
 export const ACTUAL_START_LABEL = 'Actual start time'
 const ACTUAL_START_RE = /^Actual start time: \d{1,2}:\d{2}$/
 
-/** The remark line for a set 1 that started at `at` (local HH:MM). */
+/** The remark line for a set 1 that started at `at` (Zürich HH:MM). */
 export function actualStartLine(at) {
   const clock = remarkClock(at)
   return clock ? `${ACTUAL_START_LABEL}: ${clock}` : ''

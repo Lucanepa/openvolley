@@ -5,6 +5,7 @@
  * utils/__tests__/sheetFormat.test.ts.
  */
 import { officialsToArray } from '../../src/domain/officials.js'
+import { zonedParts } from '../../src/ui/format.js'
 import { scoresheetGameId } from './scoresheetStorage'
 
 const pad2 = (n: number) => String(n).padStart(2, '0')
@@ -44,24 +45,30 @@ export function formatDob(raw: unknown): string {
   return `${pad2(d)}.${pad2(m)}.${y}`
 }
 
-const toDate = (value: unknown): Date | null => {
+/**
+ * The Zürich wall clock of a stored time (ui/format zonedParts), null for
+ * nothing. The sheet prints the gym's clock whatever zone the device is in:
+ * the device's getHours printed set 1 at 11:20 for a 10:20 start on a laptop
+ * left on GMT+2 (stress test 2026-10-25).
+ */
+const zurichParts = (value: unknown) => {
   if (value === null || value === undefined || value === '') return null
-  const dt = value instanceof Date ? value : new Date(value as string)
-  return Number.isNaN(dt.getTime()) ? null : dt
+  const p = zonedParts(value)
+  return p.valid ? p : null
 }
 
-/** A match date as printed in the header: the LOCAL calendar day, `DD.MM.YYYY`. */
+/** A match date as printed in the header: the Zürich calendar day, `DD.MM.YYYY`. */
 export function formatSheetDate(value: unknown): string {
-  const dt = toDate(value)
-  if (!dt) return ''
-  return `${pad2(dt.getDate())}.${pad2(dt.getMonth() + 1)}.${dt.getFullYear()}`
+  const p = zurichParts(value)
+  if (!p) return ''
+  return `${pad2(p.day)}.${pad2(p.month)}.${p.year}`
 }
 
-/** `YYYYMMDD` of the LOCAL calendar day (file names). */
+/** `YYYYMMDD` of the Zürich calendar day (file names). */
 export function localDateStamp(value: unknown): string {
-  const dt = toDate(value)
-  if (!dt) return ''
-  return `${dt.getFullYear()}${pad2(dt.getMonth() + 1)}${pad2(dt.getDate())}`
+  const p = zurichParts(value)
+  if (!p) return ''
+  return `${p.year}${pad2(p.month)}${pad2(p.day)}`
 }
 
 /**
@@ -75,11 +82,11 @@ export function formatHoursMinutes(totalMinutes: number | null | undefined): str
   return `${h} h ${pad2(m)} min`
 }
 
-/** A local clock time as the result table prints it: `HH h MM min`. */
+/** A Zürich clock time as the result table prints it: `HH h MM min`. */
 export function formatClockHoursMinutes(value: unknown): string {
-  const dt = toDate(value)
-  if (!dt) return ''
-  return `${pad2(dt.getHours())} h ${pad2(dt.getMinutes())} min`
+  const p = zurichParts(value)
+  if (!p || !p.timed) return ''
+  return `${pad2(p.hour)} h ${pad2(p.minute)} min`
 }
 
 /**
@@ -210,9 +217,11 @@ export function formatPersonName(lastName: unknown, firstName: unknown): string 
   if (!last) return first
   if (!first) return last
   // initials of a compound first name: "Jean-Baptiste" -> "J.-B.", "Anna Lena" -> "A. L."
+  // An initial is the first whole character (code point): p[0] of "🏐 Max" is half
+  // the emoji, which the PDF capture cannot serialise, so Save PDF failed
   const initials = first
     .split(/\s+/)
-    .map(part => part.split('-').map(p => (p ? `${p[0].toUpperCase()}.` : '')).filter(Boolean).join('-'))
+    .map(part => part.split('-').map(p => (p ? `${String.fromCodePoint(p.codePointAt(0)!).toUpperCase()}.` : '')).filter(Boolean).join('-'))
     .filter(Boolean)
     .join(' ')
   return `${last}, ${initials}`

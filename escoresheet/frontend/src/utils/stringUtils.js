@@ -1,5 +1,5 @@
 /**
- * String utilities for filename sanitization and secure PIN generation
+ * String utilities for filename sanitization, cutting text and secure PIN generation
  */
 
 /**
@@ -102,6 +102,37 @@ export function sanitizeSimple(str, maxLength = 15) {
   }
 
   return result
+}
+
+/**
+ * The first `max` UTF-16 units of a text, one fewer when the cut would fall
+ * inside an emoji or another character outside the BMP (a surrogate pair).
+ * Half a pair is not text: shown as a broken character, and the scoresheet
+ * capture (html-to-image, encodeURIComponent) throws on it, so Save PDF
+ * failed for an Easy match name cut through an emoji. The limit stays in
+ * UTF-16 units, as before, so a stored name is never longer than it was.
+ *
+ * @param {string} str - The text
+ * @param {number} max - Maximum length in UTF-16 units
+ * @returns {string}
+ */
+export function cutText(str, max) {
+  const s = str == null ? '' : String(str)
+  if (s.length <= max) return s
+  const cut = s.slice(0, max)
+  return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut
+}
+
+/**
+ * The text with every half of a surrogate pair (a lone surrogate) replaced
+ * by U+FFFD, whole pairs kept: String.prototype.toWellFormed, which older
+ * WebKit and Android WebViews lack.
+ *
+ * @param {string} str - The text
+ * @returns {string}
+ */
+export function wellFormedText(str) {
+  return String(str).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDFFF]/g, ch => (ch.length === 2 ? ch : '\uFFFD'))
 }
 
 /**

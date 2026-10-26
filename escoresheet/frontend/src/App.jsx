@@ -57,7 +57,7 @@ import {
 } from './constants/testSeeds'
 import { apiFrom } from './lib/apiClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
-import { fetchMatchByPin, importMatchFromSupabase, cloudBestOf, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, listPocketBaseBackups, fetchPocketBaseMatch } from './utils/backupManager'
+import { fetchMatchByPin, importMatchFromSupabase, cloudBestOf, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, listPocketBaseBackups, fetchPocketBaseMatch, matchBackupFromDatabaseExport, restoreErrorText } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
 import DesktopUpdateNotice from './components/DesktopUpdateNotice'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils/matchFormat'
@@ -192,10 +192,12 @@ export default function App() {
   const queueStats = useMemo(() => ({ authRequired: syncStatus === 'auth_required' }), [syncStatus])
   const backup = useAutoBackup(matchId)
   // Backup file for a restore: the desktop app opens its own dialog in the
-  // backup folder; elsewhere the browser file picker.
+  // backup folder; elsewhere the browser file picker. A whole-database export
+  // (an older set-end download) is previewed and restored as the match it holds.
   const pickBackupFile = useCallback(async () => {
     const native = await pickNativeBackupFile()
-    return native === undefined ? selectBackupFile() : native
+    const data = native === undefined ? await selectBackupFile() : native
+    return (data && matchBackupFromDatabaseExport(data)) || data
   }, [])
   // Options > Backup > Restore from a backup file: same preview + restore path
   // as the Restore match dialog.
@@ -206,7 +208,7 @@ export default function App() {
       setHomeOptionsModal(false)
       setRestorePreviewData({ data: jsonData, source: 'local' })
     } catch (err) {
-      setAlertModal(err?.message || t('home.modals.failedToRestoreFromFile'))
+      setAlertModal(restoreErrorText(err, t))
     }
   }, [pickBackupFile, t])
   // My Matches: link the signed-in account to the match open here (sync queue)
@@ -3681,13 +3683,13 @@ export default function App() {
                                   cloudData = await fetchCloudBackup(backup.path)
                                 }
                                 if (!cloudData) {
-                                  setRestoreError('Failed to fetch backup data')
+                                  setRestoreError(t('options.alerts.failedToLoadBackupData'))
                                   setRestoreLoading(false)
                                   return
                                 }
                                 setRestorePreviewData({ data: cloudData, source: backup.source || 'cloud', backupName: backup.name })
                               } catch (err) {
-                                setRestoreError(err.message || 'Failed to load backup')
+                                setRestoreError(restoreErrorText(err, t))
                               } finally {
                                 setRestoreLoading(false)
                               }
@@ -3727,7 +3729,7 @@ export default function App() {
                           // Show preview instead of immediately restoring
                           setRestorePreviewData({ data: jsonData, source: 'local' })
                         } catch (err) {
-                          setRestoreError(err.message || t('home.modals.failedToRestoreFromFile'))
+                          setRestoreError(restoreErrorText(err, t))
                         } finally {
                           setRestoreLoading(false)
                         }
@@ -3739,6 +3741,11 @@ export default function App() {
                       {restoreLoading ? t('common.loading') : t('settings.backup.selectBackupFile')}
                     </button>
                   </div>
+                  {/* A backup that could not be loaded or restored: the
+                      dialog says why (it was never shown, 2026-10-25) */}
+                  {restoreError && !restorePreviewData && (
+                    <FormError className="mt-3">{restoreError}</FormError>
+                  )}
                 </div>
               </Modal>
             )}
@@ -3748,7 +3755,7 @@ export default function App() {
               <Modal
                 title={t('settings.backup.restorePreview')}
                 open={true}
-                onClose={() => setRestorePreviewData(null)}
+                onClose={() => { setRestorePreviewData(null); setRestoreError('') }}
                 width={700}
                 // The window's height, not 85vh: on a laptop the whole preview fits
                 panelStyle={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', maxHeight: 'calc(100dvh - 2rem)' }}
@@ -3761,6 +3768,9 @@ export default function App() {
                     backupName={restorePreviewData.backupName}
                   />
                 </div>
+                {restoreError && (
+                  <FormError className="mb-3">{restoreError}</FormError>
+                )}
                 {/* Phone: Cancel | Select another, then Confirm restore full width.
                     From sm one row: Cancel left, the two choices right. */}
                 <div className="ov-kit -mx-5 -mb-5 grid shrink-0 grid-cols-2 gap-2 border-t border-stone-100 px-5 py-3 sm:flex sm:items-center sm:justify-end">
@@ -3770,6 +3780,7 @@ export default function App() {
                       setRestoreMatchModal(false)
                       setRestoreMatchIdInput('')
                       setRestorePin('')
+                      setRestoreError('')
                       setCloudBackups([])
                       setCloudBackupPin('')
                       setCloudBackupGameN('')
@@ -3781,7 +3792,7 @@ export default function App() {
                     {t('common.cancel')}
                   </button>
                   <button
-                    onClick={() => setRestorePreviewData(null)}
+                    onClick={() => { setRestorePreviewData(null); setRestoreError('') }}
                     disabled={restoreLoading}
                     className="inline-flex h-11 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
                   >
@@ -3790,6 +3801,7 @@ export default function App() {
                   <button
                     onClick={async () => {
                       setRestoreLoading(true)
+                      setRestoreError('')
                       try {
                         const cloudData = restorePreviewData.data
                         let newMatchId
@@ -3819,7 +3831,7 @@ export default function App() {
                           setRestorePreviewData(null)
                           setAlertModal(t('cloudBlock.restoreRefused'))
                         } else {
-                          setRestoreError(err.message || 'Failed to restore match')
+                          setRestoreError(restoreErrorText(err, t))
                         }
                       } finally {
                         setRestoreLoading(false)

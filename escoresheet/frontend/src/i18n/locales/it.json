@@ -867,6 +867,8 @@
       "show": "Mostra barra degli strumenti"
     },
     "confirmFailed": "Non è stato salvato. Controlla il referto e riprova.",
+    "storageFull": "Non salvato: la memoria di questo dispositivo è piena. Libera spazio (elimina vecchi download o altri file), poi tocca di nuovo. Tutto ciò che è stato registrato finora resta salvato.",
+    "storageLow": "La memoria di questo dispositivo è quasi piena: restano {{mb}} MB per OpenVolley. Libera spazio ora (elimina vecchi download o altri file): quando è piena, non si può registrare più nulla.",
     "timeoutRequest": {
       "title": "Timeout — {{team}}",
       "first": "Timeout 1 di 2 in questo set per {{team}}.",
@@ -965,6 +967,11 @@
       "restorePreview": "Anteprima ripristino",
       "fromDatabase": "Dal database",
       "fromLocalFile": "Da file locale",
+      "restoreErrors": {
+        "unreadable": "Impossibile leggere questo file: è danneggiato o incompleto. Scegli un altro file di backup.",
+        "notABackup": "Questo file non è un backup di partita OpenVolley. Scegli un altro file.",
+        "failed": "Impossibile ripristinare la partita: {{error}}"
+      },
       "preview": {
         "set": "Set {{n}}",
         "serving": "Servizio",

@@ -8,6 +8,7 @@ import { apiFrom } from '../lib/apiClient'
 import { selectAll } from '../lib/selectAll'
 import { AlertTriangle, Loader2, Search, X } from 'lucide-react'
 import { cn, FOCUS_RING, IconButton, Select } from '../ui'
+import { dayKey, dayLabel, shiftDayKey, timeLabel, todayKey } from '../ui/format'
 
 // Kit recipes: native select at h-11 (tablet), compact label, filter pills
 // (slate when on), sticky table head.
@@ -37,75 +38,53 @@ function formatLeagueDisplay(code, gender) {
   return `${code} (${genderSymbol})`
 }
 
+// The schedule's datetime is a Zürich wall time ("2026-10-26T10:20:00", no
+// zone: backend vmSync parseVmDateTime) or an instant (ICAL leagues). Both are
+// read on the Zürich clock (ui/format zonedParts), whatever zone the device is
+// in: the device's getters, and then MatchSetup reading the digits back in the
+// device's zone, stored a 10:20 kick-off as 08:20Z on a laptop left on GMT+2
+// (stress test 2026-10-25).
+
 /**
  * Format ISO date string to DD.MM.YYYY
  */
 function formatDisplayDate(isoString) {
-  if (!isoString) return ''
-  const date = new Date(isoString)
-  const day = String(date.getDate()).padStart(2, '0')
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const year = date.getFullYear()
-  return `${day}.${month}.${year}`
+  return dayLabel(isoString, { year: true })
 }
 
 /**
  * Format ISO date string to HH:MM
  */
 function formatDisplayTime(isoString) {
-  if (!isoString) return ''
-  const date = new Date(isoString)
-  const hours = String(date.getHours()).padStart(2, '0')
-  const minutes = String(date.getMinutes()).padStart(2, '0')
-  return `${hours}:${minutes}`
+  return timeLabel(isoString)
 }
 
 /**
- * Convert ISO string to local date (YYYY-MM-DD) for input
+ * Convert ISO string to the Zürich date (YYYY-MM-DD) for input
  */
 function toLocalDate(isoString) {
-  if (!isoString) return ''
-  const date = new Date(isoString)
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+  return dayKey(isoString)
 }
 
 /**
- * Convert ISO string to local time (HH:MM) for input
+ * Convert ISO string to the Zürich time (HH:MM) for input
  */
 function toLocalTime(isoString) {
-  if (!isoString) return ''
-  const date = new Date(isoString)
-  const hours = String(date.getHours()).padStart(2, '0')
-  const minutes = String(date.getMinutes()).padStart(2, '0')
-  return `${hours}:${minutes}`
+  return timeLabel(isoString)
 }
 
 /**
- * Check if a date is today (local time)
+ * Check if a date is today (Zürich)
  */
 function isToday(isoString) {
-  if (!isoString) return false
-  const date = new Date(isoString)
-  const today = new Date()
-  return date.getDate() === today.getDate() &&
-         date.getMonth() === today.getMonth() &&
-         date.getFullYear() === today.getFullYear()
+  return !!isoString && dayKey(isoString) === todayKey()
 }
 
 /**
- * Check if a date is tomorrow (local time)
+ * Check if a date is tomorrow (Zürich)
  */
 function isTomorrow(isoString) {
-  if (!isoString) return false
-  const date = new Date(isoString)
-  const tomorrow = new Date()
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  return date.getDate() === tomorrow.getDate() &&
-         date.getMonth() === tomorrow.getMonth() &&
-         date.getFullYear() === tomorrow.getFullYear()
+  return !!isoString && dayKey(isoString) === shiftDayKey(todayKey(), 1)
 }
 
 /**

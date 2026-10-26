@@ -214,10 +214,23 @@ describe('Scoreboard: one transaction and one screen change per scorer action', 
   it('a failed scorer action is shown to the scorer once', () => {
     expect(src).toMatch(/onError: onActionFailed\n\s*\}\)/)
     const failed = src.slice(src.indexOf('const onActionFailed = useCallback('), src.indexOf('const onActionFailed = useCallback(') + 300)
-    expect(failed).toContain("showAlert(t('scoreboard.confirmFailed'), 'error')")
+    expect(failed).toContain("showAlert(t(isStorageFullError(err) ? 'scoreboard.storageFull' : 'scoreboard.confirmFailed'), 'error')")
     const confirmFailed = src.slice(src.indexOf('const onConfirmFailed = useCallback('), src.indexOf('const onActionFailed = useCallback('))
     expect(confirmFailed).toContain('if (isReportedActionError(err)) return')
+    expect(confirmFailed).toContain("showAlert(t(isStorageFullError(err) ? 'scoreboard.storageFull' : 'scoreboard.confirmFailed'), 'error')")
     // the time-out keeps its own message, not a second one
-    expect(handler('confirmTimeout')).toContain("showAlert(t('scoreboard.timeoutRequest.notRecorded'), 'error')\n      throw markActionErrorReported(err)")
+    expect(handler('confirmTimeout')).toContain("showAlert(t(isStorageFullError(err) ? 'scoreboard.storageFull' : 'scoreboard.timeoutRequest.notRecorded'), 'error')\n      throw markActionErrorReported(err)")
+  })
+
+  // Stress test 2026-10-25 (storage-full-generic-not-saved): with the device
+  // storage full every tap said "That was not saved. Check the scoresheet and
+  // try again", which never helps, and nothing said the storage was full.
+  it('a full device storage is named, and said at a set start before a tap is refused', () => {
+    expect(src).toMatch(/import \{ freeStorageBytes, isStorageFullError, LOW_STORAGE_BYTES \} from '\.\.\/utils\/storageSpace'/)
+    const warn = src.slice(src.indexOf('const storageWarnedRef = useRef(false)'), src.indexOf('const storageWarnedRef = useRef(false)') + 900)
+    expect(warn).toContain('freeStorageBytes()')
+    expect(warn).toContain('free >= LOW_STORAGE_BYTES')
+    expect(warn).toContain("showAlert(t('scoreboard.storageLow', { mb: Math.floor(free / (1024 * 1024)) }), 'warning')")
+    expect(warn).toMatch(/\}, \[data\?\.set\?\.index, showAlert, t\]\)/)
   })
 })
