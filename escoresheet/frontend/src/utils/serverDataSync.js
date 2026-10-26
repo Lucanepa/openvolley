@@ -377,6 +377,26 @@ export function isLiveStateNewerThanBundle(liveState, bundle) {
 }
 
 /**
+ * The other way round: was the relay bundle read on the scorer after actions
+ * that `liveState` does not show? Same scorer session: the bundle's
+ * match._syncedSeq is past the state's sequence number; otherwise its
+ * _syncedAt is later than the state's updated_at. False when the bundle
+ * carries neither (an older scorer) or the state is not older.
+ */
+export function isBundleNewerThanLiveState(liveState, bundle) {
+  if (!liveState || !bundle) return false
+  const match = bundle.match
+  const order = liveStateOrderOf(liveState)
+  const syncedSeq = Number(match?._syncedSeq)
+  if (order && Number.isFinite(syncedSeq) && match?._syncSession === order.session) {
+    return syncedSeq > order.seq
+  }
+  const syncedAt = Number(match?._syncedAt)
+  const liveAt = liveStateTime(liveState)
+  return Number.isFinite(syncedAt) && !Number.isNaN(liveAt) && syncedAt > liveAt
+}
+
+/**
  * A relay bundle with a live state that is newer than it applied: the scorer
  * pushes its live state after every action, but the bundle (sets, events) can
  * arrive later, be refused, or be read back from the relay before the scorer's

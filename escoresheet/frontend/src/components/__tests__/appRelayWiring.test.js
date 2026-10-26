@@ -63,6 +63,19 @@ describe('App.jsx relay wiring', () => {
   })
 })
 
+// Stress test 2026-10-25: after a venue relay restart (live states in memory
+// only) the scorer resynced its bundle, which carries none, and pushed a live
+// state only at its next action: the livescore kept the old score meanwhile
+describe('Scoreboard relay connection', () => {
+  it('pushes the live state after the sync of every (re)connect', () => {
+    const start = scoreboardSrc.indexOf('detachRelay = scorerRelay.attach(wsUrl, {')
+    expect(start).toBeGreaterThan(-1)
+    const onOpen = scoreboardSrc.slice(start, scoreboardSrc.indexOf('onMessage:', start))
+    expect(onOpen).toMatch(/const initialSync = syncMatchData\(\)/)
+    expect(onOpen).toMatch(/initialSync\.then\(\(\) => syncLiveStateRef\.current\?\.\('reconnect', null, null\)/)
+  })
+})
+
 describe('Scoreboard live state: a test match stays out of the cloud', () => {
   // Scoreboard cannot be mounted here either; publishLiveState and
   // liveStateTargets are tested in relayPublisher.test.js. This pins that every

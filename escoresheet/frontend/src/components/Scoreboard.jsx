@@ -1682,6 +1682,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           initialSync.finally(() => {
             if (initialSyncRef.current === initialSync) initialSyncRef.current = null
           })
+          // Then the live state: the bundle carries none, a relay keeps it
+          // in memory only (one that restarted has none), and the pushes made
+          // while this socket was down were dropped. The livescore, which
+          // takes the score from it, stayed on the score from before a relay
+          // restart until the next rally (stress test 2026-10-25).
+          initialSync.then(() => syncLiveStateRef.current?.('reconnect', null, null), () => {})
         },
         onMessage: (message) => {
           if (message.type === 'pin-validation-request') {
