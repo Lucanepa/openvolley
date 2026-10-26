@@ -112,3 +112,18 @@ describe('health checks', () => {
     expect(scoreboardSrc).toMatch(/`\$\{backendUrl\}\/api\/server\/status` : '\/api\/server\/status'/)
   })
 })
+
+// MatchSetup cannot be mounted here either: its live-state write pinned.
+// 2026-10-26: a team colour changed on a device that continued the match
+// went out on its own clock, behind the states it had stamped ahead
+describe('MatchSetup live-state writes', () => {
+  const setupSrc = readFileSync(resolve(__dirname, '../MatchSetup.jsx'), 'utf8')
+  it('a team name, short name or colour change stamps updated_at on the match\'s live-state clock', () => {
+    const writes = []
+    for (let at = setupSrc.indexOf("await apiFrom('match_live_state')"); at > -1; at = setupSrc.indexOf("await apiFrom('match_live_state')", at + 1)) {
+      writes.push(setupSrc.slice(at, setupSrc.indexOf('.eq(', at)))
+    }
+    expect(writes).toHaveLength(3)
+    for (const write of writes) expect(write).toMatch(/updated_at: new Date\(liveStateNow\(match\)\)\.toISOString\(\)/)
+  })
+})

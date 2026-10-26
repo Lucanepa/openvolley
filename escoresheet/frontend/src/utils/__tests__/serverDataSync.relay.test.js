@@ -24,6 +24,7 @@ import {
   getMatchData,
   uploadRosterToCloud,
   liveClockOffsetAfter,
+  MAX_LIVE_CLOCK_OFFSET_MS,
   liveStateNow,
   LIVE_STATE_HOLD_MS
 } from '../serverDataSync'
@@ -623,6 +624,18 @@ describe('hand-over to a device whose clock is behind', () => {
     expect(liveClockOffsetAfter(laptopLast, A_NOW + 5000)).toBe(0)
     expect(liveClockOffsetAfter(null, B_NOW)).toBe(0)
     expect(liveStateNow({ id: 1 }, B_NOW)).toBe(B_NOW)
+  })
+
+  // 2026-10-26: following a clock an hour ahead (a laptop in the wrong time
+  // zone) stamped every state of the rest of the match, and the time-out and
+  // break starts the website and Point Hub count from, an hour ahead
+  it('the offset a device takes on is at most 10 minutes, a stored one too', () => {
+    const hourAhead = { ...laptopLast, updated_at: iso(B_NOW + 3600000) }
+    expect(liveClockOffsetAfter(hourAhead, B_NOW)).toBe(MAX_LIVE_CLOCK_OFFSET_MS)
+    expect(MAX_LIVE_CLOCK_OFFSET_MS).toBe(600000)
+    expect(liveStateNow({ id: 1, liveClockOffsetMs: 3600001 }, B_NOW)).toBe(B_NOW + MAX_LIVE_CLOCK_OFFSET_MS)
+    // a realistic skew is followed whole
+    expect(liveClockOffsetAfter(laptopLast, B_NOW)).toBe(180001)
   })
 
   it('the referee and benches follow the new device at its first bundle and live state', () => {
