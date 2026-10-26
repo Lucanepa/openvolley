@@ -847,6 +847,48 @@ describe('lanRelayCore protocol', () => {
     expect(hall.admit('10.1.0.2')).toBeNull()
   })
 
+  // A phone that leaves the hall's Wi-Fi sends no close: its socket kept its
+  // slot (50 per address, 500 in all) and its rooms until TCP gave up
+  it('pings every socket and ends one that missed the previous ping', () => {
+    const relay = createLanRelay({ heartbeatMs: 60000 })
+    const pingable = () => {
+      const ws = fakeSocket()
+      const handlers = {}
+      Object.assign(ws, {
+        pings: 0,
+        terminated: false,
+        ping() { this.pings++ },
+        terminate() { this.terminated = true; this.readyState = 3; relay.removeClient(this) },
+        on(event, fn) { handlers[event] = fn },
+        pong() { handlers.pong?.() }
+      })
+      relay.addClient(ws, { ip: '192.168.1.60' })
+      return ws
+    }
+    try {
+      const phone = pingable()
+      const tablet = pingable()
+      relay.heartbeat()
+      expect([phone.pings, tablet.pings]).toEqual([1, 1])
+      tablet.pong() // the phone left the Wi-Fi: no pong
+      relay.heartbeat()
+      expect(phone.terminated).toBe(true)
+      expect(tablet.terminated).toBe(false)
+      expect(tablet.pings).toBe(2)
+      expect(relay.clientCount).toBe(1)
+      // a socket without ping() (another runtime's) is never ended
+      const plain = connect(relay)
+      tablet.pong()
+      relay.heartbeat()
+      tablet.pong()
+      relay.heartbeat()
+      expect(relay.clientCount).toBe(2)
+      expect(plain.readyState).toBe(1)
+    } finally {
+      relay.close()
+    }
+  })
+
   it('accepts the legacy nested `data` shape in the client reader', () => {
     const legacy = { type: 'match-data-update', matchId: '7', data: { match: { id: 7 }, sets: [{ id: 1 }] } }
     expect(readRelayBundle(legacy).sets).toHaveLength(1)
