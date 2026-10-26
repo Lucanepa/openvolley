@@ -2228,10 +2228,22 @@ const server = createServer((req, res) => {
       const requesterIpKey = ipBucketKey(requesterIp)
       // ?finished=1: finished matches too (the livescore on a venue relay)
       const includeFinished = url.searchParams.get('finished') === '1'
+      // Every match's owners in one pass over the sockets: ownersOf per match
+      // went through every socket once per match (about 4 ms per call with
+      // 404 matches and 1,100 role sockets, older referee apps call this on
+      // every bundle)
+      const ownersByMatch = new Map()
+      for (const c of connections.values()) {
+        for (const id of c.ownedMatches) {
+          const list = ownersByMatch.get(id)
+          if (list) list.push(c)
+          else ownersByMatch.set(id, [c])
+        }
+      }
       const matches = []
       for (const entry of activeMatches.values()) {
         if (IS_CLOUD && entry.match?.test === true) continue
-        const owners = ownersOf(entry.matchId)
+        const owners = ownersByMatch.get(entry.matchId) || []
         if (entry.orphanedAt && now - entry.orphanedAt >= STALE_TAKEOVER_MS && owners.length === 0) continue
         // The cloud: a match without the referee connection only to its own
         // venue (same public address as its scoreboard), see cloudListsMatch
