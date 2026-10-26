@@ -527,7 +527,12 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     }))
   }
 
-  /** PUT courts: the full list [{ number, name, active, flex }]; courts left out are removed (their matches lose the court). */
+  /**
+   * PUT courts: the full list [{ number, name, active, flex }]; courts left
+   * out are removed (their open matches lose the court). A court on which a
+   * match has begun or ended stays (409 OV_COURT_IN_USE: switch it off
+   * instead): removing it would erase where that match was played.
+   */
   async function putCourts ({ user, access, id, body }) {
     const list = body?.courts
     if (!Array.isArray(list) || list.length > 40) return invalid('courts: a list of at most 40 courts')
@@ -547,6 +552,13 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     return guarded('courts', () => withTx(async (client) => {
       const t = await requireTournament(client, id, user, access, { edit: true, forUpdate: true })
       const numbers = courts.map((c) => c.number)
+      const { rows: used } = await client.query(
+        `SELECT DISTINCT c.number FROM public.beach_courts c JOIN public.beach_tmatches m ON m.court_id = c.id
+          WHERE c.tournament_id = $1 AND NOT (c.number = ANY($2::int[]))
+            AND (m.match_id IS NOT NULL OR m.status = ANY($3::text[])) ORDER BY c.number`, [t.id, numbers, LOCKED_STATUSES])
+      if (used.length) {
+        throw abort(fail(409, 'OV_COURT_IN_USE', 'Matches were played on this court: switch it off instead', { courts: used.map((r) => r.number) }))
+      }
       await client.query('DELETE FROM public.beach_courts WHERE tournament_id = $1 AND NOT (number = ANY($2::int[]))', [t.id, numbers])
       for (const c of courts) {
         await client.query(
@@ -1434,13 +1446,14 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
         'SELECT * FROM public.beach_tournaments WHERE slug = $1 AND public AND status = ANY($2::text[])', [s, PUBLIC_STATUSES])
       if (!t) return notFound()
       const [courts, draws, entries, tmatches] = await Promise.all([
-        pool.query('SELECT id, number, name FROM public.beach_courts WHERE tournament_id = $1 AND active ORDER BY number', [t.id]),
+        pool.query('SELECT id, number, name, active FROM public.beach_courts WHERE tournament_id = $1 ORDER BY number', [t.id]),
         pool.query('SELECT * FROM public.beach_draws WHERE tournament_id = $1 ORDER BY created_at, id', [t.id]),
         pool.query(`SELECT e.id, e.draw_id, e.seed, e.name, e.player1, e.player2, e.status, e.final_rank
                       FROM public.beach_entries e JOIN public.beach_draws d ON d.id = e.draw_id
                      WHERE d.tournament_id = $1 AND e.status = 'registered' ORDER BY e.draw_id, e.seed NULLS LAST, e.name`, [t.id]),
         pool.query('SELECT * FROM public.beach_tmatches WHERE tournament_id = $1 ORDER BY game_n', [t.id])
       ])
+      // a match keeps the number of its court when the court is switched off (flooded, closed)
       const courtNo = new Map(courts.rows.map((c) => [c.id, c.number]))
       const person = (p) => ({ first: p?.first || '', last: p?.last || '', country: p?.country ?? null })
       return ok({
@@ -1448,7 +1461,7 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
           slug: t.slug, title: t.title, venue: t.venue ?? null, city: t.city ?? null,
           starts_on: day(t.starts_on), ends_on: day(t.ends_on), status: t.status
         },
-        courts: courts.rows.map((c) => ({ number: c.number, name: c.name ?? null })),
+        courts: courts.rows.filter((c) => c.active).map((c) => ({ number: c.number, name: c.name ?? null })),
         draws: draws.rows.map((d) => ({ id: d.id, category: d.category, gender: d.gender, format: d.format, status: d.status })),
         entries: entries.rows.map((e) => ({
           id: e.id, draw_id: e.draw_id, seed: e.seed ?? null, name: e.name, players: [person(e.player1), person(e.player2)], final_rank: e.final_rank ?? null

@@ -245,6 +245,16 @@ describe('Tournaments tab', () => {
     }
   })
 
+  it('a court a match was played on is not removed: the server says to switch it off', async () => {
+    api.putCourts.mockResolvedValue({ data: null, error: { code: 'OV_COURT_IN_USE', message: 'in use', status: 409, details: { courts: [2] } }, status: 409 })
+    await openTournament()
+    fireEvent.click(screen.getByRole('radio', { name: 'tournaments.sections.courts' }))
+    fireEvent.click((await screen.findAllByRole('button', { name: 'tournaments.removeCourt' }))[1])
+    fireEvent.click(screen.getByRole('button', { name: 'tournaments.saveCourts' }))
+    await waitFor(() => expect(api.putCourts).toHaveBeenCalledWith('t1', [{ number: 1, name: null, active: true, flex: false }]))
+    expect(await screen.findByText('tournaments.errors.courtInUse')).toBeInTheDocument()
+  })
+
   it('a background read keeps the courts being typed', async () => {
     await openTournament()
     fireEvent.click(screen.getByRole('radio', { name: 'tournaments.sections.courts' }))

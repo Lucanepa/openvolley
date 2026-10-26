@@ -3352,6 +3352,7 @@
       "matchBegun": "Dieses Spiel hat schon begonnen: Feld und Zeit bleiben.",
       "noCourts": "Zuerst ein Feld hinzufügen.",
       "notFound": "Nicht gefunden oder nicht für dich sichtbar.",
+      "courtInUse": "Auf diesem Feld wurde schon gespielt: schalte «In Betrieb» aus, statt es zu entfernen.",
       "noManager": "Keine OpenBeach-Wettbewerbsverantwortliche Person hat diese E-Mail.",
       "slotConflict": "Dieser Platz passt nicht in den Spielplan.",
       "resultChanged": "Jemand anderes hat dieses Resultat inzwischen geändert. Schau es dir nochmals an.",
