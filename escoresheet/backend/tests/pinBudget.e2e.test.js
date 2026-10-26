@@ -201,4 +201,38 @@ describe('PIN failure budget: a hall behind one address', { skip: SKIP }, () => 
     // another address is not affected
     assert.equal((await connectionPin('203.0.113.51', PINS.bench_away, 'bench_away')).status, 200)
   })
+
+  // 2026-10-26: once a hall had spent the address's ceiling on other PINs,
+  // the scoreboard re-proving its own match on the relay (a reconnect) was
+  // refused for 10 minutes, and its referee and benches froze
+  it('the match\'s own scorer device re-proves its match after the hall spent the ceiling; another device does not', async () => {
+    const hall = '203.0.113.60'
+    const SCORER = '5c0e5c0e-0000-4000-8000-00000000000a'
+    const OTHER = '5c0e5c0e-0000-4000-8000-00000000000b'
+    await sql.query(
+      `INSERT INTO public.match_scorer_devices (match_id, device_id, platform)
+       SELECT id, $1, 'web' FROM public.matches WHERE external_id = $2
+       ON CONFLICT (match_id) DO UPDATE SET device_id = EXCLUDED.device_id`, [SCORER, ext])
+    for (const type of ['referee', 'bench_home', 'upload_home']) {
+      for (let i = 0; i < 20; i++) assert.equal((await connectionPin(hall, nextWrong(), type)).status, 404, type)
+    }
+    assert.equal((await connectionPin(hall, PINS.bench_away, 'bench_away')).status, 429, 'the address is spent')
+    const claim = async (device, gamePin) => {
+      const sock = await openSocket(srv.wsUrl, { headers: { 'cf-connecting-ip': hall } })
+      try {
+        sock.send({ type: 'sync-match-data', matchId: 7, match: { id: 7, seed_key: ext, gamePin, status: 'live' }, sets: [], events: [], device: { id: device, platform: 'web' } })
+        sock.send({ type: 'ping' })
+        await sock.waitFor((m) => m.type === 'pong')
+        return sock.messages.filter((m) => m.type === 'error').map((m) => m.code)
+      } finally {
+        sock.ws.close()
+      }
+    }
+    // another device with the right PIN: the ceiling holds
+    assert.deepEqual(await claim(OTHER, GAME_PIN), ['rate-limited'])
+    // the scorer's device: its own match's scope only
+    assert.deepEqual(await claim(SCORER, GAME_PIN), [])
+    assert.deepEqual(await claim(SCORER, '000111'), ['not-match-owner'])
+    assert.deepEqual(await claim(SCORER, GAME_PIN), [])
+  })
 })

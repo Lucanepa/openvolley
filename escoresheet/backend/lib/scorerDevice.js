@@ -138,12 +138,13 @@ export function scorerMovedBody (holder) {
 export function createScorerDevices ({ pool, db = null, audit = null } = {}) {
   /**
    * Before a write by `device`: who scores the matches it names.
-   * @returns {Promise<{ moved: object|null, unclaimed: boolean }>} moved: the
-   *   scorer row (another device); unclaimed: none of the open, non-test
-   *   matches has a scorer yet (adopt() after the write).
+   * @returns {Promise<{ moved: object|null, unclaimed: boolean, mine: boolean }>}
+   *   moved: the scorer row (another device); unclaimed: none of the open,
+   *   non-test matches has a scorer yet (adopt() after the write); mine: the
+   *   device is the stored scorer of every one of them (at least one).
    */
   async function check ({ device, refs }) {
-    if (!device || !hasRefs(refs)) return { moved: null, unclaimed: false }
+    if (!device || !hasRefs(refs)) return { moved: null, unclaimed: false, mine: false }
     let rows
     try {
       ;({ rows } = await pool.query(
@@ -154,13 +155,14 @@ export function createScorerDevices ({ pool, db = null, audit = null } = {}) {
             AND m.closed_at IS NULL AND m.test IS NOT TRUE`,
         [refs.ids || [], refs.externalIds || []]))
     } catch (err) {
-      if (isMissingTable(err)) return { moved: null, unclaimed: false }
+      if (isMissingTable(err)) return { moved: null, unclaimed: false, mine: false }
       throw err
     }
     const moved = rows.find((r) => r.device_id && r.device_id !== device.id) || null
     // No stored match yet (an insert): adopt it after the write as well
     const unclaimed = rows.length === 0 || rows.some((r) => !r.device_id)
-    return { moved, unclaimed }
+    const mine = rows.length > 0 && rows.every((r) => r.device_id === device.id)
+    return { moved, unclaimed, mine }
   }
 
   /**

@@ -167,6 +167,12 @@ export function createAttemptLimiter ({ max = 5, windowMs = 600000, maxKeys = 50
  *   refused attempt does not count toward the ceiling (nothing was compared).
  * - `refund(ipKey, scope)` takes the attempt back (a right PIN, or no PIN
  *   compared).
+ * - `{ scopeOnly: true }` (both, alike): the address's ceiling is neither
+ *   asked nor counted, only the scope's limit. For a check the server trusts
+ *   beyond the PIN: the scoreboard of the device the database names as the
+ *   match's scorer, re-proving its own match on the relay (server.js
+ *   verifyRelayClaim), was refused once a hall had spent the ceiling on
+ *   other PINs, and its referee and benches froze.
  * - `repeated(ipKey, scope, pin)` after a WRONG PIN: true, and the attempt is
  *   refunded, when the same PIN already failed in this scope within the
  *   window; else it is remembered (as a hash). The same wrong PIN tried again
@@ -179,20 +185,20 @@ export function createPinFailureBudget ({ max = 20, ipMax = 60, windowMs = 60000
   const wrong = new Map() // hash of ipKey|scope|pin -> time it failed (insertion order = time order)
   const scopeKey = (ipKey, scope) => `${ipKey}|${scope}`
   const budget = {
-    isLimited (ipKey, scope) {
-      if (total.isLimited(ipKey)) {
+    isLimited (ipKey, scope, { scopeOnly = false } = {}) {
+      if (!scopeOnly && total.isLimited(ipKey)) {
         total.refund(ipKey)
         return true
       }
       if (scoped.isLimited(scopeKey(ipKey, scope))) {
-        total.refund(ipKey)
+        if (!scopeOnly) total.refund(ipKey)
         return true
       }
       return false
     },
-    refund (ipKey, scope) {
+    refund (ipKey, scope, { scopeOnly = false } = {}) {
       scoped.refund(scopeKey(ipKey, scope))
-      total.refund(ipKey)
+      if (!scopeOnly) total.refund(ipKey)
     },
     repeated (ipKey, scope, pin) {
       const now = Date.now()
