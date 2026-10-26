@@ -42,7 +42,7 @@ import { TEAM_COLOUR_MARK, discPaint, effectiveTeamColour, matchDiscPaint, teamL
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom, writingDevice } from '../lib/apiClient'
 import { relayMatchKey, relayMatchPayload, liveStateNow } from '../utils/serverDataSync'
-import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveState, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
+import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveState, relayEvents, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { exportMatchData } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
@@ -1807,7 +1807,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           homePlayers: freshHomePlayers || [],
           awayPlayers: freshAwayPlayers || [],
           sets: freshSets || [],
-          events: freshEvents || [],
+          // without the undo snapshots (relayEvents)
+          events: relayEvents(freshEvents || []),
           // This installation: the cloud relay refuses a device the match
           // has moved away from (db/019, see App.jsx)
           device: writingDevice(),

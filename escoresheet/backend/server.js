@@ -12,6 +12,7 @@
  */
 
 import { createServer } from 'http'
+import { gzip } from 'zlib'
 import { WebSocketServer } from 'ws'
 import nodemailer from 'nodemailer'
 import ical from 'node-ical'
@@ -31,7 +32,7 @@ import { createRealtimeHub, createLiveStateRelay, createHeartbeat, isLiveRequest
 // What anonymous readers (live sockets, /api/db without a session) may see.
 import { projectLiveRow, hasAnonPolicy, anonSelectCheck, publicRelayMatch, publicPeople, relaySummaryBundle, relayMatchListRow, cloudListsMatch, projectAnonDbRows, projectNonOwnerRows } from './lib/publicColumns.js'
 // PIN-proved access to a relayed match (full bundle) and its capability tokens.
-import { createMatchTokens, pinGrantsAccess, matchTokenSecretFromEnv, isTokenRole, connectionPinType } from './lib/matchAccess.js'
+import { createMatchTokens, pinGrantsAccess, matchTokenSecretFromEnv, isTokenRole, connectionPinType, findMatchByConnectionPin } from './lib/matchAccess.js'
 // Pure helpers only (no pg, no I/O at import): safe in the LAN / SEA build.
 import { ipBucketKey, createConcurrencyGate, bearerFromHeaders } from './lib/auth.js'
 import { createAttemptLimiter, createPinFailureBudget } from './lib/matchRestore.js'
@@ -197,7 +198,12 @@ const READ_ONLY_TABLES = new Set(['svrz_games'])
 // deleting anything else is for admins.
 const REFEREE_DIRECTORY = 'referee_database'
 const REFEREE_DIRECTORY_UPDATABLE = new Set(['sport_type'])
-const DB_RATE_LIMIT_MAX = 200 // relay reads (/api/match/list, /api/match/:id, ...)
+// Relay reads (/api/match/list, /api/match/:id, /api/server/connections, ...)
+// per IP and minute, sized for a hall of 64 matches behind one address (see
+// MAX_OWNED_PER_IP): about 16 a minute per match (the scorer's tablet status
+// every 10 s, referee and bench fetches). 200 ran out at about 12 matches in
+// the national peak load test (2026-10-26, literal halls).
+const DB_RATE_LIMIT_MAX = 1000
 const AUTH_RATE_LIMIT_MAX = 10 // PocketBase PIN proof
 const EMAIL_RATE_LIMIT_MAX = 3
 const ICAL_RATE_LIMIT_MAX = 10
@@ -730,6 +736,25 @@ function publicMatch(match) {
   return publicRelayMatch(stripMatchSecrets(match))
 }
 
+// The scorer's undo snapshots on its events: stateSnapshot on every point,
+// stateBefore on rally starts, rotations and substitutions. Its own undo and
+// corrections use them; no relay subscriber reads them (referee, bench,
+// livescore, the LedBox bridge). They were about 90% of a bundle (2.5 KB per
+// point, 2.4 MB at the end of a 5-set match), kept parsed per match in
+// activeMatches and sent to every tablet twice per rally: at a national peak
+// that alone filled the backend's 256 MiB. Dropped when a sync is stored;
+// scorers since 2026-10-26 leave them out themselves (frontend relayEvents).
+const RELAY_EVENT_OMIT = ['stateSnapshot', 'stateBefore']
+function relayEvents(events) {
+  if (!Array.isArray(events)) return events
+  return events.map((e) => {
+    if (!e || typeof e !== 'object' || !RELAY_EVENT_OMIT.some((k) => k in e)) return e
+    const out = {}
+    for (const k of Object.keys(e)) if (!RELAY_EVENT_OMIT.includes(k)) out[k] = e[k]
+    return out
+  })
+}
+
 // The PIN-free, personal-data-free bundle every match-full-data /
 // match-data-update and GET /api/match/:id carries — the same flat shape the
 // LAN relays send (frontend/electron/lanRelayCore.cjs). Only the scorer, who
@@ -957,9 +982,14 @@ const STALE_TAKEOVER_MS = 10 * 60 * 1000
 // so every scorer of a venue NAT may reconnect at once.
 const CLAIM_FAILURE_LIMIT = 5
 // Distinct match ids one IP's sockets may own at once / claim per minute
-// (higher than the LAN relays: a club's courts can share one NAT address).
-const MAX_OWNED_PER_IP = 20
-const NEW_CLAIM_LIMIT = 30
+// (higher than the LAN relays: a club's courts can share one NAT address, a
+// whole hall a school network or a mobile CGNAT address). 20 refused the
+// 21st scorer of a 32-match hall for the whole set, so its referee and bench
+// tablets got no bundle (national peak load test 2026-10-26). Claims per
+// minute as many: after a relay restart a hall reclaims all its matches at
+// once.
+const MAX_OWNED_PER_IP = 64
+const NEW_CLAIM_LIMIT = 64
 const FINISHED_STATUSES = new Set(['final', 'ended', 'completed', 'finished'])
 
 // --- PocketBase sync (5s trailing-edge debounce) ---
@@ -1336,6 +1366,41 @@ function sendJson(res, status, body, headers = {}) {
   if (res.headersSent) return
   res.writeHead(status, { 'Content-Type': 'application/json', ...headers })
   res.end(JSON.stringify(body))
+}
+
+/** Does the request's Accept-Encoding take gzip (not refused with q=0)? */
+function acceptsGzip(req) {
+  return String(req.headers['accept-encoding'] || '').split(',').some((part) => {
+    const [name, ...params] = part.split(';').map((s) => s.trim().toLowerCase())
+    if (name !== 'gzip' && name !== '*') return false
+    const q = params.find((p) => p.startsWith('q='))
+    return !q || Number(q.slice(2)) > 0
+  })
+}
+
+// Gzip a JSON answer above this size for a client that accepts it.
+const GZIP_MIN_BYTES = 8 * 1024
+
+/**
+ * A JSON text answer, gzipped (level 1, off the event loop) when it is big
+ * and the client accepts it, else as it is. A referee's or bench's GET
+ * /api/match/:id carries the whole match, and a bench refetches it after
+ * every database change of its match: every byte went through the tunnel
+ * uncompressed (national peak load test 2026-10-26).
+ */
+function sendJsonText(req, res, status, text) {
+  const plain = () => {
+    if (res.headersSent) return
+    res.writeHead(status, { 'Content-Type': 'application/json' })
+    res.end(text)
+  }
+  if (text.length < GZIP_MIN_BYTES || !acceptsGzip(req)) return plain()
+  gzip(text, { level: 1 }, (err, body) => {
+    if (err) return plain()
+    if (res.headersSent) return
+    res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' })
+    res.end(body)
+  })
 }
 
 // --- Proportionate operational logs (lib/opsLog.js) ---
@@ -2199,10 +2264,22 @@ const server = createServer((req, res) => {
       const requesterIpKey = ipBucketKey(requesterIp)
       // ?finished=1: finished matches too (the livescore on a venue relay)
       const includeFinished = url.searchParams.get('finished') === '1'
+      // Every match's owners in one pass over the sockets: ownersOf per match
+      // went through every socket once per match (about 4 ms per call with
+      // 404 matches and 1,100 role sockets, older referee apps call this on
+      // every bundle)
+      const ownersByMatch = new Map()
+      for (const c of connections.values()) {
+        for (const id of c.ownedMatches) {
+          const list = ownersByMatch.get(id)
+          if (list) list.push(c)
+          else ownersByMatch.set(id, [c])
+        }
+      }
       const matches = []
       for (const entry of activeMatches.values()) {
         if (IS_CLOUD && entry.match?.test === true) continue
-        const owners = ownersOf(entry.matchId)
+        const owners = ownersByMatch.get(entry.matchId) || []
         if (entry.orphanedAt && now - entry.orphanedAt >= STALE_TAKEOVER_MS && owners.length === 0) continue
         // The cloud: a match without the referee connection only to its own
         // venue (same public address as its scoreboard), see cloudListsMatch
@@ -2281,8 +2358,7 @@ const server = createServer((req, res) => {
       const homeTeam = typeof bundle.homeTeam === 'object' && bundle.homeTeam ? bundle.homeTeam : { name: matchData.homeTeam || 'Home' }
       const awayTeam = typeof bundle.awayTeam === 'object' && bundle.awayTeam ? bundle.awayTeam : { name: matchData.awayTeam || 'Away' }
 
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({
+      sendJsonText(req, res, 200, JSON.stringify({
         success: true,
         // Never PINs; personal data never; rosters/events only with access.
         ...bundle,
@@ -2841,38 +2917,14 @@ Generated by eScoresheet
         res.once('finish', () => { if (res.statusCode !== 404) refund() })
         const pinStr = String(pin).trim()
         const layer = await getDataLayer()
-        const { status, body: out } = await layer.db.runQuery({
-          table: 'matches',
-          action: 'select',
-          params: {
-            columns: isBeach
-              ? 'id, external_id, game_n, status, scheduled_at, team1_data, team2_data, connections, connection_pins'
-              : 'id, external_id, game_n, status, scheduled_at, home_team, away_team, connections, connection_pins',
-            filters: [
-              { type: 'in', column: 'status', value: ['setup', 'live'] },
-              { type: 'eq', column: 'sport_type', value: isBeach ? 'beach' : 'indoor' },
-              // Optional: the match the caller is about to write to (roster
-              // upload). The PIN must then belong to THAT match, not any.
-              ...(matchFilter !== null ? [{ type: 'eq', column: 'external_id', value: matchFilter }] : [])
-            ],
-            order: [{ column: 'scheduled_at', ascending: false, nullsFirst: false }]
-          }
-        }, { internal: true, maxRows: PIN_SCAN_MAX_ROWS })
-        if (status !== 200) {
+        const found = await findMatchByConnectionPin({
+          runQuery: layer.db.runQuery, pins: layer.pins, sport: isBeach ? 'beach' : 'indoor', cfg, pin: pinStr, matchExternalId: matchFilter, maxRows: PIN_SCAN_MAX_ROWS
+        })
+        if (!found.ok) {
           sendJson(res, 500, { success: false, error: 'Validation failed' })
           return
         }
-        const data = out.data
-        // constant time; the stored PIN may be hashed (lib/pinHash.js, hashed
-        // under its connection_pins key): the typed PIN's hash is computed
-        // once per key for the whole scan
-        const pinMatchers = cfg.pinKeys.map((k) => [k, layer.pins.matcher(k, pinStr)])
-        const matchRow = (data || []).find(m => {
-          const pins = m.connection_pins || {}
-          const conns = m.connections || {}
-          if (cfg.enabledKey && !conns[cfg.enabledKey]) return false
-          return pinMatchers.some(([k, matches]) => matches(pins[k]))
-        })
+        const matchRow = found.row
         if (!matchRow) {
           // The same wrong PIN again (the relay's check of the same typed PIN,
           // an app retry) is no new guess
@@ -4096,16 +4148,24 @@ Generated by eScoresheet
 // are routed here. `?purpose=live` sockets (DATABASE_URL mode) go to the
 // realtime hub's own small-frame, no-deflate server; everything else is a role
 // socket (scoreboard/referee/bench/livescore relay) on this one.
+//
+// permessage-deflate is negotiated as before, for what the devices send:
+// older scorers upload whole bundles, compressed by their browsers. The cloud
+// sends nothing compressed (threshold Infinity; ws applies the threshold
+// because server_no_context_takeover is always negotiated): ws keeps a zlib
+// deflate context per socket once it has compressed one message, about 150 KB
+// in the production image, which was the backend's first memory wall at a
+// national peak (1,000 tablets: 224 MB of RSS against 76 MB, load test
+// 2026-10-26), and every bundle was deflated once per tablet. The relay's
+// bundles carry no undo snapshots any more (relayEvents): plain, they are
+// smaller than whole and deflated were. A venue relay (--local) has a hall's
+// few tablets on its Wi-Fi: it still compresses what is above 1 KB.
 const wss = new WebSocketServer({
   noServer: true,
   // Increase limits for match data
   maxPayload: 10 * 1024 * 1024, // 10MB
   perMessageDeflate: {
-    zlibDeflateOptions: {
-      chunkSize: 1024,
-      memLevel: 7,
-      level: 3
-    },
+    ...(IS_CLOUD ? {} : { zlibDeflateOptions: { chunkSize: 1024, memLevel: 7, level: 3 } }),
     zlibInflateOptions: {
       chunkSize: 10 * 1024
     },
@@ -4113,7 +4173,7 @@ const wss = new WebSocketServer({
     serverNoContextTakeover: true,
     serverMaxWindowBits: 10,
     concurrencyLimit: 10,
-    threshold: 1024
+    threshold: IS_CLOUD ? Infinity : 1024
   }
 })
 
@@ -4561,6 +4621,26 @@ function hasRelayAccess(clientInfo, matchId, entry) {
   return false
 }
 
+// A room member whose unsent data is above this when a bundle or action is to
+// go out is dropped: it reconnects and gets the latest bundle, which carries
+// the whole match. A tablet that stopped reading (a dead Wi-Fi link the
+// heartbeat has not caught yet) otherwise kept every bundle queued in the
+// backend's memory. The live hub drops its sockets at 256 KB; a bundle late
+// in a match is about 250 KB, so 1 MB is a tablet several syncs behind.
+const ROLE_MAX_BUFFERED_BYTES = 1024 * 1024
+
+/** Send `data` to a room member; false when it was dropped as too slow (see above). */
+function sendToRoomMember(clientInfo, data) {
+  const ws = clientInfo.ws
+  if (ws.bufferedAmount > ROLE_MAX_BUFFERED_BYTES) {
+    relaySummary.count('slow sockets dropped')
+    ws.terminate()
+    return false
+  }
+  ws.send(data)
+  return true
+}
+
 /** match-full-data / match-data-update to a room: full or summary per socket. */
 function broadcastMatchData(matchId, type, entry, scoreboardTs, excludeClientId = null, extra = {}) {
   const room = rooms.get(normalizeMatchId(matchId))
@@ -4574,12 +4654,11 @@ function broadcastMatchData(matchId, type, entry, scoreboardTs, excludeClientId 
     if (!clientInfo || clientInfo.ws.readyState !== 1) return
     if (hasRelayAccess(clientInfo, matchId, entry)) {
       full ??= JSON.stringify({ ...matchDataMessage(type, matchId, entry, scoreboardTs, 'full'), ...extra })
-      clientInfo.ws.send(full)
+      if (sendToRoomMember(clientInfo, full)) sent++
     } else {
       summary ??= JSON.stringify({ ...matchDataMessage(type, matchId, entry, scoreboardTs, 'summary'), ...extra })
-      clientInfo.ws.send(summary)
+      if (sendToRoomMember(clientInfo, summary)) sent++
     }
-    sent++
   })
   if (LOG_EACH_CONNECTION) console.log(`📡 Match data to ${sent} clients in room ${matchId}`)
 }
@@ -5028,7 +5107,7 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     homePlayers,
     awayPlayers,
     sets,
-    events,
+    events: relayEvents(events),
     liveState: carryLiveState ? previous?.liveState : undefined,
     gameNumber: match?.gameN || match?.gameNumber || match?.game_n,
     updatedAt: new Date().toISOString(),
@@ -5174,8 +5253,7 @@ function broadcastToRoom(matchId, message, excludeClientId = null, accessOnly = 
     const clientInfo = connections.get(clientId)
     if (clientInfo && clientInfo.ws.readyState === 1) { // WebSocket.OPEN
       if (accessOnly && !hasRelayAccess(clientInfo, normalizeMatchId(matchId), entry)) return
-      clientInfo.ws.send(data)
-      sent++
+      if (sendToRoomMember(clientInfo, data)) sent++
     }
   })
 

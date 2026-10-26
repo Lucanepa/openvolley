@@ -15,6 +15,7 @@ import {
   setRelayDevice,
   subscribeMessage,
   subscribeToMatchData,
+  viewerReconnectDelay,
   rememberMatchAccess,
   forgetMatchAccess,
   matchAccessFor,
@@ -358,6 +359,32 @@ describe('relay subscription (tablets)', () => {
       liveState: { current_set: 1, points_a: 1, points_b: 0, updated_at: at(800) }
     })
     expect(updates.at(-1).sets[0]).toMatchObject({ homePoints: 0, awayPoints: 1 })
+    unsubscribe()
+  })
+
+  // useRealtimeConnection tells a new bundle from a re-delivery by its events
+  // array (RELAY_BUNDLE_COVERS_MS): only a new bundle spares the bench a read
+  it('a live state re-delivers the last bundle with the same events array; a new bundle brings a new one', () => {
+    const updates = []
+    const unsubscribe = subscribeToMatchData('match_redeliver', (p) => updates.push(p))
+    const ws = FakeWebSocket.instances.at(-1)
+    ws.open()
+    const at = (ms) => new Date(Date.UTC(2026, 9, 5, 18, 6, 0) + ms).toISOString()
+    const bundle = (ms, events) => ({
+      type: 'match-data-update', matchId: 'match_redeliver', access: 'full',
+      match: { id: 1, coinTossTeamA: 'home', _syncedAt: Date.parse(at(ms)) },
+      sets: [{ index: 1, homePoints: events.length, awayPoints: 0, finished: false }], events
+    })
+    ws.receive(bundle(0, [{ seq: 1 }]))
+    const first = updates.at(-1)
+    ws.receive({ type: 'live-state-update', matchId: 'match_redeliver', liveState: { current_set: 1, points_a: 2, points_b: 0, updated_at: at(800) } })
+    vi.advanceTimersByTime(LIVE_STATE_HOLD_MS)
+    ws.receive({ ...bundle(0, []), access: 'summary', liveState: { current_set: 1, points_a: 3, points_b: 0, updated_at: at(900) } })
+    expect(updates).toHaveLength(3)
+    expect(updates[1].events).toBe(first.events)
+    expect(updates[2].events).toBe(first.events)
+    ws.receive(bundle(1000, [{ seq: 1 }, { seq: 2 }]))
+    expect(updates.at(-1).events).not.toBe(first.events)
     unsubscribe()
   })
 
@@ -738,5 +765,18 @@ describe('desktop app: cloud endpoints in the cloud, relay endpoints on the loca
     const relay = vi.fn(async () => json({ connections: [] }))
     await fetchRelayConnections('match_desktop_case', { fetchImpl: relay })
     expect(relay.mock.calls[0][0]).toBe('http://localhost:5173/api/server/connections?matchId=match_desktop_case')
+  })
+})
+
+// National peak load test 2026-10-26: after a backend restart every referee
+// and bench tablet reconnected after exactly 3 s, all at once.
+describe('relay subscription: reconnect backoff (tablets)', () => {
+  it('3 s more per attempt up to 10 s, spread over the second half of each step', () => {
+    expect([1, 2, 3, 4, 9].map((n) => viewerReconnectDelay(n, () => 1))).toEqual([3000, 6000, 9000, 10000, 10000])
+    expect([1, 2, 4].map((n) => viewerReconnectDelay(n, () => 0))).toEqual([1500, 3000, 5000])
+    const many = Array.from({ length: 200 }, () => viewerReconnectDelay(1))
+    expect(Math.min(...many)).toBeGreaterThanOrEqual(1500)
+    expect(Math.max(...many)).toBeLessThanOrEqual(3000)
+    expect(new Set(many).size).toBeGreaterThan(20)
   })
 })

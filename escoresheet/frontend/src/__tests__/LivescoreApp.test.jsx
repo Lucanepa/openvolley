@@ -41,13 +41,14 @@ vi.mock('../lib/apiClient', () => ({
 
 // Realtime shim: capture the postgres_changes handlers by table
 // (rt.handler = match_live_state, rt.handlers.matches = matches)
-const rt = vi.hoisted(() => ({ handler: null, handlers: {}, subscribed: null }))
+const rt = vi.hoisted(() => ({ handler: null, handlers: {}, filters: {}, subscribed: null }))
 vi.mock('../lib/supabaseClient', () => ({
   supabase: {
     channel: () => {
       const ch = {
         on: (_type, filter, cb) => {
           rt.handlers[filter.table] = cb
+          rt.filters[filter.table] = filter.filter
           if (filter.table === 'match_live_state') rt.handler = cb
           return ch
         },
@@ -103,6 +104,7 @@ describe('LivescoreApp', () => {
     api.filters = []
     rt.handler = null
     rt.handlers = {}
+    rt.filters = {}
     window.innerWidth = 1024
     window.innerHeight = 900
   })
@@ -213,6 +215,30 @@ describe('LivescoreApp', () => {
     // filled: the safety-net refetch never runs
     await act(async () => { await vi.advanceTimersByTimeAsync(60000) })
     expect(api.calls).toBe(1)
+  })
+
+  // National peak load test 2026-10-26: every live-state frame of every
+  // match went to every viewer, also to the ones looking at a single game
+  // (about 24,000 frames a second to 1,355 viewers at 404 matches)
+  it('the game on screen is followed alone; back on the list, every game again', async () => {
+    api.responses = [[row('a', { points_a: 3, last_event_type: 'point' }), row('b', { points_a: 1, last_event_type: 'point' })]]
+    render(<LivescoreApp />)
+    await flush()
+    expect(rt.filters.match_live_state).toBe('sport_type=eq.indoor')
+    fireEvent.click(screen.getByText('Home a'))
+    await flush()
+    expect(rt.filters.match_live_state).toBe('match_id=eq.a')
+    // the FINAL set chips still come with the matches row
+    expect(rt.filters.matches).toBe('sport_type=eq.indoor')
+    act(() => rt.handler({ eventType: 'UPDATE', new: { match_id: 'a', points_a: 4, last_event_type: 'point' }, old: {} }))
+    expect(screen.getByText('4')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('back'))
+    await flush()
+    expect(rt.filters.match_live_state).toBe('sport_type=eq.indoor')
+    // the list catches up on what it did not follow
+    const before = api.calls
+    await act(async () => { rt.subscribed('SUBSCRIBED') })
+    expect(api.calls).toBe(before + 1)
   })
 
   it('a failed refetch keeps the last good list with a notice', async () => {

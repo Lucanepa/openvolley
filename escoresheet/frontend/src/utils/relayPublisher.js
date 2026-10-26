@@ -409,6 +409,30 @@ export function mayPublishMatchData(match, relayUrl) {
   return !!match && (match.test !== true || isLocalRelayUrl(relayUrl))
 }
 
+// Kept on the device only: the undo snapshots (stateSnapshot on every point,
+// stateBefore on rally starts, rotations and substitutions), about 90% of a
+// match's events (2.5 KB per point). No relay subscriber reads them (referee,
+// bench, livescore, the LedBox bridge), and every sync carried them all, twice
+// per rally (national peak load test 2026-10-26). The cloud relay drops them
+// from older scorers' syncs too.
+const RELAY_EVENT_OMIT = ['stateSnapshot', 'stateBefore']
+
+/**
+ * The events as sync-match-data carries them: copies without the undo
+ * snapshots; the device's own events are not changed.
+ * @param {Array<object>|null|undefined} events
+ * @returns {Array<object>}
+ */
+export function relayEvents(events) {
+  if (!Array.isArray(events)) return []
+  return events.map((e) => {
+    if (!e || typeof e !== 'object' || !RELAY_EVENT_OMIT.some((k) => k in e)) return e
+    const out = {}
+    for (const k of Object.keys(e)) if (!RELAY_EVENT_OMIT.includes(k)) out[k] = e[k]
+    return out
+  })
+}
+
 export function liveStateTargets({ isTest = false, relayKey = null, relayUrl = null } = {}) {
   return {
     relay: !!relayKey && (!isTest || isLocalRelayUrl(relayUrl)),
@@ -438,10 +462,17 @@ export const RELAY_RECONNECT_MAX_MS = 60000
  * Delay before reconnect attempt `attempt` (0 = first after a drop): 5 s,
  * 10 s, 20 s, 40 s, then 60 s. A relay that is not there (offline hall on a
  * cloud build) is not hammered with a new socket every few seconds.
+ * Each step is spread over its second half (2.5-5 s, 5-10 s, ...): after a
+ * backend restart every scorer of the country lost its socket at the same
+ * instant and reconnected, re-sending its whole match, at the same instant
+ * (national peak load test 2026-10-26). Never later than before.
+ * @param {number} attempt
+ * @param {() => number} [random] jitter source in [0, 1) (tests)
  */
-export function relayReconnectDelay(attempt) {
+export function relayReconnectDelay(attempt, random = Math.random) {
   const n = Math.max(0, Math.min(Number(attempt) || 0, 16))
-  return Math.min(RELAY_RECONNECT_BASE_MS * 2 ** n, RELAY_RECONNECT_MAX_MS)
+  const step = Math.min(RELAY_RECONNECT_BASE_MS * 2 ** n, RELAY_RECONNECT_MAX_MS)
+  return Math.round(step * (0.5 + 0.5 * (typeof random === 'function' ? random() : Math.random())))
 }
 
 /**
