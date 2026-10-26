@@ -139,6 +139,19 @@ const MATCH_SECRET_FIELDS = [
 ]
 
 const WS_MAX_PAYLOAD = 10 * 1024 * 1024 // same cap as the cloud relay
+// permessage-deflate for the relays' WebSocketServer (server.js, Electron): a
+// tablet gets the scorer's whole match on every sync, two per rally, over the
+// hall Wi-Fi or the scorer's own hotspot. A frame above 1 KB goes compressed
+// to a client that offers it (browsers do; a client that does not gets plain
+// frames). A hall has a few tablets, so a zlib context each costs little (the
+// cloud, with hundreds, sends plain frames). Uploads compressed by the
+// scorer's browser are taken.
+const WS_PER_MESSAGE_DEFLATE = {
+  threshold: 1024,
+  serverNoContextTakeover: true,
+  clientNoContextTakeover: true,
+  concurrencyLimit: 10,
+}
 const MAX_BODY_SIZE = 1024 * 1024
 // Frames and request bodies nested deeper are refused (jsonTooDeep): the Tauri
 // relay's serde_json stops at the same depth; real bundles nest about ten.
@@ -1764,6 +1777,7 @@ function createLanRelay(options = {}) {
 module.exports = {
   MATCH_SECRET_FIELDS,
   WS_MAX_PAYLOAD,
+  WS_PER_MESSAGE_DEFLATE,
   MAX_BODY_SIZE,
   stripMatchSecrets,
   stripMatchDataSecrets,

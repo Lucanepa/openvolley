@@ -432,31 +432,12 @@ describe('backend WebSocket relay protocol', () => {
     for (const c of [scoreboard, referee]) c.ws.close()
   })
 
-  // National peak load test 2026-10-26: every role socket that received a
-  // bundle kept its own zlib deflate context (about 150 KB in the production
-  // image; 1,000 tablets 224 MB of RSS against 76 MB without), and each bundle
-  // was deflated once per tablet. A scorer's compressed upload is still
-  // accepted (older scorers send whole bundles).
-  it('takes compressed syncs, sends the tablets plain frames', async () => {
-    const wsUrl = `ws://127.0.0.1:${port}`
-    const seed = 'match_1791215210060_deflat'
-    const match = makeMatch({ id: 44, seed_key: seed, gamePin: '444444' })
-    const events = Array.from({ length: 200 }, (_, i) => ({ id: i + 1, seq: i + 1, setIndex: 1, type: 'point', payload: { team: i % 2 ? 'home' : 'away', note: 'same text every time '.repeat(10) }, ts: '2026-11-29T10:00:00.000Z' }))
-    const scoreboard = await openClient(wsUrl)
-    const referee = await openClient(wsUrl)
-    assert.equal(scoreboard.ws.extensions, 'permessage-deflate', 'compressed uploads are negotiated')
-    scoreboard.send(syncMessage(match, { events }))
-    scoreboard.send({ type: 'ping' })
-    await scoreboard.waitFor((m) => m.type === 'pong')
-    const before = referee.ws._socket.bytesRead
-    referee.send({ type: 'subscribe-match', matchId: seed, pin: PINS.refereePin })
-    const full = await referee.waitFor((m) => m.type === 'match-full-data')
-    assert.equal(full.events.length, 200)
-    const text = referee.raw[referee.raw.length - 1]
-    assert.ok(referee.ws._socket.bytesRead - before >= Buffer.byteLength(text), 'the bundle arrived as a plain frame')
-    scoreboard.send({ type: 'delete-match', matchId: 44 })
-    await referee.waitFor((m) => m.type === 'match-deleted')
-    for (const c of [scoreboard, referee]) c.ws.close()
+  // A venue relay has a hall's few tablets on its Wi-Fi: a whole bundle above
+  // 1 KB goes compressed (the cloud sends plain frames, see its suite). A
+  // scorer's compressed upload is accepted (older scorers send whole bundles).
+  it('takes compressed syncs, and compresses the bundles it sends the tablets', async () => {
+    const { wire, bytes } = await bundleOnTheWire(`ws://127.0.0.1:${port}`, { id: 44, seed: 'match_1791215210060_deflat', gamePin: '444444' })
+    assert.ok(wire < bytes / 4, `the bundle arrived compressed (${wire} bytes on the wire for ${bytes})`)
   })
 
   // National peak load test 2026-10-26: a bench refetches the whole bundle
@@ -659,6 +640,29 @@ describe('backend WebSocket relay protocol', () => {
   })
 })
 
+// A scorer's compressed whole bundle (200 events), then what one referee
+// receives for it: the bytes on the wire and the frame's size.
+async function bundleOnTheWire(wsUrl, { id, seed, gamePin }) {
+  const match = makeMatch({ id, seed_key: seed, gamePin })
+  const events = Array.from({ length: 200 }, (_, i) => ({ id: i + 1, seq: i + 1, setIndex: 1, type: 'point', payload: { team: i % 2 ? 'home' : 'away', note: 'same text every time '.repeat(10) }, ts: '2026-11-29T10:00:00.000Z' }))
+  const scoreboard = await openClient(wsUrl)
+  const referee = await openClient(wsUrl)
+  assert.equal(scoreboard.ws.extensions, 'permessage-deflate', 'compressed uploads are negotiated')
+  scoreboard.send(syncMessage(match, { events }))
+  scoreboard.send({ type: 'ping' })
+  await scoreboard.waitFor((m) => m.type === 'pong')
+  const before = referee.ws._socket.bytesRead
+  referee.send({ type: 'subscribe-match', matchId: seed, pin: PINS.refereePin })
+  const full = await referee.waitFor((m) => m.type === 'match-full-data')
+  assert.equal(full.events.length, 200)
+  const wire = referee.ws._socket.bytesRead - before
+  const bytes = Buffer.byteLength(referee.raw[referee.raw.length - 1])
+  scoreboard.send({ type: 'delete-match', matchId: id })
+  await referee.waitFor((m) => m.type === 'match-deleted')
+  for (const c of [scoreboard, referee]) c.ws.close()
+  return { wire, bytes }
+}
+
 describe('backend relay in cloud mode (IS_CLOUD)', () => {
   let child
   let port
@@ -713,6 +717,16 @@ describe('backend relay in cloud mode (IS_CLOUD)', () => {
     assert.equal(display.messages.some((m) => m.type === 'live-state-update' && m.matchId === 'cloud-test'), false)
 
     for (const c of [rehearsal, official, display]) c.ws.close()
+  })
+
+  // National peak load test 2026-10-26: every role socket that received a
+  // bundle kept its own zlib deflate context (about 150 KB in the production
+  // image; 1,000 tablets 224 MB of RSS against 76 MB without), and each bundle
+  // was deflated once per tablet. A scorer's compressed upload is still
+  // accepted (older scorers send whole bundles).
+  it('takes compressed syncs, sends the tablets plain frames', async () => {
+    const { wire, bytes } = await bundleOnTheWire(`ws://127.0.0.1:${port}`, { id: 44, seed: 'match_1791215210060_cdefla', gamePin: '444444' })
+    assert.ok(wire >= bytes, 'the bundle arrived as a plain frame')
   })
 })
 

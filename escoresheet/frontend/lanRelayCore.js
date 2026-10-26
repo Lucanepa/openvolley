@@ -12,6 +12,7 @@ import signCore from './electron/signSessionCore.cjs'
 export const {
   MATCH_SECRET_FIELDS,
   WS_MAX_PAYLOAD,
+  WS_PER_MESSAGE_DEFLATE,
   MAX_BODY_SIZE,
   stripMatchSecrets,
   stripMatchDataSecrets,
