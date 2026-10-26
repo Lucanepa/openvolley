@@ -786,6 +786,41 @@ describe('lanRelayCore protocol', () => {
     expect(relay.listMatches().body.matches[0].sportType).toBe('beach')
   })
 
+  it('a hostile frame fails that message only: the relay keeps serving the match', () => {
+    const relay = createLanRelay({ log: { log() {}, error() {} } })
+    const scoreboard = connect(relay)
+    const referee = connect(relay)
+    msg(relay, scoreboard, syncMessage())
+    msg(relay, referee, { type: 'subscribe-match', matchId: '7', pin: PINS.refereePin })
+    // Anyone on the hall Wi-Fi, no PIN: a throwaway key it subscribes to and
+    // syncs, so the relay fans what it sends out to its own second socket
+    const attacker = connect(relay, '192.168.1.66')
+    const accomplice = connect(relay, '192.168.1.67')
+    msg(relay, accomplice, { type: 'subscribe-match', matchId: 'x1' })
+    msg(relay, attacker, { type: 'sync-match-data', matchId: 'x1', match: { id: 'x1', status: 'live' } })
+    // JSON.parse takes this, JSON.stringify throws RangeError on it (20 KB)
+    const deep = '['.repeat(10000) + ']'.repeat(10000)
+    for (const frame of [
+      `{"type":"sync-match-data","matchId":"x1","match":{"id":"x1","status":"live","deep":${deep}}}`,
+      `{"type":"live-state-update","matchId":"x1","liveState":{"deep":${deep}}}`,
+      // String() of {"toString":1} throws TypeError
+      '{"type":"subscribe-match","matchId":{"toString":1}}',
+      '{"type":"sync-match-data","matchId":{"toString":1},"match":{"id":1}}'
+    ]) {
+      attacker.sent.length = 0
+      expect(() => relay.handleMessage(attacker, frame), frame.slice(0, 60)).not.toThrow()
+      expect(attacker.last('error')?.code, frame.slice(0, 60)).toBe('bad-request')
+    }
+    // Nothing of it was stored or sent on
+    expect(accomplice.sent.some((m) => m.type === 'live-state-update')).toBe(false)
+    expect(JSON.stringify(relay.listMatches().body)).not.toMatch(/deep/)
+    // The match goes on, and the attacker's socket too
+    msg(relay, scoreboard, { type: 'live-state-update', matchId: 7, liveState: { points_a: 3 } })
+    expect(referee.last('live-state-update').liveState).toEqual({ points_a: 3 })
+    msg(relay, attacker, { type: 'ping' })
+    expect(attacker.last('pong')).toBeTruthy()
+  })
+
   it('accepts the legacy nested `data` shape in the client reader', () => {
     const legacy = { type: 'match-data-update', matchId: '7', data: { match: { id: 7 }, sets: [{ id: 1 }] } }
     expect(readRelayBundle(legacy).sets).toHaveLength(1)
@@ -901,6 +936,43 @@ async function waitForHttp(url, timeoutMs = 10000) {
     if (Date.now() - start > timeoutMs) throw new Error(`server at ${url} did not start`)
     await new Promise((r) => setTimeout(r, 100))
   }
+}
+
+/**
+ * One device on the hall Wi-Fi sends frames the relay cannot handle (nested
+ * past what JSON.stringify takes, a value whose String() throws) and a body
+ * like it: the relay answers or drops them and keeps serving the match.
+ */
+async function hostileFrameScenario({ httpBase, wsUrl }) {
+  const scoreboard = await openClient(wsUrl)
+  const referee = await openClient(wsUrl)
+  const attacker = await openClient(wsUrl)
+  const accomplice = await openClient(wsUrl)
+  scoreboard.send(syncMessage(makeMatch({ seed_key: 'seed-hostile' })))
+  referee.send({ type: 'subscribe-match', matchId: 'seed-hostile', pin: PINS.refereePin })
+  await referee.waitFor((m) => m.type === 'match-full-data')
+  accomplice.send({ type: 'subscribe-match', matchId: 'x1' })
+  accomplice.send({ type: 'ping' })
+  await accomplice.waitFor((m) => m.type === 'pong')
+  attacker.send({ type: 'sync-match-data', matchId: 'x1', match: { id: 'x1', status: 'live' } })
+  const deep = '['.repeat(10000) + ']'.repeat(10000)
+  attacker.ws.send(`{"type":"sync-match-data","matchId":"x1","match":{"id":"x1","status":"live","deep":${deep}}}`)
+  attacker.ws.send(`{"type":"live-state-update","matchId":"x1","liveState":{"deep":${deep}}}`)
+  attacker.ws.send('{"type":"subscribe-match","matchId":{"toString":1}}')
+  attacker.ws.send('{"type":"sync-match-data","matchId":{"toString":1},"match":{"id":1}}')
+  attacker.send({ type: 'ping' })
+  await attacker.waitFor((m) => m.type === 'pong')
+  const patch = await fetch(`${httpBase}/api/match/x1`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: `{"deep":${deep}}`
+  })
+  expect(patch.status).toBeGreaterThanOrEqual(400)
+
+  scoreboard.send({ type: 'live-state-update', matchId: 'seed-hostile', liveState: { points_a: 4 } })
+  expect((await referee.waitFor((m) => m.type === 'live-state-update')).liveState).toEqual({ points_a: 4 })
+  expect((await fetch(`${httpBase}/api/match/list`)).status).toBe(200)
+  for (const c of [scoreboard, referee, attacker, accomplice]) c.ws.close()
 }
 
 async function relayScenario({ httpBase, wsUrl }) {
@@ -1069,6 +1141,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await waitForHttp(`http://127.0.0.1:${port}/api/server/status`)
       await relayScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await runBeachVenueContract({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'server-js' })
+      await hostileFrameScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       const unknown = await fetch(`http://127.0.0.1:${port}/api/nope`)
       expect(unknown.status).toBe(404)
       expect(unknown.headers.get('content-type')).toMatch(/json/)
@@ -1128,6 +1201,7 @@ describe('relay runtimes speak the shared protocol', () => {
     try {
       await relayScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await runBeachVenueContract({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'electron' })
+      await hostileFrameScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
     } finally {
       await relayServer.stop()
     }
@@ -1146,6 +1220,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await waitForHttp(`http://127.0.0.1:${port}/api/health`)
       await relayScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await runBeachVenueContract({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'tauri' })
+      await hostileFrameScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       const unknown = await fetch(`http://127.0.0.1:${port}/api/nope`)
       expect(unknown.status).toBe(404)
     } finally {
@@ -1195,6 +1270,7 @@ describe('relay runtimes speak the shared protocol', () => {
     it('serves the same protocol', async () => {
       await relayScenario({ httpBase, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await runBeachVenueContract({ httpBase, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'vite' })
+      await hostileFrameScenario({ httpBase, wsUrl: `ws://127.0.0.1:${wsPort}` })
     })
   })
 })

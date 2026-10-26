@@ -140,6 +140,9 @@ const MATCH_SECRET_FIELDS = [
 
 const WS_MAX_PAYLOAD = 10 * 1024 * 1024 // same cap as the cloud relay
 const MAX_BODY_SIZE = 1024 * 1024
+// Frames and request bodies nested deeper are refused (jsonTooDeep): the Tauri
+// relay's serde_json stops at the same depth; real bundles nest about ten.
+const MAX_JSON_DEPTH = 128
 const MAX_MATCH_ID_LENGTH = 128
 // A FINISHED match whose scoreboard left this long ago may be claimed by
 // another scoreboard: a second scorer device / reset browser reusing the same
@@ -334,6 +337,38 @@ function pinGrantsAccess(match, pin) {
 function stripMatchDataSecrets(matchData) {
   if (!matchData || typeof matchData !== 'object') return matchData
   return { ...matchData, match: stripMatchSecrets(matchData.match) }
+}
+
+/**
+ * Is this parsed JSON value nested deeper than MAX_JSON_DEPTH? Iterative, so
+ * the check itself cannot overflow the stack. JSON.parse takes any depth, but
+ * JSON.stringify throws RangeError at a few thousand levels (about 10 KB of
+ * brackets), and the relay stringifies what a client sent for every
+ * subscriber and HTTP read: one such frame used to end the relay process.
+ */
+function jsonTooDeep(value) {
+  if (!value || typeof value !== 'object') return false
+  // Two plain stacks instead of [value, depth] pairs: no allocation per
+  // object, so a whole bundle (thousands of events) costs well under a ms
+  const values = [value]
+  const depths = [1]
+  while (values.length > 0) {
+    const v = values.pop()
+    const depth = depths.pop()
+    if (depth > MAX_JSON_DEPTH) return true
+    if (Array.isArray(v)) {
+      for (let i = 0; i < v.length; i++) {
+        const child = v[i]
+        if (child !== null && typeof child === 'object') { values.push(child); depths.push(depth + 1) }
+      }
+    } else {
+      for (const k in v) {
+        const child = v[k]
+        if (child !== null && typeof child === 'object') { values.push(child); depths.push(depth + 1) }
+      }
+    }
+  }
+  return false
 }
 
 /** Room / store key for a match id: always a string (Dexie ids are numbers). */
@@ -762,7 +797,8 @@ function readSignBody(req, limit) {
         ? Buffer.concat(chunks).toString('utf8')
         : chunks.map(String).join('')
       try {
-        finish({ body: JSON.parse(text) })
+        const body = JSON.parse(text)
+        finish(jsonTooDeep(body) ? { error: 400 } : { body })
       } catch {
         finish({ error: 400 })
       }
@@ -1331,8 +1367,26 @@ function createLanRelay(options = {}) {
       return
     }
     if (!msg || typeof msg !== 'object') return
+    if (jsonTooDeep(msg)) {
+      sendError(ws, 'bad-request', 'Message nested too deeply')
+      return
+    }
     if (!clients.has(ws)) addClient(ws)
 
+    // A frame never ends the relay (and every court's tablets with it): the
+    // runtimes call this from the socket's 'message' event, where a throw
+    // reaches no handler and exits the process. A handler that throws on what
+    // a client sent (a value whose String() throws, ...) fails that message
+    // only.
+    try {
+      dispatch(ws, msg)
+    } catch (err) {
+      log.error('[Relay] message failed:', err && err.message)
+      sendError(ws, 'bad-request', 'Message could not be handled')
+    }
+  }
+
+  function dispatch(ws, msg) {
     switch (msg.type) {
       case 'ping': send(ws, { type: 'pong', timestamp: Date.now() }); break
       case 'sync-match-data': onSync(ws, msg); break
@@ -1490,11 +1544,14 @@ function createLanRelay(options = {}) {
       })
       req.on('end', () => {
         if (!body.trim()) return reject(Object.assign(new Error('Empty request body'), { status: 400 }))
+        let parsed
         try {
-          resolve(JSON.parse(body))
+          parsed = JSON.parse(body)
         } catch {
-          reject(Object.assign(new Error('Invalid request body'), { status: 400 }))
+          return reject(Object.assign(new Error('Invalid request body'), { status: 400 }))
         }
+        if (jsonTooDeep(parsed)) return reject(Object.assign(new Error('Invalid request body'), { status: 400 }))
+        resolve(parsed)
       })
       req.on('error', reject)
     })
