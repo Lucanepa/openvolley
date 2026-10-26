@@ -26,8 +26,13 @@ const SURFACE = {
 }
 import { setsToWin } from '../utils/matchFormat'
 import { getSideAForSet } from '../domain/rules'
-import { sanctionTarget } from '../domain/describe'
+import { sanctionTarget, compareBySeq } from '../domain/describe'
 import { TEAM_COLOUR_MARK, matchDiscPaint, teamLiberoColour, markColourOn } from '../utils/teamColours'
+
+// Newest first in the order the scorer recorded the events (seq), not by
+// their time: the scorer's clock set back mid-set made every event after the
+// change look older than the last one before it (stress test 2026-10-25)
+const newestFirst = (a, b) => compareBySeq(b, a)
 
 export default function MatchEntry({ matchId, team, onBack, embedded = false }) {
   const { t } = useTranslation()
@@ -96,11 +101,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
 
     const allSets = (result.sets || []).sort((a, b) => a.index - b.index)
     const currentSet = allSets.find(s => !s.finished) || null
-    const events = (result.events || []).sort((a, b) => {
-      const aTime = typeof a.ts === 'number' ? a.ts : new Date(a.ts).getTime()
-      const bTime = typeof b.ts === 'number' ? b.ts : new Date(b.ts).getTime()
-      return aTime - bTime
-    })
+    const events = (result.events || []).sort(compareBySeq)
 
     setData({
       match: result.match,
@@ -385,7 +386,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     // Find the last serve event in current set
     const serveEvents = data.events
       .filter(e => e.type === 'point' && e.setIndex === data.set.index)
-      .sort((a, b) => new Date(b.ts) - new Date(a.ts))
+      .sort(newestFirst)
     
     if (serveEvents.length === 0) {
       // Check first serve from match
@@ -413,7 +414,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     // Get lineup events for current set
     const lineupEvents = data.events
       .filter(e => e.type === 'lineup' && e.setIndex === data.set.index && e.payload?.team === team)
-      .sort((a, b) => new Date(b.ts) - new Date(a.ts))
+      .sort(newestFirst)
     
     const positions = ['I', 'II', 'III', 'IV', 'V', 'VI']
     
@@ -519,7 +520,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     // Get players currently on court
     const lineupEvents = data.events
       .filter(e => e.type === 'lineup' && e.setIndex === data.set.index && e.payload?.team === team)
-      .sort((a, b) => new Date(b.ts) - new Date(a.ts))
+      .sort(newestFirst)
     
     const playersOnCourtSet = new Set()
     if (lineupEvents.length > 0) {
@@ -577,7 +578,7 @@ export default function MatchEntry({ matchId, team, onBack, embedded = false }) 
     // Get players currently on court
     const lineupEvents = data.events
       .filter(e => e.type === 'lineup' && e.setIndex === data.set.index && e.payload?.team === team)
-      .sort((a, b) => new Date(b.ts) - new Date(a.ts))
+      .sort(newestFirst)
 
     const playersOnCourtSet = new Set()
     if (lineupEvents.length > 0) {
