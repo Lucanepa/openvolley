@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { elapsedWhenSent, countdownAnchor, secondsLeft, monotonicNow } from '../countdownClock'
+import { describe, it, expect, beforeEach } from 'vitest'
+import { elapsedWhenSent, countdownAnchor, secondsLeft, monotonicNow, keepCountdown, elapsedAfterTheFact } from '../countdownClock'
 
 describe('countdowns on the device\'s own clock', () => {
   it('how long it had run when sent: from the sender\'s two readings, whatever the receiver\'s clock', () => {
@@ -32,5 +32,30 @@ describe('countdowns on the device\'s own clock', () => {
     const b = monotonicNow()
     expect(Number.isFinite(a)).toBe(true)
     expect(b).toBeGreaterThanOrEqual(a)
+  })
+})
+
+describe('a countdown read after the fact (a reload, a join)', () => {
+  beforeEach(() => sessionStorage.clear())
+
+  it('this tab\'s own countdown of the same start, kept before the reload, whatever this device\'s clock says', () => {
+    const start = Date.parse('2026-10-26T19:40:00.000Z') // the scorer's clock
+    // shown with 10 s gone, at monotonic 5000 and wall 1000000 on this device
+    keepCountdown('m:timeout', start, countdownAnchor(10000, 5000), 30, { now: 1000000, mono: 5000 })
+    // 3 s later after a reload: 13 s gone
+    expect(elapsedAfterTheFact('m:timeout', start, 30, { now: 1003000 })).toBe(13000)
+    expect(elapsedAfterTheFact('m:timeout', new Date(start + 1500).toISOString(), 30, { now: 1003000 })).toBe(13000)
+    // over by now: its length, never more
+    expect(elapsedAfterTheFact('m:timeout', start, 30, { now: 1100000 })).toBe(30000)
+  })
+
+  it('another countdown, or none kept: this device\'s clock against the start, within the length', () => {
+    const start = Date.parse('2026-10-26T19:40:00.000Z')
+    keepCountdown('m:timeout', start - 60000, countdownAnchor(0, 0), 30, { now: 1000000, mono: 0 })
+    expect(elapsedAfterTheFact('m:timeout', start, 30, { now: start + 12000 })).toBe(12000)
+    expect(elapsedAfterTheFact('m:interval', start, 180, { now: start + 40000 })).toBe(40000)
+    expect(elapsedAfterTheFact('m:interval', start, 180, { now: start - 120000 })).toBe(0)
+    expect(elapsedAfterTheFact('m:interval', start, 180, { now: start + 3600000 })).toBe(180000)
+    expect(elapsedAfterTheFact('m:interval', 'not a time', 180)).toBe(0)
   })
 })

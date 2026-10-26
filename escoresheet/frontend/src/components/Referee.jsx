@@ -37,7 +37,7 @@ import { layoutReception, pointToFormation } from './referee/receptionLayout.js'
 import { getSideAForSet } from '../domain/rules'
 import { liveRowTeamA } from '../domain/coinToss'
 import { BRAND } from '../brand'
-import { monotonicNow, elapsedWhenSent, countdownAnchor, secondsLeft } from '../utils/countdownClock'
+import { monotonicNow, elapsedWhenSent, countdownAnchor, secondsLeft, keepCountdown, elapsedAfterTheFact } from '../utils/countdownClock'
 
 // A lineup position: the rich format's { number, ... } or the legacy plain number
 const lineupNumber = (pos) => (pos && typeof pos === 'object') ? pos.number : (pos || '')
@@ -236,6 +236,9 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const [timeoutModal, setTimeoutModal] = useState(null) // { team, countdown, started }
   const [showTimeoutModal, setShowTimeoutModal] = useState(false) // Modal visibility (separate from countdown state)
   const timeoutActiveRef = useRef(false) // Track if timeout is active (for closure-safe checks)
+  // The scorer's start of the last time-out this tab showed: once it is over
+  // here, an older copy that still says it runs never opens it again
+  const shownTimeoutStartRef = useRef(null)
 
   // Flashing substitution state (like Scoreboard)
   const [recentlySubstitutedPlayers, setRecentlySubstitutedPlayers] = useState([]) // [{ team, playerNumber, timestamp }]
@@ -2087,6 +2090,70 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
 
     return () => clearInterval(timer)
   }, [betweenSetsCountdown?.started, betweenSetsCountdown?.startTimestamp, betweenSetsCountdown?.anchor, betweenSetsCountdown?.initialCountdown])
+
+  // The countdowns this tab shows, kept for its reload (keepCountdown)
+  useEffect(() => {
+    if (!matchId || !timeoutModal?.started) return
+    shownTimeoutStartRef.current = timeoutModal.startTimestamp
+    if (timeoutModal.anchor == null) return
+    keepCountdown(`${matchId}:timeout`, timeoutModal.startTimestamp, timeoutModal.anchor, timeoutModal.initialCountdown || 30)
+  }, [matchId, timeoutModal?.started, timeoutModal?.startTimestamp, timeoutModal?.anchor, timeoutModal?.initialCountdown])
+  useEffect(() => {
+    if (!matchId || !betweenSetsCountdown?.started || betweenSetsCountdown.anchor == null) return
+    keepCountdown(`${matchId}:interval`, betweenSetsCountdown.startTimestamp, betweenSetsCountdown.anchor, betweenSetsCountdown.initialCountdown || 180)
+  }, [matchId, betweenSetsCountdown?.started, betweenSetsCountdown?.startTimestamp, betweenSetsCountdown?.anchor, betweenSetsCountdown?.initialCountdown])
+
+  // A referee that reloads, or joins, during a time-out or the break: the
+  // countdowns above start from pushes and relay actions, and the scorer
+  // sends none while one runs, so the live state loaded said a time-out or
+  // the break ran and no countdown showed until it ended. It shows with the
+  // time it has left (elapsedAfterTheFact: this tab's own countdown from
+  // before its reload, else this tablet's clock against the scorer's start).
+  // Never one this tab shows or showed (over here: an older copy may still say
+  // it runs), one over by now, nor a break the scorer ended.
+  useEffect(() => {
+    const state = data?.liveState
+    if (isMasterMode || !matchId || !state) return
+    if (state.timeout_active && !timeoutModalRef.current) {
+      const start = Date.parse(state.timeout_started_at ?? '')
+      const shown = shownTimeoutStartRef.current
+      const duration = state.last_event_data?.duration || 30
+      const elapsed = elapsedAfterTheFact(`${matchId}:timeout`, start, duration)
+      if (Number.isFinite(start) && !(shown != null && Math.abs(shown - start) <= 2000) && elapsed < duration * 1000) {
+        // the row's team on its sides, as for a pushed time-out
+        const teamAKey = liveRowTeamA(state, data?.match?.homeName || data?.homeTeam?.name, data?.match?.awayName || data?.awayTeam?.name) || data?.match?.coinTossTeamA || 'home'
+        const homeOnLeft = ((state.side_a || 'left') === 'left') === (teamAKey === 'home')
+        const anchor = countdownAnchor(elapsed)
+        timeoutActiveRef.current = true
+        setTimeoutModal({
+          team: (state.last_event_team === 'left') === homeOnLeft ? 'home' : 'away',
+          countdown: secondsLeft(anchor, duration),
+          startTimestamp: start,
+          anchor,
+          initialCountdown: duration,
+          started: true
+        })
+        setShowTimeoutModal(true)
+      }
+    }
+    if (state.set_interval_active && !isMatchEnded && !betweenSetsCountdownRef.current && !intervalDismissedRef.current) {
+      const start = Date.parse(state.set_interval_started_at ?? '')
+      const elapsed = elapsedAfterTheFact(`${matchId}:interval`, start, 180)
+      if (Number.isFinite(start) && elapsed < 180 * 1000) {
+        const anchor = countdownAnchor(elapsed)
+        setBetweenSetsCountdown({
+          countdown: secondsLeft(anchor, 180),
+          startTimestamp: start,
+          anchor,
+          initialCountdown: 180,
+          started: true,
+          setIndex: state.last_event_data?.setIndex || state.current_set,
+          winner: state.last_event_data?.winner
+        })
+        setShowIntervalModal(true)
+      }
+    }
+  }, [data?.liveState, isMatchEnded, isMasterMode, matchId])
 
   // Check if match is waiting for coin toss (status is 'setup' or no data yet)
   // This must be checked BEFORE the !data return to show awaiting screen

@@ -68,3 +68,54 @@ export function secondsLeft(anchor, durationSec, now = monotonicNow()) {
   const elapsed = Math.floor(Math.max(0, now - anchor) / 1000)
   return Math.max(0, Math.min(durationSec, durationSec - elapsed))
 }
+
+// Two starts this close are the same time-out or break (the Referee's own
+// comparison of a row's start with the countdown it shows)
+const SAME_COUNTDOWN_MS = 2000
+const KEPT_PREFIX = 'openvolley-countdown:'
+
+/**
+ * Keep a countdown this tab shows for its reload: its end on this device's
+ * wall clock, in sessionStorage (a reload keeps it, no other tab reads it).
+ * The monotonic clock starts again with the page, the wall clock does not,
+ * and both readings are this device's own. `key` names the countdown (match
+ * and kind), `startedAt` (the scorer's start) tells which one it is.
+ * @param {string} key
+ * @param {number|string} startedAt
+ * @param {number} anchor countdownAnchor()
+ * @param {number} durationSec
+ */
+export function keepCountdown(key, startedAt, anchor, durationSec, { now = Date.now(), mono = monotonicNow() } = {}) {
+  const start = toMs(startedAt)
+  if (start == null || !Number.isFinite(anchor)) return
+  try {
+    sessionStorage.setItem(KEPT_PREFIX + key, JSON.stringify({ start, endsAt: now + (anchor + durationSec * 1000 - mono) }))
+  } catch { /* no storage: a reload counts from the scorer's start */ }
+}
+
+/**
+ * How long (ms) a countdown has run, for one read after the fact from a
+ * live-state row (a referee that reloads or joins while it runs). Its
+ * difference with the row's updated_at says nothing then: the scorer sends
+ * no push while a countdown runs, so that is the push at its start. This
+ * tab's own countdown of the same start, kept before the reload
+ * (keepCountdown), when there is one; else this device's clock against the
+ * scorer's start, right when both keep network time (a tablet joining only
+ * now has nothing else). Never below 0 nor above the countdown's length.
+ * @param {string} key
+ * @param {number|string} startedAt
+ * @param {number} durationSec
+ */
+export function elapsedAfterTheFact(key, startedAt, durationSec, { now = Date.now() } = {}) {
+  const durationMs = Math.max(0, (durationSec || 0) * 1000)
+  const start = toMs(startedAt)
+  if (start == null) return 0
+  let elapsed = now - start
+  try {
+    const kept = JSON.parse(sessionStorage.getItem(KEPT_PREFIX + key) || 'null')
+    if (kept && Number.isFinite(kept.endsAt) && Math.abs(kept.start - start) <= SAME_COUNTDOWN_MS) {
+      elapsed = durationMs - (kept.endsAt - now)
+    }
+  } catch { /* unreadable: this device's clock */ }
+  return Math.min(Math.max(0, elapsed), durationMs)
+}
