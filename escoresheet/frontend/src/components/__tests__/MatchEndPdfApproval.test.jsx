@@ -283,7 +283,31 @@ describe('MatchEnd: the approval PDF', () => {
     expect(store.tables.matches.get(1).approved).toBe(true)
     expect(approvedJobs()).toHaveLength(1)
     expect(screen.queryByTestId('export-modal')).toBeNull()
-    expect(uploads.paths.some(p => String(p).endsWith('.pdf'))).toBe(true)
+  })
+
+  // Stress test 2026-10-25: approved offline (most halls) or with one
+  // connection reset, the PDF and the final JSON never reached the cloud;
+  // they went up once, at the approval, and nothing retried them
+  it('the approval queues the PDF and the final JSON for the cloud, with the files', async () => {
+    uploads.hang = true
+    seed({ gameNumber: 4242 })
+    render(<MatchEnd matchId={1} />)
+    await approve()
+    await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+    await findButton(en.matchEnd.closeMatch)
+    await waitFor(() => expect([...store.tables.sync_queue.values()].filter(j => j.resource === 'scoresheet')).toHaveLength(2))
+    const files = [...store.tables.sync_queue.values()].filter(j => j.resource === 'scoresheet')
+    expect(files.map(j => [j.action, j.status, j.payload.contentType])).toEqual([
+      ['upload', 'queued', 'application/pdf'],
+      ['upload', 'queued', 'application/json']
+    ])
+    expect(files[0].payload.path).toMatch(/^\d{4}-\d{2}-\d{2}\/game4242_[^/]+\.pdf$/)
+    expect(files[1].payload.path).toMatch(/^\d{4}-\d{2}-\d{2}\/game4242_[^/]+_final\.json$/)
+    expect(files.map(j => j.payload.match_external_id)).toEqual(['match_1_pdf', 'match_1_pdf'])
+    expect(files[0].payload.file).toBeInstanceOf(Blob)
+    expect(JSON.parse(await files[1].payload.file.text()).sets).toHaveLength(3)
+    // nothing went up directly (the queue sends them)
+    expect(uploads.paths).toHaveLength(0)
   })
 
   it('the export modal sits above the header (z 1000) and its open menu', async () => {

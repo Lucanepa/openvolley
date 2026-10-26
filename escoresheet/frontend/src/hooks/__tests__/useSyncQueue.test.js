@@ -124,6 +124,15 @@ vi.mock('../../lib/apiClient', () => {
       const call = { table: '__revisions', action: 'post', data: { matchExternalId, revisions }, filters: [] }
       api.calls.push(call)
       return api.respond(call)
+    },
+    apiStorage: {
+      from: (bucket) => ({
+        upload: async (path, file, options) => {
+          const call = { table: '__storage', action: 'upload', data: { bucket, path, file, options }, filters: [] }
+          api.calls.push(call)
+          return api.respond(call)
+        }
+      })
     }
   }
 })
@@ -614,6 +623,46 @@ describe('activity log upload job', () => {
     const outcome = await runQueuePass()
     expect(outcome.sent).toBe(2)
     expect(api.calls.map(c => c.table)).toEqual(['matches']) // no rows: no upload request
+  })
+})
+
+describe('scoresheet upload job', () => {
+  // Stress test 2026-10-25: approved offline (or a reset during the approval),
+  // the PDF and the final JSON never reached the cloud; nothing retried them
+  it('stores the file it carries; while the cloud is unreachable it waits and goes with a later pass', async () => {
+    const pdf = new Blob(['%PDF-1.7'], { type: 'application/pdf' })
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'scoresheet', action: 'upload', status: 'queued', payload: { path: '2026-10-25/game903703_k1_final.json', file: new Blob(['{}']), contentType: 'application/json' } },
+      { id: 2, resource: 'scoresheet', action: 'upload', status: 'queued', payload: { path: '2026-10-25/game903703_k1.pdf', file: pdf, contentType: 'application/pdf' } }
+    ])
+    api.respond = (call) => call.table === '__storage'
+      ? { data: null, error: { message: 'Failed to fetch', status: 0, network: true } }
+      : ok()
+    const offline = await runQueuePass()
+    expect(offline.stopped).toBe(true)
+    expect([...fakeDb.sync_queue.map.values()].map(j => j.status)).toEqual(['queued', 'queued'])
+
+    api.calls = []
+    api.respond = defaultRespond
+    const outcome = await runQueuePass()
+    expect(outcome.sent).toBe(2)
+    const uploads = api.calls.filter(c => c.table === '__storage')
+    expect(uploads.map(c => c.data.path)).toEqual(['2026-10-25/game903703_k1_final.json', '2026-10-25/game903703_k1.pdf'])
+    expect(uploads[1].data).toMatchObject({ bucket: 'scoresheets', file: pdf, options: { contentType: 'application/pdf', upsert: true } })
+    expect([...fakeDb.sync_queue.map.values()].map(j => j.status)).toEqual(['sent', 'sent'])
+  })
+
+  it('a refused upload holds back only the later uploads of the same file', async () => {
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'scoresheet', action: 'upload', status: 'queued', payload: { path: 'a/game1_k1.pdf', file: new Blob(['x']), contentType: 'application/pdf' } },
+      { id: 2, resource: 'scoresheet', action: 'upload', status: 'queued', payload: { path: 'a/game2_k2.pdf', file: new Blob(['y']), contentType: 'application/pdf' } }
+    ])
+    api.respond = (call) => call.table === '__storage' && call.data.path === 'a/game1_k1.pdf'
+      ? { data: null, error: { message: 'Forbidden', code: 'OV_FORBIDDEN', status: 403 } }
+      : ok()
+    await runQueuePass()
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
+    expect(fakeDb.sync_queue.map.get(2).status).toBe('sent')
   })
 })
 
