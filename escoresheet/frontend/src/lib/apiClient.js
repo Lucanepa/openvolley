@@ -7,6 +7,7 @@
 
 import { getCloudApiUrl } from '../utils/backendConfig'
 import { deviceId, platformName } from '../utils/identity'
+import { readSessionMirror, writeSessionMirror } from './sessionMirror'
 
 /**
  * This installation, as the writes name it (server db/019, the scoring-device
@@ -63,7 +64,27 @@ async function safeJsonResponse(response, fallbackError = 'Request failed') {
 
 // Network failures (fetch rejects) carry no HTTP status.
 function networkError(err) {
+  noteBackendUnreachable()
   return { message: err?.message || 'Network unavailable', status: 0, network: true }
+}
+
+/**
+ * Dispatched on window when the cloud backend answers again after requests
+ * failed to reach it. An outage of the uplink or of the cloud while the hall
+ * Wi-Fi stays up fires no 'online' event, so the sync queue's probe and the
+ * scorer's relay socket waited out their backoff (up to 60 s) although the
+ * scoreboard's own writes already got through (stress test 2026-10-25).
+ */
+export const BACKEND_REACHED_EVENT = 'ov-backend-reached'
+let backendUnreachable = false
+function noteBackendUnreachable() {
+  backendUnreachable = true
+}
+// Any answer of the backend itself (not a 5xx of a proxy or tunnel in front of it)
+function noteBackendAnswered(response) {
+  if (!backendUnreachable || !response || response.status >= 500) return
+  backendUnreachable = false
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(BACKEND_REACHED_EVENT))
 }
 
 // Upper bound for one /api/db round trip.
@@ -221,6 +242,7 @@ class QueryBuilder {
     } catch (err) {
       return { data: null, error: networkError(err), count: undefined, status: 0 }
     }
+    noteBackendAnswered(response)
 
     const result = await safeJsonResponse(response, 'Database operation failed')
     return { data: result.data ?? null, error: result.error ?? null, count: result.count, status: result.status }
@@ -278,6 +300,7 @@ async function postJson(path, body, { auth = true, timeoutMs = DB_REQUEST_TIMEOU
   } catch (err) {
     return { data: null, error: networkError(err), status: 0 }
   }
+  noteBackendAnswered(response)
   const result = await safeJsonResponse(response, fallbackError)
   return { data: result.data ?? null, error: result.error ?? null, status: result.status }
 }
@@ -304,6 +327,7 @@ export async function apiRequest(method, path, body, { timeoutMs = DB_REQUEST_TI
   } catch (err) {
     return { data: null, error: networkError(err), status: 0 }
   }
+  noteBackendAnswered(response)
   let result
   try {
     result = await safeJsonResponse(response, fallbackError)
@@ -448,6 +472,16 @@ export async function toBase64(fileData) {
 
 // ==================== Storage ====================
 
+/**
+ * Upper bound for one storage upload of `bodyLength` characters: the /api/db
+ * bound plus the time the body takes at 20 KB/s (a ~1 MB scoresheet PDF on a
+ * weak hall uplink). Uploads had none: a connection that passed no data held
+ * the scorer's "Confirm and approve" for minutes (stress test 2026-10-25).
+ */
+export function storageUploadTimeoutMs(bodyLength) {
+  return DB_REQUEST_TIMEOUT_MS + Math.ceil((Number(bodyLength) || 0) / 20000) * 1000
+}
+
 export const apiStorage = {
   from(bucket) {
     return {
@@ -465,16 +499,18 @@ export const apiStorage = {
         }
 
         try {
+          const body = JSON.stringify({
+            bucket,
+            path,
+            fileBase64,
+            contentType: options.contentType,
+            upsert: options.upsert
+          })
           const response = await fetch(apiUrl, {
             method: 'POST',
             headers: getAuthHeaders(),
-            body: JSON.stringify({
-              bucket,
-              path,
-              fileBase64,
-              contentType: options.contentType,
-              upsert: options.upsert
-            })
+            body,
+            signal: requestTimeoutSignal(storageUploadTimeoutMs(body.length))
           })
           return safeJsonResponse(response, 'Storage upload failed')
         } catch (err) {
@@ -577,15 +613,22 @@ export function authorizationHeader() {
   return token?.access_token ? { Authorization: `Bearer ${token.access_token}` } : {}
 }
 
-// Session token management
+// Session token management. localStorage holds the session the app reads;
+// lib/sessionMirror keeps a copy in IndexedDB, which survives a crash right
+// after signing in (restoreMirroredSession).
 function getStoredToken() {
   try {
     const stored = localStorage.getItem('api_auth_token')
-    if (!stored) return null
+    if (!stored) {
+      // (a crash may have lost it: the IndexedDB copy, once per page load)
+      restoreMirroredSession()
+      return null
+    }
     const session = JSON.parse(stored)
     // Check token expiration
     if (session?.expires_at && Date.now() / 1000 > session.expires_at) {
       localStorage.removeItem('api_auth_token')
+      writeSessionMirror(null)
       notifyTokenChange(null)
       return null
     }
@@ -594,11 +637,13 @@ function getStoredToken() {
 }
 
 function storeToken(session) {
+  sessionSetHere = true
   if (session) {
     localStorage.setItem('api_auth_token', JSON.stringify(session))
   } else {
     localStorage.removeItem('api_auth_token')
   }
+  writeSessionMirror(session || null)
   notifyTokenChange(session)
 }
 
@@ -608,6 +653,46 @@ function refreshStoredToken(session) {
   try {
     localStorage.setItem('api_auth_token', JSON.stringify(session))
   } catch { /* storage full or blocked: keep the old copy */ }
+  writeSessionMirror(session)
+}
+
+// Set once this page load stored or removed a session itself: a restore still
+// reading the IndexedDB copy must not bring an older one back over it
+let sessionSetHere = false
+let sessionRestore = null
+
+/**
+ * Once per page load: when localStorage has no session but its IndexedDB copy
+ * (lib/sessionMirror) has one that has not expired, it is put back and
+ * announced like a sign-in (the sync queue resumes, AuthContext shows the
+ * user). Chromium writes localStorage to disk only about a minute after the
+ * first writes of a start: a crash or power loss within a minute of signing in
+ * signed the scorer out, while the match itself (IndexedDB) was kept (stress
+ * test 2026-10-25). Never rejects.
+ */
+export function restoreMirroredSession() {
+  if (!sessionRestore) {
+    sessionRestore = (async () => {
+      if (typeof localStorage === 'undefined' || localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)) return
+      const session = await readSessionMirror()
+      if (!session?.access_token || sessionSetHere || localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)) return
+      if (session.expires_at && Date.now() / 1000 > session.expires_at) {
+        await writeSessionMirror(null)
+        return
+      }
+      localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, JSON.stringify(session))
+      console.log('[apiClient] Session restored from its IndexedDB copy')
+      notifyTokenChange(session)
+    })().catch(() => {})
+  }
+  return sessionRestore
+}
+
+// restoreMirroredSession, waited for at most this long by the session reads at
+// start: an IndexedDB that does not answer must not hold the sign-in state
+const SESSION_RESTORE_WAIT_MS = 1500
+function sessionRestored() {
+  return Promise.race([restoreMirroredSession(), new Promise(resolve => setTimeout(resolve, SESSION_RESTORE_WAIT_MS))])
 }
 
 /**
@@ -668,6 +753,7 @@ export const apiAuth = {
   },
 
   async getSession() {
+    await sessionRestored()
     const session = getStoredToken()
     if (!session?.access_token) return { data: { session: null }, error: null }
 
@@ -735,13 +821,12 @@ export const apiAuth = {
   // Auth state change listener — polls session status
   // Returns { data: { subscription } } matching Supabase API shape
   onAuthStateChange(callback) {
-    // Check session immediately
-    const session = getStoredToken()
-    if (session?.access_token) {
-      setTimeout(() => callback('INITIAL_SESSION', session), 0)
-    } else {
-      setTimeout(() => callback('INITIAL_SESSION', null), 0)
-    }
+    // Check session immediately (once a session lost from localStorage is
+    // back from its IndexedDB copy)
+    sessionRestored().then(() => {
+      const session = getStoredToken()
+      callback('INITIAL_SESSION', session?.access_token ? session : null)
+    })
 
     // Listen for storage events (cross-tab sync)
     const handler = (e) => {

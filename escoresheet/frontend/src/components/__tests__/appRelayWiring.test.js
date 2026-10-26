@@ -49,6 +49,31 @@ describe('App.jsx relay wiring', () => {
     // the raw match (with game_pin / connection_pins) is never sent
     expect(body).not.toMatch(/match: currentMatchData/)
   })
+
+  // Stress test 2026-10-25: the laptop a match moved away from re-synced its
+  // older copy into the room when it came back online. The cloud relay
+  // refuses a device the database does not name as the scorer, so both syncs
+  // name this installation.
+  it('sync-match-data names this installation, from App and Scoreboard alike', () => {
+    const body = slice('const syncMatchData = async () => {', 'const handlePinValidationRequest')
+    expect(body).toMatch(/device: writingDevice\(\)/)
+    const start = scoreboardSrc.indexOf("type: 'sync-match-data',")
+    expect(start).toBeGreaterThan(-1)
+    expect(scoreboardSrc.slice(start, scoreboardSrc.indexOf('}', start))).toMatch(/device: writingDevice\(\)/)
+  })
+})
+
+// Stress test 2026-10-25: after a venue relay restart (live states in memory
+// only) the scorer resynced its bundle, which carries none, and pushed a live
+// state only at its next action: the livescore kept the old score meanwhile
+describe('Scoreboard relay connection', () => {
+  it('pushes the live state after the sync of every (re)connect', () => {
+    const start = scoreboardSrc.indexOf('detachRelay = scorerRelay.attach(wsUrl, {')
+    expect(start).toBeGreaterThan(-1)
+    const onOpen = scoreboardSrc.slice(start, scoreboardSrc.indexOf('onMessage:', start))
+    expect(onOpen).toMatch(/const initialSync = syncMatchData\(\)/)
+    expect(onOpen).toMatch(/initialSync\.then\(\(\) => syncLiveStateRef\.current\?\.\('reconnect', null, null\)/)
+  })
 })
 
 describe('Scoreboard live state: a test match stays out of the cloud', () => {

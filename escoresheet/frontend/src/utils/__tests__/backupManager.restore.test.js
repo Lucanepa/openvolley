@@ -46,9 +46,11 @@ vi.mock('../../db/db', () => ({ db: fakeDb }))
 vi.mock('../backendConfig', () => ({ getApiUrl: (p) => `http://backend.test${p}`, getCloudApiUrl: (p) => `http://backend.test${p}` }))
 vi.mock('../../lib/apiClient', () => ({ apiFrom: vi.fn(), apiStorage: { from: vi.fn() } }))
 
-import { restoreMatchFromJson, restoreMatchInPlace, importMatchFromSupabase, serverClosedState } from '../backupManager'
+import { restoreMatchFromJson, restoreMatchInPlace, importMatchFromSupabase, serverClosedState, matchBackupFromDatabaseExport, restoreErrorText, BACKUP_FORMAT_ERROR, BACKUP_UNREADABLE_ERROR } from '../backupManager'
 import { apiFrom } from '../../lib/apiClient'
 import { isStaleClosedCopy } from '../matchReopen'
+import { signaturesPayload, signaturesSyncJob } from '../../domain/signatureEdits'
+import { approvalSignatureSources, signedOnPhone } from '../../domain/phoneSignature'
 
 const SEED = 'match_100_aaa'
 const OTHER = 'match_200_bbb'
@@ -313,6 +315,207 @@ describe('joining a cloud match on this device', () => {
     expect([...fakeDb.sync_queue.map.values()].some(j => j.action === 'scorer')).toBe(false)
     await importMatchFromSupabase({ match: { external_id: OTHER, game_n: 5, status: 'live', test: true }, sets: [], events: [] })
     expect([...fakeDb.sync_queue.map.values()].some(j => j.action === 'scorer')).toBe(false)
+  })
+})
+
+// Stress test 2026-10-25 (restore-drops-and-erases-closing-signatures): the
+// captains, scorer and referees had signed on the tablet, the tablet died,
+// the match was restored on a laptop by game number and Game PIN. The import
+// stored the closing signatures under names nothing reads
+// (homeCaptainPostGameSignature, refereeSignature) and dropped ref1, ref2 and
+// asst_scorer: Match end asked both captains to sign again, and the first
+// signature drawn there sent the whole `signatures` object with those slots
+// null, which the server stores as is (it replaces the column).
+describe('the closing signatures of a match restored by game PIN', () => {
+  const SIGNATURES = {
+    home_coach: 'data:hc', home_captain: 'data:hk', away_coach: 'data:ac', away_captain: 'data:ak',
+    home_captain_post_game: 'data:hp', away_captain_post_game: 'data:ap',
+    asst_scorer: 'data:as', scorer: 'data:sc', ref2: 'data:r2', ref1: 'data:r1'
+  }
+  const restore = (match = {}) => importMatchFromSupabase({
+    match: { external_id: SEED, game_n: 7, status: 'ended', coin_toss: { team_a: 'away', team_b: 'home', confirmed: true }, signatures: SIGNATURES, ...match },
+    sets: [],
+    events: []
+  })
+
+  it('every signature is where Match end and the sheet read it', async () => {
+    const m = fakeDb.matches.map.get(await restore())
+    expect(m).toMatchObject({
+      homePostGameCaptainSignature: 'data:hp', awayPostGameCaptainSignature: 'data:ap',
+      asstScorerSignature: 'data:as', scorerSignature: 'data:sc', ref2Signature: 'data:r2', ref1Signature: 'data:r1',
+      homeCoachSignature: 'data:hc', homeCaptainSignature: 'data:hk', awayCoachSignature: 'data:ac', awayCaptainSignature: 'data:ak'
+    })
+  })
+
+  it('a signature drawn on the restored copy sends the others back unchanged', async () => {
+    const m = fakeDb.matches.map.get(await restore())
+    expect(signaturesPayload(m)).toEqual(SIGNATURES)
+    const job = signaturesSyncJob({ ...m, homePostGameCaptainSignature: 'data:new' })
+    expect(job.payload.signatures).toEqual({ ...SIGNATURES, home_captain_post_game: 'data:new' })
+  })
+
+  it('an approved match keeps where each closing signature was made', async () => {
+    const approval = {
+      approvedAt: '2026-10-25T14:00:00.000Z',
+      signatures: {},
+      signatureSources: { captainA: 'phone', captainB: 'device', scorer: 'device', asstScorer: null, ref1: 'phone', ref2: 'device' }
+    }
+    const m = fakeDb.matches.map.get(await restore({ status: 'approved', approval }))
+    // Team A is away here: captain A's image is the away captain's
+    expect(approvalSignatureSources(m)).toEqual({ captainA: 'phone', captainB: 'device', scorer: 'device', asstScorer: 'device', ref1: 'phone', ref2: 'device' })
+    expect(signedOnPhone(m, 'awayPostGameCaptainSignature')).toBe(true)
+    expect(signedOnPhone(m, 'homePostGameCaptainSignature')).toBe(false)
+  })
+
+  it('a match without signatures restores empty slots, not names nothing reads', async () => {
+    const m = fakeDb.matches.map.get(await restore({ signatures: null }))
+    for (const field of ['homePostGameCaptainSignature', 'awayPostGameCaptainSignature', 'scorerSignature', 'ref1Signature', 'ref2Signature']) {
+      expect(m[field] ?? null).toBeNull()
+    }
+    for (const legacy of ['homeCaptainPostGameSignature', 'awayCaptainPostGameSignature', 'refereeSignature']) expect(legacy in m).toBe(false)
+  })
+})
+
+// Stress test 2026-10-25 (setend-backup-not-restorable-silent-restore-errors):
+// offline in a browser, the set-end download is the only automatic backup.
+// It holds every table of the device ({ exportDate, matchId, matches, ... }),
+// and the restore refused anything without `version` and `match`.
+describe('a whole-database export (the set-end download)', () => {
+  const dump = () => ({
+    exportDate: '2026-10-25T18:40:00.000Z',
+    exportReason: 'set_1_end',
+    matchId: 9,
+    matches: [
+      { id: 4, seed_key: OTHER, status: 'final', homeTeamId: 1, awayTeamId: 2 },
+      { id: 9, seed_key: SEED, status: 'live', gameN: 7, homeTeamId: 3, awayTeamId: 4, refereePin: '111111' }
+    ],
+    teams: [{ id: 1, name: 'Old home' }, { id: 2, name: 'Old away' }, { id: 3, name: 'Home' }, { id: 4, name: 'Away' }],
+    players: [
+      { id: 1, teamId: 1, number: 10, lastName: 'Old' },
+      { id: 2, teamId: 3, number: 1, lastName: 'Hof' },
+      { id: 3, teamId: 4, number: 12, lastName: 'Weg' }
+    ],
+    sets: [{ id: 1, matchId: 4, index: 1, homePoints: 25, awayPoints: 3, finished: true }, { id: 2, matchId: 9, index: 1, homePoints: 25, awayPoints: 7, finished: true }, { id: 3, matchId: 9, index: 2, homePoints: 2, awayPoints: 3 }],
+    events: [{ id: 1, matchId: 4, setIndex: 1, type: 'point', seq: 1 }, { id: 2, matchId: 9, setIndex: 1, type: 'point', seq: 1 }, { id: 3, matchId: 9, setIndex: 2, type: 'point', seq: 2 }],
+    referees: [],
+    scorers: []
+  })
+
+  it('holds the match it was written for, in the backup file shape', () => {
+    const b = matchBackupFromDatabaseExport(dump())
+    expect(b).toMatchObject({ version: 1, match: { id: 9, seed_key: SEED }, homeTeam: { name: 'Home' }, awayTeam: { name: 'Away' } })
+    expect(b.homePlayers.map(p => p.lastName)).toEqual(['Hof'])
+    expect(b.awayPlayers.map(p => p.lastName)).toEqual(['Weg'])
+    expect(b.sets.map(x => x.id)).toEqual([2, 3])
+    expect(b.events.map(x => x.id)).toEqual([2, 3])
+    // a backup file, or an export without its match, is not one
+    expect(matchBackupFromDatabaseExport(backup())).toBeNull()
+    expect(matchBackupFromDatabaseExport({ ...dump(), matchId: 99 })).toBeNull()
+    expect(matchBackupFromDatabaseExport(null)).toBeNull()
+  })
+
+  it('is restored: that match only, with its sets and events', async () => {
+    const id = await restoreMatchFromJson(dump())
+    expect(fakeDb.matches.map.get(id)).toMatchObject({ seed_key: SEED, status: 'live', gameN: 7 })
+    const sets = [...fakeDb.sets.map.values()].filter(x => x.matchId === id)
+    expect(sets.map(x => `${x.index}:${x.homePoints}-${x.awayPoints}`)).toEqual(['1:25-7', '2:2-3'])
+    expect([...fakeDb.events.map.values()].filter(x => x.matchId === id)).toHaveLength(2)
+    expect(fakeDb.teams.map.get(fakeDb.matches.map.get(id).homeTeamId).name).toBe('Home')
+    // the other match of the export is not restored over this device's
+    expect([...fakeDb.matches.map.values()].filter(m => m.seed_key === OTHER)).toHaveLength(1)
+  })
+
+  it('a file that is not a backup is refused with a code the dialog can say', async () => {
+    await expect(restoreMatchFromJson({ hello: 'world' })).rejects.toMatchObject({ code: BACKUP_FORMAT_ERROR })
+    await expect(restoreMatchFromJson({ ...dump(), matchId: 99 })).rejects.toMatchObject({ code: BACKUP_FORMAT_ERROR })
+  })
+
+  it('restoreErrorText: an unreadable file, a file that is not a backup, anything else', () => {
+    const t = (key, opts) => (opts ? `${key} ${JSON.stringify(opts)}` : key)
+    expect(restoreErrorText(Object.assign(new Error('x'), { code: BACKUP_UNREADABLE_ERROR }), t)).toBe('settings.backup.restoreErrors.unreadable')
+    expect(restoreErrorText(new SyntaxError('Unexpected end of JSON input'), t)).toBe('settings.backup.restoreErrors.unreadable')
+    expect(restoreErrorText(Object.assign(new Error('x'), { code: BACKUP_FORMAT_ERROR }), t)).toBe('settings.backup.restoreErrors.notABackup')
+    expect(restoreErrorText(new Error('QuotaExceededError'), t)).toBe('settings.backup.restoreErrors.failed {"error":"QuotaExceededError"}')
+  })
+})
+
+// Stress test 2026-10-25 (restored-sheet-times-and-lfp-differ): every LFP
+// mark was gone from the sheet of a copy restored by game PIN
+describe('the players of a match restored by game PIN', () => {
+  it('keep their LFP flag', async () => {
+    const id = await importMatchFromSupabase({
+      match: {
+        external_id: SEED, game_n: 7, status: 'ended',
+        home_team: { name: 'H' }, away_team: { name: 'A' },
+        players_home: [{ number: 1, first_name: 'Ana', last_name: 'Hof', is_lfp: true }, { number: 2, first_name: 'Bea', last_name: 'Ris', is_lfp: false }],
+        players_away: [{ number: 9, first_name: 'Cleo', last_name: 'Weg', is_lfp: true, is_captain: true }]
+      },
+      sets: [],
+      events: []
+    })
+    const m = fakeDb.matches.map.get(id)
+    const flags = (teamId) => [...fakeDb.players.map.values()].filter(p => p.teamId === teamId).map(p => `${p.number}:${p.isLfp}`)
+    expect(flags(m.homeTeamId)).toEqual(['1:true', '2:false'])
+    expect(flags(m.awayTeamId)).toEqual(['9:true'])
+  })
+})
+
+// Stress test 2026-10-25 (restore-reuses-other-matchs-team-by-name): the
+// club laptop still held last week's home match. Today's match of the same
+// club was restored from a backup: the restore found last week's team row by
+// name, overwrote it, replaced its roster with today's and pointed both
+// matches at it.
+describe('the teams of a restored match', () => {
+  const rosterOf = (teamId) => [...fakeDb.players.map.values()].filter(p => p.teamId === teamId).map(p => `${p.number}:${p.lastName}`)
+  beforeEach(() => {
+    fakeDb.matches.map.get(1).homeTeamId = 3
+    fakeDb.matches.map.get(1).awayTeamId = 4
+    fakeDb.teams = fakeTable([{ id: 3, name: 'VBC Wiedikon', shortName: 'WIE' }, { id: 4, name: 'Volley 05' }])
+    fakeDb.players = fakeTable([
+      { id: 1, teamId: 3, number: 10, lastName: 'Baumann' },
+      { id: 2, teamId: 3, number: 11, lastName: 'Arnold' },
+      { id: 3, teamId: 4, number: 7, lastName: 'Gast' }
+    ])
+  })
+
+  it('another local match with a team of the same name keeps its team row and roster', async () => {
+    const today = backup()
+    today.homeTeam = { id: 3, name: 'VBC Wiedikon', shortName: 'VBCW' }
+    today.homePlayers = [{ id: 1, teamId: 3, number: 10, lastName: 'Today10' }, { id: 2, teamId: 3, number: 11, lastName: 'Today11' }]
+    const id = await restoreMatchFromJson(today)
+    const restored = fakeDb.matches.map.get(id)
+    expect(restored.homeTeamId).not.toBe(3)
+    expect(fakeDb.teams.map.get(restored.homeTeamId)).toMatchObject({ name: 'VBC Wiedikon', shortName: 'VBCW' })
+    expect(rosterOf(restored.homeTeamId)).toEqual(['10:Today10', '11:Today11'])
+    // last week's match: unchanged
+    expect(fakeDb.matches.map.get(1)).toMatchObject({ homeTeamId: 3, awayTeamId: 4 })
+    expect(fakeDb.teams.map.get(3)).toMatchObject({ name: 'VBC Wiedikon', shortName: 'WIE' })
+    expect(rosterOf(3)).toEqual(['10:Baumann', '11:Arnold'])
+    expect(rosterOf(4)).toEqual(['7:Gast'])
+  })
+
+  it('the replaced copy of the match takes its own teams and players along, never another match\'s', async () => {
+    await fakeDb.teams.add({ id: 5, name: 'Home' })
+    await fakeDb.teams.add({ id: 6, name: 'Away' })
+    await fakeDb.players.add({ id: 9, teamId: 5, number: 1, lastName: 'Old copy' })
+    // the copy shares team 4 with last week's match (an earlier restore did that)
+    fakeDb.matches.map.get(2).homeTeamId = 5
+    fakeDb.matches.map.get(2).awayTeamId = 4
+    const id = await restoreMatchFromJson(backup())
+    expect(fakeDb.teams.map.has(5)).toBe(false)
+    expect(rosterOf(5)).toEqual([])
+    expect(fakeDb.teams.map.get(4)).toMatchObject({ name: 'Volley 05' })
+    expect(rosterOf(4)).toEqual(['7:Gast'])
+    expect(fakeDb.teams.map.has(6)).toBe(true) // no match of its own, not the copy's
+    const restored = fakeDb.matches.map.get(id)
+    expect([restored.homeTeamId, restored.awayTeamId].some(t => [3, 4, 5].includes(t))).toBe(false)
+  })
+
+  it('restoreMatchInPlace keeps the open match\'s own team rows, not the writing device\'s ids', async () => {
+    fakeDb.matches.map.get(2).homeTeamId = 7
+    fakeDb.matches.map.get(2).awayTeamId = 8
+    await restoreMatchInPlace(2, backup({ homeTeamId: 3, awayTeamId: 4 }))
+    expect(fakeDb.matches.map.get(2)).toMatchObject({ homeTeamId: 7, awayTeamId: 8 })
   })
 })
 

@@ -5,6 +5,9 @@
  * Owner decision 2026-10-07 (field-spec 16): the times are the ACTUAL ones.
  *  - Set start: the real start of the set's first rally, the `rally_start`
  *    event Scoreboard logs with the device clock when the first rally starts.
+ *    rally_start events stay on the scoring device; the set_start event, which
+ *    is synced, carries the same time (payload.firstRallyAt), so a copy
+ *    restored from the server prints the same start.
  *    The "Set n start time" dialog value (set.startTime) can be the scheduled
  *    time typed or kept by the scorer (a match planned 14:30 that started 16:05
  *    printed "Match Start 14:30" and a 104' first set); it is used only when a
@@ -31,7 +34,7 @@ export interface TimedEvent {
   setIndex?: number
   seq?: number
   ts?: string | number | null
-  payload?: { startTime?: string | null } | null
+  payload?: { startTime?: string | null; firstRallyAt?: string | null } | null
 }
 
 const ms = (v: unknown): number | null => {
@@ -57,7 +60,13 @@ export function setStartMs(set: TimedSet | null | undefined, events?: TimedEvent
     .map(e => ms(e.payload?.startTime ?? e.ts))
     .find((n): n is number => n !== null) ?? null
   if (confirmed !== null && dialog !== null && toMinute(confirmed) !== toMinute(dialog)) return toMinute(confirmed)
-  const rallies = timesOf(events, set.index, 'rally_start')
+  const rallies = [
+    ...timesOf(events, set.index, 'rally_start'),
+    ...(Array.isArray(events) ? events : [])
+      .filter(e => e && e.setIndex === set.index && e.type === 'set_start')
+      .map(e => ms(e.payload?.firstRallyAt))
+      .filter((n): n is number => n !== null)
+  ]
   if (rallies.length > 0) return toMinute(Math.min(...rallies))
   if (confirmed !== null) return toMinute(confirmed)
   const points = timesOf(events, set.index, 'point')

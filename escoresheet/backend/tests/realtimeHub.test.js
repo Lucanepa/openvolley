@@ -383,6 +383,23 @@ describe('realtimeHub over real sockets', () => {
     assert.equal((await a.closed).code, 1008)
   })
 
+  it('closes on a frame it cannot handle, and serves every other socket on', async () => {
+    // String() of {"toString":1} throws TypeError: one such frame on an
+    // anonymous live socket used to end the whole backend
+    for (const sub of [
+      '{"schema":{"toString":1},"table":"matches"}',
+      '{"table":{"toString":1}}',
+      '{"table":"events","event":{"toString":1}}',
+      `{"table":"events","column":"match_id","value":"${MATCH_A}","op":{"toString":1}}`
+    ]) {
+      const a = await open()
+      a.ws.send(`{"type":"subscribe-db","id":"x","subs":[${sub}]}`)
+      assert.equal((await a.closed).code, 1008, sub)
+    }
+    const b = await open()
+    assert.deepEqual(await subscribe(b, 'ch-b', [{ table: 'events', column: 'match_id', value: MATCH_A }]), { type: 'subscribe-db-ack', id: 'ch-b' })
+  })
+
   it('closes on binary frames with 1003', async () => {
     const a = await open()
     a.ws.send(Buffer.from(JSON.stringify({ type: 'ping' })), { binary: true })
@@ -452,6 +469,24 @@ describe('realtimeHub ordering and cascades', () => {
     const ins = await c.next()
     assert.equal(ins.eventType, 'INSERT')
     assert.equal(ins.new.points_a, 0)
+    c.close(); await c.closed
+  })
+
+  // Stress test 2026-10-25: the match moved to a device 3 min behind; all its
+  // rows were dropped as stale until its clock passed the previous device's
+  it('forgetOrder (a scorer-device take-over) lets the next row through, then orders again', async () => {
+    const c = await liveClient(srv.url)
+    await subscribe(c, 'l', [{ table: 'match_live_state', event: '*', column: 'match_id', value: MATCH_B }])
+    const t = (s) => `2026-10-05T14:00:${s}.000Z`
+    srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_B, points_a: 2, points_b: 1, updated_at: t('50') }])
+    assert.equal((await c.next()).new.points_a, 2)
+    srv.hub.forgetOrder('match_live_state', MATCH_B)
+    srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_B, points_a: 2, points_b: 2, updated_at: t('10') }])
+    assert.equal((await c.next()).new.points_b, 2)
+    srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_B, points_a: 2, points_b: 3, updated_at: t('11') }])
+    assert.equal((await c.next()).new.points_b, 3)
+    // the new device's order from then on
+    assert.equal(srv.hub.broadcastDbChange('match_live_state', 'UPDATE', [{ match_id: MATCH_B, points_a: 2, points_b: 2, updated_at: t('10') }]), 0)
     c.close(); await c.closed
   })
 

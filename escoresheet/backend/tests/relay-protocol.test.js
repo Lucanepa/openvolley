@@ -478,6 +478,27 @@ describe('backend WebSocket relay protocol', () => {
     for (const c of [courtA, beach, rehearsal, done, display]) c.ws.close()
   })
 
+  it('refuses a frame nested too deeply, so nothing read back from it can end the backend', async () => {
+    const wsUrl = `ws://127.0.0.1:${port}`
+    const httpBase = `http://127.0.0.1:${port}`
+    const anyone = await openClient(wsUrl)
+    // JSON.parse takes this, JSON.stringify throws RangeError on it (20 KB).
+    // The relay used to store it, and the next GET /api/match/:id threw in the
+    // request handler, which ended the process.
+    const deep = '['.repeat(10000) + ']'.repeat(10000)
+    anyone.ws.send(`{"type":"sync-match-data","matchId":"deep-1","match":{"id":"deep-1","seed_key":"deep-1","status":"live","gamePin":"481516","deep":${deep}},"sets":[],"events":[]}`)
+    anyone.ws.send(`{"type":"live-state-update","matchId":"deep-1","liveState":{"deep":${deep}}}`)
+    anyone.send({ type: 'ping' })
+    await anyone.waitFor((m) => m.type === 'pong')
+    for (const headers of [{ 'X-OV-Match-Pin': '481516' }, {}]) {
+      assert.equal((await fetch(`${httpBase}/api/match/deep-1`, { headers })).status, 404)
+    }
+    assert.equal((await fetch(`${httpBase}/api/match/list`)).status, 200)
+    assert.equal((await fetch(`${httpBase}/health`)).status, 200)
+    assert.deepEqual(anyone.messages.filter((m) => m.type === 'error').map((m) => m.code), ['bad-request', 'bad-request'])
+    anyone.ws.close()
+  })
+
   it('stops game-PIN guessing without revealing a hit', async () => {
     const wsUrl = `ws://127.0.0.1:${port}`
     const scoreboard = await openClient(wsUrl)

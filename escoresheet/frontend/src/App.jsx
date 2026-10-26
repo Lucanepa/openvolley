@@ -55,9 +55,9 @@ import {
   getTestAwayTeamShortName,
   getTestTeamByExternalId
 } from './constants/testSeeds'
-import { apiFrom } from './lib/apiClient'
+import { apiFrom, writingDevice } from './lib/apiClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
-import { fetchMatchByPin, importMatchFromSupabase, cloudBestOf, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, listPocketBaseBackups, fetchPocketBaseMatch } from './utils/backupManager'
+import { fetchMatchByPin, importMatchFromSupabase, cloudBestOf, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, listPocketBaseBackups, fetchPocketBaseMatch, matchBackupFromDatabaseExport, restoreErrorText } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
 import DesktopUpdateNotice from './components/DesktopUpdateNotice'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils/matchFormat'
@@ -76,8 +76,8 @@ import { detectAppPlatform } from './utils/openAppWindow'
 import ManageConsole from './components/manage/ManageConsole'
 import ManagerSiteLink from './components/ManagerSiteLink'
 import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, openRestore, restorePrefill } from './utils/manageNav'
-import { relayMatchKey, relayMatchPayload } from './utils/serverDataSync'
-import { needsEventCheck, pickCurrentMatch } from './utils/currentMatch'
+import { relayMatchKey, relayMatchPayload, liveStateNow } from './utils/serverDataSync'
+import { needsEventCheck, pickCurrentMatch, newOfficialMatchStep } from './utils/currentMatch'
 import { isRelayErrorFor, mayPublishMatchData, relayConnectionStatus, scorerLiveOrder, scorerRelay, scorerRelayUrl } from './utils/relayPublisher'
 import { PHONE_MAX_WIDTH, isPhoneScreen, phoneLayoutKept } from './components/scoreboard/phoneLayout'
 import { useSystemBarsHidden } from './utils/nativeSystemBars'
@@ -192,10 +192,12 @@ export default function App() {
   const queueStats = useMemo(() => ({ authRequired: syncStatus === 'auth_required' }), [syncStatus])
   const backup = useAutoBackup(matchId)
   // Backup file for a restore: the desktop app opens its own dialog in the
-  // backup folder; elsewhere the browser file picker.
+  // backup folder; elsewhere the browser file picker. A whole-database export
+  // (an older set-end download) is previewed and restored as the match it holds.
   const pickBackupFile = useCallback(async () => {
     const native = await pickNativeBackupFile()
-    return native === undefined ? selectBackupFile() : native
+    const data = native === undefined ? await selectBackupFile() : native
+    return (data && matchBackupFromDatabaseExport(data)) || data
   }, [])
   // Options > Backup > Restore from a backup file: same preview + restore path
   // as the Restore match dialog.
@@ -206,7 +208,7 @@ export default function App() {
       setHomeOptionsModal(false)
       setRestorePreviewData({ data: jsonData, source: 'local' })
     } catch (err) {
-      setAlertModal(err?.message || t('home.modals.failedToRestoreFromFile'))
+      setAlertModal(restoreErrorText(err, t))
     }
   }, [pickBackupFile, t])
   // My Matches: link the signed-in account to the match open here (sync queue)
@@ -1266,7 +1268,11 @@ export default function App() {
           homePlayers,
           awayPlayers,
           sets,
-          events
+          events,
+          // This installation (db/019): the cloud relay refuses the copy of a
+          // device the match has moved away from ('scorer-moved'), which
+          // re-syncs at once when it comes back online
+          device: writingDevice()
         }
 
         // Periodic sync - don't log every time to reduce noise
@@ -2287,28 +2293,32 @@ export default function App() {
   }
 
   async function createNewOfficialMatch() {
-    // Check if match is ongoing
-    if (matchStatus?.status === 'Match recording') {
-      return // Don't allow creating new match when one is ongoing
+    // utils/currentMatch newOfficialMatchStep. An official match being
+    // recorded is not replaced; a test or easy match is, after the question
+    // (this button did nothing at all while one was being recorded). A copy
+    // closed on the server counts as confirmed (a restored row may lack
+    // matchInfoConfirmedAt): never deleted without a word. Unconfirmed
+    // matches (user started but didn't click "Create Match") are silently
+    // deleted.
+    const step = newOfficialMatchStep(currentMatch, matchStatus?.status, { closedCopy: isStaleClosedCopy(currentMatch) })
+    if (step === 'recording') {
+      setAlertModal(t('home.modals.officialMatchStillRecording', 'An official match is still recording on this device. Continue it, or delete it with "Delete match", before creating a new official match.'))
+      return
     }
-
-    // Check if there's a CONFIRMED match (has matchInfoConfirmedAt)
-    // Unconfirmed matches (user started but didn't click "Create Match") should be silently deleted
-    if (currentMatch) {
-      // a copy closed on the server counts as confirmed (a restored row may
-      // lack matchInfoConfirmedAt): never deleted without a word
-      if (currentMatch.matchInfoConfirmedAt || isStaleClosedCopy(currentMatch)) {
-        // This is a real confirmed match - warn the user
-        setNewMatchModal({
-          type: 'official',
-          message: t('home.modals.existingMatchWarning')
-        })
-        return
-      } else {
-        // This is an unconfirmed match - delete it silently
-        console.log('[New Match] Deleting unconfirmed match:', currentMatch.id)
-        await db.matches.delete(currentMatch.id)
-      }
+    if (step === 'replace') {
+      setNewMatchModal({
+        type: 'official',
+        message: currentMatch.test !== true
+          ? t('home.modals.existingMatchWarning')
+          : currentMatch.easy === true
+            ? t('home.modals.officialMatchReplaceEasy', 'The easy match on this device is replaced by the official match and its data deleted. Continue?')
+            : t('home.modals.officialMatchReplaceTest', 'The test match on this device is replaced by the official match and its data deleted. Continue?')
+      })
+      return
+    }
+    if (step === 'discard') {
+      console.log('[New Match] Deleting unconfirmed match:', currentMatch.id)
+      await db.matches.delete(currentMatch.id)
     }
 
     // Clear any stray draft data from previous sessions
@@ -3126,6 +3136,12 @@ export default function App() {
   // screens: an 8" tablet held sideways only gets past the gate without them
   // (nativeSystemBars; a no-op in a browser). The gate waits while they go.
   const systemBarsGoing = useSystemBarsHidden(smallScreenBlocked && !isPhoneScreen())
+  // The size gate, over the screen it blocks (which stays mounted under it)
+  const sizeGateShown = !isFullscreen && !systemBarsGoing && smallScreenBlocked && isViewportTooSmall(viewportSize.width, viewportSize.height)
+  // and no button under it keeps the focus: Enter or Space would press it
+  useEffect(() => {
+    if (sizeGateShown) document.activeElement?.blur?.()
+  }, [sizeGateShown])
 
   const notClosed = (m) => (m && closedMatchId != null && m.id === closedMatchId ? null : m)
   const shownCurrentMatch = notClosed(currentMatch)
@@ -3154,45 +3170,12 @@ export default function App() {
         setMatchInfoMenuOpen(false)
       }
     }}>
-      {/* Minimum screen size warning. Home, match setup, coin toss and their
-          dialogs fit a phone (2026-10-13); the scoring screen and its match
-          end only with the phone layout (PhoneScoreboard, Screen mode Auto or
-          Phone), and the manual adjustments not yet. Allowed when at least one
-          dimension >= 800 (tablet in any orientation) and in fullscreen. */}
-      {!isFullscreen && !systemBarsGoing && smallScreenBlocked && isViewportTooSmall(viewportSize.width, viewportSize.height) ? (
-        <div className="ov-kit flex flex-1 flex-col items-center justify-center bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100 p-4">
-          <div className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-stone-200/70 bg-white p-8 text-center shadow-card-lg">
-            <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 to-red-500" />
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-stone-100 text-stone-500">
-              <PhoneIcon size={28} />
-            </div>
-            <p className="text-lg font-bold leading-snug text-stone-900">
-              {gateOffersPhoneLayout
-                ? t('sizeGate.phoneTitle', 'The tablet layout needs a larger screen (minimum 800×600).')
-                : t('sizeGate.title', 'To use this application, please use a tablet or larger screen (minimum 800×600).')}
-            </p>
-            <p className="mt-2 text-sm tabular-nums text-stone-500">
-              {t('sizeGate.current', { width: viewportSize.width, height: viewportSize.height, defaultValue: 'Current: {{width}} × {{height}} px' })}
-            </p>
-            <p className="mt-3 text-sm text-stone-600">
-              {gateOffersPhoneLayout
-                ? t('sizeGate.phoneHint', 'On a phone, the scoring screen has a layout of its own.')
-                : t('sizeGate.hint', 'Try rotating your device or entering fullscreen mode.')}
-            </p>
-            {gateOffersPhoneLayout && (
-              <Button variant="dark" size="xl" block icon={PhoneIcon} onClick={() => { setDisplayMode('auto'); try { localStorage.setItem('displayMode', 'auto') } catch { /* private mode: the state still switches */ } }} className="mt-6">
-                {t('sizeGate.usePhone', 'Use the phone layout')}
-              </Button>
-            )}
-            <Button variant={gateOffersPhoneLayout ? 'secondary' : 'dark'} size="xl" block icon={Maximize} onClick={toggleFullscreen} className={gateOffersPhoneLayout ? 'mt-3' : 'mt-6'}>
-              {t('sizeGate.fullscreen', 'Enter fullscreen')}
-            </Button>
-            <p className="mt-3 text-xs text-stone-500">
-              {t('sizeGate.fullscreenNote', 'Fullscreen removes browser headers to maximize screen space.')}
-            </p>
-          </div>
-        </div>
-      ) : (
+      {/* The app's screens. The size gate below goes OVER them: the scoring
+          screen stays mounted under it, as under the phone's "hold it
+          upright" notice, so a running time-out countdown and an open dialog
+          survive a laptop zoomed in (Ctrl +) or a window made too small for a
+          moment; in its place, it had come back without them (stress test
+          2026-10-25: "Start rally" offered in the middle of a time-out). */}
         <>
           {/* Global Header */}
           <MainHeader
@@ -3262,8 +3245,9 @@ export default function App() {
               try {
                 // updated_at too: the realtime hub orders match_live_state by
                 // updated_at and drops a row older than the last relayed one.
+                // (on the match's live-state clock: liveClockOffset)
                 const { error } = await apiFrom('match_live_state')
-                  .update({ scorer_attention_trigger: trigger, updated_at: trigger })
+                  .update({ scorer_attention_trigger: trigger, updated_at: new Date(liveStateNow(currentMatch)).toISOString() })
                   .eq('match_id', supabaseMatchId)
                 if (error) throw error
                 if (typeof navigator !== 'undefined' && navigator.vibrate) {
@@ -3681,13 +3665,13 @@ export default function App() {
                                   cloudData = await fetchCloudBackup(backup.path)
                                 }
                                 if (!cloudData) {
-                                  setRestoreError('Failed to fetch backup data')
+                                  setRestoreError(t('options.alerts.failedToLoadBackupData'))
                                   setRestoreLoading(false)
                                   return
                                 }
                                 setRestorePreviewData({ data: cloudData, source: backup.source || 'cloud', backupName: backup.name })
                               } catch (err) {
-                                setRestoreError(err.message || 'Failed to load backup')
+                                setRestoreError(restoreErrorText(err, t))
                               } finally {
                                 setRestoreLoading(false)
                               }
@@ -3727,7 +3711,7 @@ export default function App() {
                           // Show preview instead of immediately restoring
                           setRestorePreviewData({ data: jsonData, source: 'local' })
                         } catch (err) {
-                          setRestoreError(err.message || t('home.modals.failedToRestoreFromFile'))
+                          setRestoreError(restoreErrorText(err, t))
                         } finally {
                           setRestoreLoading(false)
                         }
@@ -3739,6 +3723,11 @@ export default function App() {
                       {restoreLoading ? t('common.loading') : t('settings.backup.selectBackupFile')}
                     </button>
                   </div>
+                  {/* A backup that could not be loaded or restored: the
+                      dialog says why (it was never shown, 2026-10-25) */}
+                  {restoreError && !restorePreviewData && (
+                    <FormError className="mt-3">{restoreError}</FormError>
+                  )}
                 </div>
               </Modal>
             )}
@@ -3748,7 +3737,7 @@ export default function App() {
               <Modal
                 title={t('settings.backup.restorePreview')}
                 open={true}
-                onClose={() => setRestorePreviewData(null)}
+                onClose={() => { setRestorePreviewData(null); setRestoreError('') }}
                 width={700}
                 // The window's height, not 85vh: on a laptop the whole preview fits
                 panelStyle={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', maxHeight: 'calc(100dvh - 2rem)' }}
@@ -3761,6 +3750,9 @@ export default function App() {
                     backupName={restorePreviewData.backupName}
                   />
                 </div>
+                {restoreError && (
+                  <FormError className="mb-3">{restoreError}</FormError>
+                )}
                 {/* Phone: Cancel | Select another, then Confirm restore full width.
                     From sm one row: Cancel left, the two choices right. */}
                 <div className="ov-kit -mx-5 -mb-5 grid shrink-0 grid-cols-2 gap-2 border-t border-stone-100 px-5 py-3 sm:flex sm:items-center sm:justify-end">
@@ -3770,6 +3762,7 @@ export default function App() {
                       setRestoreMatchModal(false)
                       setRestoreMatchIdInput('')
                       setRestorePin('')
+                      setRestoreError('')
                       setCloudBackups([])
                       setCloudBackupPin('')
                       setCloudBackupGameN('')
@@ -3781,7 +3774,7 @@ export default function App() {
                     {t('common.cancel')}
                   </button>
                   <button
-                    onClick={() => setRestorePreviewData(null)}
+                    onClick={() => { setRestorePreviewData(null); setRestoreError('') }}
                     disabled={restoreLoading}
                     className="inline-flex h-11 items-center justify-center rounded-xl border border-stone-300 bg-white px-4 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 focus-visible:ring-offset-1"
                   >
@@ -3790,6 +3783,7 @@ export default function App() {
                   <button
                     onClick={async () => {
                       setRestoreLoading(true)
+                      setRestoreError('')
                       try {
                         const cloudData = restorePreviewData.data
                         let newMatchId
@@ -3819,7 +3813,7 @@ export default function App() {
                           setRestorePreviewData(null)
                           setAlertModal(t('cloudBlock.restoreRefused'))
                         } else {
-                          setRestoreError(err.message || 'Failed to restore match')
+                          setRestoreError(restoreErrorText(err, t))
                         }
                       } finally {
                         setRestoreLoading(false)
@@ -4005,6 +3999,50 @@ export default function App() {
 
           </div>
         </>
+
+      {/* Minimum screen size warning. Home, match setup, coin toss and their
+          dialogs fit a phone (2026-10-13); the scoring screen and its match
+          end only with the phone layout (PhoneScoreboard, Screen mode Auto or
+          Phone), and the manual adjustments not yet. Allowed when one side
+          reaches 800 px and both 600 px (a tablet in either orientation;
+          utils/formLayout isViewportTooSmall) and in fullscreen. A dialog
+          (aria-modal): no scoring key acts under it. Its card scrolls when
+          the window is lower than the card (150 % zoom). */}
+      {sizeGateShown && (
+        <div role="dialog" aria-modal="true" data-testid="size-gate" className="ov-kit fixed inset-0 overflow-y-auto bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100" style={{ zIndex: 99999 }}>
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-stone-200/70 bg-white p-8 text-center shadow-card-lg">
+              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 to-red-500" />
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-stone-100 text-stone-500">
+                <PhoneIcon size={28} />
+              </div>
+              <p className="text-lg font-bold leading-snug text-stone-900">
+                {gateOffersPhoneLayout
+                  ? t('sizeGate.phoneTitle', 'The tablet layout needs a larger screen (minimum 800×600).')
+                  : t('sizeGate.title', 'To use this application, please use a tablet or larger screen (minimum 800×600).')}
+              </p>
+              <p className="mt-2 text-sm tabular-nums text-stone-500">
+                {t('sizeGate.current', { width: viewportSize.width, height: viewportSize.height, defaultValue: 'Current: {{width}} × {{height}} px' })}
+              </p>
+              <p className="mt-3 text-sm text-stone-600">
+                {gateOffersPhoneLayout
+                  ? t('sizeGate.phoneHint', 'On a phone, the scoring screen has a layout of its own.')
+                  : t('sizeGate.hint', 'Try rotating your device or entering fullscreen mode.')}
+              </p>
+              {gateOffersPhoneLayout && (
+                <Button variant="dark" size="xl" block icon={PhoneIcon} onClick={() => { setDisplayMode('auto'); try { localStorage.setItem('displayMode', 'auto') } catch { /* private mode: the state still switches */ } }} className="mt-6">
+                  {t('sizeGate.usePhone', 'Use the phone layout')}
+                </Button>
+              )}
+              <Button variant={gateOffersPhoneLayout ? 'secondary' : 'dark'} size="xl" block icon={Maximize} onClick={toggleFullscreen} className={gateOffersPhoneLayout ? 'mt-3' : 'mt-6'}>
+                {t('sizeGate.fullscreen', 'Enter fullscreen')}
+              </Button>
+              <p className="mt-3 text-xs text-stone-500">
+                {t('sizeGate.fullscreenNote', 'Fullscreen removes browser headers to maximize screen space.')}
+              </p>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Manage console (admins and competition managers), full screen */}

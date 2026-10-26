@@ -17,6 +17,8 @@
 // copied values are already resolved, nothing in the clone reads a var().
 // On WebKitGTK this brings the SVG from ~87 MB to ~18 MB.
 
+import { wellFormedText } from '../../src/utils/stringUtils.js';
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /** WebKitGTK (Linux desktop app, Epiphany): WebKit on Linux, not Chromium. */
@@ -84,6 +86,38 @@ export function hideImages(imgs: HTMLImageElement[]): () => void {
     if (before[i][0]) img.style.setProperty('visibility', before[i][0], before[i][1]);
     else img.style.removeProperty('visibility');
   });
+}
+
+// html-to-image serialises the clone and passes it through encodeURIComponent,
+// which throws "URI malformed" on half of a surrogate pair. One such character
+// anywhere on the sheet (a name cut through an emoji, an initial taken from
+// one, before those were fixed; still in the matches stored then) and no PDF
+// was made at all. The capture gets U+FFFD in its place.
+
+/** Replace half emojis (lone surrogates) in `root`'s text and attributes by U+FFFD; returns the undo. */
+export function wellFormedSheet(root: Element): () => void {
+  const undo: Array<() => void> = [];
+  const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const text = node as Text;
+    const before = text.data;
+    const after = wellFormedText(before);
+    // put back only what is still ours: React may have re-rendered it meanwhile
+    if (after !== before) {
+      text.data = after;
+      undo.push(() => { if (text.data === after) text.data = before; });
+    }
+  }
+  for (const el of [root, ...Array.from(root.querySelectorAll('*'))]) {
+    for (const { name, value: before } of Array.from(el.attributes)) {
+      const after = wellFormedText(before);
+      if (after !== before) {
+        el.setAttribute(name, after);
+        undo.push(() => { if (el.getAttribute(name) === after) el.setAttribute(name, before); });
+      }
+    }
+  }
+  return () => undo.forEach((put) => put());
 }
 
 /** Where the picture of `img` sits in its content box (object-fit, centred). */

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import {
   formatTimeLocal,
   formatDateTimeLocal,
@@ -135,5 +135,43 @@ describe('roundToMinute', () => {
   it('keeps already-rounded times unchanged', () => {
     const result = roundToMinute('2024-06-15T12:30:00.000Z')
     expect(result).toBe('2024-06-15T12:30:00.000Z')
+  })
+})
+
+// Stress test 2026-10-25 (device-timezone-shifts-official-times): a scorer
+// laptop on a fixed GMT+2 zone (summer time kept after 25.10) stored the
+// official kick-off 10:20 as 08:20Z, on the server too, and printed set 1 at
+// 11:20 on the official sheet; on a UTC device 09:17 for 10:17. Every clock is
+// a Zürich clock (ui/format.js): the gym's, whatever zone the device is in.
+describe('the Zürich clock on a device in any zone', () => {
+  const deviceTz = process.env.TZ
+  afterEach(() => {
+    if (deviceTz === undefined) delete process.env.TZ
+    else process.env.TZ = deviceTz
+  })
+
+  for (const tz of ['Etc/GMT-2', 'UTC', 'America/New_York', 'Europe/Zurich']) {
+    it(`${tz}: a kick-off or a typed time of 10:20 is 10:20 in Zürich`, () => {
+      process.env.TZ = tz
+      expect(parseLocalDateTimeToISO('2026-10-26', '10:20')).toBe('2026-10-26T09:20:00.000Z')
+      expect(parseLocalDateTimeToISO('2026-07-01', '20:45')).toBe('2026-07-01T18:45:00.000Z')
+      expect(splitLocalDateTime('2026-10-26T09:20:00.000Z')).toEqual({ date: '2026-10-26', time: '10:20' })
+      expect(formatTimeLocal('2026-10-26T09:20:00.000Z')).toBe('10:20')
+      // the schedule's zone-less datetime is Zürich wall time (backend vmSync)
+      expect(formatTimeLocal('2026-10-26T10:20:00')).toBe('10:20')
+      expect(splitLocalDateTime('2026-10-26T10:20:00')).toEqual({ date: '2026-10-26', time: '10:20' })
+      // 23:30Z is already the next day in Zürich
+      expect(splitLocalDateTime('2026-10-26T23:30:00.000Z')).toEqual({ date: '2026-10-27', time: '00:30' })
+      expect(formatDateTimeLocal('2026-10-26T23:30:00.000Z')).toBe('2026-10-27T00:30')
+      expect(parseLocalToISO('2026-10-27T00:30')).toBe('2026-10-26T23:30:00.000Z')
+    })
+  }
+
+  it('an impossible date or time is no time', () => {
+    expect(parseLocalDateTimeToISO('2026-02-30', '10:00')).toBeNull()
+    expect(parseLocalDateTimeToISO('2026-10-26', '24:00')).toBeNull()
+    expect(parseLocalDateTimeToISO('2026-10-26', '10:60')).toBeNull()
+    expect(parseLocalDateTimeToISO('26.10.2026', '10:00')).toBeNull()
+    expect(parseLocalToISO('2026-10-26T25:00')).toBeNull()
   })
 })

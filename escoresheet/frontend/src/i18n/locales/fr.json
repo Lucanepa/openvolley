@@ -866,6 +866,8 @@
       "show": "Afficher la barre d'outils"
     },
     "confirmFailed": "Cela n'a pas été enregistré. Vérifiez la feuille de match et réessayez.",
+    "storageFull": "Non enregistré : le stockage de cet appareil est plein. Libérez de l'espace (supprimez d'anciens téléchargements ou d'autres fichiers), puis touchez à nouveau. Tout ce qui a été enregistré jusqu'ici est conservé.",
+    "storageLow": "Le stockage de cet appareil est presque plein : il reste {{mb}} Mo pour OpenVolley. Libérez de l'espace maintenant (supprimez d'anciens téléchargements ou d'autres fichiers) : une fois plein, plus rien ne pourra être enregistré.",
     "timeoutRequest": {
       "title": "Temps mort — {{team}}",
       "first": "Temps mort 1 sur 2 de ce set pour {{team}}.",
@@ -964,6 +966,11 @@
       "restorePreview": "Aperçu de la restauration",
       "fromDatabase": "Depuis la base de données",
       "fromLocalFile": "Depuis un fichier local",
+      "restoreErrors": {
+        "unreadable": "Ce fichier ne peut pas être lu : il est endommagé ou incomplet. Choisissez un autre fichier de sauvegarde.",
+        "notABackup": "Ce fichier n’est pas une sauvegarde de match OpenVolley. Choisissez un autre fichier.",
+        "failed": "Le match n’a pas pu être restauré : {{error}}"
+      },
       "preview": {
         "set": "Set {{n}}",
         "serving": "Service",
@@ -1055,6 +1062,9 @@
     "modals": {
       "existingMatchWarning": "Un match existe déjà. Voulez-vous le supprimer et créer un nouveau match officiel ?",
       "testMatchOverwriteWarning": "Un match officiel est en cours. Démarrer un match amical effacera la session précédente. Continuer ?",
+      "officialMatchStillRecording": "Un match officiel est encore en cours d'enregistrement sur cet appareil. Continuez-le, ou supprimez-le avec \"Supprimer le match\", avant de créer un nouveau match officiel.",
+      "officialMatchReplaceTest": "Le match amical de cet appareil est remplacé par le match officiel et ses données supprimées. Continuer ?",
+      "officialMatchReplaceEasy": "Le match simplifié de cet appareil est remplacé par le match officiel et ses données supprimées. Continuer ?",
       "deleteTestMatchConfirm": "Cela supprimera le match amical et toutes ses données. Continuer ?",
       "noTestMatchFound": "Aucun match amical trouvé. Veuillez d'abord créer un nouveau match amical.",
       "testMatchDeleted": "Match amical supprimé avec succès.",
@@ -1626,6 +1636,7 @@
     "connect": "Se connecter",
     "connecting": "Connexion...",
     "invalidPin": "Code incorrect. Veuillez réessayer.",
+    "tooManyAttempts": "Trop de PIN erronés depuis ce réseau. Patientez quelques minutes, puis réessayez.",
     "roster": "Effectif",
     "match": "Match",
     "back": "Retour",
@@ -1669,7 +1680,8 @@
       "connectionLost": "Connexion perdue. Reconnexion requise.",
       "matchEnded": "Le match est fini.",
       "connectionDisabled": "Connexion désactivée.",
-      "serverUnreachable": "Pas de connexion au serveur – vérifiez le Wi-Fi et réessayez."
+      "serverUnreachable": "Pas de connexion au serveur – vérifiez le Wi-Fi et réessayez.",
+      "tooManyAttempts": "Trop de PIN erronés depuis ce réseau. Patientez quelques minutes, puis réessayez."
     },
     "connection": {
       "title": "Connexion",

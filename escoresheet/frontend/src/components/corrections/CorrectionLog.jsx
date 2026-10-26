@@ -2,13 +2,13 @@
 // referee: one sentence per correction, newest first. Entries written before
 // the sentences existed go through describeLegacyChange (never raw JSON).
 import { describeLegacyChange, tr } from '../../domain/describe'
+import { timeLabel } from '../../ui/format'
 import { SectionCard, EmptyLine } from './shared.jsx'
 
 function when(ts) {
   const ms = Date.parse(ts)
   if (!Number.isFinite(ms)) return ''
-  const d = new Date(ms)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return timeLabel(ms)
 }
 
 export default function CorrectionLog({ changes, ctx }) {

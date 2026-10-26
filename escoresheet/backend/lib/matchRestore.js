@@ -28,6 +28,11 @@
  *     secret columns stripped, plus its sets, events and live state. With
  *     `editorUserId` (the caller is signed in) that account becomes an editor
  *     of the match (match_editors): proving the game PIN is the take-over.
+ *     `idFloor` { set, event }: the highest local id the match's set / event
+ *     external_ids carry (`<match>:s:<n>`, `<match>:e:<n>`), voided events and
+ *     the revisions of events never uploaded included. The device continuing
+ *     the match gives out ids above it: a new event under the id of a voided
+ *     one would be born voided (db/015).
  *
  *   POST /api/match/claim { externalId, pin }                           (session, attempt-limited)
  *     The take-over alone: game PIN of that match -> the caller becomes an
@@ -48,6 +53,7 @@
  *   const r = await restore.restoreMatch(body, { proto: req.headers['x-ov-proto'] })
  *   const p = await restore.restoreByPin(body, { limitKey: clientIp })
  */
+import { createHash } from 'node:crypto'
 
 export const RESTORE_DEFAULTS = Object.freeze({
   matchTable: 'matches',
@@ -126,6 +132,73 @@ export function createAttemptLimiter ({ max = 5, windowMs = 600000, maxKeys = 50
     reset (key) { hits.delete(key) },
     get size () { return hits.size }
   }
+}
+
+/**
+ * The brute-force budget of the server's PIN checks: wrong PINs per address
+ * bucket (`ipKey`, IPv6 by /64) AND scope, where the scope names what a check
+ * compares against (one match's PINs, or one PIN type of every live match),
+ * with a larger ceiling per address across all scopes. Same shape as
+ * restore-by-pin's limits (per caller and game number, per caller).
+ *
+ * One limit per address alone locked a whole hall (every tablet behind one
+ * venue NAT) out of every PIN check, right PINs included, after about ten
+ * typos on one tablet: the bench and a reloading referee of another court, the
+ * scoreboard re-proving its own match, a roster upload's wrong PINs the
+ * referee connect. Per scope, a run of wrong PINs locks only what was being
+ * guessed, and still for the right PIN too (no guessing oracle); the ceiling
+ * keeps a sprayer from adding up fresh scopes.
+ *
+ * - `isLimited(ipKey, scope)` counts one attempt up front (parallel guesses
+ *   cannot all slip through) and says whether nothing may be compared. A
+ *   refused attempt does not count toward the ceiling (nothing was compared).
+ * - `refund(ipKey, scope)` takes the attempt back (a right PIN, or no PIN
+ *   compared).
+ * - `repeated(ipKey, scope, pin)` after a WRONG PIN: true, and the attempt is
+ *   refunded, when the same PIN already failed in this scope within the
+ *   window; else it is remembered (as a hash). The same wrong PIN tried again
+ *   is no new guess: the apps check a typed PIN twice (the backend, then the
+ *   relay), and one typo used to cost two.
+ */
+export function createPinFailureBudget ({ max = 20, ipMax = 60, windowMs = 600000, maxKeys = 50000 } = {}) {
+  const scoped = createAttemptLimiter({ max, windowMs, maxKeys })
+  const total = createAttemptLimiter({ max: ipMax, windowMs, maxKeys })
+  const wrong = new Map() // hash of ipKey|scope|pin -> time it failed (insertion order = time order)
+  const scopeKey = (ipKey, scope) => `${ipKey}|${scope}`
+  const budget = {
+    isLimited (ipKey, scope) {
+      if (total.isLimited(ipKey)) {
+        total.refund(ipKey)
+        return true
+      }
+      if (scoped.isLimited(scopeKey(ipKey, scope))) {
+        total.refund(ipKey)
+        return true
+      }
+      return false
+    },
+    refund (ipKey, scope) {
+      scoped.refund(scopeKey(ipKey, scope))
+      total.refund(ipKey)
+    },
+    repeated (ipKey, scope, pin) {
+      const now = Date.now()
+      for (const [k, at] of wrong) {
+        if (now - at <= windowMs) break
+        wrong.delete(k)
+      }
+      const k = createHash('sha256').update(`${scopeKey(ipKey, scope)}|${String(pin)}`).digest('base64url')
+      const at = wrong.get(k)
+      if (at !== undefined && now - at <= windowMs) {
+        budget.refund(ipKey, scope)
+        return true
+      }
+      while (wrong.size >= maxKeys) wrong.delete(wrong.keys().next().value)
+      wrong.set(k, now)
+      return false
+    }
+  }
+  return budget
 }
 
 class RestoreAbort extends Error {
@@ -341,6 +414,31 @@ export function createMatchRestore (db, options = {}) {
     }
   }
 
+  /**
+   * Highest `<n>` of the match's `<ext>:s:<n>` set and `<ext>:e:<n>` event ids
+   * (voided events and event_revisions too): { set, event }, null when none.
+   * Never throws: without it the device keeps the ids it imported (null).
+   */
+  async function idFloor (cat, matchUuid, ext) {
+    const table = (name) => `${quote(db.config.schema || 'public')}.${quote(name)}`
+    const n = (col) => `substr(${col}, length($2::text) + 4)`
+    const own = (col, kind) => `left(${col}, length($2::text) + 3) = $2::text || '${kind}' AND ${n(col)} ~ '^[0-9]{1,15}$'`
+    const maxOf = (tbl, col, kind) => `SELECT ${n(col)}::bigint AS n FROM ${table(tbl)} WHERE ${quote(cfg.childFk)} = $1 AND ${own(col, kind)}`
+    const eventSources = [maxOf(cfg.eventsTable, 'external_id', ':e:')]
+    if (cat.tables.has('event_revisions')) eventSources.push(maxOf('event_revisions', 'event_external_id', ':e:'))
+    try {
+      const r = await db.pool.query(
+        `SELECT (SELECT max(n) FROM (${maxOf(cfg.setsTable, 'external_id', ':s:')}) s) AS "set",
+                (SELECT max(n) FROM (${eventSources.join(' UNION ALL ')}) e) AS "event"`,
+        [matchUuid, ext])
+      const toNum = (v) => (v == null ? null : Number(v))
+      return { set: toNum(r.rows[0]?.set), event: toNum(r.rows[0]?.event) }
+    } catch (err) {
+      log.warn?.(`[matchRestore] could not read the id floor: ${err.code || err.message}`)
+      return null
+    }
+  }
+
   /** Attempt limits shared by restore-by-pin and claim. Returns a 429 result or null. */
   function overLimit (callerKey, gameKey) {
     if (callerLimiter.isLimited(callerKey) || pinLimiter.isLimited(gameKey)) {
@@ -450,12 +548,13 @@ export function createMatchRestore (db, options = {}) {
         if (r.body.error) throw Object.assign(new Error('child read failed'), { result: r })
         return r
       }
-      const [s, e, l] = await Promise.all([
+      const [s, e, l, floor] = await Promise.all([
         read(cfg.setsTable, { order: childOrder(cfg.setsTable, ['index']) }),
         read(cfg.eventsTable, { order: childOrder(cfg.eventsTable, ['seq', 'ts', 'id']) }),
-        read(cfg.liveStateTable, { maybeSingle: true })
+        read(cfg.liveStateTable, { maybeSingle: true }),
+        idFloor(cat, matchUuid, row[cfg.matchKey])
       ])
-      return { status: 200, body: { data: { match, sets: s.body.data, events: e.body.data, liveState: l.body.data, ...(editor ? { access: editor } : {}) }, error: null } }
+      return { status: 200, body: { data: { match, sets: s.body.data, events: e.body.data, liveState: l.body.data, ...(floor ? { idFloor: floor } : {}), ...(editor ? { access: editor } : {}) }, error: null } }
     } catch (err) {
       if (err?.result) return { status: err.result.status, body: err.result.body }
       const r = db.toErrorResult(err, { action: 'restore-by-pin', table: cfg.matchTable })
