@@ -109,6 +109,16 @@ const BREAK_ENDING_PUSHES = new Set(['set_end', 'end_interval', 'set_start', 'ma
 // when its new page loads within this long of the old one going away
 const SCORING_TAB_RELOAD_MS = 60000
 
+// A scorer action started by a tap or a key: nothing waits for its promise.
+// Its failure is shown to the scorer already (runAction's onError); left to
+// reject, it was an unhandled rejection too, reported again as an app error
+// at every refused tap (with the device storage full: each one)
+const settleTap = (promise) => {
+  Promise.resolve(promise).catch((err) => {
+    if (!isReportedActionError(err)) console.error('[action] tap failed', err)
+  })
+}
+
 // ── volleyui chrome for the scoreboard (RESTYLE-SPEC P5) ──────────────────────
 // Only the chrome around the court takes these: the toolbar, the side-column
 // surfaces, menus, dialogs and the lineup panel. The court, score digits, serve
@@ -5786,14 +5796,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       console.warn('[Scoreboard] Start rally tap as the rally buttons changed (a double tap): ignored')
       return
     }
-    handleStartRally()
+    settleTap(handleStartRally())
   }, [handleStartRally, rallyButtonsJustShown])
   const tapPoint = useCallback((side) => {
     if (rallyButtonsJustShown()) {
       console.warn('[Scoreboard] Point tap as the rally buttons changed (a double tap): ignored')
       return
     }
-    handlePoint(side, false, { tap: true })
+    settleTap(handlePoint(side, false, { tap: true }))
   }, [handlePoint, rallyButtonsJustShown])
 
   const handleReplay = useCallback(async () => {
@@ -12513,7 +12523,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Start rally if idle and no modals
         if (!hasDecisionModal && rallyStatus === 'idle') {
           e.preventDefault()
-          handleStartRally()
+          settleTap(handleStartRally())
           return
         }
         // Confirm modals
@@ -12600,12 +12610,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // `tap`: written only while the rally is in play in the database)
       if (key === keyBindings.pointLeft && rallyStatus === 'in_play') {
         e.preventDefault()
-        handlePoint('left', false, { tap: true })
+        settleTap(handlePoint('left', false, { tap: true }))
         return
       }
       if (key === keyBindings.pointRight && rallyStatus === 'in_play') {
         e.preventDefault()
-        handlePoint('right', false, { tap: true })
+        settleTap(handlePoint('right', false, { tap: true }))
         return
       }
 
@@ -12624,12 +12634,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Exchange libero keys (only when idle)
       if (key === keyBindings.exchangeLiberoLeft && rallyStatus === 'idle') {
         e.preventDefault()
-        handleExchangeLibero('left')
+        settleTap(handleExchangeLibero('left'))
         return
       }
       if (key === keyBindings.exchangeLiberoRight && rallyStatus === 'idle') {
         e.preventDefault()
-        handleExchangeLibero('right')
+        settleTap(handleExchangeLibero('right'))
         return
       }
 
