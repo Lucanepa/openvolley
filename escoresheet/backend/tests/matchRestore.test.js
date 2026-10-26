@@ -2,7 +2,7 @@ import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import pg from 'pg'
 import { createPgQuery } from '../lib/pgQuery.js'
-import { createMatchRestore, createAttemptLimiter } from '../lib/matchRestore.js'
+import { createMatchRestore, createAttemptLimiter, createPinFailureBudget } from '../lib/matchRestore.js'
 import { SKIP_PG, createTestDatabase, quietLogger } from './helpers/pgTestDb.js'
 
 describe('createAttemptLimiter', () => {
@@ -39,6 +39,67 @@ describe('createAttemptLimiter', () => {
     assert.equal(l.isLimited('k'), true)
     await new Promise(resolve => setTimeout(resolve, 30))
     assert.equal(l.isLimited('k'), false)
+  })
+})
+
+describe('createPinFailureBudget', () => {
+  it('locks one scope of an address, for the right PIN too; other scopes and addresses go on', () => {
+    const b = createPinFailureBudget({ max: 3, ipMax: 10, windowMs: 60000 })
+    for (let i = 0; i < 3; i++) assert.equal(b.isLimited('hall', 'any:indoor:referee'), false)
+    // the 4th attempt of that scope is refused before anything is compared
+    assert.equal(b.isLimited('hall', 'any:indoor:referee'), true)
+    assert.equal(b.isLimited('hall', 'any:indoor:bench_home'), false)
+    assert.equal(b.isLimited('hall', 'm:game:match-1'), false)
+    assert.equal(b.isLimited('elsewhere', 'any:indoor:referee'), false)
+  })
+
+  it('a ceiling per address across scopes; refused attempts do not count toward it', () => {
+    const b = createPinFailureBudget({ max: 3, ipMax: 5, windowMs: 60000 })
+    for (let i = 0; i < 3; i++) b.isLimited('hall', 'a')
+    // refused by the scope: not compared, not counted in the ceiling
+    for (let i = 0; i < 10; i++) assert.equal(b.isLimited('hall', 'a'), true)
+    assert.equal(b.isLimited('hall', 'b'), false)
+    assert.equal(b.isLimited('hall', 'c'), false)
+    // 5 counted: every scope of the address is refused now
+    assert.equal(b.isLimited('hall', 'd'), true)
+    assert.equal(b.isLimited('elsewhere', 'd'), false)
+  })
+
+  it('refund gives the attempt back to the scope and the ceiling', () => {
+    const b = createPinFailureBudget({ max: 1, ipMax: 1, windowMs: 60000 })
+    assert.equal(b.isLimited('hall', 'a'), false)
+    b.refund('hall', 'a')
+    assert.equal(b.isLimited('hall', 'b'), false)
+    b.refund('hall', 'b')
+    assert.equal(b.isLimited('hall', 'a'), false)
+    assert.equal(b.isLimited('hall', 'a'), true)
+  })
+
+  it('the same wrong PIN again in the same scope is not a new guess', () => {
+    const b = createPinFailureBudget({ max: 3, ipMax: 10, windowMs: 60000 })
+    // one typo checked twice (the backend, then the relay)
+    for (const pin of ['111111', '222222']) {
+      assert.equal(b.isLimited('hall', 'any:indoor:referee'), false)
+      assert.equal(b.repeated('hall', 'any:indoor:referee', pin), false)
+      assert.equal(b.isLimited('hall', 'any:indoor:referee'), false)
+      assert.equal(b.repeated('hall', 'any:indoor:referee', pin), true)
+    }
+    // two typos counted, not four: one more attempt, then the scope is locked
+    assert.equal(b.isLimited('hall', 'any:indoor:referee'), false)
+    assert.equal(b.isLimited('hall', 'any:indoor:referee'), true)
+    // the same PIN in another scope, or from another address, is a guess of its own
+    assert.equal(b.isLimited('hall', 'any:indoor:bench_home'), false)
+    assert.equal(b.repeated('hall', 'any:indoor:bench_home', '111111'), false)
+    assert.equal(b.isLimited('other', 'any:indoor:referee'), false)
+    assert.equal(b.repeated('other', 'any:indoor:referee', '111111'), false)
+  })
+
+  it('opens again after the window', async () => {
+    const b = createPinFailureBudget({ max: 1, ipMax: 1, windowMs: 20 })
+    assert.equal(b.isLimited('hall', 'a'), false)
+    assert.equal(b.isLimited('hall', 'a'), true)
+    await new Promise(resolve => setTimeout(resolve, 30))
+    assert.equal(b.isLimited('hall', 'a'), false)
   })
 })
 

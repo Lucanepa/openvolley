@@ -641,24 +641,26 @@ describe('server.js with DATABASE_URL (self-hosted cloud mode)', { skip: SKIP },
     assert.equal(badKey.status, 400)
   })
 
-  it('limits FAILED connection-PIN guesses per IPv6 /64 (20 per 10 min); successes are refunded', async () => {
-    const pinCall = (ip, pin, type) => api(srv.base, '/api/match/validate-connection-pin', {
+  it('limits FAILED connection-PIN guesses per IPv6 /64 and PIN type (20 per 10 min); successes are refunded', async () => {
+    const pinCall = (ip, pin, type, path = '/api/match/validate-connection-pin') => api(srv.base, path, {
       proto: null, headers: { 'cf-connecting-ip': ip }, body: { pin, type }
     })
     // Successes do not use the failure budget.
     for (let i = 0; i < 5; i++) assert.equal((await pinCall('2001:db8:1:2::5', PINS.referee, 'referee')).status, 200)
-    // 20 failures from two addresses of the same /64 (two PIN types: the
-    // per-type bucket is 20 per minute on its own).
+    // 20 different wrong referee PINs from two addresses of the same /64,
+    // on both checks of that PIN type (the per-type request bucket is 20 per
+    // minute on its own).
     for (let i = 0; i < 10; i++) {
-      assert.equal((await pinCall(`2001:db8:1:2::${i + 10}`, '000000', 'referee')).status, 404)
-      assert.equal((await pinCall(`2001:db8:1:2:ffff::${i + 1}`, '000001', 'bench_home')).status, 404)
+      assert.equal((await pinCall(`2001:db8:1:2::${i + 10}`, String(100000 + i), 'referee')).status, 404)
+      assert.equal((await pinCall(`2001:db8:1:2:ffff::${i + 1}`, String(110000 + i), 'referee', '/api/match/validate-pin')).status, 404)
     }
-    // The /64 is out of guesses, even with the right PIN and a fresh address.
-    const blocked = await pinCall('2001:db8:1:2:abcd::1', PINS.bench_away, 'bench_away')
+    // The /64 is out of referee guesses, even with the right PIN and a fresh address.
+    const blocked = await pinCall('2001:db8:1:2:abcd::1', PINS.referee, 'referee')
     assert.equal(blocked.status, 429)
     assert.equal(blocked.headers.get('retry-after'), '600')
-    // Another /64 is unaffected.
-    assert.equal((await pinCall('2001:db8:1:3::1', PINS.bench_away, 'bench_away')).status, 200)
+    // Another PIN type of the /64, and another /64, are unaffected.
+    assert.equal((await pinCall('2001:db8:1:2:abcd::1', PINS.bench_away, 'bench_away')).status, 200)
+    assert.equal((await pinCall('2001:db8:1:3::1', PINS.referee, 'referee')).status, 200)
   })
 
   it('restore-by-pin returns the match, sets, events and live state (no secrets)', async () => {
