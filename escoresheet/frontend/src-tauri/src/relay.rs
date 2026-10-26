@@ -174,6 +174,16 @@ const MAX_MATCH_ID_LEN: usize = 128;
 const ORPHAN_TAKEOVER: Duration = Duration::from_secs(60);
 /// An UNFINISHED match is claimable only after this long without an owner.
 const STALE_TAKEOVER: Duration = Duration::from_secs(10 * 60);
+/// Ping of every connection (the Node relays' HEARTBEAT_MS, the cloud relay's
+/// createHeartbeat): one that has not answered the previous ping is ended. A
+/// phone that leaves the hall's Wi-Fi (or sleeps) sends no close, and its
+/// connection kept its rooms, and a scoreboard's its matches (no stale
+/// takeover could start), until TCP gave up, minutes or hours later.
+/// Browsers, the desktop apps and the LedBox bridge answer pings on their own.
+#[cfg(not(test))]
+const HEARTBEAT: Duration = Duration::from_secs(30);
+#[cfg(test)]
+const HEARTBEAT: Duration = Duration::from_millis(300);
 /// Devices a room remembers as having lost it to another (sync `device.claim`).
 const MAX_MOVED_DEVICES: usize = 16;
 const MAX_CLAIM_LEN: usize = 64;
@@ -1677,11 +1687,26 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, ip: IpAddr) {
         json!({ "type": "connected", "message": "Connected to eScoresheet WebSocket server", "timestamp": now_ms() }).to_string().into(),
     ));
 
-    while let Some(Ok(msg)) = stream.next().await {
-        match msg {
-            Message::Text(t) => handle_ws_message(&state, conn_id, &tx, &t).await,
-            Message::Close(_) => break,
-            _ => {}
+    let mut heartbeat = tokio::time::interval(HEARTBEAT);
+    heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    heartbeat.tick().await; // (the first tick is at once)
+    let mut answered = true;
+    loop {
+        tokio::select! {
+            msg = stream.next() => match msg {
+                Some(Ok(Message::Text(t))) => handle_ws_message(&state, conn_id, &tx, &t).await,
+                Some(Ok(Message::Pong(_))) => answered = true,
+                Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
+                Some(Ok(_)) => {}
+            },
+            _ = heartbeat.tick() => {
+                // missed the previous ping: gone (the cleanup below as on a close)
+                if !answered {
+                    break;
+                }
+                answered = false;
+                let _ = tx.send(Message::Ping(Default::default()));
+            }
         }
     }
 
@@ -2737,6 +2762,57 @@ mod tests {
             &json!({ "requestId": "r2", "matchId": seed, "success": true, "data": b })).await;
         assert!(state.matches.lock().await.contains_key(seed));
         assert!(rx.try_recv().is_ok());
+    }
+
+    // 2026-10-26: a phone that left the hall's Wi-Fi sent no close, and its
+    // connection kept its rooms until TCP gave up (the Node relays and the
+    // cloud relay ping, this one did not)
+    #[tokio::test]
+    async fn a_connection_that_stops_answering_pings_is_ended() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let state = new_state(0, 0);
+        let http = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let ws = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = ws.local_addr().unwrap().port();
+        let server = tokio::spawn(serve(state.clone(), http, ws));
+        let upgrade = b"GET / HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\
+            Sec-WebSocket-Key: AAAAAAAAAAAAAAAAAAAAAA==\r\nSec-WebSocket-Version: 13\r\n\r\n";
+        // (a ping from the relay: FIN + opcode 9, no payload; a client's pong is masked)
+        const PING: [u8; 2] = [0x89, 0x00];
+        const PONG: [u8; 6] = [0x8a, 0x80, 0, 0, 0, 0];
+
+        // one that answers stays (answering on its own task)
+        let mut live = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        live.write_all(upgrade).await.unwrap();
+        let answering = tokio::spawn(async move {
+            let mut pings = 0;
+            let mut chunk = [0u8; 4096];
+            loop {
+                let n = live.read(&mut chunk).await.unwrap();
+                assert!(n > 0, "a connection that answers is never ended");
+                for _ in chunk[..n].windows(2).filter(|w| *w == PING) {
+                    pings += 1;
+                    live.write_all(&PONG).await.unwrap();
+                }
+                if pings >= 6 {
+                    return pings;
+                }
+            }
+        });
+
+        // one that does not is ended after the ping it missed
+        let mut gone = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        gone.write_all(upgrade).await.unwrap();
+        let mut all = Vec::new();
+        let ended = tokio::time::timeout(HEARTBEAT * 6, gone.read_to_end(&mut all)).await;
+        assert!(ended.is_ok(), "ended");
+        assert!(String::from_utf8_lossy(&all).starts_with("HTTP/1.1 101"));
+        assert!(all.windows(2).any(|w| w == PING), "pinged first");
+        assert_eq!(state.clients.lock().await.len(), 1, "only the live connection is left");
+        // the live one goes on answering, beat after beat
+        assert!(tokio::time::timeout(HEARTBEAT * 10, answering).await.unwrap().unwrap() >= 6);
+        assert_eq!(state.clients.lock().await.len(), 1);
+        server.abort();
     }
 
     // 2026-10-26: the venue relays let any device with the game PIN replace
