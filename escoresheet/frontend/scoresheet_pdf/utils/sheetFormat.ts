@@ -210,9 +210,11 @@ export function formatPersonName(lastName: unknown, firstName: unknown): string 
   if (!last) return first
   if (!first) return last
   // initials of a compound first name: "Jean-Baptiste" -> "J.-B.", "Anna Lena" -> "A. L."
+  // An initial is the first whole character (code point): p[0] of "🏐 Max" is half
+  // the emoji, which the PDF capture cannot serialise, so Save PDF failed
   const initials = first
     .split(/\s+/)
-    .map(part => part.split('-').map(p => (p ? `${p[0].toUpperCase()}.` : '')).filter(Boolean).join('-'))
+    .map(part => part.split('-').map(p => (p ? `${String.fromCodePoint(p.codePointAt(0)!).toUpperCase()}.` : '')).filter(Boolean).join('-'))
     .filter(Boolean)
     .join(' ')
   return `${last}, ${initials}`
