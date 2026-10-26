@@ -143,6 +143,16 @@ const MAX_BODY_SIZE = 1024 * 1024
 // Frames and request bodies nested deeper are refused (jsonTooDeep): the Tauri
 // relay's serde_json stops at the same depth; real bundles nest about ten.
 const MAX_JSON_DEPTH = 128
+// Sockets the relay takes in all and from one address (admit). A hall: per
+// court a scoreboard (one or two sockets), the referee, two benches and the
+// Point Hub bridge, plus one per spectator phone on the public livescore (no
+// PIN). A socket comes in before its hello, so the relay cannot tell a
+// spectator from a referee: the limits are high enough for a hall, and one
+// device cannot fill it. Per address like the backend's LAN relay
+// (MAX_CONNECTIONS_PER_IP 50); the relay host itself (loopback: its
+// scoreboard, the bridge) is exempt, as for MAX_OWNED_PER_IP.
+const MAX_SOCKETS = 500
+const MAX_SOCKETS_PER_IP = 50
 const MAX_MATCH_ID_LENGTH = 128
 // A FINISHED match whose scoreboard left this long ago may be claimed by
 // another scoreboard: a second scorer device / reset browser reusing the same
@@ -830,6 +840,8 @@ function createLanRelay(options = {}) {
   const orphanTakeoverMs = options.orphanTakeoverMs ?? ORPHAN_TAKEOVER_MS
   const staleTakeoverMs = options.staleTakeoverMs ?? STALE_TAKEOVER_MS
   const maxOwnedPerIp = options.maxOwnedPerIp ?? MAX_OWNED_PER_IP
+  const maxSockets = options.maxSockets ?? MAX_SOCKETS
+  const maxSocketsPerIp = options.maxSocketsPerIp ?? MAX_SOCKETS_PER_IP
   const ownLimiters = []
   const isRateLimited = options.isRateLimited || (ownLimiters[ownLimiters.length] = createRateLimiter())
   const claimFailures = createFailureCounter({ max: options.claimFailureLimit ?? CLAIM_FAILURE_LIMIT })
@@ -933,6 +945,21 @@ function createLanRelay(options = {}) {
   }
 
   // --- Connection lifecycle -------------------------------------------------
+
+  /**
+   * May one more socket from this address in (MAX_SOCKETS, MAX_SOCKETS_PER_IP)?
+   * null if so, else the close code and reason. The runtimes ask before
+   * addClient.
+   */
+  function admit(ip) {
+    if (clients.size >= maxSockets) return { code: 1013, reason: 'Maximum connections reached' }
+    if (ip && !isLoopbackAddress(ip)) {
+      let fromIp = 0
+      for (const meta of clients.values()) if (meta.ip === ip) fromIp++
+      if (fromIp >= maxSocketsPerIp) return { code: 1008, reason: 'Too many connections from this address' }
+    }
+    return null
+  }
 
   function addClient(ws, info = {}) {
     const meta = {
@@ -1703,6 +1730,7 @@ function createLanRelay(options = {}) {
 
   return {
     // WS side
+    admit,
     addClient,
     removeClient,
     handleMessage,

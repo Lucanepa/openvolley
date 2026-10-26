@@ -821,6 +821,32 @@ describe('lanRelayCore protocol', () => {
     expect(attacker.last('pong')).toBeTruthy()
   })
 
+  it('admits a hall: one address cannot fill the relay, the relay host is not one device', () => {
+    const relay = createLanRelay({ maxSockets: 8, maxSocketsPerIp: 3 })
+    for (let i = 0; i < 3; i++) {
+      expect(relay.admit('192.168.1.80')).toBeNull()
+      connect(relay, '192.168.1.80')
+    }
+    expect(relay.admit('192.168.1.80')).toMatchObject({ code: 1008 })
+    expect(relay.admit('::ffff:192.168.1.81')).toBeNull()
+    // The scoretable machine itself (its scoreboard, the LedBox bridge)
+    for (let i = 0; i < 4; i++) {
+      expect(relay.admit('127.0.0.1')).toBeNull()
+      connect(relay, '127.0.0.1')
+    }
+    const last = connect(relay, '192.168.1.82')
+    expect(relay.admit('192.168.1.83')).toMatchObject({ code: 1013 })
+    relay.removeClient(last)
+    expect(relay.admit('192.168.1.83')).toBeNull()
+
+    // The defaults take a hall's spectators and still its match devices
+    const hall = createLanRelay()
+    for (let i = 0; i < 200; i++) connect(hall, `10.0.${i >> 8}.${i & 255}`)
+    for (let i = 0; i < 49; i++) connect(hall, '10.1.0.1')
+    expect(hall.admit('10.1.0.1')).toBeNull()
+    expect(hall.admit('10.1.0.2')).toBeNull()
+  })
+
   it('accepts the legacy nested `data` shape in the client reader', () => {
     const legacy = { type: 'match-data-update', matchId: '7', data: { match: { id: 7 }, sets: [{ id: 1 }] } }
     expect(readRelayBundle(legacy).sets).toHaveLength(1)
@@ -973,6 +999,34 @@ async function hostileFrameScenario({ httpBase, wsUrl }) {
   expect((await referee.waitFor((m) => m.type === 'live-state-update')).liveState).toEqual({ points_a: 4 })
   expect((await fetch(`${httpBase}/api/match/list`)).status).toBe(200)
   for (const c of [scoreboard, referee, attacker, accomplice]) c.ws.close()
+}
+
+/**
+ * A hall's spectators on the public livescore (no PIN, a socket each), then
+ * the match's referee: the relay lets them all in. It took 20 sockets in
+ * total, so the 21st (a referee or bench tablet, the scorer coming back) was
+ * closed with 1013 before its hello.
+ */
+async function hallCrowdScenario({ wsUrl }) {
+  const scoreboard = await openClient(wsUrl)
+  const clients = [scoreboard]
+  try {
+    scoreboard.send(syncMessage(makeMatch({ seed_key: 'seed-crowd' })))
+    scoreboard.send({ type: 'ping' })
+    await scoreboard.waitFor((m) => m.type === 'pong')
+    for (let i = 0; i < 40; i++) {
+      const spectator = await openClient(wsUrl)
+      clients.push(spectator)
+      spectator.send({ type: 'subscribe-match', matchId: 'seed-crowd' })
+      expect((await spectator.waitFor((m) => m.type === 'match-full-data')).access).toBe('summary')
+    }
+    const referee = await openClient(wsUrl)
+    clients.push(referee)
+    referee.send({ type: 'subscribe-match', matchId: 'seed-crowd', pin: PINS.refereePin })
+    expect((await referee.waitFor((m) => m.type === 'match-full-data')).access).toBe('full')
+  } finally {
+    for (const c of clients) c.ws.close()
+  }
 }
 
 async function relayScenario({ httpBase, wsUrl }) {
@@ -1142,6 +1196,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await relayScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await runBeachVenueContract({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'server-js' })
       await hostileFrameScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
+      await hallCrowdScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
       const unknown = await fetch(`http://127.0.0.1:${port}/api/nope`)
       expect(unknown.status).toBe(404)
       expect(unknown.headers.get('content-type')).toMatch(/json/)
@@ -1202,6 +1257,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await relayScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await runBeachVenueContract({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'electron' })
       await hostileFrameScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
+      await hallCrowdScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
     } finally {
       await relayServer.stop()
     }
@@ -1221,6 +1277,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await relayScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await runBeachVenueContract({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'tauri' })
       await hostileFrameScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
+      await hallCrowdScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
       const unknown = await fetch(`http://127.0.0.1:${port}/api/nope`)
       expect(unknown.status).toBe(404)
     } finally {
@@ -1271,6 +1328,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await relayScenario({ httpBase, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await runBeachVenueContract({ httpBase, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'vite' })
       await hostileFrameScenario({ httpBase, wsUrl: `ws://127.0.0.1:${wsPort}` })
+      await hallCrowdScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
     })
   })
 })
