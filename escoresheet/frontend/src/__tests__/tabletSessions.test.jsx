@@ -66,6 +66,31 @@ describe('bench session (survives a reload)', () => {
     expect((await validateBenchPin('372449', 'home')).rateLimited).toBeUndefined()
   })
 
+  // review of #37: a bench reloading while the server was down deleted its
+  // session, every failed check looked like a wrong PIN
+  it('says noAnswer when no server compared the PIN, never for a wrong one', async () => {
+    const offline = () => Object.assign(new TypeError('Failed to fetch'))
+    // backend down: the cloud check and the relay (the same backend) unreachable
+    sync.validatePinSupabase.mockResolvedValue({ success: false, error: 'Failed to fetch', unreachable: true })
+    sync.validatePin.mockRejectedValue(offline())
+    expect(await validateBenchPin('372449', 'home', { matchExternalId: SEED })).toMatchObject({ success: false, noAnswer: true })
+    // the cloud check timed out
+    sync.validatePinSupabase.mockResolvedValue({ success: false, error: 'Server PIN check timed out', unreachable: true })
+    expect(await validateBenchPin('372449', 'home', { matchExternalId: SEED })).toMatchObject({ success: false, noAnswer: true })
+    // its database down (5xx): the relay not knowing the match says nothing
+    sync.validatePinSupabase.mockResolvedValue({ success: false, error: 'Service unavailable', status: 503 })
+    sync.validatePin.mockRejectedValue(Object.assign(new Error('No match found with this PIN.'), { status: 404 }))
+    expect(await validateBenchPin('372449', 'home', { matchExternalId: SEED })).toMatchObject({ success: false, noAnswer: true })
+
+    // a wrong PIN: the backend's 404, or the relay's 404 at a venue without internet
+    sync.validatePinSupabase.mockResolvedValue({ success: false, error: 'Invalid PIN code', status: 404 })
+    sync.validatePin.mockRejectedValue(offline())
+    expect((await validateBenchPin('372449', 'home', { matchExternalId: SEED })).noAnswer).toBeUndefined()
+    sync.validatePinSupabase.mockResolvedValue({ success: false, error: 'Failed to fetch', unreachable: true })
+    sync.validatePin.mockRejectedValue(Object.assign(new Error('No match found with this PIN.'), { status: 404 }))
+    expect((await validateBenchPin('372449', 'home', { matchExternalId: SEED })).noAnswer).toBeUndefined()
+  })
+
   it('WebSocket mode never waits for the cloud', async () => {
     sync.validatePin.mockResolvedValue({ success: false })
     await validateBenchPin('372449', 'home', { connectionMode: 'websocket' })

@@ -89,4 +89,25 @@ describe('bench opened through its match link', () => {
     expect(localStorage.getItem('bench_session')).toBeNull()
     expect(screen.queryByText('bench match view')).toBeNull()
   })
+
+  // review of #37: the PIN checks turn a network failure into a failed check,
+  // so a bench reloading while the server was down deleted its session and
+  // asked for the PIN, also once the server was back
+  it('a reload while the server is unreachable keeps the session and joins once it is back', async () => {
+    storeSession()
+    sync.validatePinSupabase.mockResolvedValue({ success: false, error: 'Failed to fetch', unreachable: true })
+    sync.validatePin.mockRejectedValue(new TypeError('Failed to fetch'))
+    render(<BenchApp />)
+    await waitFor(() => expect(sync.validatePin).toHaveBeenCalled())
+    await new Promise(r => setTimeout(r, 100))
+    expect(JSON.parse(localStorage.getItem('bench_session'))).toMatchObject({ matchId: SEED, team: 'home', pin: PIN })
+    expect(screen.queryByText('bench match view')).toBeNull()
+    // not the link's PIN step
+    expect(sync.getMatchData).not.toHaveBeenCalled()
+
+    // the server is back: the bench joins without anyone touching it
+    sync.validatePinSupabase.mockResolvedValue({ success: true, match: { id: SEED, gameNumber: 12, homeTeamConnectionEnabled: true, status: 'live' } })
+    await screen.findByText('bench match view', {}, { timeout: 10000 })
+    expect(JSON.parse(localStorage.getItem('bench_session'))).toMatchObject({ matchId: SEED, team: 'home', pin: PIN })
+  }, 20000)
 })

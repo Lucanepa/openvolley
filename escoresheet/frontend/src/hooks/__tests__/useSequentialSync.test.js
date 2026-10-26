@@ -15,7 +15,7 @@ function fakeTable() {
 const fakeDb = vi.hoisted(() => ({}))
 vi.mock('../../db/db', () => ({ db: fakeDb }))
 
-import { queueAndWait, useSequentialSync } from '../useSequentialSync'
+import { queueAndWait, useSequentialSync, setEndBackupPlan, setEndStillUndelivered } from '../useSequentialSync'
 
 const SET_END = { resource: 'set', action: 'update', payload: { external_id: 'match_1_a:s:1', finished: true } }
 const MATCH_END = { resource: 'match', action: 'update', payload: { id: 'match_1_a', current_set: 2, set_results: [] } }
@@ -133,7 +133,7 @@ describe('useSequentialSync.syncSetEnd', () => {
       result.current.syncSetEnd({ lastPointPayload: null, setPayload: SET_END.payload, matchPayload: MATCH_END.payload }).then(r => { out = r })
       await vi.advanceTimersByTimeAsync(2500)
     })
-    expect(out).toEqual({ success: true, hasWarning: true })
+    expect(out).toEqual({ success: true, hasWarning: true, waitingJobIds: [1, 2], setAside: false })
     // saved on the device, still queued for the background queue
     expect([...fakeDb.sync_queue.map.values()].map(r => r.status)).toEqual(['queued', 'queued'])
     unmount()
@@ -149,7 +149,7 @@ describe('useSequentialSync.syncSetEnd', () => {
       await vi.advanceTimersByTimeAsync(15000)
       out = await pending
     })
-    expect(out).toEqual({ success: true, hasWarning: true })
+    expect(out).toEqual({ success: true, hasWarning: true, waitingJobIds: [2], setAside: false })
     unmount()
 
     stop()
@@ -158,5 +158,33 @@ describe('useSequentialSync.syncSetEnd', () => {
     const refused = await run({ lastPointPayload: null, setPayload: SET_END.payload, matchPayload: null })
     expect(refused.out).toEqual({ success: false, hasWarning: false })
     expect(refused.state.steps[1].status).toBe('error')
+  })
+})
+
+// review of #37: with one 2 s budget for all the set-end writes, a slow hall
+// link ends more set ends as a warning, and each warning downloaded the match
+// (a prompt at every set end on a mobile browser) though the queue was still
+// delivering it
+describe('the set-end backup download', () => {
+  it('only slower than the wait: later, and only if still not delivered; at once when not delivering', () => {
+    expect(setEndBackupPlan({ success: true, hasWarning: false }, { online: true })).toBe('none')
+    expect(setEndBackupPlan({ success: true, hasWarning: true, waitingJobIds: [1, 2], setAside: false }, { online: true })).toBe('later')
+    // offline, refused, set aside for another device, or no sync result: now
+    expect(setEndBackupPlan({ success: true, hasWarning: true, waitingJobIds: [1, 2], setAside: false }, { online: false })).toBe('now')
+    expect(setEndBackupPlan({ success: false, hasWarning: false }, { online: true })).toBe('now')
+    expect(setEndBackupPlan({ success: true, hasWarning: true, waitingJobIds: [], setAside: true }, { online: true })).toBe('now')
+    expect(setEndBackupPlan(null, { online: true })).toBe('now')
+    expect(setEndBackupPlan({ success: true, hasWarning: false }, { online: false })).toBe('now')
+  })
+
+  it('still undelivered: a write not sent (queued, failed, set aside); a sent or pruned one is delivered', async () => {
+    await fakeDb.sync_queue.add({ status: 'sent' })
+    await fakeDb.sync_queue.add({ status: 'queued' })
+    await fakeDb.sync_queue.add({ status: 'superseded' })
+    await fakeDb.sync_queue.add({ status: 'dropped' })
+    expect(await setEndStillUndelivered([1, 3])).toBe(false)
+    expect(await setEndStillUndelivered([1, 99])).toBe(false)
+    expect(await setEndStillUndelivered([1, 2])).toBe(true)
+    expect(await setEndStillUndelivered([4])).toBe(true)
   })
 })

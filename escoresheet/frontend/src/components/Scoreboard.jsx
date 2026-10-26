@@ -22,7 +22,7 @@ import NativeBackupAlert from './options/NativeBackupAlert'
 import ConnectTabletsModal from './connect/ConnectTabletsModal'
 import { useSyncQueue, isAuthBlocked, checkScorerMoved } from '../hooks/useSyncQueue'
 import { isScorerMoved, SCORER_MOVED, relaySyncDevice } from '../utils/matchHandover'
-import { useSequentialSync } from '../hooks/useSequentialSync'
+import { useSequentialSync, setEndBackupPlan, setEndStillUndelivered, SET_END_DOWNLOAD_GRACE_MS } from '../hooks/useSequentialSync'
 import SyncProgressModal from './SyncProgressModal'
 import SignaturePad from './SignaturePad'
 import { saveMatchSignature } from '../utils/saveSignature'
@@ -107,6 +107,20 @@ const BREAK_ENDING_PUSHES = new Set(['set_end', 'end_interval', 'set_start', 'ma
 // The live-state push that sends the state again after a reconnect, a reload
 // or a sign-in: no event of its own (it keeps the last one's last_event_*)
 const RECONNECT_PUSH = 'reconnect'
+
+// The scoring tab reloaded takes its Web Lock back (the single-tab guard)
+// when its new page loads within this long of the old one going away
+const SCORING_TAB_RELOAD_MS = 60000
+
+// A scorer action started by a tap or a key: nothing waits for its promise.
+// Its failure is shown to the scorer already (runAction's onError); left to
+// reject, it was an unhandled rejection too, reported again as an app error
+// at every refused tap (with the device storage full: each one)
+const settleTap = (promise) => {
+  Promise.resolve(promise).catch((err) => {
+    if (!isReportedActionError(err)) console.error('[action] tap failed', err)
+  })
+}
 
 // ── volleyui chrome for the scoreboard (RESTYLE-SPEC P5) ──────────────────────
 // Only the chrome around the court takes these: the toolbar, the side-column
@@ -856,24 +870,66 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // its answers, so a later tab opened the same live match as well and both
   // scored (stress test 2026-10-25). A tab that finds the lock held shows
   // "Scoresheet already open" and scores once the other tab is gone.
+  // The scoring tab reloaded takes the lock back: freed by its reload, it
+  // went to a forgotten tab waiting behind it, which scored from then on,
+  // while the reloaded one showed "already open" (review of #37). Its page
+  // notes on the way out (pagehide), in this tab's sessionStorage (which a
+  // reload keeps and no other tab reads), that it held the lock, and the
+  // page after the reload steals it. "Score in this tab" steals it too: the
+  // other tab goes to "already open" and waits.
+  const takeOverScoringRef = useRef(null)
   useEffect(() => {
     if (!matchId) return
     if (typeof navigator === 'undefined' || !navigator.locks?.request) return
-    const abort = new AbortController()
+    const lockName = `scoresheet-${matchId}`
+    const reloadKey = `scoresheet-reload-${matchId}`
+    let current = 0 // the request that counts: a take-over replaces a queued one
+    let abort = null
+    let busy = null
     let release = null
-    // Queued, not ifAvailable: the screen remounting in this tab (React's
-    // development double mount) frees the lock a moment after asking again
-    const busy = setTimeout(() => setDuplicateTabError(true), 1000)
-    navigator.locks.request(`scoresheet-${matchId}`, { signal: abort.signal }, () => {
-      // granted just after the screen unmounted: hand it straight back
-      if (abort.signal.aborted) return undefined
+    let unmounted = false
+    const request = (steal) => {
+      const id = ++current
       clearTimeout(busy)
-      setDuplicateTabError(false)
-      return new Promise(resolve => { release = resolve })
-    }).catch(() => {}) // aborted: the screen unmounted before it got the lock
+      if (abort) abort.abort()
+      // (a steal takes no signal: it never waits)
+      abort = steal ? null : new AbortController()
+      // Queued, not ifAvailable: the screen remounting in this tab (React's
+      // development double mount) frees the lock a moment after asking again
+      busy = steal ? null : setTimeout(() => setDuplicateTabError(true), 1000)
+      navigator.locks.request(lockName, steal ? { steal: true } : { signal: abort.signal }, () => {
+        // granted just after the screen unmounted, or replaced: hand it straight back
+        if (unmounted || id !== current) return undefined
+        clearTimeout(busy)
+        setDuplicateTabError(false)
+        return new Promise(resolve => { release = resolve })
+      }).catch(() => {
+        // aborted (the screen unmounted, a take-over replaced it), or stolen
+        // by another tab's take-over: "already open", and wait again
+        if (unmounted || id !== current) return
+        release = null
+        setDuplicateTabError(true)
+        request(false)
+      })
+    }
+    let reloaded = false
+    try {
+      const at = Number(sessionStorage.getItem(reloadKey))
+      sessionStorage.removeItem(reloadKey)
+      reloaded = at > 0 && Date.now() - at < SCORING_TAB_RELOAD_MS
+    } catch { /* no sessionStorage: wait for the lock */ }
+    request(reloaded)
+    takeOverScoringRef.current = () => request(true)
+    const noteReload = () => {
+      try { if (release) sessionStorage.setItem(reloadKey, String(Date.now())) } catch { /* ignore */ }
+    }
+    window.addEventListener('pagehide', noteReload)
     return () => {
+      unmounted = true
+      takeOverScoringRef.current = null
+      window.removeEventListener('pagehide', noteReload)
       clearTimeout(busy)
-      abort.abort()
+      if (abort) abort.abort()
       if (release) release()
     }
   }, [matchId])
@@ -942,9 +998,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
     window.addEventListener('pagehide', clearMark)
+    // "Score in this tab": the mark is this tab's (the other one sees it
+    // change, storage event, and shows "already open")
+    takeOverScoringRef.current = () => {
+      if (probe) clearTimeout(probe)
+      probe = null
+      duplicate = false
+      localStorage.setItem(storageKey, tabId)
+      setDuplicateTabError(false)
+    }
 
     return () => {
       if (probe) clearTimeout(probe)
+      takeOverScoringRef.current = null
       window.removeEventListener('storage', handleStorage)
       window.removeEventListener('pagehide', clearMark)
       if (channel) channel.close()
@@ -3080,11 +3146,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // rally to the team under the finger, a triple tap on Point B gave one
   // rally two points (stress test 2026-10-25, every tap 40 to 250 ms apart).
   // For GHOST_CLICK_MS after the buttons change (drawn: a layout effect,
-  // before the next tap can reach them), a tap on them or their key is the
-  // end of the tap that changed them, as after a confirm (useConfirmAction):
-  // a rally never ends that soon after its start, nor starts that soon after
-  // its point. Not when the screen first shows them. Monotonic clock: a
-  // device clock set back must not hold them.
+  // before the next tap can reach them), a tap on them is the end of the tap
+  // that changed them, as after a confirm (useConfirmAction): a rally never
+  // ends that soon after its start, nor starts that soon after its point. Not
+  // when the screen first shows them, and not their keys: a key does not
+  // bounce, and a keyboard scorer pressing Enter at the whistle and A a moment
+  // later lost the point. Monotonic clock: a device clock set back must not
+  // hold them.
   const rallyButtonsRef = useRef({ status: null, changedAt: -Infinity })
   useLayoutEffect(() => {
     const buttons = rallyButtonsRef.current
@@ -5741,23 +5809,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     deferUi(() => setRecentlySubstitutedPlayers([]))
   }), [logEvent, isFirstRally, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration, runAction, deferUi, readRallyStatus])
 
-  // A tap on the rally buttons (Start rally, Point A | Point B) or their keys,
-  // on every layout: none the moment they changed (rallyButtonsJustShown),
-  // that is the second tap of the one that changed them. The accidental-start
-  // and accidental-point questions' Yes call the handlers themselves.
+  // A tap on the rally buttons (Start rally, Point A | Point B), on every
+  // layout: none the moment they changed (rallyButtonsJustShown), that is the
+  // second tap of the one that changed them. Their keys call the handlers
+  // themselves (no bounce to drop), as do the accidental-start and
+  // accidental-point questions' Yes.
   const tapStartRally = useCallback(() => {
     if (rallyButtonsJustShown()) {
       console.warn('[Scoreboard] Start rally tap as the rally buttons changed (a double tap): ignored')
       return
     }
-    handleStartRally()
+    settleTap(handleStartRally())
   }, [handleStartRally, rallyButtonsJustShown])
   const tapPoint = useCallback((side) => {
     if (rallyButtonsJustShown()) {
       console.warn('[Scoreboard] Point tap as the rally buttons changed (a double tap): ignored')
       return
     }
-    handlePoint(side, false, { tap: true })
+    settleTap(handlePoint(side, false, { tap: true }))
   }, [handlePoint, rallyButtonsJustShown])
 
   const handleReplay = useCallback(async () => {
@@ -6421,18 +6490,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }).catch(() => { })
         }
 
-        // Auto-download game data at set end if enabled AND sync failed/offline
-        // If sync succeeded and we're online, data is safe in cloud - no need to download
-        const syncSucceeded = syncResult?.success && !syncResult?.hasWarning
-        const isOffline = !navigator.onLine
-
-        if (autoDownloadAtSetEnd && (!syncSucceeded || isOffline)) {
-          console.log('[SET_END] Downloading backup - sync failed/skipped or offline:', {
-            syncSucceeded,
-            isOffline,
-            syncResult
-          })
-          setSetTransitionLoading({ step: 'Downloading backup...' })
+        // Auto-download game data at set end if enabled AND the set end is
+        // not reaching the cloud (failed, offline, set aside, not synced). Only
+        // slower than the set end's wait (online, still queued): once the
+        // grace period is over, and only if still not delivered; it was a
+        // download (a prompt on a mobile browser) at every set end on a slow
+        // hall link, while the queue delivered it (setEndBackupPlan)
+        const backupPlan = autoDownloadAtSetEnd
+          ? setEndBackupPlan(syncResult, { online: navigator.onLine !== false })
+          : 'none'
+        const downloadSetEndBackup = async () => {
           try {
             // This match only, in the backup file format Restore match reads
             // (exportMatchData), unindented. It was every table of the device,
@@ -6452,6 +6519,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           } catch (error) {
             console.error('Auto-download at set end failed:', error)
           }
+        }
+
+        if (backupPlan === 'now') {
+          console.log('[SET_END] Downloading backup - sync failed/skipped or offline:', { syncResult })
+          setSetTransitionLoading({ step: 'Downloading backup...' })
+          await downloadSetEndBackup()
+        } else if (backupPlan === 'later') {
+          const waitingJobIds = syncResult.waitingJobIds
+          setTimeout(async () => {
+            try {
+              if (!(await setEndStillUndelivered(waitingJobIds))) return
+              console.log('[SET_END] Downloading backup - set end still not delivered after the grace period')
+              await downloadSetEndBackup()
+            } catch (error) {
+              console.error('Auto-download at set end failed:', error)
+            }
+          }, SET_END_DOWNLOAD_GRACE_MS)
         }
 
         // Start countdown immediately when set ends (not match end)
@@ -12462,7 +12546,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Start rally if idle and no modals
         if (!hasDecisionModal && rallyStatus === 'idle') {
           e.preventDefault()
-          tapStartRally()
+          settleTap(handleStartRally())
           return
         }
         // Confirm modals
@@ -12545,14 +12629,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (hasDecisionModal || timeoutModal || lineupModal || menuModal) return
 
       // Point keys
+      // (a key, no tap: never held by the rally buttons' double-tap window;
+      // `tap`: written only while the rally is in play in the database)
       if (key === keyBindings.pointLeft && rallyStatus === 'in_play') {
         e.preventDefault()
-        tapPoint('left')
+        settleTap(handlePoint('left', false, { tap: true }))
         return
       }
       if (key === keyBindings.pointRight && rallyStatus === 'in_play') {
         e.preventDefault()
-        tapPoint('right')
+        settleTap(handlePoint('right', false, { tap: true }))
         return
       }
 
@@ -12571,19 +12657,22 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Exchange libero keys (only when idle)
       if (key === keyBindings.exchangeLiberoLeft && rallyStatus === 'idle') {
         e.preventDefault()
-        handleExchangeLibero('left')
+        settleTap(handleExchangeLibero('left'))
         return
       }
       if (key === keyBindings.exchangeLiberoRight && rallyStatus === 'idle') {
         e.preventDefault()
-        handleExchangeLibero('right')
+        settleTap(handleExchangeLibero('right'))
         return
       }
 
-      // Undo key
-      if (key === keyBindings.undo && rallyStatus === 'idle') {
+      // Undo key: asks the undo question, as the Undo button does, whenever
+      // that button can be pressed (Enter is its Yes, above). It called the
+      // question's Yes (handleUndo), which does nothing while the question
+      // is not open: Backspace did nothing at all.
+      if (key === keyBindings.undo && canUndo) {
         e.preventDefault()
-        handleUndo()
+        showUndoConfirm()
         return
       }
     }
@@ -12592,7 +12681,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [
     keybindingsEnabled, keyBindings, editingKey, showOptionsInMenu, keybindingsModalOpen,
-    rallyStatus, tapStartRally, tapPoint, handleTimeout, handleExchangeLibero, handleUndo,
+    rallyStatus, handleStartRally, handlePoint, handleTimeout, handleExchangeLibero, handleUndo, canUndo, showUndoConfirm,
     playerActionMenu, benchPlayerActionMenu, liberoDropdown, liberoInDropdown, sanctionDropdown,
     timeoutModal, lineupModal, menuModal,
     substitutionConfirm, liberoConfirm, sanctionConfirmModal, accidentalRallyConfirmModal,
@@ -13231,8 +13320,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }}>
           {t('scoreboard.duplicateTabMessage')}
         </p>
+        {/* It was "Close this tab" (window.close()), which browsers ignore
+            for a tab the user opened: it did nothing */}
         <button
-          onClick={() => window.close()}
+          onClick={() => takeOverScoringRef.current?.()}
           style={{
             padding: '12px 24px',
             fontSize: '16px',
@@ -13244,7 +13335,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             cursor: 'pointer'
           }}
         >
-          {t('scoreboard.closeThisTab')}
+          {t('scoreboard.scoreInThisTab')}
         </button>
       </div>
     )
