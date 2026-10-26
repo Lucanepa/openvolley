@@ -1641,6 +1641,7 @@
     "invalidPin": "Ungültige PIN. Bitte nomal probiere.",
     "tooManyAttempts": "Zu viele falsche PINs aus diesem Netzwerk. Bitte einige Minuten warten und erneut versuchen.",
     "reconnecting": "Kei Verbindig zum Server. D Bank verbindet sich wieder mit ihrem Spiil, sobald er wieder da isch.",
+    "waitingForScoresheet": "De Server isch wieder da. D Bank verbindet sich wieder mit ihrem Spiil, sobald s Matchblatt wieder verbunde isch.",
     "roster": "Kader",
     "match": "Spiil",
     "back": "Zrugg",

@@ -38,6 +38,22 @@ const CONNECTION_MODES = {
 const BENCH_SESSION_KEY = 'bench_session'
 // A stored session no server could check yet is checked again this often
 const BENCH_RESTORE_RETRY_MS = 5000
+// After an outage, how long a refusal of the stored session is not believed
+// yet: a backend or venue relay that has just restarted knows a match that is
+// only on the relay (a test match, a hall without internet) once its scorer
+// publishes it again, up to a minute later (the scorer's longest reconnect
+// step), and until then answers 404 like for a wrong PIN
+export const BENCH_RESTORE_GRACE_MS = 2 * 60 * 1000
+
+/**
+ * Keep a stored bench session the servers refused (keep checking it): only
+ * when this restore waited through an outage (`sawNoAnswer`) and the first
+ * refusal since is less than BENCH_RESTORE_GRACE_MS old. Without an outage a
+ * refusal is a wrong PIN, a match that ended or a bench switched off, at once.
+ */
+export function keepRefusedBenchSession({ sawNoAnswer, firstRefusalAt, now = Date.now() }) {
+  return sawNoAnswer && firstRefusalAt != null && now - firstRefusalAt < BENCH_RESTORE_GRACE_MS
+}
 
 export function readBenchSession() {
   try {
@@ -199,6 +215,8 @@ export default function BenchApp() {
   // server error) the session stays and is checked again every
   // BENCH_RESTORE_RETRY_MS until a server answers: a bench reloading during an
   // outage deleted it and asked for the PIN, also once the server was back.
+  // After such an outage a refusal waits BENCH_RESTORE_GRACE_MS for the scorer
+  // to publish the match again (keepRefusedBenchSession).
   useEffect(() => {
     if (!restoringSession) return
     if (!readBenchSession()) {
@@ -207,6 +225,8 @@ export default function BenchApp() {
     }
     let cancelled = false
     let retry = null
+    let sawNoAnswer = false
+    let firstRefusalAt = null
     const check = async () => {
       // (the stored session, again at each retry: a PIN typed meanwhile wins)
       const session = readBenchSession()
@@ -239,6 +259,13 @@ export default function BenchApp() {
         } else if (result?.noAnswer) {
           // Nothing compared: keep the session, check again shortly
           setError(t('benchDashboard.reconnecting', 'No connection to the server. The bench reconnects to its match as soon as it is back.'))
+          sawNoAnswer = true
+          firstRefusalAt = null
+          again = true
+        } else if (keepRefusedBenchSession({ sawNoAnswer, firstRefusalAt: (firstRefusalAt ??= Date.now()) })) {
+          // Refused right after an outage: the relay may not know the match
+          // again yet (its scorer reconnects after it), check again shortly
+          setError(t('benchDashboard.waitingForScoresheet', 'The server is back. The bench rejoins its match as soon as the scoresheet has reconnected.'))
           again = true
         } else {
           writeBenchSession(null)
@@ -253,6 +280,8 @@ export default function BenchApp() {
         }
       } catch {
         // Server unreachable right now: keep the session, check again shortly
+        sawNoAnswer = true
+        firstRefusalAt = null
         again = !cancelled
       }
       if (cancelled) return

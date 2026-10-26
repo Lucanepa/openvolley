@@ -12,7 +12,7 @@ vi.mock('../utils/serverDataSync', async (importOriginal) => {
   return { ...actual, validatePin: sync.validatePin, validatePinSupabase: sync.validatePinSupabase }
 })
 
-import { readBenchSession, validateBenchPin, benchGameLabel } from '../BenchApp'
+import { readBenchSession, validateBenchPin, benchGameLabel, keepRefusedBenchSession, BENCH_RESTORE_GRACE_MS } from '../BenchApp'
 import { revalidateRefereeSession } from '../RefereeApp'
 
 beforeEach(() => {
@@ -89,6 +89,18 @@ describe('bench session (survives a reload)', () => {
     sync.validatePinSupabase.mockResolvedValue({ success: false, error: 'Failed to fetch', unreachable: true })
     sync.validatePin.mockRejectedValue(Object.assign(new Error('No match found with this PIN.'), { status: 404 }))
     expect((await validateBenchPin('372449', 'home', { matchExternalId: SEED })).noAnswer).toBeUndefined()
+  })
+
+  // 2026-10-27 re-verification: after an outage, a relay that has just
+  // restarted refuses a match its scorer has not published again yet
+  it('after an outage, a refusal is believed only once the grace for the scorer to come back is over', () => {
+    const t0 = 1_000_000
+    // no outage seen: a refusal is a wrong PIN at once, as before
+    expect(keepRefusedBenchSession({ sawNoAnswer: false, firstRefusalAt: t0, now: t0 })).toBe(false)
+    expect(keepRefusedBenchSession({ sawNoAnswer: true, firstRefusalAt: t0, now: t0 })).toBe(true)
+    expect(keepRefusedBenchSession({ sawNoAnswer: true, firstRefusalAt: t0, now: t0 + BENCH_RESTORE_GRACE_MS - 1 })).toBe(true)
+    expect(keepRefusedBenchSession({ sawNoAnswer: true, firstRefusalAt: t0, now: t0 + BENCH_RESTORE_GRACE_MS })).toBe(false)
+    expect(BENCH_RESTORE_GRACE_MS).toBeGreaterThanOrEqual(90_000) // the scorer's longest reconnect step is 60 s
   })
 
   it('WebSocket mode never waits for the cloud', async () => {

@@ -1641,6 +1641,7 @@
     "invalidPin": "PIN non valido. Riprova.",
     "tooManyAttempts": "Troppi PIN errati da questa rete. Attendi qualche minuto, poi riprova.",
     "reconnecting": "Nessuna connessione al server. La panchina si ricollega alla sua partita appena torna disponibile.",
+    "waitingForScoresheet": "Il server è di nuovo disponibile. La panchina si ricollega alla sua partita appena il foglio segnapunti si è ricollegato.",
     "roster": "Rosa",
     "match": "Partita",
     "back": "Indietro",
