@@ -174,6 +174,8 @@ describe('the scorer\'s one relay connection (App + Scoreboard)', () => {
       },
       events,
       doc: null,
+      // the top of each jittered step: the timings below stay exact
+      reconnectDelay: (n) => relayReconnectDelay(n, () => 1),
       ...opts
     })
   }
@@ -357,7 +359,19 @@ describe('test (rehearsal) matches: live state to a local relay only', () => {
 
 describe('scorer relay publishing: reconnect backoff', () => {
   it('backs off from 5 s to a 60 s cap', () => {
-    expect([0, 1, 2, 3, 4, 5, 50].map(relayReconnectDelay)).toEqual([5000, 10000, 20000, 40000, 60000, 60000, 60000])
+    expect([0, 1, 2, 3, 4, 5, 50].map((n) => relayReconnectDelay(n, () => 1))).toEqual([5000, 10000, 20000, 40000, 60000, 60000, 60000])
+  })
+
+  // National peak load test 2026-10-26: after a backend restart every scorer
+  // reconnected and re-sent its whole match after exactly 5 s, all at once,
+  // and the burst refilled the backend's memory within seconds.
+  it('spreads the reconnects over the second half of each step', () => {
+    expect([0, 1, 4].map((n) => relayReconnectDelay(n, () => 0))).toEqual([2500, 5000, 30000])
+    expect(relayReconnectDelay(0, () => 0.5)).toBe(3750)
+    const many = Array.from({ length: 200 }, () => relayReconnectDelay(0))
+    expect(Math.min(...many)).toBeGreaterThanOrEqual(2500)
+    expect(Math.max(...many)).toBeLessThanOrEqual(5000)
+    expect(new Set(many).size).toBeGreaterThan(20)
   })
 })
 

@@ -968,6 +968,20 @@ export function subscribeMessage(matchId) {
 }
 
 /**
+ * Delay before a tablet's reconnect attempt `attempt` (1 = first after a
+ * drop): 3 s more per attempt up to 10 s, each spread over its second half
+ * (1.5-3 s, 3-6 s, ...). After a backend restart every referee and bench
+ * tablet lost its socket at the same instant and reconnected at the same
+ * instant (national peak load test 2026-10-26). Never later than before.
+ * @param {number} attempt
+ * @param {() => number} [random] jitter source in [0, 1) (tests)
+ */
+export function viewerReconnectDelay(attempt, random = Math.random) {
+  const step = Math.min(3000 * Math.max(1, Number(attempt) || 1), 10000)
+  return Math.round(step * (0.5 + 0.5 * (typeof random === 'function' ? random() : Math.random())))
+}
+
+/**
  * Subscribe to match data updates via WebSocket
  */
 export function subscribeToMatchData(matchId, onUpdate) {
@@ -993,8 +1007,6 @@ export function subscribeToMatchData(matchId, onUpdate) {
 
   // Add this subscriber
   connection.subscribers.add(onUpdate)
-
-  const maxReconnectDelay = 10000 // Max 10 seconds
 
   // Drop a socket that stopped answering and connect a new one right away.
   const replaceDeadSocket = () => {
@@ -1258,7 +1270,7 @@ export function subscribeToMatchData(matchId, onUpdate) {
 
         // Exponential backoff for reconnection
         connection.reconnectAttempts++
-        const delay = Math.min(3000 * connection.reconnectAttempts, maxReconnectDelay)
+        const delay = viewerReconnectDelay(connection.reconnectAttempts)
         console.log(`[ServerDataSync] WebSocket disconnected, reconnecting in ${delay / 1000} seconds... (attempt ${connection.reconnectAttempts})`)
         connection.reconnectTimeout = setTimeout(connect, delay)
       }
@@ -1266,7 +1278,7 @@ export function subscribeToMatchData(matchId, onUpdate) {
       console.error('[ServerDataSync] Connection error:', err)
       // Exponential backoff for reconnection
       connection.reconnectAttempts++
-      const delay = Math.min(3000 * connection.reconnectAttempts, maxReconnectDelay)
+      const delay = viewerReconnectDelay(connection.reconnectAttempts)
       connection.reconnectTimeout = setTimeout(connect, delay)
     }
   }
