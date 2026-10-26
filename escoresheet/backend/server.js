@@ -4173,10 +4173,14 @@ server.on('upgrade', (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req))
 })
 
-// Server-side ping for role sockets behind Cloudflare (it closes WebSockets idle
-// for 100 s): every 30 s, and a socket that missed the previous pong is
-// terminated. Cloud only; the LAN relay keeps its old behaviour.
-const roleHeartbeat = IS_CLOUD ? (realtimeHub ? realtimeHub.heartbeat : createHeartbeat({ intervalMs: 30000 })) : null
+// Server-side ping for role sockets: every 30 s, and a socket that missed the
+// previous pong is terminated. Behind Cloudflare it keeps them open (it closes
+// WebSockets idle for 100 s); on a venue relay (--local) it ends the socket of
+// a phone that left the hall's Wi-Fi or went to sleep (no close frame), which
+// otherwise kept its slot (MAX_CONNECTIONS_PER_IP) and its rooms until TCP
+// gave up, minutes or hours later, as the LAN relays do (lanRelayCore).
+// Browsers, the desktop apps and the LedBox bridge answer pings on their own.
+const roleHeartbeat = realtimeHub ? realtimeHub.heartbeat : createHeartbeat({ intervalMs: 30000 })
 
 wss.on('connection', (ws, req) => {
   // Enforce global connection cap
@@ -4231,7 +4235,7 @@ wss.on('connection', (ws, req) => {
   }
 
   connections.set(clientId, clientInfo)
-  roleHeartbeat?.track(ws)
+  roleHeartbeat.track(ws)
 
   relaySummary.count('sockets opened')
   relaySummary.setGauge('open', connections.size)
