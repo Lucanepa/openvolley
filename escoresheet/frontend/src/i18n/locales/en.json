@@ -1057,6 +1057,9 @@
     "modals": {
       "existingMatchWarning": "There is an existing match. Do you want to delete it and create a new official match?",
       "testMatchOverwriteWarning": "An official match is still recording. Starting a new test match will wipe the previous test session. Continue?",
+      "officialMatchStillRecording": "An official match is still recording on this device. Continue it, or delete it with \"Delete match\", before creating a new official match.",
+      "officialMatchReplaceTest": "The test match on this device is replaced by the official match and its data deleted. Continue?",
+      "officialMatchReplaceEasy": "The easy match on this device is replaced by the official match and its data deleted. Continue?",
       "deleteTestMatchConfirm": "This will delete the test match and all its data. Continue?",
       "noTestMatchFound": "No test match found. Please create a new test match first.",
       "testMatchDeleted": "Test match deleted successfully.",
