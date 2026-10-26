@@ -559,6 +559,28 @@ describe('backend WebSocket relay protocol', () => {
     for (const c of [laptop, laptopAgain, phone, referee, oldApp]) c.ws.close()
   })
 
+  // 2026-10-26: a phone that left the hall's Wi-Fi sent no close frame, and
+  // its socket kept its slot and its rooms until TCP gave up (the cloud relay
+  // pinged, this venue relay did not)
+  it('ends a socket that stops answering pings, never one that answers', { timeout: 90_000 }, async () => {
+    const wsUrl = `ws://127.0.0.1:${port}`
+    const live = await openClient(wsUrl)
+    const gone = new WebSocket(wsUrl, { autoPong: false })
+    await new Promise((resolve, reject) => { gone.once('open', resolve); gone.once('error', reject) })
+    let pinged = 0
+    gone.on('ping', () => { pinged++ })
+    const t0 = Date.now()
+    await new Promise((resolve) => gone.once('close', resolve))
+    const after = Date.now() - t0
+    assert.ok(pinged >= 1, 'it was pinged first')
+    assert.ok(after >= 25_000 && after <= 75_000, `ended after the ping it missed (${after} ms)`)
+    assert.equal(live.ws.readyState, WebSocket.OPEN)
+    await live.waitFor((m) => m.type === 'pong', 100).catch(() => {})
+    live.send({ type: 'ping' })
+    await live.waitFor((m) => m.type === 'pong')
+    live.ws.close()
+  })
+
   it('stops game-PIN guessing without revealing a hit', async () => {
     const wsUrl = `ws://127.0.0.1:${port}`
     const scoreboard = await openClient(wsUrl)

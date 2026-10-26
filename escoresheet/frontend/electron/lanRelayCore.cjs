@@ -169,10 +169,6 @@ const MAX_JSON_DEPTH = 128
 const MAX_SOCKETS = 500
 const MAX_SOCKETS_PER_IP = 50
 const MAX_MATCH_ID_LENGTH = 128
-// A FINISHED match whose scoreboard left this long ago may be claimed by
-// another scoreboard: a second scorer device / reset browser reusing the same
-// Dexie id on a long-running relay. Far longer than a Wi-Fi blip (clients
-// reconnect within ~5 s), so a live scoreboard is never displaced.
 // Server-side ping of every socket (the cloud relay's createHeartbeat,
 // backend/lib/realtimeHub.js): a socket that has not answered the previous
 // ping is ended. A phone that leaves the hall's Wi-Fi sends no close, and its
@@ -180,6 +176,10 @@ const MAX_MATCH_ID_LENGTH = 128
 // TCP gave up, minutes or hours later. Browsers, the desktop apps and the
 // LedBox bridge answer pings on their own.
 const HEARTBEAT_MS = 30 * 1000
+// A FINISHED match whose scoreboard left this long ago may be claimed by
+// another scoreboard: a second scorer device / reset browser reusing the same
+// Dexie id on a long-running relay. Far longer than a Wi-Fi blip (clients
+// reconnect within ~5 s), so a live scoreboard is never displaced.
 const ORPHAN_TAKEOVER_MS = 60 * 1000
 // An UNFINISHED match is only claimable after a much longer absence (a scorer
 // tablet asleep through a set break must not lose its match), and its own game
