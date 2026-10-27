@@ -27,6 +27,15 @@
  * matches have already been called, started or ended cannot be changed or
  * withdrawn (409 OV_BRACKET_LOCKED): the bracket is never rewritten under a
  * running match.
+ *
+ * On court: until a court tablet links its scored match (phase T3), the
+ * server learns that a match was called or started only from the manager
+ * (POST tmatches/:id/status, manager-beach's Start). A re-plan also keeps
+ * the slot of a match whose slot has begun and whose pairs are known, even
+ * when nobody pressed Start: it is most likely being played. Corrections
+ * do not take the clock for a start (results typed in after the day from
+ * paper sheets would be locked for good): only a started match locks its
+ * pairs.
  */
 
 import { fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
@@ -62,6 +71,8 @@ const FORBIDDEN = () => fail(403, 'OV_FORBIDDEN', 'You do not have access to thi
 const METHOD_NOT_ALLOWED = () => fail(405, 'OV_METHOD_NOT_ALLOWED', 'Method not allowed')
 const LOCKED = (details) => fail(409, 'OV_BRACKET_LOCKED', 'A match that depends on this one has already begun', details)
 const STARTED = () => fail(409, 'OV_DRAW_STARTED', 'Matches of this draw have already begun')
+// the bracket was drawn again (or reset) while the request waited for the draw: its matches have new ids
+const REPLACED = () => notFound('This match was replaced (the bracket was drawn again); reload')
 
 function validDay (s) {
   if (typeof s !== 'string' || !DATE_RE.test(s)) return false
@@ -403,6 +414,10 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
       if (!slug) {
         const base = slugify(`${out.title} ${out.starts_on.slice(0, 4)}`) || `tournament-${out.starts_on}`
         slug = base.length >= 3 ? base : `${base}-cup`
+        // the same title created at the same moment: one after the other (until
+        // the commit), so the second sees the first's address and takes the
+        // next one instead of failing on the unique key as "already taken"
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`beach_tournaments.slug:${slug}`])
         const { rows } = await client.query("SELECT slug FROM public.beach_tournaments WHERE slug = $1 OR slug LIKE $1 || '-%'", [slug])
         const taken = new Set(rows.map((r) => r.slug))
         for (let i = 2; taken.has(slug); i++) slug = `${base}-${i}`
@@ -512,7 +527,12 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     }))
   }
 
-  /** PUT courts: the full list [{ number, name, active, flex }]; courts left out are removed (their matches lose the court). */
+  /**
+   * PUT courts: the full list [{ number, name, active, flex }]; courts left
+   * out are removed (their open matches lose the court). A court on which a
+   * match has begun or ended stays (409 OV_COURT_IN_USE: switch it off
+   * instead): removing it would erase where that match was played.
+   */
   async function putCourts ({ user, access, id, body }) {
     const list = body?.courts
     if (!Array.isArray(list) || list.length > 40) return invalid('courts: a list of at most 40 courts')
@@ -532,6 +552,13 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     return guarded('courts', () => withTx(async (client) => {
       const t = await requireTournament(client, id, user, access, { edit: true, forUpdate: true })
       const numbers = courts.map((c) => c.number)
+      const { rows: used } = await client.query(
+        `SELECT DISTINCT c.number FROM public.beach_courts c JOIN public.beach_tmatches m ON m.court_id = c.id
+          WHERE c.tournament_id = $1 AND NOT (c.number = ANY($2::int[]))
+            AND (m.match_id IS NOT NULL OR m.status = ANY($3::text[])) ORDER BY c.number`, [t.id, numbers, LOCKED_STATUSES])
+      if (used.length) {
+        throw abort(fail(409, 'OV_COURT_IN_USE', 'Matches were played on this court: switch it off instead', { courts: used.map((r) => r.number) }))
+      }
       await client.query('DELETE FROM public.beach_courts WHERE tournament_id = $1 AND NOT (number = ANY($2::int[]))', [t.id, numbers])
       for (const c of courts) {
         await client.query(
@@ -1079,13 +1106,48 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     if (has(expect, 'sets') && JSON.stringify(expect.sets ?? null) !== JSON.stringify(cur.sets)) return true
     return false
   }
+  /**
+   * Whether the teams of the match differ from `expect` (entry1_id and
+   * entry2_id, only when given). A correction upstream puts another pair
+   * into a match that has no result yet; `winner` names a side, so a screen
+   * loaded before it would credit a pair that never played the match.
+   */
+  function teamsChangedSince (m, expect) {
+    return ['entry1_id', 'entry2_id'].some((k) => has(expect, k) && (expect[k]?.toLowerCase() ?? null) !== (m[k] ?? null))
+  }
+  /** `expect` of a result or a withdrawal: null when well-formed, else the 400 answer. */
+  function expectError (expect) {
+    if (!isPlainObject(expect)) return invalid('expect: an object { winner_entry_id, result, sets, entry1_id, entry2_id }')
+    for (const k of ['winner_entry_id', 'entry1_id', 'entry2_id']) {
+      if (has(expect, k) && expect[k] !== null && !isUuid(expect[k])) return invalid(`expect.${k}: an entry id or null`)
+    }
+    if (has(expect, 'result') && expect.result !== null && !RESULT_KINDS.includes(expect.result)) return invalid(`expect.result: ${RESULT_KINDS.join(', ')} or null`)
+    if (has(expect, 'sets') && expect.sets !== null && !Array.isArray(expect.sets)) return invalid('expect.sets: a list or null')
+    return null
+  }
+  /** Refuses (409) when the match the caller's screen showed (`expect`) is no longer the stored one. */
+  function checkExpect (m, expect) {
+    if (expect === undefined) return
+    if (teamsChangedSince(m, expect)) {
+      throw abort(fail(409, 'OV_MATCH_TEAMS_CHANGED', 'The teams of this match changed meanwhile', { match: tmatchOut(m) }))
+    }
+    // the result the caller last saw: someone else's result entered or
+    // withdrawn meanwhile is never overwritten silently
+    if (changedSince(m, expect)) {
+      throw abort(fail(409, 'OV_RESULT_CHANGED', 'The result of this match was changed meanwhile', { match: tmatchOut(m) }))
+    }
+  }
 
   /**
    * POST result { winner: 1|2, result: played|retired|forfeit|walkover, sets?, expect? }
    * (1 = entry1). A new result or a correction; refused when a match that
    * uses this one's winner or loser has begun. `expect` { winner_entry_id,
-   * result, sets } is the result the caller's screen showed (all null for a
-   * first entry): 409 OV_RESULT_CHANGED when the stored one differs.
+   * result, sets, entry1_id, entry2_id } is the match the caller's screen
+   * showed (the result all null for a first entry): 409
+   * OV_MATCH_TEAMS_CHANGED when its teams are no longer the stored ones,
+   * 409 OV_RESULT_CHANGED when the stored result differs (both with the
+   * match as it is now). Older apps send no entry ids: their teams are not
+   * compared.
    */
   async function enterResult ({ user, access, id, body }) {
     if (!isPlainObject(body)) return invalid('body: must be an object')
@@ -1095,26 +1157,22 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     if (!RESULT_KINDS.includes(kind)) return invalid(`result: ${RESULT_KINDS.join(', ')}`)
     const expect = body.expect
     if (expect !== undefined) {
-      if (!isPlainObject(expect)) return invalid('expect: an object { winner_entry_id, result, sets }')
-      if (has(expect, 'winner_entry_id') && expect.winner_entry_id !== null && !isUuid(expect.winner_entry_id)) return invalid('expect.winner_entry_id: an entry id or null')
-      if (has(expect, 'result') && expect.result !== null && !RESULT_KINDS.includes(expect.result)) return invalid(`expect.result: ${RESULT_KINDS.join(', ')} or null`)
-      if (has(expect, 'sets') && expect.sets !== null && !Array.isArray(expect.sets)) return invalid('expect.sets: a list or null')
+      const e = expectError(expect)
+      if (e) return e
     }
     return guarded('result', () => withTx(async (client) => {
       const t = await requireVia(client, 'tmatch', id, user, access, { edit: true })
       const { rows: [m0] } = await client.query('SELECT draw_id FROM public.beach_tmatches WHERE id = $1', [id])
+      if (!m0) throw abort(REPLACED())
       const d = await lockDraw(client, m0.draw_id)
       const err = setsError(body.sets ?? null, winner, kind, Array.isArray(d.scoring?.points) ? d.scoring.points : undefined)
       if (err) throw abort(invalid(`sets: ${err}`))
       const { rows: list } = await client.query('SELECT * FROM public.beach_tmatches WHERE draw_id = $1 ORDER BY game_n FOR UPDATE', [d.id])
       const m = list.find((x) => x.id === id)
+      if (!m) throw abort(REPLACED())
+      checkExpect(m, expect)
       if (!m.entry1_id || !m.entry2_id) throw abort(fail(409, 'OV_MATCH_NOT_READY', 'Both teams of this match are not known yet'))
       if (m.match_id) throw abort(fail(409, 'OV_MATCH_LINKED', 'This match is scored on a court tablet'))
-      // the result the caller last saw (optional): someone else's result
-      // entered meanwhile is never overwritten silently
-      if (expect !== undefined && changedSince(m, expect)) {
-        throw abort(fail(409, 'OV_RESULT_CHANGED', 'The result of this match was changed meanwhile', { match: tmatchOut(m) }))
-      }
       const winnerId = winner === 1 ? m.entry1_id : m.entry2_id
       const wasEnded = m.status === 'finished' || m.status === 'walkover'
       if (wasEnded && m.winner_entry_id !== winnerId) {
@@ -1136,14 +1194,29 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     }))
   }
 
-  /** DELETE result: the match is open again (refused when a dependent match has begun). */
-  async function withdrawResult ({ user, access, id }) {
+  /**
+   * DELETE result[?expect=<JSON>]: the match is open again (refused when a
+   * dependent match has begun). `expect` is the same as a result's, as JSON
+   * in the query (a DELETE has no body): a screen that showed another
+   * result, or other teams, does not remove a correction it never saw.
+   */
+  async function withdrawResult ({ user, access, id, query }) {
+    let expect
+    const raw = query?.get?.('expect')
+    if (raw != null) {
+      try { expect = JSON.parse(raw) } catch { return invalid('expect: JSON') }
+      const e = expectError(expect)
+      if (e) return e
+    }
     return guarded('withdraw', () => withTx(async (client) => {
       const t = await requireVia(client, 'tmatch', id, user, access, { edit: true })
       const { rows: [m0] } = await client.query('SELECT draw_id FROM public.beach_tmatches WHERE id = $1', [id])
+      if (!m0) throw abort(REPLACED())
       const d = await lockDraw(client, m0.draw_id)
       const { rows: list } = await client.query('SELECT * FROM public.beach_tmatches WHERE draw_id = $1 ORDER BY game_n FOR UPDATE', [d.id])
       const m = list.find((x) => x.id === id)
+      if (!m) throw abort(REPLACED())
+      checkExpect(m, expect)
       if (m.status !== 'finished' && m.status !== 'walkover') throw abort(fail(409, 'OV_NO_RESULT', 'This match has no result'))
       if (m.match_id) throw abort(fail(409, 'OV_MATCH_LINKED', 'This match is scored on a court tablet'))
       const locked = lockedDependents(list, m.code)
@@ -1187,6 +1260,12 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
       const placing = !!f.out.court_id || !!f.out.scheduled_at || f.out.duration_min !== undefined
       if (placing && !force) {
         const conflicts = await slotConflicts(client, t, { ...m, ...f.out })
+        // its slot has begun: it may be on court already (nobody pressed Start);
+        // the slot editor also sends an unchanged slot with a new referee
+        const moves = (f.out.court_id !== undefined && f.out.court_id !== (m.court_id ?? null)) ||
+          (f.out.scheduled_at !== undefined && f.out.scheduled_at !== iso(m.scheduled_at)) ||
+          (f.out.duration_min !== undefined && f.out.duration_min !== m.duration_min)
+        if (moves && slotBegun(t, m)) conflicts.unshift({ reason: 'begun', game_n: m.game_n, code: m.code })
         if (conflicts.length) {
           throw abort(fail(409, 'OV_SLOT_CONFLICT', 'This slot clashes with the schedule; send force: true to keep it anyway', { conflicts }))
         }
@@ -1200,6 +1279,38 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
   }
 
   /**
+   * POST tmatches/:id/status { status: 'called' | 'in_progress' | 'open' }:
+   * the manager's word that the pairs were called to the court, that the
+   * match started, or that it has not started after all ('open': 'ready' or
+   * 'scheduled' again). A called or started match keeps its court and time
+   * in a re-plan, its slot is not moved (started) and the results it
+   * depends on are locked (OV_BRACKET_LOCKED), like a match a court tablet
+   * scores. Its result is entered as for any match.
+   */
+  async function setStatus ({ user, access, id, body }) {
+    const want = isPlainObject(body) ? body.status : undefined
+    if (!['called', 'in_progress', 'open'].includes(want)) return invalid('status: called, in_progress or open')
+    return guarded('tmatch-status', () => withTx(async (client) => {
+      const t = await requireVia(client, 'tmatch', id, user, access, { edit: true })
+      const { rows: [m0] } = await client.query('SELECT draw_id FROM public.beach_tmatches WHERE id = $1', [id])
+      if (!m0) throw abort(REPLACED())
+      const d = await lockDraw(client, m0.draw_id)
+      const { rows: [m] } = await client.query('SELECT * FROM public.beach_tmatches WHERE id = $1 FOR UPDATE', [id])
+      if (!m) throw abort(REPLACED())
+      if (m.status === 'finished' || m.status === 'walkover') throw abort(fail(409, 'OV_MATCH_ENDED', 'This match has a result', { match: tmatchOut(m) }))
+      if (m.match_id) throw abort(fail(409, 'OV_MATCH_LINKED', 'This match is scored on a court tablet'))
+      if (want !== 'open' && (!m.entry1_id || !m.entry2_id)) throw abort(fail(409, 'OV_MATCH_NOT_READY', 'Both teams of this match are not known yet'))
+      const next = want === 'open' ? (m.entry1_id && m.entry2_id ? 'ready' : 'scheduled') : want
+      if (next !== m.status) {
+        await client.query('UPDATE public.beach_tmatches SET status = $2 WHERE id = $1', [id, next])
+        await audit(client, user.id, 'tournament.schedule', { tournament_id: t.id, draw_id: d.id, tmatch_id: id, game_n: m.game_n, code: m.code, op: 'status', status: next })
+      }
+      const { rows: [u] } = await client.query('SELECT * FROM public.beach_tmatches WHERE id = $1', [id])
+      return ok({ match: tmatchOut(u) })
+    }))
+  }
+
+  /**
    * What a slot (court, start, duration) of tournament match `m` clashes
    * with: [{ reason, game_n?, code? }], reason one of
    *   court            another match on the same court at the same time
@@ -1207,6 +1318,7 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
    *   hours            outside the play hours (day_start .. day_end, Zurich)
    *   before_source    before a match it waits for has ended plus the rest
    *   after_dependent  a match that waits for this one starts before it has ended plus the rest
+   *   (updateTmatch adds 'begun': the match's own slot has begun, see slotBegun)
    * Only matches that have a start time count. The same rules as
    * lib/beachSchedule.js, so a hand move cannot put a pair on two courts at once.
    */
@@ -1229,6 +1341,18 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
   }
   /** The days and play hours of a tournament row, as slotIssues() and the import read them. */
   const tournamentClock = (t) => ({ starts_on: day(t.starts_on), ends_on: day(t.ends_on), day_start: hhmm(t.day_start), day_end: hhmm(t.day_end) })
+  /**
+   * Whether an open match is probably on court although nobody said so: it
+   * is 'ready' (both pairs known), it has a court and its slot has begun,
+   * and now is a day of the tournament (a past or future tournament is
+   * re-planned as a whole).
+   */
+  function slotBegun (t, m) {
+    if (m.status !== 'ready' || !m.court_id || !m.scheduled_at) return false
+    const at = new Date(m.scheduled_at).getTime()
+    const today = new Date(now()).toLocaleDateString('en-CA', { timeZone: 'Europe/Zurich' })
+    return at <= now() && daysBetween(day(t.starts_on), day(t.ends_on)).includes(today)
+  }
 
   // ------------------------------------------------------------------ schedule
   /**
@@ -1236,8 +1360,11 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
    * the drawn draws that has not begun over the active courts and the
    * tournament's days (lib/beachSchedule.js). Begun matches keep their slot.
    * During the tournament (now on one of its days) no match is put before
-   * now. A re-plan places every match that has not begun again: a slot moved
-   * by hand (PATCH tmatches/:id) is not kept unless the match has begun.
+   * now, and a match whose slot has begun counts as begun when both its
+   * pairs are known (slotBegun): nobody may have pressed Start, but it is
+   * most likely on court. A re-plan places every match that has not begun
+   * again: a slot moved by hand (PATCH tmatches/:id) is not kept unless the
+   * match has begun.
    */
   async function schedule ({ user, access, id, body }) {
     const b = isPlainObject(body) ? body : {}
@@ -1262,7 +1389,9 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
         wave: m.wave,
         source1: m.source1,
         source2: m.source2,
-        fixed: OPEN_STATUSES.includes(m.status) && m.match_id == null ? null : { court_id: m.court_id, scheduled_at: iso(m.scheduled_at), duration_min: m.duration_min }
+        fixed: OPEN_STATUSES.includes(m.status) && m.match_id == null && !slotBegun(t, m)
+          ? null
+          : { court_id: m.court_id, scheduled_at: iso(m.scheduled_at), duration_min: m.duration_min }
       }))
       // during the tournament nothing that has not begun goes before now
       const r = scheduleMatches({
@@ -1317,13 +1446,14 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
         'SELECT * FROM public.beach_tournaments WHERE slug = $1 AND public AND status = ANY($2::text[])', [s, PUBLIC_STATUSES])
       if (!t) return notFound()
       const [courts, draws, entries, tmatches] = await Promise.all([
-        pool.query('SELECT id, number, name FROM public.beach_courts WHERE tournament_id = $1 AND active ORDER BY number', [t.id]),
+        pool.query('SELECT id, number, name, active FROM public.beach_courts WHERE tournament_id = $1 ORDER BY number', [t.id]),
         pool.query('SELECT * FROM public.beach_draws WHERE tournament_id = $1 ORDER BY created_at, id', [t.id]),
         pool.query(`SELECT e.id, e.draw_id, e.seed, e.name, e.player1, e.player2, e.status, e.final_rank
                       FROM public.beach_entries e JOIN public.beach_draws d ON d.id = e.draw_id
                      WHERE d.tournament_id = $1 AND e.status = 'registered' ORDER BY e.draw_id, e.seed NULLS LAST, e.name`, [t.id]),
         pool.query('SELECT * FROM public.beach_tmatches WHERE tournament_id = $1 ORDER BY game_n', [t.id])
       ])
+      // a match keeps the number of its court when the court is switched off (flooded, closed)
       const courtNo = new Map(courts.rows.map((c) => [c.id, c.number]))
       const person = (p) => ({ first: p?.first || '', last: p?.last || '', country: p?.country ?? null })
       return ok({
@@ -1331,7 +1461,7 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
           slug: t.slug, title: t.title, venue: t.venue ?? null, city: t.city ?? null,
           starts_on: day(t.starts_on), ends_on: day(t.ends_on), status: t.status
         },
-        courts: courts.rows.map((c) => ({ number: c.number, name: c.name ?? null })),
+        courts: courts.rows.filter((c) => c.active).map((c) => ({ number: c.number, name: c.name ?? null })),
         draws: draws.rows.map((d) => ({ id: d.id, category: d.category, gender: d.gender, format: d.format, status: d.status })),
         entries: entries.rows.map((e) => ({
           id: e.id, draw_id: e.draw_id, seed: e.seed ?? null, name: e.name, players: [person(e.player1), person(e.player2)], final_rank: e.final_rank ?? null
@@ -1376,6 +1506,7 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     ['PATCH', new RegExp(`^/api/beach/entries/${ID}$`), (m, c) => updateEntry({ ...c, id: m[1] })],
     ['DELETE', new RegExp(`^/api/beach/entries/${ID}$`), (m, c) => deleteEntry({ ...c, id: m[1] })],
     ['PATCH', new RegExp(`^/api/beach/tmatches/${ID}$`), (m, c) => updateTmatch({ ...c, id: m[1] })],
+    ['POST', new RegExp(`^/api/beach/tmatches/${ID}/status$`), (m, c) => setStatus({ ...c, id: m[1] })],
     ['POST', new RegExp(`^/api/beach/tmatches/${ID}/result$`), (m, c) => enterResult({ ...c, id: m[1] })],
     ['DELETE', new RegExp(`^/api/beach/tmatches/${ID}/result$`), (m, c) => withdrawResult({ ...c, id: m[1] })]
   ]
@@ -1411,6 +1542,7 @@ export function createBeachTournaments ({ pool, accounts, logger = console, now 
     importTournament,
     enterResult,
     withdrawResult,
+    setStatus,
     ranking
   }
 }

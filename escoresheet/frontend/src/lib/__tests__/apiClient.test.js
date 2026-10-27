@@ -391,6 +391,14 @@ describe('self-hosted backend contract', () => {
     expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body).claim).toBe(false)
   })
 
+  it('apiMatchRestore sends a hand-over re-key only when there is one', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { id: 'u', counts: {} }, error: null }))
+    await apiMatchRestore({ match: { external_id: 'm1' }, rekey: { sets: {}, events: { 'm1:e:9': 'm1:e:1' } } })
+    expect(sentBody().rekey).toEqual({ sets: {}, events: { 'm1:e:9': 'm1:e:1' } })
+    await apiMatchRestore({ match: { external_id: 'm1' } })
+    expect('rekey' in JSON.parse(globalThis.fetch.mock.calls[1][1].body)).toBe(false)
+  })
+
   it('apiMatchRestore reports 426 with its status (retry later, not fatal)', async () => {
     globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: { message: 'too old', code: 'OV_CLIENT_TOO_OLD' } }, 426))
     const r = await apiMatchRestore({ match: { external_id: 'm1' } })
@@ -413,6 +421,20 @@ describe('self-hosted backend contract', () => {
     localStorage.removeItem('api_auth_token')
     await apiMatchRestoreByPin(12, '123456')
     expect(globalThis.fetch.mock.calls[1][1].headers.Authorization).toBeUndefined()
+  })
+
+  // 2026-10-26: a device that continued a match signed out never got its
+  // queued claim through; the game PIN proved here makes it the scorer
+  it('apiMatchRestoreByPin claims the match for this device only when it continues it', async () => {
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { match: { external_id: 'm1' }, sets: [], events: [], liveState: null, scorer: { mine: true, moved: true } }, error: null }))
+    localStorage.removeItem('api_auth_token')
+    const r = await apiMatchRestoreByPin(12, '123456', { claim: true, externalId: 'm1' })
+    expect(sentBody()).toEqual({ gameN: 12, pin: '123456', claim: true, device: { id: expect.stringMatching(UUID_RE), platform: 'web' }, external_id: 'm1' })
+    expect(globalThis.fetch.mock.calls[0][1].headers.Authorization).toBeUndefined()
+    expect(r.data.scorer.mine).toBe(true)
+    // the search for backups only looks it up
+    await apiMatchRestoreByPin(12, '123456')
+    expect(JSON.parse(globalThis.fetch.mock.calls[1][1].body)).toEqual({ gameN: 12, pin: '123456' })
   })
 
   it('apiMatchClaim proves the game PIN with the session', async () => {
@@ -450,5 +472,45 @@ describe('self-hosted backend contract', () => {
     const { data } = await apiAuth.getSession()
     expect(data.session.expires_at).toBe(later)
     expect(JSON.parse(localStorage.getItem('api_auth_token')).expires_at).toBe(later)
+  })
+})
+
+// National peak load test 2026-10-26: hundreds of scorers signing in within
+// two minutes; the server's sign-in gate (a few per second for the whole
+// server) answered one in ten with 503 auth_busy, which the app showed as an
+// error the scorer had to tap away and retry by hand.
+describe('apiAuth.signInWithPassword when sign-in is busy', () => {
+  const busy = () => jsonResponse({ data: null, error: { message: 'Sign-in is busy right now. Please try again in a few seconds.', code: 'auth_busy' } }, 503)
+  const ok = () => jsonResponse({ data: { session: { access_token: 'n', user: { id: 'u2' } }, user: { id: 'u2' } }, error: null })
+
+  beforeEach(() => { localStorage.clear(); vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
+
+  it('asks again after 2-4 s, a few times, before showing the error', async () => {
+    const answers = [busy(), busy(), ok()]
+    globalThis.fetch = vi.fn(async () => answers.shift())
+    const pending = apiAuth.signInWithPassword({ email: 'a@b.ch', password: 'x' })
+    await vi.advanceTimersByTimeAsync(1999)
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(10000)
+    const r = await pending
+    expect(globalThis.fetch).toHaveBeenCalledTimes(3)
+    expect(r.error).toBeNull()
+    expect(JSON.parse(localStorage.getItem('api_auth_token')).access_token).toBe('n')
+  })
+
+  it('gives up after three more tries; other refusals are never retried', async () => {
+    globalThis.fetch = vi.fn(async () => busy())
+    const pending = apiAuth.signInWithPassword({ email: 'a@b.ch', password: 'x' })
+    await vi.advanceTimersByTimeAsync(30000)
+    const r = await pending
+    expect(globalThis.fetch).toHaveBeenCalledTimes(4)
+    expect(r.error.code).toBe('auth_busy')
+    expect(r.status).toBe(503)
+
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: null, error: { message: 'Invalid login credentials' } }, 400))
+    const wrong = await apiAuth.signInWithPassword({ email: 'a@b.ch', password: 'y' })
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+    expect(wrong.error.message).toBe('Invalid login credentials')
   })
 })

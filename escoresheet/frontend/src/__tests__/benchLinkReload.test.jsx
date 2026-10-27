@@ -33,6 +33,11 @@ vi.mock('../components/UpdateBanner', () => ({ default: () => null }))
 vi.mock('../components/DashboardHeader', () => ({ default: () => null }))
 vi.mock('../components/ServerConnectionScreen', () => ({ default: () => <div>server screen</div> }))
 vi.mock('../utils/backendConfig', async (importOriginal) => ({ ...(await importOriginal()), isServedFromLocalServer: () => true }))
+// The bench's connection check (every 15 s): never a real backend from a test
+vi.mock('../lib/apiClient', async (importOriginal) => ({
+  ...(await importOriginal()),
+  apiFrom: () => ({ select: () => ({ limit: async () => ({ data: [], error: null }) }) })
+}))
 
 import BenchApp from '../BenchApp'
 
@@ -89,4 +94,51 @@ describe('bench opened through its match link', () => {
     expect(localStorage.getItem('bench_session')).toBeNull()
     expect(screen.queryByText('bench match view')).toBeNull()
   })
+
+  // review of #37: the PIN checks turn a network failure into a failed check,
+  // so a bench reloading while the server was down deleted its session and
+  // asked for the PIN, also once the server was back
+  it('a reload while the server is unreachable keeps the session and joins once it is back', async () => {
+    storeSession()
+    sync.validatePinSupabase.mockResolvedValue({ success: false, error: 'Failed to fetch', unreachable: true })
+    sync.validatePin.mockRejectedValue(new TypeError('Failed to fetch'))
+    render(<BenchApp />)
+    await waitFor(() => expect(sync.validatePin).toHaveBeenCalled())
+    await new Promise(r => setTimeout(r, 100))
+    expect(JSON.parse(localStorage.getItem('bench_session'))).toMatchObject({ matchId: SEED, team: 'home', pin: PIN })
+    expect(screen.queryByText('bench match view')).toBeNull()
+    // not the link's PIN step
+    expect(sync.getMatchData).not.toHaveBeenCalled()
+
+    // the server is back: the bench joins without anyone touching it
+    sync.validatePinSupabase.mockResolvedValue({ success: true, match: { id: SEED, gameNumber: 12, homeTeamConnectionEnabled: true, status: 'live' } })
+    await screen.findByText('bench match view', {}, { timeout: 10000 })
+    expect(JSON.parse(localStorage.getItem('bench_session'))).toMatchObject({ matchId: SEED, team: 'home', pin: PIN })
+  }, 20000)
+
+  // 2026-10-27 re-verification: a test match is only on the relay, and a
+  // backend that has just restarted knows it once its scorer publishes it
+  // again. The bench's retry after the outage landed in that gap: the relay's
+  // 404 (with the cloud's, which never knows a test match) read as a wrong
+  // PIN, and the session was deleted, 2 runs in 3
+  it('after an outage, a match the relay does not know yet keeps the session until its scorer is back', async () => {
+    storeSession()
+    sync.validatePinSupabase.mockResolvedValue({ success: false, error: 'Failed to fetch', unreachable: true })
+    sync.validatePin.mockRejectedValue(new TypeError('Failed to fetch'))
+    render(<BenchApp />)
+    await waitFor(() => expect(sync.validatePin).toHaveBeenCalledTimes(1))
+    // the backend is back, the scorer not yet
+    sync.validatePinSupabase.mockResolvedValue({ success: false, error: 'Invalid PIN code', status: 404 })
+    sync.validatePin.mockRejectedValue(Object.assign(new Error('No match found with this PIN.'), { status: 404 }))
+    await waitFor(() => expect(sync.validatePin).toHaveBeenCalledTimes(2), { timeout: 8000 })
+    await new Promise(r => setTimeout(r, 100))
+    expect(JSON.parse(localStorage.getItem('bench_session'))).toMatchObject({ matchId: SEED, team: 'home', pin: PIN })
+    expect(sync.getMatchData).not.toHaveBeenCalled()
+    expect(screen.getByText('The server is back. The bench rejoins its match as soon as the scoresheet has reconnected.')).toBeTruthy()
+
+    // the scorer published it again: the bench joins
+    sync.validatePin.mockResolvedValue({ success: true, match: { id: SEED, gameNumber: 12, homeTeamConnectionEnabled: true, status: 'live' } })
+    await screen.findByText('bench match view', {}, { timeout: 8000 })
+    expect(JSON.parse(localStorage.getItem('bench_session'))).toMatchObject({ matchId: SEED, team: 'home', pin: PIN })
+  }, 25000)
 })

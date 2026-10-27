@@ -33,8 +33,15 @@ export const tournamentApi = {
   updateEntry(entryId, body) { return apiRequest('PATCH', `/api/beach/entries/${enc(entryId)}`, body) },
   removeEntry(entryId) { return apiRequest('DELETE', `/api/beach/entries/${enc(entryId)}`) },
   updateMatch(matchId, body) { return apiRequest('PATCH', `/api/beach/tmatches/${enc(matchId)}`, body) },
+  // the manager's word that a match was called / started, or not after all ('open')
+  setMatchStatus(matchId, status) { return apiRequest('POST', `/api/beach/tmatches/${enc(matchId)}/status`, { status }) },
   enterResult(matchId, body) { return apiRequest('POST', `/api/beach/tmatches/${enc(matchId)}/result`, body) },
-  withdrawResult(matchId) { return apiRequest('DELETE', `/api/beach/tmatches/${enc(matchId)}/result`) }
+  // expect: the match as the screen showed it (as JSON in the query: a DELETE has no body);
+  // a backend before it ignores the query
+  withdrawResult(matchId, expect) {
+    const q = expect ? `?expect=${enc(JSON.stringify(expect))}` : ''
+    return apiRequest('DELETE', `/api/beach/tmatches/${enc(matchId)}/result${q}`)
+  }
 }
 
 const CODES = {
@@ -48,8 +55,11 @@ const CODES = {
   OV_MATCH_NOT_READY: 'tournaments.errors.notReady',
   OV_MATCH_BEGUN: 'tournaments.errors.matchBegun',
   OV_NO_COURTS: 'tournaments.errors.noCourts',
+  OV_COURT_IN_USE: 'tournaments.errors.courtInUse',
   OV_SLOT_CONFLICT: 'tournaments.errors.slotConflict',
   OV_RESULT_CHANGED: 'tournaments.errors.resultChanged',
+  OV_MATCH_TEAMS_CHANGED: 'tournaments.errors.teamsChanged',
+  OV_MATCH_ENDED: 'tournaments.errors.resultChanged',
   OV_IMPORT_CHANGED: 'tournaments.import.changed',
   OV_IMPORT_INVALID: 'tournaments.import.hasErrors',
   OV_CONFLICT: 'tournaments.import.conflict',

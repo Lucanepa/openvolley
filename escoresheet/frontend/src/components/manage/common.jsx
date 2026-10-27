@@ -31,16 +31,23 @@ export function useKitLang() {
 /**
  * Load data for a panel: { data, error, loading, reload }. The previous data
  * stays on screen while reloading (no flash of the empty state).
+ * reload({ quiet: true }) is a background refresh: no loading state, and a
+ * failed read keeps what is shown.
  * @param {() => Promise<{data: any, error: object|null}>} fetcher
  */
 export function usePanelData(fetcher, deps = [], { enabled = true } = {}) {
   const [state, setState] = useState({ data: null, error: null, loading: enabled })
   const seq = useRef(0)
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (opts) => {
+    const quiet = opts?.quiet === true
     const my = ++seq.current
-    setState(s => ({ ...s, loading: true }))
+    if (!quiet) setState(s => ({ ...s, loading: true }))
     const res = await fetcher()
     if (my !== seq.current) return res
+    if (quiet && res.error) {
+      setState(s => ({ ...s, loading: false }))
+      return res
+    }
     setState({ data: res.error ? null : res.data, error: res.error || null, loading: false })
     return res
     // eslint-disable-next-line react-hooks/exhaustive-deps

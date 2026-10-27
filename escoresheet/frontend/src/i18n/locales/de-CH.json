@@ -818,8 +818,9 @@
       "selectTitle": "Spielführer"
     },
     "duplicateTabTitle": "Matchblatt bereits geöffnet",
-    "duplicateTabMessage": "Das Matchblatt ist bereits in einem anderen Tab oder Browserfenster geöffnet. Bitte schliessen Sie diesen Tab und verwenden Sie den bestehenden, um Datenkonflikte zu vermeiden.",
+    "duplicateTabMessage": "Das Matchblatt ist bereits in einem anderen Tab oder Browserfenster geöffnet. Führen Sie es nur in einem Tab, um Datenkonflikte zu vermeiden: Schliessen Sie diesen Tab, oder holen Sie es mit «In diesem Tab weiterführen» hierher (der andere Tab führt es dann nicht mehr).",
     "closeThisTab": "Diesen Tab schliessen",
+    "scoreInThisTab": "In diesem Tab weiterführen",
     "rotateDeviceTitle": "Bitte drehen Sie Ihr Gerät",
     "rotateDeviceMessage": "Das Scoreboard funktioniert am besten im Querformat. Bitte drehen Sie Ihr Gerät horizontal, um fortzufahren.",
     "rotateDeviceTip": "Tipp: Für automatische Backup-Funktionen verwenden Sie Chrome oder Edge auf einem Desktop-/Laptop-Computer.",
@@ -860,6 +861,7 @@
     "relayRejected": {
       "notOwner": "Verbindig Schiri/Bank: es anders eScoresheet hebt das Spiil uf em Server. Schiri, Bank und Livescore überchömed d Updates vo dem Grät nöd.",
       "rateLimited": "Verbindig Schiri/Bank: de Server hät das eScoresheet für e Minute abglehnt (z vill Fehlversüech).",
+      "scorerMoved": "Verbindig Schiri/Bank: das Spiil wird jetzt uf emne andere Grät gfüehrt. Schiri, Bank und Livescore folged em andere Grät, nüme dem.",
       "tooMany": "Verbindig Schiri/Bank: das Grät füehrt scho z vill Spiil uf em Server."
     },
     "toolbar": {
@@ -1063,9 +1065,9 @@
     "modals": {
       "existingMatchWarning": "Es git scho es Spiil. Möchted Sie es lösche und es neus offiziells Spiil erstelle?",
       "testMatchOverwriteWarning": "Es offiziells Spiil wird ufzeichnet. S Starte vomene Testspiil löscht die vorherig Sitzig. Wiiterfahre?",
-      "officialMatchStillRecording": "Uf dem Gerät lauft no es offiziells Spiil. Füehred Sie es wiiter oder löschet Sie es mit \"Spiil lösche\", bevor Sie es neus offiziells Spiil erstelled.",
-      "officialMatchReplaceTest": "S Testspiil uf dem Gerät wird dur s offizielle Spiil ersetzt und sini Date glöscht. Wiiterfahre?",
-      "officialMatchReplaceEasy": "S eifache Spiil uf dem Gerät wird dur s offizielle Spiil ersetzt und sini Date glöscht. Wiiterfahre?",
+      "officialMatchStillRecording": "Uf dem Grät lauft no es offiziells Spiil. Füehred Sie es wiiter oder löschet Sie es mit \"Spiil lösche\", bevor Sie es neus offiziells Spiil erstelled.",
+      "officialMatchReplaceTest": "S Testspiil uf dem Grät wird dur s offizielle Spiil ersetzt und sini Date glöscht. Wiiterfahre?",
+      "officialMatchReplaceEasy": "S eifache Spiil uf dem Grät wird dur s offizielle Spiil ersetzt und sini Date glöscht. Wiiterfahre?",
       "deleteTestMatchConfirm": "Das löscht s Testspiil und alli Date. Wiiterfahre?",
       "noTestMatchFound": "Keis Testspiil gfunde. Bitte erstelled Sie zersch es neus Testspiil.",
       "testMatchDeleted": "Testspiil erfolgriich glöscht.",
@@ -1077,9 +1079,9 @@
       "failedToRestoreFromFile": "Widerherstellig us Datei fehlgschlage",
       "enter6DigitPin": "Bitte gänd Sie en 6-stellige PIN ii",
       "matchNotFound": "Spiil nöd gfunde",
-      "easyMatchOverwriteWarning": "Es offiziells Spiil lauft no. Es eifachs Spiil ersetzt s Test- oder eifache Spiil uf dem Gerät. Wiiterfahre?",
-      "easyMatchReplaceEasy": "S eifache Spiil uf dem Gerät wird dur s neue ersetzt und sini Date glöscht. Wiiterfahre?",
-      "easyMatchReplaceTest": "S Testspiil uf dem Gerät wird dur s eifache Spiil ersetzt und sini Date glöscht. Wiiterfahre?",
+      "easyMatchOverwriteWarning": "Es offiziells Spiil lauft no. Es eifachs Spiil ersetzt s Test- oder eifache Spiil uf dem Grät. Wiiterfahre?",
+      "easyMatchReplaceEasy": "S eifache Spiil uf dem Grät wird dur s neue ersetzt und sini Date glöscht. Wiiterfahre?",
+      "easyMatchReplaceTest": "S Testspiil uf dem Grät wird dur s eifache Spiil ersetzt und sini Date glöscht. Wiiterfahre?",
       "unableToPrepareEasyMatch": "S eifache Spiil het nöd chönne starte: {{error}}",
       "deleteEasyMatchConfirm": "Das löscht s eifache Spiil und alli Date. Wiiterfahre?",
       "easyMatchDeleted": "Eifachs Spiil glöscht."
@@ -1092,14 +1094,14 @@
     "easyMatch": "Eifachs Spiil",
     "easyMatchHint": "Inoffiziell · ohni Kader und Underschrifte",
     "deviceMatches": {
-      "title": "Uf däm Gerät",
+      "title": "Uf däm Grät",
       "game": "Spiil {{game}}",
       "home": "Heim",
       "away": "Gast",
       "noTeams": "Teams nonig erfasst",
       "notSynced": "Nöd synchronisiert",
       "sameGame": "Gliichs Spiil zwöimal",
-      "duplicateNotice": "Spiil {{game}} isch zwöimal uf däm Gerät. De Server füehrt eis Match pro Spiil: füehr das wiiter, wo du zellt häsch, und lösch s andere.",
+      "duplicateNotice": "Spiil {{game}} isch zwöimal uf däm Grät. De Server füehrt eis Match pro Spiil: füehr das wiiter, wo du zellt häsch, und lösch s andere.",
       "continue": "Wiiterfüehre",
       "delete": "Lösche",
       "status": {
@@ -1472,7 +1474,7 @@
     "lcs": "Libero-Kontrollblatt",
     "lcsTooltip": "Libero-Kontrollblatt aazeige",
     "pdfFailed": "S PDF hät uf dem Grät nöd chöne erstellt werde.",
-    "matchNotFound": "Das Spiel isch nöd uf däm Gerät: Es git keis Matchblatt zum Speichere.",
+    "matchNotFound": "Das Spiel isch nöd uf däm Grät: Es git keis Matchblatt zum Speichere.",
     "pdfInvalid": "S PDF hät nöd richtig chöne erstellt werde. Bitte nomal probiere.",
     "pdfSavedAt": "PDF gspeicheret:",
     "savingFile": "{{fileName}} wird im Ordner Downloads gspeicheret...",
@@ -1638,6 +1640,8 @@
     "connecting": "Verbinde...",
     "invalidPin": "Ungültige PIN. Bitte nomal probiere.",
     "tooManyAttempts": "Zu viele falsche PINs aus diesem Netzwerk. Bitte einige Minuten warten und erneut versuchen.",
+    "reconnecting": "Kei Verbindig zum Server. D Bank verbindet sich wieder mit ihrem Spiil, sobald er wieder da isch.",
+    "waitingForScoresheet": "De Server isch wieder da. D Bank verbindet sich wieder mit ihrem Spiil, sobald s Matchblatt wieder verbunde isch.",
     "roster": "Kader",
     "match": "Spiil",
     "back": "Zrugg",
@@ -1682,6 +1686,8 @@
       "matchEnded": "S Spiil isch beendet.",
       "connectionDisabled": "D Verbindig isch deaktiviert worde.",
       "serverUnreachable": "Keine Verbindung zum Server – bitte WLAN prüfen und erneut versuchen.",
+      "reconnecting": "Kei Verbindig zum Server. S Schiri-Dashboard verbindet sich wieder mit sim Spiil, sobald er wieder da isch.",
+      "waitingForScoresheet": "De Server isch wieder da. S Schiri-Dashboard verbindet sich wieder mit sim Spiil, sobald s Matchblatt wieder verbunde isch.",
       "tooManyAttempts": "Zu viele falsche PINs aus diesem Netzwerk. Bitte einige Minuten warten und erneut versuchen."
     },
     "connection": {
@@ -1944,10 +1950,10 @@
     }
   },
   "syncBanner": {
-    "title": "Nöd aagmäldet: Das Spiil isch nur uf däm Gerät gspeicheret",
+    "title": "Nöd aagmäldet: Das Spiil isch nur uf däm Grät gspeicheret",
     "body": "S Erfasse funktioniert wiiter. Mälded Sie sich aa, zum es i de Cloud z speichere (Schiri, Livescore, Backup); wartendi Änderige werded dänn sofort gschickt.",
     "later": "Spöter",
-    "expiredTitle": "Sitzig abglaufe: Änderige sind nur uf däm Gerät gspeicheret",
+    "expiredTitle": "Sitzig abglaufe: Änderige sind nur uf däm Grät gspeicheret",
     "expiredBody": "S Erfasse funktioniert wiiter. Mälded Sie sich nomal aa, zum i de Cloud z speichere; wartendi Änderige werded dänn sofort gschickt.",
     "signInAgain": "Nomal aamälde"
   },
@@ -1975,7 +1981,7 @@
     "supabase": "Cloud-Synchronisierig",
     "cloud": "Cloud-Synchronisierig",
     "signInToSync": "Zum Synchronisiere aamälde",
-    "signInToSyncHint": "Nöd aagmäldet: Änderige bliibed uf däm Gerät, bis Sie sich aamälded.",
+    "signInToSyncHint": "Nöd aagmäldet: Änderige bliibed uf däm Grät, bis Sie sich aamälded.",
     "offlinePending": "Offline ({{count}} usstehend)",
     "refusedByServer": "Vom Server abglehnt:",
     "syncingDots": "Synchronisiere...",
@@ -2173,7 +2179,7 @@
     "wifiQrCaption": "Zersch scanne, zum i das WLAN gah"
   },
   "startupConnectivity": {
-    "cloudWaits": "Kei Internet: D Cloud-Synchronisation startet, sobald das Gerät online isch. D Spiel blibed da und uf em lokale Server gspeicheret.",
+    "cloudWaits": "Kei Internet: D Cloud-Synchronisation startet, sobald das Grät online isch. D Spiel blibed da und uf em lokale Server gspeicheret.",
     "connecting": "Verbindig wird hergstellt...",
     "goOffline": "Offline gah",
     "continueAnyway": "Trotzdem witerfahre",
@@ -3280,6 +3286,8 @@
     },
     "enterResult": "Resultat eingeben",
     "correctResult": "Resultat korrigieren",
+    "startMatch": "Starten",
+    "unstartMatch": "Start zurücknehmen",
     "resultTitle": "Spiel {{n}} · {{code}}",
     "resultKind": "Resultat",
     "kinds": {
@@ -3321,7 +3329,8 @@
       "days": "Die Startzeit liegt an keinem Turniertag.",
       "hours": "Das Spiel liegt ausserhalb der Spielzeiten.",
       "before_source": "Es beginnt, bevor Spiel {{n}} ({{code}}) samt Pause vorbei ist, auf dessen Resultat es wartet.",
-      "after_dependent": "Spiel {{n}} ({{code}}) wartet auf dieses Resultat und beginnt, bevor dieses Spiel samt Pause vorbei ist."
+      "after_dependent": "Spiel {{n}} ({{code}}) wartet auf dieses Resultat und beginnt, bevor dieses Spiel samt Pause vorbei ist.",
+      "begun": "Seine Zeit hat schon begonnen: Spiel {{n}} ({{code}}) wird vielleicht schon gespielt."
     },
     "rankingHint": "Die Schlussrangliste für MyBeach (bis 12:00 Uhr am Folgetag eintragen, Art. 29).",
     "rank": "Rang",
@@ -3349,9 +3358,11 @@
       "matchBegun": "Dieses Spiel hat schon begonnen: Feld und Zeit bleiben.",
       "noCourts": "Zuerst ein Feld hinzufügen.",
       "notFound": "Nicht gefunden oder nicht für dich sichtbar.",
+      "courtInUse": "Auf diesem Feld wurde schon gespielt: schalte «In Betrieb» aus, statt es zu entfernen.",
       "noManager": "Keine OpenBeach-Wettbewerbsverantwortliche Person hat diese E-Mail.",
       "slotConflict": "Dieser Platz passt nicht in den Spielplan.",
       "resultChanged": "Jemand anderes hat dieses Resultat inzwischen geändert. Schau es dir nochmals an.",
+      "teamsChanged": "Die Teams dieses Spiels haben inzwischen gewechselt: ein Resultat davor wurde korrigiert. Schau es dir nochmals an.",
       "drawExists": "Das Turnier hat schon ein Tableau dieser Kategorie und dieses Geschlechts."
     },
     "import": {
@@ -3563,7 +3574,7 @@
       "unavailable": "D Genehmigung mit Konto isch uf däm Server nöd verfüegbar.",
       "emailUnconfirmed": "De Offizielli hät d E-Mail-Adresse vom Konto no nöd bestätigt.",
       "scorerNotReferee": "S Konto, wo das Spiil schriibt, chan nöd als Schiri genehmige.",
-      "callerRole": "Für d Genehmigung mit Konto bruucht das Gerät es Schriiber- oder Schirikonto."
+      "callerRole": "Für d Genehmigung mit Konto bruucht das Grät es Schriiber- oder Schirikonto."
     },
     "mine": {
       "title": "Ihri Genehmigunge",
@@ -3588,10 +3599,10 @@
       "locked": "Spiil genehmigt oder abgschlosse: d Genehmigunge sind fix",
       "beach": "D Genehmigung mit PIN gits bi Beachvolleyball-Spiil nöd",
       "localMatch": "Das Spiil isch nöd online gspeicheret: d Genehmigung mit PIN bruucht es Online-Spiil",
-      "noCloud": "Kei Online-Verbindig uf dem Gerät: vo Hand underschriibe",
+      "noCloud": "Kei Online-Verbindig uf dem Grät: vo Hand underschriibe",
       "serverOff": "D Genehmigung mit PIN isch uf dem Server abgschaltet",
-      "signedOut": "Mälded Sie sich uf dem Gerät aa, zum mit PIN genehmige",
-      "callerRole": "S Konto uf dem Gerät cha kei Genehmigunge schicke: es bruucht d Rolle Schriiber oder Schiri",
+      "signedOut": "Mälded Sie sich uf dem Grät aa, zum mit PIN genehmige",
+      "callerRole": "S Konto uf dem Grät cha kei Genehmigunge schicke: es bruucht d Rolle Schriiber oder Schiri",
       "offline": "Offline: d Genehmigung mit PIN chunnt wieder, sobald Sie online sind"
     }
   },

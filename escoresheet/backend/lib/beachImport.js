@@ -306,10 +306,24 @@ function matchRow (raw, i) {
 }
 
 // ------------------------------------------------------------------ the plan
-const personKey = (p) => `${fold(p?.last)}|${fold(p?.first)}`
+// A player's last name, first name and licence, folded once: fold() is an
+// NFKD normalisation plus a regex, and a plan compares players many times
+// (planImport runs on the backend's one event loop). Players are never
+// changed once read (merges make new objects), so the cache stays true.
+const foldedPlayers = new WeakMap()
+const folded = (p) => {
+  if (p === null || typeof p !== 'object') return { last: fold(p?.last), first: fold(p?.first), licence: fold(p?.licence) }
+  let f = foldedPlayers.get(p)
+  if (!f) {
+    f = { last: fold(p.last), first: fold(p.first), licence: fold(p.licence) }
+    foldedPlayers.set(p, f)
+  }
+  return f
+}
+const personKey = (p) => `${folded(p).last}|${folded(p).first}`
 const licenceKey = (a, b) => {
-  const l1 = fold(a?.licence)
-  const l2 = fold(b?.licence)
+  const l1 = folded(a).licence
+  const l2 = folded(b).licence
   return l1 && l2 ? [l1, l2].sort().join('|') : null
 }
 const namesKey = (a, b) => [personKey(a), personKey(b)].sort().join('||')
@@ -319,13 +333,17 @@ const namesKey = (a, b) => [personKey(a), personKey(b)].sort().join('||')
  * Beispiel' keeps the pair typed in with first names).
  */
 const samePerson = (x, y) => {
-  const lx = fold(x?.licence)
-  const ly = fold(y?.licence)
-  if (lx && ly) return lx === ly
-  if (fold(x?.last) !== fold(y?.last)) return false
-  const fx = fold(x?.first)
-  const fy = fold(y?.first)
-  return !fx || !fy || fx === fy
+  const fx = folded(x)
+  const fy = folded(y)
+  if (fx.licence && fy.licence) return fx.licence === fy.licence
+  if (fx.last !== fy.last) return false
+  return !fx.first || !fy.first || fx.first === fy.first
+}
+/** list.get(key) with `value` appended (Map of lists). */
+const pushTo = (map, key, value) => {
+  const list = map.get(key)
+  if (list) list.push(value)
+  else map.set(key, [value])
 }
 /** The same pair, loosely (samePerson, in either order). */
 const samePair = (a1, a2, b1, b2) => (samePerson(a1, b1) && samePerson(a2, b2)) || (samePerson(a1, b2) && samePerson(a2, b1))
@@ -359,6 +377,8 @@ export function planImport (state, input) {
   }
   const drawById = new Map(state.draws.map((d) => [d.id, d]))
   const entriesOf = (drawId) => state.entries.filter((e) => e.draw_id === drawId)
+  const entryById = new Map()
+  for (const e of state.entries) if (!entryById.has(e.id)) entryById.set(e.id, e)
 
   // ---- draws: the existing ones, then the new ones in the file's order
   const plannedDraws = [] // { key, category, gender, op, draw }
@@ -446,7 +466,8 @@ export function planImport (state, input) {
     const seenPair = new Map()
     const seenSeed = new Map()
     const seenLicence = new Map()
-    const seenPeople = [] // { pl, row }: a player without a licence is found by name (samePerson)
+    // { pl, row } by folded last name: a player without a licence is found by name (samePerson)
+    const seenPeople = new Map()
     for (const r of rows) {
       if (r.msgs.some((m) => m.level === 'error')) continue
       const k = licenceKey(r.p1, r.p2) || namesKey(r.p1, r.p2)
@@ -466,22 +487,48 @@ export function planImport (state, input) {
         else seenLicence.set(l, r.row)
       }
       for (const pl of [r.p1, r.p2]) {
-        // two licences decide (player_twice above); else the names, as a warning (namesakes exist)
-        const prev = seenPeople.find((x) => x.row !== r.row && !(fold(x.pl.licence) && fold(pl.licence)) && samePerson(x.pl, pl))
+        // two licences decide (player_twice above); else the names, as a warning (namesakes exist);
+        // without two licences samePerson needs the same last name, so only those are looked at
+        const prev = (seenPeople.get(folded(pl).last) || [])
+          .find((x) => x.row !== r.row && !(folded(x.pl).licence && folded(pl).licence) && samePerson(x.pl, pl))
         if (prev) r.msgs.push({ level: 'warning', code: 'name_twice', name: [pl.first, pl.last].filter(Boolean).join(' '), first_row: prev.row })
       }
-      seenPeople.push({ pl: r.p1, row: r.row }, { pl: r.p2, row: r.row })
+      pushTo(seenPeople, folded(r.p1).last, { pl: r.p1, row: r.row })
+      pushTo(seenPeople, folded(r.p2).last, { pl: r.p2, row: r.row })
     }
     // match the rows to the draw's pairs: both licences, then both full
     // names, then loosely (last names; first names and licences only where
     // both sides have one), so a blank cell keeps the pair
+    // The pairs are indexed (the first in `existing` order still wins): by
+    // their licence and name keys, and for the loose pass by each player's
+    // licence and last name (a pair loosely the same has a player with the
+    // row's first player's licence, or else its last name).
     const matched = new Map() // row -> entry
     const taken = new Set()
+    const byLicences = new Map()
+    const byNames = new Map()
+    const byPlayer = new Map() // 'l:<licence>' | 'n:<last name>' -> [index in existing]
+    existing.forEach((x, i) => {
+      const lk = licenceKey(x.player1, x.player2)
+      if (lk) pushTo(byLicences, lk, x)
+      pushTo(byNames, namesKey(x.player1, x.player2), x)
+      const keys = new Set()
+      for (const pl of [x.player1, x.player2]) {
+        if (folded(pl).licence) keys.add(`l:${folded(pl).licence}`)
+        keys.add(`n:${folded(pl).last}`)
+      }
+      for (const k of keys) pushTo(byPlayer, k, i)
+    })
+    const looseCandidates = (pl) => {
+      const f = folded(pl)
+      const idx = [...(f.licence ? byPlayer.get(`l:${f.licence}`) || [] : []), ...(byPlayer.get(`n:${f.last}`) || [])]
+      return [...new Set(idx)].sort((a, b) => a - b).map((i) => existing[i])
+    }
     for (const pass of ['licence', 'names', 'loose']) {
       for (const r of rows) {
         if (matched.has(r)) continue
         if (pass === 'loose') {
-          const e = existing.find((x) => !taken.has(x.id) && samePair(r.p1, r.p2, x.player1, x.player2))
+          const e = looseCandidates(r.p1).find((x) => !taken.has(x.id) && samePair(r.p1, r.p2, x.player1, x.player2))
           if (e) {
             matched.set(r, e)
             taken.add(e.id)
@@ -490,8 +537,7 @@ export function planImport (state, input) {
         }
         const k = pass === 'licence' ? licenceKey(r.p1, r.p2) : namesKey(r.p1, r.p2)
         if (!k) continue
-        const e = existing.find((x) => !taken.has(x.id) &&
-          (pass === 'licence' ? licenceKey(x.player1, x.player2) === k : namesKey(x.player1, x.player2) === k))
+        const e = ((pass === 'licence' ? byLicences : byNames).get(k) || []).find((x) => !taken.has(x.id))
         if (e) {
           matched.set(r, e)
           taken.add(e.id)
@@ -627,13 +673,13 @@ export function planImport (state, input) {
       if (x.op?.op === 'new') x.op.values.seed = seed
       else if (x.op) {
         const c = x.op.changes.find((y) => y.field === 'seed')
-        const e = state.entries.find((y) => y.id === x.id)
+        const e = entryById.get(x.id)
         if (c) c.to = seed
         else x.op.changes.push({ field: 'seed', from: e?.seed ?? null, to: seed })
         if ((e?.seed ?? null) === seed) x.op.changes = x.op.changes.filter((y) => y.field !== 'seed')
         x.op.op = x.op.changes.length ? 'changed' : 'unchanged'
       } else {
-        const e = state.entries.find((y) => y.id === x.id)
+        const e = entryById.get(x.id)
         entryOps.push({ op: 'changed', row: null, key: p.key, entry_id: x.id, name: e?.name ?? '', changes: [{ field: 'seed', from: e?.seed ?? null, to: seed }] })
       }
       x.seed = seed
@@ -678,7 +724,7 @@ export function planImport (state, input) {
       if (x.op?.op === 'removed' || x.seed == null) continue
       if (x.op?.op === 'new') map.set(x.seed, { name: x.op.values.name })
       else {
-        const e = state.entries.find((y) => y.id === x.id)
+        const e = entryById.get(x.id)
         map.set(x.seed, { name: x.op?.name ?? e?.name ?? '' })
       }
     }

@@ -49,6 +49,19 @@ describe('actual set and match times (owner 2026-10-07)', () => {
     expect(setStartMs({ ...set1, startTime: iso(16, 3) }, restored)).toBe(min(16, 3))
   })
 
+  // review of #37: the set's first rally started by mistake and undone (or
+  // its rally_start corrected) left set_start.firstRallyAt at the old time,
+  // and the earliest of all the times printed it
+  it('on the scoring device its rally starts tell the start, not a firstRallyAt they no longer have', () => {
+    const undone = [
+      { type: 'set_start', setIndex: 1, seq: 1, ts: iso(14, 30), payload: { startTime: iso(14, 30), firstRallyAt: iso(15, 58, 10) } },
+      // the 15:58 rally_start was undone; the set really began at 16:05
+      ...events.slice(1)
+    ]
+    expect(setStartMs(set1, undone)).toBe(min(16, 5))
+    expect(setDurationMinutes(set1, undone)).toBe(9)
+  })
+
   it('falls back to the confirmed start, then to the first point', () => {
     expect(setStartMs(set1, [])).toBe(min(14, 30))
     expect(setStartMs({ index: 3 }, [{ type: 'point', setIndex: 3, ts: iso(17, 1, 59) }])).toBe(min(17, 1))

@@ -25,7 +25,7 @@ import { uploadBackupToCloud, uploadLogsToCloud } from '../utils/logger'
 import { toastQueuedSync } from '../utils/syncToast'
 import { hasStoredSessionToken } from '../hooks/useSyncQueue'
 import { apiFrom } from '../lib/apiClient'
-import { generateMatchSeedKey } from '../utils/serverDataSync'
+import { generateMatchSeedKey, liveStateNow } from '../utils/serverDataSync'
 import { TEST_TEAM_SEED_DATA, TEST_HOME_BENCH, TEST_AWAY_BENCH } from '../constants/testSeeds'
 import { splitLocalDateTime, parseLocalDateTimeToISO } from '../utils/timeUtils'
 import { generateSecurePin } from '../utils/stringUtils'
@@ -4778,7 +4778,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         [colorKey]: homeColor,
                         [shortKey]: homeShortName || generateShortName(home),
                         [nameKey]: home?.trim() || '',
-                        updated_at: new Date().toISOString()
+                        // on the match's live-state clock (serverDataSync liveStateNow)
+                        updated_at: new Date(liveStateNow(match)).toISOString()
                       })
                       .eq('match_id', supabaseMatch.id)
                     console.log('[MatchSetup] Synced home team to match_live_state')
@@ -5935,7 +5936,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                         [colorKey]: awayColor,
                         [shortKey]: awayShortName || generateShortName(away),
                         [nameKey]: away?.trim() || '',
-                        updated_at: new Date().toISOString()
+                        // on the match's live-state clock (serverDataSync liveStateNow)
+                        updated_at: new Date(liveStateNow(match)).toISOString()
                       })
                       .eq('match_id', supabaseMatch.id)
                     console.log('[MatchSetup] Synced away team to match_live_state')
@@ -7363,8 +7365,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
                       // If changing home color and home is Team B -> update team_b_color
                       const liveStateColorKey = (isHome === homeIsTeamA) ? 'team_a_color' : 'team_b_color'
 
+                      // updated_at on the match's live-state clock, as every
+                      // live-state write (serverDataSync liveStateNow)
                       await apiFrom('match_live_state')
-                        .update({ [liveStateColorKey]: color, updated_at: new Date().toISOString() })
+                        .update({ [liveStateColorKey]: color, updated_at: new Date(liveStateNow(match)).toISOString() })
                         .eq('match_id', supabaseMatch.id)
                       console.log(`[MatchSetup] Synced ${liveStateColorKey} to match_live_state:`, color)
                     }

@@ -811,8 +811,9 @@
       "selectTitle": "Spielführer"
     },
     "duplicateTabTitle": "Matchblatt bereits geöffnet",
-    "duplicateTabMessage": "Das Matchblatt ist bereits in einem anderen Tab oder Browserfenster geöffnet. Bitte schliessen Sie diesen Tab und verwenden Sie den bestehenden, um Datenkonflikte zu vermeiden.",
+    "duplicateTabMessage": "Das Matchblatt ist bereits in einem anderen Tab oder Browserfenster geöffnet. Führen Sie es nur in einem Tab, um Datenkonflikte zu vermeiden: Schliessen Sie diesen Tab, oder holen Sie es mit «In diesem Tab weiterführen» hierher (der andere Tab führt es dann nicht mehr).",
     "closeThisTab": "Diesen Tab schliessen",
+    "scoreInThisTab": "In diesem Tab weiterführen",
     "rotateDeviceTitle": "Bitte drehen Sie Ihr Gerät",
     "rotateDeviceMessage": "Das Scoreboard funktioniert am besten im Querformat. Bitte drehen Sie Ihr Gerät horizontal, um fortzufahren.",
     "rotateDeviceTip": "Tipp: Für automatische Backup-Funktionen verwenden Sie Chrome oder Edge auf einem Desktop-/Laptop-Computer.",
@@ -853,6 +854,7 @@
     "relayRejected": {
       "notOwner": "Verbindung Schiedsrichter/Bank: ein anderes eScoresheet hält dieses Spiel auf dem Server. Schiedsrichter, Bank und Livescore erhalten die Updates dieses Geräts nicht.",
       "rateLimited": "Verbindung Schiedsrichter/Bank: der Server hat dieses eScoresheet für eine Minute abgelehnt (zu viele Fehlversuche).",
+      "scorerMoved": "Verbindung Schiedsrichter/Bank: dieses Spiel wird jetzt auf einem anderen Gerät geführt. Schiedsrichter, Bank und Livescore folgen dem anderen Gerät, nicht mehr diesem.",
       "tooMany": "Verbindung Schiedsrichter/Bank: dieses Gerät führt bereits zu viele Spiele auf dem Server."
     },
     "toolbar": {
@@ -1493,6 +1495,8 @@
     "connecting": "Verbinde...",
     "invalidPin": "Ungültiger PIN. Bitte erneut versuchen.",
     "tooManyAttempts": "Zu viele falsche PINs aus diesem Netzwerk. Bitte einige Minuten warten und erneut versuchen.",
+    "reconnecting": "Keine Verbindung zum Server. Die Bank verbindet sich wieder mit ihrem Spiel, sobald er zurück ist.",
+    "waitingForScoresheet": "Der Server ist wieder da. Die Bank verbindet sich wieder mit ihrem Spiel, sobald das Matchblatt wieder verbunden ist.",
     "roster": "Kader",
     "match": "Spiel",
     "back": "Zurück",
@@ -1537,6 +1541,8 @@
       "matchEnded": "Das Spiel ist beendet.",
       "connectionDisabled": "Die Verbindung wurde deaktiviert.",
       "serverUnreachable": "Keine Verbindung zum Server – bitte WLAN prüfen und erneut versuchen.",
+      "reconnecting": "Keine Verbindung zum Server. Das Schiedsrichter-Dashboard verbindet sich wieder mit seinem Spiel, sobald er zurück ist.",
+      "waitingForScoresheet": "Der Server ist wieder da. Das Schiedsrichter-Dashboard verbindet sich wieder mit seinem Spiel, sobald das Matchblatt wieder verbunden ist.",
       "tooManyAttempts": "Zu viele falsche PINs aus diesem Netzwerk. Bitte einige Minuten warten und erneut versuchen."
     },
     "connection": {
@@ -3268,6 +3274,8 @@
     },
     "enterResult": "Resultat eingeben",
     "correctResult": "Resultat korrigieren",
+    "startMatch": "Starten",
+    "unstartMatch": "Start zurücknehmen",
     "resultTitle": "Spiel {{n}} · {{code}}",
     "resultKind": "Resultat",
     "kinds": {
@@ -3309,7 +3317,8 @@
       "days": "Die Startzeit liegt an keinem Turniertag.",
       "hours": "Das Spiel liegt ausserhalb der Spielzeiten.",
       "before_source": "Es beginnt, bevor Spiel {{n}} ({{code}}) samt Pause vorbei ist, auf dessen Resultat es wartet.",
-      "after_dependent": "Spiel {{n}} ({{code}}) wartet auf dieses Resultat und beginnt, bevor dieses Spiel samt Pause vorbei ist."
+      "after_dependent": "Spiel {{n}} ({{code}}) wartet auf dieses Resultat und beginnt, bevor dieses Spiel samt Pause vorbei ist.",
+      "begun": "Seine Zeit hat schon begonnen: Spiel {{n}} ({{code}}) wird vielleicht schon gespielt."
     },
     "rankingHint": "Die Schlussrangliste für MyBeach (bis 12:00 Uhr am Folgetag eintragen, Art. 29).",
     "rank": "Rang",
@@ -3337,9 +3346,11 @@
       "matchBegun": "Dieses Spiel hat schon begonnen: Feld und Zeit bleiben.",
       "noCourts": "Zuerst ein Feld hinzufügen.",
       "notFound": "Nicht gefunden oder nicht für dich sichtbar.",
+      "courtInUse": "Auf diesem Feld wurde schon gespielt: schalte «In Betrieb» aus, statt es zu entfernen.",
       "noManager": "Keine OpenBeach-Wettbewerbsverantwortliche Person hat diese E-Mail.",
       "slotConflict": "Dieser Platz passt nicht in den Spielplan.",
       "resultChanged": "Jemand anderes hat dieses Resultat inzwischen geändert. Schau es dir nochmals an.",
+      "teamsChanged": "Die Teams dieses Spiels haben inzwischen gewechselt: ein Resultat davor wurde korrigiert. Schau es dir nochmals an.",
       "drawExists": "Das Turnier hat schon ein Tableau dieser Kategorie und dieses Geschlechts."
     },
     "import": {

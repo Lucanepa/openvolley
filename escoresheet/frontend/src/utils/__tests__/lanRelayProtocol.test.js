@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createServer as createNetServer } from 'node:net'
 import { createServer as createHttpServer } from 'node:http'
@@ -847,6 +847,178 @@ describe('lanRelayCore protocol', () => {
     expect(hall.admit('10.1.0.2')).toBeNull()
   })
 
+  // A phone that leaves the hall's Wi-Fi sends no close: its socket kept its
+  // slot (50 per address, 500 in all) and its rooms until TCP gave up
+  it('pings every socket and ends one that missed the previous ping', () => {
+    const relay = createLanRelay({ heartbeatMs: 60000 })
+    const pingable = () => {
+      const ws = fakeSocket()
+      const handlers = {}
+      Object.assign(ws, {
+        pings: 0,
+        terminated: false,
+        ping() { this.pings++ },
+        terminate() { this.terminated = true; this.readyState = 3; relay.removeClient(this) },
+        on(event, fn) { handlers[event] = fn },
+        pong() { handlers.pong?.() }
+      })
+      relay.addClient(ws, { ip: '192.168.1.60' })
+      return ws
+    }
+    try {
+      const phone = pingable()
+      const tablet = pingable()
+      relay.heartbeat()
+      expect([phone.pings, tablet.pings]).toEqual([1, 1])
+      tablet.pong() // the phone left the Wi-Fi: no pong
+      relay.heartbeat()
+      expect(phone.terminated).toBe(true)
+      expect(tablet.terminated).toBe(false)
+      expect(tablet.pings).toBe(2)
+      expect(relay.clientCount).toBe(1)
+      // a socket without ping() (another runtime's) is never ended
+      const plain = connect(relay)
+      tablet.pong()
+      relay.heartbeat()
+      tablet.pong()
+      relay.heartbeat()
+      expect(relay.clientCount).toBe(2)
+      expect(plain.readyState).toBe(1)
+    } finally {
+      relay.close()
+    }
+  })
+
+  // 2026-10-26: the cloud relay asks its database which device scores a
+  // match (8359f59a); the venue relays let any device with the game PIN
+  // replace the room, so a laptop back on the Wi-Fi put its older copy over
+  // the phone that had continued the match
+  it('a device whose claim another device took over cannot put its copy back on the room', () => {
+    const LAPTOP = '0a0a0a0a-1111-4111-8111-000000000001'
+    const PHONE = '0b0b0b0b-2222-4222-8222-000000000002'
+    const sync = (device, home, away, extra = {}) => syncMessage(makeMatch({ id: 1 }), {
+      sets: [{ id: 1, matchId: 1, index: 1, homePoints: home, awayPoints: away }], device, ...extra
+    })
+    const relay = createLanRelay()
+    const laptop = connect(relay, '192.168.1.10')
+    const phone = connect(relay, '192.168.1.11')
+    const referee = connect(relay, '192.168.1.20')
+    msg(relay, referee, { type: 'subscribe-match', matchId: '1', pin: PINS.refereePin })
+    msg(relay, laptop, sync({ id: LAPTOP, platform: 'web', claim: 'laptop-1' }, 3, 1))
+    expect(laptop.last('error')).toBeUndefined()
+
+    // the phone continues the match (its own claim) while the laptop's socket
+    // is still up: the laptop no longer speaks for the room and is told
+    msg(relay, phone, sync({ id: PHONE, platform: 'android', claim: 'phone-1' }, 5, 3))
+    expect(phone.last('error')).toBeUndefined()
+    expect(referee.last('match-data-update').sets[0].homePoints).toBe(5)
+    expect(laptop.last('scorer-moved')).toMatchObject({ matchId: '1' })
+
+    // the laptop syncs its older copy, on that socket or a new one: refused,
+    // nothing reaches the referee
+    referee.sent.length = 0
+    msg(relay, laptop, sync({ id: LAPTOP, platform: 'web', claim: 'laptop-1' }, 3, 1))
+    expect(laptop.last('error')).toMatchObject({ code: 'scorer-moved', matchId: '1' })
+    const laptopAgain = connect(relay, '192.168.1.10')
+    msg(relay, laptopAgain, sync({ id: LAPTOP, platform: 'web', claim: 'laptop-1' }, 3, 1))
+    expect(laptopAgain.last('error')).toMatchObject({ code: 'scorer-moved' })
+    msg(relay, laptopAgain, { type: 'match-action', matchId: '1', action: 'timeout', data: {} })
+    expect(referee.sent).toHaveLength(0)
+    msg(relay, phone, sync({ id: PHONE, platform: 'android', claim: 'phone-1' }, 6, 3))
+    expect(referee.last('match-data-update').sets[0].homePoints).toBe(6)
+
+    // the laptop takes the match back (a new claim): it scores the room, and
+    // now the phone's claim is the one refused
+    laptopAgain.sent.length = 0
+    msg(relay, laptopAgain, sync({ id: LAPTOP, platform: 'web', claim: 'laptop-2' }, 6, 4))
+    expect(laptopAgain.last('error')).toBeUndefined()
+    expect(referee.last('match-data-update').sets[0].awayPoints).toBe(4)
+    expect(phone.last('scorer-moved')).toMatchObject({ matchId: '1' })
+    msg(relay, phone, sync({ id: PHONE, platform: 'android', claim: 'phone-1' }, 7, 3))
+    expect(phone.last('error')).toMatchObject({ code: 'scorer-moved' })
+    expect(referee.last('match-data-update').sets[0].homePoints).toBe(6)
+
+    // older apps name no claim: not checked, as before
+    const oldApp = connect(relay, '192.168.1.12')
+    msg(relay, oldApp, sync({ id: PHONE, platform: 'android' }, 8, 3))
+    expect(oldApp.last('error')).toBeUndefined()
+    expect(referee.last('match-data-update').sets[0].homePoints).toBe(8)
+  })
+
+  // 2026-10-27 review: the relay kept who took the room over in memory only.
+  // After a restart of the relay (the desktop app, the Point Hub board) the
+  // first sync was granted 'new' and the second 'proved': the phone that had
+  // continued the match from the laptop's backup synced first, the laptop's
+  // periodic sync of its older copy took the room, and every later phone sync
+  // was refused ('scorer-moved'), the referee left on the laptop's score
+  it('after a restart, the copy a device continued from cannot take the room from it', () => {
+    const LAPTOP = '0a0a0a0a-1111-4111-8111-000000000001'
+    const PHONE = '0b0b0b0b-2222-4222-8222-000000000002'
+    const sync = (device, home) => syncMessage(makeMatch({ id: 1 }), {
+      sets: [{ id: 1, matchId: 1, index: 1, homePoints: home, awayPoints: 0 }], device
+    })
+    // The phone restored the laptop's backup: its claim names the laptop's
+    const phoneDevice = { id: PHONE, platform: 'android', claim: 'phone-1', supersedes: ['laptop-1'] }
+    const laptopDevice = { id: LAPTOP, platform: 'web', claim: 'laptop-1' }
+
+    // phone first after the restart, then the laptop's older copy
+    let relay = createLanRelay()
+    let referee = connect(relay, '192.168.1.20')
+    msg(relay, referee, { type: 'subscribe-match', matchId: '1', pin: PINS.refereePin })
+    let phone = connect(relay, '192.168.1.11')
+    let laptop = connect(relay, '192.168.1.10')
+    msg(relay, phone, sync(phoneDevice, 20))
+    msg(relay, laptop, sync(laptopDevice, 3))
+    expect(laptop.last('error')).toMatchObject({ code: 'scorer-moved', matchId: '1' })
+    msg(relay, phone, sync(phoneDevice, 21))
+    expect(phone.last('error')).toBeUndefined()
+    expect(referee.last('match-data-update').sets[0].homePoints).toBe(21)
+
+    // the laptop first: it has the room until the phone's next sync, then
+    // never again
+    relay = createLanRelay()
+    referee = connect(relay, '192.168.1.20')
+    msg(relay, referee, { type: 'subscribe-match', matchId: '1', pin: PINS.refereePin })
+    phone = connect(relay, '192.168.1.11')
+    laptop = connect(relay, '192.168.1.10')
+    msg(relay, laptop, sync(laptopDevice, 3))
+    msg(relay, phone, sync(phoneDevice, 20))
+    expect(phone.last('error')).toBeUndefined()
+    expect(laptop.last('scorer-moved')).toMatchObject({ matchId: '1' })
+    msg(relay, laptop, sync(laptopDevice, 3))
+    expect(laptop.last('error')).toMatchObject({ code: 'scorer-moved' })
+    msg(relay, phone, sync(phoneDevice, 21))
+    expect(phone.last('error')).toBeUndefined()
+    expect(referee.last('match-data-update').sets[0].homePoints).toBe(21)
+
+    // the laptop continues the match again (a backup of the phone's): its
+    // new claim takes the room, the phone's is the older copy now
+    laptop.sent.length = 0
+    msg(relay, laptop, sync({ id: LAPTOP, platform: 'web', claim: 'laptop-2', supersedes: ['phone-1', 'laptop-1'] }, 22))
+    expect(laptop.last('error')).toBeUndefined()
+    expect(referee.last('match-data-update').sets[0].homePoints).toBe(22)
+    msg(relay, phone, sync(phoneDevice, 21))
+    expect(phone.last('error')).toMatchObject({ code: 'scorer-moved' })
+    expect(referee.last('match-data-update').sets[0].homePoints).toBe(22)
+  })
+
+  it('a device whose claim was taken over gets the room back once the other device has been gone 10 min', () => {
+    const A = '0a0a0a0a-1111-4111-8111-000000000001'
+    const B = '0b0b0b0b-2222-4222-8222-000000000002'
+    for (const { staleTakeoverMs, allowed } of [{ staleTakeoverMs: undefined, allowed: false }, { staleTakeoverMs: 0, allowed: true }]) {
+      const relay = createLanRelay({ staleTakeoverMs })
+      const a = connect(relay, '192.168.1.10')
+      const b = connect(relay, '192.168.1.11')
+      msg(relay, a, syncMessage(makeMatch({ id: 1 }), { device: { id: A, claim: 'a' } }))
+      msg(relay, b, syncMessage(makeMatch({ id: 1 }), { device: { id: B, claim: 'b' } }))
+      relay.removeClient(b) // the phone's battery
+      relay.removeClient(a)
+      const back = connect(relay, '192.168.1.10')
+      msg(relay, back, syncMessage(makeMatch({ id: 1 }), { device: { id: A, claim: 'a' } }))
+      expect(back.sent.some((m) => m.type === 'error'), String(staleTakeoverMs)).toBe(!allowed)
+    }
+  })
+
   it('accepts the legacy nested `data` shape in the client reader', () => {
     const legacy = { type: 'match-data-update', matchId: '7', data: { match: { id: 7 }, sets: [{ id: 1 }] } }
     expect(readRelayBundle(legacy).sets).toHaveLength(1)
@@ -924,9 +1096,13 @@ function freePort() {
   })
 }
 
+// Scenario clients send plain frames unless they ask (deflateScenario): they
+// send a frame and read on another socket or over HTTP at once, and a
+// compressed frame is inflated off the relay's event loop, so a frame on
+// another socket could overtake it (real devices are seconds apart).
 function openClient(url, wsOptions) {
   return new Promise((res, rej) => {
-    const ws = new WebSocket(url, wsOptions)
+    const ws = new WebSocket(url, { perMessageDeflate: false, ...wsOptions })
     const client = { ws, messages: [], raw: [] }
     client.waitFor = (pred, timeoutMs = 3000) => new Promise((ok, fail) => {
       const found = client.messages.find(pred)
@@ -1007,6 +1183,33 @@ async function hostileFrameScenario({ httpBase, wsUrl }) {
  * total, so the 21st (a referee or bench tablet, the scorer coming back) was
  * closed with 1013 before its hello.
  */
+/**
+ * A tablet on the hall Wi-Fi (or the scorer's own hotspot) gets the scorer's
+ * whole match on every sync, two per rally: a bundle above 1 KB goes
+ * compressed when the tablet offers permessage-deflate (browsers do), and the
+ * scorer's compressed upload is taken.
+ */
+async function deflateScenario({ wsUrl }) {
+  const events = Array.from({ length: 200 }, (_, i) => ({ id: i + 1, seq: i + 1, setIndex: 1, type: 'point', payload: { team: i % 2 ? 'home' : 'away', note: 'same text every time '.repeat(10) }, ts: '2026-11-29T10:00:00.000Z' }))
+  // as a browser does: permessage-deflate offered, uploads above 1 KB compressed
+  const scoreboard = await openClient(wsUrl, { perMessageDeflate: true })
+  const referee = await openClient(wsUrl, { perMessageDeflate: true })
+  try {
+    expect(referee.ws.extensions).toBe('permessage-deflate')
+    scoreboard.send(syncMessage(makeMatch({ id: 7, seed_key: 'seed-deflate' }), { events }))
+    scoreboard.send({ type: 'ping' })
+    await scoreboard.waitFor((m) => m.type === 'pong')
+    const before = referee.ws._socket.bytesRead
+    referee.send({ type: 'subscribe-match', matchId: 'seed-deflate', pin: PINS.refereePin })
+    const full = await referee.waitFor((m) => m.type === 'match-full-data')
+    expect(readRelayBundle(full).events).toHaveLength(200)
+    const wire = referee.ws._socket.bytesRead - before
+    expect(wire).toBeLessThan(Buffer.byteLength(referee.raw.at(-1)) / 4)
+  } finally {
+    for (const c of [scoreboard, referee]) c.ws.close()
+  }
+}
+
 async function hallCrowdScenario({ wsUrl }) {
   const scoreboard = await openClient(wsUrl)
   const clients = [scoreboard]
@@ -1027,6 +1230,33 @@ async function hallCrowdScenario({ wsUrl }) {
   } finally {
     for (const c of clients) c.ws.close()
   }
+}
+
+// POST /api/match/validate-pin limits wrong PINs, not checks: every check
+// counted (10 a minute per address), and a tablet reloading with its stored
+// PIN was told it had typed too many wrong ones (2026-10-26). Exhausts this
+// address's wrong-PIN budget for a minute: run it last. (Node relays; the
+// Tauri relay keeps its own limit.)
+async function pinCheckBudgetScenario({ httpBase, wsUrl }) {
+  const board = await openClient(wsUrl)
+  board.send(syncMessage(makeMatch({ id: 31, seed_key: 'seed-pin-budget', refereePin: '424242', gamePin: '434343' })))
+  board.send({ type: 'ping' })
+  await board.waitFor((m) => m.type === 'pong')
+  const validate = (pin) => fetch(`${httpBase}/api/match/validate-pin`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pin, type: 'referee' })
+  })
+  for (let i = 0; i < 15; i++) expect((await validate('424242')).status).toBe(200)
+  let wrong = 0
+  let r
+  do { r = await validate('000002'); wrong++ } while (r.status === 404 && wrong < 30)
+  expect(r.status).toBe(429)
+  expect((await r.json()).error).toMatch(/wrong PINs/)
+  expect(wrong).toBeLessThanOrEqual(11)
+  // no PIN is compared beyond the limit, the right one neither
+  expect((await validate('424242')).status).toBe(429)
+  board.ws.close()
 }
 
 async function relayScenario({ httpBase, wsUrl }) {
@@ -1197,11 +1427,50 @@ describe('relay runtimes speak the shared protocol', () => {
       await runBeachVenueContract({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'server-js' })
       await hostileFrameScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await hallCrowdScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
+      await deflateScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
+      await pinCheckBudgetScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       const unknown = await fetch(`http://127.0.0.1:${port}/api/nope`)
       expect(unknown.status).toBe(404)
       expect(unknown.headers.get('content-type')).toMatch(/json/)
     } finally {
       child.kill('SIGKILL')
+    }
+  })
+
+  it('standalone server.js opens an OpenBeach build\'s role pages, an OpenVolley build\'s as before', async () => {
+    const page = (dir, file, text) => {
+      mkdirSync(dirname(resolve(dir, file)), { recursive: true })
+      writeFileSync(resolve(dir, file), `<!doctype html><title>${text}</title>`)
+    }
+    const beach = mkdtempSync(resolve(tmpdir(), 'ov-relay-beach-'))
+    const indoor = mkdtempSync(resolve(tmpdir(), 'ov-relay-indoor-'))
+    for (const [f, t] of [['index.html', 'scorer'], ['referee_beach.html', 'beach referee'], ['livescore_beach.html', 'beach livescore'], ['scoreboard_beach.html', 'beach scoreboard']]) page(beach, f, t)
+    for (const [f, t] of [['index.html', 'scorer'], ['referee/index.html', 'referee'], ['referee_beach.html', 'stray']]) page(indoor, f, t)
+    const serve = async (dist, paths) => {
+      const [port, wsPort] = [await freePort(), await freePort()]
+      const child = spawn(process.execPath, ['server.js'], {
+        cwd: FRONTEND_DIR,
+        env: { ...process.env, PORT: String(port), WS_PORT: String(wsPort), HTTPS: 'false', NODE_ENV: 'test', OV_RELAY_DIST_DIR: dist },
+        stdio: 'ignore'
+      })
+      try {
+        await waitForHttp(`http://127.0.0.1:${port}/api/server/status`)
+        const out = {}
+        for (const p of paths) out[p] = (/<title>(.*)<\/title>/.exec(await (await fetch(`http://127.0.0.1:${port}${p}`)).text()) || [])[1]
+        return out
+      } finally {
+        child.kill('SIGKILL')
+      }
+    }
+    try {
+      expect(await serve(beach, ['/', '/referee', '/referee/', '/referee.html', '/livescore', '/scoreboard', '/elsewhere'])).toEqual({
+        '/': 'scorer', '/referee': 'beach referee', '/referee/': 'beach referee', '/referee.html': 'beach referee',
+        '/livescore': 'beach livescore', '/scoreboard': 'beach scoreboard', '/elsewhere': 'scorer'
+      })
+      expect(await serve(indoor, ['/referee', '/referee/', '/referee.html'])).toEqual({ '/referee': 'referee', '/referee/': 'referee', '/referee.html': 'referee' })
+    } finally {
+      rmSync(beach, { recursive: true, force: true })
+      rmSync(indoor, { recursive: true, force: true })
     }
   })
 
@@ -1258,6 +1527,8 @@ describe('relay runtimes speak the shared protocol', () => {
       await runBeachVenueContract({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'electron' })
       await hostileFrameScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await hallCrowdScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
+      await deflateScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
+      await pinCheckBudgetScenario({ httpBase: `http://127.0.0.1:${port}`, wsUrl: `ws://127.0.0.1:${wsPort}` })
     } finally {
       await relayServer.stop()
     }
@@ -1329,6 +1600,7 @@ describe('relay runtimes speak the shared protocol', () => {
       await runBeachVenueContract({ httpBase, wsUrl: `ws://127.0.0.1:${wsPort}`, openClient, tag: 'vite' })
       await hostileFrameScenario({ httpBase, wsUrl: `ws://127.0.0.1:${wsPort}` })
       await hallCrowdScenario({ wsUrl: `ws://127.0.0.1:${wsPort}` })
+      await pinCheckBudgetScenario({ httpBase, wsUrl: `ws://127.0.0.1:${wsPort}` })
     })
   })
 })

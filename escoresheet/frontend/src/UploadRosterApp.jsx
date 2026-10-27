@@ -6,6 +6,7 @@ import { listRosterUploadMatches } from './utils/rosterUploadMatches'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db/db'
 import { parseRosterPdf } from './utils/parseRosterPdf'
+import { shirtNumberDigits } from './domain/roster'
 import Modal from './components/Modal'
 import SimpleHeader from './components/SimpleHeader'
 import UpdateBanner from './components/UpdateBanner'
@@ -1221,7 +1222,11 @@ export default function UploadRosterApp() {
                         <input
                           type="number"
                           value={player.number || ''}
-                          onChange={(e) => handlePlayerChange(index, 'number', e.target.value ? Number(e.target.value) : null)}
+                          onChange={(e) => {
+                            // the digits typed: '1.5' is 15 (domain/roster shirtNumberDigits)
+                            const digits = shirtNumberDigits(e.target.value)
+                            handlePlayerChange(index, 'number', digits ? Number(digits) : null)
+                          }}
                           placeholder="#"
                           aria-label={t('rosterSetup.number', 'Number')}
                           className={cn(FIELD, 'text-center tabular-nums')}

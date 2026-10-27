@@ -9,10 +9,10 @@ import { createServer as createHttpsServer } from 'https'
 import { createServer as createNetServer } from 'net'
 import { readFileSync, existsSync, statSync } from 'fs'
 import { fileURLToPath } from 'url'
-import { dirname, join, extname, basename, sep } from 'path'
+import { dirname, join, resolve, extname, basename, sep } from 'path'
 import { WebSocketServer } from 'ws'
 import { networkInterfaces } from 'os'
-import { createLanRelay, createLocalAddressCheck, createMainInstanceGate, WS_MAX_PAYLOAD, signCore } from './lanRelayCore.js'
+import { createLanRelay, createLocalAddressCheck, createMainInstanceGate, WS_MAX_PAYLOAD, WS_PER_MESSAGE_DEFLATE, signCore } from './lanRelayCore.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -23,7 +23,12 @@ const __dirname = dirname(__filename)
 // Or: npm run build && npm run start
 const PORT = process.env.PORT || 5173
 const WS_PORT = process.env.WS_PORT || 8080
-const DIST_DIR = join(__dirname, 'dist')
+// OV_RELAY_DIST_DIR: another build to serve (the relay tests' throwaway builds)
+const DIST_DIR = process.env.OV_RELAY_DIST_DIR ? resolve(process.env.OV_RELAY_DIST_DIR) : join(__dirname, 'dist')
+// The role pages of a build. OpenBeach's are flat (referee_beach.html, ...):
+// /referee, /referee/ and /referee.html open them, as on the Tauri relay
+// (src-tauri relay.rs resolve_asset), instead of the scorer app.
+const ROLE_PATHS = ['referee', 'bench', 'livescore', 'scoreboard', 'scoresheet', 'upload_roster']
 const HOSTNAME = process.env.HOSTNAME || 'escoresheet.local' // Custom hostname instead of localhost
 
 // The WS protocol and /api/match/* endpoints come from ./lanRelayCore.js (shared
@@ -247,6 +252,13 @@ const requestHandler = (req, res) => {
       }
     }
     
+    // An OpenBeach build's role page
+    if (!existsSync(filePath)) {
+      const role = urlPath.replace(/^\/+|\/+$/g, '').replace(/\.html$/, '')
+      const beachPage = join(DIST_DIR, `${role}_beach.html`)
+      if (ROLE_PATHS.includes(role) && existsSync(beachPage)) filePath = beachPage
+    }
+
     // If still not found, try index.html for SPA fallback
     if (!existsSync(filePath)) {
       const indexPath = join(DIST_DIR, 'index.html')
@@ -312,7 +324,7 @@ const httpServer = httpsOptions
 // ws://127.0.0.1:8080 — keep working with zero setup.
 const wss = new WebSocketServer({
   noServer: true,
-  perMessageDeflate: false, // Disable compression for better performance
+  perMessageDeflate: WS_PER_MESSAGE_DEFLATE, // bundles to the tablets (lanRelayCore)
   maxPayload: WS_MAX_PAYLOAD
 })
 const wsOnly = (req, res) => {

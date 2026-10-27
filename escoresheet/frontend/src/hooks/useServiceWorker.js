@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { allowLeaving } from '../utils/leaveGuard'
 import { reloadWithReason } from '../diagnostics/reload'
 import { clearStorageKeepingDeviceId } from '../utils/deviceId'
+import { writeSessionMirror } from '../lib/sessionMirror'
 
 const CACHE_BUST_PARAM = 'cache_bust'
 
@@ -112,7 +113,13 @@ export async function clearCachesAndReload({ includeLocalStorage = false } = {})
     await Promise.all(registrations.map((reg) => reg.unregister()))
   }
   // (this installation's id stays: the matches in IndexedDB stay too)
-  if (includeLocalStorage) clearStorageKeepingDeviceId()
+  if (includeLocalStorage) {
+    clearStorageKeepingDeviceId()
+    // and the session's IndexedDB copy goes with it: the reload would sign the
+    // previous scorer back in from it (lib/apiClient restoreMirroredSession),
+    // on a shared club laptop too
+    await writeSessionMirror(null)
+  }
   allowLeaving()
   reloadWithReason(includeLocalStorage ? 'clear-cache-and-storage' : 'clear-cache', { how: 'replace', url: buildReloadUrl() })
   return true

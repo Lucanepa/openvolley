@@ -318,4 +318,13 @@ describe('locale keys for accounts, manage, saved teams and cloud blocks', () =>
       expect(offenders, lng).toEqual([])
     }
   })
+
+  // 2026-10-27 review: the duplicate-tab screen's only button takes scoring
+  // over ("Score in this tab"), and its text told the user to close the tab
+  // and use the other one
+  it.each(Object.keys(LOCALES))('%s: the duplicate-tab text names the button that takes scoring over', (lng) => {
+    const button = get(LOCALES[lng], 'scoreboard.scoreInThisTab')
+    expect(button, lng).toBeTruthy()
+    expect(get(LOCALES[lng], 'scoreboard.duplicateTabMessage'), lng).toContain(button)
+  })
 })

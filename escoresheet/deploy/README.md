@@ -150,6 +150,27 @@ systemctl list-timers 'openvolley-*'
 
 Complete removal (leaves no trace besides the fstab backup copies): RUNBOOK-hetzner.md, "Uninstall".
 
+## Capacity and limits for big events
+
+National peak load test (2026-10-25/26, production limits: backend 256 MiB / 1 CPU / pool 5,
+Postgres 256 MiB / 0.5 CPU / `max_connections` 20, tunnel 128 MiB / 0.5 CPU). Before the
+round-2 fixes production carried an SVRZ evening and the SVRZ peak (39 matches) comfortably,
+about 150 matches through the first set and about 100 whole matches; the national peak
+(404 matches at once) crash-looped on backend memory in the pre-match.
+
+The limits stay as they are; `NODE_OPTIONS=--max-old-space-size=160` (compose) keeps V8's heap
+below `mem_limit`. Before an event with more than about 100 simultaneous matches, raise for
+that day and measure again with the peak harness:
+
+| Service | Now | Recommended above ~100 matches | Why |
+|---|---|---|---|
+| `ov-backend` | 256m, 1 CPU, `--max-old-space-size=160` | 1g, 2 CPUs, `--max-old-space-size=700` | memory per socket and per match; above that the single Node event loop is the wall (a second CPU only takes GC and zlib off it) |
+| `ov-postgres` | 256m, 0.5 CPU, pool 5 | 512m, 1 CPU, `PG_POOL_MAX=10` (`max_connections` 20 still fits) | its 0.5 CPU was fully used and 5 of 5 pool clients busy with 4-5 waiting at 404 matches |
+| `ov-tunnel` | 128m, 0.5 CPU, 1 replica | 256-512m, 1 CPU, 2 replicas | a plain docker-proxy alone needed 52-117 % of a CPU and 100-150 MB at 404-754 matches; cloudflared also does TLS and HTTP/2 framing |
+
+A national rollout (404 matches at the peak) needs these limits plus sharding by association
+(several backends behind the tunnel), not one bigger container.
+
 ## Public downloads: get.openvolley.app
 
 `https://get.openvolley.app` serves the public install routes from `ov-pkgs`, through the same

@@ -53,4 +53,13 @@ describe('referee PIN check', () => {
     const checkLan = vi.fn().mockResolvedValue({ success: true, match: { id: SEED } })
     expect((await validateRefereePin('372449', { checkCloud, checkLan })).source).toBe('websocket')
   })
+
+  // 2026-10-26: 20 wrong referee PINs in one hall (one venue address) for
+  // other matches made a new referee with the right PIN wait 10 minutes
+  it('a page that knows the match checks the PIN against it only', async () => {
+    const checkCloud = vi.fn().mockResolvedValue({ success: true, match: { id: SEED } })
+    const r = await validateRefereePin('372449', { checkCloud, checkLan: relayNoMatch, matchExternalId: SEED })
+    expect(r).toMatchObject({ match: { id: SEED }, source: 'supabase' })
+    expect(checkCloud).toHaveBeenCalledWith('372449', 'referee', { matchExternalId: SEED })
+  })
 })

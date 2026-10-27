@@ -113,6 +113,13 @@ describe('beach tournaments end to end', { skip: SKIP }, () => {
     // the same title again gets the next free address; a taken address is 409
     assert.equal(okData(await call(users.mia, 'POST', '/api/beach/tournaments', body), 201).tournament.slug, 'zuri-open-2026-2')
     expectCode(await call(users.max, 'POST', '/api/beach/tournaments', { ...body, slug: 'zuri-open-2026' }), 409, 'OV_SLUG_TAKEN')
+    // the same title created at the same moment (two organisers, a double submit): each gets its own address
+    const same = { ...body, title: `Race Cup ${tag}` }
+    const raced = await Promise.all(Array.from({ length: 5 }, () => call(users.mia, 'POST', '/api/beach/tournaments', same)))
+    for (const r of raced) assert.equal(r.status, 201, r.text)
+    const slugs = raced.map((r) => r.json.data.tournament.slug).sort()
+    assert.deepEqual(slugs, [`race-cup-${tag}-2026`, ...[2, 3, 4, 5].map((n) => `race-cup-${tag}-2026-${n}`)])
+    for (const r of raced) okData(await call(users.mia, 'DELETE', `/api/beach/tournaments/${r.json.data.tournament.id}`))
   })
 
   it('drafts are their editors\' only; co-managers edit; the admin edits everything', async () => {
@@ -489,6 +496,195 @@ describe('beach tournaments end to end', { skip: SKIP }, () => {
     const games = okData(await get(users.max, `/api/beach/tournaments/${t.id}`)).matches.map((m) => m.game_n).sort((x, y) => x - y)
     assert.equal(new Set(games).size, games.length)
     assert.deepEqual(games, Array.from({ length: games.length }, (_, i) => i + 1))
+  })
+
+  it('a result or a withdrawal from an outdated screen is refused, never credited to another pair', async () => {
+    const t = okData(await call(users.max, 'POST', '/api/beach/tournaments', { title: 'Stale Cup', starts_on: '2026-07-18', ends_on: '2026-07-18', courts: 2 }), 201).tournament
+    const d = okData(await call(users.max, 'POST', `/api/beach/tournaments/${t.id}/draws`, { gender: 'women', category: 'S1' }), 201).draw
+    for (let i = 1; i <= 8; i++) {
+      okData(await call(users.max, 'POST', `/api/beach/draws/${d.id}/entries`, { player1: { last: `S${i}a` }, player2: { last: `S${i}b` } }), 201)
+    }
+    okData(await call(users.max, 'POST', `/api/beach/draws/${d.id}/generate`, {}))
+    const matches = async () => new Map(okData(await get(users.max, `/api/beach/tournaments/${t.id}`)).matches.map((m) => [m.code, m]))
+    // what manager-beach's ResultModal sends: the match as its screen shows it
+    const screen = (m) => ({ winner_entry_id: m.winner_entry_id, result: m.result, sets: m.sets, entry1_id: m.entry1_id, entry2_id: m.entry2_id })
+    const result = (m, winner, expect) => call(users.max, 'POST', `/api/beach/tmatches/${m.id}/result`, {
+      winner, sets: winner === 1 ? [[21, 15], [21, 15]] : [[15, 21], [15, 21]], ...(expect ? { expect } : {})
+    })
+    const withdraw = (m, expect) => call(users.max, 'DELETE', `/api/beach/tmatches/${m.id}/result${expect ? `?expect=${encodeURIComponent(JSON.stringify(expect))}` : ''}`)
+    let ms = await matches()
+    const w1 = ms.get('W1')
+    const dep = [...ms.values()].find((m) => m.source1 === 'winner:W1' || m.source2 === 'winner:W1')
+    const feeder = (dep.source1 === 'winner:W1' ? dep.source2 : dep.source1).slice('winner:'.length)
+    okData(await result(w1, 1, screen(w1)))
+    okData(await result(ms.get(feeder), 1))
+    ms = await matches()
+    const w1first = ms.get('W1')
+    // manager A's screen: the dependent match with W1's winner X in it, no result yet
+    const seen = ms.get(dep.code)
+    const sideX = seen.source1 === 'winner:W1' ? 1 : 2
+    const x = sideX === 1 ? seen.entry1_id : seen.entry2_id
+    // co-manager B corrects W1: Z won, so Z replaces X in the dependent match
+    okData(await result(w1first, 2, screen(w1first)))
+    ms = await matches()
+    assert.equal([ms.get(dep.code).entry1_id, ms.get(dep.code).entry2_id].includes(x), false, 'X is no longer in the match')
+    // A saves "X won" from the outdated screen: refused, with the match as it is now
+    const r = await result(seen, sideX, screen(seen))
+    expectCode(r, 409, 'OV_MATCH_TEAMS_CHANGED')
+    assert.equal(r.json.error.details.match.id, seen.id)
+    assert.deepEqual([r.json.error.details.match.entry1_id, r.json.error.details.match.entry2_id], [ms.get(dep.code).entry1_id, ms.get(dep.code).entry2_id])
+    ms = await matches()
+    assert.equal(ms.get(dep.code).winner_entry_id, null, 'nothing stored')
+    assert.equal(ms.get(dep.code).status, 'ready')
+    expectCode(await result(seen, sideX, { ...screen(seen), entry1_id: 'not-an-id' }), 400, 'OV_INVALID_REQUEST')
+    // a screen with the current teams saves; a withdrawal without expect (an older app) still works
+    okData(await result(ms.get(dep.code), sideX, screen(ms.get(dep.code))))
+    okData(await call(users.max, 'DELETE', `/api/beach/tmatches/${ms.get(dep.code).id}/result`))
+
+    // a withdrawal from a screen that still shows W1's first result: B's correction stays
+    expectCode(await withdraw(w1, screen(w1first)), 409, 'OV_RESULT_CHANGED')
+    ms = await matches()
+    assert.equal(ms.get('W1').winner_entry_id, w1first.entry2_id, 'the correction is kept')
+    expectCode(await call(users.max, 'DELETE', `/api/beach/tmatches/${w1.id}/result?expect=%7Bnope`), 400, 'OV_INVALID_REQUEST')
+    expectCode(await withdraw(w1, { ...screen(ms.get('W1')), sets: 'x' }), 400, 'OV_INVALID_REQUEST')
+    // from the current screen it goes; the same outdated screen again is refused
+    assert.equal(okData(await withdraw(w1, screen(ms.get('W1')))).match.winner_entry_id, null)
+    expectCode(await withdraw(w1, screen(ms.get('W1'))), 409, 'OV_RESULT_CHANGED')
+  })
+
+  it('a court keeps the matches played on it: not removed, and shown on the public page when switched off', async () => {
+    const t = okData(await call(users.max, 'POST', '/api/beach/tournaments', { title: 'Court History Cup', starts_on: '2026-08-08', ends_on: '2026-08-08', courts: 3 }), 201).tournament
+    const d = okData(await call(users.max, 'POST', `/api/beach/tournaments/${t.id}/draws`, { gender: 'women', category: 'H1' }), 201).draw
+    for (let i = 1; i <= 8; i++) {
+      okData(await call(users.max, 'POST', `/api/beach/draws/${d.id}/entries`, { player1: { last: `H${i}a` }, player2: { last: `H${i}b` } }), 201)
+    }
+    okData(await call(users.max, 'POST', `/api/beach/draws/${d.id}/generate`, {}))
+    okData(await call(users.max, 'POST', `/api/beach/tournaments/${t.id}/schedule`, {}))
+    let b = okData(await get(users.max, `/api/beach/tournaments/${t.id}`))
+    const court3 = b.courts.find((c) => c.number === 3)
+    const played = b.matches.find((m) => m.court_id === court3.id && m.status === 'ready')
+    assert.ok(played, 'a first-round match on court 3')
+    okData(await call(users.max, 'POST', `/api/beach/tmatches/${played.id}/result`, { winner: 1, sets: [[21, 15], [21, 15]] }))
+    // dropping court 3 from the list would erase where that match was played
+    const put = (courts) => call(users.max, 'PUT', `/api/beach/tournaments/${t.id}/courts`, { courts })
+    expectCode(await put([{ number: 1 }, { number: 2 }]), 409, 'OV_COURT_IN_USE')
+    b = okData(await get(users.max, `/api/beach/tournaments/${t.id}`))
+    assert.equal(b.matches.find((m) => m.id === played.id).court_id, court3.id)
+    assert.equal(b.courts.length, 3)
+    // switched off instead (flooded): kept, and the public page still names it
+    okData(await put([{ number: 1 }, { number: 2 }, { number: 3, active: false }]))
+    okData(await call(users.max, 'PATCH', `/api/beach/tournaments/${t.id}`, { public: true, status: 'live' }))
+    const pub = await api(srv.base, `/api/public/beach/t/${t.slug}`, { method: 'GET', proto: null })
+    assert.equal(pub.status, 200, pub.text)
+    const onCourt3 = b.matches.filter((m) => m.court_id === court3.id).map((m) => m.game_n)
+    assert.ok(onCourt3.length > 0)
+    for (const n of onCourt3) assert.equal(pub.json.data.matches.find((m) => m.game_n === n).court, 3, `game ${n}`)
+    assert.deepEqual(pub.json.data.courts.map((c) => c.number), [1, 2], 'the list shows the courts in use')
+    // a court with no match begun on it can still go (its open matches lose the court, as before)
+    const court2 = b.courts.find((c) => c.number === 2)
+    assert.equal(b.matches.some((m) => m.court_id === court2.id && !['scheduled', 'ready'].includes(m.status)), false)
+    okData(await put([{ number: 1 }, { number: 3, active: false }]))
+  })
+
+  it('a result or a withdrawal for a match the bracket drawn again has replaced: 404, not "database unavailable"', async () => {
+    const t = okData(await call(users.max, 'POST', '/api/beach/tournaments', { title: 'Redraw Cup', starts_on: '2026-07-25', ends_on: '2026-07-25', courts: 1 }), 201).tournament
+    const d = okData(await call(users.max, 'POST', `/api/beach/tournaments/${t.id}/draws`, { gender: 'mixed', category: 'R1' }), 201).draw
+    for (let i = 1; i <= 4; i++) {
+      okData(await call(users.max, 'POST', `/api/beach/draws/${d.id}/entries`, { player1: { last: `R${i}a` }, player2: { last: `R${i}b` } }), 201)
+    }
+    okData(await call(users.max, 'POST', `/api/beach/draws/${d.id}/generate`, {}))
+    const list = okData(await get(users.max, `/api/beach/tournaments/${t.id}`)).matches
+    const w1 = list.find((m) => m.code === 'W1')
+    const w2 = list.find((m) => m.code === 'W2')
+    okData(await call(users.max, 'POST', `/api/beach/tmatches/${w2.id}/result`, { winner: 1, sets: [[21, 15], [21, 15]] }))
+    // the request waits for the draw (as behind another manager's "Draw the bracket"); meanwhile the match goes
+    const replaced = async (id, send) => {
+      await sql.query('BEGIN')
+      await sql.query('SELECT 1 FROM public.beach_draws WHERE id = $1 FOR UPDATE', [d.id])
+      const pending = send()
+      await sleep(300)
+      await sql.query('DELETE FROM public.beach_tmatches WHERE id = $1', [id])
+      await sql.query('COMMIT')
+      return pending
+    }
+    expectCode(await replaced(w1.id, () => call(users.max, 'POST', `/api/beach/tmatches/${w1.id}/result`, { winner: 1, sets: [[21, 15], [21, 15]] })), 404, 'OV_NOT_FOUND')
+    expectCode(await replaced(w2.id, () => call(users.max, 'DELETE', `/api/beach/tmatches/${w2.id}/result`)), 404, 'OV_NOT_FOUND')
+  })
+
+  it('a match on court keeps its court, its time and its pairs: Start, and a slot that has begun', async () => {
+    // yesterday to tomorrow (Zurich), all day: "now" is always on a tournament day
+    const zurichDay = (ms) => new Date(ms).toLocaleDateString('en-CA', { timeZone: 'Europe/Zurich' })
+    const t = okData(await call(users.max, 'POST', '/api/beach/tournaments', {
+      title: 'Court Cup', starts_on: zurichDay(Date.now() - 86400000), ends_on: zurichDay(Date.now() + 86400000), day_start: '00:00', day_end: '23:55', courts: 4
+    }), 201).tournament
+    const d = okData(await call(users.max, 'POST', `/api/beach/tournaments/${t.id}/draws`, { gender: 'men', category: 'C1' }), 201).draw
+    for (let i = 1; i <= 8; i++) {
+      okData(await call(users.max, 'POST', `/api/beach/draws/${d.id}/entries`, { player1: { last: `C${i}a` }, player2: { last: `C${i}b` } }), 201)
+    }
+    okData(await call(users.max, 'POST', `/api/beach/draws/${d.id}/generate`, {}))
+    const tour = async () => okData(await get(users.max, `/api/beach/tournaments/${t.id}`))
+    const matches = async () => new Map((await tour()).matches.map((m) => [m.code, m]))
+    const courts = (await tour()).courts
+    const status = (m, s) => call(users.max, 'POST', `/api/beach/tmatches/${m.id}/status`, { status: s })
+    const win = (m, winner) => call(users.max, 'POST', `/api/beach/tmatches/${m.id}/result`, { winner, sets: winner === 1 ? [[21, 15], [21, 15]] : [[15, 21], [15, 21]] })
+    const place = (m, court, at, force = true) => call(users.max, 'PATCH', `/api/beach/tmatches/${m.id}`, { court_id: court.id, scheduled_at: at, force })
+    const at = (min) => new Date(Math.floor(Date.now() / 300000) * 300000 + min * 60000).toISOString()
+    let ms = await matches()
+
+    // W1 ended; W2 started by the manager (its slot later than planned: started early);
+    // W3 on court since its slot began 30 minutes ago, nobody pressed Start
+    okData(await place(ms.get('W1'), courts[0], at(-60)))
+    okData(await place(ms.get('W2'), courts[1], at(120)))
+    okData(await place(ms.get('W3'), courts[2], at(-30)))
+    okData(await place(ms.get('W4'), courts[3], at(90)))
+    okData(await win(ms.get('W1'), 1))
+    assert.equal(okData(await status(ms.get('W2'), 'in_progress')).match.status, 'in_progress')
+    ms = await matches()
+    const before = (c) => ({ court_id: ms.get(c).court_id, scheduled_at: ms.get(c).scheduled_at })
+    const keep = { W2: before('W2'), W3: before('W3') }
+    const w4 = before('W4')
+    okData(await call(users.max, 'POST', `/api/beach/tournaments/${t.id}/schedule`, {}))
+    ms = await matches()
+    assert.deepEqual(before('W2'), keep.W2, 'a started match keeps its court and time')
+    assert.deepEqual(before('W3'), keep.W3, 'a ready match whose slot has begun keeps its court and time')
+    assert.notDeepEqual(before('W4'), w4, 'a match whose slot lies ahead is placed again')
+    for (const m of ms.values()) {
+      if (['W1', 'W2', 'W3'].includes(m.code) || !m.scheduled_at || m.court_id !== keep.W3.court_id) continue
+      assert.ok(Date.parse(m.scheduled_at) >= Date.parse(keep.W3.scheduled_at) + 50 * 60000, `${m.code} is not put on W3's court while W3 is played`)
+    }
+    // a hand move of a match whose slot has begun asks first (it may be on court)
+    const moved = await place(ms.get('W3'), courts[2], at(60), false)
+    expectCode(moved, 409, 'OV_SLOT_CONFLICT')
+    assert.ok(moved.json.error.details.conflicts.some((c) => c.reason === 'begun'), moved.text)
+    // a started match is not moved at all (as before)
+    expectCode(await place(ms.get('W2'), courts[1], at(180)), 409, 'OV_MATCH_BEGUN')
+
+    // W1's winner X plays the next match; once it is started, a correction of W1 is refused
+    const dep = [...ms.values()].find((m) => m.source1 === 'winner:W1' || m.source2 === 'winner:W1')
+    const feeder = (dep.source1 === 'winner:W1' ? dep.source2 : dep.source1).slice('winner:'.length)
+    expectCode(await status(dep, 'in_progress'), 409, 'OV_MATCH_NOT_READY')
+    okData(await status(ms.get(feeder), 'open'))
+    okData(await win(ms.get(feeder), 1))
+    ms = await matches()
+    okData(await status(ms.get(dep.code), 'called'))
+    assert.equal(okData(await status(ms.get(dep.code), 'in_progress')).match.status, 'in_progress')
+    expectCode(await win(ms.get('W1'), 2), 409, 'OV_BRACKET_LOCKED')
+    expectCode(await call(users.max, 'DELETE', `/api/beach/tmatches/${ms.get('W1').id}/result`), 409, 'OV_BRACKET_LOCKED')
+    // not started after all: back to open, and the correction goes through
+    assert.equal(okData(await status(ms.get(dep.code), 'open')).match.status, 'ready')
+    okData(await win(ms.get('W1'), 2))
+    // the result of a started match is entered as usual
+    ms = await matches()
+    okData(await status(ms.get(dep.code), 'in_progress'))
+    assert.equal(okData(await win(ms.get(dep.code), 1)).match.status, 'finished')
+    expectCode(await status(ms.get(dep.code), 'in_progress'), 409, 'OV_MATCH_ENDED')
+    expectCode(await status(ms.get(dep.code), 'open'), 409, 'OV_MATCH_ENDED')
+    // checked input, editors only
+    expectCode(await status(ms.get('W4'), 'finished'), 400, 'OV_INVALID_REQUEST')
+    expectCode(await call(users.max, 'POST', `/api/beach/tmatches/${ms.get('W4').id}/status`, {}), 400, 'OV_INVALID_REQUEST')
+    expectCode(await call(users.bea, 'POST', `/api/beach/tmatches/${ms.get('W4').id}/status`, { status: 'in_progress' }), 404)
+    const audit = okData(await get(users.admin, '/api/admin/audit?app=beach&limit=200')).entries
+    assert.ok(audit.some((e) => e.action === 'tournament.schedule' && e.details?.op === 'status' && e.details?.status === 'in_progress'))
   })
 
   it('deleting a tournament that has not begun removes everything', async () => {

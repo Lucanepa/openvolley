@@ -34,7 +34,8 @@ import {
   LOG_CURSOR_KEY,
   LOG_PENDING_KEY,
   LOG_UPLOAD_MIN_INTERVAL_MS,
-  EARLY_UPLOAD_UNSENT
+  EARLY_UPLOAD_UNSENT,
+  BACKUP_MIN_INTERVAL_MS
 } from '../logger'
 
 const signIn = (userId = 'u1') => localStorage.setItem('api_auth_token', JSON.stringify({ access_token: 't', expires_at: Date.now() / 1000 + 3600, user: { id: userId } }))
@@ -286,7 +287,7 @@ describe('every-action backup', () => {
     expect(storage.uploads).toHaveLength(0)
   })
 
-  it('sends logs at most once a minute while backups keep going every 2 s', async () => {
+  it('sends logs at most once a minute while the actions keep coming', async () => {
     signIn()
     vi.useFakeTimers({ now: new Date('2026-10-06T08:00:00Z') })
     const getBackupData = async () => ({ match: { gameN: 7 }, sets: [] })
@@ -298,7 +299,7 @@ describe('every-action backup', () => {
       await triggerContinuousBackup('m1', getBackupData, 7)
       await vi.advanceTimersByTimeAsync(3000)
     }
-    expect(backupUploads()).toBe(10)
+    expect(backupUploads()).toBe(1)
     expect(logUploads()).toBe(1)
 
     await vi.advanceTimersByTimeAsync(LOG_UPLOAD_MIN_INTERVAL_MS)
@@ -325,6 +326,42 @@ describe('every-action backup', () => {
     await triggerContinuousBackup('m1', getBackupData, 7)
     await vi.advanceTimersByTimeAsync(10)
     expect(logUploads()).toBe(2)
+  })
+
+  // National peak load test 2026-10-26: one backup per action (2 s
+  // throttle), each the whole match as a new pretty-printed file, wrote about
+  // 105 MB per 5-set match: a 13-match evening 1.4 GB of the 15 GB volume,
+  // which refuses backups below 2 GiB free (30-day sweep)
+  it('one backup a minute at most, compact JSON; the newest state goes up at the end of the minute', async () => {
+    signIn()
+    vi.useFakeTimers({ now: new Date('2026-10-06T08:00:00Z') })
+    let point = 0
+    const getBackupData = vi.fn(async () => ({
+      match: { gameN: 7 },
+      sets: [{ index: 1, homePoints: point, awayPoints: 0 }],
+      events: [{ id: point, type: 'point', stateSnapshot: { pointsA: point, lineupA: { I: 1 } } }]
+    }))
+    const backups = () => storage.uploads.filter(u => u.path.startsWith('backups/'))
+    // three minutes of play: a rally start and a point every 10 s
+    for (let i = 1; i <= 18; i++) {
+      await triggerContinuousBackup('m1', getBackupData, 7)
+      await vi.advanceTimersByTimeAsync(5000)
+      point = i
+      await triggerContinuousBackup('m1', getBackupData, 7)
+      await vi.advanceTimersByTimeAsync(5000)
+    }
+    await vi.advanceTimersByTimeAsync(BACKUP_MIN_INTERVAL_MS)
+    expect(BACKUP_MIN_INTERVAL_MS).toBe(60 * 1000)
+    expect(backups().length).toBeGreaterThanOrEqual(3)
+    expect(backups().length).toBeLessThanOrEqual(4)
+    // the last point reached the bucket without another action
+    const last = JSON.parse(backups().at(-1).body)
+    expect(last.sets[0].homePoints).toBe(18)
+    expect(last.events[0].stateSnapshot).toEqual({ pointsA: 18, lineupA: { I: 1 } })
+    for (const u of backups()) expect(u.body).not.toMatch(/\n/)
+    // each one a new file, as before (the restore lists them)
+    expect(new Set(backups().map(u => u.path)).size).toBe(backups().length)
+    expect(backups().every(u => u.options.upsert === false)).toBe(true)
   })
 
   it('a set/match end upload is not rate limited', async () => {

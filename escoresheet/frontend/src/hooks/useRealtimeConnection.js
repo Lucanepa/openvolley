@@ -43,6 +43,17 @@ export function dbWatchRetryDelay(attempt) {
   return DB_WATCH_RETRY_DELAYS_MS[attempt] ?? DB_WATCH_RETRY_MAX_MS
 }
 
+// AUTO mode: a db change is not read again (GET /api/match/:id) while the relay
+// room pushed a new whole bundle within this time. getMatchData answers from
+// that same relay copy, and the relay pushes every new copy to this socket, so
+// the read could only bring what was or is about to be pushed: the bench
+// downloaded its whole match 2-3 times per rally for nothing (load test
+// 2026-10-26: 1.15 GB in 6 minutes for 30 benches late in their matches). Once
+// the room has been quiet this long (no new bundle: socket down, only the
+// public summary or live states on it, the relay lost the match) a change is
+// read as before; a re-subscribe of the db stream always is.
+export const RELAY_BUNDLE_COVERS_MS = 10000
+
 /**
  * Hook for managing realtime connection with WebSocket primary + Supabase Realtime fallback
  * @param {Object} options
@@ -100,6 +111,11 @@ export function useRealtimeConnection({
   const fetchSeqRef = useRef(0)
   const refetchTimerRef = useRef(null)
   const lastPushAtRef = useRef(0) // last relay bundle delivered
+  // Last NEW whole bundle from the relay (RELAY_BUNDLE_COVERS_MS): a live
+  // state re-delivers the last bundle with the same events array
+  const lastBundleAtRef = useRef(0)
+  const lastBundleEventsRef = useRef(null)
+  const refetchForcedRef = useRef(false) // a refetch in the burst is not covered by the relay
   // Newest live state from any source (relay push, relay copy, database row):
   // a newer one wins over an older relay copy's score, and a refetch answer
   // never rolls back a newer push (createLiveStateTracker)
@@ -107,6 +123,8 @@ export function useRealtimeConnection({
   if (liveTrackerRef.current === null) liveTrackerRef.current = createLiveStateTracker()
   useEffect(() => {
     liveTrackerRef.current.reset()
+    lastBundleAtRef.current = 0
+    lastBundleEventsRef.current = null
   }, [matchId])
   const deliverData = useCallback((result) => {
     if (onDataRef.current) onDataRef.current(liveTrackerRef.current.bundle(result))
@@ -133,12 +151,19 @@ export function useRealtimeConnection({
     })
   }, [matchId, deliverData])
 
-  // Coalesce bursts (one point = live_state + event + set rows) into one refetch
-  const scheduleRefetch = useCallback((reason) => {
+  // Coalesce bursts (one point = live_state + event + set rows) into one refetch.
+  // relayCovers: skipped while the relay room pushes new bundles
+  // (RELAY_BUNDLE_COVERS_MS), unless another call in the burst was not.
+  const scheduleRefetch = useCallback((reason, { relayCovers = false } = {}) => {
+    if (!relayCovers) refetchForcedRef.current = true
     if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current)
     refetchTimerRef.current = setTimeout(() => {
       refetchTimerRef.current = null
-      if (isMountedRef.current) fetchAndDeliver(reason)
+      const forced = refetchForcedRef.current
+      refetchForcedRef.current = false
+      if (!isMountedRef.current) return
+      if (!forced && Date.now() - lastBundleAtRef.current < RELAY_BUNDLE_COVERS_MS) return
+      fetchAndDeliver(reason)
     }, 250)
   }, [fetchAndDeliver])
 
@@ -190,6 +215,7 @@ export function useRealtimeConnection({
       clearTimeout(refetchTimerRef.current)
       refetchTimerRef.current = null
     }
+    refetchForcedRef.current = false
     if (secondaryChannelRef.current) {
       try { supabase?.removeChannel(secondaryChannelRef.current) } catch { /* ignore */ }
       secondaryChannelRef.current = null
@@ -326,7 +352,7 @@ export function useRealtimeConnection({
         return
       }
       if (payload?.table === 'match_live_state') deliverLiveStateRow(payload?.new)
-      scheduleRefetch('db change')
+      scheduleRefetch('db change', { relayCovers: true })
     }
     const channel = supabase.channel(`match-db-${matchId}-${Date.now()}`)
     if (uuid) {
@@ -385,6 +411,10 @@ export function useRealtimeConnection({
           }
         } else if (data && data.match) {
           lastPushAtRef.current = Date.now()
+          if (data.events !== lastBundleEventsRef.current) {
+            lastBundleEventsRef.current = data.events
+            lastBundleAtRef.current = lastPushAtRef.current
+          }
           deliverData({ success: true, ...data })
         }
       })

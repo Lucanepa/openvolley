@@ -12,6 +12,7 @@
  */
 
 import { createServer } from 'http'
+import { gzip } from 'zlib'
 import { WebSocketServer } from 'ws'
 import nodemailer from 'nodemailer'
 import ical from 'node-ical'
@@ -31,7 +32,7 @@ import { createRealtimeHub, createLiveStateRelay, createHeartbeat, isLiveRequest
 // What anonymous readers (live sockets, /api/db without a session) may see.
 import { projectLiveRow, hasAnonPolicy, anonSelectCheck, publicRelayMatch, publicPeople, relaySummaryBundle, relayMatchListRow, cloudListsMatch, projectAnonDbRows, projectNonOwnerRows } from './lib/publicColumns.js'
 // PIN-proved access to a relayed match (full bundle) and its capability tokens.
-import { createMatchTokens, pinGrantsAccess, matchTokenSecretFromEnv, isTokenRole, connectionPinType } from './lib/matchAccess.js'
+import { createMatchTokens, pinGrantsAccess, matchTokenSecretFromEnv, isTokenRole, connectionPinType, findMatchByConnectionPin } from './lib/matchAccess.js'
 // Pure helpers only (no pg, no I/O at import): safe in the LAN / SEA build.
 import { ipBucketKey, createConcurrencyGate, bearerFromHeaders } from './lib/auth.js'
 import { createAttemptLimiter, createPinFailureBudget } from './lib/matchRestore.js'
@@ -197,7 +198,12 @@ const READ_ONLY_TABLES = new Set(['svrz_games'])
 // deleting anything else is for admins.
 const REFEREE_DIRECTORY = 'referee_database'
 const REFEREE_DIRECTORY_UPDATABLE = new Set(['sport_type'])
-const DB_RATE_LIMIT_MAX = 200 // relay reads (/api/match/list, /api/match/:id, ...)
+// Relay reads (/api/match/list, /api/match/:id, /api/server/connections, ...)
+// per IP and minute, sized for a hall of 64 matches behind one address (see
+// MAX_OWNED_PER_IP): about 16 a minute per match (the scorer's tablet status
+// every 10 s, referee and bench fetches). 200 ran out at about 12 matches in
+// the national peak load test (2026-10-26, literal halls).
+const DB_RATE_LIMIT_MAX = 1000
 const AUTH_RATE_LIMIT_MAX = 10 // PocketBase PIN proof
 const EMAIL_RATE_LIMIT_MAX = 3
 const ICAL_RATE_LIMIT_MAX = 10
@@ -601,6 +607,23 @@ async function claimScorerDevice(layer, body, matchOwner, userId, where) {
 }
 
 /**
+ * restore-by-pin with claim: the device that proved the game PIN of `match`
+ * ({ id, external_id }) scores it from now on (lib/scorerDevice.js
+ * claimProved); the previous one is told. `expectedExt`: the match the app
+ * continues ("Take back scoring here" names its own): another match found by
+ * the same game number and PIN is never claimed. Returns the answer's
+ * `scorer` ({ mine, moved }) or null (not claimed: test or closed match,
+ * another match, no db/019).
+ */
+async function takeOverByPin(layer, match, device, userId, expectedExt) {
+  if (typeof expectedExt === 'string' && expectedExt && expectedExt !== match.external_id) return null
+  const r = await layer.scorer.claimProved({ matchId: match.id, device, userId })
+  if (!r) return null
+  if (r.data.moved) scorerMoved({ body: { data: r.data }, matchId: r.matchId }, device.id)
+  return { mine: true, moved: r.data.moved }
+}
+
+/**
  * Another device scores a match now (a granted scorer claim, `r`): tell the
  * relay room (notifyScorerMoved), and order the match's live states afresh.
  * The realtime hub orders them by updated_at, the scoring device's clock: a
@@ -728,6 +751,25 @@ function safeEqualStr(a, b) {
 // publicRelayMatch). Joining a room needs no PIN and its key is public.
 function publicMatch(match) {
   return publicRelayMatch(stripMatchSecrets(match))
+}
+
+// The scorer's undo snapshots on its events: stateSnapshot on every point,
+// stateBefore on rally starts, rotations and substitutions. Its own undo and
+// corrections use them; no relay subscriber reads them (referee, bench,
+// livescore, the LedBox bridge). They were about 90% of a bundle (2.5 KB per
+// point, 2.4 MB at the end of a 5-set match), kept parsed per match in
+// activeMatches and sent to every tablet twice per rally: at a national peak
+// that alone filled the backend's 256 MiB. Dropped when a sync is stored;
+// scorers since 2026-10-26 leave them out themselves (frontend relayEvents).
+const RELAY_EVENT_OMIT = ['stateSnapshot', 'stateBefore']
+function relayEvents(events) {
+  if (!Array.isArray(events)) return events
+  return events.map((e) => {
+    if (!e || typeof e !== 'object' || !RELAY_EVENT_OMIT.some((k) => k in e)) return e
+    const out = {}
+    for (const k of Object.keys(e)) if (!RELAY_EVENT_OMIT.includes(k)) out[k] = e[k]
+    return out
+  })
 }
 
 // The PIN-free, personal-data-free bundle every match-full-data /
@@ -957,9 +999,14 @@ const STALE_TAKEOVER_MS = 10 * 60 * 1000
 // so every scorer of a venue NAT may reconnect at once.
 const CLAIM_FAILURE_LIMIT = 5
 // Distinct match ids one IP's sockets may own at once / claim per minute
-// (higher than the LAN relays: a club's courts can share one NAT address).
-const MAX_OWNED_PER_IP = 20
-const NEW_CLAIM_LIMIT = 30
+// (higher than the LAN relays: a club's courts can share one NAT address, a
+// whole hall a school network or a mobile CGNAT address). 20 refused the
+// 21st scorer of a 32-match hall for the whole set, so its referee and bench
+// tablets got no bundle (national peak load test 2026-10-26). Claims per
+// minute as many: after a relay restart a hall reclaims all its matches at
+// once.
+const MAX_OWNED_PER_IP = 64
+const NEW_CLAIM_LIMIT = 64
 const FINISHED_STATUSES = new Set(['final', 'ended', 'completed', 'finished'])
 
 // --- PocketBase sync (5s trailing-edge debounce) ---
@@ -1249,16 +1296,20 @@ function singleExternalIdFilter(filters) {
 // rejects with code BODY_ABORTED. idleMs (optional): no data for that long
 // rejects with code BODY_TIMEOUT (408, see sendBodyError), for an upload whose
 // device vanished without closing the connection (Node's own requestTimeout
-// would hold the slot for 5 minutes).
-function readJsonBody(req, maxSize = MAX_BODY_SIZE, { idleMs = 0 } = {}) {
+// would hold the slot for 5 minutes). totalMs (optional): the whole body not
+// read within that long rejects the same way, for an upload that trickles (a
+// byte now and then never trips idleMs).
+function readJsonBody(req, maxSize = MAX_BODY_SIZE, { idleMs = 0, totalMs = 0 } = {}) {
   return new Promise((resolve, reject) => {
     const chunks = []
     let size = 0
     let settled = false
     let idleTimer = null
+    let totalTimer = null
     const fail = (message, code) => {
       settled = true
       clearTimeout(idleTimer)
+      clearTimeout(totalTimer)
       chunks.length = 0
       const err = new Error(message)
       err.code = code
@@ -1281,6 +1332,7 @@ function readJsonBody(req, maxSize = MAX_BODY_SIZE, { idleMs = 0 } = {}) {
       idleTimer = setTimeout(() => { if (!settled) fail('Body read timed out', 'BODY_TIMEOUT') }, idleMs)
     }
     armIdle()
+    if (totalMs > 0) totalTimer = setTimeout(() => { if (!settled) fail('Body read timed out', 'BODY_TIMEOUT') }, totalMs)
     req.on('data', (chunk) => {
       if (settled) return
       size += chunk.length
@@ -1292,6 +1344,7 @@ function readJsonBody(req, maxSize = MAX_BODY_SIZE, { idleMs = 0 } = {}) {
       if (settled) return
       settled = true
       clearTimeout(idleTimer)
+      clearTimeout(totalTimer)
       try {
         const text = Buffer.concat(chunks).toString('utf8')
         resolve(text ? JSON.parse(text) : {})
@@ -1303,6 +1356,7 @@ function readJsonBody(req, maxSize = MAX_BODY_SIZE, { idleMs = 0 } = {}) {
       if (settled) return
       settled = true
       clearTimeout(idleTimer)
+      clearTimeout(totalTimer)
       reject(err)
     })
     req.on('close', () => {
@@ -1336,6 +1390,41 @@ function sendJson(res, status, body, headers = {}) {
   if (res.headersSent) return
   res.writeHead(status, { 'Content-Type': 'application/json', ...headers })
   res.end(JSON.stringify(body))
+}
+
+/** Does the request's Accept-Encoding take gzip (not refused with q=0)? */
+function acceptsGzip(req) {
+  return String(req.headers['accept-encoding'] || '').split(',').some((part) => {
+    const [name, ...params] = part.split(';').map((s) => s.trim().toLowerCase())
+    if (name !== 'gzip' && name !== '*') return false
+    const q = params.find((p) => p.startsWith('q='))
+    return !q || Number(q.slice(2)) > 0
+  })
+}
+
+// Gzip a JSON answer above this size for a client that accepts it.
+const GZIP_MIN_BYTES = 8 * 1024
+
+/**
+ * A JSON text answer, gzipped (level 1, off the event loop) when it is big
+ * and the client accepts it, else as it is. A referee's or bench's GET
+ * /api/match/:id carries the whole match, and a bench refetches it after
+ * every database change of its match: every byte went through the tunnel
+ * uncompressed (national peak load test 2026-10-26).
+ */
+function sendJsonText(req, res, status, text) {
+  const plain = () => {
+    if (res.headersSent) return
+    res.writeHead(status, { 'Content-Type': 'application/json' })
+    res.end(text)
+  }
+  if (text.length < GZIP_MIN_BYTES || !acceptsGzip(req)) return plain()
+  gzip(text, { level: 1 }, (err, body) => {
+    if (err) return plain()
+    if (res.headersSent) return
+    res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' })
+    res.end(body)
+  })
 }
 
 // --- Proportionate operational logs (lib/opsLog.js) ---
@@ -1539,6 +1628,14 @@ const MAX_RESTORE_BODY_SIZE = 16 * 1024 * 1024
 // back (408): its device is gone. A live upload, even on bad hall Wi-Fi, never
 // pauses that long.
 const RESTORE_BODY_IDLE_MS = 30 * 1000
+// The whole restore body must arrive within this long, or it gives its slot
+// back (408) all the same: a byte every few seconds never trips the idle
+// timeout, and held a slot until Node's requestTimeout (5 minutes). The app
+// gives its whole restore request 90 s (RESTORE_REQUEST_TIMEOUT_MS, upload
+// and transaction) and then stops waiting, so a body still arriving after 2
+// minutes is one no app waits for; a full 16 MB backup in 2 minutes takes
+// about 1.1 Mbit/s of uplink, and a match backup is far smaller.
+const RESTORE_BODY_TOTAL_MS = 2 * 60 * 1000
 
 // iCal feed configuration for Swiss VolleyManager
 const ICAL_FEEDS = {
@@ -2199,10 +2296,22 @@ const server = createServer((req, res) => {
       const requesterIpKey = ipBucketKey(requesterIp)
       // ?finished=1: finished matches too (the livescore on a venue relay)
       const includeFinished = url.searchParams.get('finished') === '1'
+      // Every match's owners in one pass over the sockets: ownersOf per match
+      // went through every socket once per match (about 4 ms per call with
+      // 404 matches and 1,100 role sockets, older referee apps call this on
+      // every bundle)
+      const ownersByMatch = new Map()
+      for (const c of connections.values()) {
+        for (const id of c.ownedMatches) {
+          const list = ownersByMatch.get(id)
+          if (list) list.push(c)
+          else ownersByMatch.set(id, [c])
+        }
+      }
       const matches = []
       for (const entry of activeMatches.values()) {
         if (IS_CLOUD && entry.match?.test === true) continue
-        const owners = ownersOf(entry.matchId)
+        const owners = ownersByMatch.get(entry.matchId) || []
         if (entry.orphanedAt && now - entry.orphanedAt >= STALE_TAKEOVER_MS && owners.length === 0) continue
         // The cloud: a match without the referee connection only to its own
         // venue (same public address as its scoreboard), see cloudListsMatch
@@ -2281,8 +2390,7 @@ const server = createServer((req, res) => {
       const homeTeam = typeof bundle.homeTeam === 'object' && bundle.homeTeam ? bundle.homeTeam : { name: matchData.homeTeam || 'Home' }
       const awayTeam = typeof bundle.awayTeam === 'object' && bundle.awayTeam ? bundle.awayTeam : { name: matchData.awayTeam || 'Away' }
 
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({
+      sendJsonText(req, res, 200, JSON.stringify({
         success: true,
         // Never PINs; personal data never; rosters/events only with access.
         ...bundle,
@@ -2841,38 +2949,14 @@ Generated by eScoresheet
         res.once('finish', () => { if (res.statusCode !== 404) refund() })
         const pinStr = String(pin).trim()
         const layer = await getDataLayer()
-        const { status, body: out } = await layer.db.runQuery({
-          table: 'matches',
-          action: 'select',
-          params: {
-            columns: isBeach
-              ? 'id, external_id, game_n, status, scheduled_at, team1_data, team2_data, connections, connection_pins'
-              : 'id, external_id, game_n, status, scheduled_at, home_team, away_team, connections, connection_pins',
-            filters: [
-              { type: 'in', column: 'status', value: ['setup', 'live'] },
-              { type: 'eq', column: 'sport_type', value: isBeach ? 'beach' : 'indoor' },
-              // Optional: the match the caller is about to write to (roster
-              // upload). The PIN must then belong to THAT match, not any.
-              ...(matchFilter !== null ? [{ type: 'eq', column: 'external_id', value: matchFilter }] : [])
-            ],
-            order: [{ column: 'scheduled_at', ascending: false, nullsFirst: false }]
-          }
-        }, { internal: true, maxRows: PIN_SCAN_MAX_ROWS })
-        if (status !== 200) {
+        const found = await findMatchByConnectionPin({
+          runQuery: layer.db.runQuery, pins: layer.pins, sport: isBeach ? 'beach' : 'indoor', cfg, pin: pinStr, matchExternalId: matchFilter, maxRows: PIN_SCAN_MAX_ROWS
+        })
+        if (!found.ok) {
           sendJson(res, 500, { success: false, error: 'Validation failed' })
           return
         }
-        const data = out.data
-        // constant time; the stored PIN may be hashed (lib/pinHash.js, hashed
-        // under its connection_pins key): the typed PIN's hash is computed
-        // once per key for the whole scan
-        const pinMatchers = cfg.pinKeys.map((k) => [k, layer.pins.matcher(k, pinStr)])
-        const matchRow = (data || []).find(m => {
-          const pins = m.connection_pins || {}
-          const conns = m.connections || {}
-          if (cfg.enabledKey && !conns[cfg.enabledKey]) return false
-          return pinMatchers.some(([k, matches]) => matches(pins[k]))
-        })
+        const matchRow = found.row
         if (!matchRow) {
           // The same wrong PIN again (the relay's check of the same typed PIN,
           // an app retry) is no new guess
@@ -3546,12 +3630,13 @@ Generated by eScoresheet
         }
         // At most 2 restore bodies (16 MB each, several times that once
         // parsed) in memory at once, a short queue behind them, 503 beyond.
-        // The read settles for a client that left while queued and for an
-        // upload that went silent, so every slot comes back (readJsonBody).
+        // The read settles for a client that left while queued, for an
+        // upload that went silent and for one that trickles past the total
+        // limit, so every slot comes back (readJsonBody).
         await restoreGate.run(async () => {
           let body
           try {
-            body = await readJsonBody(req, MAX_RESTORE_BODY_SIZE, { idleMs: RESTORE_BODY_IDLE_MS })
+            body = await readJsonBody(req, MAX_RESTORE_BODY_SIZE, { idleMs: RESTORE_BODY_IDLE_MS, totalMs: RESTORE_BODY_TOTAL_MS })
           } catch (err) {
             sendBodyError(res, err)
             return
@@ -3858,6 +3943,12 @@ Generated by eScoresheet
 
   // POST /api/match/restore-by-pin {gameN, pin} — anonymous, exact match on
   // game number AND game PIN, attempt-limited per caller (lib/matchRestore.js).
+  // {claim: true, device, external_id?}: the caller continues the match on
+  // this device (the restore dialog's Confirm, "Take back scoring here"): the
+  // game PIN it proved makes the device the scorer (db/019), signed in or
+  // not, before the match is read for it (scorer in the answer). With
+  // external_id, only that match is claimed. The search for backups sends
+  // no claim: looking a match up never takes it over.
   if (url.pathname === '/api/match/restore-by-pin' && req.method === 'POST') {
     const clientIp = getClientIp(req)
     if (isRateLimited(clientIp, RESTORE_PIN_IP_RATE_LIMIT_MAX, 'restorePin')) {
@@ -3885,7 +3976,9 @@ Generated by eScoresheet
         if (bearerFromHeaders(req.headers)) {
           try { editorUserId = (await layer.auth.verifyToken(req))?.id || null } catch { editorUserId = null }
         }
-        const r = await layer.restore.restoreByPin(body, { limitKey: layer.ipKey(clientIp), editorUserId })
+        const claimDevice = layer.scorer && body?.claim === true ? deviceOf(body?.device) : null
+        const takeOver = claimDevice ? (m) => takeOverByPin(layer, m, claimDevice, editorUserId, body?.external_id) : null
+        const r = await layer.restore.restoreByPin(body, { limitKey: layer.ipKey(clientIp), editorUserId, takeOver })
         if (r.status === 200 && editorUserId && r.body.data?.access === 'editor') {
           await layer.accounts.auditClaimPin({ actorId: editorUserId, matchId: r.body.data.match?.id, via: 'restore-by-pin' })
         }
@@ -4096,16 +4189,24 @@ Generated by eScoresheet
 // are routed here. `?purpose=live` sockets (DATABASE_URL mode) go to the
 // realtime hub's own small-frame, no-deflate server; everything else is a role
 // socket (scoreboard/referee/bench/livescore relay) on this one.
+//
+// permessage-deflate is negotiated as before, for what the devices send:
+// older scorers upload whole bundles, compressed by their browsers. The cloud
+// sends nothing compressed (threshold Infinity; ws applies the threshold
+// because server_no_context_takeover is always negotiated): ws keeps a zlib
+// deflate context per socket once it has compressed one message, about 150 KB
+// in the production image, which was the backend's first memory wall at a
+// national peak (1,000 tablets: 224 MB of RSS against 76 MB, load test
+// 2026-10-26), and every bundle was deflated once per tablet. The relay's
+// bundles carry no undo snapshots any more (relayEvents): plain, they are
+// smaller than whole and deflated were. A venue relay (--local) has a hall's
+// few tablets on its Wi-Fi: it still compresses what is above 1 KB.
 const wss = new WebSocketServer({
   noServer: true,
   // Increase limits for match data
   maxPayload: 10 * 1024 * 1024, // 10MB
   perMessageDeflate: {
-    zlibDeflateOptions: {
-      chunkSize: 1024,
-      memLevel: 7,
-      level: 3
-    },
+    ...(IS_CLOUD ? {} : { zlibDeflateOptions: { chunkSize: 1024, memLevel: 7, level: 3 } }),
     zlibInflateOptions: {
       chunkSize: 10 * 1024
     },
@@ -4113,7 +4214,7 @@ const wss = new WebSocketServer({
     serverNoContextTakeover: true,
     serverMaxWindowBits: 10,
     concurrencyLimit: 10,
-    threshold: 1024
+    threshold: IS_CLOUD ? Infinity : 1024
   }
 })
 
@@ -4132,10 +4233,14 @@ server.on('upgrade', (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req))
 })
 
-// Server-side ping for role sockets behind Cloudflare (it closes WebSockets idle
-// for 100 s): every 30 s, and a socket that missed the previous pong is
-// terminated. Cloud only; the LAN relay keeps its old behaviour.
-const roleHeartbeat = IS_CLOUD ? (realtimeHub ? realtimeHub.heartbeat : createHeartbeat({ intervalMs: 30000 })) : null
+// Server-side ping for role sockets: every 30 s, and a socket that missed the
+// previous pong is terminated. Behind Cloudflare it keeps them open (it closes
+// WebSockets idle for 100 s); on a venue relay (--local) it ends the socket of
+// a phone that left the hall's Wi-Fi or went to sleep (no close frame), which
+// otherwise kept its slot (MAX_CONNECTIONS_PER_IP) and its rooms until TCP
+// gave up, minutes or hours later, as the LAN relays do (lanRelayCore).
+// Browsers, the desktop apps and the LedBox bridge answer pings on their own.
+const roleHeartbeat = realtimeHub ? realtimeHub.heartbeat : createHeartbeat({ intervalMs: 30000 })
 
 wss.on('connection', (ws, req) => {
   // Enforce global connection cap
@@ -4190,7 +4295,7 @@ wss.on('connection', (ws, req) => {
   }
 
   connections.set(clientId, clientInfo)
-  roleHeartbeat?.track(ws)
+  roleHeartbeat.track(ws)
 
   relaySummary.count('sockets opened')
   relaySummary.setGauge('open', connections.size)
@@ -4460,15 +4565,18 @@ const MAX_ACCESS_KEYS = 16
  * One counted PIN comparison for this socket.
  * @param {string} scope pinScope of what compare() compares against
  * @param {() => boolean} compare
+ * @param {{ scopeOnly?: boolean }} [budget] scopeOnly: the address's ceiling
+ *   is left out (pinFailureLimiter; the match's own scorer device, see
+ *   verifyRelayClaim)
  * @returns {'ok'|'wrong'|'rate-limited'}
  */
-function relayPinAttempt(clientInfo, scope, compare) {
+function relayPinAttempt(clientInfo, scope, compare, budget = {}) {
   const wsKey = `pin-ws:${clientInfo.id}`
   if ((windowEntry(claimFailures, wsKey)?.count || 0) >= RELAY_PIN_FAILURE_LIMIT) return 'rate-limited'
   // isLimited counts the attempt up front; a right PIN is refunded
-  if (pinFailureLimiter.isLimited(clientInfo.ipKey, scope)) return 'rate-limited'
+  if (pinFailureLimiter.isLimited(clientInfo.ipKey, scope, budget)) return 'rate-limited'
   if (compare()) {
-    pinFailureLimiter.refund(clientInfo.ipKey, scope)
+    pinFailureLimiter.refund(clientInfo.ipKey, scope, budget)
     return 'ok'
   }
   bumpWindow(claimFailures, wsKey)
@@ -4561,6 +4669,26 @@ function hasRelayAccess(clientInfo, matchId, entry) {
   return false
 }
 
+// A room member whose unsent data is above this when a bundle or action is to
+// go out is dropped: it reconnects and gets the latest bundle, which carries
+// the whole match. A tablet that stopped reading (a dead Wi-Fi link the
+// heartbeat has not caught yet) otherwise kept every bundle queued in the
+// backend's memory. The live hub drops its sockets at 256 KB; a bundle late
+// in a match is about 250 KB, so 1 MB is a tablet several syncs behind.
+const ROLE_MAX_BUFFERED_BYTES = 1024 * 1024
+
+/** Send `data` to a room member; false when it was dropped as too slow (see above). */
+function sendToRoomMember(clientInfo, data) {
+  const ws = clientInfo.ws
+  if (ws.bufferedAmount > ROLE_MAX_BUFFERED_BYTES) {
+    relaySummary.count('slow sockets dropped')
+    ws.terminate()
+    return false
+  }
+  ws.send(data)
+  return true
+}
+
 /** match-full-data / match-data-update to a room: full or summary per socket. */
 function broadcastMatchData(matchId, type, entry, scoreboardTs, excludeClientId = null, extra = {}) {
   const room = rooms.get(normalizeMatchId(matchId))
@@ -4574,12 +4702,11 @@ function broadcastMatchData(matchId, type, entry, scoreboardTs, excludeClientId 
     if (!clientInfo || clientInfo.ws.readyState !== 1) return
     if (hasRelayAccess(clientInfo, matchId, entry)) {
       full ??= JSON.stringify({ ...matchDataMessage(type, matchId, entry, scoreboardTs, 'full'), ...extra })
-      clientInfo.ws.send(full)
+      if (sendToRoomMember(clientInfo, full)) sent++
     } else {
       summary ??= JSON.stringify({ ...matchDataMessage(type, matchId, entry, scoreboardTs, 'summary'), ...extra })
-      clientInfo.ws.send(summary)
+      if (sendToRoomMember(clientInfo, summary)) sent++
     }
-    sent++
   })
   if (LOG_EACH_CONNECTION) console.log(`📡 Match data to ${sent} clients in room ${matchId}`)
 }
@@ -4769,7 +4896,9 @@ function newClaimDenied(clientInfo, matchId) {
  * claim is refunded.
  * opts.dbProved: the game PIN was just proved against the match's database
  * row (cloud, see verifyRelayClaim): the database is the authority, so a relay
- * copy held under another PIN (a squatter) is reclaimed.
+ * copy held under another PIN (a squatter) is reclaimed. opts.knownScorer:
+ * and by the device the database names as the match's scorer: its claim is
+ * counted in the match's scope only, not in the address's ceiling.
  */
 function claimMatch(clientInfo, matchId, incomingMatch, opts = {}) {
   const existing = activeMatches.get(matchId)
@@ -4799,8 +4928,9 @@ function claimMatch(clientInfo, matchId, incomingMatch, opts = {}) {
   // counted up front, refunded unless it ends as a wrong PIN.
   const counted = incomingPin !== null
   const scope = pinScope.match(matchId, 'game')
-  if (counted && pinFailureLimiter.isLimited(clientInfo.ipKey, scope)) return { ok: false, code: 'rate-limited' }
-  const refund = () => { if (counted) pinFailureLimiter.refund(clientInfo.ipKey, scope) }
+  const budget = { scopeOnly: opts.knownScorer === true }
+  if (counted && pinFailureLimiter.isLimited(clientInfo.ipKey, scope, budget)) return { ok: false, code: 'rate-limited' }
+  const refund = () => { if (counted) pinFailureLimiter.refund(clientInfo.ipKey, scope, budget) }
   const granted = (kind) => { refund(); return grant(kind) }
   if (storedPin !== null && incomingPin !== null && safeEqualStr(incomingPin, storedPin)) {
     return granted(wasOwner ? 'owner' : 'proved')
@@ -4849,7 +4979,15 @@ function claimMatch(clientInfo, matchId, incomingMatch, opts = {}) {
  * (stress test 2026-10-25). A device the database does not name as the
  * match's scorer is refused ('scorer-moved'), as its HTTP writes are (409
  * OV_SCORER_MOVED). A sync that names no device (an older app) is not checked.
- * @returns {Promise<{ ok: true, dbProved: boolean } | { ok: false, code: string }>}
+ * The device the database does name as the scorer is re-proving its own
+ * match (a reconnect, a relay restart): its game PIN is counted in that
+ * match's scope only, not in the address's ceiling across all PINs
+ * (pinFailureLimiter scopeOnly). Behind a venue NAT the hall's wrong PINs for
+ * other matches and PIN types used to spend that ceiling, and the
+ * scoreboard's re-claim was then refused for 10 minutes (its referee and
+ * benches froze). A guesser does not know the scorer's device id (it is never
+ * broadcast) and still has the scope's limit.
+ * @returns {Promise<{ ok: true, dbProved: boolean, knownScorer: boolean } | { ok: false, code: string }>}
  */
 async function verifyRelayClaim(clientInfo, matchId, match, device = null) {
   const keys = [{ column: 'external_id', value: matchId }]
@@ -4870,27 +5008,109 @@ async function verifyRelayClaim(clientInfo, matchId, match, device = null) {
     }))
   } catch (err) {
     console.warn('[relay] database check of a scoreboard claim failed (allowed):', err?.message)
-    return { ok: true, dbProved: false }
+    return { ok: true, dbProved: false, knownScorer: false }
   }
-  const stored = rows.filter((r) => r && r.game_pin != null && String(r.game_pin).trim() !== '')
-  if (stored.length > 0) {
-    const pin = gamePinOf(match)
-    if (pin === null) return { ok: false, code: 'pins-required' }
-    const r = relayPinAttempt(clientInfo, pinScope.match(matchId, 'game'), () => stored.every((row) => layer.pins.matches('game', pin, row.game_pin)))
-    if (r === 'rate-limited') return { ok: false, code: 'rate-limited' }
-    if (r === 'wrong') return { ok: false, code: 'not-match-owner' }
-  }
+  // Who scores the match, read before the PIN is compared (the answer waits
+  // for the PIN all the same)
   const known = rows.filter((r) => r && r.id != null)
+  let scorer = null
   if (device && layer.scorer && known.length > 0) {
     try {
-      const { moved } = await layer.scorer.check({ device, refs: { externalIds: [], ids: known.map((r) => String(r.id)) } })
-      if (moved) return { ok: false, code: 'scorer-moved' }
+      scorer = await layer.scorer.check({ device, refs: { externalIds: [], ids: known.map((r) => String(r.id)) } })
     } catch (err) {
       // as on /api/db: never in the way of a match day
       console.warn('[relay] scoring-device check of a scoreboard claim failed (allowed):', err?.message)
     }
   }
-  return { ok: true, dbProved: stored.length > 0 }
+  const knownScorer = scorer?.mine === true
+  const stored = rows.filter((r) => r && r.game_pin != null && String(r.game_pin).trim() !== '')
+  if (stored.length > 0) {
+    const pin = gamePinOf(match)
+    if (pin === null) return { ok: false, code: 'pins-required' }
+    const r = relayPinAttempt(clientInfo, pinScope.match(matchId, 'game'), () => stored.every((row) => layer.pins.matches('game', pin, row.game_pin)), { scopeOnly: knownScorer })
+    if (r === 'rate-limited') return { ok: false, code: 'rate-limited' }
+    if (r === 'wrong') return { ok: false, code: 'not-match-owner' }
+  }
+  if (scorer?.moved) return { ok: false, code: 'scorer-moved' }
+  return { ok: true, dbProved: stored.length > 0, knownScorer: knownScorer && stored.length > 0 }
+}
+
+// Venue relay (--local, no database): the scoring device of a room comes
+// from the syncs themselves. A sync names its device with a claim of the
+// match (`device.claim`: a random id the app makes anew each time the device
+// continues the match: restore, take back). Once another device's sync took
+// the room over, a sync that still carries a claim it took over is refused
+// ('scorer-moved'), until the device that took it over has been gone as long
+// as a stale take-over waits. The game PIN cannot tell (every device the
+// match was scored on knows it): a laptop back on the Wi-Fi re-synced its
+// older copy over the phone that continued the match, and the referee and
+// benches jumped back to it. Same rules as the LAN relays
+// (frontend/electron/lanRelayCore.cjs isMovedClaim / noteScorer). A sync
+// without a claim (older apps) is not checked. The room's entry keeps
+// scorerClaim ({ id, claim }) and movedClaims (device id -> claim).
+// A sync also names the claims of the copies its device continued the match
+// from (`device.supersedes`, a backup restore): older copies, refused like a
+// claim taken over. The take-overs live in memory only: after a restart of
+// this relay a laptop's older copy synced after the phone that had continued
+// the match took the room from it for good (2026-10-27); every sync of the
+// newer copy names the older claims, so the relay knows them again from its
+// first one. The entry keeps them in supersededClaims (Set of claims).
+const MAX_MOVED_DEVICES = 16
+const MAX_CLAIM_LENGTH = 64
+const MAX_SUPERSEDED_CLAIMS = 8
+const MAX_SUPERSEDED_PER_ROOM = 32
+
+const isVenueClaimString = (c) => typeof c === 'string' && c.length > 0 && c.length <= MAX_CLAIM_LENGTH
+
+/** A sync's device with its claim ({ id, claim, supersedes }), or null (not checked). */
+function venueDeviceClaim(raw) {
+  const device = deviceOf(raw)
+  const claim = raw && typeof raw === 'object' ? raw.claim : null
+  if (!device || !isVenueClaimString(claim)) return null
+  const supersedes = Array.isArray(raw.supersedes)
+    ? [...new Set(raw.supersedes.slice(0, MAX_SUPERSEDED_CLAIMS).filter((c) => isVenueClaimString(c) && c !== claim))]
+    : []
+  return { id: device.id, claim, supersedes }
+}
+
+function isMovedVenueClaim(matchId, device) {
+  const entry = activeMatches.get(matchId)
+  const scorer = entry?.scorerClaim
+  if (!scorer || scorer.id === device.id) return false
+  if (entry.movedClaims?.get(device.id) !== device.claim && !entry.supersededClaims?.has(device.claim)) return false
+  const grace = isFinishedMatch(entry.match) ? ORPHAN_TAKEOVER_MS : STALE_TAKEOVER_MS
+  return !(ownersOf(matchId).length === 0 && entry.orphanedAt && Date.now() - entry.orphanedAt >= grace)
+}
+
+/**
+ * The room's scorerClaim / movedClaims / supersededClaims after a granted
+ * sync of `device` (claim kind `kind`); `previous` is the room's entry before
+ * it. A take-over by another device remembers that one's claim as moved, and
+ * its sockets stop speaking for the room and are told ('scorer-moved'). The
+ * claims its copy was continued from are older copies, its own claim never.
+ */
+function venueScorerAfter(clientInfo, matchId, previous, device, kind) {
+  const fresh = kind === 'takeover' || kind === 'new'
+  const prev = fresh ? null : previous?.scorerClaim
+  const moved = new Map(fresh ? [] : previous?.movedClaims || [])
+  moved.delete(device.id)
+  const older = new Set(fresh ? [] : previous?.supersededClaims || [])
+  older.delete(device.claim)
+  for (const c of device.supersedes) {
+    older.delete(c) // re-added as the newest
+    older.add(c)
+  }
+  while (older.size > MAX_SUPERSEDED_PER_ROOM) older.delete(older.values().next().value)
+  if (prev && prev.id !== device.id) {
+    moved.set(prev.id, prev.claim)
+    while (moved.size > MAX_MOVED_DEVICES) moved.delete(moved.keys().next().value)
+    const data = JSON.stringify({ type: 'scorer-moved', matchId, timestamp: Date.now() })
+    for (const c of connections.values()) {
+      if (c === clientInfo || c.scorerDevice !== prev.id || !c.ownedMatches.delete(matchId)) continue
+      if (c.ws.readyState === 1) { try { c.ws.send(data) } catch { /* closing */ } }
+    }
+  }
+  return { scorerClaim: device, movedClaims: moved, supersededClaims: older }
 }
 
 const CLAIM_ERRORS = {
@@ -4969,11 +5189,20 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
         clientInfo.ws.send(JSON.stringify({ type: 'error', code: v.code, message: CLAIM_ERRORS[v.code] || 'Refused', matchId }))
         return
       }
-      handleSyncMatchData(clientInfo, message, { dbChecked: true, dbProved: v.dbProved })
+      handleSyncMatchData(clientInfo, message, { dbChecked: true, dbProved: v.dbProved, knownScorer: v.knownScorer })
     })
   }
 
-  const claimed = claimMatch(clientInfo, matchId, match, { dbProved: opts.dbProved === true })
+  // Venue relay: a claim another device took over, refused before any PIN
+  // is compared (isMovedVenueClaim)
+  const venueDevice = DB_MODE ? null : venueDeviceClaim(message.device)
+  if (venueDevice && isMovedVenueClaim(matchId, venueDevice)) {
+    clientInfo.ownedMatches.delete(matchId)
+    clientInfo.ws.send(JSON.stringify({ type: 'error', code: 'scorer-moved', message: CLAIM_ERRORS['scorer-moved'], matchId }))
+    return
+  }
+
+  const claimed = claimMatch(clientInfo, matchId, match, { dbProved: opts.dbProved === true, knownScorer: opts.knownScorer === true })
   if (!claimed.ok) {
     clientInfo.ws.send(JSON.stringify({
       type: 'error',
@@ -5019,7 +5248,11 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     ? 'beach'
     : ((claimed.kind === 'owner' || claimed.kind === 'proved') && previous?.sportType) || 'indoor'
   if (device) clientInfo.scorerDevice = device.id
+  const venueScorer = venueDevice
+    ? venueScorerAfter(clientInfo, matchId, previous, venueDevice, claimed.kind)
+    : (claimed.kind === 'takeover' || claimed.kind === 'new' ? {} : { scorerClaim: previous?.scorerClaim, movedClaims: previous?.movedClaims, supersededClaims: previous?.supersededClaims })
   activeMatches.set(matchId, {
+    ...venueScorer,
     matchId,
     sportType,
     match,
@@ -5028,7 +5261,7 @@ function handleSyncMatchData(clientInfo, message, opts = {}) {
     homePlayers,
     awayPlayers,
     sets,
-    events,
+    events: relayEvents(events),
     liveState: carryLiveState ? previous?.liveState : undefined,
     gameNumber: match?.gameN || match?.gameNumber || match?.game_n,
     updatedAt: new Date().toISOString(),
@@ -5174,8 +5407,7 @@ function broadcastToRoom(matchId, message, excludeClientId = null, accessOnly = 
     const clientInfo = connections.get(clientId)
     if (clientInfo && clientInfo.ws.readyState === 1) { // WebSocket.OPEN
       if (accessOnly && !hasRelayAccess(clientInfo, normalizeMatchId(matchId), entry)) return
-      clientInfo.ws.send(data)
-      sent++
+      if (sendToRoomMember(clientInfo, data)) sent++
     }
   })
 

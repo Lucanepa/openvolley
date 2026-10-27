@@ -42,6 +42,7 @@
 import { jobMatchKey } from './syncIds'
 import { matchGameNumber } from './deviceMatches'
 import { isClosingSyncJob } from './matchReopen'
+import { randomUuid } from './deviceId'
 
 export const SCORER_MOVED = 'OV_SCORER_MOVED'
 export const SCORER_CLAIM_ACTION = 'scorer'
@@ -74,6 +75,80 @@ export async function queueScorerClaim(database, match) {
   const job = scorerClaimJob(match)
   if (!job || !database?.sync_queue) return null
   return database.sync_queue.add(job)
+}
+
+/**
+ * This device's claim of `matchId` on the venue relays: a random id kept on
+ * the local match (scorerClaim) and sent with each relay sync (device.claim,
+ * see relaySyncDevice). A venue relay has no database to tell the scorer
+ * from the device it left (the game PIN is known to both): it remembers which
+ * claim each device scored the room with, and once another device took the
+ * room over, refuses a sync that still carries the claim it took over
+ * (lanRelayCore, backend --local). The claim is made on the first sync and
+ * kept; continuing a match makes a new one: a restore by game PIN and "Take
+ * back scoring here" import a new local match, and a backup restore clears
+ * it. One transaction, so the scoreboard's and the app's syncs never make
+ * two. null: no such match (or no storage).
+ */
+export async function scorerClaimOf(database, matchId) {
+  return (await scorerClaimRecord(database, matchId))?.claim ?? null
+}
+
+/** scorerClaimOf with the claims the match was continued from: { claim, supersedes } or null. */
+async function scorerClaimRecord(database, matchId) {
+  if (matchId == null || !database?.matches) return null
+  try {
+    return await database.transaction('rw', database.matches, async () => {
+      const row = await database.matches.get(matchId)
+      if (!row) return null
+      const supersedes = olderClaims(row.supersededClaims)
+      if (typeof row.scorerClaim === 'string' && row.scorerClaim) return { claim: row.scorerClaim, supersedes }
+      const claim = randomUuid()
+      await database.matches.update(matchId, { scorerClaim: claim })
+      return { claim, supersedes }
+    })
+  } catch {
+    return null
+  }
+}
+
+// The claims a sync names as the copies the match was continued from (the
+// venue relays read at most 8)
+const MAX_SUPERSEDED_CLAIMS = 8
+const olderClaims = (list) => (Array.isArray(list)
+  ? [...new Set(list.filter(c => typeof c === 'string' && c && c.length <= 64))].slice(0, MAX_SUPERSEDED_CLAIMS)
+  : [])
+
+/**
+ * The claims a match continued from the copy `match` (a backup file's match
+ * row) supersedes: that copy's claim, then the ones it superseded itself,
+ * newest first. Kept on the restored match (supersededClaims) and sent with
+ * each relay sync (device.supersedes): a venue relay refuses those older
+ * copies even after a restart of the relay, when it no longer remembers
+ * which device took the room over from which (2026-10-27: after a restart,
+ * a laptop's older copy synced after the phone that had continued the match
+ * from its backup took the room for good).
+ * @param {object|null} match
+ * @returns {string[]}
+ */
+export function supersededClaimsOf(match) {
+  return olderClaims([match?.scorerClaim, ...(Array.isArray(match?.supersededClaims) ? match.supersededClaims : [])])
+}
+
+/**
+ * The `device` of a relay sync of `matchId`: this installation (`device`,
+ * apiClient writingDevice: the cloud relay checks it against the database,
+ * db/019) with its claim of the match for the venue relays (scorerClaimOf)
+ * and the claims of the copies it continued the match from (supersedes, see
+ * supersededClaimsOf). null without a device id; without a claim, the device
+ * alone.
+ */
+export async function relaySyncDevice(database, matchId, device) {
+  if (!device) return null
+  const record = await scorerClaimRecord(database, matchId)
+  if (!record?.claim) return device
+  const supersedes = record.supersedes.filter(c => c !== record.claim)
+  return supersedes.length ? { ...device, claim: record.claim, supersedes } : { ...device, claim: record.claim }
 }
 
 // The jobs that write a match's score (the server checks the scoring device
@@ -212,7 +287,7 @@ export async function markScorerMoved(database, local, { scorer = null, closed =
  * scoring screens open the replaced match. Needs a connection and the game
  * PIN the device kept; a match closed meanwhile loads as closed (its Match
  * End), the claim then has nothing to take.
- * @param {{ fetchCloud: (pin: string, gameN: number|string) => Promise<object>, importCloud: (cloudData: object) => Promise<number>, online?: boolean }} deps
+ * @param {{ fetchCloud: (pin: string, gameN: number|string, options: { claim: boolean, externalId: string }) => Promise<object>, importCloud: (cloudData: object) => Promise<number>, online?: boolean }} deps
  * @returns {Promise<{ ok: true, matchId: number, cloud: object } | { ok: false, reason: 'offline'|'noPin'|'notFound'|'otherMatch'|'failed', message?: string }>}
  */
 export async function takeBackScoring(database, matchId, { fetchCloud, importCloud, online = true } = {}) {
@@ -224,7 +299,9 @@ export async function takeBackScoring(database, matchId, { fetchCloud, importClo
   if (!online) return { ok: false, reason: 'offline' }
   let cloud
   try {
-    cloud = await fetchCloud(String(pin).trim(), gameN)
+    // with the claim: the server makes this device the scorer before it
+    // reads the match (signed in or not), this match only
+    cloud = await fetchCloud(String(pin).trim(), gameN, { claim: true, externalId: match.seed_key })
   } catch (err) {
     return { ok: false, reason: err?.network || err?.status === 0 ? 'offline' : 'failed', message: err?.message }
   }
