@@ -21,21 +21,29 @@ import EasyMatchModal from './components/EasyMatchModal'
 import { EASY_TEAM_SEED_KEYS, easyMatchPrefill } from './domain/easyMatch'
 import HomeOptionsModal from './components/options/HomeOptionsModal'
 import ConnectTabletsModal from './components/connect/ConnectTabletsModal'
-import { useSyncQueue, useUserMatchLink, checkScorerMoved, matchEndUpdateNeeded, isClosedHere } from './hooks/useSyncQueue'
-import { isScorerMoved, takeBackScoring, relaySyncDevice } from './utils/matchHandover'
+import { useSyncQueue, useUserMatchLink, checkScorerMoved, askScoringDevice, matchEndUpdateNeeded, isClosedHere, hasStoredSessionToken, noteMatchClosedOnServer } from './hooks/useSyncQueue'
+import { isScorerMoved, takeBackScoring, relaySyncDevice, serverScoreForTakeBack } from './utils/matchHandover'
 import ScorerMovedModal from './components/ScorerMovedModal'
 import ClosedOnServerModal from './components/ClosedOnServerModal'
+import SelfCheckNotice from './components/SelfCheckNotice'
 import { isKnownClosedOnServer, isStaleClosedCopy } from './utils/matchReopen'
+import { BACKGROUND_HOME_MS, SERVER_CHECK_TIMEOUT_MS, checkCopiesOnServer, cleanUpDuplicateCopies, clearOpenMatch, findDuplicateCopies, copyState, duplicateCopyIds, hasOtherLocalCopy, isOpenOfficialCopy, lastActivityAt, matchToReopen, newestEventOf, noteOpenMatch, readServerMatchRows, runDeviceSelfCheck, trackBackground, unsentOfMatch, withinTimeout } from './utils/deviceSelfCheck'
 import SyncSignInBanner from './components/auth/SyncSignInBanner'
 import useAutoBackup from './hooks/useAutoBackup'
 import { pickNativeBackupFile } from './utils/nativeBackup'
 import { useDashboardServer } from './hooks/useDashboardServer'
+import { publishEndedLiveStates } from './utils/matchEndLiveState'
 import ballFallback from './ball_fallback.png'
 
 // Primary ball image (with a bundled copy as fallback)
 // The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
 // stay cached (old green ball) after an update
 const ballImage = ballFallback
+
+// The start-up's live-state repair of ended matches (publishEndedLiveStates):
+// tried again at most this often, this many times
+const ENDED_LIVE_STATE_RETRY_MS = 60 * 1000
+const ENDED_LIVE_STATE_TRIES = 10
 
 import {
   TEST_REFEREE_SEED_DATA,
@@ -55,24 +63,24 @@ import {
   getTestAwayTeamShortName,
   getTestTeamByExternalId
 } from './constants/testSeeds'
-import { apiFrom, writingDevice } from './lib/apiClient'
+import { apiFrom, apiMatchRestoreByPin, writingDevice } from './lib/apiClient'
 import { checkMatchSession, lockMatchSession, unlockMatchSession, verifyGamePin } from './utils/sessionManager'
 import { fetchMatchByPin, fetchMatchToContinue, importMatchFromSupabase, cloudBestOf, restoreMatchFromJson, selectBackupFile, listCloudBackups, fetchCloudBackup, listPocketBaseBackups, fetchPocketBaseMatch, matchBackupFromDatabaseExport, restoreErrorText } from './utils/backupManager'
 import UpdateBanner from './components/UpdateBanner'
 import DesktopUpdateNotice from './components/DesktopUpdateNotice'
 import { isMatchFinished as isMatchFinishedUtil, getNextSetIndex } from './utils/matchFormat'
 import { getMatchWinner } from './domain/matchEnd'
-import { setExtId } from './utils/syncIds'
-import { deviceMatchRows, jobsOfMatch, matchGameNumber } from './utils/deviceMatches'
+import { jobMatchKey, setExtId } from './utils/syncIds'
+import { deviceMatchRows, jobsOfMatch, matchGameNumber, setScore } from './utils/deviceMatches'
 import { PhoneIcon } from './components/icons'
 import { Maximize } from 'lucide-react'
 import { Button, cn, FormError, Input } from './ui'
-import { getBackendOverride, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isStaticHost } from './utils/backendConfig'
+import { getBackendOverride, getCloudApiUrl, getLocalServerStatusUrl, isCloudBlockedOnThisPort, isStaticHost } from './utils/backendConfig'
 import { isViewportTooSmall } from './utils/formLayout'
 import { installAppLifecycle, liveOf, setLiveMatch } from './utils/appLifecycle'
 import { installAndroidUpdates, liveMatchKnown } from './utils/androidUpdate'
 import AndroidUpdateNotice from './components/AndroidUpdateNotice'
-import { detectAppPlatform } from './utils/openAppWindow'
+import { detectAppPlatform, openAppWindow, openFailedMessageKey } from './utils/openAppWindow'
 import ManageConsole from './components/manage/ManageConsole'
 import ManagerSiteLink from './components/ManagerSiteLink'
 import { OPEN_MANAGE_EVENT, OPEN_RESTORE_EVENT, openRestore, restorePrefill } from './utils/manageNav'
@@ -127,6 +135,13 @@ export default function App() {
   // A copy closed on the server that Continue asked for (ClosedOnServerModal
   // over the home screen); the open match's own copy needs no id here
   const [closedCopyId, setClosedCopyId] = useState(null)
+  // What the self-check found (utils/deviceSelfCheck), on the home screen
+  // until dismissed: { closed, flagged, removed }
+  const [selfCheck, setSelfCheck] = useState(null)
+  // The local matches the last server check found scored here ("Scoring
+  // here" on the home screen); any other open official copy is "Not
+  // checked" until a check answers for it. Sorted ids.
+  const [serverHere, setServerHere] = useState([])
   const [deleteMatchModal, setDeleteMatchModal] = useState(null)
   const [deletePinInput, setDeletePinInput] = useState('')
   const [deletePinError, setDeletePinError] = useState('')
@@ -586,19 +601,54 @@ export default function App() {
   }, [])
 
   // Every open official match on this device, for the home screen's list
-  // (utils/deviceMatches.js): Continue and Delete above only reach the newest
+  // (utils/deviceMatches.js): Continue and Delete above only reach the newest.
+  // Copies of one match that the self-check flagged are listed and marked;
+  // each row says what the server said about it (deviceSelfCheck copyState).
+  const serverHereKey = serverHere.join(',')
   const deviceMatches = useLiveQuery(async () => {
     try {
       const matches = await db.matches.toArray()
       const teamIds = [...new Set(matches.flatMap(m => [m.homeTeamId, m.awayTeamId]).filter(id => id != null))]
       const teams = teamIds.length ? await db.teams.bulkGet(teamIds) : []
       const names = new Map(teams.filter(Boolean).map(tm => [tm.id, tm.name]))
-      return deviceMatchRows(matches, names)
+      const here = new Set(serverHereKey ? serverHereKey.split(',').map(Number) : [])
+      return deviceMatchRows(matches, names, {
+        duplicateIds: duplicateCopyIds(matches),
+        stateOf: (m) => copyState(m, { checkedHere: here.has(m.id) })
+      })
     } catch (error) {
       console.error('Unable to list the matches on this device', error)
       return []
     }
-  }, [])
+  }, [serverHereKey])
+
+  // The changes each match holds that the server does not have yet (unsent,
+  // or set aside: deviceSelfCheck unsentOfMatch), for the home screen only:
+  // a live query of the sync queue re-renders the whole app at every write,
+  // and the scoring screen writes one at every rally
+  const onHome = matchId == null
+  const unsentByKey = useLiveQuery(async () => {
+    if (!onHome) return null
+    try {
+      const jobs = await db.sync_queue.toArray()
+      const keys = new Set(jobs.map(j => jobMatchKey(j)).filter(Boolean))
+      return new Map([...keys].map(k => [k, unsentOfMatch(jobs, k)]))
+    } catch {
+      return null
+    }
+  }, [onHome], null)
+
+  // Every local match id -> whether it is a copy the server has closed, for
+  // the self-check's notice (below) while there is one
+  const selfCheckShown = selfCheck != null
+  const localMatchState = useLiveQuery(async () => {
+    if (!selfCheckShown) return null
+    try {
+      return new Map((await db.matches.toArray()).map(m => [m.id, isStaleClosedCopy(m)]))
+    } catch {
+      return null
+    }
+  }, [selfCheckShown], null)
 
   // Fullscreen functionality
   const toggleFullscreen = useCallback(async () => {
@@ -984,7 +1034,14 @@ export default function App() {
     return null
   }, [matchId, currentMatch, currentOfficialMatch, currentTestMatch])
 
-  const restoredRef = useRef(false)
+  // The start-up's decision and self-check (once per page load: StrictMode
+  // runs effects twice)
+  const startupCheckRef = useRef(null)
+  // The match on the screen, for the start-up and the background rule
+  const openMatchIdRef = useRef(null)
+  useEffect(() => {
+    openMatchIdRef.current = matchId
+  }, [matchId])
 
   // Preload the ball images when app loads
   useEffect(() => {
@@ -1087,17 +1144,159 @@ export default function App() {
     }
   }, [])
 
+  // The self-check's server side (utils/deviceSelfCheck): only online, signed
+  // in, with a cloud, and not in offline mode. Read each time it runs.
+  const selfCheckServer = useCallback(() => {
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false
+    let offlineChosen = false
+    try { offlineChosen = localStorage.getItem('offlineMode') === 'true' } catch { /* no storage */ }
+    if (!online || offlineChosen || !hasStoredSessionToken() || !getCloudApiUrl('/api/db')) return null
+    return { readRows: readServerMatchRows, noteClosed: noteMatchClosedOnServer, scoringDevice: askScoringDevice }
+  }, [])
 
+  // What the server said, for the home screen's states (deviceSelfCheck
+  // copyState): the copies it found scored here are "Scoring here". A check
+  // that could not ask (offline, signed out, no answer) leaves the copies it
+  // covered "Not checked". only: the copies one check covered (Continue: one)
+  const noteServerAnswers = useCallback((r, { only = null } = {}) => {
+    const covered = (id) => only == null || only.includes(id)
+    setServerHere(prev => {
+      const next = new Set(prev.filter(id => !covered(id)))
+      if (r?.asked) for (const id of r.here || []) if (covered(id)) next.add(id)
+      const sorted = [...next].sort((a, b) => a - b)
+      return sorted.join(',') === prev.join(',') ? prev : sorted
+    })
+  }, [])
+
+  // What a check found, for the home screen's notice; nothing found leaves
+  // the notice as it is (no notice at every start when nothing is wrong)
+  const showSelfCheck = useCallback((report) => {
+    const found = { closed: report?.closed || [], flagged: report?.flagged || [], removed: [] }
+    if (found.closed.length || found.flagged.length) setSelfCheck(found)
+  }, [])
+
+  // The self-check (utils/deviceSelfCheck), at start-up and back from the
+  // background: copies of one match flagged, the server asked about every
+  // open official copy. Never waited for, and it removes nothing.
+  const runSelfCheck = useCallback((openMatchId = null) => (
+    runDeviceSelfCheck({ database: db, server: selfCheckServer(), openMatchId })
+      .then((report) => {
+        showSelfCheck(report)
+        noteServerAnswers(report)
+      })
+      .catch((error) => console.error('[SelfCheck] The check failed:', error))
+  ), [selfCheckServer, showSelfCheck, noteServerAnswers])
+
+  // Start-up (utils/deviceSelfCheck, rules 1 and 2). Opening the app always
+  // lands on Home: the desktop or Android app started, a new tab, the reopen
+  // after a crash or a kill. 2026-10-27: the owner's PC opened match 406970
+  // on its scoring screen, live, a week after a phone had continued and
+  // closed it; a 12-hour rule would still have reopened a copy scored that
+  // morning, and resuming a match on its own is how duplicate scoring starts.
+  // None of the established e-scoresheets does it: Home's Continue card
+  // resumes the match in one tap. A reload (the sessionStorage marker of the
+  // match screen) or a tab the browser discarded goes straight back to the
+  // screen it showed, offline too: the scoring tab's lock (Scoreboard),
+  // the set-end recovery, the update's reload and the size gate rely on a
+  // reload landing on the scoring screen. Never over a match opened in the
+  // meantime. The self-check runs once, in the background.
   useEffect(() => {
-    if (activeMatch) {
-      if (!restoredRef.current && !matchId) {
-        setMatchId(activeMatch.id)
-        restoredRef.current = true
+    let alive = true
+    startupCheckRef.current ??= matchToReopen(db).catch(() => null).then((reopen) => {
+      runSelfCheck(reopen?.id ?? null)
+      return reopen
+    })
+    startupCheckRef.current.then(async (reopen) => {
+      if (!alive) return
+      if (!reopen) {
+        if (openMatchIdRef.current == null) clearOpenMatch()
+        return
       }
-    } else {
-      restoredRef.current = false
+      if (openMatchIdRef.current != null) return
+      // Match Setup opens filled (OV-18)
+      if (reopen.view === 'matchSetup') await preloadMatchSetup(reopen.id).catch(() => {})
+      if (!alive || openMatchIdRef.current != null) return
+      console.info(`[Start] Reloaded: back to match ${reopen.id} (${reopen.view})`)
+      setMatchId(reopen.id)
+      setShowMatchSetup(reopen.view === 'matchSetup')
+      setShowCoinToss(reopen.view === 'coinToss')
+      setShowMatchEnd(reopen.view === 'matchEnd')
+    }).catch((error) => console.error('[Start] Could not reopen the match:', error))
+    return () => { alive = false }
+  }, [runSelfCheck])
+
+  // Match End's live-state repair (utils/matchEndLiveState, fbf159bf) at
+  // start-up, for every official match this device holds as ended. An app
+  // killed between the last rally and the scoreboard's 'match_end' push used
+  // to reopen on Match End, which repairs it; it opens on Home now, and the
+  // livescore kept the game running until the scorer pressed Continue, or
+  // for good. No screen opens and nothing waits for it: tried when the app
+  // is online and signed in, again when it comes online or the queue drains
+  // (at most once a minute, a few times), until every match is done.
+  useEffect(() => {
+    const done = new Set()
+    let stopped = false
+    let running = false
+    let tries = 0
+    let lastTry = 0
+    async function attempt() {
+      if (stopped || running || !selfCheckServer()) return
+      if (tries > 0 && Date.now() - lastTry < ENDED_LIVE_STATE_RETRY_MS) return
+      running = true
+      tries++
+      lastTry = Date.now()
+      try {
+        const { pending } = await publishEndedLiveStates(db, { done })
+        if (pending === 0 || tries >= ENDED_LIVE_STATE_TRIES) stop()
+      } catch (error) {
+        console.warn('[Start] Could not publish the match end to the live state:', error?.message)
+      } finally {
+        running = false
+      }
     }
-  }, [activeMatch, matchId])
+    function stop() {
+      stopped = true
+      window.removeEventListener('online', attempt)
+      window.removeEventListener('sync-queue-drained', attempt)
+    }
+    window.addEventListener('online', attempt)
+    window.addEventListener('sync-queue-drained', attempt)
+    attempt()
+    return stop
+  }, [selfCheckServer])
+
+  // The match screen on show, for a reload (rule 2): noted whenever it
+  // changes, cleared when the scorer leaves it for Home (Home, Close match,
+  // Delete, the background rule below). Never before the start-up read it.
+  const markedOpenRef = useRef(false)
+  useEffect(() => {
+    if (matchId != null) {
+      noteOpenMatch({ id: matchId, view: currentPage === 'manualAdjustments' ? 'matchEnd' : currentPage })
+      markedOpenRef.current = true
+    } else if (markedOpenRef.current) {
+      clearOpenMatch()
+      markedOpenRef.current = false
+    }
+  }, [matchId, currentPage])
+
+  // Back after 15 minutes or more in the background (rule 3; deviceSelfCheck
+  // trackBackground counts only the time the page was hidden, so a screen
+  // left on through a long set break or a medical time-out is never acted
+  // on): Home with its Continue card. Only the screen changes: nothing is
+  // closed, locked or unlocked, set aside or deleted, and Continue opens the
+  // match where it was. The self-check runs again, the server asked as on
+  // open. (It replaces the check after an hour in the background.)
+  useEffect(() => trackBackground((gone) => {
+    if (openMatchIdRef.current != null) {
+      console.info(`[Start] Back after ${Math.round(gone / 60000)} min in the background: the home screen`)
+      setMatchId(null)
+      setShowMatchSetup(false)
+      setShowCoinToss(false)
+      setShowMatchEnd(false)
+      setShowManualAdjustments(false)
+    }
+    runSelfCheck(null)
+  }, { minHiddenMs: BACKGROUND_HOME_MS }), [runSelfCheck])
 
   // Check for pending roster upload on mount
   useEffect(() => {
@@ -1661,6 +1860,51 @@ export default function App() {
     return { ok: true }
   }
 
+  // A copy closed on the server or scored on another device opens read-only
+  // (the owner, 2026-10-27): no scoring controls, but its scoresheet stays
+  // reachable, to view, print or save, from the dialog over its screen
+  // (ScoresheetApp reads it from this device's database)
+  const openCopyScoresheet = (id) => {
+    const opened = openAppWindow(`/scoresheet/?matchId=${id}`, { features: 'width=1200,height=900', title: t('header.scoresheet') })
+    if (!opened.ok) setAlertModal(t(openFailedMessageKey(opened, 'header.allowPopups')))
+  }
+
+  // Before "Take back scoring here" (ScorerMovedModal): the server's score
+  // now, to compare with the scoreboard in its confirmation. A lookup with
+  // the game PIN, no claim; online only, as the take-back itself, which then
+  // loads the server's copy first as before (loadOfficialVersion)
+  const previewTakeBack = async (id) => {
+    const online = typeof navigator === 'undefined' || navigator.onLine !== false
+    const r = await serverScoreForTakeBack(db, id, { lookup: (gameN, pin) => apiMatchRestoreByPin(gameN, pin), online })
+    return r.ok ? { score: r.score } : { error: r.reason }
+  }
+
+  // Home's Clean up (SelfCheckNotice), after one question: the copies of a
+  // match that hold nothing of their own go, this device only; a copy that
+  // holds something stays with its own Remove (utils/deviceSelfCheck)
+  const confirmCleanUp = ({ key, gameN, count }) => {
+    setConfirmModal({
+      message: t('home.selfCheck.cleanUpConfirm', { game: gameN ?? '–', count }),
+      onConfirm: async () => {
+        setConfirmModal(null)
+        try {
+          const { removed } = await cleanUpDuplicateCopies(db, { openMatchId: matchId, keys: [key] })
+          // a copy that holds something of its own (since the check) stays,
+          // and keeps its line with Remove
+          const { flagged } = await findDuplicateCopies(db, { openMatchId: matchId, keys: [key] })
+          setSelfCheck(prev => ({
+            closed: prev?.closed || [],
+            flagged: [...(prev?.flagged || []).filter(f => f.key !== key), ...flagged],
+            removed: [...(prev?.removed || []), ...removed]
+          }))
+        } catch (error) {
+          console.error('[SelfCheck] Clean up failed:', error)
+        }
+      },
+      onCancel: () => setConfirmModal(null)
+    })
+  }
+
   async function clearLocalTestData() {
     await db.transaction('rw', db.events, db.event_history, db.sets, db.matches, db.players, db.teams, async () => {
       const testMatches = await db.matches
@@ -2162,6 +2406,16 @@ export default function App() {
     ])
     const matchName = `${homeTeam?.name || 'Home'} vs ${awayTeam?.name || 'Away'}`
 
+    // one of two copies of the match here (utils/deviceSelfCheck): the other
+    // copy, the match's jobs and the server's match stay
+    const otherCopy = await hasOtherLocalCopy(db, matchToDelete)
+    // What removing it loses (the owner, 2026-10-27): the changes of the
+    // match the server does not have, unsent or set aside (deviceSelfCheck
+    // unsentOfMatch). Named in the dialog before Delete; a copy the server
+    // has closed or another device scores goes without that warning only
+    // when there is none. Not for one of two copies: the jobs stay.
+    const unsent = otherCopy ? { changes: 0, events: 0 } : unsentOfMatch(await db.sync_queue.toArray(), matchToDelete.seed_key)
+
     setDeletePinInput('')
     setDeletePinError('')
     setDeleteMatchModal({
@@ -2169,7 +2423,12 @@ export default function App() {
       matchId: matchToDelete.id,
       gamePin: matchToDelete.gamePin || null,
       // the server keeps its closed record: only this device's copy goes
-      closedOnServer: isKnownClosedOnServer(matchToDelete)
+      closedOnServer: isKnownClosedOnServer(matchToDelete),
+      // another device scores it: the server's match and its relay room are
+      // that device's, only this device's copy goes
+      moved: isScorerMoved(matchToDelete) && !isKnownClosedOnServer(matchToDelete),
+      otherCopy,
+      unsent
     })
   }
 
@@ -2192,13 +2451,24 @@ export default function App() {
 
     // Get match before deleting to check status and seed_key
     const matchToDelete = await db.matches.get(matchIdToDelete)
-    // Never for a match known closed on the server: it keeps the closed
-    // record and refused every request of such a delete job
-    const shouldDeleteFromSupabase = matchToDelete && matchToDelete.status !== 'final' && matchToDelete.seed_key && !isKnownClosedOnServer(matchToDelete)
+    // One of two copies of the match on this device (the self-check's list,
+    // utils/deviceSelfCheck): this copy's rows go, nothing more. The match's
+    // sync jobs carry its key, which the other copy shares, as do its relay
+    // room and its server match.
+    const otherCopy = !!matchToDelete && await hasOtherLocalCopy(db, matchToDelete)
+    // Remove from this device is local only for a copy the server reported
+    // closed or scored on another device (the owner, 2026-10-27): no server
+    // delete and no relay delete-match. The server keeps the closed record
+    // (and refused every request of such a delete job); a match another
+    // device scores is that device's, on the server and in its relay room.
+    const localOnly = !!matchToDelete && (isKnownClosedOnServer(matchToDelete) || isScorerMoved(matchToDelete))
+    const shouldDeleteFromSupabase = matchToDelete && matchToDelete.status !== 'final' && matchToDelete.seed_key && !localOnly && !otherCopy
     console.log('[Delete Match] 🗑️ Preparing to delete match:', {
       matchId: matchIdToDelete,
       status: matchToDelete?.status,
       seed_key: matchToDelete?.seed_key,
+      otherCopy,
+      localOnly,
       shouldDeleteFromSupabase
     })
 
@@ -2220,29 +2490,36 @@ export default function App() {
 
       // Get match to find team IDs
       const match = await db.matches.get(matchIdToDelete)
+      // A team row another local match still uses stays with its players: a
+      // restore before 92a288da shared one row between two matches (two
+      // copies of one match too), and deleting either took it from the other
+      const sharedTeam = async (teamId) => (await db.matches.filter(m => m.id !== matchIdToDelete && (m.homeTeamId === teamId || m.awayTeamId === teamId)).count()) > 0
+      const keepHomeTeam = match?.homeTeamId ? await sharedTeam(match.homeTeamId) : false
+      const keepAwayTeam = match?.awayTeamId ? await sharedTeam(match.awayTeamId) : false
 
       // Delete players
-      if (match?.homeTeamId) {
+      if (match?.homeTeamId && !keepHomeTeam) {
         const homePlayersCount = await db.players.where('teamId').equals(match.homeTeamId).count()
         console.log('[Delete Match] Deleting', homePlayersCount, 'home players')
         await db.players.where('teamId').equals(match.homeTeamId).delete()
       }
-      if (match?.awayTeamId) {
+      if (match?.awayTeamId && !keepAwayTeam) {
         const awayPlayersCount = await db.players.where('teamId').equals(match.awayTeamId).count()
         console.log('[Delete Match] Deleting', awayPlayersCount, 'away players')
         await db.players.where('teamId').equals(match.awayTeamId).delete()
       }
 
       // Delete teams
-      if (match?.homeTeamId) {
+      if (match?.homeTeamId && !keepHomeTeam) {
         await db.teams.delete(match.homeTeamId)
       }
-      if (match?.awayTeamId) {
+      if (match?.awayTeamId && !keepAwayTeam) {
         await db.teams.delete(match.awayTeamId)
       }
 
       // This match's unsent jobs; the other matches on the device keep theirs
-      const matchJobs = jobsOfMatch(await db.sync_queue.toArray(), match?.seed_key)
+      // (and so does the other copy of this match: the jobs may be its own)
+      const matchJobs = otherCopy ? [] : jobsOfMatch(await db.sync_queue.toArray(), match?.seed_key)
       console.log('[Delete Match] Removing', matchJobs.length, 'sync queue items of the match')
       if (matchJobs.length > 0) await db.sync_queue.bulkDelete(matchJobs.map(j => j.id))
 
@@ -2254,8 +2531,10 @@ export default function App() {
       console.log('[Delete Match] Match deleted successfully')
     })
 
-    // Take the match off the relay, by its room key (the seed key)
-    const deletedRelayKey = relayMatchKey(matchToDelete)
+    // Take the match off the relay, by its room key (the seed key); not the
+    // room the other copy of the match still has, nor that of a match closed
+    // on the server or scored on another device (local only)
+    const deletedRelayKey = otherCopy || localOnly ? null : relayMatchKey(matchToDelete)
     if (deletedRelayKey) {
       scorerRelay.send({ type: 'delete-match', matchId: deletedRelayKey })
       if (publishedRelayKeyRef.current === deletedRelayKey) publishedRelayKeyRef.current = null
@@ -2279,7 +2558,7 @@ export default function App() {
         console.error('[App] Error queuing Supabase match deletion:', err)
       }
     } else {
-      console.log('[Delete Match] ⏭️ Skipping Supabase delete (final status, no seed_key or closed on the server)')
+      console.log('[Delete Match] ⏭️ Skipping Supabase delete (final status, no seed_key, closed on the server, scored on another device or another local copy)')
     }
 
     setDeleteMatchModal(null)
@@ -2299,11 +2578,14 @@ export default function App() {
     // utils/currentMatch newOfficialMatchStep. An official match being
     // recorded is not replaced; a test or easy match is, after the question
     // (this button did nothing at all while one was being recorded). A copy
-    // closed on the server counts as confirmed (a restored row may lack
-    // matchInfoConfirmedAt): never deleted without a word. Unconfirmed
-    // matches (user started but didn't click "Create Match") are silently
-    // deleted.
-    const step = newOfficialMatchStep(currentMatch, matchStatus?.status, { closedCopy: isStaleClosedCopy(currentMatch) })
+    // closed on the server or scored on another device never blocks it and
+    // is never deleted on the way: it stays, read-only, on the home screen's
+    // list (the owner, 2026-10-27). Unconfirmed matches (user started but
+    // didn't click "Create Match") are silently deleted.
+    const step = newOfficialMatchStep(currentMatch, matchStatus?.status, {
+      closedCopy: isStaleClosedCopy(currentMatch) || isKnownClosedOnServer(currentMatch),
+      movedCopy: isScorerMoved(currentMatch)
+    })
     if (step === 'recording') {
       setAlertModal(t('home.modals.officialMatchStillRecording', 'An official match is still recording on this device. Continue it, or delete it with "Delete match", before creating a new official match.'))
       return
@@ -2734,7 +3016,8 @@ export default function App() {
   async function createNewTestMatch() {
     if (testMatchLoading) return
 
-    const officialMatchRecording = matchStatus?.status === 'Match recording' && currentOfficialMatch
+    // (a copy another device scores is not recorded here)
+    const officialMatchRecording = matchStatus?.status === 'Match recording' && currentOfficialMatch && !isScorerMoved(matchStatus.match)
     if (officialMatchRecording) {
       setConfirmModal({
         message: t('home.modals.testMatchOverwriteWarning'),
@@ -2929,7 +3212,7 @@ export default function App() {
   async function startEasyMatch(form) {
     if (easyMatchLoading) return
     const previous = (await db.matches.filter(m => m.test === true && m.status !== 'final').first()) || null
-    const officialMatchRecording = matchStatus?.status === 'Match recording' && currentOfficialMatch
+    const officialMatchRecording = matchStatus?.status === 'Match recording' && currentOfficialMatch && !isScorerMoved(matchStatus.match)
     const replacing = previous && ['live', 'ended'].includes(previous.status)
     if (!officialMatchRecording && !replacing) {
       await createEasyMatch(form)
@@ -3021,14 +3304,32 @@ export default function App() {
     }
   }
 
-  async function continueMatch(matchIdParam) {
+  // checkServer: opened from the home screen (Continue, the device's match
+  // list)
+  async function continueMatch(matchIdParam, { checkServer = false } = {}) {
     const targetMatchId = matchIdParam || currentOfficialMatch?.id
     if (!targetMatchId) return
 
     try {
       // Get the match to check its status
-      const match = await db.matches.get(targetMatchId)
+      let match = await db.matches.get(targetMatchId)
       if (!match) return
+
+      // From the home screen, the server is asked first, as at start-up
+      // (utils/deviceSelfCheck): a copy it has closed meanwhile opens
+      // read-only in its dialog below instead of the scoring screen, and one
+      // another device scores now under its ScorerMovedModal. A few seconds
+      // at most; never offline or signed out, where the match opens at once.
+      // A later answer still marks the copy and its state on the home screen.
+      const server = checkServer && isOpenOfficialCopy(match) ? selfCheckServer() : null
+      if (server) {
+        const only = [match.id]
+        const asked = checkCopiesOnServer(db, server, { onlyIds: only })
+        asked.then((r) => noteServerAnswers(r, { only })).catch(() => {})
+        await withinTimeout(asked, SERVER_CHECK_TIMEOUT_MS)
+        match = await db.matches.get(targetMatchId)
+        if (!match) return
+      }
 
       // A copy the server has closed: no session lock, no scoring screen;
       // the dialog offers the official version or removing it (2026-10-23)
@@ -3146,6 +3447,15 @@ export default function App() {
     if (sizeGateShown) document.activeElement?.blur?.()
   }, [sizeGateShown])
 
+  // The self-check's notice, for what is still on the device: a closed copy
+  // while it is one (loaded or removed, its line goes), two copies while both
+  // are here
+  const shownSelfCheck = selfCheck && localMatchState ? {
+    closed: selfCheck.closed.filter(c => localMatchState.get(c.id) === true),
+    flagged: selfCheck.flagged.filter(c => localMatchState.has(c.id) && localMatchState.has(c.keptId)),
+    removed: selfCheck.removed
+  } : null
+
   const notClosed = (m) => (m && closedMatchId != null && m.id === closedMatchId ? null : m)
   const shownCurrentMatch = notClosed(currentMatch)
   const shownOfficialMatch = notClosed(currentOfficialMatch)
@@ -3158,6 +3468,49 @@ export default function App() {
   // two frames when an older test match was replaced (verification 2026-10-08)
   const headerMatchStatus = homeWhilePreparing ? homeWhilePreparing.matchStatus : shownMatchStatus
   const headerMatchInfoData = homeWhilePreparing ? homeWhilePreparing.matchInfoData : shownMatchInfoData
+
+  // Home's Continue card (HomePage): the match Continue resumes, where it
+  // stands (teams, set, score), when it was last saved, and its state on the
+  // server (deviceSelfCheck copyState). Read on the home screen only: its
+  // sets and events change at every rally.
+  const continueTarget = homeOfficialMatch || homeTestMatch
+  const continueTargetId = continueTarget?.id ?? null
+  const continueRead = useLiveQuery(async () => {
+    if (!onHome || continueTargetId == null) return null
+    try {
+      const m = await db.matches.get(continueTargetId)
+      if (!m) return null
+      const [home, away, sets, newest] = await Promise.all([
+        m.homeTeamId != null ? db.teams.get(m.homeTeamId) : null,
+        m.awayTeamId != null ? db.teams.get(m.awayTeamId) : null,
+        db.sets.where('matchId').equals(m.id).toArray(),
+        newestEventOf(db, m.id)
+      ])
+      const here = new Set(serverHereKey ? serverHereKey.split(',').map(Number) : [])
+      return {
+        id: m.id,
+        seedKey: m.seed_key || null,
+        home: home?.name || null,
+        away: away?.name || null,
+        score: setScore(sets),
+        lastSaved: lastActivityAt(m, newest),
+        state: copyState(m, { checkedHere: here.has(m.id) })
+      }
+    } catch {
+      return null
+    }
+  }, [onHome, continueTargetId, serverHereKey], null)
+  const continueInfo = continueRead && continueRead.id === continueTargetId
+    ? { ...continueRead, unsent: unsentByKey?.get(continueRead.seedKey)?.changes || 0 }
+    : null
+  // The home screen's list, each row with what the server does not have yet
+  const homeDeviceMatches = deviceMatches?.filter(r => r.id !== closedMatchId)
+    .map(r => ({ ...r, unsent: unsentByKey?.get(r.seedKey)?.changes || 0 }))
+
+  // A copy another device scores, open: its screens stay mounted under
+  // ScorerMovedModal (Take back lands on them) but inert, so no tap, key or
+  // focus reaches a scoring control (read-only, the owner 2026-10-27)
+  const movedCopyOpen = matchId != null && isScorerMoved({ cloudBlock: openMatchBlock })
 
   return (
     <div className="app-root" onClick={(e) => {
@@ -3279,7 +3632,7 @@ export default function App() {
             overflowX: 'hidden',
             overflowY: (matchId && !showCoinToss && !showMatchSetup && !showMatchEnd) ? 'hidden' : 'auto'
           }}>
-            <div className={(!matchId || showCoinToss || showMatchEnd) ? 'panel panel--centred' : 'panel'} style={{
+            <div className={(!matchId || showCoinToss || showMatchEnd) ? 'panel panel--centred' : 'panel'} inert={movedCopyOpen || undefined} aria-hidden={movedCopyOpen || undefined} style={{
               flex: '1 1 auto',
               minHeight: 0,
               height: 'auto',
@@ -3397,9 +3750,20 @@ export default function App() {
                     easyMatchLoading={easyMatchLoading}
                     currentOfficialMatch={homeOfficialMatch}
                     currentTestMatch={homeTestMatch}
-                    deviceMatches={deviceMatches?.filter(r => r.id !== closedMatchId)}
-                    continueMatch={continueMatch}
+                    deviceMatches={homeDeviceMatches}
+                    continueMatch={(id) => continueMatch(id, { checkServer: true })}
                     continueTestMatch={continueTestMatch}
+                    continueInfo={continueInfo}
+                    selfCheckNotice={
+                      <SelfCheckNotice
+                        report={shownSelfCheck}
+                        onShow={(id) => setClosedCopyId(id)}
+                        onRemove={(id) => showDeleteMatchModal(id)}
+                        onCleanUp={confirmCleanUp}
+                        onDismiss={() => setSelfCheck(null)}
+                        className="mb-4"
+                      />
+                    }
                     showDeleteMatchModal={showDeleteMatchModal}
                     restartTestMatch={restartTestMatch}
                     onOpenSettings={() => setHomeOptionsModal(true)}
@@ -3432,6 +3796,9 @@ export default function App() {
                 closed={openMatchBlock?.closed === true}
                 // The other device's score from the cloud first, then the claim
                 onTakeBack={() => loadOfficialVersion(matchId)}
+                // the server's score to compare, before the take-back
+                onPreview={() => previewTakeBack(matchId)}
+                onScoresheet={() => openCopyScoresheet(matchId)}
                 onClose={goHome}
               />
             )}
@@ -3445,6 +3812,7 @@ export default function App() {
                 onLoadOfficial={() => loadOfficialVersion(closedCopy.id)}
                 onRemove={() => showDeleteMatchModal(closedCopy.id)}
                 onUsePin={() => openRestore({ gameN: closedCopy.gameN })}
+                onScoresheet={() => openCopyScoresheet(closedCopy.id)}
                 onClose={() => {
                   setClosedCopyId(null)
                   goHome()
@@ -3476,10 +3844,26 @@ export default function App() {
                     Are you sure you want to delete all data for: <strong className="font-semibold text-stone-900">{deleteMatchModal.matchName}</strong>?
                   </p>
                   <p className="mt-2 text-sm text-stone-600">
-                    {deleteMatchModal.closedOnServer
-                      ? t('cloudBlock.removeLocalOnly')
-                      : 'This will delete all sets, events, players, and team data for this match from local storage and from the cloud database.'}
+                    {deleteMatchModal.otherCopy
+                      ? t('home.deviceMatches.removeCopyOnly')
+                      : deleteMatchModal.closedOnServer
+                        ? t('cloudBlock.removeLocalOnly')
+                        : deleteMatchModal.moved
+                          ? t('cloudBlock.removeMovedLocalOnly')
+                          : 'This will delete all sets, events, players, and team data for this match from local storage and from the cloud database.'}
                   </p>
+
+                  {/* What would be lost: the changes the server does not have */}
+                  {deleteMatchModal.unsent?.changes > 0 && (
+                    <div role="alert" data-testid="delete-loss-warning" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                      <p className="m-0 font-semibold">{t('deleteMatch.lossTitle')}</p>
+                      <ul className="my-1 list-disc pl-5">
+                        <li>{t('deleteMatch.lossChanges', { count: deleteMatchModal.unsent.changes })}</li>
+                        {deleteMatchModal.unsent.events > 0 && <li>{t('deleteMatch.lossEvents', { count: deleteMatchModal.unsent.events })}</li>}
+                      </ul>
+                      <p className="m-0">{t('deleteMatch.lossEnd')}</p>
+                    </div>
+                  )}
 
                   {/* PIN confirmation for matches with gamePin */}
                   {deleteMatchModal.gamePin && (

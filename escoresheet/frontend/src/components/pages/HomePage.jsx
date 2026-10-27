@@ -7,6 +7,7 @@ import CloudBlockNotice from '../CloudBlockNotice'
 import { ChevronDown, Download, LifeBuoy, Loader2, Settings } from 'lucide-react'
 import { Button, Card, cn, dayLabel, FOCUS_RING, FOCUS_RING_INSET, Notice, Row, RowList, RowTool, SectionHeader, StatusPill } from '../../ui'
 import { duplicateGameNumbers } from '../../utils/deviceMatches'
+import { formatTakeOver, scoreText } from '../ScorerMovedModal'
 import { isServedFromLocalServer } from '../../utils/backendConfig'
 import { BRAND } from '../../brand'
 
@@ -63,9 +64,13 @@ export default function HomePage({
   showDeleteMatchModal,
   restartTestMatch,
   onOpenSettings,
-  onRestoreMatch
+  onRestoreMatch,
+  // what the self-check found (App, SelfCheckNotice)
+  selfCheckNotice = null,
+  // the match Continue resumes (App): { home, away, score, lastSaved, state, unsent }
+  continueInfo = null
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [supportFeedbackOpen, setSupportFeedbackOpen] = useState(false)
   const desktopOS = useMemo(() => detectDesktopOS(), [])
   const inDesktopApp = useMemo(() => isInsideDesktopApp(), [])
@@ -113,8 +118,54 @@ export default function HomePage({
 
         <div className="home-wide:col-start-2 home-wide:row-span-4 home-wide:row-start-1 home-wide:self-center">
         <PendingApprovalBanner className="mb-4" />
+        {selfCheckNotice}
 
         <Card className="w-full space-y-3">
+          {/* Continue: the match in progress on this device, first and in one
+              tap. Opening the app always lands here, never on a match (the
+              owner, 2026-10-27, as the established e-scoresheets do): the
+              card says which match, where it stands, when it was last saved
+              and what the server said about it, so the scorer resumes the
+              right one, and sees a copy closed on the server or scored on
+              another device before opening it (read-only then). */}
+          {(currentOfficialMatch || currentTestMatch) && (
+            <div data-testid="continue-card" className="space-y-3 rounded-xl border border-stone-200/70 bg-stone-50/60 p-3">
+              {continueInfo && (
+                <div className="px-1">
+                  <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
+                    <span className="min-w-0 text-base font-semibold leading-snug text-stone-900">
+                      {`${continueInfo.home || t('home.deviceMatches.home')} – ${continueInfo.away || t('home.deviceMatches.away')}`}
+                    </span>
+                    <span className="flex flex-wrap items-center gap-1">
+                      <MatchStateChips state={continueInfo.state} unsent={continueInfo.unsent} />
+                    </span>
+                  </div>
+                  <div className="mt-1 text-xl font-bold tabular-nums text-stone-900">{scoreText(t, continueInfo.score)}</div>
+                  {continueInfo.lastSaved != null && (
+                    <div className="mt-0.5 text-xs tabular-nums text-stone-500">
+                      {t('home.continueCard.lastSaved', { time: formatTakeOver(continueInfo.lastSaved, i18n?.language) || '–' })}
+                    </div>
+                  )}
+                </div>
+              )}
+              <Button
+                variant="dark"
+                block
+                data-help-id="home-continue-button"
+                onClick={() => {
+                  if (currentOfficialMatch) {
+                    continueMatch(currentOfficialMatch.id)
+                  } else if (currentTestMatch) {
+                    continueTestMatch()
+                  }
+                }}
+                className="h-14 rounded-xl text-base font-semibold"
+              >
+                {t('home.continueMatch')}
+              </Button>
+            </div>
+          )}
+
           {/* New Match button with its menu (pushes the stack down) */}
           <div className="space-y-2">
             <Button
@@ -176,25 +227,6 @@ export default function HomePage({
               </div>
             )}
           </div>
-
-          {/* Continue Match - only when there is a match */}
-          {(currentOfficialMatch || currentTestMatch) && (
-            <Button
-              variant="dark"
-              block
-              data-help-id="home-continue-button"
-              onClick={() => {
-                if (currentOfficialMatch) {
-                  continueMatch(currentOfficialMatch.id)
-                } else if (currentTestMatch) {
-                  continueTestMatch()
-                }
-              }}
-              className="h-14 rounded-xl text-base font-semibold"
-            >
-              {t('home.continueMatch')}
-            </Button>
-          )}
 
           {/* The server refused this match for good (pending account, game
               already scored by someone else, closed): say why */}
@@ -304,6 +336,28 @@ export default function HomePage({
 
 const STATUS_PILL_TONE = { scheduled: 'neutral', live: 'planned', ended: 'todo', approved: 'todo' }
 
+// What the server said about a copy (utils/deviceSelfCheck copyState), and
+// whether it holds changes the server does not have yet
+const MATCH_STATE_TONE = { here: 'done', moved: 'attention', closed: 'brand', unchecked: 'neutral' }
+
+function MatchStateChips({ state, unsent = 0 }) {
+  const { t } = useTranslation()
+  return (
+    <>
+      {state && (
+        <span data-testid="match-state" className="inline-flex">
+          <StatusPill tone={MATCH_STATE_TONE[state] || 'neutral'}>{t(`home.matchState.${state}`)}</StatusPill>
+        </span>
+      )}
+      {unsent > 0 && (
+        <span data-testid="match-state" className="inline-flex">
+          <StatusPill tone="todo">{t('home.matchState.unsent')}</StatusPill>
+        </span>
+      )}
+    </>
+  )
+}
+
 function DeviceMatchList({ matches, onContinue, onDelete }) {
   const { t } = useTranslation()
   const twice = duplicateGameNumbers(matches)
@@ -315,7 +369,8 @@ function DeviceMatchList({ matches, onContinue, onDelete }) {
       ))}
       <RowList className="mt-1">
         {matches.map(m => {
-          const duplicate = !!m.gameN && twice.has(m.gameN)
+          // the same game twice, or two copies of one match (the self-check)
+          const duplicate = (!!m.gameN && twice.has(m.gameN)) || m.duplicate === true
           const title = m.home || m.away
             ? `${m.home || t('home.deviceMatches.home')} – ${m.away || t('home.deviceMatches.away')}`
             : t('home.deviceMatches.noTeams')
@@ -339,6 +394,7 @@ function DeviceMatchList({ matches, onContinue, onDelete }) {
                     {t(`home.deviceMatches.status.${m.status}`, { defaultValue: t('home.deviceMatches.status.scheduled') })}
                   </StatusPill>
                   {duplicate && <StatusPill tone="attention">{t('home.deviceMatches.sameGame')}</StatusPill>}
+                  <MatchStateChips state={m.state} unsent={m.unsent} />
                 </>
               }
               toolsIndent="pl-[0.875rem] sm:pl-[1.125rem]"

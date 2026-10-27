@@ -40,7 +40,7 @@
  *    version are cleared at app start, offline too (setAsideClosedCopies).
  */
 import { jobMatchKey } from './syncIds'
-import { matchGameNumber } from './deviceMatches'
+import { matchGameNumber, setScore } from './deviceMatches'
 import { isClosingSyncJob } from './matchReopen'
 import { randomUuid } from './deviceId'
 
@@ -312,6 +312,41 @@ export async function takeBackScoring(database, matchId, { fetchCloud, importClo
   if (newId == null) return { ok: false, reason: 'failed' }
   console.log(`[Handover] ${match.seed_key}: scoring taken back on this device from the cloud copy`)
   return { ok: true, matchId: newId, cloud }
+}
+
+/**
+ * Before "Take back scoring here": the server's score of the match now, for
+ * its confirmation, so the scorer compares it with the scoreboard this device
+ * shows (the owner, 2026-10-27). A plain lookup with the game PIN this device
+ * kept, without the claim: nothing changes on the server or here. The same
+ * needs as the take-back (the game PIN, a connection); the take-back itself
+ * loads the server's copy again, with the claim, as before.
+ * @param {{ lookup: (gameN: number, pin: string) => Promise<{data?: object|null, error?: object|null}>, online?: boolean }} deps
+ *   lookup: POST /api/match/restore-by-pin without the claim (apiMatchRestoreByPin)
+ * @returns {Promise<{ ok: true, score: object, closed: boolean } | { ok: false, reason: 'offline'|'noPin'|'notFound'|'otherMatch'|'failed' }>}
+ *   score: deviceMatches setScore of the server's sets
+ */
+export async function serverScoreForTakeBack(database, matchId, { lookup, online = true } = {}) {
+  const match = await database.matches.get(matchId)
+  if (!match?.seed_key) return { ok: false, reason: 'notFound' }
+  const pin = match.gamePin ?? match.game_pin
+  const gameN = match.gameN ?? match.game_n ?? match.gameNumber
+  if (pin == null || String(pin).trim() === '' || gameN == null || gameN === '') return { ok: false, reason: 'noPin' }
+  if (!online) return { ok: false, reason: 'offline' }
+  let answer
+  try {
+    answer = await lookup(parseInt(gameN, 10), String(pin).trim())
+  } catch (err) {
+    return { ok: false, reason: err?.network || err?.status === 0 ? 'offline' : 'failed' }
+  }
+  const { data, error } = answer || {}
+  if (error) {
+    if (error.network || error.status === 0) return { ok: false, reason: 'offline' }
+    return { ok: false, reason: error.code === 'OV_NOT_FOUND' || error.status === 404 ? 'notFound' : 'failed' }
+  }
+  if (!data?.match) return { ok: false, reason: 'notFound' }
+  if (data.match.external_id && data.match.external_id !== match.seed_key) return { ok: false, reason: 'otherMatch' }
+  return { ok: true, score: setScore(data.sets || []), closed: ['approved', 'final'].includes(data.match.status) }
 }
 
 /**

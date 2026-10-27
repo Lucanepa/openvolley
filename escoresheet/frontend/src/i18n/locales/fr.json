@@ -216,7 +216,13 @@
   },
   "deleteMatch": {
     "cancel": "Annuler",
-    "delete": "Supprimer"
+    "delete": "Supprimer",
+    "lossTitle": "Cette copie contient ce que le serveur n'a pas :",
+    "lossChanges_one": "{{count}} modification non envoyée",
+    "lossChanges_other": "{{count}} modifications non envoyées",
+    "lossEvents_one": "{{count}} événement absent du serveur",
+    "lossEvents_other": "{{count}} événements absents du serveur",
+    "lossEnd": "La supprimer les perd définitivement."
   },
   "refereeSelector": {
     "title": "Base de données des arbitres",
@@ -1103,12 +1109,38 @@
       "duplicateNotice": "Le match {{game}} est deux fois sur cet appareil. Le serveur garde une feuille par match : continuez celle que vous avez tenue et supprimez l'autre.",
       "continue": "Continuer",
       "delete": "Supprimer",
+      "removeCopyOnly": "Seule cette copie est supprimée. L'autre copie de ce match sur cet appareil et le match sur le serveur restent.",
       "status": {
         "scheduled": "Pas commencé",
         "live": "En cours",
         "ended": "Terminé",
         "approved": "Approuvé"
       }
+    },
+    "selfCheck": {
+      "closedCopy": "Le match {{game}} est clôturé sur le serveur. La copie de cet appareil n'est plus à jour et n'a pas été ouverte.",
+      "duplicateCopy": "Le match {{game}} est deux fois sur cet appareil et chaque copie contient quelque chose qui manque à l'autre. Supprimez celle que vous n'avez pas tenue.",
+      "removedCopy": "Une deuxième copie du match {{game}} a été supprimée de cet appareil : l'autre copie contient tout ce qu'elle avait.",
+      "show": "Afficher",
+      "remove": "Supprimer",
+      "dismiss": "Masquer",
+      "cleanUpLine_one": "Le match {{game}} a {{count}} copie de plus sur cet appareil, qui ne contient rien de propre.",
+      "cleanUpLine_other": "Le match {{game}} a {{count}} copies de plus sur cet appareil, qui ne contiennent rien de propre.",
+      "cleanUp": "Nettoyer",
+      "cleanUpConfirm_one": "Supprimer la copie en trop du match {{game}} de cet appareil ? Elle ne contient rien qui manque à l'autre copie. Rien ne change sur le serveur.",
+      "cleanUpConfirm_other": "Supprimer les {{count}} copies en trop du match {{game}} de cet appareil ? Elles ne contiennent rien qui manque à l'autre copie. Rien ne change sur le serveur."
+    },
+    "continueCard": {
+      "score": "Set {{set}} · {{home}}:{{away}} · sets {{setsHome}}:{{setsAway}}",
+      "notStarted": "Pas commencé",
+      "lastSaved": "Dernier enregistrement {{time}}"
+    },
+    "matchState": {
+      "here": "Tenu ici",
+      "moved": "Sur un autre appareil",
+      "closed": "Clôturé sur le serveur",
+      "unchecked": "Non vérifié",
+      "unsent": "Modifications non envoyées"
     }
   },
   "options": {
@@ -2998,6 +3030,7 @@
       }
     },
     "removeLocalOnly": "Seule la copie de cet appareil est supprimée. La version officielle reste sur le serveur.",
+    "removeMovedLocalOnly": "Seule la copie de cet appareil est supprimée. Le match reste sur le serveur et sur l'appareil qui le tient.",
     "restoreRefused": "Ce match est clôturé sur le serveur : cette sauvegarde ne peut plus être restaurée. Charge la version officielle avec le numéro et le PIN du match."
   },
   "androidUpdate": {
@@ -4094,6 +4127,9 @@
       "macos": "Mac",
       "desktop": "application de bureau",
       "web": "navigateur"
-    }
+    },
+    "serverScore": "Sur le serveur maintenant",
+    "compareHint": "Compare-le avec le tableau de cet appareil. Reprendre le match charge ce score ici, et l'autre appareil s'arrête.",
+    "confirmTakeBack": "Oui, reprendre le match ici"
   }
 }

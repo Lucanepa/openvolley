@@ -8,10 +8,16 @@
  * live state: the public livescore kept the game as running, in the last set
  * at its last score with one set too few, for good (stress test 2026-10-25,
  * 180 s watched). Match End now makes sure the live state says 'ended'.
+ *
+ * Since 2026-10-27 the app opens on Home, never on a match by itself, so an
+ * app killed in that window no longer comes back on Match End: App runs the
+ * same repair at start-up for every official match the device holds as ended
+ * (publishEndedLiveStates), without opening any screen.
  */
 import { apiFrom } from '../lib/apiClient'
 import { liveStateNow } from './serverDataSync'
 import { isLiveStateRefusal } from './eventSync'
+import { isMatchFinished } from './matchFormat'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -76,4 +82,60 @@ export async function publishMatchEndLiveState(match, sets) {
   } catch {
     return false
   }
+}
+
+// The most matches one start-up repair writes for (a device holds a few)
+const MAX_REPAIRS_PER_RUN = 8
+
+/**
+ * Did this device end `match`? Its status 'ended' (the scoreboard sets it
+ * just before the 'match_end' push), or still 'live' with a team that has
+ * won it by its finished sets: the scoreboard sets 'ended' only after the
+ * set-end sync and its pause, the window a kill at the match end leaves.
+ */
+export function endedOnThisDevice(match, sets) {
+  if (match?.status === 'ended') return true
+  if (match?.status !== 'live') return false
+  const finished = (sets || []).filter(s => s?.finished)
+  const home = finished.filter(s => s.homePoints > s.awayPoints).length
+  const away = finished.filter(s => s.awayPoints > s.homePoints).length
+  return isMatchFinished(home, away, match.bestOf)
+}
+
+/**
+ * At start-up (App): Match End's repair for every official match this device
+ * holds as ended (endedOnThisDevice), without opening any screen. Never a
+ * test match, a final copy, a copy closed on the server or one the server
+ * refused or gave to another device (any cloudBlock: its writes are refused
+ * anyway). The update only touches a live state not 'ended' yet, so a match
+ * end that got through, or an old match, is left as it is.
+ * @param {object} database the app's Dexie database
+ * @param {{ publish?: Function, done?: Set<number> }} [options]
+ *   done: the local ids done so far (kept by the caller across tries)
+ * @returns {Promise<{ pending: number }>} pending: matches to try again later
+ *   (offline, signed out, not in the cloud yet)
+ */
+export async function publishEndedLiveStates(database, { publish = publishMatchEndLiveState, done = new Set() } = {}) {
+  const candidates = (await database.matches.toArray()).filter(m => m && m.test !== true && !!m.seed_key &&
+    (m.status === 'ended' || m.status === 'live') && !m.cloudBlock && !m.closed_at && !done.has(m.id))
+  let pending = 0
+  let tried = 0
+  for (const m of candidates) {
+    const sets = await database.sets.where('matchId').equals(m.id).toArray()
+    if (!endedOnThisDevice(m, sets)) continue
+    if (tried >= MAX_REPAIRS_PER_RUN) {
+      pending++
+      continue
+    }
+    tried++
+    let ok = false
+    try {
+      ok = await publish(m, sets)
+    } catch {
+      ok = false
+    }
+    if (ok) done.add(m.id)
+    else pending++
+  }
+  return { pending }
 }

@@ -87,8 +87,17 @@ describe('New match → Official match with the current match', () => {
 
   it('otherwise as before: a confirmed match is asked about, a draft deleted, none opens the setup', () => {
     expect(newOfficialMatchStep({ id: 1, ...confirmed }, 'Setup')).toBe('replace')
-    expect(newOfficialMatchStep({ id: 1 }, 'No data', { closedCopy: true })).toBe('replace')
     expect(newOfficialMatchStep({ id: 1 }, 'Setup')).toBe('discard')
     expect(newOfficialMatchStep(null, undefined)).toBe('new')
+  })
+
+  // The owner, 2026-10-27: a copy the server has closed, or one another
+  // device scores now, never blocks a new match and is never deleted on the
+  // way (it was replaced after a question, or blocked as "still recording");
+  // it stays on the device, read-only, with its state on the home screen
+  it('a copy closed on the server or scored on another device: the setup opens, the copy stays', () => {
+    expect(newOfficialMatchStep({ id: 1 }, 'No data', { closedCopy: true })).toBe('new')
+    expect(newOfficialMatchStep({ id: 1, ...confirmed }, 'Match ended', { closedCopy: true })).toBe('new')
+    expect(newOfficialMatchStep({ id: 1, ...confirmed }, 'Match recording', { movedCopy: true })).toBe('new')
   })
 })

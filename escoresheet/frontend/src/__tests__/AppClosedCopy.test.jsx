@@ -18,12 +18,14 @@ import { db } from '../db/db'
 import { restoreMatchFromJson, selectBackupFile } from '../utils/backupManager'
 import en from '../i18n/locales/en.json'
 import { offline, online, mountApp, button, sleep } from './appMount'
+import { reloadInto } from './selfCheckFixtures'
 
 beforeAll(offline)
 afterAll(online)
 beforeEach(async () => {
   cleanup()
   await Promise.all(db.tables.map(table => table.clear()))
+  sessionStorage.clear()
 })
 
 const SEED = 'match_1792518507614_u2sbmb'
@@ -156,15 +158,16 @@ describe('App: a copy of a match the server has closed', () => {
     expect(await db.matches.count()).toBe(0)
   })
 
-  it('a live official match without a block still reopens on its scoring screen', async () => {
-    await seedMatch()
+  // (a fresh start opens Home, AppOpenAndResume: a reload goes back)
+  it('a live official match without a block still reopens on its scoring screen on a reload', async () => {
+    reloadInto(await seedMatch())
     mountApp()
     await waitFor(() => expect(scoreboardShown()).toBe(true), { timeout: 5000 })
     expect(closedModal()).toBeNull()
   })
 
-  it('a live test match with a closed block still reopens: never a closed copy', async () => {
-    await seedMatch({ test: true, seed_key: 'test-match-1', cloudBlock: closedBlock, matchInfoConfirmedAt: undefined })
+  it('a live test match with a closed block still reopens on a reload: never a closed copy', async () => {
+    reloadInto(await seedMatch({ test: true, seed_key: 'test-match-1', cloudBlock: closedBlock, matchInfoConfirmedAt: undefined }))
     mountApp()
     await waitFor(() => expect(scoreboardShown()).toBe(true), { timeout: 5000 })
     expect(closedModal()).toBeNull()
@@ -172,6 +175,7 @@ describe('App: a copy of a match the server has closed', () => {
 
   it('scoring when the server closes the match: the scoring screen goes, the dialog comes', async () => {
     const matchId = await seedMatch()
+    reloadInto(matchId)
     mountApp()
     await waitFor(() => expect(scoreboardShown()).toBe(true), { timeout: 5000 })
     // the first 409 OV_MATCH_CLOSED (useSyncQueue recordCloudBlock)
