@@ -1104,12 +1104,21 @@
       "duplicateNotice": "Spiil {{game}} isch zwöimal uf däm Grät. De Server füehrt eis Match pro Spiil: füehr das wiiter, wo du zellt häsch, und lösch s andere.",
       "continue": "Wiiterfüehre",
       "delete": "Lösche",
+      "removeCopyOnly": "Nur die Kopie wird glöscht. Die ander Kopie vo däm Spiil uf däm Grät und s Spiil uf em Server bliibed.",
       "status": {
         "scheduled": "Nonig gstartet",
         "live": "Lauft",
         "ended": "Fertig",
         "approved": "Gnehmigt"
       }
+    },
+    "selfCheck": {
+      "closedCopy": "Spiil {{game}} isch uf em Server abgschlosse. D Kopie uf däm Grät isch veraltet und isch nöd göffnet worde.",
+      "duplicateCopy": "Spiil {{game}} isch zwöimal uf däm Grät, und jedi Kopie hät öppis, wo de andere fehlt. Entfern die, wo du nöd gfüehrt häsch.",
+      "removedCopy": "E zwöiti Kopie vo Spiil {{game}} isch vo däm Grät entfernt worde: Die ander Kopie hät alles, wo sie gha hät.",
+      "show": "Aazeige",
+      "remove": "Entferne",
+      "dismiss": "Usblände"
     }
   },
   "options": {

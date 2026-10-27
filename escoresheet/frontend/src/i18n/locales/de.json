@@ -1097,12 +1097,21 @@
       "duplicateNotice": "Spiel {{game}} ist zweimal auf diesem Gerät. Der Server führt ein Match pro Spiel: Setze das gezählte fort und lösche das andere.",
       "continue": "Fortsetzen",
       "delete": "Löschen",
+      "removeCopyOnly": "Nur diese Kopie wird gelöscht. Die andere Kopie dieses Spiels auf diesem Gerät und das Spiel auf dem Server bleiben.",
       "status": {
         "scheduled": "Nicht gestartet",
         "live": "Läuft",
         "ended": "Beendet",
         "approved": "Genehmigt"
       }
+    },
+    "selfCheck": {
+      "closedCopy": "Spiel {{game}} ist auf dem Server abgeschlossen. Die Kopie auf diesem Gerät ist veraltet und wurde nicht geöffnet.",
+      "duplicateCopy": "Spiel {{game}} ist zweimal auf diesem Gerät, und jede Kopie enthält etwas, das der anderen fehlt. Entferne die, die du nicht geführt hast.",
+      "removedCopy": "Eine zweite Kopie von Spiel {{game}} wurde von diesem Gerät entfernt: Die andere Kopie enthält alles, was sie hatte.",
+      "show": "Anzeigen",
+      "remove": "Entfernen",
+      "dismiss": "Ausblenden"
     }
   },
   "options": {

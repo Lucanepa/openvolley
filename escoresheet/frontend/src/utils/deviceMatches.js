@@ -23,13 +23,19 @@ export function matchGameNumber(m) {
  * Rows for the list, newest first.
  * @param {object[]} matches all rows of db.matches
  * @param {Map<number, string>|Record<number, string>} teamNames team id -> name
+ * @param {{ duplicateIds?: number[] }} [options] copies of one official match
+ *   that the self-check on open kept, as each holds something the other lacks
+ *   (utils/deviceSelfCheck): listed (a restored copy may lack
+ *   matchInfoConfirmedAt) and marked, so each can be removed here
  * @returns {{ id: number, home: string|null, away: string|null, gameN: string|null,
- *   createdAt: string|null, status: string, cloudBlock: object|null }[]}
+ *   createdAt: string|null, status: string, cloudBlock: object|null, duplicate: boolean }[]}
  */
-export function deviceMatchRows(matches, teamNames = new Map()) {
+export function deviceMatchRows(matches, teamNames = new Map(), { duplicateIds = [] } = {}) {
   const name = (id) => (id == null ? null : (teamNames instanceof Map ? teamNames.get(id) : teamNames[id]) || null)
+  const copies = new Set(duplicateIds)
+  const copy = (m) => copies.has(m.id) && m.test !== true && m.status !== 'final'
   return (matches || [])
-    .filter(isOpenOfficialMatch)
+    .filter(m => isOpenOfficialMatch(m) || copy(m))
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
     .map(m => ({
       id: m.id,
@@ -38,7 +44,8 @@ export function deviceMatchRows(matches, teamNames = new Map()) {
       gameN: matchGameNumber(m),
       createdAt: m.createdAt || null,
       status: m.status || 'scheduled',
-      cloudBlock: m.cloudBlock || null
+      cloudBlock: m.cloudBlock || null,
+      duplicate: copy(m)
     }))
 }
 
