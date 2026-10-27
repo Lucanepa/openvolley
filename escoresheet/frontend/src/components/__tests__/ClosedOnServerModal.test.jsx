@@ -44,6 +44,16 @@ describe('ClosedOnServerModal', () => {
     expect(screen.queryByTestId('closed-copy-error')).toBeNull()
   })
 
+  // The owner, 2026-10-27: the copy opens read-only; its scoresheet (view,
+  // print, save) stays reachable from here
+  it('with onScoresheet: a Scoresheet button opens this copy\'s sheet', () => {
+    const onScoresheet = vi.fn()
+    render(<ClosedOnServerModal {...props({ onScoresheet })} />)
+    expect(screen.getAllByRole('button').map(b => b.textContent)).toEqual([en.common.close, en.header.scoresheet, texts.remove, texts.loadOfficial])
+    fireEvent.click(screen.getByRole('button', { name: en.header.scoresheet }))
+    expect(onScoresheet).toHaveBeenCalledTimes(1)
+  })
+
   it('offline: says a connection is needed, no PIN button', async () => {
     render(<ClosedOnServerModal {...props({ onLoadOfficial: vi.fn(async () => ({ error: 'offline' })) })} />)
     fireEvent.click(screen.getByRole('button', { name: texts.loadOfficial }))

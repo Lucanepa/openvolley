@@ -217,7 +217,13 @@
   },
   "deleteMatch": {
     "cancel": "Abbrechen",
-    "delete": "Löschen"
+    "delete": "Löschen",
+    "lossTitle": "Diese Kopie enthält, was der Server nicht hat:",
+    "lossChanges_one": "{{count}} nicht gesendete Änderung",
+    "lossChanges_other": "{{count}} nicht gesendete Änderungen",
+    "lossEvents_one": "{{count}} Ereignis, das nicht auf dem Server ist",
+    "lossEvents_other": "{{count}} Ereignisse, die nicht auf dem Server sind",
+    "lossEnd": "Beim Löschen gehen sie endgültig verloren."
   },
   "refereeSelector": {
     "title": "Schiri-Datebank",
@@ -1104,12 +1110,38 @@
       "duplicateNotice": "Spiil {{game}} isch zwöimal uf däm Grät. De Server füehrt eis Match pro Spiil: füehr das wiiter, wo du zellt häsch, und lösch s andere.",
       "continue": "Wiiterfüehre",
       "delete": "Lösche",
+      "removeCopyOnly": "Nur die Kopie wird glöscht. Die ander Kopie vo däm Spiil uf däm Grät und s Spiil uf em Server bliibed.",
       "status": {
         "scheduled": "Nonig gstartet",
         "live": "Lauft",
         "ended": "Fertig",
         "approved": "Gnehmigt"
       }
+    },
+    "selfCheck": {
+      "closedCopy": "Spiil {{game}} isch uf em Server abgschlosse. D Kopie uf däm Grät isch veraltet und isch nöd göffnet worde.",
+      "duplicateCopy": "Spiil {{game}} isch zwöimal uf däm Grät, und jedi Kopie hät öppis, wo de andere fehlt. Entfern die, wo du nöd gfüehrt häsch.",
+      "removedCopy": "E zwöiti Kopie vo Spiil {{game}} isch vo däm Grät entfernt worde: Die ander Kopie hät alles, wo sie gha hät.",
+      "show": "Aazeige",
+      "remove": "Entferne",
+      "dismiss": "Usblände",
+      "cleanUpLine_one": "Spiil {{game}} hät {{count}} wiiteri Kopie uf däm Grät, wo nüüt Eigets hät.",
+      "cleanUpLine_other": "Spiil {{game}} hät {{count}} wiiteri Kopie uf däm Grät, wo nüüt Eigets händ.",
+      "cleanUp": "Uufruume",
+      "cleanUpConfirm_one": "Die wiiter Kopie vo Spiil {{game}} vo däm Grät entferne? Sie hät nüüt, wo de andere Kopie fehlt. Uf em Server ändert sich nüüt.",
+      "cleanUpConfirm_other": "Die {{count}} wiitere Kopie vo Spiil {{game}} vo däm Grät entferne? Sie händ nüüt, wo de andere Kopie fehlt. Uf em Server ändert sich nüüt."
+    },
+    "continueCard": {
+      "score": "Satz {{set}} · {{home}}:{{away}} · Sätz {{setsHome}}:{{setsAway}}",
+      "notStarted": "Nonig gstartet",
+      "lastSaved": "Zletscht gspeicheret {{time}}"
+    },
+    "matchState": {
+      "here": "Wird da gfüehrt",
+      "moved": "Uf emne andere Grät",
+      "closed": "Uf em Server abgschlosse",
+      "unchecked": "Nöd prüeft",
+      "unsent": "Nöd gschickti Änderige"
     }
   },
   "options": {
@@ -2999,6 +3031,7 @@
       }
     },
     "removeLocalOnly": "Nur die Kopie auf diesem Gerät wird gelöscht. Die offizielle Version bleibt auf dem Server.",
+    "removeMovedLocalOnly": "Nur die Kopie auf diesem Gerät wird gelöscht. Das Spiel bleibt auf dem Server und auf dem Gerät, das es führt.",
     "restoreRefused": "Dieses Spiel ist auf dem Server abgeschlossen, darum lässt sich dieses Backup nicht wiederherstellen. Lade die offizielle Version mit Spielnummer und Spiel-PIN."
   },
   "androidUpdate": {
@@ -4095,6 +4128,9 @@
       "macos": "Mac",
       "desktop": "Desktop-App",
       "web": "Browser"
-    }
+    },
+    "serverScore": "Jetzt auf dem Server",
+    "compareHint": "Vergleiche ihn mit der Anzeige auf diesem Gerät. Beim Übernehmen wird dieser Spielstand hier geladen, und das andere Gerät hört auf.",
+    "confirmTakeBack": "Ja, hier wieder übernehmen"
   }
 }

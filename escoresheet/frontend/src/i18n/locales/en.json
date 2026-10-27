@@ -218,7 +218,13 @@
   },
   "deleteMatch": {
     "cancel": "Cancel",
-    "delete": "Delete"
+    "delete": "Delete",
+    "lossTitle": "This copy holds what the server does not have:",
+    "lossChanges_one": "{{count}} change not sent",
+    "lossChanges_other": "{{count}} changes not sent",
+    "lossEvents_one": "{{count}} event not on the server",
+    "lossEvents_other": "{{count}} events not on the server",
+    "lossEnd": "Deleting it loses them for good."
   },
   "refereeSelector": {
     "title": "Referee database",
@@ -1105,12 +1111,38 @@
       "duplicateNotice": "Game {{game}} is on this device twice. The server keeps one match per game: continue the one you scored and delete the other.",
       "continue": "Continue",
       "delete": "Delete",
+      "removeCopyOnly": "Only this copy is deleted. The other copy of this match on this device, and the match on the server, stay.",
       "status": {
         "scheduled": "Not started",
         "live": "In progress",
         "ended": "Ended",
         "approved": "Approved"
       }
+    },
+    "selfCheck": {
+      "closedCopy": "Game {{game}} is closed on the server. The copy on this device is out of date and was not opened.",
+      "duplicateCopy": "Game {{game}} is on this device twice, and each copy holds something the other lacks. Remove the one you did not score.",
+      "removedCopy": "Removed a second copy of game {{game}} from this device: the other copy holds everything it had.",
+      "show": "Show",
+      "remove": "Remove",
+      "dismiss": "Dismiss",
+      "cleanUpLine_one": "Game {{game}} has {{count}} extra copy on this device that holds nothing of its own.",
+      "cleanUpLine_other": "Game {{game}} has {{count}} extra copies on this device that hold nothing of their own.",
+      "cleanUp": "Clean up",
+      "cleanUpConfirm_one": "Remove the extra copy of game {{game}} from this device? It holds nothing the other copy lacks. Nothing changes on the server.",
+      "cleanUpConfirm_other": "Remove the {{count}} extra copies of game {{game}} from this device? They hold nothing the other copy lacks. Nothing changes on the server."
+    },
+    "continueCard": {
+      "score": "Set {{set}} · {{home}}:{{away}} · sets {{setsHome}}:{{setsAway}}",
+      "notStarted": "Not started",
+      "lastSaved": "Last saved {{time}}"
+    },
+    "matchState": {
+      "here": "Scoring here",
+      "moved": "On another device",
+      "closed": "Closed on the server",
+      "unchecked": "Not checked",
+      "unsent": "Unsent changes"
     }
   },
   "options": {
@@ -3005,6 +3037,7 @@
       }
     },
     "removeLocalOnly": "Only the copy on this device is deleted. The official version stays on the server.",
+    "removeMovedLocalOnly": "Only the copy on this device is deleted. The match stays on the server and on the device that scores it.",
     "restoreRefused": "This match is closed on the server, so this backup cannot be restored. Load the official version with the game number and game PIN."
   },
   "androidUpdate": {
@@ -4101,6 +4134,9 @@
       "macos": "Mac",
       "desktop": "desktop app",
       "web": "browser"
-    }
+    },
+    "serverScore": "On the server now",
+    "compareHint": "Compare it with the scoreboard on this device. Taking back loads this score here, and the other device stops.",
+    "confirmTakeBack": "Yes, take back scoring here"
   }
 }

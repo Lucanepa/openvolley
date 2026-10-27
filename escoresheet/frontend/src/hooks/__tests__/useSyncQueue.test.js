@@ -165,6 +165,8 @@ import {
   CLOUD_BLOCK_EVENT,
   matchEndUpdateNeeded,
   checkScorerMoved,
+  askScoringDevice,
+  noteMatchClosedOnServer,
   runUploadLane
 } from '../useSyncQueue'
 import { queueAndWait, useSequentialSync } from '../useSequentialSync'
@@ -1611,6 +1613,77 @@ describe('cloud blocks (OV_SCORER_REQUIRED, OV_GAME_TAKEN, OV_MATCH_CLOSED)', ()
     expect(fakeDb.sync_queue.map.get(1).status).toBe('failed')
     expect(fakeDb.matches.map.get(1).cloudBlock).toBeUndefined()
   })
+
+  // The self-check on open (utils/deviceSelfCheck) read the server's row of
+  // a copy that has written nothing since the match was closed (2026-10-27,
+  // match 406970 on the owner's PC): the copy is marked exactly as a write
+  // refused with 409 OV_MATCH_CLOSED marks it
+  describe('noteMatchClosedOnServer', () => {
+    const blockOf = (id) => fakeDb.matches.map.get(id).cloudBlock
+
+    it.each(['scheduled', 'live'])('a copy still scored here (%s): the block, its unsent writes set aside, the event', async (status) => {
+      fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', status }])
+      fakeDb.sync_queue.reset([eventJob(1), { ...restoreJob(2), status: 'failed' }])
+      const seen = []
+      const onBlock = (e) => seen.push(e.detail)
+      window.addEventListener(CLOUD_BLOCK_EVENT, onBlock)
+      expect(await noteMatchClosedOnServer(1)).toBe(true)
+      window.removeEventListener(CLOUD_BLOCK_EVENT, onBlock)
+      expect(fakeDb.matches.map.get(1).status).toBe(status)
+      expect(blockOf(1)).toEqual({ code: 'OV_MATCH_CLOSED', claim: null, at: expect.any(Number) })
+      expect([...fakeDb.sync_queue.map.values()].map(j => [j.status, j.superseded_by])).toEqual([
+        ['superseded', 'server-closed'], ['superseded', 'server-closed']
+      ])
+      expect(seen).toEqual([{ seedKey: 'match_100_aaa', code: 'OV_MATCH_CLOSED' }])
+    })
+
+    it.each(['ended', 'approved'])('a copy that ended here (%s) is final, as on a refusal', async (status) => {
+      fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', status }])
+      await noteMatchClosedOnServer(1)
+      expect(fakeDb.matches.map.get(1)).toMatchObject({ status: 'final', cloudBlock: { code: 'OV_MATCH_CLOSED' } })
+    })
+
+    it('the same block a refused write leaves', async () => {
+      fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', status: 'live' }, { id: 2, seed_key: 'match_200_bbb', status: 'live' }])
+      fakeDb.sync_queue.reset([eventJob(1)])
+      api.respond = (call) => (call.table === 'events' ? { data: null, error: { message: 'closed', code: 'OV_MATCH_CLOSED', status: 409 } } : defaultRespond(call))
+      await runQueuePass()
+      await noteMatchClosedOnServer(2)
+      const refused = blockOf(1)
+      const read = blockOf(2)
+      expect(Object.keys(read).sort()).toEqual(Object.keys(refused).sort())
+      expect({ ...read, at: 0 }).toEqual({ ...refused, at: 0 })
+    })
+
+    it('keeps the blocked-seeds bookkeeping: a write that proves the match open again clears it', async () => {
+      fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', status: 'live' }])
+      // a sent write loads the cache first, with nothing blocked
+      fakeDb.sync_queue.reset([eventJob(1)])
+      await runQueuePass()
+      await noteMatchClosedOnServer(1)
+      expect(blockOf(1).code).toBe('OV_MATCH_CLOSED')
+      // an admin reopened it: the next event goes through
+      fakeDb.sync_queue.reset([eventJob(2)])
+      await runQueuePass()
+      expect(blockOf(1)).toBeNull()
+    })
+
+    it('a copy another device took over: final with the moved notice, as the queue does', async () => {
+      const moved = { code: 'OV_SCORER_MOVED', claim: null, scorer: { platform: 'android' }, at: 5 }
+      fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', status: 'live', cloudBlock: moved }])
+      expect(await noteMatchClosedOnServer(1)).toBe(true)
+      expect(fakeDb.matches.map.get(1)).toMatchObject({ status: 'final', cloudBlock: { code: 'OV_SCORER_MOVED', closed: true } })
+    })
+
+    it('never a test match, a match without a key or one that is gone', async () => {
+      fakeDb.matches.reset([{ id: 1, seed_key: 'test-match-1', test: true, status: 'live' }, { id: 2, status: 'live' }])
+      expect(await noteMatchClosedOnServer(1)).toBe(false)
+      expect(await noteMatchClosedOnServer(2)).toBe(false)
+      expect(await noteMatchClosedOnServer(3)).toBe(false)
+      expect(blockOf(1)).toBeUndefined()
+      expect(blockOf(2)).toBeUndefined()
+    })
+  })
 })
 
 describe('access changes', () => {
@@ -1872,6 +1945,28 @@ describe('a match continued on another device', () => {
     api.respond = (call) => (call.table === '__scorer' ? ok({ mine: false, scorer: { platform: 'android', at: 'T' } }) : defaultRespond(call))
     expect(await checkScorerMoved('match_100_aaa')).toBe(true)
     expect(fakeDb.matches.map.get(1).cloudBlock).toMatchObject({ code: 'OV_SCORER_MOVED', scorer: { platform: 'android', at: 'T' } })
+    expect(api.calls.filter(c => c.table === '__scorer').every(c => c.action === 'status')).toBe(true)
+  })
+
+  // The home screen's state of a copy (utils/deviceSelfCheck, the owner
+  // 2026-10-27): "Scoring here" only on the server's word, "Not checked"
+  // without an answer, never a claim
+  it('askScoringDevice: here, moved (and marked), or no answer', async () => {
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', status: 'live' }])
+    api.respond = (call) => (call.table === '__scorer' ? ok({ mine: true, scorer: { platform: 'tauri-linux' } }) : defaultRespond(call))
+    expect(await askScoringDevice('match_100_aaa')).toBe('here')
+    // no device recorded yet: none scores it but this one
+    api.respond = (call) => (call.table === '__scorer' ? ok({ mine: null }) : defaultRespond(call))
+    expect(await askScoringDevice('match_100_aaa')).toBe('here')
+    api.respond = (call) => (call.table === '__scorer' ? { data: null, error: { message: 'offline', network: true, status: 0 }, status: 0 } : defaultRespond(call))
+    expect(await askScoringDevice('match_100_aaa')).toBeNull()
+    expect(fakeDb.matches.map.get(1).cloudBlock).toBeUndefined()
+    api.respond = (call) => (call.table === '__scorer' ? ok({ mine: false, scorer: { platform: 'android', at: 'T' } }) : defaultRespond(call))
+    expect(await askScoringDevice('match_100_aaa')).toBe('moved')
+    expect(fakeDb.matches.map.get(1).cloudBlock).toMatchObject({ code: 'OV_SCORER_MOVED', scorer: { platform: 'android', at: 'T' } })
+    // not asked at all (a final copy): no answer
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', status: 'final' }])
+    expect(await askScoringDevice('match_100_aaa')).toBeNull()
     expect(api.calls.filter(c => c.table === '__scorer').every(c => c.action === 'status')).toBe(true)
   })
 })

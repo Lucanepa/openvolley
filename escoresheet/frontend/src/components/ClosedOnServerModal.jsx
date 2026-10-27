@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CloudOff } from 'lucide-react'
+import { CloudOff, FileText } from 'lucide-react'
 import Modal from './Modal'
 import { Button, FormError } from '../ui'
 
@@ -17,11 +17,14 @@ import { Button, FormError } from '../ui'
  *   game PIN can be entered instead.
  * - Remove from this device: the delete dialog (game PIN); the server keeps
  *   its record.
+ * - Scoresheet: this copy's scoresheet in its own window, to view, print or
+ *   save (the copy opens read-only, the owner 2026-10-27: no scoring
+ *   controls, the sheet stays reachable).
  * - Close: back to the home screen, the copy stays.
  * @param {{ onLoadOfficial: () => Promise<{ok?: boolean, error?: string}|void>|void,
- *   onRemove: () => void, onUsePin: () => void, onClose: () => void }} props
+ *   onRemove: () => void, onUsePin: () => void, onClose: () => void, onScoresheet?: () => void }} props
  */
-export default function ClosedOnServerModal({ onLoadOfficial, onRemove, onUsePin, onClose }) {
+export default function ClosedOnServerModal({ onLoadOfficial, onRemove, onUsePin, onClose, onScoresheet = null }) {
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -57,6 +60,11 @@ export default function ClosedOnServerModal({ onLoadOfficial, onRemove, onUsePin
           <Button variant="secondary" size="lg" onClick={onClose} disabled={busy}>
             {t('common.close')}
           </Button>
+          {onScoresheet && (
+            <Button variant="secondary" size="lg" icon={FileText} onClick={onScoresheet} disabled={busy}>
+              {t('header.scoresheet')}
+            </Button>
+          )}
           <Button variant="danger-soft" size="lg" onClick={onRemove} disabled={busy}>
             {t('cloudBlock.closedCopy.remove')}
           </Button>

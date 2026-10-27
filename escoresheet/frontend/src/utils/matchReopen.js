@@ -70,6 +70,20 @@ export function isStaleClosedCopy(match) {
 }
 
 /**
+ * Does the server's row of a match (`matches`: id, status, closed_at) say it
+ * is closed? closed_at decides when the row carries it: the backend refuses
+ * every write of a match with closed_at set (db/007), and an admin's reopen
+ * clears it. A row without the column (another account's match: the public
+ * columns only) is closed at approved / final, the states that close it.
+ * No row: nothing is closed there.
+ */
+export function serverRowClosed(row) {
+  if (!row) return false
+  if (row.closed_at) return true
+  return !('closed_at' in row) && CLOSING_STATUSES.includes(row.status)
+}
+
+/**
  * @param {object} args
  * @param {object} args.match the local match row
  * @param {object[]} args.queue every sync_queue row (or at least this match's)
@@ -100,10 +114,7 @@ export async function planReopen({ match, queue, online, access, readServerMatch
   const row = result.data
   // Not in the cloud (or not visible to this account): nothing is closed there
   if (!row) return { kind: 'serverOpen' }
-  const closed = row.closed_at
-    ? true
-    : (!('closed_at' in row) && CLOSING_STATUSES.includes(row.status))
-  if (!closed) return { kind: 'serverOpen', row }
+  if (!serverRowClosed(row)) return { kind: 'serverOpen', row }
   if (access?.isAdmin) return { kind: 'adminReopen', row }
   return { kind: 'adminOnly', row }
 }
