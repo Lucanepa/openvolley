@@ -71,6 +71,16 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.5" date="2026-10-27">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.5</url>
+      <description>
+        <ul>
+          <li>A match continued on a device whose clock is far behind keeps the referee, bench and livescore following, however large the difference.</li>
+          <li>Time-out and set break countdowns are right on a referee tablet that joins or reloads during one, and an ended time-out stays closed.</li>
+          <li>Livescore: the list keeps updating after a game it showed disappeared during a connection drop.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0.3" date="2026-10-24">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.3</url>
       <description>
