@@ -81,6 +81,7 @@ import { lockLandscape, unlockOrientation } from '../utils/nativeOrientation'
 import { isNativeApp } from '../utils/backendConfig'
 import PhoneScoreboard from './scoreboard/PhoneScoreboard.jsx'
 import { PHONE_RECENT_MAX_LINES, detectDisplayMode, dialogsCentred, isPhoneScreen, phoneHeldSideways, recentActions } from './scoreboard/phoneLayout'
+import { captainRingStyle } from './scoreboard/captainRing'
 import { useConnectionHealthMonitor } from '../hooks/useConnectionHealthMonitor'
 import { WarningIcon, PhoneIcon, TabletIcon, FileTextIcon, SearchIcon, PrinterIcon, SaveIcon, RefreshIcon, VolleyballIcon, SwitchIcon, ChartIcon, NotebookIcon, WrenchIcon, ClipboardIcon, SpeechIcon } from './icons'
 import { cn } from '../ui/cn.js'
@@ -272,6 +273,35 @@ function SbCardIcon({ kind }) {
 
 /** The medical cross for injury rows. */
 const SB_INJURY_ICON = <Cross size={16} fill="currentColor" strokeWidth={1.5} />
+
+// The captain on a bench chip: the number circled, as on the paper sheet and
+// the phone layout, not a separate "C" beside it. The ring, in the number's em
+// so it grows with the chip's text, lies over the number, SB_BENCH_CAPTAIN_PAD
+// wider each side and just high enough to hold its digits: round one digit
+// about a circle (an upright oval round a narrow 1), round two a short oval. The
+// same room either side of the number keeps the ring as far off what stands
+// beside it (the L1 / L2 tag, the substitution marks) as the number was, and
+// comes off the chip's own side padding, so the captain's chip is as wide and
+// as high as the others.
+const SB_BENCH_CAPTAIN_PAD = '0.3em'
+const SB_BENCH_CAPTAIN_RING = {
+  one: captainRingStyle({ size: '1.35em', minWidth: '1em', pad: SB_BENCH_CAPTAIN_PAD }),
+  two: captainRingStyle({ size: '1.5em', minWidth: '1em', pad: SB_BENCH_CAPTAIN_PAD })
+}
+const sbBenchChipPadding = (captain) => (captain ? `1.6cqw calc(3.1cqw - ${SB_BENCH_CAPTAIN_PAD})` : '1.6cqw 3.1cqw')
+
+/** A bench chip's number; the captain's ringed in `ringColour` (the chip's
+ *  state), `label` naming the mark for hover and screen readers. */
+function SbBenchNumber({ number, captain, ringColour, label }) {
+  if (!captain) return <span style={{ fontWeight: 600 }}>{number}</span>
+  const ring = String(number).length > 1 ? SB_BENCH_CAPTAIN_RING.two : SB_BENCH_CAPTAIN_RING.one
+  return (
+    <span title={label} style={{ fontWeight: 600, position: 'relative', margin: `0 ${SB_BENCH_CAPTAIN_PAD}` }}>
+      {number}
+      <span role="img" aria-label={label} data-testid="bench-captain-ring" style={{ ...ring, borderColor: ringColour }} />
+    </span>
+  )
+}
 
 /**
  * SYNC ARCHITECTURE NOTE:
@@ -14392,7 +14422,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }
                             }}
                             style={{
-                              padding: '1.6cqw 3.1cqw',
+                              padding: sbBenchChipPadding(player.isCaptain),
                               minWidth: '44px',
                               minHeight: '44px',
                               justifyContent: 'center',
@@ -14419,10 +14449,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               cursor: rallyStatus === 'idle' && canSubBenchPlayer ? 'grab' : (rallyStatus === 'idle' ? 'pointer' : 'default')
                             }}
                           >
-                            <span style={{ fontWeight: 600 }}>{player.number}</span>
-                            {player.isCaptain && (
-                              <span style={{ color: isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#b45309' : 'var(--accent)'), fontSize: '4.65cqw', fontWeight: 700 }}>C</span>
-                            )}
+                            <SbBenchNumber
+                              number={player.number}
+                              captain={player.isCaptain}
+                              ringColour={isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#b45309' : 'var(--accent)')}
+                              label={t('scoreboard.phone.markCaptain', 'captain')}
+                            />
                             {isSubstitutedByLibero && (
                               <span style={{
                                 fontSize: '4.2cqw',
@@ -14653,7 +14685,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 }
                               }}
                               style={{
-                                padding: '1.6cqw 3.1cqw',
+                                padding: sbBenchChipPadding(player.isCaptain || player.captain),
                                 minHeight: '44px',
                                 minWidth: '44px',
                                 justifyContent: 'center',
@@ -14672,22 +14704,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 opacity: isDraggingLibero ? 0.5 : isUnable ? 0.6 : 1
                               }}
                             >
-                              <span style={{ fontWeight: 600 }}>{player.number}</span>
+                              {/* The number; a libero-captain's circled in the libero colour */}
+                              <SbBenchNumber
+                                number={player.number}
+                                captain={player.isCaptain || player.captain}
+                                ringColour={isUnable ? '#b91c1c' : '#1d4ed8'}
+                                label={t('scoreboard.phone.markCaptain', 'captain')}
+                              />
                               <span style={{ color: isUnable ? '#b91c1c' : '#1d4ed8', fontSize: 'max(12px, 5.6cqw)', fontWeight: 700 }}>
                                 {player.libero === 'libero1' ? 'L1' : player.libero === 'redesignated' ? 'LR' : 'L2'}
                               </span>
-                              {/* Captain badge for libero-captain on bench (left team) */}
-                              {(player.isCaptain || player.captain) && (
-                                <span style={{
-                                  background: '#fff',
-                                  color: '#10b981',
-                                  border: '1px solid #10b981',
-                                  borderRadius: '0.9cqw',
-                                  padding: '0 0.9cqw',
-                                  fontSize: '4.65cqw',
-                                  fontWeight: 700
-                                }}>C</span>
-                              )}
                               {sanctions.length > 0 && (
                                 <span style={{ display: 'flex', gap: '0.3cqw', alignItems: 'center' }}>
                                   {hasExpulsion ? (
@@ -17814,7 +17840,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               }
                             }}
                             style={{
-                              padding: '1.6cqw 3.1cqw',
+                              padding: sbBenchChipPadding(player.isCaptain),
                               minWidth: '44px',
                               minHeight: '44px',
                               justifyContent: 'center',
@@ -17841,10 +17867,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                               cursor: rallyStatus === 'idle' && canSubBenchPlayer ? 'grab' : (rallyStatus === 'idle' ? 'pointer' : 'default')
                             }}
                           >
-                            <span style={{ fontWeight: 600 }}>{player.number}</span>
-                            {player.isCaptain && (
-                              <span style={{ color: isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#b45309' : 'var(--accent)'), fontSize: '4.65cqw', fontWeight: 700 }}>C</span>
-                            )}
+                            <SbBenchNumber
+                              number={player.number}
+                              captain={player.isCaptain}
+                              ringColour={isSubstitutedByLibero ? '#000' : (wasSubstitutedOut && !showX && !hasComeBack ? '#b45309' : 'var(--accent)')}
+                              label={t('scoreboard.phone.markCaptain', 'captain')}
+                            />
                             {isSubstitutedByLibero && (
                               <span style={{
                                 fontSize: '4.2cqw',
@@ -18063,7 +18091,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 }
                               }}
                               style={{
-                                padding: '1.6cqw 3.1cqw', minHeight: '44px', minWidth: '44px', justifyContent: 'center',
+                                padding: sbBenchChipPadding(player.isCaptain || player.captain), minHeight: '44px', minWidth: '44px', justifyContent: 'center',
                                 background: isLiberoDropTarget ? 'rgba(59, 130, 246, 0.5)' : isUnable ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)',
                                 borderRadius: '1.25cqw',
                                 fontSize: 'max(15px, 6.6cqw)',
@@ -18076,22 +18104,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 opacity: isDraggingLibero ? 0.5 : isUnable ? 0.6 : 1
                               }}
                             >
-                              <span style={{ fontWeight: 600 }}>{player.number}</span>
+                              {/* The number; a libero-captain's circled in the libero colour */}
+                              <SbBenchNumber
+                                number={player.number}
+                                captain={player.isCaptain || player.captain}
+                                ringColour={isUnable ? '#b91c1c' : '#1d4ed8'}
+                                label={t('scoreboard.phone.markCaptain', 'captain')}
+                              />
                               <span style={{ color: isUnable ? '#b91c1c' : '#1d4ed8', fontSize: 'max(12px, 5.6cqw)', fontWeight: 700 }}>
                                 {player.libero === 'libero1' ? 'L1' : player.libero === 'redesignated' ? 'LR' : 'L2'}
                               </span>
-                              {/* Captain badge for libero-captain on bench (right team) */}
-                              {(player.isCaptain || player.captain) && (
-                                <span style={{
-                                  background: '#fff',
-                                  color: '#10b981',
-                                  border: '1px solid #10b981',
-                                  borderRadius: '0.9cqw',
-                                  padding: '0 0.9cqw',
-                                  fontSize: '4.65cqw',
-                                  fontWeight: 700
-                                }}>C</span>
-                              )}
                               {sanctions.length > 0 && (
                                 <span style={{ display: 'flex', gap: '0.3cqw', alignItems: 'center' }}>
                                   {hasExpulsion ? (
