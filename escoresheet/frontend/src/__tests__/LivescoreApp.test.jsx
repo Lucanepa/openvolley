@@ -241,6 +241,24 @@ describe('LivescoreApp', () => {
     expect(api.calls).toBe(before + 1)
   })
 
+  it('a game on screen whose row vanished during an outage leaves the list following every game', async () => {
+    api.responses = [[row('a', { points_a: 3, last_event_type: 'point' }), row('b', { points_a: 1, last_event_type: 'point' })]]
+    render(<LivescoreApp />)
+    await flush()
+    fireEvent.click(screen.getByText('Home a'))
+    await flush()
+    expect(rt.filters.match_live_state).toBe('match_id=eq.a')
+    // the socket comes back; a's row was deleted meanwhile (no DELETE frame
+    // reached this page), so the reconnect's refetch returns b only
+    api.responses = [[row('b', { points_a: 2, last_event_type: 'point' })]]
+    await act(async () => { rt.subscribed('SUBSCRIBED') })
+    await flush()
+    expect(screen.getByText('Home b')).toBeInTheDocument()
+    expect(rt.filters.match_live_state).toBe('sport_type=eq.indoor')
+    act(() => rt.handler({ eventType: 'UPDATE', new: { match_id: 'b', points_a: 7, last_event_type: 'point' }, old: {} }))
+    expect(screen.getByText('7')).toBeInTheDocument()
+  })
+
   it('a failed refetch keeps the last good list with a notice', async () => {
     api.responses = [[row('a', { points_a: 5, last_event_type: 'point' })]]
     render(<LivescoreApp />)
