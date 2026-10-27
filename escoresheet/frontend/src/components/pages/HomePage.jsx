@@ -63,7 +63,9 @@ export default function HomePage({
   showDeleteMatchModal,
   restartTestMatch,
   onOpenSettings,
-  onRestoreMatch
+  onRestoreMatch,
+  // what the self-check on open did or found (App, SelfCheckNotice)
+  selfCheckNotice = null
 }) {
   const { t } = useTranslation()
   const [supportFeedbackOpen, setSupportFeedbackOpen] = useState(false)
@@ -113,6 +115,7 @@ export default function HomePage({
 
         <div className="home-wide:col-start-2 home-wide:row-span-4 home-wide:row-start-1 home-wide:self-center">
         <PendingApprovalBanner className="mb-4" />
+        {selfCheckNotice}
 
         <Card className="w-full space-y-3">
           {/* New Match button with its menu (pushes the stack down) */}
@@ -315,7 +318,8 @@ function DeviceMatchList({ matches, onContinue, onDelete }) {
       ))}
       <RowList className="mt-1">
         {matches.map(m => {
-          const duplicate = !!m.gameN && twice.has(m.gameN)
+          // the same game twice, or two copies of one match (the self-check)
+          const duplicate = (!!m.gameN && twice.has(m.gameN)) || m.duplicate === true
           const title = m.home || m.away
             ? `${m.home || t('home.deviceMatches.home')} – ${m.away || t('home.deviceMatches.away')}`
             : t('home.deviceMatches.noTeams')

@@ -26,6 +26,21 @@ describe('deviceMatchRows', () => {
     expect(duplicateGameNumbers([{ gameN: '1' }, { gameN: '2' }, { gameN: null }, { gameN: null }]).size).toBe(0)
   })
 
+  // The self-check on open flagged two copies of one official match that
+  // each hold something (utils/deviceSelfCheck): both are listed as copies,
+  // also one restored without matchInfoConfirmedAt
+  it('lists and marks the copies the self-check flagged', () => {
+    const copies = [
+      { id: 7, status: 'live', seed_key: 'match_1_a', createdAt: '2026-10-20T10:00:00.000Z', matchInfoConfirmedAt: confirmed },
+      { id: 8, status: 'live', seed_key: 'match_1_a', createdAt: '2026-10-21T10:00:00.000Z' },
+      { id: 9, status: 'final', seed_key: 'match_1_a', createdAt: '2026-10-21T10:00:00.000Z' }
+    ]
+    expect(deviceMatchRows(copies).map(r => r.id)).toEqual([7])
+    const rows = deviceMatchRows(copies, new Map(), { duplicateIds: [7, 8, 9] })
+    expect(rows.map(r => [r.id, r.duplicate])).toEqual([[8, true], [7, true]])
+    expect(deviceMatchRows(matches).every(r => r.duplicate === false)).toBe(true)
+  })
+
   it('reads the game number from any of its fields', () => {
     expect(matchGameNumber({ gameN: 7 })).toBe('7')
     expect(matchGameNumber({ game_n: 8 })).toBe('8')

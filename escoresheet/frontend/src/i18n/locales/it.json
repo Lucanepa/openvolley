@@ -1104,12 +1104,21 @@
       "duplicateNotice": "La partita {{game}} è due volte su questo dispositivo. Il server tiene un match per partita: continua quello che hai refertato ed elimina l'altro.",
       "continue": "Continua",
       "delete": "Elimina",
+      "removeCopyOnly": "Viene eliminata solo questa copia. L'altra copia di questa partita su questo dispositivo e la partita sul server restano.",
       "status": {
         "scheduled": "Non iniziata",
         "live": "In corso",
         "ended": "Terminata",
         "approved": "Approvata"
       }
+    },
+    "selfCheck": {
+      "closedCopy": "La partita {{game}} è chiusa sul server. La copia di questo dispositivo non è aggiornata e non è stata aperta.",
+      "duplicateCopy": "La partita {{game}} è due volte su questo dispositivo e ogni copia contiene qualcosa che manca all'altra. Rimuovi quella che non hai refertato.",
+      "removedCopy": "Una seconda copia della partita {{game}} è stata rimossa da questo dispositivo: l'altra copia contiene tutto ciò che aveva.",
+      "show": "Mostra",
+      "remove": "Rimuovi",
+      "dismiss": "Nascondi"
     }
   },
   "options": {

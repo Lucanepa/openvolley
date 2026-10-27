@@ -1105,12 +1105,21 @@
       "duplicateNotice": "Game {{game}} is on this device twice. The server keeps one match per game: continue the one you scored and delete the other.",
       "continue": "Continue",
       "delete": "Delete",
+      "removeCopyOnly": "Only this copy is deleted. The other copy of this match on this device, and the match on the server, stay.",
       "status": {
         "scheduled": "Not started",
         "live": "In progress",
         "ended": "Ended",
         "approved": "Approved"
       }
+    },
+    "selfCheck": {
+      "closedCopy": "Game {{game}} is closed on the server. The copy on this device is out of date and was not opened.",
+      "duplicateCopy": "Game {{game}} is on this device twice, and each copy holds something the other lacks. Remove the one you did not score.",
+      "removedCopy": "Removed a second copy of game {{game}} from this device: the other copy holds everything it had.",
+      "show": "Show",
+      "remove": "Remove",
+      "dismiss": "Dismiss"
     }
   },
   "options": {

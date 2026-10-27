@@ -1103,12 +1103,21 @@
       "duplicateNotice": "Le match {{game}} est deux fois sur cet appareil. Le serveur garde une feuille par match : continuez celle que vous avez tenue et supprimez l'autre.",
       "continue": "Continuer",
       "delete": "Supprimer",
+      "removeCopyOnly": "Seule cette copie est supprimée. L'autre copie de ce match sur cet appareil et le match sur le serveur restent.",
       "status": {
         "scheduled": "Pas commencé",
         "live": "En cours",
         "ended": "Terminé",
         "approved": "Approuvé"
       }
+    },
+    "selfCheck": {
+      "closedCopy": "Le match {{game}} est clôturé sur le serveur. La copie de cet appareil n'est plus à jour et n'a pas été ouverte.",
+      "duplicateCopy": "Le match {{game}} est deux fois sur cet appareil et chaque copie contient quelque chose qui manque à l'autre. Supprimez celle que vous n'avez pas tenue.",
+      "removedCopy": "Une deuxième copie du match {{game}} a été supprimée de cet appareil : l'autre copie contient tout ce qu'elle avait.",
+      "show": "Afficher",
+      "remove": "Supprimer",
+      "dismiss": "Masquer"
     }
   },
   "options": {
