@@ -337,21 +337,30 @@ export function newerLiveState(current, incoming) {
  * clocks differed (stress test 2026-10-25). A device that continues a match
  * stamps its live states (updated_at, a relay bundle's _syncedAt) this far
  * ahead of its clock: liveClockOffsetAfter the last cloud state.
+ *
+ * The offset orders the live states and nothing else. A countdown's start
+ * (timeout_started_at, set_interval_started_at, a relay action's
+ * startTimestamp) stays on the device's own clock: the website and Point Hub
+ * count from it with theirs, and a referee joining or reloading during a
+ * time-out with its own; a start this far ahead showed the full 30 s. The
+ * offset is followed whole, however large: capped (10 minutes, round 2), the
+ * device that took over from a laptop an hour ahead stamped its states 50
+ * minutes older than the laptop's last one, and the viewers dropped every
+ * one of them for the rest of the match. Only garbage is no offset (not a
+ * number, not above 0, beyond LIVE_CLOCK_OFFSET_GARBAGE_MS).
  */
 export function liveClockOffset(match) {
   const v = Number(match?.liveClockOffsetMs)
-  return Number.isFinite(v) && v > 0 ? Math.min(v, MAX_LIVE_CLOCK_OFFSET_MS) : 0
+  return Number.isFinite(v) && v > 0 && v <= LIVE_CLOCK_OFFSET_GARBAGE_MS ? v : 0
 }
 
 /**
- * The largest live-state clock offset a device takes on (10 min). The clocks
- * of two devices in a hall differ by seconds when they keep network time and
- * by minutes when one has none for a while; a clock further off is wrong (a
- * laptop set to the wrong time zone is a whole hour off). Followed, it put
- * every live state of the rest of the match, and the time-out and break
- * starts the website and Point Hub count from, that far in the future.
+ * A live-state clock offset beyond this (7 days) is garbage, not a clock in a
+ * hall: a damaged record, or a clock set years off. It counts as none. Any
+ * real clock error (seconds, minutes, an hour or two in the wrong time zone)
+ * is far below it and is followed whole.
  */
-export const MAX_LIVE_CLOCK_OFFSET_MS = 10 * 60 * 1000
+export const LIVE_CLOCK_OFFSET_GARBAGE_MS = 7 * 24 * 60 * 60 * 1000
 
 /** Now on the live-state clock of `match` (ms): see liveClockOffset. */
 export function liveStateNow(match, now = Date.now()) {
@@ -361,12 +370,15 @@ export function liveStateNow(match, now = Date.now()) {
 /**
  * The live-state clock offset of a device that continues a match whose last
  * state in the cloud is `cloudLiveState`: what makes its first state newer
- * than that one. 0 when this device's clock is ahead already or the state
- * names no time; at most MAX_LIVE_CLOCK_OFFSET_MS.
+ * than that one, however far ahead it is. 0 when this device's clock is
+ * ahead already, the state names no time, or it is garbage (more than
+ * LIVE_CLOCK_OFFSET_GARBAGE_MS ahead).
  */
 export function liveClockOffsetAfter(cloudLiveState, now = Date.now()) {
   const last = liveStateTime(cloudLiveState)
-  return Number.isNaN(last) ? 0 : Math.min(MAX_LIVE_CLOCK_OFFSET_MS, Math.max(0, last - now + 1))
+  if (Number.isNaN(last)) return 0
+  const offset = Math.max(0, last - now + 1)
+  return offset <= LIVE_CLOCK_OFFSET_GARBAGE_MS ? offset : 0
 }
 
 /**

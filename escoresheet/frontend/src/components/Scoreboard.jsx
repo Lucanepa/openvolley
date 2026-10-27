@@ -2324,18 +2324,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         : (match?.intervalStartedAt || null)
 
       // The break's start on this device's clock (a later push in the break
-      // keeps it: intervalStartedAtRef)
+      // keeps it: intervalStartedAtRef). A countdown's start goes out on
+      // this device's own clock, as the relay actions' startTimestamp does,
+      // never on the match's live-state clock (serverDataSync
+      // liveClockOffset), which only orders the rows: the website and Point
+      // Hub count a time-out or the break from its start with their own
+      // clock, as does a referee joining or reloading during one. Stamped
+      // with the offset (round 2), a start minutes ahead had them show the
+      // full 30 s and 3 min, and the referee's time-out it had seen end came
+      // back at its next copy (its start no longer the relay action's). The
+      // referee counts a pushed row on from the start and the push's own
+      // reading of this clock, last_event_ts (countdownClock
+      // liveStatePushedAt), not updated_at.
       const breakStartedAt = isSetInterval ? (match?.intervalStartedAt || intervalStartedAt) : keptIntervalStartedAt
-      // A countdown's start goes out on the live-state clock, as updated_at
-      // does: the referee counts a time-out or the break on from their
-      // difference (utils/countdownClock elapsedWhenSent). On a match this
-      // device continued (liveClockOffset) the start was on its own clock
-      // and the difference grew by the offset: the referee's 30 s and 3 min
-      // read 0 from the start.
-      const onLiveClock = (at) => {
-        const ms = typeof at === 'number' ? at : Date.parse(at ?? '')
-        return Number.isFinite(ms) ? new Date(liveStateNow(match, ms)).toISOString() : (at ?? null)
-      }
 
       // Calculate updated set scores including the just-finished set
       // eventData.winner is 'home' or 'away' from the set_end event
@@ -2509,9 +2510,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           last_event_ts: pushedEvent.ts
         } : {}),
         timeout_active: isTimeout,
-        timeout_started_at: isTimeout ? onLiveClock(activeTimeout?.startedAt || timeoutStartedAt) : null,
+        timeout_started_at: isTimeout ? (activeTimeout?.startedAt || timeoutStartedAt) : null,
         set_interval_active: isSetInterval || keepInterval,
-        set_interval_started_at: onLiveClock(breakStartedAt),
+        set_interval_started_at: breakStartedAt,
         match_status: matchStatus,
         scorer_attention_trigger: scorerAttentionTriggerRef.current,
         // Match metadata (from IndexedDB match record)
@@ -2519,7 +2520,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         league: match.league || null,
         gender: match.match_type_2 || null,
         // (the match's live-state clock: a device that continues a match
-        // stamps after the previous device's last state, liveClockOffset)
+        // stamps after the previous device's last state, liveClockOffset;
+        // it orders the rows, it times no countdown)
         updated_at: new Date(liveStateNow(match)).toISOString(),
         sport_type: 'indoor'
       }

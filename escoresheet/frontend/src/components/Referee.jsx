@@ -37,7 +37,7 @@ import { layoutReception, pointToFormation } from './referee/receptionLayout.js'
 import { getSideAForSet } from '../domain/rules'
 import { liveRowTeamA } from '../domain/coinToss'
 import { BRAND } from '../brand'
-import { monotonicNow, elapsedWhenSent, countdownAnchor, secondsLeft, keepCountdown, elapsedAfterTheFact } from '../utils/countdownClock'
+import { monotonicNow, elapsedWhenSent, countdownAnchor, secondsLeft, keepCountdown, elapsedAfterTheFact, liveStatePushedAt } from '../utils/countdownClock'
 
 // A lineup position: the rich format's { number, ... } or the legacy plain number
 const lineupNumber = (pos) => (pos && typeof pos === 'object') ? pos.number : (pos || '')
@@ -963,9 +963,15 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
             // Timeout is active - show/update modal if not already active or if it's a new timeout
             const serverStartTs = state.timeout_started_at ? new Date(state.timeout_started_at).getTime() : Date.now()
 
-            // Only update/start if not already tracking THIS timeout (compare start timestamps)
+            // Only update/start if not already tracking THIS timeout (compare
+            // start timestamps), and never one this tab showed and saw end
+            // (a late copy or a partial update of the row still says it
+            // runs). The row's start is the scorer's own clock, as the relay
+            // action's is.
             const currentTimeout = timeoutModalRef.current
-            if (!currentTimeout || Math.abs(currentTimeout.startTimestamp - serverStartTs) > 2000) {
+            const shownStart = shownTimeoutStartRef.current
+            const seenEnd = !currentTimeout && shownStart != null && Math.abs(shownStart - serverStartTs) <= 2000
+            if (!seenEnd && (!currentTimeout || Math.abs(currentTimeout.startTimestamp - serverStartTs) > 2000)) {
               const team = getTeamFromSide(state.last_event_team)
               const duration = state.last_event_data?.duration || 30
               timeoutActiveRef.current = true
@@ -974,8 +980,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 countdown: duration,
                 startTimestamp: serverStartTs,
                 // on this tablet's clock: the row's start and its push time
-                // (updated_at) are both the scorer's
-                anchor: countdownAnchor(elapsedWhenSent(state.timeout_started_at, state.updated_at, duration * 1000)),
+                // are both read on the scorer's own clock (liveStatePushedAt:
+                // last_event_ts; updated_at is the live-state clock, which
+                // orders the rows and runs ahead on a continued match)
+                anchor: countdownAnchor(elapsedWhenSent(state.timeout_started_at, liveStatePushedAt(state), duration * 1000)),
                 initialCountdown: duration,
                 started: true
               })
@@ -1070,7 +1078,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
                 setBetweenSetsCountdown({
                   countdown: 180,
                   startTimestamp: serverStartTs,
-                  anchor: countdownAnchor(elapsedWhenSent(state.set_interval_started_at, state.updated_at, 180 * 1000)),
+                  // (the push time on the scorer's own clock, as the time-out's)
+                  anchor: countdownAnchor(elapsedWhenSent(state.set_interval_started_at, liveStatePushedAt(state), 180 * 1000)),
                   initialCountdown: 180,
                   started: true,
                   setIndex: state.last_event_data?.setIndex || state.current_set,
