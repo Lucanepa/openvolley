@@ -21,13 +21,26 @@
  *     status as the last step of the transaction, after its sets and events
  *     (closing first would lock the match before its children are in).
  *     `actorId` is the ov.user_id of the transaction (closed_by).
- *     -> 200 { data: { id, counts: { sets, events, liveState }, dropped: { match?, sets?, events?, liveState? } }, error: null }
+ *     `rekey` { sets: { <new external_id>: <old> }, events: { ... } }: the
+ *     device that continues the match cannot keep the cloud's set/event ids
+ *     (another local match holds them; frontend importMatchFromSupabase) and
+ *     moves the rows to its own. Then the rows named are renamed IN PLACE
+ *     (an old row that is gone is written under its new id) and nothing
+ *     else is deleted: voided events (db/015), rows the payload does not
+ *     name and the live state stay as they are. A whole-match replace here
+ *     dropped the voided events and every row sent after the device read
+ *     the match (2026-10-26). An older backend ignores `rekey` (a replace).
+ *     -> 200 { data: { id, counts: { sets, events, liveState, rekeyed? }, dropped: { match?, sets?, events?, liveState? } }, error: null }
  *
  *   POST /api/match/restore-by-pin { gameN, pin }                        (anonymous, attempt-limited)
  *     Exact match on game number AND game PIN. Returns the match with its
  *     secret columns stripped, plus its sets, events and live state. With
  *     `editorUserId` (the caller is signed in) that account becomes an editor
  *     of the match (match_editors): proving the game PIN is the take-over.
+ *     `takeOver(match)` (server.js, a device that continues the match: the
+ *     scoring device, db/019) runs once the PIN is proved and BEFORE the
+ *     sets, events and live state are read; what it returns is the answer's
+ *     `scorer` (nothing when it returns null or fails).
  *     `idFloor` { set, event }: the highest local id the match's set / event
  *     external_ids carry (`<match>:s:<n>`, `<match>:e:<n>`), voided events and
  *     the revisions of events never uploaded included. The device continuing
@@ -154,6 +167,12 @@ export function createAttemptLimiter ({ max = 5, windowMs = 600000, maxKeys = 50
  *   refused attempt does not count toward the ceiling (nothing was compared).
  * - `refund(ipKey, scope)` takes the attempt back (a right PIN, or no PIN
  *   compared).
+ * - `{ scopeOnly: true }` (both, alike): the address's ceiling is neither
+ *   asked nor counted, only the scope's limit. For a check the server trusts
+ *   beyond the PIN: the scoreboard of the device the database names as the
+ *   match's scorer, re-proving its own match on the relay (server.js
+ *   verifyRelayClaim), was refused once a hall had spent the ceiling on
+ *   other PINs, and its referee and benches froze.
  * - `repeated(ipKey, scope, pin)` after a WRONG PIN: true, and the attempt is
  *   refunded, when the same PIN already failed in this scope within the
  *   window; else it is remembered (as a hash). The same wrong PIN tried again
@@ -166,20 +185,20 @@ export function createPinFailureBudget ({ max = 20, ipMax = 60, windowMs = 60000
   const wrong = new Map() // hash of ipKey|scope|pin -> time it failed (insertion order = time order)
   const scopeKey = (ipKey, scope) => `${ipKey}|${scope}`
   const budget = {
-    isLimited (ipKey, scope) {
-      if (total.isLimited(ipKey)) {
+    isLimited (ipKey, scope, { scopeOnly = false } = {}) {
+      if (!scopeOnly && total.isLimited(ipKey)) {
         total.refund(ipKey)
         return true
       }
       if (scoped.isLimited(scopeKey(ipKey, scope))) {
-        total.refund(ipKey)
+        if (!scopeOnly) total.refund(ipKey)
         return true
       }
       return false
     },
-    refund (ipKey, scope) {
+    refund (ipKey, scope, { scopeOnly = false } = {}) {
       scoped.refund(scopeKey(ipKey, scope))
-      total.refund(ipKey)
+      if (!scopeOnly) total.refund(ipKey)
     },
     repeated (ipKey, scope, pin) {
       const now = Date.now()
@@ -262,9 +281,74 @@ export function createMatchRestore (db, options = {}) {
     return null
   }
 
+  // The closing status of a restored approved/final backup, its last step
+  function closeMatch (run, matchUuid, closingStatus) {
+    return run('close', {
+      table: cfg.matchTable,
+      action: 'update',
+      params: { data: { status: closingStatus }, filters: [{ type: 'eq', column: cfg.matchId, value: matchUuid }] }
+    })
+  }
+
+  // payload.rekey -> { sets: Map(new -> old), events: Map(new -> old) }, or
+  // null (absent or not an object: a plain restore)
+  function rekeyOf (raw) {
+    if (!isPlainObject(raw)) return null
+    const mapOf = (o) => new Map(isPlainObject(o)
+      ? Object.entries(o).filter(([to, from]) => typeof from === 'string' && from && from.length <= 200 && from !== to)
+      : [])
+    return { sets: mapOf(raw.sets), events: mapOf(raw.events) }
+  }
+
+  /**
+   * The re-key of a hand-over (payload.rekey): each row of `rows` whose new
+   * external_id names an old one is renamed in place, the row keeps
+   * everything else (voided, edited, its id); a row already under the new id
+   * is replaced (the device's own row, as its next write of it would). A
+   * row whose old one is gone, or that names none, is written under its id.
+   * Rows the payload does not name are left alone. Returns the rows renamed.
+   * In two steps (each row to a parked name, then to its new one): the
+   * device's new ids continue its own counter and may be old ids of this
+   * same match (cloud e:1..e:5 to e:3..e:7), and renaming one by one deleted
+   * rows still to be moved and moved others twice.
+   */
+  async function rekeyRows (client, run, table, rows, from, matchUuid, withFk) {
+    if (!rows.length) return 0
+    const byMatch = { type: 'eq', column: cfg.childFk, value: matchUuid }
+    const keys = [...new Set(rows.flatMap(r => [r.external_id, from.get(r.external_id)]).filter(k => typeof k === 'string'))]
+    // voided events included: what is there, not what is shown
+    const { rows: found } = await client.query(
+      `SELECT external_id FROM ${quote(db.config.schema || 'public')}.${quote(table)} WHERE ${quote(cfg.childFk)} = $1 AND external_id = ANY($2::text[])`,
+      [matchUuid, keys])
+    const there = new Set(found.map(r => r.external_id))
+    const renames = rows.filter(r => there.has(from.get(r.external_id)))
+    const rename = (step, fromKey, toKey) => run(`rekey ${table} ${step}`, {
+      table,
+      action: 'update',
+      params: { data: { external_id: toKey }, filters: [byMatch, { type: 'eq', column: 'external_id', value: fromKey }] }
+    })
+    // (the match's own prefix and separator: inside the id scope guard)
+    const parked = (key) => `${key}#rekey`
+    for (const r of renames) await rename('park', from.get(r.external_id), parked(r.external_id))
+    // A row still under a new id is none of the rows moved: the device's replaces it
+    const moved = new Set(renames.map(r => from.get(r.external_id)))
+    const taken = renames.map(r => r.external_id).filter(k => there.has(k) && !moved.has(k))
+    if (taken.length) {
+      await run(`rekey ${table}`, { table, action: 'delete', params: { filters: [byMatch, { type: 'in', column: 'external_id', value: taken }] } },
+        { changeColumns: cfg.deleteChangeColumns })
+    }
+    for (const r of renames) await rename('move', parked(r.external_id), r.external_id)
+    const rest = rows.filter(r => !there.has(from.get(r.external_id)))
+    if (rest.length) {
+      await run(table, { table, action: 'upsert', params: { data: rest.map(withFk), onConflict: 'external_id' } })
+    }
+    return renames.length
+  }
+
   async function restoreMatch (payload, { proto, matchOwner, actorId } = {}) {
     if (!isPlainObject(payload)) return errorBody(400, 'OV_INVALID_REQUEST', 'Invalid request')
     const { match, sets = [], events = [], liveState = null } = payload
+    const rekey = rekeyOf(payload.rekey)
     const minProto = db.config.minWriteProto
     if (minProto != null && !(Number(proto) >= minProto)) {
       return errorBody(426, 'OV_CLIENT_TOO_OLD', 'This app version is too old to write. Please reload the app.')
@@ -347,6 +431,12 @@ export function createMatchRestore (db, options = {}) {
         }, { mergeOnUpsert: matchSecrets })
         const matchUuid = up.body.data[cfg.matchId]
         const withFk = (row) => ({ ...row, [cfg.childFk]: matchUuid })
+        if (rekey) {
+          const rekeyed = (await rekeyRows(client, run, cfg.setsTable, setRows, rekey.sets, matchUuid, withFk)) +
+            (await rekeyRows(client, run, cfg.eventsTable, eventRows, rekey.events, matchUuid, withFk))
+          if (closingStatus) await closeMatch(run, matchUuid, closingStatus)
+          return { id: matchUuid, counts: { sets: setRows.length, events: eventRows.length, liveState: 0, rekeyed }, dropped: droppedOut }
+        }
         // DELETE changes carry only the keys, so subscribers drop the old rows.
         const del = (table) => run(`delete ${table}`, {
           table, action: 'delete', params: { filters: [{ type: 'eq', column: cfg.childFk, value: matchUuid }] }
@@ -368,13 +458,7 @@ export function createMatchRestore (db, options = {}) {
           const r = await run('liveState', { table: cfg.liveStateTable, action: 'insert', params: { data: withFk(liveRow), count: 'exact' } })
           counts.liveState = r.body.count
         }
-        if (closingStatus) {
-          await run('close', {
-            table: cfg.matchTable,
-            action: 'update',
-            params: { data: { status: closingStatus }, filters: [{ type: 'eq', column: cfg.matchId, value: matchUuid }] }
-          })
-        }
+        if (closingStatus) await closeMatch(run, matchUuid, closingStatus)
         return { id: matchUuid, counts, dropped: droppedOut }
       }, { statementTimeoutMs: cfg.statementTimeoutMs })
       return { status: 200, body: { data: out, error: null }, changes }
@@ -489,7 +573,7 @@ export function createMatchRestore (db, options = {}) {
     }
   }
 
-  async function restoreByPin (input, { limitKey = 'anon', editorUserId = null } = {}) {
+  async function restoreByPin (input, { limitKey = 'anon', editorUserId = null, takeOver = null } = {}) {
     if (!isPlainObject(input)) return errorBody(400, 'OV_INVALID_REQUEST', 'Invalid request')
     const gameN = typeof input.gameN === 'string' && /^\d+$/.test(input.gameN.trim()) ? Number(input.gameN.trim()) : input.gameN
     const pin = typeof input.pin === 'number' ? String(input.pin) : (typeof input.pin === 'string' ? input.pin.trim() : '')
@@ -536,6 +620,16 @@ export function createMatchRestore (db, options = {}) {
       // A signed-in caller who proved the game PIN may now write the match.
       const editor = editorUserId ? await addEditor(matchUuid, editorUserId, 'restore-by-pin') : null
       for (const k of cfg.restoreByPinHidden) delete match[k]
+      // The caller scores the match from here on (before the read: a write
+      // of the device it leaves is in what is read, or refused after it)
+      let scorer = null
+      if (typeof takeOver === 'function') {
+        try {
+          scorer = await takeOver({ id: matchUuid, external_id: row[cfg.matchKey] })
+        } catch (err) {
+          log.warn?.(`[matchRestore] scoring-device take-over failed: ${err?.code || err?.message}`)
+        }
+      }
       const byMatch = [{ type: 'eq', column: cfg.childFk, value: matchUuid }]
       const childOrder = (table, cols) => {
         const t = cat.tables.get(table)
@@ -554,7 +648,7 @@ export function createMatchRestore (db, options = {}) {
         read(cfg.liveStateTable, { maybeSingle: true }),
         idFloor(cat, matchUuid, row[cfg.matchKey])
       ])
-      return { status: 200, body: { data: { match, sets: s.body.data, events: e.body.data, liveState: l.body.data, ...(floor ? { idFloor: floor } : {}), ...(editor ? { access: editor } : {}) }, error: null } }
+      return { status: 200, body: { data: { match, sets: s.body.data, events: e.body.data, liveState: l.body.data, ...(floor ? { idFloor: floor } : {}), ...(editor ? { access: editor } : {}), ...(scorer ? { scorer } : {}) }, error: null } }
     } catch (err) {
       if (err?.result) return { status: err.result.status, body: err.result.body }
       const r = db.toErrorResult(err, { action: 'restore-by-pin', table: cfg.matchTable })

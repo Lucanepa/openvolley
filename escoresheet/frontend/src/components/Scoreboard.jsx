@@ -21,8 +21,8 @@ import ScoreboardOptionsModal from './options/ScoreboardOptionsModal'
 import NativeBackupAlert from './options/NativeBackupAlert'
 import ConnectTabletsModal from './connect/ConnectTabletsModal'
 import { useSyncQueue, isAuthBlocked, checkScorerMoved } from '../hooks/useSyncQueue'
-import { isScorerMoved, SCORER_MOVED } from '../utils/matchHandover'
-import { useSequentialSync } from '../hooks/useSequentialSync'
+import { isScorerMoved, SCORER_MOVED, relaySyncDevice } from '../utils/matchHandover'
+import { useSequentialSync, setEndBackupPlan, setEndStillUndelivered, SET_END_DOWNLOAD_GRACE_MS } from '../hooks/useSequentialSync'
 import SyncProgressModal from './SyncProgressModal'
 import SignaturePad from './SignaturePad'
 import { saveMatchSignature } from '../utils/saveSignature'
@@ -42,7 +42,7 @@ import { TEAM_COLOUR_MARK, discPaint, effectiveTeamColour, matchDiscPaint, teamL
 import { useComponentLogging } from '../contexts/LoggingContext'
 import { apiFrom, writingDevice } from '../lib/apiClient'
 import { relayMatchKey, relayMatchPayload, liveStateNow } from '../utils/serverDataSync'
-import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveState, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
+import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveState, relayEvents, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
 import { exportMatchData } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
@@ -104,6 +104,23 @@ const CLEARED_SET5_SETUP = { set5LeftTeam: null, set5FirstServe: null, set5Court
 // (its own push opens it), "End set interval", the set's start, the set 5
 // setup's (they say whether it goes on: duringInterval)
 const BREAK_ENDING_PUSHES = new Set(['set_end', 'end_interval', 'set_start', 'manual_set5_setup'])
+// The live-state push that sends the state again after a reconnect, a reload
+// or a sign-in: no event of its own (it keeps the last one's last_event_*)
+const RECONNECT_PUSH = 'reconnect'
+
+// The scoring tab reloaded takes its Web Lock back (the single-tab guard)
+// when its new page loads within this long of the old one going away
+const SCORING_TAB_RELOAD_MS = 60000
+
+// A scorer action started by a tap or a key: nothing waits for its promise.
+// Its failure is shown to the scorer already (runAction's onError); left to
+// reject, it was an unhandled rejection too, reported again as an app error
+// at every refused tap (with the device storage full: each one)
+const settleTap = (promise) => {
+  Promise.resolve(promise).catch((err) => {
+    if (!isReportedActionError(err)) console.error('[action] tap failed', err)
+  })
+}
 
 // ── volleyui chrome for the scoreboard (RESTYLE-SPEC P5) ──────────────────────
 // Only the chrome around the court takes these: the toolbar, the side-column
@@ -738,6 +755,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // set_interval_started_at of the last set_end push: a set 5 setup push
   // during the interval keeps it, so the tablets' countdown does not restart
   const intervalStartedAtRef = useRef(null)
+  // The last event a live-state push named ({ matchId, type, team, data, ts }):
+  // a reconnect push (no event, the state again) names it again
+  const lastPushedEventRef = useRef(null)
   // Relay refused this scoreboard (another device holds the match id, or too
   // many failed claims): shown to the scorer instead of failing silently.
   const [relayRejection, setRelayRejection] = useState(null) // { code, message, at } | null
@@ -850,24 +870,66 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // its answers, so a later tab opened the same live match as well and both
   // scored (stress test 2026-10-25). A tab that finds the lock held shows
   // "Scoresheet already open" and scores once the other tab is gone.
+  // The scoring tab reloaded takes the lock back: freed by its reload, it
+  // went to a forgotten tab waiting behind it, which scored from then on,
+  // while the reloaded one showed "already open" (review of #37). Its page
+  // notes on the way out (pagehide), in this tab's sessionStorage (which a
+  // reload keeps and no other tab reads), that it held the lock, and the
+  // page after the reload steals it. "Score in this tab" steals it too: the
+  // other tab goes to "already open" and waits.
+  const takeOverScoringRef = useRef(null)
   useEffect(() => {
     if (!matchId) return
     if (typeof navigator === 'undefined' || !navigator.locks?.request) return
-    const abort = new AbortController()
+    const lockName = `scoresheet-${matchId}`
+    const reloadKey = `scoresheet-reload-${matchId}`
+    let current = 0 // the request that counts: a take-over replaces a queued one
+    let abort = null
+    let busy = null
     let release = null
-    // Queued, not ifAvailable: the screen remounting in this tab (React's
-    // development double mount) frees the lock a moment after asking again
-    const busy = setTimeout(() => setDuplicateTabError(true), 1000)
-    navigator.locks.request(`scoresheet-${matchId}`, { signal: abort.signal }, () => {
-      // granted just after the screen unmounted: hand it straight back
-      if (abort.signal.aborted) return undefined
+    let unmounted = false
+    const request = (steal) => {
+      const id = ++current
       clearTimeout(busy)
-      setDuplicateTabError(false)
-      return new Promise(resolve => { release = resolve })
-    }).catch(() => {}) // aborted: the screen unmounted before it got the lock
+      if (abort) abort.abort()
+      // (a steal takes no signal: it never waits)
+      abort = steal ? null : new AbortController()
+      // Queued, not ifAvailable: the screen remounting in this tab (React's
+      // development double mount) frees the lock a moment after asking again
+      busy = steal ? null : setTimeout(() => setDuplicateTabError(true), 1000)
+      navigator.locks.request(lockName, steal ? { steal: true } : { signal: abort.signal }, () => {
+        // granted just after the screen unmounted, or replaced: hand it straight back
+        if (unmounted || id !== current) return undefined
+        clearTimeout(busy)
+        setDuplicateTabError(false)
+        return new Promise(resolve => { release = resolve })
+      }).catch(() => {
+        // aborted (the screen unmounted, a take-over replaced it), or stolen
+        // by another tab's take-over: "already open", and wait again
+        if (unmounted || id !== current) return
+        release = null
+        setDuplicateTabError(true)
+        request(false)
+      })
+    }
+    let reloaded = false
+    try {
+      const at = Number(sessionStorage.getItem(reloadKey))
+      sessionStorage.removeItem(reloadKey)
+      reloaded = at > 0 && Date.now() - at < SCORING_TAB_RELOAD_MS
+    } catch { /* no sessionStorage: wait for the lock */ }
+    request(reloaded)
+    takeOverScoringRef.current = () => request(true)
+    const noteReload = () => {
+      try { if (release) sessionStorage.setItem(reloadKey, String(Date.now())) } catch { /* ignore */ }
+    }
+    window.addEventListener('pagehide', noteReload)
     return () => {
+      unmounted = true
+      takeOverScoringRef.current = null
+      window.removeEventListener('pagehide', noteReload)
       clearTimeout(busy)
-      abort.abort()
+      if (abort) abort.abort()
       if (release) release()
     }
   }, [matchId])
@@ -936,9 +998,19 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
     window.addEventListener('pagehide', clearMark)
+    // "Score in this tab": the mark is this tab's (the other one sees it
+    // change, storage event, and shows "already open")
+    takeOverScoringRef.current = () => {
+      if (probe) clearTimeout(probe)
+      probe = null
+      duplicate = false
+      localStorage.setItem(storageKey, tabId)
+      setDuplicateTabError(false)
+    }
 
     return () => {
       if (probe) clearTimeout(probe)
+      takeOverScoringRef.current = null
       window.removeEventListener('storage', handleStorage)
       window.removeEventListener('pagehide', clearMark)
       if (channel) channel.close()
@@ -1726,7 +1798,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           // while this socket was down were dropped. The livescore, which
           // takes the score from it, stayed on the score from before a relay
           // restart until the next rally (stress test 2026-10-25).
-          initialSync.then(() => syncLiveStateRef.current?.('reconnect', null, null), () => {})
+          initialSync.then(() => syncLiveStateRef.current?.(RECONNECT_PUSH, null, null), () => {})
         },
         onMessage: (message) => {
           if (message.type === 'pin-validation-request') {
@@ -1747,10 +1819,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             if (message.code === 'pins-required') {
               // The relay lost the match while this socket left the PINs out
               if (syncFunctionRef.current) syncFunctionRef.current()
-            } else if (['not-match-owner', 'rate-limited', 'too-many-matches'].includes(message.code)) {
+            } else if (['not-match-owner', 'rate-limited', 'too-many-matches', 'scorer-moved'].includes(message.code)) {
               // The relay refused our scoreboard role: referee/bench/livescore
               // get no updates from this device until it is resolved.
               // Refused again on every sync; the banner expires when that stops.
+              // ('scorer-moved': a venue relay, another device continued the
+              // match; the cloud relay says it with a scorer-moved message)
               setRelayRejection({ code: message.code, message: message.message || '', at: Date.now() })
             }
           }
@@ -1781,13 +1855,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Another device scores it now: its tablets follow that one (db/019)
         if (isScorerMoved(freshMatch)) return
 
-        const [freshHomeTeam, freshAwayTeam, freshSets, freshEvents, freshHomePlayers, freshAwayPlayers] = await Promise.all([
+        const [freshHomeTeam, freshAwayTeam, freshSets, freshEvents, freshHomePlayers, freshAwayPlayers, device] = await Promise.all([
           db.teams.get(freshMatch?.homeTeamId),
           db.teams.get(freshMatch?.awayTeamId),
           db.sets.where('matchId').equals(matchId).toArray(),
           db.events.where('matchId').equals(matchId).toArray(),
           freshMatch?.homeTeamId ? db.players.where('teamId').equals(freshMatch.homeTeamId).toArray() : [],
-          freshMatch?.awayTeamId ? db.players.where('teamId').equals(freshMatch.awayTeamId).toArray() : []
+          freshMatch?.awayTeamId ? db.players.where('teamId').equals(freshMatch.awayTeamId).toArray() : [],
+          relaySyncDevice(db, matchId, writingDevice())
         ])
 
         if (scorerRelay.socket !== currentWs) return
@@ -1807,10 +1882,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           homePlayers: freshHomePlayers || [],
           awayPlayers: freshAwayPlayers || [],
           sets: freshSets || [],
-          events: freshEvents || [],
+          // without the undo snapshots (relayEvents)
+          events: relayEvents(freshEvents || []),
           // This installation: the cloud relay refuses a device the match
-          // has moved away from (db/019, see App.jsx)
-          device: writingDevice(),
+          // has moved away from (db/019, see App.jsx), a venue relay the
+          // copy of a claim another device took over (device.claim)
+          device,
           _timestamp: sendTimestamp // Track when sent from scoreboard
         }
 
@@ -2381,6 +2458,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         })
       }
 
+      // The event this push names. A reconnect push is none: it sends the
+      // state again, with the last event it had (the livescore, the website
+      // and Point Hub read last_event_type, and 'reconnect' is no event they
+      // know; it also overwrote a finished match's 'match_end'). Not known
+      // since a reload: left out, the stored row keeps its own.
+      const pushedEvent = eventType === RECONNECT_PUSH
+        ? (lastPushedEventRef.current?.matchId === matchId ? lastPushedEventRef.current : null)
+        : { matchId, type: eventType || null, team: eventTeam || null, data: eventData || null, ts: new Date().toISOString() }
+      if (eventType !== RECONNECT_PUSH) lastPushedEventRef.current = pushedEvent
+
       // Map directly from snapshot to Supabase table
       const liveStateData = {
         match_id: supabaseMatchId,
@@ -2415,10 +2502,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Serving team (convert to left/right) - use next set values for set_end
         serving_team: nextServingTeam === snapshot.teamAKey ? nextSideA : (nextSideA === 'left' ? 'right' : 'left'),
         // Event info
-        last_event_type: eventType || null,
-        last_event_team: eventTeam || null,
-        last_event_data: eventData || null,
-        last_event_ts: new Date().toISOString(),
+        ...(pushedEvent ? {
+          last_event_type: pushedEvent.type,
+          last_event_team: pushedEvent.team,
+          last_event_data: pushedEvent.data,
+          last_event_ts: pushedEvent.ts
+        } : {}),
         timeout_active: isTimeout,
         timeout_started_at: isTimeout ? onLiveClock(activeTimeout?.startedAt || timeoutStartedAt) : null,
         set_interval_active: isSetInterval || keepInterval,
@@ -2560,7 +2649,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (timer) clearTimeout(timer)
       timer = setTimeout(() => {
         timer = null
-        syncLiveStateRef.current?.('reconnect', null, null)
+        syncLiveStateRef.current?.(RECONNECT_PUSH, null, null)
       }, 1500)
     }
     const onOnline = () => push()
@@ -3057,11 +3146,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // rally to the team under the finger, a triple tap on Point B gave one
   // rally two points (stress test 2026-10-25, every tap 40 to 250 ms apart).
   // For GHOST_CLICK_MS after the buttons change (drawn: a layout effect,
-  // before the next tap can reach them), a tap on them or their key is the
-  // end of the tap that changed them, as after a confirm (useConfirmAction):
-  // a rally never ends that soon after its start, nor starts that soon after
-  // its point. Not when the screen first shows them. Monotonic clock: a
-  // device clock set back must not hold them.
+  // before the next tap can reach them), a tap on them is the end of the tap
+  // that changed them, as after a confirm (useConfirmAction): a rally never
+  // ends that soon after its start, nor starts that soon after its point. Not
+  // when the screen first shows them, and not their keys: a key does not
+  // bounce, and a keyboard scorer pressing Enter at the whistle and A a moment
+  // later lost the point. Monotonic clock: a device clock set back must not
+  // hold them.
   const rallyButtonsRef = useRef({ status: null, changedAt: -Infinity })
   useLayoutEffect(() => {
     const buttons = rallyButtonsRef.current
@@ -5718,23 +5809,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     deferUi(() => setRecentlySubstitutedPlayers([]))
   }), [logEvent, isFirstRally, data?.homePlayers, data?.awayPlayers, data?.events, data?.set, data?.match, matchId, getNextSubSeq, syncToReferee, checkAccidentalRallyStart, accidentalRallyStartDuration, runAction, deferUi, readRallyStatus])
 
-  // A tap on the rally buttons (Start rally, Point A | Point B) or their keys,
-  // on every layout: none the moment they changed (rallyButtonsJustShown),
-  // that is the second tap of the one that changed them. The accidental-start
-  // and accidental-point questions' Yes call the handlers themselves.
+  // A tap on the rally buttons (Start rally, Point A | Point B), on every
+  // layout: none the moment they changed (rallyButtonsJustShown), that is the
+  // second tap of the one that changed them. Their keys call the handlers
+  // themselves (no bounce to drop), as do the accidental-start and
+  // accidental-point questions' Yes.
   const tapStartRally = useCallback(() => {
     if (rallyButtonsJustShown()) {
       console.warn('[Scoreboard] Start rally tap as the rally buttons changed (a double tap): ignored')
       return
     }
-    handleStartRally()
+    settleTap(handleStartRally())
   }, [handleStartRally, rallyButtonsJustShown])
   const tapPoint = useCallback((side) => {
     if (rallyButtonsJustShown()) {
       console.warn('[Scoreboard] Point tap as the rally buttons changed (a double tap): ignored')
       return
     }
-    handlePoint(side, false, { tap: true })
+    settleTap(handlePoint(side, false, { tap: true }))
   }, [handlePoint, rallyButtonsJustShown])
 
   const handleReplay = useCallback(async () => {
@@ -6398,18 +6490,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           }).catch(() => { })
         }
 
-        // Auto-download game data at set end if enabled AND sync failed/offline
-        // If sync succeeded and we're online, data is safe in cloud - no need to download
-        const syncSucceeded = syncResult?.success && !syncResult?.hasWarning
-        const isOffline = !navigator.onLine
-
-        if (autoDownloadAtSetEnd && (!syncSucceeded || isOffline)) {
-          console.log('[SET_END] Downloading backup - sync failed/skipped or offline:', {
-            syncSucceeded,
-            isOffline,
-            syncResult
-          })
-          setSetTransitionLoading({ step: 'Downloading backup...' })
+        // Auto-download game data at set end if enabled AND the set end is
+        // not reaching the cloud (failed, offline, set aside, not synced). Only
+        // slower than the set end's wait (online, still queued): once the
+        // grace period is over, and only if still not delivered; it was a
+        // download (a prompt on a mobile browser) at every set end on a slow
+        // hall link, while the queue delivered it (setEndBackupPlan)
+        const backupPlan = autoDownloadAtSetEnd
+          ? setEndBackupPlan(syncResult, { online: navigator.onLine !== false })
+          : 'none'
+        const downloadSetEndBackup = async () => {
           try {
             // This match only, in the backup file format Restore match reads
             // (exportMatchData), unindented. It was every table of the device,
@@ -6429,6 +6519,23 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           } catch (error) {
             console.error('Auto-download at set end failed:', error)
           }
+        }
+
+        if (backupPlan === 'now') {
+          console.log('[SET_END] Downloading backup - sync failed/skipped or offline:', { syncResult })
+          setSetTransitionLoading({ step: 'Downloading backup...' })
+          await downloadSetEndBackup()
+        } else if (backupPlan === 'later') {
+          const waitingJobIds = syncResult.waitingJobIds
+          setTimeout(async () => {
+            try {
+              if (!(await setEndStillUndelivered(waitingJobIds))) return
+              console.log('[SET_END] Downloading backup - set end still not delivered after the grace period')
+              await downloadSetEndBackup()
+            } catch (error) {
+              console.error('Auto-download at set end failed:', error)
+            }
+          }, SET_END_DOWNLOAD_GRACE_MS)
         }
 
         // Start countdown immediately when set ends (not match end)
@@ -12439,7 +12546,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         // Start rally if idle and no modals
         if (!hasDecisionModal && rallyStatus === 'idle') {
           e.preventDefault()
-          tapStartRally()
+          settleTap(handleStartRally())
           return
         }
         // Confirm modals
@@ -12522,14 +12629,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (hasDecisionModal || timeoutModal || lineupModal || menuModal) return
 
       // Point keys
+      // (a key, no tap: never held by the rally buttons' double-tap window;
+      // `tap`: written only while the rally is in play in the database)
       if (key === keyBindings.pointLeft && rallyStatus === 'in_play') {
         e.preventDefault()
-        tapPoint('left')
+        settleTap(handlePoint('left', false, { tap: true }))
         return
       }
       if (key === keyBindings.pointRight && rallyStatus === 'in_play') {
         e.preventDefault()
-        tapPoint('right')
+        settleTap(handlePoint('right', false, { tap: true }))
         return
       }
 
@@ -12548,19 +12657,22 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       // Exchange libero keys (only when idle)
       if (key === keyBindings.exchangeLiberoLeft && rallyStatus === 'idle') {
         e.preventDefault()
-        handleExchangeLibero('left')
+        settleTap(handleExchangeLibero('left'))
         return
       }
       if (key === keyBindings.exchangeLiberoRight && rallyStatus === 'idle') {
         e.preventDefault()
-        handleExchangeLibero('right')
+        settleTap(handleExchangeLibero('right'))
         return
       }
 
-      // Undo key
-      if (key === keyBindings.undo && rallyStatus === 'idle') {
+      // Undo key: asks the undo question, as the Undo button does, whenever
+      // that button can be pressed (Enter is its Yes, above). It called the
+      // question's Yes (handleUndo), which does nothing while the question
+      // is not open: Backspace did nothing at all.
+      if (key === keyBindings.undo && canUndo) {
         e.preventDefault()
-        handleUndo()
+        showUndoConfirm()
         return
       }
     }
@@ -12569,7 +12681,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [
     keybindingsEnabled, keyBindings, editingKey, showOptionsInMenu, keybindingsModalOpen,
-    rallyStatus, tapStartRally, tapPoint, handleTimeout, handleExchangeLibero, handleUndo,
+    rallyStatus, handleStartRally, handlePoint, handleTimeout, handleExchangeLibero, handleUndo, canUndo, showUndoConfirm,
     playerActionMenu, benchPlayerActionMenu, liberoDropdown, liberoInDropdown, sanctionDropdown,
     timeoutModal, lineupModal, menuModal,
     substitutionConfirm, liberoConfirm, sanctionConfirmModal, accidentalRallyConfirmModal,
@@ -13208,8 +13320,10 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         }}>
           {t('scoreboard.duplicateTabMessage')}
         </p>
+        {/* It was "Close this tab" (window.close()), which browsers ignore
+            for a tab the user opened: it did nothing */}
         <button
-          onClick={() => window.close()}
+          onClick={() => takeOverScoringRef.current?.()}
           style={{
             padding: '12px 24px',
             fontSize: '16px',
@@ -13221,7 +13335,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             cursor: 'pointer'
           }}
         >
-          {t('scoreboard.closeThisTab')}
+          {t('scoreboard.scoreInThisTab')}
         </button>
       </div>
     )
@@ -13244,7 +13358,9 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             ? t('scoreboard.relayRejected.notOwner', 'Referee/bench link: another scoresheet holds this match on the server. Referee, bench and livescore do not receive this device\'s updates.')
             : relayRejection.code === 'too-many-matches'
               ? t('scoreboard.relayRejected.tooMany', 'Referee/bench link: this device already drives too many matches on the server.')
-              : t('scoreboard.relayRejected.rateLimited', 'Referee/bench link: the server refused this scoresheet for a minute (too many failed attempts).')}
+              : relayRejection.code === 'scorer-moved'
+                ? t('scoreboard.relayRejected.scorerMoved', 'Referee/bench link: this match is now scored on another device. Referee, bench and livescore follow the other device, no longer this one.')
+                : t('scoreboard.relayRejected.rateLimited', 'Referee/bench link: the server refused this scoresheet for a minute (too many failed attempts).')}
         </div>
       )}
       {/* Portrait mode warning overlay for devices that don't support orientation lock (iOS).

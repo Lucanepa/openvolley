@@ -20,14 +20,14 @@ const sync = vi.hoisted(() => ({
 
 vi.mock('../utils/serverDataSync', () => sync)
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key, fallback) => (typeof fallback === 'string' ? fallback : key) })
+  useTranslation: () => ({ t: (key, fallback) => (typeof fallback === 'string' ? fallback : key), i18n: { language: 'en' } })
 }))
 vi.mock('../components/Referee', () => ({
   default: ({ matchId }) => <div data-testid="dashboard">{String(matchId)}</div>
 }))
 vi.mock('../components/UpdateBanner', () => ({ default: () => null }))
 vi.mock('../components/DashboardHeader', () => ({ default: () => null }))
-vi.mock('../components/ServerConnectionScreen', () => ({ default: () => <div>server screen</div> }))
+vi.mock('../components/ServerConnectionScreen', () => ({ default: ({ onConnected }) => <button onClick={onConnected}>server screen</button> }))
 vi.mock('../db/db', () => ({ db: { matches: { count: vi.fn().mockResolvedValue(0) } } }))
 
 import RefereeApp from '../RefereeApp'
@@ -69,8 +69,75 @@ describe('referee match link', () => {
 
     const dashboard = await screen.findByTestId('dashboard')
     expect(dashboard.textContent).toBe(SEED)
-    expect(sync.validatePinSupabase).toHaveBeenCalledWith('786270', 'referee')
+    // the typed PIN is checked for the match of the link (its own PIN budget)
+    expect(sync.validatePinSupabase).toHaveBeenCalledWith('786270', 'referee', { matchExternalId: SEED })
     expect(localStorage.getItem('refereeMatchId')).toBe(SEED)
+  })
+
+  // 2026-10-27 review: after a wrong court's QR code, the referee picks the
+  // right game in the list. Its right PIN went out checked against the
+  // link's match (404, "Invalid PIN") until a reload without the link.
+  it('a game picked in the list after the link is the one the PIN is checked against', async () => {
+    const OTHER = 'match_1791223004297_c3nfk2'
+    const listed = [
+      { id: SEED, gameNumber: 991202, homeTeam: 'Home A', awayTeam: 'Away A', status: 'live', refereeConnectionEnabled: true },
+      { id: OTHER, gameNumber: 991203, homeTeam: 'Home B', awayTeam: 'Away B', status: 'live', refereeConnectionEnabled: true }
+    ]
+    sync.listAvailableMatchesSupabase.mockResolvedValue({ success: true, matches: listed })
+    // The backend checks a PIN that names its match against that match only
+    sync.validatePinSupabase.mockImplementation(async (pin, type, opts) =>
+      pin === '445566' && (!opts?.matchExternalId || opts.matchExternalId === OTHER)
+        ? { success: true, match: { id: OTHER, refereeConnectionEnabled: true, status: 'live' } }
+        : { success: false, status: 404, error: 'Invalid PIN code' })
+    sync.validatePin.mockRejectedValue(new Error('No match found with this PIN.'))
+
+    render(<RefereeApp />)
+    await waitFor(() => expect(sync.getMatchData).toHaveBeenCalledWith(SEED))
+    fireEvent.click(await screen.findByRole('button', { name: 'refereeDashboard.selectGame' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Home B/ }))
+
+    fireEvent.change(screen.getByLabelText('refereeDashboard.connectionPin'), { target: { value: '445566' } })
+    fireEvent.click(screen.getByRole('button', { name: 'refereeDashboard.enter' }))
+
+    const dashboard = await screen.findByTestId('dashboard')
+    expect(dashboard.textContent).toBe(OTHER)
+    expect(sync.validatePinSupabase).toHaveBeenCalledWith('445566', 'referee', { matchExternalId: OTHER })
+    expect(localStorage.getItem('refereeMatchId')).toBe(OTHER)
+  })
+
+  it('picking the linked game itself in the list keeps the link\'s match', async () => {
+    sync.listAvailableMatchesSupabase.mockResolvedValue({ success: true, matches: [
+      { id: SEED, gameNumber: 991202, homeTeam: 'Home A', awayTeam: 'Away A', status: 'live', refereeConnectionEnabled: true }
+    ] })
+    render(<RefereeApp />)
+    await waitFor(() => expect(sync.getMatchData).toHaveBeenCalledWith(SEED))
+    fireEvent.click(await screen.findByRole('button', { name: 'refereeDashboard.selectGame' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Home A/ }))
+
+    fireEvent.change(screen.getByLabelText('refereeDashboard.connectionPin'), { target: { value: '786270' } })
+    fireEvent.click(screen.getByRole('button', { name: 'refereeDashboard.enter' }))
+
+    expect((await screen.findByTestId('dashboard')).textContent).toBe(SEED)
+    expect(sync.validatePinSupabase).toHaveBeenCalledWith('786270', 'referee', { matchExternalId: SEED })
+  })
+
+  it('a game number two listed matches share names no match in the check', async () => {
+    Object.defineProperty(window, 'location', { value: { ...realLocation, search: '' }, writable: true, configurable: true })
+    const OTHER = 'match_1791223004297_c3nfk2'
+    sync.listAvailableMatchesSupabase.mockResolvedValue({ success: true, matches: [
+      { id: SEED, gameNumber: 1, homeTeam: 'Home A', awayTeam: 'Away A', status: 'live', refereeConnectionEnabled: true },
+      { id: OTHER, gameNumber: 1, homeTeam: 'Home B', awayTeam: 'Away B', status: 'live', refereeConnectionEnabled: true }
+    ] })
+    sync.validatePinSupabase.mockResolvedValue({ success: true, match: { id: OTHER, refereeConnectionEnabled: true, status: 'live' } })
+    render(<RefereeApp />)
+    fireEvent.click(await screen.findByRole('button', { name: 'server screen' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'refereeDashboard.selectGame' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Home B/ }))
+    fireEvent.change(screen.getByLabelText('refereeDashboard.connectionPin'), { target: { value: '445566' } })
+    fireEvent.click(screen.getByRole('button', { name: 'refereeDashboard.enter' }))
+
+    expect((await screen.findByTestId('dashboard')).textContent).toBe(OTHER)
+    expect(sync.validatePinSupabase).toHaveBeenCalledWith('445566', 'referee')
   })
 
   it('a wrong PIN does not connect', async () => {

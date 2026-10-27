@@ -279,6 +279,32 @@ describe('publicColumns: the match relay bundle', () => {
     assert.equal(relayMatchListRow({ matchId: 'x', sportType: 'other', match: { sport_type: 'beach' } }).sportType, 'indoor')
   })
 
+  it('relayMatchListRow: the date is formatted with shared formatters, not one per row', () => {
+    // GET /api/match/list builds a row for every match the relay holds, and
+    // Date#toLocaleDateString / #toLocaleTimeString with options build a new
+    // Intl formatter on every call: about 66 us per row, nearly all of the
+    // handler's time (26 ms per call with 404 matches, a whole CPU at the
+    // national peak's polling rate). The text stays what it was.
+    const scheduledAt = '2026-10-05T18:07:00.000Z'
+    const d = new Date(scheduledAt)
+    const expected = `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} ${d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}`
+    const calls = { date: 0, time: 0 }
+    const { toLocaleDateString, toLocaleTimeString } = Date.prototype
+    Date.prototype.toLocaleDateString = function (...args) { calls.date++; return toLocaleDateString.apply(this, args) }
+    Date.prototype.toLocaleTimeString = function (...args) { calls.time++; return toLocaleTimeString.apply(this, args) }
+    let rows
+    try {
+      rows = Array.from({ length: 50 }, (_, i) => relayMatchListRow({ matchId: `m${i}`, match: { status: 'live', scheduledAt } }))
+    } finally {
+      Date.prototype.toLocaleDateString = toLocaleDateString
+      Date.prototype.toLocaleTimeString = toLocaleTimeString
+    }
+    assert.deepEqual(calls, { date: 0, time: 0 })
+    for (const row of rows) assert.equal(row.dateTime, expected)
+    assert.equal(relayMatchListRow({ matchId: 'x', match: {} }).dateTime, 'TBD')
+    assert.equal(relayMatchListRow({ matchId: 'x', match: { scheduledAt: 'not a date' } }).dateTime, 'TBD')
+  })
+
   it('isPublicIp: only routable internet addresses', () => {
     for (const ip of ['203.0.113.9', '8.8.8.8', '::ffff:8.8.8.8', '2001:db8::1', '172.32.0.1', '100.128.0.1']) assert.equal(isPublicIp(ip), true, ip)
     for (const ip of ['127.0.0.1', '::1', '10.0.0.5', '172.18.0.5', '192.168.1.20', '169.254.1.1', '100.100.1.1', 'fd00::1', 'fe80::1', '::ffff:10.0.0.1', '', null, 'unknown', 'x.y']) assert.equal(isPublicIp(ip), false, String(ip))

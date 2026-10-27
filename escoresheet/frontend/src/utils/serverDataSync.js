@@ -89,7 +89,9 @@ async function renewMatchToken(matchId, row) {
   const last = tokenRenewedAt.get(key)
   if (last !== undefined && Date.now() - last < TOKEN_RENEW_MS) return false
   tokenRenewedAt.set(key, Date.now())
-  const r = await validatePinSupabase(a.pin, a.type)
+  // Checked against this match only: its own brute-force scope on the
+  // backend, apart from the hall's typos for other matches (2026-10-26)
+  const r = await validatePinSupabase(a.pin, a.type, { matchExternalId: key })
   return !!(r?.success && r.token && String(r.match?.id) === key)
 }
 
@@ -338,8 +340,18 @@ export function newerLiveState(current, incoming) {
  */
 export function liveClockOffset(match) {
   const v = Number(match?.liveClockOffsetMs)
-  return Number.isFinite(v) && v > 0 ? v : 0
+  return Number.isFinite(v) && v > 0 ? Math.min(v, MAX_LIVE_CLOCK_OFFSET_MS) : 0
 }
+
+/**
+ * The largest live-state clock offset a device takes on (10 min). The clocks
+ * of two devices in a hall differ by seconds when they keep network time and
+ * by minutes when one has none for a while; a clock further off is wrong (a
+ * laptop set to the wrong time zone is a whole hour off). Followed, it put
+ * every live state of the rest of the match, and the time-out and break
+ * starts the website and Point Hub count from, that far in the future.
+ */
+export const MAX_LIVE_CLOCK_OFFSET_MS = 10 * 60 * 1000
 
 /** Now on the live-state clock of `match` (ms): see liveClockOffset. */
 export function liveStateNow(match, now = Date.now()) {
@@ -350,11 +362,11 @@ export function liveStateNow(match, now = Date.now()) {
  * The live-state clock offset of a device that continues a match whose last
  * state in the cloud is `cloudLiveState`: what makes its first state newer
  * than that one. 0 when this device's clock is ahead already or the state
- * names no time.
+ * names no time; at most MAX_LIVE_CLOCK_OFFSET_MS.
  */
 export function liveClockOffsetAfter(cloudLiveState, now = Date.now()) {
   const last = liveStateTime(cloudLiveState)
-  return Number.isNaN(last) ? 0 : Math.max(0, last - now + 1)
+  return Number.isNaN(last) ? 0 : Math.min(MAX_LIVE_CLOCK_OFFSET_MS, Math.max(0, last - now + 1))
 }
 
 /**
@@ -968,6 +980,20 @@ export function subscribeMessage(matchId) {
 }
 
 /**
+ * Delay before a tablet's reconnect attempt `attempt` (1 = first after a
+ * drop): 3 s more per attempt up to 10 s, each spread over its second half
+ * (1.5-3 s, 3-6 s, ...). After a backend restart every referee and bench
+ * tablet lost its socket at the same instant and reconnected at the same
+ * instant (national peak load test 2026-10-26). Never later than before.
+ * @param {number} attempt
+ * @param {() => number} [random] jitter source in [0, 1) (tests)
+ */
+export function viewerReconnectDelay(attempt, random = Math.random) {
+  const step = Math.min(3000 * Math.max(1, Number(attempt) || 1), 10000)
+  return Math.round(step * (0.5 + 0.5 * (typeof random === 'function' ? random() : Math.random())))
+}
+
+/**
  * Subscribe to match data updates via WebSocket
  */
 export function subscribeToMatchData(matchId, onUpdate) {
@@ -993,8 +1019,6 @@ export function subscribeToMatchData(matchId, onUpdate) {
 
   // Add this subscriber
   connection.subscribers.add(onUpdate)
-
-  const maxReconnectDelay = 10000 // Max 10 seconds
 
   // Drop a socket that stopped answering and connect a new one right away.
   const replaceDeadSocket = () => {
@@ -1258,7 +1282,7 @@ export function subscribeToMatchData(matchId, onUpdate) {
 
         // Exponential backoff for reconnection
         connection.reconnectAttempts++
-        const delay = Math.min(3000 * connection.reconnectAttempts, maxReconnectDelay)
+        const delay = viewerReconnectDelay(connection.reconnectAttempts)
         console.log(`[ServerDataSync] WebSocket disconnected, reconnecting in ${delay / 1000} seconds... (attempt ${connection.reconnectAttempts})`)
         connection.reconnectTimeout = setTimeout(connect, delay)
       }
@@ -1266,7 +1290,7 @@ export function subscribeToMatchData(matchId, onUpdate) {
       console.error('[ServerDataSync] Connection error:', err)
       // Exponential backoff for reconnection
       connection.reconnectAttempts++
-      const delay = Math.min(3000 * connection.reconnectAttempts, maxReconnectDelay)
+      const delay = viewerReconnectDelay(connection.reconnectAttempts)
       connection.reconnectTimeout = setTimeout(connect, delay)
     }
   }
@@ -1567,7 +1591,10 @@ export async function listAvailableMatchesForBenchSupabase({ now = Date.now() } 
  * re-checking its stored PIN after a reload, whose check the backend then
  * counts apart from other tablets' typos behind the same address.
  * A refusal without comparing (too many wrong PINs from this address) comes
- * back with rateLimited: true, never as a wrong PIN.
+ * back with rateLimited: true, never as a wrong PIN. A failed check says what
+ * the backend answered (status) or, when it did not answer at all (network
+ * error, timed out), unreachable: true: a tablet re-checking its stored PIN
+ * keeps it when nothing was compared.
  */
 export async function validatePinSupabase(pin, type = 'referee', { timeoutMs = 3000, matchExternalId } = {}) {
   // Bounded: on a venue network that drops packets to the internet this check
@@ -1598,22 +1625,22 @@ export async function validatePinSupabase(pin, type = 'referee', { timeoutMs = 3
     try {
       result = await response.json()
     } catch {
-      return { success: false, error: 'Validation failed', ...(response.status === 429 ? { rateLimited: true } : {}) }
+      return { success: false, error: 'Validation failed', status: response.status, ...(response.status === 429 ? { rateLimited: true } : {}) }
     }
 
     if (response.status === 429) {
-      return { success: false, rateLimited: true, error: result?.error || 'Too many attempts' }
+      return { success: false, rateLimited: true, error: result?.error || 'Too many attempts', status: 429 }
     }
     if (!response.ok || !result?.success) {
-      return { success: false, error: result?.error || 'Invalid PIN code' }
+      return { success: false, error: result?.error || 'Invalid PIN code', status: response.status }
     }
 
     if (result.match?.id != null) rememberMatchAccess(result.match.id, { pin: pinStr, token: result.token || null, type })
     return { success: true, match: result.match, token: result.token || null }
   } catch (error) {
-    if (error?.name === 'AbortError') return { success: false, error: 'Server PIN check timed out' }
+    if (error?.name === 'AbortError') return { success: false, error: 'Server PIN check timed out', unreachable: true }
     console.error('[validatePinSupabase] Exception:', error)
-    return { success: false, error: error.message }
+    return { success: false, error: error.message, unreachable: true }
   } finally {
     if (timer) clearTimeout(timer)
   }
@@ -1843,6 +1870,9 @@ export function relayMatchPayload(match, lastPinSignature = null, { now = Date.n
   // (on the match's live-state clock, as the live states' updated_at)
   out._syncedAt = (Number.isFinite(mark?.at) ? mark.at : now) + liveClockOffset(match)
   delete out.liveClockOffsetMs
+  // (sent as device.claim and device.supersedes, matchHandover relaySyncDevice)
+  delete out.scorerClaim
+  delete out.supersededClaims
   if (mark && Number.isFinite(mark.seq) && typeof mark.session === 'string' && mark.session) {
     out._syncedSeq = mark.seq
     out._syncSession = mark.session

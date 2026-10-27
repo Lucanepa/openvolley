@@ -81,6 +81,16 @@ import { SCORER_CLAIM_ACTION, SCORER_MOVED, MATCH_CLOSED, SERVER_CLOSED_BY, isSc
 // 'activity': the activity log upload (utils/activity/upload), needs no match row
 const RESOURCE_ORDER = ['match', 'set', 'event', USER_MATCH_RESOURCE, SCORESHEET_UPLOAD_RESOURCE, 'activity']
 
+// The queue's two lanes. The scoresheet files (the approval's PDF and final
+// JSON, up to a megabyte or more) go in their own (runUploadLane), beside the
+// score: in the pass, on an uplink too slow for the storage timeout (about
+// 90 s for 1 MB), every pass spent that long on the upload and then stopped
+// as offline, and a device already scoring the next match had its rallies
+// and set ends wait each time (44 s in one stress run, "saved on this
+// device" at set ends; 2026-10-26).
+const UPLOAD_LANE = [SCORESHEET_UPLOAD_RESOURCE]
+const SCORE_LANE = RESOURCE_ORDER.filter(r => !UPLOAD_LANE.includes(r))
+
 // Max retries for jobs waiting on dependencies (e.g., event waiting for match to sync)
 const MAX_DEPENDENCY_RETRIES = 10
 
@@ -1180,7 +1190,7 @@ async function processJobInner(job, ctx) {
     // events and live state). Nothing half-restored is ever left behind; a
     // failure rolls back and the job is retried (local IndexedDB stays the source).
     if (job.resource === 'match' && job.action === 'restore') {
-      const { match, sets, events, liveState } = job.payload
+      const { match, sets, events, liveState, rekey } = job.payload
 
       // SAFETY CHECK: external_id is required - identifies THIS specific match
       if (!match?.external_id) {
@@ -1201,7 +1211,10 @@ async function processJobInner(job, ctx) {
           liveState: liveState || null,
           // When the restore was made (db/019): another device that took the
           // match over after that keeps it (409 OV_SCORER_MOVED)
-          queuedAt: job.ts
+          queuedAt: job.ts,
+          // A hand-over's re-key (importMatchFromSupabase): only the rows it
+          // names are renamed, nothing is deleted
+          ...(rekey ? { rekey } : {})
         })
         if (error) {
           safeLog.error('[SyncQueue] Restore failed:', error.code || error.status, error.message, error.details || '')
@@ -1520,15 +1533,17 @@ function reportJobOutcome(job, result, jobError) {
 }
 
 /**
- * One pass over the queued jobs, in dependency order.
+ * One pass over the queued jobs, in dependency order. `resources`: the lane
+ * (SCORE_LANE by default; the scoresheet files go in runUploadLane).
  * @returns {Promise<{ processed: number, sent: number, hasError: boolean, hasFailed: boolean, hasRetry: boolean, stopped: boolean, authRequired: boolean }>}
  */
-export async function runQueuePass() {
-  const queued = await db.sync_queue.where('status').equals('queued').toArray()
+export async function runQueuePass({ resources = SCORE_LANE } = {}) {
+  const queued = (await db.sync_queue.where('status').equals('queued').toArray()).filter(j => resources.includes(j.resource))
   const outcome = { processed: queued.length, sent: 0, hasError: false, hasFailed: false, hasRetry: false, stopped: false, authRequired: false }
   if (queued.length === 0) return outcome
-  // (marks left by an earlier pass)
-  setAsideJobIds.clear()
+  // (marks left by an earlier pass; only the score lane sets jobs aside, and
+  // the upload lane runs beside it)
+  if (resources !== UPLOAD_LANE) setAsideJobIds.clear()
 
   safeLog.log(`[SyncQueue] Processing ${queued.length} queued items`)
 
@@ -1556,6 +1571,7 @@ export async function runQueuePass() {
 
   // Process in dependency order
   for (const resource of RESOURCE_ORDER) {
+    if (!resources.includes(resource)) continue
     // A scoring-device claim goes first among the match jobs: the writes
     // queued before "Take back scoring here" would be refused without it
     const claimFirst = (j) => (j.action === SCORER_CLAIM_ACTION ? 0 : 1)
@@ -1688,6 +1704,42 @@ export async function runQueuePass() {
   }
 
   return outcome
+}
+
+// The upload lane (UPLOAD_LANE) runs one pass at a time, beside the score's
+let uploadLaneBusy = false
+
+/**
+ * One pass over the queued scoresheet files, beside the score's pass (flush
+ * starts it and does not wait): a slow upload no longer holds back the
+ * rallies of the next match. Same bookkeeping as the score's pass: a network
+ * stop leaves the file queued (then backs off), a refusal parks it, and the
+ * errored ones come back with retryErrorsInternal until delivered. Its own
+ * stops never mark the score's connection as down.
+ * @returns {Promise<object|null>} the pass outcome, null while one runs
+ */
+export async function runUploadLane() {
+  if (uploadLaneBusy) return null
+  uploadLaneBusy = true
+  try {
+    return await runQueuePass({ resources: UPLOAD_LANE })
+  } finally {
+    uploadLaneBusy = false
+  }
+}
+
+/**
+ * A scoresheet file is still waiting in its lane (queued, or being sent).
+ * The score's pass alone being through is no "synced" then: the badge said
+ * synced while the approval's PDF / JSON was still uploading, and a scorer
+ * could close the device thinking the cloud had it (2026-10-27 review).
+ */
+async function uploadLaneHasWork() {
+  try {
+    return (await db.sync_queue.where('status').anyOf('queued', 'sending').and(j => UPLOAD_LANE.includes(j.resource)).count()) > 0
+  } catch {
+    return false
+  }
 }
 
 // One flusher per page. App, Scoreboard and Referee each mount this hook; a
@@ -1908,6 +1960,8 @@ export function useSyncQueue() {
         return
       }
       clearAuthBlock()
+      // The scoresheet files, beside the score (not waited for)
+      runUploadLane().catch((err) => safeLog.warn('[SyncQueue] Scoresheet upload lane failed:', err?.message))
 
       if (outcome.sent > 0 && !outcome.stopped && typeof window !== 'undefined') {
         // Consumers that push state outside the queue (match_live_state) catch up
@@ -1915,7 +1969,7 @@ export function useSyncQueue() {
       }
 
       if (outcome.processed === 0) {
-        setSyncStatus('synced')
+        setSyncStatus(await uploadLaneHasWork() ? 'syncing' : 'synced')
         return
       }
 
@@ -1929,7 +1983,7 @@ export function useSyncQueue() {
         // Some items need retry - will be processed next cycle
         setSyncStatus('syncing')
       } else {
-        setSyncStatus('synced')
+        setSyncStatus(await uploadLaneHasWork() ? 'syncing' : 'synced')
       }
     } catch (err) {
       safeLog.error('[SyncQueue] Flush error:', err)

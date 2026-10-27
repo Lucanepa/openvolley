@@ -65,6 +65,7 @@ beforeEach(async () => {
   cleanup()
   delete navigator.locks
   localStorage.clear()
+  sessionStorage.clear()
   await Promise.all(db.tables.map(t => t.clear()))
 })
 afterAll(() => {
@@ -86,9 +87,10 @@ const ofType = async (type) => (await events()).filter(e => e.type === type)
 const button = (text, root = document) => [...root.querySelectorAll('button')].find(b => b.textContent.trim() === text && !b.disabled)
 
 // The browser's lock manager (navigator.locks), exclusive locks only: what
-// the screen uses of it
+// the screen uses of it. A steal takes the lock from its holder at once
+// (whose request then rejects with AbortError), ahead of the queue.
 function fakeLockManager() {
-  const held = new Set()
+  const holders = new Map()
   const waiting = new Map()
   const grantNext = (name) => {
     const queue = waiting.get(name) || []
@@ -100,13 +102,21 @@ function fakeLockManager() {
       if (typeof options === 'function') { callback = options; options = {} }
       return new Promise((resolve, reject) => {
         const grant = () => {
-          held.add(name)
+          const me = { reject }
+          holders.set(name, me)
           Promise.resolve()
             .then(() => callback({ name, mode: 'exclusive' }))
             .then(resolve, reject)
-            .finally(() => { held.delete(name); grantNext(name) })
+            .finally(() => { if (holders.get(name) === me) { holders.delete(name); grantNext(name) } })
         }
-        if (!held.has(name)) { grant(); return }
+        if (options.steal) {
+          const holder = holders.get(name)
+          holders.delete(name)
+          if (holder) holder.reject(new DOMException('stolen', 'AbortError'))
+          grant()
+          return
+        }
+        if (!holders.has(name)) { grant(); return }
         if (options.ifAvailable) { Promise.resolve(callback(null)).then(resolve, reject); return }
         const queue = waiting.get(name) || []
         waiting.set(name, queue)
@@ -176,6 +186,66 @@ describe('Scoreboard: one scoring tab per match', () => {
     a.unmount()
     await waitFor(() => expect(scoring(b)).toBe(true), { timeout: 10000 })
     expect(blocked(b)).toBe(false)
+  }, 60000)
+
+  // review of #37: tab A scored, a forgotten tab B waited behind it; A
+  // reloaded, the browser freed A's lock, B took it and scored, and A came
+  // back as "Scoresheet already open", whose "Close this tab" did nothing
+  // (browsers ignore window.close() for a tab the user opened)
+  it('Web Locks: the scoring tab reloaded takes scoring back from a tab waiting behind it', async () => {
+    setViewport(1280, 800)
+    Object.defineProperty(navigator, 'locks', { value: fakeLockManager(), configurable: true })
+    const matchId = await setUpMatch()
+    const a = mount(matchId)
+    await waitFor(() => expect(scoring(a)).toBe(true), { timeout: 10000 })
+    const b = mount(matchId)
+    await waitFor(() => expect(blocked(b)).toBe(true), { timeout: 5000 })
+
+    // A reloads: its page goes (pagehide), the browser frees its lock
+    window.dispatchEvent(new Event('pagehide'))
+    a.unmount()
+    const reloaded = mount(matchId)
+    await waitFor(() => expect(scoring(reloaded)).toBe(true), { timeout: 10000 })
+    await waitFor(() => expect(blocked(b)).toBe(true), { timeout: 5000 })
+    await wait(1500)
+    expect(scoring(reloaded)).toBe(true)
+    expect(blocked(b)).toBe(true)
+  }, 60000)
+
+  it('Web Locks: "Score in this tab" moves scoring to the blocked tab', async () => {
+    setViewport(1280, 800)
+    Object.defineProperty(navigator, 'locks', { value: fakeLockManager(), configurable: true })
+    const matchId = await setUpMatch()
+    const a = mount(matchId)
+    await waitFor(() => expect(scoring(a)).toBe(true), { timeout: 10000 })
+    const b = mount(matchId)
+    await waitFor(() => expect(blocked(b)).toBe(true), { timeout: 5000 })
+
+    fireEvent.click(button('Score in this tab', b.container))
+    await waitFor(() => expect(scoring(b)).toBe(true), { timeout: 10000 })
+    await waitFor(() => expect(blocked(a)).toBe(true), { timeout: 5000 })
+
+    // and A, closed now, leaves B scoring
+    a.unmount()
+    await wait(500)
+    expect(scoring(b)).toBe(true)
+  }, 60000)
+
+  it('without Web Locks: "Score in this tab" moves scoring to the blocked tab', async () => {
+    setViewport(1280, 800)
+    const matchId = await setUpMatch()
+    const a = mount(matchId)
+    await waitFor(() => expect(scoring(a)).toBe(true), { timeout: 10000 })
+    await wait(500)
+    const b = mount(matchId)
+    await waitFor(() => expect(blocked(b)).toBe(true), { timeout: 5000 })
+
+    fireEvent.click(button('Score in this tab', b.container))
+    await waitFor(() => expect(scoring(b)).toBe(true), { timeout: 10000 })
+    // the other tab learns it from the storage mark (another tab's event)
+    window.dispatchEvent(new StorageEvent('storage', { key: `scoresheet-active-${matchId}`, newValue: localStorage.getItem(`scoresheet-active-${matchId}`) }))
+    await waitFor(() => expect(blocked(a)).toBe(true), { timeout: 5000 })
+    expect(scoring(b)).toBe(true)
   }, 60000)
 
   it('without Web Locks: after a reload a second tab is blocked', async () => {

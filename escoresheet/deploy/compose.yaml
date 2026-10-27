@@ -164,6 +164,13 @@ services:
       # Phase 7 (backend README "Security model"): PINs at rest and match tokens
       OV_PIN_SECRET: ${OV_PIN_SECRET:-}
       OV_MATCH_TOKEN_SECRET: ${OV_MATCH_TOKEN_SECRET:-}
+      # V8's heap limit, below mem_limit (change them together). Node 22 sizes
+      # the heap from the cgroup (259 MB at 256m), so V8 never collected hard
+      # before the kernel OOM-killed the container: the national peak load
+      # test (2026-10-26) crash-looped on exit 137 while part of the heap was
+      # garbage. With 160 MB of old space V8 collects first; buffers, sockets
+      # and code keep the rest of the 256 MB.
+      NODE_OPTIONS: --max-old-space-size=160
     volumes:
       - type: bind
         source: ${OV_STORAGE_HOST_DIR:?set OV_STORAGE_HOST_DIR in .env}

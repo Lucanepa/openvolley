@@ -579,10 +579,16 @@ describe('pgQuery on Postgres', { skip: SKIP_PG }, () => {
       row = (await q('matches', 'select', { columns: 'match_info, set_results, sanctions', filters: [eq('id', m.id)], single: true })).body.data
       assert.deepEqual(row, { match_info: { c: 3 }, set_results: { x: 1 }, sanctions: null })
 
-      // The bench PIN still validates the way server.js validate-connection-pin reads it.
-      const pins = await q('matches', 'select', { columns: 'id, external_id, connections, connection_pins', filters: [{ type: 'in', column: 'status', value: ['setup', 'live'] }, eq('sport_type', 'indoor')] }, { internal: true })
-      const hit = pins.body.data.find(x => x.connection_pins?.bench_home === '222222' && x.connections?.home_bench_enabled)
-      assert.equal(hit?.external_id, m.external_id)
+      // The bench PIN still validates the way validate-connection-pin reads it
+      // (lib/matchAccess.js findMatchByConnectionPin): an exact filter on the
+      // secret column's key, internal only.
+      const byPin = (key, value) => q('matches', 'select', { columns: 'id, external_id, connections, connection_pins', filters: [{ type: 'in', column: 'status', value: ['setup', 'live'] }, eq('sport_type', 'indoor'), { type: 'in', column: `connection_pins->>${key}`, value }] }, { internal: true })
+      const pins = await byPin('bench_home', ['222222', 'h1:not-this-one'])
+      assert.deepEqual(pins.body.data.map(x => x.external_id), [m.external_id])
+      assert.equal(pins.body.data[0].connections.home_bench_enabled, true)
+      assert.deepEqual((await byPin('bench_home', ['333333'])).body.data, [])
+      // never through the client's /api/db
+      assert.equal((await q('matches', 'select', { columns: 'id', filters: [{ type: 'in', column: 'connection_pins->>bench_home', value: ['222222'] }] })).body.error.code, 'OV_SECRET_FILTER')
 
       // Concurrent partial updates of different keys both survive.
       await Promise.all([

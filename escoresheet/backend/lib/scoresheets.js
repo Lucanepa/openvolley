@@ -190,6 +190,12 @@ export function createScoresheets ({ pool, storage, accounts, logger = console, 
 
   const ROW_COLUMNS = `m.id, m.external_id, m.game_n, m.status, m.scheduled_at, m.closed_at, m.updated_at, m.created_at,
                 (m.sport_type IS NOT DISTINCT FROM 'beach') AS is_beach`
+  // The team names by the match's sport, as lib/approvals.js reads them: an
+  // indoor match's home_team / away_team, a beach match's team1_data /
+  // team2_data (OpenBeach leaves home_team / away_team empty).
+  const nameSql = (side) => `CASE WHEN m.sport_type IS NOT DISTINCT FROM 'beach' THEN m.${side === 'home' ? 'team1_data' : 'team2_data'}->>'name' ` +
+    `ELSE m.${side === 'home' ? 'home_team' : 'away_team'}->>'name' END`
+  const NAME_COLUMNS = `${nameSql('home')} AS home_name, ${nameSql('away')} AS away_name`
 
   /** GET /api/scoresheets?app=indoor|beach&state=closed|open|all&q=&limit= */
   async function list ({ app, state = 'all', q = '', limit } = {}) {
@@ -212,11 +218,11 @@ export function createScoresheets ({ pool, storage, accounts, logger = console, 
       if (/^\d{1,9}$/.test(term)) where.push(`m.game_n = ${p(Number(term))}`)
       else if (term) {
         const pat = p('%' + term.replace(/[\\%_]/g, (c) => '\\' + c) + '%')
-        where.push(`((m.home_team->>'name') ILIKE ${pat} OR (m.away_team->>'name') ILIKE ${pat})`)
+        where.push(`((${nameSql('home')}) ILIKE ${pat} OR (${nameSql('away')}) ILIKE ${pat})`)
       }
       const { rows } = await pool.query(
         `SELECT ${ROW_COLUMNS},
-                m.home_team->>'name' AS home_name, m.away_team->>'name' AS away_name, m.match_info->>'league' AS league,
+                ${NAME_COLUMNS}, m.match_info->>'league' AS league,
                 nullif(trim(coalesce(p.first_name, '') || ' ' || coalesce(p.last_name, '')), '') AS scorer_name
            FROM public.matches m
            LEFT JOIN public.profiles p ON p.user_id = m.created_by
@@ -271,8 +277,7 @@ export function createScoresheets ({ pool, storage, accounts, logger = console, 
     let m
     try {
       const { rows: [r] } = await pool.query(
-        `SELECT ${ROW_COLUMNS}, m.test, m.match_info->>'league' AS league,
-                m.home_team->>'name' AS home_name, m.away_team->>'name' AS away_name
+        `SELECT ${ROW_COLUMNS}, m.test, m.match_info->>'league' AS league, ${NAME_COLUMNS}
            FROM public.matches m WHERE m.id = $1`, [matchId])
       if (!r || r.test === true) return notFound()
       m = { ...r, sport: sportOut(r.is_beach) }

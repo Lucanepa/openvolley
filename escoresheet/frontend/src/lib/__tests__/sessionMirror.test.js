@@ -104,3 +104,30 @@ describe('session copy in IndexedDB', () => {
     expect(data.session?.access_token).toBe('tok-2')
   })
 })
+
+// review of #37: Options > "Clear all (includes settings)" cleared localStorage
+// only, and the reload brought the session back from its copy: on a shared club
+// laptop the previous scorer stayed signed in
+describe('"Clear all (includes settings)"', () => {
+  it('signs out for good: the reload does not bring the session back from its copy', async () => {
+    await signIn(await pageLoad())
+    const { clearCachesAndReload } = await import('../../hooks/useServiceWorker')
+    const originalLocation = window.location
+    Object.defineProperty(window, 'location', { value: { href: 'https://host/', replace: vi.fn() }, configurable: true, writable: true })
+    globalThis.caches = { keys: vi.fn().mockResolvedValue([]), delete: vi.fn() }
+    globalThis.fetch = vi.fn(async () => ({ ok: true }))
+    try {
+      expect(await clearCachesAndReload({ includeLocalStorage: true })).toBe(true)
+    } finally {
+      Object.defineProperty(window, 'location', { value: originalLocation, configurable: true, writable: true })
+      delete globalThis.caches
+    }
+    expect(localStorage.getItem('api_auth_token')).toBeNull()
+
+    const page = await pageLoad()
+    globalThis.fetch = vi.fn(async () => jsonResponse({ data: { user: session.user }, error: null }))
+    const { data } = await page.apiAuth.getSession()
+    expect(data.session).toBeNull()
+    expect(await page.readSessionMirror()).toBeNull()
+  })
+})

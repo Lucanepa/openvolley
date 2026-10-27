@@ -15,6 +15,7 @@ import {
   setRelayDevice,
   subscribeMessage,
   subscribeToMatchData,
+  viewerReconnectDelay,
   rememberMatchAccess,
   forgetMatchAccess,
   matchAccessFor,
@@ -24,6 +25,7 @@ import {
   getMatchData,
   uploadRosterToCloud,
   liveClockOffsetAfter,
+  MAX_LIVE_CLOCK_OFFSET_MS,
   liveStateNow,
   LIVE_STATE_HOLD_MS
 } from '../serverDataSync'
@@ -45,6 +47,12 @@ describe('relay key and payload (scorer)', () => {
 
   it('stamps the sync with the scorer\'s clock (tablets compare live-state pushes with it)', () => {
     expect(relayMatchPayload({ id: 1, seed_key: SEED }, null, { now: 1234 }).match._syncedAt).toBe(1234)
+  })
+
+  // the claim goes out as device.claim to the relay alone, never to the room's tablets
+  it('leaves the device\'s venue claim out of the match the relay hands on', () => {
+    expect(relayMatchPayload({ id: 1, seed_key: SEED, scorerClaim: 'c-1' }, null).match).not.toHaveProperty('scorerClaim')
+    expect(relayMatchPayload({ id: 1, seed_key: SEED, supersededClaims: ['c-0'] }, null).match).not.toHaveProperty('supersededClaims')
   })
 
   it('stamps the sync with the live-state order marked before the reads', () => {
@@ -361,6 +369,32 @@ describe('relay subscription (tablets)', () => {
     unsubscribe()
   })
 
+  // useRealtimeConnection tells a new bundle from a re-delivery by its events
+  // array (RELAY_BUNDLE_COVERS_MS): only a new bundle spares the bench a read
+  it('a live state re-delivers the last bundle with the same events array; a new bundle brings a new one', () => {
+    const updates = []
+    const unsubscribe = subscribeToMatchData('match_redeliver', (p) => updates.push(p))
+    const ws = FakeWebSocket.instances.at(-1)
+    ws.open()
+    const at = (ms) => new Date(Date.UTC(2026, 9, 5, 18, 6, 0) + ms).toISOString()
+    const bundle = (ms, events) => ({
+      type: 'match-data-update', matchId: 'match_redeliver', access: 'full',
+      match: { id: 1, coinTossTeamA: 'home', _syncedAt: Date.parse(at(ms)) },
+      sets: [{ index: 1, homePoints: events.length, awayPoints: 0, finished: false }], events
+    })
+    ws.receive(bundle(0, [{ seq: 1 }]))
+    const first = updates.at(-1)
+    ws.receive({ type: 'live-state-update', matchId: 'match_redeliver', liveState: { current_set: 1, points_a: 2, points_b: 0, updated_at: at(800) } })
+    vi.advanceTimersByTime(LIVE_STATE_HOLD_MS)
+    ws.receive({ ...bundle(0, []), access: 'summary', liveState: { current_set: 1, points_a: 3, points_b: 0, updated_at: at(900) } })
+    expect(updates).toHaveLength(3)
+    expect(updates[1].events).toBe(first.events)
+    expect(updates[2].events).toBe(first.events)
+    ws.receive(bundle(1000, [{ seq: 1 }, { seq: 2 }]))
+    expect(updates.at(-1).events).not.toBe(first.events)
+    unsubscribe()
+  })
+
   // A side-out on the referee: the new score first, the new server and the
   // rotation one sync later (~200 ms on the desktop app) looked like the ball
   // and the teams moving on their own. The push waits for the sync.
@@ -473,7 +507,9 @@ describe('match access after the PIN step', () => {
     })
     await getMatchData(SEED)
     const check = calls.find((c) => c.url.includes('validate-connection-pin'))
-    expect(JSON.parse(check.init.body)).toEqual({ pin: '314159', type: 'bench_home' })
+    // against this match only: its own scope of the backend's PIN budget,
+    // apart from the hall's typos for other matches (2026-10-26)
+    expect(JSON.parse(check.init.body)).toEqual({ pin: '314159', type: 'bench_home', matchExternalId: SEED })
     expect(matchAccessFor(SEED).token).toBe('v1.new.sig')
     expect(dbReads).toBe(2)
     // Within the minute: no second PIN check
@@ -625,6 +661,18 @@ describe('hand-over to a device whose clock is behind', () => {
     expect(liveStateNow({ id: 1 }, B_NOW)).toBe(B_NOW)
   })
 
+  // 2026-10-26: following a clock an hour ahead (a laptop in the wrong time
+  // zone) stamped every state of the rest of the match, and the time-out and
+  // break starts the website and Point Hub count from, an hour ahead
+  it('the offset a device takes on is at most 10 minutes, a stored one too', () => {
+    const hourAhead = { ...laptopLast, updated_at: iso(B_NOW + 3600000) }
+    expect(liveClockOffsetAfter(hourAhead, B_NOW)).toBe(MAX_LIVE_CLOCK_OFFSET_MS)
+    expect(MAX_LIVE_CLOCK_OFFSET_MS).toBe(600000)
+    expect(liveStateNow({ id: 1, liveClockOffsetMs: 3600001 }, B_NOW)).toBe(B_NOW + MAX_LIVE_CLOCK_OFFSET_MS)
+    // a realistic skew is followed whole
+    expect(liveClockOffsetAfter(laptopLast, B_NOW)).toBe(180001)
+  })
+
   it('the referee and benches follow the new device at its first bundle and live state', () => {
     const tabletMatch = { id: 1, seed_key: SEED, coinTossTeamA: 'home', liveClockOffsetMs: liveClockOffsetAfter(laptopLast, B_NOW) }
     const tracker = createLiveStateTracker()
@@ -738,5 +786,18 @@ describe('desktop app: cloud endpoints in the cloud, relay endpoints on the loca
     const relay = vi.fn(async () => json({ connections: [] }))
     await fetchRelayConnections('match_desktop_case', { fetchImpl: relay })
     expect(relay.mock.calls[0][0]).toBe('http://localhost:5173/api/server/connections?matchId=match_desktop_case')
+  })
+})
+
+// National peak load test 2026-10-26: after a backend restart every referee
+// and bench tablet reconnected after exactly 3 s, all at once.
+describe('relay subscription: reconnect backoff (tablets)', () => {
+  it('3 s more per attempt up to 10 s, spread over the second half of each step', () => {
+    expect([1, 2, 3, 4, 9].map((n) => viewerReconnectDelay(n, () => 1))).toEqual([3000, 6000, 9000, 10000, 10000])
+    expect([1, 2, 4].map((n) => viewerReconnectDelay(n, () => 0))).toEqual([1500, 3000, 5000])
+    const many = Array.from({ length: 200 }, () => viewerReconnectDelay(1))
+    expect(Math.min(...many)).toBeGreaterThanOrEqual(1500)
+    expect(Math.max(...many)).toBeLessThanOrEqual(3000)
+    expect(new Set(many).size).toBeGreaterThan(20)
   })
 })

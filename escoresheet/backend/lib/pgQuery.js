@@ -595,7 +595,14 @@ export function createPgQuery (options = {}) {
     const inner = `SELECT ${selectParts.join(', ')} FROM ${from}${where.sql}${order} LIMIT ${limit}`
     const wantData = !params.head
     const wantCount = !!params.count
-    const sql = `SELECT ${wantData ? `(SELECT coalesce(json_agg(q), '[]'::json) FROM (${inner}) q)` : 'NULL::json'} AS data, ` +
+    // head: no rows, but the select list's bind parameters (__owned's user,
+    // an embed's keys) are still sent and must appear in the statement, else
+    // Postgres refuses it (08P01, or an untyped parameter). LIMIT 0 never
+    // runs the inner query; it only types its parameters.
+    const dataSql = wantData
+      ? `(SELECT coalesce(json_agg(q), '[]'::json) FROM (${inner}) q)`
+      : `(SELECT NULL::json FROM (${inner}) q LIMIT 0)`
+    const sql = `SELECT ${dataSql} AS data, ` +
       `${wantCount ? `(SELECT count(*) FROM ${qTable(t.name)} AS t${where.sql})` : 'NULL::bigint'} AS count`
     const res = await (opts.client || pool).query(sql, ctx.values)
     const rows = res.rows[0].data

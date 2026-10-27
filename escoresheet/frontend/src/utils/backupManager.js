@@ -18,11 +18,11 @@ import { buildConnectionPins } from './connectionPins'
 import { missingConnectionPins } from './remoteRoster'
 import { generateSecurePin } from './stringUtils'
 import { isScorerEntry } from './appEntry'
-import { queueScorerClaim, retireSupersededMatches } from './matchHandover'
+import { queueScorerClaim, retireSupersededMatches, supersededClaimsOf } from './matchHandover'
 import { isKnownClosedOnServer, CLOSING_STATUSES } from './matchReopen'
 import { postMatchSignaturesFromServer } from '../domain/signatureEdits'
 import { signatureSourcesFromApproval } from '../domain/phoneSignature'
-import { liveClockOffsetAfter } from './serverDataSync'
+import { liveClockOffset, liveClockOffsetAfter, liveStateNow } from './serverDataSync'
 
 // IndexedDB key for storing file system directory handle
 const BACKUP_DB_NAME = 'escoresheet_backup'
@@ -365,6 +365,37 @@ export async function serverClosedState(externalId, { read = readServerStatus, t
   }
 }
 
+// The match's live state in the cloud (its updated_at): matches.id by the
+// key, then match_live_state by it (public columns, no session needed)
+async function readServerLiveState(key) {
+  const m = await apiFrom('matches').select('id').eq('external_id', key).maybeSingle()
+  if (m?.error || !m?.data?.id) return { data: null, error: m?.error || null }
+  return apiFrom('match_live_state').select('updated_at').eq('match_id', m.data.id).maybeSingle()
+}
+
+/**
+ * The cloud's live state of a match (`{ updated_at }`), or null: no key,
+ * offline, none there, the read failed or did not answer within timeoutMs.
+ * A backup restored on a device continues the match there: its live states
+ * must be stamped after this one (serverDataSync.liveClockOffsetAfter).
+ * @returns {Promise<object|null>}
+ */
+export async function serverLiveState(externalId, { read = readServerLiveState, timeoutMs = SERVER_CLOSED_TIMEOUT_MS } = {}) {
+  if (!externalId) return null
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return null
+  let timer
+  try {
+    const timeout = new Promise(resolve => { timer = setTimeout(() => resolve(TIMED_OUT), timeoutMs) })
+    const result = await Promise.race([read(externalId), timeout])
+    if (result === TIMED_OUT || !result || result.error) return null
+    return result.data || null
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /** The error a restore of a match closed on the server is refused with. */
 export function closedOnServerError(externalId, gameN) {
   const err = new Error('This match is closed on the server')
@@ -462,7 +493,7 @@ export function restoreErrorText(err, t) {
  * @param {object} jsonData the backup
  * @param {{checkServer?: (externalId: string) => Promise<boolean|null>}} [options]
  */
-export async function restoreMatchFromJson(jsonData, { checkServer = serverClosedState } = {}) {
+export async function restoreMatchFromJson(jsonData, { checkServer = serverClosedState, cloudLiveState = serverLiveState } = {}) {
   // A whole-database export holds the match it was written for
   jsonData = matchBackupFromDatabaseExport(jsonData) || jsonData
   // Validate schema
@@ -481,10 +512,14 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
 
   // Before anything is deleted, added or queued (test matches never sync)
   const guarded = !!externalId && !match.test
+  // The cloud's last live state, read alongside: this device stamps its own
+  // after it (the previous device's clock may be ahead of this one's)
+  const cloudLive = guarded ? cloudLiveState(externalId).catch(() => null) : Promise.resolve(null)
   if (guarded) {
     const localCopies = await db.matches.filter(m => localMatchKey(m) === externalId).toArray()
     await refuseIfClosedOnServer(externalId, match, localCopies, checkServer)
   }
+  const liveClockOffsetMs = liveClockOffsetAfter(await cloudLive)
 
   let restoredMatchId = null
 
@@ -553,6 +588,18 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
       homeTeamId,
       awayTeamId,
       seed_key: externalId, // Ensure seed_key is set for sync
+      // This device's own live-state clock (serverDataSync.liveClockOffset),
+      // never the one of the device that wrote the backup: its states come
+      // after the cloud's last one. 2026-10-26: a match continued from a
+      // backup row kept the file's offset (or none), and with the previous
+      // device's clock ahead the referee and benches dropped every new state.
+      liveClockOffsetMs,
+      // A claim of its own on the venue relays (made at the next relay sync,
+      // matchHandover scorerClaimOf): never the file's, which may be a claim
+      // another device has taken over since. The file's claims are older
+      // copies from now on: a venue relay refuses them even after a restart
+      scorerClaim: null,
+      supersededClaims: supersededClaimsOf(match),
       restoredAt: new Date().toISOString()
     })
 
@@ -670,7 +717,12 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
         points_b: latestSet?.awayPoints ?? latestSet?.away_points ?? 0,
         sets_won_a: homeSetsWon,
         sets_won_b: awaySetsWon,
-        match_status: match.status || 'live'
+        match_status: match.status || 'live',
+        // On this device's live-state clock, as its next states: stamped by
+        // the server's clock instead (the column default), the restored score
+        // looked newer than this device's next states whenever its clock is
+        // behind the server's, and the realtime hub and the viewers kept it
+        updated_at: new Date(Date.now() + liveClockOffsetMs).toISOString()
       }
 
       // Queue the restore job (filter payload to valid columns only)
@@ -743,6 +795,14 @@ export async function restoreMatchInPlace(matchId, jsonData, { checkServer = ser
       // The backup's team ids are local ids of the device that wrote it
       // (another match's teams here, or none): the open match keeps its own
       ...(currentMatch ? { homeTeamId: currentMatch.homeTeamId, awayTeamId: currentMatch.awayTeamId } : {}),
+      // ... and its own live-state clock (a backup made on another device
+      // carries that one's, serverDataSync.liveClockOffset)
+      liveClockOffsetMs: liveClockOffset(currentMatch),
+      // ... and a new claim on the venue relays: this device continues the
+      // match from the backup (matchHandover scorerClaimOf), whose claims
+      // are older copies from now on (supersededClaimsOf)
+      scorerClaim: null,
+      supersededClaims: supersededClaimsOf(match),
       seed_key: externalId, // Ensure seed_key is set for sync
       restoredAt: new Date().toISOString()
     })
@@ -866,7 +926,10 @@ export async function restoreMatchInPlace(matchId, jsonData, { checkServer = ser
         points_b: latestSet?.awayPoints ?? latestSet?.away_points ?? 0,
         sets_won_a: homeSetsWon,
         sets_won_b: awaySetsWon,
-        match_status: match.status || 'live'
+        match_status: match.status || 'live',
+        // on the match's live-state clock, as the device's next states
+        // (restoreMatchFromJson)
+        updated_at: new Date(liveStateNow(restoredLocal)).toISOString()
       }
 
       // Queue the restore job (filter payload to valid columns only)
@@ -1094,13 +1157,16 @@ function rowLeftIsHome(row) {
  * server (game_pin can no longer be used as a /api/db filter). Returns the
  * match (secrets stripped), its sets (by index), events (by seq) and live state.
  * Uses JSONB columns for team/player data (teams/players tables were dropped)
+ * `claim` (and `externalId`, apiMatchRestoreByPin): this device continues the
+ * match; `scorerClaimed` in the result: the server made it the scoring
+ * device already (importMatchFromSupabase then queues no claim).
  */
-export async function fetchMatchByPin(gamePin, gameN) {
+export async function fetchMatchByPin(gamePin, gameN, { claim = false, externalId = null } = {}) {
   const pin = String(gamePin ?? '').trim()
   const n = parseInt(gameN, 10)
   if (!pin || !Number.isInteger(n)) throw new Error('Game number and game PIN are required')
 
-  const { data, error } = await apiMatchRestoreByPin(n, pin)
+  const { data, error } = await apiMatchRestoreByPin(n, pin, { claim, externalId })
   if (error) {
     if (error.code === 'OV_NOT_FOUND' || error.status === 404) throw new Error('Match not found with this ID and PIN')
     if (error.code === 'OV_TOO_MANY_ATTEMPTS' || error.status === 429) {
@@ -1360,7 +1426,35 @@ export async function fetchMatchByPin(gamePin, gameN) {
     courtSides,
     // The highest set / event ids the match has used on the server (voided
     // events included): the ids the importing device gives out stay above
-    idFloor: data.idFloor || null
+    idFloor: data.idFloor || null,
+    // This device scores the match already (asked with claim, db/019)
+    scorerClaimed: data.scorer?.mine === true
+  }
+}
+
+/**
+ * The restore dialog's Confirm on the match found by game number and PIN:
+ * this device continues it. The match is read again, with the claim: the
+ * server makes the device its scorer first (signed in or not; signed out,
+ * the queued claim never went through and the relay refused the device's
+ * syncs, 2026-10-26), then reads it, so a rally of the previous device is
+ * either in what is imported or refused - not sent between the read and
+ * the claim and then overwritten. The preview was read when the scorer
+ * searched; the match as it is now is imported. Offline, refused, or another
+ * match found: the preview, and the claim is queued as before.
+ * @param {object} preview  fetchMatchByPin's result shown in the preview
+ * @returns {Promise<object>} cloudData for importMatchFromSupabase
+ */
+export async function fetchMatchToContinue(preview) {
+  const m = preview?.match
+  const ext = m?.external_id
+  if (!ext || m.game_pin == null || m.game_n == null) return preview
+  try {
+    const fresh = await fetchMatchByPin(m.game_pin, m.game_n, { claim: true, externalId: ext })
+    return fresh?.match?.external_id === ext ? fresh : preview
+  } catch (err) {
+    console.warn('[Restore] Could not read the match again to continue it, restoring what was previewed:', err?.message)
+    return preview
   }
 }
 
@@ -1654,16 +1748,25 @@ export async function importMatchFromSupabase(cloudData) {
         // Another local match holds one of the ids (or a cloud id is not this
         // match's own): the cloud rows move to this device's new ids instead,
         // in one server transaction (POST /api/match/restore, as a backup
-        // restore does; test matches never sync)
+        // restore does; test matches never sync). `rekey` names the cloud id
+        // each row had: the server renames those rows in place and deletes
+        // nothing else (the match's voided events, a row sent after this
+        // read); an older server ignores it and replaces the whole match.
         console.warn(`[Import] ${seedKey}: the cloud ids cannot be kept on this device; re-keying the cloud rows`)
+        const newSetExt = sets.map((s, i) => setExtId(seedKey, newSetIds[i]))
+        const newEventExt = cloudEvents.map((e, i) => eventExtId(seedKey, newEventIds[i]))
         await db.sync_queue.add({
           resource: 'match',
           action: 'restore',
           payload: {
             match: filterMatchPayload({ external_id: seedKey, status: match.status }),
-            sets: sets.map((s, i) => ({ ...cloudChildRow(s), external_id: setExtId(seedKey, newSetIds[i]) })),
-            events: cloudEvents.map((e, i) => ({ ...cloudChildRow(e), external_id: eventExtId(seedKey, newEventIds[i]) })),
-            liveState: cloudData.liveState ? cloudChildRow(cloudData.liveState) : null
+            sets: sets.map((s, i) => ({ ...cloudChildRow(s), external_id: newSetExt[i] })),
+            events: cloudEvents.map((e, i) => ({ ...cloudChildRow(e), external_id: newEventExt[i] })),
+            liveState: cloudData.liveState ? cloudChildRow(cloudData.liveState) : null,
+            rekey: {
+              sets: Object.fromEntries(sets.map((s, i) => [newSetExt[i], s.external_id])),
+              events: Object.fromEntries(cloudEvents.map((e, i) => [newEventExt[i], e.external_id]))
+            }
           },
           ts: new Date().toISOString(),
           status: 'queued'
@@ -1672,7 +1775,8 @@ export async function importMatchFromSupabase(cloudData) {
     })
   })
 
-  await afterJoin(importedMatchId, { claim: true })
+  // (restore-by-pin with claim made this device the scorer already)
+  await afterJoin(importedMatchId, { claim: cloudData.scorerClaimed !== true })
   return importedMatchId
 }
 

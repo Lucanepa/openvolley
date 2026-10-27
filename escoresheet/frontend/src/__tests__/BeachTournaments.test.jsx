@@ -23,6 +23,9 @@ const api = vi.hoisted(() => ({
   generate: vi.fn(),
   putSeeds: vi.fn(),
   enterResult: vi.fn(),
+  setMatchStatus: vi.fn(),
+  withdrawResult: vi.fn(),
+  putCourts: vi.fn(),
   updateMatch: vi.fn(),
   schedule: vi.fn(),
   ranking: vi.fn(),
@@ -141,9 +144,10 @@ describe('Tournaments tab', () => {
     fireEvent.change(screen.getByTestId('result-sets'), { target: { value: '15:21 21:19 12:15' } })
     expect(save).toBeEnabled()
     fireEvent.click(save)
-    // with the result this screen showed (none), so a result entered elsewhere meanwhile is not overwritten
+    // with the result this screen showed (none) and its pairs, so a result entered elsewhere
+    // meanwhile is not overwritten and side 2 is never another pair than the one shown
     await waitFor(() => expect(api.enterResult).toHaveBeenCalledWith('m1', {
-      winner: 2, result: 'played', sets: [[15, 21], [21, 19], [12, 15]], expect: { winner_entry_id: null, result: null, sets: null }
+      winner: 2, result: 'played', sets: [[15, 21], [21, 19], [12, 15]], expect: { winner_entry_id: null, result: null, sets: null, entry1_id: 'e1', entry2_id: 'e4' }
     }))
   })
 
@@ -162,10 +166,105 @@ describe('Tournaments tab', () => {
     const loads = api.get.mock.calls.length
     fireEvent.click(screen.getByTestId('result-save'))
     await waitFor(() => expect(api.enterResult).toHaveBeenCalledWith('m1', {
-      winner: 2, result: 'played', sets: [[10, 21], [12, 21]], expect: { winner_entry_id: 'e1', result: 'played', sets: [[21, 10], [21, 12]] }
+      winner: 2, result: 'played', sets: [[10, 21], [12, 21]], expect: { winner_entry_id: 'e1', result: 'played', sets: [[21, 10], [21, 12]], entry1_id: 'e1', entry2_id: 'e4' }
     }))
     await waitFor(() => expect(screen.queryByTestId('result-save')).toBeNull())
     await waitFor(() => expect(api.get.mock.calls.length).toBeGreaterThan(loads))
+  })
+
+  const READY_W5 = {
+    id: 'm5', draw_id: 'd1', game_n: 5, code: 'W5', phase: 'winners', round: 2, position: 1, wave: 2, source1: 'winner:W1', source2: 'winner:W2',
+    entry1_id: 'e1', entry2_id: 'e2', status: 'ready', match_id: null, sets: null, result: null, winner_entry_id: null
+  }
+
+  it('the pairs of a match changed elsewhere meanwhile: no result for a pair that did not play, the draw reloads', async () => {
+    api.get.mockResolvedValue(ok(bundle({ draws: [{ ...DRAW, status: 'playing' }], matches: [READY_W5] })))
+    api.enterResult.mockResolvedValue({ data: null, error: { code: 'OV_MATCH_TEAMS_CHANGED', message: 'changed', status: 409, details: { match: {} } }, status: 409 })
+    await openDraw()
+    fireEvent.click(await screen.findByTestId('result-W5'))
+    fireEvent.change(screen.getByTestId('result-sets'), { target: { value: '21:10 21:12' } })
+    const loads = api.get.mock.calls.length
+    fireEvent.click(screen.getByTestId('result-save'))
+    await waitFor(() => expect(api.enterResult).toHaveBeenCalledWith('m5', expect.objectContaining({
+      winner: 1, expect: { winner_entry_id: null, result: null, sets: null, entry1_id: 'e1', entry2_id: 'e2' }
+    })))
+    await waitFor(() => expect(screen.queryByTestId('result-save')).toBeNull())
+    await waitFor(() => expect(api.get.mock.calls.length).toBeGreaterThan(loads))
+  })
+
+  it('withdrawing a result names the result this screen showed; refused when it changed meanwhile', async () => {
+    const shown = { ...READY_W5, status: 'finished', result: 'played', sets: [[21, 10], [21, 12]], winner_entry_id: 'e1' }
+    api.get.mockResolvedValue(ok(bundle({ draws: [{ ...DRAW, status: 'playing' }], matches: [shown] })))
+    api.withdrawResult.mockResolvedValue({ data: null, error: { code: 'OV_RESULT_CHANGED', message: 'changed', status: 409 }, status: 409 })
+    await openDraw()
+    fireEvent.click(await screen.findByTestId('result-W5'))
+    const loads = api.get.mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: 'tournaments.withdrawResult' }))
+    await waitFor(() => expect(api.withdrawResult).toHaveBeenCalledWith('m5', {
+      winner_entry_id: 'e1', result: 'played', sets: [[21, 10], [21, 12]], entry1_id: 'e1', entry2_id: 'e2'
+    }))
+    await waitFor(() => expect(screen.queryByTestId('result-save')).toBeNull())
+    await waitFor(() => expect(api.get.mock.calls.length).toBeGreaterThan(loads))
+  })
+
+  it('Start tells the server a match is on court; Undo start takes it back', async () => {
+    api.get.mockResolvedValue(ok(bundle({ draws: [{ ...DRAW, status: 'playing' }], matches: [READY_W5, { ...READY_W5, id: 'm6', game_n: 6, code: 'W6', status: 'in_progress' }] })))
+    api.setMatchStatus.mockResolvedValue(ok({ match: {} }))
+    await openDraw()
+    expect(screen.queryByTestId('unstart-W5')).toBeNull()
+    expect(screen.queryByTestId('start-W6')).toBeNull()
+    const loads = api.get.mock.calls.length
+    fireEvent.click(await screen.findByTestId('start-W5'))
+    await waitFor(() => expect(api.setMatchStatus).toHaveBeenCalledWith('m5', 'in_progress'))
+    await waitFor(() => expect(api.get.mock.calls.length).toBeGreaterThan(loads))
+    fireEvent.click(screen.getByTestId('unstart-W6'))
+    await waitFor(() => expect(api.setMatchStatus).toHaveBeenCalledWith('m6', 'open'))
+    // the result of a started match is entered as usual
+    expect(screen.getByTestId('result-W6')).toBeInTheDocument()
+  })
+
+  it('reads the tournament again in the background: when the page comes back and every 30 s', async () => {
+    const intervals = vi.spyOn(window, 'setInterval')
+    try {
+      await openTournament()
+      const loads = api.get.mock.calls.length
+      window.dispatchEvent(new Event('focus'))
+      await waitFor(() => expect(api.get.mock.calls.length).toBe(loads + 1))
+      // a failed background read keeps what is shown
+      api.get.mockResolvedValueOnce({ data: null, error: { code: 'OV_DB_UNAVAILABLE', status: 503 }, status: 503 })
+      const every30s = intervals.mock.calls.filter(([, ms]) => ms === 30000).at(-1)
+      expect(every30s).toBeTruthy()
+      every30s[0]()
+      await waitFor(() => expect(api.get.mock.calls.length).toBe(loads + 2))
+      await new Promise(r => setTimeout(r, 0))
+      expect(screen.getByRole('heading', { name: 'Züri Open' })).toBeInTheDocument()
+      expect(screen.getByRole('radio', { name: 'tournaments.sections.draws' })).toBeInTheDocument()
+      expect(screen.queryByText('manage.errors.generic')).toBeNull()
+    } finally {
+      intervals.mockRestore()
+    }
+  })
+
+  it('a court a match was played on is not removed: the server says to switch it off', async () => {
+    api.putCourts.mockResolvedValue({ data: null, error: { code: 'OV_COURT_IN_USE', message: 'in use', status: 409, details: { courts: [2] } }, status: 409 })
+    await openTournament()
+    fireEvent.click(screen.getByRole('radio', { name: 'tournaments.sections.courts' }))
+    fireEvent.click((await screen.findAllByRole('button', { name: 'tournaments.removeCourt' }))[1])
+    fireEvent.click(screen.getByRole('button', { name: 'tournaments.saveCourts' }))
+    await waitFor(() => expect(api.putCourts).toHaveBeenCalledWith('t1', [{ number: 1, name: null, active: true, flex: false }]))
+    expect(await screen.findByText('tournaments.errors.courtInUse')).toBeInTheDocument()
+  })
+
+  it('a background read keeps the courts being typed', async () => {
+    await openTournament()
+    fireEvent.click(screen.getByRole('radio', { name: 'tournaments.sections.courts' }))
+    const name = (await screen.findAllByLabelText('tournaments.courtName'))[0]
+    fireEvent.change(name, { target: { value: 'Stadium' } })
+    const loads = api.get.mock.calls.length
+    window.dispatchEvent(new Event('focus'))
+    await waitFor(() => expect(api.get.mock.calls.length).toBe(loads + 1))
+    await new Promise(r => setTimeout(r, 0))
+    expect(screen.getAllByLabelText('tournaments.courtName')[0]).toHaveValue('Stadium')
   })
 
   it('the schedule: planned after a dry run, shown per day, time and court', async () => {

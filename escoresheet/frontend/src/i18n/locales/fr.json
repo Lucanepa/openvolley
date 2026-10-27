@@ -817,8 +817,9 @@
       "selectTitle": "Capitaine de jeu"
     },
     "duplicateTabTitle": "Feuille de match déjà ouverte",
-    "duplicateTabMessage": "La feuille de match est déjà ouverte dans un autre onglet ou navigateur. Veuillez fermer cet onglet et utiliser celui existant pour éviter les conflits de données.",
+    "duplicateTabMessage": "La feuille de match est déjà ouverte dans un autre onglet ou navigateur. Pour éviter les conflits de données, tenez-la dans un seul onglet : fermez celui-ci, ou appuyez sur « Continuer dans cet onglet » pour la reprendre ici (l’autre onglet cesse alors de la tenir).",
     "closeThisTab": "Fermer cet onglet",
+    "scoreInThisTab": "Continuer dans cet onglet",
     "rotateDeviceTitle": "Veuillez tourner votre appareil",
     "rotateDeviceMessage": "Le tableau de bord fonctionne mieux en mode paysage. Veuillez tourner votre appareil horizontalement pour continuer.",
     "rotateDeviceTip": "Conseil : Pour les fonctions de sauvegarde automatique, utilisez Chrome ou Edge sur un ordinateur de bureau/portable.",
@@ -859,6 +860,7 @@
     "relayRejected": {
       "notOwner": "Lien arbitre/banc : une autre eScoresheet détient ce match sur le serveur. L'arbitre, le banc et le livescore ne reçoivent pas les mises à jour de cet appareil.",
       "rateLimited": "Lien arbitre/banc : le serveur a refusé cette eScoresheet pendant une minute (trop de tentatives échouées).",
+      "scorerMoved": "Lien arbitre/banc : ce match est maintenant tenu sur un autre appareil. L'arbitre, le banc et le livescore suivent l'autre appareil, plus celui-ci.",
       "tooMany": "Lien arbitre/banc : cet appareil gère déjà trop de matchs sur le serveur."
     },
     "toolbar": {
@@ -1637,6 +1639,8 @@
     "connecting": "Connexion...",
     "invalidPin": "Code incorrect. Veuillez réessayer.",
     "tooManyAttempts": "Trop de PIN erronés depuis ce réseau. Patientez quelques minutes, puis réessayez.",
+    "reconnecting": "Pas de connexion au serveur. Le banc se reconnecte à son match dès qu’il est de retour.",
+    "waitingForScoresheet": "Le serveur est de retour. Le banc se reconnecte à son match dès que la feuille de match est reconnectée.",
     "roster": "Effectif",
     "match": "Match",
     "back": "Retour",
@@ -1681,6 +1685,8 @@
       "matchEnded": "Le match est fini.",
       "connectionDisabled": "Connexion désactivée.",
       "serverUnreachable": "Pas de connexion au serveur – vérifiez le Wi-Fi et réessayez.",
+      "reconnecting": "Pas de connexion au serveur. Le tableau de bord arbitre se reconnecte à son match dès qu’il est de retour.",
+      "waitingForScoresheet": "Le serveur est de retour. Le tableau de bord arbitre se reconnecte à son match dès que la feuille de match est reconnectée.",
       "tooManyAttempts": "Trop de PIN erronés depuis ce réseau. Patientez quelques minutes, puis réessayez."
     },
     "connection": {
@@ -3279,6 +3285,8 @@
     },
     "enterResult": "Saisir le résultat",
     "correctResult": "Corriger le résultat",
+    "startMatch": "Démarrer",
+    "unstartMatch": "Annuler le début",
     "resultTitle": "Match {{n}} · {{code}}",
     "resultKind": "Résultat",
     "kinds": {
@@ -3320,7 +3328,8 @@
       "days": "Le début ne tombe pas sur un jour du tournoi.",
       "hours": "Le match est en dehors des heures de jeu.",
       "before_source": "Il commence avant la fin du match {{n}} ({{code}}), dont il attend le résultat, plus le temps de repos.",
-      "after_dependent": "Le match {{n}} ({{code}}) attend ce résultat et commence avant la fin de ce match plus le temps de repos."
+      "after_dependent": "Le match {{n}} ({{code}}) attend ce résultat et commence avant la fin de ce match plus le temps de repos.",
+      "begun": "Son créneau a déjà commencé : le match {{n}} ({{code}}) est peut-être déjà sur le terrain."
     },
     "rankingHint": "Le classement final pour MyBeach (à saisir avant 12h00 le lendemain, art. 29).",
     "rank": "Rang",
@@ -3348,9 +3357,11 @@
       "matchBegun": "Ce match a déjà commencé : son terrain et son heure restent.",
       "noCourts": "Ajoute d’abord un terrain.",
       "notFound": "Introuvable, ou pas visible pour toi.",
+      "courtInUse": "Un match a été joué sur ce terrain : désactive « En service » au lieu de le retirer.",
       "noManager": "Aucun responsable de compétition OpenBeach n’a cet e-mail.",
       "slotConflict": "Ce créneau ne convient pas au programme.",
       "resultChanged": "Quelqu’un d’autre a modifié ce résultat entre-temps. Regarde-le à nouveau.",
+      "teamsChanged": "Les équipes de ce match ont changé entre-temps : un résultat précédent a été corrigé. Regarde-le à nouveau.",
       "drawExists": "Le tournoi a déjà un tableau de cette catégorie et de ce genre."
     },
     "import": {

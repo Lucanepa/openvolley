@@ -50,6 +50,22 @@
  *                     id never opens a second, frozen room. Subscribers (tablets, the
  *                     point-hub LedBox bridge) must use the seed key: MATCH_ID=<seed key>,
  *                     or resolve it via /api/match/list or /api/match/by-game-number.
+ *                     device { id, claim } (optional): the installation and its claim of
+ *                     the match (a random id, new each time the device continues the
+ *                     match: restore, take back). The game PIN is known to every device
+ *                     the match was scored on; once another device's sync took the room
+ *                     over, a sync that still carries a claim it took over gets
+ *                     { code:'scorer-moved' } (nothing compared, not counted), unless the
+ *                     device that took it over left STALE_TAKEOVER_MS ago (finished:
+ *                     ORPHAN_TAKEOVER_MS). The take-over ends the room ownership of the
+ *                     sockets that named the previous device and tells them
+ *                     { type:'scorer-moved', matchId }. A sync without a claim (older
+ *                     apps) is not checked and changes nothing of this.
+ *                     device.supersedes (optional, up to MAX_SUPERSEDED_CLAIMS): the claims
+ *                     of the copies this device continued the match from (a backup
+ *                     restore): older copies of the room's match. Refused like a claim
+ *                     taken over, and since every sync of the newer copy names them, a
+ *                     restart of the relay does not forget them.
  *   match-action      { matchId, action, data, timestamp }   proven scoreboard of matchId only
  *   live-state-update { matchId, liveState }                 proven scoreboard of matchId only
  *   delete-match      { matchId }                            proven scoreboard of matchId only
@@ -108,10 +124,20 @@
  *   POST /api/match/validate-pin { pin, type, sport? }  sport 'beach' (openbeach)
  *                     finds beach matches only, 'indoor' (the default) indoor
  *                     ones only.
+ *   /api/match/validate-connection-pin  the backend's (cloud) PIN check, not a
+ *                     relay's: 501. openbeach's referee asks it at its page's
+ *                     origin first, which on a venue LAN is this relay, and
+ *                     takes a JSON 4xx as the final "wrong PIN"; a 5xx sends it
+ *                     on to validate-pin (as the Tauri relay's 405 and the
+ *                     backend --local's 503 do).
  *
  * Venue mode: one relay serves every court. Each scorer claims its own match
  * (room key = seed_key), /api/match/list lists them all, and the
  * main-instance lock only guards the "/" page (createMainInstanceGate).
+ *
+ * Liveness: the relay pings every socket every HEARTBEAT_MS (30 s, as the
+ * cloud relay) and ends one that did not answer the previous ping; the
+ * runtime's 'close' handler then removes it (removeClient).
  *
  * Match ids are always String(matchId). PINs never leave the relay: PIN
  * validation is answered from the relay's own store, never by a WS client.
@@ -139,6 +165,19 @@ const MATCH_SECRET_FIELDS = [
 ]
 
 const WS_MAX_PAYLOAD = 10 * 1024 * 1024 // same cap as the cloud relay
+// permessage-deflate for the relays' WebSocketServer (server.js, Electron): a
+// tablet gets the scorer's whole match on every sync, two per rally, over the
+// hall Wi-Fi or the scorer's own hotspot. A frame above 1 KB goes compressed
+// to a client that offers it (browsers do; a client that does not gets plain
+// frames). A hall has a few tablets, so a zlib context each costs little (the
+// cloud, with hundreds, sends plain frames). Uploads compressed by the
+// scorer's browser are taken.
+const WS_PER_MESSAGE_DEFLATE = {
+  threshold: 1024,
+  serverNoContextTakeover: true,
+  clientNoContextTakeover: true,
+  concurrencyLimit: 10,
+}
 const MAX_BODY_SIZE = 1024 * 1024
 // Frames and request bodies nested deeper are refused (jsonTooDeep): the Tauri
 // relay's serde_json stops at the same depth; real bundles nest about ten.
@@ -154,6 +193,13 @@ const MAX_JSON_DEPTH = 128
 const MAX_SOCKETS = 500
 const MAX_SOCKETS_PER_IP = 50
 const MAX_MATCH_ID_LENGTH = 128
+// Server-side ping of every socket (the cloud relay's createHeartbeat,
+// backend/lib/realtimeHub.js): a socket that has not answered the previous
+// ping is ended. A phone that leaves the hall's Wi-Fi sends no close, and its
+// socket kept its slot (MAX_SOCKETS, MAX_SOCKETS_PER_IP) and its rooms until
+// TCP gave up, minutes or hours later. Browsers, the desktop apps and the
+// LedBox bridge answer pings on their own.
+const HEARTBEAT_MS = 30 * 1000
 // A FINISHED match whose scoreboard left this long ago may be claimed by
 // another scoreboard: a second scorer device / reset browser reusing the same
 // Dexie id on a long-running relay. Far longer than a Wi-Fi blip (clients
@@ -183,7 +229,38 @@ const FINISHED_STATUSES = new Set(['final', 'ended', 'completed', 'finished'])
 // Wrong PINs offered for a match's bundle (subscribe-match, GET /api/match/:id)
 // per socket and per IP and minute.
 const PIN_FAILURE_LIMIT = 5
+// POST /api/match/validate-pin per IP and minute: wrong PINs (the limit the
+// whole endpoint had before), and every check (reloads, renewals)
+const VALIDATE_PIN_FAILURES = 10
+const VALIDATE_PIN_REQUESTS = 60
 const MAX_ACCESS_KEYS = 16
+// Devices a room remembers as having lost it to another (sync device.claim)
+const MAX_MOVED_DEVICES = 16
+const DEVICE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const MAX_CLAIM_LENGTH = 64
+// Claims a sync names as the copies it continued from (device.supersedes),
+// and those a room remembers
+const MAX_SUPERSEDED_CLAIMS = 8
+const MAX_SUPERSEDED_PER_ROOM = 32
+
+const isClaimString = (c) => typeof c === 'string' && c.length > 0 && c.length <= MAX_CLAIM_LENGTH
+
+/**
+ * The scoring device a sync names with its claim of the match ({ id, claim,
+ * supersedes }, see sync-match-data `device`), or null: no device, or one
+ * without a claim (older apps), is not checked. `supersedes`: the claims of
+ * the copies it continued the match from (never its own), [] when none.
+ */
+function syncDeviceClaim(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const { id, claim } = raw
+  if (typeof id !== 'string' || !DEVICE_ID_RE.test(id)) return null
+  if (!isClaimString(claim)) return null
+  const supersedes = Array.isArray(raw.supersedes)
+    ? [...new Set(raw.supersedes.slice(0, MAX_SUPERSEDED_CLAIMS).filter((c) => isClaimString(c) && c !== claim))]
+    : []
+  return { id: id.toLowerCase(), claim, supersedes }
+}
 
 // PIN types accepted by POST /api/match/validate-pin
 const PIN_TYPES = {
@@ -831,6 +908,8 @@ const isJsonRequest = (req) => /^application\/json\b/i.test(String((req.headers 
  * `isLocal(addr)`: the relay host itself may start a session; anyone else
  * proves the match's game PIN (X-OV-Match-Pin). Defaults to loopback only.
  *
+ * `heartbeatMs`: the ping interval (HEARTBEAT_MS; 0 turns it off).
+ *
  * @param {{ log?: Console, requestTimeoutMs?: number, isRateLimited?: Function,
  *   signCore?: object, isLocal?: (addr: string) => boolean, signOptions?: object }} [options]
  */
@@ -842,11 +921,14 @@ function createLanRelay(options = {}) {
   const maxOwnedPerIp = options.maxOwnedPerIp ?? MAX_OWNED_PER_IP
   const maxSockets = options.maxSockets ?? MAX_SOCKETS
   const maxSocketsPerIp = options.maxSocketsPerIp ?? MAX_SOCKETS_PER_IP
+  const heartbeatMs = options.heartbeatMs ?? HEARTBEAT_MS
   const ownLimiters = []
   const isRateLimited = options.isRateLimited || (ownLimiters[ownLimiters.length] = createRateLimiter())
   const claimFailures = createFailureCounter({ max: options.claimFailureLimit ?? CLAIM_FAILURE_LIMIT })
   // Wrong subscribe-match PINs per socket / IP and minute (no PIN compared beyond)
   const pinFailures = createFailureCounter({ max: options.pinFailureLimit ?? PIN_FAILURE_LIMIT })
+  // Wrong POST /api/match/validate-pin PINs per IP and minute
+  const validatePinFailures = createFailureCounter({ max: VALIDATE_PIN_FAILURES })
   const isNewClaimLimited = (ownLimiters[ownLimiters.length] = createRateLimiter({ max: options.newClaimLimit ?? NEW_CLAIM_LIMIT }))
   const signCore = options.signCore || null
   const isLocalAddr = options.isLocal || isLoopbackAddress
@@ -858,6 +940,9 @@ function createLanRelay(options = {}) {
   const pending = new Map() // requestId -> { type, matchId, targets:Set<ws>, resolve, timer }
   const orphanedSince = new Map() // matchId -> when its last owning socket left
   const displaced = new Map() // matchId -> game PIN an unfinished match had before a stale takeover
+  const scorers = new Map() // matchId -> { id, claim }: the device whose claim scores the room
+  const movedClaims = new Map() // matchId -> Map<device id, claim> another device's claim took over
+  const supersededClaims = new Map() // matchId -> Set<claim> the scorers' copies were continued from
   let nextClientId = 1
 
   function send(ws, msg) {
@@ -961,6 +1046,41 @@ function createLanRelay(options = {}) {
     return null
   }
 
+  // --- Heartbeat (HEARTBEAT_MS) -----------------------------------------------
+  // ws -> pong seen since the last ping. Sockets without ping() (tests' fakes)
+  // are not watched. The timer starts with the first socket and never keeps
+  // a process alive (unref): a module-level relay must not hold `vite build`.
+  const alive = new Map()
+  let heartbeatTimer = null
+
+  /** One heartbeat round: end the sockets that missed the last ping, ping the rest. */
+  function heartbeat() {
+    for (const [ws, seen] of alive) {
+      if (ws.readyState !== 1) {
+        if (ws.readyState === 3) alive.delete(ws)
+        continue
+      }
+      if (!seen) {
+        alive.delete(ws)
+        // the runtime's 'close' handler removes it (removeClient)
+        try { ws.terminate() } catch { /* already gone */ }
+        continue
+      }
+      alive.set(ws, false)
+      try { ws.ping() } catch { /* went away between checks */ }
+    }
+  }
+
+  function watch(ws) {
+    if (!(heartbeatMs > 0) || typeof ws.ping !== 'function' || typeof ws.terminate !== 'function' || typeof ws.on !== 'function') return
+    alive.set(ws, true)
+    ws.on('pong', () => { if (alive.has(ws)) alive.set(ws, true) })
+    if (!heartbeatTimer) {
+      heartbeatTimer = setInterval(heartbeat, heartbeatMs)
+      if (heartbeatTimer.unref) heartbeatTimer.unref()
+    }
+  }
+
   function addClient(ws, info = {}) {
     const meta = {
       id: `c${nextClientId++}`,
@@ -973,13 +1093,16 @@ function createLanRelay(options = {}) {
       aliases: new Map(), // id this socket synced under -> room key (seed_key)
       pinKeys: new Set(), // room keys this socket sent PINs for (see 'pins-required')
       access: new Map(), // room key -> { pin, verified }: the PIN offered in subscribe-match
+      scorerDevice: null, // the device its syncs named with a claim (see noteScorer)
     }
     clients.set(ws, meta)
+    watch(ws)
     send(ws, { type: 'connected', message: 'Connected to eScoresheet WebSocket server', timestamp: Date.now() })
     return meta
   }
 
   function removeClient(ws) {
+    alive.delete(ws)
     const meta = clients.get(ws)
     if (!meta) return
     for (const id of meta.subscribed) {
@@ -1122,6 +1245,71 @@ function createLanRelay(options = {}) {
     'too-many-matches': 'This device already drives the maximum number of matches',
     'bad-request': 'Unknown connection',
     'pins-required': 'Send this match again with its PINs (the relay lost it, or this connection has not proved it yet)',
+    'scorer-moved': 'This match is now scored on another device',
+  }
+
+  /**
+   * The room moved away from `device`'s claim: another device's sync took it
+   * over, and this one has not continued the match since (a new claim). The
+   * game PIN cannot tell: every device the match was scored on knows it, and
+   * a laptop back on the Wi-Fi re-synced its older copy over the room, the
+   * referee and benches jumping back to it (the cloud relay asks its
+   * database, see backend verifyRelayClaim). Once the device that took it
+   * over has been gone as long as a stale take-over waits, the match is the
+   * old one's again.
+   * Also moved: a claim the room's scorers name as one their copy was
+   * continued from (device.supersedes, a backup restore). The take-overs are
+   * kept in memory only: after a restart of this relay the first sync was
+   * granted, the second proved the PIN, and a laptop's older copy synced
+   * after the phone that had continued the match took the room from it for
+   * good (2026-10-27). Every sync of the newer copy names the older claims,
+   * so the relay knows them again from the newer copy's first sync.
+   */
+  function isMovedClaim(matchId, device) {
+    const scorer = scorers.get(matchId)
+    if (!scorer || scorer.id === device.id) return false
+    if (movedClaims.get(matchId)?.get(device.id) !== device.claim &&
+      !supersededClaims.get(matchId)?.has(device.claim)) return false
+    return !isAbandoned(matchId, store.get(matchId))
+  }
+
+  /**
+   * A granted sync of `device` (sync-match-data with a claim): it scores the
+   * room. When it took it over from another device, that device's claim is
+   * remembered as moved (isMovedClaim), and the sockets that named it stop
+   * speaking for the room and are told ('scorer-moved'), so its copy cannot
+   * replace the room on their next sync. A take-over by another match (a
+   * reused id) starts afresh. The claims its copy was continued from are
+   * older copies from now on (isMovedClaim), its own claim never.
+   */
+  function noteScorer(ws, meta, matchId, device, kind) {
+    if (kind === 'takeover' || kind === 'new') {
+      movedClaims.delete(matchId)
+      supersededClaims.delete(matchId)
+    }
+    if (meta) meta.scorerDevice = device.id
+    const prev = kind === 'takeover' || kind === 'new' ? null : scorers.get(matchId)
+    scorers.set(matchId, device)
+    let older = supersededClaims.get(matchId)
+    if (device.supersedes.length && !older) supersededClaims.set(matchId, (older = new Set()))
+    if (older) {
+      older.delete(device.claim)
+      for (const c of device.supersedes) {
+        older.delete(c) // re-added as the newest
+        older.add(c)
+      }
+      while (older.size > MAX_SUPERSEDED_PER_ROOM) older.delete(older.values().next().value)
+    }
+    let moved = movedClaims.get(matchId)
+    if (moved) moved.delete(device.id)
+    if (!prev || prev.id === device.id) return
+    if (!moved) movedClaims.set(matchId, (moved = new Map()))
+    moved.set(prev.id, prev.claim)
+    while (moved.size > MAX_MOVED_DEVICES) moved.delete(moved.keys().next().value)
+    for (const [other, om] of clients) {
+      if (other === ws || om.scorerDevice !== prev.id || !om.owned.delete(matchId)) continue
+      send(other, { type: 'scorer-moved', matchId, timestamp: Date.now() })
+    }
   }
 
   /**
@@ -1153,6 +1341,9 @@ function createLanRelay(options = {}) {
     store.delete(matchId)
     orphanedSince.delete(matchId)
     displaced.delete(matchId)
+    scorers.delete(matchId)
+    movedClaims.delete(matchId)
+    supersededClaims.delete(matchId)
     for (const meta of clients.values()) meta.owned.delete(matchId)
   }
 
@@ -1256,6 +1447,13 @@ function createLanRelay(options = {}) {
         return
       }
     }
+    // A claim another device took over: refused before any PIN is compared
+    const device = syncDeviceClaim(msg.device)
+    if (device && isMovedClaim(matchId, device)) {
+      if (meta) meta.owned.delete(matchId)
+      sendError(ws, 'scorer-moved', CLAIM_ERRORS['scorer-moved'], matchId)
+      return
+    }
     const claimed = claim(ws, matchId, bundle.match)
     if (!claimed.ok) {
       sendError(ws, claimed.code, CLAIM_ERRORS[claimed.code] || 'Refused', matchId)
@@ -1266,6 +1464,7 @@ function createLanRelay(options = {}) {
       if (meta.aliases.size >= MAX_ALIASES) meta.aliases.delete(meta.aliases.keys().next().value)
       meta.aliases.set(rawId, matchId)
     }
+    if (device) noteScorer(ws, meta, matchId, device, claimed.kind)
     const stored = storeBundle(matchId, bundle, claimed.kind)
     sendMatchData(matchId, 'match-data-update', stored, msg._timestamp, ws)
   }
@@ -1686,13 +1885,30 @@ function createLanRelay(options = {}) {
       return true
     }
 
+    if (path === '/api/match/validate-connection-pin') {
+      sendJson(res, 501, { success: false, error: 'Not a venue relay endpoint: use /api/match/validate-pin' })
+      return true
+    }
     if (path === '/api/match/validate-pin') {
       if (method !== 'POST') return false
-      if (isRateLimited(ip)) {
+      // Wrong PINs are limited (VALIDATE_PIN_FAILURES a minute per address,
+      // no PIN compared beyond), right ones are not: every check used to
+      // count, and a tablet reloading with its stored PIN was told it had
+      // typed too many wrong ones. A generous cap on all checks stays.
+      const failKey = `vp:${ip || 'unknown'}`
+      if (validatePinFailures.blocked(failKey)) {
+        sendJson(res, 429, { success: false, error: 'Too many wrong PINs. Wait a minute.' })
+        return true
+      }
+      if (isRateLimited(failKey, VALIDATE_PIN_REQUESTS)) {
         sendJson(res, 429, { success: false, error: 'Too many attempts. Please wait a minute before trying again.' })
         return true
       }
-      reply(readJsonBody(req).then(validatePin))
+      reply(readJsonBody(req).then((body) => {
+        const r = validatePin(body)
+        if (r.status === 404) validatePinFailures.fail(failKey)
+        return r
+      }))
       return true
     }
     if (path === '/api/match/list' && method === 'GET') {
@@ -1746,6 +1962,8 @@ function createLanRelay(options = {}) {
     get clientCount() { return clients.size },
     hasMatch: (id) => store.has(normalizeMatchId(id)),
     isScoreboard: (ws) => (clients.get(ws)?.owned.size || 0) > 0,
+    /** Run one heartbeat round now (tests). */
+    heartbeat,
     /** Sign session counts (tests): null before the first sign request. */
     signStats: () => (signSessions ? signSessions.stats() : null),
     /**
@@ -1757,6 +1975,9 @@ function createLanRelay(options = {}) {
       signSessions = null
       for (const limiter of ownLimiters) limiter.dispose()
       for (const p of pending.values()) clearTimeout(p.timer)
+      if (heartbeatTimer) clearInterval(heartbeatTimer)
+      heartbeatTimer = null
+      alive.clear()
     },
   }
 }
@@ -1764,6 +1985,7 @@ function createLanRelay(options = {}) {
 module.exports = {
   MATCH_SECRET_FIELDS,
   WS_MAX_PAYLOAD,
+  WS_PER_MESSAGE_DEFLATE,
   MAX_BODY_SIZE,
   stripMatchSecrets,
   stripMatchDataSecrets,

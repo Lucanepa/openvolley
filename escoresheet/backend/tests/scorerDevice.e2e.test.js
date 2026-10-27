@@ -309,6 +309,94 @@ describe('scoring-device handover end to end', { skip: SKIP }, () => {
     }
   })
 
+  // Review of 8359f59a (2026-10-26): a device that continued a match signed
+  // out never got its queued claim through (POST /api/match/scorer needs a
+  // session), so the relay refused its syncs as the device the match had
+  // left and the referee and benches froze. The game PIN it proves in
+  // restore-by-pin makes it the scorer, before the match is read for it.
+  const byPin = (m, extra = {}, ip = '198.51.100.7') => api(srv.base, '/api/match/restore-by-pin', {
+    proto: null,
+    headers: { 'cf-connecting-ip': ip },
+    body: { gameN: m.gameN, pin: GAME_PIN, ...extra }
+  })
+  async function pinMatch (extra = {}) {
+    const gameN = gameSeq
+    const m = await newMatch(users.anna, PC, extra)
+    return { ...m, gameN }
+  }
+
+  it('a signed-out device that continues a match by game PIN scores it at once, and the relay takes its syncs', async () => {
+    const m = await pinMatch()
+    assert.equal((await event(m, 1, PC)).status, 200)
+    // Searching for backups looks the match up only
+    const looked = await byPin(m)
+    assert.equal(looked.status, 200, looked.text)
+    assert.equal(looked.json.data.scorer, undefined)
+    assert.equal((await holder(m)).device_id, PC.id)
+
+    const phoneBoard = await openSocket(srv.wsUrl)
+    const viewer = await openSocket(srv.wsUrl)
+    try {
+      const joined = await byPin(m, { claim: true, device: PHONE })
+      assert.equal(joined.status, 200, joined.text)
+      assert.deepEqual(joined.json.data.scorer, { mine: true, moved: true })
+      assert.equal(joined.json.data.events.length, 1)
+      assert.equal(joined.text.includes(PC.id), false, 'never the other device id')
+      assert.deepEqual(await holder(m), { device_id: PHONE.id, platform: 'android' })
+      const audit = (await sql.query("SELECT actor_id, details FROM public.audit_log WHERE action = 'match.scorer_device' AND match_id = $1", [m.id])).rows
+      assert.equal(audit.length, 1)
+      assert.equal(audit[0].actor_id, null)
+      assert.equal(audit[0].details.via, 'game-pin')
+
+      // The PC's next rally (sent after the phone read the match) is refused,
+      // never written to be overwritten by the phone's own
+      expectCode(await event(m, 2, PC), 409, 'OV_SCORER_MOVED')
+
+      // The phone's relay sync is the room's, signed out as it is
+      phoneBoard.send(relaySync(m, PHONE))
+      await roundTrip(phoneBoard)
+      viewer.send({ type: 'subscribe-match', matchId: m.ext, device: 'livescore' })
+      await roundTrip(viewer)
+      phoneBoard.send(liveUpdate(0, 2))
+      await viewer.waitFor((msg) => msg.type === 'live-state-update' && msg.liveState?.points_b === 2, 5000, "the phone's 0:2")
+      assert.equal(phoneBoard.messages.some((msg) => msg.type === 'scorer-moved' || msg.type === 'error'), false, JSON.stringify(phoneBoard.messages))
+
+      // Again on the device that scores it: nothing moves
+      assert.deepEqual((await byPin(m, { claim: true, device: PHONE })).json.data.scorer, { mine: true, moved: false })
+    } finally {
+      phoneBoard.ws.close()
+      viewer.ws.close()
+    }
+  })
+
+  it('restore-by-pin claims only the match it names, never a test or closed match, and only with a device', async () => {
+    const m = await pinMatch()
+    const other = await byPin(m, { claim: true, device: PHONE, external_id: 'match_another_one' })
+    assert.equal(other.status, 200, other.text)
+    assert.equal(other.json.data.scorer, undefined)
+    assert.equal((await holder(m)).device_id, PC.id)
+    assert.equal((await byPin(m, { claim: true, device: { id: 'nope' } })).json.data.scorer, undefined)
+    assert.equal((await byPin(m, { claim: true })).json.data.scorer, undefined)
+    assert.equal((await holder(m)).device_id, PC.id)
+    assert.deepEqual((await byPin(m, { claim: true, device: PHONE, external_id: m.ext })).json.data.scorer, { mine: true, moved: true })
+
+    const t = await pinMatch({ test: true })
+    assert.equal((await byPin(t, { claim: true, device: PHONE })).json.data.scorer, undefined)
+    assert.equal(await holder(t), null)
+
+    const closed = await pinMatch()
+    assert.equal((await dbCall(users.anna, 'matches', 'update', { data: { status: 'approved' }, filters: [eq('external_id', closed.ext)] }, PC)).status, 200)
+    const r = await byPin(closed, { claim: true, device: PHONE })
+    assert.equal(r.status, 200, r.text)
+    assert.equal(r.json.data.scorer, undefined)
+    assert.equal((await holder(closed)).device_id, PC.id)
+
+    // A wrong PIN claims nothing
+    const wrong = await api(srv.base, '/api/match/restore-by-pin', { proto: null, headers: { 'cf-connecting-ip': '198.51.100.9' }, body: { gameN: m.gameN, pin: '000001', claim: true, device: PC } })
+    assert.equal(wrong.status, 404, wrong.text)
+    assert.equal((await holder(m)).device_id, PHONE.id)
+  })
+
   it('a socket of the previous device that stayed connected stops speaking for the room when the match moves', async () => {
     const m = await newMatch(users.anna, PC)
     const pc = await openSocket(srv.wsUrl)

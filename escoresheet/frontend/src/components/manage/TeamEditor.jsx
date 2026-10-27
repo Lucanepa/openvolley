@@ -5,6 +5,7 @@ import { savedTeamsApi, errorKeyOf } from '../../lib/accountApi'
 import { apiFrom } from '../../lib/apiClient'
 import { selectAll } from '../../lib/selectAll'
 import { STAFF_ROLES, validateSavedRoster, MAX_PLAYERS, MAX_STAFF, sportOf } from '../../domain/savedTeams'
+import { shirtNumberDigits } from '../../domain/roster'
 import { InlineError } from './common'
 import { Button, DateField, Field, Input, Select, Checkbox, Switch, SectionHeader, EmptyInset, IconButton, confirmDialog, toast, cn } from '../../ui'
 
@@ -389,7 +390,7 @@ export default function TeamEditor({ team, competition, online, onBack, onChange
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-[4rem_1fr_1fr_9.5rem_8rem_auto] sm:items-center">
                       <label className="block">
                         <span className={CELL_LABEL}>{t('savedTeams.number')}</span>
-                        <Input type="number" inputMode="numeric" numeric min={0} max={99} value={p.number} onChange={e => updatePlayer(p.key, { number: e.target.value })} aria-label={t('savedTeams.number')} className="tabular-nums" />
+                        <Input type="number" inputMode="numeric" numeric min={0} max={99} value={p.number} onChange={e => updatePlayer(p.key, { number: shirtNumberDigits(e.target.value) })} aria-label={t('savedTeams.number')} className="tabular-nums" />
                       </label>
                       <label className="block">
                         <span className={CELL_LABEL}>{t('savedTeams.firstName')}</span>
