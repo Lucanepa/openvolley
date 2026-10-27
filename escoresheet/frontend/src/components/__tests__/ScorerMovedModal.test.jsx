@@ -46,6 +46,53 @@ describe('ScorerMovedModal', () => {
     await waitFor(() => expect(screen.getByTestId('scorer-moved-error').textContent).toBe(en.scorerMoved.errors.failed))
   })
 
+  // The owner, 2026-10-27: Take back shows the server's score first, so the
+  // scorer compares it with the scoreboard; only the second tap takes back
+  it('with onPreview: Take back shows the server\'s score and asks again; Cancel leaves it', async () => {
+    const onPreview = vi.fn(async () => ({ score: { set: 3, home: 14, away: 12, setsHome: 1, setsAway: 1 } }))
+    const onTakeBack = vi.fn(async () => ({ ok: true }))
+    const onScoresheet = vi.fn()
+    render(<ScorerMovedModal scorer={{ platform: 'android', at }} onPreview={onPreview} onTakeBack={onTakeBack} onScoresheet={onScoresheet} onClose={() => {}} />)
+    expect(screen.getAllByRole('button').map(b => b.textContent)).toEqual(['Close', en.header.scoresheet, 'Take back scoring here'])
+    fireEvent.click(screen.getByRole('button', { name: en.header.scoresheet }))
+    expect(onScoresheet).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Take back scoring here' }))
+    const preview = await screen.findByTestId('scorer-moved-preview')
+    expect(preview.textContent).toContain('Set 3 · 14:12 · sets 1:1')
+    expect(preview.textContent).toContain(en.scorerMoved.compareHint)
+    expect(onTakeBack).not.toHaveBeenCalled()
+    expect(screen.getAllByRole('button').map(b => b.textContent)).toEqual([en.common.cancel, en.scorerMoved.confirmTakeBack])
+
+    fireEvent.click(screen.getByRole('button', { name: en.common.cancel }))
+    expect(screen.queryByTestId('scorer-moved-preview')).toBeNull()
+    expect(onTakeBack).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Take back scoring here' }))
+    await screen.findByTestId('scorer-moved-preview')
+    fireEvent.click(screen.getByRole('button', { name: en.scorerMoved.confirmTakeBack }))
+    await waitFor(() => expect(onTakeBack).toHaveBeenCalledTimes(1))
+    expect(onPreview).toHaveBeenCalledTimes(2)
+  })
+
+  it('with onPreview offline: the take-back\'s own message, no score, nothing taken back', async () => {
+    const onTakeBack = vi.fn()
+    render(<ScorerMovedModal scorer={null} onPreview={vi.fn(async () => ({ error: 'offline' }))} onTakeBack={onTakeBack} onClose={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Take back scoring here' }))
+    expect((await screen.findByTestId('scorer-moved-error')).textContent).toBe(en.scorerMoved.errors.offline)
+    expect(screen.queryByTestId('scorer-moved-preview')).toBeNull()
+    expect(onTakeBack).not.toHaveBeenCalled()
+  })
+
+  it('closed on the other device: the final result loads at once, no comparison', async () => {
+    const onPreview = vi.fn()
+    const onTakeBack = vi.fn(async () => ({ ok: true }))
+    render(<ScorerMovedModal scorer={null} closed onPreview={onPreview} onTakeBack={onTakeBack} onClose={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: en.scorerMoved.showResult }))
+    await waitFor(() => expect(onTakeBack).toHaveBeenCalledTimes(1))
+    expect(onPreview).not.toHaveBeenCalled()
+  })
+
   it('closed on the other device: says so and only loads the final result', () => {
     render(<ScorerMovedModal scorer={{ platform: 'android', at }} closed onTakeBack={() => {}} onClose={() => {}} />)
     expect(screen.getByRole('alert').textContent).toBe(en.scorerMoved.bodyClosed)

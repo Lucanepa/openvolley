@@ -12,6 +12,7 @@ vi.mock('../utils/parseRosterPdf', () => ({ parseRosterPdf: vi.fn() })) // pdf.j
 import { db } from '../db/db'
 import { offline, online, mountApp, button, sleep } from './appMount'
 import { GHOST_CLICK_MS } from '../hooks/useConfirmAction'
+import { reloadInto } from './selfCheckFixtures'
 
 let saved
 beforeAll(() => {
@@ -32,7 +33,8 @@ const resize = (width, height) => {
 const gateShown = () => document.body.textContent.includes('please use a tablet or larger screen')
 const gate = () => document.querySelector('[data-testid="size-gate"]')
 
-// An official match in set 1 at 1:0, live: the app opens its scoring screen
+// An official match in set 1 at 1:0, live, its scoring screen on show when
+// the page was reloaded (a fresh start opens Home)
 async function seedLiveMatch() {
   const start = new Date(Date.now() - 3600000).toISOString()
   const home = await db.teams.add({ name: 'Home', shortName: 'HOM' })
@@ -61,7 +63,7 @@ async function seedLiveMatch() {
 describe('App: the size gate over the scoring screen', () => {
   it('a laptop zoomed in during a time-out: the gate goes over it, the countdown is still there after', async () => {
     resize(1366, 768)
-    await seedLiveMatch()
+    reloadInto(await seedLiveMatch())
     mountApp()
     await waitFor(() => expect(button('Start rally')).toBeTruthy(), { timeout: 10000 })
 

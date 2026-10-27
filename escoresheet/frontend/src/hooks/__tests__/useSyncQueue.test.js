@@ -165,6 +165,7 @@ import {
   CLOUD_BLOCK_EVENT,
   matchEndUpdateNeeded,
   checkScorerMoved,
+  askScoringDevice,
   noteMatchClosedOnServer,
   runUploadLane
 } from '../useSyncQueue'
@@ -1944,6 +1945,28 @@ describe('a match continued on another device', () => {
     api.respond = (call) => (call.table === '__scorer' ? ok({ mine: false, scorer: { platform: 'android', at: 'T' } }) : defaultRespond(call))
     expect(await checkScorerMoved('match_100_aaa')).toBe(true)
     expect(fakeDb.matches.map.get(1).cloudBlock).toMatchObject({ code: 'OV_SCORER_MOVED', scorer: { platform: 'android', at: 'T' } })
+    expect(api.calls.filter(c => c.table === '__scorer').every(c => c.action === 'status')).toBe(true)
+  })
+
+  // The home screen's state of a copy (utils/deviceSelfCheck, the owner
+  // 2026-10-27): "Scoring here" only on the server's word, "Not checked"
+  // without an answer, never a claim
+  it('askScoringDevice: here, moved (and marked), or no answer', async () => {
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', status: 'live' }])
+    api.respond = (call) => (call.table === '__scorer' ? ok({ mine: true, scorer: { platform: 'tauri-linux' } }) : defaultRespond(call))
+    expect(await askScoringDevice('match_100_aaa')).toBe('here')
+    // no device recorded yet: none scores it but this one
+    api.respond = (call) => (call.table === '__scorer' ? ok({ mine: null }) : defaultRespond(call))
+    expect(await askScoringDevice('match_100_aaa')).toBe('here')
+    api.respond = (call) => (call.table === '__scorer' ? { data: null, error: { message: 'offline', network: true, status: 0 }, status: 0 } : defaultRespond(call))
+    expect(await askScoringDevice('match_100_aaa')).toBeNull()
+    expect(fakeDb.matches.map.get(1).cloudBlock).toBeUndefined()
+    api.respond = (call) => (call.table === '__scorer' ? ok({ mine: false, scorer: { platform: 'android', at: 'T' } }) : defaultRespond(call))
+    expect(await askScoringDevice('match_100_aaa')).toBe('moved')
+    expect(fakeDb.matches.map.get(1).cloudBlock).toMatchObject({ code: 'OV_SCORER_MOVED', scorer: { platform: 'android', at: 'T' } })
+    // not asked at all (a final copy): no answer
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_aaa', status: 'final' }])
+    expect(await askScoringDevice('match_100_aaa')).toBeNull()
     expect(api.calls.filter(c => c.table === '__scorer').every(c => c.action === 'status')).toBe(true)
   })
 })

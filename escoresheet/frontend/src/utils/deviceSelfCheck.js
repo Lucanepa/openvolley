@@ -1,6 +1,5 @@
 /**
- * The device's self-check on open: run by App at start-up and again when the
- * app comes back after a long time in the background (LONG_HIDDEN_MS).
+ * The device's self-check, and how the app opens and resumes (App.jsx).
  *
  * 2026-10-27 (the owner: "whenever it opens it should do a self check etc to
  * avoid duplications"): the owner's desktop app opened straight on the
@@ -13,52 +12,92 @@
  * 20.10, so it looked live for a week. A stale copy reopened like that is how
  * duplicate scoring and duplicate records start.
  *
- * Part 1, local (always, offline too):
- * - Two or more copies of one official match (the same seed_key; older
- *   versions and restores could leave several): the copy furthest on is kept
- *   (most events, then the latest activity). Another copy is removed only
- *   when it holds nothing the kept one lacks: no unsent write of the match
- *   (the jobs carry the match key, not the copy), no event, set score,
- *   signature, approval, remarks, roster, officials or event history beyond
- *   the kept copy's, never the match on the screen. Otherwise it is flagged:
- *   the home screen lists it as a copy with its Remove.
- * - At start-up at most one live match is resumed, the one with the most
- *   recent activity, and none whose last activity is older than
- *   STALE_LIVE_MS: Home offers it with Continue. A scorer whose app restarts
- *   mid-match (minutes or an hour later) is back on the scoring screen at
- *   once, offline too.
- * Part 2, the server (online and signed in only, never blocking for long):
+ * The owner's start and resume rules (2026-10-27, after the established
+ * e-scoresheets: DataProject / FIVB / CEV, SAMS, Nevobo DWF, FFvolley FDME,
+ * VolleySpike, nuScore, SIHF, GameSheet and the cricket scorers open on their
+ * home or match list and resume with one tap; none reopens a match by itself,
+ * and none deletes a copy without the user):
+ * 1. Opening the app always lands on Home: the desktop or Android app
+ *    started, a new browser tab, the reopen after a crash or a kill. Home's
+ *    Continue card resumes the match in one tap.
+ * 2. A reload goes back into the match. The match screen on show is noted in
+ *    sessionStorage (OPEN_MATCH_KEY, noteOpenMatch): a reload keeps it, an
+ *    app kill or a new tab does not. matchToReopen reads it at start-up;
+ *    document.wasDiscarded (a tab the browser unloaded to save memory) counts
+ *    as a reload too. Where it runs:
+ *    - a browser tab: sessionStorage is the tab's; a reload, a discarded tab
+ *      brought back and a closed tab reopened (Ctrl+Shift+T) keep it, a new
+ *      tab and a new window start without it.
+ *    - the desktop app (Tauri, src-tauri main.rs): the scoretable window is
+ *      created when the app starts, a new WebView with its own empty session
+ *      storage; its close button only hides it (lifecycle.rs), so the same
+ *      page comes back, and a reload of the window keeps the marker.
+ *    - the Android app (Capacitor): the WebView's session storage lives in
+ *      the app's process. Android killing the app in the background, a swipe
+ *      from the recent apps, a crash (a renderer that dies takes the app with
+ *      it: no WebViewListener handles onRenderProcessGone) all start a new
+ *      process without it. Turning the device or a keyboard never recreates
+ *      the activity (AndroidManifest configChanges).
+ * 3. 15 minutes or more in the background (BACKGROUND_HOME_MS) goes to Home,
+ *    and only changes the screen. Only the time the page was hidden counts
+ *    (trackBackground: visibilitychange, pagehide / pageshow, the Capacitor
+ *    App plugin's appStateChange and the document's pause / resume where the
+ *    app has them): a screen left on through a long set break or a medical
+ *    time-out is never acted on. The hidden-since time is kept in
+ *    sessionStorage too, so a page the browser discarded while hidden for 15
+ *    minutes comes back on Home.
+ * 4. The server check (below) runs on open, on Continue and on the return
+ *    from the background, never in the way: offline or signed out, nothing
+ *    waits for it. Home shows each copy's state (copyState).
+ * 5. Nothing is removed by a check. Copies of one match are flagged
+ *    (findDuplicateCopies); Home's Clean up removes, after one question, the
+ *    ones that hold nothing of their own (cleanUpDuplicateCopies).
+ *
+ * The check, local part (always, offline too): two or more copies of one
+ * official match (the same seed_key; older versions and restores could leave
+ * several). The copy furthest on is the kept one (most events, then the
+ * latest activity). Another copy holds nothing of its own when it has no
+ * unsent write of the match (the jobs carry the match key, not the copy), no
+ * event, set score, signature, approval, remarks, roster, officials or event
+ * history beyond the kept copy's, and it is not the match on the screen.
+ * The server part (online and signed in only):
  * - Every open official copy is looked up in ONE read of `matches`. A copy
  *   the server has closed is marked as the sync queue marks a write refused
- *   as closed (useSyncQueue noteMatchClosedOnServer): the closed-copy notice
- *   and dialog take over, and it is never resumed.
- * - The copy about to be resumed (or the open one, back from the background)
- *   is asked about its scoring device (checkScorerMoved): a match another
- *   device scores now shows ScorerMovedModal at once.
- * - The start-up waits for these answers SERVER_CHECK_TIMEOUT_MS at most; a
- *   later answer is still applied (the closed-copy dialog then replaces the
- *   scoring screen). A timeout, an error, no session or no connection leave
- *   the decision to Part 1.
+ *   as closed (useSyncQueue noteMatchClosedOnServer): it opens read-only
+ *   (ClosedOnServerModal) from then on.
+ * - A copy the server has open is asked about its scoring device
+ *   (useSyncQueue askScoringDevice): one another device scores now is marked
+ *   (ScorerMovedModal, read-only); one this device scores is "Scoring here".
+ *   A match the server does not have is scored nowhere else.
  * Test matches are never asked about on the server.
  */
 import { jobMatchKey } from './syncIds'
 import { matchGameNumber } from './deviceMatches'
 import { isKnownClosedOnServer, isStaleClosedCopy, serverRowClosed } from './matchReopen'
+import { isScorerMoved, SCORER_MOVED_BY, SERVER_CLOSED_BY } from './matchHandover'
 import { wipeMatchEvents } from '../db/eventHistory'
 import { apiFrom } from '../lib/apiClient'
 
-// A match plus its breaks never comes near it; a copy left live overnight or
-// for days does
-export const STALE_LIVE_MS = 12 * 60 * 60 * 1000
-// The longest a start-up (or Continue) waits for the server's answers
+// The longest Continue waits for the server's answer before it opens a match
 export const SERVER_CHECK_TIMEOUT_MS = 3000
-// Back in the foreground after this long: the check runs again
-export const LONG_HIDDEN_MS = 60 * 60 * 1000
+// Hidden this long: back on Home (rule 3)
+export const BACKGROUND_HOME_MS = 15 * 60 * 1000
+// The match screen on show, for a reload (rule 2): { id, view }
+export const OPEN_MATCH_KEY = 'ov.openMatch'
+// Since when the page is hidden (ms), for a page reloaded or discarded meanwhile
+export const HIDDEN_AT_KEY = 'ov.hiddenAt'
+// The copies whose scoring device one check asks about, at most
+const MAX_SCORER_CHECKS = 8
 
 // Jobs not sent yet (or in flight): a copy is never removed while one exists
 const UNSENT = ['queued', 'sending', 'error', 'failed']
+// Writes set aside because the server closed the match or another device
+// scores it: never sent unless the match is reopened, lost with the copy
+const SET_ASIDE_BY = [SERVER_CLOSED_BY, SCORER_MOVED_BY]
 // How far a copy got; a copy that got further holds something
 const STATUS_RANK = { live: 1, ended: 2, approved: 3, final: 4 }
+// The screens a reload goes back to (App's currentPage)
+const VIEWS = ['scoreboard', 'matchSetup', 'coinToss', 'matchEnd']
 
 /** The match key of a local row (seed_key; older rows used seedKey / externalId). */
 export const localMatchKey = (m) => m?.seed_key || m?.seedKey || m?.externalId || m?.external_id || null
@@ -80,9 +119,41 @@ export function lastActivityAt(match, newestEvent) {
 }
 
 // The last event added to a match (the highest id), one row read
-const newestEventOf = (database, matchId) => database.events.where('matchId').equals(matchId).last()
+export const newestEventOf = (database, matchId) => database.events.where('matchId').equals(matchId).last()
 
 const reportItem = (m, extra = {}) => ({ id: m.id, key: localMatchKey(m), gameN: matchGameNumber(m), ...extra })
+
+/**
+ * The state Home shows for a local match (rule 4), from what this device
+ * knows: 'closed' (the server has closed it), 'moved' (another device scores
+ * it), 'here' (the last server check said this device scores it, or the
+ * server does not have it) or 'unchecked' (not asked: offline, signed out,
+ * no answer). null for a test match: never asked about.
+ * @param {object} match the local row
+ * @param {{ checkedHere?: boolean }} [options]
+ * @returns {'closed'|'moved'|'here'|'unchecked'|null}
+ */
+export function copyState(match, { checkedHere = false } = {}) {
+  if (!match || match.test === true) return null
+  if (isKnownClosedOnServer(match) || isStaleClosedCopy(match)) return 'closed'
+  if (isScorerMoved(match)) return 'moved'
+  return checkedHere ? 'here' : 'unchecked'
+}
+
+/**
+ * What a copy of `seedKey` holds that the server does not have: its writes
+ * not sent yet, and those set aside because the server closed the match or
+ * another device scores it (sent never, unless the match is reopened).
+ * Removing the copy loses them. events: the events among them.
+ * @param {object[]} jobs all rows of sync_queue
+ * @returns {{ changes: number, events: number }}
+ */
+export function unsentOfMatch(jobs, seedKey) {
+  if (!seedKey) return { changes: 0, events: 0 }
+  const lost = (jobs || []).filter(j => jobMatchKey(j) === seedKey &&
+    (UNSENT.includes(j.status) || SET_ASIDE_BY.includes(j.superseded_by)))
+  return { changes: lost.length, events: lost.filter(j => j.resource === 'event' && j.action !== 'delete').length }
+}
 
 /** Ids of the open local matches that are one of two or more copies of an official match. */
 export function duplicateCopyIds(matches) {
@@ -103,7 +174,7 @@ export async function hasOtherLocalCopy(database, match) {
 }
 
 // ---------------------------------------------------------------------------
-// Part 1: copies of one official match
+// Copies of one official match
 // ---------------------------------------------------------------------------
 
 const hasValue = (v) => v != null && v !== '' && v !== false &&
@@ -154,7 +225,9 @@ const furthestFirst = (x, y) =>
 // The copy's rows: its sets and events (with their history), the match, and
 // its own team and player rows. A team row another local match still uses
 // stays (restores before 92a288da shared one row between matches). Its sync
-// jobs are left: they carry the match key, which the kept copy shares.
+// jobs are left: they carry the match key, which the kept copy shares. Local
+// only: no server delete, no relay delete-match (the match is the kept
+// copy's there).
 async function removeCopy(database, m) {
   const tables = [database.matches, database.sets, database.events, database.event_history, database.players, database.teams].filter(Boolean)
   await database.transaction('rw', tables, async () => {
@@ -171,19 +244,22 @@ async function removeCopy(database, m) {
 }
 
 /**
- * Part 1: the copies of one official match. Test matches and final copies are
- * left alone.
+ * The copies of each official match on this device, one kept and the others
+ * flagged; nothing is removed here (rule 5). Test matches and final copies
+ * are left alone.
  * @param {object} database the app's Dexie database
- * @param {{ openMatchId?: number|null }} [options] the match on the screen: never removed
- * @returns {Promise<{ removed: object[], flagged: object[] }>} { id, key, gameN, keptId } each
+ * @param {{ openMatchId?: number|null, keys?: string[]|null }} [options]
+ *   openMatchId: the match on the screen (never removable); keys: these
+ *   matches only
+ * @returns {Promise<{ flagged: object[] }>} { id, key, gameN, keptId,
+ *   removable } each; removable: it holds nothing of its own
  */
-export async function settleDuplicateCopies(database, { openMatchId = null } = {}) {
-  const removed = []
+export async function findDuplicateCopies(database, { openMatchId = null, keys = null } = {}) {
   const flagged = []
   const groups = new Map()
   for (const m of await database.matches.toArray()) {
     const key = localMatchKey(m)
-    if (!key || m.test === true || m.status === 'final') continue
+    if (!key || m.test === true || m.status === 'final' || (keys && !keys.includes(key))) continue
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key).push(m)
   }
@@ -195,38 +271,48 @@ export async function settleDuplicateCopies(database, { openMatchId = null } = {
     const [kept, ...others] = contents
     const unsent = (await database.sync_queue.where('status').anyOf(UNSENT).toArray()).some(j => jobMatchKey(j) === key)
     for (const other of others) {
-      const item = reportItem(other.match, { keptId: kept.match.id })
-      if (!unsent && other.match.id !== openMatchId && covers(kept, other)) {
-        await removeCopy(database, other.match)
-        removed.push(item)
-        console.info(`[SelfCheck] Removed a copy of match ${key} (game ${item.gameN ?? '?'}, local ${other.match.id}): local ${kept.match.id} holds everything it had`)
-      } else {
-        flagged.push(item)
-        console.info(`[SelfCheck] Two copies of match ${key} (game ${item.gameN ?? '?'}): local ${other.match.id} kept next to ${kept.match.id}, it holds something of its own${unsent ? ' or the match has unsent writes' : ''}`)
-      }
+      const removable = !unsent && other.match.id !== openMatchId && covers(kept, other)
+      flagged.push(reportItem(other.match, { keptId: kept.match.id, removable }))
+      console.info(`[SelfCheck] Two copies of match ${key} (game ${matchGameNumber(other.match) ?? '?'}): local ${other.match.id} next to ${kept.match.id}, ${removable ? 'holds nothing of its own' : `holds something of its own${unsent ? ' or the match has unsent writes' : ''}`}`)
     }
   }
-  return { removed, flagged }
+  return { flagged }
 }
 
 /**
- * The live match a start-up resumes: the one with the most recent activity,
- * never a copy the server has closed. `stale`: last active more than
- * `staleMs` ago (or nothing says when), not resumed.
- * @returns {Promise<{ id: number, match: object, lastActivityAt: number|null, stale: boolean }|null>}
+ * Home's Clean up, after its question: the copies that hold nothing of their
+ * own, decided again now (anything may have changed since the check), are
+ * removed, this device only. The others stay.
+ * @param {{ openMatchId?: number|null, keys?: string[]|null }} [options]
+ * @returns {Promise<{ removed: object[] }>}
  */
-export async function pickResumeMatch(database, { now = Date.now(), staleMs = STALE_LIVE_MS } = {}) {
-  const live = (await database.matches.where('status').equals('live').toArray()).filter(m => !isStaleClosedCopy(m))
-  if (!live.length) return null
-  const rated = []
-  for (const m of live) rated.push({ match: m, at: lastActivityAt(m, await newestEventOf(database, m.id)) })
-  rated.sort((x, y) => ((y.at ?? -Infinity) - (x.at ?? -Infinity)) || (y.match.id - x.match.id))
-  const { match, at } = rated[0]
-  return { id: match.id, match, lastActivityAt: at, stale: at == null || now - at > staleMs }
+export async function cleanUpDuplicateCopies(database, { openMatchId = null, keys = null } = {}) {
+  const removed = []
+  const { flagged } = await findDuplicateCopies(database, { openMatchId, keys })
+  for (const item of flagged) {
+    if (!item.removable) continue
+    const m = await database.matches.get(item.id)
+    if (!m) continue
+    await removeCopy(database, m)
+    removed.push(item)
+    console.info(`[SelfCheck] Removed a copy of match ${item.key} (game ${item.gameN ?? '?'}, local ${item.id}): local ${item.keptId} holds everything it had`)
+  }
+  return { removed }
+}
+
+/** The live match last scored on this device, never a copy closed on the server or scored on another device. */
+export async function lastScoredLiveMatch(database) {
+  const live = (await database.matches.where('status').equals('live').toArray()).filter(m => !isStaleClosedCopy(m) && !isScorerMoved(m))
+  let best = null
+  for (const m of live) {
+    const at = lastActivityAt(m, await newestEventOf(database, m.id))
+    if (!best || (at ?? -Infinity) > (best.at ?? -Infinity) || ((at ?? -Infinity) === (best.at ?? -Infinity) && m.id > best.match.id)) best = { match: m, at }
+  }
+  return best?.match ?? null
 }
 
 // ---------------------------------------------------------------------------
-// Part 2: the server
+// The server
 // ---------------------------------------------------------------------------
 
 /**
@@ -241,17 +327,20 @@ export function readServerMatchRows(keys) {
  * Ask the server about the open official copies on this device.
  * @param {object} database
  * @param {{ readRows: (keys: string[]) => Promise<{data: object[]|null, error: object|null}>,
- *   noteClosed: (localId: number) => Promise<boolean>, scorerMoved: (seedKey: string) => Promise<boolean> }} server
- * @param {{ onlyIds?: number[]|null, scorerCheckId?: number|null }} [options]
- *   onlyIds: these copies only (Continue); scorerCheckId: the copy whose
- *   scoring device is asked too, once the server has it open
- * @returns {Promise<{ closed: object[], moved: boolean, error: object|null }>}
+ *   noteClosed: (localId: number) => Promise<boolean>,
+ *   scoringDevice: (seedKey: string) => Promise<'moved'|'here'|null> }} server
+ * @param {{ onlyIds?: number[]|null }} [options] onlyIds: these copies only (Continue)
+ * @returns {Promise<{ closed: object[], moved: object[], here: number[], asked: boolean, error: object|null }>}
+ *   here: the copies this device scores; asked: the server answered
  */
-export async function checkCopiesOnServer(database, server, { onlyIds = null, scorerCheckId = null } = {}) {
-  const result = { closed: [], moved: false, error: null }
+export async function checkCopiesOnServer(database, server, { onlyIds = null } = {}) {
+  const result = { closed: [], moved: [], here: [], asked: false, error: null }
   const copies = (await database.matches.toArray()).filter(m => isOpenOfficialCopy(m) && (!onlyIds || onlyIds.includes(m.id)))
   const keys = [...new Set(copies.map(m => m.seed_key))]
-  if (!keys.length) return result
+  if (!keys.length) {
+    result.asked = true
+    return result
+  }
   let rows
   try {
     const { data, error } = await server.readRows(keys)
@@ -266,20 +355,34 @@ export async function checkCopiesOnServer(database, server, { onlyIds = null, sc
     console.info('[SelfCheck] The server could not be asked about the matches on this device:', err?.message)
     return result
   }
+  result.asked = true
   const byKey = new Map(rows.filter(r => r?.external_id).map(r => [r.external_id, r]))
-  const closedKeys = new Set()
+  const scorer = new Map() // seed key -> the answer (copies of one match share it)
   for (const m of copies) {
-    if (!serverRowClosed(byKey.get(m.seed_key))) continue
-    closedKeys.add(m.seed_key)
-    if (await server.noteClosed(m.id)) {
-      result.closed.push(reportItem(m))
-      console.info(`[SelfCheck] Match ${m.seed_key} (game ${matchGameNumber(m) ?? '?'}, local ${m.id}) is closed on the server: this copy is marked closed`)
+    const row = byKey.get(m.seed_key)
+    if (serverRowClosed(row)) {
+      if (await server.noteClosed(m.id)) {
+        result.closed.push(reportItem(m))
+        console.info(`[SelfCheck] Match ${m.seed_key} (game ${matchGameNumber(m) ?? '?'}, local ${m.id}) is closed on the server: this copy is marked closed`)
+      }
+      continue
     }
-  }
-  // (a match the server does not have is scored nowhere else)
-  const target = scorerCheckId == null ? null : copies.find(m => m.id === scorerCheckId)
-  if (target && byKey.has(target.seed_key) && !closedKeys.has(target.seed_key)) {
-    result.moved = (await server.scorerMoved(target.seed_key)) === true
+    // already marked: Home says so from the copy itself
+    if (isScorerMoved(m)) continue
+    // a match the server does not have is scored nowhere else
+    if (!row) {
+      result.here.push(m.id)
+      continue
+    }
+    if (!scorer.has(m.seed_key)) {
+      if (scorer.size >= MAX_SCORER_CHECKS || typeof server.scoringDevice !== 'function') continue
+      let who = null
+      try { who = await server.scoringDevice(m.seed_key) } catch { who = null }
+      scorer.set(m.seed_key, who)
+    }
+    const who = scorer.get(m.seed_key)
+    if (who === 'moved') result.moved.push(reportItem(m))
+    else if (who === 'here') result.here.push(m.id)
   }
   return result
 }
@@ -295,90 +398,169 @@ export function withinTimeout(promise, ms) {
   })
 }
 
-// One check at a time: a start-up and a return from the background never
-// remove the same copy twice
-let running = Promise.resolve()
-
 /**
- * The self-check (see the top of this file).
+ * The self-check (see the top of this file): the copies of one match flagged,
+ * and, with a server, every open official copy asked about. Never waited for
+ * by the screen, and it removes nothing.
  * @param {object} args
  * @param {object} args.database the app's Dexie database
  * @param {object|null} [args.server] the server side (checkCopiesOnServer), only online and signed in
- * @param {boolean} [args.resume] start-up: pick the live match to resume
- * @param {number|null} [args.openMatchId] the match on the screen (back from the background)
- * @returns {Promise<{ removed: object[], flagged: object[], closed: object[], resumeId: number|null,
- *   stale: object|null, late: Promise<{ closed: object[] }>|null }>} late: the server's
- *   answer when it came after the timeout (applied all the same)
+ * @param {number|null} [args.openMatchId] the match on the screen
+ * @returns {Promise<{ flagged: object[], closed: object[], moved: object[], here: number[], asked: boolean }>}
  */
-export function runDeviceSelfCheck(args) {
-  const run = running.then(() => selfCheck(args))
-  running = run.catch(() => {})
-  return run
-}
-
-async function selfCheck({ database, server = null, now = Date.now(), resume = false, openMatchId = null,
-  timeoutMs = SERVER_CHECK_TIMEOUT_MS, staleMs = STALE_LIVE_MS }) {
-  const report = { removed: [], flagged: [], closed: [], resumeId: null, stale: null, late: null }
+export async function runDeviceSelfCheck({ database, server = null, openMatchId = null }) {
+  const report = { flagged: [], closed: [], moved: [], here: [], asked: false }
   try {
-    Object.assign(report, await settleDuplicateCopies(database, { openMatchId }))
+    report.flagged = (await findDuplicateCopies(database, { openMatchId })).flagged
   } catch (err) {
     console.warn('[SelfCheck] Could not check the copies on this device:', err?.message)
   }
-
-  let pick = null
-  if (resume) {
-    try {
-      pick = await pickResumeMatch(database, { now, staleMs })
-    } catch (err) {
-      console.warn('[SelfCheck] Could not read the live matches:', err?.message)
-    }
-    if (pick?.stale) {
-      report.stale = reportItem(pick.match, { lastActivityAt: pick.lastActivityAt })
-      console.info(`[SelfCheck] Live match ${localMatchKey(pick.match) ?? pick.id} not reopened: last activity ${pick.lastActivityAt ? new Date(pick.lastActivityAt).toISOString() : 'unknown'}`)
-    }
-  }
-  const candidate = pick && !pick.stale ? pick.match : null
-
   if (server) {
-    const scorerCheckId = resume ? (candidate?.id ?? null) : openMatchId
-    const work = checkCopiesOnServer(database, server, { scorerCheckId }).catch((err) => {
+    try {
+      const r = await checkCopiesOnServer(database, server)
+      Object.assign(report, { closed: r.closed, moved: r.moved, here: r.here, asked: r.asked })
+    } catch (err) {
       console.warn('[SelfCheck] The server check failed:', err?.message)
-      return { closed: [], moved: false, error: err }
-    })
-    const answer = await withinTimeout(work, timeoutMs)
-    if (answer.done) report.closed = answer.value.closed
-    else {
-      console.info(`[SelfCheck] No answer from the server within ${timeoutMs} ms: decided on this device`)
-      report.late = work
     }
-  }
-
-  // Resumed only if still live and not closed (the server may have said so)
-  if (candidate) {
-    const fresh = await database.matches.get(candidate.id).catch(() => null)
-    if (fresh?.status === 'live' && !isStaleClosedCopy(fresh)) report.resumeId = fresh.id
   }
   return report
 }
 
-/**
- * Calls `callback` when the page becomes visible again after being hidden for
- * at least `minHiddenMs` (the app sent to the background, the desktop window
- * hidden to the tray). @returns {() => void} unsubscribe
- */
-export function onBackAfterHidden(callback, { minHiddenMs = LONG_HIDDEN_MS, doc = typeof document === 'undefined' ? null : document, now = () => Date.now() } = {}) {
-  if (!doc?.addEventListener) return () => {}
-  let hiddenAt = doc.visibilityState === 'hidden' ? now() : null
-  const onChange = () => {
-    if (doc.visibilityState === 'hidden') {
-      if (hiddenAt == null) hiddenAt = now()
-      return
-    }
-    if (doc.visibilityState !== 'visible' || hiddenAt == null) return
-    const away = now() - hiddenAt
-    hiddenAt = null
-    if (away >= minHiddenMs) callback(away)
+// ---------------------------------------------------------------------------
+// Open, reload, background (rules 1 to 3)
+// ---------------------------------------------------------------------------
+
+const sessionStore = () => {
+  try {
+    return typeof sessionStorage === 'undefined' ? null : sessionStorage
+  } catch {
+    return null // storage blocked: every start is an opening
   }
-  doc.addEventListener('visibilitychange', onChange)
-  return () => doc.removeEventListener('visibilitychange', onChange)
+}
+const read = (storage, key) => {
+  try { return storage?.getItem(key) ?? null } catch { return null }
+}
+const write = (storage, key, value) => {
+  try {
+    if (value == null) storage?.removeItem(key)
+    else storage?.setItem(key, value)
+  } catch { /* storage full or blocked: a reload then opens Home */ }
+}
+
+/** A match screen is on show (App, whenever it changes): a reload goes back to it. */
+export function noteOpenMatch({ id, view = 'scoreboard' }, storage = sessionStore()) {
+  if (id == null) return
+  write(storage, OPEN_MATCH_KEY, JSON.stringify({ id, view: VIEWS.includes(view) ? view : 'scoreboard' }))
+}
+
+/** The user left the match screen (Home, close match): a reload stays on Home. */
+export function clearOpenMatch(storage = sessionStore()) {
+  write(storage, OPEN_MATCH_KEY, null)
+}
+
+/** @returns {{ id: number, view: string }|null} */
+export function readOpenMatch(storage = sessionStore()) {
+  try {
+    const v = JSON.parse(read(storage, OPEN_MATCH_KEY) || 'null')
+    return v && v.id != null ? { id: v.id, view: VIEWS.includes(v.view) ? v.view : 'scoreboard' } : null
+  } catch {
+    return null
+  }
+}
+
+const readHiddenAt = (storage) => {
+  const t = Number(read(storage, HIDDEN_AT_KEY))
+  return Number.isFinite(t) && t > 0 ? t : null
+}
+
+/**
+ * At start-up (once per page load): the match screen a reload, or a tab the
+ * browser discarded, goes back to; null for an opening (Home, rule 1).
+ * - The marker names a match still on the device: that match, on the screen
+ *   it showed. Without a marker, a discarded tab goes back to the live match
+ *   last scored here (never a closed or moved copy).
+ * - Hidden 15 minutes or more before the page went away (a tab discarded in
+ *   the background, a reload after a long time hidden): Home (rule 3).
+ * The marker is left for App to keep or clear; the hidden-since time is
+ * consumed when the page is visible.
+ * @returns {Promise<{ id: number, view: string }|null>}
+ */
+export async function matchToReopen(database, {
+  storage = sessionStore(),
+  doc = typeof document === 'undefined' ? null : document,
+  now = Date.now(),
+  minHiddenMs = BACKGROUND_HOME_MS
+} = {}) {
+  const marker = readOpenMatch(storage)
+  const discarded = doc?.wasDiscarded === true
+  const hiddenAt = readHiddenAt(storage)
+  if (doc?.visibilityState !== 'hidden') write(storage, HIDDEN_AT_KEY, null)
+  if (!marker && !discarded) return null
+  if (hiddenAt != null && now - hiddenAt >= minHiddenMs) {
+    console.info(`[Start] Hidden for ${Math.round((now - hiddenAt) / 60000)} min before this page loaded: the home screen`)
+    return null
+  }
+  let match = marker ? await database.matches.get(marker.id).catch(() => null) : null
+  if (!match && !marker && discarded) match = await lastScoredLiveMatch(database).catch(() => null)
+  if (!match) return null
+  return { id: match.id, view: marker?.view || 'scoreboard' }
+}
+
+/**
+ * Calls `callback(ms)` when the page comes back after being hidden for at
+ * least `minHiddenMs` (the app sent to the background, the desktop window
+ * hidden to the tray or minimised, the device's screen off). Only hidden time
+ * counts: a visible screen, however idle, is never acted on.
+ * @returns {() => void} unsubscribe
+ */
+export function trackBackground(callback, {
+  minHiddenMs = BACKGROUND_HOME_MS,
+  doc = typeof document === 'undefined' ? null : document,
+  win = typeof window === 'undefined' ? null : window,
+  storage = sessionStore(),
+  now = () => Date.now()
+} = {}) {
+  if (!doc?.addEventListener) return () => {}
+  let hiddenAt = doc.visibilityState === 'hidden' ? (readHiddenAt(storage) ?? now()) : null
+  const away = () => {
+    if (hiddenAt != null) return
+    hiddenAt = now()
+    write(storage, HIDDEN_AT_KEY, String(hiddenAt))
+  }
+  const back = () => {
+    // the Page Lifecycle's resume can come while the page is still hidden
+    if (hiddenAt == null || doc.visibilityState === 'hidden') return
+    const gone = now() - hiddenAt
+    hiddenAt = null
+    write(storage, HIDDEN_AT_KEY, null)
+    if (gone >= minHiddenMs) callback(gone)
+  }
+  const onVisibility = () => (doc.visibilityState === 'hidden' ? away() : back())
+  doc.addEventListener('visibilitychange', onVisibility)
+  // Cordova / Capacitor's App plugin fire these on the document
+  doc.addEventListener('pause', away)
+  doc.addEventListener('resume', back)
+  // a reload or a page kept in the back-forward cache
+  win?.addEventListener?.('pagehide', away)
+  win?.addEventListener?.('pageshow', back)
+  // The Capacitor App plugin's state, where the app has it
+  let appHandle = null
+  let stopped = false
+  const capApp = win?.Capacitor?.Plugins?.App
+  if (typeof capApp?.addListener === 'function') {
+    try {
+      Promise.resolve(capApp.addListener('appStateChange', (s) => (s?.isActive ? back() : away())))
+        .then((h) => { if (stopped) h?.remove?.(); else appHandle = h })
+        .catch(() => {})
+    } catch { /* no plugin after all */ }
+  }
+  return () => {
+    stopped = true
+    doc.removeEventListener('visibilitychange', onVisibility)
+    doc.removeEventListener('pause', away)
+    doc.removeEventListener('resume', back)
+    win?.removeEventListener?.('pagehide', away)
+    win?.removeEventListener?.('pageshow', back)
+    try { appHandle?.remove?.() } catch { /* gone */ }
+  }
 }

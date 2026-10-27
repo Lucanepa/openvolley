@@ -492,7 +492,8 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
 
   // The cloud live state says the match ended (utils/matchEndLiveState): an
   // app killed between the last rally and the scoreboard's 'match_end' push
-  // reopens here, and the livescore kept the game running for good. Tried
+  // comes back here (since 2026-10-27 through Home's Continue: a restart
+  // opens Home), and the livescore kept the game running for good. Tried
   // once a Match End shows, again when the queue drains or the device comes
   // back online, until it is done.
   const officialSeedKey = data?.match && data.match.test !== true ? seedKey : null

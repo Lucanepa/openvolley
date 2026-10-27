@@ -210,7 +210,13 @@
   },
   "deleteMatch": {
     "cancel": "Abbrechen",
-    "delete": "Löschen"
+    "delete": "Löschen",
+    "lossTitle": "Diese Kopie enthält, was der Server nicht hat:",
+    "lossChanges_one": "{{count}} nicht gesendete Änderung",
+    "lossChanges_other": "{{count}} nicht gesendete Änderungen",
+    "lossEvents_one": "{{count}} Ereignis, das nicht auf dem Server ist",
+    "lossEvents_other": "{{count}} Ereignisse, die nicht auf dem Server sind",
+    "lossEnd": "Beim Löschen gehen sie endgültig verloren."
   },
   "refereeSelector": {
     "title": "Schiedsrichter-Datenbank",
@@ -1111,7 +1117,24 @@
       "removedCopy": "Eine zweite Kopie von Spiel {{game}} wurde von diesem Gerät entfernt: Die andere Kopie enthält alles, was sie hatte.",
       "show": "Anzeigen",
       "remove": "Entfernen",
-      "dismiss": "Ausblenden"
+      "dismiss": "Ausblenden",
+      "cleanUpLine_one": "Spiel {{game}} hat {{count}} weitere Kopie auf diesem Gerät, die nichts Eigenes enthält.",
+      "cleanUpLine_other": "Spiel {{game}} hat {{count}} weitere Kopien auf diesem Gerät, die nichts Eigenes enthalten.",
+      "cleanUp": "Aufräumen",
+      "cleanUpConfirm_one": "Die weitere Kopie von Spiel {{game}} von diesem Gerät entfernen? Sie enthält nichts, was der anderen Kopie fehlt. Auf dem Server ändert sich nichts.",
+      "cleanUpConfirm_other": "Die {{count}} weiteren Kopien von Spiel {{game}} von diesem Gerät entfernen? Sie enthalten nichts, was der anderen Kopie fehlt. Auf dem Server ändert sich nichts."
+    },
+    "continueCard": {
+      "score": "Satz {{set}} · {{home}}:{{away}} · Sätze {{setsHome}}:{{setsAway}}",
+      "notStarted": "Nicht gestartet",
+      "lastSaved": "Zuletzt gespeichert {{time}}"
+    },
+    "matchState": {
+      "here": "Wird hier geführt",
+      "moved": "Auf anderem Gerät",
+      "closed": "Auf dem Server abgeschlossen",
+      "unchecked": "Nicht geprüft",
+      "unsent": "Nicht gesendete Änderungen"
     }
   },
   "options": {
@@ -2992,6 +3015,7 @@
       }
     },
     "removeLocalOnly": "Nur die Kopie auf diesem Gerät wird gelöscht. Die offizielle Version bleibt auf dem Server.",
+    "removeMovedLocalOnly": "Nur die Kopie auf diesem Gerät wird gelöscht. Das Spiel bleibt auf dem Server und auf dem Gerät, das es führt.",
     "restoreRefused": "Dieses Spiel ist auf dem Server abgeschlossen, darum lässt sich dieses Backup nicht wiederherstellen. Lade die offizielle Version mit Spielnummer und Spiel-PIN."
   },
   "androidUpdate": {
@@ -4092,6 +4116,9 @@
       "macos": "Mac",
       "desktop": "Desktop-App",
       "web": "Browser"
-    }
+    },
+    "serverScore": "Jetzt auf dem Server",
+    "compareHint": "Vergleiche ihn mit der Anzeige auf diesem Gerät. Beim Übernehmen wird dieser Spielstand hier geladen, und das andere Gerät hört auf.",
+    "confirmTakeBack": "Ja, hier wieder übernehmen"
   }
 }
