@@ -67,6 +67,19 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.2" date="2026-10-27">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v3.0.2</url>
+      <description>
+        <ul>
+          <li>Deleting a match keeps the unsent results of other matches.</li>
+          <li>Take back scoring keeps the cloud's sets and points, the TTO and the sides.</li>
+          <li>Live score: team B's sets count; an Undo is never overwritten; catches up after Wi-Fi drops.</li>
+          <li>One scoring tab per match; a double tap is one point; Reopen set ends again.</li>
+          <li>Works offline from every page link; Clear cache refuses offline.</li>
+          <li>Scoresheet: penalty service turns; files retried until uploaded.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.0.10" date="2026-10-19">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v2.0.10</url>
       <description>
