@@ -4,6 +4,7 @@ import { Undo2, Menu } from 'lucide-react'
 import { ActionSheet } from '../../ui/Modal.jsx'
 import { COURT_SURFACE, HEADER_SURFACE, normaliseColour, teamBoxStyle, teamTextPaint } from '../../utils/teamColours'
 import { COURT_CELLS, PHONE_COUNTER_HEIGHT_PX, PHONE_COURT_MIN_PX, PHONE_RECENT_MIN_PX, PHONE_SQUARE_MIN_PX, PHONE_SQUARE_RESERVE_PX, POSITIONS, officialRoleShort, recentLinesFor, tintOf } from './phoneLayout'
+import { captainRingStyle } from './captainRing'
 
 /**
  * The scoring screen on a phone held upright (owner-approved mockup, 390x844).
@@ -553,11 +554,7 @@ const hasValue = (v) => v !== undefined && v !== null && v !== ''
 // circle and a 2-digit one a short oval
 const CAPTAIN_RING_PAD = 9
 const CAPTAIN_RING_SIZE = 44
-const captainRing = {
-  position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)',
-  width: `calc(100% + ${2 * CAPTAIN_RING_PAD}px)`, minWidth: CAPTAIN_RING_SIZE, height: CAPTAIN_RING_SIZE,
-  boxSizing: 'border-box', borderWidth: 2, borderStyle: 'solid', borderRadius: 999, pointerEvents: 'none'
-}
+const captainRing = captainRingStyle({ size: CAPTAIN_RING_SIZE, pad: CAPTAIN_RING_PAD })
 
 // A court mark (the replaced player's number at the number's foot, the
 // libero's L at its top, set where it is drawn): small
