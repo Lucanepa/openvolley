@@ -102,8 +102,17 @@ const VIEWS = ['scoreboard', 'matchSetup', 'coinToss', 'matchEnd']
 /** The match key of a local row (seed_key; older rows used seedKey / externalId). */
 export const localMatchKey = (m) => m?.seed_key || m?.seedKey || m?.externalId || m?.external_id || null
 
-/** An official copy the server may have closed: not a test, has its seed_key, not final, not known closed. */
-export const isOpenOfficialCopy = (m) => !!m && m.test !== true && !!m.seed_key && m.status !== 'final' && !isKnownClosedOnServer(m)
+/**
+ * An official copy the server may have closed: not a test, has its seed_key,
+ * not final, not known closed, not approved here. A copy approved on this
+ * device is closed on the server by its own approval (db/007 sets closed_at
+ * at 'approved'), and only its Match End's Close match takes it further: it
+ * queues 'final' and removes the copy. Marked closed by the check, it became
+ * final here, left the home screen without Close match, and the server's
+ * match stayed 'approved' for good. A refusal of its approval (another device
+ * closed it first) still marks it, through the sync queue.
+ */
+export const isOpenOfficialCopy = (m) => !!m && m.test !== true && !!m.seed_key && m.status !== 'final' && m.approved !== true && !isKnownClosedOnServer(m)
 
 const timeOf = (v) => {
   const t = typeof v === 'number' ? v : (typeof v === 'string' ? Date.parse(v) : NaN)
@@ -128,7 +137,8 @@ const reportItem = (m, extra = {}) => ({ id: m.id, key: localMatchKey(m), gameN:
  * knows: 'closed' (the server has closed it), 'moved' (another device scores
  * it), 'here' (the last server check said this device scores it, or the
  * server does not have it) or 'unchecked' (not asked: offline, signed out,
- * no answer). null for a test match: never asked about.
+ * no answer). null for a test match or a copy approved here: never asked
+ * about.
  * @param {object} match the local row
  * @param {{ checkedHere?: boolean }} [options]
  * @returns {'closed'|'moved'|'here'|'unchecked'|null}
@@ -137,6 +147,8 @@ export function copyState(match, { checkedHere = false } = {}) {
   if (!match || match.test === true) return null
   if (isKnownClosedOnServer(match) || isStaleClosedCopy(match)) return 'closed'
   if (isScorerMoved(match)) return 'moved'
+  // approved here: never asked about (isOpenOfficialCopy), Close match ends it
+  if (match.approved === true) return null
   return checkedHere ? 'here' : 'unchecked'
 }
 
