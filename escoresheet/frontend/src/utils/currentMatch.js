@@ -75,20 +75,26 @@ export function pickCurrentMatch(matches, { now = Date.now(), hasEvents = () => 
  * (App.jsx createNewOfficialMatch), from its home-screen status:
  * - 'recording': an official match is being recorded. It is not replaced;
  *   the scorer is told to continue or delete it first.
- * - 'replace': a confirmed match (or a copy closed on the server) is deleted
- *   after a question, a test or easy match also while it is being recorded.
+ * - 'replace': a confirmed match is deleted after a question, a test or easy
+ *   match also while it is being recorded.
  *   The button used to do nothing at all then, no dialog, no message, while
  *   Test match in the same menu asked to replace the match.
  * - 'discard': a match never confirmed (Create Match not pressed) is deleted
  *   without a word.
- * - 'new': no current match; the official match setup opens.
+ * - 'new': no current match, or one that is no longer this device's to
+ *   score: a copy the server has closed or another device scores now. Such a
+ *   copy never blocks a new match and is never deleted on the way (the owner,
+ *   2026-10-27): it stays on the device, read-only, listed on the home screen
+ *   with its state, and Remove takes it off there. It used to be replaced
+ *   after a question (closed), or to block as "still recording" (moved).
  * @param {object|null} match the current match
  * @param {string|undefined} status its home-screen status ('Match recording', ...)
- * @param {{ closedCopy?: boolean }} [opts] closedCopy: closed on the server
+ * @param {{ closedCopy?: boolean, movedCopy?: boolean }} [opts] closedCopy:
+ *   closed on the server; movedCopy: scored on another device
  * @returns {'recording'|'replace'|'discard'|'new'}
  */
-export function newOfficialMatchStep(match, status, { closedCopy = false } = {}) {
-  if (!match) return 'new'
+export function newOfficialMatchStep(match, status, { closedCopy = false, movedCopy = false } = {}) {
+  if (!match || closedCopy || movedCopy) return 'new'
   if (status === 'Match recording') return match.test === true ? 'replace' : 'recording'
-  return match.matchInfoConfirmedAt || closedCopy ? 'replace' : 'discard'
+  return match.matchInfoConfirmedAt ? 'replace' : 'discard'
 }

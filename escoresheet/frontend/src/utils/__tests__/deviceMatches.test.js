@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { deviceMatchRows, duplicateGameNumbers, isOpenOfficialMatch, jobsOfMatch, matchGameNumber } from '../deviceMatches'
+import { deviceMatchRows, duplicateGameNumbers, isOpenOfficialMatch, jobsOfMatch, matchGameNumber, setScore } from '../deviceMatches'
 
 const confirmed = '2026-10-01T10:00:00.000Z'
 
@@ -41,6 +41,14 @@ describe('deviceMatchRows', () => {
     expect(deviceMatchRows(matches).every(r => r.duplicate === false)).toBe(true)
   })
 
+  // The home screen says what the server said about each match (the owner,
+  // 2026-10-27; utils/deviceSelfCheck copyState)
+  it('carries each row\'s seed key and the state stateOf gives it', () => {
+    const rows = deviceMatchRows([{ id: 1, status: 'live', seed_key: 'match_1_a', matchInfoConfirmedAt: confirmed }], new Map(), { stateOf: (m) => `state of ${m.id}` })
+    expect(rows[0]).toMatchObject({ seedKey: 'match_1_a', state: 'state of 1' })
+    expect(deviceMatchRows(matches)[0].state).toBeNull()
+  })
+
   it('reads the game number from any of its fields', () => {
     expect(matchGameNumber({ gameN: 7 })).toBe('7')
     expect(matchGameNumber({ game_n: 8 })).toBe('8')
@@ -73,5 +81,26 @@ describe('jobsOfMatch', () => {
 
   it('a match without a seed key has no jobs', () => {
     expect(jobsOfMatch(jobs, null)).toEqual([])
+  })
+})
+
+describe('setScore: where a match stands (the home screen\'s Continue card, Take back\'s comparison)', () => {
+  it('the latest set and its points, and the sets each team won, from local rows or the server\'s', () => {
+    const local = [
+      { index: 2, homePoints: 20, awayPoints: 25, finished: true },
+      { index: 1, homePoints: 25, awayPoints: 20, finished: true },
+      { index: 3, homePoints: 12, awayPoints: 10, finished: false }
+    ]
+    expect(setScore(local)).toEqual({ set: 3, home: 12, away: 10, setsHome: 1, setsAway: 1 })
+    const server = [
+      { index: 1, home_points: 25, away_points: 23, finished: true },
+      { index: 2, home_points: 14, away_points: 12, finished: false }
+    ]
+    expect(setScore(server)).toEqual({ set: 2, home: 14, away: 12, setsHome: 1, setsAway: 0 })
+  })
+
+  it('no set yet: not started', () => {
+    expect(setScore([])).toEqual({ set: null, home: 0, away: 0, setsHome: 0, setsAway: 0 })
+    expect(setScore(null).set).toBeNull()
   })
 })

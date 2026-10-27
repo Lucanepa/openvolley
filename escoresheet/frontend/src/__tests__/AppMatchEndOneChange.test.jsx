@@ -9,6 +9,7 @@ import { waitFor, fireEvent } from '@testing-library/react'
 vi.mock('../utils/parseRosterPdf', () => ({ parseRosterPdf: vi.fn() })) // pdf.js worker import
 import { db } from '../db/db'
 import { offline, online, mountApp, button, sleep, track } from './appMount'
+import { reloadInto } from './selfCheckFixtures'
 
 beforeAll(offline)
 afterAll(online)
@@ -35,7 +36,9 @@ describe('App: the match end', () => {
     ])
     await db.events.add({ matchId, setIndex: 1, type: 'coin_toss', payload: {}, seq: 1, ts: start })
 
-    mountApp() // opens the live match (App restores it)
+    // the page reloaded on the scoring screen (a fresh start opens Home)
+    reloadInto(matchId)
+    mountApp()
     // the scoreboard's match-end dialog
     const dialog = () => [...document.querySelectorAll('[role=dialog]')].find(d => /won the match/.test(d.textContent))
     await waitFor(() => expect(dialog()).toBeTruthy())

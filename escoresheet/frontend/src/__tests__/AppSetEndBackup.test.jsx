@@ -11,6 +11,7 @@ vi.mock('../utils/parseRosterPdf', () => ({ parseRosterPdf: vi.fn() })) // pdf.j
 import { db } from '../db/db'
 import { restoreMatchFromJson } from '../utils/backupManager'
 import { offline, online, mountApp, sleep } from './appMount'
+import { reloadInto } from './selfCheckFixtures'
 
 const blobs = []
 const downloads = []
@@ -49,6 +50,8 @@ describe('App: the set-end backup download', () => {
     await db.sets.add({ matchId, index: 1, homePoints: 25, awayPoints: 20, finished: false, startTime: start })
     await db.events.add({ matchId, setIndex: 1, type: 'coin_toss', payload: {}, seq: 1, ts: start })
 
+    // the page reloaded on the scoring screen (a fresh start opens Home)
+    reloadInto(matchId)
     mountApp()
     const dialog = () => [...document.querySelectorAll('[role=dialog]')].find(d => /won set|Set 1|set end/i.test(d.textContent) && [...d.querySelectorAll('button')].some(b => b.textContent.trim() === 'Confirm'))
     await waitFor(() => expect(dialog()).toBeTruthy(), { timeout: 5000 })

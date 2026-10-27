@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
-  retireSupersededMatches, retireIfSuperseded, retireStaleGameCopies, takeBackScoring,
+  retireSupersededMatches, retireIfSuperseded, retireStaleGameCopies, takeBackScoring, serverScoreForTakeBack,
   noteScorerMoved, scorerClaimJob, isScorerMoved, SCORER_MOVED, markScorerMoved, setAsideMovedJobs,
   hasUnsentClaim, closeMovedMatches, setAsideClosedJobs, setAsideClosedCopies, requeueClosedJobs, MATCH_CLOSED, SERVER_CLOSED_BY
 } from '../matchHandover'
@@ -185,6 +185,37 @@ describe('the scoring device', () => {
     expect(await takeBackScoring(db, 2, { fetchCloud: async () => null, importCloud })).toEqual({ ok: false, reason: 'notFound' })
     // nothing changed here
     expect(db.matches.map.get(2).cloudBlock).toEqual({ code: SCORER_MOVED })
+  })
+
+  // The owner, 2026-10-27: Take back's confirmation shows the server's score
+  // now, to compare with the scoreboard. A lookup with the game PIN without
+  // the claim: nothing changes, on the server or here
+  it('before Take back: the server\'s score, looked up without the claim', async () => {
+    db.matches.map.get(2).cloudBlock = { code: SCORER_MOVED }
+    db.matches.map.get(2).gamePin = '583920'
+    const looked = []
+    const sets = [
+      { index: 1, home_points: 25, away_points: 20, finished: true },
+      { index: 2, home_points: 20, away_points: 25, finished: true },
+      { index: 3, home_points: 14, away_points: 12, finished: false }
+    ]
+    const r = await serverScoreForTakeBack(db, 2, { lookup: async (gameN, pin) => { looked.push([gameN, pin]); return { data: { match: { external_id: PCS, status: 'live' }, sets } } } })
+    expect(r).toEqual({ ok: true, score: { set: 3, home: 14, away: 12, setsHome: 1, setsAway: 1 }, closed: false })
+    expect(looked).toEqual([[406970, '583920']])
+    expect(db.matches.map.get(2).cloudBlock).toEqual({ code: SCORER_MOVED })
+  })
+
+  it('before Take back, the same needs as Take back: the game PIN, a connection, this match', async () => {
+    const m = db.matches.map.get(2)
+    const lookup = async () => ({ data: { match: { external_id: PCS }, sets: [] } })
+    expect(await serverScoreForTakeBack(db, 2, { lookup })).toEqual({ ok: false, reason: 'noPin' })
+    m.gamePin = '583920'
+    expect(await serverScoreForTakeBack(db, 2, { lookup, online: false })).toEqual({ ok: false, reason: 'offline' })
+    expect(await serverScoreForTakeBack(db, 2, { lookup: async () => ({ data: { match: { external_id: 'match_x' } } }) })).toEqual({ ok: false, reason: 'otherMatch' })
+    expect(await serverScoreForTakeBack(db, 2, { lookup: async () => ({ data: null, error: { status: 0, network: true } }) })).toEqual({ ok: false, reason: 'offline' })
+    expect(await serverScoreForTakeBack(db, 2, { lookup: async () => ({ data: null, error: { status: 404, code: 'OV_NOT_FOUND' } }) })).toEqual({ ok: false, reason: 'notFound' })
+    expect(await serverScoreForTakeBack(db, 2, { lookup: async () => ({ data: null, error: { status: 500 } }) })).toEqual({ ok: false, reason: 'failed' })
+    expect(await serverScoreForTakeBack(db, 2, { lookup: async () => { throw new Error('x') } })).toEqual({ ok: false, reason: 'failed' })
   })
 
   it('an unsent claim (queued, in flight, backing off) is known; a refused or sent one is not', async () => {

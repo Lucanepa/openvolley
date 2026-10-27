@@ -735,18 +735,50 @@ async function setAsideClosed(job, seedKey) {
  */
 export async function checkScorerMoved(seedKey) {
   try {
-    const marked = await noteScorerMoved(db, seedKey, { check: (key) => apiMatchScorer(key, { claim: false }) })
-    if (!marked) return false
+    return (await scorerCheck(seedKey)).moved
+  } catch (err) {
+    safeLog.warn('[SyncQueue] Could not check the scoring device of a match:', err?.message)
+    return false
+  }
+}
+
+/**
+ * Which device scores `seedKey`, for the home screen's state of a copy (the
+ * self-check, utils/deviceSelfCheck): 'moved' when another device does (the
+ * copy is marked, as by checkScorerMoved), 'here' when the server answered
+ * that this device does or that none does, null when it was not asked or
+ * gave no answer (no connection, a claim of this device still unsent, a
+ * test or final copy). Never throws.
+ * @returns {Promise<'moved'|'here'|null>}
+ */
+export async function askScoringDevice(seedKey) {
+  try {
+    const { moved, answer } = await scorerCheck(seedKey)
+    if (moved) return 'moved'
+    return answer && !answer.error && answer.data && answer.data.mine !== false ? 'here' : null
+  } catch (err) {
+    safeLog.warn('[SyncQueue] Could not check the scoring device of a match:', err?.message)
+    return null
+  }
+}
+
+// checkScorerMoved and askScoringDevice: the server's answer, and the marking
+async function scorerCheck(seedKey) {
+  let answer = null
+  const moved = await noteScorerMoved(db, seedKey, {
+    check: async (key) => {
+      answer = await apiMatchScorer(key, { claim: false })
+      return answer
+    }
+  })
+  if (moved) {
     ;(await getBlockedSeeds()).add(seedKey)
     safeLog.log('[SyncQueue] Another device scores this match now:', seedKey)
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent(CLOUD_BLOCK_EVENT, { detail: { seedKey, code: SCORER_MOVED } }))
     }
-    return true
-  } catch (err) {
-    safeLog.warn('[SyncQueue] Could not check the scoring device of a match:', err?.message)
-    return false
   }
+  return { moved, answer }
 }
 
 // A sent job that proves the server has the match open: a closed match

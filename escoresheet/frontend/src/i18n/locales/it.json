@@ -217,7 +217,13 @@
   },
   "deleteMatch": {
     "cancel": "Annullamento",
-    "delete": "Cancellare"
+    "delete": "Cancellare",
+    "lossTitle": "Questa copia contiene ciò che il server non ha:",
+    "lossChanges_one": "{{count}} modifica non inviata",
+    "lossChanges_other": "{{count}} modifiche non inviate",
+    "lossEvents_one": "{{count}} evento non presente sul server",
+    "lossEvents_other": "{{count}} eventi non presenti sul server",
+    "lossEnd": "Eliminandola vanno persi per sempre."
   },
   "refereeSelector": {
     "title": "Database arbitri",
@@ -1118,7 +1124,24 @@
       "removedCopy": "Una seconda copia della partita {{game}} è stata rimossa da questo dispositivo: l'altra copia contiene tutto ciò che aveva.",
       "show": "Mostra",
       "remove": "Rimuovi",
-      "dismiss": "Nascondi"
+      "dismiss": "Nascondi",
+      "cleanUpLine_one": "La partita {{game}} ha {{count}} copia in più su questo dispositivo, che non contiene nulla di proprio.",
+      "cleanUpLine_other": "La partita {{game}} ha {{count}} copie in più su questo dispositivo, che non contengono nulla di proprio.",
+      "cleanUp": "Riordina",
+      "cleanUpConfirm_one": "Rimuovere la copia in più della partita {{game}} da questo dispositivo? Non contiene nulla che manchi all'altra copia. Sul server non cambia nulla.",
+      "cleanUpConfirm_other": "Rimuovere le {{count}} copie in più della partita {{game}} da questo dispositivo? Non contengono nulla che manchi all'altra copia. Sul server non cambia nulla."
+    },
+    "continueCard": {
+      "score": "Set {{set}} · {{home}}:{{away}} · set {{setsHome}}:{{setsAway}}",
+      "notStarted": "Non iniziata",
+      "lastSaved": "Ultimo salvataggio {{time}}"
+    },
+    "matchState": {
+      "here": "Refertata qui",
+      "moved": "Su un altro dispositivo",
+      "closed": "Chiusa sul server",
+      "unchecked": "Non verificata",
+      "unsent": "Modifiche non inviate"
     }
   },
   "options": {
@@ -3013,6 +3036,7 @@
       }
     },
     "removeLocalOnly": "Viene eliminata solo la copia di questo dispositivo. La versione ufficiale resta sul server.",
+    "removeMovedLocalOnly": "Viene eliminata solo la copia di questo dispositivo. La partita resta sul server e sul dispositivo che la referta.",
     "restoreRefused": "Questa partita è chiusa sul server: questo backup non può più essere ripristinato. Carica la versione ufficiale con il numero e il PIN della partita."
   },
   "androidUpdate": {
@@ -4109,6 +4133,9 @@
       "macos": "Mac",
       "desktop": "app desktop",
       "web": "browser"
-    }
+    },
+    "serverScore": "Ora sul server",
+    "compareHint": "Confrontalo con il tabellone di questo dispositivo. Riprendendola, questo punteggio viene caricato qui e l'altro dispositivo si ferma.",
+    "confirmTakeBack": "Sì, riprendi la partita qui"
   }
 }
