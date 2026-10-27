@@ -165,12 +165,13 @@ services:
       OV_PIN_SECRET: ${OV_PIN_SECRET:-}
       OV_MATCH_TOKEN_SECRET: ${OV_MATCH_TOKEN_SECRET:-}
       # V8's heap limit, below mem_limit (change them together). Node 22 sizes
-      # the heap from the cgroup (259 MB at 256m), so V8 never collected hard
-      # before the kernel OOM-killed the container: the national peak load
-      # test (2026-10-26) crash-looped on exit 137 while part of the heap was
-      # garbage. With 160 MB of old space V8 collects first; buffers, sockets
-      # and code keep the rest of the 256 MB.
-      NODE_OPTIONS: --max-old-space-size=160
+      # the heap from the cgroup, so V8 never collected hard before the kernel
+      # OOM-killed the container: the national peak load test (2026-10-26)
+      # crash-looped on exit 137 while part of the heap was garbage. With
+      # 256 MB of old space V8 collects first; buffers, sockets and code keep
+      # the rest of the 512 MB (at the national peak about 110-130 MB of the
+      # backend's memory was outside V8's heap).
+      NODE_OPTIONS: --max-old-space-size=256
     volumes:
       - type: bind
         source: ${OV_STORAGE_HOST_DIR:?set OV_STORAGE_HOST_DIR in .env}
@@ -188,8 +189,11 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    mem_limit: 256m
-    memswap_limit: 256m
+    # 512m since 2026-10-27 (owner): at 256m the national peak load test's
+    # backend died 4-6 times in set 1 on memory outside V8's heap, and the
+    # host has RAM to spare. CPU stays at 1.
+    mem_limit: 512m
+    memswap_limit: 512m
     cpus: 1.0
     pids_limit: 256
     oom_score_adj: 500

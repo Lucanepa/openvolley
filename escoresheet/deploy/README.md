@@ -158,13 +158,14 @@ round-2 fixes production carried an SVRZ evening and the SVRZ peak (39 matches) 
 about 150 matches through the first set and about 100 whole matches; the national peak
 (404 matches at once) crash-looped on backend memory in the pre-match.
 
-The limits stay as they are; `NODE_OPTIONS=--max-old-space-size=160` (compose) keeps V8's heap
-below `mem_limit`. Before an event with more than about 100 simultaneous matches, raise for
-that day and measure again with the peak harness:
+Since 2026-10-27 the backend has 512m with `NODE_OPTIONS=--max-old-space-size=256` (compose; V8's
+heap stays below `mem_limit`). At 256m the national peak still OOM-killed it 4-6 times in set 1
+on memory outside V8's heap. The other limits stay as they are. Before an event with more than
+about 100 simultaneous matches, raise for that day and measure again with the peak harness:
 
 | Service | Now | Recommended above ~100 matches | Why |
 |---|---|---|---|
-| `ov-backend` | 256m, 1 CPU, `--max-old-space-size=160` | 1g, 2 CPUs, `--max-old-space-size=700` | memory per socket and per match; above that the single Node event loop is the wall (a second CPU only takes GC and zlib off it) |
+| `ov-backend` | 512m, 1 CPU, `--max-old-space-size=256` | 1g, 2 CPUs, `--max-old-space-size=700` | memory per socket and per match; above that the single Node event loop is the wall (a second CPU only takes GC and zlib off it) |
 | `ov-postgres` | 256m, 0.5 CPU, pool 5 | 512m, 1 CPU, `PG_POOL_MAX=10` (`max_connections` 20 still fits) | its 0.5 CPU was fully used and 5 of 5 pool clients busy with 4-5 waiting at 404 matches |
 | `ov-tunnel` | 128m, 0.5 CPU, 1 replica | 256-512m, 1 CPU, 2 replicas | a plain docker-proxy alone needed 52-117 % of a CPU and 100-150 MB at 404-754 matches; cloudflared also does TLS and HTTP/2 framing |
 
