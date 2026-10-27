@@ -198,7 +198,12 @@ export default function LivescoreApp() {
   // (national peak load test 2026-10-26: about 24,000 frames a second to 1,355
   // viewers at 404 matches, the backend's CPU and the tunnel's main load).
   // Back on the list, SUBSCRIBED refetches what it did not follow meanwhile.
-  const liveFilter = selectedGame ? `match_id=eq.${selectedGame}` : 'sport_type=eq.indoor'
+  // The filter follows the game only while it is on screen: a game whose row
+  // vanished during an outage shows the list again after the reconnect's
+  // refetch, and the list must then get every game's frames, not stay on
+  // match_id=eq.<gone> until a click or a reload.
+  const shownGameId = selectedGame && liveGames.some((g) => g.match_id === selectedGame) ? selectedGame : null
+  const liveFilter = shownGameId ? `match_id=eq.${shownGameId}` : 'sport_type=eq.indoor'
   useEffect(() => {
     if (!serverReady || relayLivescoreNow() || !supabase) return undefined
 
