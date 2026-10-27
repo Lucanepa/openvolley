@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { elapsedWhenSent, countdownAnchor, secondsLeft, monotonicNow, keepCountdown, elapsedAfterTheFact } from '../countdownClock'
+import { elapsedWhenSent, countdownAnchor, secondsLeft, monotonicNow, keepCountdown, elapsedAfterTheFact, liveStatePushedAt } from '../countdownClock'
 
 describe('countdowns on the device\'s own clock', () => {
   it('how long it had run when sent: from the sender\'s two readings, whatever the receiver\'s clock', () => {
@@ -13,6 +13,24 @@ describe('countdowns on the device\'s own clock', () => {
     expect(elapsedWhenSent(start, undefined, 30000)).toBe(0)
     expect(elapsedWhenSent(null, start, 30000)).toBe(0)
     expect(elapsedWhenSent('not a time', start, 30000)).toBe(0)
+  })
+
+  // 2026-10-27: updated_at is the live-state clock (serverDataSync
+  // liveClockOffset), which runs ahead of the scorer's own clock on a match it
+  // continued; the starts are on its own clock, as last_event_ts is
+  it('a row\'s push time on the scorer\'s own clock: last_event_ts, else updated_at', () => {
+    const pushed = Date.parse('2026-10-27T19:40:05.000Z')
+    const row = {
+      timeout_started_at: new Date(pushed - 5000).toISOString(),
+      last_event_ts: new Date(pushed).toISOString(),
+      updated_at: new Date(pushed + 3600000).toISOString()
+    }
+    expect(liveStatePushedAt(row)).toBe(row.last_event_ts)
+    expect(elapsedWhenSent(row.timeout_started_at, liveStatePushedAt(row), 30000)).toBe(5000)
+    // a row without one (an older scorer, a partial write): updated_at
+    expect(liveStatePushedAt({ updated_at: row.updated_at })).toBe(row.updated_at)
+    expect(liveStatePushedAt({ last_event_ts: null, updated_at: row.updated_at })).toBe(row.updated_at)
+    expect(liveStatePushedAt(null)).toBeNull()
   })
 
   it('counts down from its length to 0 on the monotonic clock, never outside', () => {

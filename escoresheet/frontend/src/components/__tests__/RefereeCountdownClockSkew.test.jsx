@@ -97,8 +97,16 @@ async function openReferee() {
   expect(countdown()).toBeNull()
 }
 
+// The break's countdown (2:20), null without one
+const breakClock = () => {
+  const el = [...document.querySelectorAll('div')].find(d => d.children.length === 0 && /^\d:\d\d$/.test(d.textContent.trim()))
+  return el ? el.textContent.trim() : null
+}
+
 // The scorer's clock, `skewMs` ahead of this tablet's (negative: behind)
 const scorerClock = (skewMs) => Date.now() + skewMs
+const iso = (ms) => new Date(ms).toISOString()
+const HOUR = 3600 * 1000
 
 describe('Referee: the time-out countdown with the tablet\'s clock off', () => {
   beforeEach(() => {
@@ -136,5 +144,45 @@ describe('Referee: the time-out countdown with the tablet\'s clock off', () => {
     })
     await settle()
     expect(countdown()).toBe(25)
+  })
+
+  // 2026-10-27: a device that continued a match from one whose clock was an
+  // hour ahead stamps its rows' updated_at an hour ahead of its own clock (the
+  // live-state clock, which only orders the rows: serverDataSync
+  // liveClockOffset) and its countdown starts on its own clock, which the
+  // website and Point Hub count from. Counted from updated_at, its time-out
+  // read 0 from the first second and its break 0:00. The push's own reading
+  // on the starts' clock is last_event_ts.
+  it('the database row of a scorer whose live-state clock runs an hour ahead: 30, not 0', async () => {
+    await openReferee()
+    const start = scorerClock(0)
+    await act(async () => {
+      cloud.onRow({
+        new: liveRow(start + 80 + HOUR, {
+          timeout_active: true, timeout_started_at: iso(start), last_event_ts: iso(start + 80),
+          last_event_type: 'timeout', last_event_team: 'left', last_event_data: { duration: 30 }
+        })
+      })
+    })
+    await settle()
+    expect(countdown()).toBe(30)
+    await settle(1200)
+    expect(countdown()).toBe(29)
+  })
+
+  it('the same scorer\'s push 40 s into the break: 2:20 left, not 0:00', async () => {
+    await openReferee()
+    const pushedAt = scorerClock(0)
+    await act(async () => {
+      cloud.onRow({
+        new: liveRow(pushedAt + HOUR, {
+          current_set: 2, points_a: 0, points_b: 0, sets_won_a: 1, sets_won_b: 0, match_status: 'interval',
+          set_interval_active: true, set_interval_started_at: iso(pushedAt - 40000), last_event_ts: iso(pushedAt),
+          last_event_type: 'lineup', last_event_team: 'home', last_event_data: { setIndex: 1, winner: 'home' }
+        })
+      })
+    })
+    await settle()
+    expect(breakClock()).toBe('2:20')
   })
 })

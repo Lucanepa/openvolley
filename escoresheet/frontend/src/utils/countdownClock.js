@@ -16,6 +16,8 @@
  * each other: their difference is how long the countdown had run when it was
  * sent. The receiving device counts on from there on its own monotonic clock
  * (the message's way through the relay, well under a second, is not counted).
+ * Both readings are the device's own Date.now(), never the live-state clock
+ * that orders the rows (liveStatePushedAt).
  */
 
 /** This device's monotonic clock in ms (performance.now; Date.now without it). */
@@ -45,6 +47,26 @@ export function elapsedWhenSent(startedAt, sentAt, durationMs) {
   const sent = toMs(sentAt)
   if (start == null || sent == null) return 0
   return Math.min(Math.max(0, sent - start), Math.max(0, durationMs || 0))
+}
+
+/**
+ * When the scorer pushed a match_live_state row, read on its own clock, the
+ * clock its countdown starts (timeout_started_at, set_interval_started_at)
+ * are on: the push's last_event_ts, else its updated_at. A push that names
+ * an event stamps last_event_ts with the device's Date.now() as it is sent.
+ * updated_at is on the match's live-state clock (serverDataSync
+ * liveClockOffset), which orders the rows: on a device that continued a
+ * match from one whose clock was ahead, it runs ahead of the device's own
+ * clock by as much, an hour after a laptop in the wrong time zone, and a
+ * time-out counted from it read 0 from its first second. A reconnect push
+ * names the last event again with its own time: a countdown first read from
+ * one counts from that event's push (more time left than there is, never
+ * less).
+ * @param {object|null} row
+ * @returns {string|number|null}
+ */
+export function liveStatePushedAt(row) {
+  return row?.last_event_ts || row?.updated_at || null
 }
 
 /**
@@ -96,12 +118,15 @@ export function keepCountdown(key, startedAt, anchor, durationSec, { now = Date.
 /**
  * How long (ms) a countdown has run, for one read after the fact from a
  * live-state row (a referee that reloads or joins while it runs). Its
- * difference with the row's updated_at says nothing then: the scorer sends
+ * difference with the row's push time says nothing then: the scorer sends
  * no push while a countdown runs, so that is the push at its start. This
  * tab's own countdown of the same start, kept before the reload
  * (keepCountdown), when there is one; else this device's clock against the
  * scorer's start, right when both keep network time (a tablet joining only
- * now has nothing else). Never below 0 nor above the countdown's length.
+ * now has nothing else). The start is the scorer's own clock, as the relay
+ * action's start a kept countdown names: on the live-state clock (round 2),
+ * a start the offset ahead matched no kept countdown and read 0 elapsed, the
+ * full 30 s. Never below 0 nor above the countdown's length.
  * @param {string} key
  * @param {number|string} startedAt
  * @param {number} durationSec

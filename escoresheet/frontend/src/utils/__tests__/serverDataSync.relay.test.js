@@ -25,7 +25,6 @@ import {
   getMatchData,
   uploadRosterToCloud,
   liveClockOffsetAfter,
-  MAX_LIVE_CLOCK_OFFSET_MS,
   liveStateNow,
   LIVE_STATE_HOLD_MS
 } from '../serverDataSync'
@@ -661,16 +660,34 @@ describe('hand-over to a device whose clock is behind', () => {
     expect(liveStateNow({ id: 1 }, B_NOW)).toBe(B_NOW)
   })
 
-  // 2026-10-26: following a clock an hour ahead (a laptop in the wrong time
-  // zone) stamped every state of the rest of the match, and the time-out and
-  // break starts the website and Point Hub count from, an hour ahead
-  it('the offset a device takes on is at most 10 minutes, a stored one too', () => {
+  // 2026-10-27: the offset was capped at 10 minutes. After a laptop an hour
+  // ahead (the wrong time zone), the device that continued its match stamped
+  // its states 50 minutes older than the laptop's last one, and the referee,
+  // benches and livescore dropped every one of them, for the rest of the
+  // match. The offset only orders the live states (the countdown starts stay
+  // on the device's own clock): it is followed whole.
+  it('a clock an hour ahead is followed whole, a stored offset too; garbage is no offset', () => {
     const hourAhead = { ...laptopLast, updated_at: iso(B_NOW + 3600000) }
-    expect(liveClockOffsetAfter(hourAhead, B_NOW)).toBe(MAX_LIVE_CLOCK_OFFSET_MS)
-    expect(MAX_LIVE_CLOCK_OFFSET_MS).toBe(600000)
-    expect(liveStateNow({ id: 1, liveClockOffsetMs: 3600001 }, B_NOW)).toBe(B_NOW + MAX_LIVE_CLOCK_OFFSET_MS)
-    // a realistic skew is followed whole
+    const offset = liveClockOffsetAfter(hourAhead, B_NOW)
+    expect(offset).toBe(3600001)
+    const tabletMatch = { id: 1, seed_key: SEED, liveClockOffsetMs: offset }
+    // its next state comes after the laptop's last, for the hub and the viewers
+    const next = { current_set: 1, points_a: 2, points_b: 2, updated_at: iso(liveStateNow(tabletMatch, B_NOW + 1000)), _seq: 1, _session: 'B' }
+    expect(isNewerLiveState(next, hourAhead.updated_at)).toBe(true)
+    expect(newerLiveState(hourAhead, next)).toBe(next)
+    // its relay bundles too
+    const { match } = relayMatchPayload(tabletMatch, null, { now: B_NOW, mark: { seq: 1, session: 'B', at: B_NOW } })
+    expect(match._syncedAt).toBe(B_NOW + 3600001)
+    // a stored offset of an hour, or of days, is the device's clock as it is
+    expect(liveStateNow({ id: 1, liveClockOffsetMs: 3600001 }, B_NOW)).toBe(B_NOW + 3600001)
+    expect(liveStateNow({ id: 1, liveClockOffsetMs: 3 * 86400000 }, B_NOW)).toBe(B_NOW + 3 * 86400000)
+    // a realistic skew is followed whole, as ever
     expect(liveClockOffsetAfter(laptopLast, B_NOW)).toBe(180001)
+    // garbage (not a number, more than 7 days): no offset
+    for (const bad of [Infinity, NaN, 'soon', -5000, 8 * 86400000]) {
+      expect(liveStateNow({ id: 1, liveClockOffsetMs: bad }, B_NOW)).toBe(B_NOW)
+    }
+    expect(liveClockOffsetAfter({ updated_at: iso(B_NOW + 8 * 86400000) }, B_NOW)).toBe(0)
   })
 
   it('the referee and benches follow the new device at its first bundle and live state', () => {
