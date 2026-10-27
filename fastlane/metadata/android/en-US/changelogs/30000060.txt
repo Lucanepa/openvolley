@@ -1,0 +1,4 @@
+OpenVolley 3.0.6
+- The app opens on Home; the match in progress is one tap away (Continue). A reload goes back into it; 15 minutes in the background goes to Home.
+- Every start checks the device's matches with the server: a match finished or continued elsewhere is shown as such, read-only, and can be removed from this device safely.
+- Duplicate copies are flagged with a Clean up action, never deleted on their own.
