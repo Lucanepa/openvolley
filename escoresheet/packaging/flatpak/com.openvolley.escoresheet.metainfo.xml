@@ -71,6 +71,16 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.6" date="2026-10-27">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.6</url>
+      <description>
+        <ul>
+          <li>The app opens on Home; the match in progress is one tap away (Continue). A reload goes back into it; 15 minutes in the background goes to Home.</li>
+          <li>Every start checks the device's matches with the server: a match finished or continued elsewhere is shown as such, read-only, and can be removed from this device safely.</li>
+          <li>Duplicate copies are flagged with a Clean up action, never deleted on their own.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0.5" date="2026-10-27">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.5</url>
       <description>
