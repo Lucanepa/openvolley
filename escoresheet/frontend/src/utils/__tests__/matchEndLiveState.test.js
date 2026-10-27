@@ -25,7 +25,7 @@ vi.mock('../../lib/apiClient', () => {
   return { apiFrom: (table) => builder(table) }
 })
 
-import { matchEndLiveStatePatch, publishMatchEndLiveState } from '../matchEndLiveState'
+import { endedOnThisDevice, matchEndLiveStatePatch, publishEndedLiveStates, publishMatchEndLiveState } from '../matchEndLiveState'
 
 const CLOUD_ID = '11111111-2222-4333-8444-555555555555'
 const match = { id: 1, seed_key: 'match_972748_abc', test: false, coinTossTeamA: 'away', bestOf: 3 }
@@ -86,5 +86,65 @@ describe('publishMatchEndLiveState', () => {
     api.calls = []
     expect(await publishMatchEndLiveState({ ...match, test: true }, sets)).toBe(true)
     expect(api.calls).toHaveLength(0)
+  })
+})
+
+// Since 2026-10-27 the app opens on Home: App runs the repair at start-up for
+// every official match the device holds as ended, no screen opened
+describe('endedOnThisDevice', () => {
+  const won = [...sets]
+  it('ended here, or still live with a team that has won it by its sets', () => {
+    expect(endedOnThisDevice({ ...match, status: 'ended' }, [])).toBe(true)
+    expect(endedOnThisDevice({ ...match, status: 'live' }, won)).toBe(true)
+    expect(endedOnThisDevice({ ...match, status: 'live' }, won.slice(0, 1))).toBe(false)
+    // best of 5 (the default): 2 sets are not enough
+    expect(endedOnThisDevice({ ...match, status: 'live', bestOf: undefined }, won)).toBe(false)
+    expect(endedOnThisDevice({ ...match, status: 'scheduled' }, won)).toBe(false)
+    expect(endedOnThisDevice({ ...match, status: 'final' }, won)).toBe(false)
+  })
+})
+
+describe('publishEndedLiveStates', () => {
+  // the app database, as far as the repair reads it
+  const fakeDb = (matches, setsOf) => ({
+    matches: { toArray: async () => matches },
+    sets: { where: () => ({ equals: (id) => ({ toArray: async () => setsOf[id] || [] }) }) }
+  })
+
+  it('publishes for each official match ended here, and only those; done ones are not asked again', async () => {
+    const rows = [
+      { ...match, id: 1, status: 'ended' },
+      { ...match, id: 2, seed_key: 'match_2_b', status: 'live' }, // won by its sets
+      { ...match, id: 3, seed_key: 'match_3_c', status: 'live' }, // in progress
+      { ...match, id: 4, seed_key: 'match_4_d', status: 'ended', test: true },
+      { ...match, id: 5, seed_key: 'match_5_e', status: 'final' },
+      { ...match, id: 6, seed_key: 'match_6_f', status: 'ended', cloudBlock: { code: 'OV_SCORER_MOVED' } },
+      { ...match, id: 7, seed_key: 'match_7_g', status: 'ended', cloudBlock: { code: 'OV_MATCH_CLOSED' } },
+      { ...match, id: 8, seed_key: 'match_8_h', status: 'ended', closed_at: '2026-10-20T18:40:00.000Z' },
+      { ...match, id: 9, seed_key: null, status: 'ended' }
+    ]
+    const database = fakeDb(rows, { 1: sets, 2: sets, 3: sets.slice(0, 1) })
+    const publish = vi.fn(async () => true)
+    const done = new Set()
+    expect(await publishEndedLiveStates(database, { publish, done })).toEqual({ pending: 0 })
+    expect(publish.mock.calls.map(([m]) => m.id)).toEqual([1, 2])
+    expect(publish.mock.calls[0][1]).toEqual(sets)
+    expect([...done]).toEqual([1, 2])
+    publish.mockClear()
+    expect(await publishEndedLiveStates(database, { publish, done })).toEqual({ pending: 0 })
+    expect(publish).not.toHaveBeenCalled()
+  })
+
+  it('not done (offline, not in the cloud yet) or failing: pending, asked again next time', async () => {
+    const database = fakeDb([{ ...match, id: 1, status: 'ended' }, { ...match, id: 2, seed_key: 'match_2_b', status: 'ended' }], {})
+    const publish = vi.fn(async (m) => {
+      if (m.id === 2) throw new Error('boom')
+      return false
+    })
+    const done = new Set()
+    expect(await publishEndedLiveStates(database, { publish, done })).toEqual({ pending: 2 })
+    expect(done.size).toBe(0)
+    publish.mockImplementation(async () => true)
+    expect(await publishEndedLiveStates(database, { publish, done })).toEqual({ pending: 0 })
   })
 })

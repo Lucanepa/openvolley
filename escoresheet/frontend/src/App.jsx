@@ -32,12 +32,18 @@ import SyncSignInBanner from './components/auth/SyncSignInBanner'
 import useAutoBackup from './hooks/useAutoBackup'
 import { pickNativeBackupFile } from './utils/nativeBackup'
 import { useDashboardServer } from './hooks/useDashboardServer'
+import { publishEndedLiveStates } from './utils/matchEndLiveState'
 import ballFallback from './ball_fallback.png'
 
 // Primary ball image (with a bundled copy as fallback)
 // The bundled, content-hashed ball (brand/ball.svg): an unhashed /ball.png could
 // stay cached (old green ball) after an update
 const ballImage = ballFallback
+
+// The start-up's live-state repair of ended matches (publishEndedLiveStates):
+// tried again at most this often, this many times
+const ENDED_LIVE_STATE_RETRY_MS = 60 * 1000
+const ENDED_LIVE_STATE_TRIES = 10
 
 import {
   TEST_REFEREE_SEED_DATA,
@@ -1218,6 +1224,46 @@ export default function App() {
     }).catch((error) => console.error('[Start] Could not reopen the match:', error))
     return () => { alive = false }
   }, [runSelfCheck])
+
+  // Match End's live-state repair (utils/matchEndLiveState, fbf159bf) at
+  // start-up, for every official match this device holds as ended. An app
+  // killed between the last rally and the scoreboard's 'match_end' push used
+  // to reopen on Match End, which repairs it; it opens on Home now, and the
+  // livescore kept the game running until the scorer pressed Continue, or
+  // for good. No screen opens and nothing waits for it: tried when the app
+  // is online and signed in, again when it comes online or the queue drains
+  // (at most once a minute, a few times), until every match is done.
+  useEffect(() => {
+    const done = new Set()
+    let stopped = false
+    let running = false
+    let tries = 0
+    let lastTry = 0
+    async function attempt() {
+      if (stopped || running || !selfCheckServer()) return
+      if (tries > 0 && Date.now() - lastTry < ENDED_LIVE_STATE_RETRY_MS) return
+      running = true
+      tries++
+      lastTry = Date.now()
+      try {
+        const { pending } = await publishEndedLiveStates(db, { done })
+        if (pending === 0 || tries >= ENDED_LIVE_STATE_TRIES) stop()
+      } catch (error) {
+        console.warn('[Start] Could not publish the match end to the live state:', error?.message)
+      } finally {
+        running = false
+      }
+    }
+    function stop() {
+      stopped = true
+      window.removeEventListener('online', attempt)
+      window.removeEventListener('sync-queue-drained', attempt)
+    }
+    window.addEventListener('online', attempt)
+    window.addEventListener('sync-queue-drained', attempt)
+    attempt()
+    return stop
+  }, [selfCheckServer])
 
   // The match screen on show, for a reload (rule 2): noted whenever it
   // changes, cleared when the scorer leaves it for Home (Home, Close match,

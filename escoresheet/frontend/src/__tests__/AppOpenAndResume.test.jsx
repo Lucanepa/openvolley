@@ -24,7 +24,7 @@ import { scorerRelay } from '../utils/relayPublisher'
 import { offline, online, mountApp, button, sleep } from './appMount'
 import {
   SEED, MIN, HOUR, DAY, ago, OPEN_MATCH_KEY, reloadInto, seedMatch, signIn, answerServer, rowsReads, callsTo,
-  closedRow, openRow, offlineDevice, backgroundClock
+  closedRow, openRow, offlineDevice, backgroundClock, jsonResponse
 } from './selfCheckFixtures'
 
 beforeAll(offline)
@@ -471,5 +471,88 @@ describe('Remove warns before anything unsent is lost', () => {
     } finally {
       onLine.mockRestore()
     }
+  })
+})
+
+// fbf159bf: an app killed between the last rally and the scoreboard's
+// 'match_end' push reopened on Match End, which makes the cloud live state
+// say 'ended'; the livescore kept the game running otherwise. The app opens
+// on Home now: the same repair runs at start-up, without opening a screen.
+describe('Match End\'s live-state repair runs at start-up, on Home', () => {
+  const CLOUD_ID = 'c0ffee00-0000-4000-8000-000000000001'
+  const liveStateWrites = () => globalThis.fetch.mock.calls
+    .map(([url, init]) => [String(url), JSON.parse(init?.body || 'null')])
+    .filter(([url, b]) => url.endsWith('/api/db') && b?.table === 'match_live_state' && b?.action === 'update')
+    .map(([, b]) => b)
+  // the server: the self-check's read, and the live state's update
+  function serverWithLiveState() {
+    answerServer(() => [openRow])
+    const inner = globalThis.fetch.getMockImplementation()
+    globalThis.fetch.mockImplementation(async (url, init) => {
+      const b = JSON.parse(init?.body || 'null')
+      if (String(url).endsWith('/api/db') && b?.table === 'match_live_state') return jsonResponse({ data: [] })
+      return inner(url, init)
+    })
+  }
+  // the last set finished: 25:20, 20:25, 15:10
+  async function endedMatch(fields) {
+    const id = await seedMatch({ at: ago(10 * MIN), externalId: CLOUD_ID, bestOf: 3, ...fields })
+    await db.sets.where({ matchId: id, index: 3 }).modify({ homePoints: 15, awayPoints: 10, finished: true })
+    return id
+  }
+
+  it.each([
+    ['ended here (killed before the push)', { status: 'ended' }],
+    ['still live, won by its sets (killed in the set-end sync\'s pause)', { status: 'live' }]
+  ])('a match %s: the live state says ended, and the app stays on Home', async (_, fields) => {
+    await endedMatch(fields)
+    signIn()
+    serverWithLiveState()
+    mountApp()
+    await waitFor(() => expect(liveStateWrites()).toHaveLength(1))
+    const write = liveStateWrites()[0]
+    expect(write.params.data).toMatchObject({ match_status: 'ended', current_set: 3, sets_won_a: 2, sets_won_b: 1, points_a: 15, points_b: 10 })
+    expect(write.params.filters).toEqual(expect.arrayContaining([
+      { type: 'eq', column: 'match_id', value: CLOUD_ID },
+      { type: 'neq', column: 'match_status', value: 'ended' }
+    ]))
+    await sleep(300)
+    expect(homeShown()).toBe(true)
+    expect(continueCard()).toBeTruthy()
+    expect(liveStateWrites()).toHaveLength(1)
+  })
+
+  it('offline at the start: tried when the device comes online', async () => {
+    await endedMatch({ status: 'ended' })
+    signIn()
+    serverWithLiveState()
+    const onLine = offlineDevice()
+    try {
+      mountApp()
+      await waitFor(() => expect(continueCard()).toBeTruthy())
+      await sleep(300)
+      expect(liveStateWrites()).toHaveLength(0)
+    } finally {
+      onLine.mockRestore()
+    }
+    window.dispatchEvent(new Event('online'))
+    await waitFor(() => expect(liveStateWrites()).toHaveLength(1))
+    expect(homeShown()).toBe(true)
+  })
+
+  it.each([
+    ['in progress', { status: 'live' }, false],
+    ['scored on another device', { status: 'ended', cloudBlock: { code: 'OV_SCORER_MOVED', claim: null, scorer: null, at: 1 } }, true],
+    ['closed on the server', { status: 'ended', cloudBlock: { code: 'OV_MATCH_CLOSED', claim: null, at: 1 } }, true],
+    ['a test match', { status: 'ended', test: true, seed_key: 'test-match-1', matchInfoConfirmedAt: undefined }, true]
+  ])('never for a match %s', async (_, fields, finished) => {
+    const id = await seedMatch({ at: ago(10 * MIN), externalId: CLOUD_ID, bestOf: 3, ...fields })
+    if (finished) await db.sets.where({ matchId: id, index: 3 }).modify({ homePoints: 15, awayPoints: 10, finished: true })
+    signIn()
+    serverWithLiveState()
+    mountApp()
+    await waitFor(() => expect(continueCard()).toBeTruthy())
+    await sleep(600)
+    expect(liveStateWrites()).toHaveLength(0)
   })
 })
