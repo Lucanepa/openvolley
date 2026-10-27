@@ -234,6 +234,8 @@ describe('copyState: what Home says about a copy', () => {
     expect(copyState({ status: 'live', seed_key: SEED }, { checkedHere: true })).toBe('here')
     expect(copyState({ status: 'live', seed_key: SEED })).toBe('unchecked')
     expect(copyState({ status: 'live', test: true })).toBeNull()
+    // approved here, Close match not pressed yet: never asked about
+    expect(copyState({ status: 'ended', approved: true, seed_key: SEED }, { checkedHere: true })).toBeNull()
   })
 })
 
@@ -357,6 +359,20 @@ describe('runDeviceSelfCheck', () => {
     await runDeviceSelfCheck({ database: db, server })
     expect(server.readRows).toHaveBeenCalledTimes(1)
     expect(server.readRows.mock.calls[0][0].sort()).toEqual(['match_1_a', 'match_2_b'])
+  })
+
+  it('a copy approved here (Close match not pressed yet) is not asked about: the server closed it at its approval', async () => {
+    const id = await addMatch({ events: 3, status: 'ended', approved: true, approvedAt: ago(10 * MIN) })
+    const server = fakeServer([{ ...closedRow, status: 'approved' }])
+    const r = await runDeviceSelfCheck({ database: db, server })
+    expect(server.readRows).not.toHaveBeenCalled()
+    expect(server.noteClosed).not.toHaveBeenCalled()
+    expect(r.closed).toEqual([])
+    expect((await db.matches.get(id)).cloudBlock).toBeUndefined()
+    // ended here, not approved: approved on another device, marked as before
+    const other = await addMatch({ events: 3, seed_key: 'match_2_b', status: 'ended' })
+    const r2 = await runDeviceSelfCheck({ database: db, server: fakeServer([{ ...closedRow, external_id: 'match_2_b' }]) })
+    expect(r2.closed.map(c => c.id)).toEqual([other])
   })
 
   it('two copies of one match: their scoring device asked once', async () => {

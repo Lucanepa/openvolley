@@ -255,6 +255,31 @@ describe('App: the self-check on open', () => {
     expect(scoreboardShown()).toBe(false)
   })
 
+  it('(i) a match approved here, before Close match: never marked closed by the check, it stays on Home and Continue opens its Close match', async () => {
+    // db/007 closes the server's match at 'approved': the check found the
+    // server row closed, marked the copy final (useSyncQueue closesLocalCopy)
+    // and it left the home screen without Close match, which queues 'final'.
+    // The server's match stayed 'approved' for good.
+    const matchId = await seedMatch({ at: ago(30 * MIN), status: 'ended', approved: true, approvedAt: ago(25 * MIN) })
+    await db.sets.where({ matchId, index: 3 }).modify({ homePoints: 15, awayPoints: 10, finished: true })
+    signIn()
+    answerServer(() => [{ ...closedRow, status: 'approved' }])
+    mountApp()
+    await waitFor(() => expect(button('Continue match')).toBeTruthy())
+    await sleep(800)
+    const after = await db.matches.get(matchId)
+    expect(after.status).toBe('ended')
+    expect(after.cloudBlock ?? null).toBeNull()
+    expect(selfCheckNotice()).toBeNull()
+    // done here: no server state to show
+    expect(stateLabels(continueCard())).toEqual([])
+    expect(rowsReads()).toHaveLength(0)
+
+    fireEvent.click(button('Continue match'))
+    await waitFor(() => expect(button(en.matchEnd.closeMatch)).toBeTruthy())
+    expect((await db.matches.get(matchId)).status).toBe('ended')
+  })
+
   it('Continue offline opens at once, without asking', async () => {
     await seedMatch({ at: ago(2 * DAY) })
     signIn()
