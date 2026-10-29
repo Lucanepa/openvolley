@@ -488,7 +488,9 @@
     "clubBlockedTitle": "Not a home game of your club",
     "clubRequired": "Your account has no club yet. An admin adds your club before you can score official games.",
     "notYourClub": "{{home}} is the home team. You score the home games of {{clubs}} only.",
-    "gameNotInSchedule": "Game {{game}} is not in the VolleyManager schedule, so its home team is unknown. Check the game number."
+    "gameNotInSchedule": "Game {{game}} is not in the VolleyManager schedule, so its home team is unknown. Check the game number.",
+    "refereeEmail": "Email (optional)",
+    "refereeEmailHint": "For the final scoresheet. Only this match's scorers see it."
   },
   "scoreboard": {
     "set": "Set",
@@ -1495,7 +1497,8 @@
       },
       "cancelKeepsUnapproved": "Cancel leaves the match not approved. Approve without PDF approves it now: save the PDF from the scoresheet later.",
       "keepWindowOpen": "Keep the scoresheet window open until the PDF is ready."
-    }
+    },
+    "testMailSent": "Scoresheet sent to {{to}}"
   },
   "scoresheetPdf": {
     "zoomOut": "Zoom out",
@@ -2633,7 +2636,8 @@
       "activity": "Activity",
       "scoresheets": "Scoresheets",
       "clubs": "Clubs",
-      "myclub": "My club"
+      "myclub": "My club",
+      "settings": "Settings"
     },
     "status": {
       "setup": "Set-up",
@@ -2930,6 +2934,18 @@
       "invites": "Invite codes",
       "maxUsesHint": "1 to {{max}}",
       "expiresHint": "At most {{days}} days ahead"
+    },
+    "settings": {
+      "finalEmail": "Send the final scoresheet by email",
+      "finalEmailOffHint": "Off: no scoresheet is mailed. Turn it on once OpenVolley scores real games.",
+      "finalEmailOnHint": "On: once an official match is closed, its scoresheet goes to the scorer, the referees and the contact of each team's club.",
+      "finalEmailOnTitle": "Send final scoresheets by email?",
+      "finalEmailOnBody": "From now on, every closed official match mails its scoresheet PDF to the scorer, the referees and the contact address of each team's club. Matches closed earlier are not mailed. The privacy policy must say so before you turn this on.",
+      "finalEmailOnConfirm": "Turn on",
+      "finalEmailIsOn": "Final scoresheets are now sent by email",
+      "finalEmailIsOff": "Final scoresheets are no longer sent",
+      "changed": "Changed",
+      "noMail": "This server cannot send email yet (no mail server set up): nothing goes out, even with the switch on."
     }
   },
   "playerPool": {

@@ -12,9 +12,12 @@ import {
 } from '../lib/mailer.js'
 import { startFakeSmtp, makeTestCert, linkToken, SMTP_USER, SMTP_PASS } from './helpers/fakeSmtp.js'
 
-// The account mails come in both brands; the approval notices are OpenVolley's only
+// The account mails come in both brands; the approval notices and the
+// scoresheet mails (db/021, a PDF attached, no link) are OpenVolley's only
 const APPROVAL_KINDS = ['approval', 'approval_pin_locked']
-const ACCOUNT_KINDS = MAIL_KINDS.filter((k) => !APPROVAL_KINDS.includes(k))
+const SCORESHEET_KINDS = ['scoresheet', 'scoresheet_test']
+const ACCOUNT_KINDS = MAIL_KINDS.filter((k) => !APPROVAL_KINDS.includes(k) && !SCORESHEET_KINDS.includes(k))
+const SCORESHEET_VARS = { teams: 'KSC Wiedikon H1 – VBC Other H1', game: '930001', date: '29.10.2026', result: '3:1', corrected: false }
 
 const TOKEN = 'A'.repeat(20) + '_-' + 'b'.repeat(21)
 const silent = { log() {}, warn() {}, error() {} }
@@ -48,14 +51,14 @@ describe('mailer: links and templates', () => {
     const subjects = new Set()
     for (const kind of MAIL_KINDS) {
       for (const lang of MAIL_LANGS) {
-        const m = renderMail(kind, lang, { link })
+        const m = renderMail(kind, lang, { link, vars: SCORESHEET_VARS })
         assert.ok(m.subject && !subjects.has(m.subject), `${kind}/${lang} has its own subject`)
         subjects.add(m.subject)
         assert.ok(m.text.endsWith('\n'))
         assert.doesNotMatch(m.html, /<img|<script|<link|url\(|@import/i, 'no remote images, scripts or styles')
         assert.doesNotMatch(m.text + m.subject, /ß/, 'Swiss spelling')
         const urls = (m.html.match(/https?:\/\/[^"<\s]+/g) || [])
-        if (kind === 'password_changed') {
+        if (kind === 'password_changed' || SCORESHEET_KINDS.includes(kind)) {
           assert.equal(urls.length, 0, 'the notice carries no link')
           assert.doesNotMatch(m.text, /https?:/)
         } else {
@@ -272,13 +275,31 @@ describe('mailer: budgets and the per-inbox cap (stub transport)', () => {
   const link = 'https://x.test/#t?token=t'
 
   it('defaults: 50 + 50 per hour (100 in total, as before), 100 approval notices, 5 per inbox', () => {
-    assert.deepEqual({ ...DEFAULT_BUDGETS }, { account: 50, confirm: 50, notify: 100 })
+    assert.deepEqual({ ...DEFAULT_BUDGETS }, { account: 50, confirm: 50, notify: 100, scoresheet: 300 })
     assert.equal(DEFAULT_MAX_PER_INBOX, 5)
     const m = createMailer({ ...stub(), from: 'x <x@example.test>', logger: silent })
     const st = m.stats()
     assert.equal(st.budgets.account.max, 50)
     assert.equal(st.budgets.confirm.max, 50)
     assert.deepEqual(disabledMailer('SMTP_HOST not set').stats(), { enabled: false, reason: 'SMTP_HOST not set' })
+  })
+
+  it('scoresheet mails: the PDF attached (PDFs only, scoresheet kinds only); test mails capped per inbox, the final ones not', async () => {
+    const { sent, transport } = stub()
+    const m = createMailer({ transport, from: 'x <x@example.test>', logger: silent })
+    const pdf = [{ filename: 'Match_1.pdf', content: Buffer.from('%PDF-1.4') }]
+    assert.deepEqual(await m.send('scoresheet', { to: 'club@example.ch', vars: SCORESHEET_VARS, attachments: pdf }), { sent: true })
+    assert.equal(sent[0].attachments[0].filename, 'Match_1.pdf')
+    assert.equal(sent[0].attachments[0].contentType, 'application/pdf')
+    await assert.rejects(m.send('reset', { to: 'a@example.ch', link, attachments: pdf }), /no such attachment/)
+    await assert.rejects(m.send('scoresheet', { to: 'a@example.ch', vars: SCORESHEET_VARS, attachments: [{ filename: 'x.exe', content: Buffer.from('MZ') }] }), /no such attachment/)
+    await assert.rejects(m.send('scoresheet', { to: 'a@example.ch', vars: SCORESHEET_VARS, attachments: [{ filename: 'x.pdf', path: '/etc/passwd' }] }), /no such attachment/)
+    for (let i = 0; i < 8; i++) await m.send('scoresheet', { to: 'club@example.ch', vars: SCORESHEET_VARS, attachments: pdf })
+    assert.equal(sent.filter((x) => x.to === 'club@example.ch').length, 9, 'a club contact gets every game')
+    const results = []
+    for (let i = 0; i < 8; i++) results.push(await m.send('scoresheet_test', { to: 'me@example.ch', vars: SCORESHEET_VARS, attachments: pdf }))
+    assert.equal(results.filter((r) => r.sent).length, DEFAULT_MAX_PER_INBOX)
+    assert.equal(results.at(-1).skipped, 'inbox')
   })
 
   it('confirmation mails cannot use up the budget of reset and password-changed mails', async () => {
@@ -358,7 +379,7 @@ describe('mailer: brands (OpenVolley / OpenBeach)', () => {
     for (const kind of MAIL_KINDS) {
       for (const lang of MAIL_LANGS) {
         for (const app of ['indoor', 'beach']) {
-          const m = renderMail(kind, lang, { link, app })
+          const m = renderMail(kind, lang, { link, app, vars: SCORESHEET_VARS })
           assert.ok(m.text.endsWith(`\n\n${expected[lang]}\n`), `${kind}/${lang}/${app} text`)
           assert.ok(m.html.includes(`>${expected[lang]}</p></div>`), `${kind}/${lang}/${app} html`)
         }
@@ -416,6 +437,7 @@ describe('mailer: brands (OpenVolley / OpenBeach)', () => {
       }
     }
     for (const kind of ACCOUNT_KINDS) assert.equal(mailBrandOf(kind, 'beach'), 'beach')
+    for (const kind of SCORESHEET_KINDS) assert.equal(mailBrandOf(kind, 'beach'), 'indoor')
   })
 
   it('send(): the OpenBeach sender for app beach, OpenVolley otherwise; links per brand', async () => {

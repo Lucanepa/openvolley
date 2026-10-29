@@ -480,7 +480,9 @@
     "clubBlockedTitle": "Kein Heimspiel deines Vereins",
     "clubRequired": "Deinem Konto ist noch kein Verein zugeordnet. Ein Admin ordnet ihn zu, bevor du offizielle Spiele führen kannst.",
     "notYourClub": "{{home}} ist das Heimteam. Du führst nur die Heimspiele von {{clubs}}.",
-    "gameNotInSchedule": "Spiel {{game}} steht nicht im VolleyManager-Spielplan, das Heimteam ist darum unbekannt. Prüfe die Spielnummer."
+    "gameNotInSchedule": "Spiel {{game}} steht nicht im VolleyManager-Spielplan, das Heimteam ist darum unbekannt. Prüfe die Spielnummer.",
+    "refereeEmail": "E-Mail (freiwillig)",
+    "refereeEmailHint": "Für das fertige Matchblatt. Nur die Schreiber dieses Spiels sehen sie."
   },
   "scoreboard": {
     "set": "Satz",
@@ -2452,7 +2454,8 @@
       },
       "cancelKeepsUnapproved": "Abbrechen lässt das Spiel ungenehmigt. Ohne PDF genehmigen genehmigt es jetzt: Speichern Sie das PDF später aus dem eScoresheet.",
       "keepWindowOpen": "Lassen Sie das eScoresheet-Fenster offen, bis das PDF fertig ist."
-    }
+    },
+    "testMailSent": "Matchblatt an {{to}} gesendet"
   },
   "scoresheetPdf": {
     "backToScoresheet": "Zurück zum eScoresheet",
@@ -2611,7 +2614,8 @@
       "activity": "Aktivität",
       "scoresheets": "Matchblätter",
       "clubs": "Vereine",
-      "myclub": "Mein Verein"
+      "myclub": "Mein Verein",
+      "settings": "Einstellungen"
     },
     "status": {
       "setup": "Vorbereitung",
@@ -2908,6 +2912,18 @@
       "invites": "Einladungscodes",
       "maxUsesHint": "1 bis {{max}}",
       "expiresHint": "Höchstens {{days}} Tage im Voraus"
+    },
+    "settings": {
+      "finalEmail": "Fertiges Matchblatt per E-Mail senden",
+      "finalEmailOffHint": "Aus: Es wird kein Matchblatt verschickt. Einschalten, sobald OpenVolley echte Spiele schreibt.",
+      "finalEmailOnHint": "Ein: Sobald ein offizielles Spiel abgeschlossen ist, geht sein Matchblatt an den Schreiber, die Schiedsrichter und den Kontakt des Vereins jedes Teams.",
+      "finalEmailOnTitle": "Fertige Matchblätter per E-Mail senden?",
+      "finalEmailOnBody": "Ab jetzt schickt jedes abgeschlossene offizielle Spiel sein Matchblatt als PDF an den Schreiber, die Schiedsrichter und die Kontaktadresse des Vereins jedes Teams. Früher abgeschlossene Spiele werden nicht verschickt. Die Datenschutzerklärung muss das erwähnen, bevor du es einschaltest.",
+      "finalEmailOnConfirm": "Einschalten",
+      "finalEmailIsOn": "Fertige Matchblätter werden jetzt per E-Mail gesendet",
+      "finalEmailIsOff": "Fertige Matchblätter werden nicht mehr gesendet",
+      "changed": "Geändert",
+      "noMail": "Dieser Server kann noch keine E-Mails senden (kein Mailserver eingerichtet): Es geht nichts raus, auch wenn der Schalter an ist."
     }
   },
   "playerPool": {

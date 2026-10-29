@@ -487,7 +487,9 @@
     "clubBlockedTitle": "Non è una partita in casa della tua società",
     "clubRequired": "Il tuo account non ha ancora una società. Un admin la aggiunge prima che tu possa refertare partite ufficiali.",
     "notYourClub": "{{home}} gioca in casa. Referti solo le partite in casa di {{clubs}}.",
-    "gameNotInSchedule": "La partita {{game}} non è nel calendario VolleyManager, quindi la squadra di casa è sconosciuta. Controlla il numero della partita."
+    "gameNotInSchedule": "La partita {{game}} non è nel calendario VolleyManager, quindi la squadra di casa è sconosciuta. Controlla il numero della partita.",
+    "refereeEmail": "E-mail (facoltativa)",
+    "refereeEmailHint": "Per il referto finale. La vedono solo i segnapunti di questa partita."
   },
   "scoreboard": {
     "set": "Set",
@@ -1494,7 +1496,8 @@
       },
       "cancelKeepsUnapproved": "Annulla lascia la partita non approvata. Approva senza PDF la approva ora: salva il PDF dall’eScoresheet più tardi.",
       "keepWindowOpen": "Tieni aperta la finestra dell’eScoresheet finché il PDF è pronto."
-    }
+    },
+    "testMailSent": "Referto inviato a {{to}}"
   },
   "scoresheetPdf": {
     "zoomOut": "Riduci",
@@ -2632,7 +2635,8 @@
       "activity": "Attività",
       "scoresheets": "Referti",
       "clubs": "Società",
-      "myclub": "La mia società"
+      "myclub": "La mia società",
+      "settings": "Impostazioni"
     },
     "status": {
       "setup": "Preparazione",
@@ -2929,6 +2933,18 @@
       "invites": "Codici d’invito",
       "maxUsesHint": "Da 1 a {{max}}",
       "expiresHint": "Al massimo {{days}} giorni in avanti"
+    },
+    "settings": {
+      "finalEmail": "Invia il referto finale per e-mail",
+      "finalEmailOffHint": "Spento: nessun referto viene inviato. Accendilo quando OpenVolley referta partite vere.",
+      "finalEmailOnHint": "Acceso: appena una partita ufficiale è chiusa, il referto va al segnapunti, agli arbitri e al contatto della società di ogni squadra.",
+      "finalEmailOnTitle": "Inviare i referti finali per e-mail?",
+      "finalEmailOnBody": "Da adesso ogni partita ufficiale chiusa invia il referto in PDF al segnapunti, agli arbitri e all’indirizzo di contatto della società di ogni squadra. Le partite chiuse prima non vengono inviate. L’informativa sulla privacy deve menzionarlo prima che tu lo accenda.",
+      "finalEmailOnConfirm": "Accendi",
+      "finalEmailIsOn": "I referti finali ora vengono inviati per e-mail",
+      "finalEmailIsOff": "I referti finali non vengono più inviati",
+      "changed": "Modificato il",
+      "noMail": "Questo server non può ancora inviare e-mail (nessun server di posta configurato): non parte nulla, anche con l’interruttore acceso."
     }
   },
   "playerPool": {

@@ -12,7 +12,7 @@ import Modal from './Modal'
 import ballFallback from '../ball_fallback.png'
 import JSZip from 'jszip'
 import { apiFrom } from '../lib/apiClient'
-import { admin as adminApi, approvalsApi, errorKeyOf, isApprovalUnavailable } from '../lib/accountApi'
+import { admin as adminApi, approvalsApi, errorKeyOf, isApprovalUnavailable, sendTestScoresheet } from '../lib/accountApi'
 import { useAuth } from '../contexts/AuthContext'
 import { planReopen, isKnownClosedOnServer } from '../utils/matchReopen'
 import { requeueClosedJobs } from '../utils/matchHandover'
@@ -1208,6 +1208,21 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
     }
   }
 
+  // A test (or easy) match's scoresheet to its signed-in scorer (owner plan
+  // 2026-10-29, step 4): never stored on the server, the mail is its only
+  // copy; Close match then deletes the match from this device. Signed out or
+  // offline: no mail (the ZIP download still has the PDF).
+  const mailTestScoresheet = (pdfResult) => {
+    if (!authCtx?.user || (typeof navigator !== 'undefined' && navigator.onLine === false)) return
+    sendTestScoresheet(pdfResult.blob, {
+      teams: `${homeTeam?.name || t('common.home')} – ${awayTeam?.name || t('common.away')}`,
+      result: `${homeSetsWon}:${awaySetsWon}`
+    }).then((res) => {
+      if (res?.data?.sent) showAlert(t('matchEnd.testMailSent', { to: res.data.to }), 'success')
+      else console.warn('[MatchEnd] Test scoresheet mail not sent:', res?.error?.code || res?.error?.message)
+    }, (err) => console.warn('[MatchEnd] Test scoresheet mail failed:', err?.message))
+  }
+
   const handleApprove = async () => {
     cLogger.logHandler('handleApprove', { matchId, allSignaturesDone })
     setIsSaving(true)
@@ -1404,6 +1419,7 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       // at that step), and with it the approval and the ZIP, for minutes
       // (stress test 2026-10-25).
       if (!match?.test) await queueApprovalFiles({ pdfResult, sets: allSets, events: allEvents })
+      else if (pdfResult) mailTestScoresheet(pdfResult)
 
       // Warn if PDF was not generated (approval still succeeded)
       if (!pdfResult) {

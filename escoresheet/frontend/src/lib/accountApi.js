@@ -94,6 +94,33 @@ export const clubsApi = {
   }
 }
 
+// ── Settings (db/021): the app's switches, admins and competition managers ──
+export const settingsApi = {
+  /** { settings: { send_final_email, changed_at }, mail: the server can send email } */
+  get() {
+    return apiRequest('GET', '/api/settings')
+  },
+  setFinalEmail(on) {
+    return apiRequest('PUT', '/api/settings', { send_final_email: !!on })
+  }
+}
+
+/** A Blob's bytes as base64 (no data: prefix). */
+async function blobBase64(blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  let bin = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(bin)
+}
+
+/**
+ * POST /api/scoresheet/test-mail: a test match's PDF to the signed-in
+ * scorer's own address (never stored on the server) -> { sent, to }.
+ */
+export async function sendTestScoresheet(pdfBlob, { teams = '', result = '' } = {}) {
+  return apiRequest('POST', '/api/scoresheet/test-mail', { pdf: await blobBase64(pdfBlob), teams, result }, { timeoutMs: 30000 })
+}
+
 // ── My club (db/020): what a club manager (or an admin) does for one club ──
 export const clubApi = {
   /** The club with its teams, contact address, managers and scorer count. */

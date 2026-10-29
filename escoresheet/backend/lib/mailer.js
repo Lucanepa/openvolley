@@ -52,8 +52,10 @@
  *   disabledMailer(reason)         -> mailer
  *   mailer.enabled / mailer.reason / mailer.managerUrl / mailer.from (OpenVolley's)
  *   mailer.managerUrlFor(app) / mailer.fromFor(app)   per brand ('indoor' | 'beach')
- *   mailer.send(kind, { to, lang, link, app, vars }) -> Promise<{ sent, skipped? }>
+ *   mailer.send(kind, { to, lang, link, app, vars, attachments }) -> Promise<{ sent, skipped? }>
  *                                            kind: reset | confirm | password_changed | approval | approval_pin_locked
+ *                                            | scoresheet | scoresheet_test (the final scoresheet, lib/finalMail.js:
+ *                                            attachments [{ filename, content: Buffer }], PDFs only)
  *                                            (vars: the approval notices' values, see T)
  *                                            skipped: 'budget' | 'inbox' | 'disabled'
  *   mailer.stats()                 -> { enabled, budgets, inboxDropped, failed, lastDropAt, ... }
@@ -71,7 +73,7 @@ import nodemailer from 'nodemailer'
 import { legalUrl } from './legalLinks.js'
 
 export const MAIL_LANGS = Object.freeze(['en', 'de', 'fr', 'it'])
-export const MAIL_KINDS = Object.freeze(['reset', 'confirm', 'password_changed', 'approval', 'approval_pin_locked'])
+export const MAIL_KINDS = Object.freeze(['reset', 'confirm', 'password_changed', 'approval', 'approval_pin_locked', 'scoresheet', 'scoresheet_test'])
 export const DEFAULT_MANAGER_URL = 'https://manager.openvolley.app'
 export const DEFAULT_FROM_NAME = 'OpenVolley'
 export const DEFAULT_MANAGER_URL_BEACH = 'https://manager-beach.openvolley.app'
@@ -109,13 +111,19 @@ export function mailBrandOf(kind, app) {
 // sign-ups uses up only the latter (whose holders can resend later).
 // "notify" carries the approval notices of lib/approvals.js (an approval made
 // with an official's PIN, a locked PIN): they cannot starve the account mails.
-export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', confirm: 'confirm', approval: 'notify', approval_pin_locked: 'notify' })
-export const DEFAULT_BUDGETS = Object.freeze({ account: 50, confirm: 50, notify: 100 })
+export const MAIL_BUDGET_OF = Object.freeze({ reset: 'account', password_changed: 'account', confirm: 'confirm', approval: 'notify', approval_pin_locked: 'notify', scoresheet: 'scoresheet', scoresheet_test: 'scoresheet' })
+// scoresheet: a busy match day (a dozen recipients a game) must not starve
+// the account mails, nor be starved by them
+export const DEFAULT_BUDGETS = Object.freeze({ account: 50, confirm: 50, notify: 100, scoresheet: 300 })
 // Reset + confirmation mails to one delivered inbox per hour. A real user
 // needs at most: a confirmation, three resends, one reset. password_changed
 // is not counted (only the inbox's holder can cause it, with a reset link).
 export const DEFAULT_MAX_PER_INBOX = 5
-const INBOX_CAPPED = new Set(['reset', 'confirm'])
+// scoresheet_test: a scorer mails its own test scoresheets, never a flood.
+// The final scoresheet is not capped: a club's contact gets every game of a
+// tournament day.
+const INBOX_CAPPED = new Set(['reset', 'confirm', 'scoresheet_test'])
+const ATTACHING = new Set(['scoresheet', 'scoresheet_test'])
 const HOUR_MS = 60 * 60 * 1000
 
 /** Normalizes a language tag to one of MAIL_LANGS, or null. de-CH -> de. */
@@ -334,6 +342,69 @@ const T = {
         `Partita: ${v.game}`, `Risultato: ${v.result}`, `Approvato: ${v.time} · ID ${v.id}`, ...(v.sender ? [`Inviato dall’account di ${v.sender}.`] : [])],
       button: 'Aprire OpenVolley',
       after: ['Se non è stato lei: in OpenVolley apra il suo profilo, PIN di approvazione, e annulli l’approvazione finché la partita è aperta. Poi cambi il PIN e avvisi l’admin del suo club.']
+    })
+  },
+  // The final scoresheet (lib/finalMail.js), the PDF attached. vars: teams,
+  // game ('' when none), date, result ('' when unknown), corrected
+  scoresheet: {
+    en: (v) => ({
+      subject: `${v.corrected ? 'Corrected scoresheet' : 'Scoresheet'}: ${v.teams}`,
+      before: ['Hello,', `the ${v.corrected ? 'corrected ' : ''}final scoresheet of this match is attached.`,
+        `Match: ${v.teams}`, ...(v.game ? [`Game: ${v.game}`] : []), `Date: ${v.date}`, ...(v.result ? [`Result: ${v.result}`] : [])],
+      button: null,
+      after: ['You get this mail as an official of the match or as the contact of one of its clubs. Questions about the match go to the organiser of the competition.']
+    }),
+    de: (v) => ({
+      subject: `${v.corrected ? 'Korrigiertes Matchblatt' : 'Matchblatt'}: ${v.teams}`,
+      before: ['Hallo', `Im Anhang finden Sie das ${v.corrected ? 'korrigierte ' : ''}fertige Matchblatt dieses Spiels.`,
+        `Spiel: ${v.teams}`, ...(v.game ? [`Spielnummer: ${v.game}`] : []), `Datum: ${v.date}`, ...(v.result ? [`Resultat: ${v.result}`] : [])],
+      button: null,
+      after: ['Sie erhalten diese E-Mail als Offizielle/r des Spiels oder als Kontakt eines der beiden Vereine. Fragen zum Spiel richten Sie an den Veranstalter der Meisterschaft.']
+    }),
+    fr: (v) => ({
+      subject: `${v.corrected ? 'Feuille de match corrigée' : 'Feuille de match'} : ${v.teams}`,
+      before: ['Bonjour,', `vous trouverez en pièce jointe la feuille de match ${v.corrected ? 'corrigée ' : ''}finale de ce match.`,
+        `Match : ${v.teams}`, ...(v.game ? [`Numéro : ${v.game}`] : []), `Date : ${v.date}`, ...(v.result ? [`Résultat : ${v.result}`] : [])],
+      button: null,
+      after: ['Vous recevez cet e-mail en tant qu’officiel du match ou contact de l’un de ses clubs. Les questions sur le match vont à l’organisateur du championnat.']
+    }),
+    it: (v) => ({
+      subject: `${v.corrected ? 'Referto corretto' : 'Referto'}: ${v.teams}`,
+      before: ['Buongiorno,', `in allegato trova il referto ${v.corrected ? 'corretto ' : ''}finale di questa partita.`,
+        `Partita: ${v.teams}`, ...(v.game ? [`Numero: ${v.game}`] : []), `Data: ${v.date}`, ...(v.result ? [`Risultato: ${v.result}`] : [])],
+      button: null,
+      after: ['Riceve questa e-mail come ufficiale della partita o come contatto di una delle due società. Le domande sulla partita vanno all’organizzatore del campionato.']
+    })
+  },
+  // A test match's scoresheet to its scorer (never stored). vars: teams, result
+  scoresheet_test: {
+    en: (v) => ({
+      subject: `Test scoresheet: ${v.teams}`,
+      before: ['Hello,', 'the scoresheet of your test match is attached. Test matches are not kept on the server or on your device: this mail is their only copy.',
+        `Match: ${v.teams}`, ...(v.result ? [`Result: ${v.result}`] : [])],
+      button: null,
+      after: []
+    }),
+    de: (v) => ({
+      subject: `Test-Matchblatt: ${v.teams}`,
+      before: ['Hallo', 'Im Anhang finden Sie das Matchblatt Ihres Testspiels. Testspiele werden weder auf dem Server noch auf Ihrem Gerät aufbewahrt: Diese E-Mail ist die einzige Kopie.',
+        `Spiel: ${v.teams}`, ...(v.result ? [`Resultat: ${v.result}`] : [])],
+      button: null,
+      after: []
+    }),
+    fr: (v) => ({
+      subject: `Feuille de match de test : ${v.teams}`,
+      before: ['Bonjour,', 'vous trouverez en pièce jointe la feuille de votre match de test. Les matchs de test ne sont gardés ni sur le serveur ni sur votre appareil : cet e-mail en est la seule copie.',
+        `Match : ${v.teams}`, ...(v.result ? [`Résultat : ${v.result}`] : [])],
+      button: null,
+      after: []
+    }),
+    it: (v) => ({
+      subject: `Referto di prova: ${v.teams}`,
+      before: ['Buongiorno,', 'in allegato trova il referto della sua partita di prova. Le partite di prova non vengono conservate né sul server né sul suo dispositivo: questa e-mail è l’unica copia.',
+        `Partita: ${v.teams}`, ...(v.result ? [`Risultato: ${v.result}`] : [])],
+      button: null,
+      after: []
     })
   },
   // vars: game, until ('' when disabled), disabled
@@ -640,9 +711,14 @@ export function createMailer(o = {}) {
   }
   if (!brands.beach.from) throw new Error('createMailer: no OpenBeach sender (fromBeach)')
 
-  async function send(kind, { to, lang, link, app, vars } = {}) {
+  async function send(kind, { to, lang, link, app, vars, attachments } = {}) {
     if (!MAIL_KINDS.includes(kind)) throw new Error(`mailer: unknown mail kind ${kind}`)
     if (typeof to !== 'string' || !to.includes('@')) throw new Error('mailer: no recipient')
+    // Files only on the scoresheet mails, and only PDFs held in memory
+    const files = attachments ?? []
+    if (files.length && (!ATTACHING.has(kind) || !files.every((f) => Buffer.isBuffer(f?.content) && /^[^/\\]{1,120}\.pdf$/i.test(f?.filename || '')))) {
+      throw new Error(`mailer: ${kind} takes no such attachment`)
+    }
     const budgetName = MAIL_BUDGET_OF[kind]
     const budget = budgets[budgetName]
     if (!budget.take()) {
@@ -667,6 +743,7 @@ export function createMailer(o = {}) {
         text,
         html,
         headers: { 'Auto-Submitted': 'auto-generated', 'X-Auto-Response-Suppress': 'All' },
+        ...(files.length ? { attachments: files.map((f) => ({ filename: f.filename, content: f.content, contentType: 'application/pdf' })) } : {}),
         disableFileAccess: true,
         disableUrlAccess: true
       })
