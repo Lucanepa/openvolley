@@ -4,6 +4,8 @@ import { getBackendUrl, getBackendOverride, setBackendOverride, clearBackendOver
 import { GlobeIcon, SatelliteDishIcon } from './icons'
 import { Loader2 } from 'lucide-react'
 import { Button, cn, FOCUS_RING, NOTICE } from '../ui'
+import ContextualHelpPanel from './help/ContextualHelpPanel'
+import { HeaderHelpButton } from './help/HelpButton.jsx'
 
 const LAST_SERVER_KEY = 'openvolley_last_server'
 
@@ -14,9 +16,12 @@ const LAST_SERVER_KEY = 'openvolley_last_server'
  * @param {Object} props
  * @param {function} props.onConnected - Called when server is confirmed reachable, with { serverUrl }
  * @param {boolean} [props.skipIfAutoConnect] - If true and URL params have server/match, skip this screen
+ * @param {string} [props.helpScreen] - The app's help screen (referee, bench, livescore): a "?" in the
+ *   corner opens its help panel on Connecting tablets
  */
-export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect = true }) {
+export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect = true, helpScreen }) {
   const { t } = useTranslation()
+  const [helpOpen, setHelpOpen] = useState(false)
   const [mode, setMode] = useState('online') // 'online' | 'local'
   const [localAddress, setLocalAddress] = useState('')
   const [status, setStatus] = useState('idle') // 'idle' | 'checking' | 'connected' | 'failed'
@@ -170,7 +175,16 @@ export default function ServerConnectionScreen({ onConnected, skipIfAutoConnect 
   )
 
   return (
-    <div className="ov-kit min-h-screen bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100 flex items-center justify-center p-4">
+    <div className="ov-kit relative min-h-screen bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100 flex items-center justify-center p-4">
+      {/* The "?" where the app's header has it, before there is a header */}
+      {helpScreen && (
+        <>
+          <div className="absolute right-3 top-3">
+            <HeaderHelpButton onClick={() => setHelpOpen(prev => !prev)} pressed={helpOpen} />
+          </div>
+          <ContextualHelpPanel open={helpOpen} onClose={() => setHelpOpen(false)} screen={helpScreen} openSection="connections" />
+        </>
+      )}
       <div className="w-full max-w-sm">
         <div className="relative overflow-hidden rounded-3xl border border-stone-200/70 bg-white p-6 shadow-card-lg sm:p-8">
           <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 to-red-500" />

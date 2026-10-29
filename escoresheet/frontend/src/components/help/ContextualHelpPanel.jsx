@@ -159,25 +159,27 @@ function HelpVideo({ id, video, online, lang }) {
 // support. The main section is open. Slides in from the right; Escape and
 // the phone backdrop close it. A dialog while open (aria-modal): no scoring
 // key acts under it, Android's Back closes it, and a kit dialog it was
-// opened over leaves it the keyboard.
-export default function ContextualHelpPanel({ open, onClose, screen, currentPage, onShowMe }) {
+// opened over leaves it the keyboard. openSection: the section open first
+// when it is one of the screen's (the tablets' Connect to server screen opens
+// on Connecting tablets), else the main one.
+export default function ContextualHelpPanel({ open, onClose, screen, currentPage, onShowMe, openSection }) {
   const { t, i18n } = useTranslation()
   const titleId = useId()
   const panelRef = useRef(null)
   const screenId = screen || currentPage
   const sections = sectionsForScreen(screenId)
-  const mainSection = sections[0]?.id || null
+  const startSection = (sections.some(s => s.id === openSection) ? openSection : sections[0]?.id) || null
   const pageName = HELP_SCREENS[screenId] ? t(HELP_SCREENS[screenId].nameKey) : screenId
   const online = useOnline(open)
   const lang = videoLanguage(i18n?.language)
-  const [openSections, setOpenSections] = useState(() => new Set(mainSection ? [mainSection] : []))
+  const [openSections, setOpenSections] = useState(() => new Set(startSection ? [startSection] : []))
   // the section whose Contact support is open (its id is the form's area)
   const [supportArea, setSupportArea] = useState(null)
 
-  // Each opening (and another screen) starts on the main section
+  // Each opening (and another screen) starts on openSection, else the main section
   useEffect(() => {
-    if (open) setOpenSections(new Set(mainSection ? [mainSection] : []))
-  }, [open, screenId, mainSection])
+    if (open) setOpenSections(new Set(startSection ? [startSection] : []))
+  }, [open, screenId, startSection])
 
   // The keyboard goes to the panel
   useEffect(() => {

@@ -596,7 +596,7 @@ export default function RefereeApp() {
 
   // Show server connection screen first (unless auto-connecting via URL params)
   if (!serverReady) {
-    return <ServerConnectionScreen onConnected={handleServerConnected} />
+    return <ServerConnectionScreen onConnected={handleServerConnected} helpScreen="referee" />
   }
 
   // Render Referee component if connected (either to match or in master mode)
