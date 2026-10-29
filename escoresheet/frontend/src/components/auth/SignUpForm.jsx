@@ -4,7 +4,7 @@ import { Check } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { confirmationLinkSent, needsEmailConfirmation } from './signUpResult'
 import DateOfBirthInput from './DateOfBirthInput'
-import { Button, cn, Field, FOCUS_RING, Input } from '../../ui'
+import { Button, cn, Field, FOCUS_RING, Input, Select } from '../../ui'
 import { LegalSentence } from '../../legal/LegalLinks'
 
 export const MIN_PASSWORD_LENGTH = 6
@@ -148,15 +148,13 @@ export default function SignUpForm({ onSignedUp, onSwitchToLogin, existingAccoun
 
         <div className="grid grid-cols-2 gap-3 stack:grid-cols-1">
           <Field label={t('auth.country', 'Country')}>
-            <Input
+            {/* Switzerland only for now (owner's decision); more countries go in options */}
+            <Select
               size="lg"
-              type="text"
+              block
               value={country}
-              onChange={e => setCountry(e.target.value.toUpperCase())}
-              placeholder="CHE"
-              maxLength={3}
-              autoComplete="off"
-              className="uppercase"
+              onChange={e => setCountry(e.target.value)}
+              options={[{ value: 'CHE', label: 'CHE' }]}
             />
           </Field>
           <Field label={t('auth.dob', 'Date of birth')} error={dobError}>
