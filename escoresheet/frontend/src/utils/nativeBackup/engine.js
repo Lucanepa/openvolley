@@ -282,9 +282,19 @@ export function createNativeBackupEngine({
       await written
       return status
     },
-    /** Resolves once every queued backup is written and the rotation is done (tests, shutdown). */
-    async flush() {
-      while (settled) await settled
+    /**
+     * Resolves once every queued backup is written and the rotation is done
+     * (tests). writesOnly: once the queued backups are written, without
+     * waiting for the rotation of older folders (the app quitting,
+     * flushNativeBackups).
+     */
+    async flush({ writesOnly = false } = {}) {
+      if (!writesOnly) {
+        while (settled) await settled
+        return
+      }
+      if (!timer && !running && !pending.size) return
+      await new Promise(resolve => writeWaiters.push(resolve))
     },
     getStatus: () => status,
     subscribe(listener) {
