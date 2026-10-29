@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.3 · Aggiornata al 16 ottobre 2026
+**OpenVolley e OpenBeach** · Versione 1.4 · Aggiornata al 29 ottobre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione tedesca.
@@ -74,8 +74,9 @@ entrambe le leggi.
 
 ## 4. Sito web e pagina di download
 
-**openvolley.app** e **get.openvolley.app** sono pagine statiche senza moduli
-e senza script di terzi. Quando le apre, Cloudflare tratta i dati
+**openvolley.app** e **get.openvolley.app** sono pagine statiche senza
+script di terzi. L'unico modulo è il modulo di supporto su
+openvolley.app/support (sezione 13). Quando le apre, Cloudflare tratta i dati
 tecnicamente necessari: indirizzo IP, indirizzo richiesto, ora e
 identificativo del browser. Il mio server non tiene un registro degli accessi
 per get.openvolley.app.
@@ -429,16 +430,32 @@ Se non desidera figurare nell'elenco, scriva a support@openvolley.app.
 
 ## 13. Supporto e contatto
 
-**Modulo di supporto nelle app:** trasmette al server tipo e ambito della
-segnalazione, la sua descrizione, facoltativamente il suo indirizzo e-mail,
-l'indirizzo della pagina e l'identificativo del browser. Il suo indirizzo
-e-mail e l'inizio del messaggio vengono annotati nel registro del server
-(sezione 14); la segnalazione può essere inoltrata per e-mail a
-support@openvolley.app. Uso il suo indirizzo solo per risponderle. **Per
+**Modulo di supporto (nelle app e su openvolley.app/support):** trasmette al
+mio server il suo indirizzo e-mail, tipo e ambito della richiesta, il suo
+messaggio e, se li aggiunge, fino a cinque allegati (per esempio screenshot o
+file di backup), insieme alla lingua, all'indirizzo della pagina senza
+parametri, all'identificativo del browser, all'ora, alla piattaforma («web»
+dal sito) e, nelle app, alla versione dell'app. I dati diagnostici (versione
+dell'app, piattaforma, visualizzazione, stato della connessione, numero della
+partita aperta e ultimi messaggi d'errore dell'app) vengono inviati solo se
+spunta «Includi la diagnostica» nell'app, ed esattamente come vi sono
+mostrati. Il sito web non invia dati diagnostici.
+
+Il server inoltra la richiesta come un'unica e-mail a support@openvolley.app,
+con il suo indirizzo come indirizzo di risposta. Non ne conserva nulla, salvo
+una riga di registro con tipo, ambito e una forma abbreviata del suo
+indirizzo e-mail (sezione 14). La casella postale è presso Migadu
+(sezione 15). Il mio sistema di ticket (support.openvolley.app), che gestisco
+io stesso sul mio server in Svizzera, la legge, così posso risponderle e
+seguire la sua richiesta. Uso il suo indirizzo solo per risponderle. **Per
 richieste sui suoi dati scriva direttamente a support@openvolley.app.**
 
-**E-mail a support@openvolley.app:** conservo il suo messaggio per il tempo
-necessario alla sua richiesta.
+**E-mail a support@openvolley.app:** viene trattata allo stesso modo, nella
+casella postale e nel sistema di ticket.
+
+**Conservazione:** conservo le richieste di supporto (casella postale e
+sistema di ticket, con gli allegati) per 2 anni dopo l'ultimo messaggio, per
+poter ritrovare le risposte precedenti; prima su richiesta.
 
 ## 14. Registri e sicurezza sul server
 
@@ -517,6 +534,7 @@ riceve una copia di queste garanzie.
 | Registro d'uso (solo sul dispositivo) | OpenVolley dalla 2.4.0: 30 giorni, al massimo 50 000 voci |
 | File di registro dell'app desktop (solo sul dispositivo) | Al massimo cinque file precedenti da 5 MB ciascuno |
 | Firma sul telefono (server o portatile) | Solo nella memoria di lavoro; link valido 10 minuti, firma eliminata al più tardi 5 minuti dopo la firma |
+| Richieste di supporto (casella postale e sistema di ticket, con gli allegati) | 2 anni dopo l'ultimo messaggio; prima su richiesta |
 | Registri del server | Sovrascritti in base alla dimensione (alcuni giorni o poche settimane) |
 | Dati in diretta (server e modalità palestra) | Solo nella memoria di lavoro; sul server eliminati 24 ore dopo l'ultima attività |
 | Copie di sicurezza del server | Fino a circa 6 mesi (sezione 18) |

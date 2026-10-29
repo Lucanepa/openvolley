@@ -44,7 +44,7 @@ export default function ClosedOnServerModal({ onLoadOfficial, onRemove, onUsePin
   }
 
   return (
-    <Modal title={t('cloudBlock.closedCopy.title')} open={true} hideCloseButton={true} width={460} zIndex={3000}>
+    <Modal title={t('cloudBlock.closedCopy.title')} open={true} hideCloseButton={true} width={460} zIndex={3000} helpScreen="closedCopy">
       <div className="ov-kit" data-testid="closed-copy-modal">
         <div role="alert" className="flex items-start gap-3 text-sm text-stone-700">
           <CloudOff size={20} aria-hidden="true" className="mt-0.5 shrink-0 text-amber-700" />

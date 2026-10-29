@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.3 · As of 16 October 2026
+**OpenVolley and OpenBeach** · Version 1.4 · As of 29 October 2026
 
 This policy is available in German, English, French and Italian. The German
 version is binding.
@@ -71,8 +71,9 @@ information both laws require.
 
 ## 4. Website and download page
 
-**openvolley.app** and **get.openvolley.app** are static pages without forms
-and without third-party scripts. When you open them, Cloudflare processes the
+**openvolley.app** and **get.openvolley.app** are static pages without
+third-party scripts. The only form is the support form on
+openvolley.app/support (section 13). When you open them, Cloudflare processes the
 technically necessary data: IP address, requested address, time and browser
 identifier. My server keeps no access log for get.openvolley.app.
 
@@ -399,16 +400,31 @@ If you do not want to be in the directory, write to support@openvolley.app.
 
 ## 13. Support and contact
 
-**Support form in the apps:** it sends the type and area of the report, your
-description, optionally your email address, the page address and the
-browser identifier to the server. Your email address and the beginning of
-your message are recorded in the server log (section 14); the report may be
-forwarded by email to support@openvolley.app. I use your address only to
-answer you. **For requests about your data, please write directly to
-support@openvolley.app.**
+**Support form (in the apps and on openvolley.app/support):** it sends your
+email address, the type and area of your request, your message and, if you
+add them, up to five attachments (for example screenshots or backup files)
+to my server, together with the language, the page address without its
+query, the browser identifier, the time, the platform ("web" from the website)
+and, in the apps, the app version. Diagnostics (app version, platform,
+display, connection state, the game number of the open match and the app's
+last error messages) are sent only if you tick "Include diagnostics" in the
+app, and exactly as shown there. The website sends no diagnostics.
 
-**Email to support@openvolley.app:** I keep your message as long as your
-request needs it.
+The server forwards the request as one email to support@openvolley.app, with
+your address as the reply address. It keeps nothing of it except a log line
+with the type, the area and a shortened form of your email address
+(section 14). The mailbox is hosted by Migadu (section 15). My helpdesk
+(support.openvolley.app), which I run myself on my server in Switzerland,
+reads it so that I can answer you and keep track of your request. I use your
+address only to answer you. **For requests about your data, please write
+directly to support@openvolley.app.**
+
+**Email to support@openvolley.app:** it is handled the same way, in the
+mailbox and in the helpdesk.
+
+**How long:** I keep support requests (mailbox and helpdesk, with the
+attachments) for 2 years after the last message, so that I can look up
+earlier answers; earlier on request.
 
 ## 14. Logs and security on the server
 
@@ -482,6 +498,7 @@ copy of these safeguards.
 | Interaction log (on the device only) | OpenVolley from 2.4.0: 30 days, at most 50,000 entries |
 | Desktop app log file (on the device only) | At most five older files of 5 MB each |
 | Signature on a phone (server or laptop) | In memory only; link valid 10 minutes, signature discarded at the latest 5 minutes after signing |
+| Support requests (mailbox and helpdesk, with attachments) | 2 years after the last message; earlier on request |
 | Server logs | Overwritten by size (days to a few weeks) |
 | Live data (server and venue mode) | In memory only; on the server discarded 24 hours after the last activity |
 | Backups | Up to about 6 months (section 18) |

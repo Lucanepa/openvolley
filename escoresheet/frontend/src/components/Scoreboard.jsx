@@ -19204,6 +19204,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         <Modal
           title={t('corrections.title')}
           open={true}
+          helpScreen="liveCorrections"
           onClose={() => {
             setShowManualPanel(false)
             // Notify scoresheet to refresh after manual panel is closed
@@ -19756,7 +19757,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       expanded={availableSubs.length > 1 || easyNewSub ? courtSubExpanded : undefined}
                       icon={availableSubs.length > 1 || easyNewSub ? undefined : <ArrowUpDown size={16} strokeWidth={2.5} />}
                     >
-                      Substitution
+                      {t('scoreboard.substitution')}
                     </SbMenuItem>
                     {courtSubExpanded && (availableSubs.length > 1 || (easyNewSub && availableSubs.length > 0)) && (
                       <div className={SB_MENU_CHIPS}>
@@ -19871,7 +19872,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       <SbMenuItem tone="libero" expanded={courtLiberoExpanded} onClick={() => setCourtLiberoExpanded(!courtLiberoExpanded)}>
-                        Libero
+                        {t('scoreboard.actions.libero')}
                       </SbMenuItem>
                       {courtLiberoExpanded && (
                         <div className={SB_MENU_CHIPS}>
@@ -19919,7 +19920,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                         })}
                         disabled={liberoOutDisabled}
                       >
-                        Libero out
+                        {t('scoreboard.playerMenu.liberoOut')}
                       </SbMenuItem>
                       {/* Exchange Libero button - only if 2 liberos */}
                       {liberos.length >= 2 && (
@@ -19933,13 +19934,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           })}
                           disabled={exchangeLiberoDisabled}
                         >
-                          Exchange libero
+                          {t('scoreboard.playerMenu.exchangeLibero')}
                         </SbMenuItem>
                       )}
                       {/* Unable to play - expandable */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <SbMenuItem tone="danger" expanded={courtLiberoUnableExpanded} onClick={() => setCourtLiberoUnableExpanded(!courtLiberoUnableExpanded)}>
-                          Unable to play
+                          {t('scoreboard.playerMenu.unableToPlay')}
                         </SbMenuItem>
                         {courtLiberoUnableExpanded && (
                           <div className={SB_MENU_SUB}>
@@ -19961,7 +19962,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 })
                               }}
                             >
-                              Declared unable
+                              {t('scoreboard.playerMenu.declaredUnable')}
                             </SbMenuItem>
                             <SbMenuItem
                               tone="danger"
@@ -19981,7 +19982,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                                 })
                               }}
                             >
-                              Injury / illness
+                              {t('scoreboard.playerMenu.injuryIllness')}
                             </SbMenuItem>
                           </div>
                         )}
@@ -19992,21 +19993,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {/* Sanction - expandable */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <SbMenuItem expanded={courtSanctionExpanded} onClick={() => setCourtSanctionExpanded(!courtSanctionExpanded)}>
-                    Sanction
+                    {t('scoreboard.sanction')}
                   </SbMenuItem>
                   {courtSanctionExpanded && (
                     <div className={SB_MENU_SUB}>
                       <SbMenuItem icon={<SbCardIcon kind="yellow" />} onClick={() => showSanctionConfirmFromMenu('warning')} disabled={!canGetWarning}>
-                        Warning
+                        {t('scoreboard.sanctions.warning')}
                       </SbMenuItem>
                       <SbMenuItem icon={<SbCardIcon kind="red" />} onClick={() => showSanctionConfirmFromMenu('penalty')} disabled={!canGetPenalty}>
-                        Penalty
+                        {t('scoreboard.sanctions.penalty')}
                       </SbMenuItem>
                       <SbMenuItem icon={<SbCardIcon kind="combo" />} onClick={() => showSanctionConfirmFromMenu('expulsion')} disabled={!canGetExpulsion}>
-                        Expulsion
+                        {t('scoreboard.sanctions.expulsion')}
                       </SbMenuItem>
                       <SbMenuItem icon={<SbCardIcon kind="pair" />} onClick={() => showSanctionConfirmFromMenu('disqualification')}>
-                        Disqualification
+                        {t('scoreboard.sanctions.disqualification')}
                       </SbMenuItem>
                     </div>
                   )}
@@ -20014,7 +20015,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 {/* Injury - direct button (NOT shown for liberos on court - they have "Unable to play" menu) */}
                 {!playerActionMenu.isLiberoOnCourt && (
                   <SbMenuItem tone="danger" icon={SB_INJURY_ICON} onClick={openInjuryFromMenu}>
-                    Injury
+                    {t('corrections.reasonLabel.injury')}
                   </SbMenuItem>
                 )}
               </div>
@@ -20137,11 +20138,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   {isExceptional ? t('scoreboard.modals.exceptionalSubstitution') : t('scoreboard.substitution')}
                 </div>
                 <div style={{ marginBottom: '8px', fontSize: '11px', color: 'var(--muted)', textAlign: 'center' }}>
-                  # {substitutionDropdown.playerNumber} out
+                  {t('scoreboard.playerMenu.playerOut', { player: substitutionDropdown.playerNumber })}
                 </div>
                 {isExceptional && availableSubstitutes.length > 0 && (
                   <div style={{ marginBottom: '8px', padding: '4px', textAlign: 'center', color: '#facc15', fontSize: '10px', fontWeight: 600, background: 'rgba(234, 179, 8, 0.15)', border: '1px solid rgba(234, 179, 8, 0.3)', borderRadius: '4px' }}>
-                    Exceptional
+                    {t('corrections.chip.exceptional')}
                   </div>
                 )}
                 {availableSubstitutes.length === 0 && !(data?.match?.easy === true && newPlayerMayEnter({
@@ -20151,7 +20152,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   exceptional: isExceptional || !isLegal
                 })) ? (
                   <div style={{ padding: '8px', textAlign: 'center', color: 'var(--muted)', fontSize: '11px' }}>
-                    No substitutes
+                    {t('scoreboard.playerMenu.noSubstitutes')}
                   </div>
                 ) : availableSubstitutes.length === 0 ? null : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -20196,7 +20197,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       setSubstitutionDropdown(null)
                     }}
                   >
-                    Cancel sanction
+                    {t('scoreboard.playerMenu.cancelSanction')}
                   </SbMenuItem>
                 )}
               </div>
@@ -20300,14 +20301,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 }}
               >
                 <div style={{ marginBottom: '8px', fontSize: '12px', fontWeight: 600, color: '#000', textAlign: 'center', borderBottom: '1px solid rgba(0, 0, 0, 0.1)', paddingBottom: '8px' }}>
-                  Libero
+                  {t('scoreboard.actions.libero')}
                 </div>
                 <div style={{ marginBottom: '8px', fontSize: '11px', color: '#666', textAlign: 'center' }}>
-                  # {liberoDropdown.playerNumber}{libDropdownPlayerName ? ` ${libDropdownPlayerName}` : ''} out
+                  {t('scoreboard.playerMenu.playerOut', { player: `${liberoDropdown.playerNumber}${libDropdownPlayerName ? ` ${libDropdownPlayerName}` : ''}` })}
                 </div>
                 {liberos.length === 0 ? (
                   <div style={{ padding: '8px', textAlign: 'center', color: '#666', fontSize: '11px' }}>
-                    No liberos
+                    {t('scoreboard.phone.noLibero')}
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -20389,11 +20390,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 }}
               >
                 <div style={{ marginBottom: '8px', fontSize: '12px', fontWeight: 600, color: '#000', textAlign: 'center', borderBottom: '1px solid rgba(0, 0, 0, 0.1)', paddingBottom: '8px' }}>
-                  Libero in
+                  {t('scoreboard.playerMenu.liberoIn')}
                 </div>
                 {eligiblePlayers.length === 0 ? (
                   <div style={{ padding: '8px', textAlign: 'center', color: '#666', fontSize: '11px' }}>
-                    No eligible players
+                    {t('scoreboard.playerMenu.noEligiblePlayers')}
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -20486,13 +20487,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                           role === 'Assistant Coach 2' ? 'AC2' :
                             role === 'Physiotherapist' ? 'P' :
                               role === 'Medic' ? 'M' : role
-                      return `Sanction for ${roleAbbr}${sanctionOfficialName ? ` ${sanctionOfficialName}` : ''}`
+                      return t('scoreboard.playerMenu.sanctionFor', { who: `${roleAbbr}${sanctionOfficialName ? ` ${sanctionOfficialName}` : ''}` })
                     } else if (type === 'bench' && playerNumber) {
-                      return `Actions for # ${playerNumber}${sanctionPlayerName ? ` ${sanctionPlayerName}` : ''}`
+                      return t('scoreboard.playerMenu.actionsFor', { who: `# ${playerNumber}${sanctionPlayerName ? ` ${sanctionPlayerName}` : ''}` })
                     } else if (playerNumber) {
-                      return `Sanction for # ${playerNumber}${sanctionPlayerName ? ` ${sanctionPlayerName}` : ''}`
+                      return t('scoreboard.playerMenu.sanctionFor', { who: `# ${playerNumber}${sanctionPlayerName ? ` ${sanctionPlayerName}` : ''}` })
                     } else {
-                      return 'Sanction'
+                      return t('scoreboard.sanction')
                     }
                   })()}
                 </div>
@@ -20522,16 +20523,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     return (
                       <>
                         <SbMenuItem icon={<SbCardIcon kind="yellow" />} onClick={() => showSanctionConfirm('warning')} disabled={!canGetWarning}>
-                          Warning{!canGetWarning && (teamWarning ? ' (Team has warning)' : ' (Already sanctioned)')}
+                          {t('scoreboard.sanctions.warning')}{!canGetWarning && ` (${teamWarning ? t('scoreboard.playerMenu.teamHasWarning') : t('scoreboard.playerMenu.alreadySanctioned')})`}
                         </SbMenuItem>
                         <SbMenuItem icon={<SbCardIcon kind="red" />} onClick={() => showSanctionConfirm('penalty')} disabled={!canGetPenalty}>
-                          Penalty{!canGetPenalty && ' (Already sanctioned)'}
+                          {t('scoreboard.sanctions.penalty')}{!canGetPenalty && ` (${t('scoreboard.playerMenu.alreadySanctioned')})`}
                         </SbMenuItem>
                         <SbMenuItem icon={<SbCardIcon kind="combo" />} onClick={() => showSanctionConfirm('expulsion')} disabled={!canGetExpulsion}>
-                          Expulsion{!canGetExpulsion && ' (Already sanctioned)'}
+                          {t('scoreboard.sanctions.expulsion')}{!canGetExpulsion && ` (${t('scoreboard.playerMenu.alreadySanctioned')})`}
                         </SbMenuItem>
                         <SbMenuItem icon={<SbCardIcon kind="pair" />} onClick={() => showSanctionConfirm('disqualification')}>
-                          Disqualification
+                          {t('scoreboard.sanctions.disqualification')}
                         </SbMenuItem>
                       </>
                     )
@@ -20661,14 +20662,14 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }}
                     disabled={!canSubstitute}
                   >
-                    Substitution
+                    {t('scoreboard.substitution')}
                   </SbMenuItem>
                 )}
                 {/* Substitution button with expandable list - for players who never played */}
                 {neverPlayed && availableCourtPlayers.length > 0 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <SbMenuItem tone="positive" expanded={benchSubExpanded} onClick={() => setBenchSubExpanded(!benchSubExpanded)}>
-                      Substitution
+                      {t('scoreboard.substitution')}
                     </SbMenuItem>
                     {benchSubExpanded && (
                       <div className={SB_MENU_CHIPS}>
@@ -20722,21 +20723,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       <SbMenuItem expanded={benchSanctionExpanded} onClick={() => setBenchSanctionExpanded(!benchSanctionExpanded)}>
-                        Sanction
+                        {t('scoreboard.sanction')}
                       </SbMenuItem>
                       {benchSanctionExpanded && (
                         <div className={SB_MENU_SUB}>
                           <SbMenuItem icon={<SbCardIcon kind="yellow" />} onClick={() => showSanctionConfirmFromBenchMenu('warning')} disabled={!canGetWarning}>
-                            Warning
+                            {t('scoreboard.sanctions.warning')}
                           </SbMenuItem>
                           <SbMenuItem icon={<SbCardIcon kind="red" />} onClick={() => showSanctionConfirmFromBenchMenu('penalty')} disabled={!canGetPenalty}>
-                            Penalty
+                            {t('scoreboard.sanctions.penalty')}
                           </SbMenuItem>
                           <SbMenuItem icon={<SbCardIcon kind="combo" />} onClick={() => showSanctionConfirmFromBenchMenu('expulsion')} disabled={!canGetExpulsion}>
-                            Expulsion
+                            {t('scoreboard.sanctions.expulsion')}
                           </SbMenuItem>
                           <SbMenuItem icon={<SbCardIcon kind="pair" />} onClick={() => showSanctionConfirmFromBenchMenu('disqualification')}>
-                            Disqualification
+                            {t('scoreboard.sanctions.disqualification')}
                           </SbMenuItem>
                         </div>
                       )}
@@ -20777,7 +20778,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                     }
                   }}
                 >
-                  Injury
+                  {t('corrections.reasonLabel.injury')}
                 </SbMenuItem>
               </div>
             </div>
@@ -20857,13 +20858,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 }}
               >
                 <div style={{ marginBottom: '8px', fontSize: '11px', fontWeight: 600, color: 'var(--text)', textAlign: 'center', borderBottom: '1px solid var(--border)', paddingBottom: '6px' }}>
-                  Injury
+                  {t('corrections.reasonLabel.injury')}
                 </div>
                 <div style={{ marginBottom: '8px', fontSize: '11px', color: 'var(--muted)', textAlign: 'center' }}>
                   # {injuryDropdown.playerNumber}{injPlayerName ? ` ${injPlayerName}` : ''}
                 </div>
                 <SbMenuItem tone="danger" onClick={handleInjury}>
-                  Substitute
+                  {t('scoreboard.buttons.substitute')}
                 </SbMenuItem>
               </div>
             </div>
@@ -21155,7 +21156,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         const teamData = sanctionConfirmModal.team === 'home' ? data?.homeTeam : data?.awayTeam
         const teamColor = teamData?.color || (sanctionConfirmModal.team === 'home' ? '#ef4444' : '#3b82f6')
         const teamLabel = sanctionConfirmModal.team === teamAKey ? 'A' : 'B'
-        const teamName = teamData?.name || (sanctionConfirmModal.team === 'home' ? 'Home' : 'Away')
+        const teamName = teamData?.name || (sanctionConfirmModal.team === 'home' ? t('common.home') : t('common.away'))
 
         return (
           <Modal
@@ -21179,8 +21180,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             <div style={{ padding: '16px', textAlign: 'center' }}>
               <p style={{ marginBottom: '12px', fontSize: '12px', color: 'var(--muted)' }}>
                 {sanctionConfirmModal.type === 'player' && `#${sanctionConfirmModal.playerNumber}`}
-                {sanctionConfirmModal.type === 'bench' && `Bench #${sanctionConfirmModal.playerNumber}`}
-                {sanctionConfirmModal.type === 'libero' && `Libero #${sanctionConfirmModal.playerNumber}`}
+                {sanctionConfirmModal.type === 'bench' && `${t('scoreboard.roster.bench')} #${sanctionConfirmModal.playerNumber}`}
+                {sanctionConfirmModal.type === 'libero' && t('corrections.target.libero', { n: sanctionConfirmModal.playerNumber })}
                 {sanctionConfirmModal.type === 'official' && `${sanctionConfirmModal.role}`}
                 {sanctionConfirmModal.type === 'team' && t('scoreboard.sanctions.wholeTeam', 'The team')}
               </p>
@@ -21196,21 +21197,21 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                 )}
               </div>
               <p style={{ marginBottom: '16px', fontSize: '13px', fontWeight: 600 }}>
-                {sanctionConfirmModal.sanctionType === 'warning' && 'Warning'}
-                {sanctionConfirmModal.sanctionType === 'penalty' && 'Penalty'}
-                {sanctionConfirmModal.sanctionType === 'expulsion' && 'Expulsion'}
-                {sanctionConfirmModal.sanctionType === 'disqualification' && 'Disqualification'}
+                {sanctionConfirmModal.sanctionType === 'warning' && t('scoreboard.sanctions.warning')}
+                {sanctionConfirmModal.sanctionType === 'penalty' && t('scoreboard.sanctions.penalty')}
+                {sanctionConfirmModal.sanctionType === 'expulsion' && t('scoreboard.sanctions.expulsion')}
+                {sanctionConfirmModal.sanctionType === 'disqualification' && t('scoreboard.sanctions.disqualification')}
               </p>
               <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                 <SbButton variant="positive"
                   onClick={confirmPlayerSanction}
                 >
-                  Confirm
+                  {t('common.confirm')}
                 </SbButton>
                 <SbButton variant="secondary"
                   onClick={cancelSanctionConfirm}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </SbButton>
               </div>
             </div>
@@ -22313,30 +22314,26 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         >
           <div style={{ padding: '4px 0', textAlign: 'center' }}>
             <p className="text-base font-medium text-stone-800" style={{ marginBottom: '8px' }}>
-              Remember to insert the libero if available
+              {t('scoreboard.modals.liberoReminderText')}
             </p>
-            {liberoReminder.teams.length > 1 && (
-              <p className="text-sm text-stone-500" style={{ marginBottom: '20px' }}>
-                {liberoReminder.teams.map((team, idx) => {
-                  const teamName = team === 'home'
-                    ? (data?.homeTeam?.name || t('common.home'))
-                    : (data?.awayTeam?.name || t('common.away'))
-                  return (
-                    <span key={team}>
-                      {teamName}
-                      {idx < liberoReminder.teams.length - 1 ? ' and ' : ''}
-                    </span>
-                  )
-                })}
-              </p>
-            )}
+            {/* both teams: "Home and Away" */}
+            {liberoReminder.teams.length > 1 && (() => {
+              const [first, second] = liberoReminder.teams.map(team => team === 'home'
+                ? (data?.homeTeam?.name || t('common.home'))
+                : (data?.awayTeam?.name || t('common.away')))
+              return (
+                <p className="text-sm text-stone-500" style={{ marginBottom: '20px' }}>
+                  {t('scoreboard.modals.liberoReminderTeams', { first, second })}
+                </p>
+              )
+            })()}
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '20px' }}>
               <SbButton variant="secondary"
                 onClick={() => {
                   setLiberoReminder(null)
                 }}
               >
-                Back
+                {t('common.back')}
               </SbButton>
               <SbButton variant="positive"
                 onClick={async () => {
@@ -22351,7 +22348,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   setSetStartTimeModal({ setIndex: data?.set?.index, defaultTime, fromSchedule })
                 }}
               >
-                Continue
+                {t('scoreboard.sync.proceed')}
               </SbButton>
             </div>
           </div>

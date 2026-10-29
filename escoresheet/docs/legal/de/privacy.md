@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.3 · Stand: 16. Oktober 2026
+**OpenVolley und OpenBeach** · Version 1.4 · Stand: 29. Oktober 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die deutsche Fassung.
@@ -76,7 +76,8 @@ Beachturnier, beachte ich zusätzlich die Datenschutz-Grundverordnung der EU
 ## 4. Website und Download-Seite
 
 **openvolley.app** und **get.openvolley.app** sind statische Seiten ohne
-Formulare und ohne Skripte von Dritten. Beim Aufruf verarbeitet Cloudflare
+Skripte von Dritten. Das einzige Formular ist das Support-Formular auf
+openvolley.app/support (Abschnitt 13). Beim Aufruf verarbeitet Cloudflare
 technisch nötige Daten: IP-Adresse, aufgerufene Adresse, Zeitpunkt und
 Browser-Kennung. Mein Server führt für get.openvolley.app kein Zugriffsprotokoll.
 
@@ -430,16 +431,34 @@ support@openvolley.app.
 
 ## 13. Support und Kontakt
 
-**Support-Formular in den Apps:** Es übermittelt Art und Bereich der Meldung,
-Ihre Beschreibung, freiwillig Ihre E-Mail-Adresse, die Adresse der Seite und
-die Browser-Kennung an den Server. Ihre E-Mail-Adresse und der Anfang Ihrer
-Nachricht werden im Serverprotokoll festgehalten (Abschnitt 14); die Meldung
-kann per E-Mail an support@openvolley.app weitergeleitet werden. Ich verwende
-Ihre Adresse nur, um Ihnen zu antworten. **Für Anfragen zu Ihren Daten
-schreiben Sie bitte direkt an support@openvolley.app.**
+**Support-Formular (in den Apps und auf openvolley.app/support):** Es
+übermittelt Ihre E-Mail-Adresse, Art und Bereich Ihrer Anfrage, Ihre
+Nachricht und, falls Sie welche hinzufügen, bis zu fünf Anhänge (zum Beispiel
+Bildschirmfotos oder Backup-Dateien) an meinen Server, dazu die Sprache, die
+Adresse der Seite ohne Parameter, die Browser-Kennung, den Zeitpunkt, die
+Plattform (von der Website «web») und in den Apps die App-Version.
+Diagnosedaten (App-Version, Plattform, Anzeige, Verbindungsstatus, die
+Spielnummer des offenen Spiels und die letzten Fehlermeldungen der App) werden
+nur gesendet, wenn Sie in der App «Diagnosedaten mitsenden» ankreuzen, und
+genau so, wie sie dort angezeigt werden. Die Website sendet keine
+Diagnosedaten.
 
-**E-Mail an support@openvolley.app:** Ich bewahre Ihre Nachricht so lange auf,
-wie es für Ihr Anliegen nötig ist.
+Der Server leitet die Anfrage als eine E-Mail an support@openvolley.app
+weiter, mit Ihrer Adresse als Antwortadresse. Er behält davon nichts ausser
+einer Protokollzeile mit Art, Bereich und einer gekürzten Form Ihrer
+E-Mail-Adresse (Abschnitt 14). Das Postfach liegt bei Migadu (Abschnitt 15).
+Mein Helpdesk (support.openvolley.app), den ich selbst auf meinem Server in
+der Schweiz betreibe, liest es, damit ich Ihnen antworten und Ihre Anfrage
+nachverfolgen kann. Ich verwende Ihre Adresse nur, um Ihnen zu antworten.
+**Für Anfragen zu Ihren Daten schreiben Sie bitte direkt an
+support@openvolley.app.**
+
+**E-Mail an support@openvolley.app:** Sie wird gleich behandelt, im Postfach
+und im Helpdesk.
+
+**Aufbewahrung:** Support-Anfragen (Postfach und Helpdesk, mit den Anhängen)
+bewahre ich 2 Jahre nach der letzten Nachricht auf, damit ich frühere
+Antworten nachschlagen kann; auf Anfrage früher.
 
 ## 14. Protokolle und Sicherheit auf dem Server
 
@@ -517,6 +536,7 @@ Anfrage erhalten Sie eine Kopie dieser Garantien.
 | Bedienprotokoll (nur auf dem Gerät) | OpenVolley ab 2.4.0: 30 Tage, höchstens 50 000 Einträge |
 | Protokolldatei der Desktop-App (nur auf dem Gerät) | Höchstens fünf ältere Dateien zu je 5 MB |
 | Unterschrift auf dem Telefon (Server oder Laptop) | Nur im Arbeitsspeicher; Link 10 Minuten gültig, Unterschrift spätestens 5 Minuten nach dem Unterschreiben verworfen |
+| Support-Anfragen (Postfach und Helpdesk, mit Anhängen) | 2 Jahre nach der letzten Nachricht; auf Anfrage früher |
 | Serverprotokolle | Überschrieben nach Grösse (Tage bis wenige Wochen) |
 | Live-Daten (Server und Hallen-Modus) | Nur im Arbeitsspeicher; auf dem Server 24 Stunden nach der letzten Aktivität verworfen |
 | Datensicherungen | Bis etwa 6 Monate (Abschnitt 18) |

@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 
 // Mock dependencies before importing the component
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key, fallback) => fallback || key
+    // the fallback text, else the key (also for interpolation options)
+    t: (key, fallback) => (typeof fallback === 'string' ? fallback : key),
+    i18n: { language: 'en' }
   })
 }))
 
@@ -128,5 +130,28 @@ describe('ServerConnectionScreen', () => {
     expect(learnRelayWsPort).toHaveBeenCalledWith('http://192.168.1.20:5173')
     expect(setBackendOverride).toHaveBeenCalledWith('http://192.168.1.20:5173')
     expect(order).toEqual(['learn', 'override', 'connected'])
+  })
+
+  // The tablets' first screen has the "?" too: the app's help, on Connecting tablets
+  it.each(['referee', 'bench', 'livescore'])('%s: the "?" opens the app\'s help on Connecting tablets', (app) => {
+    render(<ServerConnectionScreen onConnected={mockOnConnected} helpScreen={app} />)
+    const panel = screen.getByTestId('help-panel')
+    expect(panel.getAttribute('aria-modal')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Help' }))
+    expect(panel.getAttribute('aria-modal')).toBe('true')
+    const sections = [...panel.querySelectorAll('[data-testid^="help-section-"]')].map(n => n.dataset.testid.replace('help-section-', ''))
+    expect(sections).toEqual([app, 'connections'])
+    const expanded = (id) => panel.querySelector(`[data-testid="help-section-${id}"] button`).getAttribute('aria-expanded')
+    expect(expanded('connections')).toBe('true')
+    expect(expanded(app)).toBe('false')
+    // the close button
+    fireEvent.click(within(panel).getByRole('button', { name: 'Close' }))
+    expect(panel.getAttribute('aria-modal')).toBeNull()
+  })
+
+  it('without a help screen: no "?" and no panel', () => {
+    render(<ServerConnectionScreen onConnected={mockOnConnected} />)
+    expect(screen.queryByRole('button', { name: 'Help' })).toBeNull()
+    expect(screen.queryByTestId('help-panel')).toBeNull()
   })
 })
