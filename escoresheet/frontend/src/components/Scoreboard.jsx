@@ -15227,10 +15227,12 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
             {/* Hide court area during Set 5 setup until confirmation */}
             {!(data?.set?.index === 5 && !set5SetupConfirmed) && (
               <>
-                {/* Game Captain Buttons + 1R row - above court */}
+                {/* Game Captain Buttons + 1R row - above court. Three columns, the
+                    outer two equal, so the 1R name sits over the net whatever the
+                    width of the Game captain buttons. */}
                 <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
                   alignItems: 'center',
                   width: '100%',
                   marginBottom: '1px'
@@ -15239,17 +15241,18 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   {leftTeamLineupSet && !captainOnCourtStatus[leftIsHome ? 'home' : 'away'].captainOnCourt ? (
                     <button
                       onClick={() => setCaptainOnCourtModal({ team: leftIsHome ? 'home' : 'away' })}
-                      style={GAME_CAPTAIN_CHIP}
+                      style={{ ...GAME_CAPTAIN_CHIP, justifySelf: 'start' }}
                     >
                       {t('scoreboard.captainOnCourt.designate', 'Game captain')}
                     </button>
                   ) : <div style={{ width: '80px' }} />}
 
-                  {/* 1R in center - only show in non-compact mode */}
-                  {!isCompactMode && (() => {
+                  {/* 1R in center - only show in non-compact mode (an empty middle
+                      cell otherwise, so the right button stays in the right column) */}
+                  {isCompactMode ? <div /> : (() => {
                     const ref1 = data?.match?.officials?.find(o => o.role === '1st referee' || o.role === '1st Referee')
                     const ref1Name = ref1 ? `${ref1.firstName || ''} ${ref1.lastName || ''}`.trim() : null
-                    if (!ref1Name) return <div style={{ flex: 1 }} />
+                    if (!ref1Name) return <div />
                     return (
                       <span style={{
                         fontSize: isLaptopMode ? '13px' : '16px',
@@ -15265,7 +15268,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                   {rightTeamLineupSet && !captainOnCourtStatus[leftIsHome ? 'away' : 'home'].captainOnCourt ? (
                     <button
                       onClick={() => setCaptainOnCourtModal({ team: leftIsHome ? 'away' : 'home' })}
-                      style={GAME_CAPTAIN_CHIP}
+                      style={{ ...GAME_CAPTAIN_CHIP, justifySelf: 'end' }}
                     >
                       {t('scoreboard.captainOnCourt.designate', 'Game captain')}
                     </button>
