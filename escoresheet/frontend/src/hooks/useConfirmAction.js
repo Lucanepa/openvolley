@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react'
+import { samePlace } from '../utils/pointerPresses'
 
 /**
  * The one pattern every scorer confirmation dialog follows when its "Yes" is
@@ -34,7 +35,12 @@ import { useCallback, useRef } from 'react'
  * lands on the dialog (it is gone) but on whatever was under it - a court
  * player, or the next dialog the action opens (the substitute list after an
  * expulsion, the libero re-designation list). So for a short moment after a
- * confirm, clicks anywhere are swallowed (GHOST_CLICK_MS).
+ * confirm, clicks there are swallowed (GHOST_CLICK_MS): at the place of the
+ * confirming tap (utils/pointerPresses, TAP_SLOP_PX), where the second tap of
+ * a double tap lands. A tap elsewhere is aimed, and goes through: "Yes" on
+ * Undo and Start rally a moment later was swallowed without a sign (stress
+ * test 2026-10-25, low; seen again 2026-10-29). A confirm by key, or a click
+ * whose place is unknown: every click, as before.
  *
  *   const runConfirm = useConfirmAction()
  *   const confirmX = useCallback(() => runConfirm(async () => {
@@ -49,11 +55,23 @@ export const GHOST_CLICK_MS = 450
 
 const activeGuards = new Set()
 
+// The place of the click being handled (the confirming tap), when it is a
+// pointer's click (detail > 0: not a key on a focused button)
+function confirmingTapPlace(win) {
+  const current = win.event
+  if (!current || current.type !== 'click' || !(current.detail > 0)) return null
+  const { clientX: x, clientY: y } = current
+  return typeof x === 'number' && typeof y === 'number' ? { x, y } : null
+}
+
 function swallowFollowingClicks(ms) {
   if (typeof window === 'undefined') return
   const until = Date.now() + ms
+  const origin = confirmingTapPlace(window)
   const swallow = (e) => {
     if (Date.now() >= until) return
+    // aimed elsewhere: the scorer's next tap, not the end of this one
+    if (origin && e.detail > 0 && !samePlace({ x: e.clientX, y: e.clientY }, origin)) return
     e.preventDefault()
     e.stopImmediatePropagation()
   }
