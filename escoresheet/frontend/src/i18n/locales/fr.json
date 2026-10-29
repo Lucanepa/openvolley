@@ -558,6 +558,7 @@
       }
     },
     "lastAction": "Dernière action :",
+    "rallyTapIgnored": "Non compté : pris pour un double appui",
     "keybindings": {
       "instruction": "Cliquez sur une touche pour la modifier. Appuyez sur la nouvelle touche à attribuer ou sur Echap pour annuler.",
       "pointLeftTeam": "Équipe point gauche",
@@ -2543,7 +2544,7 @@
     },
     "scoring": {
       "q_doubleTap": "J'ai appuyé deux fois : pourquoi un seul point ?",
-      "a_doubleTap": "Juste après le changement de « Lancer l'échange » ou d'un bouton de point, l'app ignore les appuis sur ces boutons pendant 450 ms. Un double appui ou un doigt qui rebondit ne donne pas de deuxième point et ne lance pas de nouvel échange. Les touches du clavier agissent tout de suite. Les options proposent aussi « Vérifier démarrage accidentel » et « Vérifier point accidentel ».",
+      "a_doubleTap": "Sur « Lancer l'échange » et les boutons de point, un deuxième appui au même endroit moins de 450 ms après le précédent est pris pour un double appui et ignoré (« Non compté » s'affiche) : un double appui ou un doigt qui rebondit ne donne pas de deuxième point et ne lance pas de nouvel échange. Un appui visant l'autre bouton compte dès que celui-ci est visible. Les touches du clavier agissent tout de suite. Les options proposent aussi « Vérifier démarrage accidentel » et « Vérifier point accidentel ».",
       "q_serveRotation": "Où voir qui sert et la rotation ?",
       "a_serveRotation": "Le ballon marque l'équipe au service, et le terrain montre les positions I à VI de chaque équipe. L'app fait tourner une équipe quand elle reprend le service. Une rotation fausse se corrige dans Match › Corrections avec « Corriger la formation ».",
       "q_scoreDisplay": "Que montre l'affichage du score ?",

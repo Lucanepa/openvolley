@@ -559,6 +559,7 @@
       }
     },
     "lastAction": "Ultima azione:",
+    "rallyTapIgnored": "Non contato: preso per un doppio tocco",
     "keybindings": {
       "instruction": "Fare clic su un tasto per modificarlo. Premere il nuovo tasto da assegnare o Escape per annullarlo.",
       "pointLeftTeam": "Punto alla squadra a sinistra",
@@ -2549,7 +2550,7 @@
     },
     "scoring": {
       "q_doubleTap": "Ho toccato due volte: perché è arrivato un solo punto?",
-      "a_doubleTap": "Subito dopo che «Inizia scambio» o un pulsante del punto cambia, l'app ignora i tocchi su questi pulsanti per 450 ms. Un doppio tocco o un dito che rimbalza non dà un secondo punto e non fa partire un nuovo scambio. I tasti della tastiera agiscono subito. Le opzioni hanno anche «Controllo avvio accidentale» e «Controllo punto accidentale».",
+      "a_doubleTap": "Su «Inizia scambio» e sui pulsanti del punto, un secondo tocco nello stesso punto entro 450 ms dal precedente è preso per un doppio tocco e ignorato (compare «Non contato»): un doppio tocco o un dito che rimbalza non dà un secondo punto e non fa partire un nuovo scambio. Un tocco rivolto all'altro pulsante conta appena è visibile. I tasti della tastiera agiscono subito. Le opzioni hanno anche «Controllo avvio accidentale» e «Controllo punto accidentale».",
       "q_serveRotation": "Dove vedo chi serve e la rotazione?",
       "a_serveRotation": "Il pallone indica la squadra al servizio, e il campo mostra le posizioni da I a VI di ogni squadra. L'app fa ruotare una squadra quando riconquista il servizio. Una rotazione sbagliata si corregge in Partita › Correzioni con «Correggi la formazione».",
       "q_scoreDisplay": "Cosa mostra il display del punteggio?",

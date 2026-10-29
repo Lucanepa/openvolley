@@ -560,6 +560,7 @@
       }
     },
     "lastAction": "Last action:",
+    "rallyTapIgnored": "Not counted: taken as a double tap",
     "keybindings": {
       "instruction": "Click on a key to change it. Press the new key to assign, or Escape to cancel.",
       "pointLeftTeam": "Point left team",
@@ -2550,7 +2551,7 @@
     },
     "scoring": {
       "q_doubleTap": "I tapped twice: why was only one point given?",
-      "a_doubleTap": "Right after “Start rally” or a point button changes, the app ignores taps on these buttons for 450 ms. A double tap or a bouncing finger gives no second point and starts no new rally. The keyboard keys act at once. The options also have “Check accidental rally start” and “Check accidental point award”.",
+      "a_doubleTap": "On “Start rally” and the point buttons, a second tap at the same place within 450 ms of the one before is taken as a double tap and ignored (“Not counted” shows): a double tap or a bouncing finger gives no second point and starts no new rally. A tap aimed at the other button counts as soon as you can see it. The keyboard keys act at once. The options also have “Check accidental rally start” and “Check accidental point award”.",
       "q_serveRotation": "How do I see who serves and the rotation?",
       "a_serveRotation": "The ball marks the serving team, and the court shows each team's positions I to VI. The app rotates a team when it wins the service back. A wrong rotation is fixed in Match › Corrections with “Fix the line-up”.",
       "q_scoreDisplay": "What does the score display show?",
