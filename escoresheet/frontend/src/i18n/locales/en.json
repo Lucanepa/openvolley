@@ -4169,7 +4169,8 @@
       "startTime": "Start",
       "endTime": "End",
       "currentFinal": "Now",
-      "addDelayRemark": "Add a remark about the delayed start"
+      "addDelayRemark": "Add a remark about the delayed start",
+      "order": "Order"
     },
     "who": {
       "player": "Player on court",
@@ -4244,7 +4245,9 @@
       "correctFinalScore": "Correct final score",
       "setTimes": "Set times",
       "showAutomatic": "Show automatic entries",
-      "reopenForCorrections": "Back to the match end"
+      "reopenForCorrections": "Back to the match end",
+      "newestFirst": "Newest first",
+      "oldestFirst": "Oldest first"
     },
     "preview": {
       "title": "What changes on the scoresheet",

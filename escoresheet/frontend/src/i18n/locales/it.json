@@ -4168,7 +4168,8 @@
       "startTime": "Inizio",
       "endTime": "Fine",
       "currentFinal": "Ora",
-      "addDelayRemark": "Aggiungi un'osservazione sull'inizio ritardato"
+      "addDelayRemark": "Aggiungi un'osservazione sull'inizio ritardato",
+      "order": "Ordine"
     },
     "who": {
       "player": "Giocatore/trice in campo",
@@ -4243,7 +4244,9 @@
       "correctFinalScore": "Correggi punteggio finale",
       "setTimes": "Orari del set",
       "showAutomatic": "Mostra le voci automatiche",
-      "reopenForCorrections": "Torna alla fine della partita"
+      "reopenForCorrections": "Torna alla fine della partita",
+      "newestFirst": "Prima le più recenti",
+      "oldestFirst": "Prima le più vecchie"
     },
     "preview": {
       "title": "Cosa cambia sul referto",

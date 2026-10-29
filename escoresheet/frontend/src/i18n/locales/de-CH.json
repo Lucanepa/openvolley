@@ -4163,7 +4163,8 @@
       "startTime": "Beginn",
       "endTime": "Endi",
       "currentFinal": "Jetzt",
-      "addDelayRemark": "Bemerkig zum verspötete Beginn hinzuefüege"
+      "addDelayRemark": "Bemerkig zum verspötete Beginn hinzuefüege",
+      "order": "Reihefolg"
     },
     "who": {
       "player": "Spieler/in uf em Feld",
@@ -4238,7 +4239,9 @@
       "correctFinalScore": "Endstand korrigiere",
       "setTimes": "Satzziite",
       "showAutomatic": "Automatischi Iiträg aazeige",
-      "reopenForCorrections": "Zrugg zum Matchend"
+      "reopenForCorrections": "Zrugg zum Matchend",
+      "newestFirst": "Neuschti zersch",
+      "oldestFirst": "Ältischti zersch"
     },
     "preview": {
       "title": "Was sich ufem Matchblatt änderet",
