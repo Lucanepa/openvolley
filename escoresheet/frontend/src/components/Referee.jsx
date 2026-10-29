@@ -12,6 +12,7 @@ import WsDebugOverlay from './WsDebugOverlay'
 import { db } from '../db/db'
 import TestModeControls from './TestModeControls'
 import SimpleHeader from './SimpleHeader'
+import ContextualHelpPanel from './help/ContextualHelpPanel'
 import DonutCountdown from './DonutCountdown'
 import { supabase } from '../lib/supabaseClient'
 import { apiFrom } from '../lib/apiClient'
@@ -199,6 +200,10 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
   const { syncStatus, retryErrors } = useSyncQueue()
   const [refereeView, setRefereeView] = useState('2nd') // '1st' or '2nd'
   const [attentionModalOpen, setAttentionModalOpen] = useState(false)
+  // The "?" of the referee view: the panel with the referee's help
+  const [helpOpen, setHelpOpen] = useState(false)
+  const toggleHelp = useCallback(() => setHelpOpen(prev => !prev), [])
+  const closeHelp = useCallback(() => setHelpOpen(false), [])
   const lastAttentionTriggerRef = useRef(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const theme = useTheme()
@@ -2193,6 +2198,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         flexDirection: 'column',
         overflow: 'hidden'
       }}>
+        <ContextualHelpPanel open={helpOpen} onClose={closeHelp} screen="referee" />
         {/* Header - same as main view */}
         <div style={{
           height: '40px',
@@ -2291,6 +2297,30 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           </div>
 
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            {/* Help: the panel with the referee's help */}
+            <button
+              type="button"
+              onClick={toggleHelp}
+              aria-pressed={helpOpen}
+              aria-label={t('contextHelp.helpButton', 'Help')}
+              title={t('contextHelp.helpButton', 'Help')}
+              style={{
+                padding: '4px 9px',
+                fontSize: '12px',
+                fontWeight: 700,
+                height: '25px',
+                alignItems: 'center',
+                justifyContent: 'center',
+                display: 'flex',
+                background: helpOpen ? 'var(--ov-selected)' : 'var(--panel)',
+                color: helpOpen ? 'var(--ov-on-dark)' : 'var(--text)',
+                border: helpOpen ? '1px solid var(--ov-selected)' : '1px solid var(--border)',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              ?
+            </button>
             {/* Language Selector */}
             <div style={{ position: 'relative' }}>
               <button
@@ -2831,6 +2861,8 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
         ]}
         onFullscreen={toggleFullscreen}
         isFullscreen={isFullscreen}
+        onHelp={toggleHelp}
+        helpOpen={helpOpen}
         menuItems={[
           // Screen options
           { header: t('refereeDashboard.screenOptions') },
@@ -2896,6 +2928,7 @@ export default function Referee({ matchId, onExit, isMasterMode }) {
           }
         ]}
       />
+      <ContextualHelpPanel open={helpOpen} onClose={closeHelp} screen="referee" />
 
       {/* Main content wrapper - percentage-based heights. `.referee-court` pins
           the pre-restyle palette for the whole scoring view (styles.css, RESTYLE-SPEC 4). */}

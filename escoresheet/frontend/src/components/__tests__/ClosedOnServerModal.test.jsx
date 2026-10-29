@@ -15,6 +15,9 @@ vi.mock('react-i18next', () => ({
 
 import ClosedOnServerModal from '../ClosedOnServerModal'
 
+// The dialog's own buttons (the title row's help button aside: components/help)
+const actionButtons = () => screen.getAllByRole('button').filter(b => b.dataset.testid !== 'dialog-help')
+
 const texts = en.cloudBlock.closedCopy
 const props = (over = {}) => ({
   onLoadOfficial: vi.fn(async () => ({ ok: true })),
@@ -33,7 +36,7 @@ describe('ClosedOnServerModal', () => {
     expect(screen.getByTestId('closed-copy-modal')).toBeTruthy()
     expect(screen.getByText(texts.title)).toBeTruthy()
     expect(screen.getByRole('alert').textContent).toBe(texts.body)
-    expect(screen.getAllByRole('button').map(b => b.textContent)).toEqual([en.common.close, texts.remove, texts.loadOfficial])
+    expect(actionButtons().map(b => b.textContent)).toEqual([en.common.close, texts.remove, texts.loadOfficial])
 
     fireEvent.click(screen.getByRole('button', { name: texts.loadOfficial }))
     await waitFor(() => expect(p.onLoadOfficial).toHaveBeenCalledTimes(1))
@@ -49,7 +52,7 @@ describe('ClosedOnServerModal', () => {
   it('with onScoresheet: a Scoresheet button opens this copy\'s sheet', () => {
     const onScoresheet = vi.fn()
     render(<ClosedOnServerModal {...props({ onScoresheet })} />)
-    expect(screen.getAllByRole('button').map(b => b.textContent)).toEqual([en.common.close, en.header.scoresheet, texts.remove, texts.loadOfficial])
+    expect(actionButtons().map(b => b.textContent)).toEqual([en.common.close, en.header.scoresheet, texts.remove, texts.loadOfficial])
     fireEvent.click(screen.getByRole('button', { name: en.header.scoresheet }))
     expect(onScoresheet).toHaveBeenCalledTimes(1)
   })
@@ -78,7 +81,7 @@ describe('ClosedOnServerModal', () => {
     render(<ClosedOnServerModal {...p} />)
     fireEvent.click(screen.getByRole('button', { name: texts.loadOfficial }))
     expect((await screen.findByTestId('closed-copy-error')).textContent).toBe(texts.errors.failed)
-    expect(screen.getAllByRole('button').map(b => b.textContent)).toEqual([en.common.close, texts.remove, texts.usePin, texts.loadOfficial])
+    expect(actionButtons().map(b => b.textContent)).toEqual([en.common.close, texts.remove, texts.usePin, texts.loadOfficial])
     fireEvent.click(screen.getByRole('button', { name: texts.usePin }))
     expect(p.onUsePin).toHaveBeenCalledTimes(1)
 
@@ -97,10 +100,10 @@ describe('ClosedOnServerModal', () => {
     const p = props({ onLoadOfficial: vi.fn(() => new Promise(r => { finish = r })) })
     render(<ClosedOnServerModal {...p} />)
     fireEvent.click(screen.getByRole('button', { name: texts.loadOfficial }))
-    await waitFor(() => expect(screen.getAllByRole('button').every(b => b.disabled)).toBe(true))
+    await waitFor(() => expect(actionButtons().every(b => b.disabled)).toBe(true))
     expect(screen.getByRole('button', { name: texts.loadOfficial }).getAttribute('aria-busy')).toBe('true')
     finish({ ok: true })
-    await waitFor(() => expect(screen.getAllByRole('button').every(b => !b.disabled)).toBe(true))
+    await waitFor(() => expect(actionButtons().every(b => !b.disabled)).toBe(true))
   })
 
   it('the buttons wrap on a phone', () => {
