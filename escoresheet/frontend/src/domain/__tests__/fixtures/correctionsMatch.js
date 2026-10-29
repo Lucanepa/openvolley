@@ -10,9 +10,16 @@
  *   sets: [{ points: 'HHAH…', extras: [{ at: 5, type: 'timeout', payload: { team: 'home' } }], finished: true }]
  * })
  * `at` = number of points already played when the extra event is logged.
+ * Libero replacements are written as the scoreboard writes them:
+ *   { at, type: 'libero_entry', payload: { team, playerOut, liberoIn } } and
+ *   { at, type: 'libero_exit', payload: { team } } with their line-up
+ *   sub-rows; a rotation that takes the libero to the front row writes the
+ *   automatic libero_exit (N.1) before the rotation line-up (N.2).
  */
 import { rotateLineup } from '../../rotation'
 import { getFirstServeForSet } from '../../rules'
+
+const MOVE = { I: 'VI', II: 'I', III: 'II', IV: 'III', V: 'IV', VI: 'V' }
 
 export const HOME_LINEUP = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6 }
 export const AWAY_LINEUP = { I: 11, II: 12, III: 13, IV: 14, V: 15, VI: 16 }
@@ -46,6 +53,7 @@ export function buildMatch({ sets = [], match = MATCH, start = Date.parse('2026-
   sets.forEach((def, i) => {
     const setIndex = def.index || i + 1
     const lineups = { home: { ...(def.homeLineup || HOME_LINEUP) }, away: { ...(def.awayLineup || AWAY_LINEUP) } }
+    const ls = { home: null, away: null }
     const startTime = new Date(clock + 60000).toISOString()
     add(setIndex, 'set_start', { setIndex })
     add(setIndex, 'lineup', { team: 'home', lineup: { ...lineups.home }, isInitial: true })
@@ -57,12 +65,26 @@ export function buildMatch({ sets = [], match = MATCH, start = Date.parse('2026-
     const logExtras = (n) => {
       for (const x of extrasAt(n)) {
         const row = add(setIndex, x.type, x.payload)
+        const team = x.payload?.team
         if (x.type === 'substitution') {
-          const team = x.payload.team
           const pos = Object.keys(lineups[team]).find(k => lineups[team][k] === x.payload.playerOut)
           lineups[team][pos] = x.payload.playerIn
           row.payload.position = pos
-          add(setIndex, 'lineup', { team, lineup: { ...lineups[team] }, fromSubstitution: true }, row.seq + 0.1)
+          const lp = { team, lineup: { ...lineups[team] }, fromSubstitution: true }
+          if (ls[team]) lp.liberoSubstitution = { ...ls[team] }
+          add(setIndex, 'lineup', lp, row.seq + 0.1)
+        } else if (x.type === 'libero_entry') {
+          const pos = Object.keys(lineups[team]).find(k => lineups[team][k] === x.payload.playerOut)
+          lineups[team][pos] = String(x.payload.liberoIn)
+          row.payload = { liberoType: 'libero1', ...x.payload, position: pos }
+          ls[team] = { position: pos, liberoNumber: x.payload.liberoIn, playerNumber: x.payload.playerOut, liberoType: row.payload.liberoType }
+          add(setIndex, 'lineup', { team, lineup: { ...lineups[team] }, liberoSubstitution: { ...ls[team] } }, row.seq + 0.1)
+        } else if (x.type === 'libero_exit') {
+          const cur = ls[team]
+          lineups[team][cur.position] = cur.playerNumber
+          row.payload = { ...x.payload, position: cur.position, liberoOut: cur.liberoNumber, playerIn: cur.playerNumber, liberoType: cur.liberoType }
+          ls[team] = null
+          add(setIndex, 'lineup', { team, lineup: { ...lineups[team] }, fromSubstitution: true, liberoSubstitution: null }, row.seq + 0.1)
         }
       }
     }
@@ -76,7 +98,19 @@ export function buildMatch({ sets = [], match = MATCH, start = Date.parse('2026-
       const point = add(setIndex, 'point', { team, score: { home, away } })
       if (server !== team) {
         lineups[team] = rotateLineup(lineups[team])
-        add(setIndex, 'lineup', { team, lineup: { ...lineups[team] }, liberoSubstitution: null }, point.seq + 0.1)
+        let sub = 1
+        if (ls[team]) {
+          const pos = MOVE[ls[team].position]
+          if (['II', 'III', 'IV'].includes(pos)) {
+            lineups[team][pos] = String(ls[team].playerNumber)
+            add(setIndex, 'libero_exit', { team, position: pos, liberoOut: ls[team].liberoNumber, playerIn: ls[team].playerNumber, liberoType: ls[team].liberoType, reason: 'rotation_to_front_row' }, point.seq + 0.1)
+            sub = 2
+            ls[team] = null
+          } else {
+            ls[team] = { ...ls[team], position: pos }
+          }
+        }
+        add(setIndex, 'lineup', { team, lineup: { ...lineups[team] }, liberoSubstitution: ls[team] ? { ...ls[team] } : null }, Math.round((point.seq + sub / 10) * 1000) / 1000)
         server = team
       }
       logExtras(p + 1)
