@@ -1,8 +1,8 @@
 # Terms of use
 
-**OpenVolley and OpenBeach** · Version 1.0 · As of 7 October 2026
+**OpenVolley and OpenBeach** · Version 1.1 · As of 29 October 2026
 
-These terms are available in German, English, French and Italian. The German
+These terms are available in German, English, French and Italian. The English
 version is binding.
 
 ## 1. What this is about

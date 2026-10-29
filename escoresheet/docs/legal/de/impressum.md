@@ -1,6 +1,6 @@
 # Impressum
 
-**OpenVolley und OpenBeach** · Stand: 7. Oktober 2026
+**OpenVolley und OpenBeach** · Stand: 29. Oktober 2026
 
 ## Betreiber
 
@@ -52,4 +52,4 @@ Siehe [Datenschutzerklärung](privacy.md).
 ## Sprache
 
 Dieses Impressum gibt es auf Deutsch, Englisch, Französisch und Italienisch.
-Massgebend ist die deutsche Fassung.
+Massgebend ist die englische Fassung.

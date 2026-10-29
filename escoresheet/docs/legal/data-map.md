@@ -42,7 +42,7 @@ say otherwise.
   or terms of use would be needed.
   The texts below assume (a) with plain-language notes for players. Settle
   this before go-live.
-- **Binding language:** German; EN/FR/IT are translations.
+- **Binding language:** English (owner, 2026-10-29; German before); DE/FR/IT are translations.
 
 ## 2. Systems and where data lives
 

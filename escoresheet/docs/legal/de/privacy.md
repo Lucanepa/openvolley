@@ -3,7 +3,7 @@
 **OpenVolley und OpenBeach** · Version 1.4 · Stand: 29. Oktober 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
-Massgebend ist die deutsche Fassung.
+Massgebend ist die englische Fassung.
 
 ## Kurz zusammengefasst
 

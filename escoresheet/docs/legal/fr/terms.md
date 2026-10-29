@@ -1,9 +1,9 @@
 # Conditions d'utilisation
 
-**OpenVolley et OpenBeach** · Version 1.0 · État au 7 octobre 2026
+**OpenVolley et OpenBeach** · Version 1.1 · État au 29 octobre 2026
 
 Ces conditions existent en allemand, anglais, français et italien. Seule la
-version allemande fait foi.
+version anglaise fait foi.
 
 ## 1. De quoi il s'agit
 

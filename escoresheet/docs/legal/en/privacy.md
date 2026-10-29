@@ -2,7 +2,7 @@
 
 **OpenVolley and OpenBeach** · Version 1.4 · As of 29 October 2026
 
-This policy is available in German, English, French and Italian. The German
+This policy is available in German, English, French and Italian. The English
 version is binding.
 
 ## In short
