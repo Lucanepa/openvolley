@@ -630,6 +630,8 @@
       "set5ChooseSideService": "Satz {{number}} - Seite und Aufschlag wählen",
       "noLegalSubstitution": "Keine regelkonforme Auswechslung verfügbar",
       "liberoReminder": "Libero-Erinnerung",
+      "liberoReminderText": "Denken Sie daran, den Libero einzusetzen, falls vorhanden",
+      "liberoReminderTeams": "{{first}} und {{second}}",
       "reopenSet": "Satz wieder öffnen",
       "scoresheetError": "eScoresheet-Fehler",
       "scoresheetAlreadyOpen": "eScoresheet bereits geöffnet",
@@ -654,6 +656,22 @@
       "expulsion": "Ausschluss",
       "disqualification": "Disqualifikation",
       "wholeTeam": "Das Team"
+    },
+    "playerMenu": {
+      "liberoOut": "Libero raus",
+      "exchangeLibero": "Libero-Tausch",
+      "unableToPlay": "Spielunfähig",
+      "declaredUnable": "Für spielunfähig erklärt",
+      "injuryIllness": "Verletzung / Krankheit",
+      "playerOut": "# {{player}} raus",
+      "noSubstitutes": "Keine Ersatzspieler",
+      "cancelSanction": "Sanktion zurücknehmen",
+      "liberoIn": "Libero rein",
+      "noEligiblePlayers": "Keine berechtigten Spieler",
+      "sanctionFor": "Sanktion für {{who}}",
+      "actionsFor": "Aktionen für {{who}}",
+      "teamHasWarning": "Team hat Warnung",
+      "alreadySanctioned": "Bereits sanktioniert"
     },
     "actions": {
       "libero": "Libero",

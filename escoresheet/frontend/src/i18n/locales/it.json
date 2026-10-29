@@ -637,6 +637,8 @@
       "set5ChooseSideService": "Set {{number}} - scegli campo e servizio",
       "noLegalSubstitution": "Nessuna sostituzione legale disponibile",
       "liberoReminder": "Promemoria libero",
+      "liberoReminderText": "Ricorda di inserire il libero, se disponibile",
+      "liberoReminderTeams": "{{first}} e {{second}}",
       "reopenSet": "Riapri set",
       "scoresheetError": "Errore eScoresheet",
       "scoresheetAlreadyOpen": "eScoresheet già aperto",
@@ -661,6 +663,22 @@
       "expulsion": "Espulsione",
       "disqualification": "Squalifica",
       "wholeTeam": "La squadra"
+    },
+    "playerMenu": {
+      "liberoOut": "Libero esce",
+      "exchangeLibero": "Scambio dei libero",
+      "unableToPlay": "Inabile a giocare",
+      "declaredUnable": "Dichiarato inabile",
+      "injuryIllness": "Infortunio / malattia",
+      "playerOut": "# {{player}} esce",
+      "noSubstitutes": "Nessun sostituto",
+      "cancelSanction": "Annulla la sanzione",
+      "liberoIn": "Libero entra",
+      "noEligiblePlayers": "Nessun giocatore idoneo",
+      "sanctionFor": "Sanzione per {{who}}",
+      "actionsFor": "Azioni per {{who}}",
+      "teamHasWarning": "Squadra già avvertita",
+      "alreadySanctioned": "Già sanzionato"
     },
     "actions": {
       "libero": "Libero",
