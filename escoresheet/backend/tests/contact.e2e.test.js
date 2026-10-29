@@ -107,7 +107,7 @@ describe('POST /api/contact (server.js, no mail configured)', () => {
 
   it('logs no full address', () => {
     const out = srv.output.join('')
-    assert.match(out, /\[Contact\] support\/connections from te\*\*\*@example\.ch \(website, 1 attachment\(s\)\) not mailed: support mail is off/)
+    assert.match(out, /\[Contact\] support\/connections P3 from te\*\*\*@example\.ch \(website, 1 attachment\(s\)\) not mailed: support mail is off/)
     assert.doesNotMatch(out, /tester@example\.ch/)
   })
 })

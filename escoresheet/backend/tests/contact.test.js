@@ -12,7 +12,7 @@ import { randomBytes } from 'node:crypto'
 import nodemailer from 'nodemailer'
 import {
   parseMultipart, parseContactBody, boundaryOf, sniffFile, safeFilename, checkAttachments, normalizeContact,
-  areaOf, pageUrlOf, firstWords, supportSubject, buildSupportMail, handleContact, isHoneypotHit,
+  areaOf, pageUrlOf, priorityOf, supportSubject, buildSupportMail, handleContact, isHoneypotHit,
   createContactMailer, contactMailerFromEnv, disabledContactMailer, ContactError,
   SECTION_IDS, SECTION_NAMES, CONTACT_AREAS, LEGACY_AREAS, MAX_FILES, MAX_FILES_BYTES, MAX_PARTS
 } from '../lib/contact.js'
@@ -272,13 +272,87 @@ describe('contact: fields', () => {
     assert.equal(isHoneypotHit({ website: 'http://spam.example' }), true)
   })
 
-  it('subject: "[OpenVolley <type>] <area> – <first words>", one line', () => {
-    const v = normalizeContact(base)
-    assert.equal(supportSubject(v), '[OpenVolley Support] scoring – Undo does nothing after a time-out in set…')
-    assert.equal(supportSubject(normalizeContact({ ...base, contactType: 'request', area: 'livescore', comments: 'Dark mode\r\nBcc: x@example.org' })),
-      '[OpenVolley Request] livescore – Dark mode Bcc: x@example.org')
-    assert.equal(firstWords('short'), 'short')
-    assert.equal(firstWords('x'.repeat(80)), `${'x'.repeat(60)}…`)
+  it('a severity only for support: one left over in a form switched to feedback is dropped', () => {
+    assert.equal(normalizeContact({ ...base, contactType: 'feedback', severity: '1' }).severity, '')
+    assert.equal(normalizeContact({ ...base, contactType: 'request', severity: '2' }).severity, '')
+    assert.equal(normalizeContact({ ...base, supportType: 'help', severity: '3' }).severity, '3')
+  })
+
+  it('matchRunning: "1" is a match being scored now, anything else is not', () => {
+    assert.equal(normalizeContact(base).matchRunning, false)
+    assert.equal(normalizeContact({ ...base, matchRunning: '1' }).matchRunning, true)
+    for (const v of ['0', '', 'true', 'yes', '2', ' 1 x', '11']) {
+      assert.equal(normalizeContact({ ...base, matchRunning: v }).matchRunning, false, JSON.stringify(v))
+    }
+    // a JSON body: the number 1 is "1", true is "true"
+    const json = (o) => normalizeContact(parseContactBody(Buffer.from(JSON.stringify({ ...base, ...o })), 'application/json').fields).matchRunning
+    assert.equal(json({ matchRunning: 1 }), true)
+    assert.equal(json({ matchRunning: true }), false)
+  })
+})
+
+describe('contact: priority', () => {
+  const base = Object.fromEntries(VALID)
+  const of = (fields) => priorityOf(normalizeContact({ ...base, ...fields }))
+  const bug = (severity, more = {}) => of({ contactType: 'support', supportType: 'bug', severity, ...more })
+
+  it('P1: a match running, whatever the rest, or severity 1', () => {
+    assert.deepEqual(bug('1'), { level: 'P1', reason: 'severity 1' })
+    assert.deepEqual(bug('1', { matchRunning: '1' }), { level: 'P1', reason: 'match running, severity 1' })
+    for (const fields of [
+      { contactType: 'support', supportType: 'bug', severity: '4' },
+      { contactType: 'support', supportType: 'help', severity: '' },
+      { contactType: 'support', supportType: '', severity: '' },
+      { contactType: 'feedback', supportType: '', severity: '' },
+      { contactType: 'request', supportType: '', severity: '' }
+    ]) {
+      assert.deepEqual(of({ ...fields, matchRunning: '1' }), { level: 'P1', reason: 'match running' }, JSON.stringify(fields))
+    }
+  })
+
+  it('P2: severity 2', () => {
+    assert.deepEqual(bug('2'), { level: 'P2', reason: 'severity 2' })
+    assert.deepEqual(of({ supportType: 'help', severity: '2' }), { level: 'P2', reason: 'severity 2' }, 'the severity before the help')
+  })
+
+  it('P3: severity 3, a help question, support without a severity', () => {
+    assert.deepEqual(bug('3'), { level: 'P3', reason: 'severity 3' })
+    assert.deepEqual(of({ supportType: 'help', severity: '' }), { level: 'P3', reason: 'help question' })
+    assert.deepEqual(of({ supportType: 'help', severity: '4' }), { level: 'P3', reason: 'help question' }, 'help before severity 4')
+    assert.deepEqual(of({ supportType: '', severity: '' }), { level: 'P3', reason: 'support without severity' })
+    assert.deepEqual(of({ supportType: 'bug', severity: '' }), { level: 'P3', reason: 'support without severity' })
+    assert.deepEqual(of({ supportType: 'bug', severity: '7' }), { level: 'P3', reason: 'support without severity' }, 'no valid severity')
+  })
+
+  it('P4: severity 4, feedback, a feature request (a severity sent with them does not count)', () => {
+    assert.deepEqual(bug('4'), { level: 'P4', reason: 'severity 4' })
+    assert.deepEqual(of({ contactType: 'feedback', supportType: '', severity: '' }), { level: 'P4', reason: 'feedback' })
+    assert.deepEqual(of({ contactType: 'request', supportType: '', severity: '' }), { level: 'P4', reason: 'feature request' })
+    assert.deepEqual(of({ contactType: 'feedback', supportType: 'bug', severity: '1' }), { level: 'P4', reason: 'feedback' })
+    assert.deepEqual(of({ contactType: 'request', severity: '2', matchRunning: 'true' }), { level: 'P4', reason: 'feature request' })
+  })
+
+  it('subject: "[<priority>] [<area>] <type>", " – match running" only with a match running', () => {
+    const subject = (fields) => supportSubject(normalizeContact({ ...base, ...fields }))
+    assert.equal(subject({ severity: '1', matchRunning: '1' }), '[P1 – match running] [scoring] Support – Bug report')
+    assert.equal(subject({ severity: '4', matchRunning: '1', area: 'sanctions' }), '[P1 – match running] [sanctions] Support – Bug report')
+    assert.equal(subject({ severity: '1' }), '[P1] [scoring] Support – Bug report')
+    assert.equal(subject({}), '[P2] [scoring] Support – Bug report')
+    assert.equal(subject({ area: 'connections', supportType: 'help', severity: '' }), '[P3] [connections] Support – Help / question')
+    assert.equal(subject({ area: 'setup', supportType: '', severity: '' }), '[P3] [setup] Support')
+    assert.equal(subject({ area: 'mainPage', contactType: 'feedback' }), '[P4] [home] Feedback')
+    assert.equal(subject({ area: 'nowhere', contactType: 'request' }), '[P4] [other] Request')
+    assert.equal(subject({ area: 'livescore', contactType: 'request', matchRunning: '1' }), '[P1 – match running] [livescore] Request')
+  })
+
+  it('no word the user typed reaches the subject (FreeScout\'s auto reply can quote it to an unverified address)', () => {
+    const typed = 'WIN A PRIZE: visit http://phish.example and enter your password'
+    for (const contactType of ['support', 'feedback', 'request']) {
+      const value = normalizeContact({ ...base, contactType, comments: `${typed}\r\nBcc: x@example.org` })
+      const subject = supportSubject(value)
+      for (const word of ['WIN', 'PRIZE', 'phish', 'password', 'Bcc', 'example.org']) assert.ok(!subject.includes(word), `${contactType}: ${subject}`)
+      assert.match(subject, /^\[P[1-4][^\]]*\] \[[a-z-]+\] (Support|Feedback|Request)( – (Bug report|Help \/ question))?$/)
+    }
   })
 })
 
@@ -306,8 +380,10 @@ describe('contact: the mail', () => {
     assert.match(headers, /^To: support@example\.test$/m)
     assert.match(headers, /^Reply-To: tester@example\.ch$/m)
     assert.match(headers, /^Subject: /m)
-    assert.doesNotMatch(headers, /^(Auto-Submitted|Precedence|X-Auto-Response-Suppress|Bcc|Cc):/im, 'FreeScout would read it as an auto-responder')
-    assert.equal(mail.subject, '[OpenVolley Support] scoring – Undo does nothing after a time-out in set…')
+    assert.doesNotMatch(headers, /^(Auto-Submitted|Precedence|X-Auto-Response-Suppress|X-Autoreply|X-Autorespond|Bcc|Cc):/im, 'FreeScout would read it as an auto-responder')
+    assert.match(headers, /^X-OpenVolley-Priority: P2$/im)
+    assert.equal(mail.subject, '[P2] [scoring] Support – Bug report')
+    assert.doesNotMatch(headers, /Undo|time-out/, 'the message is not in a header')
 
     // attachments: checked types, the bytes as sent
     assert.deepEqual(mail.attachments.map((a) => [a.filename, a.contentType]),
@@ -318,9 +394,11 @@ describe('contact: the mail', () => {
     assert.match(raw, /Content-Disposition: attachment; filename=Matchblatt\.pdf/)
     assert.ok(raw.includes(PNG.toString('base64')), 'the PNG travels base64-encoded')
 
-    // body
+    // body: the priority first
     const text = mail.text
-    assert.match(text, /^Support from the OpenVolley app$/m)
+    assert.match(text, /^Priority: +P2 – severity 2\n/)
+    assert.match(text, /^Type: +Support$/m)
+    assert.match(text, /^Source: +app$/m)
     assert.match(text, /^Support type: +Bug report$/m)
     assert.match(text, /^Severity: +2 - Very limited functionality$/m)
     assert.match(text, /^Area: +Scoring \(scoring\)$/m)
@@ -342,12 +420,30 @@ describe('contact: the mail', () => {
       ['comments', 'Nice app'], ['source', 'website'], ['language', 'fr']])
     const r = await handleContact({ body, contentType, mailer, logger: silent })
     assert.equal(r.status, 200)
-    const { mail } = sent[0]
-    assert.equal(mail.subject, '[OpenVolley Feedback] install-updates – Nice app')
-    assert.match(mail.text, /^Feedback from the OpenVolley website$/m)
+    const { mail, raw } = sent[0]
+    assert.equal(mail.subject, '[P4] [install-updates] Feedback')
+    assert.match(headersOf(raw), /^X-OpenVolley-Priority: P4$/im)
+    assert.match(mail.text, /^Priority: +P4 – feedback\n/)
+    assert.match(mail.text, /^Source: +website$/m)
     assert.match(mail.text, /^Attachments: +none$/m)
     assert.doesNotMatch(mail.text, /Diagnostics|Support type|Severity/)
     assert.deepEqual(mail.attachments, [])
+  })
+
+  it('a match running: P1 in the subject, the header and the first line, still no auto-responder header', async () => {
+    const { mailer, sent } = streamMailer()
+    const { body, contentType } = await formBody([...VALID.filter(([k]) => k !== 'severity'), ['severity', '3'], ['matchRunning', '1']])
+    const lines = []
+    const r = await handleContact({ body, contentType, mailer, logger: { log: (l) => lines.push(l), warn() {}, error() {} } })
+    assert.equal(r.status, 200)
+    const { mail, raw } = sent[0]
+    assert.equal(mail.subject, '[P1 – match running] [scoring] Support – Bug report')
+    const headers = headersOf(raw)
+    assert.match(headers, /^X-OpenVolley-Priority: P1$/im)
+    assert.doesNotMatch(headers, /^(Auto-Submitted|Precedence|X-Auto-Response-Suppress|X-Autoreply|X-Autorespond):/im)
+    assert.match(mail.text, /^Priority: +P1 – match running\n/)
+    assert.match(mail.text, /^Severity: +3 - Inconvenience$/m)
+    assert.match(lines.join('\n'), /\[Contact\] support\/scoring P1 from te\*\*\*@example\.ch/)
   })
 
   it('the honeypot: 200 and nothing sent', async () => {
@@ -413,7 +509,7 @@ describe('contact: the mail', () => {
     const lines = []
     const { body, contentType } = await formBody(VALID)
     await handleContact({ body, contentType, mailer, logger: { log: (l) => lines.push(l), warn: (l) => lines.push(l), error: (l) => lines.push(l) } })
-    assert.match(lines.join('\n'), /support\/scoring from te\*\*\*@example\.ch \(app, 0 attachment\(s\)\) mailed/)
+    assert.match(lines.join('\n'), /support\/scoring P2 from te\*\*\*@example\.ch \(app, 0 attachment\(s\)\) mailed/)
     assert.doesNotMatch(lines.join('\n'), /tester@/)
   })
 })
