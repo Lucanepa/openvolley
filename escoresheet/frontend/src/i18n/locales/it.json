@@ -2357,8 +2357,8 @@
     },
     "home": {
       "q_createMatch": "Come creo una nuova partita?",
-      "a_createMatch": "Tocca «Nuova partita» e scegli «Partita ufficiale», «Partita test» o «Partita semplice». Una partita ufficiale ha roster, ufficiali di gara e firme. Una partita test serve per esercitarsi. Una partita semplice non è ufficiale: niente roster e niente firme.",
-      "tip_createMatch": "Tocca qui per creare una nuova partita: ufficiale, test o semplice.",
+      "a_createMatch": "Con l'accesso, tocca «Partita ufficiale»: scegli dalla lista la partita in casa di oggi del tuo club, o inserisci tu la partita. Sotto ci sono «Partita test» e «Partita semplice»; senza accesso hai solo queste due. Una partita ufficiale ha roster, ufficiali di gara e firme. Una partita test serve per esercitarsi. Una partita semplice non è ufficiale: niente roster e niente firme.",
+      "tip_createMatch": "Inizia qui una nuova partita: ufficiale (con l'accesso), test o semplice.",
       "q_officialVsTest": "Qual è la differenza tra partite ufficiali e test?",
       "a_officialVsTest": "Una partita ufficiale richiede i due roster (almeno 6 giocatori ciascuno), gli ufficiali di gara e le firme. Se hai effettuato l'accesso, viene salvata nel cloud per l'arbitro, il livescore e i backup. Una partita test ha squadre inventate per esercitarsi. Resta su questo dispositivo e non va mai nel cloud.",
       "q_continueMatch": "Come continuo una partita?",

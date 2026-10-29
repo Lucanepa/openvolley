@@ -2352,8 +2352,8 @@
     },
     "home": {
       "q_createMatch": "Wie erstell ich es neus Spiil?",
-      "a_createMatch": "Tipp uf «Neus Spiil» und wähl «Offiziells Spiil», «Testspiil» oder «Eifachs Spiil». Es offiziells Spiil hät Kader, Offizielli und Underschrifte. Es Testspiil isch zum Üebe. Es eifachs Spiil isch inoffiziell: kei Kader und kei Underschrifte.",
-      "tip_createMatch": "Tipp da, zum es neus Spiil erstelle: offiziell, Test oder eifach.",
+      "a_createMatch": "Aagmäldet tippsch uf «Offiziells Spiil»: Wähl s hüttige Heimspiil vo dim Verein us de Liste oder gib s Spiil sälber ii. Drunter sind «Testspiil» und «Eifachs Spiil»; abgmäldet häsch nur die zwei. Es offiziells Spiil hät Kader, Offizielli und Underschrifte. Es Testspiil isch zum Üebe. Es eifachs Spiil isch inoffiziell: kei Kader und kei Underschrifte.",
+      "tip_createMatch": "Da startisch es neus Spiil: offiziell (aagmäldet), Test oder eifach.",
       "q_officialVsTest": "Was isch de Unterschied zwüsche offizielle Spiil und Testspiil?",
       "a_officialVsTest": "Es offiziells Spiil bruucht beidi Kader (je mindestens 6 Spieler), d Offizielle und d Underschrifte. Bisch aagmäldet, wird s i de Cloud gspeicheret: für de Schiri, de Livescore und d Backups. Es Testspiil hät erfundeni Teams zum Üebe. Es bliibt uf däm Grät und chunnt nie i d Cloud.",
       "q_continueMatch": "Wie füehr ich es Spiil wiiter?",

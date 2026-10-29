@@ -2358,8 +2358,8 @@
     },
     "home": {
       "q_createMatch": "How do I create a new match?",
-      "a_createMatch": "Tap “New match” and choose “Official match”, “Test match” or “Easy match”. An official match has rosters, officials and signatures. A test match is for practice. An easy match is unofficial: no rosters and no signatures.",
-      "tip_createMatch": "Tap here to create a new match: official, test or easy.",
+      "a_createMatch": "Signed in, tap “Official match”: pick today's home game of your club from the list, or enter the game yourself. “Test match” and “Easy match” are below it; signed out, you only have those two. An official match has rosters, officials and signatures. A test match is for practice. An easy match is unofficial: no rosters and no signatures.",
+      "tip_createMatch": "Start a new match here: official (signed in), test or easy.",
       "q_officialVsTest": "What is the difference between official and test matches?",
       "a_officialVsTest": "An official match needs both rosters (at least 6 players each), the officials and the signatures. When you are signed in, it is saved to the cloud for the referee, the livescore and the backups. A test match has invented teams for practice. It stays on this device and never goes to the cloud.",
       "q_continueMatch": "How do I continue a match?",
