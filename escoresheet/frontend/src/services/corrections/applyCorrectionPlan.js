@@ -7,9 +7,13 @@
  *  2. every affected set: its score re-derived from the point events (set
  *     row and, for a finished set, the set_end payload) — no score is ever
  *     typed in; set-time changes go to the set row
- *  3. match.sanctions re-derived from the sanction events
- *  4. match.remarks: the plan's lines removed / appended
+ *  3. match.sanctions re-derived from the sanction events; plan.matchPatch
+ *     (coin toss, game captain ...) on the match row
+ *  4. match.remarks: the plan's lines replaced in place (remarkReplace),
+ *     removed / appended
  *  5. match.manualChanges: the correction-log entry (a human sentence)
+ *  5b. plan.playerUpdates on the roster (a renumbered player, libero marks),
+ *     and the team's roster to the cloud (players_home / players_away)
  *  6. sync jobs: event/insert (an upsert on external_id, so edited and
  *     renumbered rows are re-sent the same way), set/update, match/update —
  *     no direct API writes, corrections work offline
@@ -35,6 +39,7 @@ import { syncJobsForEvents } from '../../domain/corrections'
 import { clearedPostMatchSignatures, POST_MATCH_SIGNATURE_FIELDS } from '../../domain/matchEnd'
 import { signaturesPayload } from '../../domain/signatureEdits'
 import { buildEventInsertJob } from '../../utils/eventSync'
+import { toCloudPlayers } from '../../db/matchRepository'
 import { setExtId } from '../../utils/syncIds'
 import { withActivityContext, EVENT_HISTORY_SCOPE, rememberSeedKey } from '../../db/eventHistory'
 import { randomUuid } from '../../utils/deviceId'
@@ -47,7 +52,8 @@ export function planChangesSheet(plan) {
   return !!plan && (
     (plan.add?.length || 0) + (plan.update?.length || 0) + (plan.remove?.length || 0) +
     (plan.setUpdates?.length || 0) + (plan.remarkAdd?.length || 0) + (plan.remarkRemove?.length || 0) +
-    (plan.remarksSet !== undefined ? 1 : 0)
+    (plan.remarksSet !== undefined ? 1 : 0) + (plan.remarkReplace?.length || 0) +
+    Object.keys(plan.matchPatch || {}).length + (plan.playerUpdates?.length || 0)
   ) > 0
 }
 
@@ -73,6 +79,11 @@ export function logEntryFor(plan, now = new Date()) {
 export function remarksAfter(remarks, plan) {
   // remarksSet: the whole text, when one line was edited in place
   let out = plan?.remarksSet !== undefined ? String(plan.remarksSet) : (remarks || '')
+  // a line rewritten where it stands (a renumbered player's remark)
+  for (const { from, to } of plan?.remarkReplace || []) {
+    if (!from || from === to) continue
+    out = out.split('\n').map(l => (l === from ? to : l)).join('\n')
+  }
   for (const line of plan?.remarkRemove || []) out = removeRemarkLine(out, line)
   for (const line of plan?.remarkAdd || []) out = appendRemark(out, line)
   return out
@@ -93,8 +104,9 @@ async function writePlan(plan, { matchId, db, mode = 'live', hooks = {}, now = n
   const result = { addedIds: [], signaturesCleared: false }
   // The history tables the database has (all of them in the app)
   const historyTables = EVENT_HISTORY_SCOPE.map(name => db[name]).filter(Boolean)
+  const playerTables = db.players ? [db.players] : []
 
-  await db.transaction('rw', [db.events, db.sets, db.matches, db.sync_queue, ...historyTables], async () => {
+  await db.transaction('rw', [db.events, db.sets, db.matches, db.sync_queue, ...playerTables, ...historyTables], async () => {
     const match = await db.matches.get(matchId)
     if (!match) throw new Error('Match not found')
     // the history hooks queue the revision jobs in this transaction when they know the match's key
@@ -151,7 +163,7 @@ async function writePlan(plan, { matchId, db, mode = 'live', hooks = {}, now = n
     }
 
     // 3-5, 8. the match row
-    const patch = {}
+    const patch = { ...(plan.matchPatch || {}) }
     if (set5Back) patch.set5CourtSwitched = false
     const flags = deriveTeamSanctionFlags(events)
     const sanctions = { ...(match.sanctions || {}), ...flags }
@@ -165,6 +177,17 @@ async function writePlan(plan, { matchId, db, mode = 'live', hooks = {}, now = n
       result.signaturesCleared = true
     }
     if (Object.keys(patch).length) await db.matches.update(matchId, patch)
+
+    // 5b. the roster (a renumbered player, a libero mark)
+    const rosterTeams = new Set()
+    for (const pu of plan.playerUpdates || []) {
+      if (!db.players || pu?.id == null) continue
+      const row = await db.players.get(pu.id)
+      if (!row) continue
+      await db.players.update(pu.id, pu.changes)
+      if (row.teamId != null && row.teamId === match.homeTeamId) rosterTeams.add('home')
+      else if (row.teamId != null && row.teamId === match.awayTeamId) rosterTeams.add('away')
+    }
 
     // 6-7. sync jobs (official matches only)
     if (match.seed_key && !match.test) {
@@ -190,9 +213,15 @@ async function writePlan(plan, { matchId, db, mode = 'live', hooks = {}, now = n
         if (s.endTime !== undefined) payload.end_time = s.endTime ?? null
         await db.sync_queue.add({ resource: 'set', action: 'update', payload, ts, status: 'queued' })
       }
-      const matchPayload = { id: match.seed_key }
+      const matchPayload = { id: match.seed_key, ...(plan.cloudMatch || {}) }
       if (patch.manualChanges) matchPayload.manual_changes = patch.manualChanges
       if (patch.sanctions) matchPayload.sanctions = patch.sanctions
+      // the whole roster of a team whose players changed (the arrays replace the stored ones)
+      for (const team of rosterTeams) {
+        const teamId = team === 'home' ? match.homeTeamId : match.awayTeamId
+        const list = await db.players.where('teamId').equals(teamId).sortBy('number')
+        matchPayload[team === 'home' ? 'players_home' : 'players_away'] = toCloudPlayers(list)
+      }
       // 8. the cleared signatures on the server too, as Reopen last set does
       // (the server kept them all, attached to the corrected sheet): the whole
       // object, it replaces the column, so the pre-match ones travel along
