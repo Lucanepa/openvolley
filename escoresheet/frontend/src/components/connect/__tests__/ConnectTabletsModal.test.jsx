@@ -185,6 +185,19 @@ describe('ConnectTabletsModal', () => {
     await waitFor(() => expect(qrUrl()).toBe(`http://192.168.1.42:5173/bench?match=${SEED}&team=away`))
   })
 
+  it('the footer\'s Help opens the help panel on this dialog\'s sections', () => {
+    renderModal({ match: MATCH, fetchImpl: okFetch(), win: {} })
+    const screens = []
+    const onOpen = (e) => screens.push(e.detail.screen)
+    window.addEventListener('ov:open-help', onOpen)
+    try {
+      fireEvent.click(screen.getByTestId('connect-help'))
+    } finally {
+      window.removeEventListener('ov:open-help', onOpen)
+    }
+    expect(screens).toEqual(['connectTablets'])
+  })
+
   it('starts on the first tablet that is let in', () => {
     renderModal({ match: { ...MATCH, refereeConnectionEnabled: false }, fetchImpl: okFetch(), win: {} })
     expect(within(screen.getByTestId('role-row-bench_home')).getByRole('radio')).toHaveAttribute('aria-checked', 'true')

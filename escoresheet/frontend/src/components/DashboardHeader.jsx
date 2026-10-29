@@ -15,6 +15,7 @@ import { backdropDismiss } from '../ui/backdropDismiss.js'
 import LegalLinks from '../legal/LegalLinks'
 import { useTheme } from '../utils/theme'
 import { themeMenuItems } from './themeMenuItems'
+import { HeaderHelpButton } from './help/HelpButton.jsx'
 
 // Flag SVG components for language selector
 const FlagGB = () => (
@@ -71,7 +72,7 @@ const languages = [
  * DashboardHeader - 3-column header for dashboard views (Bench, Livescore)
  * Left: Title/version (and, with backButton, a visible Back button)
  * Middle: Hamburger menu (collapsible); menuAlign="end" puts it at the right
- * Right: Fullscreen button
+ * Right: ? (help, with onHelp) and Fullscreen button
  */
 export default function DashboardHeader({
   title,
@@ -101,7 +102,10 @@ export default function DashboardHeader({
   connectionMode,
   onConnectionModeChange,
   // Custom content
-  rightContent
+  rightContent,
+  // The "?" of the page's help panel (ContextualHelpPanel)
+  onHelp,
+  helpOpen = false
 }) {
   const { t } = useTranslation()
   const theme = useTheme()
@@ -440,6 +444,8 @@ export default function DashboardHeader({
       {/* RIGHT: Fullscreen Button + Custom content */}
       <div className="flex flex-1 basis-0 items-center justify-end gap-2">
         {rightContent}
+
+        {onHelp && <HeaderHelpButton onClick={onHelp} pressed={helpOpen} />}
 
         {showFullscreen && onToggleFullscreen && (
           <button
