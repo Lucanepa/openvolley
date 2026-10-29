@@ -207,6 +207,27 @@ describe('MatchSetup smoke render', () => {
     expect(insert.payload.officials.find((o) => o.role === '1st referee').email).toBe('rita.ref@example.ch')
   })
 
+  // A test match never reaches the cloud: saving its edited info once queued a
+  // cloud insert marked test: false (and a cloud backup) under a new seed_key
+  it('saving a test match\'s edited info queues nothing for the cloud', async () => {
+    const { uploadBackupToCloud } = await import('../../utils/logger')
+    store.tables.matches = new Map([[1, {
+      id: 1, status: 'setup', test: true, matchInfoConfirmedAt: '2026-10-06T10:00:00Z',
+      homeTeamId: 11, awayTeamId: 12, homeName: 'Home V', awayName: 'Away V', homeShortName: 'HOM', awayShortName: 'AWA',
+      scheduledAt: '2026-10-29T18:00:00.000Z', game_n: 991406, league: '3L', hall: 'Halle A', city: 'Zürich', ...PINS
+    }]])
+    store.tables.teams = new Map([[11, { id: 11, name: 'Home V' }], [12, { id: 12, name: 'Away V' }]])
+    render(<Setup matchId={1} />)
+    fireEvent.click((await screen.findAllByRole('button', { name: 'common.edit' }))[0])
+    fireEvent.change(await screen.findByLabelText('matchSetup.hall'), { target: { value: 'Halle B' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'matchSetup.save' }))
+    await waitFor(() => expect(store.tables.matches.get(1).hall).toBe('Halle B'))
+    expect(queued().filter((j) => j.resource === 'match' && j.action === 'insert')).toEqual([])
+    expect(store.tables.matches.get(1).seed_key).toBeFalsy()
+    await new Promise((r) => setTimeout(r, 20))
+    expect(uploadBackupToCloud).not.toHaveBeenCalled()
+  })
+
   // The colour picker's Custom tile: a hex picked there is saved on the team
   // and the match, and the team's shirt and number are drawn with it; a
   // saved colour that is none of the twelve presets selects the Custom tile.

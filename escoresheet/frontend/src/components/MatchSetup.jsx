@@ -2207,8 +2207,10 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       // Generate seed_key if match doesn't have one (for older matches or matches created via other flows)
       // seed_key is the stable unique identifier used for Supabase sync (stored as external_id)
       // It never includes modifiable fields like gameN or scheduled_at
+      // A test match never reaches the cloud: no seed_key, no insert, no backup
+      const isTestMatch = match?.test === true
       let matchSeedKey = match?.seed_key
-      if (!matchSeedKey) {
+      if (!matchSeedKey && !isTestMatch) {
         matchSeedKey = generateMatchSeedKey()
       }
 
@@ -2305,7 +2307,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
         syncPayload.status = 'setup'
       }
 
-      const syncJobId = await db.sync_queue.add({
+      const syncJobId = isTestMatch ? null : await db.sync_queue.add({
         resource: 'match',
         action: 'insert',
         payload: syncPayload,
@@ -2351,6 +2353,8 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
           })
           .catch(err => console.warn('[MatchSetup] Match info email failed:', err))
       }
+
+      if (isTestMatch) return
 
       // Cloud backup at match setup (non-blocking)
       exportMatchData(matchId).then(backupData => {
