@@ -4,6 +4,7 @@ import { validatePin, validatePinSupabase, listAvailableMatches, getWebSocketSta
 import { benchJoinableMatches } from './utils/relayMatchList'
 import MatchEntry from './components/MatchEntry'
 import DashboardHeader from './components/DashboardHeader'
+import ContextualHelpPanel from './components/help/ContextualHelpPanel'
 import UpdateBanner from './components/UpdateBanner'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
 import { applyServerParam, isServedFromLocalServer } from './utils/backendConfig'
@@ -152,6 +153,8 @@ export default function BenchApp() {
   const [selectedMatch, setSelectedMatch] = useState(null) // The selected match object
   const [selectedTeam, setSelectedTeam] = useState(null) // 'home' or 'away'
   const [pinInput, setPinInput] = useState('')
+  // The "?" of every bench page: the panel with the bench's help
+  const [helpOpen, setHelpOpen] = useState(false)
   const [matchId, setMatchId] = useState(null)
   const [error, setError] = useState('')
   const [view, setView] = useState(null) // 'roster' or 'match'
@@ -790,6 +793,10 @@ export default function BenchApp() {
     if (!matchId || !selectedTeam) setRelayDevice(null)
   }, [matchId, selectedTeam])
 
+  // The "?" in every page's header and its panel
+  const toggleHelp = () => setHelpOpen(prev => !prev)
+  const helpPanel = <ContextualHelpPanel open={helpOpen} onClose={() => setHelpOpen(false)} screen="bench" />
+
   // Show server connection screen first (unless auto-connecting via URL params)
   if (!serverReady) {
     return <ServerConnectionScreen onConnected={handleServerConnected} />
@@ -822,7 +829,10 @@ export default function BenchApp() {
           onConnectionModeChange={handleConnectionModeChange}
           onBack={handleBack}
           backLabel={t('benchDashboard.back')}
+          onHelp={toggleHelp}
+          helpOpen={helpOpen}
         />
+        {helpPanel}
 
         <div style={{
           flex: 1,
@@ -865,7 +875,10 @@ export default function BenchApp() {
           connectionMode={connectionMode}
           activeConnection={activeConnection}
           onConnectionModeChange={handleConnectionModeChange}
+          onHelp={toggleHelp}
+          helpOpen={helpOpen}
         />
+        {helpPanel}
 
         <EntryPage>
           <EntryCard
@@ -921,7 +934,10 @@ export default function BenchApp() {
           connectionMode={connectionMode}
           activeConnection={activeConnection}
           onConnectionModeChange={handleConnectionModeChange}
+          onHelp={toggleHelp}
+          helpOpen={helpOpen}
         />
+        {helpPanel}
 
         <EntryPage>
           <EntryCard
@@ -989,7 +1005,10 @@ export default function BenchApp() {
         connectionMode={connectionMode}
         activeConnection={activeConnection}
         onConnectionModeChange={handleConnectionModeChange}
+        onHelp={toggleHelp}
+        helpOpen={helpOpen}
       />
+      {helpPanel}
 
       <EntryPage>
         <EntryCard

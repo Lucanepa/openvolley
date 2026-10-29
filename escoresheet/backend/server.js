@@ -1944,7 +1944,10 @@ const server = createServer((req, res) => {
     // checks this hash against the script)
     "script-src 'self' 'sha256-hAC66PTngtOWJY571phiLXHzeuEYS3pprPNjnV1uBik='",
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
+    // the help panel's videos and their posters and subtitles stream from the
+    // website (frontend components/help, helpSections.js VIDEO_BASE)
+    "img-src 'self' data: blob: https://openvolley.app",
+    "media-src 'self' https://openvolley.app",
     connectSrc,
     "font-src 'self'",
     "frame-ancestors 'none'"
