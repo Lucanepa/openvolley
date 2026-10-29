@@ -27,4 +27,8 @@ ingress:
   # Public download host (APT + F-Droid repos, install page): ov-pkgs, static.
   - hostname: get.openvolley.app
     service: http://ov-pkgs:80
+  # FreeScout helpdesk (~/stacks/freescout on lenovoserver, joins the ov-edge network as
+  # `freescout`; not part of this kit). A 502 while that stack is down.
+  - hostname: support.openvolley.app
+    service: http://freescout:80
   - service: http_status:404
