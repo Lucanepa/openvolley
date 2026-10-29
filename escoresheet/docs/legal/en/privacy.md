@@ -1,8 +1,8 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.4 · As of 29 October 2026
+**OpenVolley and OpenBeach** · Version 1.5 · As of 29 October 2026
 
-This policy is available in German, English, French and Italian. The German
+This policy is available in German, English, French and Italian. The English
 version is binding.
 
 ## In short
@@ -23,6 +23,9 @@ version is binding.
   type stays on your device (section 5).
 - The server is in Switzerland and is run by me. Cloudflare (USA) delivers the
   websites and forwards the traffic to the server.
+- When sending is switched on, the scorer, the referees and the clubs of both
+  teams receive the final scoresheet of an official match by email
+  (section 7).
 - You can ask for access, correction or deletion at any time:
   **support@openvolley.app**.
 
@@ -178,7 +181,8 @@ match results as an official. Accounts are opened on
 `manager.openvolley.app` and `manager-beach.openvolley.app`.
 
 **Data:** email address, password (stored only as a hash, never in plain
-text), first and last name, country, date of birth (optional), roles (for
+text), first and last name, country, date of birth (optional), the language chosen at sign-up (for
+the account's emails), roles (for
 example scorer, referee, competition manager), the apps the account is for
 (indoor, beach), times of creation, last sign-in and email confirmation. What
 you enter at sign-up is also kept as a copy with the account.
@@ -196,6 +200,14 @@ them and when, until the club or the assignment is removed or you delete the
 account. The scoring app keeps a copy of your clubs on your device, so it can
 check a game offline; the copy is removed when you sign out.
 
+**Club managers (OpenVolley):** an administrator can make accounts managers
+of a club. For the accounts that score for their club they see the name, email
+address, roles and the date of the assignment. They can create invite codes
+for their club and remove an account from the club; the account itself and
+its roles stay. A club can have a **contact address** (entered by the
+administrators or the club managers); it receives the final scoresheets of
+the club's games (section 7).
+
 **Sign-in:** after you sign in, your browser stores a sign-in token. The
 server holds only a hash of it. A session lasts 30 days from last use, at most
 90 days, and ends when you sign out, change your password or delete the
@@ -208,6 +220,9 @@ changed, a notice that a result was approved with your approval PIN, and a
 notice that your PIN was locked. They contain no tracking pixels and no
 remote images. A confirmation link is valid for 24 hours, a reset link for
 60 minutes.
+
+**Scoresheets by email:** I send the final scoresheet of an official match
+and the scoresheet of your own test match as described in section 7.
 
 **Who sees your account data:** you and the OpenVolley administrators (me and
 people I appoint).
@@ -227,7 +242,8 @@ under section 19, as far as the scoresheet does not need it.
 **What a match contains:** game number, league, hall and town, teams (name,
 short name, colour), rosters with shirt number, first and last name, date of
 birth and libero or captain flag, team staff (role, name, date of birth),
-officials (referees, scorer, line judges with name, country, date of birth),
+officials (referees, scorer, line judges with name, country, date of birth; referees optionally with an
+email address),
 **signatures** (as images drawn on the device or on a phone), coin toss, the course of the
 match with all events, substitutions and sanctions, results and later
 corrections.
@@ -260,6 +276,31 @@ PDF in the manager. Every time they open one, it is recorded in the audit log
 with their account. If the uploading account is deleted, the file stays stored
 as the match record; only the administrators and competition managers can
 still open the PDF.
+
+**Final scoresheet by email:** this feature is switched off at first; the
+OpenVolley administrators and competition managers switch it on. When it is
+on, the server sends the scoresheet of a closed official indoor match as a PDF
+to:
+
+- the account that closed the match and the scorer's account that approved
+  the result;
+- the referees who approved the result with their account or whose email
+  address was entered for the match;
+- the contact address of each team's club (section 6), so the club can pass
+  the scoresheet on to the coaches.
+
+Each address gets its own email and does not see the others. If a match is
+reopened and closed again, the corrected scoresheet goes to the recipients
+once more. Only when and to how many addresses the scoresheet was sent is
+stored, not which ones. Matches closed before the feature was switched on are
+not sent. A referee's email address is optional, belongs to the match and is
+never public; only those who may read the whole match see it (table above).
+Emails are sent through Migadu (section 15).
+
+**Scoresheet of a test match:** if you approve the result at the end of a
+test match while signed in, the app sends its scoresheet as a PDF to your
+account's email address and to no other. The server does not store it; on
+your device the test match is deleted when you close it.
 
 **Approval with a PIN:** officials can confirm the result with a personal
 approval PIN in addition to their signature. Stored are: the PIN as a
@@ -444,6 +485,11 @@ earlier answers; earlier on request.
   approved, closed or reopened matches, added co-editors or changed
   tournament entries, and when. The entries can contain co-editors' email
   addresses and beach team names. Only administrators see this log.
+- **Clubs and scoresheets by email:** the change log also records who made
+  accounts club managers, removed an account from a club, changed a club's
+  contact address or switched the sending of scoresheets on or off, and that
+  the scoresheet of a match was sent, with the number of recipients. It
+  contains no email addresses.
 - **Signing on a phone:** the server logs only the steps (started, opened,
   signed, closed) with the role and a short identifier, never the link, the
   signature, names or teams.
@@ -489,6 +535,11 @@ copy of these safeguards.
 | Saved teams, beach tournaments | Until a manager deletes them, or on request |
 | Referee directory, match assignments | As long as needed; deleted on request |
 | Change log | As long as needed for accountability; deletion on request is considered |
+| A club's contact address | Until it is changed or removed, or the club is deleted |
+| Club managers | Until the administrators remove them, the club is deleted or you delete your account |
+| A referee's email address for a match | With the match, as part of the scoresheet |
+| Sending of the final scoresheet (time, number of recipients, no addresses) | With the match |
+| Scoresheet of a test match by email | Not stored on the server |
 | Uploaded backup copies | 30 days |
 | Uploaded app logs | Until you delete your account |
 | Activity log of a match (server) | 24 months, or until the match is deleted; earlier on request |
@@ -568,7 +619,8 @@ Where the GDPR applies, I rely on:
 - **Legitimate interests** (Art. 6(1)(f) GDPR): correct and verifiable
   official match records for clubs, the association and officials (rosters,
   dates of birth to check eligibility, signatures, approvals, activity log and
-  event history), livescore for the public, running tournaments,
+  event history), delivering the final scoresheet to officials and clubs,
+  livescore for the public, running tournaments,
   troubleshooting, security and protection against misuse, backups.
 - **Consent** (Art. 6(1)(a) GDPR): the optional date of birth in the account,
   the update check of the directly installed Android app.
