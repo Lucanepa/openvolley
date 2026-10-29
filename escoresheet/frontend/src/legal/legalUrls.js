@@ -1,6 +1,6 @@
 /**
  * The legal pages (privacy policy, terms of use, legal notice, open-source
- * notice) on openvolley.app, in DE/EN/FR/IT; German is the binding version.
+ * notice) on openvolley.app, in DE/EN/FR/IT; English is the binding version.
  * The one place for these URLs: the apps, the manager sites, the backend
  * (status page, emails) and the download page all link here.
  *

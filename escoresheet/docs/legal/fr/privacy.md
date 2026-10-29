@@ -1,9 +1,9 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.4 · État au 29 octobre 2026
+**OpenVolley et OpenBeach** · Version 1.5 · État au 29 octobre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
-version allemande fait foi.
+version anglaise fait foi.
 
 ## En bref
 
@@ -26,6 +26,9 @@ version allemande fait foi.
   vous cliquez ou tapez reste sur votre appareil (section 5).
 - Le serveur se trouve en Suisse et est exploité par moi. Cloudflare
   (États-Unis) diffuse les sites web et transmet le trafic au serveur.
+- Lorsque l'envoi est activé, le marqueur, les arbitres et les clubs des deux
+  équipes reçoivent par e-mail la feuille de match finale d'un match officiel
+  (section 7).
 - Vous pouvez demander à tout moment l'accès, la rectification ou
   l'effacement : **support@openvolley.app**.
 
@@ -209,7 +212,8 @@ sur `manager.openvolley.app` et `manager-beach.openvolley.app`.
 
 **Données :** adresse e-mail, mot de passe (enregistré uniquement sous forme
 de hachage, jamais en clair), prénom et nom, pays, date de naissance
-(facultative), rôles (par exemple marqueur, arbitre, gestionnaire de
+(facultative), la langue choisie à l'inscription (pour les e-mails du
+compte), rôles (par exemple marqueur, arbitre, gestionnaire de
 compétition), les applications concernées (salle, beach), dates de création,
 de dernière connexion et de confirmation de l'e-mail. Les indications saisies
 à l'inscription sont aussi conservées en copie avec le compte.
@@ -229,6 +233,15 @@ rattachement soit supprimé ou que vous supprimiez le compte. L'application de
 marque garde une copie de vos clubs sur votre appareil pour vérifier un match
 hors ligne ; la copie est supprimée à la déconnexion.
 
+**Responsables de club (OpenVolley) :** un administrateur peut désigner des
+comptes comme responsables d'un club. Pour les comptes qui marquent pour leur
+club, ils voient le nom, l'adresse e-mail, les rôles et la date du
+rattachement. Ils peuvent créer des codes d'invitation pour leur club et
+retirer un compte du club ; le compte lui-même et ses rôles restent. Un club
+peut indiquer une **adresse de contact** (saisie par les administrateurs ou
+les responsables du club) ; elle reçoit les feuilles de match finales des
+matchs du club (section 7).
+
 **Connexion :** après la connexion, votre navigateur enregistre un jeton de
 connexion. Le serveur n'en garde qu'un hachage. Une session dure 30 jours
 après la dernière utilisation, 90 jours au plus, et se termine à la
@@ -242,6 +255,10 @@ changement du mot de passe, avis qu'un résultat a été validé avec votre NIP
 de validation et avis que votre NIP a été bloqué. Ils ne contiennent ni pixel
 de suivi ni image chargée à distance. Un lien de confirmation est valable
 24 heures, un lien de réinitialisation 60 minutes.
+
+**Feuilles de match par e-mail :** j'envoie la feuille de match finale d'un
+match officiel et la feuille de votre propre match de test comme décrit à la
+section 7.
 
 **Qui voit vos données de compte :** vous-même et les administrateurs
 d'OpenVolley (moi et les personnes que je désigne).
@@ -265,7 +282,8 @@ section 19, dans la mesure où la feuille de match n'en a pas besoin.
 (nom, nom court, couleur), listes d'équipe avec numéro de maillot, prénom et
 nom, date de naissance et indication libéro ou capitaine, encadrement
 (fonction, nom, date de naissance), officiels (arbitres, marqueur, juges de
-ligne avec nom, pays, date de naissance), **signatures** (images dessinées sur
+ligne avec nom, pays, date de naissance ; arbitres avec une adresse e-mail
+facultative), **signatures** (images dessinées sur
 l'appareil ou sur un téléphone), tirage au sort, déroulement du match avec tous les événements,
 remplacements et sanctions, résultats et corrections ultérieures.
 
@@ -300,6 +318,33 @@ est inscrite au journal avec leur compte. Si le compte qui l'a téléversée est
 supprimé, le fichier reste conservé comme procès-verbal du match ; seuls les
 administrateurs et les responsables de compétition peuvent encore ouvrir le
 PDF.
+
+**Feuille de match finale par e-mail :** cette fonction est d'abord
+désactivée ; les administrateurs et les responsables de compétition
+d'OpenVolley l'activent. Lorsqu'elle est activée, le serveur envoie la
+feuille de match d'un match officiel en salle clôturé, en PDF, à :
+
+- le compte qui a clôturé le match et le compte du marqueur qui a validé le
+  résultat ;
+- les arbitres qui ont validé le résultat avec leur compte ou dont l'adresse
+  e-mail a été saisie pour le match ;
+- l'adresse de contact du club de chaque équipe (section 6), afin que le club
+  puisse transmettre la feuille aux entraîneurs.
+
+Chaque adresse reçoit son propre e-mail et ne voit pas les autres. Si un
+match est rouvert puis clôturé à nouveau, la feuille corrigée est envoyée une
+nouvelle fois aux destinataires. Seuls le moment de l'envoi et le nombre
+d'adresses sont enregistrés, pas les adresses. Les matchs clôturés avant
+l'activation ne sont pas envoyés. L'adresse e-mail d'un arbitre est
+facultative, fait partie du match et n'est jamais publique ; seuls ceux qui
+peuvent lire tout le match la voient (tableau ci-dessus). L'envoi passe par
+Migadu (section 15).
+
+**Feuille d'un match de test :** si vous validez le résultat à la fin d'un
+match de test en étant connecté, l'application envoie sa feuille en PDF à
+l'adresse e-mail de votre compte, et à aucune autre. Le serveur ne la
+conserve pas ; sur votre appareil, le match de test est supprimé lorsque vous
+le clôturez.
 
 **Validation avec NIP :** les officiels peuvent confirmer le résultat, en plus
 de leur signature, avec un NIP de validation personnel. Sont enregistrés : le
@@ -506,6 +551,11 @@ tôt sur demande.
   co-éditeurs ou modifié des inscriptions à un tournoi, et quand. Les entrées
   peuvent contenir les adresses e-mail de co-éditeurs et les noms d'équipes de
   beach-volley. Seuls les administrateurs voient ce journal.
+- **Clubs et feuilles de match par e-mail :** le journal des modifications
+  consigne aussi qui a désigné des responsables de club, retiré un compte
+  d'un club, modifié l'adresse de contact d'un club ou activé ou désactivé
+  l'envoi des feuilles de match, et que la feuille d'un match a été envoyée,
+  avec le nombre de destinataires. Il ne contient aucune adresse e-mail.
 - **Signer sur un téléphone :** le serveur ne journalise que les étapes
   (démarrée, ouverte, signée, terminée) avec la fonction et un identifiant
   court, jamais le lien, la signature, des noms ou des équipes.
@@ -553,6 +603,11 @@ prestataires. Vous pouvez me demander une copie de ces garanties.
 | Équipes enregistrées, tournois de beach-volley | Jusqu'à ce qu'un gestionnaire les supprime, ou sur demande |
 | Répertoire des arbitres, convocations | Aussi longtemps que nécessaire ; effacement sur demande |
 | Journal des modifications | Aussi longtemps que nécessaire pour la traçabilité ; effacement examiné sur demande |
+| Adresse de contact d'un club | Jusqu'à sa modification ou sa suppression, ou la suppression du club |
+| Responsables de club | Jusqu'à ce que les administrateurs les retirent, que le club soit supprimé ou que vous supprimiez votre compte |
+| Adresse e-mail d'un arbitre pour un match | Avec le match, comme partie de la feuille de match |
+| Envoi de la feuille de match finale (moment, nombre de destinataires, sans adresses) | Avec le match |
+| Feuille d'un match de test par e-mail | Non conservée sur le serveur |
 | Copies de sauvegarde téléversées | 30 jours |
 | Journaux de l'application téléversés | Jusqu'à la suppression de votre compte |
 | Journal d'activité d'un match (serveur) | 24 mois, ou jusqu'à la suppression du match ; plus tôt sur demande |
@@ -643,7 +698,8 @@ Lorsque le RGPD s'applique, je me fonde sur :
   de match officiels corrects et vérifiables pour les clubs, la fédération et
   les officiels (listes d'équipe, dates de naissance pour le contrôle de la
   qualification, signatures, validations, journal d'activité et historique
-  des événements), le livescore pour le public, l'organisation de tournois, le
+  des événements), l'envoi de la feuille de match finale aux officiels et aux
+  clubs, le livescore pour le public, l'organisation de tournois, le
   dépannage, la sécurité et la protection contre les abus, les sauvegardes ;
 - **le consentement** (art. 6, par. 1, let. a RGPD) : date de naissance
   facultative dans le compte, recherche de mises à jour de l'application

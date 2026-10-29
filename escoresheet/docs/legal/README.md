@@ -9,8 +9,9 @@ Not published. The public pages are built from `{de,en,fr,it}/*.md`:
 | `terms.md` | Nutzungsbedingungen / Terms of use |
 | `opensource.md` | Open-Source-Hinweis / Open-source notice |
 
-German is the binding version; EN/FR/IT are translations and must be kept in
-step with it (same sections, same numbering). Cross-links are relative
+English is the binding version (owner, 2026-10-29; German until then);
+DE/FR/IT are translations and must be kept in step with it (same sections,
+same numbering). Cross-links are relative
 (`privacy.md`, `impressum.md`, ...); the site build maps them to page URLs.
 The facts behind the texts are in [data-map.md](data-map.md).
 

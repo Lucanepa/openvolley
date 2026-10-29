@@ -1,9 +1,9 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.4 · Aggiornata al 29 ottobre 2026
+**OpenVolley e OpenBeach** · Versione 1.5 · Aggiornata al 29 ottobre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
-la versione tedesca.
+la versione inglese.
 
 ## In breve
 
@@ -24,6 +24,9 @@ la versione tedesca.
   clicca o digita resta sul suo dispositivo (sezione 5).
 - Il server si trova in Svizzera ed è gestito da me. Cloudflare (USA)
   distribuisce i siti web e inoltra il traffico al server.
+- Se l'invio è attivato, dopo una partita ufficiale il segnapunti, gli arbitri
+  e le società delle due squadre ricevono il referto finale per e-mail
+  (sezione 7).
 - Può chiedere in ogni momento informazioni, rettifica o cancellazione:
   **support@openvolley.app**.
 
@@ -189,7 +192,8 @@ approvare risultati come ufficiale di gara. Gli account si aprono su
 `manager.openvolley.app` e `manager-beach.openvolley.app`.
 
 **Dati:** indirizzo e-mail, password (salvata solo come hash, mai in chiaro),
-nome e cognome, paese, data di nascita (facoltativa), ruoli (per esempio
+nome e cognome, paese, data di nascita (facoltativa), la lingua scelta all'apertura (per
+le e-mail all'account), ruoli (per esempio
 segnapunti, arbitro, gestore di competizione), le app per cui vale l'account
 (indoor, beach), date di apertura, ultimo accesso e conferma dell'e-mail. I
 dati inseriti alla registrazione sono conservati anche come copia presso
@@ -210,6 +214,15 @@ l'assegnazione viene rimossa o lei elimina l'account. L'app di refertazione
 conserva una copia delle sue società sul suo dispositivo, per poter verificare
 una partita anche offline; la copia viene eliminata quando lei si disconnette.
 
+**Responsabili di società (OpenVolley):** un amministratore può nominare
+account responsabili di una società. Degli account che refertano per la loro
+società vedono nome, indirizzo e-mail, ruoli e data dell'assegnazione. Possono
+creare codici d'invito per la loro società e togliere un account dalla
+società; l'account stesso e i suoi ruoli restano. Una società può indicare un
+**indirizzo di contatto** (inserito dagli amministratori o dai responsabili
+della società); riceve i referti finali delle partite della società
+(sezione 7).
+
 **Accesso:** dopo l'accesso il suo browser salva un token di accesso. Sul
 server si trova solo un hash di esso. Una sessione dura 30 giorni dall'ultimo
 utilizzo, al massimo 90 giorni, e termina con l'uscita, il cambio della
@@ -223,6 +236,9 @@ che un risultato è stato approvato con il suo PIN di approvazione e avviso
 che il suo PIN è stato bloccato. Non contengono pixel di tracciamento né
 immagini caricate da remoto. Un link di conferma vale 24 ore, un link di
 reimpostazione 60 minuti.
+
+**Referti per e-mail:** invio il referto finale di una partita ufficiale e
+il referto della sua partita di prova come descritto nella sezione 7.
 
 **Chi vede i dati del suo account:** lei stesso e gli amministratori di
 OpenVolley (io e le persone da me designate).
@@ -245,7 +261,8 @@ referto non ne ha bisogno.
 squadre (nome, nome breve, colore), liste squadra con numero di maglia, nome e
 cognome, data di nascita e indicazione libero o capitano, staff (funzione,
 nome, data di nascita), ufficiali di gara (arbitri, segnapunti, giudici di
-linea con nome, paese, data di nascita), **firme** (immagini disegnate sul
+linea con nome, paese, data di nascita; arbitri con indirizzo e-mail
+facoltativo), **firme** (immagini disegnate sul
 dispositivo o su un telefono), sorteggio, svolgimento della partita con tutti gli eventi,
 sostituzioni e sanzioni, risultati e correzioni successive.
 
@@ -279,6 +296,31 @@ che possono aprire il PDF nel manager. Ogni apertura viene annotata nel
 registro con il loro account. Se l'account che l'ha caricato viene cancellato,
 il file resta conservato come verbale della partita; solo gli amministratori e
 i responsabili competizione possono ancora aprire il PDF.
+
+**Referto finale per e-mail:** questa funzione è inizialmente spenta; la
+accendono gli amministratori e i responsabili delle competizioni di
+OpenVolley. Quando è accesa, il server invia il referto di una partita
+ufficiale indoor chiusa, in PDF, a:
+
+- l'account che ha chiuso la partita e l'account del segnapunti che ha
+  approvato il risultato;
+- gli arbitri che hanno approvato il risultato con il loro account o il cui
+  indirizzo e-mail è stato inserito per la partita;
+- l'indirizzo di contatto della società di ogni squadra (sezione 6), affinché
+  la società possa inoltrare il referto agli allenatori.
+
+Ogni indirizzo riceve una propria e-mail e non vede gli altri. Se una partita
+viene riaperta e chiusa di nuovo, il referto corretto viene inviato ancora una
+volta ai destinatari. Vengono salvati solo il momento dell'invio e il numero
+di indirizzi, non gli indirizzi. Le partite chiuse prima dell'accensione non
+vengono inviate. L'indirizzo e-mail di un arbitro è facoltativo, fa parte
+della partita e non è mai pubblico; lo vede solo chi può leggere tutta la
+partita (tabella sopra). L'invio avviene tramite Migadu (sezione 15).
+
+**Referto di una partita di prova:** se alla fine di una partita di prova
+approva il risultato da connesso, l'app invia il referto in PDF all'indirizzo
+e-mail del suo account, e a nessun altro. Il server non lo conserva; sul suo
+dispositivo la partita di prova viene cancellata alla chiusura.
 
 **Approvazione con PIN:** gli ufficiali di gara possono confermare il
 risultato, oltre che con la firma, con un PIN di approvazione personale.
@@ -478,6 +520,11 @@ poter ritrovare le risposte precedenti; prima su richiesta.
   co-editori o modificato iscrizioni a un torneo, e quando. Le voci possono
   contenere indirizzi e-mail di co-editori e nomi di squadre di beach volley.
   Solo gli amministratori vedono questo registro.
+- **Società e referti per e-mail:** il registro delle modifiche annota anche
+  chi ha nominato responsabili di società, tolto un account da una società,
+  modificato l'indirizzo di contatto di una società o acceso o spento l'invio
+  dei referti, e che il referto di una partita è stato inviato, con il numero
+  di destinatari. Non contiene indirizzi e-mail.
 - **Firmare sul telefono:** il server registra solo i passaggi (avviata,
   aperta, firmata, chiusa) con la funzione e un breve identificativo, mai il
   link, la firma, nomi o squadre.
@@ -525,6 +572,11 @@ riceve una copia di queste garanzie.
 | Squadre salvate, tornei di beach volley | Finché un gestore non li cancella, o su richiesta |
 | Elenco degli arbitri, designazioni | Per il tempo necessario; cancellazione su richiesta |
 | Registro delle modifiche | Per il tempo necessario alla tracciabilità; la cancellazione su richiesta viene esaminata |
+| Indirizzo di contatto di una società | Finché non viene modificato o rimosso, o la società viene cancellata |
+| Responsabili di società | Finché gli amministratori non li rimuovono, la società viene cancellata o lei cancella il suo account |
+| Indirizzo e-mail di un arbitro per una partita | Con la partita, come parte del referto |
+| Invio del referto finale (momento, numero di destinatari, senza indirizzi) | Con la partita |
+| Referto di una partita di prova per e-mail | Non conservato sul server |
 | Copie di sicurezza caricate | 30 giorni |
 | Registri dell'app caricati | Fino alla cancellazione del suo account |
 | Registro attività di una partita (server) | 24 mesi, o fino alla cancellazione della partita; prima su richiesta |
@@ -611,7 +663,8 @@ Se si applica il RGPD, mi baso su:
   delle partite corretti e verificabili per società, federazione e ufficiali
   di gara (liste squadra, date di nascita per il controllo dell'idoneità,
   firme, approvazioni, registro attività e cronologia degli eventi),
-  livescore per il pubblico, organizzazione di tornei, diagnosi dei problemi,
+  invio del referto finale a ufficiali di gara e società, livescore per il
+  pubblico, organizzazione di tornei, diagnosi dei problemi,
   sicurezza e protezione dagli abusi, copie di sicurezza;
 - **consenso** (art. 6 par. 1 lett. a RGPD): data di nascita facoltativa
   nell'account, ricerca di aggiornamenti dell'app Android installata

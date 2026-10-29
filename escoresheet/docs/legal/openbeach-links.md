@@ -14,7 +14,7 @@ OpenBeach-branded ones too) and `get.openvolley.app`.
 
 ## The URLs
 
-Same URLs as OpenVolley; German is binding. Language of the page from the
+Same URLs as OpenVolley; English is binding. Language of the page from the
 app language: `de`, `de-CH` -> German, `fr`, `it`, everything else -> English.
 
 | Document | de | en | fr | it |

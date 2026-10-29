@@ -1,6 +1,6 @@
 # Mentions légales
 
-**OpenVolley et OpenBeach** · État au 7 octobre 2026
+**OpenVolley et OpenBeach** · État au 29 octobre 2026
 
 ## Exploitant
 
@@ -52,4 +52,4 @@ Voir la [déclaration de protection des données](privacy.md).
 ## Langue
 
 Ces mentions légales existent en allemand, anglais, français et italien. Seule
-la version allemande fait foi.
+la version anglaise fait foi.

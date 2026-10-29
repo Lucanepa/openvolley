@@ -1,9 +1,9 @@
 # Nutzungsbedingungen
 
-**OpenVolley und OpenBeach** · Version 1.0 · Stand: 7. Oktober 2026
+**OpenVolley und OpenBeach** · Version 1.1 · Stand: 29. Oktober 2026
 
 Diese Bedingungen gibt es auf Deutsch, Englisch, Französisch und Italienisch.
-Massgebend ist die deutsche Fassung.
+Massgebend ist die englische Fassung.
 
 ## 1. Worum es geht
 

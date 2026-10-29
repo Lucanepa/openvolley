@@ -1,9 +1,9 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.4 · Stand: 29. Oktober 2026
+**OpenVolley und OpenBeach** · Version 1.5 · Stand: 29. Oktober 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
-Massgebend ist die deutsche Fassung.
+Massgebend ist die englische Fassung.
 
 ## Kurz zusammengefasst
 
@@ -24,6 +24,10 @@ Massgebend ist die deutsche Fassung.
   tippen, bleibt auf Ihrem Gerät (Abschnitt 5).
 - Der Server steht in der Schweiz und wird von mir betrieben. Cloudflare (USA)
   liefert die Websites aus und leitet den Verkehr zum Server weiter.
+- Ist der Versand eingeschaltet, erhalten nach einem offiziellen Spiel die
+  Schreiberin oder der Schreiber, die Schiedsrichterinnen und Schiedsrichter
+  und die Vereine der beiden Teams den fertigen Spielbericht per E-Mail
+  (Abschnitt 7).
 - Sie können jederzeit Auskunft, Berichtigung oder Löschung verlangen:
   **support@openvolley.app**.
 
@@ -190,7 +194,8 @@ Konten werden auf `manager.openvolley.app` und `manager-beach.openvolley.app`
 eröffnet.
 
 **Daten:** E-Mail-Adresse, Passwort (nur als Hash gespeichert, nie im
-Klartext), Vor- und Nachname, Land, Geburtsdatum (freiwillig), Rollen
+Klartext), Vor- und Nachname, Land, Geburtsdatum (freiwillig), die bei der Eröffnung gewählte Sprache
+(für die E-Mails an das Konto), Rollen
 (zum Beispiel Schreiber/in, Schiedsrichter/in, Wettbewerbsmanager/in), die
 Apps, für die das Konto gilt (Halle, Beach), Zeitpunkte von Eröffnung,
 letzter Anmeldung und E-Mail-Bestätigung. Ihre Angaben bei der
@@ -211,6 +216,15 @@ die Zuordnung entfernt wird oder Sie das Konto löschen. Die App zum Spiel
 führen behält eine Kopie Ihrer Vereine auf Ihrem Gerät, damit sie ein Spiel auch
 offline prüfen kann; die Kopie wird beim Abmelden gelöscht.
 
+**Vereinsverantwortliche (OpenVolley):** Eine Administratorin oder ein
+Administrator kann Konten als Verantwortliche eines Vereins bestimmen. Diese
+sehen von den Konten, die für ihren Verein schreiben, Name, E-Mail-Adresse,
+Rollen und das Datum der Zuordnung. Ausserdem können sie Einladungscodes für
+ihren Verein erstellen und ein Konto vom Verein entfernen; das Konto selbst und
+seine Rollen bleiben bestehen. Ein Verein kann eine **Kontaktadresse** hinterlegen
+(die Administration oder die Vereinsverantwortlichen tragen sie ein); sie
+erhält die fertigen Spielberichte seiner Spiele (Abschnitt 7).
+
 **Anmeldung:** Nach der Anmeldung speichert Ihr Browser ein Anmelde-Token. Auf
 dem Server liegt nur ein Hash davon. Eine Sitzung gilt 30 Tage ab der letzten
 Nutzung, höchstens 90 Tage, und endet beim Abmelden, beim Ändern des Passworts
@@ -223,6 +237,10 @@ Passwortänderung, Hinweis, dass ein Resultat mit Ihrem Freigabe-PIN
 freigegeben wurde, und Hinweis, dass Ihr PIN gesperrt wurde. Sie enthalten
 keine Zählpixel und keine nachgeladenen Bilder. Ein Bestätigungslink gilt
 24 Stunden, ein Link zum Zurücksetzen 60 Minuten.
+
+**Spielberichte per E-Mail:** Den fertigen Spielbericht eines offiziellen
+Spiels und den Spielbericht Ihres eigenen Testspiels sende ich nach
+Abschnitt 7.
 
 **Wer sieht Ihre Kontodaten:** Sie selbst und die Administratorinnen und
 Administratoren von OpenVolley (ich und von mir bestimmte Personen).
@@ -245,7 +263,8 @@ nach Abschnitt 19 löschen lassen, soweit es für den Spielbericht nicht nötig 
 Kurzname, Farbe), Kaderlisten mit Rückennummer, Vor- und Nachname,
 Geburtsdatum und Kennzeichnung als Libero oder Captain, Betreuungspersonen
 (Funktion, Name, Geburtsdatum), Offizielle (Schiedsrichter, Schreiber,
-Linienrichter mit Name, Land, Geburtsdatum), **Unterschriften** (als Bild,
+Linienrichter mit Name, Land, Geburtsdatum; Schiedsrichterinnen und Schiedsrichter
+freiwillig mit E-Mail-Adresse), **Unterschriften** (als Bild,
 auf dem Gerät oder auf einem Telefon gezeichnet), Platzwahl, Spielverlauf mit allen Ereignissen,
 Wechseln und Sanktionen, Resultate und nachträgliche Korrekturen.
 
@@ -280,6 +299,32 @@ Administration und die Wettbewerbsverantwortlichen der jeweiligen App
 Konto gelöscht, bleibt die Datei als Spielaufzeichnung gespeichert; das PDF
 können dann nur noch die Administration und die Wettbewerbsverantwortlichen
 öffnen.
+
+**Fertiger Spielbericht per E-Mail:** Die Funktion ist zunächst
+ausgeschaltet; die Administration und die Wettbewerbsverantwortlichen von
+OpenVolley schalten sie ein. Ist sie eingeschaltet, sendet der Server den
+Spielbericht eines abgeschlossenen offiziellen Hallenspiels als PDF an:
+
+- das Konto, das das Spiel abgeschlossen hat, und das Konto der Schreiberin
+  oder des Schreibers, das das Resultat freigegeben hat;
+- die Schiedsrichterinnen und Schiedsrichter, die das Resultat mit ihrem
+  Konto freigegeben haben oder deren E-Mail-Adresse beim Spiel erfasst wurde;
+- die Kontaktadresse des Vereins jedes Teams (Abschnitt 6), damit der Verein
+  den Spielbericht an Trainerinnen und Trainer weitergeben kann.
+
+Jede Adresse erhält eine eigene E-Mail und sieht die anderen nicht. Wird ein
+Spiel wieder geöffnet und erneut abgeschlossen, geht der korrigierte
+Spielbericht noch einmal an die Empfänger. Gespeichert wird nur, wann und an
+wie viele Adressen der Spielbericht ging, nicht an welche. Spiele, die vor dem
+Einschalten abgeschlossen wurden, werden nicht versendet. Die E-Mail-Adresse
+einer Schiedsrichterin oder eines Schiedsrichters ist freiwillig, gehört zum
+Spiel und ist nie öffentlich; sie sieht nur, wer das ganze Spiel lesen darf
+(Tabelle oben). Der Versand läuft über Migadu (Abschnitt 15).
+
+**Spielbericht eines Testspiels:** Geben Sie am Ende eines Testspiels
+angemeldet das Resultat frei, sendet die App den Spielbericht als PDF an die
+E-Mail-Adresse Ihres Kontos, an keine andere. Der Server speichert ihn nicht;
+auf Ihrem Gerät wird das Testspiel beim Abschliessen gelöscht.
 
 **Freigabe mit PIN:** Offizielle können das Resultat zusätzlich zur
 Unterschrift mit einem persönlichen Freigabe-PIN bestätigen. Gespeichert
@@ -480,6 +525,12 @@ Antworten nachschlagen kann; auf Anfrage früher.
   geöffnet, Mitbearbeitende hinzugefügt oder Turniereinträge geändert hat.
   Die Einträge können E-Mail-Adressen von Mitbearbeitenden und Namen von
   Beach-Teams enthalten. Nur die Administration sieht dieses Protokoll.
+- **Vereine und Spielberichte per E-Mail:** Das Änderungsprotokoll hält
+  zudem fest, wer Vereinsverantwortliche bestimmt, ein Konto von einem Verein
+  entfernt, die Kontaktadresse eines Vereins geändert oder den Versand der
+  Spielberichte ein- oder ausgeschaltet hat, und dass der Spielbericht eines
+  Spiels versendet wurde, mit der Anzahl Empfänger. E-Mail-Adressen stehen
+  darin nicht.
 - **Unterschreiben auf dem Telefon:** Der Server protokolliert nur den Ablauf
   (gestartet, geöffnet, unterschrieben, beendet) mit der Funktion und einer
   kurzen Kennung, nie den Link, die Unterschrift, Namen oder Teams.
@@ -527,6 +578,11 @@ Anfrage erhalten Sie eine Kopie dieser Garantien.
 | Gespeicherte Teams, Beachturniere | Bis eine Managerin oder ein Manager sie löscht, oder auf Anfrage |
 | Schiedsrichter-Verzeichnis, Spielansetzungen | So lange wie nötig; Löschung auf Anfrage |
 | Änderungsprotokoll | So lange wie für die Nachvollziehbarkeit nötig; Löschung auf Anfrage geprüft |
+| Kontaktadresse eines Vereins | Bis sie geändert oder entfernt oder der Verein gelöscht wird |
+| Vereinsverantwortliche | Bis die Administration sie entfernt, der Verein gelöscht wird oder Sie Ihr Konto löschen |
+| E-Mail-Adresse einer Schiedsrichterin oder eines Schiedsrichters beim Spiel | Mit dem Spiel, als Teil des Spielberichts |
+| Versand des fertigen Spielberichts (Zeitpunkt, Anzahl Empfänger, ohne Adressen) | Mit dem Spiel |
+| Spielbericht eines Testspiels per E-Mail | Auf dem Server nicht gespeichert |
 | Hochgeladene Sicherungskopien | 30 Tage |
 | Hochgeladene App-Protokolle | Bis Sie Ihr Konto löschen |
 | Aktivitätsprotokoll eines Spiels (Server) | 24 Monate oder bis das Spiel gelöscht wird; auf Anfrage früher |
@@ -616,6 +672,7 @@ Soweit die DSGVO gilt, stütze ich mich auf:
   überprüfbare offizielle Spielaufzeichnungen für Vereine, Verband und
   Offizielle (Kaderlisten, Geburtsdaten zur Kontrolle der Spielberechtigung,
   Unterschriften, Freigaben, Aktivitätsprotokoll und Ereignisgeschichte),
+  Zustellung des fertigen Spielberichts an Offizielle und Vereine,
   Livescore für das Publikum, Organisation von Turnieren, Fehlersuche,
   Sicherheit und Missbrauchsschutz, Datensicherungen.
 - **Einwilligung** (Art. 6 Abs. 1 lit. a DSGVO): freiwilliges Geburtsdatum im

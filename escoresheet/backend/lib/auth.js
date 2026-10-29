@@ -1183,6 +1183,9 @@ export function createAuth(options = {}) {
       return fail(422, 'Invalid date of birth', 'validation_failed')
     }
     if (meta.dob === '') meta.dob = null
+    // The language picked at sign-up: the account's later mails (the final
+    // scoresheet, lib/finalMail.js) go out in it, as the confirmation does
+    meta.mail_lang = mailLang(body, ctx)
 
     const hash = await hashPassword(body.password)
     const id = randomUUID()
