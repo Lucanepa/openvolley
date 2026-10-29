@@ -70,6 +70,24 @@ export function isStaleClosedCopy(match) {
 }
 
 /**
+ * A copy whose match another device went on with: the server closed it while
+ * this device was still scoring it (isStaleClosedCopy), or another device
+ * took it over (OV_SCORER_MOVED, closed there or not). Its state is older
+ * than the match's and nothing scores it here any more, so the app writes no
+ * new backup file of it (utils/nativeBackup). 2026-10-29: the desktop app
+ * reopened its copy of match 406970, which a phone had continued and closed
+ * a week before, and wrote a fresh backup of it at open: the newest file of
+ * the match, with the older score. A copy this device ended or approved is
+ * never one: its final state is this device's own. Never a test match.
+ * Reads only local evidence.
+ */
+export function isContinuedElsewhere(match) {
+  if (!match || match.test === true) return false
+  if (match.approved === true || match.status === 'ended') return false
+  return match.cloudBlock?.code === 'OV_SCORER_MOVED' || isStaleClosedCopy(match)
+}
+
+/**
  * Does the server's row of a match (`matches`: id, status, closed_at) say it
  * is closed? closed_at decides when the row carries it: the backend refuses
  * every write of a match with closed_at set (db/007), and an admin's reopen

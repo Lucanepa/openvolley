@@ -110,6 +110,33 @@ describe('useAutoBackup in the desktop app', () => {
     unmount()
   })
 
+  // 2026-10-29: the desktop app reopened its copy of match 406970, which a
+  // phone had continued and closed a week before, and wrote a fresh backup
+  // file of it at open
+  it('writes no backup of a copy another device went on with, and keeps backing up one approved here', async () => {
+    localStorage.removeItem('nativeAutoBackupEnabled') // switched off above
+    const { default: useAutoBackup } = await import('../useAutoBackup')
+    const closed = { code: 'OV_MATCH_CLOSED', at: 1 }
+    const before = writes.length
+
+    state.match = { id: 7, gameN: 321, seed_key: 'seedabc', status: 'live', cloudBlock: closed }
+    const stale = renderHook(() => useAutoBackup(7))
+    await new Promise(r => setTimeout(r, 300)) // opened
+    act(() => fakeDb.write('matches', 'updating', { remarks: 'late' }, 7, state.match))
+    state.match = { ...state.match, cloudBlock: { code: 'OV_SCORER_MOVED', closed: true }, status: 'final' }
+    act(() => fakeDb.write('matches', 'updating', { status: 'final' }, 7, state.match))
+    await new Promise(r => setTimeout(r, 300))
+    expect(writes).toHaveLength(before)
+    stale.unmount()
+
+    // approved here; the server's close noted afterwards changes nothing
+    state.match = { id: 7, gameN: 321, seed_key: 'seedabc', status: 'ended', approved: true, cloudBlock: closed }
+    const approved = renderHook(() => useAutoBackup(7))
+    await waitFor(() => expect(writes).toHaveLength(before + 1))
+    expect(JSON.parse(writes.at(-1).contents).match).toMatchObject({ status: 'ended', approved: true })
+    approved.unmount()
+  })
+
   it('opens the backup folder through the backup_open_dir command', async () => {
     const { default: useAutoBackup } = await import('../useAutoBackup')
     const { result } = renderHook(() => useAutoBackup(null))
