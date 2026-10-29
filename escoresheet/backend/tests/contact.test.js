@@ -13,8 +13,9 @@ import nodemailer from 'nodemailer'
 import {
   parseMultipart, parseContactBody, boundaryOf, sniffFile, safeFilename, checkAttachments, normalizeContact,
   areaOf, pageUrlOf, priorityOf, supportSubject, buildSupportMail, handleContact, isHoneypotHit,
-  createContactMailer, contactMailerFromEnv, disabledContactMailer, ContactError,
-  SECTION_IDS, SECTION_NAMES, CONTACT_AREAS, LEGACY_AREAS, MAX_FILES, MAX_FILES_BYTES, MAX_PARTS
+  createContactMailer, contactMailerFromEnv, disabledContactMailer, createContactSlots, ContactError,
+  SECTION_IDS, SECTION_NAMES, CONTACT_AREAS, LEGACY_AREAS, MAX_FILES, MAX_FILES_BYTES, MAX_PARTS,
+  MAX_CONTACT_IN_FLIGHT, BUSY_BODY
 } from '../lib/contact.js'
 
 const silent = { log() {}, warn() {}, error() {} }
@@ -511,6 +512,71 @@ describe('contact: the mail', () => {
     await handleContact({ body, contentType, mailer, logger: { log: (l) => lines.push(l), warn: (l) => lines.push(l), error: (l) => lines.push(l) } })
     assert.match(lines.join('\n'), /support\/scoring P2 from te\*\*\*@example\.ch \(app, 0 attachment\(s\)\) mailed/)
     assert.doesNotMatch(lines.join('\n'), /tester@/)
+  })
+})
+
+describe('contact: requests at once', () => {
+  // a request that hangs until the test ends it: resolve, reject or throw
+  const pending = () => {
+    let resolve, reject
+    const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+    return { promise, resolve, reject }
+  }
+  const settled = () => new Promise((r) => setImmediate(r))
+
+  it('10 at once (11 MB each for up to 2 minutes): the 11th starts nothing', () => {
+    assert.equal(MAX_CONTACT_IN_FLIGHT, 10)
+    const slots = createContactSlots()
+    const held = Array.from({ length: 10 }, () => pending())
+    const jobs = held.map((h) => slots.run(() => h.promise))
+    assert.ok(jobs.every((j) => j instanceof Promise))
+    assert.equal(slots.inFlight, 10)
+    let started = false
+    assert.equal(slots.run(() => { started = true }), null)
+    assert.equal(started, false, 'the 11th never runs')
+    assert.equal(slots.inFlight, 10)
+    for (const h of held) h.resolve()
+    return Promise.all(jobs).then(() => assert.equal(slots.inFlight, 0))
+  })
+
+  it('each way a request ends frees its slot: answered, refused, timed out, the client gone, a throw', async () => {
+    const slots = createContactSlots(1)
+    const timeout = Object.assign(new Error('Body read timed out'), { code: 'BODY_TIMEOUT' })
+    const aborted = Object.assign(new Error('Client went away'), { code: 'BODY_ABORTED' })
+    const endings = [
+      ['answered', (h) => h.resolve({ status: 200 })],
+      ['refused', (h) => h.resolve({ status: 400 })],
+      ['timed out', (h) => h.reject(timeout)],
+      ['the client gone', (h) => h.reject(aborted)]
+    ]
+    for (const [name, end] of endings) {
+      const h = pending()
+      const job = slots.run(() => h.promise)
+      assert.ok(job, name)
+      assert.equal(slots.run(() => {}), null, `${name}: the one slot is taken`)
+      end(h)
+      await job.catch(() => {})
+      await settled()
+      assert.equal(slots.inFlight, 0, `${name}: freed`)
+    }
+    // work throwing before it returns a promise, and a rejection the caller sees
+    await assert.rejects(slots.run(() => { throw new Error('sync') }), /sync/)
+    assert.equal(slots.inFlight, 0)
+    await assert.rejects(slots.run(async () => { throw timeout }), (e) => e.code === 'BODY_TIMEOUT')
+    assert.equal(slots.inFlight, 0)
+    // and the slot is free for the next request
+    const h = pending()
+    assert.ok(slots.run(() => h.promise))
+    h.resolve()
+  })
+
+  it('a full form answers as a used-up hourly budget does: 503 busy', async () => {
+    let t = 0
+    const { mailer } = streamMailer({ maxPerHour: 0, now: () => t })
+    const { body, contentType } = await formBody(VALID)
+    const r = await handleContact({ body, contentType, mailer, logger: silent })
+    assert.deepEqual(r, { status: 503, body: BUSY_BODY })
+    assert.deepEqual(BUSY_BODY, { success: false, code: 'busy', error: 'Too many messages right now. Please try again later' })
   })
 })
 

@@ -42,7 +42,9 @@
  *
  * Volume: the route's per-IP limit (server.js) and CONTACT_MAILS_PER_HOUR
  * for all senders together, so the form cannot use up the mailbox's sending
- * quota that the account mails need.
+ * quota that the account mails need. Memory: at most MAX_CONTACT_IN_FLIGHT
+ * requests at once (createContactSlots), each with up to 11 MB of body; the
+ * next one gets the same 503 busy as a used-up budget.
  *
  * Public API:
  *   handleContact({ body, contentType, mailer, logger, now }) -> Promise<{ status, body }>  never throws
@@ -55,6 +57,7 @@
  *   supportSubject(value) -> "[P1 – match running] [scoring] Support – Bug report"
  *   buildSupportMail(value, attachments, { receivedAt }) -> nodemailer message (no from / to)
  *   createContactMailer({ transport, from, to, maxPerHour }) / contactMailerFromEnv(env) / disabledContactMailer(reason)
+ *   createContactSlots(max) -> { run(work) -> Promise | null, inFlight, max }: MAX_CONTACT_IN_FLIGHT at once
  */
 
 import nodemailer from 'nodemailer'
@@ -130,6 +133,9 @@ export const MAX_COMMENTS = 5000
 export const MAX_DIAGNOSTICS_BYTES = 32 * 1024
 export const CONTACT_MAILS_PER_HOUR = 30
 const HOUR_MS = 60 * 60 * 1000
+// Requests in flight at once (createContactSlots): each holds its body, up to
+// MAX_CONTACT_BODY_BYTES, in memory for up to 2 minutes, so 10 hold 110 MB
+export const MAX_CONTACT_IN_FLIGHT = 10
 
 /** A rejected request: status and code for the answer, message for people. */
 export class ContactError extends Error {
@@ -623,6 +629,45 @@ export function contactMailerFromEnv(env = process.env, { tls, maxPerHour } = {}
 const answer = (status, body) => ({ status, body })
 
 /**
+ * The 503 of a form that cannot take more now: the hourly budget is used up
+ * (handleContact), or MAX_CONTACT_IN_FLIGHT bodies are being received
+ * (server.js). The app then offers to send the message by email (mailto).
+ */
+export const BUSY_BODY = Object.freeze({ success: false, code: 'busy', error: 'Too many messages right now. Please try again later' })
+
+/**
+ * At most `max` contact requests at once (server.js): each holds its body,
+ * up to MAX_CONTACT_BODY_BYTES, in memory while it arrives (up to 2 minutes)
+ * and while it is mailed. run(work) starts work in a free slot and frees the
+ * slot once work settles, whichever way it ends (answered, refused, the body
+ * timed out or the client gone, work throwing), and returns work's promise;
+ * with every slot taken it starts nothing and returns null.
+ */
+export function createContactSlots(max = MAX_CONTACT_IN_FLIGHT) {
+  let inFlight = 0
+  return {
+    max,
+    get inFlight() { return inFlight },
+    run(work) {
+      if (inFlight >= max) return null
+      inFlight++
+      let released = false
+      const release = () => {
+        if (released) return
+        released = true
+        inFlight--
+      }
+      try {
+        return Promise.resolve(work()).finally(release)
+      } catch (err) {
+        release()
+        return Promise.reject(err)
+      }
+    }
+  }
+}
+
+/**
  * One POST /api/contact after the rate limit and the body read. Never throws.
  *   200 { success: true }                         mailed (or the honeypot was filled)
  *   400 / 413 / 415 { success: false, code, error } the body, a field or a file is refused
@@ -655,7 +700,7 @@ export async function handleContact({ body, contentType, mailer, logger = consol
     const r = await mailer.send(buildSupportMail(value, attachments, { receivedAt: now() }))
     if (!r.sent) {
       logger.warn(`[Contact] ${what} not mailed: ${r.skipped === 'budget' ? 'hourly budget used up' : r.skipped}`)
-      return answer(503, { success: false, code: 'busy', error: 'Too many messages right now. Please try again later' })
+      return answer(503, BUSY_BODY)
     }
   } catch (err) {
     logger.error(`[Contact] ${what} not mailed: ${describeMailError(err)}`)
