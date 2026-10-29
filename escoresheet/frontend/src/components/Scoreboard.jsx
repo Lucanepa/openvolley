@@ -907,6 +907,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
   // reload keeps and no other tab reads), that it held the lock, and the
   // page after the reload steals it. "Score in this tab" steals it too: the
   // other tab goes to "already open" and waits.
+  // A page on its way out never asks again, and a refused request is asked
+  // again in a later task, never from its own rejection: WebKit (the desktop
+  // app on Linux and macOS, Safari) rejects the held lock while it unloads
+  // the page and then refuses every new request at once, so asking again
+  // from the rejection looped in microtasks for good. The page froze before
+  // the reload could show anything, still showing the old screen (29.10.2026:
+  // the desktop app's update reload on the scoring screen, 3.0.5 to 3.0.6).
   const takeOverScoringRef = useRef(null)
   useEffect(() => {
     if (!matchId) return
@@ -916,30 +923,43 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     let current = 0 // the request that counts: a take-over replaces a queued one
     let abort = null
     let busy = null
+    let retry = null
     let release = null
     let unmounted = false
+    let leaving = false // pagehide: the page is unloading or going into the back-forward cache
+    let askedAt = 0
+    let refusals = 0 // refused at once, in a row: asked again later each time
     const request = (steal) => {
       const id = ++current
       clearTimeout(busy)
+      clearTimeout(retry)
       if (abort) abort.abort()
       // (a steal takes no signal: it never waits)
       abort = steal ? null : new AbortController()
       // Queued, not ifAvailable: the screen remounting in this tab (React's
       // development double mount) frees the lock a moment after asking again
       busy = steal ? null : setTimeout(() => setDuplicateTabError(true), 1000)
+      askedAt = Date.now()
       navigator.locks.request(lockName, steal ? { steal: true } : { signal: abort.signal }, () => {
         // granted just after the screen unmounted, or replaced: hand it straight back
         if (unmounted || id !== current) return undefined
         clearTimeout(busy)
+        refusals = 0
         setDuplicateTabError(false)
         return new Promise(resolve => { release = resolve })
       }).catch(() => {
-        // aborted (the screen unmounted, a take-over replaced it), or stolen
-        // by another tab's take-over: "already open", and wait again
+        // aborted (the screen unmounted, a take-over replaced it), stolen by
+        // another tab's take-over, or the page unloading: "already open", and
+        // wait again unless the page is going away
         if (unmounted || id !== current) return
         release = null
+        if (leaving) return
         setDuplicateTabError(true)
-        request(false)
+        refusals = Date.now() - askedAt < 100 ? refusals + 1 : 0
+        const delay = refusals ? Math.min(2000, 50 * 2 ** Math.min(refusals - 1, 6)) : 0
+        retry = setTimeout(() => {
+          if (!unmounted && !leaving && id === current) request(false)
+        }, delay)
       })
     }
     let reloaded = false
@@ -952,13 +972,24 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     takeOverScoringRef.current = () => request(true)
     const noteReload = () => {
       try { if (release) sessionStorage.setItem(reloadKey, String(Date.now())) } catch { /* ignore */ }
+      leaving = true
+    }
+    // Back from the back-forward cache: the page was hidden, not unloaded;
+    // ask again if the lock went while it was away
+    const onPageShow = (event) => {
+      if (!event.persisted || !leaving) return
+      leaving = false
+      if (!release) request(false)
     }
     window.addEventListener('pagehide', noteReload)
+    window.addEventListener('pageshow', onPageShow)
     return () => {
       unmounted = true
       takeOverScoringRef.current = null
       window.removeEventListener('pagehide', noteReload)
+      window.removeEventListener('pageshow', onPageShow)
       clearTimeout(busy)
+      clearTimeout(retry)
       if (abort) abort.abort()
       if (release) release()
     }
