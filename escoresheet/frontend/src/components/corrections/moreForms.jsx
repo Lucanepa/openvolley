@@ -292,7 +292,8 @@ export function RenumberForm({ ctx, events, players, preset = {}, busy, onCancel
     return planRenumberPlayer(events, { team, playerId: player.id ?? null, from: player.number, to: to.trim() }, ctx)
   }, [events, team, player, to, ctx])
   const inRecord = team && player ? referencedPlayerNumbers(events, team).has(String(player.number)) : false
-  const entries = plan && !plan.error ? plan.update.length : 0
+  // the entries whose content changes (not the stored snapshots alone)
+  const entries = plan && !plan.error ? plan.update.filter(u => u.changes?.payload).length : 0
   return (
     <CorrectionForm
       title={tr(t, 'corrections.form.renumber', 'Change a player\'s number')}

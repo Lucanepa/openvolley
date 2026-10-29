@@ -127,7 +127,9 @@ async function writePlan(plan, { matchId, db, mode = 'live', hooks = {}, now = n
     for (const u of plan.update || []) {
       if (!byId.has(u.id) || removing.has(u.id)) continue
       await db.events.update(u.id, u.changes)
-      touched.add(u.id)
+      // a row whose stored snapshot alone changed (a renumbered player) has
+      // nothing new for the server: the upsert sends the payload only
+      if (Object.keys(u.changes || {}).some(k => k !== 'stateSnapshot')) touched.add(u.id)
     }
     for (const row of plan.add || []) {
       // eslint-disable-next-line no-unused-vars
