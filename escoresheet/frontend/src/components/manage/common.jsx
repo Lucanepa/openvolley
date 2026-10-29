@@ -77,10 +77,12 @@ export function useErrorText() {
 }
 
 /** Panel title row: a page title and the panel's actions. */
-export function PanelHead({ title, children }) {
+// `level` 2: a section under the panel's own heading (My club's members and codes)
+export function PanelHead({ title, level = 1, children }) {
+  const H = level === 2 ? 'h2' : 'h1'
   return (
     <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <h1 className="m-0 text-xl font-bold tracking-tight text-stone-900 sm:text-2xl">{title}</h1>
+      <H className={level === 2 ? 'm-0 text-lg font-semibold tracking-tight text-stone-900' : 'm-0 text-xl font-bold tracking-tight text-stone-900 sm:text-2xl'}>{title}</H>
       {children && <div className="flex flex-wrap items-center gap-2">{children}</div>}
     </div>
   )

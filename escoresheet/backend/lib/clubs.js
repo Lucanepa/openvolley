@@ -16,9 +16,18 @@
  *     vmTeams({ q })                      VolleyManager team names, each with its club
  *     setAccountClubs({ actorId, userId, body })  { club_ids: [...] } (the whole list)
  *     setRule({ actorId, body })          { enabled }
+ *     setManagers({ actorId, id, body })  { emails: [...] } the club's managers (the whole list, db/020)
+ *   club managers of that club, and admins (/api/club/:id/..., db/020)
+ *     clubDetail({ id })                  the club with its teams, contact address and scorer count
+ *     setContact({ actorId, id, body })   { contact_email } (null clears it)
+ *     members({ id })                     the accounts that score for the club
+ *     removeMember({ actorId, id, userId })  the club link only: the account and its roles stay
+ *     clubInviteBody(body)                an invite code body within a club manager's limits
+ *     isManager(userId, clubId)           does the account manage the club?
  *   everyone else (lib/accounts.js)
  *     clubsOf(client, userId)             [{ id, name, teams }] of an account
  *     clubsOfMany(client, userIds)        Map userId -> [{ id, name }]
+ *     managedClubsOf(client, userId)      [{ id, name }] the account manages (db/020)
  *     ruleOn(client)                      is the rule on?
  *     verdict({ userId, access, gameN, sportType })  { ok } or { ok: false, code, home_team }
  *
@@ -38,6 +47,15 @@ export const GAME_NOT_IN_SCHEDULE = () => fail(403, 'OV_GAME_NOT_IN_SCHEDULE',
 
 const MAX_TEAMS = 60
 const MAX_CLUBS_PER_ACCOUNT = 20
+const MAX_MANAGERS = 10
+// A club manager's invite codes (owner, 2026-10-29): scorer or referee, the
+// club fixed, at most 50 uses, never unlimited, gone after 90 days at most
+export const CLUB_INVITE_ROLES = Object.freeze(['scorer', 'referee'])
+export const CLUB_INVITE_MAX_USES = 50
+export const CLUB_INVITE_MAX_DAYS = 90
+const DAY_MS = 24 * 60 * 60 * 1000
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+const nameSql = (alias) => `nullif(trim(coalesce(${alias}.first_name, '') || ' ' || coalesce(${alias}.last_name, '')), '')`
 // No db/018 yet: a relation or column that does not exist
 const MISSING = new Set(['42P01', '42703'])
 
@@ -45,6 +63,38 @@ const text = (raw, max) => {
   if (typeof raw !== 'string') return undefined
   const s = raw.trim().replace(/\s+/g, ' ')
   return s.length >= 1 && s.length <= max ? s : undefined
+}
+
+/** A contact address from a body: the trimmed, lower-case address, null to clear it, undefined when invalid. */
+export function contactEmail (raw) {
+  if (raw === null || raw === '') return null
+  if (typeof raw !== 'string') return undefined
+  const s = raw.trim().toLowerCase()
+  if (s === '') return null
+  return s.length >= 3 && s.length <= 254 && EMAIL_RE.test(s) ? s : undefined
+}
+
+/**
+ * A club manager's invite code body: { label, role, max_uses, expires_at }
+ * within the limits above (defaults: scorer, 1 use, 30 days), or { error }.
+ * The club and the sport are the route's, never the body's.
+ */
+export function clubInviteBody (body, now = Date.now()) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { error: 'body: must be an object' }
+  const role = body.role == null ? 'scorer' : body.role
+  if (!CLUB_INVITE_ROLES.includes(role)) return { error: 'role: scorer or referee' }
+  let maxUses = 1
+  if (body.max_uses != null) {
+    maxUses = Number.isInteger(body.max_uses) ? body.max_uses : NaN
+    if (!(maxUses >= 1 && maxUses <= CLUB_INVITE_MAX_USES)) return { error: `max_uses: 1 to ${CLUB_INVITE_MAX_USES}` }
+  }
+  let expires = new Date(now + 30 * DAY_MS)
+  if (body.expires_at != null) {
+    expires = typeof body.expires_at === 'string' ? new Date(body.expires_at) : null
+    if (!expires || Number.isNaN(expires.getTime())) return { error: 'expires_at: an ISO date-time' }
+    if (expires.getTime() > now + CLUB_INVITE_MAX_DAYS * DAY_MS) return { error: `expires_at: at most ${CLUB_INVITE_MAX_DAYS} days ahead` }
+  }
+  return { body: { label: body.label, role, max_uses: maxUses, expires_at: expires.toISOString() } }
 }
 
 /** A club's team list from a body: unique (case-insensitive), trimmed names; undefined when invalid. */
@@ -134,6 +184,32 @@ export function createClubs ({ pool, audit, access = null, logger = console } = 
     return out
   }
 
+  /** The clubs an account manages: [{ id, name }]. [] without db/020. */
+  async function managedClubsOf (client, userId) {
+    if (!isUuid(userId)) return []
+    try {
+      const { rows } = await (client || pool).query(
+        `SELECT c.id, c.name FROM public.club_managers cm JOIN public.clubs c ON c.id = cm.club_id
+          WHERE cm.user_id = $1 ORDER BY lower(c.name)`, [userId])
+      return rows.map((r) => ({ id: r.id, name: r.name }))
+    } catch (err) {
+      if (MISSING.has(err?.code)) return []
+      throw err
+    }
+  }
+
+  /** Does `userId` manage club `clubId`? false without db/020. Throws on a DB error. */
+  async function isManager (userId, clubId) {
+    if (!isUuid(userId) || !isUuid(clubId)) return false
+    try {
+      const { rows } = await pool.query('SELECT 1 FROM public.club_managers WHERE club_id = $1 AND user_id = $2', [clubId, userId])
+      return rows.length > 0
+    } catch (err) {
+      if (MISSING.has(err?.code)) return false
+      throw err
+    }
+  }
+
   /** Is the rule on? false without db/018. */
   async function ruleOn (client) {
     try {
@@ -173,9 +249,13 @@ export function createClubs ({ pool, audit, access = null, logger = console } = 
   // ---------------------------------------------------------------- admin
   async function readClubs (client, where = '', values = []) {
     const { rows } = await client.query(
-      `SELECT c.id, c.name, c.created_at, c.updated_at,
+      `SELECT c.id, c.name, c.created_at, c.updated_at, c.contact_email,
               coalesce((SELECT array_agg(ct.team_name ORDER BY lower(ct.team_name)) FROM public.club_teams ct WHERE ct.club_id = c.id), '{}') AS teams,
-              (SELECT count(*)::int FROM public.account_clubs ac WHERE ac.club_id = c.id) AS scorers
+              (SELECT count(*)::int FROM public.account_clubs ac WHERE ac.club_id = c.id) AS scorers,
+              coalesce((SELECT json_agg(json_build_object('user_id', u.id, 'email', u.email, 'name', ${nameSql('p')}) ORDER BY lower(u.email))
+                          FROM public.club_managers cm JOIN auth.users u ON u.id = cm.user_id
+                          LEFT JOIN public.profiles p ON p.user_id = u.id
+                         WHERE cm.club_id = c.id), '[]') AS managers
          FROM public.clubs c ${where}
         ORDER BY lower(c.name)`, values)
     return rows.map((r) => ({
@@ -183,6 +263,8 @@ export function createClubs ({ pool, audit, access = null, logger = console } = 
       name: r.name,
       teams: r.teams,
       scorers: r.scorers,
+      contact_email: r.contact_email ?? null,
+      managers: r.managers,
       created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
       updated_at: r.updated_at instanceof Date ? r.updated_at.toISOString() : r.updated_at
     }))
@@ -253,6 +335,8 @@ export function createClubs ({ pool, audit, access = null, logger = console } = 
     if (name === undefined) return invalid('name: 1 to 120 characters')
     const teams = 'teams' in body ? teamList(body.teams) : null
     if (teams === undefined) return invalid(`teams: at most ${MAX_TEAMS} names of 1 to 200 characters`)
+    const contact = 'contact_email' in body ? contactEmail(body.contact_email) : false
+    if (contact === undefined) return invalid('contact_email: an email address, or null')
     return guarded('update', () => withTx(async (client) => {
       const { rows: [cur] } = await client.query('SELECT id, name FROM public.clubs WHERE id = $1 FOR UPDATE', [id])
       if (!cur) throw abort(notFound())
@@ -270,7 +354,8 @@ export function createClubs ({ pool, audit, access = null, logger = console } = 
         await writeTeams(client, id, teams)
         await client.query('UPDATE public.clubs SET updated_at = now() WHERE id = $1', [id])
       }
-      await audit(client, { actorId, action: 'club.update', details: { club_id: id, ...(name !== null ? { name } : {}), ...(teams !== null ? { teams } : {}) } })
+      if (contact !== false) await client.query('UPDATE public.clubs SET contact_email = $2 WHERE id = $1', [id, contact])
+      await audit(client, { actorId, action: 'club.update', details: { club_id: id, ...(name !== null ? { name } : {}), ...(teams !== null ? { teams } : {}), ...(contact !== false ? { contact_email: contact !== null } : {}) } })
       const [club] = await readClubs(client, 'WHERE c.id = $1', [id])
       return ok({ club })
     }))
@@ -360,5 +445,104 @@ export function createClubs ({ pool, audit, access = null, logger = console } = 
     }))
   }
 
-  return { list, create, update, remove, vmTeams, setAccountClubs, setRule, clubsOf, clubsOfMany, ruleOn, verdict }
+  /** PUT /api/admin/clubs/:id/managers { emails: [...] }: the club's whole list of managers. */
+  async function setManagers ({ actorId, id, body } = {}) {
+    if (!isUuid(id)) return notFound()
+    const raw = body && Array.isArray(body.emails) ? body.emails : undefined
+    const emails = raw && raw.every((e) => typeof e === 'string') ? [...new Set(raw.map((e) => e.trim().toLowerCase()).filter(Boolean))] : undefined
+    if (!emails || emails.length > MAX_MANAGERS) return invalid(`emails: at most ${MAX_MANAGERS} addresses`)
+    return guarded('managers', () => withTx(async (client) => {
+      const { rows: [cur] } = await client.query('SELECT id FROM public.clubs WHERE id = $1 FOR UPDATE', [id])
+      if (!cur) throw abort(notFound())
+      const { rows: found } = emails.length
+        ? await client.query('SELECT id, lower(email) AS email FROM auth.users WHERE lower(email) = ANY($1::text[])', [emails])
+        : { rows: [] }
+      const unknown = emails.filter((e) => !found.some((u) => u.email === e))
+      if (unknown.length) throw abort(fail(404, 'OV_ACCOUNT_NOT_FOUND', 'No account has this address', unknown.join(', ')))
+      const ids = found.map((u) => u.id)
+      const { rows: before } = await client.query('SELECT user_id FROM public.club_managers WHERE club_id = $1', [id])
+      await client.query('DELETE FROM public.club_managers WHERE club_id = $1 AND NOT (user_id = ANY($2::uuid[]))', [id, ids])
+      if (ids.length) {
+        await client.query(
+          `INSERT INTO public.club_managers (club_id, user_id, added_by)
+           SELECT $1, unnest($2::uuid[]), $3 ON CONFLICT (club_id, user_id) DO NOTHING`,
+          [id, ids, isUuid(actorId) ? actorId : null])
+      }
+      await audit(client, { actorId, action: 'club.managers', details: { club_id: id, before: before.map((r) => r.user_id), after: ids } })
+      const [club] = await readClubs(client, 'WHERE c.id = $1', [id])
+      return ok({ club })
+    }))
+  }
+
+  // ---------------------------------------------------------------- club managers
+  /** GET /api/club/:id: the club as its manager sees it (no other club's data). */
+  async function clubDetail ({ id } = {}) {
+    if (!isUuid(id)) return notFound()
+    return guarded('club', async () => {
+      const [club] = await readClubs(pool, 'WHERE c.id = $1', [id])
+      if (!club) return notFound()
+      return ok({ club })
+    })
+  }
+
+  /** PATCH /api/club/:id { contact_email }: where the club's final scoresheets go (step 4). */
+  async function setContact ({ actorId, id, body } = {}) {
+    if (!isUuid(id)) return notFound()
+    if (!body || typeof body !== 'object' || !('contact_email' in body)) return invalid('contact_email: an email address, or null')
+    const contact = contactEmail(body.contact_email)
+    if (contact === undefined) return invalid('contact_email: an email address, or null')
+    return guarded('contact', () => withTx(async (client) => {
+      const { rowCount } = await client.query('UPDATE public.clubs SET contact_email = $2 WHERE id = $1', [id, contact])
+      if (!rowCount) throw abort(notFound())
+      await audit(client, { actorId, action: 'club.contact', details: { club_id: id, set: contact !== null } })
+      const [club] = await readClubs(client, 'WHERE c.id = $1', [id])
+      return ok({ club })
+    }))
+  }
+
+  /** GET /api/club/:id/members: the accounts that score for the club. */
+  async function members ({ id } = {}) {
+    if (!isUuid(id)) return notFound()
+    return guarded('members', async () => {
+      const { rows: [c] } = await pool.query('SELECT id FROM public.clubs WHERE id = $1', [id])
+      if (!c) return notFound()
+      const { rows } = await pool.query(
+        `SELECT u.id, u.email, ${nameSql('p')} AS name, coalesce(p.roles, '{}') AS roles, ac.granted_at,
+                EXISTS (SELECT 1 FROM public.club_managers cm WHERE cm.club_id = ac.club_id AND cm.user_id = u.id) AS manager
+           FROM public.account_clubs ac
+           JOIN auth.users u ON u.id = ac.user_id
+           LEFT JOIN public.profiles p ON p.user_id = u.id
+          WHERE ac.club_id = $1
+          ORDER BY lower(coalesce(${nameSql('p')}, u.email))
+          LIMIT 1000`, [id])
+      return ok({
+        members: rows.map((r) => ({
+          id: r.id,
+          email: r.email,
+          name: r.name ?? null,
+          // the indoor roles only: what the account may do for the club
+          roles: (r.roles || []).filter((x) => ['scorer', 'referee', 'competition_manager', 'admin', 'super_admin'].includes(x)),
+          manager: r.manager === true,
+          joined_at: r.granted_at instanceof Date ? r.granted_at.toISOString() : r.granted_at
+        }))
+      })
+    })
+  }
+
+  /** DELETE /api/club/:id/members/:userId: the club link only; the account and its roles stay. */
+  async function removeMember ({ actorId, id, userId } = {}) {
+    if (!isUuid(id) || !isUuid(userId)) return notFound()
+    return guarded('remove-member', () => withTx(async (client) => {
+      const { rowCount } = await client.query('DELETE FROM public.account_clubs WHERE club_id = $1 AND user_id = $2', [id, userId])
+      if (!rowCount) throw abort(notFound())
+      await audit(client, { actorId, action: 'club.member_remove', targetUserId: userId, details: { club_id: id } })
+      return ok({ removed: userId })
+    })).finally(() => access?.invalidate?.(userId))
+  }
+
+  return {
+    list, create, update, remove, vmTeams, setAccountClubs, setRule, setManagers,
+    clubDetail, setContact, members, removeMember, isManager,
+    clubsOf, clubsOfMany, managedClubsOf, ruleOn, verdict
+  }
 }

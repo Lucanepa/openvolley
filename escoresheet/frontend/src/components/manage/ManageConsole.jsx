@@ -6,6 +6,7 @@ import { ConsoleShell, ConsolePanel, consoleHeaderBtn } from '../../ui'
 import AccountsPanel from './AccountsPanel'
 import InvitesPanel from './InvitesPanel'
 import ClubsPanel from './ClubsPanel'
+import MyClubPanel from './MyClubPanel'
 import OfficialGamesPanel from './OfficialGamesPanel'
 import ClosedMatchesPanel from './ClosedMatchesPanel'
 import ScoresheetsPanel from './ScoresheetsPanel'
@@ -23,6 +24,9 @@ const TABS = [
   // db/018: scorers score the home games of their own club (OpenVolley; the
   // OpenBeach brand's tab list leaves it out)
   { id: 'clubs', icon: House, admin: true },
+  // db/020: a club manager's own club(s), whatever its roles (OpenVolley; the
+  // OpenBeach brand's tab list leaves it out)
+  { id: 'myclub', icon: House, clubManager: true },
   { id: 'games', icon: Trophy, admin: true },
   { id: 'matches', icon: ShieldCheck, admin: true },
   // every match's stored scoresheet PDF: admins and the sport's competition managers
@@ -37,7 +41,7 @@ const TABS = [
 
 /**
  * The tabs an account sees: admins all of them, competition managers the
- * scoresheets and saved teams.
+ * scoresheets and saved teams, club managers (access.managedClubs) My club.
  * With a brand (src/managerBrand.js) only that brand's tabs, and the saved
  * teams by that app's role (OpenBeach: beach:competition_manager). Without
  * one (or OpenVolley's), exactly as before. A tab with `apps` (tournaments)
@@ -49,7 +53,7 @@ export function manageTabsFor(access, brand = null) {
   return TABS
     .filter(tab => !brand?.tabs || brand.tabs.includes(tab.id))
     .filter(tab => !tab.apps || tab.apps.includes(brand?.app))
-    .filter(tab => (tab.admin ? own.isAdmin : own.canManageTeams))
+    .filter(tab => (tab.clubManager ? (access.managedClubs?.length > 0) : tab.admin ? own.isAdmin : own.canManageTeams))
     .map(tab => tab.id)
 }
 
@@ -133,6 +137,7 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
         {visited.has('accounts') && <ConsolePanel id="accounts" current={current}><AccountsPanel selfId={user.id} app={scope} /></ConsolePanel>}
         {visited.has('invites') && <ConsolePanel id="invites" current={current}><InvitesPanel app={scope} /></ConsolePanel>}
         {visited.has('clubs') && <ConsolePanel id="clubs" current={current}><ClubsPanel /></ConsolePanel>}
+        {visited.has('myclub') && <ConsolePanel id="myclub" current={current}><MyClubPanel clubs={access.managedClubs} /></ConsolePanel>}
         {visited.has('games') && <ConsolePanel id="games" current={current}><OfficialGamesPanel /></ConsolePanel>}
         {visited.has('matches') && <ConsolePanel id="matches" current={current}><ClosedMatchesPanel onShowActivity={showActivity} /></ConsolePanel>}
         {visited.has('scoresheets') && <ConsolePanel id="scoresheets" current={current}><ScoresheetsPanel app={brand.app} /></ConsolePanel>}

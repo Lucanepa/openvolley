@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { clubsApi } from '../../lib/accountApi'
 import KitModal from './KitModal'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError, useErrorText } from './common'
-import { Button, Checkbox, Chip, EmptyInset, Field, Input, Notice, Row, RowList, RowTool, SearchInput, SkeletonRows, Switch, confirmDialog, toast } from '../../ui'
+import { Button, Checkbox, Chip, EmptyInset, Field, Input, Notice, Textarea, Row, RowList, RowTool, SearchInput, SkeletonRows, Switch, confirmDialog, toast } from '../../ui'
 
 /**
  * Clubs (admins, OpenVolley; db/018, lib/clubs.js): a scorer scores the home
@@ -11,6 +11,9 @@ import { Button, Checkbox, Chip, EmptyInset, Field, Input, Notice, Row, RowList,
  * that play for it; accounts get their clubs in Accounts or through an invite
  * code. The rule is off until it is switched on here: then every scorer
  * without a club is blocked from official games, so set the clubs up first.
+ * db/020: each club may have managers (by address; they run the club's codes
+ * and members in their own My club tab) and a contact address (the final
+ * scoresheets of its games).
  */
 export default function ClubsPanel() {
   const { t } = useTranslation()
@@ -93,7 +96,11 @@ export default function ClubsPanel() {
               toolsIndent="sm:pl-2"
               actionIndent="pl-1.5"
               title={c.name}
-              meta={<span>{t('manage.clubs.scorers', { count: c.scorers })}</span>}
+              meta={<>
+                <span>{t('manage.clubs.scorers', { count: c.scorers })}</span>
+                {c.managers?.length > 0 && <span>{t('manage.clubs.managersCount', { count: c.managers.length })}</span>}
+                {c.contact_email && <span>{c.contact_email}</span>}
+              </>}
               chips={c.teams.length
                 ? c.teams.map((name) => <Chip key={name}>{name}</Chip>)
                 : <Chip tone="amber">{t('manage.clubs.noTeams')}</Chip>}
@@ -122,6 +129,10 @@ function ClubModal({ club, onClose, onSaved }) {
   const errorText = useErrorText()
   const [name, setName] = useState(club?.name || '')
   const [teams, setTeams] = useState(() => new Set(club?.teams || []))
+  // db/020: the contact address and the managers, one address per line
+  const [contact, setContact] = useState(club?.contact_email || '')
+  const managersBefore = (club?.managers || []).map((m) => m.email).join('\n')
+  const [managers, setManagers] = useState(managersBefore)
   const [q, setQ] = useState('')
   const [term, setTerm] = useState('')
   const [busy, setBusy] = useState(false)
@@ -152,12 +163,19 @@ function ClubModal({ club, onClose, onSaved }) {
     if (!valid || busy) return
     setBusy(true)
     const body = { name: name.trim(), teams: [...teams] }
-    const res = club ? await clubsApi.update(club.id, body) : await clubsApi.create(body)
+    let res = club ? await clubsApi.update(club.id, { ...body, contact_email: contact.trim() || null }) : await clubsApi.create(body)
+    // a new club: its contact address once it exists
+    if (!res.error && !club && contact.trim()) res = await clubsApi.update(res.data.club.id, { contact_email: contact.trim() })
+    const clubId = club?.id || res.data?.club?.id
+    const emails = managers.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean)
+    if (!res.error && clubId && emails.join('\n') !== managersBefore) res = await clubsApi.setManagers(clubId, emails)
     setBusy(false)
     if (res.error) {
       setError(res.error.code === 'OV_TEAM_TAKEN'
         ? t('manage.clubs.teamTaken', { teams: res.error.details || '' })
-        : res.error.code === 'OV_CLUB_EXISTS' ? t('manage.clubs.nameTaken') : errorText(res.error))
+        : res.error.code === 'OV_CLUB_EXISTS' ? t('manage.clubs.nameTaken')
+          : res.error.code === 'OV_ACCOUNT_NOT_FOUND' ? t('manage.clubs.managerUnknown', { emails: res.error.details || '' })
+            : errorText(res.error))
       return
     }
     toast.success(t('manage.clubs.saved'))
@@ -179,6 +197,12 @@ function ClubModal({ club, onClose, onSaved }) {
       <div className="space-y-3">
         <Field label={t('manage.clubs.name')}>
           <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} required autoFocus />
+        </Field>
+        <Field label={t('manage.clubs.contact')} hint={t('manage.clubs.contactHint')}>
+          <Input type="email" value={contact} onChange={(e) => setContact(e.target.value)} maxLength={254} data-testid="club-contact" />
+        </Field>
+        <Field label={t('manage.clubs.managers')} hint={t('manage.clubs.managersHint')}>
+          <Textarea value={managers} onChange={(e) => setManagers(e.target.value)} rows={2} data-testid="club-managers" />
         </Field>
         <Field label={t('manage.clubs.teams')} hint={t('manage.clubs.teamsHint')}>
           <SearchInput size="md" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('manage.clubs.searchTeams')} aria-label={t('manage.clubs.searchTeams')} maxLength={80} />

@@ -79,6 +79,41 @@ export const clubsApi = {
   },
   setRule(enabled) {
     return apiRequest('PUT', '/api/admin/club-rule', { enabled })
+  },
+  /** db/020: the club's managers by address (the whole list). */
+  setManagers(id, emails = []) {
+    return apiRequest('PUT', `/api/admin/clubs/${enc(id)}/managers`, { emails })
+  }
+}
+
+// ── My club (db/020): what a club manager (or an admin) does for one club ──
+export const clubApi = {
+  /** The club with its teams, contact address, managers and scorer count. */
+  get(clubId) {
+    return apiRequest('GET', `/api/club/${enc(clubId)}`)
+  },
+  /** Where the club's final scoresheets go; null clears it. */
+  setContact(clubId, contactEmail) {
+    return apiRequest('PATCH', `/api/club/${enc(clubId)}`, { contact_email: contactEmail || null })
+  },
+  members(clubId) {
+    return apiRequest('GET', `/api/club/${enc(clubId)}/members`)
+  },
+  /** Takes the account off the club only: it keeps its account and roles. */
+  removeMember(clubId, userId) {
+    return apiRequest('DELETE', `/api/club/${enc(clubId)}/members/${enc(userId)}`)
+  },
+  listInvites(clubId) {
+    return apiRequest('GET', `/api/club/${enc(clubId)}/invites`)
+  },
+  /** { label, role: scorer|referee, max_uses <= 50, expires_at <= 90 days }; the club is the path's. */
+  createInvite(clubId, { label, role = 'scorer', max_uses = 1, expires_at } = {}) {
+    const body = { label, role, max_uses }
+    if (expires_at) body.expires_at = expires_at
+    return apiRequest('POST', `/api/club/${enc(clubId)}/invites`, body)
+  },
+  revokeInvite(clubId, inviteId) {
+    return apiRequest('POST', `/api/club/${enc(clubId)}/invites/${enc(inviteId)}/revoke`, {})
   }
 }
 

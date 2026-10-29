@@ -65,6 +65,8 @@ export const AUDIT_ACTIONS = Object.freeze([
   'scoresheet.read',
   // db/018: clubs and the clubs an account scores for (lib/clubs.js)
   'club.create', 'club.update', 'club.delete', 'account.clubs', 'club_rule.set',
+  // db/020: club managers, a club's contact address, a member taken off a club
+  'club.managers', 'club.contact', 'club.member_remove',
   // db/019: a match moved to another scoring device (lib/scorerDevice.js claim)
   'match.scorer_device'
 ])
@@ -325,6 +327,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       const c = clubs()
       const myClubs = c ? await c.clubsOf(pool, userId) : []
       const clubRule = c ? await c.ruleOn(pool) : false
+      // db/020: the clubs the account manages (the manager's "My club" tab)
+      const managedClubs = c?.managedClubsOf ? await c.managedClubsOf(pool, userId) : []
       return ok({
         id: userId,
         roles: access?.roles ?? [],
@@ -336,7 +340,8 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
         isPending: !!access?.isPending,
         apps,
         clubs: myClubs,
-        clubRule
+        clubRule,
+        managedClubs
       })
     })
   }
@@ -488,7 +493,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
               `INSERT INTO public.invite_codes (code_hash, code_hint, label, club, role, max_uses, expires_at, created_by, sport${clubId ? ', club_id' : ''})
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9${clubId ? ', $10' : ''}) RETURNING id`,
               [hashInviteCode(normalized), normalized.slice(-4), label, club, role, maxUses, expiresAt, isUuid(actorId) ? actorId : null, sport, ...(clubId ? [clubId] : [])])
-            await audit(client, { actorId, action: 'invite.create', details: { invite_id: row.id, label, role, ...(sport === 'beach' ? { sport } : {}) }, app: sport })
+            await audit(client, { actorId, action: 'invite.create', details: { invite_id: row.id, label, role, ...(clubId ? { club_id: clubId } : {}), ...(sport === 'beach' ? { sport } : {}) }, app: sport })
             const { rows: [inv] } = await client.query(`${INVITE_SELECT} WHERE i.id = $1`, [row.id])
             return ok({ invite: inviteOut(inv), code }, 201)
           })
@@ -501,23 +506,31 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     })
   }
 
-  /** GET /api/admin/invites[?app=indoor|beach]: the codes of one sport (all without ?app=). */
-  async function listInvites ({ app } = {}) {
+  /**
+   * GET /api/admin/invites[?app=indoor|beach]: the codes of one sport (all
+   * without ?app=). `clubId` (a club manager's list, db/020): that club's codes only.
+   */
+  async function listInvites ({ app, clubId } = {}) {
     const a = appParam(app)
     if (a === null) return invalid('app: indoor or beach')
+    if (clubId !== undefined && !isUuid(clubId)) return notFound()
     return guarded('list-invites', async () => {
-      const { rows } = a
-        ? await pool.query(`${INVITE_SELECT} WHERE i.sport = $1 ORDER BY i.created_at DESC, i.id LIMIT 500`, [a])
-        : await pool.query(`${INVITE_SELECT} ORDER BY i.created_at DESC, i.id LIMIT 500`)
+      const { rows } = clubId
+        ? await pool.query(`${INVITE_SELECT} WHERE i.club_id = $1 ORDER BY i.created_at DESC, i.id LIMIT 500`, [clubId])
+        : a
+          ? await pool.query(`${INVITE_SELECT} WHERE i.sport = $1 ORDER BY i.created_at DESC, i.id LIMIT 500`, [a])
+          : await pool.query(`${INVITE_SELECT} ORDER BY i.created_at DESC, i.id LIMIT 500`)
       return ok({ invites: rows.map(inviteOut) })
     })
   }
 
-  async function revokeInvite ({ actorId, id } = {}) {
+  /** `clubId` (a club manager, db/020): only a code of that club; any other answers 404. */
+  async function revokeInvite ({ actorId, id, clubId } = {}) {
     if (!isUuid(id)) return notFound()
     return guarded('revoke-invite', () => withTx(async (client) => {
-      const { rows: [cur] } = await client.query('SELECT id, label, sport, revoked_at FROM public.invite_codes WHERE id = $1 FOR UPDATE', [id])
-      if (!cur) throw abort(notFound())
+      const { rows: [cur] } = await client.query(
+        `SELECT id, label, sport, revoked_at, to_jsonb(invite_codes) ->> 'club_id' AS club_id FROM public.invite_codes WHERE id = $1 FOR UPDATE`, [id])
+      if (!cur || (clubId !== undefined && cur.club_id !== clubId)) throw abort(notFound())
       if (!cur.revoked_at) {
         await client.query('UPDATE public.invite_codes SET revoked_at = now() WHERE id = $1', [id])
         await audit(client, { actorId, action: 'invite.revoke', details: { invite_id: id, label: cur.label }, app: cur.sport === 'beach' ? 'beach' : 'indoor' })

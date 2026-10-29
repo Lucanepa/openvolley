@@ -31,6 +31,15 @@
  *   GET    /api/admin/club-teams?q=                  isAdmin: VolleyManager team names with their club
  *   PUT    /api/admin/accounts/:id/clubs             isAdmin: the account's clubs (the whole list)
  *   PUT    /api/admin/club-rule                      isAdmin: { enabled }
+ *   PUT    /api/admin/clubs/:id/managers             isAdmin: { emails } the club's managers (db/020)
+ *   GET/PATCH /api/club/:id                          a manager of that club (db/020), or isAdmin:
+ *                                                    the club; PATCH { contact_email }
+ *   GET    /api/club/:id/members                     the same: the accounts that score for it
+ *   DELETE /api/club/:id/members/:userId             the same: the club link only
+ *   GET/POST /api/club/:id/invites                   the same: that club's codes; new ones are
+ *                                                    indoor, of the club, scorer|referee, <= 50 uses,
+ *                                                    <= 90 days (lib/clubs.js clubInviteBody)
+ *   POST   /api/club/:id/invites/:inviteId/revoke    the same: a code of that club only
  *   DELETE /api/admin/activity?match=|account=&confirm=yes  isAdmin: delete on request (audited)
  *   GET    /api/scoresheets?app=indoor|beach&state=&q=  canManageTeams of that sport (admins and its
  *                                                    competition managers; no app = indoor)
@@ -50,7 +59,8 @@
  * never throw either).
  */
 
-import { fail, notFound } from './accounts.js'
+import { fail, invalid, notFound } from './accounts.js'
+import { clubInviteBody } from './clubs.js'
 import { SPORTS, accessForSport, sportsWith } from './access.js'
 
 // Before lib/approvals.js is wired (or on a server built without it)
@@ -79,6 +89,7 @@ export function manageFamilyOf (pathname) {
   if (pathname === '/api/account/approval-pin' || pathname === '/api/account/approval-pin/remove') return 'approvalPin'
   if (pathname === '/api/approvals' || pathname.startsWith('/api/approvals/') || pathname === '/api/account/approvals') return 'approvals'
   if (pathname === '/api/scoresheets' || pathname.startsWith('/api/scoresheets/')) return 'scoresheets'
+  if (pathname.startsWith('/api/club/')) return 'club'
   return null
 }
 
@@ -125,6 +136,19 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     return accessForSport(c.access, app).canManageTeams ? null : FORBIDDEN()
   }
   const sheets = (fn) => (scoresheets ? fn(scoresheets) : notFound())
+  // db/020: a manager of the club in the path (m[1]), or an admin. A server
+  // built without lib/clubs.js leaves it to the handler (404).
+  const clubManagerOf = async (m, c) => {
+    if (c.access?.isAdmin || !clubs) return null
+    return (await clubs.isManager(c.user.id, m[1])) ? null : FORBIDDEN()
+  }
+  const club = (fn) => (clubs ? fn(clubs) : notFound())
+  const clubInvite = (m, c) => {
+    const r = clubs ? clubInviteBody(c.body) : null
+    if (!r) return notFound()
+    if (r.error) return invalid(r.error)
+    return accounts.createInvite({ actorId: c.user.id, body: { ...r.body, club_id: m[1], sport: 'indoor' }, app: 'indoor' })
+  }
 
   // [method, regex, need, handler(match, ctx)]
   const routes = [
@@ -143,6 +167,15 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['DELETE', new RegExp(`^/api/admin/clubs/${ID}$`), 'admin', (m, c) => (clubs ? clubs.remove({ actorId: c.user.id, id: m[1] }) : notFound())],
     ['GET', /^\/api\/admin\/club-teams$/, 'admin', (m, c) => (clubs ? clubs.vmTeams({ q: q(c.query, 'q') ?? '' }) : notFound())],
     ['PUT', /^\/api\/admin\/club-rule$/, 'admin', (m, c) => (clubs ? clubs.setRule({ actorId: c.user.id, body: c.body }) : notFound())],
+    ['PUT', new RegExp(`^/api/admin/clubs/${ID}/managers$`), 'admin', (m, c) => club((cl) => cl.setManagers({ actorId: c.user.id, id: m[1], body: c.body }))],
+    // db/020: a club manager's own club
+    ['GET', new RegExp(`^/api/club/${ID}$`), clubManagerOf, (m) => club((cl) => cl.clubDetail({ id: m[1] }))],
+    ['PATCH', new RegExp(`^/api/club/${ID}$`), clubManagerOf, (m, c) => club((cl) => cl.setContact({ actorId: c.user.id, id: m[1], body: c.body }))],
+    ['GET', new RegExp(`^/api/club/${ID}/members$`), clubManagerOf, (m) => club((cl) => cl.members({ id: m[1] }))],
+    ['DELETE', new RegExp(`^/api/club/${ID}/members/${ID}$`), clubManagerOf, (m, c) => club((cl) => cl.removeMember({ actorId: c.user.id, id: m[1], userId: m[2] }))],
+    ['GET', new RegExp(`^/api/club/${ID}/invites$`), clubManagerOf, (m) => club(() => accounts.listInvites({ clubId: m[1] }))],
+    ['POST', new RegExp(`^/api/club/${ID}/invites$`), clubManagerOf, clubInvite],
+    ['POST', new RegExp(`^/api/club/${ID}/invites/${ID}/revoke$`), clubManagerOf, (m, c) => club(() => accounts.revokeInvite({ actorId: c.user.id, id: m[2], clubId: m[1] }))],
     ['GET', /^\/api\/admin\/invites$/, 'admin', (m, c) => accounts.listInvites({ app: q(c.query, 'app') })],
     ['POST', /^\/api\/admin\/invites$/, 'admin', (m, c) => accounts.createInvite({ actorId: c.user.id, body: c.body, app: q(c.query, 'app') })],
     ['POST', new RegExp(`^/api/admin/invites/${ID}/revoke$`), 'admin', (m, c) => accounts.revokeInvite({ actorId: c.user.id, id: m[1] })],

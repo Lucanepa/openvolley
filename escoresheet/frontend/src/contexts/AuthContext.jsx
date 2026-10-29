@@ -382,11 +382,12 @@ export function AuthProvider({ children, app = null }) {
   // bumped to load the clubs again (an invite code that carries a club)
   const [clubsReload, setClubsReload] = useState(0)
   const clubsSource = clubsState?.userId === userId ? clubsState : (userId ? readCachedClubs(userId) : null)
-  const clubsKey = JSON.stringify(clubsSource ? [clubsSource.clubs, clubsSource.clubRule] : null)
+  const clubsKey = JSON.stringify(clubsSource ? [clubsSource.clubs, clubsSource.clubRule, clubsSource.managedClubs || []] : null)
   const access = useMemo(() => {
     if (!userId) return NO_ACCESS
     const c = JSON.parse(clubsKey)
-    return { ...accessFromRoles(JSON.parse(rolesKey)), known, clubs: c ? c[0] : [], clubRule: c ? c[1] === true : false, clubsKnown: !!c }
+    // db/020: managedClubs, the clubs the account manages (the manager's My club tab)
+    return { ...accessFromRoles(JSON.parse(rolesKey)), known, clubs: c ? c[0] : [], clubRule: c ? c[1] === true : false, managedClubs: c ? c[2] : [], clubsKnown: !!c }
   }, [userId, rolesKey, known, clubsKey])
 
   // Load the clubs once signed in, and again on focus and when back online
@@ -399,7 +400,12 @@ export function AuthProvider({ children, app = null }) {
       // never throws into the effect (a failing request keeps the cache)
       Promise.resolve().then(() => fetchMe()).then((res) => {
         if (gone || res?.error || !res?.data) return
-        const value = { userId, clubs: Array.isArray(res.data.clubs) ? res.data.clubs : [], clubRule: res.data.clubRule === true }
+        const value = {
+          userId,
+          clubs: Array.isArray(res.data.clubs) ? res.data.clubs : [],
+          clubRule: res.data.clubRule === true,
+          managedClubs: Array.isArray(res.data.managedClubs) ? res.data.managedClubs : []
+        }
         cacheClubs(value)
         setClubsState(value)
       }).catch(() => { /* offline-first: keep the cache */ })
