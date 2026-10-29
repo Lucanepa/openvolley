@@ -9,6 +9,7 @@ import UpdateBanner from './components/UpdateBanner'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
 import { applyServerParam, isServedFromLocalServer } from './utils/backendConfig'
 import { loadMatchList } from './utils/matchListSource'
+import { setDiagnosticsInfo } from './utils/diagnosticsInfo'
 import ballFallback from './ball_fallback.png'
 
 // Primary ball image (with a bundled copy as fallback)
@@ -179,6 +180,20 @@ export default function BenchApp() {
   const supabaseChannelRef = useRef(null)
   const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 400)
   const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 700)
+
+  // The support diagnostics (utils/diagnosticsInfo): this bench's connection
+  useEffect(() => {
+    setDiagnosticsInfo('bench', {
+      view,
+      matchId: matchId == null ? null : String(matchId),
+      team: selectedTeam,
+      connectionMode,
+      activeConnection,
+      connections: connectionStatuses,
+      serverReady,
+      error: error ? String(error).slice(0, 200) : null
+    })
+  }, [view, matchId, selectedTeam, connectionMode, activeConnection, connectionStatuses, serverReady, error])
 
   // Check URL params for auto-connect on mount
   useEffect(() => {

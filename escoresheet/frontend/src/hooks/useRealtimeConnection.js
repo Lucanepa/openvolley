@@ -16,6 +16,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { apiFrom } from '../lib/apiClient'
 import { subscribeToMatchData, getMatchData, fetchRelayConnections, summarizeRelayTablets, createLiveStateTracker } from '../utils/serverDataSync'
+import { setDiagnosticsInfo } from '../utils/diagnosticsInfo'
 
 // Connection types
 export const CONNECTION_TYPES = {
@@ -550,6 +551,20 @@ export function useRealtimeConnection({
       cleanup()
     }
   }, [matchId, enabled, connectionType, watchDbChanges]) // Only core dependencies, not callbacks
+
+  // The support diagnostics (utils/diagnosticsInfo): this tablet's connection
+  useEffect(() => {
+    setDiagnosticsInfo('realtime', {
+      status,
+      connectionType,
+      activeConnection,
+      enabled,
+      matchId: matchId == null ? null : String(matchId),
+      error: error ? String(error?.message || error).slice(0, 200) : null,
+      lastUpdate: lastUpdate instanceof Date ? lastUpdate.getTime() : lastUpdate
+    })
+  }, [status, connectionType, activeConnection, enabled, matchId, error, lastUpdate])
+  useEffect(() => () => setDiagnosticsInfo('realtime', null), [])
 
   return {
     // State
