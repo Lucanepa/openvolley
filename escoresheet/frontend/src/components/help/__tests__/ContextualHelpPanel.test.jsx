@@ -7,7 +7,8 @@ const support = vi.hoisted(() => ({ props: [] }))
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key, fallback) => (typeof fallback === 'string' ? fallback : key),
+    // the key, or the fallback; a section name it is given after a colon
+    t: (key, fallback) => (typeof fallback === 'string' ? fallback : fallback?.section ? `${key}:${fallback.section}` : key),
     i18n: { language: 'de' }
   })
 }))
@@ -28,6 +29,7 @@ vi.mock('../../../utils/openAppWindow', () => ({ openAppWindow: vi.fn(() => ({ o
 
 import ContextualHelpPanel from '../ContextualHelpPanel'
 import { HELP_SCREENS, helpSection } from '../helpSections'
+import { HELP_VIDEOS } from '../helpVideos'
 import { openAppWindow } from '../../../utils/openAppWindow'
 
 const sectionIds = () => [...document.querySelectorAll('[data-testid^="help-section-"]')].map(n => n.dataset.testid.replace('help-section-', ''))
@@ -104,6 +106,53 @@ describe('ContextualHelpPanel: the video', () => {
     expect(tracks.map(t => [t.getAttribute('srclang'), t.getAttribute('src')])).toEqual(['en', 'de', 'fr', 'it'].map(l => [l, `https://openvolley.app/support/videos/coin-toss.${l}.vtt`]))
     // the app speaks German (mocked i18n): its subtitles are on
     expect(tracks.filter(t => t.hasAttribute('default')).map(t => t.getAttribute('srclang'))).toEqual(['de'])
+    // its title in the app's language and its length (70.1 s), from the recording
+    expect(video.getAttribute('aria-label')).toBe('contextHelp.videoLabel:Auslosung und Aufstellung')
+    expect(screen.getByTestId('help-video-caption').textContent).toBe('contextHelp.videoLabel:Auslosung und Aufstellung1:10')
+    // the box has the video's shape
+    const { width, height } = HELP_VIDEOS['coin-toss']
+    expect(video.style.aspectRatio).toBe(`${width} / ${height}`)
+    expect(video.classList.contains('aspect-video')).toBe(false)
+  })
+
+  it('a video of unknown size gets a 16:9 box', () => {
+    const saved = HELP_VIDEOS.home
+    try {
+      HELP_VIDEOS.home = { ...saved, width: undefined, height: undefined }
+      panel({ screen: 'home' })
+      expect(screen.getByTestId('help-video').classList.contains('aspect-video')).toBe(true)
+      expect(screen.getByTestId('help-video').style.aspectRatio).toBe('')
+    } finally {
+      HELP_VIDEOS.home = saved
+    }
+  })
+
+  it('a section without a recorded video shows no player and no note', () => {
+    const saved = HELP_VIDEOS['coin-toss']
+    try {
+      delete HELP_VIDEOS['coin-toss']
+      panel({ screen: 'coinToss' })
+      expect(screen.queryByTestId('help-video')).toBeNull()
+      expect(screen.queryByTestId('help-video-offline')).toBeNull()
+      // its questions and links stay
+      expect(screen.getByText('contextHelp.moreHelp')).toBeTruthy()
+    } finally {
+      HELP_VIDEOS['coin-toss'] = saved
+    }
+  })
+
+  it('only the subtitle tracks the video was recorded with', () => {
+    const saved = HELP_VIDEOS.scoring
+    try {
+      HELP_VIDEOS.scoring = { ...saved, languages: ['en', 'fr'] }
+      panel({ screen: 'scoreboard' })
+      const tracks = [...screen.getByTestId('help-video').querySelectorAll('track')]
+      expect(tracks.map(t => t.getAttribute('srclang'))).toEqual(['en', 'fr'])
+      // no German track: none is on by default
+      expect(tracks.some(t => t.hasAttribute('default'))).toBe(false)
+    } finally {
+      HELP_VIDEOS.scoring = saved
+    }
   })
 
   it('only for the open sections', () => {

@@ -3,9 +3,9 @@
  * Exports the in-app help (src/components/help/helpSections.js) for the
  * website's support page (openvolley.app/support), which is organised by the
  * same sections: every section's title, its questions and answers, its video
- * and the screens of the app that show it, in English, German, French and
- * Italian (de-CH is left out: the website has no Swiss German), resolved from
- * the app's locale files.
+ * (null while none is recorded: helpVideos.js) and the screens of the app
+ * that show it, in English, German, French and Italian (de-CH is left out:
+ * the website has no Swiss German), resolved from the app's locale files.
  *
  * Usage:
  *   node scripts/export-help.mjs                 # ~/.cache/openvolley/support-help-export.json
@@ -60,8 +60,12 @@ const sections = HELP_SECTIONS.map(section => {
     id: section.id,
     url: supportPageUrl(section.id),
     title: texts(section.titleKey),
-    video: {
+    video: video && {
       id: section.video,
+      title: video.title,
+      durationSec: video.durationSec,
+      width: video.width,
+      height: video.height,
       mp4: video.src,
       poster: video.poster,
       subtitles: Object.fromEntries(video.tracks.map(track => [track.lang, track.src]))
