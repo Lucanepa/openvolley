@@ -13,6 +13,7 @@ import {
 } from './chromeClasses'
 import HeaderMenuItem from './HeaderMenuItem'
 import { backdropDismiss } from '../ui/backdropDismiss.js'
+import { HeaderHelpButton } from './help/HelpButton.jsx'
 
 // Flag SVG components for language selector
 const FlagGB = () => (
@@ -69,7 +70,7 @@ const languages = [
  * SimpleHeader - 3-column header for all dashboard apps
  * Left: Title/version
  * Middle: Hamburger menu (collapsible)
- * Right: Fullscreen button
+ * Right: ? (help, with onHelp) and Fullscreen button
  *
  * volleyui chrome: white bar with a stone hairline, kit header buttons, the
  * menu as a white anchored dropdown with 48 px rows, the optional toggle as a
@@ -81,7 +82,10 @@ export default function SimpleHeader({
   menuItems = [], // Array of { icon, label, onClick, active, color, toggle, badge, badgeColor, disabled, divider }
   onFullscreen,
   isFullscreen = false,
-  toggleOptions // Optional: segmented toggle [{ label: '1 REF', active: false, onClick }, { label: '2 REF', active: true, onClick }]
+  toggleOptions, // Optional: segmented toggle [{ label: '1 REF', active: false, onClick }, { label: '2 REF', active: true, onClick }]
+  // The "?" of the page's help panel (ContextualHelpPanel)
+  onHelp,
+  helpOpen = false
 }) {
   const { t } = useTranslation()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -303,8 +307,9 @@ export default function SimpleHeader({
         )}
       </div>
 
-      {/* RIGHT: Fullscreen Button */}
+      {/* RIGHT: ? and Fullscreen Button */}
       <div className="flex flex-1 basis-0 items-center justify-end gap-2">
+        {onHelp && <HeaderHelpButton onClick={onHelp} pressed={helpOpen} />}
         {onFullscreen && (
           <button
             type="button"

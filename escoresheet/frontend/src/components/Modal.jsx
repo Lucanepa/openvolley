@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { X } from 'lucide-react'
 import { IconButton } from '../ui/IconButton.jsx'
+import { DialogHelpButton } from './help/HelpButton.jsx'
 
 // The app's legacy modal shell, on the volleyui recipe (kit Modal, plain layout):
 // stone-900/50 scrim with blur, white rounded-2xl panel with shadow-2xl, a
@@ -9,6 +10,8 @@ import { IconButton } from '../ui/IconButton.jsx'
 // (scoring screens depend on that), there is no Escape handling, and
 // `width`, `position`, `customStyle` and `zIndex` work as before. `panelStyle`
 // adds to the centred panel's style (a large dialog's own maxHeight).
+// `helpScreen` puts a help button beside the close: it opens the help panel on
+// that screen (components/help/helpSections.js).
 //
 // Children are NOT wrapped in `.ov-kit`: they are legacy views (lineup grid,
 // set-end readouts...) that rely on the legacy element rules. Only the close
@@ -17,7 +20,7 @@ import { IconButton } from '../ui/IconButton.jsx'
 const OVERLAY = 'no-print fixed inset-0 bg-stone-900/50 backdrop-blur-sm'
 const PANEL = 'bg-white rounded-2xl shadow-2xl p-5 max-h-[85vh] overflow-auto text-stone-800'
 
-export default function Modal({ title, open, onClose, children, width = 800, hideCloseButton = false, position = 'center', customStyle = {}, zIndex = 1000, panelStyle = null }) {
+export default function Modal({ title, open, onClose, children, width = 800, hideCloseButton = false, position = 'center', customStyle = {}, zIndex = 1000, panelStyle = null, helpScreen = null }) {
   const { t } = useTranslation()
 
   if (!open) return null
@@ -32,13 +35,14 @@ export default function Modal({ title, open, onClose, children, width = 800, hid
   }
 
   const closeLabel = t('modal.close', 'Close')
-  const header = (title || !hideCloseButton) && (
+  const header = (title || !hideCloseButton || helpScreen) && (
     <div className="flex items-start justify-between gap-3 mb-3">
       <h3 className="m-0 min-w-0 pt-1.5 text-lg font-bold leading-snug text-stone-900">{title}</h3>
-      {!hideCloseButton && (
-        <span className="ov-kit -mr-2 -mt-1 shrink-0">
+      {(helpScreen || !hideCloseButton) && (
+        <span className="ov-kit -mr-2 -mt-1 flex shrink-0 items-center">
+          {helpScreen && <DialogHelpButton screen={helpScreen} />}
           {/* data-modal-close: Android's Back closes the modal with it (appLifecycle.js) */}
-          <IconButton variant="close" label={closeLabel} icon={X} onClick={onClose} data-modal-close="" />
+          {!hideCloseButton && <IconButton variant="close" label={closeLabel} icon={X} onClick={onClose} data-modal-close="" />}
         </span>
       )}
     </div>
