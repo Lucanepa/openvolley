@@ -10,7 +10,9 @@
  *   comments     the message                                      required
  *   area         a section id of the help (SECTION_IDS) or 'other';
  *                the app's older area names are mapped (LEGACY_AREAS)
- *   supportType  bug | help        severity  1-4
+ *   supportType  bug | help        severity  1-4 (support only)
+ *   matchRunning "1": a match is being scored right now (the app ticks it
+ *                when this device scores one); anything else: not
  *   source       app | website     language, appVersion, platform, url,
  *                userAgent, timestamp: context, each checked against a
  *                pattern (url loses its query and fragment: ?pin=)
@@ -23,8 +25,12 @@
  *                name or the client's Content-Type alone
  *
  * The mail: From MAIL_FROM (the account mailbox of lib/mailer.js), To
- * CONTACT_EMAIL, Reply-To the user, the attachments, subject
- * "[OpenVolley Support] scoring – <first words>". FreeScout takes the
+ * CONTACT_EMAIL, Reply-To the user, the attachments, the priority
+ * (priorityOf: P1-P4) in the subject, in the X-OpenVolley-Priority header
+ * and as the body's first line. The subject holds no text the user typed,
+ * only the priority, the area and the type ("[P2] [scoring] Support – Bug
+ * report"): FreeScout's auto reply can quote the subject to the Reply-To
+ * address, which nobody has verified. FreeScout takes the
  * customer of an incoming mail from Reply-To when it has one, else From
  * (app/Console/Commands/FetchEmails.php, processMessage), so the user becomes
  * the ticket's customer and the agents' replies go to them. The mail carries
@@ -45,6 +51,8 @@
  *   normalizeContact(fields) -> the checked values      (throws ContactError)
  *   checkAttachments(files) -> [{ filename, mime, data }] (throws ContactError)
  *   sniffFile(data, filename) -> { mime, ext } | null
+ *   priorityOf(value) -> { level: 'P1'|'P2'|'P3'|'P4', reason }
+ *   supportSubject(value) -> "[P1 – match running] [scoring] Support – Bug report"
  *   buildSupportMail(value, attachments, { receivedAt }) -> nodemailer message (no from / to)
  *   createContactMailer({ transport, from, to, maxPerHour }) / contactMailerFromEnv(env) / disabledContactMailer(reason)
  */
@@ -345,7 +353,10 @@ export function normalizeContact(fields = {}) {
     comments,
     area: areaOf(fields.area),
     supportType: contactType === 'support' && SUPPORT_TYPES.includes(supportType) ? supportType : '',
-    severity: /^[1-4]$/.test(severity) ? severity : '',
+    // only a support message has a severity: one left in a form switched to
+    // feedback would set the priority (priorityOf)
+    severity: contactType === 'support' && /^[1-4]$/.test(severity) ? severity : '',
+    matchRunning: oneLine(fields.matchRunning, 10) === '1',
     source: SOURCES.includes(source) ? source : 'app',
     language: pick(fields.language, /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$/, 16),
     appVersion: pick(fields.appVersion, /^[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}$/, 32),
@@ -448,37 +459,57 @@ export function checkAttachments(files = []) {
 // The mail
 // ---------------------------------------------------------------------------
 
-/** The start of the message for the subject: up to 8 words or 60 characters. */
-export function firstWords(text, { words = 8, chars = 60 } = {}) {
-  const flat = oneLine(text, 2000)
-  const list = flat.split(' ').filter(Boolean)
-  let out = list.slice(0, words).join(' ')
-  let cut = list.length > words
-  if (out.length > chars) {
-    out = out.slice(0, chars).replace(/\s+\S*$/, '') || out.slice(0, chars)
-    cut = true
-  }
-  return cut ? `${out}…` : out
-}
-
 function formatBytes(n) {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
-/** "[OpenVolley Support] scoring – The undo button does nothing after a…" */
-export function supportSubject(value) {
-  return `[OpenVolley ${TYPE_LABELS[value.contactType]}] ${value.area} – ${firstWords(value.comments)}`
+/**
+ * The ticket's priority (the owner's scheme, 2026-10-29) and the reason the
+ * body names:
+ *   P1  a match is being scored right now (matchRunning), or severity 1
+ *   P2  severity 2
+ *   P3  severity 3, a help question, or support without a severity
+ *   P4  the rest: severity 4, feedback, a feature request
+ * @param {{ contactType: string, supportType?: string, severity?: string, matchRunning?: boolean }} value normalizeContact's
+ * @returns {{ level: 'P1'|'P2'|'P3'|'P4', reason: string }}
+ */
+export function priorityOf(value) {
+  const { contactType, supportType, severity, matchRunning } = value
+  if (matchRunning || severity === '1') {
+    return { level: 'P1', reason: [matchRunning && 'match running', severity === '1' && 'severity 1'].filter(Boolean).join(', ') }
+  }
+  if (severity === '2') return { level: 'P2', reason: 'severity 2' }
+  if (severity === '3') return { level: 'P3', reason: 'severity 3' }
+  if (supportType === 'help') return { level: 'P3', reason: 'help question' }
+  if (contactType === 'support' && !severity) return { level: 'P3', reason: 'support without severity' }
+  if (severity === '4') return { level: 'P4', reason: 'severity 4' }
+  return { level: 'P4', reason: contactType === 'request' ? 'feature request' : 'feedback' }
+}
+
+/**
+ * "[P1 – match running] [scoring] Support – Bug report", "[P4] [home] Feedback":
+ * the priority, the area id and the type, never a word the user typed.
+ * FreeScout's auto reply can quote the subject to the Reply-To address,
+ * which nobody has verified; the message stays in the body.
+ */
+export function supportSubject(value, priority = priorityOf(value)) {
+  const level = value.matchRunning ? `${priority.level} – match running` : priority.level
+  const supportType = value.contactType === 'support' ? SUPPORT_TYPE_LABELS[value.supportType] : ''
+  return `[${level}] [${value.area}] ${TYPE_LABELS[value.contactType]}${supportType ? ` – ${supportType}` : ''}`
 }
 
 /**
  * The mail to the support mailbox, without from / to (the mailer sets them):
- * Reply-To the user, the attachments with their checked types, a plain-text
- * body with every field and the diagnostics.
+ * Reply-To the user, the priority in the subject and in X-OpenVolley-Priority,
+ * the attachments with their checked types, a plain-text body with the
+ * priority first, then every field and the diagnostics.
  */
 export function buildSupportMail(value, attachments = [], { receivedAt = new Date() } = {}) {
+  const priority = priorityOf(value)
   const rows = [
+    ['Priority', `${priority.level} – ${priority.reason}`],
     ['Type', TYPE_LABELS[value.contactType]],
     ['Support type', SUPPORT_TYPE_LABELS[value.supportType] || ''],
     ['Severity', SEVERITY_LABELS[value.severity] || ''],
@@ -496,8 +527,7 @@ export function buildSupportMail(value, attachments = [], { receivedAt = new Dat
   ].filter(([, v]) => v)
   const width = Math.max(...rows.map(([k]) => k.length)) + 1
   const lines = [
-    `${TYPE_LABELS[value.contactType]} from the OpenVolley ${value.source === 'website' ? 'website' : 'app'}`,
-    '',
+    // "Priority: P1 – match running" first: the line FreeScout's list previews
     ...rows.map(([k, v]) => `${`${k}:`.padEnd(width + 1)}${v}`),
     '',
     'Message:',
@@ -507,7 +537,11 @@ export function buildSupportMail(value, attachments = [], { receivedAt = new Dat
   if (value.diagnostics) lines.push('Diagnostics (sent with the user\'s consent):', value.diagnostics, '')
   return {
     replyTo: { name: '', address: value.email },
-    subject: supportSubject(value),
+    subject: supportSubject(value, priority),
+    // a custom header only, nothing FreeScout reads as an auto-responder.
+    // nodemailer writes the name as X-Openvolley-Priority (header names are
+    // case-insensitive)
+    headers: { 'X-OpenVolley-Priority': priority.level },
     text: lines.join('\n'),
     attachments: attachments.map((a) => ({ filename: a.filename, content: a.data, contentType: a.mime }))
   }
@@ -612,7 +646,7 @@ export async function handleContact({ body, contentType, mailer, logger = consol
     logger.error('[Contact] could not read the request:', err?.message)
     return answer(400, { success: false, code: 'invalid_body', error: 'Invalid request' })
   }
-  const what = `${value.contactType}/${value.area} from ${maskEmail(value.email)} (${value.source}, ${attachments.length} attachment(s))`
+  const what = `${value.contactType}/${value.area} ${priorityOf(value).level} from ${maskEmail(value.email)} (${value.source}, ${attachments.length} attachment(s))`
   if (!mailer?.enabled) {
     logger.warn(`[Contact] ${what} not mailed: support mail is off (${mailer?.reason || 'no mailer'})`)
     return answer(503, { success: false, code: 'unavailable', error: 'The support form is not available right now' })
