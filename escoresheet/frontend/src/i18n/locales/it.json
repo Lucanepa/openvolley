@@ -1583,6 +1583,7 @@
     "filesTooLarge": "Gli allegati sono troppo grandi. Insieme possono pesare al massimo {{mb}} MB.",
     "fileType": "{{name}} non può essere allegato. Allega immagini, PDF, file di testo o JSON.",
     "invalidEmail": "Inserisci un indirizzo email valido.",
+    "matchRunning": "Una partita è in corso in questo momento",
     "includeDiagnostics": "Includi la diagnostica",
     "diagnosticsHint": "Aiuta a trovare il problema. Viene inviato esattamente ciò che vedi qui sotto.",
     "diagnosticsPreview": "Diagnostica da inviare",

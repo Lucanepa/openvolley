@@ -10,6 +10,10 @@
  *   so a caller may pass either.
  * - attachments: checked here before the upload (count, 10 MB together, the
  *   kinds the backend takes); the backend checks again, by the bytes.
+ * - matchRunning: "A match is running right now", sent as matchRunning=1
+ *   (the backend makes the ticket P1). The dialog ticks it by itself while
+ *   this device scores an official match in progress (isScoringMatchHere);
+ *   the user can untick it, or tick it for any other match.
  * - diagnostics: only when the user ticks "Include diagnostics", and exactly
  *   what the dialog shows: app version, platform, display mode, screen size,
  *   online state, the open match's game number, and the last 20 console
@@ -18,6 +22,7 @@
  */
 import { appVersion, platformName } from './identity'
 import { getActiveMatch } from './activity/activeMatch'
+import { getLiveMatch } from './appLifecycle'
 import { getLogs } from './logger'
 import { redactFreeText } from '../domain/activitySummary'
 import { redactScreenText } from './screenText'
@@ -98,6 +103,17 @@ export function checkFiles(files) {
   return null
 }
 
+/**
+ * Is this device scoring a match right now: an official match in progress,
+ * from its coin toss to its end? The scorer app's live match
+ * (utils/appLifecycle, set by App.jsx from the local match in status 'live'
+ * that is not a copy the server has closed); 'none' in the referee, bench and
+ * livescore apps. A test or easy match does not count: the user ticks the box
+ * for one by hand.
+ * @param {'none'|'official'|'test'} [live]
+ */
+export const isScoringMatchHere = (live = getLiveMatch()) => live === 'official'
+
 /** The page the form is sent from, without query or fragment (tablet links carry ?pin=). */
 export function pageUrl(win = typeof window !== 'undefined' ? window : undefined) {
   try {
@@ -152,10 +168,10 @@ export function collectDiagnostics({
 }
 
 /**
- * The multipart body of POST /api/contact.
+ * The multipart body of POST /api/contact. matchRunning: "1" only when true.
  * @param {{ contactType: string, area: string, supportType?: string, severity?: string|number,
- *   email: string, comments: string, files?: File[], diagnostics?: object|null, language?: string,
- *   win?: Window, now?: Date }} v
+ *   matchRunning?: boolean, email: string, comments: string, files?: File[], diagnostics?: object|null,
+ *   language?: string, win?: Window, now?: Date }} v
  */
 export function buildContactForm(v) {
   const win = v.win ?? (typeof window !== 'undefined' ? window : undefined)
@@ -164,6 +180,7 @@ export function buildContactForm(v) {
   fd.append('area', v.area)
   fd.append('supportType', v.supportType || '')
   fd.append('severity', v.severity ? String(v.severity) : '')
+  if (v.matchRunning) fd.append('matchRunning', '1')
   fd.append('email', String(v.email || '').trim())
   fd.append('comments', v.comments)
   fd.append('source', 'app')
@@ -183,12 +200,13 @@ export function buildContactForm(v) {
  * mailto cannot carry them). labels: the translated values to show.
  */
 export function contactMailto(v, labels = {}) {
-  const subject = `[OpenVolley ${labels.type || v.contactType}] ${v.area}${labels.supportType ? ` - ${labels.supportType}` : ''}`
+  const subject = `[OpenVolley ${labels.type || v.contactType}${v.matchRunning ? ' – match running' : ''}] ${v.area}${labels.supportType ? ` - ${labels.supportType}` : ''}`
   const lines = [
     `Contact type: ${labels.type || v.contactType}`,
     `Area: ${labels.area || v.area} (${v.area})`,
     labels.supportType ? `Support type: ${labels.supportType}` : null,
     labels.severity ? `Severity: ${labels.severity}` : null,
+    v.matchRunning ? 'A match is running right now: yes' : null,
     `From: ${String(v.email || '').trim()}`,
     `App version: ${appVersion()}`,
     `Page: ${pageUrl(v.win)}`,

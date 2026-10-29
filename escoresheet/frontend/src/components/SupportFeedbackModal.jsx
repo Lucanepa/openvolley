@@ -1,14 +1,15 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import Modal from './Modal'
 import { getCloudApiUrl } from '../utils/backendConfig'
+import { getLiveMatch, onLiveMatchChange } from '../utils/appLifecycle'
 import { openAppWindow } from '../utils/openAppWindow'
 import { useScaledLayout } from '../hooks/useScaledLayout'
 import { Check, Mail, Paperclip, Send, X } from 'lucide-react'
 import { Button, Checkbox, cn, FOCUS_RING, IconButton, Select } from '../ui'
 import {
   CONTACT_AREAS, FILE_ACCEPT, MAX_FILES, MAX_FILES_MB, buildContactForm, checkFiles, collectDiagnostics,
-  contactAreaOf, contactMailto, isContactEmail
+  contactAreaOf, contactMailto, isContactEmail, isScoringMatchHere
 } from '../utils/supportContact'
 
 const CONTACT_TYPES = ['support', 'feedback', 'request']
@@ -198,6 +199,13 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
   const [comments, setComments] = useState('')
   const [email, setEmail] = useState('')
   const [files, setFiles] = useState([])
+  // "A match is running right now" (the backend makes it P1): ticked by
+  // itself while this device scores an official match in progress, and it
+  // follows that until the user ticks or unticks it
+  const liveMatch = useSyncExternalStore(onLiveMatchChange, getLiveMatch, getLiveMatch)
+  const scoringHere = isScoringMatchHere(liveMatch)
+  const [matchRunning, setMatchRunning] = useState(scoringHere)
+  const [matchRunningSetByUser, setMatchRunningSetByUser] = useState(false)
   const [includeDiagnostics, setIncludeDiagnostics] = useState(false)
   // What the box shows is what is sent: one snapshot, taken when it is ticked
   const [diagnostics, setDiagnostics] = useState(null)
@@ -213,6 +221,10 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
     if (open) setArea(initialArea)
   }, [open, initialArea])
 
+  useEffect(() => {
+    if (open && !matchRunningSetByUser) setMatchRunning(scoringHere)
+  }, [open, scoringHere, matchRunningSetByUser])
+
   const resetForm = () => {
     setContactType('')
     setArea(initialArea)
@@ -221,6 +233,8 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
     setComments('')
     setEmail('')
     setFiles([])
+    setMatchRunning(scoringHere)
+    setMatchRunningSetByUser(false)
     setIncludeDiagnostics(false)
     setDiagnostics(null)
     setSent(null)
@@ -245,11 +259,19 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
     setDiagnostics(on ? collectDiagnostics({ gameNumber }) : null)
   }
 
+  const toggleMatchRunning = (on) => {
+    setMatchRunningSetByUser(true)
+    setMatchRunning(on)
+  }
+
   const request = () => ({
     contactType,
     area,
-    supportType,
-    severity,
+    // what the form shows for the type: a severity picked for a bug and left
+    // behind by switching to a question or to feedback is not sent
+    supportType: contactType === 'support' ? supportType : '',
+    severity: contactType === 'support' && supportType === 'bug' ? severity : '',
+    matchRunning,
     email,
     comments,
     files,
@@ -258,13 +280,14 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
   })
 
   const openMailto = () => {
+    const v = request()
     const labels = {
       type: t(`supportFeedback.types.${contactType}`),
       area: t(`supportFeedback.areas.${area}`),
-      supportType: supportType ? t(`supportFeedback.supportTypes.${supportType}`) : '',
-      severity: severity ? t(`supportFeedback.severities.severity${severity}`) : ''
+      supportType: v.supportType ? t(`supportFeedback.supportTypes.${v.supportType}`) : '',
+      severity: v.severity ? t(`supportFeedback.severities.severity${v.severity}`) : ''
     }
-    openAppWindow(contactMailto(request(), labels))
+    openAppWindow(contactMailto(v, labels))
     setSent('mailto')
   }
 
@@ -424,6 +447,17 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
             required={true}
             scaleFactor={scaleFactor}
           />
+        )}
+
+        {/* A match running: every type, as soon as one is chosen */}
+        {contactType && (
+          <div className="mb-4">
+            <Checkbox
+              label={t('supportFeedback.matchRunning')}
+              checked={matchRunning}
+              onChange={(e) => toggleMatchRunning(e.target.checked)}
+            />
+          </div>
         )}
 
         {/* Support Type (only for support, after area is selected) */}

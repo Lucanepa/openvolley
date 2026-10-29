@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import {
   CONTACT_AREAS, SUPPORT_SECTIONS, LEGACY_AREAS, MAX_FILES, MAX_FILES_BYTES, buildContactForm, checkFiles,
-  collectDiagnostics, contactAreaOf, contactMailto, isAllowedFile, isContactEmail, pageUrl
+  collectDiagnostics, contactAreaOf, contactMailto, isAllowedFile, isContactEmail, isScoringMatchHere, pageUrl
 } from '../supportContact'
 import { setActiveMatch } from '../activity/activeMatch'
 import { HELP_SCREENS, SECTION_IDS } from '../../components/help/helpSections'
@@ -113,6 +113,20 @@ describe('support form: the request', () => {
     expect(plain.has('diagnostics')).toBe(false)
     expect(plain.getAll('files')).toEqual([])
     expect(plain.get('severity')).toBe('')
+    expect(plain.has('matchRunning')).toBe(false)
+  })
+
+  it('a match running: matchRunning=1, only when ticked', () => {
+    const v = { contactType: 'request', area: 'livescore', email: 'a@b.ch', comments: 'x', win: win() }
+    expect(buildContactForm({ ...v, matchRunning: true }).getAll('matchRunning')).toEqual(['1'])
+    expect(buildContactForm({ ...v, matchRunning: false }).has('matchRunning')).toBe(false)
+  })
+
+  it('a match is scored here: an official match live in the scorer app, not a test or easy match', () => {
+    expect(isScoringMatchHere('official')).toBe(true)
+    expect(isScoringMatchHere('test')).toBe(false)
+    expect(isScoringMatchHere('none')).toBe(false)
+    expect(isScoringMatchHere(), 'nothing live in a test').toBe(false)
   })
 
   it('pageUrl drops query and fragment', () => {
@@ -135,5 +149,11 @@ describe('support form: the request', () => {
     expect(body).toContain('Tablet does not connect')
     expect(body).toContain('Diagnostics: {"online":false}')
     expect(body).toContain('1 file(s) to attach: shot.png')
+    expect(body).not.toContain('match is running')
+
+    const running = new URL(contactMailto({ contactType: 'support', area: 'scoring', email: 'a@b.ch', comments: 'x', matchRunning: true, win: win() },
+      { type: 'Support', supportType: 'Bug report' }))
+    expect(running.searchParams.get('subject')).toBe('[OpenVolley Support – match running] scoring - Bug report')
+    expect(running.searchParams.get('body')).toContain('A match is running right now: yes')
   })
 })

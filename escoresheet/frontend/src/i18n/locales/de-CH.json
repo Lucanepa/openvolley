@@ -1583,6 +1583,7 @@
     "filesTooLarge": "D Aahäng sind z gross. Zäme dörfed sie höchstens {{mb}} MB ha.",
     "fileType": "{{name}} cha nöd aaghängt werde. Hänged Sie Bilder, PDF-, Text- oder JSON-Dateie aa.",
     "invalidEmail": "Bitte gänd Sie e gültigi E-Mail-Adrässe ii.",
+    "matchRunning": "Es lauft grad es Spiil",
     "includeDiagnostics": "Diagnosedate mitschicke",
     "diagnosticsHint": "Hilft, s Problem z finde. Gschickt wird genau das, wo unte staht.",
     "diagnosticsPreview": "Diagnosedate, wo gschickt werded",

@@ -1584,6 +1584,7 @@
     "filesTooLarge": "The attachments are too large. Together they may have {{mb}} MB at most.",
     "fileType": "{{name}} cannot be attached. Attach images, PDF, text or JSON files.",
     "invalidEmail": "Please enter a valid email address.",
+    "matchRunning": "A match is running right now",
     "includeDiagnostics": "Include diagnostics",
     "diagnosticsHint": "Helps to find the problem. Exactly what is shown below is sent.",
     "diagnosticsPreview": "Diagnostics to send",
