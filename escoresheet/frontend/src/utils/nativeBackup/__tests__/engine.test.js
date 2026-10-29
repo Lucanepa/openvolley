@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { createNativeBackupEngine, serializeBackup } from '../engine'
 import { eventFileName, LATEST_FILE } from '../rotation'
+import { createBackupSealer } from '../../backupCrypto/sealer'
+import { isEncryptedBackup, openEnvelope } from '../../backupCrypto/envelope'
+import { derivePinKey } from '../../backupCrypto/kdf'
 
 const DAY = 24 * 60 * 60 * 1000
 const T0 = Date.UTC(2026, 9, 6, 12, 0, 0, 0)
@@ -304,13 +307,91 @@ describe('native backup engine', () => {
     engine.notify(1)
     await engine.flush()
     const text = store.dirs.get('game12-seed1').get(LATEST_FILE)
+    // encrypted with the game PIN and the referee PIN: inside, no PIN either
+    const { data: latest } = await openEnvelope(JSON.parse(text), '111111')
     for (const secret of ['111111', '222222', '333333', '444444', '555555', '666666', 'sess-1']) {
       expect(text).not.toContain(secret)
+      expect(JSON.stringify(latest)).not.toContain(secret)
     }
-    const latest = JSON.parse(text)
     expect(latest.secretsRemoved).toBe(true)
     expect(latest.match).toMatchObject({ hall: 'Saalsporthalle', seed_key: 'seed1' })
     expect(m.state.match.gamePin).toBe('111111') // the stored match is untouched
+  })
+
+  describe('encryption', () => {
+    const withPins = (m) => Object.assign(m.state.match, { gamePin: '123456', refereePin: '654321' })
+
+    it('a match with PINs: every file, latest.json too, is an envelope either PIN opens', async () => {
+      const derive = vi.fn(derivePinKey)
+      const { engine, store, m, tick } = setup({ engine: { sealer: createBackupSealer({ derive }) } })
+      withPins(m)
+      for (let i = 0; i < 3; i++) {
+        m.point(i % 2 ? 'away' : 'home')
+        engine.notify(1)
+        await engine.flush()
+        tick()
+      }
+      const dir = store.dirs.get('game12-seed1')
+      const files = eventFiles(store)
+      expect(files).toHaveLength(3)
+      for (const name of [...files, LATEST_FILE]) {
+        const text = dir.get(name)
+        expect(isEncryptedBackup(JSON.parse(text))).toBe(true)
+        expect(text).not.toContain('"events"')
+      }
+      expect(dir.get(LATEST_FILE)).toBe(dir.get(files[2]))
+      const byGame = await openEnvelope(JSON.parse(dir.get(LATEST_FILE)), '123456')
+      const byReferee = await openEnvelope(JSON.parse(dir.get(LATEST_FILE)), '654321')
+      expect(byGame.data).toEqual(byReferee.data)
+      expect(byGame.data).toMatchObject({ version: 1, secretsRemoved: true, sets: [{ homePoints: 2, awayPoints: 1 }] })
+      expect(byGame.data.events).toHaveLength(3)
+      expect(JSON.parse(dir.get(LATEST_FILE)).readable).toMatchObject({ gameN: 12, homeTeam: 'A', awayTeam: 'B', sets: [{ index: 1, home: 2, away: 1 }] })
+      // the two PINs were derived once each, not per file
+      expect(derive).toHaveBeenCalledTimes(2)
+    })
+
+    it('a match with neither PIN (a test match) is written plain, as before', async () => {
+      const { engine, store, m, log } = setup()
+      m.point('home')
+      engine.notify(1)
+      await engine.flush()
+      const latest = JSON.parse(store.dirs.get('game12-seed1').get(LATEST_FILE))
+      expect(isEncryptedBackup(latest)).toBe(false)
+      expect(latest).toMatchObject({ version: 1, secretsRemoved: true })
+      expect(log.info).toHaveBeenCalledWith(expect.stringContaining('not encrypted'))
+    })
+
+    it('coalescing compares the plain state, not the ciphertext (a fresh IV per file)', async () => {
+      const { engine, store, m } = setup()
+      withPins(m)
+      m.point('home')
+      engine.notify(1)
+      await engine.flush()
+      Object.assign(m.state.match, { updatedAt: '2026-10-06T12:00:10Z', refereeHeartbeat: 5 })
+      engine.notify(1)
+      engine.notify(1)
+      await engine.flush()
+      expect(eventFiles(store)).toHaveLength(1)
+      m.point('away')
+      engine.notify(1)
+      await engine.flush()
+      expect(eventFiles(store)).toHaveLength(2)
+    })
+
+    it('a file that cannot be encrypted is not written in the clear: a status error, retried at the next event', async () => {
+      const sealer = { seal: vi.fn().mockRejectedValueOnce(new Error('KDF out of memory')).mockImplementation(createBackupSealer().seal) }
+      const { engine, store, m } = setup({ engine: { sealer } })
+      withPins(m)
+      m.point('home')
+      engine.notify(1)
+      await engine.flush()
+      expect(store.write).not.toHaveBeenCalled()
+      expect(engine.getStatus().error).toBe('KDF out of memory')
+      engine.notify(1)
+      await engine.flush()
+      expect(engine.getStatus().error).toBeNull()
+      expect(isEncryptedBackup(JSON.parse(store.dirs.get('game12-seed1').get(LATEST_FILE)))).toBe(true)
+    })
   })
 
   it('writes no file when only heartbeats, sessions or updatedAt changed', async () => {

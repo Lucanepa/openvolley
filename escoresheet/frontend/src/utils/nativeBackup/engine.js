@@ -18,6 +18,10 @@
  *    went on with, matchReopen.isContinuedElsewhere), read from the state
  *    the file would hold. backupNow, the scorer's own "Back up now", still
  *    writes it.
+ *  - The file is encrypted with the match's game PIN and referee PIN
+ *    (utils/backupCrypto: either one opens it; the key of each PIN is derived
+ *    once per match and session, in a worker); a match with neither (test
+ *    matches) is written plain. Coalescing compares the plain state.
  *  - Rotation of older backups runs after the first file of the session is
  *    written, in small chunks on idle.
  *
@@ -38,6 +42,7 @@ import {
 } from './rotation'
 import { redactMatch, stableMatch, SECRETS_REMOVED } from './redact'
 import { emitActivity } from '../activity/bus'
+import { createBackupSealer } from '../backupCrypto/sealer'
 
 const REMOVE_CHUNK = 20
 
@@ -45,8 +50,9 @@ const REMOVE_CHUNK = 20
  * The file text and the coalescing key of a backup, each top-level part
  * serialized once (the events are the bulk of it). The file has the
  * exportMatchData/downloadMatchBackup format without the match PINs, with
- * `secretsRemoved` and `lastUpdated` added. The key leaves out lastUpdated
- * and the match's bookkeeping fields.
+ * `secretsRemoved` and `lastUpdated` added (the sealer encrypts it when the
+ * match has a PIN). The key leaves out lastUpdated and the match's
+ * bookkeeping fields.
  */
 export function serializeBackup(data) {
   const parts = []
@@ -89,6 +95,8 @@ export function createNativeBackupEngine({
   idleKeep = DEFAULT_IDLE_KEEP,
   idleAfterHours = DEFAULT_IDLE_AFTER_HOURS,
   skipMatch = () => false,
+  // { seal(matchId, data, plainText, lastUpdated) -> { text, encrypted } } (backupCrypto)
+  sealer = createBackupSealer(),
   log = console
 }) {
   const quiet = quietMs ?? settleMs ?? 150
@@ -97,6 +105,7 @@ export function createNativeBackupEngine({
   const lastKey = new Map() // matchId -> coalescing key of the last file written
   const known = new Map() // matchDir -> [{ name, size }] event files on disk
   const writtenDirs = new Set() // folders this session writes (rotated after each write)
+  const plainNoted = new Set() // matches whose files are plain (no PIN), logged once
   const listeners = new Set()
   let running = null
   let timer = null
@@ -199,7 +208,13 @@ export function createNativeBackupEngine({
     const stamp = nextStamp()
     const dir = matchFolderName(data.match, matchId)
     const name = eventFileName(stamp, latestEventSeq(data))
-    const text = build(stamp.toISOString())
+    const iso = stamp.toISOString()
+    // Read with the match's PINs (data), written without them (build)
+    const { text, encrypted } = await sealer.seal(matchId, data, build(iso), iso)
+    if (!encrypted && !plainNoted.has(matchId)) {
+      plainNoted.add(matchId)
+      log.info?.(`[NativeBackup] ${dir} has no game PIN and no referee PIN: its backups are not encrypted`)
+    }
     const result = await store.write(dir, name, text, { latest: true })
     if (result?.warning) log.warn?.('[NativeBackup]', result.warning)
     lastKey.set(matchId, key)
