@@ -506,7 +506,7 @@ export default function LivescoreApp() {
 
   // Show server connection screen first (unless auto-connecting via URL params)
   if (!serverReady) {
-    return <ServerConnectionScreen onConnected={handleServerConnected} />
+    return <ServerConnectionScreen onConnected={handleServerConnected} helpScreen="livescore" />
   }
 
   // List view - show all games

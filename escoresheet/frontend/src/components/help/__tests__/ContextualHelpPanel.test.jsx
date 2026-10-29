@@ -65,6 +65,16 @@ describe('ContextualHelpPanel: the screen\'s sections', () => {
     expect(sectionIds()).toEqual(HELP_SCREENS.scoreboard.sections)
   })
 
+  it('openSection opens that section first when the screen has it, else the main one', () => {
+    panel({ screen: 'bench', openSection: 'connections' })
+    expect(sectionIds()).toEqual(['bench', 'connections'])
+    expect(header('connections').getAttribute('aria-expanded')).toBe('true')
+    expect(header('bench').getAttribute('aria-expanded')).toBe('false')
+    cleanup()
+    panel({ screen: 'bench', openSection: 'sanctions' })
+    expect(header('bench').getAttribute('aria-expanded')).toBe('true')
+  })
+
   it('opens another section on its header', () => {
     panel({ screen: 'scoreboard' })
     fireEvent.click(header('sanctions'))

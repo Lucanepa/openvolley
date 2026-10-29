@@ -799,7 +799,7 @@ export default function BenchApp() {
 
   // Show server connection screen first (unless auto-connecting via URL params)
   if (!serverReady) {
-    return <ServerConnectionScreen onConnected={handleServerConnected} />
+    return <ServerConnectionScreen onConnected={handleServerConnected} helpScreen="bench" />
   }
 
   // If view is selected, show the appropriate component wrapped with SimpleHeader
