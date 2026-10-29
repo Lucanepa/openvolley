@@ -14,7 +14,7 @@ import {
   parseMultipart, parseContactBody, boundaryOf, sniffFile, safeFilename, checkAttachments, normalizeContact,
   areaOf, pageUrlOf, firstWords, supportSubject, buildSupportMail, handleContact, isHoneypotHit,
   createContactMailer, contactMailerFromEnv, disabledContactMailer, ContactError,
-  SECTION_IDS, CONTACT_AREAS, LEGACY_AREAS, MAX_FILES, MAX_FILES_BYTES, MAX_PARTS
+  SECTION_IDS, SECTION_NAMES, CONTACT_AREAS, LEGACY_AREAS, MAX_FILES, MAX_FILES_BYTES, MAX_PARTS
 } from '../lib/contact.js'
 
 const silent = { log() {}, warn() {}, error() {} }
@@ -235,6 +235,13 @@ describe('contact: fields', () => {
     assert.equal(areaOf('toString'), 'other', 'no prototype keys')
     assert.equal(areaOf('<script>'), 'other')
     assert.equal(areaOf(undefined), 'other')
+  })
+
+  it('the areas are the sections of the app\'s help, in its order, each with its name in the mail', async () => {
+    // plain data, no imports but its video list: node reads it as the website's export does
+    const help = await import('../../frontend/src/components/help/helpSections.js')
+    assert.deepEqual([...SECTION_IDS], help.SECTION_IDS)
+    for (const id of CONTACT_AREAS) assert.ok(SECTION_NAMES[id], id)
   })
 
   it('keeps context fields only when they fit; the page loses its query (?pin=)', () => {

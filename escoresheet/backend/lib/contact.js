@@ -83,8 +83,8 @@ export const SECTION_NAMES = Object.freeze({
   'install-updates': 'Installing, updates',
   other: 'Other'
 })
-// Area names of app versions before the sections, and the pages of the old
-// contextual help (helpContent.js)
+// Area names of app versions before the sections, and the pages of the
+// contextual help before it had sections (helpContent.js)
 export const LEGACY_AREAS = Object.freeze({
   mainPage: 'home',
   header: 'home',

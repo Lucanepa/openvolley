@@ -4,10 +4,10 @@
  * openvolley.app/support page), or a mailto to the support mailbox when
  * there is no backend or the request fails.
  *
- * - areas: the section ids of the help (the "?" panel of each screen and
- *   openvolley.app/support), plus 'other'. The area names of older app
- *   versions and the pages of the contextual help map onto them
- *   (contactAreaOf), so a caller may pass either.
+ * - areas: the section ids of the help (helpSections.js: the "?" panel of
+ *   each screen and openvolley.app/support), plus 'other'. The area names of
+ *   older app versions and the help's screens map onto them (contactAreaOf),
+ *   so a caller may pass either.
  * - attachments: checked here before the upload (count, 10 MB together, the
  *   kinds the backend takes); the backend checks again, by the bytes.
  * - diagnostics: only when the user ticks "Include diagnostics", and exactly
@@ -21,17 +21,16 @@ import { getActiveMatch } from './activity/activeMatch'
 import { getLogs } from './logger'
 import { redactFreeText } from '../domain/activitySummary'
 import { redactScreenText } from './screenText'
+import { HELP_SCREENS, SECTION_IDS } from '../components/help/helpSections'
 
 export const SUPPORT_EMAIL = 'support@openvolley.app'
 
-export const SUPPORT_SECTIONS = Object.freeze([
-  'home', 'setup', 'coin-toss', 'scoring', 'subs-timeouts', 'sanctions', 'set-end', 'match-end',
-  'corrections', 'connections', 'referee', 'bench', 'livescore', 'handover', 'sync-offline', 'install-updates'
-])
+export const SUPPORT_SECTIONS = Object.freeze([...SECTION_IDS])
 export const CONTACT_AREAS = Object.freeze([...SUPPORT_SECTIONS, 'other'])
 
-// Older area values (the form's own before the sections) and the pages of
-// the contextual help (helpContent.js)
+// Older area values (the form's own before the sections, and the pages of
+// the contextual help before it had sections), as backend/lib/contact.js
+// maps them
 export const LEGACY_AREAS = Object.freeze({
   mainPage: 'home',
   header: 'home',
@@ -49,11 +48,18 @@ export const LEGACY_AREAS = Object.freeze({
   livescore: 'livescore'
 })
 
-/** A section id (or 'other') for a section id or an older area / page name; '' for anything else. */
+const own = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key)
+
+/**
+ * A section id (or 'other') for a section id, an older area / page name or a
+ * help screen (its main section: liveCorrections -> corrections); '' for
+ * anything else.
+ */
 export function contactAreaOf(raw) {
   if (typeof raw !== 'string' || !raw) return ''
   if (CONTACT_AREAS.includes(raw)) return raw
-  return Object.prototype.hasOwnProperty.call(LEGACY_AREAS, raw) ? LEGACY_AREAS[raw] : ''
+  if (own(LEGACY_AREAS, raw)) return LEGACY_AREAS[raw]
+  return own(HELP_SCREENS, raw) ? HELP_SCREENS[raw].sections[0] : ''
 }
 
 export const MAX_FILES = 5

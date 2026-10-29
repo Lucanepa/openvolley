@@ -309,7 +309,6 @@ export default function ContextualHelpPanel({ open, onClose, screen, currentPage
               open={true}
               onClose={() => setSupportArea(null)}
               area={supportArea}
-              currentPage={supportArea}
             />
           </WithScale>
         </div>
