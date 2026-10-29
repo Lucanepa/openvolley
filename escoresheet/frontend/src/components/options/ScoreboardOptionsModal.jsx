@@ -12,6 +12,7 @@ import {
   pickNativeBackupFile
 } from '../../utils/nativeBackup'
 import BackupTable from '../BackupTable'
+import { useBackupUnlock } from '../../hooks/useBackupUnlock'
 import { clearCachesAndReload } from '../../hooks/useServiceWorker'
 import { ChevronDown, Info, Tablet, X } from 'lucide-react'
 import { cn, IconButton, Select, SegmentedControl, Switch } from '../../ui'
@@ -139,6 +140,8 @@ export default function ScoreboardOptionsModal({
   const [cloudBackups, setCloudBackups] = useState([])
   const [backupsLoading, setBackupsLoading] = useState(false)
   const [restoreConfirm, setRestoreConfirm] = useState(null) // backup to confirm restore
+  // An encrypted backup file asks for the game PIN or the referee PIN first
+  const { unlock: unlockBackup, dialog: backupUnlockDialog } = useBackupUnlock()
   const [backupPlatform] = useState(() => detectBackupPlatform())
   const nativeBackup = isNativeBackupPlatform(backupPlatform)
   const nativeBackupStatus = useNativeBackupStatus()
@@ -208,12 +211,13 @@ export default function ScoreboardOptionsModal({
 
   // Apps: restore the open match from a backup file on this device (after the
   // same confirmation as a cloud backup). A whole-database export or a Match
-  // End file is read as the match it holds.
+  // End file is read as the match it holds; an encrypted app backup is opened
+  // with a PIN first (cancelled: back to the options).
   const handleRestoreFromFile = async () => {
     try {
       const native = await pickNativeBackupFile()
       const picked = native === undefined ? await selectBackupFile() : native
-      const backupData = picked && matchBackupFromFile(picked)
+      const backupData = picked && await unlockBackup(matchBackupFromFile(picked))
       if (!backupData) return // cancelled
       const lastSet = [...(backupData.sets || [])].sort((a, b) => (b.index || 0) - (a.index || 0))[0]
       setRestoreConfirm({
@@ -1048,6 +1052,7 @@ export default function ScoreboardOptionsModal({
       </div>
       </div>
       <ActivityLogModal open={showActivityLog} onClose={() => setShowActivityLog(false)} matchId={matchId ?? null} />
+      {backupUnlockDialog}
     </Modal >
   )
 }

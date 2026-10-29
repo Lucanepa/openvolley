@@ -1000,6 +1000,19 @@
         "notABackup": "Questo file non è un backup di partita OpenVolley. Scegli un altro file.",
         "failed": "Impossibile ripristinare la partita: {{error}}"
       },
+      "unlock": {
+        "title": "File di backup cifrato",
+        "intro": "Questo file di backup è cifrato. Inserisci il PIN partita o il PIN arbitro della partita per aprirlo.",
+        "pinLabel": "PIN partita o PIN arbitro",
+        "open": "Apri",
+        "opening": "Apertura…",
+        "wrongPin": "PIN errato: non è né il PIN partita né il PIN arbitro di questa partita. Riprova.",
+        "newer": "Questo file di backup è stato salvato da una versione più recente di OpenVolley. Aggiorna l’app, poi apri di nuovo il file.",
+        "unsupported": "I file di backup cifrati non si possono aprire su questa pagina. Apri il file nell’app OpenVolley o su app.openvolley.app.",
+        "locked": "Questo file di backup è cifrato: sceglilo di nuovo e inserisci il PIN partita o il PIN arbitro.",
+        "game": "Partita {{n}}",
+        "saved": "Salvato il {{when}}"
+      },
       "preview": {
         "set": "Set {{n}}",
         "serving": "Servizio",
@@ -1280,8 +1293,8 @@
     "nativeBackupPreparing": "Preparazione della cartella di backup…",
     "nativeBackupCopyHint": "Copia la cartella dal tablet con un cavo USB o con l’app File.",
     "nativeBackupFailed": "Impossibile salvare l’ultimo backup:",
-    "nativeBackupPrivacy": "I file contengono nomi e date di nascita di giocatrici e giocatori, ufficiali e firme, ma nessun PIN. Solo il tuo account utente può aprirli.",
-    "nativeBackupPrivacyAndroid": "I file contengono nomi e date di nascita di giocatrici e giocatori, ufficiali e firme, ma nessun PIN. Chiunque abbia il tablet può leggerli, e restano dopo la disinstallazione dell’app: elimina la cartella prima di dare il tablet a qualcun altro.",
+    "nativeBackupPrivacy": "I file contengono nomi e date di nascita di giocatrici e giocatori, ufficiali e firme, cifrati con il PIN partita e il PIN arbitro (i PIN stessi non vengono salvati). Senza PIN si leggono solo numero di partita, squadre, data e punteggi dei set; una partita di prova non ha PIN e viene salvata senza cifratura. Solo il tuo account utente può aprire la cartella.",
+    "nativeBackupPrivacyAndroid": "I file contengono nomi e date di nascita di giocatrici e giocatori, ufficiali e firme, cifrati con il PIN partita e il PIN arbitro (i PIN stessi non vengono salvati). Senza PIN si leggono solo numero di partita, squadre, data e punteggi dei set; una partita di prova non ha PIN e viene salvata senza cifratura. Chiunque abbia il tablet può copiare i file, e restano dopo la disinstallazione dell’app. Un PIN di 6 cifre rallenta soltanto chi vuole forzarlo: elimina la cartella prima di dare il tablet a qualcun altro.",
     "nativeBackupFailingShort": "Il backup automatico non riesce. Dettagli nelle opzioni.",
     "nativeBackupFailingBadge": "Backup",
     "openBackupFolder": "Apri cartella di backup",
@@ -2668,9 +2681,9 @@
       "q_takeBack": "Come riprendo la partita?",
       "a_takeBack": "Sul vecchio dispositivo, tocca «Riprendi la partita qui». Serve una connessione. L'app mostra prima il punteggio sul server: confrontalo con il tabellone, poi tocca «Sì, riprendi la partita qui». L'altro dispositivo viene avvisato e si ferma.",
       "q_backups": "Dove sono i backup?",
-      "a_backups": "Le app desktop e Android salvano un file di backup a ogni punto e a ogni azione: Opzioni › Backup › Apri cartella di backup. In un browser, usa «Scarica backup ora» nelle opzioni o il download a fine set. Se hai effettuato l'accesso, l'app tiene anche backup nel cloud durante la partita.",
+      "a_backups": "Le app desktop e Android salvano un file di backup a ogni punto e a ogni azione: Opzioni › Backup › Apri cartella di backup. I file sono cifrati con il PIN partita e il PIN arbitro. In un browser, usa «Scarica backup ora» nelle opzioni o il download a fine set. Se hai effettuato l'accesso, l'app tiene anche backup nel cloud durante la partita.",
       "q_restoreFile": "Come ripristino da un file di backup?",
-      "a_restoreFile": "Sulla home: «Ripristina partita» › «Ripristina da file locale» › «Seleziona file di backup». Scegli il file, controlla l'«Anteprima ripristino» e tocca «Conferma ripristino».",
+      "a_restoreFile": "Sulla home: «Ripristina partita» › «Ripristina da file locale» › «Seleziona file di backup». Scegli il file, controlla l'«Anteprima ripristino» e tocca «Conferma ripristino». Un file di backup dell'app desktop o Android è cifrato: inserisci il PIN partita o il PIN arbitro quando l'app lo chiede.",
       "q_restoreRefused": "Perché non posso ripristinare questo backup?",
       "a_restoreRefused": "La partita è chiusa sul server, quindi un suo backup non si può ripristinare. Carica invece la versione ufficiale con il numero partita e il PIN partita."
     },
