@@ -261,3 +261,30 @@ describe('removing and editing the other entries', () => {
     expect(plan.update.every(u => after.find(e => e.id === u.id)?.setIndex === 5 || after.find(e => e.id === u.id)?.type === 'set5_coin_toss')).toBe(true)
   })
 })
+
+describe('nothing listed on a match the scoreboard played', () => {
+  it('a player re-designated as libero in set 2 was a regular player in the line-ups before it', () => {
+    const { events } = buildMatch({
+      sets: [
+        { points: pointsFor(25, 20), finished: true },
+        { points: pointsFor(10, 8), finished: false, extras: [{ at: 3, type: 'libero_redesignation', payload: { team: 'home', unableLiberoNumber: 9, newLiberoNumber: 6 } }] }
+      ]
+    })
+    // the roster as it is now: #6 is the re-designated libero
+    const players = { home: HOME_PLAYERS.map(p => (p.number === 6 ? { ...p, libero: 'redesignated' } : p.number === 9 ? { ...p, libero: 'unable' } : p)), away: AWAY_PLAYERS }
+    expect(matchIssues(events, { ...ctx, players })).toEqual([])
+    // a starting line-up written after the re-designation with #6 in it is listed
+    const set3 = buildMatch({ sets: [{ points: '', finished: false }] }).events.filter(e => e.type === 'lineup').map((e, i) => ({ ...e, id: 900 + i, setIndex: 3, seq: 500 + i }))
+    expect(matchIssues([...events, ...set3], { ...ctx, players }).map(i => i.key)).toEqual(['corrections.issue.liberoInLineup'])
+  })
+
+  it('an easy match played without line-ups: nothing to check', () => {
+    const { events } = buildMatch({ sets: [{ points: pointsFor(25, 20), finished: true }] })
+    const noLineups = events.filter(e => e.type !== 'lineup')
+    expect(matchIssues(noLineups, { ...ctx, match: { ...LIVE_MATCH, easy: true } })).toEqual([])
+    const rc = recomputeMatch(noLineups, { ...ctx, match: { ...LIVE_MATCH, easy: true } })
+    expect([rc.add, rc.update, rc.remove]).toEqual([[], [], []])
+    // an official match without them is listed
+    expect(matchIssues(noLineups, ctx).map(i => i.key)).toEqual(['corrections.issue.noLineup', 'corrections.issue.noLineup'])
+  })
+})
