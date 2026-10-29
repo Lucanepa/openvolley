@@ -146,7 +146,9 @@ vi.mock('../../db/db', () => {
   return { db, default: db }
 })
 
+import JSZip from 'jszip'
 import MatchEnd from '../MatchEnd'
+import { matchBackupFromFile } from '../../utils/backupManager'
 
 function seed(matchOver = {}) {
   store.tables = {}
@@ -319,6 +321,29 @@ describe('MatchEnd: the approval PDF', () => {
     expect(JSON.parse(await files[1].payload.file.text()).sets).toHaveLength(3)
     // nothing went up directly (the queue sends them)
     expect(uploads.paths).toHaveLength(0)
+  })
+
+  // Backup plan 2026-10-29: the ZIP's MatchData JSON had the teams inside the
+  // match and no version, and Restore match refused it
+  it('the ZIP\'s match data is a backup file Restore match takes as it is', async () => {
+    const zipFile = vi.spyOn(JSZip.prototype, 'file')
+    try {
+      render(<MatchEnd matchId={1} />)
+      await approve()
+      await postFromSheet({ type: 'pdfBlob', arrayBuffer: new ArrayBuffer(8), filename: 'x.pdf' })
+      await findButton(en.matchEnd.closeMatch)
+      const call = zipFile.mock.calls.find(([name]) => /^MatchData_.*\.json$/.test(name))
+      expect(call[0]).toMatch(/^MatchData_Home_V_vs_Away_V_/)
+      const data = JSON.parse(call[1])
+      expect(data).toMatchObject({ version: 1, match: { id: 1, seed_key: 'match_1_pdf', status: 'ended' }, homeTeam: { name: 'Home V' }, awayTeam: { name: 'Away V' } })
+      expect('homeTeam' in data.match).toBe(false)
+      expect(data.sets.map(s => s.index)).toEqual([1, 2, 3])
+      expect(typeof data.lastUpdated).toBe('string')
+      expect(data.exportedAt).toBe(data.lastUpdated)
+      expect(matchBackupFromFile(data)).toBe(data) // nothing to convert
+    } finally {
+      zipFile.mockRestore()
+    }
   })
 
   it('the export modal sits above the header (z 1000) and its open menu', async () => {

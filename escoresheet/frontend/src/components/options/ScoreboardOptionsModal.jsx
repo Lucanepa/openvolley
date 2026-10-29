@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useAlert } from '../../contexts/AlertContext'
 import Modal from '../Modal'
 import { db } from '../../db/db'
-import { restoreMatchInPlace, listCloudBackups, fetchCloudBackup, selectBackupFile, getBackupSettings } from '../../utils/backupManager'
+import { restoreMatchInPlace, listCloudBackups, fetchCloudBackup, selectBackupFile, getBackupSettings, matchBackupFromFile } from '../../utils/backupManager'
 import {
   detectBackupPlatform,
   isNativeBackupPlatform,
@@ -207,11 +207,13 @@ export default function ScoreboardOptionsModal({
   }
 
   // Apps: restore the open match from a backup file on this device (after the
-  // same confirmation as a cloud backup)
+  // same confirmation as a cloud backup). A whole-database export or a Match
+  // End file is read as the match it holds.
   const handleRestoreFromFile = async () => {
     try {
       const native = await pickNativeBackupFile()
-      const backupData = native === undefined ? await selectBackupFile() : native
+      const picked = native === undefined ? await selectBackupFile() : native
+      const backupData = picked && matchBackupFromFile(picked)
       if (!backupData) return // cancelled
       const lastSet = [...(backupData.sets || [])].sort((a, b) => (b.index || 0) - (a.index || 0))[0]
       setRestoreConfirm({
