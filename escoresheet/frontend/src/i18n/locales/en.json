@@ -397,7 +397,8 @@
       "invalidNumbers": "Invalid jersey numbers (must be 1-99): {{numbers}}",
       "playersWithoutNumbers": "{{count}} player(s) without jersey numbers",
       "fixIssues": "Please fix the following issues:\n\n• {{issues}}",
-      "completeBeforeCoinToss": "Please complete the following before proceeding to coin toss:\n\n• {{issues}}"
+      "completeBeforeCoinToss": "Please complete the following before proceeding to coin toss:\n\n• {{issues}}",
+      "numbersInRecord": "These numbers appear in the match record and cannot be changed or removed here: {{numbers}}. Change a player's number in Corrections → Player numbers: it then changes for the whole match."
     },
     "modals": {
       "syncing": "Syncing",
@@ -4015,7 +4016,8 @@
       "remarks": "Remarks",
       "remark": "Remark",
       "set": "Set {{n}}",
-      "sanction": "Sanction"
+      "sanction": "Sanction",
+      "liberoShort": "L"
     },
     "describe": {
       "point": "Point for {{team}}",
@@ -4071,7 +4073,11 @@
       "remarkRemoved": "Remark removed: \"{{text}}\"",
       "missedPoint": "Added: missed point for {{team}}",
       "firstServe": "First serve changed to {{team}}",
-      "sides": "Sides switched in set {{set}}"
+      "sides": "Sides switched in set {{set}}",
+      "lineupChanged": "Line-up of {{team}} in set {{set}} changed: {{from}} → {{to}}",
+      "coinToss": "Coin toss corrected: Team A is {{teamA}}, {{serve}} serves first",
+      "set5CoinToss": "Coin toss of the deciding set corrected: {{serve}} serves first",
+      "renumbered": "Player #{{from}} of {{team}} renumbered to #{{to}}"
     },
     "error": {
       "noSuchScore": "Set {{set}} never had this score.",
@@ -4103,7 +4109,18 @@
       "liberoOnCourtRotate": "A libero is on court for this team: rotate after the libero has left the court.",
       "removePointNotLast": "The penalty point can only be removed while it is the last point of the set being played.",
       "noScoreChange": "Nothing to change.",
-      "endBeforeStart": "Set {{set}} cannot end before it starts."
+      "endBeforeStart": "Set {{set}} cannot end before it starts.",
+      "useReopen": "A set end is taken back with \"Reopen set\".",
+      "automaticEntry": "This row is written by the app and recalculated from the entries: correct the entry it belongs to.",
+      "coinTossNotRemovable": "A match always has a coin toss: correct it instead.",
+      "lineupIncomplete": "Choose a player for each of the six positions.",
+      "lineupDuplicate": "#{{n}} is chosen twice.",
+      "chooseNumber": "Choose a number.",
+      "numberTaken": "#{{n}} is already the number of {{name}} ({{team}}). Choose another number.",
+      "numberInRecord": "#{{n}} already appears in the match record of {{team}}. Choose another number.",
+      "invalidNumber": "A shirt number is a whole number from 1 to 99.",
+      "sameNumber": "This is already the player's number.",
+      "noSuchPlayer": "This player is not on the roster."
     },
     "note": {
       "ladder": "By the rules this would have been a {{expected}}; recorded as the referee decided.",
@@ -4116,7 +4133,14 @@
       "irBox": "Team {{letter}}'s letter is crossed (X) in the improper-request box; no score is written.",
       "expulsionReplacement": "Record the replacement with \"+ Add substitution\" (exceptional if no legal substitution was possible).",
       "laterRotations": "Later rotations of this set are not recalculated.",
-      "afterMatch": "Entered after the match."
+      "afterMatch": "Entered after the match.",
+      "timeoutLimit": "Both time-outs of this team were already recorded in set {{set}}: this is a third one.",
+      "subLimit": "Six substitutions of this team are already recorded in set {{set}}: this is a seventh one.",
+      "subRule": "{{reason}}",
+      "winnerWouldChange": "This changes who won set {{set}}.",
+      "invalidFinalScore": "{{score}} is not a possible final score of set {{set}}.",
+      "liberoInLineup": "#{{n}} is a libero: a libero is not in the starting line-up.",
+      "recalculated": "Everything after it is recalculated: rotations, serve, libero replacements and the score."
     },
     "title": "Corrections",
     "pageTitle": "Corrections",
@@ -4135,7 +4159,10 @@
       "sanctions": "Sanctions",
       "libero": "Libero",
       "log": "Correction log (shown to the referee)",
-      "advanced": "Advanced: event log"
+      "advanced": "Advanced: event log",
+      "issues": "Check these entries",
+      "coinToss": "Coin toss",
+      "numbers": "Player numbers"
     },
     "add": {
       "timeout": "Add time-out",
@@ -4151,7 +4178,8 @@
       "libero": "No libero replacements recorded.",
       "log": "No corrections yet.",
       "players": "No player to choose.",
-      "sets": "No finished set yet."
+      "sets": "No finished set yet.",
+      "lineup": "No line-up recorded."
     },
     "field": {
       "set": "Set",
@@ -4170,7 +4198,20 @@
       "endTime": "End",
       "currentFinal": "Now",
       "addDelayRemark": "Add a remark about the delayed start",
-      "order": "Order"
+      "order": "Order",
+      "positions": "Positions (front row on top)",
+      "pointTo": "Point to",
+      "teamA": "Team A",
+      "firstServeSet5": "Serves first in the deciding set",
+      "firstServe": "Serves first in set 1",
+      "gameCaptainNow": "Game captain now: #{{n}}",
+      "gameCaptainNone": "No game captain designated.",
+      "player": "Player",
+      "newNumber": "New number",
+      "liberoIn": "Libero in",
+      "playerReplaced": "Player replaced (on court)",
+      "libero": "Libero",
+      "newLibero": "New libero"
     },
     "who": {
       "player": "Player on court",
@@ -4213,7 +4254,22 @@
       "addRemark": "Add remark",
       "editRemark": "Edit remark",
       "finalScore": "Set {{set}}: correct final score",
-      "setTimes": "Set {{set}}: start and end time"
+      "setTimes": "Set {{set}}: start and end time",
+      "editLineupRow": "Edit corrected line-up",
+      "editLineup": "Starting line-up",
+      "editPoint": "Edit point",
+      "set5CoinToss": "Coin toss of the deciding set",
+      "coinToss": "Coin toss",
+      "gameCaptain": "Game captain",
+      "renumber": "Change a player's number",
+      "editLiberoEntry": "Edit libero replacement",
+      "editLiberoExit": "Edit libero exit",
+      "editLiberoExchange": "Edit libero exchange",
+      "editLiberoUnable": "Edit libero declared unable",
+      "editRedesignation": "Edit libero re-designation",
+      "editGameCaptain": "Edit game captain",
+      "editInjury": "Edit injury",
+      "editEntry": "Edit entry"
     },
     "action": {
       "back": "Back",
@@ -4247,7 +4303,10 @@
       "showAutomatic": "Show automatic entries",
       "reopenForCorrections": "Back to the match end",
       "newestFirst": "Newest first",
-      "oldestFirst": "Oldest first"
+      "oldestFirst": "Oldest first",
+      "editSet5Toss": "Edit deciding set",
+      "gameCaptain": "Change game captain",
+      "renumber": "Change a number"
     },
     "preview": {
       "title": "What changes on the scoresheet",
@@ -4260,7 +4319,12 @@
       "paperSub": "{{in}} in for {{out}} at {{score}} in the line-up column of position {{position}}.",
       "subCount": "Substitutions of {{team}} in set {{set}}: {{n}}/6",
       "paperSanction": "{{code}} in the {{column}} column · Team {{letter}} · Set {{set}} · {{score}}",
-      "finalScore": "Final score {{before}} becomes {{after}}."
+      "finalScore": "Final score {{before}} becomes {{after}}.",
+      "pointTeam": "The rally after {{score}} goes to {{team}}; the serve, the rotations and the score after it are recalculated.",
+      "renumber": "#{{from}} becomes #{{to}} in the roster and in every entry of the match ({{n}} rows), before and after now: line-ups, substitutions, liberos, sanctions, game captain, remarks. The scoresheet and the tablets show #{{to}}.",
+      "renumberRosterOnly": "#{{from}} becomes #{{to}} in the roster; the match record does not name this player yet.",
+      "checkAfter": "Check after this correction",
+      "moreIssues": "and {{n}} more (listed under \"Check these entries\")"
     },
     "pointGiven": {
       "yes": "Yes",
@@ -4270,7 +4334,8 @@
       "exceptional": "Exceptional",
       "incomplete": "Incomplete entry",
       "paperCode": "As written on the scoresheet",
-      "teamsNotSet": "Team A/B not set: home is shown as A"
+      "teamsNotSet": "Team A/B not set: home is shown as A",
+      "automatic": "Automatic"
     },
     "hint": {
       "timeoutHere": "time-out already here",
@@ -4281,7 +4346,13 @@
       "finalScore": "Only the end of the set can be corrected: a point added after the last point, or the last point removed. Points missed in the middle of a set cannot be fixed (Swiss scorekeeper course).",
       "libero": "To correct a libero replacement during the match, use Undo.",
       "lineup": "Fix the line-up before the first rally of the set; rotate a team when it stands one position off.",
-      "advanced": "Every entry of the match log. Removing an entry removes everything that belongs to it. Use the cards above to add or change entries."
+      "advanced": "Every entry of the match log. Removing an entry removes everything that belongs to it. Use the cards above to add or change entries.",
+      "issues": "After a correction these entries no longer fit what comes before them. Nothing was refused: correct them, or leave them if the referee decided so.",
+      "lineupAny": "Correct a starting line-up at any time, also after rallies were played: the rotations, the serve and the libero replacements after it are recalculated.",
+      "liberoEdit": "Edit or remove a libero replacement: the line-ups after it are recalculated.",
+      "numbers": "A number changed here is changed for the whole match: every entry before and after shows the new number, on the scoresheet and on the tablets.",
+      "advancedAll": "Every entry of the match log. Edit or remove any entry: what belongs to it goes with it and everything after it is recalculated. Use the cards above to add entries.",
+      "coinToss": "Team A only changes the letters on the sheet; nothing moves on the court. The team that serves first in set 1 also serves first in set 3 and receives first in sets 2 and 4."
     },
     "confirm": {
       "removeTitle": "Remove this entry?",
@@ -4300,6 +4371,42 @@
     "banner": {
       "signaturesCleared": "Signatures were cleared because the sheet changed. Collect them again at the match end.",
       "readOnly": "The match is approved: corrections are read-only."
+    },
+    "coinToss": {
+      "summary": "Team A: {{teamA}} · Serves first in set 1: {{serve}}",
+      "set5": "Deciding set: {{serve}} serves first"
+    },
+    "lineup": {
+      "gameCaptain": "Game captain {{team}}: {{n}}"
+    },
+    "issue": {
+      "noLineup": "Set {{set}}: no line-up of {{team}} is recorded before its first point.",
+      "lineupIncomplete": "Set {{set}}: the starting line-up of {{team}} has no player at position {{position}}.",
+      "lineupDuplicate": "Set {{set}}, {{score}}: #{{n}} stands twice in the line-up of {{team}}.",
+      "liberoInLineup": "Set {{set}}: libero #{{n}} is in the starting line-up of {{team}}.",
+      "notOnRoster": "#{{n}} of {{team}} is not on the roster (set {{set}}).",
+      "subOutNotOnCourt": "Set {{set}}, {{score}}: substitution of {{team}}, #{{in}} for #{{out}}: #{{out}} is not on court.",
+      "subInOnCourt": "Set {{set}}, {{score}}: substitution of {{team}}, #{{in}} for #{{out}}: #{{in}} is already on court.",
+      "subLiberoReplaced": "Set {{set}}, {{score}}: substitution of {{team}}, #{{in}} for #{{out}}: #{{out}} is replaced by libero #{{libero}} at that moment.",
+      "subLimit": "Set {{set}}, {{score}}: {{team}} has {{n}} regular substitutions in this set (6 allowed).",
+      "subInTwice": "Set {{set}}, {{score}}: #{{n}} of {{team}} comes in a second time in this set.",
+      "subOutTwice": "Set {{set}}, {{score}}: #{{n}} of {{team}} goes out a second time in this set.",
+      "subPairing": "Set {{set}}, {{score}}: #{{out}} of {{team}} came on for #{{starter}}: only #{{starter}} may replace #{{out}}.",
+      "liberoEntryNotOnCourt": "Set {{set}}, {{score}}: libero #{{libero}} in for #{{n}} ({{team}}): #{{n}} is not on court.",
+      "liberoAlreadyOnCourt": "Set {{set}}, {{score}}: libero #{{libero}} in ({{team}}): libero #{{other}} is already on court.",
+      "liberoFrontRow": "Set {{set}}, {{score}}: libero #{{libero}} replaces #{{n}} of {{team}} in the front row (position {{position}}).",
+      "notALibero": "Set {{set}}, {{score}}: #{{n}} of {{team}} replaces a player as libero but is not a libero on the roster.",
+      "liberoExitNone": "Set {{set}}, {{score}}: libero exit of {{team}}: no libero is on court.",
+      "liberoExchangeNone": "Set {{set}}, {{score}}: libero exchange of {{team}}: no libero is on court.",
+      "timeoutLimit": "Set {{set}}, {{score}}: {{team}} has {{n}} time-outs in this set (2 allowed).",
+      "sanctionLadder": "Set {{set}}, {{score}}: {{what}} of {{team}}: by the rules this is a {{expected}}.",
+      "sameSanctionTwice": "Set {{set}}, {{score}}: {{what}} of {{team}}: this person already has this sanction.",
+      "teamAlreadyWarned": "Set {{set}}, {{score}}: {{what}} of {{team}}: the team was already warned.",
+      "pointsAfterWin": "Set {{set}} was already won at {{score}}; {{n}} more point(s) follow.",
+      "setScoreInvalid": "Set {{set}} ended {{score}}: not a possible final score.",
+      "setWinnerChanged": "Set {{set}} is now won by {{team}} ({{score}}).",
+      "matchNotDecided": "The match is over but no team has won {{n}} sets ({{result}}).",
+      "setsAfterMatchWon": "Set {{set}} is played after the match was already won ({{result}})."
     }
   },
   "picker": {

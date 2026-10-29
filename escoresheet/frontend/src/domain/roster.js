@@ -27,27 +27,53 @@ export function shirtNumberDigits(value) {
   return String(value ?? '').replace(/\D/g, '')
 }
 
+// Where an event of a team holds one of its players' numbers, beside a
+// line-up's positions and its libero record (owner 2026-10-29: a number
+// changed in the roster is changed for the whole match). Fields an entry
+// does not have are skipped.
+const LIBERO_FIELDS = ['liberoIn', 'liberoOut', 'playerIn', 'playerOut', 'playerNumber', 'liberoNumber', 'unableLiberoNumber', 'newLiberoNumber']
+const NUMBER_FIELDS = {
+  substitution: ['playerIn', 'playerOut'],
+  libero_entry: LIBERO_FIELDS,
+  libero_exit: LIBERO_FIELDS,
+  libero_exchange: LIBERO_FIELDS,
+  libero_unable: LIBERO_FIELDS,
+  libero_redesignation: LIBERO_FIELDS,
+  court_captain_designation: ['playerNumber', 'previousCourtCaptain', 'previousRememberedCourtCaptain'],
+  bench_injury: ['playerNumber'],
+  lineup: ['previousRememberedCourtCaptain']
+}
+
+/** A sanction given to a player (on court, on the bench, a libero), not to an official or the team. */
+function isPlayerSanction(p) {
+  const pt = p?.playerType
+  return pt === undefined || pt === null || pt === 'player' || pt === 'bench' || pt === 'libero'
+}
+
+/** The number fields of one event (payload keys), without the line-up positions. */
+export function numberFieldsOf(e) {
+  if (!e?.payload) return []
+  if (e.type === 'sanction') return isPlayerSanction(e.payload) ? ['playerNumber'] : []
+  return NUMBER_FIELDS[e.type] || []
+}
+
 /** Player numbers of a team referred to by the match events. */
 export function referencedPlayerNumbers(events, teamKey) {
   const nums = new Set()
   const add = (n) => { if (n !== undefined && n !== null && n !== '') nums.add(String(n)) }
-  for (const e of events || []) {
-    const p = e.payload
-    if (!p || p.team !== teamKey) continue
+  const visit = (e) => {
+    const p = e?.payload
+    if (!p || p.team !== teamKey) return
     if (e.type === 'lineup') {
       for (const n of Object.values(p.lineup || {})) add(n)
       if (p.liberoSubstitution) { add(p.liberoSubstitution.liberoNumber); add(p.liberoSubstitution.playerNumber) }
-    } else if (e.type === 'substitution') {
-      add(p.playerIn); add(p.playerOut)
-    } else if (e.type === 'libero_entry' || e.type === 'libero_exit' || e.type === 'libero_exchange') {
-      add(p.liberoIn); add(p.liberoOut); add(p.playerIn); add(p.playerOut)
-    } else if (e.type === 'libero_unable' || e.type === 'libero_redesignation') {
-      add(p.liberoNumber); add(p.unableLiberoNumber); add(p.newLiberoNumber)
-    } else if (e.type === 'sanction' && (p.playerType === undefined || p.playerType === 'player')) {
-      add(p.playerNumber)
-    } else if (e.type === 'court_captain_designation') {
-      add(p.playerNumber)
     }
+    for (const f of numberFieldsOf(e)) add(p[f])
+  }
+  for (const e of events || []) {
+    visit(e)
+    // a decision change keeps the rows it removed, to put them back on undo
+    if (e?.type === 'decision_change') for (const r of e.payload?.removedSubEvents || []) visit(r)
   }
   return nums
 }
@@ -112,12 +138,18 @@ export function validateReopenedRoster(editedPlayers, originalPlayers, reference
 /**
  * Rewrite one team's events after players were renumbered in the roster.
  * Every field referencedPlayerNumbers() reads is rewritten, all renumbers at
- * once (so 5->12 and 12->... never chain). A value keeps its type (lineups
- * store strings, substitutions often numbers).
+ * once (so 5->12 and 12->... never chain): line-ups and their libero record,
+ * substitutions, libero replacements, sanctions of players, game captains
+ * (with the numbers an undo puts back), injuries, the rows a decision change
+ * keeps for its undo, the automatic remark of an entry and the state
+ * snapshot stored on the event. A value keeps its type (line-ups store
+ * strings, substitutions often numbers).
  * @param {Array} events
  * @param {'home'|'away'} teamKey
  * @param {Array<{from:string|number, to:string|number}>} renumbers
- * @returns {Array<{id:any, payload:object}>} updated payloads of the changed events
+ * @returns {Array<{id:any, payload:object, stateSnapshot?:object, autoRemark?:{from:string, to:string}}>}
+ *   updated payloads (and snapshots) of the changed events; autoRemark: the
+ *   entry's remark line before and after (to be rewritten in the remarks too)
  */
 export function renumberPlayerInEvents(events, teamKey, renumbers) {
   const map = new Map((renumbers || []).map(r => [String(r.from), String(r.to)]))
@@ -128,48 +160,127 @@ export function renumberPlayerInEvents(events, teamKey, renumbers) {
     if (to === undefined) return v
     return typeof v === 'number' ? Number(to) : to
   }
-  const swapFields = (obj, fields) => {
+
+  const renumberPayload = (e) => {
+    const p = e?.payload
+    if (!p || p.team !== teamKey) return null
     let changed = false
-    const out = { ...obj }
-    for (const f of fields) {
+    const out = { ...p }
+    if (e.type === 'lineup') {
+      if (p.lineup) {
+        const lineup = {}
+        for (const [pos, n] of Object.entries(p.lineup)) {
+          lineup[pos] = swap(n)
+          if (lineup[pos] !== n) changed = true
+        }
+        out.lineup = lineup
+      }
+      if (p.liberoSubstitution) {
+        const ls = { ...p.liberoSubstitution }
+        for (const f of ['liberoNumber', 'playerNumber']) {
+          if (!(f in ls)) continue
+          const v = swap(ls[f])
+          if (v !== ls[f]) { ls[f] = v; changed = true }
+        }
+        out.liberoSubstitution = ls
+      }
+    }
+    for (const f of numberFieldsOf(e)) {
       if (!(f in out)) continue
       const v = swap(out[f])
       if (v !== out[f]) { out[f] = v; changed = true }
     }
-    return { out, changed }
+    if (typeof p.autoRemark === 'string') {
+      const text = renumberRemarkText(p.autoRemark, map)
+      if (text !== p.autoRemark) { out.autoRemark = text; changed = true }
+    }
+    return changed ? out : null
   }
 
   const updates = []
   for (const e of events || []) {
-    const p = e.payload
-    if (!p || p.team !== teamKey) continue
-    let next = null
-    if (e.type === 'lineup') {
-      let changed = false
-      const lineup = {}
-      for (const [pos, n] of Object.entries(p.lineup || {})) {
-        lineup[pos] = swap(n)
-        if (lineup[pos] !== n) changed = true
-      }
-      let liberoSubstitution = p.liberoSubstitution
-      if (liberoSubstitution) {
-        const r = swapFields(liberoSubstitution, ['liberoNumber', 'playerNumber'])
-        if (r.changed) { liberoSubstitution = r.out; changed = true }
-      }
-      if (changed) next = { ...p, ...(p.lineup ? { lineup } : {}), ...(p.liberoSubstitution ? { liberoSubstitution } : {}) }
-    } else {
-      let fields = null
-      if (e.type === 'substitution') fields = ['playerIn', 'playerOut']
-      else if (e.type === 'libero_entry' || e.type === 'libero_exit' || e.type === 'libero_exchange') fields = ['liberoIn', 'liberoOut', 'playerIn', 'playerOut']
-      else if (e.type === 'libero_unable' || e.type === 'libero_redesignation') fields = ['liberoNumber', 'unableLiberoNumber', 'newLiberoNumber']
-      else if (e.type === 'sanction' && (p.playerType === undefined || p.playerType === 'player')) fields = ['playerNumber']
-      else if (e.type === 'court_captain_designation') fields = ['playerNumber']
-      if (fields) {
-        const r = swapFields(p, fields)
-        if (r.changed) next = r.out
-      }
+    let payload = renumberPayload(e)
+    if (e?.type === 'decision_change' && Array.isArray(e.payload?.removedSubEvents)) {
+      let any = false
+      const rows = e.payload.removedSubEvents.map(r => {
+        const np = renumberPayload(r)
+        if (!np) return r
+        any = true
+        return { ...r, payload: np }
+      })
+      if (any) payload = { ...(payload || e.payload), removedSubEvents: rows }
     }
-    if (next) updates.push({ id: e.id, payload: next })
+    const snapshot = renumberSnapshot(e?.stateSnapshot, teamKey, map)
+    if (!payload && !snapshot) continue
+    const u = { id: e.id, payload: payload || e.payload }
+    if (snapshot) u.stateSnapshot = snapshot
+    if (payload && typeof e.payload?.autoRemark === 'string' && payload.autoRemark !== e.payload.autoRemark) {
+      u.autoRemark = { from: e.payload.autoRemark, to: payload.autoRemark }
+    }
+    updates.push(u)
   }
   return updates
+}
+
+// A player number in a remark line: "#7", "no. 7", "Nr. 7", "n° 7", "n. 7"
+const REMARK_NUMBER = /(#|\bno\.\s?|\bNr\.\s?|n°\s?|\bn\.\s?)(\d{1,2})(?!\d)/g
+
+/** A remark line with the renumbered players' numbers (scores and times stay). */
+export function renumberRemarkText(text, renumbers) {
+  const map = renumbers instanceof Map ? renumbers : new Map((renumbers || []).map(r => [String(r.from), String(r.to)]))
+  if (!text || map.size === 0) return text
+  return String(text).replace(REMARK_NUMBER, (m, prefix, n) => (map.has(n) ? `${prefix}${map.get(n)}` : m))
+}
+
+/**
+ * The state snapshot stored on an event (what the referee and the
+ * livescore were last shown), with the team's renumbered players: its
+ * line-up discs, server, substitutions and sanctions. null when nothing
+ * changes.
+ */
+export function renumberSnapshot(snapshot, teamKey, map) {
+  if (!snapshot || typeof snapshot !== 'object') return null
+  const side = (snapshot.teamAKey || 'home') === teamKey ? 'A' : 'B'
+  let changed = false
+  const swap = (v) => {
+    if (v === undefined || v === null || v === '') return v
+    const to = map.get(String(v))
+    if (to === undefined) return v
+    changed = true
+    return typeof v === 'number' ? Number(to) : to
+  }
+  const out = { ...snapshot }
+  const lineup = snapshot[`lineup${side}`]
+  if (lineup && typeof lineup === 'object') {
+    const next = {}
+    for (const [pos, d] of Object.entries(lineup)) {
+      if (!d || typeof d !== 'object') { next[pos] = d; continue }
+      const nd = { ...d }
+      for (const f of ['number', 'replacedNumber', 'substitutedFor']) if (f in nd) nd[f] = swap(nd[f])
+      next[pos] = nd
+    }
+    out[`lineup${side}`] = next
+  }
+  if (snapshot.servingTeam === teamKey && 'serverNumber' in snapshot) out.serverNumber = swap(snapshot.serverNumber)
+  for (const key of [`subs${side}`, `sanctions${side}`, `matchTeamSanctions${side}`]) {
+    if (!Array.isArray(snapshot[key])) continue
+    out[key] = snapshot[key].map(x => {
+      if (!x || typeof x !== 'object') return x
+      const nx = { ...x }
+      for (const f of ['playerIn', 'playerOut', 'player']) if (f in nx) nx[f] = swap(nx[f])
+      return nx
+    })
+  }
+  return changed ? out : null
+}
+
+/**
+ * Numbers the match record refers to that a new roster no longer has (a
+ * player renumbered or removed in a roster editor that matches players by
+ * number): saving it would leave those entries without their player.
+ * @returns {string[]}
+ */
+export function recordNumbersMissingFrom(events, teamKey, roster) {
+  const have = new Set((roster || []).map(p => String(p?.number ?? '')).filter(Boolean))
+  return [...referencedPlayerNumbers(events, teamKey)].filter(n => !have.has(n)).sort((a, b) => Number(a) - Number(b))
 }

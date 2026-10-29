@@ -51,6 +51,7 @@ import { actualStartRemark, scheduledStartOnDay } from '../utils/setStartTime'
 import { validateManualTimeout, validateManualSubstitution, classifySubstitutionRequest } from './substitutions'
 import { resolveSanction, isDelaySanction, awardsPoint, validateMemberSanction } from './sanctions'
 import { applyPlanToEvents, finalizePlan, isRotationLiberoExit } from './recompute'
+import { referencedPlayerNumbers, renumberPlayerInEvents, isShirtNumber } from './roster'
 
 export { applyPlanToEvents }
 
@@ -153,7 +154,7 @@ function note(key, params = {}, t) {
 }
 
 export function emptyPlan() {
-  return { add: [], update: [], remove: [], affectedSets: [], setUpdates: [], remarkAdd: [], remarkRemove: [], log: null, notes: [], followUp: null }
+  return { add: [], update: [], remove: [], affectedSets: [], setUpdates: [], remarkAdd: [], remarkRemove: [], remarkReplace: [], log: null, notes: [], followUp: null }
 }
 
 /** Merge two plans (b planned on the events after a): b's changes win per field. */
@@ -179,6 +180,10 @@ export function mergePlans(a, b) {
   out.setUpdates = [...(a.setUpdates || []), ...(b.setUpdates || [])]
   out.remarkAdd = [...(a.remarkAdd || []), ...(b.remarkAdd || [])]
   out.remarkRemove = [...(a.remarkRemove || []), ...(b.remarkRemove || [])]
+  out.remarkReplace = [...(a.remarkReplace || []), ...(b.remarkReplace || [])]
+  if (a.matchPatch || b.matchPatch) out.matchPatch = { ...(a.matchPatch || {}), ...(b.matchPatch || {}) }
+  if (a.cloudMatch || b.cloudMatch) out.cloudMatch = { ...(a.cloudMatch || {}), ...(b.cloudMatch || {}) }
+  if (a.playerUpdates || b.playerUpdates) out.playerUpdates = [...(a.playerUpdates || []), ...(b.playerUpdates || [])]
   out.notes = [...(a.notes || []), ...(b.notes || [])]
   out.log = b.log || a.log
   out.followUp = b.followUp || a.followUp
@@ -1271,6 +1276,90 @@ export function planRotateTeam(events, { setIndex, team, direction = 1 } = {}, c
   plan.before = lu.payload.lineup
   plan.after = lineup
   return done(events, finishPlan(plan, events, ctx, 'rotateTeam', row), ctx)
+}
+
+// ───────────────────────── player numbers ─────────────────────────
+
+/**
+ * Change a player's shirt number for the whole match (owner 2026-10-29):
+ * the roster row, and every reference the match record holds — line-ups and
+ * libero records, substitutions, libero replacements, sanctions, game
+ * captains (and the numbers their undo puts back), injuries, the automatic
+ * remark lines (rewritten where they stand), the snapshots the tablets were
+ * shown — in one correction, logged for the referee. The scoresheet, the
+ * PDF and the tablets read the new number from all of them.
+ * Refused when the new number is another player's of the team, or already
+ * appears in the team's record (two histories would merge).
+ * values: { team, playerId?, from, to } (playerId: the roster row; from:
+ * its number when the row is not known)
+ */
+export function planRenumberPlayer(events, { team, playerId = null, from = null, to } = {}, ctx = {}) {
+  if (team !== 'home' && team !== 'away') return fail('chooseTarget')
+  const roster = rosterOfCtx(ctx, team)
+  const player = playerId != null ? roster.find(p => p.id === playerId) : roster.find(p => sameNumber(p.number, from))
+  if (!player && !hasNumber(from)) return fail('noSuchPlayer')
+  const old = player ? player.number : from
+  if (!hasNumber(to) || !isShirtNumber(to)) return fail('invalidNumber')
+  const next = String(Number(to))
+  if (sameNumber(old, next)) return fail('sameNumber')
+  const label = teamLabel(team, ctx)?.name || '?'
+  const taken = roster.find(p => p !== player && sameNumber(p.number, next))
+  if (taken) {
+    const name = taken.name || [taken.firstName, taken.lastName].filter(Boolean).join(' ') || `#${next}`
+    return fail('numberTaken', { n: next, name, team: label })
+  }
+  if (referencedPlayerNumbers(events, team).has(next)) return fail('numberInRecord', { n: next, team: label })
+
+  return planRenumberPlayers(events, { team, renumbers: [{ from: String(old), to: next, playerId: player?.id ?? null }] }, ctx)
+}
+
+/**
+ * The renumbering of one or more players of a team (already checked: the
+ * Corrections form above, or the roster editor's validateReopenedRoster),
+ * all at once so 5->12 and 12->... never chain.
+ * values: { team, renumbers: [{ from, to, playerId? }] }
+ */
+export function planRenumberPlayers(events, { team, renumbers = [] } = {}, ctx = {}) {
+  if (team !== 'home' && team !== 'away') return fail('chooseTarget')
+  const list = (renumbers || []).filter(r => hasNumber(r?.from) && hasNumber(r?.to) && !sameNumber(r.from, r.to))
+    .map(r => ({ ...r, from: String(r.from), to: String(Number(r.to)) }))
+  if (!list.length) return fail('sameNumber')
+  const roster = rosterOfCtx(ctx, team)
+  const label = teamLabel(team, ctx)?.name || '?'
+  const plan = emptyPlan()
+  for (const u of renumberPlayerInEvents(events, team, list)) {
+    const changes = { payload: u.payload }
+    if (u.stateSnapshot) changes.stateSnapshot = u.stateSnapshot
+    plan.update.push({ id: u.id, changes })
+    if (u.autoRemark) plan.remarkReplace.push(u.autoRemark)
+  }
+  // the game captain in force and the one remembered for later
+  const match = ctx.match || {}
+  const patch = {}
+  for (const f of team === 'home' ? ['homeCourtCaptain', 'homeRememberedCourtCaptain'] : ['awayCourtCaptain', 'awayRememberedCourtCaptain']) {
+    const r = list.find(x => sameNumber(match[f], x.from))
+    if (r) patch[f] = typeof match[f] === 'number' ? Number(r.to) : r.to
+  }
+  if (Object.keys(patch).length) plan.matchPatch = patch
+  plan.playerUpdates = []
+  for (const r of list) {
+    const row = r.playerId != null ? roster.find(p => p.id === r.playerId) : roster.find(p => sameNumber(p.number, r.from))
+    const id = r.playerId ?? row?.id
+    if (id != null) plan.playerUpdates.push({ id, changes: { number: typeof row?.number === 'string' ? r.to : Number(r.to) } })
+  }
+  plan.renumber = { team, renumbers: list.map(({ from, to }) => ({ from, to })) }
+  let text = list.map(r => tr(ctx.t, 'corrections.log.renumbered', 'Player #{{from}} of {{team}} renumbered to #{{to}}', { from: r.from, to: r.to, team: label })).join('; ')
+  if (ctx.mode === 'review') text += tr(ctx.t, 'corrections.log.afterMatchSuffix', ' (entered after the match)')
+  plan.log = { action: 'renumberPlayer', setIndex: null, team, before: list.map(r => r.from).join(','), after: list.map(r => r.to).join(','), text }
+  // the rebuild reads the roster with the new numbers
+  const players = {
+    ...(ctx.players || {}),
+    [team]: roster.map(p => {
+      const r = list.find(x => (x.playerId != null ? x.playerId === p.id : sameNumber(x.from, p.number)))
+      return r ? { ...p, number: Number(r.to) } : p
+    })
+  }
+  return done(events, plan, { ...ctx, players })
 }
 
 // ───────────────────────── advanced: event log ─────────────────────────
