@@ -44,7 +44,7 @@ import { signPageFile } from './lib/signPage.js'
 // The scoring-device handover's pure helpers (the pg part runs in DATABASE_URL mode only)
 import { SCORER_TABLES, deviceOf, matchRefsOfWrite, scorerMovedBody } from './lib/scorerDevice.js'
 // The support form (POST /api/contact): its body, checks and the one mail to CONTACT_EMAIL
-import { contactMailerFromEnv, handleContact, MAX_CONTACT_BODY_BYTES } from './lib/contact.js'
+import { BUSY_BODY, contactMailerFromEnv, createContactSlots, handleContact, MAX_CONTACT_BODY_BYTES } from './lib/contact.js'
 
 const PORT = process.env.PORT || 8080
 
@@ -867,6 +867,8 @@ const emailTransporter = LEGACY_SMTP ? nodemailer.createTransport({
 // The support form's mail (lib/contact.js): From MAIL_FROM, To CONTACT_EMAIL,
 // Reply-To the user, so FreeScout makes the user the ticket's customer.
 const contactMailer = contactMailerFromEnv(process.env)
+// At most 10 support requests at once, each up to 11 MB in memory for up to 2 min
+const contactSlots = createContactSlots()
 if (contactMailer.enabled) {
   console.log(`[Contact] support form mails ${contactMailer.to} from ${contactMailer.from}`)
 } else if (DB_MODE || process.env.SMTP_HOST) {
@@ -2526,7 +2528,9 @@ const server = createServer((req, res) => {
       res.end(JSON.stringify({ success: false, error: 'Too many requests. Please wait before submitting again.' }))
       return
     }
-    ;(async () => {
+    // One slot per request until it is answered, however it ends (answered,
+    // refused, timed out, the client gone): the slots cap the bodies held
+    const job = contactSlots.run(async () => {
       let body
       try {
         // A phone on hall Wi-Fi uploading 10 MB: no data for 30 s, or not
@@ -2541,7 +2545,21 @@ const server = createServer((req, res) => {
       }
       const r = await handleContact({ body, contentType: req.headers['content-type'], mailer: contactMailer })
       sendJson(res, r.status, r.body)
-    })()
+    })
+    if (!job) {
+      // Every slot taken: the hourly cap's 503 busy (the app offers mailto),
+      // at once. The body is drained and discarded, never held; the
+      // connection stays open so the client can still read the answer
+      // (closed, a client still uploading gets EPIPE instead)
+      console.warn(`[Contact] ${contactSlots.max} messages already being received: busy`)
+      req.resume()
+      sendJson(res, 503, BUSY_BODY)
+      return
+    }
+    job.catch((err) => {
+      console.error('[Contact] request failed:', err?.message)
+      sendJson(res, 500, { success: false, code: 'server_error', error: 'Could not send the message' })
+    })
     return
   }
 
