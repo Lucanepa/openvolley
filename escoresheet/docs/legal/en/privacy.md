@@ -180,7 +180,8 @@ match results as an official. Accounts are opened on
 `manager.openvolley.app` and `manager-beach.openvolley.app`.
 
 **Data:** email address, password (stored only as a hash, never in plain
-text), first and last name, country, date of birth (optional), roles (for
+text), first and last name, country, date of birth (optional), the language chosen at sign-up (for
+the account's emails), roles (for
 example scorer, referee, competition manager), the apps the account is for
 (indoor, beach), times of creation, last sign-in and email confirmation. What
 you enter at sign-up is also kept as a copy with the account.

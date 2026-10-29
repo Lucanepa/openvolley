@@ -97,7 +97,7 @@ user asked for. **(f)** = legitimate interest. **(a)** = consent.
 
 | | |
 |---|---|
-| **Data** | Email; password as bcrypt hash (`auth.users.encrypted_password`); first and last name, country (default `CHE`), date of birth (optional field, empty by default: `frontend/src/components/auth/SignUpForm.jsx`), roles (`profiles.roles`), app memberships (indoor/beach, `auth.app_memberships`), created / updated / last sign-in / email-confirmed times; `banned_until` / `deleted_at` on accounts imported from Supabase. The sign-up form data is also kept as a raw copy in `auth.users.raw_user_meta_data` (F15) |
+| **Data** | Email; password as bcrypt hash (`auth.users.encrypted_password`); first and last name, country (default `CHE`), date of birth (optional field, empty by default: `frontend/src/components/auth/SignUpForm.jsx`), roles (`profiles.roles`), app memberships (indoor/beach, `auth.app_memberships`), created / updated / last sign-in / email-confirmed times; `banned_until` / `deleted_at` on accounts imported from Supabase. The sign-up form data is also kept as a raw copy in `auth.users.raw_user_meta_data` (F15), with the language picked at sign-up (`mail_lang`, set by the server: the final scoresheet mail to the account goes out in it, `lib/finalMail.js`; clearing the raw copy for F15 must keep it) |
 | **Whose** | Account holder |
 | **Purpose** | Sign-in; showing the role-based features; pre-filling the scorer's own entry (name, country, DOB) in the officials block of a scoresheet (`MatchSetup.jsx:1439`) |
 | **Basis** | (b); DOB: (a) (optional field) or (b) where it fills the official scoresheet |

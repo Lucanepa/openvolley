@@ -211,7 +211,8 @@ sur `manager.openvolley.app` et `manager-beach.openvolley.app`.
 
 **Données :** adresse e-mail, mot de passe (enregistré uniquement sous forme
 de hachage, jamais en clair), prénom et nom, pays, date de naissance
-(facultative), rôles (par exemple marqueur, arbitre, gestionnaire de
+(facultative), la langue choisie à l'inscription (pour les e-mails du
+compte), rôles (par exemple marqueur, arbitre, gestionnaire de
 compétition), les applications concernées (salle, beach), dates de création,
 de dernière connexion et de confirmation de l'e-mail. Les indications saisies
 à l'inscription sont aussi conservées en copie avec le compte.
