@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Activity, ArrowLeft, ClipboardList, FileText, House, KeyRound, Medal, ScrollText, ShieldCheck, Trophy, Users } from 'lucide-react'
+import { Activity, ArrowLeft, ClipboardList, FileText, House, KeyRound, Medal, ScrollText, Settings, ShieldCheck, Trophy, Users } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { ConsoleShell, ConsolePanel, consoleHeaderBtn } from '../../ui'
 import AccountsPanel from './AccountsPanel'
 import InvitesPanel from './InvitesPanel'
 import ClubsPanel from './ClubsPanel'
 import MyClubPanel from './MyClubPanel'
+import SettingsPanel from './SettingsPanel'
 import OfficialGamesPanel from './OfficialGamesPanel'
 import ClosedMatchesPanel from './ClosedMatchesPanel'
 import ScoresheetsPanel from './ScoresheetsPanel'
@@ -36,7 +37,10 @@ const TABS = [
   { id: 'activity', icon: Activity, admin: true },
   { id: 'teams', icon: ClipboardList, admin: false },
   // OpenBeach only (plan phase T1): beach competition managers and the admin
-  { id: 'tournaments', icon: Medal, admin: false, apps: ['beach'] }
+  { id: 'tournaments', icon: Medal, admin: false, apps: ['beach'] },
+  // db/021: OpenVolley's switches (send the final scoresheet), admins and
+  // competition managers (the OpenBeach brand's tab list leaves it out)
+  { id: 'settings', icon: Settings, admin: false, apps: ['indoor'] }
 ]
 
 /**
@@ -138,6 +142,7 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
         {visited.has('invites') && <ConsolePanel id="invites" current={current}><InvitesPanel app={scope} /></ConsolePanel>}
         {visited.has('clubs') && <ConsolePanel id="clubs" current={current}><ClubsPanel /></ConsolePanel>}
         {visited.has('myclub') && <ConsolePanel id="myclub" current={current}><MyClubPanel clubs={access.managedClubs} /></ConsolePanel>}
+        {visited.has('settings') && <ConsolePanel id="settings" current={current}><SettingsPanel /></ConsolePanel>}
         {visited.has('games') && <ConsolePanel id="games" current={current}><OfficialGamesPanel /></ConsolePanel>}
         {visited.has('matches') && <ConsolePanel id="matches" current={current}><ClosedMatchesPanel onShowActivity={showActivity} /></ConsolePanel>}
         {visited.has('scoresheets') && <ConsolePanel id="scoresheets" current={current}><ScoresheetsPanel app={brand.app} /></ConsolePanel>}
