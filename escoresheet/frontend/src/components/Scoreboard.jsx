@@ -44,7 +44,7 @@ import { apiFrom, writingDevice } from '../lib/apiClient'
 import { relayMatchKey, relayMatchPayload, liveStateNow } from '../utils/serverDataSync'
 import { isRelayErrorFor, liveStateTargets, mayPublishMatchData, publishLiveState, relayEvents, scorerLiveOrder, scorerRelay, scorerRelayUrl } from '../utils/relayPublisher'
 import { useRelayTablets } from '../hooks/useRealtimeConnection'
-import { exportMatchData } from '../utils/backupManager'
+import { exportMatchData, getBackupSettings, saveBackupSettings } from '../utils/backupManager'
 import { setExtId, eventExtId } from '../utils/syncIds'
 import { openAppWindow, openFailedMessageKey } from '../utils/openAppWindow'
 import { queueSetStartTimeSync } from '../utils/setStartTimeSync'
@@ -755,7 +755,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     localStorage.setItem('showNamesOnCourt', String(val))
   }
   const [expandedPlayerName, setExpandedPlayerName] = useState(null) // 'home-12' | 'away-5' | null - tracks which player name is expanded
-  const [autoDownloadAtSetEnd, setAutoDownloadAtSetEnd] = useState(true)
+  // Options > "Auto-download data at set end": on by default, kept across
+  // matches and restarts (backupManager's backup settings)
+  const [autoDownloadAtSetEnd, setAutoDownloadAtSetEndState] = useState(() => getBackupSettings().autoDownloadAtSetEnd)
+  const setAutoDownloadAtSetEnd = (val) => {
+    setAutoDownloadAtSetEndState(val)
+    saveBackupSettings({ autoDownloadAtSetEnd: val })
+  }
   const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1366)
   const [viewportHeight, setViewportHeight] = useState(() => typeof window !== 'undefined' ? window.innerHeight : 768)
   const isLandscape = viewportWidth >= viewportHeight

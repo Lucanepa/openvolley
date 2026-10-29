@@ -6,7 +6,7 @@
 // it back.
 import 'fake-indexeddb/auto'
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
-import { waitFor, fireEvent } from '@testing-library/react'
+import { waitFor, fireEvent, cleanup } from '@testing-library/react'
 vi.mock('../utils/parseRosterPdf', () => ({ parseRosterPdf: vi.fn() })) // pdf.js worker import
 import { db } from '../db/db'
 import { restoreMatchFromJson } from '../utils/backupManager'
@@ -27,6 +27,34 @@ async function seedPlayers(teamId, prefix) {
   await db.players.bulkAdd([1, 2, 3, 4, 5, 6, 7].map(n => ({ teamId, number: n, firstName: prefix, lastName: `${prefix}${n}`, isCaptain: n === 1 })))
 }
 
+// A live test match with its rosters, on its first set point
+async function seedSetPoint() {
+  const home = await db.teams.add({ name: 'Home', shortName: 'HOM' })
+  const away = await db.teams.add({ name: 'Away', shortName: 'AWA' })
+  await seedPlayers(home, 'H')
+  await seedPlayers(away, 'A')
+  const start = new Date(Date.now() - 3600000).toISOString()
+  const matchId = await db.matches.add({
+    homeTeamId: home, awayTeamId: away, status: 'live', test: true, createdAt: start, seed_key: 'test-match-now',
+    firstServe: 'home', coinTossTeamA: 'home', coinTossTeamB: 'away', coinTossServeA: true, coinTossServeB: false,
+    homeCoachSignature: 'x', homeCaptainSignature: 'x', awayCoachSignature: 'x', awayCaptainSignature: 'x'
+  })
+  // the set point is on the score: the scoreboard asks for the set end
+  await db.sets.add({ matchId, index: 1, homePoints: 25, awayPoints: 20, finished: false, startTime: start })
+  await db.events.add({ matchId, setIndex: 1, type: 'coin_toss', payload: {}, seq: 1, ts: start })
+  return matchId
+}
+
+// The page reloaded on the scoring screen (a fresh start opens Home), and the
+// scorer confirms the set end
+async function endSetOne(matchId) {
+  reloadInto(matchId)
+  mountApp()
+  const dialog = () => [...document.querySelectorAll('[role=dialog]')].find(d => /won set|Set 1|set end/i.test(d.textContent) && [...d.querySelectorAll('button')].some(b => b.textContent.trim() === 'Confirm'))
+  await waitFor(() => expect(dialog()).toBeTruthy(), { timeout: 5000 })
+  fireEvent.click([...dialog().querySelectorAll('button')].find(b => b.textContent.trim() === 'Confirm'))
+}
+
 describe('App: the set-end backup download', () => {
   it('holds this match only, unindented, and restores', async () => {
     // last season's match, still on the device
@@ -36,26 +64,8 @@ describe('App: the set-end backup download', () => {
     await db.sets.add({ matchId: old, index: 1, homePoints: 25, awayPoints: 3, finished: true })
     await db.events.bulkAdd(Array.from({ length: 50 }, (_, i) => ({ matchId: old, setIndex: 1, type: 'point', payload: { team: 'home' }, seq: i + 1 })))
 
-    const home = await db.teams.add({ name: 'Home', shortName: 'HOM' })
-    const away = await db.teams.add({ name: 'Away', shortName: 'AWA' })
-    await seedPlayers(home, 'H')
-    await seedPlayers(away, 'A')
-    const start = new Date(Date.now() - 3600000).toISOString()
-    const matchId = await db.matches.add({
-      homeTeamId: home, awayTeamId: away, status: 'live', test: true, createdAt: start, seed_key: 'test-match-now',
-      firstServe: 'home', coinTossTeamA: 'home', coinTossTeamB: 'away', coinTossServeA: true, coinTossServeB: false,
-      homeCoachSignature: 'x', homeCaptainSignature: 'x', awayCoachSignature: 'x', awayCaptainSignature: 'x'
-    })
-    // the set point is on the score: the scoreboard asks for the set end
-    await db.sets.add({ matchId, index: 1, homePoints: 25, awayPoints: 20, finished: false, startTime: start })
-    await db.events.add({ matchId, setIndex: 1, type: 'coin_toss', payload: {}, seq: 1, ts: start })
-
-    // the page reloaded on the scoring screen (a fresh start opens Home)
-    reloadInto(matchId)
-    mountApp()
-    const dialog = () => [...document.querySelectorAll('[role=dialog]')].find(d => /won set|Set 1|set end/i.test(d.textContent) && [...d.querySelectorAll('button')].some(b => b.textContent.trim() === 'Confirm'))
-    await waitFor(() => expect(dialog()).toBeTruthy(), { timeout: 5000 })
-    fireEvent.click([...dialog().querySelectorAll('button')].find(b => b.textContent.trim() === 'Confirm'))
+    const matchId = await seedSetPoint()
+    await endSetOne(matchId)
     await waitFor(() => expect(downloads.some(n => n.startsWith('backup_set1_'))).toBe(true), { timeout: 5000 })
     await sleep(200)
 
@@ -73,5 +83,23 @@ describe('App: the set-end backup download', () => {
     expect(await db.matches.get(restored)).toMatchObject({ seed_key: 'test-match-now' })
     expect((await db.sets.where('matchId').equals(restored).toArray()).map(s => `${s.homePoints}-${s.awayPoints}`)).toContain('25-20')
     expect(await db.players.count()).toBe(14)
+  }, 20000)
+
+  // Options > "Auto-download data at set end" was not stored: every scoreboard
+  // (a reload, the next match) turned it back on
+  it('switched off, it stays off: the next scoreboard downloads nothing at the set end', async () => {
+    cleanup()
+    await Promise.all(db.tables.map(table => table.clear()))
+    localStorage.setItem('autoDownloadAtSetEnd', 'false') // switched off in the Options
+    try {
+      downloads.length = 0
+      const matchId = await seedSetPoint()
+      await endSetOne(matchId)
+      await waitFor(async () => expect((await db.sets.where('matchId').equals(matchId).first())?.finished).toBe(true), { timeout: 5000 })
+      await sleep(500)
+      expect(downloads.filter(n => n.startsWith('backup_set'))).toEqual([])
+    } finally {
+      localStorage.removeItem('autoDownloadAtSetEnd')
+    }
   }, 20000)
 })
