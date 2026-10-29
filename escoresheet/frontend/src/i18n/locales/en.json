@@ -638,6 +638,8 @@
       "set5ChooseSideService": "Set {{number}} - choose side and service",
       "noLegalSubstitution": "No legal substitution available",
       "liberoReminder": "Libero reminder",
+      "liberoReminderText": "Remember to insert the libero if available",
+      "liberoReminderTeams": "{{first}} and {{second}}",
       "reopenSet": "Reopen set",
       "scoresheetError": "Scoresheet error",
       "scoresheetAlreadyOpen": "Scoresheet already open",
@@ -662,6 +664,22 @@
       "expulsion": "Expulsion",
       "disqualification": "Disqualification",
       "wholeTeam": "The team"
+    },
+    "playerMenu": {
+      "liberoOut": "Libero out",
+      "exchangeLibero": "Exchange libero",
+      "unableToPlay": "Unable to play",
+      "declaredUnable": "Declared unable",
+      "injuryIllness": "Injury / illness",
+      "playerOut": "# {{player}} out",
+      "noSubstitutes": "No substitutes",
+      "cancelSanction": "Cancel sanction",
+      "liberoIn": "Libero in",
+      "noEligiblePlayers": "No eligible players",
+      "sanctionFor": "Sanction for {{who}}",
+      "actionsFor": "Actions for {{who}}",
+      "teamHasWarning": "Team has warning",
+      "alreadySanctioned": "Already sanctioned"
     },
     "actions": {
       "libero": "Libero",
