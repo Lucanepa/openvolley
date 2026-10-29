@@ -524,15 +524,6 @@ export function countLiveGames(games) {
 // ── Live-state pushes (scoreboard side) ─────────────────────────────────────
 
 /**
- * Must the scoreboard capture a fresh state snapshot for this live-state push
- * instead of reusing the last event's? Manual changes, and the deciding-set
- * court switch: it writes set5CourtSwitched without an event, so the last
- * event's snapshot still has the old sides (livescore showed them until the
- * next rally). The end of an interval too: the last event's snapshot is from
- * before the set 5 coin toss sides / first serve were chosen (match fields).
- * @param {string|null|undefined} eventType
- */
-/**
  * True when the correction log has an entry newer than an event's time: the
  * event's stored state snapshot predates that correction.
  * @param {Array|undefined} manualChanges  match.manualChanges
@@ -546,6 +537,15 @@ export function correctionAfter(manualChanges, eventTs) {
   return Number.isFinite(c) && Number.isFinite(e) && c > e
 }
 
+/**
+ * Must the scoreboard capture a fresh state snapshot for this live-state push
+ * instead of reusing the last event's? Manual changes, and the deciding-set
+ * court switch: it writes set5CourtSwitched without an event, so the last
+ * event's snapshot still has the old sides (livescore showed them until the
+ * next rally). The end of an interval too: the last event's snapshot is from
+ * before the set 5 coin toss sides / first serve were chosen (match fields).
+ * @param {string|null|undefined} eventType
+ */
 export function liveStateNeedsFreshSnapshot(eventType) {
   return typeof eventType === 'string' &&
     (eventType.startsWith('manual_') || eventType === 'court_switch' || eventType === 'end_interval')
