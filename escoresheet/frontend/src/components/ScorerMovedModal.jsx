@@ -70,7 +70,7 @@ export default function ScorerMovedModal({ scorer, closed = false, onTakeBack, o
     : run(onTakeBack))
 
   return (
-    <Modal title={t('scorerMoved.title')} open={true} hideCloseButton={true} width={460} zIndex={3000}>
+    <Modal title={t('scorerMoved.title')} open={true} hideCloseButton={true} width={460} zIndex={3000} helpScreen="takeBack">
       <div className="ov-kit" data-testid="scorer-moved-modal">
         <div role="alert" className="flex items-start gap-3 text-sm text-stone-700">
           <MonitorSmartphone size={20} aria-hidden="true" className="mt-0.5 shrink-0 text-amber-700" />
