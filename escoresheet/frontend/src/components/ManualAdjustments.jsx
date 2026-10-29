@@ -17,6 +17,7 @@ import { confirmDialog } from '../ui/uiStore.js'
 import { DateField, DateTimeField } from '../ui/DateField.jsx'
 import { formatDateTimeLocal, parseLocalToISO } from '../utils/timeUtils'
 import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
+import { DialogHelpButton } from './help/HelpButton.jsx'
 import { usePhoneWidth } from '../hooks/usePhoneWidth'
 import { TEAM_COLOUR_MARK, discRing, HEADER_SURFACE, isCustomColour } from '../utils/teamColours'
 
@@ -697,7 +698,9 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
         <h1 className="text-xl font-bold tracking-tight text-stone-900" style={{ margin: 0 }}>
           {t('corrections.pageTitle', 'Corrections')}
         </h1>
-        <div className="ov-kit" style={{ display: 'flex', gap: '12px' }}>
+        <div className="ov-kit" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          {/* this page covers the header and its ?: the help panel from here */}
+          <DialogHelpButton screen="manualAdjustments" />
           <Button variant="secondary" size="xl" className="px-5 font-medium" onClick={handleClose}>
             {t('corrections.action.close', 'Close')}
           </Button>

@@ -11,6 +11,7 @@ import ManualAdjustments from './components/ManualAdjustments'
 import Modal from './components/Modal'
 import ContextualHelpPanel from './components/help/ContextualHelpPanel'
 import SpotlightOverlay from './components/help/SpotlightOverlay'
+import { OPEN_HELP_EVENT } from './components/help/helpEvents'
 import ConnectionStatus from './components/ConnectionStatus'
 import StartupConnectivityModal from './components/StartupConnectivityModal'
 import MainHeader from './components/MainHeader'
@@ -198,6 +199,18 @@ export default function App() {
   const [newMatchMenuOpen, setNewMatchMenuOpen] = useState(false)
   const [homeOptionsModal, setHomeOptionsModal] = useState(false)
   const [helpPanelOpen, setHelpPanelOpen] = useState(false)
+  // A dialog's help button opens the panel on the dialog's own screen
+  // (components/help/helpEvents.js); the header's ? on the page's
+  const [helpDialogScreen, setHelpDialogScreen] = useState(null)
+  useEffect(() => {
+    const onOpenHelp = (e) => {
+      if (!e?.detail?.screen) return
+      setHelpDialogScreen(e.detail.screen)
+      setHelpPanelOpen(true)
+    }
+    window.addEventListener(OPEN_HELP_EVENT, onOpenHelp)
+    return () => window.removeEventListener(OPEN_HELP_EVENT, onOpenHelp)
+  }, [])
   const [spotlightTarget, setSpotlightTarget] = useState(null)
   const [connectionSetupModal, setConnectionSetupModal] = useState(false)
   const { syncStatus, retryErrors, isOnline } = useSyncQueue()
@@ -3615,7 +3628,7 @@ export default function App() {
             }}
             alarmEnabled={currentMatch?.refereeConnectionEnabled === true}
             currentPage={currentPage}
-            onToggleHelp={() => setHelpPanelOpen(prev => !prev)}
+            onToggleHelp={() => { setHelpDialogScreen(null); setHelpPanelOpen(prev => !prev) }}
             helpPanelOpen={helpPanelOpen}
           />
           <div className="container" style={{
@@ -3910,6 +3923,7 @@ export default function App() {
               <Modal
                 title={t('settings.backup.restoreMatch')}
                 open={true}
+                helpScreen="restore"
                 onClose={() => {
                   setRestoreMatchModal(false)
                   setRestoreMatchIdInput('')
@@ -4124,6 +4138,7 @@ export default function App() {
               <Modal
                 title={t('settings.backup.restorePreview')}
                 open={true}
+                helpScreen="restore"
                 onClose={() => { setRestorePreviewData(null); setRestoreError('') }}
                 width={700}
                 // The window's height, not 85vh: on a laptop the whole preview fits
@@ -4350,12 +4365,14 @@ export default function App() {
               } : null}
             />
 
-            {/* Contextual Help Panel */}
+            {/* Contextual Help Panel: the page's sections, or a dialog's
+                (helpDialogScreen); Show me only for the page, a dialog covers
+                its targets (the Corrections page asks for its own: page) */}
             <ContextualHelpPanel
               open={helpPanelOpen}
-              onClose={() => setHelpPanelOpen(false)}
-              currentPage={currentPage}
-              onShowMe={(helpId, tooltipKey) => {
+              onClose={() => { setHelpPanelOpen(false); setHelpDialogScreen(null) }}
+              screen={helpDialogScreen || currentPage}
+              onShowMe={helpDialogScreen && helpDialogScreen !== currentPage ? undefined : (helpId, tooltipKey) => {
                 setHelpPanelOpen(false)
                 setSpotlightTarget({ helpId, tooltipKey })
               }}
