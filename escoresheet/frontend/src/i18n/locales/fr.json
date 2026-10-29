@@ -1159,6 +1159,20 @@
       "closed": "Clôturé sur le serveur",
       "unchecked": "Non vérifié",
       "unsent": "Modifications non envoyées"
+    },
+    "signInForOfficial": "Connectez-vous pour marquer des matchs officiels. Les matchs de test et simples restent sur cet appareil.",
+    "todayGames": {
+      "title": "Matchs du jour",
+      "loading": "Chargement des matchs du jour…",
+      "offline": "Pas de connexion : la liste de tout à l’heure.",
+      "failed": "Les matchs du jour n’ont pas pu être chargés. Saisissez le match vous-même.",
+      "noClub": "Votre compte n’a pas encore de club, il n’y a donc pas de liste. Saisissez le match vous-même ou demandez à votre club.",
+      "none": "Aucun match à domicile de votre club aujourd’hui.",
+      "mine": "Commencé par vous",
+      "taken": "Commencé sur un autre compte",
+      "closed": "Clôturé",
+      "notListed": "Pas dans la liste ?",
+      "manual": "Saisir le match moi-même"
     }
   },
   "options": {
@@ -2334,8 +2348,8 @@
     },
     "home": {
       "q_createMatch": "Comment créer un nouveau match ?",
-      "a_createMatch": "Appuyez sur « Nouveau match » et choisissez « Match officiel », « Match amical » ou « Match simplifié ». Un match officiel a des effectifs, des officiels et des signatures. Un match amical sert à s'entraîner. Un match simplifié n'est pas officiel : pas d'effectifs ni de signatures.",
-      "tip_createMatch": "Appuyez ici pour créer un nouveau match : officiel, amical ou simplifié.",
+      "a_createMatch": "Connecté, appuyez sur « Match officiel » : choisissez le match à domicile de votre club du jour dans la liste, ou saisissez le match vous-même. « Match amical » et « Match simplifié » se trouvent en dessous ; déconnecté, vous n'avez que ces deux-là. Un match officiel a des effectifs, des officiels et des signatures. Un match amical sert à s'entraîner. Un match simplifié n'est pas officiel : pas d'effectifs ni de signatures.",
+      "tip_createMatch": "Commencez un nouveau match ici : officiel (connecté), amical ou simplifié.",
       "q_officialVsTest": "Quelle est la différence entre les matchs officiels et tests ?",
       "a_officialVsTest": "Un match officiel demande les deux effectifs (au moins 6 joueurs chacun), les officiels et les signatures. Si vous êtes connecté, il est enregistré dans le cloud pour l'arbitre, le livescore et les sauvegardes. Un match amical a des équipes inventées pour s'entraîner. Il reste sur cet appareil et ne va jamais dans le cloud.",
       "q_continueMatch": "Comment reprendre un match ?",

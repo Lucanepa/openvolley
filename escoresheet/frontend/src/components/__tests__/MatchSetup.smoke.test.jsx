@@ -166,6 +166,27 @@ describe('MatchSetup smoke render', () => {
     expect(screen.queryByText(/Something went wrong/i)).toBeNull()
   })
 
+  // Official game on the home screen: the game picked from today's list fills
+  // the new match's setup once its stored fields are in, and is used once
+  it('a game picked on the home screen fills the new match\'s info page', async () => {
+    store.tables.matches = new Map([[1, { id: 1, status: 'scheduled', ...PINS }]])
+    const used = vi.fn()
+    const game = { gameN: '930001', date: '2026-10-29', time: '18:00', home: 'KSC Wiedikon H1', away: 'VBC Other H1', league: '2L', hall: 'Halle Wiedikon', city: 'Zürich', bestOf: 5 }
+    render(<Setup matchId={1} initialOfficialGame={game} onInitialOfficialGameUsed={used} />)
+    // the info page opens first (its Back snapshot), then the game fills it
+    await waitFor(() => expect(screen.getByLabelText('matchSetup.gameNumber')).toHaveValue(930001))
+    expect(screen.getByLabelText('matchSetup.hall')).toHaveValue('Halle Wiedikon')
+    await waitFor(() => expect(used).toHaveBeenCalledTimes(1))
+  })
+
+  it('never over a created match', async () => {
+    store.tables.matches = new Map([[1, { id: 1, status: 'setup', seed_key: 'match_1_conf', matchInfoConfirmedAt: '2026-10-06T10:00:00Z', homeName: 'Home V', awayName: 'Away V', game_n: 991404, ...PINS }]])
+    const used = vi.fn()
+    render(<Setup matchId={1} initialOfficialGame={{ gameN: '930001', home: 'X', away: 'Y' }} onInitialOfficialGameUsed={used} />)
+    await waitFor(() => expect(used).toHaveBeenCalledTimes(1))
+    expect(screen.queryByLabelText('matchSetup.gameNumber')).toBeNull() // the info page did not open
+  })
+
   // A test match never reaches the cloud: saving its edited info once queued a
   // cloud insert marked test: false (and a cloud backup) under a new seed_key
   it('saving a test match\'s edited info queues nothing for the cloud', async () => {

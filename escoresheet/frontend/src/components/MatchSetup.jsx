@@ -466,7 +466,7 @@ function formatDobForSync(dob) {
   return null // Unknown format, don't sync
 }
 
-export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, onOpenCoinToss, offlineMode = false, lfpTrackingEnabled = false }) {
+export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, onOpenCoinToss, offlineMode = false, lfpTrackingEnabled = false, initialOfficialGame = null, onInitialOfficialGameUsed }) {
   const { t, i18n } = useTranslation()
   const { showAlert } = useAlert()
   const { user, profile, getCachedProfile, access } = useAuth()
@@ -1256,6 +1256,9 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
   // the commit that first shows the setup (a layout effect: before the
   // paint); else read here once the match is there.
   const appliedMatchRef = useRef(null)
+  // The match whose stored fields are in the form (a game picked on the home
+  // screen is filled in after them, never overwritten by them)
+  const [storedAppliedFor, setStoredAppliedFor] = useState(null)
   useLayoutEffect(() => {
     if (!matchId || appliedMatchRef.current === matchId) return
     if (preloaded?.match) {
@@ -1453,6 +1456,7 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
       } catch (error) {
         console.error('Error loading initial match data:', error)
       }
+      setStoredAppliedFor(matchId)
     }
   }, [matchId, preloaded, match])
 
@@ -3010,6 +3014,29 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
     setOfficialClaim(null)
     afterOfficialLoad(matchData)
   }
+
+  // A game picked on the home screen (App: today's home games of the
+  // account's clubs): once the new match's stored fields are in, the info page
+  // opens (its Back snapshot taken first, as for "Load match from schedule")
+  // and the game fills it, with the same checks as a schedule pick. Never on a
+  // created or test match.
+  const [pickedGamePhase, setPickedGamePhase] = useState(0)
+  useEffect(() => {
+    if (!initialOfficialGame || pickedGamePhase !== 0 || !matchId || storedAppliedFor !== matchId) return
+    if (match?.matchInfoConfirmedAt || match?.test) {
+      onInitialOfficialGameUsed?.()
+      return
+    }
+    setPickedGamePhase(1)
+    setCurrentView('info')
+  }, [initialOfficialGame, pickedGamePhase, matchId, storedAppliedFor, match, onInitialOfficialGameUsed])
+  useEffect(() => {
+    if (pickedGamePhase !== 1 || currentView !== 'info' || !initialOfficialGame) return
+    setPickedGamePhase(2)
+    handleOfficialMatchSelect(initialOfficialGame)
+    onInitialOfficialGameUsed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickedGamePhase, currentView, initialOfficialGame])
 
   // PDF file handlers - must be defined before conditional returns
   const handleHomeFileSelect = (e) => {

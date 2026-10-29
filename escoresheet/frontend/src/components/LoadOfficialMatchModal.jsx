@@ -158,6 +158,50 @@ export function mapSupabaseToMatchFormat(row) {
   }
 }
 
+/**
+ * The match data MatchSetup's handleOfficialMatchSelect fills the form from,
+ * of one game in the internal format (mapSupabaseToMatchFormat). Also the
+ * home screen's "today's games" (TodayGamesModal).
+ */
+export function matchDataFromSchedule(match) {
+  return {
+    // Date/Time - convert to local formats for inputs
+    date: toLocalDate(match.dtstart),
+    time: toLocalTime(match.dtstart),
+
+    // Location
+    city: match.city,
+    hall: match.venue,
+
+    // Match type
+    type1: match.type1,
+    championshipType: match.championshipType,
+    type2: match.type2,
+    type3: match.type3,
+    type3Other: match.type3Other,
+
+    // Game details
+    gameN: match.gameN,
+    league: match.league,
+
+    // Teams
+    home: match.home,
+    away: match.away,
+
+    // Supabase-only fields (undefined when source is ICAL)
+    bestOf: match.bestOf,
+    referee1First: match.referee1First,
+    referee1Last: match.referee1Last,
+    referee1Dob: match.referee1Dob,
+    referee2First: match.referee2First,
+    referee2Last: match.referee2Last,
+    referee2Dob: match.referee2Dob,
+    linesman1: match.linesman1,
+    linesman2: match.linesman2,
+    groupDisplay: match.groupDisplay
+  }
+}
+
 export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch }) {
   const { t } = useTranslation()
   const { showAlert } = useAlert()
@@ -385,42 +429,7 @@ export default function LoadOfficialMatchModal({ open, onClose, onSelectMatch })
   }, [matches, searchQuery, dateFilter])
 
   const handleSelectMatch = (match) => {
-    const matchData = {
-      // Date/Time - convert to local formats for inputs
-      date: toLocalDate(match.dtstart),
-      time: toLocalTime(match.dtstart),
-
-      // Location
-      city: match.city,
-      hall: match.venue,
-
-      // Match type
-      type1: match.type1,
-      championshipType: match.championshipType,
-      type2: match.type2,
-      type3: match.type3,
-      type3Other: match.type3Other,
-
-      // Game details
-      gameN: match.gameN,
-      league: match.league,
-
-      // Teams
-      home: match.home,
-      away: match.away,
-
-      // Supabase-only fields (undefined when source is ICAL)
-      bestOf: match.bestOf,
-      referee1First: match.referee1First,
-      referee1Last: match.referee1Last,
-      referee1Dob: match.referee1Dob,
-      referee2First: match.referee2First,
-      referee2Last: match.referee2Last,
-      referee2Dob: match.referee2Dob,
-      linesman1: match.linesman1,
-      linesman2: match.linesman2,
-      groupDisplay: match.groupDisplay
-    }
+    const matchData = matchDataFromSchedule(match)
 
     onSelectMatch(matchData)
     onClose()

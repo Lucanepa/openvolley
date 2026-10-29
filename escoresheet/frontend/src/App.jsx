@@ -19,6 +19,8 @@ import BackupTable from './components/BackupTable'
 import RestorePreview from './components/RestorePreview'
 import HomePage from './components/pages/HomePage'
 import EasyMatchModal from './components/EasyMatchModal'
+import TodayGamesModal from './components/TodayGamesModal'
+import { useAuth } from './contexts/AuthContext'
 import { EASY_TEAM_SEED_KEYS, easyMatchPrefill } from './domain/easyMatch'
 import HomeOptionsModal from './components/options/HomeOptionsModal'
 import ConnectTabletsModal from './components/connect/ConnectTabletsModal'
@@ -196,7 +198,11 @@ export default function App() {
   const [easyMatchLoading, setEasyMatchLoading] = useState(false)
   const [alertModal, setAlertModal] = useState(null) // { message: string }
   const [confirmModal, setConfirmModal] = useState(null) // { message: string, onConfirm: function, onCancel: function }
-  const [newMatchMenuOpen, setNewMatchMenuOpen] = useState(false)
+  // Official game, signed in: today's home games of the account's clubs; the
+  // game picked fills the new match's setup (MatchSetup initialOfficialGame)
+  const [todayGamesOpen, setTodayGamesOpen] = useState(false)
+  const [pendingOfficialGame, setPendingOfficialGame] = useState(null)
+  const { user: signedInUser } = useAuth()
   const [homeOptionsModal, setHomeOptionsModal] = useState(false)
   const [helpPanelOpen, setHelpPanelOpen] = useState(false)
   // A dialog's help button opens the panel on the dialog's own screen
@@ -2600,6 +2606,7 @@ export default function App() {
       movedCopy: isScorerMoved(currentMatch)
     })
     if (step === 'recording') {
+      setPendingOfficialGame(null)
       setAlertModal(t('home.modals.officialMatchStillRecording', 'An official match is still recording on this device. Continue it, or delete it with "Delete match", before creating a new official match.'))
       return
     }
@@ -2700,6 +2707,20 @@ export default function App() {
 
   function cancelNewMatch() {
     setNewMatchModal(null)
+    setPendingOfficialGame(null)
+  }
+
+  // Home's Official game (owner plan 2026-10-29, step 3): signed in, today's
+  // home games of the account's clubs first; else the blank setup, typed in
+  // (the desktop app offline, a venue box: no sign-in there)
+  const signInAvailable = !offlineMode && !!getCloudApiUrl('/api/auth/sign-in')
+  function openOfficialGame() {
+    if (signedInUser && signInAvailable) {
+      setTodayGamesOpen(true)
+      return
+    }
+    setPendingOfficialGame(null)
+    createNewOfficialMatch()
   }
 
   useEffect(() => {
@@ -3714,6 +3735,8 @@ export default function App() {
                   }}
                   offlineMode={offlineMode}
                   lfpTrackingEnabled={lfpTrackingEnabled}
+                  initialOfficialGame={pendingOfficialGame}
+                  onInitialOfficialGameUsed={() => setPendingOfficialGame(null)}
                 />
               ) : showManualAdjustments && matchId ? (
                 <ManualAdjustments
@@ -3754,9 +3777,9 @@ export default function App() {
                   {/* the desktop app's own update (updater.rs): home screen only */}
                   <DesktopUpdateNotice />
                   <HomePage
-                    newMatchMenuOpen={newMatchMenuOpen}
-                    setNewMatchMenuOpen={setNewMatchMenuOpen}
-                    createNewOfficialMatch={createNewOfficialMatch}
+                    signedIn={!!signedInUser}
+                    signInAvailable={signInAvailable}
+                    onOfficialGame={openOfficialGame}
                     createNewTestMatch={createNewTestMatch}
                     testMatchLoading={testMatchLoading}
                     createEasyMatch={() => openEasyMatch()}
@@ -3829,6 +3852,25 @@ export default function App() {
                 onClose={() => {
                   setClosedCopyId(null)
                   goHome()
+                }}
+              />
+            )}
+
+            {/* Official game, signed in: pick one of today's home games, or type it in */}
+            {todayGamesOpen && (
+              <TodayGamesModal
+                open={true}
+                userId={signedInUser?.id ?? null}
+                onClose={() => setTodayGamesOpen(false)}
+                onPick={(game) => {
+                  setTodayGamesOpen(false)
+                  setPendingOfficialGame(game)
+                  createNewOfficialMatch()
+                }}
+                onManual={() => {
+                  setTodayGamesOpen(false)
+                  setPendingOfficialGame(null)
+                  createNewOfficialMatch()
                 }}
               />
             )}

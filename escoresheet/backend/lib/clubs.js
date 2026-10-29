@@ -30,13 +30,14 @@
  *     managedClubsOf(client, userId)      [{ id, name }] the account manages (db/020)
  *     ruleOn(client)                      is the rule on?
  *     verdict({ userId, access, gameN, sportType })  { ok } or { ok: false, code, home_team }
+ *     todayGames({ userId })              today's home games of the account's clubs (GET /api/games/today)
  *
  * Every answer is the { status, body } shape of lib/accounts.js. A database
  * without db/018 reads as "no clubs, rule off" (deploy order), never a 503.
  */
 
 import { fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
-import { sportOf } from './officialGame.js'
+import { seasonOf, sportOf } from './officialGame.js'
 
 export const CLUB_REQUIRED = () => fail(403, 'OV_CLUB_REQUIRED',
   'Your account has no club yet. An admin adds it before you can score official games.')
@@ -55,6 +56,23 @@ export const CLUB_INVITE_MAX_USES = 50
 export const CLUB_INVITE_MAX_DAYS = 90
 const DAY_MS = 24 * 60 * 60 * 1000
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+// The schedule fields the scorer app maps into a match (LoadOfficialMatchModal
+// mapSupabaseToMatchFormat): read through to_jsonb, so a column a schedule
+// lacks reads as null instead of failing
+const SCHEDULE_FIELDS = Object.freeze([
+  'game_number', 'datetime', 'date', 'time', 'city', 'hall', 'hall_address', 'hall_postal_code',
+  'match_type', 'championship_type', 'gender', 'match_level', 'league', 'match_format', 'team_home', 'team_away',
+  'referee_1_first_name', 'referee_1_last_name', 'referee_1_dob', 'referee_2_first_name', 'referee_2_last_name', 'referee_2_dob',
+  'linesman_1', 'linesman_2', 'group_display'
+])
+const zurichDayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Zurich', year: 'numeric', month: '2-digit', day: '2-digit' })
+/** Europe/Zurich calendar day of `d` as YYYY-MM-DD. */
+export const zurichDay = (d = new Date()) => zurichDayFmt.format(d)
+const nextDay = (day) => {
+  const t = new Date(`${day}T12:00:00Z`)
+  t.setUTCDate(t.getUTCDate() + 1)
+  return t.toISOString().slice(0, 10)
+}
 const nameSql = (alias) => `nullif(trim(coalesce(${alias}.first_name, '') || ' ' || coalesce(${alias}.last_name, '')), '')`
 // No db/018 yet: a relation or column that does not exist
 const MISSING = new Set(['42P01', '42703'])
@@ -244,6 +262,54 @@ export function createClubs ({ pool, audit, access = null, logger = console } = 
     const h = home.trim().toLowerCase()
     const mine = clubs.some((c) => c.teams.some((t) => t.trim().toLowerCase() === h))
     return mine ? { ok: true, home_team: home } : { ok: false, code: 'OV_NOT_YOUR_CLUB', home_team: home, clubs: names }
+  }
+
+  /**
+   * GET /api/games/today: today's (Europe/Zurich) games whose HOME team is of
+   * one of the account's clubs (owner, 2026-10-29: the club scores its home
+   * games), each with the schedule fields the app fills the match from and
+   * whether a match claims it already (`claim`: { mine, closed } or null).
+   * No club: no games. [] without db/018.
+   */
+  async function todayGames ({ userId, now = new Date() } = {}) {
+    if (!isUuid(userId)) return fail(401, 'invalid_token', 'Not signed in')
+    return guarded('today-games', async () => {
+      const day = zurichDay(now)
+      const clubs = await clubsOf(pool, userId)
+      const teams = new Map()
+      for (const c of clubs) for (const t of c.teams) teams.set(t.trim().toLowerCase(), c.name)
+      if (!teams.size) return ok({ day, clubs: clubs.map((c) => c.name), games: [] })
+      const { rows } = await pool.query(
+        `SELECT to_jsonb(g) AS g FROM public.svrz_games g
+          WHERE g.datetime >= $1 AND g.datetime < $2 AND lower(btrim(g.team_home)) = ANY($3::text[])
+          ORDER BY g.datetime, g.game_number
+          LIMIT 200`, [day, nextDay(day), [...teams.keys()]])
+      const games = rows.map((r) => Object.fromEntries(SCHEDULE_FIELDS.map((k) => [k, r.g[k] ?? null])))
+      const numbers = [...new Set(games.map((g) => Number(g.game_number)).filter((n) => Number.isInteger(n) && n > 0))]
+      const claims = new Map()
+      if (numbers.length) {
+        const { rows: ms } = await pool.query(
+          `SELECT m.game_n, m.created_by, m.closed_at, m.scheduled_at, m.created_at FROM public.matches m
+            WHERE m.test IS NOT TRUE AND NOT m.official_game_exempt AND m.game_n = ANY($1::int[])
+              AND (m.sport_type IS NOT DISTINCT FROM 'beach') IS NOT TRUE`, [numbers])
+        for (const m of ms) {
+          const key = `${m.game_n}|${seasonOf(m.scheduled_at || m.created_at)}`
+          if (!claims.has(key)) claims.set(key, m)
+        }
+      }
+      return ok({
+        day,
+        clubs: clubs.map((c) => c.name),
+        games: games.map((g) => {
+          const m = claims.get(`${Number(g.game_number)}|${seasonOf(g.datetime)}`)
+          return {
+            ...g,
+            club: teams.get(String(g.team_home || '').trim().toLowerCase()) ?? null,
+            claim: m ? { mine: m.created_by === userId, closed: m.closed_at != null } : null
+          }
+        })
+      })
+    })
   }
 
   // ---------------------------------------------------------------- admin
@@ -543,6 +609,6 @@ export function createClubs ({ pool, audit, access = null, logger = console } = 
   return {
     list, create, update, remove, vmTeams, setAccountClubs, setRule, setManagers,
     clubDetail, setContact, members, removeMember, isManager,
-    clubsOf, clubsOfMany, managedClubsOf, ruleOn, verdict
+    clubsOf, clubsOfMany, managedClubsOf, ruleOn, verdict, todayGames
   }
 }

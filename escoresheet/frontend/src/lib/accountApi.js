@@ -49,6 +49,14 @@ export function officialCheck({ game_n, scheduled_at = null, sport_type = 'indoo
   return apiRequest('POST', '/api/match/official-check', { game_n, scheduled_at, sport_type, external_id }, timeoutMs ? { timeoutMs } : undefined)
 }
 
+/**
+ * GET /api/games/today -> { day, clubs: [name], games: [svrz_games row + club, claim: { mine, closed } | null] }:
+ * today's home games of the account's clubs (the home screen's Official game).
+ */
+export function fetchTodayGames({ timeoutMs } = {}) {
+  return apiRequest('GET', '/api/games/today', undefined, timeoutMs ? { timeoutMs } : undefined)
+}
+
 // The courtesy check before creating a match: local-first creation never waits
 // longer than this on a slow venue network (a timeout counts as "unknown").
 export const OFFICIAL_CHECK_CONFIRM_TIMEOUT_MS = 3500

@@ -18,6 +18,7 @@ afterAll(online)
 beforeEach(async () => {
   cleanup()
   await Promise.all(db.tables.map(table => table.clear()))
+  localStorage.removeItem('api_auth_token')
 })
 
 const start = new Date(Date.now() - 3600000).toISOString()
@@ -52,13 +53,20 @@ const menuOfficialMatch = () => [...document.querySelectorAll('button')]
   .find(b => b.textContent.trim() === 'Official match' && !b.disabled)
 const dialogWith = (text) => [...document.querySelectorAll('[role="dialog"]')].find(d => d.textContent.includes(text))
 
+// Signed in (Official game is for accounts); offline, today's games cannot
+// load, so the game is typed in
 async function openOfficialMatch() {
+  localStorage.setItem('api_auth_token', JSON.stringify({
+    access_token: 'token-test', expires_at: Math.floor(Date.now() / 1000) + 30 * 24 * 3600,
+    user: { id: '00000000-0000-4000-8000-0000000000aa' }
+  }))
   mountApp()
   await waitFor(() => expect(button('Continue match')).toBeTruthy())
   await sleep(500) // the home screen's match status is read
-  fireEvent.click(button('New match'))
   await waitFor(() => expect(menuOfficialMatch()).toBeTruthy())
   fireEvent.click(menuOfficialMatch())
+  await waitFor(() => expect(document.querySelector('[data-testid="today-games-manual"]')).toBeTruthy())
+  fireEvent.click(document.querySelector('[data-testid="today-games-manual"]'))
 }
 
 describe('App: New match → Official match while a match is being recorded', () => {
