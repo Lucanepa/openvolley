@@ -162,3 +162,69 @@ describe('renumber helpers', () => {
     expect(recordNumbersMissingFrom([], 'home', roster)).toEqual([])
   })
 })
+
+describe('remark lines follow the players they name', () => {
+  const benchLine = (letter, n) => `Set 1, 19:05, ${letter} 3:2, #${n} injured (bench)`
+
+  it('a renumbered player: his bench-injury line is rewritten, with or without its autoRemark; the other team\'s is not', async () => {
+    const { remarksAfter } = await import('../../services/corrections/applyCorrectionPlan')
+    const { events } = buildMatch({
+      sets: [{
+        points: pointsFor(10, 8),
+        finished: false,
+        extras: [
+          // written before the entry carried its line
+          { at: 5, type: 'bench_injury', payload: { team: 'home', playerNumber: 8 } },
+          { at: 6, type: 'bench_injury', payload: { team: 'away', playerNumber: 8 } },
+          { at: 7, type: 'bench_injury', payload: { team: 'home', playerNumber: 6, autoRemark: benchLine('A', 6) } }
+        ]
+      }]
+    })
+    const remarks = [benchLine('A', 8), benchLine('B', 8), benchLine('A', 6)].join('\n')
+    const rctx = { ...ctx, match: { ...LIVE, remarks }, players: { home: HOME_PLAYERS.concat([{ id: 6, number: 6 }]), away: AWAY_PLAYERS } }
+    const eight = planRenumberPlayer(events, { team: 'home', playerId: 8, to: 18 }, rctx)
+    expect(eight.error).toBeUndefined()
+    expect(remarksAfter(remarks, eight).split('\n')).toEqual([benchLine('A', 18), benchLine('B', 8), benchLine('A', 6)])
+    const six = planRenumberPlayer(events, { team: 'home', playerId: 6, to: 16 }, rctx)
+    expect(remarksAfter(remarks, six).split('\n')).toEqual([benchLine('A', 8), benchLine('B', 8), benchLine('A', 16)])
+    expect(applyPlanToEvents(events, six).find(e => e.type === 'bench_injury' && e.payload.playerNumber === 16).payload.autoRemark).toBe(benchLine('A', 16))
+  })
+
+  it('an edited entry rewrites its line; a removed bench injury takes its line with it', async () => {
+    const { planEditEntry, planRemoveEntry } = await import('../manualCorrections')
+    const { remarksAfter } = await import('../../services/corrections/applyCorrectionPlan')
+    const redesignation = 'Set 1, 19:10, A 4:3, #8 re-designated as Libero (replacing #9)'
+    const { events } = buildMatch({
+      sets: [{
+        points: pointsFor(10, 8),
+        finished: false,
+        extras: [
+          { at: 5, type: 'bench_injury', payload: { team: 'home', playerNumber: 8 } },
+          { at: 7, type: 'libero_redesignation', payload: { team: 'home', unableLiberoNumber: 9, newLiberoNumber: 8, autoRemark: redesignation } }
+        ]
+      }]
+    })
+    const remarks = [benchLine('A', 8), redesignation].join('\n')
+    const rctx = { ...ctx, match: { ...LIVE, remarks } }
+    const r = events.find(e => e.type === 'libero_redesignation')
+    const edit = planEditEntry(events, r.id, { newLiberoNumber: 7 }, rctx)
+    expect(edit.error).toBeUndefined()
+    expect(remarksAfter(remarks, edit).split('\n')).toEqual([benchLine('A', 8), 'Set 1, 19:10, A 4:3, #7 re-designated as Libero (replacing #9)'])
+    const injury = events.find(e => e.type === 'bench_injury')
+    const moved = planEditEntry(events, injury.id, { playerNumber: 6 }, rctx)
+    expect(remarksAfter(remarks, moved).split('\n')).toEqual([benchLine('A', 6), redesignation])
+    const removed = planRemoveEntry(events, injury.id, rctx)
+    expect(remarksAfter(remarks, removed).split('\n')).toEqual([redesignation])
+  })
+
+  it('a row whose stored snapshot alone changes is not sent as a changed entry', () => {
+    const { events } = matchWithFive()
+    const plan = planRenumberPlayer(events, { team: 'home', playerId: 5, to: 15 }, ctx)
+    const snapshotOnly = plan.update.filter(u => !u.changes.payload)
+    expect(snapshotOnly.length).toBeGreaterThan(0)
+    for (const u of snapshotOnly) {
+      expect(u.changes.stateSnapshot).toBeTruthy()
+      expect(events.find(e => e.id === u.id).type).toBe('point')
+    }
+  })
+})

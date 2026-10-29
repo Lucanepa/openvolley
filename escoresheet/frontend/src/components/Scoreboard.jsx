@@ -20829,12 +20829,16 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
                       const newRemarks = currentRemarks ? `${currentRemarks}\n${remark}` : remark
                       await db.matches.update(matchId, { remarks: newRemarks })
 
-                      // Log as event so we can track and show red cross
+                      // Log as event so we can track and show red cross. It
+                      // carries its remark line (autoRemark), as every entry
+                      // that writes one: Undo takes the line out with it, a
+                      // correction or a renumbered player rewrites it
                       if (logEventRef.current) {
                         await logEventRef.current('bench_injury', {
                           team,
                           playerNumber,
-                          setIndex
+                          setIndex,
+                          autoRemark: remark
                         })
                       }
 

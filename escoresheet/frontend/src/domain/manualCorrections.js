@@ -51,7 +51,7 @@ import { actualStartRemark, scheduledStartOnDay } from '../utils/setStartTime'
 import { validateManualTimeout, validateManualSubstitution, classifySubstitutionRequest } from './substitutions'
 import { resolveSanction, isDelaySanction, awardsPoint, validateMemberSanction } from './sanctions'
 import { applyPlanToEvents, finalizePlan, isRotationLiberoExit } from './recompute'
-import { referencedPlayerNumbers, renumberPlayerInEvents, isShirtNumber } from './roster'
+import { referencedPlayerNumbers, renumberPlayerInEvents, isShirtNumber, renumberRemarkText } from './roster'
 
 export { applyPlanToEvents }
 
@@ -799,6 +799,22 @@ export function planEditEntry(events, id, values = {}, ctx = {}) {
   const changedFields = fields.some(f => String(p[f.key] ?? '') !== String(payload[f.key] ?? ''))
   if (!changedFields && !moving) return fail('noScoreChange')
 
+  // Its remark line names its players ("#12 re-designated as Libero ...",
+  // "#4 injured (bench)"): it follows them, where it stands in the remarks
+  const renamed = new Map(fields
+    .filter(f => hasNumber(p[f.key]) && !sameNumber(p[f.key], payload[f.key]))
+    .map(f => [String(p[f.key]), String(payload[f.key])]))
+  if (renamed.size && typeof p.autoRemark === 'string') {
+    const text = renumberRemarkText(p.autoRemark, renamed)
+    if (text !== p.autoRemark) {
+      payload.autoRemark = text
+      plan.remarkReplace = [{ from: p.autoRemark, to: text }]
+    }
+  } else if (renamed.size && ev.type === 'bench_injury') {
+    const [line] = benchInjuryLines(p.team, [p.playerNumber], ctx)
+    if (line) plan.remarkReplace = [{ from: line, to: renumberRemarkText(line, renamed) }]
+  }
+
   // The game captain in force follows its designation
   if (ev.type === 'court_captain_designation' && (p.team === 'home' || p.team === 'away')) {
     const latest = latestDesignation(events, p.team)
@@ -832,6 +848,29 @@ function camel(type) {
 
 function rosterOfCtx(ctx, team) {
   return (team === 'home' ? ctx?.players?.home : ctx?.players?.away) || []
+}
+
+// "Set 3, 14:28, B 15:5, #4 injured (bench)": the remark line the bench
+// injury button writes. Entries written before the event carried its line
+// (payload.autoRemark) are found by it: their team's letter and number.
+const BENCH_INJURY_LINE = /^Set \d+, \d{1,2}:\d{2}, ([AB]) \d+:\d+, #(\d{1,2}) injured \(bench\)$/
+
+/** The remark lines of a team's bench injuries of `numbers` (entries without autoRemark). */
+function benchInjuryLines(team, numbers, ctx) {
+  const letter = teamLetter(team, ctx?.match)
+  const wanted = new Set([...(numbers || [])].map(String))
+  if (!letter || !wanted.size) return []
+  return String(ctx?.match?.remarks || '').split('\n').filter(line => {
+    const m = line.match(BENCH_INJURY_LINE)
+    return !!m && m[1] === letter && wanted.has(m[2])
+  })
+}
+
+/** The bench-injury numbers of a team's entries that do not carry their remark line. */
+function benchInjuriesWithoutRemark(events, team) {
+  return (events || [])
+    .filter(e => e.type === 'bench_injury' && e.payload?.team === team && typeof e.payload?.autoRemark !== 'string' && hasNumber(e.payload?.playerNumber))
+    .map(e => String(e.payload.playerNumber))
 }
 
 function setHasPointAfter(events, ev) {
@@ -1058,6 +1097,12 @@ function removalSideEffects(events, removed, ctx) {
   const out = { remarkRemove: [], matchPatch: {}, playerUpdates: [] }
   const list = [...removed].sort((a, b) => compareBySeq(b, a))
   for (const e of list) if (e.payload?.autoRemark) out.remarkRemove.push(e.payload.autoRemark)
+  // a bench injury written before its entry carried its remark line
+  for (const e of list) {
+    if (e.type !== 'bench_injury' || typeof e.payload?.autoRemark === 'string') continue
+    const [line] = benchInjuryLines(e.payload?.team, [e.payload?.playerNumber], ctx).filter(l => !out.remarkRemove.includes(l))
+    if (line) out.remarkRemove.push(line)
+  }
   for (const e of list) {
     const team = e.payload?.team
     if (team !== 'home' && team !== 'away') continue
@@ -1329,11 +1374,19 @@ export function planRenumberPlayers(events, { team, renumbers = [] } = {}, ctx =
   const roster = rosterOfCtx(ctx, team)
   const label = teamLabel(team, ctx)?.name || '?'
   const plan = emptyPlan()
+  const map = new Map(list.map(r => [r.from, r.to]))
+  const byId = new Map((events || []).map(e => [e.id, e]))
   for (const u of renumberPlayerInEvents(events, team, list)) {
-    const changes = { payload: u.payload }
+    // the payload only when it changes (a point's stored snapshot alone often does)
+    const changes = u.payload !== byId.get(u.id)?.payload ? { payload: u.payload } : {}
     if (u.stateSnapshot) changes.stateSnapshot = u.stateSnapshot
     plan.update.push({ id: u.id, changes })
     if (u.autoRemark) plan.remarkReplace.push(u.autoRemark)
+  }
+  // the remark line of a bench injury written before the entry carried it
+  for (const line of benchInjuryLines(team, benchInjuriesWithoutRemark(events, team).filter(n => map.has(n)), ctx)) {
+    const to = renumberRemarkText(line, map)
+    if (to !== line && !plan.remarkReplace.some(r => r.from === line)) plan.remarkReplace.push({ from: line, to })
   }
   // the game captain in force and the one remembered for later
   const match = ctx.match || {}
