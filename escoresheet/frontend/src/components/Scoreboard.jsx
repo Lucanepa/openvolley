@@ -4,7 +4,7 @@ import { useAlert } from '../contexts/AlertContext'
 import { useLiveQuery } from 'dexie-react-hooks'
 import Dexie from 'dexie'
 import { db } from '../db/db'
-import { queueMatchUpdate } from '../db/matchRepository'
+import { queueMatchUpdate, toCloudPlayers } from '../db/matchRepository'
 import { withActivityContext, currentActivityContext, maxVoidedSeq, rememberSeedKey } from '../db/eventHistory'
 import Modal from './Modal'
 import RostersPanel from './rosters/RostersPanel'
@@ -67,7 +67,9 @@ import { rotateLineup as rotateLineupPure, pointSubEventsForTeam } from '../doma
 import { playerReplacedByLibero } from '../domain/liberos'
 import { planSubstitutionDeletion, countRegularSubstitutions, classifySubstitutionRequest, MAX_SUBSTITUTIONS_PER_SET } from '../domain/substitutions'
 import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, syncJobsForSets, scoreAfterUndo } from '../domain/corrections'
-import { validateReopenedRoster, referencedPlayerNumbers, renumberPlayerInEvents, isShirtNumber } from '../domain/roster'
+import { validateReopenedRoster, referencedPlayerNumbers, isShirtNumber } from '../domain/roster'
+import { planRenumberPlayers } from '../domain/manualCorrections'
+import { applyCorrectionPlan } from '../services/corrections/applyCorrectionPlan'
 import { appendRemark, removeRemarkLine, eventRemark, remarkClock, setActualStartRemark } from '../domain/remarks'
 import { LINEUP_POSITIONS, lineupEntryErrors, lineupCandidates, lineupCaptainStatus, teamCaptainNumber, gameCaptainOptions, initialGameCaptainChoice, lineupGameCaptainDecision } from '../domain/lineupEntry'
 import { easyLiberoNumbers, easyLiberoErrors, easyRosterChanges, liberoSlotEditable, MAX_LIBEROS, easyPlayerRow, newPlayerMayEnter, newPlayerError, NEW_PLAYER_ERRORS, easyReferencedNumbers, isEasyStray } from '../domain/easyMatch'
@@ -4596,9 +4598,17 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       return
     }
 
-    // Log each change to manualChanges (persisted to IndexedDB + Supabase)
-    for (const change of changes) {
-      logManualChange(change.category, change.field, change.before, change.after, change.description)
+    // Log every change to manualChanges (IndexedDB + cloud) in one write on a
+    // fresh read: logManualChange per change appended each one to the same
+    // render-time list, so only the last change of a save was kept
+    {
+      const now = new Date().toISOString()
+      const entries = changes.map(c => ({ ts: now, category: c.category, field: c.field, before: c.before, after: c.after, description: c.description }))
+      const fresh = await db.matches.get(matchId)
+      const manualChanges = [...(fresh?.manualChanges || []), ...entries]
+      await db.matches.update(matchId, { manualChanges })
+      await queueMatchUpdate(db, fresh?.seed_key, { manual_changes: manualChanges }, { test: fresh?.test === true })
+      deferUi(() => setManualChangesLog(prev => [...prev, ...entries]))
     }
 
     // Build remarks summary and append
@@ -4650,36 +4660,49 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       }
     }
 
-    // A renumbered player keeps their history: rewrite the numbers in that
-    // team's events, and in the court captain designation on the match
-    const renumberMatchUpdate = {}
-    if (renumbers?.length) {
-      const teamEvents = await db.events.where('matchId').equals(matchId).toArray()
-      await withActivityContext({ reason: 'roster_reopen' }, async () => {
-        for (const { id, payload } of renumberPlayerInEvents(teamEvents, teamKey, renumbers)) {
-          await db.events.update(id, { payload })
-        }
-      })
-      const matchNow = await db.matches.get(matchId)
-      const courtCaptainField = teamKey === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain'
-      const renumbered = renumbers.find(r => String(r.from) === String(matchNow?.[courtCaptainField]))
-      if (renumbered) {
-        renumberMatchUpdate[courtCaptainField] = typeof matchNow[courtCaptainField] === 'number' ? Number(renumbered.to) : renumbered.to
-      }
-    }
-
     // Persist bench officials
     const benchField = teamKey === 'home' ? 'bench_home' : 'bench_away'
     const freshMatch = await db.matches.get(matchId)
     await db.matches.update(matchId, {
       [benchField]: editedBench,
-      ...renumberMatchUpdate,
       remarks: appendRemark(freshMatch?.remarks || '', remarkBlock)
     })
 
+    // A renumbered player keeps their history, for the whole match: one
+    // correction (domain/manualCorrections planRenumberPlayers) rewrites every
+    // reference of that team's record (line-ups, substitutions, liberos,
+    // sanctions, game captains, injuries, remark lines, snapshots), the game
+    // captain on the match, the roster row and the cloud roster, logged
+    // "Player #7 of … renumbered to #17" for the referee
+    if (renumbers?.length) {
+      const allEvents = await db.events.where('matchId').equals(matchId).toArray()
+      const matchNow = await db.matches.get(matchId)
+      const plan = planRenumberPlayers(allEvents, {
+        team: teamKey,
+        renumbers: renumbers.map(r => ({ ...r, playerId: snapshotPlayers.find(p => String(p.number) === String(r.from))?.id ?? null }))
+      }, {
+        t, match: matchNow, homeTeam: data?.homeTeam, awayTeam: data?.awayTeam, matchId, mode: 'live',
+        players: { home: teamKey === 'home' ? snapshotPlayers : (data?.homePlayers || []), away: teamKey === 'away' ? snapshotPlayers : (data?.awayPlayers || []) }
+      })
+      if (!plan.error) await applyCorrectionPlan(plan, { matchId, db, mode: 'live' })
+    }
+    // The team's roster to the cloud (names, liberos, captain, numbers): the
+    // tablets' cloud fallback and a hand-over read it from there
+    {
+      const teamId = teamKey === 'home' ? data?.match?.homeTeamId : data?.match?.awayTeamId
+      const m = await db.matches.get(matchId)
+      if (teamId != null && m?.seed_key) {
+        const roster = await db.players.where('teamId').equals(teamId).sortBy('number')
+        await queueMatchUpdate(db, m.seed_key, { [teamKey === 'home' ? 'players_home' : 'players_away']: toCloudPlayers(roster) }, { test: m.test === true })
+      }
+    }
+    notifyScoresheetUpdate('roster_reopen')
+    syncToReferee()
+    syncLiveStateToSupabase('manual_roster', null, null)
+
     showAlert(t('scoreboard.reopenRoster.savedSuccess', { count: changes.length }), 'success')
     setReopenRosterTeam(null)
-  }, [matchId, data?.homeTeam, data?.awayTeam, data?.set, data?.match?.homeTeamId, data?.match?.awayTeamId, data?.events, logManualChange, diffRosters, showAlert, t])
+  }, [matchId, data?.homeTeam, data?.awayTeam, data?.set, data?.match?.homeTeamId, data?.match?.awayTeamId, data?.events, data?.homePlayers, data?.awayPlayers, diffRosters, showAlert, t, deferUi, notifyScoresheetUpdate, syncToReferee, syncLiveStateToSupabase])
 
   // Log one event: the event, its state snapshot and its cloud sync job are
   // written in one transaction (runAction). Called inside a scorer action it

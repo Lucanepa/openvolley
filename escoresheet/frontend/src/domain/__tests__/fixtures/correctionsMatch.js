@@ -67,14 +67,14 @@ export function buildMatch({ sets = [], match = MATCH, start = Date.parse('2026-
         const row = add(setIndex, x.type, x.payload)
         const team = x.payload?.team
         if (x.type === 'substitution') {
-          const pos = Object.keys(lineups[team]).find(k => lineups[team][k] === x.payload.playerOut)
+          const pos = Object.keys(lineups[team]).find(k => String(lineups[team][k]) === String(x.payload.playerOut))
           lineups[team][pos] = x.payload.playerIn
           row.payload.position = pos
           const lp = { team, lineup: { ...lineups[team] }, fromSubstitution: true }
           if (ls[team]) lp.liberoSubstitution = { ...ls[team] }
           add(setIndex, 'lineup', lp, row.seq + 0.1)
         } else if (x.type === 'libero_entry') {
-          const pos = Object.keys(lineups[team]).find(k => lineups[team][k] === x.payload.playerOut)
+          const pos = Object.keys(lineups[team]).find(k => String(lineups[team][k]) === String(x.payload.playerOut))
           lineups[team][pos] = String(x.payload.liberoIn)
           row.payload = { liberoType: 'libero1', ...x.payload, position: pos }
           ls[team] = { position: pos, liberoNumber: x.payload.liberoIn, playerNumber: x.payload.playerOut, liberoType: row.payload.liberoType }

@@ -389,7 +389,8 @@
       "invalidNumbers": "Ungültige Trikotnummern (muss 1-99 sein): {{numbers}}",
       "playersWithoutNumbers": "{{count}} Spieler ohne Trikotnummer",
       "fixIssues": "Bitte folgende Probleme beheben:\n\n• {{issues}}",
-      "completeBeforeCoinToss": "Bitte vor der Auslosung vervollständigen:\n\n• {{issues}}"
+      "completeBeforeCoinToss": "Bitte vor der Auslosung vervollständigen:\n\n• {{issues}}",
+      "numbersInRecord": "Diese Nummern kommen im Spielprotokoll vor und können hier nicht geändert oder entfernt werden: {{numbers}}. Ändere die Nummer unter Korrekturen → Spielernummern: sie ändert dann für das ganze Spiel."
     },
     "modals": {
       "syncing": "Synchronisierung",
@@ -3997,7 +3998,8 @@
       "remarks": "Bemerkungen",
       "remark": "Bemerkung",
       "set": "Satz {{n}}",
-      "sanction": "Sanktion"
+      "sanction": "Sanktion",
+      "liberoShort": "L"
     },
     "describe": {
       "point": "Punkt für {{team}}",
@@ -4053,7 +4055,11 @@
       "remarkRemoved": "Bemerkung entfernt: «{{text}}»",
       "missedPoint": "Hinzugefügt: vergessener Punkt für {{team}}",
       "firstServe": "Erster Aufschlag geändert auf {{team}}",
-      "sides": "Seiten gewechselt in Satz {{set}}"
+      "sides": "Seiten gewechselt in Satz {{set}}",
+      "lineupChanged": "Aufstellung von {{team}} in Satz {{set}} geändert: {{from}} → {{to}}",
+      "coinToss": "Seitenwahl korrigiert: Team A ist {{teamA}}, erster Aufschlag {{serve}}",
+      "set5CoinToss": "Seitenwahl des Entscheidungssatzes korrigiert: erster Aufschlag {{serve}}",
+      "renumbered": "Spieler/in #{{from}} von {{team}} umnummeriert auf #{{to}}"
     },
     "error": {
       "noSuchScore": "Satz {{set}} hatte diesen Spielstand nie.",
@@ -4085,7 +4091,18 @@
       "liberoOnCourtRotate": "Ein Libero ist für diese Mannschaft auf dem Feld: rotiere, nachdem der Libero das Feld verlassen hat.",
       "removePointNotLast": "Der Strafpunkt kann nur entfernt werden, solange er der letzte Punkt des laufenden Satzes ist.",
       "noScoreChange": "Nichts zu ändern.",
-      "endBeforeStart": "Satz {{set}} kann nicht vor seinem Beginn enden."
+      "endBeforeStart": "Satz {{set}} kann nicht vor seinem Beginn enden.",
+      "useReopen": "Ein Satzende wird mit «Satz wieder öffnen» zurückgenommen.",
+      "automaticEntry": "Diese Zeile schreibt die App und berechnet sie aus den Einträgen: korrigiere den Eintrag, zu dem sie gehört.",
+      "coinTossNotRemovable": "Ein Spiel hat immer eine Seitenwahl: korrigiere sie stattdessen.",
+      "lineupIncomplete": "Wähle für jede der sechs Positionen eine Person.",
+      "lineupDuplicate": "#{{n}} ist zweimal gewählt.",
+      "chooseNumber": "Wähle eine Nummer.",
+      "numberTaken": "#{{n}} ist bereits die Nummer von {{name}} ({{team}}). Wähle eine andere Nummer.",
+      "numberInRecord": "#{{n}} kommt im Spielprotokoll von {{team}} bereits vor. Wähle eine andere Nummer.",
+      "invalidNumber": "Eine Trikotnummer ist eine ganze Zahl von 1 bis 99.",
+      "sameNumber": "Das ist bereits die Nummer dieser Person.",
+      "noSuchPlayer": "Diese Person steht nicht auf der Spielerliste."
     },
     "note": {
       "ladder": "Nach den Regeln wäre das eine {{expected}} gewesen; erfasst, wie der Schiedsrichter entschieden hat.",
@@ -4098,7 +4115,14 @@
       "irBox": "Der Buchstabe von Team {{letter}} wird im Feld «Nicht ordnungsgemässer Antrag» durchgestrichen (X); kein Spielstand.",
       "expulsionReplacement": "Erfasse den Ersatz mit «+ Spielerwechsel hinzufügen» (ausserordentlich, wenn kein regulärer Wechsel möglich war).",
       "laterRotations": "Spätere Rotationen dieses Satzes werden nicht neu berechnet.",
-      "afterMatch": "Nach dem Spiel erfasst."
+      "afterMatch": "Nach dem Spiel erfasst.",
+      "timeoutLimit": "Beide Auszeiten dieser Mannschaft sind in Satz {{set}} bereits erfasst: das ist eine dritte.",
+      "subLimit": "Sechs Spielerwechsel dieser Mannschaft sind in Satz {{set}} bereits erfasst: das ist ein siebter.",
+      "subRule": "{{reason}}",
+      "winnerWouldChange": "Das ändert den Sieger von Satz {{set}}.",
+      "invalidFinalScore": "{{score}} ist kein möglicher Endstand von Satz {{set}}.",
+      "liberoInLineup": "#{{n}} ist Libero: ein Libero steht nicht in der Startaufstellung.",
+      "recalculated": "Alles danach wird neu berechnet: Rotationen, Aufschlag, Libero-Wechsel und Spielstand."
     },
     "title": "Korrekturen",
     "pageTitle": "Korrekturen",
@@ -4117,7 +4141,10 @@
       "sanctions": "Sanktionen",
       "libero": "Libero",
       "log": "Korrekturprotokoll (für den Schiedsrichter)",
-      "advanced": "Erweitert: Ereignisprotokoll"
+      "advanced": "Erweitert: Ereignisprotokoll",
+      "issues": "Diese Einträge prüfen",
+      "coinToss": "Seitenwahl",
+      "numbers": "Spielernummern"
     },
     "add": {
       "timeout": "Auszeit hinzufügen",
@@ -4133,7 +4160,8 @@
       "libero": "Keine Libero-Wechsel erfasst.",
       "log": "Noch keine Korrekturen.",
       "players": "Keine Spieler/innen zur Auswahl.",
-      "sets": "Noch kein Satz beendet."
+      "sets": "Noch kein Satz beendet.",
+      "lineup": "Keine Aufstellung erfasst."
     },
     "field": {
       "set": "Satz",
@@ -4152,7 +4180,20 @@
       "endTime": "Ende",
       "currentFinal": "Jetzt",
       "addDelayRemark": "Bemerkung zum verspäteten Beginn hinzufügen",
-      "order": "Reihenfolge"
+      "order": "Reihenfolge",
+      "positions": "Positionen (Vorderreihe oben)",
+      "pointTo": "Punkt für",
+      "teamA": "Team A",
+      "firstServeSet5": "Erster Aufschlag im Entscheidungssatz",
+      "firstServe": "Erster Aufschlag in Satz 1",
+      "gameCaptainNow": "Spielkapitän/in jetzt: #{{n}}",
+      "gameCaptainNone": "Kein/e Spielkapitän/in bestimmt.",
+      "player": "Spieler/in",
+      "newNumber": "Neue Nummer",
+      "liberoIn": "Libero rein",
+      "playerReplaced": "Ersetzt (auf dem Feld)",
+      "libero": "Libero",
+      "newLibero": "Neue/r Libero"
     },
     "who": {
       "player": "Spieler/in auf dem Feld",
@@ -4195,7 +4236,22 @@
       "addRemark": "Bemerkung hinzufügen",
       "editRemark": "Bemerkung bearbeiten",
       "finalScore": "Satz {{set}}: Endstand korrigieren",
-      "setTimes": "Satz {{set}}: Beginn und Ende"
+      "setTimes": "Satz {{set}}: Beginn und Ende",
+      "editLineupRow": "Korrigierte Aufstellung bearbeiten",
+      "editLineup": "Startaufstellung",
+      "editPoint": "Punkt bearbeiten",
+      "set5CoinToss": "Seitenwahl des Entscheidungssatzes",
+      "coinToss": "Seitenwahl",
+      "gameCaptain": "Spielkapitän/in",
+      "renumber": "Spielernummer ändern",
+      "editLiberoEntry": "Libero-Wechsel bearbeiten",
+      "editLiberoExit": "Libero-Austritt bearbeiten",
+      "editLiberoExchange": "Libero-Tausch bearbeiten",
+      "editLiberoUnable": "Spielunfähigen Libero bearbeiten",
+      "editRedesignation": "Neubestimmung des Liberos bearbeiten",
+      "editGameCaptain": "Spielkapitän/in bearbeiten",
+      "editInjury": "Verletzung bearbeiten",
+      "editEntry": "Eintrag bearbeiten"
     },
     "action": {
       "back": "Zurück",
@@ -4229,7 +4285,10 @@
       "showAutomatic": "Automatische Einträge anzeigen",
       "reopenForCorrections": "Zurück zum Spielende",
       "newestFirst": "Neueste zuerst",
-      "oldestFirst": "Älteste zuerst"
+      "oldestFirst": "Älteste zuerst",
+      "editSet5Toss": "Entscheidungssatz bearbeiten",
+      "gameCaptain": "Spielkapitän/in ändern",
+      "renumber": "Nummer ändern"
     },
     "preview": {
       "title": "Was sich auf dem Matchblatt ändert",
@@ -4242,7 +4301,12 @@
       "paperSub": "{{in}} für {{out}} bei {{score}} in der Aufstellungsspalte der Position {{position}}.",
       "subCount": "Spielerwechsel von {{team}} in Satz {{set}}: {{n}}/6",
       "paperSanction": "{{code}} in der Spalte {{column}} · Team {{letter}} · Satz {{set}} · {{score}}",
-      "finalScore": "Endstand {{before}} wird zu {{after}}."
+      "finalScore": "Endstand {{before}} wird zu {{after}}.",
+      "pointTeam": "Der Ballwechsel nach {{score}} geht an {{team}}; Aufschlag, Rotationen und Spielstand danach werden neu berechnet.",
+      "renumber": "#{{from}} wird #{{to}} in der Spielerliste und in jedem Eintrag des Spiels ({{n}} Zeilen), vorher und nachher: Aufstellungen, Wechsel, Liberos, Sanktionen, Spielkapitän/in, Bemerkungen. Matchblatt und Tablets zeigen #{{to}}.",
+      "renumberRosterOnly": "#{{from}} wird #{{to}} in der Spielerliste; das Spielprotokoll nennt diese Person noch nicht.",
+      "checkAfter": "Nach dieser Korrektur prüfen",
+      "moreIssues": "und {{n}} weitere (unter «Diese Einträge prüfen»)"
     },
     "pointGiven": {
       "yes": "Ja",
@@ -4252,7 +4316,8 @@
       "exceptional": "Ausserordentlich",
       "incomplete": "Unvollständiger Eintrag",
       "paperCode": "So wie auf dem Matchblatt",
-      "teamsNotSet": "Team A/B nicht festgelegt: Heim wird als A gezeigt"
+      "teamsNotSet": "Team A/B nicht festgelegt: Heim wird als A gezeigt",
+      "automatic": "Automatisch"
     },
     "hint": {
       "timeoutHere": "Auszeit schon hier",
@@ -4263,7 +4328,13 @@
       "finalScore": "Nur das Satzende kann korrigiert werden: ein Punkt nach dem letzten Punkt hinzugefügt oder der letzte Punkt entfernt. Vergessene Punkte mitten im Satz können nicht korrigiert werden (Schreiberkurs Swiss Volley).",
       "libero": "Einen Libero-Wechsel korrigierst du während des Spiels mit Rückgängig.",
       "lineup": "Korrigiere die Aufstellung vor dem ersten Ballwechsel des Satzes; rotiere eine Mannschaft, die eine Position verschoben steht.",
-      "advanced": "Alle Einträge des Spielprotokolls. Beim Entfernen geht alles mit, was zum Eintrag gehört. Hinzufügen und Ändern in den Karten oben."
+      "advanced": "Alle Einträge des Spielprotokolls. Beim Entfernen geht alles mit, was zum Eintrag gehört. Hinzufügen und Ändern in den Karten oben.",
+      "issues": "Nach einer Korrektur passen diese Einträge nicht mehr zu dem, was vorher war. Nichts wurde abgelehnt: korrigiere sie oder lass sie, wenn der Schiedsrichter so entschieden hat.",
+      "lineupAny": "Korrigiere eine Startaufstellung jederzeit, auch nach gespielten Ballwechseln: Rotationen, Aufschlag und Libero-Wechsel danach werden neu berechnet.",
+      "liberoEdit": "Bearbeite oder entferne einen Libero-Wechsel: die Aufstellungen danach werden neu berechnet.",
+      "numbers": "Eine hier geänderte Nummer gilt für das ganze Spiel: jeder Eintrag davor und danach zeigt die neue Nummer, auf dem Matchblatt und auf den Tablets.",
+      "advancedAll": "Jeder Eintrag des Spielprotokolls. Bearbeite oder entferne jeden Eintrag: was dazugehört, geht mit, und alles danach wird neu berechnet. Einträge fügst du in den Karten oben hinzu.",
+      "coinToss": "Team A ändert nur die Buchstaben auf dem Matchblatt; auf dem Feld bewegt sich nichts. Wer in Satz 1 zuerst aufschlägt, schlägt auch in Satz 3 zuerst auf und nimmt in den Sätzen 2 und 4 zuerst an."
     },
     "confirm": {
       "removeTitle": "Diesen Eintrag entfernen?",
@@ -4282,6 +4353,42 @@
     "banner": {
       "signaturesCleared": "Die Unterschriften wurden gelöscht, weil sich das Matchblatt geändert hat. Hole sie am Spielende neu ein.",
       "readOnly": "Das Spiel ist genehmigt: Korrekturen sind schreibgeschützt."
+    },
+    "coinToss": {
+      "summary": "Team A: {{teamA}} · Erster Aufschlag in Satz 1: {{serve}}",
+      "set5": "Entscheidungssatz: erster Aufschlag {{serve}}"
+    },
+    "lineup": {
+      "gameCaptain": "Spielkapitän/in {{team}}: {{n}}"
+    },
+    "issue": {
+      "noLineup": "Satz {{set}}: vor dem ersten Punkt ist keine Aufstellung von {{team}} erfasst.",
+      "lineupIncomplete": "Satz {{set}}: die Startaufstellung von {{team}} hat auf Position {{position}} niemanden.",
+      "lineupDuplicate": "Satz {{set}}, {{score}}: #{{n}} steht zweimal in der Aufstellung von {{team}}.",
+      "liberoInLineup": "Satz {{set}}: Libero #{{n}} steht in der Startaufstellung von {{team}}.",
+      "notOnRoster": "#{{n}} von {{team}} steht nicht auf der Spielerliste (Satz {{set}}).",
+      "subOutNotOnCourt": "Satz {{set}}, {{score}}: Wechsel von {{team}}, #{{in}} für #{{out}}: #{{out}} ist nicht auf dem Feld.",
+      "subInOnCourt": "Satz {{set}}, {{score}}: Wechsel von {{team}}, #{{in}} für #{{out}}: #{{in}} ist schon auf dem Feld.",
+      "subLiberoReplaced": "Satz {{set}}, {{score}}: Wechsel von {{team}}, #{{in}} für #{{out}}: #{{out}} ist in diesem Moment durch Libero #{{libero}} ersetzt.",
+      "subLimit": "Satz {{set}}, {{score}}: {{team}} hat {{n}} reguläre Wechsel in diesem Satz (6 erlaubt).",
+      "subInTwice": "Satz {{set}}, {{score}}: #{{n}} von {{team}} kommt in diesem Satz ein zweites Mal rein.",
+      "subOutTwice": "Satz {{set}}, {{score}}: #{{n}} von {{team}} geht in diesem Satz ein zweites Mal raus.",
+      "subPairing": "Satz {{set}}, {{score}}: #{{out}} von {{team}} kam für #{{starter}} rein: nur #{{starter}} darf #{{out}} ersetzen.",
+      "liberoEntryNotOnCourt": "Satz {{set}}, {{score}}: Libero #{{libero}} für #{{n}} ({{team}}): #{{n}} ist nicht auf dem Feld.",
+      "liberoAlreadyOnCourt": "Satz {{set}}, {{score}}: Libero #{{libero}} rein ({{team}}): Libero #{{other}} ist schon auf dem Feld.",
+      "liberoFrontRow": "Satz {{set}}, {{score}}: Libero #{{libero}} ersetzt #{{n}} von {{team}} in der Vorderreihe (Position {{position}}).",
+      "notALibero": "Satz {{set}}, {{score}}: #{{n}} von {{team}} ersetzt als Libero, ist aber auf der Spielerliste kein Libero.",
+      "liberoExitNone": "Satz {{set}}, {{score}}: Libero-Austritt von {{team}}: kein Libero ist auf dem Feld.",
+      "liberoExchangeNone": "Satz {{set}}, {{score}}: Libero-Tausch von {{team}}: kein Libero ist auf dem Feld.",
+      "timeoutLimit": "Satz {{set}}, {{score}}: {{team}} hat {{n}} Auszeiten in diesem Satz (2 erlaubt).",
+      "sanctionLadder": "Satz {{set}}, {{score}}: {{what}} von {{team}}: nach den Regeln ist das eine {{expected}}.",
+      "sameSanctionTwice": "Satz {{set}}, {{score}}: {{what}} von {{team}}: diese Person hat diese Sanktion bereits.",
+      "teamAlreadyWarned": "Satz {{set}}, {{score}}: {{what}} von {{team}}: die Mannschaft wurde bereits verwarnt.",
+      "pointsAfterWin": "Satz {{set}} war bei {{score}} bereits gewonnen; danach folgen noch {{n}} Punkt(e).",
+      "setScoreInvalid": "Satz {{set}} endete {{score}}: kein möglicher Endstand.",
+      "setWinnerChanged": "Satz {{set}} gewinnt jetzt {{team}} ({{score}}).",
+      "matchNotDecided": "Das Spiel ist beendet, aber keine Mannschaft hat {{n}} Sätze gewonnen ({{result}}).",
+      "setsAfterMatchWon": "Satz {{set}} wurde gespielt, nachdem das Spiel bereits gewonnen war ({{result}})."
     }
   },
   "picker": {

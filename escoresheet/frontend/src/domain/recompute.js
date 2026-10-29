@@ -140,7 +140,7 @@ const ISSUE_DEFAULTS = {
   subLimit: 'Set {{set}}, {{score}}: {{team}} has {{n}} regular substitutions in this set (6 allowed).',
   subInTwice: 'Set {{set}}, {{score}}: #{{n}} of {{team}} comes in a second time in this set.',
   subOutTwice: 'Set {{set}}, {{score}}: #{{n}} of {{team}} goes out a second time in this set.',
-  subPairing: 'Set {{set}}, {{score}}: #{{out}} of {{team}} came on for #{{starter}}; only #{{starter}} may replace him.',
+  subPairing: 'Set {{set}}, {{score}}: #{{out}} of {{team}} came on for #{{starter}}: only #{{starter}} may replace #{{out}}.',
   liberoEntryNotOnCourt: 'Set {{set}}, {{score}}: libero #{{libero}} in for #{{n}} ({{team}}): #{{n}} is not on court.',
   liberoAlreadyOnCourt: 'Set {{set}}, {{score}}: libero #{{libero}} in ({{team}}): libero #{{other}} is already on court.',
   liberoFrontRow: 'Set {{set}}, {{score}}: libero #{{libero}} replaces #{{n}} of {{team}} in the front row (position {{position}}).',
