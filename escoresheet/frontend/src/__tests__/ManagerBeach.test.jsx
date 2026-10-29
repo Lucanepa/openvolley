@@ -105,7 +105,7 @@ describe('managerBrand', () => {
     expect(manageTabsFor(accessFromRoles(['beach:competition_manager']))).toEqual([])
     // OpenVolley's console: as before
     expect(manageTabsFor(accessFromRoles(['admin']))).toEqual(['accounts', 'invites', 'clubs', 'games', 'matches', 'scoresheets', 'audit', 'activity', 'teams'])
-    expect(manageTabsFor(accessFromRoles(['admin']), MANAGER_BRANDS.indoor)).toEqual(['accounts', 'invites', 'clubs', 'games', 'matches', 'scoresheets', 'audit', 'activity', 'teams'])
+    expect(manageTabsFor(accessFromRoles(['admin']), MANAGER_BRANDS.indoor)).toEqual(['accounts', 'invites', 'clubs', 'games', 'matches', 'scoresheets', 'audit', 'activity', 'teams', 'settings'])
   })
 
   it('accessForApp: the beach flags; indoor is the access itself', () => {
@@ -429,7 +429,7 @@ describe('flip between OpenVolley and OpenBeach (one sign-in)', () => {
     await waitFor(() => expect(api.scoresheetsApi.list).toHaveBeenCalledWith(expect.objectContaining({ app: 'beach' })))
     fireEvent.click(screen.getByTestId('manager-brand-flip-phone'))
     await waitFor(() => expect(api.scoresheetsApi.list).toHaveBeenLastCalledWith(expect.objectContaining({ app: 'indoor' })))
-    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.tabs.teams'])
+    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.tabs.teams', 'manage.tabs.settings'])
   })
 
   it('no flip without a console in the other app, nor outside a switchable manager', () => {

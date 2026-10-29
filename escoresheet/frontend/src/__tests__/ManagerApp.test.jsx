@@ -133,7 +133,7 @@ describe('ManagerApp (manager.openvolley.app)', () => {
     expect(screen.getByTestId('manage-console')).toBeInTheDocument()
     expect(railButtons().map(b => b.textContent)).toEqual([
       'manage.tabs.accounts', 'manage.tabs.invites', 'manage.tabs.clubs', 'manage.tabs.games',
-      'manage.tabs.matches', 'manage.tabs.scoresheets', 'manage.tabs.audit', 'manage.tabs.activity', 'manage.tabs.teams'
+      'manage.tabs.matches', 'manage.tabs.scoresheets', 'manage.tabs.audit', 'manage.tabs.activity', 'manage.tabs.teams', 'manage.tabs.settings'
     ])
     expect(screen.queryByRole('button', { name: 'manage.backToApp' })).toBeNull()
     expect(screen.getByRole('link', { name: 'managerSite.openAppLong' })).toHaveAttribute('href', APP_URL)
@@ -177,7 +177,7 @@ describe('ManagerApp (manager.openvolley.app)', () => {
     window.history.replaceState(null, '', '/#accounts')
     setAuth({ roles: ['competition_manager'] })
     render(<ManagerApp />)
-    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.tabs.teams'])
+    expect(railButtons().map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.tabs.teams', 'manage.tabs.settings'])
     await waitFor(() => expect(api.scoresheetsApi.list).toHaveBeenCalledWith(expect.objectContaining({ app: 'indoor' })))
     expect(api.admin.listAccounts).not.toHaveBeenCalled()
   })

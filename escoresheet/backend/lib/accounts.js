@@ -67,6 +67,8 @@ export const AUDIT_ACTIONS = Object.freeze([
   'club.create', 'club.update', 'club.delete', 'account.clubs', 'club_rule.set',
   // db/020: club managers, a club's contact address, a member taken off a club
   'club.managers', 'club.contact', 'club.member_remove',
+  // db/021: the final scoresheet mail of a match, and its switch (lib/finalMail.js)
+  'match.final_mail', 'settings.final_email',
   // db/019: a match moved to another scoring device (lib/scorerDevice.js claim)
   'match.scorer_device'
 ])
