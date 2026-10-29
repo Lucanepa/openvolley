@@ -55,9 +55,10 @@ function WithScale({ children }) {
   return scale ? children : <ScaleProvider>{children}</ScaleProvider>
 }
 
-/** "More help": the section on openvolley.app/support, outside the app. */
+/** "More help": the section on openvolley.app/support, outside the app, in the app's language. */
 function SupportPageLink({ id, children, className }) {
-  const href = supportPageUrl(id)
+  const { i18n } = useTranslation()
+  const href = supportPageUrl(id, i18n?.language)
   return (
     <a
       href={href}
