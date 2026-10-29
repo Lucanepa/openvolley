@@ -1438,6 +1438,7 @@
     "filesTooLarge": "Die Anhänge sind zu gross. Zusammen dürfen sie höchstens {{mb}} MB haben.",
     "fileType": "{{name}} kann nicht angehängt werden. Hängen Sie Bilder, PDF-, Text- oder JSON-Dateien an.",
     "invalidEmail": "Bitte geben Sie eine gültige E-Mail-Adresse ein.",
+    "matchRunning": "Es läuft gerade ein Spiel",
     "includeDiagnostics": "Diagnosedaten mitsenden",
     "diagnosticsHint": "Hilft, das Problem zu finden. Gesendet wird genau das, was unten steht.",
     "diagnosticsPreview": "Diagnosedaten, die gesendet werden",

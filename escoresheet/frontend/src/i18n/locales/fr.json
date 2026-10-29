@@ -1582,6 +1582,7 @@
     "filesTooLarge": "Les pièces jointes sont trop lourdes. Ensemble, elles peuvent faire {{mb}} Mo au plus.",
     "fileType": "{{name}} ne peut pas être joint. Joignez des images, des PDF, des fichiers texte ou JSON.",
     "invalidEmail": "Veuillez saisir une adresse e-mail valide.",
+    "matchRunning": "Un match est en cours en ce moment",
     "includeDiagnostics": "Joindre les diagnostics",
     "diagnosticsHint": "Aide à trouver le problème. Seul ce qui est affiché ci-dessous est envoyé.",
     "diagnosticsPreview": "Diagnostics envoyés",

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, fireEvent, screen, waitFor } from '@testing-library/react'
+import { render, fireEvent, screen, waitFor, act } from '@testing-library/react'
 
 // Keys stay visible; the interpolated values the tests look for are appended
 vi.mock('react-i18next', () => ({
@@ -17,6 +17,7 @@ vi.mock('../../utils/openAppWindow', () => ({ openAppWindow }))
 
 import SupportFeedbackModal from '../SupportFeedbackModal'
 import { setActiveMatch } from '../../utils/activity/activeMatch'
+import { setLiveMatch } from '../../utils/appLifecycle'
 
 const png = () => new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'shot.png', { type: 'image/png' })
 
@@ -48,6 +49,7 @@ describe('SupportFeedbackModal', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     setActiveMatch(null)
+    setLiveMatch('none')
   })
 
   it('starts on the section the help panel passes; older page names are mapped', () => {
@@ -82,6 +84,79 @@ describe('SupportFeedbackModal', () => {
     expect(fd.getAll('files').map((f) => f.name)).toEqual(['shot.png', 'backup.json'])
     expect(fd.has('diagnostics')).toBe(false)
     expect(openAppWindow).not.toHaveBeenCalled()
+  })
+
+  const matchBox = () => screen.getByLabelText('supportFeedback.matchRunning')
+  const sentForm = () => fetchMock.mock.calls[0][1].body
+
+  it('"A match is running right now": ticked while this device scores an official match, and sent as matchRunning=1', async () => {
+    // App.jsx's live match: the local match in status 'live' (coin toss to match end)
+    setLiveMatch('official')
+    render(<SupportFeedbackModal open onClose={() => {}} area="scoring" />)
+    fillBug()
+    expect(matchBox().checked).toBe(true)
+    submit()
+    await screen.findByText('supportFeedback.thankYouSupport')
+    expect(sentForm().get('matchRunning')).toBe('1')
+  })
+
+  it('not ticked without a match scored here, nor for a test or easy match; then not sent', async () => {
+    for (const live of ['none', 'test']) {
+      setLiveMatch(live)
+      fetchMock.mockClear()
+      const { unmount } = render(<SupportFeedbackModal open onClose={() => {}} area="scoring" />)
+      fillBug()
+      expect(matchBox().checked, live).toBe(false)
+      submit()
+      await screen.findByText('supportFeedback.thankYouSupport')
+      expect(sentForm().has('matchRunning'), live).toBe(false)
+      unmount()
+    }
+  })
+
+  it('follows the match until the user ticks or unticks it; unticked, it is not sent', async () => {
+    const { rerender } = render(<SupportFeedbackModal open onClose={() => {}} area="scoring" />)
+    fillBug()
+    expect(matchBox().checked).toBe(false)
+    act(() => setLiveMatch('official'))
+    expect(matchBox().checked, 'the match went live while the dialog was open').toBe(true)
+    fireEvent.click(matchBox())
+    expect(matchBox().checked).toBe(false)
+    act(() => { setLiveMatch('none'); setLiveMatch('official') })
+    expect(matchBox().checked, 'the user\'s choice stays').toBe(false)
+    submit()
+    await screen.findByText('supportFeedback.thankYouSupport')
+    expect(sentForm().has('matchRunning')).toBe(false)
+    // closed and opened again: detected afresh
+    fireEvent.click(screen.getByRole('button', { name: 'common.close' }))
+    rerender(<SupportFeedbackModal open={false} onClose={() => {}} area="scoring" />)
+    rerender(<SupportFeedbackModal open onClose={() => {}} area="scoring" />)
+    selectByLabel('supportFeedback.contactTypeLabel', 'feedback')
+    expect(matchBox().checked).toBe(true)
+  })
+
+  it('shown for every contact type; ticked by hand for feedback, it is sent', async () => {
+    render(<SupportFeedbackModal open onClose={() => {}} area="home" />)
+    expect(screen.queryByLabelText('supportFeedback.matchRunning')).toBeNull()
+    for (const type of ['support', 'request', 'feedback']) {
+      selectByLabel('supportFeedback.contactTypeLabel', type)
+      expect(matchBox().checked, type).toBe(false)
+    }
+    fireEvent.click(matchBox())
+    fireEvent.change(screen.getByLabelText('supportFeedback.commentsLabel'), { target: { value: 'The court lines are hard to read' } })
+    fireEvent.change(screen.getByLabelText('supportFeedback.emailLabel'), { target: { value: 'tester@example.ch' } })
+    submit()
+    await screen.findByText('supportFeedback.thankYouFeedback')
+    expect([sentForm().get('contactType'), sentForm().get('matchRunning')]).toEqual(['feedback', '1'])
+  })
+
+  it('a severity left from a bug report is not sent once the message is feedback or a question', async () => {
+    render(<SupportFeedbackModal open onClose={() => {}} area="scoring" />)
+    fillBug()
+    selectByLabel('supportFeedback.supportTypeLabel', 'help')
+    submit()
+    await screen.findByText('supportFeedback.thankYouSupport')
+    expect([sentForm().get('supportType'), sentForm().get('severity')]).toEqual(['help', ''])
   })
 
   it('"Include diagnostics" is off by default, shows what it sends, and sends exactly that', async () => {
