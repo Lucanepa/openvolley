@@ -32,6 +32,12 @@
  *
  * Every question goes through askConfirm (the in-app dialog), never
  * window.confirm.
+ *
+ * A confirmed quit (desktop) or Exit (Android) first writes the open match's
+ * last backup file (utils/nativeBackup flushNativeBackups, 1.5 s at most):
+ * the app exits at once after it, and a backup still in its quiet window
+ * went with it. The app's own native quit question and the OS ending the app
+ * do not go through the page, so they do not wait for it.
  */
 
 import i18n from 'i18next'
@@ -42,6 +48,7 @@ import { isLeavingAllowed, resetLeaveGuardForTests } from './leaveGuard.js'
 import { desktopWindowRoleOnce, knownDesktopWindowRole } from '../diagnostics/popupForward.js'
 
 import { emitActivity, flushActivityNow } from './activity/bus'
+import { flushNativeBackups, QUIT_BACKUP_WAIT_MS } from './nativeBackup'
 export { allowLeaving } from './leaveGuard.js'
 
 export const LIFECYCLE_EVENT = 'ov-app-lifecycle'
@@ -362,9 +369,11 @@ export async function requestDesktopQuit(win = desktopWin || window, ask = askCo
     const nothingMore = fromClose && live === 'none' && !nets.wifi && !nets.bluetooth && windows.length === 0 && !pdfBusy
     // ONE question for every app window: the quit closes the scoresheets too
     if (!nothingMore && !(await ask(quitQuestion({ live, ...nets, windows, pdfBusy })))) return false
-    // The activity log's last line, written before the app goes
+    // The activity log's last line and the match's last backup file, written
+    // before the app goes (app_quit exits at once). Both waits are bounded:
+    // a slow disk never holds the quit.
     emitActivity('app.quit', {})
-    await flushActivityNow(800)
+    await Promise.all([flushActivityNow(800), flushNativeBackups(QUIT_BACKUP_WAIT_MS)])
     quitting = true
     await invoke('app_quit')
     return true
@@ -492,7 +501,8 @@ function installAndroid(win, ask) {
     if (open) return true // a second Back while it asks: keep asking
     open = true
     Promise.resolve(ask(exitQuestion({ live })))
-      .then((ok) => (ok ? androidExit(win) : undefined))
+      // the match's last backup file first (bounded, as on the desktop)
+      .then((ok) => (ok ? flushNativeBackups(QUIT_BACKUP_WAIT_MS).then(() => androidExit(win)) : undefined))
       .catch((e) => console.error('[app] exit failed', e))
       .finally(() => { open = false })
     return true

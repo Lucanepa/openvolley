@@ -140,6 +140,28 @@ describe('native backup engine', () => {
     await engine.flush()
   })
 
+  // The app quitting (appLifecycle, flushNativeBackups): the last point's
+  // file must be on disk; the rotation of older folders can wait
+  it('flush({ writesOnly }) resolves once the queued files are written, not waiting for the rotation', async () => {
+    const store = memoryStore({ 'game1-old': [eventFileName(T0 - 45 * DAY, 1), eventFileName(T0 - 44 * DAY, 2)] })
+    let releaseList
+    store.list.mockImplementation(() => new Promise(r => { releaseList = r }))
+    const { engine, m, tick } = setup({ store })
+    await engine.flush({ writesOnly: true }) // nothing queued: at once
+    m.point('home')
+    engine.notify(1)
+    await engine.flush({ writesOnly: true })
+    expect(eventFiles(store)).toHaveLength(1)
+    await vi.waitFor(() => expect(store.list).toHaveBeenCalled()) // the rotation is still listing
+    m.point('away')
+    tick()
+    engine.notify(1)
+    await engine.flush({ writesOnly: true })
+    expect(eventFiles(store)).toHaveLength(2)
+    releaseList([])
+    await engine.flush()
+  })
+
   it('never throws: a failing write becomes a status error and the next event retries', async () => {
     const store = memoryStore()
     const { engine, m, log } = setup({ store })

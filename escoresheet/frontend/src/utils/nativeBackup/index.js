@@ -60,6 +60,31 @@ export function useNativeBackupStatus() {
   return status
 }
 
+/** How long the app's quit waits at most for the last backup file. */
+export const QUIT_BACKUP_WAIT_MS = 1500
+
+/**
+ * Before the app quits (appLifecycle): resolves once the backups queued now
+ * are written (the last scoring write's file, still in its quiet window or
+ * being written), or after timeoutMs at the latest, so a quit never waits
+ * longer, whatever the disk does. At once in a browser and when the engine
+ * never started. Never throws.
+ */
+export async function flushNativeBackups(timeoutMs = QUIT_BACKUP_WAIT_MS) {
+  if (!enginePromise) return
+  let timer
+  try {
+    await Promise.race([
+      enginePromise.then(e => e?.flush({ writesOnly: true })),
+      new Promise(resolve => { timer = setTimeout(resolve, timeoutMs) })
+    ])
+  } catch (e) {
+    console.warn('[NativeBackup] last backup before quitting:', e?.message || e)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /** Opens the backup folder in the file manager (desktop). */
 export async function openNativeBackupFolder() {
   const e = await getNativeBackupEngine()
