@@ -4,6 +4,7 @@ import { supabase } from './lib/supabaseClient'
 import { apiFrom } from './lib/apiClient'
 import UpdateBanner from './components/UpdateBanner'
 import DashboardHeader from './components/DashboardHeader'
+import ContextualHelpPanel from './components/help/ContextualHelpPanel'
 import LegalLinks from './legal/LegalLinks'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
 import { applyServerParam, getApiUrl, getBackendOverride, isServedFromLocalServer, isStaticDeployment } from './utils/backendConfig'
@@ -64,6 +65,8 @@ export default function LivescoreApp() {
   // server chosen earlier on this device). See utils/livescoreModel.js.
   const [serverReady, setServerReady] = useState(() => shouldAutoConnectNow())
   const [liveGames, setLiveGames] = useState([]) // All games from match_live_state
+  // The "?" of both livescore pages: the panel with the livescore's help
+  const [helpOpen, setHelpOpen] = useState(false)
   const [selectedGame, setSelectedGame] = useState(null) // UUID of selected game for fullscreen
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -318,6 +321,10 @@ export default function LivescoreApp() {
     </div>
   ) : null
 
+  // The "?" in both pages' headers and its panel
+  const toggleHelp = () => setHelpOpen(prev => !prev)
+  const helpPanel = <ContextualHelpPanel open={helpOpen} onClose={() => setHelpOpen(false)} screen="livescore" />
+
   // Fullscreen view for selected game
   if (selectedGameData) {
     const { leftName, rightName, leftScore, rightScore, leftSets, rightSets, isMatchEnded, servingTeam, setResults, phase } = getLeftRight(selectedGameData)
@@ -385,7 +392,10 @@ export default function LivescoreApp() {
           backButton
           menuAlign="end"
           showOptionsMenu={false}
+          onHelp={toggleHelp}
+          helpOpen={helpOpen}
         />
+        {helpPanel}
 
         {/* Score Display */}
         <div style={{
@@ -496,7 +506,7 @@ export default function LivescoreApp() {
 
   // Show server connection screen first (unless auto-connecting via URL params)
   if (!serverReady) {
-    return <ServerConnectionScreen onConnected={handleServerConnected} />
+    return <ServerConnectionScreen onConnected={handleServerConnected} helpScreen="livescore" />
   }
 
   // List view - show all games
@@ -518,7 +528,10 @@ export default function LivescoreApp() {
         matchCount={shownGames.length}
         menuAlign="end"
         showOptionsMenu={false}
+        onHelp={toggleHelp}
+        helpOpen={helpOpen}
       />
+      {helpPanel}
 
       {/* Content */}
       <div className="ov-kit px-4 py-6">

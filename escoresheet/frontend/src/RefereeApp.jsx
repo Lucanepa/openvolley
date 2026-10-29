@@ -6,6 +6,7 @@ import Referee from './components/Referee'
 import Modal from './components/Modal'
 import UpdateBanner from './components/UpdateBanner'
 import DashboardHeader from './components/DashboardHeader'
+import ContextualHelpPanel from './components/help/ContextualHelpPanel'
 import ServerConnectionScreen from './components/ServerConnectionScreen'
 import { isServedFromLocalServer } from './utils/backendConfig'
 import { loadMatchList } from './utils/matchListSource'
@@ -99,6 +100,8 @@ export default function RefereeApp() {
   const [autoConnectMatch, setAutoConnectMatch] = useState(null) // match seed_key from URL params
   const [linkedMatch, setLinkedMatch] = useState(null) // { id: seed key, gameNumber } preselected by a link
   const [pinInput, setPinInput] = useState('')
+  // The "?" of the game and PIN page (the match has its own: Referee)
+  const [helpOpen, setHelpOpen] = useState(false)
   const [matchId, setMatchId] = useState(null)
   const [error, setError] = useState('')
   const [match, setMatch] = useState(null)
@@ -593,7 +596,7 @@ export default function RefereeApp() {
 
   // Show server connection screen first (unless auto-connecting via URL params)
   if (!serverReady) {
-    return <ServerConnectionScreen onConnected={handleServerConnected} />
+    return <ServerConnectionScreen onConnected={handleServerConnected} helpScreen="referee" />
   }
 
   // Render Referee component if connected (either to match or in master mode)
@@ -630,7 +633,10 @@ export default function RefereeApp() {
         showWakeLock={true}
         wakeLockActive={wakeLockActive}
         onToggleWakeLock={toggleWakeLock}
+        onHelp={() => setHelpOpen(prev => !prev)}
+        helpOpen={helpOpen}
       />
+      <ContextualHelpPanel open={helpOpen} onClose={() => setHelpOpen(false)} screen="referee" />
 
       {/* Main content */}
       <EntryPage className="overflow-y-auto">
