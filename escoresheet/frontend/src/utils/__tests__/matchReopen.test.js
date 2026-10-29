@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isStaleClosedCopy, serverRowClosed } from '../matchReopen'
+import { isContinuedElsewhere, isStaleClosedCopy, serverRowClosed } from '../matchReopen'
 
 // The server's row of a match (Match End's reopen check, the self-check on
 // open): closed as the backend refuses writes (db/007, closed_at)
@@ -54,5 +54,39 @@ describe('isStaleClosedCopy', () => {
     expect(isStaleClosedCopy({ status: 'live', closed_at: '2026-10-20T19:09:00Z', cloudBlock: { code: 'OV_SCORER_MOVED', closed: true } })).toBe(false)
     expect(isStaleClosedCopy(null)).toBe(false)
     expect(isStaleClosedCopy(undefined)).toBe(false)
+  })
+})
+
+// 2026-10-29: the desktop app reopened its copy of match 406970, continued
+// and closed on a phone a week before, and wrote a fresh backup file of it.
+// No backup file of such a copy; the final state of a match this device
+// ended or approved is always backed up.
+describe('isContinuedElsewhere', () => {
+  const closed = { code: 'OV_MATCH_CLOSED' }
+  const moved = { code: 'OV_SCORER_MOVED' }
+
+  it('a copy the server closed while it was scored here, or one another device took over', () => {
+    expect(isContinuedElsewhere({ status: 'live', cloudBlock: closed })).toBe(true)
+    expect(isContinuedElsewhere({ status: 'scheduled', closed_at: '2026-10-20T19:09:00Z' })).toBe(true)
+    expect(isContinuedElsewhere({ status: 'live', cloudBlock: moved })).toBe(true)
+    // taken over and closed there (markScorerMoved makes the copy final)
+    expect(isContinuedElsewhere({ status: 'final', cloudBlock: { ...moved, closed: true } })).toBe(true)
+  })
+
+  it('never a copy this device ended or approved, whatever the server says', () => {
+    expect(isContinuedElsewhere({ status: 'ended', approved: true, cloudBlock: closed })).toBe(false)
+    expect(isContinuedElsewhere({ status: 'ended', approved: true })).toBe(false)
+    expect(isContinuedElsewhere({ status: 'ended', cloudBlock: moved })).toBe(false)
+    expect(isContinuedElsewhere({ status: 'ended', closed_at: '2026-10-20T19:09:00Z' })).toBe(false)
+    // ended here, then closed on the server (useSyncQueue closesLocalCopy)
+    expect(isContinuedElsewhere({ status: 'final', cloudBlock: closed })).toBe(false)
+  })
+
+  it('not an open copy, a test match or no match', () => {
+    expect(isContinuedElsewhere({ status: 'live' })).toBe(false)
+    expect(isContinuedElsewhere({ status: 'live', cloudBlock: { code: 'OV_GAME_TAKEN' } })).toBe(false)
+    expect(isContinuedElsewhere({ status: 'live', test: true, cloudBlock: closed })).toBe(false)
+    expect(isContinuedElsewhere({ status: 'live', test: true, cloudBlock: moved })).toBe(false)
+    expect(isContinuedElsewhere(null)).toBe(false)
   })
 })

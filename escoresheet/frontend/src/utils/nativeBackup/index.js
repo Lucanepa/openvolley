@@ -7,6 +7,7 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { detectBackupPlatform, isNativeBackupPlatform, createPlatformStore } from './platform'
 import { createNativeBackupEngine } from './engine'
+import { isContinuedElsewhere } from '../matchReopen'
 
 export { detectBackupPlatform, isNativeBackupPlatform } from './platform'
 export { subscribeMatchWrites } from './matchWriteHook'
@@ -24,7 +25,9 @@ export function getNativeBackupEngine() {
         createPlatformStore(),
         import('../backupManager')
       ])
-      engine = createNativeBackupEngine({ store, exportMatch: exportMatchData })
+      // No new file of a copy another device went on with: its state is older
+      // than the match's (2026-10-29, match 406970)
+      engine = createNativeBackupEngine({ store, exportMatch: exportMatchData, skipMatch: isContinuedElsewhere })
       engine.subscribe(emit)
       emit()
       return engine

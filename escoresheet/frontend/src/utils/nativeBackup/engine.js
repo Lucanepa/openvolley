@@ -14,6 +14,10 @@
  *    IndexedDB and serializing, so the scorer's next tap goes first.
  *  - A state equal to the last one written (ignoring heartbeats, sessions and
  *    sync stamps) is skipped.
+ *  - So is a match skipMatch(match) names (index.js: a copy another device
+ *    went on with, matchReopen.isContinuedElsewhere), read from the state
+ *    the file would hold. backupNow, the scorer's own "Back up now", still
+ *    writes it.
  *  - Rotation of older backups runs after the first file of the session is
  *    written, in small chunks on idle.
  *
@@ -84,6 +88,7 @@ export function createNativeBackupEngine({
   maxBytesPerMatch = DEFAULT_MAX_BYTES_PER_MATCH,
   idleKeep = DEFAULT_IDLE_KEEP,
   idleAfterHours = DEFAULT_IDLE_AFTER_HOURS,
+  skipMatch = () => false,
   log = console
 }) {
   const quiet = quietMs ?? settleMs ?? 150
@@ -187,6 +192,7 @@ export function createNativeBackupEngine({
   async function backupOnce(matchId, { force = false } = {}) {
     const data = await exportMatch(matchId)
     if (!data?.match) return null
+    if (!force && skipMatch(data.match)) return null
     const { key, build } = serializeBackup(data)
     if (!force && lastKey.get(matchId) === key) return null // same scoring state: coalesced
 
