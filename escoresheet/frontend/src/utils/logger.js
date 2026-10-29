@@ -117,10 +117,16 @@ const originalConsole = {
 /**
  * Format a log entry
  */
+// The stack of an error or warning, kept in memory for the support
+// diagnostics (utils/diagnosticsReport); never uploaded or persisted
+const STACK_MAX_CHARS = 2000
+
 function formatLogEntry(level, args) {
   const now = Date.now()
   const timestamp = new Date(now).toISOString()
   const message = args.map(arg => {
+    // JSON.stringify(new Error('x')) is "{}"
+    if (arg instanceof Error) return `${arg.name}: ${arg.message}`
     if (typeof arg === 'object') {
       try {
         return JSON.stringify(arg)
@@ -131,7 +137,12 @@ function formatLogEntry(level, args) {
     return String(arg)
   }).join(' ')
 
-  return { seq: nextSeq(now), timestamp, level, message }
+  const entry = { seq: nextSeq(now), timestamp, level, message }
+  if (level === 'error' || level === 'warn') {
+    const err = args.find(a => a instanceof Error && typeof a.stack === 'string')
+    if (err) entry.stack = err.stack.slice(0, STACK_MAX_CHARS)
+  }
+  return entry
 }
 
 /**
@@ -347,7 +358,8 @@ export function persistPendingLogs() {
     } catch { /* unreadable: overwrite */ }
     const bySeq = new Map()
     for (const e of [...previous, ...getUnsentLogs()]) {
-      if (e && Number.isFinite(e.seq) && typeof e.message === 'string') bySeq.set(e.seq, e)
+      // the stack stays in memory (diagnostics only)
+      if (e && Number.isFinite(e.seq) && typeof e.message === 'string') bySeq.set(e.seq, { seq: e.seq, timestamp: e.timestamp, level: e.level, message: e.message })
     }
     const pending = [...bySeq.values()].sort((a, b) => a.seq - b.seq).slice(-MAX_PENDING_ENTRIES)
     let chars = 0

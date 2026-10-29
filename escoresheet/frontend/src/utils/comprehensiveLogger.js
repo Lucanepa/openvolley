@@ -89,6 +89,10 @@ export function initComprehensiveLogger(gameN = null, mId = null) {
   // Sync on page visibility change (user leaving)
   document.addEventListener('visibilitychange', handleVisibilityChange)
   window.addEventListener('beforeunload', handleBeforeUnload)
+  // The support diagnostics' timeline marks the app going to the background
+  // and the network going away (utils/diagnosticsReport)
+  window.addEventListener('online', handleNetworkChange)
+  window.addEventListener('offline', handleNetworkChange)
 
   console.log('[ComprehensiveLogger] Initialized (local-only mode) with session:', sessionId)
 }
@@ -277,10 +281,16 @@ function stopFlushTimer() {
  * Handle visibility change (user switching tabs)
  */
 function handleVisibilityChange() {
+  log('system', 'visibility', 'App', document.visibilityState)
   if (document.visibilityState === 'hidden') {
     // User is leaving - flush to IndexedDB
     flushToIndexedDB()
   }
+}
+
+/** The device went online or offline (the browser's online / offline events). */
+function handleNetworkChange(event) {
+  log('system', 'network', 'App', event?.type === 'offline' ? 'offline' : 'online')
 }
 
 /**
@@ -541,6 +551,58 @@ export async function getLogsForMatch({ matchId: mId = null, gameN = null, from 
   }
 }
 
+/**
+ * When this page load's first entry was logged (ms), or null: the support
+ * diagnostics' timeline covers at least the whole page load.
+ * @returns {Promise<number|null>}
+ */
+export async function getSessionStart() {
+  if (!sessionId) return null
+  let start = null
+  try {
+    if (db.interaction_logs) {
+      // ids start with Date.now(): the index's first row is the oldest
+      const first = await db.interaction_logs.where('sessionId').equals(sessionId).first()
+      if (Number.isFinite(first?.ts)) start = first.ts
+    }
+  } catch { /* not readable: the buffer only */ }
+  for (const e of logBuffer) {
+    if (e.sessionId === sessionId && Number.isFinite(e.ts) && (start == null || e.ts < start)) start = e.ts
+  }
+  return start
+}
+
+/**
+ * Every entry between `from` and `to` (ms), oldest first, whatever the match:
+ * the support diagnostics' timeline (utils/diagnosticsReport). Click texts
+ * and links scrubbed as in an export; an entry of a password or PIN field
+ * keeps only that it happened (time, kind of event, `target.secret`): no
+ * name, label, key or value.
+ * @param {{ from?: number, to?: number }} [q]
+ * @returns {Promise<Array>}
+ */
+export async function getRecentLogs({ from = 0, to = Date.now() } = {}) {
+  const inRange = (e) => Number.isFinite(e?.ts) && e.ts >= from && e.ts <= to
+  let rows = []
+  try {
+    if (db.interaction_logs) rows = await db.interaction_logs.where('ts').between(from, to, true, true).toArray()
+  } catch (err) {
+    console.warn('[ComprehensiveLogger] Recent logs not readable:', err?.message)
+  }
+  const byId = new Map()
+  for (const e of [...rows, ...logBuffer.filter(inRange)]) byId.set(e.id, e)
+  const entries = [...byId.values()].sort((a, b) => a.ts - b.ts)
+  return entries.map(e => (isSecretEntry(e) ? secretStub(e) : scrubExportEntry(e)))
+}
+
+// What is left of an entry of a password or PIN field
+function secretStub(e) {
+  return {
+    id: e.id, ts: e.ts, timestamp: e.timestamp, category: e.category, type: e.type, component: e.component, action: e.type,
+    payload: {}, target: { tagName: e.target?.tagName || 'input', secret: true }, gameNumber: e.gameNumber, matchId: e.matchId, sessionId: e.sessionId
+  }
+}
+
 // Export helpers take a game number (legacy) or a match query object
 const isMatchQuery = (q) => q !== null && typeof q === 'object'
 const logsOf = (q) => (isMatchQuery(q) ? getLogsForMatch(q) : getAllLogs(q))
@@ -763,6 +825,8 @@ export function shutdownLogger() {
   // Remove event listeners
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   window.removeEventListener('beforeunload', handleBeforeUnload)
+  window.removeEventListener('online', handleNetworkChange)
+  window.removeEventListener('offline', handleNetworkChange)
 
   isInitialized = false
   console.log('[ComprehensiveLogger] Shutdown complete')
