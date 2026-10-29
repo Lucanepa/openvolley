@@ -23,7 +23,7 @@ import {
 } from '../../domain/describe'
 import {
   planRemoveTimeout, planRemoveSubstitution, planRemoveSanction, planRemoveEntry, planRotateTeam,
-  planCoinToss, planSet5CoinToss, emptyPlan, errorText, describeRemoval, entryActions, startingLineupEvent
+  planCoinToss, planSet5CoinToss, emptyPlan, errorText, describeRemoval, entryActions
 } from '../../domain/manualCorrections'
 import { matchIssues, issueText } from '../../domain/recompute'
 import { awardsPoint } from '../../domain/sanctions'
@@ -528,8 +528,7 @@ export default function CorrectionsPanel({
                             onClick={() => {
                               // before the first rally of the set being played: the scoreboard's line-up form
                               if (isLive && !setStarted && hooks.openManualLineup) { hooks.openManualLineup(team); return }
-                              const ev = startingLineupEvent(sorted, s.index, team)
-                              setForm({ kind: 'lineup', preset: { setIndex: s.index, team }, editEvent: ev || null })
+                              setForm({ kind: 'lineup', preset: { setIndex: s.index, team } })
                             }}>
                             {tr(t, 'corrections.action.fixLineup', 'Fix the line-up')}
                           </Button>
