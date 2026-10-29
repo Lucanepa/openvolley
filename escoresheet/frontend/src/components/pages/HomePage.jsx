@@ -1,11 +1,11 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import SupportFeedbackModal from '../SupportFeedbackModal'
-import UserButton from '../auth/UserButton'
+import LoginModal from '../auth/LoginModal'
 import PendingApprovalBanner from '../auth/PendingApprovalBanner'
 import CloudBlockNotice from '../CloudBlockNotice'
-import { ChevronDown, Download, LifeBuoy, Loader2, Settings } from 'lucide-react'
-import { Button, Card, cn, dayLabel, FOCUS_RING, FOCUS_RING_INSET, Notice, Row, RowList, RowTool, SectionHeader, StatusPill } from '../../ui'
+import { Download, LifeBuoy, Loader2, LogIn, Settings } from 'lucide-react'
+import { Button, Card, cn, dayLabel, FOCUS_RING, Notice, Row, RowList, RowTool, SectionHeader, StatusPill } from '../../ui'
 import { duplicateGameNumbers } from '../../utils/deviceMatches'
 import { formatTakeOver, scoreText } from '../ScorerMovedModal'
 import { isServedFromLocalServer } from '../../utils/backendConfig'
@@ -48,10 +48,22 @@ function isInsideDesktopApp() {
       isServedFromLocalServer())
 }
 
+/**
+ * The home screen (owner plan 2026-10-29, step 3). What a new match can be
+ * follows the sign-in:
+ *   - signed out where sign-in exists: Test match and Easy match only (never
+ *     on the cloud), and a way to sign in for official games;
+ *   - signed in: Official game first (today's home games of the account's
+ *     clubs, or typed in: App's onOfficialGame), Test and Easy below;
+ *   - no sign-in at all (offline mode, no cloud: the desktop app offline, a
+ *     venue box): Official game typed in, as before, Test and Easy below.
+ * The Continue card and the device's open matches always stay: a session
+ * that ran out never strands a match being recorded.
+ */
 export default function HomePage({
-  newMatchMenuOpen,
-  setNewMatchMenuOpen,
-  createNewOfficialMatch,
+  signedIn = false,
+  signInAvailable = false,
+  onOfficialGame,
   createNewTestMatch,
   testMatchLoading,
   createEasyMatch,
@@ -72,6 +84,9 @@ export default function HomePage({
 }) {
   const { t, i18n } = useTranslation()
   const [supportFeedbackOpen, setSupportFeedbackOpen] = useState(false)
+  const [loginOpen, setLoginOpen] = useState(false)
+  // Signed out where an account could sign in: no official game here
+  const testOnly = signInAvailable && !signedIn
   const desktopOS = useMemo(() => detectDesktopOS(), [])
   const inDesktopApp = useMemo(() => isInsideDesktopApp(), [])
 
@@ -166,67 +181,59 @@ export default function HomePage({
             </div>
           )}
 
-          {/* New Match button with its menu (pushes the stack down) */}
-          <div className="space-y-2">
-            <Button
-              variant="primary"
-              block
-              data-help-id="home-new-match-button"
-              aria-expanded={newMatchMenuOpen}
-              onClick={() => setNewMatchMenuOpen(!newMatchMenuOpen)}
-              className="h-14 rounded-xl text-base font-semibold"
-              iconRight={<ChevronDown size={18} aria-hidden="true" className={cn('transition-transform', newMatchMenuOpen && 'rotate-180')} />}
-            >
-              {t('home.newMatch')}
-            </Button>
-
-            {newMatchMenuOpen && (
-              // Flat sunken block under the CTA: no border, no shadow inside the Card.
-              <div className="overflow-hidden rounded-xl bg-stone-50 divide-y divide-stone-200/70">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setNewMatchMenuOpen(false)
-                    createNewOfficialMatch()
-                  }}
-                  className={cn('w-full min-h-12 inline-flex items-center justify-center gap-3 px-4 py-3 text-base font-semibold text-stone-800 hover:bg-stone-100 transition-colors', FOCUS_RING_INSET)}
-                >
-                  {t('home.officialMatch')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setNewMatchMenuOpen(false)
-                    createNewTestMatch()
-                  }}
-                  disabled={testMatchLoading}
-                  aria-busy={testMatchLoading || undefined}
-                  className={cn('w-full min-h-12 inline-flex items-center justify-center gap-2 px-4 py-3 text-base font-semibold text-amber-800 hover:bg-amber-50 transition-colors disabled:cursor-not-allowed disabled:opacity-60', FOCUS_RING_INSET)}
-                >
-                  {testMatchLoading && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
-                  {testMatchLoading ? t('home.preparing') : t('home.testMatch')}
-                </button>
-                {createEasyMatch && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNewMatchMenuOpen(false)
-                      createEasyMatch()
-                    }}
-                    disabled={easyMatchLoading || testMatchLoading}
-                    aria-busy={easyMatchLoading || undefined}
-                    className={cn('w-full min-h-12 inline-flex flex-col items-center justify-center px-4 py-2.5 text-base font-semibold text-stone-800 hover:bg-stone-100 transition-colors disabled:cursor-not-allowed disabled:opacity-60', FOCUS_RING_INSET)}
-                  >
-                    <span className="inline-flex items-center gap-2">
-                      {easyMatchLoading && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
-                      {t('home.easyMatch', 'Easy match')}
-                    </span>
-                    <span className="text-xs font-medium text-stone-500">{t('home.easyMatchHint', 'Unofficial · no rosters or signatures')}</span>
-                  </button>
-                )}
-              </div>
+          {/* New match: Official game first when it can be scored here,
+              Test and Easy below it (signed out: those two only). One block
+              for the help's "Show me" (createMatch), signed in or out */}
+          <div className="space-y-3" data-help-id="home-new-match-button">
+            {!testOnly && (
+              <Button
+                variant="primary"
+                block
+                data-help-id="home-official-button"
+                onClick={onOfficialGame}
+                className="h-14 rounded-xl text-base font-semibold"
+              >
+                {t('home.officialMatch')}
+              </Button>
             )}
+            <div className={cn('grid gap-2', createEasyMatch && 'grid-cols-2')}>
+              <Button
+                variant={testOnly ? 'primary' : 'secondary'}
+                block
+                data-help-id="home-test-button"
+                onClick={createNewTestMatch}
+                disabled={testMatchLoading}
+                aria-busy={testMatchLoading || undefined}
+                className={cn('rounded-xl text-base font-semibold', testOnly ? 'h-14' : 'h-12')}
+              >
+                {testMatchLoading && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
+                {testMatchLoading ? t('home.preparing') : t('home.testMatch')}
+              </Button>
+              {createEasyMatch && (
+                <Button
+                  variant="secondary"
+                  block
+                  data-help-id="home-easy-button"
+                  onClick={createEasyMatch}
+                  disabled={easyMatchLoading || testMatchLoading}
+                  aria-busy={easyMatchLoading || undefined}
+                  title={t('home.easyMatchHint', 'Unofficial · no rosters or signatures')}
+                  className={cn('rounded-xl text-base font-semibold', testOnly ? 'h-14' : 'h-12')}
+                >
+                  {easyMatchLoading && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
+                  {t('home.easyMatch', 'Easy match')}
+                </Button>
+              )}
+            </div>
           </div>
+          {testOnly && (
+            <div className="rounded-xl bg-stone-50 px-3 py-3 text-center" data-testid="home-sign-in-note">
+              <p className="text-sm text-stone-600">{t('home.signInForOfficial')}</p>
+              <Button variant="secondary" size="xl" icon={LogIn} onClick={() => setLoginOpen(true)} className="mt-2" data-testid="home-sign-in">
+                {t('auth.login', 'Login')}
+              </Button>
+            </div>
+          )}
 
           {/* The server refused this match for good (pending account, game
               already scored by someone else, closed): say why */}
@@ -251,7 +258,8 @@ export default function HomePage({
             </Button>
           )}
 
-          {/* Restore Match */}
+          {/* Restore Match: always, signed out too (a scorer whose device
+              broke gets the match back with its game PIN or a backup file) */}
           <Button
             variant="secondary"
             block
@@ -329,6 +337,7 @@ export default function HomePage({
           onClose={() => setSupportFeedbackOpen(false)}
           currentPage="mainPage"
         />
+        {testOnly && <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />}
       </div>
     </div>
   )

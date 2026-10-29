@@ -28,7 +28,6 @@ describe('App: a new test match over an older one', () => {
     mountApp()
     await waitFor(() => expect(button('Continue match')).toBeTruthy())
     await waitFor(() => expect(chip()).toBe('Test match'))
-    fireEvent.click(button('New match'))
     await waitFor(() => expect(menuTestMatch()).toBeTruthy())
 
     const { states, stop } = track(() => {
