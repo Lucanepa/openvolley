@@ -19,7 +19,8 @@ vi.mock('../../utils/backupManager', () => ({
   listCloudBackups: vi.fn(),
   fetchCloudBackup: vi.fn(),
   selectBackupFile: vi.fn(),
-  getBackupSettings: () => ({ autoBackupEnabled: true })
+  getBackupSettings: () => ({ autoBackupEnabled: true }),
+  matchBackupFromFile: (data) => data
 }))
 vi.mock('../../diagnostics/reload', () => ({ reloadWithReason: vi.fn() }))
 vi.mock('../../db/db', () => ({ db: { matches: { get: vi.fn(async () => ({ id: 7, seed_key: 'match_1792518507614_u2sbmb' })) } } }))

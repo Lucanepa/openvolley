@@ -20,6 +20,7 @@ import KitModal from './manage/KitModal'
 import CloudBlockNotice from './CloudBlockNotice'
 import { Textarea } from '../ui/Textarea.jsx'
 import { scoresheetUploadPath, scoresheetUploadJob, scoresheetJsonBlob, uploadQueuedScoresheet } from '../utils/scoresheetUploader'
+import { matchEndExportData } from '../utils/backupManager'
 import { publishMatchEndLiveState } from '../utils/matchEndLiveState'
 import { isoOf, matchTimes, setDurationMinutes } from '../../scoresheet_pdf/utils/matchTimes'
 import { displaySetNumber, getScoreBeforeEvent, isDefaultSet } from '../../scoresheet_pdf/utils/scoresheetModel'
@@ -1259,14 +1260,19 @@ export default function MatchEnd({ matchId, onGoHome, onReopenLastSet, onManualA
       const allSets = await db.sets.where('matchId').equals(matchId).sortBy('index')
       const allEvents = await db.events.where('matchId').equals(matchId).sortBy('seq')
 
-      const exportData = {
-        match: { ...match, homeTeam, awayTeam },
+      // In the backup file format: Restore match takes the ZIP's JSON back.
+      // It had the teams inside the match and no version, and the restore
+      // refused it (backupManager.matchBackupFromMatchEndExport still reads
+      // those files).
+      const exportData = matchEndExportData({
+        match,
+        homeTeam,
+        awayTeam,
         homePlayers,
         awayPlayers,
         sets: allSets,
-        events: allEvents,
-        exportedAt: new Date().toISOString()
-      }
+        events: allEvents
+      })
 
       const dataStr = JSON.stringify(exportData, null, 2)
       const matchDate = match.scheduledAt
