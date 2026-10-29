@@ -2617,7 +2617,8 @@
       "tournaments": "Tornei",
       "activity": "Attività",
       "scoresheets": "Referti",
-      "clubs": "Società"
+      "clubs": "Società",
+      "myclub": "La mia società"
     },
     "status": {
       "setup": "Preparazione",
@@ -2888,7 +2889,32 @@
       "ruleOnBody": "Ogni refertista senza società viene subito bloccato per le partite ufficiali, e le partite di altre società vengono rifiutate.",
       "ruleOnConfirm": "Attiva",
       "ruleIsOn": "La regola delle società è attiva",
-      "ruleIsOff": "La regola delle società è disattivata"
+      "ruleIsOff": "La regola delle società è disattivata",
+      "contact": "E-mail di contatto",
+      "contactHint": "Riceve i referti finali delle partite della società, per gli allenatori.",
+      "managers": "Responsabili della società",
+      "managersHint": "Indirizzi e-mail di account esistenti, uno per riga. Creano i codici d’invito della società e ne gestiscono i membri.",
+      "managersCount_one": "{{count}} responsabile",
+      "managersCount_other": "{{count}} responsabili",
+      "managerUnknown": "Nessun account ha questo indirizzo: {{emails}}"
+    },
+    "myClub": {
+      "none": "Non gestisci nessuna società.",
+      "pick": "Società",
+      "save": "Salva",
+      "contactSaved": "E-mail di contatto salvata",
+      "members": "Membri",
+      "noMembers": "Nessuno referta ancora per questa società. Crea qui sotto un codice d’invito e mandalo ai tuoi segnapunti.",
+      "joined": "Membro dal",
+      "manager": "Responsabile della società",
+      "pending": "In attesa",
+      "remove": "Togli dalla società",
+      "removeTitle": "Togliere {{name}} dalla società?",
+      "removeBody": "Non potrà più refertare le partite di {{club}}. Il suo account resta.",
+      "removed": "Tolto dalla società",
+      "invites": "Codici d’invito",
+      "maxUsesHint": "Da 1 a {{max}}",
+      "expiresHint": "Al massimo {{days}} giorni in avanti"
     }
   },
   "playerPool": {
