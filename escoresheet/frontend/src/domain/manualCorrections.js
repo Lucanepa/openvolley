@@ -82,7 +82,7 @@ export const ERROR_DEFAULTS = {
   choosePlayers: 'Choose the player going out and the player coming in.',
   playerNotOnCourt: 'At {{score}}, #{{n}} was not on court.',
   liberoOnCourt: 'At {{score}}, #{{n}} was replaced by libero #{{libero}}.',
-  liberoNotSubstituted: '#{{n}} is a libero: a libero is not substituted. To correct a libero replacement, use Undo.',
+  liberoNotSubstituted: '#{{n}} is a libero: a libero is not substituted. Correct the libero replacement in the Libero card.',
   playerInOnCourt: 'At {{score}}, #{{n}} was already on court.',
   laterConflict: '#{{out}} or #{{in}} takes part in a later substitution or libero replacement in this set. Remove that one first.',
   noLaterOpponentPoint: '{{team}} has no later point in set {{set}} to mark as the penalty point. If the point was never recorded, use "Correct final score".',
@@ -1008,7 +1008,7 @@ export function planSet5CoinToss(events, { firstServe } = {}, ctx = {}) {
   if (ct) plan.update = [{ id: ct.id, changes: { payload: { ...ct.payload, firstServe, firstServeTeamKey: serveKey } } }]
   let text = tr(ctx.t, 'corrections.log.set5CoinToss', 'Coin toss of the deciding set corrected: {{serve}} serves first', { serve: nameWithLetter(serveKey, ctx) })
   if (ctx.mode === 'review') text += tr(ctx.t, 'corrections.log.afterMatchSuffix', ' (entered after the match)')
-  plan.log = { action: 'set5CoinToss', setIndex: 5, team: null, before: cur, after: firstServe, text }
+  plan.log = { action: 'set5CoinToss', setIndex: 5, team: null, before: { set5FirstServe: cur }, after: { set5FirstServe: firstServe }, text }
   if ((events || []).some(e => e.type === 'point' && setOf(e) === 5)) plan.notes.push(note('recalculated', {}, ctx.t))
   return done(events, plan, ctx)
 }
@@ -1348,9 +1348,11 @@ export function planRenumberPlayers(events, { team, renumbers = [] } = {}, ctx =
     if (id != null) plan.playerUpdates.push({ id, changes: { number: typeof row?.number === 'string' ? r.to : Number(r.to) } })
   }
   plan.renumber = { team, renumbers: list.map(({ from, to }) => ({ from, to })) }
-  let text = list.map(r => tr(ctx.t, 'corrections.log.renumbered', 'Player #{{from}} of {{team}} renumbered to #{{to}}', { from: r.from, to: r.to, team: label })).join('; ')
+  const sentence = list.map(r => tr(ctx.t, 'corrections.log.renumbered', 'Player #{{from}} of {{team}} renumbered to #{{to}}', { from: r.from, to: r.to, team: label })).join('; ')
+  let text = sentence
   if (ctx.mode === 'review') text += tr(ctx.t, 'corrections.log.afterMatchSuffix', ' (entered after the match)')
-  plan.log = { action: 'renumberPlayer', setIndex: null, team, before: list.map(r => r.from).join(','), after: list.map(r => r.to).join(','), text }
+  // before: the old numbers; after: the sentence (the preview shows it)
+  plan.log = { action: 'renumberPlayer', setIndex: null, team, before: list.map(r => r.from).join(','), after: sentence, text }
   // the rebuild reads the roster with the new numbers
   const players = {
     ...(ctx.players || {}),
