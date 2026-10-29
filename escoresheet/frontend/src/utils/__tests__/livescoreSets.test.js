@@ -235,3 +235,16 @@ describe('a Swap A/B after the live row: its own Team A (its names)', () => {
     expect(teamAIsHome(game)).toBe(false)
   })
 })
+
+describe('correctionAfter', () => {
+  it('true when the correction log has an entry newer than the event', async () => {
+    const { correctionAfter } = await import('../livescoreModel')
+    const log = [{ ts: '2026-10-29T20:00:00.000Z' }, { ts: '2026-10-29T20:05:00.000Z' }]
+    expect(correctionAfter(log, '2026-10-29T20:04:00.000Z')).toBe(true)
+    expect(correctionAfter(log, '2026-10-29T20:06:00.000Z')).toBe(false)
+    expect(correctionAfter(log, Date.parse('2026-10-29T20:04:59.000Z'))).toBe(true)
+    expect(correctionAfter([], '2026-10-29T20:04:00.000Z')).toBe(false)
+    expect(correctionAfter(undefined, '2026-10-29T20:04:00.000Z')).toBe(false)
+    expect(correctionAfter(log, undefined)).toBe(false)
+  })
+})

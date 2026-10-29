@@ -532,6 +532,20 @@ export function countLiveGames(games) {
  * before the set 5 coin toss sides / first serve were chosen (match fields).
  * @param {string|null|undefined} eventType
  */
+/**
+ * True when the correction log has an entry newer than an event's time: the
+ * event's stored state snapshot predates that correction.
+ * @param {Array|undefined} manualChanges  match.manualChanges
+ * @param {string|number|undefined} eventTs
+ */
+export function correctionAfter(manualChanges, eventTs) {
+  const last = Array.isArray(manualChanges) ? manualChanges[manualChanges.length - 1] : null
+  if (!last?.ts || eventTs == null) return false
+  const c = Date.parse(last.ts)
+  const e = typeof eventTs === 'number' ? eventTs : Date.parse(eventTs)
+  return Number.isFinite(c) && Number.isFinite(e) && c > e
+}
+
 export function liveStateNeedsFreshSnapshot(eventType) {
   return typeof eventType === 'string' &&
     (eventType.startsWith('manual_') || eventType === 'court_switch' || eventType === 'end_interval')
