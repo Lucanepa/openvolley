@@ -107,7 +107,7 @@ describe('renumber a player for the whole match', () => {
     expect(plan.matchPatch).toEqual({ homeCourtCaptain: 15, homeRememberedCourtCaptain: 15 })
 
     // the correction log shown to the referee; nothing inconsistent after it
-    expect(plan.log).toMatchObject({ action: 'renumberPlayer', team: 'home', before: '5', after: '15' })
+    expect(plan.log).toMatchObject({ action: 'renumberPlayer', team: 'home', before: '5', after: 'Player #5 of VC Smash renumbered to #15' })
     expect(plan.log.text).toBe('Player #5 of VC Smash renumbered to #15')
     expect(plan.newIssues).toEqual([])
     // the lists read the new number
