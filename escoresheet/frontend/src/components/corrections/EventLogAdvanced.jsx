@@ -2,14 +2,29 @@
 // seq, time, what and the score "A x:y B". Remove takes the whole group
 // (a point with its rotation and rally start) after a confirmation that
 // names what goes. No Add here: adding is done in the cards above.
+// Newest entries first by default (owner 2026-10-29); the scorer's choice
+// of order is remembered on the device.
 import { useMemo, useState } from 'react'
 import { X } from 'lucide-react'
 import { Button } from '../../ui/Button.jsx'
 import { Switch } from '../../ui/Switch.jsx'
+import { SegmentedControl } from '../../ui/SegmentedControl.jsx'
 import { describeEvent, compareBySeq, humanize, tr, tsMs, formatScore, scoreBeforeEvent } from '../../domain/describe'
 import { isRemovableEntry } from '../../domain/manualCorrections'
 import { HIT } from './shared.jsx'
 import { timeLabel } from '../../ui/format'
+
+/** Where the scorer's order of the event log is kept (this device). */
+export const EVENT_LOG_ORDER_KEY = 'ov.corrections.eventLogOrder'
+
+/** 'newest' (the default) or 'oldest'. */
+export function readEventLogOrder() {
+  try { return localStorage.getItem(EVENT_LOG_ORDER_KEY) === 'oldest' ? 'oldest' : 'newest' } catch { return 'newest' }
+}
+
+function saveEventLogOrder(order) {
+  try { localStorage.setItem(EVENT_LOG_ORDER_KEY, order) } catch { /* private mode: not remembered */ }
+}
 
 function clock(ts) {
   const ms = tsMs(ts)
@@ -21,14 +36,17 @@ export default function EventLogAdvanced({ events, filterSet, ctx, readOnly, onR
   const t = ctx.t
   const [open, setOpen] = useState(false)
   const [showAuto, setShowAuto] = useState(false)
+  const [order, setOrder] = useState(readEventLogOrder)
+  const chooseOrder = (value) => { setOrder(value); saveEventLogOrder(value) }
   const rows = useMemo(() => {
     if (!open) return []
-    return [...(events || [])]
+    const list = [...(events || [])]
       .filter(e => filterSet === 'all' || (e.setIndex ?? 1) === Number(filterSet))
       .sort(compareBySeq)
       .map(e => ({ e, d: describeEvent(e, events, ctx) }))
       .filter(r => r.d || showAuto)
-  }, [open, events, filterSet, showAuto, ctx])
+    return order === 'oldest' ? list : list.reverse()
+  }, [open, events, filterSet, showAuto, ctx, order])
 
   return (
     <details
@@ -44,9 +62,21 @@ export default function EventLogAdvanced({ events, filterSet, ctx, readOnly, onR
           <p className="text-xs text-stone-500 mb-3">
             {tr(t, 'corrections.hint.advanced', 'Every entry of the match log. Removing an entry removes everything that belongs to it. Use the cards above to add or change entries.')}
           </p>
-          <div className="flex items-center justify-between gap-3 mb-2">
-            <span id="ov-corr-auto" className="text-sm text-stone-700">{tr(t, 'corrections.action.showAutomatic', 'Show automatic entries')}</span>
-            <Switch checked={showAuto} onCheckedChange={setShowAuto} aria-labelledby="ov-corr-auto" />
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+            <SegmentedControl
+              variant="joined-quiet"
+              ariaLabel={tr(t, 'corrections.field.order', 'Order')}
+              options={[
+                { value: 'newest', label: tr(t, 'corrections.action.newestFirst', 'Newest first') },
+                { value: 'oldest', label: tr(t, 'corrections.action.oldestFirst', 'Oldest first') }
+              ]}
+              value={order}
+              onChange={chooseOrder}
+            />
+            <div className="flex items-center gap-3">
+              <span id="ov-corr-auto" className="text-sm text-stone-700">{tr(t, 'corrections.action.showAutomatic', 'Show automatic entries')}</span>
+              <Switch checked={showAuto} onCheckedChange={setShowAuto} aria-labelledby="ov-corr-auto" />
+            </div>
           </div>
           <ol className="divide-y divide-stone-100">
             {rows.map(({ e, d }) => (

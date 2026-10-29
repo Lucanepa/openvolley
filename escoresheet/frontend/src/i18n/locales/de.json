@@ -4151,7 +4151,8 @@
       "startTime": "Beginn",
       "endTime": "Ende",
       "currentFinal": "Jetzt",
-      "addDelayRemark": "Bemerkung zum verspäteten Beginn hinzufügen"
+      "addDelayRemark": "Bemerkung zum verspäteten Beginn hinzufügen",
+      "order": "Reihenfolge"
     },
     "who": {
       "player": "Spieler/in auf dem Feld",
@@ -4226,7 +4227,9 @@
       "correctFinalScore": "Endstand korrigieren",
       "setTimes": "Satzzeiten",
       "showAutomatic": "Automatische Einträge anzeigen",
-      "reopenForCorrections": "Zurück zum Spielende"
+      "reopenForCorrections": "Zurück zum Spielende",
+      "newestFirst": "Neueste zuerst",
+      "oldestFirst": "Älteste zuerst"
     },
     "preview": {
       "title": "Was sich auf dem Matchblatt ändert",

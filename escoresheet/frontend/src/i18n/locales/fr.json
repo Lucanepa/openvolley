@@ -4162,7 +4162,8 @@
       "startTime": "Début",
       "endTime": "Fin",
       "currentFinal": "Actuellement",
-      "addDelayRemark": "Ajouter une remarque sur le début retardé"
+      "addDelayRemark": "Ajouter une remarque sur le début retardé",
+      "order": "Ordre"
     },
     "who": {
       "player": "Joueur/euse sur le terrain",
@@ -4237,7 +4238,9 @@
       "correctFinalScore": "Corriger le score final",
       "setTimes": "Heures du set",
       "showAutomatic": "Afficher les entrées automatiques",
-      "reopenForCorrections": "Retour à la fin du match"
+      "reopenForCorrections": "Retour à la fin du match",
+      "newestFirst": "Plus récentes d'abord",
+      "oldestFirst": "Plus anciennes d'abord"
     },
     "preview": {
       "title": "Ce qui change sur la feuille de match",
