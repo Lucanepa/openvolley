@@ -14,6 +14,15 @@ const api = vi.hoisted(() => ({ url: 'https://backend.example.test/api/contact' 
 vi.mock('../../utils/backendConfig', () => ({ getCloudApiUrl: () => api.url }))
 const openAppWindow = vi.hoisted(() => vi.fn())
 vi.mock('../../utils/openAppWindow', () => ({ openAppWindow }))
+// The diagnostics report of the device (utils/diagnosticsCollect, loaded by the dialog when needed)
+const diag = vi.hoisted(() => ({ make: null }))
+vi.mock('../../utils/diagnosticsCollect', () => ({ createDiagnosticsReport: (...args) => diag.make(...args) }))
+const REPORT = Object.freeze({
+  text: 'OpenVolley diagnostics\n\n== 1. Summary ==\nApp:  OpenVolley – scorer app\n\n== 3. Timeline ==\n22:01:03.120  tap     "Point A"  Scoreboard\n\n== end of report ==\n',
+  bytes: 131,
+  lines: 9,
+  fileName: 'openvolley-diagnostics-20261029-2201-g4711.txt'
+})
 
 import SupportFeedbackModal from '../SupportFeedbackModal'
 import { setActiveMatch } from '../../utils/activity/activeMatch'
@@ -44,6 +53,7 @@ describe('SupportFeedbackModal', () => {
     fetchMock = vi.fn(async () => new Response(JSON.stringify({ success: true }), { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
     openAppWindow.mockClear()
+    diag.make = vi.fn(async () => REPORT)
     localStorage.clear()
   })
   afterEach(() => {
@@ -159,20 +169,171 @@ describe('SupportFeedbackModal', () => {
     expect([sentForm().get('supportType'), sentForm().get('severity')]).toEqual(['help', ''])
   })
 
-  it('"Include diagnostics" is off by default, shows what it sends, and sends exactly that', async () => {
+  const diagBox = () => screen.getByLabelText(/supportFeedback\.includeDiagnostics/)
+  const showButton = () => screen.findByRole('button', { name: /supportFeedback\.(show|hide)Diagnostics/ })
+
+  it('"Include diagnostics" is ticked for a bug report; "Show what is sent" shows exactly the file that goes', async () => {
     setActiveMatch({ id: 3, gameNumber: 4711 })
     render(<SupportFeedbackModal open onClose={() => {}} area="scoring" />)
     fillBug()
-    const box = screen.getByLabelText(/supportFeedback\.includeDiagnostics/)
-    expect(box.checked).toBe(false)
+    expect(diagBox().checked).toBe(true)
+    const toggle = await showButton()
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.getByText('supportFeedback.diagnosticsSize')).toBeInTheDocument()
     expect(screen.queryByLabelText('supportFeedback.diagnosticsPreview')).toBeNull()
-    fireEvent.click(box)
-    const preview = screen.getByLabelText('supportFeedback.diagnosticsPreview')
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(toggle.textContent).toContain('supportFeedback.hideDiagnostics')
+    expect(screen.getByLabelText('supportFeedback.diagnosticsPreview').textContent).toBe(REPORT.text)
+    submit()
+    await screen.findByText('supportFeedback.thankYouSupport')
+    const fd = sentForm()
+    const file = fd.get('diagnosticsFile')
+    expect(file.name).toBe(REPORT.fileName)
+    expect(await file.text()).toBe(REPORT.text)
+    expect(fd.getAll('files')).toEqual([])
+    expect(fd.has('diagnostics')).toBe(false)
+    expect(diag.make).toHaveBeenCalledTimes(1)
+    expect(diag.make).toHaveBeenCalledWith({ gameNumber: undefined, language: 'de-CH' })
+  })
+
+  it('ticked for a question too', async () => {
+    render(<SupportFeedbackModal open onClose={() => {}} area="connections" />)
+    selectByLabel('supportFeedback.contactTypeLabel', 'support')
+    selectByLabel('supportFeedback.supportTypeLabel', 'help')
+    expect(diagBox().checked).toBe(true)
+    await showButton()
+    fireEvent.change(screen.getByLabelText('supportFeedback.commentsLabel'), { target: { value: 'How do I connect the bench?' } })
+    fireEvent.change(screen.getByLabelText('supportFeedback.emailLabel'), { target: { value: 'tester@example.ch' } })
+    submit()
+    await screen.findByText('supportFeedback.thankYouSupport')
+    expect(sentForm().get('diagnosticsFile').name).toBe(REPORT.fileName)
+  })
+
+  it('unticked for feedback and requests: nothing made or sent; ticked by hand, the report is made and sent', async () => {
+    render(<SupportFeedbackModal open onClose={() => {}} area="home" />)
+    for (const type of ['feedback', 'request']) {
+      selectByLabel('supportFeedback.contactTypeLabel', type)
+      expect(diagBox().checked, type).toBe(false)
+    }
+    expect(diag.make).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByLabelText('supportFeedback.commentsLabel'), { target: { value: 'A dark mode please' } })
+    fireEvent.change(screen.getByLabelText('supportFeedback.emailLabel'), { target: { value: 'tester@example.ch' } })
+    submit()
+    await screen.findByText('supportFeedback.thankYouRequest')
+    expect(sentForm().has('diagnosticsFile')).toBe(false)
+    expect(sentForm().has('diagnostics')).toBe(false)
+    expect(diag.make).not.toHaveBeenCalled()
+  })
+
+  it('feedback ticked by hand: the report is made then, and sent', async () => {
+    render(<SupportFeedbackModal open onClose={() => {}} area="home" />)
+    selectByLabel('supportFeedback.contactTypeLabel', 'feedback')
+    fireEvent.click(diagBox())
+    expect(diagBox().checked).toBe(true)
+    await showButton()
+    fireEvent.change(screen.getByLabelText('supportFeedback.commentsLabel'), { target: { value: 'Lovely app' } })
+    fireEvent.change(screen.getByLabelText('supportFeedback.emailLabel'), { target: { value: 'tester@example.ch' } })
+    submit()
+    await screen.findByText('supportFeedback.thankYouFeedback')
+    expect(sentForm().get('diagnosticsFile').name).toBe(REPORT.fileName)
+  })
+
+  it('unticked by the user: not sent, and a change of type keeps the choice; ticked again, a new report', async () => {
+    render(<SupportFeedbackModal open onClose={() => {}} area="scoring" />)
+    fillBug()
+    await showButton()
+    fireEvent.click(diagBox())
+    expect(diagBox().checked).toBe(false)
+    expect(screen.queryByRole('button', { name: /supportFeedback\.showDiagnostics/ })).toBeNull()
+    selectByLabel('supportFeedback.supportTypeLabel', 'help')
+    expect(diagBox().checked, 'the user\'s choice stays').toBe(false)
+    submit()
+    await screen.findByText('supportFeedback.thankYouSupport')
+    expect(sentForm().has('diagnosticsFile')).toBe(false)
+    expect(sentForm().has('diagnostics')).toBe(false)
+    expect(diag.make).toHaveBeenCalledTimes(1)
+  })
+
+  it('ticked again after unticking: a new snapshot', async () => {
+    render(<SupportFeedbackModal open onClose={() => {}} area="scoring" />)
+    fillBug()
+    await showButton()
+    fireEvent.click(diagBox())
+    fireEvent.click(diagBox())
+    await showButton()
+    expect(diag.make).toHaveBeenCalledTimes(2)
+  })
+
+  it('still being made when Send is pressed: the message waits for it', async () => {
+    let finish
+    diag.make = vi.fn(() => new Promise((resolve) => { finish = resolve }))
+    render(<SupportFeedbackModal open onClose={() => {}} area="scoring" />)
+    fillBug()
+    expect(screen.getByRole('status').textContent).toBe('supportFeedback.diagnosticsPreparing')
+    submit()
+    await act(async () => { await Promise.resolve() })
+    expect(fetchMock).not.toHaveBeenCalled()
+    await act(async () => { finish(REPORT) })
+    await screen.findByText('supportFeedback.thankYouSupport')
+    expect(sentForm().get('diagnosticsFile').name).toBe(REPORT.fileName)
+  })
+
+  it('the report cannot be made: the short JSON is shown, and sent instead', async () => {
+    diag.make = vi.fn(async () => { throw new Error('IndexedDB blocked') })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    setActiveMatch({ id: 3, gameNumber: 4711 })
+    render(<SupportFeedbackModal open onClose={() => {}} area="scoring" />)
+    fillBug()
+    const preview = await screen.findByLabelText('supportFeedback.diagnosticsPreview')
+    expect(screen.getByText('supportFeedback.diagnosticsFailed')).toBeInTheDocument()
     const shown = JSON.parse(preview.textContent)
     expect(shown).toMatchObject({ appVersion: '0.0.0-test', platform: 'web', displayMode: 'auto', online: true, gameNumber: 4711 })
     submit()
     await screen.findByText('supportFeedback.thankYouSupport')
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body.get('diagnostics'))).toEqual(shown)
+    expect(JSON.parse(sentForm().get('diagnostics'))).toEqual(shown)
+    expect(sentForm().has('diagnosticsFile')).toBe(false)
+    warn.mockRestore()
+  })
+
+  it('sending failed: "Download diagnostics" saves the same file to attach to the email', async () => {
+    fetchMock.mockImplementation(async () => new Response(JSON.stringify({ success: false, code: 'send_failed' }), { status: 502 }))
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const blobs = []
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn((b) => { blobs.push(b); return 'blob:diag' }), revokeObjectURL: vi.fn() }))
+    const clicked = []
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () { clicked.push([this.download, this.href]) })
+    render(<SupportFeedbackModal open onClose={() => {}} area="scoring" />)
+    fillBug()
+    await showButton()
+    submit()
+    expect((await screen.findByRole('alert')).textContent).toBe('supportFeedback.sendError')
+    fireEvent.click(screen.getByRole('button', { name: /supportFeedback\.downloadDiagnostics/ }))
+    expect(clicked).toEqual([[REPORT.fileName, 'blob:diag']])
+    expect(await blobs[0].text()).toBe(REPORT.text)
+    fireEvent.click(screen.getByRole('button', { name: /supportFeedback\.sendByEmail/ }))
+    const body = new URL(openAppWindow.mock.calls[0][0]).searchParams.get('body')
+    expect(body).toContain(`Diagnostics file to attach: ${REPORT.fileName}`)
+    // the email app's screen offers the file again
+    expect(screen.getByText('supportFeedback.mailtoAttachDiagnostics')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /supportFeedback\.downloadDiagnostics/ }))
+    expect(clicked).toHaveLength(2)
+    click.mockRestore()
+    err.mockRestore()
+  })
+
+  it('no download button when diagnostics are unticked', async () => {
+    fetchMock.mockImplementation(async () => new Response('{}', { status: 503 }))
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    render(<SupportFeedbackModal open onClose={() => {}} area="scoring" />)
+    fillBug()
+    await showButton()
+    fireEvent.click(diagBox())
+    submit()
+    await screen.findByRole('alert')
+    expect(screen.getByRole('button', { name: /supportFeedback\.sendByEmail/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /supportFeedback\.downloadDiagnostics/ })).toBeNull()
+    err.mockRestore()
   })
 
   it('refuses a file of another kind or one too many when picked', () => {
@@ -234,13 +395,15 @@ describe('SupportFeedbackModal', () => {
     online.mockRestore()
   })
 
-  it('no backend to send to: the email app at once', () => {
+  it('no backend to send to: the email app at once, and the diagnostics file to download for it', async () => {
     api.url = null
     render(<SupportFeedbackModal open onClose={() => {}} area="install-updates" />)
     fillBug()
     submit()
+    await screen.findByText('supportFeedback.mailtoTitle')
     expect(fetchMock).not.toHaveBeenCalled()
     expect(openAppWindow).toHaveBeenCalledTimes(1)
-    expect(screen.getByText('supportFeedback.mailtoTitle')).toBeInTheDocument()
+    expect(new URL(openAppWindow.mock.calls[0][0]).searchParams.get('body')).toContain(`Diagnostics file to attach: ${REPORT.fileName}`)
+    expect(screen.getByRole('button', { name: /supportFeedback\.downloadDiagnostics/ })).toBeInTheDocument()
   })
 })
