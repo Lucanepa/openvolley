@@ -11,8 +11,9 @@ vi.mock('react-i18next', () => ({
     i18n: { language: 'de' }
   })
 }))
-// The support form is another agent's; here only what it is given. It reads
-// the scale context as the real one does (useScaledLayout).
+// The support form has its own tests; here only what it is given
+// (ContextualHelpPanel.contact.test.jsx drives the real one). It reads the
+// scale context as the real one does (useScaledLayout).
 vi.mock('../../SupportFeedbackModal', async () => {
   const { useScale } = await vi.importActual('../../../contexts/ScaleContext')
   return {
@@ -182,6 +183,8 @@ describe('ContextualHelpPanel: More help and Contact support', () => {
     fireEvent.click(within(screen.getByTestId('help-section-scoring')).getByText('contextHelp.contactSupport'))
     expect(screen.getByTestId('support-modal').dataset.area).toBe('scoring')
     expect(support.props.at(-1)).toMatchObject({ open: true, area: 'scoring' })
+    // the section itself, not a page name for the form to map
+    expect(support.props.at(-1).currentPage).toBeUndefined()
     // closed, then from another section
     support.props.at(-1).onClose()
     cleanup()

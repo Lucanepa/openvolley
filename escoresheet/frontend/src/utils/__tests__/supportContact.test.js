@@ -4,7 +4,7 @@ import {
   collectDiagnostics, contactAreaOf, contactMailto, isAllowedFile, isContactEmail, pageUrl
 } from '../supportContact'
 import { setActiveMatch } from '../activity/activeMatch'
-import { helpContent } from '../../components/help/helpContent'
+import { HELP_SCREENS, SECTION_IDS } from '../../components/help/helpSections'
 
 const file = (name, size = 10, type = '') => new File([new Uint8Array(size)], name, { type })
 const win = (href = 'https://app.openvolley.app/referee?pin=123456#set2') => {
@@ -16,17 +16,22 @@ describe('support form: areas', () => {
   it('are the 16 help sections and "other"', () => {
     expect(SUPPORT_SECTIONS).toEqual(['home', 'setup', 'coin-toss', 'scoring', 'subs-timeouts', 'sanctions', 'set-end', 'match-end',
       'corrections', 'connections', 'referee', 'bench', 'livescore', 'handover', 'sync-offline', 'install-updates'])
+    expect(SUPPORT_SECTIONS).toEqual(SECTION_IDS)
     expect(CONTACT_AREAS).toEqual([...SUPPORT_SECTIONS, 'other'])
   })
 
-  it('maps the older area names and every page of the contextual help onto a section', () => {
+  it('maps the older area names and every screen of the help onto a section', () => {
     for (const id of CONTACT_AREAS) expect(contactAreaOf(id)).toBe(id)
     expect(contactAreaOf('mainPage')).toBe('home')
     expect(contactAreaOf('options')).toBe('home')
     expect(contactAreaOf('scoreboard')).toBe('scoring')
     expect(contactAreaOf('uploadRoster')).toBe('setup')
     expect(contactAreaOf('approval')).toBe('match-end')
-    for (const page of Object.keys(helpContent)) expect(SUPPORT_SECTIONS).toContain(contactAreaOf(page))
+    // a screen: its main section (the panel passes the section itself)
+    for (const [id, screen] of Object.entries(HELP_SCREENS)) expect(contactAreaOf(id), id).toBe(screen.sections[0])
+    expect(contactAreaOf('liveCorrections')).toBe('corrections')
+    expect(contactAreaOf('connectTablets')).toBe('connections')
+    expect(contactAreaOf('closedCopy')).toBe('sync-offline')
     for (const v of Object.values(LEGACY_AREAS)) expect(SUPPORT_SECTIONS).toContain(v)
     expect(contactAreaOf('toString')).toBe('')
     expect(contactAreaOf('nope')).toBe('')
