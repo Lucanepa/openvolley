@@ -1,16 +1,21 @@
 // Advanced: the full event log, collapsed, in human words (describeEvent):
-// seq, time, what and the score "A x:y B". Remove takes the whole group
-// (a point with its rotation and rally start) after a confirmation that
-// names what goes. No Add here: adding is done in the cards above.
+// seq, time, what and the score "A x:y B". Every entry the scorer wrote has
+// its Edit and Remove (domain/manualCorrections entryActions): Remove takes
+// the whole group (a point with its rotation and rally start) after a
+// confirmation that names what goes, a set end is reopened, and what
+// follows is recalculated. The rows the app derives (rotations, the
+// automatic libero exit) are marked "Automatic": they follow their entry.
+// No Add here: adding is done in the cards above.
 // Newest entries first by default (owner 2026-10-29); the scorer's choice
 // of order is remembered on the device.
 import { useMemo, useState } from 'react'
-import { X } from 'lucide-react'
+import { X, Pencil } from 'lucide-react'
 import { Button } from '../../ui/Button.jsx'
 import { Switch } from '../../ui/Switch.jsx'
 import { SegmentedControl } from '../../ui/SegmentedControl.jsx'
 import { describeEvent, compareBySeq, humanize, tr, tsMs, formatScore, scoreBeforeEvent } from '../../domain/describe'
-import { isRemovableEntry } from '../../domain/manualCorrections'
+import { entryActions } from '../../domain/manualCorrections'
+import { Chip } from '../../ui/Chip.jsx'
 import { HIT } from './shared.jsx'
 import { timeLabel } from '../../ui/format'
 
@@ -32,7 +37,7 @@ function clock(ts) {
   return timeLabel(ms)
 }
 
-export default function EventLogAdvanced({ events, filterSet, ctx, readOnly, onRemove }) {
+export default function EventLogAdvanced({ events, filterSet, ctx, readOnly, onRemove, onEdit, canReopen = () => false }) {
   const t = ctx.t
   const [open, setOpen] = useState(false)
   const [showAuto, setShowAuto] = useState(false)
@@ -43,7 +48,7 @@ export default function EventLogAdvanced({ events, filterSet, ctx, readOnly, onR
     const list = [...(events || [])]
       .filter(e => filterSet === 'all' || (e.setIndex ?? 1) === Number(filterSet))
       .sort(compareBySeq)
-      .map(e => ({ e, d: describeEvent(e, events, ctx) }))
+      .map(e => ({ e, d: describeEvent(e, events, ctx), actions: entryActions(e, events) }))
       .filter(r => r.d || showAuto)
     return order === 'oldest' ? list : list.reverse()
   }, [open, events, filterSet, showAuto, ctx, order])
@@ -60,7 +65,7 @@ export default function EventLogAdvanced({ events, filterSet, ctx, readOnly, onR
       {open && (
         <div className="px-4 pb-4">
           <p className="text-xs text-stone-500 mb-3">
-            {tr(t, 'corrections.hint.advanced', 'Every entry of the match log. Removing an entry removes everything that belongs to it. Use the cards above to add or change entries.')}
+            {tr(t, 'corrections.hint.advancedAll', 'Every entry of the match log. Edit or remove any entry: what belongs to it goes with it and everything after it is recalculated. Use the cards above to add entries.')}
           </p>
           <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
             <SegmentedControl
@@ -79,7 +84,7 @@ export default function EventLogAdvanced({ events, filterSet, ctx, readOnly, onR
             </div>
           </div>
           <ol className="divide-y divide-stone-100">
-            {rows.map(({ e, d }) => (
+            {rows.map(({ e, d, actions }) => (
               <li key={e.id} className="flex items-center gap-3 py-2">
                 <span className="w-12 shrink-0 font-mono text-[11px] text-stone-400 tabular-nums">{e.seq}</span>
                 <span className="w-10 shrink-0 text-xs text-stone-500 tabular-nums">{clock(e.ts)}</span>
@@ -89,14 +94,27 @@ export default function EventLogAdvanced({ events, filterSet, ctx, readOnly, onR
                   {d?.teamText && <span className="text-stone-500"> · {d.teamText}</span>}
                 </span>
                 <span className="shrink-0 text-xs text-stone-500 tabular-nums">{d?.score || formatScore(scoreBeforeEvent(events, e), null, ctx)}</span>
-                {!readOnly && isRemovableEntry(e) && (
+                {actions.automatic && <Chip tone="stone">{tr(t, 'corrections.chip.automatic', 'Automatic')}</Chip>}
+                {!readOnly && actions.edit && onEdit && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon={Pencil}
+                    className={`${HIT} w-8 px-0`}
+                    onClick={() => onEdit(e)}
+                    aria-label={tr(t, 'corrections.action.editWhat', 'Edit {{what}}', { what: d?.title || humanize(e.type) })}
+                  />
+                )}
+                {!readOnly && (actions.remove === 'plan' || (actions.remove === 'reopen' && canReopen(e))) && (
                   <Button
                     variant="danger-soft"
                     size="sm"
                     icon={X}
                     className={`${HIT} w-8 px-0`}
                     onClick={() => onRemove(e)}
-                    aria-label={tr(t, 'corrections.action.removeEntry', 'Remove {{what}}', { what: d?.title || humanize(e.type) })}
+                    aria-label={actions.remove === 'reopen'
+                      ? tr(t, 'corrections.action.reopenSet', 'Reopen set')
+                      : tr(t, 'corrections.action.removeEntry', 'Remove {{what}}', { what: d?.title || humanize(e.type) })}
                   />
                 )}
               </li>
