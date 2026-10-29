@@ -42,7 +42,8 @@ describe('App: closing a match', () => {
     const { states, stop } = track(() => ({
       home: !!button('Restore match'),
       match: !!button('Continue match') || !!button('Delete match'),
-      testMatchChip: !!button('Test match'),
+      // the header's match chip (Home's own Test match button has the same text)
+      testMatchChip: document.querySelector('button[data-match-info-menu]')?.textContent.trim() === 'Test match',
       matchEnd: /Match complete/.test(document.body.textContent)
     }))
     fireEvent.click(button('Close match'))

@@ -1143,6 +1143,20 @@
       "closed": "Closed on the server",
       "unchecked": "Not checked",
       "unsent": "Unsent changes"
+    },
+    "signInForOfficial": "Sign in to score official games. Test and easy matches stay on this device.",
+    "todayGames": {
+      "title": "Today's games",
+      "loading": "Loading today's games…",
+      "offline": "No connection: the list from earlier today.",
+      "failed": "Today's games could not be loaded. Enter the game yourself.",
+      "noClub": "Your account has no club yet, so there is no list. Enter the game yourself or ask your club.",
+      "none": "No home game of your club today.",
+      "mine": "Started by you",
+      "taken": "Started on another account",
+      "closed": "Closed",
+      "notListed": "Not in the list?",
+      "manual": "Enter the game yourself"
     }
   },
   "options": {
