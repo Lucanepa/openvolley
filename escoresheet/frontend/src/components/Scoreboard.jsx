@@ -68,7 +68,7 @@ import { playerReplacedByLibero } from '../domain/liberos'
 import { planSubstitutionDeletion, countRegularSubstitutions, classifySubstitutionRequest, MAX_SUBSTITUTIONS_PER_SET } from '../domain/substitutions'
 import { decisionChangeUndoRecord, planDecisionChangeReversal, planPointRemoval, syncJobsForEvents, syncJobsForSets, scoreAfterUndo } from '../domain/corrections'
 import { validateReopenedRoster, referencedPlayerNumbers, isShirtNumber } from '../domain/roster'
-import { planRenumberPlayers } from '../domain/manualCorrections'
+import { planRenumberPlayers, errorText as correctionErrorText } from '../domain/manualCorrections'
 import { applyCorrectionPlan } from '../services/corrections/applyCorrectionPlan'
 import { appendRemark, removeRemarkLine, eventRemark, remarkClock, setActualStartRemark } from '../domain/remarks'
 import { LINEUP_POSITIONS, lineupEntryErrors, lineupCandidates, lineupCaptainStatus, teamCaptainNumber, gameCaptainOptions, initialGameCaptainChoice, lineupGameCaptainDecision } from '../domain/lineupEntry'
@@ -4624,6 +4624,13 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
     // Persist player changes to IndexedDB
     const existingPlayerIds = new Set(snapshotPlayers.map(p => p.id))
     const editedPlayerIds = new Set(editedPlayers.filter(p => p.id).map(p => p.id))
+    // A renumbered player's new number is written with the renumbered record
+    // below (applyCorrectionPlan: the roster row and every entry in one
+    // transaction). Written here first, a failure in between left the roster
+    // at the new number and the record at the old one: a player without history
+    const renumberedFrom = new Map((renumbers || [])
+      .map(r => [snapshotPlayers.find(p => String(p.number) === String(r.from))?.id, r.from])
+      .filter(([id]) => id != null))
 
     // Delete removed players
     for (const orig of snapshotPlayers) {
@@ -4637,7 +4644,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
       if (player.id && existingPlayerIds.has(player.id)) {
         // Update existing
         await db.players.update(player.id, {
-          number: player.number,
+          number: renumberedFrom.has(player.id) ? (snapshotPlayers.find(p => p.id === player.id)?.number ?? player.number) : player.number,
           name: `${player.lastName || ''} ${player.firstName || ''}`.trim(),
           firstName: player.firstName,
           lastName: player.lastName,
@@ -4688,7 +4695,8 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         t, match: matchNow, homeTeam: data?.homeTeam, awayTeam: data?.awayTeam, matchId, mode: 'live',
         players: { home: teamKey === 'home' ? snapshotPlayers : (data?.homePlayers || []), away: teamKey === 'away' ? snapshotPlayers : (data?.awayPlayers || []) }
       })
-      if (!plan.error) await applyCorrectionPlan(plan, { matchId, db, mode: 'live' })
+      if (plan.error) showAlert(correctionErrorText(plan, t), 'error')
+      else await applyCorrectionPlan(plan, { matchId, db, mode: 'live' })
     }
     // The team's roster to the cloud (names, liberos, captain, numbers): the
     // tablets' cloud fallback and a hand-over read it from there
