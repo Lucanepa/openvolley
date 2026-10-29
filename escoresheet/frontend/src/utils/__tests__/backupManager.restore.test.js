@@ -46,7 +46,9 @@ vi.mock('../../db/db', () => ({ db: fakeDb }))
 vi.mock('../backendConfig', () => ({ getApiUrl: (p) => `http://backend.test${p}`, getCloudApiUrl: (p) => `http://backend.test${p}` }))
 vi.mock('../../lib/apiClient', () => ({ apiFrom: vi.fn(), apiStorage: { from: vi.fn() } }))
 
-import { restoreMatchFromJson, restoreMatchInPlace, importMatchFromSupabase, serverClosedState, matchBackupFromDatabaseExport, matchBackupFromMatchEndExport, matchBackupFromFile, matchEndExportData, restoreErrorText, BACKUP_FORMAT_ERROR, BACKUP_UNREADABLE_ERROR } from '../backupManager'
+import { restoreMatchFromJson, restoreMatchInPlace, importMatchFromSupabase, serverClosedState, matchBackupFromDatabaseExport, matchBackupFromMatchEndExport, matchBackupFromFile, matchEndExportData, restoreErrorText, BACKUP_FORMAT_ERROR, BACKUP_UNREADABLE_ERROR, BACKUP_LOCKED_ERROR } from '../backupManager'
+import { createBackupSealer } from '../backupCrypto/sealer'
+import { openEnvelope } from '../backupCrypto/envelope'
 import { apiFrom } from '../../lib/apiClient'
 import { isStaleClosedCopy } from '../matchReopen'
 import { signaturesPayload, signaturesSyncJob } from '../../domain/signatureEdits'
@@ -212,6 +214,71 @@ describe('restoreMatchFromJson', () => {
   it('never queues a restore for a test match', async () => {
     await restoreMatchFromJson(backup({ test: true }))
     expect([...fakeDb.sync_queue.map.values()].some(j => j.action === 'restore')).toBe(false)
+  })
+})
+
+// An app backup file of a match with a PIN is encrypted (backupCrypto): the
+// scorer opens it with the game PIN or the referee PIN (useBackupUnlock), and
+// the restore keeps that PIN instead of making a new one the cloud is sent
+describe('an encrypted app backup file, opened with a PIN', () => {
+  const PINS = ['gamePin', 'refereePin', 'homeTeamPin', 'awayTeamPin', 'homeTeamUploadPin', 'awayTeamUploadPin']
+  // as the app writes it (no PINs) and as the PIN dialog hands it on
+  async function opened(pin, overrides = {}) {
+    const data = backup({ seed_key: 'match_300_ccc', gamePin: '123456', refereePin: '654321', ...overrides })
+    const { gamePin, refereePin, homeTeamPin, ...match } = data.match
+    const plain = JSON.stringify({ ...data, match, secretsRemoved: true })
+    const { text } = await createBackupSealer().seal(1, data, plain, '2026-10-29T19:00:00.000Z')
+    const { data: inside, unlockedWith } = await openEnvelope(JSON.parse(text), pin)
+    return { envelope: JSON.parse(text), file: { ...inside, unlockedWith } }
+  }
+  const restoreJob = () => [...fakeDb.sync_queue.map.values()].find(j => j.action === 'restore')
+
+  it('a match new to this device keeps the referee PIN that opened it; the other PINs are new', async () => {
+    const { file } = await opened('654321')
+    const newId = await restoreMatchFromJson(file, { checkServer: async () => false, cloudLiveState: async () => null })
+    const restored = fakeDb.matches.map.get(newId)
+    expect(restored.refereePin).toBe('654321')
+    const pins = PINS.map(f => restored[f])
+    for (const pin of pins) expect(pin).toMatch(/^\d{6}$/)
+    expect(new Set(pins).size).toBe(pins.length)
+    expect(restoreJob().payload.match.connection_pins.referee).toBe('654321')
+    expect('unlockedWith' in restored).toBe(false)
+  })
+
+  it('the game PIN that opened it is the restored match\'s game PIN, sent to the cloud as it is', async () => {
+    const { file } = await opened('123456')
+    const newId = await restoreMatchFromJson(file, { checkServer: async () => false, cloudLiveState: async () => null })
+    expect(fakeDb.matches.map.get(newId).gamePin).toBe('123456')
+    expect(restoreJob().payload.match.game_pin).toBe('123456')
+  })
+
+  it('the local copy it replaces keeps its own PINs (the file may be older than a PIN change)', async () => {
+    fakeDb.matches.map.set(2, { id: 2, seed_key: 'match_300_ccc', status: 'live', gamePin: '900001', refereePin: '900002' })
+    const { file } = await opened('654321')
+    const newId = await restoreMatchFromJson(file, { checkServer: async () => false, cloudLiveState: async () => null })
+    expect(fakeDb.matches.map.get(newId)).toMatchObject({ gamePin: '900001', refereePin: '900002' })
+  })
+
+  it('restoreMatchInPlace: the open match keeps its PINs; the typed one fills a PIN it lacks', async () => {
+    fakeDb.matches.map.set(2, { id: 2, seed_key: 'match_300_ccc', status: 'live', gamePin: '900001' })
+    const { file } = await opened('654321')
+    await restoreMatchInPlace(2, file, { checkServer: async () => false })
+    expect(fakeDb.matches.map.get(2)).toMatchObject({ gamePin: '900001', refereePin: '654321' })
+    expect(restoreJob().payload.match).toMatchObject({ game_pin: '900001', connection_pins: { referee: '654321' } })
+    // typed the game PIN: the open match's own stays
+    const other = await opened('123456')
+    await restoreMatchInPlace(2, other.file, { checkServer: async () => false })
+    expect(fakeDb.matches.map.get(2).gamePin).toBe('900001')
+  })
+
+  it('a file still encrypted is refused before anything changes, with a code the dialogs say', async () => {
+    const { envelope } = await opened('123456')
+    const before = [...fakeDb.matches.map.values()]
+    expect(matchBackupFromFile(envelope)).toBe(envelope)
+    await expect(restoreMatchFromJson(envelope)).rejects.toMatchObject({ code: BACKUP_LOCKED_ERROR })
+    await expect(restoreMatchInPlace(2, envelope)).rejects.toMatchObject({ code: BACKUP_LOCKED_ERROR })
+    expect([...fakeDb.matches.map.values()]).toEqual(before)
+    expect(restoreErrorText({ code: BACKUP_LOCKED_ERROR }, (k) => k)).toBe('settings.backup.unlock.locked')
   })
 })
 

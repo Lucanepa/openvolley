@@ -999,6 +999,19 @@
         "notABackup": "Ce fichier n’est pas une sauvegarde de match OpenVolley. Choisissez un autre fichier.",
         "failed": "Le match n’a pas pu être restauré : {{error}}"
       },
+      "unlock": {
+        "title": "Fichier de sauvegarde chiffré",
+        "intro": "Ce fichier de sauvegarde est chiffré. Saisissez le PIN du match ou le PIN arbitre pour l’ouvrir.",
+        "pinLabel": "PIN du match ou PIN arbitre",
+        "open": "Ouvrir",
+        "opening": "Ouverture…",
+        "wrongPin": "PIN incorrect : ce n’est ni le PIN du match ni le PIN arbitre de ce match. Réessayez.",
+        "newer": "Ce fichier de sauvegarde a été enregistré par une version plus récente d’OpenVolley. Mettez l’app à jour, puis ouvrez à nouveau le fichier.",
+        "unsupported": "Les fichiers de sauvegarde chiffrés ne peuvent pas être ouverts sur cette page. Ouvrez le fichier dans l’app OpenVolley ou sur app.openvolley.app.",
+        "locked": "Ce fichier de sauvegarde est chiffré : choisissez-le à nouveau et saisissez le PIN du match ou le PIN arbitre.",
+        "game": "Match {{n}}",
+        "saved": "Enregistré le {{when}}"
+      },
       "preview": {
         "set": "Set {{n}}",
         "serving": "Service",
@@ -1278,8 +1291,8 @@
     "nativeBackupPreparing": "Préparation du dossier de sauvegarde…",
     "nativeBackupCopyHint": "Copiez le dossier depuis la tablette avec un câble USB ou l’app Fichiers.",
     "nativeBackupFailed": "La dernière sauvegarde n’a pas pu être enregistrée :",
-    "nativeBackupPrivacy": "Les fichiers contiennent les noms et dates de naissance des joueuses et joueurs, les officiels et les signatures, mais aucun PIN. Seul votre compte utilisateur peut les ouvrir.",
-    "nativeBackupPrivacyAndroid": "Les fichiers contiennent les noms et dates de naissance des joueuses et joueurs, les officiels et les signatures, mais aucun PIN. Toute personne qui a la tablette peut les lire, et ils restent après la désinstallation de l’app : supprimez le dossier avant de confier la tablette à quelqu’un d’autre.",
+    "nativeBackupPrivacy": "Les fichiers contiennent les noms et dates de naissance des joueuses et joueurs, les officiels et les signatures, chiffrés avec le PIN du match et le PIN arbitre (les PIN eux-mêmes ne sont pas enregistrés). Sans PIN, seuls le numéro du match, les équipes, la date et les scores des sets sont lisibles ; un match test n’a pas de PIN et est enregistré sans chiffrement. Seul votre compte utilisateur peut ouvrir le dossier.",
+    "nativeBackupPrivacyAndroid": "Les fichiers contiennent les noms et dates de naissance des joueuses et joueurs, les officiels et les signatures, chiffrés avec le PIN du match et le PIN arbitre (les PIN eux-mêmes ne sont pas enregistrés). Sans PIN, seuls le numéro du match, les équipes, la date et les scores des sets sont lisibles ; un match test n’a pas de PIN et est enregistré sans chiffrement. Toute personne qui a la tablette peut copier les fichiers, et ils restent après la désinstallation de l’app. Un PIN à 6 chiffres ne fait que ralentir qui veut le casser : supprimez le dossier avant de confier la tablette à quelqu’un d’autre.",
     "nativeBackupFailingShort": "La sauvegarde automatique échoue. Détails dans les options.",
     "nativeBackupFailingBadge": "Sauvegarde",
     "openBackupFolder": "Ouvrir le dossier de sauvegarde",
@@ -2662,9 +2675,9 @@
       "q_takeBack": "Comment reprendre la saisie ?",
       "a_takeBack": "Sur l'ancien appareil, appuyez sur « Reprendre le match ici ». Une connexion est nécessaire. L'app montre d'abord le score sur le serveur : comparez-le avec le tableau, puis appuyez sur « Oui, reprendre le match ici ». L'autre appareil est averti et s'arrête.",
       "q_backups": "Où sont les sauvegardes ?",
-      "a_backups": "Les apps pour ordinateur et Android enregistrent un fichier de sauvegarde à chaque point et chaque action : Options › Sauvegarde › Ouvrir le dossier de sauvegarde. Dans un navigateur, utilisez « Télécharger maintenant » dans les options, ou le téléchargement à la fin du set. Si vous êtes connecté, l'app garde aussi des sauvegardes cloud pendant le match.",
+      "a_backups": "Les apps pour ordinateur et Android enregistrent un fichier de sauvegarde à chaque point et chaque action : Options › Sauvegarde › Ouvrir le dossier de sauvegarde. Les fichiers sont chiffrés avec le PIN du match et le PIN arbitre. Dans un navigateur, utilisez « Télécharger maintenant » dans les options, ou le téléchargement à la fin du set. Si vous êtes connecté, l'app garde aussi des sauvegardes cloud pendant le match.",
       "q_restoreFile": "Comment restaurer depuis un fichier de sauvegarde ?",
-      "a_restoreFile": "À l'accueil : « Restaurer le match » › « Restaurer depuis un fichier local » › « Sélectionner le fichier de sauvegarde ». Choisissez le fichier, vérifiez l'« Aperçu de la restauration » et appuyez sur « Confirmer la restauration ».",
+      "a_restoreFile": "À l'accueil : « Restaurer le match » › « Restaurer depuis un fichier local » › « Sélectionner le fichier de sauvegarde ». Choisissez le fichier, vérifiez l'« Aperçu de la restauration » et appuyez sur « Confirmer la restauration ». Un fichier de sauvegarde de l'app pour ordinateur ou Android est chiffré : saisissez le PIN du match ou le PIN arbitre quand l'app le demande.",
       "q_restoreRefused": "Pourquoi ne puis-je pas restaurer cette sauvegarde ?",
       "a_restoreRefused": "Le match est clôturé sur le serveur, donc aucune sauvegarde ne peut le restaurer. Chargez plutôt la version officielle avec le numéro et le PIN du match."
     },

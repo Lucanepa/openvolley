@@ -993,6 +993,19 @@
         "notABackup": "Diese Datei ist kein OpenVolley-Spielbackup. Wählen Sie eine andere Datei.",
         "failed": "Das Spiel konnte nicht wiederhergestellt werden: {{error}}"
       },
+      "unlock": {
+        "title": "Verschlüsselte Backup-Datei",
+        "intro": "Diese Backup-Datei ist verschlüsselt. Geben Sie die Spiel-PIN oder die Schiedsrichter-PIN des Spiels ein, um sie zu öffnen.",
+        "pinLabel": "Spiel-PIN oder Schiedsrichter-PIN",
+        "open": "Öffnen",
+        "opening": "Wird geöffnet…",
+        "wrongPin": "Falsche PIN: Das ist weder die Spiel-PIN noch die Schiedsrichter-PIN dieses Spiels. Versuchen Sie es noch einmal.",
+        "newer": "Diese Backup-Datei wurde von einer neueren Version von OpenVolley gespeichert. Aktualisieren Sie die App und öffnen Sie die Datei dann noch einmal.",
+        "unsupported": "Verschlüsselte Backup-Dateien können auf dieser Seite nicht geöffnet werden. Öffnen Sie die Datei in der OpenVolley-App oder auf app.openvolley.app.",
+        "locked": "Diese Backup-Datei ist verschlüsselt: Wählen Sie sie noch einmal und geben Sie die Spiel-PIN oder die Schiedsrichter-PIN ein.",
+        "game": "Spiel {{n}}",
+        "saved": "Gespeichert {{when}}"
+      },
       "preview": {
         "set": "Satz {{n}}",
         "serving": "Aufschlag",
@@ -1272,8 +1285,8 @@
     "nativeBackupPreparing": "Backup-Ordner wird vorbereitet…",
     "nativeBackupCopyHint": "Den Ordner per USB-Kabel oder mit der App «Dateien» vom Tablet kopieren.",
     "nativeBackupFailed": "Das letzte Backup konnte nicht gespeichert werden:",
-    "nativeBackupPrivacy": "Die Dateien enthalten Namen und Geburtsdaten der Spielerinnen und Spieler, die Offiziellen und Unterschriften, aber keine PINs. Nur Ihr Benutzerkonto kann sie öffnen.",
-    "nativeBackupPrivacyAndroid": "Die Dateien enthalten Namen und Geburtsdaten der Spielerinnen und Spieler, die Offiziellen und Unterschriften, aber keine PINs. Wer das Tablet hat, kann sie lesen, und sie bleiben nach dem Deinstallieren der App erhalten: Löschen Sie den Ordner, bevor Sie das Tablet weitergeben.",
+    "nativeBackupPrivacy": "Die Dateien enthalten Namen und Geburtsdaten der Spielerinnen und Spieler, die Offiziellen und Unterschriften, verschlüsselt mit der Spiel-PIN und der Schiedsrichter-PIN des Spiels (die PINs selbst werden nicht gespeichert). Ohne PIN sind nur Spielnummer, Teams, Datum und Satzresultate lesbar; ein Testspiel hat keine PIN und wird unverschlüsselt gespeichert. Nur Ihr Benutzerkonto kann den Ordner öffnen.",
+    "nativeBackupPrivacyAndroid": "Die Dateien enthalten Namen und Geburtsdaten der Spielerinnen und Spieler, die Offiziellen und Unterschriften, verschlüsselt mit der Spiel-PIN und der Schiedsrichter-PIN des Spiels (die PINs selbst werden nicht gespeichert). Ohne PIN sind nur Spielnummer, Teams, Datum und Satzresultate lesbar; ein Testspiel hat keine PIN und wird unverschlüsselt gespeichert. Wer das Tablet hat, kann die Dateien kopieren, und sie bleiben nach dem Deinstallieren der App erhalten. Eine 6-stellige PIN bremst nur, wer sie knacken will: Löschen Sie den Ordner, bevor Sie das Tablet weitergeben.",
     "nativeBackupFailingShort": "Das automatische Backup schlägt fehl. Details unter Optionen.",
     "nativeBackupFailingBadge": "Backup",
     "openBackupFolder": "Backup-Ordner öffnen",
@@ -2517,9 +2530,9 @@
       "q_takeBack": "Wie übernehme ich das Spiel wieder?",
       "a_takeBack": "Tippe auf dem alten Gerät auf «Hier wieder übernehmen». Dafür braucht es eine Verbindung. Die App zeigt zuerst den Spielstand auf dem Server: Vergleiche ihn mit der Anzeige und tippe auf «Ja, hier wieder übernehmen». Das andere Gerät erfährt es und hört auf.",
       "q_backups": "Wo sind die Backups?",
-      "a_backups": "Die Desktop- und die Android-App speichern bei jedem Punkt und jeder Aktion eine Backup-Datei: Optionen › Sicherung › Backup-Ordner öffnen. Im Browser nutzt du «Backup jetzt herunterladen» in den Optionen oder den Download am Satzende. Bist du angemeldet, behält die App während des Spiels auch Cloud-Backups.",
+      "a_backups": "Die Desktop- und die Android-App speichern bei jedem Punkt und jeder Aktion eine Backup-Datei: Optionen › Sicherung › Backup-Ordner öffnen. Die Dateien sind mit der Spiel-PIN und der Schiedsrichter-PIN verschlüsselt. Im Browser nutzt du «Backup jetzt herunterladen» in den Optionen oder den Download am Satzende. Bist du angemeldet, behält die App während des Spiels auch Cloud-Backups.",
       "q_restoreFile": "Wie stelle ich ein Spiel aus einer Backup-Datei wieder her?",
-      "a_restoreFile": "Auf der Startseite: «Spiel wiederherstellen» › «Aus lokaler Datei wiederherstellen» › «Backup-Datei auswählen». Wähle die Datei, prüfe die «Wiederherstellungs-Vorschau» und tippe auf «Wiederherstellen».",
+      "a_restoreFile": "Auf der Startseite: «Spiel wiederherstellen» › «Aus lokaler Datei wiederherstellen» › «Backup-Datei auswählen». Wähle die Datei, prüfe die «Wiederherstellungs-Vorschau» und tippe auf «Wiederherstellen». Eine Backup-Datei der Desktop- oder Android-App ist verschlüsselt: Gib die Spiel-PIN oder die Schiedsrichter-PIN des Spiels ein, wenn die App danach fragt.",
       "q_restoreRefused": "Warum kann ich dieses Backup nicht wiederherstellen?",
       "a_restoreRefused": "Das Spiel ist auf dem Server abgeschlossen, darum lässt sich kein Backup davon wiederherstellen. Lade stattdessen die offizielle Version mit Spielnummer und Spiel-PIN."
     },
