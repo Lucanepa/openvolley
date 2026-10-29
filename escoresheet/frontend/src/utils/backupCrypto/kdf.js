@@ -4,13 +4,14 @@
  * the platform has one, else on this thread (tests, a worker that cannot
  * start).
  *
- * Cost (2026-10-29, Node 24, one Ryzen 7 PRO 8700GE core):
+ * Cost (2026-10-29, one Ryzen 7 PRO 8700GE core), Node 24:
  *   m=19 MiB t=2: 31 ms   m=32 MiB t=3: 76 ms   m=64 MiB t=1: 69 ms   m=64 MiB t=2: 114 ms
- * A mid-range Android tablet (Cortex-A76/A73 cores, WASM in the WebView) is
- * about 5x slower (4x to 8x): m=32 MiB t=3 is ~0.4 s there (0.3 to 0.6 s),
- * twice that for a wrong PIN at a restore (both slots are tried). 32 MiB also
- * fits a low-memory tablet's WebView. The sealer derives each PIN once per
- * match and session (sealer.js), never per file.
+ * and m=32 MiB t=3 in Chromium's KDF worker: 110 ms. A mid-range Android
+ * tablet (Cortex-A76/A73 cores, WASM in the WebView) is about 4-5x slower
+ * than that: ~0.5 s (up to ~0.9 s on a slow one), twice that for a wrong PIN
+ * at a restore (both slots are tried). 32 MiB also fits a low-memory
+ * tablet's WebView. The sealer derives each PIN once per match and session
+ * (sealer.js), never per file.
  *
  * A 6-digit PIN is a speed bump, not a lock: its 10^6 values cost about
  * 76 ms each, so a copied file falls to one 16-core desktop in about 80
