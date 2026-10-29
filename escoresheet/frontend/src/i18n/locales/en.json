@@ -2891,7 +2891,8 @@
       "tournaments": "Tournaments",
       "activity": "Activity",
       "scoresheets": "Scoresheets",
-      "clubs": "Clubs"
+      "clubs": "Clubs",
+      "myclub": "My club"
     },
     "status": {
       "setup": "Set-up",
@@ -3162,7 +3163,32 @@
       "ruleOnBody": "Every scorer without a club is blocked from official games at once, and games of other clubs are refused.",
       "ruleOnConfirm": "Switch on",
       "ruleIsOn": "The club rule is on",
-      "ruleIsOff": "The club rule is off"
+      "ruleIsOff": "The club rule is off",
+      "contact": "Contact email",
+      "contactHint": "Gets the final scoresheets of the club's games, for its coaches.",
+      "managers": "Club managers",
+      "managersHint": "Email addresses of existing accounts, one per line. They make the club's invite codes and manage its members.",
+      "managersCount_one": "{{count}} manager",
+      "managersCount_other": "{{count}} managers",
+      "managerUnknown": "No account has this address: {{emails}}"
+    },
+    "myClub": {
+      "none": "You don't manage a club.",
+      "pick": "Club",
+      "save": "Save",
+      "contactSaved": "Contact email saved",
+      "members": "Members",
+      "noMembers": "Nobody scores for this club yet. Make an invite code below and send it to your scorers.",
+      "joined": "Joined",
+      "manager": "Club manager",
+      "pending": "Pending",
+      "remove": "Remove from club",
+      "removeTitle": "Remove {{name}} from the club?",
+      "removeBody": "They can no longer score the games of {{club}}. Their account stays.",
+      "removed": "Removed from the club",
+      "invites": "Invite codes",
+      "maxUsesHint": "1 to {{max}}",
+      "expiresHint": "At most {{days}} days ahead"
     }
   },
   "playerPool": {

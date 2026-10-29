@@ -2884,7 +2884,8 @@
       "tournaments": "Tournois",
       "activity": "Activité",
       "scoresheets": "Feuilles de match",
-      "clubs": "Clubs"
+      "clubs": "Clubs",
+      "myclub": "Mon club"
     },
     "status": {
       "setup": "Préparation",
@@ -3155,7 +3156,32 @@
       "ruleOnBody": "Tout marqueur sans club est aussitôt bloqué pour les matchs officiels, et les matchs des autres clubs sont refusés.",
       "ruleOnConfirm": "Activer",
       "ruleIsOn": "La règle des clubs est activée",
-      "ruleIsOff": "La règle des clubs est désactivée"
+      "ruleIsOff": "La règle des clubs est désactivée",
+      "contact": "E-mail de contact",
+      "contactHint": "Reçoit les feuilles de match finales des matchs du club, pour ses entraîneurs.",
+      "managers": "Responsables du club",
+      "managersHint": "Adresses e-mail de comptes existants, une par ligne. Ils créent les codes d’invitation du club et gèrent ses membres.",
+      "managersCount_one": "{{count}} responsable",
+      "managersCount_other": "{{count}} responsables",
+      "managerUnknown": "Aucun compte n’a cette adresse : {{emails}}"
+    },
+    "myClub": {
+      "none": "Vous ne gérez aucun club.",
+      "pick": "Club",
+      "save": "Enregistrer",
+      "contactSaved": "E-mail de contact enregistré",
+      "members": "Membres",
+      "noMembers": "Personne ne marque encore pour ce club. Créez un code d’invitation ci-dessous et envoyez-le à vos marqueurs.",
+      "joined": "Membre depuis",
+      "manager": "Responsable du club",
+      "pending": "En attente",
+      "remove": "Retirer du club",
+      "removeTitle": "Retirer {{name}} du club ?",
+      "removeBody": "Cette personne ne pourra plus marquer les matchs de {{club}}. Son compte reste.",
+      "removed": "Retiré du club",
+      "invites": "Codes d’invitation",
+      "maxUsesHint": "1 à {{max}}",
+      "expiresHint": "Au plus {{days}} jours à l’avance"
     }
   },
   "playerPool": {
