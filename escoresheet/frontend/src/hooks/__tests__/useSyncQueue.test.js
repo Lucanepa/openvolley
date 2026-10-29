@@ -2163,3 +2163,43 @@ describe('a match closed on the server', () => {
     })
   })
 })
+
+describe('test matches never reach the cloud', () => {
+  it('drops every job of a test match (match, set, event, scoresheet) without a request', async () => {
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_tst', test: true }])
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'insert', status: 'queued', retry_count: 0, payload: { external_id: 'match_100_tst', test: false } },
+      { id: 2, resource: 'set', action: 'insert', status: 'queued', retry_count: 0, payload: { external_id: 'match_100_tst:s:1', match_id: 'match_100_tst', index: 1 } },
+      { id: 3, resource: 'event', action: 'insert', status: 'queued', retry_count: 0, payload: { external_id: 'match_100_tst:e:1', match_id: 'match_100_tst' } },
+      { id: 4, resource: 'scoresheet', action: 'upload', status: 'queued', retry_count: 0, payload: { match_external_id: 'match_100_tst' } }
+    ])
+    // the dropped insert holds the match's other jobs until the next pass;
+    // the scoresheet goes in its own lane
+    await runQueuePass()
+    await runQueuePass()
+    await runUploadLane()
+    expect(api.calls).toEqual([])
+    for (const id of [1, 2, 3, 4]) expect(fakeDb.sync_queue.map.get(id).status).toBe('dropped')
+  })
+
+  it('a job queued while signed out is still dropped after the sign-in (processJob)', async () => {
+    fakeDb.matches.reset([{ id: 1, seed_key: 'match_100_tst', test: true }])
+    const job = { id: 7, resource: 'match', action: 'insert', status: 'queued', payload: { external_id: 'match_100_tst', test: false } }
+    fakeDb.sync_queue.reset([job])
+    expect(await processJob(job)).toBe('drop')
+    expect(api.calls).toEqual([])
+  })
+
+  it('an official match on the same device is sent as before', async () => {
+    fakeDb.matches.reset([
+      { id: 1, seed_key: 'match_100_tst', test: true },
+      { id: 2, seed_key: 'match_200_off' }
+    ])
+    fakeDb.sync_queue.reset([
+      { id: 1, resource: 'match', action: 'insert', status: 'queued', retry_count: 0, payload: { external_id: 'match_200_off', test: false } }
+    ])
+    await runQueuePass()
+    expect(api.calls.some(c => c.table === 'matches' && c.action === 'upsert')).toBe(true)
+    expect(fakeDb.sync_queue.map.get(1).status).toBe('sent')
+  })
+})
