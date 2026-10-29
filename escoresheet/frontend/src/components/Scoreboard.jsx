@@ -78,7 +78,7 @@ import CorrectionsPanel from './corrections/CorrectionsPanel.jsx'
 import { planForfeit, isMatchOverStatus, findPreviousSet, getMatchWinner, clearedPostMatchSignatures, countSetsWon, forfeitScope, playersAvailableForNextSet, planForfeitReversal } from '../domain/matchEnd'
 import { signaturesPayload } from '../domain/signatureEdits'
 import { savedSidesOfRegularSets } from '../domain/coinToss'
-import { liveStateNeedsFreshSnapshot } from '../utils/livescoreModel'
+import { liveStateNeedsFreshSnapshot, correctionAfter } from '../utils/livescoreModel'
 import { displaySetNumber, setsWonWithFinishedSet, finishedSetMissingFromSnapshot } from '../utils/matchFormat'
 import { TimeInput24 } from './TimeInput24'
 import { uploadScoresheetAsync } from '../utils/scoresheetUploader'
@@ -2349,7 +2349,11 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
           // other way round than the match now ("Swap A/B" made since: its
           // A/B fields and the sides read from the match would not agree)
           const swappedSince = !!snapshot?.teamAKey && snapshot.teamAKey !== (match?.coinTossTeamA || 'home')
-          if (!snapshot || snapshot.currentSetIndex === undefined || swappedSince) {
+          // A correction since that event (Corrections recalculates the
+          // line-ups after the entry it corrects, renumbers players): its
+          // snapshot shows the court before the correction
+          const correctedSince = correctionAfter(match?.manualChanges, lastEvent?.ts)
+          if (!snapshot || snapshot.currentSetIndex === undefined || swappedSince || correctedSince) {
             const result = await captureFullStateSnapshot()
             snapshot = result?.snapshot || null
           }
