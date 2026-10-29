@@ -19204,6 +19204,7 @@ export default function Scoreboard({ matchId, scorerAttentionTrigger = null, onF
         <Modal
           title={t('corrections.title')}
           open={true}
+          helpScreen="liveCorrections"
           onClose={() => {
             setShowManualPanel(false)
             // Notify scoresheet to refresh after manual panel is closed

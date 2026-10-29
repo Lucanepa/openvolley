@@ -18,6 +18,9 @@ vi.mock('react-i18next', () => ({
 import ScorerMovedModal, { formatTakeOver } from '../ScorerMovedModal'
 import { cloudBlockMessage } from '../CloudBlockNotice'
 
+// The dialog's own buttons (the title row's help button aside: components/help)
+const actionButtons = () => screen.getAllByRole('button').filter(b => b.dataset.testid !== 'dialog-help')
+
 describe('ScorerMovedModal', () => {
   const now = new Date()
   const at = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 19, 54).toISOString()
@@ -28,7 +31,7 @@ describe('ScorerMovedModal', () => {
     render(<ScorerMovedModal scorer={{ platform: 'android', at }} onTakeBack={onTakeBack} onClose={onClose} />)
     expect(screen.getByRole('alert').textContent).toBe('This match is now scored on another device (Android phone or tablet, 19:54). This device no longer scores it.')
     expect(screen.queryByRole('button', { name: /close/i })).not.toBeNull()
-    expect(screen.getAllByRole('button').map(b => b.textContent)).toEqual(['Close', 'Take back scoring here'])
+    expect(actionButtons().map(b => b.textContent)).toEqual(['Close', 'Take back scoring here'])
     fireEvent.click(screen.getByRole('button', { name: 'Take back scoring here' }))
     await waitFor(() => expect(onTakeBack).toHaveBeenCalledTimes(1))
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
@@ -53,7 +56,7 @@ describe('ScorerMovedModal', () => {
     const onTakeBack = vi.fn(async () => ({ ok: true }))
     const onScoresheet = vi.fn()
     render(<ScorerMovedModal scorer={{ platform: 'android', at }} onPreview={onPreview} onTakeBack={onTakeBack} onScoresheet={onScoresheet} onClose={() => {}} />)
-    expect(screen.getAllByRole('button').map(b => b.textContent)).toEqual(['Close', en.header.scoresheet, 'Take back scoring here'])
+    expect(actionButtons().map(b => b.textContent)).toEqual(['Close', en.header.scoresheet, 'Take back scoring here'])
     fireEvent.click(screen.getByRole('button', { name: en.header.scoresheet }))
     expect(onScoresheet).toHaveBeenCalledTimes(1)
 
@@ -62,7 +65,7 @@ describe('ScorerMovedModal', () => {
     expect(preview.textContent).toContain('Set 3 · 14:12 · sets 1:1')
     expect(preview.textContent).toContain(en.scorerMoved.compareHint)
     expect(onTakeBack).not.toHaveBeenCalled()
-    expect(screen.getAllByRole('button').map(b => b.textContent)).toEqual([en.common.cancel, en.scorerMoved.confirmTakeBack])
+    expect(actionButtons().map(b => b.textContent)).toEqual([en.common.cancel, en.scorerMoved.confirmTakeBack])
 
     fireEvent.click(screen.getByRole('button', { name: en.common.cancel }))
     expect(screen.queryByTestId('scorer-moved-preview')).toBeNull()
@@ -96,7 +99,7 @@ describe('ScorerMovedModal', () => {
   it('closed on the other device: says so and only loads the final result', () => {
     render(<ScorerMovedModal scorer={{ platform: 'android', at }} closed onTakeBack={() => {}} onClose={() => {}} />)
     expect(screen.getByRole('alert').textContent).toBe(en.scorerMoved.bodyClosed)
-    expect(screen.getAllByRole('button').map(b => b.textContent)).toEqual(['Close', en.scorerMoved.showResult])
+    expect(actionButtons().map(b => b.textContent)).toEqual(['Close', en.scorerMoved.showResult])
   })
 
   it('without a known platform or time: the plain sentence', () => {
