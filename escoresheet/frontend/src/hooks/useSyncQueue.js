@@ -1016,6 +1016,15 @@ const NO_SCORER_RECORD = ['OV_MATCH_CLOSED', 'OV_SCORER_UNAVAILABLE', 'OV_DB_NOT
 
 async function processJobInner(job, ctx) {
   try {
+    // A test match never reaches the cloud, whoever queued the job (MatchSetup
+    // once queued its insert as test: false) and even when it waited for a
+    // sign-in
+    const testKey = jobMatchKey(job)
+    if (testKey && (await findLocalMatchBySeed(testKey))?.test === true) {
+      safeLog.log('[SyncQueue] Dropping a job of a test match:', job.resource, job.action)
+      return DROP_JOB
+    }
+
     // Jobs queued before set/event ids were namespaced (or by a call site that
     // still sends the bare Dexie id) are rewritten before they reach the cloud.
     if (job.resource === 'set' || job.resource === 'event') {
