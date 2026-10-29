@@ -15,7 +15,8 @@ import {
   areaOf, pageUrlOf, priorityOf, supportSubject, buildSupportMail, handleContact, isHoneypotHit,
   createContactMailer, contactMailerFromEnv, disabledContactMailer, createContactSlots, ContactError,
   SECTION_IDS, SECTION_NAMES, CONTACT_AREAS, LEGACY_AREAS, MAX_FILES, MAX_FILES_BYTES, MAX_PARTS,
-  MAX_CONTACT_IN_FLIGHT, BUSY_BODY
+  MAX_CONTACT_IN_FLIGHT, BUSY_BODY, checkDiagnosticsFile, MAX_DIAGNOSTICS_FILE_BYTES, MAX_CONTACT_BODY_BYTES,
+  DIAGNOSTICS_FILE_FIELD
 } from '../lib/contact.js'
 
 const silent = { log() {}, warn() {}, error() {} }
@@ -512,6 +513,132 @@ describe('contact: the mail', () => {
     await handleContact({ body, contentType, mailer, logger: { log: (l) => lines.push(l), warn: (l) => lines.push(l), error: (l) => lines.push(l) } })
     assert.match(lines.join('\n'), /support\/scoring P2 from te\*\*\*@example\.ch \(app, 0 attachment\(s\)\) mailed/)
     assert.doesNotMatch(lines.join('\n'), /tester@/)
+  })
+})
+
+describe('contact: the diagnostics report (diagnosticsFile)', () => {
+  const NAME = 'openvolley-diagnostics-20261029-2201-g406970.txt'
+  const REPORT = Buffer.from([
+    'OpenVolley diagnostics',
+    '== 1. Summary ==',
+    'App:      OpenVolley – scorer app',
+    'Version:  3.0.7',
+    '== 3. Timeline ==',
+    '22:01:03.120  tap     "Point A"                     Scoreboard',
+    '22:01:03.300  score   Point A (away) → 3:2 (set 1)  seq 41',
+    '== end of report ==',
+    ''
+  ].join('\n'))
+  const LINES = 8
+
+  it('goes as its own part: attached last as .txt with a body row, not one of the 5 files nor in their 10 MB', async () => {
+    assert.equal(DIAGNOSTICS_FILE_FIELD, 'diagnosticsFile')
+    assert.equal(MAX_DIAGNOSTICS_FILE_BYTES, 3 * 1024 * 1024)
+    assert.equal(MAX_CONTACT_BODY_BYTES, MAX_FILES_BYTES + MAX_DIAGNOSTICS_FILE_BYTES + 1024 * 1024, 'the body limit is raised by the report\'s 3 MB')
+    const { mailer, sent } = streamMailer()
+    const fifth = Buffer.alloc(MAX_FILES_BYTES / 5, 0x41)
+    // five files, exactly 10 MB together, and a report of almost 3 MB on top
+    const big = Buffer.concat([REPORT, Buffer.alloc(MAX_DIAGNOSTICS_FILE_BYTES - REPORT.length - 10, 0x2e)])
+    const { body, contentType } = await formBody([
+      ...VALID,
+      ...Array.from({ length: MAX_FILES }, (_, i) => ['files', fifth, `log${i}.txt`, 'text/plain']),
+      ['diagnosticsFile', big, NAME, 'text/plain;charset=utf-8']
+    ])
+    assert.ok(body.length > 11 * 1024 * 1024 && body.length < MAX_CONTACT_BODY_BYTES)
+    const r = await handleContact({ body, contentType, mailer, logger: silent })
+    assert.deepEqual(r, { status: 200, body: { success: true } })
+    const { mail } = sent[0]
+    assert.equal(mail.attachments.length, MAX_FILES + 1)
+    const last = mail.attachments[MAX_FILES]
+    assert.deepEqual([last.filename, last.contentType], [NAME, 'text/plain; charset=utf-8'])
+    assert.ok(last.content.equals(big), 'the bytes as sent')
+    assert.match(mail.text, /^Attachments: +log0\.txt \(2\.0 MB\), log1\.txt/m)
+    assert.doesNotMatch(mail.text.match(/^Attachments:.*$/m)[0], /diagnostics/, 'the report is not listed as a user file')
+    // the dots after the report's last line break are one more line
+    assert.match(mail.text, new RegExp(`^Diagnostics: +attached \\(${LINES + 1} lines, 3072 KB\\): ${NAME.replace(/\./g, '\\.')}$`, 'm'))
+  })
+
+  it('a small report: N lines, X KB; its text never goes into the body', async () => {
+    const { mailer, sent } = streamMailer()
+    const { body, contentType } = await formBody([...VALID, ['diagnosticsFile', REPORT, NAME, 'text/plain']])
+    assert.equal((await handleContact({ body, contentType, mailer, logger: silent })).status, 200)
+    const { mail, raw } = sent[0]
+    assert.match(mail.text, new RegExp(`^Diagnostics: +attached \\(${LINES} lines, 1 KB\\): ${NAME.replace(/\./g, '\\.')}$`, 'm'))
+    assert.match(mail.text, /^Attachments: +none$/m)
+    assert.doesNotMatch(mail.text, /Point A/)
+    assert.match(raw.replace(/\n[ \t]+/g, ' '), new RegExp(`Content-Disposition: attachment; filename=${NAME.replace(/\./g, '\\.')}`))
+    assert.deepEqual(mail.attachments.map((a) => a.filename), [NAME])
+  })
+
+  it('at most 3 MB: 413 diagnostics_too_large, nothing sent', async () => {
+    const { mailer, sent } = streamMailer()
+    const { body, contentType } = await formBody([...VALID, ['diagnosticsFile', Buffer.alloc(MAX_DIAGNOSTICS_FILE_BYTES + 1, 0x41), NAME, 'text/plain']])
+    const r = await handleContact({ body, contentType, mailer, logger: silent })
+    assert.deepEqual([r.status, r.body.code, r.body.maxBytes], [413, 'diagnostics_too_large', MAX_DIAGNOSTICS_FILE_BYTES])
+    assert.equal(sent.length, 0)
+    const exact = await formBody([['diagnosticsFile', Buffer.alloc(MAX_DIAGNOSTICS_FILE_BYTES, 0x41), NAME]])
+    assert.equal(parseMultipart(exact.body, exact.contentType).diagnosticsFile.data.length, MAX_DIAGNOSTICS_FILE_BYTES, 'exactly 3 MB is allowed')
+  })
+
+  it('UTF-8 text only: a PNG, a NUL, broken UTF-8 are refused (415 diagnostics_type), nothing sent', async () => {
+    for (const bad of [PNG, Buffer.from('report\u0000with a NUL'), Buffer.from([0x52, 0xc3, 0x28, 0x0a]), EXE]) {
+      const { mailer, sent } = streamMailer()
+      const { body, contentType } = await formBody([...VALID, ['diagnosticsFile', bad, NAME, 'text/plain']])
+      const r = await handleContact({ body, contentType, mailer, logger: silent })
+      assert.deepEqual([r.status, r.body.code], [415, 'diagnostics_type'], bad.toString('latin1').slice(0, 8))
+      assert.equal(sent.length, 0)
+    }
+    assert.throws(() => checkDiagnosticsFile({ filename: NAME, data: PNG }), (e) => e instanceof ContactError && e.code === 'diagnostics_type')
+  })
+
+  it('always a .txt in the mail, whatever the name; also from a part without a filename', async () => {
+    assert.equal(checkDiagnosticsFile({ filename: 'report.log', data: REPORT }).filename, 'report.log.txt')
+    assert.equal(checkDiagnosticsFile({ filename: '../../etc/x.txt', data: REPORT }).filename, 'x.txt')
+    assert.equal(checkDiagnosticsFile({ filename: '', data: REPORT }).filename, 'openvolley-diagnostics.txt')
+    assert.equal(checkDiagnosticsFile(null), null)
+    assert.equal(checkDiagnosticsFile({ filename: NAME, data: Buffer.alloc(0) }), null)
+    // sent as a plain field (no filename): still the report, and larger than a field may be
+    const field = await formBody([...VALID, ['diagnosticsFile', `${REPORT.toString('utf8')}${'x'.repeat(70 * 1024)}`]])
+    const parsed = parseMultipart(field.body, field.contentType)
+    assert.equal(parsed.fields.diagnosticsFile, undefined)
+    assert.equal(parsed.diagnosticsFile.filename, '')
+    const { mailer, sent } = streamMailer()
+    assert.equal((await handleContact({ body: field.body, contentType: field.contentType, mailer, logger: silent })).status, 200)
+    assert.equal(sent[0].mail.attachments[0].filename, 'openvolley-diagnostics.txt')
+  })
+
+  it('apart from the files when parsed; the first report wins; none in a JSON body', async () => {
+    const { body, contentType } = await formBody([
+      ['files', PNG, 'shot.png', 'image/png'],
+      ['diagnosticsFile', REPORT, NAME, 'text/plain'],
+      ['diagnosticsFile', Buffer.from('second'), 'other.txt', 'text/plain']
+    ])
+    const parsed = parseMultipart(body, contentType)
+    assert.deepEqual(parsed.files.map((f) => f.filename), ['shot.png'])
+    assert.equal(parsed.diagnosticsFile.filename, NAME)
+    assert.ok(parsed.diagnosticsFile.data.equals(REPORT))
+    assert.equal('diagnosticsFile' in parseContactBody(Buffer.from('{"contactType":"feedback"}'), 'application/json'), false)
+    const without = await formBody(VALID)
+    assert.equal('diagnosticsFile' in parseMultipart(without.body, without.contentType), false)
+  })
+
+  it('the older apps: the short diagnostics JSON still goes into the body, without a file', async () => {
+    const { mailer, sent } = streamMailer()
+    const { body, contentType } = await formBody([...VALID, ['diagnostics', JSON.stringify({ appVersion: '3.0.6', gameNumber: 4711 })]])
+    assert.equal((await handleContact({ body, contentType, mailer, logger: silent })).status, 200)
+    const { mail } = sent[0]
+    assert.match(mail.text, /Diagnostics \(sent with the user's consent\):\n\{\n {2}"appVersion": "3\.0\.6",\n {2}"gameNumber": 4711\n\}/)
+    assert.doesNotMatch(mail.text, /^Diagnostics: +attached/m)
+    assert.deepEqual(mail.attachments, [])
+  })
+
+  it('the log line says a report came, never what is in it', async () => {
+    const { mailer } = streamMailer()
+    const lines = []
+    const { body, contentType } = await formBody([...VALID, ['diagnosticsFile', REPORT, NAME, 'text/plain']])
+    await handleContact({ body, contentType, mailer, logger: { log: (l) => lines.push(l), warn: (l) => lines.push(l), error: (l) => lines.push(l) } })
+    assert.match(lines.join('\n'), /\(app, 0 attachment\(s\), diagnostics\) mailed/)
+    assert.doesNotMatch(lines.join('\n'), /Point A|Summary/)
   })
 })
 
