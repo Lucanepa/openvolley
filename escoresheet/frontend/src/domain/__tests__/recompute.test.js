@@ -201,3 +201,63 @@ describe('recompute after a correction', () => {
     expect(plan.affectedSets).toEqual([1])
   })
 })
+
+describe('removing and editing the other entries', () => {
+  it('a decision change removed gives the point back and rebuilds the rotations', async () => {
+    const { planRemoveEntry } = await import('../manualCorrections')
+    const { events } = buildMatch({ sets: [{ points: 'HAHH', finished: false }] })
+    const points = events.filter(e => e.type === 'point').sort(compareBySeq)
+    const swapped = points[1] // away's point, swapped to home by a decision change
+    const changed = events.map(e => (e.id === swapped.id ? { ...e, payload: { ...e.payload, team: 'home', swappedFrom: 'away' } } : e))
+      .filter(e => !(Math.floor(e.seq) === Math.floor(swapped.seq) && e.type === 'lineup'))
+    const dc = { id: 999, matchId: 1, setIndex: 1, type: 'decision_change', seq: 100, ts: new Date().toISOString(), payload: { fromTeam: 'away', toTeam: 'home', pointEventId: swapped.id } }
+    const log = [...changed, dc]
+    const plan = planRemoveEntry(log, dc.id, ctx)
+    expect(plan.error).toBeUndefined()
+    const after = applyPlanToEvents(log, plan)
+    expect(after.find(e => e.id === swapped.id).payload.team).toBe('away')
+    expect(after.some(e => e.id === dc.id)).toBe(false)
+    // away rotated on its side-out again
+    expect(asStrings(lastLineup(after, 1, 'away'))).toEqual(asStrings(lastLineup(events, 1, 'away')))
+    expect(asStrings(lastLineup(after, 1, 'home'))).toEqual(asStrings(lastLineup(events, 1, 'home')))
+  })
+
+  it('a game captain designation: edited, the match field follows; removed, the previous one comes back', async () => {
+    const { planEditEntry, planRemoveEntry, planGameCaptain } = await import('../manualCorrections')
+    const { events } = buildMatch({ sets: [{ points: pointsFor(10, 8), finished: false, extras: [{ at: 2, type: 'court_captain_designation', payload: { team: 'home', playerNumber: 3, previousCourtCaptain: 4 } }] }] })
+    const des = events.find(e => e.type === 'court_captain_designation')
+    const mctx = { ...ctx, match: { ...LIVE_MATCH, homeCourtCaptain: 3 } }
+    const edit = planEditEntry(events, des.id, { playerNumber: 5 }, mctx)
+    expect(edit.matchPatch).toEqual({ homeCourtCaptain: 5 })
+    expect(edit.log.text).toMatch(/^Changed: Game captain: #5/)
+    const removed = planRemoveEntry(events, des.id, mctx)
+    expect(removed.matchPatch).toEqual({ homeCourtCaptain: 4 })
+    const viaCard = planGameCaptain(events, { team: 'home', number: 6 }, mctx)
+    expect(viaCard.matchPatch).toEqual({ homeCourtCaptain: 6 })
+    expect(applyPlanToEvents(events, viaCard).find(e => e.id === des.id).payload.playerNumber).toBe(6)
+  })
+
+  it('a libero re-designation removed puts the roster libero marks back', async () => {
+    const { planRemoveEntry } = await import('../manualCorrections')
+    const { events } = buildMatch({ sets: [{ points: pointsFor(10, 8), finished: false, extras: [{ at: 3, type: 'libero_redesignation', payload: { team: 'home', unableLiberoNumber: 9, newLiberoNumber: 8, previousLiberoFlags: { unableLibero: { id: 9, libero: 'libero1' }, newLibero: { id: 8, libero: '' } } } }] }] })
+    const r = events.find(e => e.type === 'libero_redesignation')
+    const plan = planRemoveEntry(events, r.id, ctx)
+    expect(plan.playerUpdates).toEqual([{ id: 9, changes: { libero: 'libero1' } }, { id: 8, changes: { libero: '' } }])
+  })
+
+  it('the deciding set\'s serve corrected: its rotations follow', async () => {
+    const { planSet5CoinToss } = await import('../manualCorrections')
+    const m5 = { ...LIVE_MATCH, set5FirstServe: 'A' }
+    const sets = [1, 2, 3, 4].map(i => ({ index: i, points: i % 2 ? pointsFor(25, 20) : pointsFor(20, 25), finished: true }))
+    const { events } = buildMatch({ sets: [...sets, { index: 5, points: 'HAAHAH', finished: false }], match: m5 })
+    const plan = planSet5CoinToss(events, { firstServe: 'B' }, { ...ctx, match: m5 })
+    expect(plan.error).toBeUndefined()
+    expect(plan.matchPatch).toEqual({ set5FirstServe: 'B' })
+    const after = applyPlanToEvents(events, plan)
+    const expected = buildMatch({ sets: [...sets, { index: 5, points: 'HAAHAH', finished: false }], match: { ...m5, set5FirstServe: 'B' } }).events
+    expect(asStrings(lastLineup(after, 5, 'home'))).toEqual(asStrings(lastLineup(expected, 5, 'home')))
+    expect(asStrings(lastLineup(after, 5, 'away'))).toEqual(asStrings(lastLineup(expected, 5, 'away')))
+    // sets 1-4 untouched
+    expect(plan.update.every(u => after.find(e => e.id === u.id)?.setIndex === 5 || after.find(e => e.id === u.id)?.type === 'set5_coin_toss')).toBe(true)
+  })
+})
