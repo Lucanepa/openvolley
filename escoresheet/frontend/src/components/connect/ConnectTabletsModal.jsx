@@ -1,10 +1,11 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { Tablet } from 'lucide-react'
+import { CircleHelp, Tablet } from 'lucide-react'
 import { Button, EmptyState, Modal, confirmDialog } from '../../ui'
 import { AuthContext } from '../../contexts/AuthContext'
 import LoginModal from '../auth/LoginModal'
+import { openHelp } from '../help/helpEvents'
 import { useSyncStatus } from '../../hooks/useSyncQueue'
 import { useRelayTablets } from '../../hooks/useRealtimeConnection'
 import { getCloudApiBaseUrl, getLocalServerStatusUrl, isCloudBlockedOnThisPort } from '../../utils/backendConfig'
@@ -398,6 +399,10 @@ export default function ConnectTabletsModal({ open, onClose, match = null, fetch
           <CopyLinkButton url={urlOf('main')} />
         </div>
       </Disclosure>
+      {/* the help panel on this dialog's sections (App, helpEvents.js) */}
+      <Button variant="ghost" icon={CircleHelp} onClick={() => openHelp('connectTablets')} className="h-10" data-testid="connect-help">
+        {t('contextHelp.helpButton', 'Help')}
+      </Button>
       <Button variant="dark" onClick={onClose} className="h-10">{t('connectTablets.done', 'Done')}</Button>
     </div>
   )

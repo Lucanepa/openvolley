@@ -43,6 +43,8 @@ import { createSignSessions, signEndpointOf, signBodyLimit, signError, isSignPag
 import { signPageFile } from './lib/signPage.js'
 // The scoring-device handover's pure helpers (the pg part runs in DATABASE_URL mode only)
 import { SCORER_TABLES, deviceOf, matchRefsOfWrite, scorerMovedBody } from './lib/scorerDevice.js'
+// The support form (POST /api/contact): its body, checks and the one mail to CONTACT_EMAIL
+import { BUSY_BODY, contactMailerFromEnv, createContactSlots, handleContact, MAX_CONTACT_BODY_BYTES } from './lib/contact.js'
 
 const PORT = process.env.PORT || 8080
 
@@ -809,11 +811,12 @@ function matchDataMessage(type, matchId, entry, scoreboardTs, access = 'full') {
 // RESEND_API_KEY
 // Option 2: SMTP (may be blocked by some cloud providers)
 // SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, CONTACT_EMAIL
-// The SMTP settings are the account-email mailbox (lib/mailer.js). These two
-// legacy routes (/api/contact, /api/match/send-info) mail addresses that an
-// anonymous request supplies, so they use it only with SMTP_LEGACY_ROUTES=1:
-// otherwise configuring password-reset mail would turn them into an open
-// relay of the noreply mailbox.
+// The SMTP settings are the account-email mailbox (lib/mailer.js). The legacy
+// route /api/match/send-info mails an address that an anonymous request
+// supplies, so it uses it only with SMTP_LEGACY_ROUTES=1: otherwise
+// configuring password-reset mail would turn it into an open relay of the
+// noreply mailbox. /api/contact mails only CONTACT_EMAIL (lib/contact.js) and
+// uses the mailbox without that switch.
 const LEGACY_SMTP = !!process.env.SMTP_HOST && process.env.SMTP_LEGACY_ROUTES === '1'
 if (process.env.RESEND_API_KEY || LEGACY_SMTP) {
   console.log('[Email Config] RESEND_API_KEY:', process.env.RESEND_API_KEY ? 'SET' : 'NOT SET')
@@ -863,6 +866,16 @@ const emailTransporter = LEGACY_SMTP ? nodemailer.createTransport({
     pass: process.env.SMTP_PASS
   }
 }) : null
+// The support form's mail (lib/contact.js): From MAIL_FROM, To CONTACT_EMAIL,
+// Reply-To the user, so FreeScout makes the user the ticket's customer.
+const contactMailer = contactMailerFromEnv(process.env)
+// At most 10 support requests at once, each up to 11 MB in memory for up to 2 min
+const contactSlots = createContactSlots()
+if (contactMailer.enabled) {
+  console.log(`[Contact] support form mails ${contactMailer.to} from ${contactMailer.from}`)
+} else if (DB_MODE || process.env.SMTP_HOST) {
+  console.warn(`[Contact] support form mail off (${contactMailer.reason}): POST /api/contact answers 503`)
+}
 // IS_CLOUD / IS_LOCAL are defined at the top (runtime mode).
 
 // --- Static file serving for standalone/local mode ---
@@ -1300,8 +1313,22 @@ function singleExternalIdFilter(filters) {
 // device vanished without closing the connection (Node's own requestTimeout
 // would hold the slot for 5 minutes). totalMs (optional): the whole body not
 // read within that long rejects the same way, for an upload that trickles (a
-// byte now and then never trips idleMs).
-function readJsonBody(req, maxSize = MAX_BODY_SIZE, { idleMs = 0, totalMs = 0 } = {}) {
+// byte now and then never trips idleMs). readBodyBuffer resolves the raw bytes
+// (the multipart support form), readJsonBody the parsed JSON.
+function readJsonBody(req, maxSize = MAX_BODY_SIZE, opts = {}) {
+  return readBodyBuffer(req, maxSize, opts).then((buffer) => {
+    let parsed
+    try {
+      const text = buffer.toString('utf8')
+      parsed = text ? JSON.parse(text) : {}
+    } catch {
+      throw new Error('Invalid JSON')
+    }
+    return parsed
+  })
+}
+
+function readBodyBuffer(req, maxSize = MAX_BODY_SIZE, { idleMs = 0, totalMs = 0 } = {}) {
   return new Promise((resolve, reject) => {
     const chunks = []
     let size = 0
@@ -1347,12 +1374,7 @@ function readJsonBody(req, maxSize = MAX_BODY_SIZE, { idleMs = 0, totalMs = 0 } 
       settled = true
       clearTimeout(idleTimer)
       clearTimeout(totalTimer)
-      try {
-        const text = Buffer.concat(chunks).toString('utf8')
-        resolve(text ? JSON.parse(text) : {})
-      } catch {
-        reject(new Error('Invalid JSON'))
-      }
+      resolve(Buffer.concat(chunks))
     })
     req.on('error', (err) => {
       if (settled) return
@@ -1946,7 +1968,10 @@ const server = createServer((req, res) => {
     // checks this hash against the script)
     "script-src 'self' 'sha256-hAC66PTngtOWJY571phiLXHzeuEYS3pprPNjnV1uBik='",
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
+    // the help panel's videos and their posters and subtitles stream from the
+    // website (frontend components/help, helpSections.js VIDEO_BASE)
+    "img-src 'self' data: blob: https://openvolley.app",
+    "media-src 'self' https://openvolley.app",
     connectSrc,
     "font-src 'self'",
     "frame-ancestors 'none'"
@@ -2496,7 +2521,8 @@ const server = createServer((req, res) => {
     return
   }
 
-  // Contact/Support form endpoint
+  // Support form (lib/contact.js): multipart with up to 5 attachments, one
+  // mail to CONTACT_EMAIL with Reply-To the user (FreeScout's customer)
   if (url.pathname === '/api/contact' && req.method === 'POST') {
     const clientIp = getClientIp(req)
     if (isRateLimited(clientIp, CONTACT_RATE_LIMIT_MAX, 'contact')) {
@@ -2504,164 +2530,37 @@ const server = createServer((req, res) => {
       res.end(JSON.stringify({ success: false, error: 'Too many requests. Please wait before submitting again.' }))
       return
     }
-    // Parse multipart form data (simplified - just log for now, email via mailto fallback)
-    let body = ''
-    const chunks = []
-    let totalSize = 0
-    req.on('data', chunk => {
-      totalSize += chunk.length
-      if (totalSize > MAX_BODY_SIZE) {
-        req.destroy()
+    // One slot per request until it is answered, however it ends (answered,
+    // refused, timed out, the client gone): the slots cap the bodies held
+    const job = contactSlots.run(async () => {
+      let body
+      try {
+        // A phone on hall Wi-Fi uploading 10 MB: no data for 30 s, or not
+        // done in 2 minutes, gives up (408)
+        body = await readBodyBuffer(req, MAX_CONTACT_BODY_BYTES, { idleMs: 30 * 1000, totalMs: 120 * 1000 })
+      } catch (err) {
+        sendBodyError(res, err, {
+          tooLargeBody: { success: false, code: 'files_too_large', error: 'Attachments too large' },
+          invalidBody: { success: false, code: 'invalid_body', error: 'Invalid request' }
+        })
         return
       }
-      chunks.push(chunk)
+      const r = await handleContact({ body, contentType: req.headers['content-type'], mailer: contactMailer })
+      sendJson(res, r.status, r.body)
     })
-    req.on('end', async () => {
-      try {
-        const buffer = Buffer.concat(chunks)
-        const contentType = req.headers['content-type'] || ''
-
-        // Extract form data
-        let formData = {}
-        if (contentType.includes('multipart/form-data')) {
-          // Simple multipart parser for text fields only
-          const boundary = contentType.split('boundary=')[1]
-          if (boundary) {
-            const parts = buffer.toString().split('--' + boundary)
-            parts.forEach(part => {
-              const nameMatch = part.match(/name="([^"]+)"/)
-              if (nameMatch && !part.includes('filename=')) {
-                const name = nameMatch[1]
-                const valueMatch = part.split('\r\n\r\n')
-                if (valueMatch[1]) {
-                  formData[name] = valueMatch[1].replace(/\r\n--$/, '').trim()
-                }
-              }
-            })
-          }
-        } else {
-          try {
-            formData = JSON.parse(buffer.toString())
-          } catch {
-            formData = {}
-          }
-        }
-
-        // Validate email to prevent header injection
-        if (formData.email && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email) || /[\r\n]/.test(formData.email))) {
-          res.writeHead(400, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ success: false, error: 'Invalid email address' }))
-          return
-        }
-
-        console.log('[Contact] Received feedback:', {
-          contactType: sanitizeLog(formData.contactType),
-          area: sanitizeLog(formData.area),
-          supportType: sanitizeLog(formData.supportType),
-          severity: sanitizeLog(formData.severity),
-          email: sanitizeLog(formData.email),
-          comments: sanitizeLog(formData.comments?.substring(0, 100)),
-          timestamp: formData.timestamp
-        })
-
-        // Sanitize all form fields to prevent CRLF/header injection in email
-        const sanitizeField = (str, maxLen = 500) =>
-          typeof str === 'string' ? str.replace(/[\r\n]/g, ' ').substring(0, maxLen).trim() : String(str || '')
-
-        // Build email content
-        const contactEmail = process.env.CONTACT_EMAIL || 'support@openvolley.app'
-        const typeLabels = { support: 'Support', feedback: 'Feedback', request: 'Feature Request' }
-        const supportTypeLabels = { bug: 'Bug Report', help: 'Help / Question' }
-        const severityLabels = {
-          '1': '1 - Tool breaks completely',
-          '2': '2 - Very limited functionality',
-          '3': '3 - Inconvenience',
-          '4': '4 - Nice-to-have'
-        }
-
-        const safeContactType = sanitizeField(formData.contactType, 50)
-        const safeArea = sanitizeField(formData.area, 100)
-        const safeSupportType = sanitizeField(formData.supportType, 50)
-        const safeSeverity = sanitizeField(formData.severity, 10)
-        const safeComments = sanitizeField(formData.comments, 5000)
-        const safeUrl = sanitizeField(formData.url, 500)
-        const safeUserAgent = sanitizeField(formData.userAgent, 300)
-
-        const subject = `[eScoresheet ${(typeLabels[safeContactType] || safeContactType).toUpperCase()}] ${safeArea}${safeSupportType ? ` - ${supportTypeLabels[safeSupportType] || safeSupportType}` : ''}`
-
-        const emailBody = `
-New ${typeLabels[safeContactType] || safeContactType} from eScoresheet
-
-Contact Type: ${typeLabels[safeContactType] || safeContactType}
-Area: ${safeArea}
-${safeSupportType ? `Support Type: ${supportTypeLabels[safeSupportType] || safeSupportType}\n` : ''}${safeSeverity ? `Severity: ${severityLabels[safeSeverity] || safeSeverity}\n` : ''}
-From: ${formData.email}
-URL: ${safeUrl || 'N/A'}
-User Agent: ${safeUserAgent || 'N/A'}
-Timestamp: ${formData.timestamp || new Date().toISOString()}
-
-Comments:
-${safeComments || 'No comments provided'}
-`.trim()
-
-        // Send email if configured
-        if (emailTransporter) {
-          try {
-            // Send to contact email
-            await emailTransporter.sendMail({
-              from: process.env.SMTP_USER,
-              to: contactEmail,
-              replyTo: formData.email,
-              subject: subject,
-              text: emailBody
-            })
-
-            // Send confirmation copy to user
-            if (formData.email) {
-              const confirmationBody = `
-Thank you for contacting eScoresheet support!
-
-This is a confirmation that your message has been received. I'll review it as soon as possible and will contact you if I have any questions.
-
---- Your message ---
-${emailBody}
----
-
-Best regards,
-Luca
-eScoresheet Developer
-`.trim()
-
-              await emailTransporter.sendMail({
-                from: process.env.SMTP_USER,
-                to: formData.email,
-                subject: `Re: ${subject} - Message Received`,
-                text: confirmationBody
-              })
-            }
-
-            console.log('[Contact] Emails sent successfully')
-          } catch (emailErr) {
-            console.error('[Contact] Failed to send email:', emailErr)
-            // Continue anyway - the form data is logged
-          }
-        } else {
-          console.log('[Contact] Email not configured (SMTP_HOST with SMTP_LEGACY_ROUTES=1 not set). Form data logged only.')
-        }
-
-        res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({
-          success: true,
-          message: 'Feedback received. Thank you!'
-        }))
-      } catch (err) {
-        console.error('[Contact] Error processing form:', err)
-        res.writeHead(500, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({
-          success: false,
-          error: 'Failed to process feedback'
-        }))
-      }
+    if (!job) {
+      // Every slot taken: the hourly cap's 503 busy (the app offers mailto),
+      // at once. The body is drained and discarded, never held; the
+      // connection stays open so the client can still read the answer
+      // (closed, a client still uploading gets EPIPE instead)
+      console.warn(`[Contact] ${contactSlots.max} messages already being received: busy`)
+      req.resume()
+      sendJson(res, 503, BUSY_BODY)
+      return
+    }
+    job.catch((err) => {
+      console.error('[Contact] request failed:', err?.message)
+      sendJson(res, 500, { success: false, code: 'server_error', error: 'Could not send the message' })
     })
     return
   }

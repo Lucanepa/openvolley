@@ -151,7 +151,7 @@ Deploy to Render for cloud backup, also run locally when available. The frontend
 | `BACKUP_MAX_AGE_HOURS` | Max age of `$STATUS_DIR/last_backup` before `/health` says `backup: stale` (503) and the `backup/` sweep pauses. `0` disables both (dev only). | `36` |
 | `IS_CLOUD` | Strict cloud CORS/HSTS/CSP without a database (relay-only cloud). Implied by `DATABASE_URL`. | - |
 | `PG_POOL_MAX` | Max Postgres connections of the one shared pool (pgQuery + auth). | `5` |
-| `CONTACT_EMAIL` | Contact form recipient; also named in the "password reset unavailable" message | `support@openvolley.app` |
+| `CONTACT_EMAIL` | The support mailbox (FreeScout reads it): the only recipient of `/api/contact`; also named in the "password reset unavailable" message | `support@openvolley.app` |
 | `OV_PIN_SECRET` | Secret (at least 32 characters) for the PINs at rest: `game_pin` and every `connection_pins` value are stored as an HMAC with it (`lib/pinHash.js`). Unset: stored in plaintext as before (the server warns at startup). Also keys the approval PINs: unset turns approval with an account off ("Approval PINs"). **Never change or lose it** while matches stored with it are in use (see "Security model"). | - |
 | `OV_MATCH_TOKEN_SECRET` | Secret (at least 32 characters; a shorter one stops the start) for the match access tokens the PIN checks answer with (`lib/matchAccess.js`). Unset: derived from `OV_PIN_SECRET`; both unset: a random one per process (tokens end with a restart; the apps re-check their stored PIN on reload). | derived / random |
 | `STORAGE_BACKUP_MIN_FREE_MB`, `STORAGE_SCORESHEETS_MIN_FREE_MB`, `STORAGE_MAX_FILE_MB`, `STORAGE_OWNER_SCOPE`, `STORAGE_OWNER_SCOPE_BUCKETS` | See "Self-hosted storage" below | |
@@ -166,7 +166,7 @@ Deploy to Render for cloud backup, also run locally when available. The frontend
 | `MANAGER_URL` | Base of the links in the account emails (`#reset?token=`, `#confirm?token=`); https only | `https://manager.openvolley.app` |
 | `MAIL_FROM_BEACH` | Sender of the OpenBeach account emails (requests with `app: 'beach'`); the same mailbox. Set but without an address: the mails are off | `OpenBeach <address of MAIL_FROM>` |
 | `MANAGER_URL_BEACH` | Base of the links in the OpenBeach account emails; https only (set but unusable: the mails are off) | `https://manager-beach.openvolley.app` |
-| `SMTP_LEGACY_ROUTES` | `1`: `/api/contact` and `/api/match/send-info` may also send through the SMTP account. Off by default: both mail addresses an anonymous request supplies | - |
+| `SMTP_LEGACY_ROUTES` | `1`: `/api/match/send-info` may also send through the SMTP account. Off by default: it mails an address an anonymous request supplies. (`/api/contact` uses the SMTP account without it: it mails only `CONTACT_EMAIL`) | - |
 | `POCKETBASE_URL`, `POCKETBASE_ADMIN_EMAIL`, `POCKETBASE_ADMIN_PASSWORD` | Optional relay snapshot backup (unchanged) | - |
 
 `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are no longer read.
@@ -585,7 +585,7 @@ answers at the same backend URL. Optional, to decouple the two: first ship a
 backend-only change to the current production backend that adds `X-OV-Proto`
 to `Access-Control-Allow-Headers`.
 
-Match-info and contact-form email (`/api/match/send-info`, `/api/contact`) requires `RESEND_API_KEY`, or the SMTP settings with `SMTP_LEGACY_ROUTES=1`. Account emails: "Account emails" above.
+Match-info email (`/api/match/send-info`) requires `RESEND_API_KEY`, or the SMTP settings with `SMTP_LEGACY_ROUTES=1`. The support form (`/api/contact`) needs the SMTP settings of the account emails ("Account emails" above), nothing else.
 
 ## Self-hosted storage (`lib/storage.js`)
 
@@ -817,7 +817,28 @@ Send match info email to a specified address. Requires email configuration.
 
 ### `POST /api/contact`
 
-Contact/support form submission. Accepts JSON or multipart form data.
+The support form of the app (Support & feedback) and of openvolley.app/support (`lib/contact.js`). `multipart/form-data` (a JSON object is still read, without files):
+
+| Field | |
+| --- | --- |
+| `contactType` | `support` \| `feedback` \| `request` (required) |
+| `email` | the user's address (required; one address, no display name) |
+| `comments` | the message (required, at most 5000 characters) |
+| `area` | a section id of the help: `home`, `setup`, `coin-toss`, `scoring`, `subs-timeouts`, `sanctions`, `set-end`, `match-end`, `corrections`, `connections`, `referee`, `bench`, `livescore`, `handover`, `sync-offline`, `install-updates`, or `other`. The app's older area names (`mainPage`, `scoreboard`, ...) are mapped; anything else is `other` |
+| `supportType`, `severity` | `bug` \| `help`, `1`-`4` (optional; only a `support` message keeps a severity) |
+| `matchRunning` | `1`: a match is being scored right now (the app ticks "A match is running right now" itself when this device scores one in progress; the user can untick it). Anything else, or none: not running |
+| `source`, `language`, `appVersion`, `platform`, `url`, `userAgent`, `timestamp` | context (`source`: `app` \| `website`, default `app`); a value that does not fit its pattern is left out. `url` loses its query and fragment (tablet links carry `?pin=`) |
+| `diagnostics` | JSON text, at most 32 KB; the app sends it only when the user ticks "Include diagnostics" |
+| `website` | honeypot: filled in, the answer is 200 and nothing is sent |
+| `files` | 0-5 attachments, 10 MB together (body at most 11 MB): PNG, JPEG, GIF, WebP, HEIC/HEIF, AVIF, PDF (by their first bytes), and UTF-8 text without NUL named `.txt`, `.log`, `.csv`, `.json` or `.ndjson` (JSON starting with `{` or `[`). The type comes from the bytes, never from the name or the client's Content-Type; a PNG named `x.txt` goes out as `x.txt.png` |
+
+It sends ONE mail: From `MAIL_FROM`, To `CONTACT_EMAIL`, **Reply-To the user**, a plain-text body with the priority first and then every field and the diagnostics, the attachments with their checked types.
+
+**Priority** (`priorityOf`, the owner's scheme): **P1** a match running (`matchRunning=1`) or severity 1; else **P2** severity 2; else **P3** severity 3, a help question (`supportType=help`) or support without a severity; else **P4** (severity 4, feedback, a feature request). It is in the subject, in the header `X-OpenVolley-Priority: P1` (nodemailer writes the name `X-Openvolley-Priority`; header names are case-insensitive), and in the body's first line with its reason (`Priority: P1 – match running`, `P2 – severity 2`, `P3 – help question`, `P4 – feedback`, ...).
+
+**Subject**: the priority, the area id and the type, never a word the user typed: FreeScout's auto reply can quote the subject to the Reply-To address, which nobody has verified. `[P1 – match running] [scoring] Support – Bug report` (" – match running" only with `matchRunning=1`), `[P1] [scoring] Support – Bug report` (severity 1), `[P2] [scoring] Support – Bug report`, `[P3] [connections] Support – Help / question`, `[P4] [home] Feedback`, `[P4] [other] Request`. The user gets no mail from the backend: FreeScout's auto reply of the mailbox is the acknowledgement. FreeScout makes the Reply-To address the customer of the new conversation (it prefers Reply-To over From for an incoming mail), so the agents' replies go to the user. The mail carries no `Auto-Submitted` / `Precedence` header, which FreeScout reads as an auto-responder (no auto reply then). From and To are fixed by the server, so the route relays to nobody.
+
+Answers: 200 `{success: true}`; 400 `invalid_body` \| `invalid_type` \| `invalid_email` \| `missing_comments` \| `field_too_large` \| `too_many_parts` \| `too_many_files`; 413 `files_too_large`; 415 `file_type` (with `file`); 429 (3 per minute per IP); 503 `unavailable` (no SMTP settings) \| `busy` (30 mails per hour for all senders, so the form cannot use up the mailbox quota of the account mails; or 10 requests already in flight: each holds up to 11 MB of body in memory for up to 2 minutes, so the 11th is answered at once, its body drained and discarded); 502 `send_failed`. Errors are `{success: false, code, error}`. The app offers to send the message by email (mailto) after a 5xx or without a connection. Logs name the type, area and priority, mask the address and never hold the message. A request keeps its slot until it is answered, however it ends (answered, refused, timed out, the client gone). Tests: `tests/contact.test.js` (nodemailer `streamTransport`, nothing is sent) and `tests/contact.e2e.test.js` (server.js without mail settings).
 
 ### `GET /api/official-matches?federation=SV&league=1LD`
 
@@ -872,7 +893,7 @@ Password-reset links, confirmation links for new accounts and the "your password
 - **Limits**: reset 10/hour per IP (/64), 3/hour per delivered inbox (`inboxKey`), counted for unknown addresses too; redeeming links (`reset-password/confirm`, `confirm-email`) 30 per 15 min per IP; `resend-confirmation` 3/hour per account and 10/hour per IP.
 - **Audit log** (when `public.audit_log` exists): `account.password_reset_requested` (existing accounts only; never visible in an API answer), `account.password_reset`, `account.email_confirmed`.
 - **Turned off** (no `SMTP_HOST`/`SMTP_PASS`, or `auth.app_tokens` missing): reset answers 503 `reset_unavailable` as before, sign-up confirms at once, `resend-confirmation` answers 503 `confirm_unavailable`. Links already sent stay redeemable while the table exists.
-- **Legacy routes**: `/api/contact` and `/api/match/send-info` do **not** use these SMTP settings unless `SMTP_LEGACY_ROUTES=1` (both send to an address an anonymous request supplies).
+- **Legacy route**: `/api/match/send-info` does **not** use these SMTP settings unless `SMTP_LEGACY_ROUTES=1` (it sends to an address an anonymous request supplies). The support form (`/api/contact`) does, without that switch: its only recipient is `CONTACT_EMAIL`.
 - **Tests**: `tests/mailer.test.js` (templates, settings, real SMTP sessions over implicit TLS and STARTTLS against `tests/helpers/fakeSmtp.js`, an `smtp-server` sink with a throwaway certificate), `tests/emailAuth.pg.test.js` (the flows against Postgres), `tests/emailAuth.e2e.test.js` (server.js end to end, links followed out of the captured mails). Never against a real mailbox.
 - **Operations**: deploy/RUNBOOK-hetzner.md, "Account emails (SMTP)".
 
