@@ -160,6 +160,19 @@ the account (4.5a).
 | **Retention as built** | Until an admin removes the club or the club from the account; `account_clubs` rows go with the account (FK cascade) and with the club |
 | **Audit** | `club.create` / `club.update` / `club.delete`, `account.clubs` (before/after club ids and names), `club_rule.set` (4.6) |
 
+### 4.5b Club managers and club contact (db/020, OpenVolley)
+
+| | |
+|---|---|
+| **Data** | `public.club_managers`: which account manages which club, who added it and when. `public.clubs.contact_email`: one contact address per club |
+| **Whose** | Club manager accounts; the club's contact person (often a generic club address) |
+| **Purpose** | A club runs its own invite codes and members without an admin (owner decision 2026-10-29); the contact address receives the club's final scoresheets (4.7a) |
+| **Basis** | (f) running the club's scorers; (f) delivering the official scoresheet to the club |
+| **Stored** | VM; backups |
+| **Who sees it** | Admins (Clubs tab, managers and contact); a club's managers see their club: contact address, and for each member account name, email, indoor roles, joined date (`GET /api/club/:id/members`) |
+| **Retention as built** | `club_managers` rows go with the account and the club (FK cascade); `contact_email` until changed, cleared or the club is deleted. Removing a member deletes only the `account_clubs` row (the account and its roles stay) |
+| **Audit** | `club.managers` (before/after user ids), `club.contact` (only whether an address is set), `club.member_remove`, `invite.create` with `club_id` (4.6) |
+
 ### 4.6 Audit log
 
 | | |
@@ -182,6 +195,22 @@ the account (4.5a).
 | **Who sees it** | Full rows: the creating account, accounts that proved the game PIN (`match_editors`), admins. Referee/bench tablets after a PIN: rosters with names and numbers, **without DOB, country, signatures, officials, approvals or pending rosters** (`lib/publicColumns.js` `publicRelayMatch`). Public (no session): see 4.8 |
 | **Retention as built** | **Indefinitely.** Once a match is approved/final it is **closed and read-only**, even for its creator (`db/007` `ov_matches_guard`). Only an admin can reopen it. Account deletion keeps the matches (creator set NULL) |
 | **Delete path** | Open matches: the owner can delete over `/api/db`. Closed matches: **no endpoint deletes or anonymises personal data**. It takes a manual SQL session with `ov.allow_closed = 'on'`, and the copies in `events.state_snapshot`, `backup/` files, scoresheet files and the backups (F2) |
+
+### 4.7a Final scoresheet by email (db/021)
+
+| | |
+|---|---|
+| **Data** | Sent: the stored scoresheet PDF of a closed official indoor match (4.12), team names, game number, date, result. Kept: `public.match_final_mails` (match, close time, outcome, number of recipients, corrected), `public.app_settings.send_final_email` (on/off, who, when). Referees' optional addresses in `matches.officials[].email` (typed in the match setup) |
+| **Whose** | Scorer, referees, club contacts (recipients); players and officials named in the PDF |
+| **Recipients** | The closing account and the scorer-approval account; referee-approval accounts and the typed referee addresses; the contact address of each team's club (`club_teams` name match). One mail per address, at most 12 |
+| **When** | Only while the switch is on (off by default; admins and indoor competition managers, Settings tab); matches closed after it was turned on, once per close (a reopened and closed again match is mailed again, marked corrected); not mailed without a PDF within 2 h of the close |
+| **Test matches** | `POST /api/scoresheet/test-mail`: the PDF from the request to the caller's own account address only; not stored; capped per inbox |
+| **Basis** | (f) delivering the official record to the officials and clubs concerned; the referee address is optional |
+| **Processor** | Migadu (SMTP) |
+| **Stored** | `match_final_mails` and the referee addresses with the match (VM, backups); addresses are never logged (`maskEmail`) and never in the audit log |
+| **Who sees the referee addresses** | Like the rest of `officials`: the match's owner and editors, admins; never public (`lib/publicColumns.js`) |
+| **Retention as built** | With the match (FK cascade on `match_final_mails`) |
+| **Audit** | `settings.final_email`, `match.final_mail` (number of recipients, corrected, game number) |
 
 ### 4.8 What is public (no account, no PIN)
 
