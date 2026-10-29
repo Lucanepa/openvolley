@@ -165,6 +165,18 @@ describe('help videos and links', () => {
     expect(supportPageUrl('sync-offline')).toBe('https://openvolley.app/support#sync-offline')
   })
 
+  it('the support page opens in the app\'s language: ?lang= before the section, de-CH as German, others left out', () => {
+    expect(supportPageUrl('scoring', 'de')).toBe('https://openvolley.app/support?lang=de#scoring')
+    expect(supportPageUrl('scoring', 'de-CH')).toBe('https://openvolley.app/support?lang=de#scoring')
+    expect(supportPageUrl('coin-toss', 'en')).toBe('https://openvolley.app/support?lang=en#coin-toss')
+    expect(supportPageUrl('handover', 'fr')).toBe('https://openvolley.app/support?lang=fr#handover')
+    expect(supportPageUrl('handover', 'it-CH')).toBe('https://openvolley.app/support?lang=it#handover')
+    expect(supportPageUrl('home', 'en-US')).toBe('https://openvolley.app/support?lang=en#home')
+    for (const lng of ['es', 'rm', 'pt-BR', '', undefined, null, 'de&x=1']) {
+      expect(supportPageUrl('home', lng), String(lng)).toBe('https://openvolley.app/support#home')
+    }
+  })
+
   it('are the recorded ones (helpVideos.js): each a section, with its title in every website language, its length and its subtitles', () => {
     const langs = VIDEO_LANGUAGES.map(v => v.lang)
     expect(Object.keys(HELP_VIDEOS).length).toBeGreaterThan(0)

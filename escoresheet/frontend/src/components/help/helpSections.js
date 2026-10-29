@@ -273,9 +273,19 @@ export function sectionVideo(id) {
   }
 }
 
-/** The section on openvolley.app/support. */
-export function supportPageUrl(id) {
-  return `${SUPPORT_PAGE}#${encodeURIComponent(id)}`
+// The languages of openvolley.app/support (?lang=)
+export const SUPPORT_PAGE_LANGUAGES = ['de', 'en', 'fr', 'it']
+
+/**
+ * The section on openvolley.app/support, in the app's language when the
+ * website has it: supportPageUrl('scoring', 'de-CH') is
+ * https://openvolley.app/support?lang=de#scoring (de-CH reads German); a
+ * language the website lacks, or none, leaves ?lang= out.
+ */
+export function supportPageUrl(id, lng) {
+  const base = String(lng || '').split('-')[0].toLowerCase()
+  const query = SUPPORT_PAGE_LANGUAGES.includes(base) ? `?lang=${base}` : ''
+  return `${SUPPORT_PAGE}${query}#${encodeURIComponent(id)}`
 }
 
 /** The subtitle language for the app's language: de-CH reads the German track. */

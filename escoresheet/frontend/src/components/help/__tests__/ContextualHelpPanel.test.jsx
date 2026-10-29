@@ -182,9 +182,9 @@ describe('ContextualHelpPanel: the video', () => {
     const note = screen.getByTestId('help-video-offline')
     expect(note.textContent).toContain('contextHelp.videoOffline')
     const link = within(note).getByRole('link')
-    expect(link.getAttribute('href')).toBe('https://openvolley.app/support#scoring')
+    expect(link.getAttribute('href')).toBe('https://openvolley.app/support?lang=de#scoring')
     fireEvent.click(link)
-    expect(openAppWindow).toHaveBeenCalledWith('https://openvolley.app/support#scoring')
+    expect(openAppWindow).toHaveBeenCalledWith('https://openvolley.app/support?lang=de#scoring')
   })
 
   it('the scorer\'s Offline switch counts as offline too', () => {
@@ -228,12 +228,12 @@ describe('ContextualHelpPanel: the video', () => {
 })
 
 describe('ContextualHelpPanel: More help and Contact support', () => {
-  it('More help opens the section on openvolley.app/support outside the app', () => {
+  it('More help opens the section on openvolley.app/support outside the app, in the app\'s language', () => {
     panel({ screen: 'coinToss' })
     const link = screen.getByText('contextHelp.moreHelp').closest('a')
-    expect(link.getAttribute('href')).toBe('https://openvolley.app/support#coin-toss')
+    expect(link.getAttribute('href')).toBe('https://openvolley.app/support?lang=de#coin-toss')
     fireEvent.click(link)
-    expect(openAppWindow).toHaveBeenCalledWith('https://openvolley.app/support#coin-toss')
+    expect(openAppWindow).toHaveBeenCalledWith('https://openvolley.app/support?lang=de#coin-toss')
   })
 
   it('Contact support opens the support form with the section as its area', () => {
