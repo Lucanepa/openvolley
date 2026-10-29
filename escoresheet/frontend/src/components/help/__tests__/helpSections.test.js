@@ -15,6 +15,7 @@ import {
   HELP_SCREENS, HELP_SECTIONS, SECTION_IDS, VIDEO_LANGUAGES, helpSection, screensForSection,
   sectionVideo, sectionsForScreen, supportPageUrl, videoLanguage
 } from '../helpSections'
+import { HELP_VIDEOS } from '../helpVideos'
 
 const LOCALES = { en, de, 'de-CH': deCH, fr, it: it_ }
 const get = (obj, path) => path.split('.').reduce((o, k) => (o == null ? o : o[k]), obj)
@@ -149,6 +150,10 @@ describe('help videos and links', () => {
     expect(sectionVideo('set-end')).toEqual({
       src: 'https://openvolley.app/support/videos/set-end.mp4',
       poster: 'https://openvolley.app/support/videos/set-end.jpg',
+      title: HELP_VIDEOS['set-end'].title,
+      durationSec: HELP_VIDEOS['set-end'].durationSec,
+      width: HELP_VIDEOS['set-end'].width,
+      height: HELP_VIDEOS['set-end'].height,
       tracks: [
         { lang: 'en', label: 'English', src: 'https://openvolley.app/support/videos/set-end.en.vtt' },
         { lang: 'de', label: 'Deutsch', src: 'https://openvolley.app/support/videos/set-end.de.vtt' },
@@ -158,6 +163,36 @@ describe('help videos and links', () => {
     })
     expect(VIDEO_LANGUAGES.map(v => v.lang)).toEqual(['en', 'de', 'fr', 'it'])
     expect(supportPageUrl('sync-offline')).toBe('https://openvolley.app/support#sync-offline')
+  })
+
+  it('are the recorded ones (helpVideos.js): each a section, with its title in every website language, its length and its subtitles', () => {
+    const langs = VIDEO_LANGUAGES.map(v => v.lang)
+    expect(Object.keys(HELP_VIDEOS).length).toBeGreaterThan(0)
+    for (const [id, video] of Object.entries(HELP_VIDEOS)) {
+      expect(SECTION_IDS, id).toContain(id)
+      for (const lng of langs) expect(video.title[lng], `${id} ${lng}`).toMatch(/\S/)
+      expect(video.durationSec, id).toBeGreaterThan(0)
+      // a short how-to, not a lecture
+      expect(video.durationSec, id).toBeLessThan(5 * 60)
+      // a tablet (1280x800 and the subtitle band) or two side by side
+      expect(video.width / video.height, id).toBeGreaterThan(1)
+      expect(video.languages.every(l => langs.includes(l)), id).toBe(true)
+      expect(sectionVideo(id).tracks.map(t => t.lang), id).toEqual(langs.filter(l => video.languages.includes(l)))
+    }
+  })
+
+  it('a section without a recorded video has none; a video gets only the subtitles it was recorded with', () => {
+    const saved = HELP_VIDEOS['set-end']
+    try {
+      delete HELP_VIDEOS['set-end']
+      expect(sectionVideo('set-end')).toBeNull()
+      HELP_VIDEOS['set-end'] = { ...saved, languages: ['it', 'en'] }
+      expect(sectionVideo('set-end').tracks.map(t => t.lang)).toEqual(['en', 'it'])
+    } finally {
+      HELP_VIDEOS['set-end'] = saved
+    }
+    expect(sectionVideo('nope')).toBeNull()
+    expect(sectionVideo('toString')).toBeNull()
   })
 
   it('show the subtitles of the app language; de-CH reads German', () => {

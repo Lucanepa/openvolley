@@ -1,12 +1,14 @@
 // The help of the app, per section: one source for the in-app "?" panel
 // (ContextualHelpPanel) and for openvolley.app/support, which is organised by
 // the same sections (scripts/export-help.mjs writes this file's texts out for
-// the website). Plain data, no imports: node reads it too.
+// the website). Plain data (and helpVideos.js, data too): node reads it too.
 //
 // A section: its FAQ (question / answer i18n keys under contextHelp.*, with
 // an optional helpId for "Show me", SpotlightOverlay, and its tooltip key),
-// its video (the section id) and the screens that show it. A screen lists its
-// sections, the main one first.
+// its video (the section id; helpVideos.js lists the recorded ones) and the
+// screens that show it. A screen lists its sections, the main one first.
+
+import { HELP_VIDEOS } from './helpVideos.js'
 
 export const SUPPORT_PAGE = 'https://openvolley.app/support'
 // <id>.mp4, the poster <id>.jpg and the subtitles <id>.<lang>.vtt
@@ -249,13 +251,25 @@ export function screensForSection(id) {
   return screens.sort((a, b) => rank(a) - rank(b))
 }
 
-/** The video of a section: the file, its poster and a subtitle track per language. */
+/**
+ * The video of a section, null while it has none (helpVideos.js): the file,
+ * its poster, its title in each language, its length and picture size (null
+ * when unknown), and a subtitle track per language it was recorded with.
+ */
 export function sectionVideo(id) {
+  const recorded = Object.prototype.hasOwnProperty.call(HELP_VIDEOS, id) ? HELP_VIDEOS[id] : null
+  if (!recorded) return null
   const base = `${VIDEO_BASE}/${encodeURIComponent(id)}`
   return {
     src: `${base}.mp4`,
     poster: `${base}.jpg`,
-    tracks: VIDEO_LANGUAGES.map(({ lang, label }) => ({ lang, label, src: `${base}.${lang}.vtt` }))
+    title: recorded.title,
+    durationSec: recorded.durationSec,
+    width: recorded.width || null,
+    height: recorded.height || null,
+    tracks: VIDEO_LANGUAGES
+      .filter(({ lang }) => recorded.languages.includes(lang))
+      .map(({ lang, label }) => ({ lang, label, src: `${base}.${lang}.vtt` }))
   }
 }
 

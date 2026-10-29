@@ -74,16 +74,24 @@ function SupportPageLink({ id, children, className }) {
   )
 }
 
+// 54.8 -> 0:54, as the player shows the length once it has loaded
+function formatDuration(sec) {
+  const s = Math.floor(sec)
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
 /**
- * The section's video, streamed from openvolley.app only while online:
- * offline, or when the file is not there (yet), a line and the link instead.
- * Nothing loads before Play (preload none); never autoplay. Subtitles in
- * every language, the app's own on by default.
+ * The section's video (sectionVideo: only a recorded one), streamed from
+ * openvolley.app only while online: offline, or when the file is not there,
+ * a line and the link instead. Nothing loads before Play (preload none);
+ * never autoplay. Its subtitles, the app's language on by default; its title
+ * and length under it (the player knows the length only once it loads).
  */
-function HelpVideo({ id, title, online, lang }) {
+function HelpVideo({ id, video, online, lang }) {
   const { t } = useTranslation()
   const [failed, setFailed] = useState(false)
-  const video = sectionVideo(id)
+  const videoTitle = video.title?.[lang] || video.title?.en || ''
+  const label = t('contextHelp.videoLabel', { section: videoTitle })
 
   // The poster is made with the video: when it is missing, so is the video.
   // A plain image request, so the box never shows a dead player.
@@ -114,10 +122,13 @@ function HelpVideo({ id, title, online, lang }) {
   }
 
   return (
-    <div className="px-2 pb-2">
+    <figure className="px-2 pb-2">
       <video
         data-testid="help-video"
-        className="aspect-video w-full rounded-lg bg-stone-900"
+        // the box has the video's shape (a tablet, or two side by side), so
+        // the poster fills it; 16:9 when the size is not known
+        className={cn('w-full rounded-lg bg-stone-900', !(video.width && video.height) && 'aspect-video')}
+        style={video.width && video.height ? { aspectRatio: `${video.width} / ${video.height}` } : undefined}
         controls
         preload="none"
         playsInline
@@ -126,14 +137,18 @@ function HelpVideo({ id, title, online, lang }) {
         crossOrigin="anonymous"
         poster={video.poster}
         src={video.src}
-        aria-label={t('contextHelp.videoLabel', { section: title })}
+        aria-label={label}
         onError={() => setFailed(true)}
       >
         {video.tracks.map(track => (
           <track key={track.lang} kind="subtitles" srcLang={track.lang} label={track.label} src={track.src} default={track.lang === lang} />
         ))}
       </video>
-    </div>
+      <figcaption data-testid="help-video-caption" className="mt-1.5 flex items-baseline justify-between gap-3 px-1 text-xs text-stone-500">
+        <span className="min-w-0 truncate">{label}</span>
+        <span className="shrink-0 tabular-nums">{formatDuration(video.durationSec)}</span>
+      </figcaption>
+    </figure>
   )
 }
 
@@ -243,6 +258,7 @@ export default function ContextualHelpPanel({ open, onClose, screen, currentPage
               {sections.map(section => {
                 const expanded = openSections.has(section.id)
                 const title = t(section.titleKey)
+                const video = sectionVideo(section.video)
                 return (
                   <section key={section.id} data-testid={`help-section-${section.id}`} aria-label={title}>
                     <button
@@ -256,7 +272,7 @@ export default function ContextualHelpPanel({ open, onClose, screen, currentPage
                     </button>
                     {expanded && (
                       <div className="pt-2 pb-1">
-                        {open && <HelpVideo id={section.id} title={title} online={online} lang={lang} />}
+                        {open && video && <HelpVideo id={section.id} video={video} online={online} lang={lang} />}
                         <div className="divide-y divide-stone-100">
                           {section.faq.map(item => (
                             <FAQItem
