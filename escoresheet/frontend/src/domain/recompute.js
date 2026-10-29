@@ -180,6 +180,13 @@ export function recomputeMatch(events, ctx = {}) {
   const all = [...(events || [])].sort(compareBySeq)
   const sets = [...new Set(all.map(setOf))].sort((a, b) => a - b)
   const roster = rosterNumbers(ctx.players)
+  // a player re-designated as libero (FIVB 19.4) played as a regular player before it
+  for (const e of all) {
+    const r = e.type === 'libero_redesignation' ? roster[e.payload?.team] : null
+    if (!r || !has(e.payload?.newLiberoNumber)) continue
+    r.redesignatedAt = r.redesignatedAt || new Map()
+    if (!r.redesignatedAt.has(String(e.payload.newLiberoNumber))) r.redesignatedAt.set(String(e.payload.newLiberoNumber), e)
+  }
   const seenIssue = new Set()
   const issue = (key, params, e, setIndex, extraSig = '') => {
     const sig = `${key}:${e?.id ?? ''}:${setIndex ?? ''}:${extraSig}`
@@ -324,7 +331,9 @@ function recomputeSet(rows, setIndex, ctx, out, issue, roster) {
               else {
                 checkRoster(team, lu[pos], e)
                 const r = roster[team]
-                if (r && r.everLiberos.has(String(lu[pos]))) issue('liberoInLineup', { n: lu[pos], team: label(team), set }, e, setIndex, String(lu[pos]))
+                const redesignation = r?.redesignatedAt?.get(String(lu[pos]))
+                const liberoThen = r && r.everLiberos.has(String(lu[pos])) && !(redesignation && compareBySeq(e, redesignation) < 0)
+                if (liberoThen) issue('liberoInLineup', { n: lu[pos], team: label(team), set }, e, setIndex, String(lu[pos]))
               }
             }
           }
@@ -427,7 +436,8 @@ function applyOwner(owner, env) {
     if (!st.lineup) {
       if (!env.noLineupFlag[team]) {
         env.noLineupFlag[team] = true
-        issue('noLineup', { team: label(team), set }, e, setIndex, team)
+        // an easy match plays without line-ups when it likes (domain/easyMatch)
+        if (env.ctx.match?.easy !== true) issue('noLineup', { team: label(team), set }, e, setIndex, team)
       }
       owner.expected = { keep: true }
       return
@@ -441,7 +451,7 @@ function applyOwner(owner, env) {
   if (!st.lineup) {
     if (!env.noLineupFlag[team]) {
       env.noLineupFlag[team] = true
-      issue('noLineup', { team: label(team), set }, e, setIndex, team)
+      if (env.ctx.match?.easy !== true) issue('noLineup', { team: label(team), set }, e, setIndex, team)
     }
     owner.expected = { keep: true }
     return
