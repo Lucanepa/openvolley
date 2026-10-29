@@ -50,12 +50,16 @@ export function FormPage({ width = 'xl', className, children }) {
  *   (sign-up): the standalone `md` cap (shell.md).
  */
 export function GateScreen({ logo, eyebrow, corner, footer, below, brandBar = true, width = 'sm', className, children }) {
+  // Scrolls itself: styles.css locks html/body/#root (overflow hidden) for the
+  // scoring screens, so a card taller than a phone would be cut off. my-auto,
+  // not items-center: a tall card starts at the top instead of above it.
   return (
-    <div className="min-h-screen bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100 flex items-center justify-center p-4">
-      <div className={cn('w-full', width === 'md' ? 'max-w-md' : 'max-w-sm')}>
+    <div className="h-dvh overflow-y-auto bg-gradient-to-br from-stone-100 via-stone-50 to-stone-100 flex flex-col items-center p-4">
+      <div className={cn('w-full my-auto', width === 'md' ? 'max-w-md' : 'max-w-sm')}>
         <div className={cn('relative overflow-hidden bg-white rounded-3xl shadow-card-lg border border-stone-200/70 p-8', className)}>
           {brandBar && <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 to-red-500" />}
-          {corner && <div className="absolute right-4 top-4">{corner}</div>}
+          {/* A row of its own on a phone (it covered the logo), the corner from sm */}
+          {corner && <div className="mb-3 flex justify-end sm:absolute sm:right-4 sm:top-4 sm:mb-0">{corner}</div>}
           {(logo || eyebrow) && (
             <div className="flex flex-col items-center text-center mb-7">
               {logo}

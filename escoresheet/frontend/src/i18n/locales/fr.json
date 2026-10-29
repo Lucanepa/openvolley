@@ -2565,7 +2565,6 @@
     "openManager": "Ouvrir {{host}}",
     "createAccount": "Créer un compte",
     "signUpHeading": "Créer votre compte",
-    "signUpBody": "Un seul compte pour marquer sur le web, dans l’application de bureau et sur Android.",
     "backToSignIn": "Retour à la connexion",
     "accountCreated": "Votre compte a été créé.",
     "inviteStepTitle": "Saisissez le code d’invitation de votre club",
