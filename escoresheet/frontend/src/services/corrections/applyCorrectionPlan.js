@@ -16,7 +16,12 @@
  *     and the team's roster to the cloud (players_home / players_away)
  *  6. sync jobs: event/insert (an upsert on external_id, so edited and
  *     renumbered rows are re-sent the same way), set/update, match/update —
- *     no direct API writes, corrections work offline
+ *     no direct API writes, corrections work offline. The match update
+ *     carries cloud columns only (the server refuses an unknown column, and
+ *     with it the whole update: the correction log, the coin toss ...) and,
+ *     when a finished set's score changed, the match result as the set end
+ *     and the match end write it (set_results; winner and final_score once
+ *     the match is over: the final mail reads them)
  *  7. queued insert jobs of removed events are dropped (only inserts:
  *     domain/corrections syncJobsForEvents)
  *  8. at the match end, a change of the sheet clears the post-match
@@ -36,10 +41,10 @@ import { scoreFromPointEvents } from '../../domain/rules'
 import { deriveTeamSanctionFlags } from '../../domain/sanctions'
 import { appendRemark, removeRemarkLine } from '../../domain/remarks'
 import { syncJobsForEvents } from '../../domain/corrections'
-import { clearedPostMatchSignatures, POST_MATCH_SIGNATURE_FIELDS } from '../../domain/matchEnd'
+import { clearedPostMatchSignatures, POST_MATCH_SIGNATURE_FIELDS, getMatchWinner, countSetsWon, isMatchOverStatus } from '../../domain/matchEnd'
 import { signaturesPayload } from '../../domain/signatureEdits'
 import { buildEventInsertJob } from '../../utils/eventSync'
-import { toCloudPlayers } from '../../db/matchRepository'
+import { toCloudPlayers, filterMatchPayload } from '../../db/matchRepository'
 import { setExtId } from '../../utils/syncIds'
 import { withActivityContext, EVENT_HISTORY_SCOPE, rememberSeedKey } from '../../db/eventHistory'
 import { randomUuid } from '../../utils/deviceId'
@@ -213,8 +218,19 @@ async function writePlan(plan, { matchId, db, mode = 'live', hooks = {}, now = n
         if (s.endTime !== undefined) payload.end_time = s.endTime ?? null
         await db.sync_queue.add({ resource: 'set', action: 'update', payload, ts, status: 'queued' })
       }
-      const matchPayload = { id: match.seed_key, ...(plan.cloudMatch || {}) }
+      const matchPayload = { id: match.seed_key, ...filterMatchPayload(plan.cloudMatch || {}) }
       if (patch.manualChanges) matchPayload.manual_changes = patch.manualChanges
+      // a finished set's score changed: the result the set end / match end sent is stale
+      if ([...changedSets.values()].some(s => s.finished)) {
+        const nowSets = sets.map(s => (changedSets.has(s.id) ? changedSets.get(s.id) : s))
+        const finished = nowSets.filter(s => s.finished).sort((a, b) => a.index - b.index)
+        matchPayload.set_results = finished.map(s => ({ set: s.index, home: Number(s.homePoints) || 0, away: Number(s.awayPoints) || 0 }))
+        if (isMatchOverStatus(match.status)) {
+          const won = countSetsWon(finished)
+          matchPayload.winner = getMatchWinner(finished, match.bestOf, { forfeitTeam: match.forfeitTeam })
+          matchPayload.final_score = `${won.home}-${won.away}`
+        }
+      }
       if (patch.sanctions) matchPayload.sanctions = patch.sanctions
       // the whole roster of a team whose players changed (the arrays replace the stored ones)
       for (const team of rosterTeams) {
