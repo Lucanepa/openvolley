@@ -58,7 +58,7 @@ describe('ManageConsole', () => {
     asUser(['admin'])
     render(<ManageConsole tab="accounts" onTab={() => {}} onClose={() => {}} />)
     const nav = screen.getAllByRole('navigation')[0]
-    expect(within(nav).getAllByRole('button')).toHaveLength(9)
+    expect(within(nav).getAllByRole('button')).toHaveLength(10) // with Settings (db/021)
     await waitFor(() => expect(api.admin.listAccounts).toHaveBeenCalled())
   })
 
@@ -91,7 +91,7 @@ describe('ManageConsole', () => {
     asUser(['competition_manager'])
     render(<ManageConsole tab="accounts" onTab={() => {}} onClose={() => {}} />)
     const nav = screen.getAllByRole('navigation')[0]
-    expect(within(nav).getAllByRole('button').map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.tabs.teams'])
+    expect(within(nav).getAllByRole('button').map(b => b.textContent)).toEqual(['manage.tabs.scoresheets', 'manage.tabs.teams', 'manage.tabs.settings'])
     await waitFor(() => expect(api.scoresheetsApi.list).toHaveBeenCalledWith(expect.objectContaining({ app: 'indoor' })))
     expect(api.admin.listAccounts).not.toHaveBeenCalled()
   })

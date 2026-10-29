@@ -486,7 +486,9 @@
     "clubBlockedTitle": "Pas un match à domicile de ton club",
     "clubRequired": "Ton compte n'a pas encore de club. Un admin l'ajoute avant que tu puisses tenir des matchs officiels.",
     "notYourClub": "{{home}} reçoit. Tu tiens uniquement les matchs à domicile de {{clubs}}.",
-    "gameNotInSchedule": "Le match {{game}} n'est pas dans le calendrier VolleyManager, son équipe qui reçoit est donc inconnue. Vérifie le numéro du match."
+    "gameNotInSchedule": "Le match {{game}} n'est pas dans le calendrier VolleyManager, son équipe qui reçoit est donc inconnue. Vérifie le numéro du match.",
+    "refereeEmail": "E-mail (facultatif)",
+    "refereeEmailHint": "Pour la feuille de match finale. Seuls les marqueurs de ce match la voient."
   },
   "scoreboard": {
     "set": "Set",
@@ -1511,7 +1513,8 @@
       },
       "cancelKeepsUnapproved": "Annuler laisse le match non approuvé. Approuver sans PDF l’approuve maintenant : enregistrez le PDF depuis l’eScoresheet plus tard.",
       "keepWindowOpen": "Laissez la fenêtre de l’eScoresheet ouverte jusqu’à ce que le PDF soit prêt."
-    }
+    },
+    "testMailSent": "Feuille de match envoyée à {{to}}"
   },
   "scoresheetPdf": {
     "zoomOut": "Réduire",
@@ -2899,7 +2902,8 @@
       "activity": "Activité",
       "scoresheets": "Feuilles de match",
       "clubs": "Clubs",
-      "myclub": "Mon club"
+      "myclub": "Mon club",
+      "settings": "Réglages"
     },
     "status": {
       "setup": "Préparation",
@@ -3196,6 +3200,18 @@
       "invites": "Codes d’invitation",
       "maxUsesHint": "1 à {{max}}",
       "expiresHint": "Au plus {{days}} jours à l’avance"
+    },
+    "settings": {
+      "finalEmail": "Envoyer la feuille de match finale par e-mail",
+      "finalEmailOffHint": "Désactivé : aucune feuille n’est envoyée. À activer quand OpenVolley marque de vrais matchs.",
+      "finalEmailOnHint": "Activé : dès qu’un match officiel est clôturé, sa feuille va au marqueur, aux arbitres et au contact du club de chaque équipe.",
+      "finalEmailOnTitle": "Envoyer les feuilles de match finales par e-mail ?",
+      "finalEmailOnBody": "Désormais, chaque match officiel clôturé envoie sa feuille en PDF au marqueur, aux arbitres et à l’adresse de contact du club de chaque équipe. Les matchs clôturés avant ne sont pas envoyés. La politique de confidentialité doit le mentionner avant que vous l’activiez.",
+      "finalEmailOnConfirm": "Activer",
+      "finalEmailIsOn": "Les feuilles de match finales sont maintenant envoyées par e-mail",
+      "finalEmailIsOff": "Les feuilles de match finales ne sont plus envoyées",
+      "changed": "Modifié le",
+      "noMail": "Ce serveur ne peut pas encore envoyer d’e-mails (aucun serveur de messagerie configuré) : rien ne part, même avec l’interrupteur activé."
     }
   },
   "playerPool": {

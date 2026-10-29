@@ -187,6 +187,26 @@ describe('MatchSetup smoke render', () => {
     expect(screen.queryByLabelText('matchSetup.gameNumber')).toBeNull() // the info page did not open
   })
 
+  // The final scoresheet by email (db/021): a referee's optional address is
+  // saved with the match's officials (never public: officials are read by the
+  // match's scorers only)
+  it('a referee\'s address typed in the setup is saved with the officials', async () => {
+    store.tables.matches = new Map([[1, {
+      id: 1, status: 'setup', seed_key: 'match_1_ref', matchInfoConfirmedAt: '2026-10-06T10:00:00Z',
+      homeTeamId: 11, awayTeamId: 12, homeName: 'Home V', awayName: 'Away V', homeShortName: 'HOM', awayShortName: 'AWA',
+      scheduledAt: '2026-10-29T18:00:00.000Z', game_n: 991407, league: '3L', hall: 'Halle A', city: 'Zürich',
+      officials: [{ role: '1st referee', firstName: 'Rita', lastName: 'Ref', country: 'CHE', dob: '01.01.1990' }], ...PINS
+    }]])
+    store.tables.teams = new Map([[11, { id: 11, name: 'Home V' }], [12, { id: 12, name: 'Away V' }]])
+    render(<Setup matchId={1} />)
+    fireEvent.click((await screen.findAllByRole('button', { name: 'common.edit' }))[0])
+    fireEvent.change(await screen.findByLabelText('matchSetup.referee1 matchSetup.refereeEmail'), { target: { value: ' Rita.Ref@Example.ch ' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'matchSetup.save' }))
+    await waitFor(() => expect(store.tables.matches.get(1).officials.find((o) => o.role === '1st referee')?.email).toBe('rita.ref@example.ch'))
+    const insert = queued().find((j) => j.resource === 'match' && j.action === 'insert')
+    expect(insert.payload.officials.find((o) => o.role === '1st referee').email).toBe('rita.ref@example.ch')
+  })
+
   // A test match never reaches the cloud: saving its edited info once queued a
   // cloud insert marked test: false (and a cloud backup) under a new seed_key
   it('saving a test match\'s edited info queues nothing for the cloud', async () => {

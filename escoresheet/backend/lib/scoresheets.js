@@ -16,6 +16,10 @@
  *                                            VIEW_LINK_TTL_MS under a random token:
  *                                            { path: /api/scoresheet-view/<token>/<file name>,
  *                                            expires_at }
+ *   latestPdf(m)                             the newest stored PDF of match row m, for
+ *                                            trusted server code (the final scoresheet
+ *                                            mail, lib/finalMail.js): { data, filename,
+ *                                            mtimeMs }, null (none), or { unknown: true }
  *   readViewLink({ token, name })            that PDF, inline, by its link: { status, file }
  *                                            or 404. The browser's own PDF viewer opens
  *                                            the link in a tab (no Authorization header
@@ -320,6 +324,27 @@ export function createScoresheets ({ pool, storage, accounts, logger = console, 
   }
 
   /**
+   * The newest stored PDF of match row `m` ({ sport, game_n, external_id,
+   * scheduled_at, closed_at, updated_at, created_at, home_name, away_name,
+   * league }), read past the uploader-only rule for trusted server code: the
+   * final scoresheet mail (lib/finalMail.js), which audits its own sending.
+   * { data, filename, mtimeMs }, null when there is none, { unknown: true }
+   * when the storage could not be read. Never throws.
+   */
+  async function latestPdf (m) {
+    try {
+      const { file, unknown } = await locate(m, folderReader())
+      if (!file) return unknown ? { unknown: true } : null
+      const data = await storage.readTrusted({ bucket: SCORESHEETS_BUCKET, path: `${file.folder}/${file.name}` })
+      return { data, filename: downloadName(m, file.folder.split('/').pop()), mtimeMs: file.mtimeMs }
+    } catch (err) {
+      if (err?.code === 'OV_STORAGE_NOT_FOUND') return null
+      log.warn?.(`[scoresheets] latest PDF failed: ${err?.code || ''} ${String(err?.message || err).slice(0, 120)}`)
+      return { unknown: true }
+    }
+  }
+
+  /**
    * POST /api/scoresheets/:id/view: the PDF behind a short-lived link for the
    * browser's viewer. The read is checked and audited exactly as GET .../pdf.
    */
@@ -351,5 +376,5 @@ export function createScoresheets ({ pool, storage, accounts, logger = console, 
     return { status: 200, file: { ...v.file, disposition: 'inline' } }
   }
 
-  return { list, readPdf, sportOf, createViewLink, readViewLink }
+  return { list, readPdf, sportOf, createViewLink, readViewLink, latestPdf }
 }
