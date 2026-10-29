@@ -191,7 +191,8 @@ approvare risultati come ufficiale di gara. Gli account si aprono su
 `manager.openvolley.app` e `manager-beach.openvolley.app`.
 
 **Dati:** indirizzo e-mail, password (salvata solo come hash, mai in chiaro),
-nome e cognome, paese, data di nascita (facoltativa), ruoli (per esempio
+nome e cognome, paese, data di nascita (facoltativa), la lingua scelta all'apertura (per
+le e-mail all'account), ruoli (per esempio
 segnapunti, arbitro, gestore di competizione), le app per cui vale l'account
 (indoor, beach), date di apertura, ultimo accesso e conferma dell'e-mail. I
 dati inseriti alla registrazione sono conservati anche come copia presso

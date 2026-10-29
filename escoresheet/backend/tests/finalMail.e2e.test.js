@@ -3,7 +3,8 @@
  * manager-home-email-PLAN.md step 4), end to end over a fake SMTP server:
  * the switch (admins and competition managers, off by default), the mail of
  * a closed official match to the scorer, a referee's typed address and the
- * clubs' contacts with the PDF attached, once; a reopened and closed again
+ * clubs' contacts with the PDF attached, once, each account's in the language
+ * of its sign-up and the other addresses in English; a reopened and closed again
  * match as "corrected"; nothing while the switch is off or for matches closed
  * before it was turned on; a test match's PDF to its scorer only.
  *
@@ -46,10 +47,10 @@ describe('final mail end to end', { skip: SKIP }, () => {
   const users = {}
   const mailsTo = (to) => smtp.mails.filter((m) => m.envelope.to.includes(to))
 
-  async function account (name, roles) {
+  async function account (name, roles, lang) {
     const email = `${name}-${randomBytes(3).toString('hex')}@example.ch`
     const ip = `198.51.100.${ipSeq++}`
-    await api(srv.base, '/api/auth/sign-up', { headers: { 'cf-connecting-ip': ip }, body: { email, password: 'correct-horse-battery', metadata: { first_name: name, last_name: 'Test' } } })
+    await api(srv.base, '/api/auth/sign-up', { headers: { 'cf-connecting-ip': ip }, body: { email, password: 'correct-horse-battery', ...(lang ? { lang } : {}), metadata: { first_name: name, last_name: 'Test' } } })
     // the mailer is on: confirm the address in the database (no link click)
     await sql.query('UPDATE auth.users SET email_confirmed_at = now() WHERE lower(email) = lower($1)', [email])
     let inn
@@ -114,7 +115,7 @@ describe('final mail end to end', { skip: SKIP }, () => {
       STORAGE_BACKUP_MIN_FREE_MB: '1', STORAGE_SCORESHEETS_MIN_FREE_MB: '1', ...smtp.env(), FINAL_MAIL_SWEEP_MS: '1000'
     })
     const admin = await account('admin', ['admin'])
-    await account('scorer', ['scorer'])
+    await account('scorer', ['scorer'], 'de') // signed up in German
     await account('cm', ['competition_manager'])
     const ksc = (await call(admin, 'POST', '/api/admin/clubs', { name: 'KSC Wiedikon', teams: ['KSC Wiedikon H1'] })).json.data.club
     const other = (await call(admin, 'POST', '/api/admin/clubs', { name: 'VBC Other', teams: ['VBC Other H1'] })).json.data.club
@@ -155,9 +156,10 @@ describe('final mail end to end', { skip: SKIP }, () => {
   let matchId
   it('a closed official match: the PDF to the scorer, the referee and both clubs, once', async () => {
     matchId = await closedMatch({ gameN: 940002, closedMinAgo: 3, refereeEmail: 'Rita.Ref@example.ch' })
-    for (const to of [users.scorer.email, 'rita.ref@example.ch', 'contact@ksc.example.ch', 'contact@other.example.ch']) {
+    // the scorer's account in the language of its sign-up, the others in English
+    for (const [to, subject] of [[users.scorer.email, 'Matchblatt'], ['rita.ref@example.ch', 'Scoresheet'], ['contact@ksc.example.ch', 'Scoresheet'], ['contact@other.example.ch', 'Scoresheet']]) {
       const mail = await smtp.waitForMail((m) => m.envelope.to.includes(to) && /940002|KSC Wiedikon H1/.test(m.text))
-      assert.match(mail.subject, /^Matchblatt: KSC Wiedikon H1 – VBC Other H1$/)
+      assert.equal(mail.subject, `${subject}: KSC Wiedikon H1 – VBC Other H1`)
       assert.match(mail.raw, /application\/pdf/)
       assert.match(mail.raw, /filename="?[^"\r\n]*\.pdf/)
       assert.equal(mail.envelope.to.length, 1, 'one mail per address: nobody sees the others')
@@ -177,10 +179,10 @@ describe('final mail end to end', { skip: SKIP }, () => {
     const reopened = await call(users.admin, 'POST', `/api/admin/matches/${matchId}/reopen`, { reason: 'wrong final score' })
     assert.equal(reopened.status, 200, reopened.text)
     await closeAgo(matchId, 3)
-    const mail = await smtp.waitForMail((m) => m.envelope.to.includes('contact@ksc.example.ch') && /^Korrigiertes Matchblatt/.test(m.subject))
-    assert.match(mail.text, /korrigierte/)
+    const mail = await smtp.waitForMail((m) => m.envelope.to.includes('contact@ksc.example.ch') && /^Corrected scoresheet/.test(m.subject))
+    assert.match(mail.text, /corrected final scoresheet/)
     await sleep(3000)
-    assert.equal(mailsTo('contact@ksc.example.ch').filter((m) => /^Korrigiertes/.test(m.subject)).length, 1, 'once, not on every sweep')
+    assert.equal(mailsTo('contact@ksc.example.ch').filter((m) => /^Corrected/.test(m.subject)).length, 1, 'once, not on every sweep')
   })
 
   it('switched off: nothing more goes out', async () => {
@@ -193,7 +195,7 @@ describe('final mail end to end', { skip: SKIP }, () => {
   it('a test match: its PDF to the scorer\'s own address only, never stored, whatever the switch', async () => {
     assert.equal((await api(srv.base, '/api/scoresheet/test-mail', { body: { pdf: PDF.toString('base64') } })).status, 401)
     expectCode(await call(users.scorer, 'POST', '/api/scoresheet/test-mail', { pdf: Buffer.from('not a pdf').toString('base64') }), 400, 'OV_INVALID_REQUEST')
-    const r = await call(users.scorer, 'POST', '/api/scoresheet/test-mail', { pdf: PDF.toString('base64'), teams: 'Home – Away', result: '3:1' }, { 'accept-language': 'de-CH' })
+    const r = await call(users.scorer, 'POST', '/api/scoresheet/test-mail', { pdf: PDF.toString('base64'), teams: 'Home – Away', result: '3:1' }, { 'accept-language': 'en' }) // the account's language wins
     assert.equal(r.status, 200, r.text)
     assert.equal(r.json.data.to, users.scorer.email.toLowerCase())
     const mail = await smtp.waitForMail((m) => m.envelope.to.includes(users.scorer.email.toLowerCase()) && /^Test-Matchblatt/.test(m.subject))

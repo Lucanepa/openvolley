@@ -193,7 +193,8 @@ Konten werden auf `manager.openvolley.app` und `manager-beach.openvolley.app`
 eröffnet.
 
 **Daten:** E-Mail-Adresse, Passwort (nur als Hash gespeichert, nie im
-Klartext), Vor- und Nachname, Land, Geburtsdatum (freiwillig), Rollen
+Klartext), Vor- und Nachname, Land, Geburtsdatum (freiwillig), die bei der Eröffnung gewählte Sprache
+(für die E-Mails an das Konto), Rollen
 (zum Beispiel Schreiber/in, Schiedsrichter/in, Wettbewerbsmanager/in), die
 Apps, für die das Konto gilt (Halle, Beach), Zeitpunkte von Eröffnung,
 letzter Anmeldung und E-Mail-Bestätigung. Ihre Angaben bei der

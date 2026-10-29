@@ -17,7 +17,9 @@
  *     match setup (officials[].email, 1st and 2nd referee);
  *   - the coaches: the contact address of each team's club (db/020
  *     clubs.contact_email; the team names as club_teams spells them).
- * One mail per address (nobody sees the others'). Only while the switch is
+ * One mail per address (nobody sees the others'). An account's mail is in the
+ * language picked at its sign-up (user metadata mail_lang, lib/auth.js); a
+ * typed address or a club's contact in English (FINAL_MAIL_LANG overrides). Only while the switch is
  * on, and only matches closed after it was turned on (never the backlog).
  * A match reopened and closed again is mailed again, as "corrected". No PDF
  * within NO_PDF_AFTER_MS of the close: recorded as no_pdf, never mailed. A
@@ -40,9 +42,10 @@ const MAX_TRIES = 5
 const BATCH = 20
 export const TEST_PDF_MAX_BYTES = 5 * 1024 * 1024
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
-// Who reads the official mail is not known: German, the binding language of
-// the competition's region (FINAL_MAIL_LANG overrides)
-const DEFAULT_LANG = 'de'
+// An address without an account (a typed referee address, a club's contact):
+// who reads it is not known, so English, the app's binding language (owner,
+// 2026-10-29; FINAL_MAIL_LANG overrides, e.g. de)
+const DEFAULT_LANG = 'en'
 
 const iso = (v) => (v instanceof Date ? v.toISOString() : v ?? null)
 const cleanAddress = (raw) => {
@@ -127,10 +130,10 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
     }
   }
 
-  /** The addresses of one match row (see the header). */
+  /** The addresses of one match row (see the header), with the accounts' languages. */
   async function recipientsOf (m) {
     const { rows: accounts } = await pool.query(
-      `SELECT lower(u.email) AS email FROM auth.users u
+      `SELECT lower(u.email) AS email, u.raw_user_meta_data->>'mail_lang' AS lang FROM auth.users u
         WHERE u.id = $2
            OR u.id IN (SELECT a.user_id FROM public.match_approvals a
                         WHERE a.match_id = $1 AND a.revoked_at IS NULL AND a.slot IN ('scorer', 'referee1', 'referee2'))`,
@@ -143,7 +146,9 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
           WHERE lower(btrim(ct.team_name)) = ANY($1::text[]) AND c.contact_email IS NOT NULL`, [names])
       clubs = rows
     }
-    return recipientList([...accounts.map((r) => r.email), ...refereeAddresses(m.officials), ...clubs.map((r) => r.email)])
+    const to = recipientList([...accounts.map((r) => r.email), ...refereeAddresses(m.officials), ...clubs.map((r) => r.email)])
+    const langs = new Map(accounts.filter((r) => r.lang).map((r) => [r.email, pickLang(r.lang, null)]))
+    return to.map((address) => ({ address, lang: langs.get(address) || lang }))
   }
 
   // closed_at as the database wrote it (microseconds): a JS Date keeps
@@ -185,9 +190,9 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
     }
     let sent = 0
     let failed = 0
-    for (const address of to) {
+    for (const { address, lang: mailLang } of to) {
       try {
-        const r = await mailer.send('scoresheet', { to: address, lang, vars, attachments: [{ filename: pdf.filename, content: pdf.data }] })
+        const r = await mailer.send('scoresheet', { to: address, lang: mailLang, vars, attachments: [{ filename: pdf.filename, content: pdf.data }] })
         if (r?.sent) sent++
       } catch (err) {
         failed++
@@ -253,12 +258,12 @@ export function createFinalMail ({ pool, mailer, scoresheets, audit, logger = co
     const teams = typeof body.teams === 'string' ? body.teams.slice(0, 200) : ''
     const result = typeof body.result === 'string' ? body.result.slice(0, 60) : ''
     try {
-      const { rows: [u] } = await pool.query('SELECT email FROM auth.users WHERE id = $1', [userId])
+      const { rows: [u] } = await pool.query(`SELECT email, raw_user_meta_data->>'mail_lang' AS lang FROM auth.users WHERE id = $1`, [userId])
       const to = cleanAddress(u?.email)
       if (!to) return fail(409, 'OV_NO_EMAIL', 'Your account has no email address')
       const r = await mailer.send('scoresheet_test', {
         to,
-        lang: pickLang(undefined, requestLang),
+        lang: pickLang(u?.lang, requestLang),
         vars: { teams: teams || '?', result },
         attachments: [{ filename: 'scoresheet_test.pdf', content: data }]
       })
