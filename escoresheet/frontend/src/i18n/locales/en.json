@@ -2337,7 +2337,7 @@
       "a_restoreMatch": "Tap “Restore match”. Choose “Restore from cloud backup” (game number and game PIN, then “Search cloud backups”) or “Restore from local file” (“Select backup file”). Check the “Restore preview”, then tap “Confirm restore”.",
       "tip_restoreMatch": "Tap here to restore a match from a cloud or local backup.",
       "q_settings": "How do I change the language or settings?",
-      "a_settings": "The language is in the menu (☰) of the header. The other settings are in “Options”: on Home, or in the scoring screen under Menu › Options.",
+      "a_settings": "The language is in the menu (☰) of the header. The other settings are in “Options”: on Home, or in the scoring screen under Match › Options.",
       "q_backgroundHome": "Why did the app go back to Home?",
       "a_backgroundHome": "After 15 minutes or more in the background (another app, the screen off), the app shows Home. Nothing is closed or deleted: tap “Continue match”. Time with the screen on, such as a long set break, does not count.",
       "q_matchStates": "What do the labels on a match mean?",
@@ -2377,7 +2377,7 @@
       "q_rosterUpload": "Can the coach send the roster?",
       "a_rosterUpload": "Yes. In “Edit roster”, choose “Remote” and tap “Generate PIN”. Give the coach the game number and this upload PIN. The coach opens roster.openvolley.app, picks the game and the team, enters the PIN and uploads the roster PDF. “Roster uploaded” then appears (“Search for roster” checks for it): tap “Preview”, then “Accept” or “Reject”.",
       "q_pins": "Where are the PINs for the tablets?",
-      "a_pins": "The game PIN is on the match info page (“Create match” or “Edit”), where “Send PIN by email” can send it to you. Keep it: you need it to delete or restore the match. The referee and bench PINs are in “Connect tablets”. During the match, Menu › Show PINs shows them all."
+      "a_pins": "The game PIN is on the match info page (“Create match” or “Edit”), where “Send PIN by email” can send it to you. Keep it: you need it to delete or restore the match. The referee and bench PINs are in “Connect tablets”. During the match, Match › Show PINs shows them all."
     },
     "coinToss": {
       "q_record": "How do I record the coin toss?",
@@ -2435,7 +2435,7 @@
       "a_set5": "The deciding set (set 5, or set 3 in a best of 3) goes to 15 points with a 2-point lead. Toss the coin again before it: set the sides and the service with “Switch sides” and “Switch serve”, then tap “Confirm set 5 setup”. At 8 points the teams change courts.",
       "tip_set5": "The set indicator shows which set is played and the results so far.",
       "q_changeDecision": "How do I change a scoring decision?",
-      "a_changeDecision": "After a point, tap “Decision change”: give the point to the other team, or replay the rally with no point. During a rally, “Replay rally” replays it. Older mistakes are fixed in Menu › Corrections.",
+      "a_changeDecision": "After a point, tap “Decision change”: give the point to the other team, or replay the rally with no point. During a rally, “Replay rally” replays it. Older mistakes are fixed in Match › Corrections.",
       "tip_changeDecision": "“Undo” takes back the last action. After a point, “Decision change” is next to it."
     },
     "matchEnd": {
@@ -2449,7 +2449,7 @@
       "a_exportPdf": "Tap “Scoresheet” and choose “Preview”, “Print” or “Save PDF”. It works before and after the approval.",
       "tip_exportPdf": "Tap here to view, print or save the scoresheet.",
       "q_downloadJson": "How do I download the match data?",
-      "a_downloadJson": "“Confirm and approve” saves the match data as a JSON file, together with the PDF. During the match: Menu › Download game data (JSON). The file can restore the match.",
+      "a_downloadJson": "“Confirm and approve” saves the match data as a JSON file, together with the PDF. During the match: Match › Download game data (JSON). The file can restore the match.",
       "tip_downloadJson": "“Confirm and approve” saves the match data and makes the scoresheet.",
       "q_reopenSet": "How do I reopen a set to make corrections?",
       "a_reopenSet": "Tap “Reopen last set” to go back to the scoring screen. All signatures are cleared and must be collected again. After the approval, only an admin can reopen the match (“Reopen match”).",
@@ -2479,15 +2479,15 @@
       "a_saveChanges": "Corrections are saved one by one when you confirm them. Changes in “Teams” and “Match info” are saved together with “Save changes” at the top. “Close” asks before it drops unsaved changes.",
       "tip_saveChanges": "Saves the changes in “Teams” and “Match info”.",
       "q_whereCorrections": "Where do I correct a mistake?",
-      "a_whereCorrections": "During the match: Menu › Corrections. At the match end: the “Corrections” button. Each correction is saved when you confirm it and listed in the correction log for the referee.",
+      "a_whereCorrections": "During the match: Match › Corrections. At the match end: the “Corrections” button. Each correction is saved when you confirm it and listed in the correction log for the referee.",
       "q_missedPoint": "I forgot a point during the set?",
-      "a_missedPoint": "In Menu › Corrections, tap “Add a missed point” for the team. It is added at the current score with its rotation and service, as the point button does. If the last point went to the wrong team, tap “Last point went to the wrong team”.",
+      "a_missedPoint": "In Match › Corrections, tap “Add a missed point” for the team. It is added at the current score with its rotation and service, as the point button does. If the last point went to the wrong team, tap “Last point went to the wrong team”.",
       "q_serveSidesLineup": "How do I fix the serve, the sides or the line-up?",
       "a_serveSidesLineup": "In Corrections: “Change who serves first”, “Switch sides” and “Reopen set”. “Fix the line-up” corrects a wrong rotation: rotate the team one position forward or back.",
       "q_signaturesCleared": "Why were the signatures cleared?",
       "a_signaturesCleared": "A correction that changes the scoresheet clears the signatures collected at the match end. Collect them again. An approved match is read-only: reopen it first.",
       "q_editRoster": "Can I change a roster during the match?",
-      "a_editRoster": "Yes: Menu › Edit home roster or Edit away roster. Changes after the coin toss are logged in the corrections and in the remarks."
+      "a_editRoster": "Yes: Match › Edit home roster or Edit away roster. Changes after the coin toss are logged in the corrections and in the remarks."
     },
     "moreHelp": "More help",
     "contactSupport": "Contact support",
@@ -2517,9 +2517,9 @@
       "q_doubleTap": "I tapped twice: why was only one point given?",
       "a_doubleTap": "Right after “Start rally” or a point button changes, the app ignores taps on these buttons for 450 ms. A double tap or a bouncing finger gives no second point and starts no new rally. The keyboard keys act at once. The options also have “Check accidental rally start” and “Check accidental point award”.",
       "q_serveRotation": "How do I see who serves and the rotation?",
-      "a_serveRotation": "The ball marks the serving team, and the court shows each team's positions I to VI. The app rotates a team when it wins the service back. A wrong rotation is fixed in Menu › Corrections with “Fix the line-up”.",
+      "a_serveRotation": "The ball marks the serving team, and the court shows each team's positions I to VI. The app rotates a team when it wins the service back. A wrong rotation is fixed in Match › Corrections with “Fix the line-up”.",
       "q_scoreDisplay": "What does the score display show?",
-      "a_scoreDisplay": "The points of the set, the sets won and the serving team. Each team's side shows its time-outs (TO) and substitutions (SUB) in this set. Menu › Show sanctions and results lists every set.",
+      "a_scoreDisplay": "The points of the set, the sets won and the serving team. Each team's side shows its time-outs (TO) and substitutions (SUB) in this set. Match › Show sanctions and results lists every set.",
       "q_phone": "Can I score on a phone?",
       "a_phone": "Yes. In the options, set “Screen mode” to “Auto” or the phone layout, and hold the phone upright. The score, the court, the time-outs, the substitutions and the point buttons fit on one screen."
     },
@@ -2547,7 +2547,7 @@
       "q_warningOnce": "Why is “Warning” greyed out?",
       "a_warningOnce": "A team gets one warning per match. After it, “Warning” is greyed out for every member of that team. Further misconduct is a penalty or more.",
       "q_fixSanction": "I recorded the wrong sanction: how do I fix it?",
-      "a_fixSanction": "If it is the last action, tap “Undo”. Otherwise open Menu › Corrections: in the “Sanctions” card, edit or remove it, or tap “Add sanction”. The correction log shows the change to the referee."
+      "a_fixSanction": "If it is the last action, tap “Undo”. Otherwise open Match › Corrections: in the “Sanctions” card, edit or remove it, or tap “Add sanction”. The correction log shows the change to the referee."
     },
     "setEnd": {
       "q_interval": "How does the interval between sets work?",
@@ -2629,7 +2629,7 @@
       "q_continueOther": "How do I continue a match on another device?",
       "a_continueOther": "On the new device, tap “Restore match” on Home. Under “Restore from cloud backup”, enter the game number and the game PIN, then tap “Search cloud backups”. Choose the newest entry, check the “Restore preview” and tap “Confirm restore”. The new device scores from then on.",
       "q_gamePin": "Where do I find the game PIN?",
-      "a_gamePin": "On Home under “Game PIN”, on the match info page of the match setup (“Send PIN by email” sends it to you), and in the scoring screen under Menu › Show PINs.",
+      "a_gamePin": "On Home under “Game PIN”, on the match info page of the match setup (“Send PIN by email” sends it to you), and in the scoring screen under Match › Show PINs.",
       "q_oldDevice": "What happens on the old device?",
       "a_oldDevice": "It shows “Scored on another device” and stops scoring. The match opens read-only there; its scoresheet can still be viewed. Changes it had not sent are set aside, never sent over the new score.",
       "q_takeBack": "How do I take scoring back?",

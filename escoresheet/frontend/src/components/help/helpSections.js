@@ -218,7 +218,7 @@ export const HELP_SCREENS = {
   matchEnd: { app: 'scorer', nameKey: 'contextHelp.pageNames.matchEnd', sections: ['match-end', 'corrections'] },
   // the Corrections page at the match end (it covers the header: its own help button)
   manualAdjustments: { app: 'scorer', nameKey: 'contextHelp.pageNames.manualAdjustments', sections: ['corrections', 'match-end'] },
-  // Menu › Corrections during the match (Scoreboard)
+  // Match › Corrections during the match (Scoreboard)
   liveCorrections: { app: 'scorer', nameKey: 'contextHelp.pageNames.manualAdjustments', sections: ['corrections', 'scoring', 'sanctions'] },
   // Connect tablets (ConnectTabletsModal: header menu, Options)
   connectTablets: { app: 'scorer', nameKey: 'contextHelp.pageNames.connectTablets', sections: ['connections', 'referee', 'bench', 'livescore'] },

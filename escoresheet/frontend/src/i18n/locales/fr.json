@@ -2330,7 +2330,7 @@
       "a_restoreMatch": "Appuyez sur « Restaurer le match ». Choisissez « Restaurer depuis la sauvegarde cloud » (numéro et PIN du match, puis « Rechercher les sauvegardes cloud ») ou « Restaurer depuis un fichier local » (« Sélectionner le fichier de sauvegarde »). Vérifiez l'« Aperçu de la restauration », puis appuyez sur « Confirmer la restauration ».",
       "tip_restoreMatch": "Appuyez ici pour restaurer un match à partir d'une sauvegarde cloud ou locale.",
       "q_settings": "Comment changer la langue ou les paramètres ?",
-      "a_settings": "La langue se trouve dans le menu (☰) de l'en-tête. Les autres réglages sont dans les « Options » : sur l'accueil, ou sur l'écran de saisie sous Menu › Options.",
+      "a_settings": "La langue se trouve dans le menu (☰) de l'en-tête. Les autres réglages sont dans les « Options » : sur l'accueil, ou sur l'écran de saisie sous Match › Options.",
       "q_backgroundHome": "Pourquoi l'app est-elle revenue à l'accueil ?",
       "a_backgroundHome": "Après 15 minutes ou plus en arrière-plan (une autre app, l'écran éteint), l'app affiche l'accueil. Rien n'est fermé ni supprimé : appuyez sur « Continuer le match ». Le temps passé avec l'écran allumé, comme une longue pause entre les sets, ne compte pas.",
       "q_matchStates": "Que signifient les indications sur un match ?",
@@ -2370,7 +2370,7 @@
       "q_rosterUpload": "L'entraîneur peut-il envoyer l'effectif ?",
       "a_rosterUpload": "Oui. Dans « Modifier l'effectif », choisissez « Distant » et appuyez sur « Générer PIN ». Donnez à l'entraîneur le numéro du match et ce code PIN. L'entraîneur ouvre roster.openvolley.app, choisit le match et l'équipe, saisit le PIN et envoie le PDF de l'effectif. L'effectif envoyé apparaît ensuite (« Chercher l'effectif » le vérifie) : appuyez sur « Aperçu », puis sur « Accepter » ou « Refuser ».",
       "q_pins": "Où sont les PIN des tablettes ?",
-      "a_pins": "Le PIN du match figure sur la page des informations du match (« Créer le match » ou « Modifier ») ; « Envoyer PIN par email » vous l'envoie. Gardez-le : il sert à supprimer ou restaurer le match. Les PIN de l'arbitre et des bancs sont dans « Connecter des tablettes ». Pendant le match, Menu › Afficher les codes PIN les montre tous."
+      "a_pins": "Le PIN du match figure sur la page des informations du match (« Créer le match » ou « Modifier ») ; « Envoyer PIN par email » vous l'envoie. Gardez-le : il sert à supprimer ou restaurer le match. Les PIN de l'arbitre et des bancs sont dans « Connecter des tablettes ». Pendant le match, Match › Afficher les codes PIN les montre tous."
     },
     "coinToss": {
       "q_record": "Comment enregistrer le tirage au sort ?",
@@ -2428,7 +2428,7 @@
       "a_set5": "Le set décisif (set 5, ou set 3 en deux sets gagnants) se joue en 15 points avec 2 points d'écart. Avant lui, refaites le tirage au sort : réglez les côtés et le service avec « Changer de côté » et « Changer de service », puis appuyez sur « Confirmer set 5 setup ». À 8 points, les équipes changent de côté.",
       "tip_set5": "L'indicateur de set montre le set en cours et les résultats déjà joués.",
       "q_changeDecision": "Comment changer une décision de score ?",
-      "a_changeDecision": "Après un point, appuyez sur « Changement de décision » : donnez le point à l'autre équipe, ou rejouez l'échange sans point. Pendant un échange, « Rejouer l'échange » le fait rejouer. Les erreurs plus anciennes se corrigent dans Menu › Corrections.",
+      "a_changeDecision": "Après un point, appuyez sur « Changement de décision » : donnez le point à l'autre équipe, ou rejouez l'échange sans point. Pendant un échange, « Rejouer l'échange » le fait rejouer. Les erreurs plus anciennes se corrigent dans Match › Corrections.",
       "tip_changeDecision": "« Annuler » reprend la dernière action. Après un point, « Changement de décision » est juste à côté."
     },
     "matchEnd": {
@@ -2442,7 +2442,7 @@
       "a_exportPdf": "Appuyez sur « eScoresheet » et choisissez « Aperçu », « Imprimer » ou « Enregistrer PDF ». Cela fonctionne avant et après l'approbation.",
       "tip_exportPdf": "Appuyez ici pour voir, imprimer ou enregistrer la feuille de match.",
       "q_downloadJson": "Comment télécharger les données du match ?",
-      "a_downloadJson": "« Confirmer et approuver » enregistre les données du match dans un fichier JSON, avec le PDF. Pendant le match : Menu › Télécharger les données du match (JSON). Le fichier permet de restaurer le match.",
+      "a_downloadJson": "« Confirmer et approuver » enregistre les données du match dans un fichier JSON, avec le PDF. Pendant le match : Match › Télécharger les données du match (JSON). Le fichier permet de restaurer le match.",
       "tip_downloadJson": "« Confirmer et approuver » enregistre les données du match et crée la feuille de match.",
       "q_reopenSet": "Comment rouvrir un set pour faire des corrections ?",
       "a_reopenSet": "Appuyez sur « Rouvrir dernier set » pour revenir à l'écran de saisie. Toutes les signatures sont effacées et doivent être recueillies à nouveau. Après l'approbation, seul un administrateur peut rouvrir le match (« Rouvrir le match »).",
@@ -2472,15 +2472,15 @@
       "a_saveChanges": "Les corrections sont enregistrées une par une quand vous les confirmez. Les modifications dans « Équipes » et « Info match » sont enregistrées ensemble avec « Enregistrer les modifications » en haut. « Fermer » demande avant d'abandonner des modifications non enregistrées.",
       "tip_saveChanges": "Enregistre les modifications de « Équipes » et « Info match ».",
       "q_whereCorrections": "Où corriger une erreur ?",
-      "a_whereCorrections": "Pendant le match : Menu › Corrections. À la fin du match : le bouton « Corrections ». Chaque correction est enregistrée quand vous la confirmez et figure dans le journal des corrections pour l'arbitre.",
+      "a_whereCorrections": "Pendant le match : Match › Corrections. À la fin du match : le bouton « Corrections ». Chaque correction est enregistrée quand vous la confirmez et figure dans le journal des corrections pour l'arbitre.",
       "q_missedPoint": "J'ai oublié un point pendant le set ?",
-      "a_missedPoint": "Dans Menu › Corrections, appuyez sur « Ajouter un point oublié » pour l'équipe. Il est ajouté au score actuel avec sa rotation et son service, comme avec le bouton de point. Si le dernier point est allé à la mauvaise équipe, appuyez sur « Le dernier point a été donné à la mauvaise équipe ».",
+      "a_missedPoint": "Dans Match › Corrections, appuyez sur « Ajouter un point oublié » pour l'équipe. Il est ajouté au score actuel avec sa rotation et son service, comme avec le bouton de point. Si le dernier point est allé à la mauvaise équipe, appuyez sur « Le dernier point a été donné à la mauvaise équipe ».",
       "q_serveSidesLineup": "Comment corriger le service, les côtés ou la formation ?",
       "a_serveSidesLineup": "Dans les corrections : « Changer qui sert en premier », « Changer de côté » et « Rouvrir le set ». « Corriger la formation » répare une rotation fausse : faites tourner l'équipe d'une position en avant ou en arrière.",
       "q_signaturesCleared": "Pourquoi les signatures ont-elles été effacées ?",
       "a_signaturesCleared": "Une correction qui change la feuille de match efface les signatures recueillies à la fin du match. Recueillez-les à nouveau. Un match approuvé est en lecture seule : rouvrez-le d'abord.",
       "q_editRoster": "Puis-je changer un effectif pendant le match ?",
-      "a_editRoster": "Oui : Menu › Modifier la composition domicile ou Modifier la composition visiteur. Les changements faits après le tirage au sort sont notés dans les corrections et dans les remarques."
+      "a_editRoster": "Oui : Match › Modifier la composition domicile ou Modifier la composition visiteur. Les changements faits après le tirage au sort sont notés dans les corrections et dans les remarques."
     },
     "moreHelp": "Plus d'aide",
     "contactSupport": "Contacter le support",
@@ -2510,9 +2510,9 @@
       "q_doubleTap": "J'ai appuyé deux fois : pourquoi un seul point ?",
       "a_doubleTap": "Juste après le changement de « Lancer l'échange » ou d'un bouton de point, l'app ignore les appuis sur ces boutons pendant 450 ms. Un double appui ou un doigt qui rebondit ne donne pas de deuxième point et ne lance pas de nouvel échange. Les touches du clavier agissent tout de suite. Les options proposent aussi « Vérifier démarrage accidentel » et « Vérifier point accidentel ».",
       "q_serveRotation": "Où voir qui sert et la rotation ?",
-      "a_serveRotation": "Le ballon marque l'équipe au service, et le terrain montre les positions I à VI de chaque équipe. L'app fait tourner une équipe quand elle reprend le service. Une rotation fausse se corrige dans Menu › Corrections avec « Corriger la formation ».",
+      "a_serveRotation": "Le ballon marque l'équipe au service, et le terrain montre les positions I à VI de chaque équipe. L'app fait tourner une équipe quand elle reprend le service. Une rotation fausse se corrige dans Match › Corrections avec « Corriger la formation ».",
       "q_scoreDisplay": "Que montre l'affichage du score ?",
-      "a_scoreDisplay": "Les points du set, les sets gagnés et l'équipe au service. Le côté de chaque équipe montre ses temps morts (TM) et ses remplacements (RMP) dans ce set. Menu › Afficher sanctions et résultats liste chaque set.",
+      "a_scoreDisplay": "Les points du set, les sets gagnés et l'équipe au service. Le côté de chaque équipe montre ses temps morts (TM) et ses remplacements (RMP) dans ce set. Match › Afficher sanctions et résultats liste chaque set.",
       "q_phone": "Puis-je saisir sur un téléphone ?",
       "a_phone": "Oui. Dans les options, réglez le « Mode d'écran » sur « Auto » ou sur la vue téléphone, et tenez le téléphone à la verticale. Le score, le terrain, les temps morts, les remplacements et les boutons de point tiennent sur un seul écran."
     },
@@ -2540,7 +2540,7 @@
       "q_warningOnce": "Pourquoi « Avertissement » est-il grisé ?",
       "a_warningOnce": "Une équipe reçoit un seul avertissement par match. Ensuite, l'avertissement est grisé pour tous les membres de cette équipe. Toute autre faute de conduite est une pénalité ou plus.",
       "q_fixSanction": "J'ai saisi la mauvaise sanction : comment la corriger ?",
-      "a_fixSanction": "Si c'est la dernière action, appuyez sur « Annuler ». Sinon, ouvrez Menu › Corrections : dans la carte « Sanctions », modifiez-la ou supprimez-la, ou appuyez sur « Ajouter une sanction ». Le journal des corrections montre la modification à l'arbitre."
+      "a_fixSanction": "Si c'est la dernière action, appuyez sur « Annuler ». Sinon, ouvrez Match › Corrections : dans la carte « Sanctions », modifiez-la ou supprimez-la, ou appuyez sur « Ajouter une sanction ». Le journal des corrections montre la modification à l'arbitre."
     },
     "setEnd": {
       "q_interval": "Comment fonctionne la pause entre les sets ?",
@@ -2622,7 +2622,7 @@
       "q_continueOther": "Comment continuer un match sur un autre appareil ?",
       "a_continueOther": "Sur le nouvel appareil, appuyez sur « Restaurer le match » à l'accueil. Sous « Restaurer depuis la sauvegarde cloud », saisissez le numéro et le PIN du match, puis appuyez sur « Rechercher les sauvegardes cloud ». Choisissez l'entrée la plus récente, vérifiez l'« Aperçu de la restauration » et appuyez sur « Confirmer la restauration ». Dès lors, le nouvel appareil tient le match.",
       "q_gamePin": "Où trouver le PIN du match ?",
-      "a_gamePin": "À l'accueil sous « PIN du match », sur la page des informations du match dans la configuration (« Envoyer PIN par email » vous l'envoie) et sur l'écran de saisie sous Menu › Afficher les codes PIN.",
+      "a_gamePin": "À l'accueil sous « PIN du match », sur la page des informations du match dans la configuration (« Envoyer PIN par email » vous l'envoie) et sur l'écran de saisie sous Match › Afficher les codes PIN.",
       "q_oldDevice": "Que se passe-t-il sur l'ancien appareil ?",
       "a_oldDevice": "Il affiche « Tenu sur un autre appareil » et arrête la saisie. Le match s'y ouvre en lecture seule ; sa feuille de match reste consultable. Les modifications qu'il n'avait pas envoyées sont mises de côté, jamais envoyées par-dessus le nouveau score.",
       "q_takeBack": "Comment reprendre la saisie ?",

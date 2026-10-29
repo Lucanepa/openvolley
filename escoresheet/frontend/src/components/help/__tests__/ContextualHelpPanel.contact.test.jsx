@@ -68,7 +68,7 @@ describe('ContextualHelpPanel: Contact support with the real support form', () =
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('a dialog\'s screen (Menu › Corrections) passes its section, not its own name', () => {
+  it('a dialog\'s screen (Match › Corrections) passes its section, not its own name', () => {
     render(<ContextualHelpPanel open onClose={() => {}} screen="liveCorrections" />)
     fireEvent.click(within(sectionEl('corrections')).getByRole('button', { name: en.contextHelp.contactSupport }))
     select(en.supportFeedback.contactTypeLabel, 'feedback')

@@ -2331,7 +2331,7 @@
       "a_restoreMatch": "Tipp uf «Spiil widerherstelle». Wähl «Vo Cloud-Backup widerherstelle» (Spiilnummere und Spiil-PIN, dänn «Cloud-Backups sueche») oder «Vo lokaler Datei widerherstelle» («Backup-Datei uswähle»). Prüef d «Widerherstelligs-Vorschau» und tipp uf «Widerherstelle».",
       "tip_restoreMatch": "Tipp da, zum es Spiil us emne Cloud- oder lokale Backup widerherstelle.",
       "q_settings": "Wie änder ich d Sprach oder d Iistellige?",
-      "a_settings": "D Sprach findsch im Menü (☰) i de Chopfziile. Di andere Iistellige sind i de «Optione»: uf de Startsiite oder ufem Erfassigsbildschirm under Menü › Optione.",
+      "a_settings": "D Sprach findsch im Menü (☰) i de Chopfziile. Di andere Iistellige sind i de «Optione»: uf de Startsiite oder ufem Erfassigsbildschirm under Spiil › Optione.",
       "q_backgroundHome": "Werum isch d App wieder uf de Startsiite?",
       "a_backgroundHome": "Nach 15 Minute oder meh im Hintergrund (en anderi App, Bildschirm us) zeigt d App d Startsiite. Nüüt wird gschlosse oder glöscht: Tipp uf «Spiil wiiterfüehre». Ziit mit iigschaltetem Bildschirm, zum Bispiil e langi Satzpause, zellt nöd.",
       "q_matchStates": "Was bedüütet d Hiiwiis bi emne Spiil?",
@@ -2371,7 +2371,7 @@
       "q_rosterUpload": "Chan de Coach de Kader schicke?",
       "a_rosterUpload": "Ja. Wähl i «Kader bearbeite» «Remote» und tipp uf «PIN generiere». Gib em Coach d Spiilnummere und die Upload-PIN. De Coach macht roster.openvolley.app uf, wählt Spiil und Team, git d PIN ii und ladt s Kader-PDF ufe. Dänn erschiint «Kader ufeglade» («Kader sueche» prüeft das): Tipp uf «Vorschau», dänn uf «Akzeptiere» oder «Ablehne».",
       "q_pins": "Wo sind d PINs für d Tablets?",
-      "a_pins": "D Spiil-PIN staht uf de Siite vo de Spiilinfo («Spiil erstelle» oder «Bearbeite»); «PIN per E-Mail schicke» schickt si dir. Bhalt si guet: Du bruuchsch si, zum s Spiil lösche oder widerherstelle. D PINs vom Schiri und vo de Bänk sind i «Tablets verbinde». Während em Spiil zeigt Menü › PINs aazeige alli."
+      "a_pins": "D Spiil-PIN staht uf de Siite vo de Spiilinfo («Spiil erstelle» oder «Bearbeite»); «PIN per E-Mail schicke» schickt si dir. Bhalt si guet: Du bruuchsch si, zum s Spiil lösche oder widerherstelle. D PINs vom Schiri und vo de Bänk sind i «Tablets verbinde». Während em Spiil zeigt Spiil › PINs aazeige alli."
     },
     "coinToss": {
       "q_record": "Wie trag ich d Usloosig ii?",
@@ -2429,7 +2429,7 @@
       "a_set5": "De Entscheidigssatz (Satz 5, oder Satz 3 bi Best of 3) gaht uf 15 Pünkt mit 2 Pünkt Vorsprung. Vorher wird neu uusgloost: Leg Siite und Ufschlag mit «Siite wächsle» und «Ufschlag wächsle» fescht und tipp uf «Satz 5 Iirichtig bestätige». Bi 8 Pünkt wächsled d Teams s Fäld.",
       "tip_set5": "D Satzaazeig zeigt de laufend Satz und di bisherige Resultat.",
       "q_changeDecision": "Wie änder ich en Entscheid?",
-      "a_changeDecision": "Tipp nach emne Punkt uf «Entscheidsänderig»: Gib de Punkt em andere Team, oder wiederhol de Ballwächsel ohni Punkt. Während emne Ballwächsel wiederholt «Ballwechsel wiederhole» ihn. Älteri Fähler korrigiersch under Menü › Korrekture.",
+      "a_changeDecision": "Tipp nach emne Punkt uf «Entscheidsänderig»: Gib de Punkt em andere Team, oder wiederhol de Ballwächsel ohni Punkt. Während emne Ballwächsel wiederholt «Ballwechsel wiederhole» ihn. Älteri Fähler korrigiersch under Spiil › Korrekture.",
       "tip_changeDecision": "«Rückgängig» nimmt di letscht Aktion zrugg. Nach emne Punkt staht «Entscheidsänderig» dernäbe."
     },
     "matchEnd": {
@@ -2443,7 +2443,7 @@
       "a_exportPdf": "Tipp uf «eScoresheet» und wähl «Vorschau», «Drucke» oder «PDF speichere». Das gaht vor und nach de Gnehmigung.",
       "tip_exportPdf": "Tipp da, zum s Matchblatt aaluege, drucke oder speichere.",
       "q_downloadJson": "Wie lad ich d Spiildate abe?",
-      "a_downloadJson": "«Bestätige und genehmige» speicheret d Spiildate als JSON-Datei, zäme mit em PDF. Während em Spiil: Menü › Spiildate abelade (JSON). Mit de Datei chasch s Spiil widerherstelle.",
+      "a_downloadJson": "«Bestätige und genehmige» speicheret d Spiildate als JSON-Datei, zäme mit em PDF. Während em Spiil: Spiil › Spiildate abelade (JSON). Mit de Datei chasch s Spiil widerherstelle.",
       "tip_downloadJson": "«Bestätige und genehmige» speicheret d Spiildate und macht s Matchblatt.",
       "q_reopenSet": "Wie mach ich en Satz für Korrekture wieder uf?",
       "a_reopenSet": "Tipp uf «Letschte Satz wieder öffne», zum zum Erfassigsbildschirm zrugg. Alli Underschrifte werded glöscht und müend neu gsammlet werde. Nach de Gnehmigung chan nur en Admin s Spiil wieder ufmache («Spiil wieder ufmache»).",
@@ -2473,15 +2473,15 @@
       "a_saveChanges": "Korrekture werded einzeln gspeicheret, wänn du si bestätigsch. Änderige i «Teams» und «Spielinfo» speicheret «Änderige speichere» obe zäme. «Schliesse» fröget nache, bevor nöd gspeicherti Änderige verlore gönd.",
       "tip_saveChanges": "Speicheret d Änderige i «Teams» und «Spielinfo».",
       "q_whereCorrections": "Wo korrigier ich en Fähler?",
-      "a_whereCorrections": "Während em Spiil: Menü › Korrekture. Am Spieländi: de Chnopf «Korrekture». Jedi Korrektur wird gspeicheret, wänn du si bestätigsch, und im Korrekturprotokoll für de Schiri uufgfüehrt.",
+      "a_whereCorrections": "Während em Spiil: Spiil › Korrekture. Am Spieländi: de Chnopf «Korrekture». Jedi Korrektur wird gspeicheret, wänn du si bestätigsch, und im Korrekturprotokoll für de Schiri uufgfüehrt.",
       "q_missedPoint": "Ich ha im Satz en Punkt vergässe?",
-      "a_missedPoint": "Tipp under Menü › Korrekture bim Team uf «Vergässene Punkt hinzuefüege». Er wird bim aktuelle Spielstand mit Rotation und Ufschlag iitreit, wie mit em Punkt-Chnopf. Isch de letscht Punkt as falsch Team gange, tipp uf «Letschte Punkt isch a di falsch Mannschaft gange».",
+      "a_missedPoint": "Tipp under Spiil › Korrekture bim Team uf «Vergässene Punkt hinzuefüege». Er wird bim aktuelle Spielstand mit Rotation und Ufschlag iitreit, wie mit em Punkt-Chnopf. Isch de letscht Punkt as falsch Team gange, tipp uf «Letschte Punkt isch a di falsch Mannschaft gange».",
       "q_serveSidesLineup": "Wie korrigier ich Ufschlag, Siite oder Ufstellig?",
       "a_serveSidesLineup": "I de Korrekture: «Erschte Ufschlag ändere», «Siite wächsle» und «Satz wieder öffne». «Ufstellig korrigiere» behebt e falschi Rotation: Rotier s Team um ei Position vor oder zrugg.",
       "q_signaturesCleared": "Werum sind d Underschrifte glöscht worde?",
       "a_signaturesCleared": "E Korrektur, wo s Matchblatt änderet, löscht d Underschrifte vom Spieländi. Sammle si neu. Es gnehmigets Spiil isch schriibgschützt: Mach s zersch wieder uf.",
       "q_editRoster": "Chan ich en Kader während em Spiil ändere?",
-      "a_editRoster": "Ja: Menü › Hei-Ufschtelig bearbeite oder Gascht-Ufschtelig bearbeite. Änderige nach de Usloosig werded i de Korrekture und i de Bemerkige protokolliert."
+      "a_editRoster": "Ja: Spiil › Hei-Ufschtelig bearbeite oder Gascht-Ufschtelig bearbeite. Änderige nach de Usloosig werded i de Korrekture und i de Bemerkige protokolliert."
     },
     "moreHelp": "Meh Hilf",
     "contactSupport": "Support kontaktiere",
@@ -2511,9 +2511,9 @@
       "q_doubleTap": "Ich ha doppelt tippt: Werum hät s nur ein Punkt gee?",
       "a_doubleTap": "Grad nachdem «Ballwechsel starte» oder en Punkt-Chnopf wächslet, ignoriert d App Tipper uf die Chnöpf für 450 ms. En Doppeltipp oder en prällende Finger git kein zweite Punkt und startet kein neue Ballwächsel. D Taste vo de Tastatur wirked sofort. D Optione händ derzue «Versehentliche Ballwechsel-Start prüefe» und «Versehentlichi Punktvergab prüefe».",
       "q_serveRotation": "Wo gseh ich, wer ufschlaat, und d Rotation?",
-      "a_serveRotation": "De Ball markiert s ufschlagend Team, und s Fäld zeigt d Positione I bis VI vo jedem Team. D App laat es Team rotiere, wänn s de Ufschlag zruggwinnt. E falschi Rotation korrigiersch under Menü › Korrekture mit «Ufstellig korrigiere».",
+      "a_serveRotation": "De Ball markiert s ufschlagend Team, und s Fäld zeigt d Positione I bis VI vo jedem Team. D App laat es Team rotiere, wänn s de Ufschlag zruggwinnt. E falschi Rotation korrigiersch under Spiil › Korrekture mit «Ufstellig korrigiere».",
       "q_scoreDisplay": "Was zeigt d Spielstandaazeig?",
-      "a_scoreDisplay": "D Pünkt vom Satz, di gwunnene Sätz und s ufschlagend Team. D Siite vo jedem Team zeigt sini Timeouts (TO) und Wächsel (US) i dem Satz. Menü › Sanktione und Ergebnis aazeige lischtet jede Satz.",
+      "a_scoreDisplay": "D Pünkt vom Satz, di gwunnene Sätz und s ufschlagend Team. D Siite vo jedem Team zeigt sini Timeouts (TO) und Wächsel (US) i dem Satz. Spiil › Sanktione und Ergebnis aazeige lischtet jede Satz.",
       "q_phone": "Chan ich ufemne Handy erfasse?",
       "a_phone": "Ja. Stell i de Optione de «Bildschirmmodus» uf «Auto» oder d Handy-Aasicht und heb s Handy hochkant. Spielstand, Fäld, Timeouts, Wächsel und Punkt-Chnöpf hend uf eim Bildschirm Platz."
     },
@@ -2541,7 +2541,7 @@
       "q_warningOnce": "Werum isch «Warnig» grau?",
       "a_warningOnce": "Es Team überchunnt ei Warnig pro Spiil. Nachher isch «Warnig» für alli Mitglieder vo däm Team grau. Wiiters Fehlverhalte isch e Straaf oder meh.",
       "q_fixSanction": "Ich ha di falsch Sanktion erfasst: Wie korrigier ich si?",
-      "a_fixSanction": "Isch s di letscht Aktion, tipp uf «Rückgängig». Susch mach Menü › Korrekture uf: I de Charte «Sanktione» bearbeitisch oder entfernsch si, oder du tippsch uf «Sanktion hinzuefüege». S Korrekturprotokoll zeigt d Änderig em Schiri."
+      "a_fixSanction": "Isch s di letscht Aktion, tipp uf «Rückgängig». Susch mach Spiil › Korrekture uf: I de Charte «Sanktione» bearbeitisch oder entfernsch si, oder du tippsch uf «Sanktion hinzuefüege». S Korrekturprotokoll zeigt d Änderig em Schiri."
     },
     "setEnd": {
       "q_interval": "Wie funktioniert d Pause zwüsche de Sätz?",
@@ -2623,7 +2623,7 @@
       "q_continueOther": "Wie füehr ich es Spiil uf emne andere Grät wiiter?",
       "a_continueOther": "Tipp ufem neue Grät uf de Startsiite uf «Spiil widerherstelle». Gib under «Vo Cloud-Backup widerherstelle» d Spiilnummere und d Spiil-PIN ii und tipp uf «Cloud-Backups sueche». Wähl de neuscht Iitrag, prüef d «Widerherstelligs-Vorschau» und tipp uf «Widerherstelle». Ab dänn füehrt s neu Grät s Spiil.",
       "q_gamePin": "Wo find ich d Spiil-PIN?",
-      "a_gamePin": "Uf de Startsiite under «Spiil-PIN», uf de Siite vo de Spiilinfo i de Spielirichtig («PIN per E-Mail schicke» schickt si dir) und ufem Erfassigsbildschirm under Menü › PINs aazeige.",
+      "a_gamePin": "Uf de Startsiite under «Spiil-PIN», uf de Siite vo de Spiilinfo i de Spielirichtig («PIN per E-Mail schicke» schickt si dir) und ufem Erfassigsbildschirm under Spiil › PINs aazeige.",
       "q_oldDevice": "Was passiert ufem alte Grät?",
       "a_oldDevice": "Es zeigt, dass s Spiil uf emne andere Grät gfüehrt wird, und hört uf erfasse. S Spiil gaht det nur zum Läse uf; sis Matchblatt chasch wiiter aaluege. Nöd gschickti Änderige werded uf d Siite gleit, nie über de neu Spielstand gschickt.",
       "q_takeBack": "Wie übernimm ich s Spiil wieder?",
