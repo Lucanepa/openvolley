@@ -873,7 +873,7 @@ const emailTransporter = LEGACY_SMTP ? nodemailer.createTransport({
 // The support form's mail (lib/contact.js): From MAIL_FROM, To CONTACT_EMAIL,
 // Reply-To the user, so FreeScout makes the user the ticket's customer.
 const contactMailer = contactMailerFromEnv(process.env)
-// At most 10 support requests at once, each up to 11 MB in memory for up to 2 min
+// At most 10 support requests at once, each up to 14 MB in memory for up to 2 min
 const contactSlots = createContactSlots()
 if (contactMailer.enabled) {
   console.log(`[Contact] support form mails ${contactMailer.to} from ${contactMailer.from}`)
