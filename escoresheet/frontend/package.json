@@ -65,6 +65,7 @@
     "dexie": "^4.3.0",
     "dexie-react-hooks": "^4.2.0",
     "fflate": "^0.8.3",
+    "hash-wasm": "^4.12.0",
     "html-to-image": "^1.11.13",
     "html5-qrcode": "^2.3.8",
     "i18next": "^26.4.3",
