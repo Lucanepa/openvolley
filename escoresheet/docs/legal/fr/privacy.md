@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.3 · État au 16 octobre 2026
+**OpenVolley et OpenBeach** · Version 1.4 · État au 29 octobre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version allemande fait foi.
@@ -83,7 +83,8 @@ Cette déclaration contient les informations exigées par les deux lois.
 ## 4. Site web et page de téléchargement
 
 **openvolley.app** et **get.openvolley.app** sont des pages statiques sans
-formulaire et sans scripts de tiers. Lors de l'affichage, Cloudflare traite
+scripts de tiers. Le seul formulaire est le formulaire de support sur
+openvolley.app/support (section 13). Lors de l'affichage, Cloudflare traite
 les données techniquement nécessaires : adresse IP, adresse demandée, heure
 et identifiant du navigateur. Mon serveur ne tient pas de journal d'accès pour
 get.openvolley.app.
@@ -453,17 +454,35 @@ support@openvolley.app.
 
 ## 13. Support et contact
 
-**Formulaire de support dans les applications :** il transmet au serveur le
-type et le domaine du signalement, votre description, à titre facultatif votre
-adresse e-mail, l'adresse de la page et l'identifiant du navigateur. Votre
-adresse e-mail et le début de votre message sont consignés dans le journal du
-serveur (section 14) ; le signalement peut être transmis par e-mail à
-support@openvolley.app. J'utilise votre adresse uniquement pour vous
-répondre. **Pour les demandes concernant vos données, écrivez directement à
-support@openvolley.app.**
+**Formulaire de support (dans les applications et sur openvolley.app/support) :**
+il transmet à mon serveur votre adresse e-mail, le type et le domaine de
+votre demande, votre message et, si vous en ajoutez, jusqu'à cinq pièces
+jointes (par exemple des captures d'écran ou des fichiers de sauvegarde),
+ainsi que la langue, l'adresse de la page sans ses paramètres, l'identifiant
+du navigateur, l'heure, la plateforme (« web » depuis le site) et, dans les
+applications, la version de l'application. Les diagnostics (version de
+l'application, plateforme, affichage, état de la connexion, numéro du match
+ouvert et derniers messages d'erreur de l'application) ne sont envoyés que si
+vous cochez « Joindre les diagnostics » dans l'application, et tels qu'ils y
+sont affichés. Le site web n'envoie pas de diagnostics.
 
-**E-mail à support@openvolley.app :** je conserve votre message aussi
-longtemps que votre demande l'exige.
+Le serveur transmet la demande sous la forme d'un seul e-mail à
+support@openvolley.app, avec votre adresse comme adresse de réponse. Il n'en
+garde rien, sauf une ligne de journal avec le type, le domaine et une forme
+abrégée de votre adresse e-mail (section 14). La boîte aux lettres est
+hébergée par Migadu (section 15). Mon système de tickets
+(support.openvolley.app), que j'exploite moi-même sur mon serveur en Suisse,
+la lit, afin que je puisse vous répondre et suivre votre demande. J'utilise
+votre adresse uniquement pour vous répondre. **Pour les demandes concernant
+vos données, écrivez directement à support@openvolley.app.**
+
+**E-mail à support@openvolley.app :** il est traité de la même manière, dans
+la boîte aux lettres et dans le système de tickets.
+
+**Durée de conservation :** je conserve les demandes de support (boîte aux
+lettres et système de tickets, avec les pièces jointes) 2 ans après le
+dernier message, afin de pouvoir retrouver les réponses précédentes ; plus
+tôt sur demande.
 
 ## 14. Journaux et sécurité sur le serveur
 
@@ -543,6 +562,7 @@ prestataires. Vous pouvez me demander une copie de ces garanties.
 | Journal d'utilisation (uniquement sur l'appareil) | OpenVolley à partir de 2.4.0 : 30 jours, au plus 50 000 entrées |
 | Fichier journal de l'application de bureau (uniquement sur l'appareil) | Au plus cinq anciens fichiers de 5 Mo chacun |
 | Signature sur un téléphone (serveur ou ordinateur portable) | Uniquement en mémoire vive ; lien valable 10 minutes, signature supprimée au plus tard 5 minutes après la signature |
+| Demandes de support (boîte aux lettres et système de tickets, avec les pièces jointes) | 2 ans après le dernier message ; plus tôt sur demande |
 | Journaux du serveur | Écrasés selon leur taille (quelques jours à quelques semaines) |
 | Données en direct (serveur et mode salle) | Uniquement en mémoire vive ; sur le serveur supprimées 24 heures après la dernière activité |
 | Sauvegardes | Jusqu'à environ 6 mois (section 18) |
