@@ -1142,6 +1142,20 @@
       "closed": "Uf em Server abgschlosse",
       "unchecked": "Nöd prüeft",
       "unsent": "Nöd gschickti Änderige"
+    },
+    "signInForOfficial": "Melde dich an, um offizielle Spiele zu schreiben. Test- und einfache Spiele bleiben auf diesem Gerät.",
+    "todayGames": {
+      "title": "Spiele von heute",
+      "loading": "Spiele von heute werden geladen…",
+      "offline": "Keine Verbindung: die Liste von vorhin.",
+      "failed": "Die Spiele von heute konnten nicht geladen werden. Gib das Spiel selbst ein.",
+      "noClub": "Dein Konto hat noch keinen Verein, darum gibt es keine Liste. Gib das Spiel selbst ein oder frag deinen Verein.",
+      "none": "Heute kein Heimspiel deines Vereins.",
+      "mine": "Von dir begonnen",
+      "taken": "Von einem anderen Konto begonnen",
+      "closed": "Abgeschlossen",
+      "notListed": "Nicht in der Liste?",
+      "manual": "Spiel selbst eingeben"
     }
   },
   "options": {

@@ -40,6 +40,8 @@
  *                                                    indoor, of the club, scorer|referee, <= 50 uses,
  *                                                    <= 90 days (lib/clubs.js clubInviteBody)
  *   POST   /api/club/:id/invites/:inviteId/revoke    the same: a code of that club only
+ *   GET    /api/games/today                          any signed-in account: today's home games of
+ *                                                    its clubs (the scorer app's Official game)
  *   DELETE /api/admin/activity?match=|account=&confirm=yes  isAdmin: delete on request (audited)
  *   GET    /api/scoresheets?app=indoor|beach&state=&q=  canManageTeams of that sport (admins and its
  *                                                    competition managers; no app = indoor)
@@ -90,6 +92,7 @@ export function manageFamilyOf (pathname) {
   if (pathname === '/api/approvals' || pathname.startsWith('/api/approvals/') || pathname === '/api/account/approvals') return 'approvals'
   if (pathname === '/api/scoresheets' || pathname.startsWith('/api/scoresheets/')) return 'scoresheets'
   if (pathname.startsWith('/api/club/')) return 'club'
+  if (pathname === '/api/games/today') return 'games'
   return null
 }
 
@@ -168,6 +171,8 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
     ['GET', /^\/api\/admin\/club-teams$/, 'admin', (m, c) => (clubs ? clubs.vmTeams({ q: q(c.query, 'q') ?? '' }) : notFound())],
     ['PUT', /^\/api\/admin\/club-rule$/, 'admin', (m, c) => (clubs ? clubs.setRule({ actorId: c.user.id, body: c.body }) : notFound())],
     ['PUT', new RegExp(`^/api/admin/clubs/${ID}/managers$`), 'admin', (m, c) => club((cl) => cl.setManagers({ actorId: c.user.id, id: m[1], body: c.body }))],
+    // The scorer app's Official game: today's home games of the account's clubs
+    ['GET', /^\/api\/games\/today$/, 'any', (m, c) => club((cl) => cl.todayGames({ userId: c.user.id }))],
     // db/020: a club manager's own club
     ['GET', new RegExp(`^/api/club/${ID}$`), clubManagerOf, (m) => club((cl) => cl.clubDetail({ id: m[1] }))],
     ['PATCH', new RegExp(`^/api/club/${ID}$`), clubManagerOf, (m, c) => club((cl) => cl.setContact({ actorId: c.user.id, id: m[1], body: c.body }))],

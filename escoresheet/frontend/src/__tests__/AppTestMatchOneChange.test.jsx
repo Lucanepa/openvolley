@@ -15,8 +15,7 @@ afterAll(online)
 describe('App: a new test match', () => {
   it('goes from the home screen to the filled Match Setup in one change', async () => {
     mountApp()
-    await waitFor(() => expect(button('New match')).toBeTruthy())
-    fireEvent.click(button('New match'))
+    // Test match is on the home screen itself (no New match menu since 3.1)
     await waitFor(() => expect(button('Test match')).toBeTruthy())
 
     const { states, stop } = track(() => {

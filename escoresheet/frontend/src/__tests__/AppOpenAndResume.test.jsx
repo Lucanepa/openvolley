@@ -404,13 +404,18 @@ describe('No automatic deletion: duplicates are flagged, Clean up asks once', ()
 })
 
 describe('A closed or moved copy never blocks a new match', () => {
+  // Signed in (Official game is for accounts; signed out, Home offers test
+  // and easy matches only): offline, today's games cannot load, so the game
+  // is typed in
   async function newOfficialMatch() {
+    signIn()
     mountApp()
     await waitFor(() => expect(button('Continue match')).toBeTruthy())
     await sleep(500) // the home screen's match status is read
-    fireEvent.click(button('New match'))
     await waitFor(() => expect(menuOfficialMatch()).toBeTruthy())
     fireEvent.click(menuOfficialMatch())
+    await waitFor(() => expect(document.querySelector('[data-testid="today-games-manual"]')).toBeTruthy())
+    fireEvent.click(document.querySelector('[data-testid="today-games-manual"]'))
   }
 
   it.each([

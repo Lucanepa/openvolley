@@ -1141,6 +1141,20 @@
       "closed": "Clôturé sur le serveur",
       "unchecked": "Non vérifié",
       "unsent": "Modifications non envoyées"
+    },
+    "signInForOfficial": "Connectez-vous pour marquer des matchs officiels. Les matchs de test et simples restent sur cet appareil.",
+    "todayGames": {
+      "title": "Matchs du jour",
+      "loading": "Chargement des matchs du jour…",
+      "offline": "Pas de connexion : la liste de tout à l’heure.",
+      "failed": "Les matchs du jour n’ont pas pu être chargés. Saisissez le match vous-même.",
+      "noClub": "Votre compte n’a pas encore de club, il n’y a donc pas de liste. Saisissez le match vous-même ou demandez à votre club.",
+      "none": "Aucun match à domicile de votre club aujourd’hui.",
+      "mine": "Commencé par vous",
+      "taken": "Commencé sur un autre compte",
+      "closed": "Clôturé",
+      "notListed": "Pas dans la liste ?",
+      "manual": "Saisir le match moi-même"
     }
   },
   "options": {

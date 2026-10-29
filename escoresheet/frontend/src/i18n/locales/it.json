@@ -1142,6 +1142,20 @@
       "closed": "Chiusa sul server",
       "unchecked": "Non verificata",
       "unsent": "Modifiche non inviate"
+    },
+    "signInForOfficial": "Accedi per refertare partite ufficiali. Le partite di prova e semplici restano su questo dispositivo.",
+    "todayGames": {
+      "title": "Partite di oggi",
+      "loading": "Caricamento delle partite di oggi…",
+      "offline": "Nessuna connessione: la lista di prima.",
+      "failed": "Non è stato possibile caricare le partite di oggi. Inserisci tu la partita.",
+      "noClub": "Il tuo account non ha ancora una società, quindi non c’è una lista. Inserisci tu la partita o chiedi alla tua società.",
+      "none": "Oggi nessuna partita in casa della tua società.",
+      "mine": "Iniziata da te",
+      "taken": "Iniziata da un altro account",
+      "closed": "Chiusa",
+      "notListed": "Non è nella lista?",
+      "manual": "Inserisci tu la partita"
     }
   },
   "options": {
