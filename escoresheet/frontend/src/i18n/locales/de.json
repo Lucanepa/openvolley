@@ -552,6 +552,7 @@
       }
     },
     "lastAction": "Letzte Aktion:",
+    "rallyTapIgnored": "Nicht gezählt: als Doppeltipp erkannt",
     "keybindings": {
       "instruction": "Auf Taste klicken zum Ändern. Neue Taste drücken oder Escape zum Abbrechen.",
       "pointLeftTeam": "Punkt links",
@@ -2398,7 +2399,7 @@
     },
     "scoring": {
       "q_doubleTap": "Ich habe doppelt getippt: Warum gab es nur einen Punkt?",
-      "a_doubleTap": "Gleich nachdem «Ballwechsel starten» oder eine Punkt-Schaltfläche wechselt, ignoriert die App das Antippen dieser Schaltflächen für 450 ms. Ein Doppeltipp oder ein prellender Finger gibt keinen zweiten Punkt und startet keinen neuen Ballwechsel. Die Tasten der Tastatur wirken sofort. Die Optionen haben dazu «Versehentlichen Ballwechsel-Start prüfen» und «Versehentliche Punktvergabe prüfen».",
+      "a_doubleTap": "Auf «Ballwechsel starten» und den Punkt-Schaltflächen gilt ein zweites Antippen an derselben Stelle innerhalb von 450 ms als Doppeltipp und wird ignoriert («Nicht gezählt» erscheint): Ein Doppeltipp oder ein prellender Finger gibt keinen zweiten Punkt und startet keinen neuen Ballwechsel. Ein Tipp auf die andere Schaltfläche zählt, sobald sie zu sehen ist. Die Tasten der Tastatur wirken sofort. Die Optionen haben dazu «Versehentlichen Ballwechsel-Start prüfen» und «Versehentliche Punktvergabe prüfen».",
       "q_serveRotation": "Wo sehe ich, wer aufschlägt, und die Rotation?",
       "a_serveRotation": "Der Ball markiert das aufschlagende Team, und das Feld zeigt die Positionen I bis VI jedes Teams. Die App lässt ein Team rotieren, wenn es den Aufschlag zurückgewinnt. Eine falsche Rotation korrigierst du unter Spiel › Korrekturen mit «Aufstellung korrigieren».",
       "q_scoreDisplay": "Was zeigt die Spielstandanzeige?",
