@@ -1,13 +1,18 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Copy, Plus } from 'lucide-react'
-import { admin, clubsApi } from '../../lib/accountApi'
+import { admin, clubApi, clubsApi } from '../../lib/accountApi'
 import KitModal from './KitModal'
 import { usePanelData, useOnline, OfflineBanner, PanelHead, InlineError, useErrorText } from './common'
 import { Button, DateField, Field, Input, Select, RowList, Row, RowTool, Chip, StatusPill, EmptyInset, SkeletonRows, Notice, ModalStrip, dayLabel, confirmDialog, toast } from '../../ui'
 
 const STATE_TONE = { active: 'done', expired: 'neutral', used_up: 'neutral', revoked: 'brand' }
 const INVITE_ROLES = ['scorer', 'referee', 'competition_manager']
+// db/020: a club manager's codes (lib/clubs.js clubInviteBody): scorer or
+// referee, at most 50 uses, gone after 90 days at most
+const CLUB_INVITE_ROLES = ['scorer', 'referee']
+const CLUB_MAX_USES = 50
+const CLUB_MAX_DAYS = 90
 
 function plusDays(days) {
   const d = new Date(Date.now() + days * 86400000)
@@ -19,15 +24,20 @@ function plusDays(days) {
  * 'beach' (OpenVolley's / OpenBeach's console): that app's codes only, and
  * new codes are of that sport (beach: they grant the beach role). Left out:
  * every code, new codes indoor (as before).
+ * `club` { id, name } (db/020, the My club tab): that club's codes only, made
+ * for it within a club manager's limits (the server checks them again).
  */
-export default function InvitesPanel({ app }) {
+export default function InvitesPanel({ app, club = null, title }) {
   const { t } = useTranslation()
   const online = useOnline()
   const errorText = useErrorText()
   const [creating, setCreating] = useState(false)
   const [created, setCreated] = useState(null) // { code, invite } — shown once
   const [rowError, setRowError] = useState({})
-  const { data, error, loading, reload } = usePanelData(() => (app ? admin.listInvites({ app }) : admin.listInvites()), [app], { enabled: online })
+  const clubId = club?.id || null
+  const { data, error, loading, reload } = usePanelData(
+    () => (clubId ? clubApi.listInvites(clubId) : app ? admin.listInvites({ app }) : admin.listInvites()),
+    [app, clubId], { enabled: online })
   const invites = data?.invites || []
 
   const revoke = async (invite) => {
@@ -39,7 +49,7 @@ export default function InvitesPanel({ app }) {
       tone: 'danger'
     })
     if (!ok) return
-    const res = await admin.revokeInvite(invite.id)
+    const res = clubId ? await clubApi.revokeInvite(clubId, invite.id) : await admin.revokeInvite(invite.id)
     if (res.error) {
       setRowError(e => ({ ...e, [invite.id]: errorText(res.error) }))
       return
@@ -49,7 +59,7 @@ export default function InvitesPanel({ app }) {
 
   return (
     <section>
-      <PanelHead title={t('manage.tabs.invites')}>
+      <PanelHead title={title || t('manage.tabs.invites')} level={club ? 2 : 1}>
         <Button icon={Plus} onClick={() => setCreating(true)} disabled={!online}>{t('manage.invites.new')}</Button>
       </PanelHead>
       <OfflineBanner online={online} />
@@ -88,6 +98,7 @@ export default function InvitesPanel({ app }) {
       )}
       <CreateInviteModal
         app={app}
+        club={club}
         open={creating}
         onClose={() => setCreating(false)}
         onCreated={(res) => { setCreating(false); setCreated(res); reload() }}
@@ -126,13 +137,16 @@ export default function InvitesPanel({ app }) {
   )
 }
 
-function CreateInviteModal({ app, open, onClose, onCreated }) {
+function CreateInviteModal({ app, club: fixedClub = null, open, onClose, onCreated }) {
   const { t } = useTranslation()
   const errorText = useErrorText()
   const [label, setLabel] = useState('')
   const [club, setClub] = useState('')
-  // db/018: the club whoever redeems the code joins (OpenVolley)
-  const withClubs = app !== 'beach'
+  // db/018: the club whoever redeems the code joins (OpenVolley); a club
+  // manager's code is always its club's (no choice, no admin club list)
+  const withClubs = app !== 'beach' && !fixedClub
+  const roles = fixedClub ? CLUB_INVITE_ROLES : INVITE_ROLES
+  const maxUsesCap = fixedClub ? CLUB_MAX_USES : 10000
   const [clubId, setClubId] = useState('')
   const clubList = usePanelData(() => (withClubs && open ? clubsApi.list() : Promise.resolve({ data: null })), [withClubs, open])
   const clubs = clubList.data?.clubs || []
@@ -143,8 +157,8 @@ function CreateInviteModal({ app, open, onClose, onCreated }) {
   const [error, setError] = useState('')
 
   const reset = () => { setLabel(''); setClub(''); setClubId(''); setRole('scorer'); setMaxUses('1'); setExpires(plusDays(30)); setError('') }
-  const maxValid = maxUses === '' || (/^\d+$/.test(maxUses) && Number(maxUses) >= 1 && Number(maxUses) <= 10000)
-  const valid = label.trim().length >= 1 && maxValid
+  const maxValid = (maxUses === '' && !fixedClub) || (/^\d+$/.test(maxUses) && Number(maxUses) >= 1 && Number(maxUses) <= maxUsesCap)
+  const valid = label.trim().length >= 1 && maxValid && (!fixedClub || !!expires)
   const submit = async (e) => {
     e?.preventDefault()
     if (!valid || busy) return
@@ -152,7 +166,12 @@ function CreateInviteModal({ app, open, onClose, onCreated }) {
     setError('')
     // Expiry at the end of the chosen day (Zurich local time of this device)
     const expiresAt = expires ? new Date(`${expires}T23:59:59`).toISOString() : null
-    const res = await admin.createInvite({
+    const res = fixedClub ? await clubApi.createInvite(fixedClub.id, {
+      label: label.trim(),
+      role,
+      max_uses: Number(maxUses),
+      expires_at: expiresAt
+    }) : await admin.createInvite({
       label: label.trim(),
       club: clubId ? null : (club.trim() || null),
       ...(clubId ? { club_id: clubId } : {}),
@@ -188,7 +207,11 @@ function CreateInviteModal({ app, open, onClose, onCreated }) {
         <Field label={t('manage.invites.label')} hint={t('manage.invites.labelHint')}>
           <Input value={label} onChange={e => setLabel(e.target.value)} maxLength={120} required autoFocus />
         </Field>
-        {withClubs && clubs.length > 0 ? (
+        {fixedClub ? (
+          <Field label={t('manage.invites.club')}>
+            <Input value={fixedClub.name} readOnly disabled data-testid="invite-fixed-club" />
+          </Field>
+        ) : withClubs && clubs.length > 0 ? (
           <Field label={t('manage.invites.club')} hint={t('manage.invites.clubHint')}>
             <Select value={clubId} onChange={e => setClubId(e.target.value)} data-testid="invite-club">
               <option value="">{t('manage.invites.noClub')}</option>
@@ -202,15 +225,15 @@ function CreateInviteModal({ app, open, onClose, onCreated }) {
         )}
         <Field label={t('manage.invites.role')}>
           <Select value={role} onChange={e => setRole(e.target.value)}>
-            {INVITE_ROLES.map(r => <option key={r} value={r}>{t(`access.roles.${r}`)}</option>)}
+            {roles.map(r => <option key={r} value={r}>{t(`access.roles.${r}`)}</option>)}
           </Select>
         </Field>
         <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
-          <Field label={t('manage.invites.maxUses')} hint={t('manage.invites.maxUsesHint')}>
-            <Input type="number" inputMode="numeric" min={1} max={10000} value={maxUses} onChange={e => setMaxUses(e.target.value)} />
+          <Field label={t('manage.invites.maxUses')} hint={fixedClub ? t('manage.myClub.maxUsesHint', { max: CLUB_MAX_USES }) : t('manage.invites.maxUsesHint')}>
+            <Input type="number" inputMode="numeric" min={1} max={maxUsesCap} value={maxUses} onChange={e => setMaxUses(e.target.value)} />
           </Field>
-          <Field label={t('manage.invites.expires')}>
-            <DateField value={expires} onChange={setExpires} />
+          <Field label={t('manage.invites.expires')} hint={fixedClub ? t('manage.myClub.expiresHint', { days: CLUB_MAX_DAYS }) : undefined}>
+            <DateField value={expires} onChange={setExpires} max={fixedClub ? plusDays(CLUB_MAX_DAYS) : undefined} />
           </Field>
         </div>
         <InlineError error={error} />

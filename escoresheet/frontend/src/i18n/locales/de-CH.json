@@ -2885,7 +2885,8 @@
       "tournaments": "Turniere",
       "activity": "Aktivität",
       "scoresheets": "Matchblätter",
-      "clubs": "Vereine"
+      "clubs": "Vereine",
+      "myclub": "Mein Verein"
     },
     "status": {
       "setup": "Vorbereitung",
@@ -3156,7 +3157,32 @@
       "ruleOnBody": "Jeder Schreiber ohne Verein kann sofort keine offiziellen Spiele mehr führen, und Spiele anderer Vereine werden abgelehnt.",
       "ruleOnConfirm": "Einschalten",
       "ruleIsOn": "Die Vereinsregel ist eingeschaltet",
-      "ruleIsOff": "Die Vereinsregel ist ausgeschaltet"
+      "ruleIsOff": "Die Vereinsregel ist ausgeschaltet",
+      "contact": "Kontakt-E-Mail",
+      "contactHint": "Erhält die fertigen Matchblätter der Spiele des Vereins, für die Trainer.",
+      "managers": "Vereinsverantwortliche",
+      "managersHint": "E-Mail-Adressen bestehender Konten, eine pro Zeile. Sie erstellen die Einladungscodes des Vereins und verwalten seine Mitglieder.",
+      "managersCount_one": "{{count}} Verantwortliche/r",
+      "managersCount_other": "{{count}} Verantwortliche",
+      "managerUnknown": "Kein Konto hat diese Adresse: {{emails}}"
+    },
+    "myClub": {
+      "none": "Du verwaltest keinen Verein.",
+      "pick": "Verein",
+      "save": "Speichern",
+      "contactSaved": "Kontakt-E-Mail gespeichert",
+      "members": "Mitglieder",
+      "noMembers": "Noch niemand schreibt für diesen Verein. Erstelle unten einen Einladungscode und schicke ihn deinen Schreibern.",
+      "joined": "Dabei seit",
+      "manager": "Vereinsverantwortliche/r",
+      "pending": "Ausstehend",
+      "remove": "Aus dem Verein entfernen",
+      "removeTitle": "{{name}} aus dem Verein entfernen?",
+      "removeBody": "Die Person kann die Spiele von {{club}} nicht mehr schreiben. Ihr Konto bleibt bestehen.",
+      "removed": "Aus dem Verein entfernt",
+      "invites": "Einladungscodes",
+      "maxUsesHint": "1 bis {{max}}",
+      "expiresHint": "Höchstens {{days}} Tage im Voraus"
     }
   },
   "playerPool": {
