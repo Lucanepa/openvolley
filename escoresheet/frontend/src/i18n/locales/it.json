@@ -2571,7 +2571,6 @@
     "openManager": "Apri {{host}}",
     "createAccount": "Crea account",
     "signUpHeading": "Crea il tuo account",
-    "signUpBody": "Un solo account per refertare sul web, nell’app desktop e su Android.",
     "backToSignIn": "Torna all’accesso",
     "accountCreated": "Il tuo account è stato creato.",
     "inviteStepTitle": "Inserisci il codice d’invito del tuo club",

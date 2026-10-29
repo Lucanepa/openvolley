@@ -2550,7 +2550,6 @@
     "openManager": "{{host}} öffnen",
     "createAccount": "Konto erstellen",
     "signUpHeading": "Konto erstellen",
-    "signUpBody": "Ein Konto für das Schreiben im Web, in der Desktop-App und auf Android.",
     "backToSignIn": "Zurück zur Anmeldung",
     "accountCreated": "Dein Konto wurde erstellt.",
     "inviteStepTitle": "Gib den Einladungscode deines Vereins ein",
