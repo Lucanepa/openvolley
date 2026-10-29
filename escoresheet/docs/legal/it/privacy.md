@@ -1,6 +1,6 @@
 # Informativa sulla protezione dei dati
 
-**OpenVolley e OpenBeach** · Versione 1.5 · Aggiornata al 29 ottobre 2026
+**OpenVolley e OpenBeach** · Versione 1.6 · Aggiornata al 30 ottobre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
 la versione inglese.
@@ -21,7 +21,9 @@ la versione inglese.
   e firme non sono mai pubblici.**
 - L'app OpenVolley tiene un registro attività di ogni partita, senza PIN né
   password. Se ha effettuato l'accesso, viene caricato sul server. Ciò che
-  clicca o digita resta sul suo dispositivo (sezione 5).
+  clicca o digita resta sul suo dispositivo, salvo un riassunto senza il
+  testo digitato se include la diagnostica in una richiesta di supporto
+  (sezioni 5 e 13).
 - Il server si trova in Svizzera ed è gestito da me. Cloudflare (USA)
   distribuisce i siti web e inoltra il traffico al server.
 - Se l'invio è attivato, dopo una partita ufficiale il segnapunti, gli arbitri
@@ -154,14 +156,16 @@ conserva la modifica, così lo svolgimento della partita resta tracciabile. La
 cronologia degli eventi fa parte della partita e viene cancellata con essa.
 Sul server la vedono solo gli amministratori.
 
-**Registro d'uso: ciò che clicca o digita resta sul suo dispositivo.** Per
-la diagnosi dei problemi l'app registra sul dispositivo ciò che clicca e
-digita (anche il testo nei campi di inserimento, per esempio nomi). Questo
-registro non viene mai caricato. Può scaricarlo lei stesso (nelle
-impostazioni o a fine partita nel file ZIP) e inviarlo per esempio al
-supporto. In OpenVolley dalla versione 2.4.0 non registra alcun inserimento
-nei campi password e PIN né i PIN mostrati sullo schermo, e viene cancellato
-dopo 30 giorni od oltre 50 000 voci.
+**Registro d'uso: ciò che clicca o digita resta sul suo dispositivo.** Per la
+diagnosi dei problemi l'app registra sul dispositivo ciò che clicca e digita
+(anche il testo nei campi di inserimento, per esempio nomi). Questo registro
+non viene caricato da solo. Solo se include la diagnostica in una richiesta di
+supporto, la accompagna un riassunto delle ultime due ore circa, senza il
+testo digitato (sezione 13). Può scaricarlo lei stesso (nelle impostazioni o a
+fine partita nel file ZIP) e inviarlo per esempio al supporto. In OpenVolley
+dalla versione 2.4.0 non registra alcun inserimento nei campi password e PIN
+né i PIN mostrati sullo schermo, e viene cancellato dopo 30 giorni od oltre
+50 000 voci.
 
 **App desktop.** L'app desktop salva inoltre copie di sicurezza automatiche
 delle partite nella sua cartella utente (Linux:
@@ -477,11 +481,42 @@ mio server il suo indirizzo e-mail, tipo e ambito della richiesta, il suo
 messaggio e, se li aggiunge, fino a cinque allegati (per esempio screenshot o
 file di backup), insieme alla lingua, all'indirizzo della pagina senza
 parametri, all'identificativo del browser, all'ora, alla piattaforma («web»
-dal sito) e, nelle app, alla versione dell'app. I dati diagnostici (versione
-dell'app, piattaforma, visualizzazione, stato della connessione, numero della
-partita aperta e ultimi messaggi d'errore dell'app) vengono inviati solo se
-spunta «Includi la diagnostica» nell'app, ed esattamente come vi sono
-mostrati. Il sito web non invia dati diagnostici.
+dal sito) e, nelle app, alla versione dell'app.
+
+**I dati diagnostici** vengono inviati solo se «Includi la diagnostica» è
+spuntato. Per una richiesta di supporto (segnalazione di errore o domanda) la
+casella è già spuntata, per feedback e suggerimenti no; può togliere la spunta
+prima dell'invio. «Mostra cosa viene inviato» le mostra prima esattamente il
+testo che viene inviato. L'app lo allega alla richiesta come file di testo (al
+massimo 2 MB). Contiene:
+
+- dati tecnici: app e versione, piattaforma, sistema operativo,
+  identificativo del browser, dimensioni dello schermo e della finestra,
+  lingua, ora e fuso orario, stato online e della connessione, dati non
+  ancora trasmessi e gli ultimi errori di trasmissione, memoria occupata,
+  l'identificativo casuale del dispositivo e, se ha effettuato l'accesso,
+  l'identificativo del suo account;
+- lo stato della partita aperta (o dell'ultima aperta): numero della
+  partita, squadre, stato, set e punteggio, formazioni (numeri di maglia),
+  time-out e sostituzioni, gli ultimi 30 eventi della partita e se il server
+  ha chiuso la partita o l'ha affidata a un altro dispositivo;
+- la cronologia delle ultime due ore circa (almeno dall'ultimo avvio
+  dell'app) dal registro attività e dal registro d'uso (sezione 5): ciò che
+  ha toccato (con la sua etichetta, che può contenere nomi di squadre o di
+  persone), i tasti, le schermate aperte, in quale campo ha digitato quanti
+  caratteri (non il testo), i punti e gli altri eventi della partita, le
+  correzioni, le trasmissioni e l'avvio, la chiusura e il passaggio in
+  background dell'app;
+- gli ultimi messaggi d'errore e avvisi dell'app con il punto del programma.
+
+**Non sono mai inclusi** password, PIN, token di accesso, firme, indirizzi
+e-mail, numeri di telefono e il testo digitato nei campi: l'app toglie questi
+dati da tutto il testo prima dell'invio. Nelle viste di arbitro, panchina e
+livescore il file contiene solo i dati tecnici, lo stato della connessione e
+i messaggi d'errore. Se l'invio non riesce, «Scarica la diagnostica» salva il
+file, così può allegarlo lei stesso alla sua e-mail. Le versioni meno recenti
+dell'app inviano solo i dati tecnici, il numero della partita e gli ultimi
+messaggi d'errore. Il sito web non invia dati diagnostici.
 
 Il server inoltra la richiesta come un'unica e-mail a support@openvolley.app,
 con il suo indirizzo come indirizzo di risposta. Non ne conserva nulla, salvo
@@ -496,8 +531,9 @@ richieste sui suoi dati scriva direttamente a support@openvolley.app.**
 casella postale e nel sistema di ticket.
 
 **Conservazione:** conservo le richieste di supporto (casella postale e
-sistema di ticket, con gli allegati) per 2 anni dopo l'ultimo messaggio, per
-poter ritrovare le risposte precedenti; prima su richiesta.
+sistema di ticket, con gli allegati e i dati diagnostici) per 2 anni dopo
+l'ultimo messaggio, per poter ritrovare le risposte precedenti; prima su
+richiesta.
 
 ## 14. Registri e sicurezza sul server
 
@@ -586,7 +622,7 @@ riceve una copia di queste garanzie.
 | Registro d'uso (solo sul dispositivo) | OpenVolley dalla 2.4.0: 30 giorni, al massimo 50 000 voci |
 | File di registro dell'app desktop (solo sul dispositivo) | Al massimo cinque file precedenti da 5 MB ciascuno |
 | Firma sul telefono (server o portatile) | Solo nella memoria di lavoro; link valido 10 minuti, firma eliminata al più tardi 5 minuti dopo la firma |
-| Richieste di supporto (casella postale e sistema di ticket, con gli allegati) | 2 anni dopo l'ultimo messaggio; prima su richiesta |
+| Richieste di supporto (casella postale e sistema di ticket, con gli allegati e i dati diagnostici) | 2 anni dopo l'ultimo messaggio; prima su richiesta |
 | Registri del server | Sovrascritti in base alla dimensione (alcuni giorni o poche settimane) |
 | Dati in diretta (server e modalità palestra) | Solo nella memoria di lavoro; sul server eliminati 24 ore dopo l'ultima attività |
 | Copie di sicurezza del server | Fino a circa 6 mesi (sezione 18) |

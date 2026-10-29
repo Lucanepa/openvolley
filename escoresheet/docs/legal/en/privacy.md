@@ -1,6 +1,6 @@
 # Privacy policy
 
-**OpenVolley and OpenBeach** · Version 1.5 · As of 29 October 2026
+**OpenVolley and OpenBeach** · Version 1.6 · As of 30 October 2026
 
 This policy is available in German, English, French and Italian. The English
 version is binding.
@@ -20,7 +20,8 @@ version is binding.
   **Dates of birth, licence numbers and signatures are never public.**
 - The OpenVolley app keeps an activity log of each match, without PINs or
   passwords. When you are signed in it goes to the server. What you click or
-  type stays on your device (section 5).
+  type stays on your device, except for a summary without the text you typed
+  when you include diagnostics with a support request (sections 5 and 13).
 - The server is in Switzerland and is run by me. Cloudflare (USA) delivers the
   websites and forwards the traffic to the server.
 - When sending is switched on, the scorer, the referees and the clubs of both
@@ -147,11 +148,13 @@ it. On the server only the administrators see it.
 
 **Interaction log: what you click or type stays on your device.** For
 troubleshooting, the app records on the device what you click and type (also
-text in input fields, for example names). This log is never uploaded. You can
-download it yourself (in the settings, or at the end of a match in the ZIP
-file) and send it to support, for example. In OpenVolley from version 2.4.0 it
-records no input in password and PIN fields and no PINs shown on screen, and
-it is deleted after 30 days or beyond 50,000 entries.
+text in input fields, for example names). This log is not uploaded on its own.
+Only when you include diagnostics with a support request does a summary of
+about the last two hours go with it, without the text you typed (section 13).
+You can download it yourself (in the settings, or at the end of a match in the
+ZIP file) and send it to support, for example. In OpenVolley from version
+2.4.0 it records no input in password and PIN fields and no PINs shown on
+screen, and it is deleted after 30 days or beyond 50,000 entries.
 
 **Desktop app.** The desktop app also keeps automatic backup files of matches
 in your user folder (Linux: `~/.local/share/OpenVolley/backups`, Windows:
@@ -446,10 +449,40 @@ email address, the type and area of your request, your message and, if you
 add them, up to five attachments (for example screenshots or backup files)
 to my server, together with the language, the page address without its
 query, the browser identifier, the time, the platform ("web" from the website)
-and, in the apps, the app version. Diagnostics (app version, platform,
-display, connection state, the game number of the open match and the app's
-last error messages) are sent only if you tick "Include diagnostics" in the
-app, and exactly as shown there. The website sends no diagnostics.
+and, in the apps, the app version.
+
+**Diagnostics** are sent only if "Include diagnostics" is ticked. For a
+support request (a bug report or a question) the box is already ticked, for
+feedback and requests it is not; you can untick it before sending. "Show what
+is sent" shows you beforehand exactly the text that is sent. The app attaches
+it to the request as a text file (at most 2 MB). It contains:
+
+- technical details: app and version, platform, operating system, browser
+  identifier, screen and window size, language, time and time zone, online
+  and connection state, data not yet transferred and the last transfer
+  errors, storage used, the device's random identifier and, if you are
+  signed in, the identifier of your account;
+- the state of the open (or last open) match: game number, teams, status,
+  sets and score, line-ups (shirt numbers), time-outs and substitutions, the
+  last 30 match events, and whether the server has closed the match or
+  handed it to another device;
+- the history of about the last two hours (at least since the app was last
+  started) from the activity log and the interaction log (section 5): what
+  you tapped (with its label, which can contain names of teams or people),
+  keys, the screens you opened, which field you typed how many characters
+  into (not the text), points and other match events, corrections,
+  transfers, and the app starting, closing and going to the background;
+- the app's last error messages and warnings with their place in the
+  program.
+
+**Never included** are passwords, PINs, sign-in tokens, signatures, email
+addresses, phone numbers and text you typed into fields: the app removes
+such details from the whole text before sending. In the referee, bench and
+livescore apps the file contains only the technical details, the connection
+state and the error messages. If sending fails, "Download diagnostics" saves
+the file so that you can attach it to your email yourself. Older app
+versions send only the technical details, the game number and the last
+error messages. The website sends no diagnostics.
 
 The server forwards the request as one email to support@openvolley.app, with
 your address as the reply address. It keeps nothing of it except a log line
@@ -464,8 +497,8 @@ directly to support@openvolley.app.**
 mailbox and in the helpdesk.
 
 **How long:** I keep support requests (mailbox and helpdesk, with the
-attachments) for 2 years after the last message, so that I can look up
-earlier answers; earlier on request.
+attachments and diagnostics) for 2 years after the last message, so that I can
+look up earlier answers; earlier on request.
 
 ## 14. Logs and security on the server
 
@@ -549,7 +582,7 @@ copy of these safeguards.
 | Interaction log (on the device only) | OpenVolley from 2.4.0: 30 days, at most 50,000 entries |
 | Desktop app log file (on the device only) | At most five older files of 5 MB each |
 | Signature on a phone (server or laptop) | In memory only; link valid 10 minutes, signature discarded at the latest 5 minutes after signing |
-| Support requests (mailbox and helpdesk, with attachments) | 2 years after the last message; earlier on request |
+| Support requests (mailbox and helpdesk, with attachments and diagnostics) | 2 years after the last message; earlier on request |
 | Server logs | Overwritten by size (days to a few weeks) |
 | Live data (server and venue mode) | In memory only; on the server discarded 24 hours after the last activity |
 | Backups | Up to about 6 months (section 18) |
