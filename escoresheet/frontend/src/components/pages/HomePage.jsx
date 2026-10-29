@@ -182,46 +182,49 @@ export default function HomePage({
           )}
 
           {/* New match: Official game first when it can be scored here,
-              Test and Easy below it (signed out: those two only) */}
-          {!testOnly && (
-            <Button
-              variant="primary"
-              block
-              data-help-id="home-official-button"
-              onClick={onOfficialGame}
-              className="h-14 rounded-xl text-base font-semibold"
-            >
-              {t('home.officialMatch')}
-            </Button>
-          )}
-          <div className={cn('grid gap-2', createEasyMatch && 'grid-cols-2')}>
-            <Button
-              variant={testOnly ? 'primary' : 'secondary'}
-              block
-              data-help-id="home-test-button"
-              onClick={createNewTestMatch}
-              disabled={testMatchLoading}
-              aria-busy={testMatchLoading || undefined}
-              className={cn('rounded-xl text-base font-semibold', testOnly ? 'h-14' : 'h-12')}
-            >
-              {testMatchLoading && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
-              {testMatchLoading ? t('home.preparing') : t('home.testMatch')}
-            </Button>
-            {createEasyMatch && (
+              Test and Easy below it (signed out: those two only). One block
+              for the help's "Show me" (createMatch), signed in or out */}
+          <div className="space-y-3" data-help-id="home-new-match-button">
+            {!testOnly && (
               <Button
-                variant="secondary"
+                variant="primary"
                 block
-                data-help-id="home-easy-button"
-                onClick={createEasyMatch}
-                disabled={easyMatchLoading || testMatchLoading}
-                aria-busy={easyMatchLoading || undefined}
-                title={t('home.easyMatchHint', 'Unofficial · no rosters or signatures')}
-                className={cn('rounded-xl text-base font-semibold', testOnly ? 'h-14' : 'h-12')}
+                data-help-id="home-official-button"
+                onClick={onOfficialGame}
+                className="h-14 rounded-xl text-base font-semibold"
               >
-                {easyMatchLoading && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
-                {t('home.easyMatch', 'Easy match')}
+                {t('home.officialMatch')}
               </Button>
             )}
+            <div className={cn('grid gap-2', createEasyMatch && 'grid-cols-2')}>
+              <Button
+                variant={testOnly ? 'primary' : 'secondary'}
+                block
+                data-help-id="home-test-button"
+                onClick={createNewTestMatch}
+                disabled={testMatchLoading}
+                aria-busy={testMatchLoading || undefined}
+                className={cn('rounded-xl text-base font-semibold', testOnly ? 'h-14' : 'h-12')}
+              >
+                {testMatchLoading && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
+                {testMatchLoading ? t('home.preparing') : t('home.testMatch')}
+              </Button>
+              {createEasyMatch && (
+                <Button
+                  variant="secondary"
+                  block
+                  data-help-id="home-easy-button"
+                  onClick={createEasyMatch}
+                  disabled={easyMatchLoading || testMatchLoading}
+                  aria-busy={easyMatchLoading || undefined}
+                  title={t('home.easyMatchHint', 'Unofficial · no rosters or signatures')}
+                  className={cn('rounded-xl text-base font-semibold', testOnly ? 'h-14' : 'h-12')}
+                >
+                  {easyMatchLoading && <Loader2 size={16} className="animate-spin" aria-hidden="true" />}
+                  {t('home.easyMatch', 'Easy match')}
+                </Button>
+              )}
+            </div>
           </div>
           {testOnly && (
             <div className="rounded-xl bg-stone-50 px-3 py-3 text-center" data-testid="home-sign-in-note">

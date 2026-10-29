@@ -2348,8 +2348,8 @@
     },
     "home": {
       "q_createMatch": "Comment créer un nouveau match ?",
-      "a_createMatch": "Appuyez sur « Nouveau match » et choisissez « Match officiel », « Match amical » ou « Match simplifié ». Un match officiel a des effectifs, des officiels et des signatures. Un match amical sert à s'entraîner. Un match simplifié n'est pas officiel : pas d'effectifs ni de signatures.",
-      "tip_createMatch": "Appuyez ici pour créer un nouveau match : officiel, amical ou simplifié.",
+      "a_createMatch": "Connecté, appuyez sur « Match officiel » : choisissez le match à domicile de votre club du jour dans la liste, ou saisissez le match vous-même. « Match amical » et « Match simplifié » se trouvent en dessous ; déconnecté, vous n'avez que ces deux-là. Un match officiel a des effectifs, des officiels et des signatures. Un match amical sert à s'entraîner. Un match simplifié n'est pas officiel : pas d'effectifs ni de signatures.",
+      "tip_createMatch": "Commencez un nouveau match ici : officiel (connecté), amical ou simplifié.",
       "q_officialVsTest": "Quelle est la différence entre les matchs officiels et tests ?",
       "a_officialVsTest": "Un match officiel demande les deux effectifs (au moins 6 joueurs chacun), les officiels et les signatures. Si vous êtes connecté, il est enregistré dans le cloud pour l'arbitre, le livescore et les sauvegardes. Un match amical a des équipes inventées pour s'entraîner. Il reste sur cet appareil et ne va jamais dans le cloud.",
       "q_continueMatch": "Comment reprendre un match ?",

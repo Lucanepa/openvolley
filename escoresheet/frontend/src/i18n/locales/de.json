@@ -2204,8 +2204,8 @@
     },
     "home": {
       "q_createMatch": "Wie erstelle ich ein neues Spiel?",
-      "a_createMatch": "Tippe auf «Neues Spiel» und wähle «Offizielles Spiel», «Testspiel» oder «Einfaches Spiel». Ein offizielles Spiel hat Kader, Offizielle und Unterschriften. Ein Testspiel ist zum Üben. Ein einfaches Spiel ist inoffiziell: keine Kader und keine Unterschriften.",
-      "tip_createMatch": "Tippe hier, um ein neues Spiel zu erstellen: offiziell, Test oder einfach.",
+      "a_createMatch": "Angemeldet tippst du auf «Offizielles Spiel»: Wähle das heutige Heimspiel deines Vereins aus der Liste oder gib das Spiel selbst ein. Darunter sind «Testspiel» und «Einfaches Spiel»; abgemeldet hast du nur diese zwei. Ein offizielles Spiel hat Kader, Offizielle und Unterschriften. Ein Testspiel ist zum Üben. Ein einfaches Spiel ist inoffiziell: keine Kader und keine Unterschriften.",
+      "tip_createMatch": "Hier startest du ein neues Spiel: offiziell (angemeldet), Test oder einfach.",
       "q_officialVsTest": "Was ist der Unterschied zwischen offiziellen und Testspielen?",
       "a_officialVsTest": "Ein offizielles Spiel braucht beide Kader (je mindestens 6 Spieler), die Offiziellen und die Unterschriften. Bist du angemeldet, wird es in der Cloud gespeichert: für den Schiedsrichter, den Livescore und die Backups. Ein Testspiel hat erfundene Teams zum Üben. Es bleibt auf diesem Gerät und kommt nie in die Cloud.",
       "q_continueMatch": "Wie führe ich ein Spiel weiter?",
