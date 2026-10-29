@@ -2071,7 +2071,9 @@ export async function fetchCloudBackup(path) {
 
 /**
  * Get backup settings from localStorage. The apps (native: true) keep their own
- * switch, on by default; browsers default to off.
+ * switch, on by default; browsers default to off. The scoreboard's "Auto-download
+ * data at set end" is on by default everywhere (it was not stored: every new
+ * scoreboard turned it back on).
  */
 const autoBackupKey = (native) => (native ? 'nativeAutoBackupEnabled' : 'autoBackupEnabled')
 
@@ -2079,7 +2081,8 @@ export function getBackupSettings({ native = false } = {}) {
   const stored = localStorage.getItem(autoBackupKey(native))
   return {
     autoBackupEnabled: stored === null ? native : stored === 'true',
-    backupFrequencyMinutes: parseInt(localStorage.getItem('backupFrequencyMinutes') || '5', 10)
+    backupFrequencyMinutes: parseInt(localStorage.getItem('backupFrequencyMinutes') || '5', 10),
+    autoDownloadAtSetEnd: localStorage.getItem('autoDownloadAtSetEnd') !== 'false'
   }
 }
 
@@ -2092,6 +2095,9 @@ export function saveBackupSettings(settings, { native = false } = {}) {
   }
   if (settings.backupFrequencyMinutes !== undefined) {
     localStorage.setItem('backupFrequencyMinutes', String(settings.backupFrequencyMinutes))
+  }
+  if (settings.autoDownloadAtSetEnd !== undefined) {
+    localStorage.setItem('autoDownloadAtSetEnd', String(settings.autoDownloadAtSetEnd))
   }
 }
 
