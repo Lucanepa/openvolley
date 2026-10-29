@@ -1,6 +1,6 @@
 # Legal notice (Impressum)
 
-**OpenVolley and OpenBeach** · As of 7 October 2026
+**OpenVolley and OpenBeach** · As of 29 October 2026
 
 ## Operator
 
@@ -51,4 +51,4 @@ See the [privacy policy](privacy.md).
 ## Language
 
 This legal notice is available in German, English, French and Italian. The
-German version is binding.
+English version is binding.

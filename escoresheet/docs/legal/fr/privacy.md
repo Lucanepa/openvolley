@@ -3,7 +3,7 @@
 **OpenVolley et OpenBeach** · Version 1.4 · État au 29 octobre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
-version allemande fait foi.
+version anglaise fait foi.
 
 ## En bref
 

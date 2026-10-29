@@ -3,7 +3,7 @@
 **OpenVolley e OpenBeach** · Versione 1.4 · Aggiornata al 29 ottobre 2026
 
 Questa informativa esiste in tedesco, inglese, francese e italiano. Fa fede
-la versione tedesca.
+la versione inglese.
 
 ## In breve
 

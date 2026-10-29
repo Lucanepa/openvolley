@@ -5,7 +5,7 @@ import { LEGAL_DOCS, legalUrl } from './legalUrls'
 
 /**
  * Links to the legal pages on openvolley.app in the reader's language
- * (de/de-CH -> German, fr, it, everything else English); German is binding.
+ * (de/de-CH -> German, fr, it, everything else English); English is binding.
  * External links open in the browser (desktop app: the system browser via
  * the new-window handler; Android: the WebView hands other hosts to the
  * browser), like the source-code link in Options.

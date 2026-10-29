@@ -1,6 +1,6 @@
 # Note legali (Impressum)
 
-**OpenVolley e OpenBeach** · Aggiornate al 7 ottobre 2026
+**OpenVolley e OpenBeach** · Aggiornate al 29 ottobre 2026
 
 ## Gestore
 
@@ -52,4 +52,4 @@ Vedi l'[informativa sulla protezione dei dati](privacy.md).
 ## Lingua
 
 Queste note legali esistono in tedesco, inglese, francese e italiano. Fa fede
-la versione tedesca.
+la versione inglese.
