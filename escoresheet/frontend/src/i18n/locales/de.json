@@ -2186,7 +2186,7 @@
       "a_restoreMatch": "Tippe auf «Spiel wiederherstellen». Wähle «Aus Cloud-Backup wiederherstellen» (Spielnummer und Spiel-PIN, dann «Cloud-Backups suchen») oder «Aus lokaler Datei wiederherstellen» («Backup-Datei auswählen»). Prüfe die «Wiederherstellungs-Vorschau» und tippe auf «Wiederherstellen».",
       "tip_restoreMatch": "Tippe hier, um ein Spiel aus einem Cloud- oder lokalen Backup wiederherzustellen.",
       "q_settings": "Wie ändere ich die Sprache oder Einstellungen?",
-      "a_settings": "Die Sprache findest du im Menü (☰) in der Kopfzeile. Die übrigen Einstellungen sind in den «Optionen»: auf der Startseite oder auf dem Erfassungsbildschirm unter Menü › Optionen.",
+      "a_settings": "Die Sprache findest du im Menü (☰) in der Kopfzeile. Die übrigen Einstellungen sind in den «Optionen»: auf der Startseite oder auf dem Erfassungsbildschirm unter Spiel › Optionen.",
       "q_backgroundHome": "Warum ist die App wieder auf der Startseite?",
       "a_backgroundHome": "Nach 15 Minuten oder mehr im Hintergrund (andere App, Bildschirm aus) zeigt die App die Startseite. Nichts wird geschlossen oder gelöscht: Tippe auf «Spiel fortsetzen». Zeit mit eingeschaltetem Bildschirm, etwa eine lange Satzpause, zählt nicht.",
       "q_matchStates": "Was bedeuten die Hinweise bei einem Spiel?",
@@ -2226,7 +2226,7 @@
       "q_rosterUpload": "Kann der Coach den Kader schicken?",
       "a_rosterUpload": "Ja. Wähle in «Kader bearbeiten» «Remote» und tippe auf «PIN generieren». Gib dem Coach die Spielnummer und diese Upload-PIN. Der Coach öffnet roster.openvolley.app, wählt Spiel und Team, gibt die PIN ein und lädt das Kader-PDF hoch. Danach erscheint «Kader hochgeladen» («Kader suchen» prüft es): Tippe auf «Vorschau», dann auf «Akzeptieren» oder «Ablehnen».",
       "q_pins": "Wo sind die PINs für die Tablets?",
-      "a_pins": "Die Spiel-PIN steht auf der Seite der Spielinfo («Spiel erstellen» oder «Bearbeiten»); «PIN per E-Mail senden» schickt sie dir. Bewahre sie auf: Du brauchst sie, um das Spiel zu löschen oder wiederherzustellen. Die PINs von Schiedsrichter und Bänken sind in «Tablets verbinden». Während des Spiels zeigt Menü › PINs anzeigen alle."
+      "a_pins": "Die Spiel-PIN steht auf der Seite der Spielinfo («Spiel erstellen» oder «Bearbeiten»); «PIN per E-Mail senden» schickt sie dir. Bewahre sie auf: Du brauchst sie, um das Spiel zu löschen oder wiederherzustellen. Die PINs von Schiedsrichter und Bänken sind in «Tablets verbinden». Während des Spiels zeigt Spiel › PINs anzeigen alle."
     },
     "coinToss": {
       "q_record": "Wie zeichne ich den Münzwurf auf?",
@@ -2284,7 +2284,7 @@
       "a_set5": "Der Entscheidungssatz (Satz 5, oder Satz 3 bei Best of 3) geht auf 15 Punkte mit 2 Punkten Vorsprung. Davor wird neu ausgelost: Lege Seiten und Aufschlag mit «Seiten wechseln» und «Aufschlag wechseln» fest und tippe auf «Satz 5 Einrichtung bestätigen». Bei 8 Punkten wechseln die Teams das Feld.",
       "tip_set5": "Die Satzanzeige zeigt den laufenden Satz und die bisherigen Ergebnisse.",
       "q_changeDecision": "Wie ändere ich eine Punkteentscheidung?",
-      "a_changeDecision": "Tippe nach einem Punkt auf «Entscheidungsänderung»: Gib den Punkt dem anderen Team, oder wiederhole den Ballwechsel ohne Punkt. Während eines Ballwechsels wiederholt «Ballwechsel wiederholen» ihn. Ältere Fehler korrigierst du unter Menü › Korrekturen.",
+      "a_changeDecision": "Tippe nach einem Punkt auf «Entscheidungsänderung»: Gib den Punkt dem anderen Team, oder wiederhole den Ballwechsel ohne Punkt. Während eines Ballwechsels wiederholt «Ballwechsel wiederholen» ihn. Ältere Fehler korrigierst du unter Spiel › Korrekturen.",
       "tip_changeDecision": "«Rückgängig» nimmt die letzte Aktion zurück. Nach einem Punkt steht «Entscheidungsänderung» daneben."
     },
     "matchEnd": {
@@ -2298,7 +2298,7 @@
       "a_exportPdf": "Tippe auf «eScoresheet» und wähle «Vorschau», «Drucken» oder «PDF speichern». Das geht vor und nach der Genehmigung.",
       "tip_exportPdf": "Tippe hier, um das Matchblatt anzusehen, zu drucken oder zu speichern.",
       "q_downloadJson": "Wie lade ich die Spieldaten herunter?",
-      "a_downloadJson": "«Bestätigen und genehmigen» speichert die Spieldaten als JSON-Datei, zusammen mit dem PDF. Während des Spiels: Menü › Spieldaten herunterladen (JSON). Mit der Datei lässt sich das Spiel wiederherstellen.",
+      "a_downloadJson": "«Bestätigen und genehmigen» speichert die Spieldaten als JSON-Datei, zusammen mit dem PDF. Während des Spiels: Spiel › Spieldaten herunterladen (JSON). Mit der Datei lässt sich das Spiel wiederherstellen.",
       "tip_downloadJson": "«Bestätigen und genehmigen» speichert die Spieldaten und erstellt das Matchblatt.",
       "q_reopenSet": "Wie öffne ich einen Satz zur Korrektur wieder?",
       "a_reopenSet": "Tippe auf «Letzten Satz wieder öffnen», um zum Erfassungsbildschirm zurückzukehren. Alle Unterschriften werden gelöscht und müssen neu gesammelt werden. Nach der Genehmigung kann nur ein Admin das Spiel wieder öffnen («Spiel wieder öffnen»).",
@@ -2328,15 +2328,15 @@
       "a_saveChanges": "Korrekturen werden einzeln gespeichert, wenn du sie bestätigst. Änderungen in «Teams» und «Spielinfo» speichert «Änderungen speichern» oben gemeinsam. «Schliessen» fragt nach, bevor ungespeicherte Änderungen verloren gehen.",
       "tip_saveChanges": "Speichert die Änderungen in «Teams» und «Spielinfo».",
       "q_whereCorrections": "Wo korrigiere ich einen Fehler?",
-      "a_whereCorrections": "Während des Spiels: Menü › Korrekturen. Am Spielende: die Schaltfläche «Korrekturen». Jede Korrektur wird gespeichert, wenn du sie bestätigst, und im Korrekturprotokoll für den Schiedsrichter aufgeführt.",
+      "a_whereCorrections": "Während des Spiels: Spiel › Korrekturen. Am Spielende: die Schaltfläche «Korrekturen». Jede Korrektur wird gespeichert, wenn du sie bestätigst, und im Korrekturprotokoll für den Schiedsrichter aufgeführt.",
       "q_missedPoint": "Ich habe im Satz einen Punkt vergessen?",
-      "a_missedPoint": "Tippe unter Menü › Korrekturen beim Team auf «Vergessenen Punkt hinzufügen». Er wird beim aktuellen Spielstand mit Rotation und Aufschlag eingetragen, wie mit der Punkt-Schaltfläche. Ging der letzte Punkt an das falsche Team, tippe auf «Letzter Punkt ging an die falsche Mannschaft».",
+      "a_missedPoint": "Tippe unter Spiel › Korrekturen beim Team auf «Vergessenen Punkt hinzufügen». Er wird beim aktuellen Spielstand mit Rotation und Aufschlag eingetragen, wie mit der Punkt-Schaltfläche. Ging der letzte Punkt an das falsche Team, tippe auf «Letzter Punkt ging an die falsche Mannschaft».",
       "q_serveSidesLineup": "Wie korrigiere ich Aufschlag, Seiten oder Aufstellung?",
       "a_serveSidesLineup": "In den Korrekturen: «Ersten Aufschlag ändern», «Seiten wechseln» und «Satz wieder öffnen». «Aufstellung korrigieren» behebt eine falsche Rotation: Rotiere das Team um eine Position vor oder zurück.",
       "q_signaturesCleared": "Warum wurden die Unterschriften gelöscht?",
       "a_signaturesCleared": "Eine Korrektur, die das Matchblatt ändert, löscht die am Spielende gesammelten Unterschriften. Sammle sie neu. Ein genehmigtes Spiel ist schreibgeschützt: Öffne es zuerst wieder.",
       "q_editRoster": "Kann ich einen Kader während des Spiels ändern?",
-      "a_editRoster": "Ja: Menü › Heim-Aufstellung bearbeiten oder Gast-Aufstellung bearbeiten. Änderungen nach der Auslosung werden in den Korrekturen und in den Bemerkungen protokolliert."
+      "a_editRoster": "Ja: Spiel › Heim-Aufstellung bearbeiten oder Gast-Aufstellung bearbeiten. Änderungen nach der Auslosung werden in den Korrekturen und in den Bemerkungen protokolliert."
     },
     "moreHelp": "Mehr Hilfe",
     "contactSupport": "Support kontaktieren",
@@ -2366,9 +2366,9 @@
       "q_doubleTap": "Ich habe doppelt getippt: Warum gab es nur einen Punkt?",
       "a_doubleTap": "Gleich nachdem «Ballwechsel starten» oder eine Punkt-Schaltfläche wechselt, ignoriert die App das Antippen dieser Schaltflächen für 450 ms. Ein Doppeltipp oder ein prellender Finger gibt keinen zweiten Punkt und startet keinen neuen Ballwechsel. Die Tasten der Tastatur wirken sofort. Die Optionen haben dazu «Versehentlichen Ballwechsel-Start prüfen» und «Versehentliche Punktvergabe prüfen».",
       "q_serveRotation": "Wo sehe ich, wer aufschlägt, und die Rotation?",
-      "a_serveRotation": "Der Ball markiert das aufschlagende Team, und das Feld zeigt die Positionen I bis VI jedes Teams. Die App lässt ein Team rotieren, wenn es den Aufschlag zurückgewinnt. Eine falsche Rotation korrigierst du unter Menü › Korrekturen mit «Aufstellung korrigieren».",
+      "a_serveRotation": "Der Ball markiert das aufschlagende Team, und das Feld zeigt die Positionen I bis VI jedes Teams. Die App lässt ein Team rotieren, wenn es den Aufschlag zurückgewinnt. Eine falsche Rotation korrigierst du unter Spiel › Korrekturen mit «Aufstellung korrigieren».",
       "q_scoreDisplay": "Was zeigt die Spielstandanzeige?",
-      "a_scoreDisplay": "Die Punkte des Satzes, die gewonnenen Sätze und das aufschlagende Team. Die Seite jedes Teams zeigt seine Timeouts (TO) und Wechsel (AUS) in diesem Satz. Menü › Sanktionen und Ergebnisse anzeigen listet jeden Satz.",
+      "a_scoreDisplay": "Die Punkte des Satzes, die gewonnenen Sätze und das aufschlagende Team. Die Seite jedes Teams zeigt seine Timeouts (TO) und Wechsel (AUS) in diesem Satz. Spiel › Sanktionen und Ergebnisse anzeigen listet jeden Satz.",
       "q_phone": "Kann ich auf einem Handy erfassen?",
       "a_phone": "Ja. Stelle in den Optionen den «Bildschirmmodus» auf «Auto» oder die Handy-Ansicht und halte das Handy hochkant. Spielstand, Feld, Timeouts, Wechsel und Punkt-Schaltflächen passen auf einen Bildschirm."
     },
@@ -2396,7 +2396,7 @@
       "q_warningOnce": "Warum ist «Warnung» grau?",
       "a_warningOnce": "Ein Team bekommt eine Warnung pro Spiel. Danach ist «Warnung» für alle Mitglieder dieses Teams grau. Weiteres Fehlverhalten ist eine Strafe oder mehr.",
       "q_fixSanction": "Ich habe die falsche Sanktion erfasst: Wie korrigiere ich sie?",
-      "a_fixSanction": "Ist es die letzte Aktion, tippe auf «Rückgängig». Sonst öffne Menü › Korrekturen: In der Karte «Sanktionen» bearbeitest oder entfernst du sie, oder du tippst auf «Sanktion hinzufügen». Das Korrekturprotokoll zeigt die Änderung dem Schiedsrichter."
+      "a_fixSanction": "Ist es die letzte Aktion, tippe auf «Rückgängig». Sonst öffne Spiel › Korrekturen: In der Karte «Sanktionen» bearbeitest oder entfernst du sie, oder du tippst auf «Sanktion hinzufügen». Das Korrekturprotokoll zeigt die Änderung dem Schiedsrichter."
     },
     "setEnd": {
       "q_interval": "Wie funktioniert die Pause zwischen den Sätzen?",
@@ -2478,7 +2478,7 @@
       "q_continueOther": "Wie führe ich ein Spiel auf einem anderen Gerät weiter?",
       "a_continueOther": "Tippe auf dem neuen Gerät auf der Startseite auf «Spiel wiederherstellen». Gib unter «Aus Cloud-Backup wiederherstellen» die Spielnummer und die Spiel-PIN ein und tippe auf «Cloud-Backups suchen». Wähle den neuesten Eintrag, prüfe die «Wiederherstellungs-Vorschau» und tippe auf «Wiederherstellen». Ab dann führt das neue Gerät das Spiel.",
       "q_gamePin": "Wo finde ich die Spiel-PIN?",
-      "a_gamePin": "Auf der Startseite unter «Spiel-PIN», auf der Seite der Spielinfo in der Spieleinrichtung («PIN per E-Mail senden» schickt sie dir) und auf dem Erfassungsbildschirm unter Menü › PINs anzeigen.",
+      "a_gamePin": "Auf der Startseite unter «Spiel-PIN», auf der Seite der Spielinfo in der Spieleinrichtung («PIN per E-Mail senden» schickt sie dir) und auf dem Erfassungsbildschirm unter Spiel › PINs anzeigen.",
       "q_oldDevice": "Was passiert auf dem alten Gerät?",
       "a_oldDevice": "Es zeigt «Auf einem anderen Gerät geführt» und hört auf zu erfassen. Das Spiel öffnet dort nur zum Lesen; sein Matchblatt lässt sich weiter ansehen. Nicht gesendete Änderungen werden beiseitegelegt, nie über den neuen Spielstand gesendet.",
       "q_takeBack": "Wie übernehme ich das Spiel wieder?",

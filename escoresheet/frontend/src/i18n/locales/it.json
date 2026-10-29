@@ -2336,7 +2336,7 @@
       "a_restoreMatch": "Tocca «Ripristina partita». Scegli «Ripristina da backup cloud» (numero partita e PIN partita, poi «Cerca backup cloud») o «Ripristina da file locale» («Seleziona file di backup»). Controlla l'«Anteprima ripristino», poi tocca «Conferma ripristino».",
       "tip_restoreMatch": "Tocca qui per ripristinare una partita da un backup cloud o locale.",
       "q_settings": "Come cambio la lingua o le impostazioni?",
-      "a_settings": "La lingua è nel menu (☰) dell'intestazione. Le altre impostazioni sono nelle «Opzioni»: sulla home, oppure nella schermata del punteggio in Menu › Opzioni.",
+      "a_settings": "La lingua è nel menu (☰) dell'intestazione. Le altre impostazioni sono nelle «Opzioni»: sulla home, oppure nella schermata del punteggio in Partita › Opzioni.",
       "q_backgroundHome": "Perché l'app è tornata alla home?",
       "a_backgroundHome": "Dopo 15 minuti o più in secondo piano (un'altra app, lo schermo spento), l'app mostra la home. Niente viene chiuso o eliminato: tocca «Continua partita». Il tempo con lo schermo acceso, come una lunga pausa tra i set, non conta.",
       "q_matchStates": "Cosa significano le indicazioni su una partita?",
@@ -2376,7 +2376,7 @@
       "q_rosterUpload": "L'allenatore può inviare il roster?",
       "a_rosterUpload": "Sì. In «Modifica roster», scegli «Remoto» e tocca «Genera PIN». Dai all'allenatore il numero partita e questo PIN per upload. L'allenatore apre roster.openvolley.app, sceglie la partita e la squadra, inserisce il PIN e carica il PDF del roster. Poi compare «Roster caricata» («Cerca rosa» la controlla): tocca «Anteprima», poi «Accetta» o «Rifiuta».",
       "q_pins": "Dove sono i PIN per i tablet?",
-      "a_pins": "Il PIN partita è nella pagina delle info partita («Crea partita» o «Modifica»); «Invia PIN via email» te lo invia. Conservalo: serve per eliminare o ripristinare la partita. I PIN dell'arbitro e delle panchine sono in «Collega tablet». Durante la partita, Menu › Mostra PIN li mostra tutti."
+      "a_pins": "Il PIN partita è nella pagina delle info partita («Crea partita» o «Modifica»); «Invia PIN via email» te lo invia. Conservalo: serve per eliminare o ripristinare la partita. I PIN dell'arbitro e delle panchine sono in «Collega tablet». Durante la partita, Partita › Mostra PIN li mostra tutti."
     },
     "coinToss": {
       "q_record": "Come registro il sorteggio?",
@@ -2434,7 +2434,7 @@
       "a_set5": "Il set decisivo (set 5, o set 3 al meglio dei 3) va a 15 punti con 2 punti di vantaggio. Prima si rifà il sorteggio: imposta lati e servizio con «Inverti lati» e «Inverti servizio», poi tocca «Conferma set 5». A 8 punti le squadre cambiano campo.",
       "tip_set5": "L'indicatore del set mostra il set in corso e i risultati precedenti.",
       "q_changeDecision": "Come cambio una decisione sul punteggio?",
-      "a_changeDecision": "Dopo un punto, tocca «Cambio decisione»: dai il punto all'altra squadra, oppure ripeti lo scambio senza punto. Durante uno scambio, «Ripeti scambio» lo fa ripetere. Gli errori più vecchi si correggono in Menu › Correzioni.",
+      "a_changeDecision": "Dopo un punto, tocca «Cambio decisione»: dai il punto all'altra squadra, oppure ripeti lo scambio senza punto. Durante uno scambio, «Ripeti scambio» lo fa ripetere. Gli errori più vecchi si correggono in Partita › Correzioni.",
       "tip_changeDecision": "«Annulla» toglie l'ultima azione. Dopo un punto, «Cambio decisione» è lì accanto."
     },
     "matchEnd": {
@@ -2448,7 +2448,7 @@
       "a_exportPdf": "Tocca «eScoresheet» e scegli «Anteprima», «Stampa» o «Salva PDF». Funziona prima e dopo l'approvazione.",
       "tip_exportPdf": "Tocca qui per vedere, stampare o salvare il referto.",
       "q_downloadJson": "Come scarico i dati della partita?",
-      "a_downloadJson": "«Conferma e approva» salva i dati della partita in un file JSON, insieme al PDF. Durante la partita: Menu › Scarica i dati della partita (JSON). Con il file si può ripristinare la partita.",
+      "a_downloadJson": "«Conferma e approva» salva i dati della partita in un file JSON, insieme al PDF. Durante la partita: Partita › Scarica i dati della partita (JSON). Con il file si può ripristinare la partita.",
       "tip_downloadJson": "«Conferma e approva» salva i dati della partita e crea il referto.",
       "q_reopenSet": "Come riapro un set per fare correzioni?",
       "a_reopenSet": "Tocca «Riapri ultimo set» per tornare alla schermata del punteggio. Tutte le firme vengono cancellate e vanno raccolte di nuovo. Dopo l'approvazione, solo un amministratore può riaprire la partita («Riapri partita»).",
@@ -2478,15 +2478,15 @@
       "a_saveChanges": "Le correzioni vengono salvate una per una quando le confermi. Le modifiche in «Squadre» e «Info partita» si salvano insieme con «Salva le modifiche» in alto. «Chiudi» chiede prima di scartare modifiche non salvate.",
       "tip_saveChanges": "Salva le modifiche in «Squadre» e «Info partita».",
       "q_whereCorrections": "Dove correggo un errore?",
-      "a_whereCorrections": "Durante la partita: Menu › Correzioni. A fine partita: il pulsante «Correzioni». Ogni correzione viene salvata quando la confermi e compare nel registro delle correzioni per l'arbitro.",
+      "a_whereCorrections": "Durante la partita: Partita › Correzioni. A fine partita: il pulsante «Correzioni». Ogni correzione viene salvata quando la confermi e compare nel registro delle correzioni per l'arbitro.",
       "q_missedPoint": "Ho dimenticato un punto durante il set?",
-      "a_missedPoint": "In Menu › Correzioni, tocca «Aggiungi un punto dimenticato» per la squadra. Viene aggiunto al punteggio attuale con rotazione e servizio, come con il pulsante del punto. Se l'ultimo punto è andato alla squadra sbagliata, tocca «L'ultimo punto è andato alla squadra sbagliata».",
+      "a_missedPoint": "In Partita › Correzioni, tocca «Aggiungi un punto dimenticato» per la squadra. Viene aggiunto al punteggio attuale con rotazione e servizio, come con il pulsante del punto. Se l'ultimo punto è andato alla squadra sbagliata, tocca «L'ultimo punto è andato alla squadra sbagliata».",
       "q_serveSidesLineup": "Come correggo il servizio, i lati o la formazione?",
       "a_serveSidesLineup": "Nelle correzioni: «Cambia chi serve per primo», «Cambia campo» e «Riapri set». «Correggi la formazione» sistema una rotazione sbagliata: fai ruotare la squadra di una posizione avanti o indietro.",
       "q_signaturesCleared": "Perché le firme sono state cancellate?",
       "a_signaturesCleared": "Una correzione che cambia il referto cancella le firme raccolte a fine partita. Raccoglile di nuovo. Una partita approvata è in sola lettura: riaprila prima.",
       "q_editRoster": "Posso cambiare un roster durante la partita?",
-      "a_editRoster": "Sì: Menu › Modifica rosa squadra casa o Modifica rosa squadra ospite. Le modifiche dopo il sorteggio vengono registrate nelle correzioni e nelle osservazioni."
+      "a_editRoster": "Sì: Partita › Modifica rosa squadra casa o Modifica rosa squadra ospite. Le modifiche dopo il sorteggio vengono registrate nelle correzioni e nelle osservazioni."
     },
     "moreHelp": "Altro aiuto",
     "contactSupport": "Contatta il supporto",
@@ -2516,9 +2516,9 @@
       "q_doubleTap": "Ho toccato due volte: perché è arrivato un solo punto?",
       "a_doubleTap": "Subito dopo che «Inizia scambio» o un pulsante del punto cambia, l'app ignora i tocchi su questi pulsanti per 450 ms. Un doppio tocco o un dito che rimbalza non dà un secondo punto e non fa partire un nuovo scambio. I tasti della tastiera agiscono subito. Le opzioni hanno anche «Controllo avvio accidentale» e «Controllo punto accidentale».",
       "q_serveRotation": "Dove vedo chi serve e la rotazione?",
-      "a_serveRotation": "Il pallone indica la squadra al servizio, e il campo mostra le posizioni da I a VI di ogni squadra. L'app fa ruotare una squadra quando riconquista il servizio. Una rotazione sbagliata si corregge in Menu › Correzioni con «Correggi la formazione».",
+      "a_serveRotation": "Il pallone indica la squadra al servizio, e il campo mostra le posizioni da I a VI di ogni squadra. L'app fa ruotare una squadra quando riconquista il servizio. Una rotazione sbagliata si corregge in Partita › Correzioni con «Correggi la formazione».",
       "q_scoreDisplay": "Cosa mostra il display del punteggio?",
-      "a_scoreDisplay": "I punti del set, i set vinti e la squadra al servizio. Il lato di ogni squadra mostra i suoi timeout (TO) e le sostituzioni (SOS) in questo set. Menu › Mostra sanzioni e risultati elenca ogni set.",
+      "a_scoreDisplay": "I punti del set, i set vinti e la squadra al servizio. Il lato di ogni squadra mostra i suoi timeout (TO) e le sostituzioni (SOS) in questo set. Partita › Mostra sanzioni e risultati elenca ogni set.",
       "q_phone": "Posso refertare su un telefono?",
       "a_phone": "Sì. Nelle opzioni imposta la «Modalita schermo» su «Auto» o sulla vista per telefono, e tieni il telefono in verticale. Punteggio, campo, timeout, sostituzioni e pulsanti del punto stanno in un'unica schermata."
     },
@@ -2546,7 +2546,7 @@
       "q_warningOnce": "Perché «Avvertimento» è grigio?",
       "a_warningOnce": "Una squadra riceve un solo avvertimento per partita. Dopo, l'avvertimento è grigio per tutti i membri di quella squadra. Ogni altra scorrettezza è una penalità o di più.",
       "q_fixSanction": "Ho registrato la sanzione sbagliata: come la correggo?",
-      "a_fixSanction": "Se è l'ultima azione, tocca «Annulla». Altrimenti apri Menu › Correzioni: nella scheda «Sanzioni» modificala o rimuovila, oppure tocca «Aggiungi sanzione». Il registro delle correzioni mostra la modifica all'arbitro."
+      "a_fixSanction": "Se è l'ultima azione, tocca «Annulla». Altrimenti apri Partita › Correzioni: nella scheda «Sanzioni» modificala o rimuovila, oppure tocca «Aggiungi sanzione». Il registro delle correzioni mostra la modifica all'arbitro."
     },
     "setEnd": {
       "q_interval": "Come funziona l'intervallo tra i set?",
@@ -2628,7 +2628,7 @@
       "q_continueOther": "Come continuo una partita su un altro dispositivo?",
       "a_continueOther": "Sul nuovo dispositivo, tocca «Ripristina partita» sulla home. In «Ripristina da backup cloud» inserisci il numero partita e il PIN partita, poi tocca «Cerca backup cloud». Scegli la voce più recente, controlla l'«Anteprima ripristino» e tocca «Conferma ripristino». Da quel momento referta il nuovo dispositivo.",
       "q_gamePin": "Dove trovo il PIN partita?",
-      "a_gamePin": "Sulla home sotto «PIN partita», nella pagina delle info partita nella configurazione («Invia PIN via email» te lo invia) e nella schermata del punteggio in Menu › Mostra PIN.",
+      "a_gamePin": "Sulla home sotto «PIN partita», nella pagina delle info partita nella configurazione («Invia PIN via email» te lo invia) e nella schermata del punteggio in Partita › Mostra PIN.",
       "q_oldDevice": "Cosa succede sul vecchio dispositivo?",
       "a_oldDevice": "Mostra «Tenuta su un altro dispositivo» e smette di refertare. Lì la partita si apre in sola lettura; il suo referto resta consultabile. Le modifiche che non aveva inviato vengono messe da parte, mai inviate sopra il nuovo punteggio.",
       "q_takeBack": "Come riprendo la partita?",
