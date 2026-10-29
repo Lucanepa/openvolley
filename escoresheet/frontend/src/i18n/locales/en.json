@@ -2572,7 +2572,6 @@
     "openManager": "Open {{host}}",
     "createAccount": "Create account",
     "signUpHeading": "Create your account",
-    "signUpBody": "One account for scoring on the web, in the desktop app and on Android.",
     "backToSignIn": "Back to sign in",
     "accountCreated": "Your account has been created.",
     "inviteStepTitle": "Enter your club's invite code",

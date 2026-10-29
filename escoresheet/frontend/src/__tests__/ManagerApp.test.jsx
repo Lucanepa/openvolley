@@ -313,7 +313,13 @@ describe('ManagerApp #signup (accounts are made here)', () => {
     for (const label of ['First name', 'Last name', 'Country', 'Date of birth', 'Email', 'Password', 'Confirm password']) {
       expect(within(page).getByLabelText(label)).toBeInTheDocument()
     }
-    expect(within(page).getByLabelText('Country')).toHaveValue('CHE')
+    // a dropdown with Switzerland only, for now
+    const country = within(page).getByLabelText('Country')
+    expect(country.tagName).toBe('SELECT')
+    expect(country).toHaveValue('CHE')
+    expect(within(country).getAllByRole('option').map(o => o.value)).toEqual(['CHE'])
+    // no line under the heading on OpenVolley (OpenBeach keeps its own)
+    expect(within(page).queryByText('managerSite.signUpBody')).toBeNull()
     // never today's date: a text field, empty until the user types
     const dob = within(page).getByLabelText('Date of birth')
     expect(dob).toHaveValue('')

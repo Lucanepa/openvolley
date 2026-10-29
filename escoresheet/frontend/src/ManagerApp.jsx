@@ -130,7 +130,8 @@ function useBrandText() {
     signInHeading: t(beach ? 'managerBeach.signInHeading' : 'managerSite.signInHeading'),
     signInBody: t(beach ? 'managerBeach.signInBody' : 'managerSite.signInBody'),
     noAccountYet: t(beach ? 'managerBeach.noAccountYet' : 'managerSite.noAccountYet'),
-    signUpBody: t(beach ? 'managerBeach.signUpBody' : 'managerSite.signUpBody'),
+    // OpenVolley's sign-up has no line under the heading (owner's decision)
+    signUpBody: beach ? t('managerBeach.signUpBody') : null,
     inviteStepBody: t(beach ? 'managerBeach.inviteStepBody' : 'managerSite.inviteStepBody'),
     nativeAppsNote: t(beach ? 'managerBeach.nativeAppsNote' : 'managerSite.nativeAppsNote'),
     allSetBody: t(beach ? 'managerBeach.allSetBody' : 'managerSite.allSetBody'),
@@ -245,7 +246,7 @@ function SignUpScreen({ onSignedUp, onBack }) {
         <div data-testid="manager-sign-up">
           <div className="mb-5 text-center">
             <h1 className="text-xl font-bold tracking-tight text-stone-900">{t('managerSite.signUpHeading')}</h1>
-            <p className="mt-2 text-sm text-stone-600">{text.signUpBody}</p>
+            {text.signUpBody && <p className="mt-2 text-sm text-stone-600">{text.signUpBody}</p>}
           </div>
           <SignUpForm
             onSignedUp={onSignedUp}
