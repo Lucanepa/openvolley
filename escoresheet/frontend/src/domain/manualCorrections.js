@@ -968,10 +968,12 @@ export function planCoinToss(events, { teamA, firstServe } = {}, ctx = {}) {
   const serve = m3.firstServe || 'home'
   const plan = emptyPlan()
   plan.matchPatch = patch
+  // The cloud's coin_toss column (as the coin toss writes it); set 5's toss
+  // reaches the server through its set5_coin_toss event (backupManager
+  // set5TossFromEvents), the matches table has no set5 column: an unknown
+  // column refuses the whole update
   plan.cloudMatch = {
-    coin_toss: { team_a: a, team_b: b, serve_a: serve === a, confirmed: true, first_serve: serve },
-    ...(patch.set5LeftTeam !== undefined ? { set5LeftTeam: patch.set5LeftTeam } : {}),
-    ...(patch.set5FirstServe !== undefined ? { set5FirstServe: patch.set5FirstServe } : {})
+    coin_toss: { team_a: a, team_b: b, serve_a: serve === a, confirmed: true, first_serve: serve }
   }
   const ct = (events || []).find(e => e.type === 'coin_toss')
   if (ct) plan.update = [{ id: ct.id, changes: { payload: { ...ct.payload, teamA: a, teamB: b, serveA: serve === a, serveB: serve !== a, firstServe: serve } } }]
@@ -1001,7 +1003,7 @@ export function planSet5CoinToss(events, { firstServe } = {}, ctx = {}) {
   if (cur === firstServe) return fail('noScoreChange')
   const plan = emptyPlan()
   plan.matchPatch = { set5FirstServe: firstServe }
-  plan.cloudMatch = { set5FirstServe: firstServe }
+  // (no match column: the server reads it from the set5_coin_toss event updated below)
   const a = match.coinTossTeamA || 'home'
   const serveKey = firstServe === 'A' ? a : (a === 'home' ? 'away' : 'home')
   const ct = (events || []).find(e => e.type === 'set5_coin_toss')
