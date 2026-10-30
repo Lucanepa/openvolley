@@ -46,7 +46,7 @@ vi.mock('../../db/db', () => ({ db: fakeDb }))
 vi.mock('../backendConfig', () => ({ getApiUrl: (p) => `http://backend.test${p}`, getCloudApiUrl: (p) => `http://backend.test${p}` }))
 vi.mock('../../lib/apiClient', () => ({ apiFrom: vi.fn(), apiStorage: { from: vi.fn() } }))
 
-import { restoreMatchFromJson, restoreMatchInPlace, importMatchFromSupabase, serverClosedState, matchBackupFromDatabaseExport, restoreErrorText, BACKUP_FORMAT_ERROR, BACKUP_UNREADABLE_ERROR } from '../backupManager'
+import { restoreMatchFromJson, restoreMatchInPlace, importMatchFromSupabase, serverClosedState, matchBackupFromDatabaseExport, matchBackupFromMatchEndExport, matchBackupFromFile, matchEndExportData, restoreErrorText, BACKUP_FORMAT_ERROR, BACKUP_UNREADABLE_ERROR } from '../backupManager'
 import { apiFrom } from '../../lib/apiClient'
 import { isStaleClosedCopy } from '../matchReopen'
 import { signaturesPayload, signaturesSyncJob } from '../../domain/signatureEdits'
@@ -499,6 +499,95 @@ describe('a whole-database export (the set-end download)', () => {
     expect(restoreErrorText(new SyntaxError('Unexpected end of JSON input'), t)).toBe('settings.backup.restoreErrors.unreadable')
     expect(restoreErrorText(Object.assign(new Error('x'), { code: BACKUP_FORMAT_ERROR }), t)).toBe('settings.backup.restoreErrors.notABackup')
     expect(restoreErrorText(new Error('QuotaExceededError'), t)).toBe('settings.backup.restoreErrors.failed {"error":"QuotaExceededError"}')
+  })
+})
+
+// Backup plan 2026-10-29: the ZIP that Approve downloads is the one file a
+// scorer keeps of an approved match (Close match removes it from the device).
+// Its MatchData_*.json had no `version` and the teams inside the match, and
+// the restore refused it as "not a backup".
+describe('a Match End file (the MatchData JSON of the approval ZIP)', () => {
+  // The match row, its teams and players, sets and events as Match End reads them
+  const ended = () => ({
+    match: { id: 9, seed_key: SEED, status: 'ended', gameN: 7, homeTeamId: 3, awayTeamId: 4, refereePin: '111111', scorerSignature: 'data:s' },
+    homeTeam: { id: 3, name: 'Home', color: '#c00' },
+    awayTeam: { id: 4, name: 'Away', color: '#00c' },
+    homePlayers: [{ id: 1, teamId: 3, number: 1, lastName: 'Hof' }],
+    awayPlayers: [{ id: 2, teamId: 4, number: 12, lastName: 'Weg' }],
+    sets: [{ id: 2, matchId: 9, index: 1, homePoints: 25, awayPoints: 7, finished: true }, { id: 3, matchId: 9, index: 2, homePoints: 25, awayPoints: 20, finished: true }],
+    events: [{ id: 2, matchId: 9, setIndex: 1, type: 'point', seq: 1 }, { id: 3, matchId: 9, setIndex: 2, type: 'point', seq: 2 }]
+  })
+  // As MatchEnd wrote it before 2026-10-29
+  const olderFile = () => {
+    const { match, homeTeam, awayTeam, ...rest } = ended()
+    return JSON.parse(JSON.stringify({ match: { ...match, homeTeam, awayTeam }, ...rest, exportedAt: '2026-10-28T20:15:00.000Z' }))
+  }
+  const restoredRows = (id) => ({
+    match: fakeDb.matches.map.get(id),
+    sets: [...fakeDb.sets.map.values()].filter(x => x.matchId === id),
+    events: [...fakeDb.events.map.values()].filter(x => x.matchId === id),
+    teams: [fakeDb.matches.map.get(id).homeTeamId, fakeDb.matches.map.get(id).awayTeamId].map(t => fakeDb.teams.map.get(t)),
+    players: [...fakeDb.players.map.values()]
+  })
+
+  it('an older file is read in the backup file shape, the teams out of the match row', () => {
+    const b = matchBackupFromMatchEndExport(olderFile())
+    expect(b).toMatchObject({ version: 1, lastUpdated: '2026-10-28T20:15:00.000Z', match: { id: 9, seed_key: SEED, status: 'ended' }, homeTeam: { name: 'Home' }, awayTeam: { name: 'Away' } })
+    expect('homeTeam' in b.match || 'awayTeam' in b.match).toBe(false)
+    expect(b.homePlayers.map(p => p.lastName)).toEqual(['Hof'])
+    expect(b.sets).toHaveLength(2)
+    expect(b.events).toHaveLength(2)
+    // the scoresheet JSON the approval stores in the cloud: the teams beside the match
+    const sheet = { ...ended(), uploadedAt: '2026-10-28T20:16:00.000Z' }
+    expect(matchBackupFromMatchEndExport(sheet)).toMatchObject({ version: 1, lastUpdated: '2026-10-28T20:16:00.000Z', homeTeam: { name: 'Home' }, awayTeam: { name: 'Away' } })
+    // a backup file, a whole-database export or anything else is not one
+    expect(matchBackupFromMatchEndExport(backup())).toBeNull()
+    expect(matchBackupFromMatchEndExport({ matchId: 9, matches: [{ id: 9 }] })).toBeNull()
+    expect(matchBackupFromMatchEndExport({ match: { id: 1 } })).toBeNull()
+    expect(matchBackupFromMatchEndExport({ match: 'x', sets: [] })).toBeNull()
+    expect(matchBackupFromMatchEndExport(null)).toBeNull()
+    // matchBackupFromFile: every picked file the restore takes, a backup as it is
+    const file = backup()
+    expect(matchBackupFromFile(file)).toBe(file)
+    expect(matchBackupFromFile(olderFile())).toMatchObject({ version: 1, homeTeam: { name: 'Home' } })
+  })
+
+  it('an older file restores: the match, its teams, players, sets and events', async () => {
+    const id = await restoreMatchFromJson(olderFile(), { checkServer: async () => false, cloudLiveState: async () => null })
+    const r = restoredRows(id)
+    expect(r.match).toMatchObject({ seed_key: SEED, status: 'ended', gameN: 7, scorerSignature: 'data:s' })
+    expect('homeTeam' in r.match || 'awayTeam' in r.match).toBe(false) // the team rows hold them
+    expect(r.teams.map(t => t.name)).toEqual(['Home', 'Away'])
+    expect(r.players.map(p => [p.lastName, p.teamId])).toEqual([['Hof', r.match.homeTeamId], ['Weg', r.match.awayTeamId]])
+    expect(r.sets.map(x => `${x.index}:${x.homePoints}-${x.awayPoints}`)).toEqual(['1:25-7', '2:25-20'])
+    expect(r.events).toHaveLength(2)
+    // it replaced this device's copy of the match and queued the restore
+    expect([...fakeDb.matches.map.values()].filter(m => m.seed_key === SEED)).toHaveLength(1)
+    const job = (await fakeDb.sync_queue.toArray()).find(j => j.action === 'restore')
+    expect(job.payload.match).toMatchObject({ external_id: SEED, home_team: { name: 'Home' }, away_team: { name: 'Away' } })
+    expect(job.payload.sets).toHaveLength(2)
+  })
+
+  it('the file Match End writes now is a backup file: written, read back, it restores as it is', async () => {
+    const data = matchEndExportData(ended(), new Date('2026-10-29T19:00:00.000Z'))
+    expect(data).toMatchObject({ version: 1, lastUpdated: '2026-10-29T19:00:00.000Z', exportedAt: '2026-10-29T19:00:00.000Z', homeTeam: { name: 'Home' } })
+    const file = JSON.parse(JSON.stringify(data, null, 2)) // the ZIP's text
+    expect(matchBackupFromFile(file)).toBe(file) // nothing to convert
+    const id = await restoreMatchFromJson(file, { checkServer: async () => false, cloudLiveState: async () => null })
+    const r = restoredRows(id)
+    expect(r.match).toMatchObject({ seed_key: SEED, status: 'ended', gameN: 7, scorerSignature: 'data:s' })
+    expect(r.teams.map(t => t.name)).toEqual(['Home', 'Away'])
+    expect(r.players.map(p => p.lastName)).toEqual(['Hof', 'Weg'])
+    expect(r.sets.map(x => `${x.index}:${x.homePoints}-${x.awayPoints}`)).toEqual(['1:25-7', '2:25-20'])
+    expect(r.events.map(e => e.seq)).toEqual([1, 2])
+  })
+
+  it('restoreMatchInPlace reads an older file too', async () => {
+    await restoreMatchInPlace(2, olderFile(), { checkServer: async () => false })
+    const m = fakeDb.matches.map.get(2)
+    expect(m).toMatchObject({ seed_key: SEED, status: 'ended', gameN: 7 })
+    expect('homeTeam' in m).toBe(false)
+    expect([...fakeDb.sets.map.values()].filter(x => x.matchId === 2)).toHaveLength(2)
   })
 })
 

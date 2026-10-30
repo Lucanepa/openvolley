@@ -14,6 +14,10 @@
  *    IndexedDB and serializing, so the scorer's next tap goes first.
  *  - A state equal to the last one written (ignoring heartbeats, sessions and
  *    sync stamps) is skipped.
+ *  - So is a match skipMatch(match) names (index.js: a copy another device
+ *    went on with, matchReopen.isContinuedElsewhere), read from the state
+ *    the file would hold. backupNow, the scorer's own "Back up now", still
+ *    writes it.
  *  - Rotation of older backups runs after the first file of the session is
  *    written, in small chunks on idle.
  *
@@ -84,6 +88,7 @@ export function createNativeBackupEngine({
   maxBytesPerMatch = DEFAULT_MAX_BYTES_PER_MATCH,
   idleKeep = DEFAULT_IDLE_KEEP,
   idleAfterHours = DEFAULT_IDLE_AFTER_HOURS,
+  skipMatch = () => false,
   log = console
 }) {
   const quiet = quietMs ?? settleMs ?? 150
@@ -187,6 +192,7 @@ export function createNativeBackupEngine({
   async function backupOnce(matchId, { force = false } = {}) {
     const data = await exportMatch(matchId)
     if (!data?.match) return null
+    if (!force && skipMatch(data.match)) return null
     const { key, build } = serializeBackup(data)
     if (!force && lastKey.get(matchId) === key) return null // same scoring state: coalesced
 
@@ -236,12 +242,13 @@ export function createNativeBackupEngine({
     }
   }
 
-  function start() {
+  // now: the app is going away (flush({ writesOnly })), no idle moment to wait for
+  function start({ now = false } = {}) {
     timer = null
     if (running) return
     batchStart = null
     running = (async () => {
-      await nextIdle() // the scorer's own work first
+      if (!now) await nextIdle() // the scorer's own work first
       await drain()
     })().finally(() => {
       running = null
@@ -276,9 +283,25 @@ export function createNativeBackupEngine({
       await written
       return status
     },
-    /** Resolves once every queued backup is written and the rotation is done (tests, shutdown). */
-    async flush() {
-      while (settled) await settled
+    /**
+     * Resolves once every queued backup is written and the rotation is done
+     * (tests). writesOnly: once the queued backups are written, without
+     * waiting for the rotation of older folders (the app quitting or, on
+     * Android, going to the background: flushNativeBackups). Those start at
+     * once, not at the end of their quiet window: the app may be gone by then.
+     */
+    async flush({ writesOnly = false } = {}) {
+      if (!writesOnly) {
+        while (settled) await settled
+        return
+      }
+      if (!timer && !running && !pending.size) return
+      const written = new Promise(resolve => writeWaiters.push(resolve))
+      if (timer) {
+        clearTimeout(timer)
+        start({ now: true })
+      }
+      await written
     },
     getStatus: () => status,
     subscribe(listener) {

@@ -140,6 +140,43 @@ describe('native backup engine', () => {
     await engine.flush()
   })
 
+  // The app quitting (appLifecycle, flushNativeBackups): the last point's
+  // file must be on disk; the rotation of older folders can wait
+  it('flush({ writesOnly }) resolves once the queued files are written, not waiting for the rotation', async () => {
+    const store = memoryStore({ 'game1-old': [eventFileName(T0 - 45 * DAY, 1), eventFileName(T0 - 44 * DAY, 2)] })
+    let releaseList
+    store.list.mockImplementation(() => new Promise(r => { releaseList = r }))
+    const { engine, m, tick } = setup({ store })
+    await engine.flush({ writesOnly: true }) // nothing queued: at once
+    m.point('home')
+    engine.notify(1)
+    await engine.flush({ writesOnly: true })
+    expect(eventFiles(store)).toHaveLength(1)
+    await vi.waitFor(() => expect(store.list).toHaveBeenCalled()) // the rotation is still listing
+    m.point('away')
+    tick()
+    engine.notify(1)
+    await engine.flush({ writesOnly: true })
+    expect(eventFiles(store)).toHaveLength(2)
+    releaseList([])
+    await engine.flush()
+  })
+
+  // The app going away (quitting, Android to the background): the last
+  // point's file is written now, not at the end of its quiet window or on
+  // an idle moment the page may never get
+  it('flush({ writesOnly }) starts the queued backup at once', async () => {
+    const { engine, store, m } = setup({ engine: { quietMs: 60_000, maxWaitMs: 60_000, idle: () => {} } })
+    m.point('home')
+    engine.notify(1)
+    const outcome = await Promise.race([
+      engine.flush({ writesOnly: true }).then(() => 'written'),
+      new Promise(r => setTimeout(() => r('still waiting'), 500))
+    ])
+    expect(outcome).toBe('written')
+    expect(eventFiles(store)).toHaveLength(1)
+  })
+
   it('never throws: a failing write becomes a status error and the next event retries', async () => {
     const store = memoryStore()
     const { engine, m, log } = setup({ store })
@@ -162,6 +199,39 @@ describe('native backup engine', () => {
     await engine.flush()
     expect(store.write).not.toHaveBeenCalled()
     expect(engine.getStatus().error).toBe('Match not found')
+  })
+
+  // 2026-10-29: a stale copy of match 406970 (continued and closed on a
+  // phone) got a fresh backup file at open on the desktop app
+  it('writes no file of a match skipMatch names, read from the state it would write', async () => {
+    const skipMatch = vi.fn((match) => match.cloudBlock?.code === 'OV_MATCH_CLOSED')
+    const { engine, store, m, tick } = setup({ engine: { skipMatch } })
+    m.point('home')
+    engine.notify(1)
+    await engine.flush()
+    expect(eventFiles(store)).toHaveLength(1)
+    // the server's close is recorded on the copy: that write and the next ones make no file
+    m.state.match.cloudBlock = { code: 'OV_MATCH_CLOSED' }
+    tick()
+    engine.notify(1)
+    await engine.flush()
+    m.point('away')
+    tick()
+    engine.notify(1)
+    await engine.flush()
+    expect(eventFiles(store)).toHaveLength(1)
+    expect(skipMatch).toHaveBeenLastCalledWith(expect.objectContaining({ cloudBlock: { code: 'OV_MATCH_CLOSED' } }))
+    expect(engine.getStatus()).toMatchObject({ count: 1, error: null }) // skipped, not failed
+    // the scorer's own "Back up now" still writes it
+    await engine.backupNow(1)
+    expect(eventFiles(store)).toHaveLength(2)
+    // the copy is open again (an admin reopened the match): backed up again
+    delete m.state.match.cloudBlock
+    m.point('home')
+    tick()
+    engine.notify(1)
+    await engine.flush()
+    expect(eventFiles(store)).toHaveLength(3)
   })
 
   it('caps each match at maxPerMatch event files, oldest deleted first', async () => {
