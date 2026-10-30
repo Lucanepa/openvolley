@@ -211,4 +211,29 @@ describe('club managers end to end', { skip: SKIP }, () => {
     expectCode(await call(users.boss, 'GET', `/api/club/${ksc.id}`), 403, 'OV_FORBIDDEN')
     assert.deepEqual((await call(users.boss, 'GET', '/api/me')).json.data.managedClubs, [])
   })
+
+  it('the audit list names the club of each club entry and of a club\'s invite code; a deleted club keeps the name in its details', async () => {
+    const gone = (await call(users.admin, 'POST', '/api/admin/clubs', { name: 'VBC Gone' })).json.data.club
+    assert.equal((await call(users.admin, 'DELETE', `/api/admin/clubs/${gone.id}`)).status, 200)
+    const r = await call(users.admin, 'GET', '/api/admin/audit?limit=200')
+    assert.equal(r.status, 200, r.text)
+    const of = (action) => r.json.data.entries.filter((e) => e.action === action)
+    const clubOf = (e) => e.details.club_id
+    for (const action of ['club.create', 'club.update', 'club.managers', 'club.contact', 'club.member_remove']) {
+      const live = of(action).filter((e) => clubOf(e) !== gone.id)
+      assert.ok(live.length, action)
+      for (const e of live) assert.equal(e.club_name, clubOf(e) === ksc.id ? 'KSC Wiedikon' : 'VBC Other', action)
+    }
+    assert.deepEqual(of('club.member_remove').map((e) => e.club_name), ['KSC Wiedikon'])
+    assert.equal(of('invite.create').find((e) => e.details.label === 'H1 scorers').club_name, 'KSC Wiedikon')
+    assert.ok(of('invite.redeem').some((e) => e.club_name === 'KSC Wiedikon'))
+    // gone: no name from the list, its own in the delete entry
+    const [deleted] = of('club.delete')
+    assert.equal(deleted.club_name, null)
+    assert.equal(deleted.details.name, 'VBC Gone')
+    assert.equal(of('club.create').find((e) => clubOf(e) === gone.id).club_name, null)
+    // an entry about no club names none
+    assert.ok(of('club_rule.set').length)
+    for (const e of of('club_rule.set')) assert.equal(e.club_name, null)
+  })
 })

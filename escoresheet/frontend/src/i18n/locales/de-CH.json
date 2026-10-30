@@ -3030,6 +3030,11 @@
     "audit": {
       "loadMore": "Mehr laden",
       "empty": "Noch keine Einträge.",
+      "recipients_one": "{{count}} Empfänger",
+      "recipients_other": "{{count}} Empfänger",
+      "corrected": "korrigiert",
+      "rows_one": "{{count}} Eintrag",
+      "rows_other": "{{count}} Einträge",
       "actions": {
         "account_roles": "Rollen geändert",
         "invite_create": "Einladungscode erstellt",
@@ -3062,7 +3067,18 @@
         "match_approve": "Resultat mit Konto genehmigt",
         "match_approval_revoke": "Konto-Genehmigung rückgängig gemacht",
         "match_approval_void": "Konto-Genehmigungen ungültig",
-        "scoresheet_read": "Matchblatt geöffnet"
+        "scoresheet_read": "Matchblatt geöffnet",
+        "activity_delete": "Aktivitätseinträge gelöscht",
+        "club_create": "Verein erstellt",
+        "club_update": "Vereinsangaben geändert",
+        "club_delete": "Verein gelöscht",
+        "account_clubs": "Vereine geändert",
+        "club_rule_set": "Vereinsregel umgeschaltet",
+        "club_managers": "Vereinsverantwortliche geändert",
+        "club_contact": "Kontakt-E-Mail des Vereins geändert",
+        "club_member_remove": "Aus dem Verein entfernt",
+        "match_final_mail": "Fertiges Matchblatt per E-Mail gesendet",
+        "settings_final_email": "Matchblatt-Versand per E-Mail umgeschaltet"
       }
     },
     "approvals": {

@@ -3035,6 +3035,11 @@
     "audit": {
       "loadMore": "Carica altro",
       "empty": "Ancora nessuna voce.",
+      "recipients_one": "{{count}} destinatario",
+      "recipients_other": "{{count}} destinatari",
+      "corrected": "corretto",
+      "rows_one": "{{count}} voce",
+      "rows_other": "{{count}} voci",
       "actions": {
         "account_roles": "Ruoli modificati",
         "invite_create": "Codice d’invito creato",
@@ -3067,7 +3072,18 @@
         "match_approve": "Risultato approvato con account",
         "match_approval_revoke": "Approvazione con account annullata",
         "match_approval_void": "Approvazioni con account annullate",
-        "scoresheet_read": "Referto aperto"
+        "scoresheet_read": "Referto aperto",
+        "activity_delete": "Voci di attività eliminate",
+        "club_create": "Società creata",
+        "club_update": "Dati della società modificati",
+        "club_delete": "Società eliminata",
+        "account_clubs": "Società modificate",
+        "club_rule_set": "Regola delle società cambiata",
+        "club_managers": "Responsabili della società modificati",
+        "club_contact": "E-mail di contatto della società modificata",
+        "club_member_remove": "Tolto dalla società",
+        "match_final_mail": "Referto finale inviato per e-mail",
+        "settings_final_email": "Invio del referto per e-mail cambiato"
       }
     },
     "approvals": {
