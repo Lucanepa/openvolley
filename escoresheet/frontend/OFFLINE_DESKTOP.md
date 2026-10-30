@@ -528,8 +528,10 @@ ones) is written plain as before, since nothing could open it
 - One random AES-256-GCM data key per match and app session encrypts the
   backup JSON, with a fresh IV per file. Each slot holds that key wrapped by
   a key derived from one PIN (Argon2id, `hash-wasm`, in a worker; each PIN
-  is derived once per match and session, never per file), so **either PIN
-  alone opens the file**. When a PIN changes, the files from then on get a
+  is derived once per match and session, never per file, when the match is
+  opened, so the first file, maybe the last before quitting, only encrypts;
+  a worker that gives no answer in 10 s is retired and the keys are derived
+  on the main thread), so **either PIN alone opens the file**. When a PIN changes, the files from then on get a
   new data key.
 - **Readable without a PIN**: game number, team names, scheduled date, set
   scores and the time of the file (public on the livescore anyway). They are
@@ -549,11 +551,14 @@ ones) is written plain as before, since nothing could open it
 Backup → Restore from a backup file, then pick the file: the app asks for the
 **game PIN or the referee PIN** of the match (the dialog shows the readable
 game number, teams, date and set scores). A wrong PIN says so and asks again;
-Cancel goes back. Then the usual preview. The restored match keeps the PIN
-that was typed (the other PINs come from the local copy it replaces, or are
-new); plain files of older versions restore as before, without a PIN. An app
-from before the encryption says "not an OpenVolley match backup" for an
-encrypted file.
+Cancel goes back, also while a PIN is being tried. Then the usual preview.
+The restored match keeps the PIN that was typed (the other PINs come from the
+local copy it replaces, or are new); plain files of older versions restore as
+before, without a PIN. An app from before the encryption says "not an
+OpenVolley match backup" for an encrypted file. Against a damaged or crafted
+file: the readable header is shown as text and scores only (it is not
+authenticated before the file opens), at most 8 PIN slots are tried and a
+slot asking for more than 128 MiB (or 16 passes) is skipped.
 
 When it writes: after a write of the match, once nothing more was written for
 150 ms (at most 1.5 s later), on an idle moment, so a point (event, its state
@@ -573,7 +578,11 @@ are always kept. Older folders are rotated after the first backup of a
 session, in small chunks.
 
 Privacy: the files hold player names and birth dates, officials and signature
-images (no PINs), encrypted for every match with a PIN (above). On Linux the
+images (no PINs), encrypted for every match with a PIN (above). Files of
+3.0.8 and older are plain: the rotation removes their event files after 30
+days, but never the newest event file or `latest.json` of a folder, so the
+folder of a match scored with an older version stays readable until it is
+deleted by hand (Options → Backup says so). On Linux the
 folders are created `0700` and the files `0600`; on Windows `%APPDATA%` is
 private to the user account. If only
 `latest.json` cannot be replaced (Windows: a virus scan or the Explorer

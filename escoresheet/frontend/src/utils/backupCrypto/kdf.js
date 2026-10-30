@@ -25,8 +25,9 @@ export const KDF_PARAMS = Object.freeze({ alg: 'argon2id', memoryKiB: 32768, ite
 export const SALT_BYTES = 16
 
 // What a file may ask for: a damaged or crafted file must not make the app
-// allocate gigabytes or spin for minutes
-const LIMITS = { memoryKiB: [8192, 262144], iterations: [1, 16], parallelism: [1, 4] }
+// allocate gigabytes or spin for minutes. 128 MiB at most (the app's own
+// files ask for 32 MiB): more can fail in a low-memory tablet's WebView.
+const LIMITS = { memoryKiB: [8192, 131072], iterations: [1, 16], parallelism: [1, 4] }
 
 /** The KDF parameters of a slot, checked; throws for anything else. */
 export function checkKdfParams(params) {
@@ -49,6 +50,11 @@ async function deriveHere(pin, salt, params) {
 // of the session derives on this thread). Ended after a quiet minute: the
 // WASM memory (32 MiB) is not given back while it runs.
 const IDLE_MS = 60_000
+// A job at the app's parameters that has no answer after this long is stuck
+// (a worker the WebView froze or that never loaded): the worker is retired
+// and its jobs run here, so a backup never waits for it forever. A costlier
+// slot (a restore) gets proportionally longer before it moves to this thread.
+export const WORKER_TIMEOUT_MS = 10_000
 let worker
 let idleTimer = null
 let nextJob = 0
@@ -61,6 +67,24 @@ function endWorker() {
   worker = undefined
 }
 
+// It could not load, crashed or does not answer: its jobs and the next ones run here
+function retireWorker(w, why) {
+  if (worker !== w) return
+  console.warn(`[BackupCrypto] KDF worker ${why}, deriving on the main thread`)
+  clearTimeout(idleTimer)
+  idleTimer = null
+  w.terminate()
+  worker = null
+  const waiting = [...jobs.values()]
+  jobs.clear()
+  for (const job of waiting) {
+    clearTimeout(job.timer)
+    job.retryHere()
+  }
+}
+
+const cost = (p) => p.memoryKiB * p.iterations
+
 function kdfWorker() {
   if (worker !== undefined) return worker
   worker = null
@@ -71,19 +95,14 @@ function kdfWorker() {
       const job = jobs.get(data?.id)
       if (!job) return
       jobs.delete(data.id)
+      clearTimeout(job.timer)
       if (data.error) job.reject(new Error(data.error))
       else job.resolve(new Uint8Array(data.key))
       if (!jobs.size) idleTimer = setTimeout(endWorker, IDLE_MS)
     }
-    // It could not load (or crashed): its jobs and the next ones run here
     w.onerror = (e) => {
       e?.preventDefault?.()
-      console.warn('[BackupCrypto] KDF worker failed, deriving on the main thread:', e?.message || e)
-      w.terminate()
-      worker = null
-      const waiting = [...jobs.values()]
-      jobs.clear()
-      for (const job of waiting) job.retryHere()
+      retireWorker(w, `failed (${e?.message || e})`)
     }
     worker = w
   } catch {
@@ -104,9 +123,14 @@ export async function derivePinKey(pin, salt, params = KDF_PARAMS) {
   const w = kdfWorker()
   if (!w) return deriveHere(pin, salt, checked)
   clearTimeout(idleTimer)
+  const timeoutMs = WORKER_TIMEOUT_MS * Math.max(1, cost(checked) / cost(KDF_PARAMS))
   return new Promise((resolve, reject) => {
     const id = ++nextJob
-    jobs.set(id, { resolve, reject, retryHere: () => deriveHere(pin, salt, checked).then(resolve, reject) })
+    const job = { resolve, reject, retryHere: () => deriveHere(pin, salt, checked).then(resolve, reject) }
+    job.timer = setTimeout(() => {
+      if (jobs.get(id) === job) retireWorker(w, `did not answer in ${Math.round(timeoutMs / 1000)} s`)
+    }, timeoutMs)
+    jobs.set(id, job)
     w.postMessage({ id, pin: String(pin), salt, params: checked })
   })
 }

@@ -180,6 +180,47 @@ describe('native backup engine', () => {
     expect(eventFiles(store)).toHaveLength(1)
   })
 
+  // A hidden Android WebView gets its idle callback late (the 1000 ms
+  // timeout) or not at all: the quiet window is over, the backup waits for it
+  it('flush({ writesOnly }) does not wait for an idle moment the backup is already waiting for', async () => {
+    const idle = vi.fn() // never called back
+    const { engine, store, m } = setup({ engine: { idle } })
+    m.point('home')
+    engine.notify(1)
+    await vi.waitFor(() => expect(idle).toHaveBeenCalled()) // the quiet window (0 ms) ended
+    expect(m.exportMatch).not.toHaveBeenCalled()
+    const outcome = await Promise.race([
+      engine.flush({ writesOnly: true }).then(() => 'written'),
+      new Promise(r => setTimeout(() => r('still waiting'), 500))
+    ])
+    expect(outcome).toBe('written')
+    expect(eventFiles(store)).toHaveLength(1)
+  })
+
+  it('flush({ writesOnly }) also writes, at once, a write that lands while the last file is written', async () => {
+    const { engine, store, m, tick } = setup({ engine: { quietMs: 60_000, maxWaitMs: 60_000, idle: () => {} } })
+    let release
+    m.exportMatch.mockImplementationOnce(() => new Promise(r => { release = r }))
+    m.point('home')
+    engine.notify(1)
+    const flushed = engine.flush({ writesOnly: true }).then(() => 'written')
+    await vi.waitFor(() => expect(m.exportMatch).toHaveBeenCalledTimes(1))
+    const first = structuredClone(m.state)
+    m.point('away')
+    tick()
+    engine.notify(1) // committed while the first file is exported
+    release({ version: 1, ...first })
+    const outcome = await Promise.race([flushed, new Promise(r => setTimeout(() => r('still waiting'), 500))])
+    expect(outcome).toBe('written')
+    expect(m.exportMatch).toHaveBeenCalledTimes(2)
+    expect(eventFiles(store)).toHaveLength(2)
+    // all written: the next write waits for its quiet window again
+    m.point('home')
+    engine.notify(1)
+    await new Promise(r => setTimeout(r, 50))
+    expect(m.exportMatch).toHaveBeenCalledTimes(2)
+  })
+
   it('never throws: a failing write becomes a status error and the next event retries', async () => {
     const store = memoryStore()
     const { engine, m, log } = setup({ store })
@@ -391,6 +432,50 @@ describe('native backup engine', () => {
       engine.notify(1)
       await engine.flush()
       expect(eventFiles(store)).toHaveLength(2)
+    })
+
+    // The first seal of a match derives both PIN keys (about 0.5-0.9 s each
+    // on a tablet): done when the engine first sees the match, so its first
+    // file, maybe the last one before the app quits, only encrypts
+    it('warms the PIN keys when it first sees the match, writing nothing: the first file does not derive them', async () => {
+      const derive = vi.fn(derivePinKey)
+      let match
+      const readMatch = vi.fn(async () => structuredClone(match.state.match))
+      const { engine, store, m } = setup({ engine: { sealer: createBackupSealer({ derive }), readMatch } })
+      match = m
+      withPins(m)
+      expect(await engine.warm(1)).toBe(true)
+      expect(derive).toHaveBeenCalledTimes(2)
+      expect(store.write).not.toHaveBeenCalled()
+      expect(m.exportMatch).not.toHaveBeenCalled()
+      derive.mockClear()
+      m.point('home')
+      engine.notify(1)
+      await engine.flush()
+      expect(derive).not.toHaveBeenCalled()
+      expect(isEncryptedBackup(JSON.parse(store.dirs.get('game12-seed1').get(LATEST_FILE)))).toBe(true)
+      expect(readMatch).toHaveBeenCalledTimes(1) // once per match
+    })
+
+    it('the first notify of a match warms its keys, once; a copy skipMatch names gets none', async () => {
+      const derive = vi.fn(derivePinKey)
+      let match
+      const readMatch = vi.fn(async (id) => (id === 1 ? structuredClone(match.state.match) : { ...match.state.match, id: 2, cloudBlock: { code: 'OV_MATCH_CLOSED' } }))
+      const skipMatch = (row) => row.cloudBlock?.code === 'OV_MATCH_CLOSED'
+      const { engine, m, tick } = setup({ engine: { sealer: createBackupSealer({ derive }), readMatch, skipMatch } })
+      match = m
+      withPins(m)
+      for (let i = 0; i < 3; i++) {
+        m.point('home')
+        engine.notify(1)
+        await engine.flush()
+        tick()
+      }
+      await engine.warm(1)
+      expect(readMatch).toHaveBeenCalledTimes(1)
+      expect(derive).toHaveBeenCalledTimes(2) // the warm and the files share the keys
+      expect(await engine.warm(2)).toBe(false)
+      expect(derive).toHaveBeenCalledTimes(2)
     })
 
     it('a file that cannot be encrypted is not written in the clear: a status error, retried at the next event', async () => {
