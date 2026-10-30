@@ -503,6 +503,36 @@ describe('desktop app', () => {
     uninstall = installAppLifecycle({ win, ask: vi.fn() })
     expect(invoke).not.toHaveBeenCalled()
   })
+
+  // The OS ends the app (logout, shutdown, SIGTERM; lifecycle.rs os_exit):
+  // the app waits for app_flush_done, 2 s at most, then exits
+  it('the OS ending the app: the last files are written, then the app is told, nothing asked', async () => {
+    const { win, invoke } = desktopWin()
+    const ask = vi.fn().mockResolvedValue(true)
+    const choose = vi.fn()
+    let written
+    flushNativeBackups.mockClear()
+    flushNativeBackups.mockImplementationOnce(() => new Promise((r) => { written = r }))
+    uninstall = installAppLifecycle({ win, ask, choose })
+    fire(win, 'flush-requested')
+    await vi.waitFor(() => expect(flushNativeBackups).toHaveBeenCalledWith(1500))
+    await flush()
+    expect(invoke).not.toHaveBeenCalledWith('app_flush_done')
+    written()
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith('app_flush_done'))
+    expect(ask).not.toHaveBeenCalled()
+    expect(choose).not.toHaveBeenCalled()
+    expect(invoke).not.toHaveBeenCalledWith('app_quit')
+    expect(invoke).not.toHaveBeenCalledWith('app_quit_ack')
+  })
+
+  it('the OS ending the app: a failing write still tells the app', async () => {
+    const { win, invoke } = desktopWin()
+    flushNativeBackups.mockImplementationOnce(async () => { throw new Error('disk gone') })
+    uninstall = installAppLifecycle({ win, ask: vi.fn() })
+    fire(win, 'flush-requested')
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith('app_flush_done'))
+  })
 })
 
 describe('Android app', () => {
@@ -620,6 +650,85 @@ describe('Android app', () => {
     win.__ovAndroidBack()
     expect(win.__ovAndroidBack()).toBe(true)
     expect(ask).toHaveBeenCalledTimes(1)
+  })
+
+  // Android may end a backgrounded app without a word (a swipe from the
+  // recent apps): the last backup file is written as it goes
+  describe('going to the background writes the last backup file', () => {
+    function withDocument() {
+      const { win } = androidWin()
+      const doc = new EventTarget()
+      doc.visibilityState = 'visible'
+      win.document = doc
+      return { win, doc }
+    }
+
+    it('on Capacitor\'s pause (the activity\'s onPause), once while it writes', async () => {
+      const { win, doc } = withDocument()
+      let written
+      flushNativeBackups.mockClear()
+      flushNativeBackups.mockImplementationOnce(() => new Promise((r) => { written = r }))
+      const ask = vi.fn()
+      const uninstall = installAppLifecycle({ win, ask })
+      doc.dispatchEvent(new Event('pause'))
+      expect(flushNativeBackups).toHaveBeenCalledWith(1500)
+      // the page goes hidden with it: the same write
+      doc.visibilityState = 'hidden'
+      doc.dispatchEvent(new Event('visibilitychange'))
+      expect(flushNativeBackups).toHaveBeenCalledTimes(1)
+      written()
+      await flush()
+      // back and away again: a new one
+      doc.visibilityState = 'visible'
+      doc.dispatchEvent(new Event('visibilitychange'))
+      expect(flushNativeBackups).toHaveBeenCalledTimes(1)
+      doc.dispatchEvent(new Event('pause'))
+      expect(flushNativeBackups).toHaveBeenCalledTimes(2)
+      expect(ask).not.toHaveBeenCalled()
+      await flush()
+      uninstall()
+      doc.dispatchEvent(new Event('pause'))
+      expect(flushNativeBackups).toHaveBeenCalledTimes(2)
+    })
+
+    it('on the page going hidden', async () => {
+      const { win, doc } = withDocument()
+      flushNativeBackups.mockClear()
+      const uninstall = installAppLifecycle({ win, ask: vi.fn() })
+      doc.visibilityState = 'hidden'
+      doc.dispatchEvent(new Event('visibilitychange'))
+      expect(flushNativeBackups).toHaveBeenCalledWith(1500)
+      uninstall()
+    })
+
+    it('on the App plugin\'s appStateChange, where the app has it', async () => {
+      const { win } = withDocument()
+      let listener
+      const remove = vi.fn()
+      win.Capacitor.Plugins = { App: { addListener: vi.fn(async (name, fn) => { listener = fn; return { remove } }) } }
+      flushNativeBackups.mockClear()
+      const uninstall = installAppLifecycle({ win, ask: vi.fn() })
+      await flush()
+      expect(win.Capacitor.Plugins.App.addListener).toHaveBeenCalledWith('appStateChange', expect.any(Function))
+      listener({ isActive: true })
+      expect(flushNativeBackups).not.toHaveBeenCalled()
+      listener({ isActive: false })
+      expect(flushNativeBackups).toHaveBeenCalledWith(1500)
+      uninstall()
+      expect(remove).toHaveBeenCalled()
+    })
+
+    it('a write that fails changes nothing for the app', async () => {
+      const { win, doc } = withDocument()
+      flushNativeBackups.mockClear()
+      flushNativeBackups.mockImplementationOnce(async () => { throw new Error('disk gone') })
+      const uninstall = installAppLifecycle({ win, ask: vi.fn() })
+      doc.dispatchEvent(new Event('pause'))
+      await flush()
+      doc.dispatchEvent(new Event('pause'))
+      expect(flushNativeBackups).toHaveBeenCalledTimes(2)
+      uninstall()
+    })
   })
 })
 

@@ -34,6 +34,7 @@ const APP_COMMANDS: &[&str] = &[
     "app_hide",
     "app_quit",
     "app_quit_ack",
+    "app_flush_done",
     "app_close_ack",
     "app_quit_cancel",
     // the scoresheet windows a quit closes too (popups.rs)
