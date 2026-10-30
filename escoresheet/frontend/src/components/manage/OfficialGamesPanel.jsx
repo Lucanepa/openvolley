@@ -63,7 +63,7 @@ export default function OfficialGamesPanel() {
                 </>}
                 status={claim ? <MatchStatusPill status={claim.status} /> : <StatusPill tone="neutral">{t('manage.games.notClaimed')}</StatusPill>}
                 chips={claim ? <>
-                  <span className="text-xs text-stone-600">{t('manage.games.scoredBy', { name: claim.scorer_name || claim.scorer_email || t('manage.games.unknownScorer') })}</span>
+                  <span className="text-xs text-stone-600">{t('manage.games.scoredBy', { name: claim.scorer_name || claim.scorer_email || claim.sheet_scorer_name || t('manage.games.unknownScorer') })}</span>
                   {claim.editors > 0 && <span className="text-xs text-stone-500">{t('manage.games.editors', { count: claim.editors })}</span>}
                   <ApprovalChips approvals={claim.approvals ?? g.approvals} />
                 </> : null}

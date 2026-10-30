@@ -138,7 +138,7 @@ export default function ManageConsole({ tab, onTab, onClose, headerActions, phon
         footer={<LegalLinks className="text-[11px] text-stone-400" />}
       >
         {phoneTop && <div className="mb-3 sm:hidden">{phoneTop}</div>}
-        {visited.has('accounts') && <ConsolePanel id="accounts" current={current}><AccountsPanel selfId={user.id} app={scope} /></ConsolePanel>}
+        {visited.has('accounts') && <ConsolePanel id="accounts" current={current}><AccountsPanel selfId={user.id} selfIsSuperAdmin={!!access?.isSuperAdmin} app={scope} /></ConsolePanel>}
         {visited.has('invites') && <ConsolePanel id="invites" current={current}><InvitesPanel app={scope} /></ConsolePanel>}
         {visited.has('clubs') && <ConsolePanel id="clubs" current={current}><ClubsPanel /></ConsolePanel>}
         {visited.has('myclub') && <ConsolePanel id="myclub" current={current}><MyClubPanel clubs={access.managedClubs} /></ConsolePanel>}

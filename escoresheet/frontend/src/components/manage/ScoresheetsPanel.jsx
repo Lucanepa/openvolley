@@ -144,7 +144,8 @@ export default function ScoresheetsPanel({ app = 'indoor' }) {
                   {m.game_n ? <span className="tabular-nums">#{m.game_n}</span> : null}
                   {m.scheduled_at && <span className="tabular-nums">{dayTimeLabel(m.scheduled_at)}</span>}
                   {m.league && <span>{m.league}</span>}
-                  {m.scorer_name && <span>{t('manage.games.scoredBy', { name: m.scorer_name })}</span>}
+                  {/* the account, else (account deleted, or none) the scorer named on the scoresheet */}
+                  {(m.scorer_name || m.sheet_scorer_name) && <span>{t('manage.games.scoredBy', { name: m.scorer_name || m.sheet_scorer_name })}</span>}
                 </>}
                 chips={noPdf
                   ? <Chip>{t('manage.scoresheets.noPdfYet')}</Chip>
