@@ -162,6 +162,21 @@ describe('native backup engine', () => {
     await engine.flush()
   })
 
+  // The app going away (quitting, Android to the background): the last
+  // point's file is written now, not at the end of its quiet window or on
+  // an idle moment the page may never get
+  it('flush({ writesOnly }) starts the queued backup at once', async () => {
+    const { engine, store, m } = setup({ engine: { quietMs: 60_000, maxWaitMs: 60_000, idle: () => {} } })
+    m.point('home')
+    engine.notify(1)
+    const outcome = await Promise.race([
+      engine.flush({ writesOnly: true }).then(() => 'written'),
+      new Promise(r => setTimeout(() => r('still waiting'), 500))
+    ])
+    expect(outcome).toBe('written')
+    expect(eventFiles(store)).toHaveLength(1)
+  })
+
   it('never throws: a failing write becomes a status error and the next event retries', async () => {
     const store = memoryStore()
     const { engine, m, log } = setup({ store })
