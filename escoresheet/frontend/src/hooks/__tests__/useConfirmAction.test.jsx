@@ -143,6 +143,57 @@ describe('useConfirmAction', () => {
     expect(under).toHaveBeenCalledTimes(1)
   })
 
+  // A pointer's taps (detail 1, with their place): the second tap of a double
+  // tap lands where the confirming one did; a tap elsewhere is aimed ("Yes" on
+  // Undo, then Start rally a moment later: it was swallowed, 2026-10-29)
+  describe('with the place of the taps', () => {
+    function Screen({ under, startRally }) {
+      const run = useConfirmAction()
+      const [open, setOpen] = useState(true)
+      return (
+        <div>
+          <button onClick={under}>court player</button>
+          <button onClick={startRally}>Start rally</button>
+          {open && <button onClick={() => run(async () => { setOpen(false); await sleep(5) })}>Yes</button>}
+        </div>
+      )
+    }
+    const tap = (el, x, y) => fireEvent.click(el, { detail: 1, clientX: x, clientY: y })
+
+    it('swallows a tap at the place of the confirming one (a finger off by a few px too)', async () => {
+      const under = vi.fn()
+      render(<Screen under={under} startRally={vi.fn()} />)
+      await act(async () => {
+        tap(screen.getByText('Yes'), 590, 470)
+        tap(screen.getByText('court player'), 596, 478)
+        await sleep(20)
+      })
+      expect(under).not.toHaveBeenCalled()
+    })
+
+    it('lets a tap elsewhere through: the scorer aimed at it', async () => {
+      const startRally = vi.fn()
+      render(<Screen under={vi.fn()} startRally={startRally} />)
+      await act(async () => {
+        tap(screen.getByText('Yes'), 590, 470)
+        await sleep(200)
+        tap(screen.getByText('Start rally'), 640, 650)
+      })
+      expect(startRally).toHaveBeenCalledTimes(1)
+    })
+
+    it('a confirm by key (a click without a place): every click is swallowed, as before', async () => {
+      const startRally = vi.fn()
+      render(<Screen under={vi.fn()} startRally={startRally} />)
+      await act(async () => {
+        fireEvent.click(screen.getByText('Yes'), { detail: 0 })
+        tap(screen.getByText('Start rally'), 640, 650)
+        await sleep(20)
+      })
+      expect(startRally).not.toHaveBeenCalled()
+    })
+  })
+
   it('reports a failed write through onError (the dialog is already closed)', async () => {
     const onError = vi.fn()
     const { result } = renderHook(() => useConfirmAction(onError))

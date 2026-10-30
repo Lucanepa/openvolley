@@ -126,8 +126,42 @@ function fakeLockManager() {
           if (at >= 0) { queue.splice(at, 1); reject(new DOMException('aborted', 'AbortError')) }
         })
       })
+    },
+    held: (name) => holders.has(name),
+    rejectHolders() {
+      for (const [name, holder] of [...holders]) {
+        holders.delete(name)
+        holder.reject(new DOMException('unloading', 'AbortError'))
+      }
     }
   }
+}
+
+// WebKit (the desktop app on Linux and macOS, Safari) unloading a page: the
+// held lock's request rejects, then every new request is refused at once
+// (the document is no longer fully active). Past 200 refusals it stops
+// answering, so a screen that asks again from the rejection fails the test
+// (spun) instead of looping in microtasks for good, as the app did
+// (29.10.2026: frozen on the desktop update's reload).
+function webkitLockManager() {
+  const base = fakeLockManager()
+  const lm = {
+    refusing: false,
+    refused: 0,
+    spun: false,
+    request(name, options, callback) {
+      if (!lm.refusing) return base.request(name, options, callback)
+      lm.refused++
+      if (lm.refused > 200) { lm.spun = true; return new Promise(() => {}) }
+      return Promise.reject(new DOMException('The document is not fully active', 'InvalidStateError'))
+    },
+    held: base.held,
+    unloadPage() {
+      lm.refusing = true
+      base.rejectHolders()
+    }
+  }
+  return lm
 }
 
 // Set 1 at `home`:`away`, no rally in play, team A (home) on the left
@@ -229,6 +263,66 @@ describe('Scoreboard: one scoring tab per match', () => {
     a.unmount()
     await wait(500)
     expect(scoring(b)).toBe(true)
+  }, 60000)
+
+  // 29.10.2026: the desktop app (WebKitGTK) reloaded into an update on the
+  // scoring screen and froze for good, still showing the old screen
+  it('Web Locks: a page being unloaded never asks for the lock again', async () => {
+    setViewport(1280, 800)
+    const locks = webkitLockManager()
+    Object.defineProperty(navigator, 'locks', { value: locks, configurable: true })
+    const matchId = await setUpMatch()
+    const a = mount(matchId)
+    await waitFor(() => expect(scoring(a)).toBe(true), { timeout: 10000 })
+
+    // the reload: pagehide, then WebKit takes the lock and refuses every request
+    window.dispatchEvent(new Event('pagehide'))
+    locks.unloadPage()
+    await wait(500)
+    expect(locks.spun).toBe(false)
+    expect(locks.refused).toBe(0)
+    a.unmount()
+  }, 60000)
+
+  it('Web Locks: a refused request is asked again later, never from its rejection', async () => {
+    setViewport(1280, 800)
+    const locks = webkitLockManager()
+    locks.refusing = true
+    Object.defineProperty(navigator, 'locks', { value: locks, configurable: true })
+    const matchId = await setUpMatch()
+    const a = mount(matchId)
+    await waitFor(() => expect(blocked(a)).toBe(true), { timeout: 10000 })
+    await wait(700)
+    expect(locks.spun).toBe(false)
+    // backing off: 50, 100, 200, 400 ms ...
+    expect(locks.refused).toBeGreaterThan(1)
+    expect(locks.refused).toBeLessThan(15)
+
+    // refused no longer: the screen gets the lock and scores
+    locks.refusing = false
+    await waitFor(() => expect(scoring(a)).toBe(true), { timeout: 10000 })
+    expect(locks.held(`scoresheet-${matchId}`)).toBe(true)
+    a.unmount()
+  }, 60000)
+
+  it('Web Locks: back from the back-forward cache, the page asks for the lock again', async () => {
+    setViewport(1280, 800)
+    const locks = webkitLockManager()
+    Object.defineProperty(navigator, 'locks', { value: locks, configurable: true })
+    const matchId = await setUpMatch()
+    const a = mount(matchId)
+    await waitFor(() => expect(scoring(a)).toBe(true), { timeout: 10000 })
+
+    // hidden into the cache: the lock goes; shown again: asked for again
+    window.dispatchEvent(new Event('pagehide'))
+    locks.unloadPage()
+    await wait(200)
+    expect(locks.held(`scoresheet-${matchId}`)).toBe(false)
+    locks.refusing = false
+    window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }))
+    await waitFor(() => expect(locks.held(`scoresheet-${matchId}`)).toBe(true), { timeout: 5000 })
+    expect(scoring(a)).toBe(true)
+    a.unmount()
   }, 60000)
 
   it('without Web Locks: "Score in this tab" moves scoring to the blocked tab', async () => {

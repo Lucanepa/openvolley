@@ -39,7 +39,7 @@ import { Button, DateField, Field, Input, Select, TimeField, SegmentedControl, S
 import SavedTeamPickerModal, { confirmReplaceRoster } from './SavedTeamPickerModal'
 import SaveRosterToTeamModal from './SaveRosterToTeamModal'
 import { focusLeaves, sortedByNumber } from '../utils/rosterOrder'
-import { isShirtNumber, shirtNumberDigits } from '../domain/roster'
+import { isShirtNumber, shirtNumberDigits, recordNumbersMissingFrom } from '../domain/roster'
 import PlayerPoolModal from './PlayerPoolModal'
 import { buildPlayerPool, poolToRoster, ROSTER_MAX } from '../domain/playerPool'
 import { officialsFromSchedule } from '../domain/officials'
@@ -4696,6 +4696,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
               validationErrors.push(t('matchSetup.validation.invalidNumbers', { numbers: invalidNumbers.map(p => p.number).join(', ') }))
             }
 
+            // This editor matches players by number: a player of the match
+            // record renumbered (or removed) here would leave the record's
+            // entries without their player. A number is changed for the whole
+            // match in Corrections → Player numbers (owner 2026-10-29)
+            if (matchId) {
+              const recordEvents = await db.events.where('matchId').equals(matchId).toArray()
+              const missing = recordNumbersMissingFrom(recordEvents, 'home', homeRoster)
+              if (missing.length > 0) {
+                validationErrors.push(t('matchSetup.validation.numbersInRecord', { numbers: missing.join(', '), defaultValue: "These numbers appear in the match record and cannot be changed or removed here: {{numbers}}. Change a player's number in Corrections → Player numbers: it then changes for the whole match." }))
+              }
+            }
+
             // Show validation errors if any critical errors
             if (validationErrors.length > 0) {
               console.log('[MatchSetup] Home roster validation errors:', validationErrors)
@@ -5851,6 +5863,18 @@ export default function MatchSetup({ onStart, matchId, onReturn, onOpenOptions, 
             if (invalidNumbers.length > 0) {
               console.log('[MatchSetup] Away invalid numbers:', invalidNumbers.map(p => p.number))
               validationErrors.push(t('matchSetup.validation.invalidNumbers', { numbers: invalidNumbers.map(p => p.number).join(', ') }))
+            }
+
+            // This editor matches players by number: a player of the match
+            // record renumbered (or removed) here would leave the record's
+            // entries without their player. A number is changed for the whole
+            // match in Corrections → Player numbers (owner 2026-10-29)
+            if (matchId) {
+              const recordEvents = await db.events.where('matchId').equals(matchId).toArray()
+              const missing = recordNumbersMissingFrom(recordEvents, 'away', awayRoster)
+              if (missing.length > 0) {
+                validationErrors.push(t('matchSetup.validation.numbersInRecord', { numbers: missing.join(', '), defaultValue: "These numbers appear in the match record and cannot be changed or removed here: {{numbers}}. Change a player's number in Corrections → Player numbers: it then changes for the whole match." }))
+              }
             }
 
             // Show validation errors if any critical errors

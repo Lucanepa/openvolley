@@ -21,6 +21,24 @@ export const VALID_MATCH_COLUMNS = [
   'remarks'
 ]
 
+/**
+ * A roster in the cloud's snake_case shape (players_home / players_away),
+ * as the normal match sync writes it (CoinToss), so a restored match reads
+ * back with names (importMatchFromSupabase reads first_name).
+ * @param {Array} players local player rows
+ */
+export function toCloudPlayers(players) {
+  return (players || []).map(p => ({
+    number: p.number,
+    first_name: p.firstName ?? p.first_name ?? '',
+    last_name: p.lastName ?? p.last_name ?? '',
+    dob: p.dob || null,
+    libero: p.libero || '',
+    is_captain: !!(p.isCaptain ?? p.is_captain),
+    is_lfp: !!(p.isLfp ?? p.is_lfp)
+  }))
+}
+
 // db/017's CHECK on matches.remarks (characters, not bytes)
 export const REMARKS_MAX = 8000
 

@@ -4,9 +4,12 @@
 // "+ Add …", every row a sentence (domain/describe), every change planned
 // (domain/manualCorrections), previewed, confirmed and written in one
 // transaction (services/corrections/applyCorrectionPlan).
+// Every entry is correctable (owner 2026-10-29): what follows from it is
+// recalculated (domain/recompute) and what no longer fits is listed under
+// "Check these entries", each with its Edit, never refused.
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus, X, Pencil, Undo2, Repeat, ArrowLeftRight, RotateCw, RotateCcw, ListRestart } from 'lucide-react'
+import { Plus, X, Pencil, Undo2, Repeat, ArrowLeftRight, RotateCw, RotateCcw, ListRestart, Hash, AlertTriangle } from 'lucide-react'
 import { db } from '../../db/db'
 import { cn } from '../../ui/cn.js'
 import { Button } from '../../ui/Button.jsx'
@@ -19,16 +22,18 @@ import {
   hasTeamDesignation, teamNameWithLetter
 } from '../../domain/describe'
 import {
-  planRemoveTimeout, planRemoveSubstitution, planRemoveSanction, planRemoveGroup, planRotateTeam,
-  emptyPlan, errorText, describeRemoval
+  planRemoveTimeout, planRemoveSubstitution, planRemoveSanction, planRemoveEntry, planRotateTeam,
+  planCoinToss, planSet5CoinToss, emptyPlan, errorText, describeRemoval, entryActions
 } from '../../domain/manualCorrections'
+import { matchIssues, issueText } from '../../domain/recompute'
 import { awardsPoint } from '../../domain/sanctions'
 import { scoreFromPointEvents, getFirstServeForSet } from '../../domain/rules'
 import { applyCorrectionPlan } from '../../services/corrections/applyCorrectionPlan'
 import { useConfirmAction } from '../../hooks/useConfirmAction'
-import { switchSides, switchFirstServe, firstServerOf, teamASide } from './liveActions'
-import { SectionCard, EmptyLine, TeamDot, CourtMini, HIT } from './shared.jsx'
+import { switchSides, firstServerOf, teamASide } from './liveActions'
+import { SectionCard, EmptyLine, TeamDot, CourtMini, HIT, NewIssues } from './shared.jsx'
 import { TimeoutForm, SubstitutionForm, SanctionForm, RemarkForm, SetTimesForm, FinalScoreForm, playedSets } from './forms.jsx'
+import { LineupForm, PointForm, EntryForm, CoinTossForm, GameCaptainForm, RenumberForm, lineupSummary } from './moreForms.jsx'
 import CorrectionLog from './CorrectionLog.jsx'
 import EventLogAdvanced from './EventLogAdvanced.jsx'
 
@@ -95,21 +100,24 @@ export default function CorrectionsPanel({
     home: (homePlayers || []).filter(p => p?.libero).map(p => p.number),
     away: (awayPlayers || []).filter(p => p?.libero).map(p => p.number)
   }), [homePlayers, awayPlayers])
-  const ctx = useMemo(() => ({ t, match, homeTeam, awayTeam, matchId, mode, liveSetIndex, liberos }), [t, match, homeTeam, awayTeam, matchId, mode, liveSetIndex, liberos])
+  const rosters = useMemo(() => ({ home: homePlayers || [], away: awayPlayers || [] }), [homePlayers, awayPlayers])
+  const ctx = useMemo(() => ({ t, match, homeTeam, awayTeam, matchId, mode, liveSetIndex, liberos, players: rosters }), [t, match, homeTeam, awayTeam, matchId, mode, liveSetIndex, liberos, rosters])
   const sorted = useMemo(() => [...(events || [])].sort(compareBySeq), [events])
   const played = useMemo(() => playedSets(sets, sorted), [sets, sorted])
   const [filter, setFilter] = useState(live && liveSetIndex ? String(liveSetIndex) : 'all')
   const [form, setForm] = useState(null) // { kind, editEvent?, setRow?, line?, index? }
   const [busy, setBusy] = useState(false)
   const [signaturesCleared, setSignaturesCleared] = useState(false)
-  const players = useMemo(() => ({ home: homePlayers || [], away: awayPlayers || [] }), [homePlayers, awayPlayers])
+  const players = rosters
+  // What the record says that no longer fits (a correction never refuses it)
+  const issues = useMemo(() => matchIssues(sorted, ctx), [sorted, ctx])
 
   const inFilter = (e) => filter === 'all' || (e.setIndex ?? 1) === Number(filter)
   const rowsOf = (pred) => sorted.filter(e => pred(e) && inFilter(e)).map(e => ({ e, d: describeEvent(e, sorted, ctx) })).filter(r => r.d)
   const timeouts = rowsOf(e => e.type === 'timeout')
   const subs = rowsOf(e => e.type === 'substitution')
   const sanctions = rowsOf(e => e.type === 'sanction')
-  const liberoRows = rowsOf(e => LIBERO_TYPES.includes(e.type))
+  const liberoRows = rowsOf(e => LIBERO_TYPES.includes(e.type) && !entryActions(e, sorted).automatic)
   const remarkLines = String(match?.remarks || '').split('\n').map((line, index) => ({ line, index })).filter(r => r.line.trim())
 
   const presetSet = filter === 'all' ? null : Number(filter)
@@ -159,6 +167,7 @@ export default function CorrectionsPanel({
         <div className="space-y-1.5 text-sm">
           {lines.map((l, i) => <p key={i}>{l}</p>)}
           {(plan.notes || []).map((n, i) => <p key={`n${i}`} className="text-amber-800">{tr(t, n.key, n.text, n.params)}</p>)}
+          <NewIssues issues={plan.newIssues} t={t} />
         </div>
       ),
       confirmLabel: tr(t, 'corrections.action.remove', 'Remove'),
@@ -204,13 +213,58 @@ export default function CorrectionsPanel({
       }
       return confirmAndApply(plan, { title, lines: [d.text] })
     }
-    const plan = planRemoveGroup(sorted, ev.id, ctx)
+    const actions = entryActions(ev, sorted)
+    if (actions.remove === 'reopen') {
+      // a set end (forfeit, stopped match) is taken back with Reopen set
+      const setRow = (sets || []).find(s => s.index === (ev.setIndex ?? 1))
+      if (live && hooks.reopenSet && setRow && setRow.index !== liveSetIndex) return hooks.reopenSet(setRow)
+      toast.error(tr(t, 'corrections.error.useReopen', 'A set end is taken back with "Reopen set".'))
+      return
+    }
+    const plan = planRemoveEntry(sorted, ev.id, ctx)
     if (plan.error) { toast.error(errorText(plan, t)); return }
     const what = describeRemoval(sorted, plan, ctx)
     return confirmAndApply(plan, {
       title,
       lines: [tr(t, 'corrections.confirm.removes', 'Removes:'), ...what]
     })
+  }
+
+  /** Open the form that corrects an entry (the Edit of any row). */
+  const editEvent = (ev) => {
+    const kind = entryActions(ev, sorted).edit
+    if (!kind) return
+    if (kind === 'setTimes') {
+      const setRow = (sets || []).find(s => s.index === (ev.setIndex ?? 1))
+      if (setRow) setForm({ kind: 'setTimes', setRow })
+      return
+    }
+    if (kind === 'coinToss' || kind === 'set5CoinToss') { setForm({ kind: 'coinToss', deciding: kind === 'set5CoinToss' }); return }
+    setForm({ kind, editEvent: ev })
+  }
+
+  /** "Change who serves first" (live): the coin toss corrected, every rotation of the set recalculated. */
+  const changeFirstServe = async () => {
+    const before = firstServerOf(match, liveSetIndex)
+    const after = before === 'home' ? 'away' : 'home'
+    const aKey = match?.coinTossTeamA === 'away' ? 'away' : 'home'
+    const plan = liveSetIndex === 5 && match?.set5FirstServe
+      ? planSet5CoinToss(sorted, { firstServe: after === aKey ? 'A' : 'B' }, ctx)
+      : planCoinToss(sorted, { firstServe: after }, ctx)
+    if (plan.error) { toast.error(errorText(plan, t)); return }
+    const ok = await confirmDialog({
+      title: tr(t, 'corrections.action.changeServe', 'Change who serves first'),
+      message: (
+        <div className="space-y-1.5 text-sm">
+          <p>{tr(t, 'corrections.confirm.changeServe', 'First serve in set {{set}}: {{before}} → {{after}}.', { set: displaySetNumber(liveSetIndex, match), before: teamNameWithLetter(before, ctx), after: teamNameWithLetter(after, ctx) })}</p>
+          {(plan.notes || []).map((n, i) => <p key={i} className="text-amber-800">{tr(t, n.key, n.text, n.params)}</p>)}
+          <NewIssues issues={plan.newIssues} t={t} />
+        </div>
+      ),
+      confirmLabel: tr(t, 'corrections.action.confirm', 'Confirm'),
+      cancelLabel: tr(t, 'corrections.action.cancel', 'Cancel')
+    })
+    if (ok) await apply(plan)
   }
 
   const removeRemark = async ({ line, index }) => {
@@ -260,6 +314,12 @@ export default function CorrectionsPanel({
     if (form.kind === 'remark') return <RemarkForm {...common} match={match} editLine={form.line ?? null} editIndex={form.index ?? null} />
     if (form.kind === 'setTimes') return <SetTimesForm {...common} match={match} setRow={form.setRow} />
     if (form.kind === 'finalScore') return <FinalScoreForm {...common} setRow={form.setRow} />
+    if (form.kind === 'lineup') return <LineupForm {...common} preset={form.preset || {}} editEvent={form.editEvent || null} />
+    if (form.kind === 'point') return <PointForm {...common} editEvent={form.editEvent} />
+    if (form.kind === 'entry') return <EntryForm {...common} editEvent={form.editEvent} />
+    if (form.kind === 'coinToss') return <CoinTossForm {...common} deciding={!!form.deciding} />
+    if (form.kind === 'gameCaptain') return <GameCaptainForm {...common} preset={form.preset || {}} />
+    if (form.kind === 'renumber') return <RenumberForm {...common} preset={form.preset || {}} />
   }
 
   const filterOptions = [
@@ -300,6 +360,36 @@ export default function CorrectionsPanel({
         <Banner tone="warning">{tr(t, 'corrections.banner.signaturesCleared', 'Signatures were cleared because the sheet changed. Collect them again at the match end.')}</Banner>
       )}
 
+      {/* 0. What the record says that no longer fits */}
+      {issues.length > 0 && (
+        <SectionCard
+          title={<span className="inline-flex items-center gap-2"><AlertTriangle size={16} className="text-amber-600" aria-hidden="true" />{tr(t, 'corrections.section.issues', 'Check these entries')}</span>}
+          count={issues.length}
+          hint={tr(t, 'corrections.hint.issues', 'After a correction these entries no longer fit what comes before them. Nothing was refused: correct them, or leave them if the referee decided so.')}
+        >
+          <ul className="divide-y divide-stone-100" data-testid="corrections-issues">
+            {issues.map(i => {
+              const ev = i.eventId != null ? sorted.find(e => e.id === i.eventId) : null
+              const kind = ev ? entryActions(ev, sorted).edit : null
+              return (
+                <li key={i.sig} className="flex items-start gap-3 py-2.5">
+                  <span className="mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+                  <p className="min-w-0 flex-1 text-sm text-stone-800">{issueText(i, t)}</p>
+                  {editable && kind && (
+                    <Button variant="secondary" size="md" icon={Pencil} className={HIT} onClick={() => editEvent(ev)} aria-label={tr(t, 'corrections.action.editWhat', 'Edit {{what}}', { what: describeEvent(ev, sorted, ctx)?.title || '' })}>
+                      <span className="hidden sm:inline">{tr(t, 'corrections.action.edit', 'Edit')}</span>
+                    </Button>
+                  )}
+                  {editable && ev && entryActions(ev, sorted).remove === 'plan' && (
+                    <Button variant="danger-soft" size="md" icon={X} className={cn(HIT, 'w-9 px-0')} onClick={() => removeEvent(ev)} aria-label={tr(t, 'corrections.action.removeEntry', 'Remove {{what}}', { what: describeEvent(ev, sorted, ctx)?.title || '' })} />
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        </SectionCard>
+      )}
+
       {/* 1. Score and serve */}
       <SectionCard title={live ? tr(t, 'corrections.section.scoreServe', 'Score and serve') : tr(t, 'corrections.section.sets', 'Set results')}>
         {live && liveSet && (
@@ -336,22 +426,7 @@ export default function CorrectionsPanel({
                     {tr(t, 'corrections.action.addMissedPointFor', 'Add a missed point: {{team}}', { team: teamLabel(team, ctx).name })}
                   </Button>
                 ))}
-                <Button variant="secondary" size="lg" icon={RotateCw} className={LIVE_BTN}
-                  onClick={async () => {
-                    const before = firstServerOf(match, liveSetIndex)
-                    const after = before === 'home' ? 'away' : 'home'
-                    const ok = await confirmDialog({
-                      title: tr(t, 'corrections.action.changeServe', 'Change who serves first'),
-                      message: tr(t, 'corrections.confirm.changeServe', 'First serve in set {{set}}: {{before}} → {{after}}.', { set: displaySetNumber(liveSetIndex, match), before: teamNameWithLetter(before, ctx), after: teamNameWithLetter(after, ctx) }),
-                      confirmLabel: tr(t, 'corrections.action.confirm', 'Confirm'),
-                      cancelLabel: tr(t, 'corrections.action.cancel', 'Cancel')
-                    })
-                    if (!ok) return
-                    await runConfirm(async () => {
-                      const r = await switchFirstServe({ db, matchId, match, setIndex: liveSetIndex })
-                      await logOnly(tr(t, 'corrections.log.firstServe', 'First serve changed to {{team}}', { team: teamNameWithLetter(after, ctx) }), 'changeServe', r)
-                    })
-                  }}>
+                <Button variant="secondary" size="lg" icon={RotateCw} className={LIVE_BTN} onClick={changeFirstServe}>
                   {tr(t, 'corrections.action.changeServe', 'Change who serves first')}
                 </Button>
                 <Button variant="secondary" size="lg" icon={ArrowLeftRight} className={LIVE_BTN}
@@ -405,26 +480,90 @@ export default function CorrectionsPanel({
         )}
       </SectionCard>
 
-      {/* 2. Line-up (live) */}
-      {live && liveSet && editable && (
-        <SectionCard title={tr(t, 'corrections.section.lineup', 'Line-up')} hint={tr(t, 'corrections.hint.lineup', 'Fix the line-up before the first rally of the set; rotate a team when it stands one position off.')}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {/* 2. Coin toss and line-ups: correctable at any time, everything after them is recalculated */}
+      <SectionCard title={tr(t, 'corrections.section.coinToss', 'Coin toss')}
+        action={editable && (
+          <Button variant="secondary" size="md" icon={Pencil} className={HIT} onClick={() => setForm({ kind: 'coinToss' })}>
+            {tr(t, 'corrections.action.edit', 'Edit')}
+          </Button>
+        )}>
+        <p className="text-sm text-stone-800">
+          {tr(t, 'corrections.coinToss.summary', 'Team A: {{teamA}} · Serves first in set 1: {{serve}}', {
+            teamA: teamLabel(match?.coinTossTeamA === 'away' ? 'away' : 'home', ctx)?.name,
+            serve: teamNameWithLetter(match?.firstServe || 'home', ctx)
+          })}
+        </p>
+        {played.some(s => s.index === 5) && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <p className="min-w-0 flex-1 text-sm text-stone-800">
+              {tr(t, 'corrections.coinToss.set5', 'Deciding set: {{serve}} serves first', { serve: teamNameWithLetter(getFirstServeForSet(5, match || {}), ctx) })}
+            </p>
+            {editable && (
+              <Button variant="secondary" size="md" className={HIT} onClick={() => setForm({ kind: 'coinToss', deciding: true })}>
+                {tr(t, 'corrections.action.editSet5Toss', 'Edit deciding set')}
+              </Button>
+            )}
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard title={tr(t, 'corrections.section.lineup', 'Line-up')} hint={tr(t, 'corrections.hint.lineupAny', 'Correct a starting line-up at any time, also after rallies were played: the rotations, the serve and the libero replacements after it are recalculated.')}>
+        <div className="space-y-3">
+          {played.filter(s => filter === 'all' || s.index === Number(filter)).map(s => (
+            <div key={s.id ?? s.index} className="space-y-2">
+              {(filter === 'all' || played.length > 1) && <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">{tr(t, 'corrections.term.set', 'Set {{n}}', { n: displaySetNumber(s.index, match) })}</p>}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {['home', 'away'].map(team => {
+                  const lbl = teamLabel(team, ctx)
+                  const summary = lineupSummary(sorted, s.index, team)
+                  const isLive = live && liveSet && s.index === liveSetIndex
+                  const setStarted = sorted.some(e => e.type === 'point' && (e.setIndex ?? 1) === s.index)
+                  return (
+                    <div key={team} className="rounded-xl border border-stone-200 p-3 space-y-2">
+                      <div className="flex items-center gap-2 text-sm font-medium text-stone-800"><TeamDot color={lbl.color} />{lbl.name} ({lbl.letter})</div>
+                      <p className="text-sm tabular-nums text-stone-700">{summary || tr(t, 'corrections.empty.lineup', 'No line-up recorded.')}</p>
+                      {editable && (
+                        <div className="flex flex-wrap gap-2">
+                          <Button variant="secondary" size="md" icon={Pencil} className={HIT}
+                            onClick={() => {
+                              // before the first rally of the set being played: the scoreboard's line-up form
+                              if (isLive && !setStarted && hooks.openManualLineup) { hooks.openManualLineup(team); return }
+                              setForm({ kind: 'lineup', preset: { setIndex: s.index, team } })
+                            }}>
+                            {tr(t, 'corrections.action.fixLineup', 'Fix the line-up')}
+                          </Button>
+                          {isLive && (
+                            <>
+                              <Button variant="secondary" size="md" icon={RotateCw} className={HIT} onClick={() => rotate(team, 1)}>{tr(t, 'corrections.action.rotateForwardShort', 'Forward')}</Button>
+                              <Button variant="secondary" size="md" icon={RotateCcw} className={HIT} onClick={() => rotate(team, -1)}>{tr(t, 'corrections.action.rotateBackShort', 'Back')}</Button>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+          {played.length === 0 && <EmptyLine>{tr(t, 'corrections.empty.lineup', 'No line-up recorded.')}</EmptyLine>}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-stone-100 pt-3">
             {['home', 'away'].map(team => {
-              const lbl = teamLabel(team, ctx)
+              const n = match?.[team === 'home' ? 'homeCourtCaptain' : 'awayCourtCaptain']
               return (
-                <div key={team} className="rounded-xl border border-stone-200 p-3 space-y-2">
-                  <div className="flex items-center gap-2 text-sm font-medium text-stone-800"><TeamDot color={lbl.color} />{lbl.name} ({lbl.letter})</div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button variant="secondary" size="md" className={HIT} disabled={!hooks.openManualLineup} onClick={() => hooks.openManualLineup(team)}>{tr(t, 'corrections.action.fixLineup', 'Fix the line-up')}</Button>
-                    <Button variant="secondary" size="md" icon={RotateCw} className={HIT} onClick={() => rotate(team, 1)}>{tr(t, 'corrections.action.rotateForwardShort', 'Forward')}</Button>
-                    <Button variant="secondary" size="md" icon={RotateCcw} className={HIT} onClick={() => rotate(team, -1)}>{tr(t, 'corrections.action.rotateBackShort', 'Back')}</Button>
-                  </div>
-                </div>
+                <span key={team} className="text-sm text-stone-700">
+                  {tr(t, 'corrections.lineup.gameCaptain', 'Game captain {{team}}: {{n}}', { team: teamLabel(team, ctx)?.letter, n: n != null && n !== '' ? `#${n}` : '–' })}
+                </span>
               )
             })}
+            {editable && (
+              <Button variant="secondary" size="md" className={HIT} onClick={() => setForm({ kind: 'gameCaptain' })}>
+                {tr(t, 'corrections.action.gameCaptain', 'Change game captain')}
+              </Button>
+            )}
           </div>
-        </SectionCard>
-      )}
+        </div>
+      </SectionCard>
 
       {/* 3. Time-outs */}
       <SectionCard title={tr(t, 'corrections.section.timeouts', 'Time-outs')} count={timeouts.length}
@@ -478,21 +617,46 @@ export default function CorrectionsPanel({
         )}
       </SectionCard>
 
-      {/* 7. Libero (read-only in v1) */}
+      {/* 7. Libero */}
       <SectionCard title={tr(t, 'corrections.section.libero', 'Libero')} count={liberoRows.length}
-        hint={tr(t, 'corrections.hint.libero', 'To correct a libero replacement during the match, use Undo.')}>
+        hint={tr(t, 'corrections.hint.liberoEdit', 'Edit or remove a libero replacement: the line-ups after it are recalculated.')}>
         {liberoRows.length === 0 ? <EmptyLine>{tr(t, 'corrections.empty.libero', 'No libero replacements recorded.')}</EmptyLine> : (
           <ul className="divide-y divide-stone-100">
-            {liberoRows.map(({ e, d }) => <EventRow key={e.id} d={d} t={t} readOnly />)}
+            {liberoRows.map(({ e, d }) => (
+              <EventRow key={e.id} d={d} t={t} readOnly={!editable}
+                onEdit={entryActions(e, sorted).edit ? () => editEvent(e) : undefined}
+                onRemove={() => removeEvent(e)} />
+            ))}
           </ul>
         )}
+      </SectionCard>
+
+      {/* 7b. Player numbers */}
+      <SectionCard title={tr(t, 'corrections.section.numbers', 'Player numbers')}
+        hint={tr(t, 'corrections.hint.numbers', 'A number changed here is changed for the whole match: every entry before and after shows the new number, on the scoresheet and on the tablets.')}
+        action={editable && (
+          <Button variant="secondary" size="md" icon={Hash} className={HIT} onClick={() => setForm({ kind: 'renumber' })}>
+            {tr(t, 'corrections.action.renumber', 'Change a number')}
+          </Button>
+        )}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {['home', 'away'].map(team => (
+            <div key={team} className="min-w-0">
+              <p className="flex items-center gap-2 text-sm font-medium text-stone-800"><TeamDot color={teamLabel(team, ctx)?.color} />{teamLabel(team, ctx)?.name}</p>
+              <p className="mt-0.5 text-sm text-stone-600 tabular-nums">
+                {[...(players[team] || [])].map(p => p.number).sort((a, b) => Number(a) - Number(b)).map(n => `#${n}`).join(' ') || '–'}
+              </p>
+            </div>
+          ))}
+        </div>
       </SectionCard>
 
       {/* 8. Correction log */}
       <CorrectionLog changes={match?.manualChanges} ctx={ctx} />
 
       {/* 9. Advanced: event log */}
-      <EventLogAdvanced events={sorted} filterSet={filter} ctx={ctx} readOnly={!editable} onRemove={removeEvent} />
+      <EventLogAdvanced events={sorted} filterSet={filter} ctx={ctx} readOnly={!editable} onRemove={removeEvent} onEdit={editEvent}
+        canReopen={(ev) => live && !!hooks.reopenSet && (ev.setIndex ?? 1) !== liveSetIndex} />
     </div>
   )
 }

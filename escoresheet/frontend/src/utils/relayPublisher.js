@@ -7,6 +7,7 @@
 import { relayMatchPayload, getRelayServerStatus } from './serverDataSync'
 import { getRelayWebSocketUrl } from './backendConfig'
 import { BACKEND_REACHED_EVENT } from '../lib/apiClient'
+import { setDiagnosticsInfo } from './diagnosticsInfo'
 
 let knownScorerWsPort = null
 
@@ -88,7 +89,10 @@ export function createScorerRelay({
   events = typeof window !== 'undefined' ? window : null,
   doc = typeof document !== 'undefined' ? document : null,
   pingIntervalMs = 25000,
-  pongTimeoutMs = 10000
+  pongTimeoutMs = 10000,
+  // the support diagnostics (utils/diagnosticsInfo): state and clock offset
+  publish = (state) => setDiagnosticsInfo('relay', state),
+  now = () => Date.now()
 } = {}) {
   const users = []
   const pins = createRelayPinTracker()
@@ -101,6 +105,31 @@ export function createScorerRelay({
   let pongTimer = null
   let lastMessageAt = 0
   let listening = false
+  let pingSentAt = 0
+  // The relay's clock against this device's: the pong carries the relay's
+  // Date.now() (backend server.js, lib/realtimeHub.js), taken half way
+  // through the round trip. null until the first pong.
+  let clock = null
+
+  function stateName() {
+    if (!url) return 'detached'
+    if (!ws) return reconnectTimer ? 'reconnecting' : 'closed'
+    if (ws.readyState === WS_OPEN) return 'open'
+    if (ws.readyState === WS_CONNECTING) return 'connecting'
+    return 'closed'
+  }
+  function report() {
+    try {
+      publish?.({
+        state: stateName(),
+        url: url ? String(url).split(/[?#]/)[0] : null,
+        users: users.length,
+        reconnectAttempt: attempt,
+        lastMessageAt: lastMessageAt || null,
+        clock
+      })
+    } catch { /* diagnostics never break the relay */ }
+  }
 
   const safe = (fn) => {
     try { fn() } catch (err) { console.error('[ScorerRelay] handler failed:', err) }
@@ -137,6 +166,7 @@ export function createScorerRelay({
     const socket = ws
     if (!socket || socket.readyState !== WS_OPEN) return
     const sentAt = Date.now()
+    pingSentAt = now()
     try { socket.send(JSON.stringify({ type: 'ping', timestamp: sentAt })) } catch { /* closing */ }
     pongTimer = setTimer(() => {
       pongTimer = null
@@ -173,6 +203,7 @@ export function createScorerRelay({
       stopPing()
       pingTimer = setTimer(ping, pingIntervalMs)
       for (const user of [...users]) safe(() => user.onOpen?.(socket))
+      report()
     }
     socket.onmessage = (event) => {
       if (ws !== socket) return
@@ -180,6 +211,13 @@ export function createScorerRelay({
       let message
       try { message = JSON.parse(event.data) } catch { return }
       if (!message || typeof message !== 'object') return
+      if (message.type === 'pong' && Number.isFinite(message.timestamp) && pingSentAt) {
+        const at = now()
+        const rttMs = Math.max(0, at - pingSentAt)
+        clock = { offsetMs: Math.round(message.timestamp - (pingSentAt + rttMs / 2)), rttMs, at }
+        pingSentAt = 0
+        report()
+      }
       const targets = isRelayRequest(message) ? users.slice(-1) : [...users]
       for (const user of targets) safe(() => user.onMessage?.(message, socket))
     }
@@ -188,7 +226,9 @@ export function createScorerRelay({
       ws = null
       stopPing()
       scheduleReconnect()
+      report()
     }
+    report()
   }
 
   // Back online / tab visible again / the backend answers again after an
@@ -230,10 +270,13 @@ export function createScorerRelay({
     }
     url = null
     pins.reset()
+    report()
   }
 
   return {
     get socket() { return ws },
+    /** The relay's clock offset from the last pong: { offsetMs, rttMs, at } or null. */
+    get clock() { return clock },
     /** The relay URL the connection is attached to (null when detached). */
     get url() { return url },
     get userCount() { return users.length },

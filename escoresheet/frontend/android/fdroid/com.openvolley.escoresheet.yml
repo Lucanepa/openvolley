@@ -14,9 +14,9 @@ Binaries:
   https://github.com/Lucanepa/openvolley/releases/download/android-v%v/com.openvolley.escoresheet_%c.apk
 
 Builds:
-  - versionName: 3.0.6
-    versionCode: 30000060
-    commit: 54a814bb464ab367d7a25011fe065d471de4abd8
+  - versionName: 3.0.7
+    versionCode: 30000070
+    commit: 04c5793ab09b669c9a33b1d5939f7f57ed81f95a
     subdir: escoresheet/frontend/android/app
     sudo:
       - echo "deb https://deb.debian.org/debian forky main" > /etc/apt/sources.list.d/forky.list
@@ -41,5 +41,5 @@ AllowedAPKSigningKeys: 2c7f9db4da41f5475f36142403043e45452a3143baff764e3d511d686
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags ^android-v[\d.]+$
-CurrentVersion: 3.0.6
-CurrentVersionCode: 30000060
+CurrentVersion: 3.0.7
+CurrentVersionCode: 30000070

@@ -10,7 +10,7 @@ import { wipeMatchEvents, withoutEventHistory } from '../db/eventHistory'
 import { apiFrom, apiStorage, apiMatchRestoreByPin } from '../lib/apiClient'
 import { sanitizeSimple } from './stringUtils'
 import { getCloudApiUrl } from './backendConfig'
-import { filterMatchPayload, localFromMatchInfo, matchInfoFromLocal, remarksForServer } from '../db/matchRepository'
+import { filterMatchPayload, localFromMatchInfo, matchInfoFromLocal, remarksForServer, toCloudPlayers } from '../db/matchRepository'
 import { getSideAForSet, getLeftTeamLabelForSet } from '../domain/rules'
 import { swappedSides, liveRowTeamA } from '../domain/coinToss'
 import { setExtId, eventExtId, jobMatchKey, parseExtId } from './syncIds'
@@ -37,19 +37,6 @@ function restoreRemarks(match) {
   return typeof match?.remarks === 'string' ? { remarks: remarksForServer(match.remarks) } : {}
 }
 
-// Roster in the same snake_case shape as the normal match sync (CoinToss), so a
-// restored match reads back with names (importMatchFromSupabase reads first_name).
-function toCloudPlayers(players) {
-  return (players || []).map(p => ({
-    number: p.number,
-    first_name: p.firstName ?? p.first_name ?? '',
-    last_name: p.lastName ?? p.last_name ?? '',
-    dob: p.dob || null,
-    libero: p.libero || '',
-    is_captain: !!(p.isCaptain ?? p.is_captain),
-    is_lfp: !!(p.isLfp ?? p.is_lfp)
-  }))
-}
 
 /**
  * Check if File System Access API is available

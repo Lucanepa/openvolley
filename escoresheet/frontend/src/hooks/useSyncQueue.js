@@ -4,6 +4,7 @@ import { db } from '../db/db'
 import { apiFrom, apiMatchRestore, apiMatchClaim, apiMatchScorer, apiPostEventRevisions, AUTH_TOKEN_CHANGE_EVENT, AUTH_TOKEN_STORAGE_KEY, BACKEND_REACHED_EVENT } from '../lib/apiClient'
 import { REVISION_OPS, revisionOfJob } from '../domain/eventRevisions'
 import { emitActivity, noteSyncPass } from '../utils/activity/bus'
+import { setDiagnosticsInfo } from '../utils/diagnosticsInfo'
 import { uploadActivityBatch, activityFlushJob } from '../utils/activity/upload'
 import { getCloudApiUrl } from '../utils/backendConfig'
 import { filterMatchPayload, JSONB_COLUMNS } from '../db/matchRepository'
@@ -1875,11 +1876,20 @@ const SYNC_STATE_GROUP = { synced: 'ok', syncing: 'ok', connecting: 'ok' }
 const syncGroup = (s) => SYNC_STATE_GROUP[s] || s
 // Statuses that say the cloud answered
 const CLOUD_REACHED = new Set(['synced', 'syncing', 'auth_required'])
+// The support diagnostics (utils/diagnosticsInfo): the status, since when,
+// and what the last queue pass did
+let syncStatusSince = Date.now()
+let lastSyncPass = null
+function publishSyncDiagnostics() {
+  setDiagnosticsInfo('sync', { status: currentSyncStatus, since: syncStatusSince, lastPass: lastSyncPass })
+}
 function publishSyncStatus(status) {
   if (syncGroup(status) !== syncGroup(currentSyncStatus)) {
     emitActivity('sync.state', { from: currentSyncStatus, to: status }, { level: status === 'error' ? 'warn' : 'info' })
   }
+  if (status !== currentSyncStatus) syncStatusSince = Date.now()
   currentSyncStatus = status
+  publishSyncDiagnostics()
   for (const listener of syncStatusListeners) listener(status)
 }
 
@@ -2023,6 +2033,17 @@ export function useSyncQueue() {
       if (currentSyncStatus === 'auth_required') setSyncStatus('syncing')
       const outcome = await runQueuePass()
       noteSyncPass({ sent: outcome.sent, failed: outcome.hasFailed || outcome.hasError ? 1 : 0, pending: outcome.hasRetry ? 1 : 0 })
+      lastSyncPass = {
+        at: Date.now(),
+        processed: outcome.processed ?? null,
+        sent: outcome.sent,
+        error: !!outcome.hasError,
+        failed: !!outcome.hasFailed,
+        retry: !!outcome.hasRetry,
+        stopped: !!outcome.stopped,
+        authRequired: !!outcome.authRequired
+      }
+      publishSyncDiagnostics()
 
       if (outcome.authRequired) {
         authBlockedAt = Date.now()

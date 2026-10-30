@@ -289,6 +289,28 @@ describe('the scorer\'s one relay connection (App + Scoreboard)', () => {
     expect(sockets).toHaveLength(2)
   })
 
+  it('the pong\'s server time gives the relay\'s clock offset, for the support diagnostics', () => {
+    let t = 1_000_000
+    const states = []
+    const relay = make({ pingIntervalMs: 1000, pongTimeoutMs: 500, now: () => t, publish: (st) => states.push(st) })
+    relay.attach('wss://relay?pin=771234', {})
+    expect(states.at(-1)).toMatchObject({ state: 'connecting', url: 'wss://relay', clock: null })
+    sockets[0].open()
+    expect(states.at(-1).state).toBe('open')
+    expect(relay.clock).toBe(null)
+    vi.advanceTimersByTime(1000)
+    // the server's clock is 2.5 s ahead; the answer takes 80 ms there and back
+    t += 80
+    sockets[0].receive({ type: 'pong', timestamp: 1_000_000 + 40 + 2500 })
+    expect(relay.clock).toEqual({ offsetMs: 2500, rttMs: 80, at: 1_000_080 })
+    expect(states.at(-1).clock).toEqual(relay.clock)
+    // a pong without a time (a LAN relay) changes nothing
+    sockets[0].receive({ type: 'pong' })
+    expect(relay.clock.offsetMs).toBe(2500)
+    sockets[0].drop()
+    expect(states.at(-1).state).toBe('reconnecting')
+  })
+
   it('moves to another relay URL (LAN server port known) with fresh PINs', () => {
     const relay = make()
     relay.attach('ws://host:8080', {})

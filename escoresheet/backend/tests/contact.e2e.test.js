@@ -79,14 +79,26 @@ describe('POST /api/contact (server.js, no mail configured)', () => {
     assert.equal(r.json.code, 'files_too_large')
   })
 
-  it('a body declared over 11 MB: 413 before it is read, the connection closed', async () => {
+  it('10 MB of files and a 2.5 MB diagnostics report: read in full (503: no mail configured), not 413', async () => {
+    const file = Buffer.alloc(2 * 1024 * 1024, 0x41)
+    const report = Buffer.concat([Buffer.from('OpenVolley diagnostics\n'), Buffer.alloc(2.5 * 1024 * 1024, 0x2e)])
+    const r = await post(form([...VALID, ...Array.from({ length: 5 }, (_, i) => ['files', file, `log${i}.txt`]), ['diagnosticsFile', report, 'openvolley-diagnostics-20261029-2201.txt']]))
+    assert.deepEqual([r.status, r.json.code], [503, 'unavailable'])
+  })
+
+  it('a diagnostics report that is not text: 415 diagnostics_type', async () => {
+    const r = await post(form([...VALID, ['diagnosticsFile', PNG, 'openvolley-diagnostics-20261029-2201.txt']]))
+    assert.deepEqual([r.status, r.json.code], [415, 'diagnostics_type'])
+  })
+
+  it('a body declared over 14 MB (10 MB of files, the 3 MB report, 1 MB of fields): 413 before it is read, the connection closed', async () => {
     // node:http, not fetch: only the headers go out, the answer comes before
     // any of the body (which is then never sent)
     const r = await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('no answer to the oversized body')), 10000)
       const out = request(`${srv.base}/api/contact`, {
         method: 'POST',
-        headers: { 'content-type': 'multipart/form-data; boundary=x', 'content-length': 11 * 1024 * 1024 + 1, 'cf-connecting-ip': nextIp() }
+        headers: { 'content-type': 'multipart/form-data; boundary=x', 'content-length': 14 * 1024 * 1024 + 1, 'cf-connecting-ip': nextIp() }
       }, (res) => {
         let text = ''
         res.on('data', (d) => { text += d })
