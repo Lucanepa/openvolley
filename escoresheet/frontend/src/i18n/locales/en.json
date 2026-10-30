@@ -1361,7 +1361,7 @@
     "showNamesOnCourt": "Show names on court",
     "showNamesOnCourtInfo": "Display player last names below the court position circles",
     "autoDownloadAtSetEnd": "Auto-download data at set end",
-    "autoDownloadAtSetEndInfo": "Automatically download game data when a set ends for backup. In case of emergencies, the local data can be used to restore the game.",
+    "autoDownloadAtSetEndInfo": "When a set end cannot be sent to the cloud (offline, failed, or set aside because another device scores the match), download the match as a backup file; on a slow connection, only if it is still not sent after 30 s. “Restore match” brings the match back from that file.",
     "configureKeys": "Configure keys",
     "cloudBackup": "Cloud backup",
     "restoreFromCloud": "Restore from cloud",

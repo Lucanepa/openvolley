@@ -1376,7 +1376,7 @@
     "showNamesOnCourtInfo": "Nachnamen der Spielenden unter den Positionskreisen auf dem Feld anzeigen",
     "configureKeys": "Tasten konfigurieren",
     "autoDownloadAtSetEnd": "Daten am Satzende automatisch herunterladen",
-    "autoDownloadAtSetEndInfo": "Die Spieldaten am Ende jedes Satzes automatisch als Sicherung herunterladen. Im Notfall kann das Spiel aus diesen lokalen Daten wiederhergestellt werden.",
+    "autoDownloadAtSetEndInfo": "Wenn ein Satzende nicht in die Cloud gesendet werden kann (offline, fehlgeschlagen oder beiseitegelegt, weil ein anderes Gerät das Spiel führt), das Spiel als Sicherungsdatei herunterladen; bei langsamer Verbindung nur, wenn es nach 30 s noch nicht gesendet ist. Mit dieser Datei holt «Spiel wiederherstellen» das Spiel zurück.",
     "cloudBackup": "Cloud-Backup",
     "restoreFromCloud": "Aus der Cloud wiederherstellen",
     "restoreFromCloudInfo": "Die automatischen Cloud-Backups dieses Spiels durchsuchen und wiederherstellen",
