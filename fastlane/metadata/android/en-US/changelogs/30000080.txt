@@ -1,0 +1,6 @@
+OpenVolley 3.0.8
+- Corrections: every entry can be corrected (line-ups after rallies, coin toss, liberos, sanctions, points); rotations, serve and score are recalculated.
+- A shirt number changed during the match changes for the whole match.
+- The event log shows the newest entries first.
+- Support requests can include a diagnostics report, shown before sending.
+- Correcting the deciding set's first serve reaches the server again.
