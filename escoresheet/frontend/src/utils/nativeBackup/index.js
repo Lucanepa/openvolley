@@ -21,13 +21,20 @@ export function getNativeBackupEngine() {
   if (!isNativeBackupPlatform(detectBackupPlatform())) return Promise.resolve(null)
   if (!enginePromise) {
     enginePromise = (async () => {
-      const [store, { exportMatchData }] = await Promise.all([
+      const [store, { exportMatchData }, { db }] = await Promise.all([
         createPlatformStore(),
-        import('../backupManager')
+        import('../backupManager'),
+        import('../../db/db')
       ])
       // No new file of a copy another device went on with: its state is older
-      // than the match's (2026-10-29, match 406970)
-      engine = createNativeBackupEngine({ store, exportMatch: exportMatchData, skipMatch: isContinuedElsewhere })
+      // than the match's (2026-10-29, match 406970). The match row alone gives
+      // the PINs whose keys are derived when the match is opened.
+      engine = createNativeBackupEngine({
+        store,
+        exportMatch: exportMatchData,
+        readMatch: (matchId) => db.matches.get(matchId),
+        skipMatch: isContinuedElsewhere
+      })
       engine.subscribe(emit)
       emit()
       return engine
