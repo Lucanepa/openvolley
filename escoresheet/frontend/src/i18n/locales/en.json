@@ -1003,6 +1003,19 @@
         "notABackup": "This file is not an OpenVolley match backup. Choose another file.",
         "failed": "The match could not be restored: {{error}}"
       },
+      "unlock": {
+        "title": "Encrypted backup file",
+        "intro": "This backup file is encrypted. Type the game PIN or the referee PIN of the match to open it.",
+        "pinLabel": "Game PIN or referee PIN",
+        "open": "Open",
+        "opening": "Opening…",
+        "wrongPin": "Wrong PIN: this is neither the game PIN nor the referee PIN of this match. Try again.",
+        "newer": "This backup file was saved by a newer version of OpenVolley. Update the app, then open it again.",
+        "unsupported": "Encrypted backup files cannot be opened on this page. Open the file in the OpenVolley app or at app.openvolley.app.",
+        "locked": "This backup file is encrypted: choose it again and type the game PIN or the referee PIN.",
+        "game": "Game {{n}}",
+        "saved": "Saved {{when}}"
+      },
       "preview": {
         "set": "Set {{n}}",
         "serving": "Serving",
@@ -1283,8 +1296,8 @@
     "nativeBackupPreparing": "Preparing the backup folder…",
     "nativeBackupCopyHint": "Copy the folder off the tablet with a USB cable or the Files app.",
     "nativeBackupFailed": "The last backup could not be saved:",
-    "nativeBackupPrivacy": "The files contain player names and birth dates, officials and signatures, but no PINs. Only your user account can open them.",
-    "nativeBackupPrivacyAndroid": "The files contain player names and birth dates, officials and signatures, but no PINs. Anyone who has the tablet can read them, and they stay after the app is uninstalled: delete the folder before you give the tablet to someone else.",
+    "nativeBackupPrivacy": "The files hold player names and birth dates, officials and signatures, encrypted with the match's game PIN and referee PIN (the PINs themselves are not saved). Without a PIN only the game number, teams, date and set scores can be read; a test match has no PIN and is saved unencrypted. Only your user account can open the folder.",
+    "nativeBackupPrivacyAndroid": "The files hold player names and birth dates, officials and signatures, encrypted with the match's game PIN and referee PIN (the PINs themselves are not saved). Without a PIN only the game number, teams, date and set scores can be read; a test match has no PIN and is saved unencrypted. Anyone who has the tablet can copy the files, and they stay after the app is uninstalled. A 6-digit PIN only slows down someone set on breaking it: delete the folder before you give the tablet to someone else.",
     "nativeBackupFailingShort": "Automatic backup is failing. Open Options for details.",
     "nativeBackupFailingBadge": "Backup",
     "openBackupFolder": "Open backup folder",
@@ -2678,9 +2691,9 @@
       "q_takeBack": "How do I take scoring back?",
       "a_takeBack": "On the old device, tap “Take back scoring here”. It needs a connection. The app first shows the score on the server: compare it with the scoreboard, then tap “Yes, take back scoring here”. The other device is told and stops.",
       "q_backups": "Where are the backups?",
-      "a_backups": "The desktop and Android apps save a backup file at every point and action: Options › Backup › Open backup folder. In a browser, use “Download backup now” in the options, or the download at the set end. When you are signed in, the app also keeps cloud backups during the match.",
+      "a_backups": "The desktop and Android apps save a backup file at every point and action: Options › Backup › Open backup folder. The files are encrypted with the match's game PIN and referee PIN. In a browser, use “Download backup now” in the options, or the download at the set end. When you are signed in, the app also keeps cloud backups during the match.",
       "q_restoreFile": "How do I restore from a backup file?",
-      "a_restoreFile": "On Home: “Restore match” › “Restore from local file” › “Select backup file”. Pick the file, check the “Restore preview” and tap “Confirm restore”.",
+      "a_restoreFile": "On Home: “Restore match” › “Restore from local file” › “Select backup file”. Pick the file, check the “Restore preview” and tap “Confirm restore”. A backup file of the desktop or Android app is encrypted: type the game PIN or the referee PIN of the match when asked.",
       "q_restoreRefused": "Why can't I restore this backup?",
       "a_restoreRefused": "The match is closed on the server, so a backup of it cannot be restored. Load the official version with the game number and the game PIN instead."
     },

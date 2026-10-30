@@ -5,6 +5,8 @@
 import { describe, it, expect } from 'vitest'
 import { createNativeBackupEngine, serializeBackup } from '../engine'
 import { planMatchRotation, DEFAULT_MAX_BYTES_PER_MATCH, LATEST_FILE } from '../rotation'
+import { createBackupSealer } from '../../backupCrypto/sealer'
+import { isEncryptedBackup } from '../../backupCrypto/envelope'
 
 const T0 = Date.UTC(2026, 9, 6, 18, 0, 0)
 const SET_SCORES = [[25, 23], [23, 25], [25, 22], [22, 25], [15, 13]]
@@ -130,15 +132,23 @@ describe('a full 5-set match', () => {
     const keptBytes = eventFiles.reduce((n, [, t]) => n + t.length, 0)
     const finalSize = store.files.get(LATEST_FILE).length
 
-    // serialize cost of one backup at the end of set 5 (median of 9)
+    // serialize and encrypt cost of one backup at the end of set 5 (median
+    // of 9; the PIN keys derived once before, as in a session)
     const times = []
+    const sealTimes = []
+    const sealer = createBackupSealer()
+    await sealer.seal(1, state, '{}', 'warm-up')
     for (let i = 0; i < 9; i++) {
       const t = performance.now()
       const { build } = serializeBackup(structuredClone(state))
-      build(new Date().toISOString())
+      const text = build(new Date().toISOString())
       times.push(performance.now() - t)
+      const s = performance.now()
+      await sealer.seal(1, state, text, 'x')
+      sealTimes.push(performance.now() - s)
     }
     times.sort((a, b) => a - b)
+    sealTimes.sort((a, b) => a - b)
 
     console.info('[full match]', JSON.stringify({
       events: state.events.length,
@@ -148,8 +158,12 @@ describe('a full 5-set match', () => {
       writtenMB: +(store.written / 1048576).toFixed(1),
       keptFiles: eventFiles.length,
       keptMB: +(keptBytes / 1048576).toFixed(1),
-      serializeMsAtSet5: +times[4].toFixed(1)
+      serializeMsAtSet5: +times[4].toFixed(1),
+      encryptMsAtSet5: +sealTimes[4].toFixed(1)
     }))
+
+    // the match has a game PIN: every file is encrypted
+    expect(isEncryptedBackup(JSON.parse(store.files.get(LATEST_FILE)))).toBe(true)
 
     expect(state.events.length).toBeGreaterThan(450)
     expect(finalSize).toBeLessThan(2 * 1024 * 1024)

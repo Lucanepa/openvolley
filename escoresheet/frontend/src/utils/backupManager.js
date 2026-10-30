@@ -23,6 +23,7 @@ import { isKnownClosedOnServer, CLOSING_STATUSES } from './matchReopen'
 import { postMatchSignaturesFromServer } from '../domain/signatureEdits'
 import { signatureSourcesFromApproval } from '../domain/phoneSignature'
 import { liveClockOffset, liveClockOffsetAfter, liveStateNow } from './serverDataSync'
+import { isEncryptedBackup, BACKUP_DAMAGED } from './backupCrypto/envelope'
 
 // IndexedDB key for storing file system directory handle
 const BACKUP_DB_NAME = 'escoresheet_backup'
@@ -285,10 +286,21 @@ const localMatchKey = (m) => m?.seed_key || m?.seedKey || m?.externalId || m?.ex
 const LOCAL_PIN_FIELDS = ['gamePin', 'refereePin', 'homeTeamPin', 'awayTeamPin', 'homeTeamUploadPin', 'awayTeamUploadPin']
 const hasValue = (v) => v !== undefined && v !== null && String(v).trim() !== ''
 
+// The PIN typed to open an encrypted app backup file: the decrypted backup
+// carries it as `unlockedWith` (hooks/useBackupUnlock, backupCrypto
+// openEnvelope), never in a file. Its game PIN or referee PIN.
+function unlockedPin(jsonData) {
+  const u = jsonData?.unlockedWith
+  return u && (u.field === 'gamePin' || u.field === 'refereePin') && hasValue(u.value) ? u : null
+}
+
 /**
  * The PINs of a match restored from an app backup file, which carries none
- * (utils/nativeBackup/redact): those of the local copy it replaces, else new
- * ones (a new game PIN only for an official match). {} for other backups.
+ * (utils/nativeBackup/redact): those of the local copy it replaces, then the
+ * PIN that opened the file when it was encrypted, else new ones (a new game
+ * PIN only for an official match). {} for other backups.
+ * The replaced copy's PINs come before the typed one: they are the ones the
+ * cloud and the tablets know, and the file may be older than a PIN change.
  * @param {object} jsonData the backup
  * @param {object|null} previous the local copy being replaced
  */
@@ -299,12 +311,22 @@ export function pinsForRestore(jsonData, previous) {
   for (const f of LOCAL_PIN_FIELDS) {
     if (!hasValue(match[f]) && hasValue(previous?.[f])) pins[f] = previous[f]
   }
+  // The match's own PIN, not a new one the cloud would then be sent
+  const typed = unlockedPin(jsonData)
+  if (typed && !hasValue(match[typed.field]) && !hasValue(pins[typed.field])) pins[typed.field] = String(typed.value).trim()
   const merged = { ...match, ...pins }
   Object.assign(pins, missingConnectionPins(merged))
   if (!match.test && !hasValue(merged.gamePin) && !hasValue(match.game_pin)) {
     pins.gamePin = generateSecurePin(Object.values(pins).map(String))
   }
   return pins
+}
+
+// restoreMatchInPlace: the typed PIN (unlockedPin) where the open match lacks it
+function typedPinFor(jsonData, current) {
+  const typed = unlockedPin(jsonData)
+  if (!typed || hasValue(current?.[typed.field]) || hasValue(jsonData.match?.[typed.field])) return {}
+  return { [typed.field]: String(typed.value).trim() }
 }
 
 // Full connection_pins for the restore upsert, or nothing when the backup has no
@@ -426,6 +448,14 @@ function withoutClosedEvidence(...rows) {
 // (damaged, cut off): restoreErrorText says these in the user's words.
 export const BACKUP_FORMAT_ERROR = 'OV_BACKUP_FORMAT'
 export const BACKUP_UNREADABLE_ERROR = 'OV_BACKUP_UNREADABLE'
+// An encrypted backup handed to a restore before it was opened with a PIN
+export const BACKUP_LOCKED_ERROR = 'OV_BACKUP_LOCKED'
+
+function refuseLocked(jsonData) {
+  if (isEncryptedBackup(jsonData)) {
+    throw Object.assign(new Error('This backup file is encrypted: open it with the game PIN or the referee PIN first'), { code: BACKUP_LOCKED_ERROR })
+  }
+}
 
 /**
  * The match backup inside a whole-database export: "match stopped" and the
@@ -492,10 +522,13 @@ export function matchBackupFromMatchEndExport(jsonData) {
 /**
  * A match file in the shape the restores read (exportMatchData's): a backup
  * file as it is, a whole-database export or a Match End file converted.
- * Every picked file and both restores go through it.
+ * Every picked file and both restores go through it. An encrypted app
+ * backup comes back as it is: the scorer opens it with a PIN first
+ * (hooks/useBackupUnlock), then it is a backup file like the others.
  * @param {object} jsonData a parsed backup file
  */
 export function matchBackupFromFile(jsonData) {
+  if (isEncryptedBackup(jsonData)) return jsonData
   return matchBackupFromDatabaseExport(jsonData) || matchBackupFromMatchEndExport(jsonData) || jsonData
 }
 
@@ -530,8 +563,9 @@ export function matchEndExportData({ match, homeTeam, awayTeam, homePlayers, awa
  * @param {(key: string, opts?: object) => string} t
  */
 export function restoreErrorText(err, t) {
-  if (err?.code === BACKUP_UNREADABLE_ERROR || err?.name === 'SyntaxError') return t('settings.backup.restoreErrors.unreadable')
+  if (err?.code === BACKUP_UNREADABLE_ERROR || err?.code === BACKUP_DAMAGED || err?.name === 'SyntaxError') return t('settings.backup.restoreErrors.unreadable')
   if (err?.code === BACKUP_FORMAT_ERROR) return t('settings.backup.restoreErrors.notABackup')
+  if (err?.code === BACKUP_LOCKED_ERROR) return t('settings.backup.unlock.locked')
   return t('settings.backup.restoreErrors.failed', { error: err?.message || String(err ?? '') })
 }
 
@@ -548,6 +582,7 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
   // A whole-database export holds the match it was written for, a Match End
   // file the match in its own shape
   jsonData = matchBackupFromFile(jsonData)
+  refuseLocked(jsonData)
   // Validate schema
   if (!jsonData?.version || !jsonData.match) {
     throw Object.assign(new Error('Invalid backup file format'), { code: BACKUP_FORMAT_ERROR })
@@ -811,6 +846,7 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
  */
 export async function restoreMatchInPlace(matchId, jsonData, { checkServer = serverClosedState } = {}) {
   jsonData = matchBackupFromFile(jsonData)
+  refuseLocked(jsonData)
   if (!jsonData.version || !jsonData.match) {
     throw new Error('Invalid backup file format')
   }
@@ -844,6 +880,9 @@ export async function restoreMatchInPlace(matchId, jsonData, { checkServer = ser
     await db.matches.update(matchId, {
       ...match,
       ...(guarded ? withoutClosedEvidence(match, currentMatch) : {}),
+      // The PIN that opened an encrypted file, where the open match has none
+      // (its own PINs stay: the backup has none, the update keeps them)
+      ...typedPinFor(jsonData, currentMatch),
       id: matchId,
       // The backup's team ids are local ids of the device that wrote it
       // (another match's teams here, or none): the open match keeps its own

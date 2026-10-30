@@ -8,6 +8,7 @@ import { subscribeMatchWrites } from '../matchWriteHook'
 import { createNativeBackupEngine } from '../engine'
 import { exportMatchData } from '../../backupManager'
 import { LATEST_FILE } from '../rotation'
+import { openEnvelope } from '../../backupCrypto/envelope'
 
 const settle = () => new Promise(r => setTimeout(r, 20))
 
@@ -97,7 +98,7 @@ describe('subscribeMatchWrites on the real Dexie database', () => {
     expect(onWrite).toHaveBeenCalledTimes(2)
   })
 
-  it('with the engine: the scoreboard write sequence of a point gives one complete file without PINs', async () => {
+  it('with the engine: the scoreboard write sequence of a point gives one complete encrypted file without PINs', async () => {
     const files = new Map()
     const store = {
       info: async () => ({ folder: '/b' }),
@@ -119,7 +120,8 @@ describe('subscribeMatchWrites on the real Dexie database', () => {
 
     expect(store.write).toHaveBeenCalledTimes(1)
     const [, text] = [...files].find(([k]) => !k.endsWith(LATEST_FILE))
-    const data = JSON.parse(text)
+    expect(text).not.toMatch(/123456|654321/)
+    const { data } = await openEnvelope(JSON.parse(text), '654321')
     expect(data.events).toHaveLength(1)
     expect(data.events[0].stateSnapshot).toEqual({ homePoints: 1 })
     expect(data.sets[0].homePoints).toBe(1)

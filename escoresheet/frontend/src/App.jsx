@@ -34,6 +34,7 @@ import { BACKGROUND_HOME_MS, SERVER_CHECK_TIMEOUT_MS, checkCopiesOnServer, clean
 import SyncSignInBanner from './components/auth/SyncSignInBanner'
 import useAutoBackup from './hooks/useAutoBackup'
 import { pickNativeBackupFile } from './utils/nativeBackup'
+import { useBackupUnlock } from './hooks/useBackupUnlock'
 import { useDashboardServer } from './hooks/useDashboardServer'
 import { publishEndedLiveStates } from './utils/matchEndLiveState'
 import ballFallback from './ball_fallback.png'
@@ -225,15 +226,17 @@ export default function App() {
   // whether the cloud is waiting for a sign-in.
   const queueStats = useMemo(() => ({ authRequired: syncStatus === 'auth_required' }), [syncStatus])
   const backup = useAutoBackup(matchId)
+  const { unlock: unlockBackup, dialog: backupUnlockDialog } = useBackupUnlock()
   // Backup file for a restore: the desktop app opens its own dialog in the
   // backup folder; elsewhere the browser file picker. A whole-database export
   // (an older set-end download) and a Match End file (the ZIP's MatchData
-  // JSON) are previewed and restored as the match they hold.
+  // JSON) are previewed and restored as the match they hold. An encrypted app
+  // backup asks for the game PIN or the referee PIN first (null: cancelled).
   const pickBackupFile = useCallback(async () => {
     const native = await pickNativeBackupFile()
     const data = native === undefined ? await selectBackupFile() : native
-    return data && matchBackupFromFile(data)
-  }, [])
+    return data && unlockBackup(matchBackupFromFile(data))
+  }, [unlockBackup])
   // Options > Backup > Restore from a backup file: same preview + restore path
   // as the Restore match dialog.
   const restoreFromBackupFile = useCallback(async () => {
@@ -4407,6 +4410,10 @@ export default function App() {
                 connectedDashboards: dashboardServerData.connectedDashboards
               } : null}
             />
+
+            {/* The PIN of an encrypted backup file (pickBackupFile), over the
+                Restore dialog and the options */}
+            {backupUnlockDialog}
 
             {/* Contextual Help Panel: the page's sections, or a dialog's
                 (helpDialogScreen); Show me only for the page, a dialog covers
