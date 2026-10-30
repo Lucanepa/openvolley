@@ -28,6 +28,7 @@
  *     clubsOf(client, userId)             [{ id, name, teams }] of an account
  *     clubsOfMany(client, userIds)        Map userId -> [{ id, name }]
  *     managedClubsOf(client, userId)      [{ id, name }] the account manages (db/020)
+ *     namesOf(client, clubIds)            Map clubId -> name (the audit list, GET /api/admin/audit)
  *     ruleOn(client)                      is the rule on?
  *     verdict({ userId, access, gameN, sportType })  { ok } or { ok: false, code, home_team }
  *     todayGames({ userId })              today's home games of the account's clubs (GET /api/games/today)
@@ -196,6 +197,20 @@ export function createClubs ({ pool, audit, access = null, logger = console } = 
         if (!out.has(r.user_id)) out.set(r.user_id, [])
         out.get(r.user_id).push({ id: r.id, name: r.name })
       }
+    } catch (err) {
+      if (!MISSING.has(err?.code)) throw err
+    }
+    return out
+  }
+
+  /** clubId -> name of the clubs that still exist (the audit list names them). Empty without db/018. */
+  async function namesOf (client, clubIds) {
+    const ids = [...new Set((clubIds || []).filter(isUuid))]
+    const out = new Map()
+    if (!ids.length) return out
+    try {
+      const { rows } = await (client || pool).query('SELECT id, name FROM public.clubs WHERE id = ANY($1::uuid[])', [ids])
+      for (const r of rows) out.set(r.id, r.name)
     } catch (err) {
       if (!MISSING.has(err?.code)) throw err
     }
@@ -609,6 +624,6 @@ export function createClubs ({ pool, audit, access = null, logger = console } = 
   return {
     list, create, update, remove, vmTeams, setAccountClubs, setRule, setManagers,
     clubDetail, setContact, members, removeMember, isManager,
-    clubsOf, clubsOfMany, managedClubsOf, ruleOn, verdict, todayGames
+    clubsOf, clubsOfMany, managedClubsOf, namesOf, ruleOn, verdict, todayGames
   }
 }

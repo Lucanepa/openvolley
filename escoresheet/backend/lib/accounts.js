@@ -912,6 +912,15 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
           LIMIT ${lim + 1}`, values)
       const more = rows.length > lim
       const page = rows.slice(0, lim)
+      // db/018: the club an entry is about (details.club_id; an invite code's
+      // club joined, details.joined) by its name today; null once deleted
+      // (club.delete keeps the name in its details)
+      const clubIdOf = (r) => {
+        const id = r.details?.club_id ?? r.details?.joined
+        return typeof id === 'string' ? id.toLowerCase() : null
+      }
+      const c = clubs()
+      const clubNames = c ? await c.namesOf(pool, page.map(clubIdOf)) : new Map()
       return ok({
         entries: page.map((r) => ({
           id: Number(r.id),
@@ -923,6 +932,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
           target_email: r.target_email ?? null,
           match_id: r.match_id ?? null,
           details: r.details ?? {},
+          club_name: clubNames.get(clubIdOf(r)) ?? null,
           app: r.app === 'beach' ? 'beach' : 'indoor'
         })),
         next_before: more && page.length ? Number(page[page.length - 1].id) : null

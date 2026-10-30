@@ -3036,6 +3036,11 @@
     "audit": {
       "loadMore": "Load more",
       "empty": "No entries yet.",
+      "recipients_one": "{{count}} recipient",
+      "recipients_other": "{{count}} recipients",
+      "corrected": "corrected",
+      "rows_one": "{{count}} entry",
+      "rows_other": "{{count}} entries",
       "actions": {
         "account_roles": "Roles changed",
         "invite_create": "Invite code created",
@@ -3068,7 +3073,18 @@
         "match_approve": "Result approved with account",
         "match_approval_revoke": "Account approval undone",
         "match_approval_void": "Account approvals voided",
-        "scoresheet_read": "Scoresheet opened"
+        "scoresheet_read": "Scoresheet opened",
+        "activity_delete": "Activity entries deleted",
+        "club_create": "Club created",
+        "club_update": "Club details changed",
+        "club_delete": "Club deleted",
+        "account_clubs": "Clubs changed",
+        "club_rule_set": "Club rule switched",
+        "club_managers": "Club managers changed",
+        "club_contact": "Club contact email changed",
+        "club_member_remove": "Removed from club",
+        "match_final_mail": "Final scoresheet emailed",
+        "settings_final_email": "Final scoresheet email switched"
       }
     },
     "approvals": {

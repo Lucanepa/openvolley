@@ -8,13 +8,33 @@ import { RowList, Row, DateRail, EmptyInset, SkeletonRows, Notice, Button, dayLa
 const PAGE = 50
 
 const APPROVAL_ACTIONS = new Set(['match.approve', 'match.approval_revoke', 'match.approval_void'])
+// The entries about one club (db/018, db/020): the club's name leads their line
+const CLUB_ACTIONS = new Set(['club.create', 'club.update', 'club.delete', 'club.managers', 'club.contact', 'club.member_remove'])
+
+/** "club_rule.set" -> "Club rule set": an action this build has no label for yet reads as words, never as a code. */
+export function readableAction(action) {
+  const words = String(action ?? '').replace(/[._]+/g, ' ').trim()
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : ''
+}
+
+/**
+ * An audit entry's title: manage.audit.actions.<the action, "." as "_">
+ * (club.managers -> club_managers), else readableAction().
+ */
+export function auditActionLabel(action, t = null) {
+  const fallback = readableAction(action)
+  return t ? t(`manage.audit.actions.${String(action ?? '').replace(/\./g, '_')}`, fallback) : fallback
+}
 
 /**
  * A short, human line for an audit entry's details (never the whole JSON).
  * The second argument is `{ roleLabel, t }` (or `t` alone):
  * - `roleLabel` names a role (OpenBeach's console: "Scorer" for beach:scorer,
  *   as everywhere else there); without it roles show as stored;
- * - `t` words the approval entries ("1st referee · ID 6F1C2A9B").
+ * - `t` words the approval entries ("1st referee · ID 6F1C2A9B") and the
+ *   switches, counts and clubs of the others.
+ * `entry.club_name` is the club of details.club_id as the backend lists it
+ * (GET /api/admin/audit): a club entry, an invite code of a club.
  */
 export function auditDetailsLine(entry, opts = {}) {
   const { roleLabel, t = null } = typeof opts === 'function' ? { t: opts } : (opts || {})
@@ -35,6 +55,41 @@ export function auditDetailsLine(entry, opts = {}) {
     if (d.disabled) parts.push(tr('manage.approvals.blocked', 'blocked'))
     return parts.join(' · ')
   }
+  const club = entry?.club_name ? String(entry.club_name) : null
+  if (CLUB_ACTIONS.has(entry?.action)) {
+    // club.delete (and a renamed club.update) carries the name itself
+    const name = club || (d.name ? String(d.name) : null)
+    if (name) parts.push(name)
+    if (Array.isArray(d.after)) parts.push(tr('manage.clubs.managersCount', `${d.after.length} managers`, { count: d.after.length }))
+    if (Number.isFinite(d.scorers)) parts.push(tr('manage.clubs.scorers', `Scorers: ${d.scorers}`, { count: d.scorers }))
+    return parts.join(' · ')
+  }
+  if (entry?.action === 'account.clubs') {
+    // an admin's whole list (names), or the club of an invite code (club_name)
+    if (Array.isArray(d.names)) parts.push(d.names.length ? d.names.map(String).join(', ') : tr('manage.invites.noClub', 'No club'))
+    else if (club) parts.push(`+ ${club}`)
+    return parts.join(' · ')
+  }
+  if (entry?.action === 'club_rule.set' && typeof d.enabled === 'boolean') {
+    return d.enabled ? tr('manage.clubs.ruleIsOn', 'The club rule is on') : tr('manage.clubs.ruleIsOff', 'The club rule is off')
+  }
+  if (entry?.action === 'settings.final_email' && typeof d.send_final_email === 'boolean') {
+    return d.send_final_email
+      ? tr('manage.settings.finalEmailIsOn', 'Final scoresheets are now sent by email')
+      : tr('manage.settings.finalEmailIsOff', 'Final scoresheets are no longer sent')
+  }
+  if (entry?.action === 'match.final_mail') {
+    if (d.game_n) parts.push(`#${d.game_n}`)
+    if (Number.isFinite(d.recipients)) parts.push(tr('manage.audit.recipients', `${d.recipients} recipients`, { count: d.recipients }))
+    if (d.corrected) parts.push(tr('manage.audit.corrected', 'corrected'))
+    return parts.join(' · ')
+  }
+  if (entry?.action === 'activity.delete') {
+    // the match id or the account (the entry's target) whose rows went
+    if (d.match) parts.push(String(d.match))
+    if (Number.isFinite(d.rows)) parts.push(tr('manage.audit.rows', `${d.rows} entries`, { count: d.rows }))
+    return parts.join(' · ')
+  }
   if (Array.isArray(d.added) && d.added.length) parts.push(`+ ${d.added.map(role).join(', ')}`)
   if (Array.isArray(d.removed) && d.removed.length) parts.push(`− ${d.removed.map(role).join(', ')}`)
   if (d.game_n) parts.push(`#${d.game_n}`)
@@ -48,6 +103,8 @@ export function auditDetailsLine(entry, opts = {}) {
   if (d.via) parts.push(String(d.via))
   if (d.email) parts.push(String(d.email))
   if (d.reason) parts.push(`“${String(d.reason).slice(0, 120)}”`)
+  // invite.create / invite.redeem of a club's code
+  if (club) parts.push(club)
   return parts.join(' · ')
 }
 
@@ -103,7 +160,7 @@ export default function AuditPanel({ app }) {
                 <Row
                   key={e.id}
                   leading={<DateRail weekday={weekdayLabel(e.at, lang)} date={dayLabel(e.at)} time={timeLabel(e.at)} />}
-                  title={t(`manage.audit.actions.${String(e.action).replace(/\./g, '_')}`, e.action)}
+                  title={auditActionLabel(e.action, t)}
                   meta={<>
                     {actor && <span>{actor}</span>}
                     {target && target !== actor && <span>→ {target}</span>}

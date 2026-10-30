@@ -324,7 +324,13 @@ sets the closing status last, in one transaction.
 **Audit log** (`public.audit_log`, read through `GET /api/admin/audit`):
 `account.roles`, `invite.create|revoke|redeem`, `match.claim_game`,
 `match.claim_pin`, `match.game_taken` (once per account, game and season a
-day), `match.close`, `match.reopen`, `match.editor_add`, `match.release_game`.
+day), `match.close`, `match.reopen`, `match.editor_add`, `match.release_game`,
+and the later ones; the full list is `AUDIT_ACTIONS` in `lib/accounts.js`
+(the manager's Audit log has a name for each, checked by
+`frontend/src/components/__tests__/AuditPanel.test.jsx`). Each listed entry
+also carries `club_name`: today's name of the club in `details.club_id` (an
+invite code's club joined: `details.joined`), `null` once the club is deleted
+(`club.delete` keeps the name in its details).
 
 **Invite codes** are 12 characters of the Crockford alphabet (60 bits), shown
 once as `XXXX-XXXX-XXXX`; only `sha256('ov-invite:' + code)` and the last 4
