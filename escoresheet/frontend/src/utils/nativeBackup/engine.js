@@ -21,7 +21,10 @@
  *  - The file is encrypted with the match's game PIN and referee PIN
  *    (utils/backupCrypto: either one opens it; the key of each PIN is derived
  *    once per match and session, in a worker); a match with neither (test
- *    matches) is written plain. Coalescing compares the plain state.
+ *    matches) is written plain. Coalescing compares the plain state. The
+ *    first notify of a match derives its PIN keys at once (warm, from
+ *    readMatch), so its first file, maybe the last before the app quits,
+ *    does not wait for them.
  *  - Rotation of older backups runs after the first file of the session is
  *    written, in small chunks on idle.
  *
@@ -95,7 +98,9 @@ export function createNativeBackupEngine({
   idleKeep = DEFAULT_IDLE_KEEP,
   idleAfterHours = DEFAULT_IDLE_AFTER_HOURS,
   skipMatch = () => false,
-  // { seal(matchId, data, plainText, lastUpdated) -> { text, encrypted } } (backupCrypto)
+  // (matchId) -> the match row with its PINs, read cheaply (warm); none: no warm
+  readMatch = null,
+  // { seal(matchId, data, plainText, lastUpdated) -> { text, encrypted }, warm(matchId, match) } (backupCrypto)
   sealer = createBackupSealer(),
   log = console
 }) {
@@ -106,6 +111,7 @@ export function createNativeBackupEngine({
   const known = new Map() // matchDir -> [{ name, size }] event files on disk
   const writtenDirs = new Set() // folders this session writes (rotated after each write)
   const plainNoted = new Set() // matches whose files are plain (no PIN), logged once
+  const warmed = new Map() // matchId -> warm(): its PIN keys derived ahead of its first file
   const listeners = new Set()
   let running = null
   let timer = null
@@ -208,6 +214,23 @@ export function createNativeBackupEngine({
     })()
   }
 
+  // The match's PIN keys, derived now (in the KDF worker), not on its first
+  // file's path. Writes nothing; a copy skipMatch names gets no keys.
+  function warm(matchId) {
+    if (!readMatch || typeof sealer.warm !== 'function') return Promise.resolve(false)
+    if (!warmed.has(matchId)) {
+      warmed.set(matchId, (async () => {
+        const match = await readMatch(matchId)
+        if (!match || skipMatch(match)) return false
+        return sealer.warm(matchId, match)
+      })().catch((e) => {
+        log.warn?.('[NativeBackup] could not prepare the encryption:', e?.message || e)
+        return false
+      }))
+    }
+    return warmed.get(matchId)
+  }
+
   function nextStamp() {
     // strictly increasing, so two backups in the same millisecond never collide
     const t = Math.max(now().getTime(), lastStamp + 1)
@@ -303,6 +326,7 @@ export function createNativeBackupEngine({
     /** A write of this match was committed: back it up (in the background). */
     notify(matchId, { force = false } = {}) {
       if (matchId == null) return
+      warm(matchId)
       busy()
       if (batchStart == null) batchStart = clock()
       const prev = pending.get(matchId)
@@ -341,6 +365,8 @@ export function createNativeBackupEngine({
       }
       await written
     },
+    /** Derives the match's PIN keys ahead of its first file (notify does, once per match). Resolves to true when it did. */
+    warm,
     getStatus: () => status,
     subscribe(listener) {
       listeners.add(listener)

@@ -401,10 +401,12 @@ the desktop app, **encrypted** with the match's game PIN and referee PIN, see
 - Cost: one file per event, each the whole match (a 5-set match ends near
   0.9 MB encrypted). The event file crosses the WebView bridge once;
   `latest.json` is a native `Filesystem.copy`. The engine waits for a 150 ms
-  quiet window and an idle moment before it reads IndexedDB. The first file
-  of a match in a session derives the PIN keys (Argon2id, about 0.5 s per PIN
-  on a mid-range tablet) in a Web Worker, so scoring does not stall; the
-  later files only encrypt (AES-GCM in WebCrypto). Each match keeps its newest files
+  quiet window and an idle moment before it reads IndexedDB. The PIN keys
+  of a match (Argon2id, about 0.5 s per PIN on a mid-range tablet) are
+  derived once per session in a Web Worker when the engine first sees the
+  match (it is opened), so scoring does not stall and even the first file
+  only encrypts (AES-GCM in WebCrypto); a worker that gives no answer in
+  10 s is retired and the keys are derived on the main thread. Each match keeps its newest files
   within 64 MB, a match idle for 12 hours keeps its newest 10, files older
   than 30 days go, and the newest file of every folder is always kept (also
   when `latest.json` belongs to an earlier install).

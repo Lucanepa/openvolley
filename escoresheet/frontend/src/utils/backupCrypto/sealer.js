@@ -8,7 +8,8 @@
  * When a PIN changes (or one is added), the match gets a new data key,
  * wrapped by the PIN keys it already has plus the new one's: only the new
  * PIN is derived, and the files written from then on do not open with the
- * old PIN.
+ * old PIN. warm() derives them when the match is opened, so the first file
+ * (maybe the last one before the app quits) only encrypts.
  */
 
 import { derivePinKey } from './kdf'
@@ -67,6 +68,24 @@ export function createBackupSealer({ derive = derivePinKey, params } = {}) {
   }
 
   return {
+    /**
+     * Derives the keys of a match's PINs ahead of its first file, writing
+     * nothing (nativeBackup engine: when it first sees the match). Resolves
+     * to true when the next file of these PINs only encrypts; never throws
+     * (a failed derivation is tried again by the next file).
+     * @param {string|number} scope the match (local id)
+     * @param {object} match the match row WITH its PINs
+     */
+    async warm(scope, match) {
+      const pins = backupPins(match)
+      if (!pins.length) return false
+      try {
+        await keyring(scope, pins)
+        return true
+      } catch {
+        return false
+      }
+    },
     /**
      * The text of one backup file: the envelope, or the plain JSON for a match
      * with no game PIN and no referee PIN (test matches, some unofficial ones:

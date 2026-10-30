@@ -528,8 +528,10 @@ ones) is written plain as before, since nothing could open it
 - One random AES-256-GCM data key per match and app session encrypts the
   backup JSON, with a fresh IV per file. Each slot holds that key wrapped by
   a key derived from one PIN (Argon2id, `hash-wasm`, in a worker; each PIN
-  is derived once per match and session, never per file), so **either PIN
-  alone opens the file**. When a PIN changes, the files from then on get a
+  is derived once per match and session, never per file, when the match is
+  opened, so the first file, maybe the last before quitting, only encrypts;
+  a worker that gives no answer in 10 s is retired and the keys are derived
+  on the main thread), so **either PIN alone opens the file**. When a PIN changes, the files from then on get a
   new data key.
 - **Readable without a PIN**: game number, team names, scheduled date, set
   scores and the time of the file (public on the livescore anyway). They are

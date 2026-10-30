@@ -434,6 +434,50 @@ describe('native backup engine', () => {
       expect(eventFiles(store)).toHaveLength(2)
     })
 
+    // The first seal of a match derives both PIN keys (about 0.5-0.9 s each
+    // on a tablet): done when the engine first sees the match, so its first
+    // file, maybe the last one before the app quits, only encrypts
+    it('warms the PIN keys when it first sees the match, writing nothing: the first file does not derive them', async () => {
+      const derive = vi.fn(derivePinKey)
+      let match
+      const readMatch = vi.fn(async () => structuredClone(match.state.match))
+      const { engine, store, m } = setup({ engine: { sealer: createBackupSealer({ derive }), readMatch } })
+      match = m
+      withPins(m)
+      expect(await engine.warm(1)).toBe(true)
+      expect(derive).toHaveBeenCalledTimes(2)
+      expect(store.write).not.toHaveBeenCalled()
+      expect(m.exportMatch).not.toHaveBeenCalled()
+      derive.mockClear()
+      m.point('home')
+      engine.notify(1)
+      await engine.flush()
+      expect(derive).not.toHaveBeenCalled()
+      expect(isEncryptedBackup(JSON.parse(store.dirs.get('game12-seed1').get(LATEST_FILE)))).toBe(true)
+      expect(readMatch).toHaveBeenCalledTimes(1) // once per match
+    })
+
+    it('the first notify of a match warms its keys, once; a copy skipMatch names gets none', async () => {
+      const derive = vi.fn(derivePinKey)
+      let match
+      const readMatch = vi.fn(async (id) => (id === 1 ? structuredClone(match.state.match) : { ...match.state.match, id: 2, cloudBlock: { code: 'OV_MATCH_CLOSED' } }))
+      const skipMatch = (row) => row.cloudBlock?.code === 'OV_MATCH_CLOSED'
+      const { engine, m, tick } = setup({ engine: { sealer: createBackupSealer({ derive }), readMatch, skipMatch } })
+      match = m
+      withPins(m)
+      for (let i = 0; i < 3; i++) {
+        m.point('home')
+        engine.notify(1)
+        await engine.flush()
+        tick()
+      }
+      await engine.warm(1)
+      expect(readMatch).toHaveBeenCalledTimes(1)
+      expect(derive).toHaveBeenCalledTimes(2) // the warm and the files share the keys
+      expect(await engine.warm(2)).toBe(false)
+      expect(derive).toHaveBeenCalledTimes(2)
+    })
+
     it('a file that cannot be encrypted is not written in the clear: a status error, retried at the next event', async () => {
       const sealer = { seal: vi.fn().mockRejectedValueOnce(new Error('KDF out of memory')).mockImplementation(createBackupSealer().seal) }
       const { engine, store, m } = setup({ engine: { sealer } })

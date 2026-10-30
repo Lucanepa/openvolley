@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { argon2id } from 'hash-wasm'
 import { argon2idOptions } from '../argon2'
 import { BACKUP_DAMAGED, BACKUP_NEWER, BACKUP_WRONG_PIN, fromBase64, isEncryptedBackup, openEnvelope, readableHeader, toBase64 } from '../envelope'
@@ -184,6 +184,33 @@ describe('the session sealer', () => {
     expect(encrypted).toBe(true)
   })
 
+  // The match opened (nativeBackup engine warm): its first file, maybe the
+  // last before the app quits, does not wait for Argon2id
+  it('warm derives the PIN keys ahead and writes nothing: the first file only encrypts', async () => {
+    const derive = countingDerive()
+    const sealer = createBackupSealer({ derive })
+    const data = backup()
+    expect(await sealer.warm(1, data.match)).toBe(true)
+    expect(derive).toHaveBeenCalledTimes(2)
+    derive.mockClear()
+    const { text, encrypted } = await sealer.seal(1, data, plainOf(data), '2026-10-29T18:00:00.000Z')
+    expect(encrypted).toBe(true)
+    expect(derive).not.toHaveBeenCalled()
+    await expect(openEnvelope(JSON.parse(text), '654321')).resolves.toBeTruthy()
+    // a match with no PIN: nothing to derive
+    expect(await sealer.warm(2, { test: true })).toBe(false)
+    expect(derive).not.toHaveBeenCalled()
+  })
+
+  it('a failed warm is not an error: the first file derives the PIN keys again', async () => {
+    const derive = vi.fn().mockRejectedValueOnce(new Error('out of memory')).mockImplementation(derivePinKey)
+    const sealer = createBackupSealer({ derive })
+    const data = backup({ refereePin: null })
+    expect(await sealer.warm(1, data.match)).toBe(false)
+    await expect(sealer.seal(1, data, plainOf(data), 'x')).resolves.toMatchObject({ encrypted: true })
+    expect(derive).toHaveBeenCalledTimes(2)
+  })
+
   it('backupPins reads the local and the cloud spellings', () => {
     expect(backupPins({ game_pin: 123456, connection_pins: { referee: '222222' } })).toEqual([{ pin: 'game', value: '123456' }, { pin: 'referee', value: '222222' }])
     expect(backupPins({ test: true })).toEqual([])
@@ -196,6 +223,65 @@ describe('the KDF', () => {
     const key = await derivePinKey('123456', salt)
     expect(key).toHaveLength(32)
     expect([...key]).toEqual([...await argon2id(argon2idOptions('123456', salt, KDF_PARAMS))])
+  })
+
+  // A worker that never answers (a WebView that froze it, a script that
+  // never loaded) must not hold a backup back for good
+  describe('a KDF worker that does not answer', () => {
+    let made
+    let posted
+    let terminated
+    async function freshKdf() {
+      made = 0
+      posted = []
+      terminated = vi.fn()
+      vi.stubGlobal('Worker', class {
+        constructor() { made++ }
+        postMessage(msg) { posted.push(msg) }
+        terminate() { terminated() }
+      })
+      vi.resetModules()
+      vi.useFakeTimers()
+      return import('../kdf') // its own worker state
+    }
+    afterEach(() => {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    })
+
+    it('after 10 s the job is derived on this thread, and so is the rest of the session', async () => {
+      const kdf = await freshKdf()
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const salt = new Uint8Array(16).fill(3)
+      const key = kdf.derivePinKey('123456', salt)
+      await vi.advanceTimersByTimeAsync(kdf.WORKER_TIMEOUT_MS - 100)
+      expect(posted).toHaveLength(1)
+      expect(terminated).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(100)
+      expect(terminated).toHaveBeenCalledTimes(1) // retired
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('did not answer'))
+      vi.useRealTimers()
+      expect([...await key]).toEqual([...await argon2id(argon2idOptions('123456', salt, KDF_PARAMS))])
+      await kdf.derivePinKey('654321', salt)
+      expect(made).toBe(1) // no new worker
+      expect(posted).toHaveLength(1)
+      warn.mockRestore()
+    })
+
+    it('a costlier slot (a restore) gets proportionally longer before it moves to this thread', async () => {
+      const kdf = await freshKdf()
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const salt = new Uint8Array(16).fill(4)
+      const params = { ...KDF_PARAMS, iterations: 6 } // twice the cost
+      const key = kdf.derivePinKey('123456', salt, params)
+      await vi.advanceTimersByTimeAsync(kdf.WORKER_TIMEOUT_MS)
+      expect(terminated).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(kdf.WORKER_TIMEOUT_MS)
+      expect(terminated).toHaveBeenCalledTimes(1)
+      vi.useRealTimers()
+      expect([...await key]).toEqual([...await argon2id(argon2idOptions('123456', salt, params))])
+      warn.mockRestore()
+    })
   })
 })
 
