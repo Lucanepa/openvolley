@@ -31,11 +31,23 @@
 //!   a page that cannot (crashed into its error screen, a hung web process,
 //!   still loading) gets a native "Quit OpenVolley?" from the app instead,
 //!   so the app can always be quit, and never without a confirmation.
-//! - **The OS ends the session**: never blocked. Windows ends the event loop
-//!   on WM_ENDSESSION (tao), which is RunEvent::Exit, not ExitRequested.
-//!   Linux: SIGTERM / SIGINT / SIGHUP quit at once (`os_exit`, which closes
-//!   the scoresheet windows too, never asking), with a watchdog in case the
-//!   event loop no longer answers.
+//! - **The OS ends the session**: never blocked, never asked. Linux: SIGTERM /
+//!   SIGINT / SIGHUP quit (`os_exit`, which closes the scoresheet windows
+//!   too), with a watchdog in case the event loop no longer answers. First
+//!   the scoretable page writes its last files (`flush-requested`: the
+//!   activity log and the match's last backup file, as a confirmed quit
+//!   does) and says so (`app_flush_done`); the exit waits for that at most
+//!   [`FLUSH_TIMEOUT`], and not at all without a page that answers (loading,
+//!   crashed, its handler gone). The installer's `--quit` goes the same way.
+//!   RunEvent::ExitRequested needs no wait of its own: an exit nobody
+//!   confirmed becomes the quit question, one after `os_exit` has waited
+//!   already, and one without the scoretable window has no page left to
+//!   write anything. RunEvent::Exit cannot wait: Windows ends the event loop
+//!   on WM_ENDSESSION (tao), and the macOS Dock's Quit, a logout and a
+//!   shutdown end it the same way; the loop is ending on the thread that
+//!   carries the page's answers, and the OS ends the process soon after.
+//!   There the last backup file is the one the page wrote shortly after its
+//!   last change (utils/nativeBackup: the engine's quiet window).
 //! - **An update is ready** (updater.rs): the tray menu gets "Restart to
 //!   update to {v}" while the update gate is open (no live match, no tablets,
 //!   no tablet network), and the status line says "Update ready". A confirmed
@@ -46,10 +58,9 @@
 //!   window back (RunEvent::Reopen, main.rs). The app menu's Quit (Cmd+Q) is
 //!   this app's own item ([`app_menu`]): it asks like "Quit OpenVolley…"
 //!   (AppKit's standard Quit would end the app at once, unasked). The Dock
-//!   menu's Quit, a logout and a shutdown end it like the OS ending the
-//!   session on the other systems: never blocked (tao has no
-//!   applicationShouldTerminate to answer), RunEvent::Exit still stops the
-//!   tablets' network.
+//!   menu's Quit, a logout and a shutdown end it like WM_ENDSESSION on
+//!   Windows: never blocked (tao has no applicationShouldTerminate to
+//!   answer), RunEvent::Exit still stops the tablets' network.
 //! - **Second launch**: tauri-plugin-single-instance hands it to this one,
 //!   which shows its window (main.rs). `--quit` (the Windows installer and
 //!   uninstaller, windows/installer-hooks.nsh, after they asked) quits it cleanly.
@@ -57,7 +68,7 @@
 //! The decisions are in [`ExitGate`] (plain data, unit-tested); the rest
 //! applies them to the windows.
 
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -80,6 +91,11 @@ pub const QUIT_ARG: &str = "--quit";
 
 /// How long the page has to take "quit-requested" before the app asks itself.
 pub const ACK_TIMEOUT: Duration = Duration::from_millis(2500);
+
+/// How long the OS ending the app waits for the page's last files
+/// ("flush-requested", `app_flush_done`). The page's own waits are shorter
+/// (appLifecycle.js: 1.5 s for the backup, 0.8 s for the activity log).
+pub const FLUSH_TIMEOUT: Duration = Duration::from_millis(2000);
 
 /// Page handler tokens are short (appLifecycle.js); anything else is cut.
 const MAX_TOKEN: usize = 64;
@@ -120,6 +136,18 @@ pub enum ExitDecision {
     Prevent,
 }
 
+/// What the OS ending the app does first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OsExit {
+    /// The page writes its last files ("flush-requested"); exit once it
+    /// says so (`app_flush_done`), at the latest after FLUSH_TIMEOUT.
+    FlushFirst,
+    /// No page that could answer: exit now.
+    Exit,
+    /// Already waiting for the page: that wait ends in the exit.
+    Waiting,
+}
+
 /// The close / quit rules.
 #[derive(Debug, Default)]
 pub struct ExitGate {
@@ -143,6 +171,9 @@ pub struct ExitGate {
     quit_seq: u64,
     /// The native "Quit OpenVolley?" is on screen.
     native_open: bool,
+    /// The OS ends the app and waits for the page's last files
+    /// (`app_flush_done`).
+    flush_waiting: bool,
 }
 
 impl ExitGate {
@@ -180,6 +211,7 @@ impl ExitGate {
         let token: String = token.chars().take(MAX_TOKEN).collect();
         if self.page.as_deref() == Some(token.as_str()) {
             self.page = None;
+            self.flush_waiting = false;
         }
         if !self.detached.contains(&token) {
             if self.detached.len() >= MAX_DETACHED {
@@ -194,6 +226,7 @@ impl ExitGate {
     pub fn page_unloaded(&mut self) {
         self.page = None;
         self.close_unacked = false;
+        self.flush_waiting = false;
     }
 
     /// Hide or minimise: what "out of the way, still running" is here.
@@ -282,9 +315,29 @@ impl ExitGate {
     }
 
     /// The OS ends the app (logout / shutdown / SIGTERM), or the installer
-    /// asked (`--quit`, after its own question).
-    pub fn os_exit(&mut self) {
+    /// asked (`--quit`, after its own question). The page writes its last
+    /// files first when one answers; a second request while it does only
+    /// waits for the first one's exit.
+    pub fn os_exit(&mut self) -> OsExit {
         self.os_exit = true;
+        if self.flush_waiting {
+            return OsExit::Waiting;
+        }
+        if !self.page_ready() {
+            return OsExit::Exit;
+        }
+        self.flush_waiting = true;
+        OsExit::FlushFirst
+    }
+
+    /// `app_flush_done` (or the wait is over): the exit no longer waits.
+    pub fn flush_done(&mut self) {
+        self.flush_waiting = false;
+    }
+
+    /// The exit is waiting for the page's last files.
+    pub fn flush_waiting(&self) -> bool {
+        self.flush_waiting
     }
 
     /// RunEvent::ExitRequested. Prevented only while the scoretable window
@@ -528,6 +581,9 @@ pub enum MatchLive {
 /// scoretable.
 pub struct Lifecycle {
     gate: Mutex<ExitGate>,
+    /// The gate's flush wait changed (`app_flush_done`, the page reloading
+    /// or its handler gone): wakes the OS exit waiting for it.
+    flushed: Condvar,
     labels: Mutex<TrayLabels>,
     live: Mutex<MatchLive>,
     tablets: Mutex<usize>,
@@ -541,6 +597,7 @@ impl Lifecycle {
     pub fn new() -> Self {
         Self {
             gate: Mutex::new(ExitGate::new(false)),
+            flushed: Condvar::new(),
             labels: Mutex::new(TrayLabels::default()),
             live: Mutex::new(MatchLive::None),
             tablets: Mutex::new(0),
@@ -566,6 +623,29 @@ impl Lifecycle {
 
     pub fn gate(&self) -> std::sync::MutexGuard<'_, ExitGate> {
         self.gate.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Waits until the page wrote its last files, or can no longer answer
+    /// (reloading, its handler gone), at most `timeout`: false when the time
+    /// ran out. The wait is over either way.
+    pub fn wait_for_flush(&self, timeout: Duration) -> bool {
+        let (mut gate, waited) = self
+            .flushed
+            .wait_timeout_while(self.gate(), timeout, |g| g.flush_waiting())
+            .unwrap_or_else(|e| e.into_inner());
+        gate.flush_done();
+        !waited.timed_out()
+    }
+
+    /// `app_flush_done`: the page wrote its last files, the exit goes ahead.
+    pub fn flush_done(&self) {
+        self.gate().flush_done();
+        self.flush_changed();
+    }
+
+    /// Wakes a wait_for_flush after the gate's flush wait may have ended.
+    fn flush_changed(&self) {
+        self.flushed.notify_all();
     }
 
     fn labels(&self) -> TrayLabels {
@@ -600,7 +680,7 @@ struct TrayItems<R: Runtime> {
     update_shown: std::sync::atomic::AtomicBool,
 }
 
-/// The page's lifecycle event (src/utils/desktopLifecycle.js listens).
+/// The page's lifecycle event (src/utils/appLifecycle.js listens).
 fn page_event_script(kind: &str) -> String {
     let detail = serde_json::json!({ "type": kind });
     format!("window.dispatchEvent(new CustomEvent('ov-app-lifecycle', {{ detail: {detail} }}))")
@@ -766,7 +846,9 @@ fn ask_native<R: Runtime>(app: &AppHandle<R>) {
 }
 
 /// RunEvent::ExitRequested: true when the exit must be prevented (the
-/// question is asked instead).
+/// question is asked instead). Nothing waits here for the page's last
+/// files: a confirmed quit wrote them before `app_quit`, and the OS ending
+/// the app before `os_exit` called exit (see the module docs).
 pub fn on_exit_requested<R: Runtime>(app: &AppHandle<R>) -> bool {
     let open = main_window(app).is_some();
     let decision = app.state::<Lifecycle>().gate().exit_requested(open);
@@ -780,18 +862,41 @@ pub fn on_exit_requested<R: Runtime>(app: &AppHandle<R>) -> bool {
     false
 }
 
-/// The OS ends the app (or the installer, after it asked): never blocked,
-/// never asked, and the scoresheet windows close too.
+/// The OS ends the app (or the installer, after it asked): never asked, and
+/// the scoresheet windows close too. The scoretable page first writes its
+/// last files ("flush-requested", `app_flush_done`), FLUSH_TIMEOUT at most.
+/// The wait is on a thread of its own and never on the caller's: the page's
+/// answer and its file writes come through the event loop.
 pub fn os_exit<R: Runtime>(app: &AppHandle<R>, why: &str) {
     log::info!("[app] {why}: quitting");
-    app.state::<Lifecycle>().gate().os_exit();
-    exit_closing_windows(app);
+    let action = app.state::<Lifecycle>().gate().os_exit();
+    match action {
+        OsExit::Exit => exit_closing_windows(app),
+        OsExit::Waiting => {}
+        OsExit::FlushFirst => {
+            let sent = main_window(app).map(|w| w.eval(page_event_script("flush-requested")).is_ok()).unwrap_or(false);
+            if !sent {
+                app.state::<Lifecycle>().gate().flush_done();
+                exit_closing_windows(app);
+                return;
+            }
+            let app = app.clone();
+            std::thread::spawn(move || {
+                if app.state::<Lifecycle>().wait_for_flush(FLUSH_TIMEOUT) {
+                    log::info!("[app] the page wrote its last files (or went away)");
+                } else {
+                    log::warn!("[app] the page did not write its last files within {} ms: quitting without them", FLUSH_TIMEOUT.as_millis());
+                }
+                exit_closing_windows(&app);
+            });
+        }
+    }
 }
 
 /// Linux: SIGTERM (logout, shutdown, `kill`), SIGINT and SIGHUP quit cleanly
-/// (the tablets' network is stopped by RunEvent::Exit). A second signal, or an
-/// event loop that does not exit within 10 s, ends the process at once, so a
-/// session end is never held up.
+/// (the page's last files first, os_exit; the tablets' network is stopped by
+/// RunEvent::Exit). A second signal, or an event loop that does not exit
+/// within 10 s, ends the process at once, so a session end is never held up.
 #[cfg(unix)]
 pub fn quit_on_signals<R: Runtime>(app: &AppHandle<R>) {
     use tokio::signal::unix::{signal, SignalKind};
@@ -1060,7 +1165,9 @@ pub fn set_tablet_count<R: Runtime>(app: &AppHandle<R>, count: usize) {
 /// The main window started loading a page: until it calls app_page_state, it
 /// cannot answer the lifecycle events.
 pub fn page_load_started<R: Runtime>(app: &AppHandle<R>) {
-    app.state::<Lifecycle>().gate().page_unloaded();
+    let lifecycle = app.state::<Lifecycle>();
+    lifecycle.gate().page_unloaded();
+    lifecycle.flush_changed();
 }
 
 #[derive(Debug, Serialize)]
@@ -1104,12 +1211,20 @@ pub fn app_page_state<R: Runtime>(
 #[tauri::command]
 pub fn app_page_gone(state: State<'_, Lifecycle>, handler: String) {
     state.gate().page_detached(&handler);
+    state.flush_changed();
 }
 
 /// The page took a "quit-requested": its question is on screen.
 #[tauri::command]
 pub fn app_quit_ack(state: State<'_, Lifecycle>) {
     state.gate().quit_acked();
+}
+
+/// The page wrote its last files after a "flush-requested" (the OS ends the
+/// app): the exit goes ahead now.
+#[tauri::command]
+pub fn app_flush_done(state: State<'_, Lifecycle>) {
+    state.flush_done();
 }
 
 /// The page took a "close-requested": its question is on screen.
@@ -1309,6 +1424,114 @@ mod tests {
     }
 
     #[test]
+    fn the_os_ending_the_app_lets_the_page_write_its_last_files_first() {
+        let mut g = ready(true);
+        assert_eq!(g.os_exit(), OsExit::FlushFirst);
+        assert!(g.flush_waiting());
+        // meanwhile nothing asks, and an exit from elsewhere goes ahead
+        assert_eq!(g.exit_requested(true), ExitDecision::Proceed);
+        assert_eq!(g.close_requested(), CloseAction::Close);
+        assert_eq!(g.quit_requested(), QuitAction::Exit);
+        // a second request (the installer's --quit) while it writes: no
+        // second wait, the first one's exit
+        assert_eq!(g.os_exit(), OsExit::Waiting);
+        g.flush_done();
+        assert!(!g.flush_waiting());
+    }
+
+    #[test]
+    fn without_a_page_that_answers_the_os_exit_does_not_wait() {
+        // still loading
+        let mut g = ExitGate::new(true);
+        assert_eq!(g.os_exit(), OsExit::Exit);
+        // crashed into its error screen (its handler said it is gone)
+        let mut g = ready(true);
+        g.page_detached("h1");
+        assert_eq!(g.os_exit(), OsExit::Exit);
+        assert!(!g.flush_waiting());
+    }
+
+    #[test]
+    fn a_page_that_goes_away_ends_the_flush_wait() {
+        let mut g = ready(true);
+        assert_eq!(g.os_exit(), OsExit::FlushFirst);
+        g.page_unloaded(); // a reload
+        assert!(!g.flush_waiting());
+        let mut g = ready(true);
+        assert_eq!(g.os_exit(), OsExit::FlushFirst);
+        g.page_detached("h0"); // an older handler: this one still writes
+        assert!(g.flush_waiting());
+        g.page_detached("h1");
+        assert!(!g.flush_waiting());
+    }
+
+    /// A Lifecycle whose OS exit waits for the page (handler "h1").
+    fn flushing() -> std::sync::Arc<Lifecycle> {
+        let lifecycle = std::sync::Arc::new(Lifecycle::new());
+        {
+            let mut g = lifecycle.gate();
+            g.page_attached("h1");
+            assert_eq!(g.os_exit(), OsExit::FlushFirst);
+        }
+        lifecycle
+    }
+
+    /// `f` on the lifecycle from another thread (the page's command) after a moment.
+    fn later(lifecycle: &std::sync::Arc<Lifecycle>, f: fn(&Lifecycle)) -> std::thread::JoinHandle<()> {
+        let lifecycle = lifecycle.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(30));
+            f(&lifecycle);
+        })
+    }
+
+    #[test]
+    fn the_os_exit_goes_ahead_once_the_page_wrote_its_last_files() {
+        let lifecycle = flushing();
+        let page = later(&lifecycle, |l| l.flush_done()); // app_flush_done
+        let started = std::time::Instant::now();
+        assert!(lifecycle.wait_for_flush(Duration::from_secs(20)), "answered in time");
+        assert!(started.elapsed() < Duration::from_secs(10), "woken, not timed out: {:?}", started.elapsed());
+        page.join().unwrap();
+        assert!(!lifecycle.gate().flush_waiting());
+    }
+
+    #[test]
+    fn a_stuck_page_holds_the_os_exit_up_to_the_timeout_only() {
+        let lifecycle = flushing();
+        let started = std::time::Instant::now();
+        assert!(!lifecycle.wait_for_flush(Duration::from_millis(100)), "no answer: timed out");
+        let waited = started.elapsed();
+        assert!(waited >= Duration::from_millis(100) && waited < Duration::from_secs(5), "{waited:?}");
+        assert!(!lifecycle.gate().flush_waiting(), "the wait is over");
+        // a late answer changes nothing
+        lifecycle.flush_done();
+        assert!(FLUSH_TIMEOUT <= Duration::from_secs(2), "a session end is not held up for long");
+    }
+
+    #[test]
+    fn a_page_that_goes_away_does_not_hold_the_os_exit() {
+        // its handler gone (app_page_gone) or a reload (page_load_started)
+        fn handler_gone(l: &Lifecycle) {
+            l.gate().page_detached("h1");
+            l.flush_changed();
+        }
+        fn reloading(l: &Lifecycle) {
+            l.gate().page_unloaded();
+            l.flush_changed();
+        }
+        let ways: [fn(&Lifecycle); 2] = [handler_gone, reloading];
+        for gone in ways {
+            let lifecycle = flushing();
+            let page = later(&lifecycle, gone);
+            let started = std::time::Instant::now();
+            assert!(lifecycle.wait_for_flush(Duration::from_secs(20)));
+            assert!(started.elapsed() < Duration::from_secs(10), "{:?}", started.elapsed());
+            page.join().unwrap();
+        }
+    }
+
+    #[test]
     fn a_destroyed_scoretable_window_exits() {
         // e.g. the OS destroyed it: nothing left that could ask
         let g = ready(true);
@@ -1439,6 +1662,10 @@ mod tests {
         assert_eq!(
             page_event_script("quit-requested"),
             r#"window.dispatchEvent(new CustomEvent('ov-app-lifecycle', { detail: {"type":"quit-requested"} }))"#
+        );
+        assert_eq!(
+            page_event_script("flush-requested"),
+            r#"window.dispatchEvent(new CustomEvent('ov-app-lifecycle', { detail: {"type":"flush-requested"} }))"#
         );
     }
 }

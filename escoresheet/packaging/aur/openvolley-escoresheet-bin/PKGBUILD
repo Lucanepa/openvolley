@@ -7,7 +7,7 @@
 
 pkgname=openvolley-escoresheet-bin
 _pkgname=openvolley-escoresheet
-pkgver=3.0.6
+pkgver=3.0.7
 pkgrel=1
 pkgdesc='Open source volleyball eScoresheet: offline scoretable with a LAN server for referee, bench and livescore tablets'
 arch=('x86_64')
@@ -39,7 +39,7 @@ source=("LICENSE-$pkgver::https://raw.githubusercontent.com/Lucanepa/openvolley/
 source_x86_64=("$_pkgname-$pkgver-amd64.deb::https://github.com/Lucanepa/openvolley/releases/download/desktop-v$pkgver/${_pkgname}_${pkgver}_amd64.deb")
 noextract=("$_pkgname-$pkgver-amd64.deb")
 sha256sums=('4916eae672b6d1d5ec8d97c2bb9838815fdd4e313473d2c16ff759c51d9b7aec')
-sha256sums_x86_64=('8d46002de502442481d860522028eec1da7aa52ea035d9f489a68eb6f9bb9a3d')
+sha256sums_x86_64=('380494b3d555d705ec1af12c703002bf0eb98619fb5d317feb01d66e68b04ace')
 
 # pacman updates this package, never the app itself (src-tauri/src/updater.rs):
 # - the marker file /usr/lib/$_pkgname/package-manager (package()): a release

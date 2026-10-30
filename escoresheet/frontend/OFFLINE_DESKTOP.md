@@ -656,11 +656,17 @@ quit (`src-tauri/src/lifecycle.rs`, page side `src/utils/appLifecycle.js`):
   without a confirmation.
 - **Exit rules** (`ExitGate`, unit-tested): a close hides; an exit nobody
   confirmed (`RunEvent::ExitRequested` while the scoretable window exists) is
-  prevented and turned into the question; a confirmed quit exits; the OS is
-  never held up: Linux `SIGTERM` (logout, shutdown, `kill`), `SIGINT`,
-  `SIGHUP` quit at once (a second signal, or 10 s without an exit, ends the
-  process), Windows ends the event loop itself on `WM_ENDSESSION`. A window
-  with no page that answers gets the native question (above).
+  prevented and turned into the question; a confirmed quit exits after the
+  page wrote the match's last backup file (1.5 s at most); the OS is never
+  held up: Linux `SIGTERM` (logout, shutdown, `kill`), `SIGINT`, `SIGHUP`
+  and the installer's `--quit` quit without a question, once the page wrote
+  its last files (`flush-requested`, `app_flush_done`; 2 s at most, no wait
+  without a page that answers; a second signal, or 10 s without an exit,
+  ends the process). Windows ends the event loop itself on `WM_ENDSESSION`,
+  and macOS on a logout, a shutdown or the Dock's Quit: that cannot wait for
+  the page, the last backup there is the one written shortly after the last
+  change (the backup engine's quiet window). A window with no page that
+  answers gets the native question (above).
 - **Windows installer / uninstaller** (`src-tauri/windows/installer-hooks.nsh`,
   `bundle.windows.nsis.installerHooks`): Tauri's own check would end a
   running app (usually in the tray) with `TerminateProcess`, skipping the

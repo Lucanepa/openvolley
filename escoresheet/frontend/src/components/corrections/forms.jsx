@@ -34,7 +34,7 @@ export function playedSets(sets, events) {
 }
 
 /** The timeline index holding an existing event (the score before it). */
-function indexOfEvent(timeline, events, ev) {
+export function indexOfEvent(timeline, events, ev) {
   if (!ev) return null
   const s = scoreBeforeEvent(events, ev)
   const i = timeline.findIndex(x => x.home === s.home && x.away === s.away)
@@ -42,7 +42,7 @@ function indexOfEvent(timeline, events, ev) {
 }
 
 /** Shared state of every "at a score" form: set, timeline, chosen score. */
-function useScoreChoice({ events, mode, liveSetIndex, preset, editEvent }) {
+export function useScoreChoice({ events, mode, liveSetIndex, preset, editEvent }) {
   const initialSet = editEvent ? setOf(editEvent) : (preset?.setIndex ?? (mode === 'live' ? liveSetIndex : null))
   const [setIndex, setSetIndex] = useState(initialSet ?? null)
   const timeline = useMemo(() => (setIndex ? scoreTimeline(events, setIndex) : []), [events, setIndex])
@@ -60,11 +60,11 @@ function useScoreChoice({ events, mode, liveSetIndex, preset, editEvent }) {
   return { setIndex, chooseSet, timeline, at, setAt, liveIdx }
 }
 
-function rosterOf(players, team) {
+export function rosterOf(players, team) {
   return (team === 'home' ? players?.home : players?.away) || []
 }
 
-function asPlayer(roster, n) {
+export function asPlayer(roster, n) {
   return roster.find(p => String(p.number) === String(n)) || { number: n }
 }
 

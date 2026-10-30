@@ -71,6 +71,20 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.7" date="2026-10-29">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.7</url>
+      <description>
+        <ul>
+          <li>Reloading the scoring screen no longer freezes the app on Linux, macOS and iPad.</li>
+          <li>A Point tap right after Start rally counts.</li>
+          <li>Home follows your sign-in; Official game lists your club's home games of the day.</li>
+          <li>Club managers run their own club's invite codes and members.</li>
+          <li>Help on every screen (the "?") with short videos; Support &amp; feedback becomes a ticket.</li>
+          <li>Test matches never reach the cloud.</li>
+          <li>The bench circles the captain; the 1R name sits over the net.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0.6" date="2026-10-27">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.6</url>
       <description>

@@ -524,6 +524,20 @@ export function countLiveGames(games) {
 // ── Live-state pushes (scoreboard side) ─────────────────────────────────────
 
 /**
+ * True when the correction log has an entry newer than an event's time: the
+ * event's stored state snapshot predates that correction.
+ * @param {Array|undefined} manualChanges  match.manualChanges
+ * @param {string|number|undefined} eventTs
+ */
+export function correctionAfter(manualChanges, eventTs) {
+  const last = Array.isArray(manualChanges) ? manualChanges[manualChanges.length - 1] : null
+  if (!last?.ts || eventTs == null) return false
+  const c = Date.parse(last.ts)
+  const e = typeof eventTs === 'number' ? eventTs : Date.parse(eventTs)
+  return Number.isFinite(c) && Number.isFinite(e) && c > e
+}
+
+/**
  * Must the scoreboard capture a fresh state snapshot for this live-state push
  * instead of reusing the last event's? Manual changes, and the deciding-set
  * court switch: it writes set5CourtSwitched without an event, so the last

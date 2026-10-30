@@ -10,6 +10,7 @@ import ServerConnectionScreen from './components/ServerConnectionScreen'
 import { applyServerParam, getApiUrl, getBackendOverride, isServedFromLocalServer, isStaticDeployment } from './utils/backendConfig'
 import { createRelayLivescoreFeed, fetchRelayLivescoreList, relayLivescoreMode, relayLivescoreWsUrl } from './utils/relayLivescore'
 import { applyLiveChange, visibleGames } from './utils/livescoreChanges'
+import { setDiagnosticsInfo } from './utils/diagnosticsInfo'
 import { listedGames, trackWatched, needsFinalRefetch, FINAL_REFETCH_DELAYS_MS, jitterDelay, applyMatchRowChange, shouldAutoConnect, liveSetNumber, countLiveGames, LIVE_FETCH_WINDOW_MS, liveScoreboard, settleLiveChange } from './utils/livescoreModel'
 import ballFallback from './ball_fallback.png'
 import { AlertTriangle, Radio, RefreshCw, Server } from 'lucide-react'
@@ -93,6 +94,19 @@ export default function LivescoreApp() {
     const timer = setInterval(() => setListNow(Date.now()), 60 * 1000)
     return () => clearInterval(timer)
   }, [])
+
+  // The support diagnostics (utils/diagnosticsInfo): what this page shows
+  useEffect(() => {
+    setDiagnosticsInfo('livescore', {
+      serverReady,
+      mode: relayFeedRef.current ? 'relay' : 'cloud',
+      games: liveGames.length,
+      selectedGame: selectedGame == null ? null : String(selectedGame),
+      loading,
+      stale,
+      error: error ? String(error?.message || error).slice(0, 200) : null
+    })
+  }, [serverReady, liveGames, selectedGame, loading, stale, error])
 
   // ?server= sets the backend for this and later visits (the initial state
   // already counts it as a known server)
