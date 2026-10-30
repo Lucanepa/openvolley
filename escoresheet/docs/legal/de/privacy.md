@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-**OpenVolley und OpenBeach** · Version 1.5 · Stand: 29. Oktober 2026
+**OpenVolley und OpenBeach** · Version 1.6 · Stand: 30. Oktober 2026
 
 Diese Erklärung gibt es auf Deutsch, Englisch, Französisch und Italienisch.
 Massgebend ist die englische Fassung.
@@ -21,7 +21,9 @@ Massgebend ist die englische Fassung.
   **Geburtsdaten, Lizenznummern und Unterschriften sind nie öffentlich.**
 - Die OpenVolley-App führt ein Aktivitätsprotokoll jedes Spiels, ohne PINs
   und Passwörter. Mit Anmeldung geht es auf den Server. Was Sie anklicken oder
-  tippen, bleibt auf Ihrem Gerät (Abschnitt 5).
+  tippen, bleibt auf Ihrem Gerät, ausser einer Zusammenfassung ohne den
+  eingetippten Text, wenn Sie einer Support-Anfrage die Diagnosedaten
+  mitsenden (Abschnitte 5 und 13).
 - Der Server steht in der Schweiz und wird von mir betrieben. Cloudflare (USA)
   liefert die Websites aus und leitet den Verkehr zum Server weiter.
 - Ist der Versand eingeschaltet, erhalten nach einem offiziellen Spiel die
@@ -157,11 +159,13 @@ sieht sie nur die Administration.
 **Bedienprotokoll: Was Sie anklicken oder tippen, bleibt auf Ihrem Gerät.**
 Zur Fehlersuche zeichnet die App auf dem Gerät auf, was Sie anklicken und
 eintippen (auch Text in Eingabefeldern, zum Beispiel Namen). Dieses Protokoll
-wird nie übertragen. Sie können es selbst herunterladen (in den Einstellungen
-oder am Spielende in der ZIP-Datei) und zum Beispiel dem Support schicken. In
-OpenVolley ab Version 2.4.0 zeichnet es keine Eingaben in Passwort- und
-PIN-Feldern und keine auf dem Bildschirm angezeigten PINs auf und wird nach
-30 Tagen oder ab 50 000 Einträgen gelöscht.
+wird nicht von selbst übertragen. Nur wenn Sie einer Support-Anfrage die
+Diagnosedaten mitsenden, geht eine Zusammenfassung etwa der letzten zwei
+Stunden mit, ohne den eingetippten Text (Abschnitt 13). Sie können es selbst
+herunterladen (in den Einstellungen oder am Spielende in der ZIP-Datei) und
+zum Beispiel dem Support schicken. In OpenVolley ab Version 2.4.0 zeichnet es
+keine Eingaben in Passwort- und PIN-Feldern und keine auf dem Bildschirm
+angezeigten PINs auf und wird nach 30 Tagen oder ab 50 000 Einträgen gelöscht.
 
 **Desktop-App.** Die Desktop-App speichert zusätzlich automatische
 Sicherungsdateien der Spiele in Ihrem Benutzerordner (Linux:
@@ -482,11 +486,41 @@ Nachricht und, falls Sie welche hinzufügen, bis zu fünf Anhänge (zum Beispiel
 Bildschirmfotos oder Backup-Dateien) an meinen Server, dazu die Sprache, die
 Adresse der Seite ohne Parameter, die Browser-Kennung, den Zeitpunkt, die
 Plattform (von der Website «web») und in den Apps die App-Version.
-Diagnosedaten (App-Version, Plattform, Anzeige, Verbindungsstatus, die
-Spielnummer des offenen Spiels und die letzten Fehlermeldungen der App) werden
-nur gesendet, wenn Sie in der App «Diagnosedaten mitsenden» ankreuzen, und
-genau so, wie sie dort angezeigt werden. Die Website sendet keine
-Diagnosedaten.
+
+**Diagnosedaten** sendet die App nur, wenn «Diagnosedaten mitsenden»
+angekreuzt ist. Bei einer Support-Anfrage (Fehlermeldung oder Frage) ist das
+Kästchen schon angekreuzt, bei Feedback und Wünschen nicht; Sie können es vor
+dem Senden abwählen. Mit «Anzeigen, was gesendet wird» sehen Sie vorher genau
+den Text, der gesendet wird. Die App hängt ihn als Textdatei (höchstens 2 MB)
+an die Anfrage an. Er enthält:
+
+- technische Angaben: App und Version, Plattform, Betriebssystem,
+  Browser-Kennung, Bildschirm- und Fenstergrösse, Sprache, Uhrzeit und
+  Zeitzone, Online- und Verbindungsstatus, noch nicht übertragene Daten und
+  die letzten Übertragungsfehler, den belegten Speicher, die zufällige
+  Kennung des Geräts und, wenn Sie angemeldet sind, die Kennung Ihres Kontos;
+- den Stand des offenen (oder zuletzt offenen) Spiels: Spielnummer, Teams,
+  Status, Sätze und Spielstand, Aufstellungen (Rückennummern), Auszeiten und
+  Wechsel, die letzten 30 Spielereignisse und ob der Server das Spiel
+  abgeschlossen oder einem anderen Gerät übergeben hat;
+- den Verlauf etwa der letzten zwei Stunden (mindestens seit dem letzten
+  Start der App) aus dem Aktivitäts- und dem Bedienprotokoll (Abschnitt 5):
+  was Sie angetippt haben (mit der Beschriftung, die auch Namen von Teams oder
+  Personen enthalten kann), Tasten, aufgerufene Bildschirme, in welches Feld
+  Sie wie viele Zeichen getippt haben (nicht den Text), Punkte und andere
+  Spielereignisse, Korrekturen, Übertragungen sowie Start, Beenden und
+  Hintergrund der App;
+- die letzten Fehlermeldungen und Warnungen der App mit der Programmstelle.
+
+**Nie enthalten** sind Passwörter, PINs, Anmelde-Token, Unterschriften,
+E-Mail-Adressen, Telefonnummern und Text, den Sie in Felder eingetippt
+haben: Die App entfernt solche Angaben vor dem Senden aus dem ganzen Text.
+In der Schiedsrichter-, Bank- und Livescore-App enthält die Datei nur die
+technischen Angaben, den Verbindungsstatus und die Fehlermeldungen. Klappt
+das Senden nicht, können Sie die Datei mit «Diagnosedaten herunterladen»
+speichern und selbst an Ihre E-Mail anhängen. Ältere App-Versionen senden
+nur die technischen Angaben, die Spielnummer und die letzten Fehlermeldungen.
+Die Website sendet keine Diagnosedaten.
 
 Der Server leitet die Anfrage als eine E-Mail an support@openvolley.app
 weiter, mit Ihrer Adresse als Antwortadresse. Er behält davon nichts ausser
@@ -501,9 +535,9 @@ support@openvolley.app.**
 **E-Mail an support@openvolley.app:** Sie wird gleich behandelt, im Postfach
 und im Helpdesk.
 
-**Aufbewahrung:** Support-Anfragen (Postfach und Helpdesk, mit den Anhängen)
-bewahre ich 2 Jahre nach der letzten Nachricht auf, damit ich frühere
-Antworten nachschlagen kann; auf Anfrage früher.
+**Aufbewahrung:** Support-Anfragen (Postfach und Helpdesk, mit den Anhängen
+und Diagnosedaten) bewahre ich 2 Jahre nach der letzten Nachricht auf, damit
+ich frühere Antworten nachschlagen kann; auf Anfrage früher.
 
 ## 14. Protokolle und Sicherheit auf dem Server
 
@@ -592,7 +626,7 @@ Anfrage erhalten Sie eine Kopie dieser Garantien.
 | Bedienprotokoll (nur auf dem Gerät) | OpenVolley ab 2.4.0: 30 Tage, höchstens 50 000 Einträge |
 | Protokolldatei der Desktop-App (nur auf dem Gerät) | Höchstens fünf ältere Dateien zu je 5 MB |
 | Unterschrift auf dem Telefon (Server oder Laptop) | Nur im Arbeitsspeicher; Link 10 Minuten gültig, Unterschrift spätestens 5 Minuten nach dem Unterschreiben verworfen |
-| Support-Anfragen (Postfach und Helpdesk, mit Anhängen) | 2 Jahre nach der letzten Nachricht; auf Anfrage früher |
+| Support-Anfragen (Postfach und Helpdesk, mit Anhängen und Diagnosedaten) | 2 Jahre nach der letzten Nachricht; auf Anfrage früher |
 | Serverprotokolle | Überschrieben nach Grösse (Tage bis wenige Wochen) |
 | Live-Daten (Server und Hallen-Modus) | Nur im Arbeitsspeicher; auf dem Server 24 Stunden nach der letzten Aktivität verworfen |
 | Datensicherungen | Bis etwa 6 Monate (Abschnitt 18) |

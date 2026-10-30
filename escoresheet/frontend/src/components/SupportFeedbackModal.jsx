@@ -5,11 +5,11 @@ import { getCloudApiUrl } from '../utils/backendConfig'
 import { getLiveMatch, onLiveMatchChange } from '../utils/appLifecycle'
 import { openAppWindow } from '../utils/openAppWindow'
 import { useScaledLayout } from '../hooks/useScaledLayout'
-import { Check, Mail, Paperclip, Send, X } from 'lucide-react'
+import { Check, ChevronDown, Download, Mail, Paperclip, Send, X } from 'lucide-react'
 import { Button, Checkbox, cn, FOCUS_RING, IconButton, Select } from '../ui'
 import {
   CONTACT_AREAS, FILE_ACCEPT, MAX_FILES, MAX_FILES_MB, buildContactForm, checkFiles, collectDiagnostics,
-  contactAreaOf, contactMailto, isContactEmail, isScoringMatchHere
+  contactAreaOf, contactMailto, downloadDiagnosticsFile, isContactEmail, isScoringMatchHere
 } from '../utils/supportContact'
 
 const CONTACT_TYPES = ['support', 'feedback', 'request']
@@ -178,6 +178,22 @@ function FileAttachment({ label, files, onFilesChange, onReject, t, scaleFactor 
 // The answer codes of POST /api/contact the user can fix in the form
 const FIXABLE = new Set(['invalid_email', 'too_many_files', 'files_too_large', 'file_type'])
 
+// "Include diagnostics" starts ticked for these contact types (a bug report
+// and a question); feedback and requests start unticked
+const DIAGNOSTICS_BY_DEFAULT = new Set(['support'])
+
+function sizeText(bytes) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/** The diagnostics report of this device now (utils/diagnosticsCollect, loaded when needed). */
+async function makeReport(opts) {
+  const { createDiagnosticsReport } = await import('../utils/diagnosticsCollect')
+  return createDiagnosticsReport(opts)
+}
+
 /**
  * Support & feedback: sends the message with its attachments to the support
  * mailbox (POST /api/contact; utils/supportContact.js), or opens a mailto
@@ -187,8 +203,9 @@ const FIXABLE = new Set(['invalid_email', 'too_many_files', 'files_too_large', '
  * @param {string} [props.area]        a help section id ('scoring', ...): the "?" panel passes its screen's
  * @param {string} [props.currentPage] older area / page names ('mainPage', 'options', 'scoreboard', ...), mapped
  * @param {string|number|null} [props.gameNumber] the match the diagnostics name (default: the open match)
+ * @param {(opts: object) => Promise<object>} [props.createReport] the diagnostics report (tests)
  */
-export default function SupportFeedbackModal({ open, onClose, area: areaProp, currentPage = 'mainPage', gameNumber }) {
+export default function SupportFeedbackModal({ open, onClose, area: areaProp, currentPage = 'mainPage', gameNumber, createReport = makeReport }) {
   const { t, i18n } = useTranslation()
   const { scaleFactor } = useScaledLayout()
   const initialArea = contactAreaOf(areaProp) || contactAreaOf(currentPage)
@@ -206,8 +223,17 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
   const scoringHere = isScoringMatchHere(liveMatch)
   const [matchRunning, setMatchRunning] = useState(scoringHere)
   const [matchRunningSetByUser, setMatchRunningSetByUser] = useState(false)
+  // "Include diagnostics": ticked by itself for support, unticked for
+  // feedback and requests, until the user ticks or unticks it
   const [includeDiagnostics, setIncludeDiagnostics] = useState(false)
-  // What the box shows is what is sent: one snapshot, taken when it is ticked
+  const [diagnosticsSetByUser, setDiagnosticsSetByUser] = useState(false)
+  // What "Show what is sent" shows is what is sent: one report, made when the
+  // box is ticked (and shown); unticked and ticked again, a new one
+  const [report, setReport] = useState(null)
+  const [reportState, setReportState] = useState('idle') // idle | loading | ready | failed
+  const [showReport, setShowReport] = useState(false)
+  const reportJob = useRef(null)
+  // The short JSON of older versions: sent only when the report could not be made
   const [diagnostics, setDiagnostics] = useState(null)
   const [sending, setSending] = useState(false)
   // 'server': in the support inbox; 'mailto': handed to the email app
@@ -225,6 +251,22 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
     if (open && !matchRunningSetByUser) setMatchRunning(scoringHere)
   }, [open, scoringHere, matchRunningSetByUser])
 
+  useEffect(() => {
+    if (!diagnosticsSetByUser) setIncludeDiagnostics(DIAGNOSTICS_BY_DEFAULT.has(contactType))
+  }, [contactType, diagnosticsSetByUser])
+
+  // The form has reached the message (and the diagnostics box)
+  const showComments = !!contactType && (
+    contactType !== 'support' ||
+    supportType === 'help' ||
+    (supportType === 'bug' && !!severity)
+  )
+
+  // Ticked and shown: the report is made (once; ticked again, a new one)
+  useEffect(() => {
+    if (open && showComments && includeDiagnostics && reportState === 'idle') prepareReport()
+  }, [open, showComments, includeDiagnostics, reportState]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const resetForm = () => {
     setContactType('')
     setArea(initialArea)
@@ -236,7 +278,8 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
     setMatchRunning(scoringHere)
     setMatchRunningSetByUser(false)
     setIncludeDiagnostics(false)
-    setDiagnostics(null)
+    setDiagnosticsSetByUser(false)
+    forgetReport()
     setSent(null)
     setError(null)
     setOfferMailto(false)
@@ -254,9 +297,43 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
     return t('supportFeedback.sendError')
   }
 
+  function forgetReport() {
+    reportJob.current = null
+    setReport(null)
+    setReportState('idle')
+    setShowReport(false)
+    setDiagnostics(null)
+  }
+
+  // The report, once: resolves with it, or null when it could not be made
+  // (the short JSON is sent then, and shown instead)
+  const prepareReport = () => {
+    if (reportJob.current) return reportJob.current
+    const job = Promise.resolve()
+      .then(() => createReport({ gameNumber, language: i18n?.language || '' }))
+      .then((r) => {
+        if (reportJob.current !== job) return null
+        if (!r?.text) throw new Error('empty report')
+        setReport(r)
+        setReportState('ready')
+        return r
+      })
+      .catch((err) => {
+        if (reportJob.current !== job) return null
+        console.warn('[Support] diagnostics report not made:', err?.message)
+        setDiagnostics(collectDiagnostics({ gameNumber }))
+        setReportState('failed')
+        return null
+      })
+    reportJob.current = job
+    setReportState('loading')
+    return job
+  }
+
   const toggleDiagnostics = (on) => {
+    setDiagnosticsSetByUser(true)
     setIncludeDiagnostics(on)
-    setDiagnostics(on ? collectDiagnostics({ gameNumber }) : null)
+    if (!on) forgetReport()
   }
 
   const toggleMatchRunning = (on) => {
@@ -264,7 +341,19 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
     setMatchRunning(on)
   }
 
-  const request = () => ({
+  // What goes with the message as diagnostics: the report (made now when it
+  // is still on its way), or the short JSON when it could not be made
+  const settledDiagnostics = () => ({
+    diagnosticsReport: includeDiagnostics && reportState === 'ready' ? report : null,
+    diagnostics: includeDiagnostics && reportState === 'failed' ? diagnostics : null
+  })
+  const diagnosticsToSend = async () => {
+    if (!includeDiagnostics) return { diagnosticsReport: null, diagnostics: null }
+    const r = reportState === 'ready' && report ? report : await prepareReport()
+    return r ? { diagnosticsReport: r, diagnostics: null } : { diagnosticsReport: null, diagnostics: diagnostics || collectDiagnostics({ gameNumber }) }
+  }
+
+  const request = (diag = settledDiagnostics()) => ({
     contactType,
     area,
     // what the form shows for the type: a severity picked for a bug and left
@@ -275,12 +364,12 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
     email,
     comments,
     files,
-    diagnostics: includeDiagnostics ? diagnostics : null,
+    ...diag,
     language: i18n?.language || ''
   })
 
-  const openMailto = () => {
-    const v = request()
+  const openMailto = (diag) => {
+    const v = request(diag)
     const labels = {
       type: t(`supportFeedback.types.${contactType}`),
       area: t(`supportFeedback.areas.${area}`),
@@ -320,8 +409,9 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
 
     const apiUrl = getCloudApiUrl('/api/contact')
     if (!apiUrl) {
-      // No backend to send to (a desktop window without the cloud): the email app
-      openMailto()
+      // No backend to send to (a desktop window without the cloud): the email
+      // app, and "Download diagnostics" on the next screen
+      openMailto(await diagnosticsToSend())
       return
     }
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -335,9 +425,10 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
     setOfferMailto(false)
 
     try {
+      const diag = await diagnosticsToSend()
       const response = await fetch(apiUrl, {
         method: 'POST',
-        body: buildContactForm(request())
+        body: buildContactForm(request(diag))
       })
       if (!response.ok) {
         let answer = null
@@ -382,6 +473,8 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
     const followUp = sent === 'mailto'
       ? (files.length > 0 ? t('supportFeedback.mailtoAttach') : null)
       : t('supportFeedback.replyTo', { email: email.trim() })
+    // The email cannot carry the diagnostics file: it is downloaded to attach by hand
+    const reportToAttach = sent === 'mailto' && includeDiagnostics && report ? report : null
 
     return (
       <Modal open={true} title="" onClose={handleClose} width={450} hideCloseButton={true}>
@@ -393,10 +486,18 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
                 ? <Mail size={26} strokeWidth={2.25} aria-hidden="true" />
                 : <Check size={26} strokeWidth={2.25} aria-hidden="true" />}
             </div>
-            <p role="status" className={cn('text-base text-stone-700', followUp ? 'mb-2' : 'mb-6')}>
+            <p role="status" className={cn('text-base text-stone-700', followUp || reportToAttach ? 'mb-2' : 'mb-6')}>
               {successMessage}
             </p>
-            {followUp && <p className="mb-6 text-sm text-stone-500">{followUp}</p>}
+            {followUp && <p className={cn('text-sm text-stone-500', reportToAttach ? 'mb-2' : 'mb-6')}>{followUp}</p>}
+            {reportToAttach && (
+              <>
+                <p className="mb-3 text-sm text-stone-500">{t('supportFeedback.mailtoAttachDiagnostics')}</p>
+                <Button variant="secondary" size="lg" icon={Download} onClick={() => downloadDiagnosticsFile(reportToAttach)} className="mb-6">
+                  {t('supportFeedback.downloadDiagnostics')}
+                </Button>
+              </>
+            )}
             <Button variant="dark" size="xl" onClick={handleClose} className="min-w-32 rounded-lg font-medium">
               {t('common.close')}
             </Button>
@@ -405,13 +506,6 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
       </Modal>
     )
   }
-
-  // Show whether to display comments field
-  const showComments = contactType && (
-    contactType !== 'support' ||
-    supportType === 'help' ||
-    (supportType === 'bug' && severity)
-  )
 
   return (
     <Modal open={true} title="" onClose={handleClose} width={450} hideCloseButton={true} panelStyle={ONE_SCROLLER}>
@@ -515,7 +609,8 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
           />
         )}
 
-        {/* Diagnostics: off by default, and shows exactly what it sends */}
+        {/* Diagnostics: ticked for support, unticked for feedback and
+            requests; "Show what is sent" shows exactly the file that goes */}
         {showComments && (
           <div className="mb-4">
             <Checkbox
@@ -524,13 +619,48 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
               checked={includeDiagnostics}
               onChange={(e) => toggleDiagnostics(e.target.checked)}
             />
-            {includeDiagnostics && diagnostics && (
-              <pre
-                aria-label={t('supportFeedback.diagnosticsPreview')}
-                className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 font-mono text-[11px] leading-snug text-stone-700"
-              >
-                {JSON.stringify(diagnostics, null, 2)}
-              </pre>
+            {includeDiagnostics && reportState === 'loading' && (
+              <p role="status" className="mt-2 text-xs text-stone-500">{t('supportFeedback.diagnosticsPreparing')}</p>
+            )}
+            {includeDiagnostics && reportState === 'ready' && report && (
+              <div className="mt-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    aria-expanded={showReport}
+                    aria-controls="support-diagnostics-preview"
+                    onClick={() => setShowReport((v) => !v)}
+                    className={cn('inline-flex h-9 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-stone-700 hover:bg-stone-100', FOCUS_RING)}
+                  >
+                    <ChevronDown size={16} aria-hidden="true" className={cn('transition-transform', showReport && 'rotate-180')} />
+                    {showReport ? t('supportFeedback.hideDiagnostics') : t('supportFeedback.showDiagnostics')}
+                  </button>
+                  <span className="text-xs tabular-nums text-stone-500">
+                    {t('supportFeedback.diagnosticsSize', { size: sizeText(report.bytes), lines: report.lines })}
+                  </span>
+                </div>
+                {showReport && (
+                  <pre
+                    id="support-diagnostics-preview"
+                    aria-label={t('supportFeedback.diagnosticsPreview')}
+                    tabIndex={0}
+                    className="mt-2 max-h-72 overflow-auto whitespace-pre rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 font-mono text-[11px] leading-snug text-stone-700"
+                  >
+                    {report.text}
+                  </pre>
+                )}
+              </div>
+            )}
+            {includeDiagnostics && reportState === 'failed' && diagnostics && (
+              <>
+                <p className="mt-2 text-xs text-stone-500">{t('supportFeedback.diagnosticsFailed')}</p>
+                <pre
+                  aria-label={t('supportFeedback.diagnosticsPreview')}
+                  className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 font-mono text-[11px] leading-snug text-stone-700"
+                >
+                  {JSON.stringify(diagnostics, null, 2)}
+                </pre>
+              </>
             )}
           </div>
         )}
@@ -555,11 +685,19 @@ export default function SupportFeedbackModal({ open, onClose, area: areaProp, cu
           </p>
         )}
 
-        {/* Sending failed or offline: the same message by email */}
+        {/* Sending failed or offline: the same message by email, and the
+            diagnostics file to attach to it by hand */}
         {showComments && offerMailto && (
-          <Button variant="secondary" size="lg" block icon={Mail} onClick={openMailto} className="mb-3">
-            {t('supportFeedback.sendByEmail')}
-          </Button>
+          <>
+            <Button variant="secondary" size="lg" block icon={Mail} onClick={() => openMailto()} className="mb-3">
+              {t('supportFeedback.sendByEmail')}
+            </Button>
+            {includeDiagnostics && report && (
+              <Button variant="secondary" size="lg" block icon={Download} onClick={() => downloadDiagnosticsFile(report)} className="mb-3">
+                {t('supportFeedback.downloadDiagnostics')}
+              </Button>
+            )}
+          </>
         )}
 
         {/* Submit Button */}
