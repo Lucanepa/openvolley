@@ -396,7 +396,8 @@
       "invalidNumbers": "Invalid jersey numbers (must be 1-99): {{numbers}}",
       "playersWithoutNumbers": "{{count}} player(s) without jersey numbers",
       "fixIssues": "Please fix the following issues:\n\n• {{issues}}",
-      "completeBeforeCoinToss": "Please complete the following before proceeding to coin toss:\n\n• {{issues}}"
+      "completeBeforeCoinToss": "Please complete the following before proceeding to coin toss:\n\n• {{issues}}",
+      "numbersInRecord": "Die Nummere chömed im Spielprotokoll vor und chönd da nöd gänderet oder entfernt werde: {{numbers}}. Änder d Nummere under Korrekture → Spielernummere: si änderet denn für de ganz Match."
     },
     "modals": {
       "syncing": "Synchronisierig",
@@ -2497,13 +2498,13 @@
     },
     "manualAdjustments": {
       "q_editScores": "Wie korrigier ich es Satzresultat?",
-      "a_editScores": "Tipp i de Charte «Satzresultat» uf «Endstand korrigiere». Nur s Ändi vomene Satz laat sich ändere: en Punkt nach em letschte Punkt hinzuefüege oder de letscht Punkt entferne. Mitti im Satz vergässni Pünkt chasch nöd korrigiere.",
+      "a_editScores": "Tipp i de Charte «Satzresultat» uf «Endstand korrigiere»: en Punkt nach em letschte Punkt hinzuefüege oder de letscht Punkt entferne. Under «Erwiiteret: Ereignisprotokoll» chasch jede Punkt em andere Team gäh oder entferne; Ufschlag, Rotatione und Spielstand dänach werdet neu berächnet.",
       "tip_editScores": "Korrekture: Spielstand, Satzresultat, Auszeite, Spielerwächsel und Sanktione.",
       "q_editTeams": "Wie bearbeit ich Teaminformatione?",
       "a_editTeams": "Mach de Reiter «Teams» uf, zum Näme, Churznäme, Farbe, Spieler und Bankoffizielli ändere. De Reiter «Spielinfo» hät Halle, Datum und Offizielli. Tipp dänn uf «Änderige speichere».",
       "tip_editTeams": "Teams: Näme, Farbe, Spieler und Bankoffizielli.",
       "q_editEvents": "Wie korrigier ich es Timeout, en Wächsel oder e Sanktion?",
-      "a_editEvents": "Bruuch d Charte «Auszeite», «Spielerwächsel» und «Sanktione». Jedi hät en Chnopf zum Hinzuefüege, und jedi Ziile hät «Bearbeite» und «Entferne». E Vorschau zeigt, was sich ufem Matchblatt änderet, bevor du bestätigsch.",
+      "a_editEvents": "Bruuch d Charte «Auszeite», «Spielerwächsel», «Sanktione», «Libero» und «Ufstellig» oder für jede Iitrag «Erwiiteret: Ereignisprotokoll»: Jedi Ziile hät «Bearbeite» und «Entferne». E Vorschau zeigt, was sich ufem Matchblatt änderet, bevor du bestätigsch. Was dänach chunnt, wird neu berächnet; en Iitrag, wo nümme passt, staht under «Die Iiträg prüefe».",
       "tip_editEvents": "Da füegsch Auszeite, Spielerwächsel und Sanktione hinzue, bearbeitisch oder entfernsch si.",
       "q_saveChanges": "Wie speicher ich mini Änderige?",
       "a_saveChanges": "Korrekture werded einzeln gspeicheret, wänn du si bestätigsch. Änderige i «Teams» und «Spielinfo» speicheret «Änderige speichere» obe zäme. «Schliesse» fröget nache, bevor nöd gspeicherti Änderige verlore gönd.",
@@ -2513,11 +2514,11 @@
       "q_missedPoint": "Ich ha im Satz en Punkt vergässe?",
       "a_missedPoint": "Tipp under Spiil › Korrekture bim Team uf «Vergässene Punkt hinzuefüege». Er wird bim aktuelle Spielstand mit Rotation und Ufschlag iitreit, wie mit em Punkt-Chnopf. Isch de letscht Punkt as falsch Team gange, tipp uf «Letschte Punkt isch a di falsch Mannschaft gange».",
       "q_serveSidesLineup": "Wie korrigier ich Ufschlag, Siite oder Ufstellig?",
-      "a_serveSidesLineup": "I de Korrekture: «Erschte Ufschlag ändere», «Siite wächsle» und «Satz wieder öffne». «Ufstellig korrigiere» behebt e falschi Rotation: Rotier s Team um ei Position vor oder zrugg.",
+      "a_serveSidesLineup": "I de Korrekture: «Erschte Ufschlag ändere», «Siite wächsle» und «Satz wieder öffne» und d Charte «Siitewahl». «Ufstellig korrigiere» änderet e Startufstellig, au nach gspielte Ballwächsel; «Vorwärts» und «Zrugg» rotiered es Team, wo ei Position verschobe staht. D Rotatione dänach werdet neu berächnet.",
       "q_signaturesCleared": "Werum sind d Underschrifte glöscht worde?",
       "a_signaturesCleared": "E Korrektur, wo s Matchblatt änderet, löscht d Underschrifte vom Spieländi. Sammle si neu. Es gnehmigets Spiil isch schriibgschützt: Mach s zersch wieder uf.",
       "q_editRoster": "Chan ich en Kader während em Spiil ändere?",
-      "a_editRoster": "Ja: Spiil › Hei-Ufschtelig bearbeite oder Gascht-Ufschtelig bearbeite. Änderige nach de Usloosig werded i de Korrekture und i de Bemerkige protokolliert."
+      "a_editRoster": "Ja: Spiil › Hei-Ufschtelig bearbeite oder Gascht-Ufschtelig bearbeite. Änderige nach de Usloosig werded i de Korrekture und i de Bemerkige protokolliert. E Nummere, wo du det oder under Korrekture › Spielernummere änderisch, gilt für de ganz Match: jede Iitrag vorher und nachher zeigt di neu Nummere."
     },
     "moreHelp": "Meh Hilf",
     "contactSupport": "Support kontaktiere",
@@ -4009,7 +4010,8 @@
       "remarks": "Bemerkige",
       "remark": "Bemerkig",
       "set": "Satz {{n}}",
-      "sanction": "Sanktion"
+      "sanction": "Sanktion",
+      "liberoShort": "L"
     },
     "describe": {
       "point": "Punkt für {{team}}",
@@ -4065,7 +4067,11 @@
       "remarkRemoved": "Bemerkig entfernt: «{{text}}»",
       "missedPoint": "Hinzuegfüegt: vergässne Punkt für {{team}}",
       "firstServe": "Erschte Ufschlag gänderet uf {{team}}",
-      "sides": "Siite gwächslet in Satz {{set}}"
+      "sides": "Siite gwächslet in Satz {{set}}",
+      "lineupChanged": "Ufstellig vo {{team}} in Satz {{set}} gänderet: {{from}} → {{to}}",
+      "coinToss": "Siitewahl korrigiert: Team A isch {{teamA}}, erschte Ufschlag {{serve}}",
+      "set5CoinToss": "Siitewahl vom Entscheidigssatz korrigiert: erschte Ufschlag {{serve}}",
+      "renumbered": "Spieler/in #{{from}} vo {{team}} umnummeriert uf #{{to}}"
     },
     "error": {
       "noSuchScore": "Satz {{set}} het dä Spielstand nie gha.",
@@ -4077,7 +4083,7 @@
       "choosePlayers": "Wähl d Spieler/innen, wo use und ine gönd.",
       "playerNotOnCourt": "Bi {{score}} isch #{{n}} nöd uf em Feld gsi.",
       "liberoOnCourt": "Bi {{score}} isch #{{n}} dur Libero #{{libero}} ersetzt gsi.",
-      "liberoNotSubstituted": "#{{n}} isch Libero: En Libero wird nöd usgwächslet. E Libero-Uswächslig wird mit Rückgängig korrigiert.",
+      "liberoNotSubstituted": "#{{n}} isch Libero: En Libero wird nöd usgwächslet. Korrigier de Libero-Wächsel i de Charte «Libero».",
       "playerInOnCourt": "Bi {{score}} isch #{{n}} scho uf em Feld gsi.",
       "laterConflict": "#{{out}} oder #{{in}} isch imene spötere Wächsel oder Libero-Uustusch i dem Satz debii. Entfern dä zersch.",
       "noLaterOpponentPoint": "{{team}} het in Satz {{set}} kein spötere Punkt, wo als Strafpunkt markiert werde chan. Isch de Punkt nie erfasst worde, nimm «Endstand korrigiere».",
@@ -4097,7 +4103,18 @@
       "liberoOnCourtRotate": "En Libero isch für die Mannschaft uf em Feld: rotier, wenn de Libero s Feld verlah het.",
       "removePointNotLast": "De Strafpunkt chan nur entfernt werde, solang er de letscht Punkt vom laufende Satz isch.",
       "noScoreChange": "Nüüt z ändere.",
-      "endBeforeStart": "Satz {{set}} cha nöd vor sim Aafang ändi."
+      "endBeforeStart": "Satz {{set}} cha nöd vor sim Aafang ändi.",
+      "useReopen": "Es Satzänd wird mit «Satz wieder öffne» zruggnoh.",
+      "automaticEntry": "Die Ziile schriibt d App und berächnet si us de Iiträg: korrigier de Iitrag, wo si dezueghört.",
+      "coinTossNotRemovable": "En Match het immer e Siitewahl: korrigier si statt desse.",
+      "lineupIncomplete": "Wähl für jedi vo de sächs Positione e Person.",
+      "lineupDuplicate": "#{{n}} isch zwöimal gwählt.",
+      "chooseNumber": "Wähl e Nummere.",
+      "numberTaken": "#{{n}} isch scho d Nummere vo {{name}} ({{team}}). Wähl en anderi Nummere.",
+      "numberInRecord": "#{{n}} chunnt im Spielprotokoll vo {{team}} scho vor. Wähl en anderi Nummere.",
+      "invalidNumber": "E Trikotnummere isch e ganzi Zahl vo 1 bis 99.",
+      "sameNumber": "Das isch scho d Nummere vo dere Person.",
+      "noSuchPlayer": "Die Person staht nöd uf de Spielerlischte."
     },
     "note": {
       "ladder": "Nach de Regle wär das e {{expected}} gsi; erfasst, wie de Schiri entschiede het.",
@@ -4110,7 +4127,14 @@
       "irBox": "De Buechstabe vo Team {{letter}} wird im Feld «Nicht ordnungsgemässer Antrag» dureggstriche (X); kein Spielstand.",
       "expulsionReplacement": "Erfass de Ersatz mit «+ Spielerwächsel hinzuefüege» (ausserordentlich, wenn kein reguläre Wächsel möglich gsi isch).",
       "laterRotations": "Späteri Rotatione vo dem Satz werdet nöd neu berächnet.",
-      "afterMatch": "Nach em Match erfasst."
+      "afterMatch": "Nach em Match erfasst.",
+      "timeoutLimit": "Beidi Auszeite vo dere Mannschaft sind in Satz {{set}} scho erfasst: das isch e dritti.",
+      "subLimit": "Sächs Spielerwächsel vo dere Mannschaft sind in Satz {{set}} scho erfasst: das isch en sibete.",
+      "subRule": "{{reason}}",
+      "winnerWouldChange": "Das änderet de Gwünner vo Satz {{set}}.",
+      "invalidFinalScore": "{{score}} isch kein mögliche Endstand vo Satz {{set}}.",
+      "liberoInLineup": "#{{n}} isch Libero: en Libero staht nöd i de Startufstellig.",
+      "recalculated": "Alles dänach wird neu berächnet: Rotatione, Ufschlag, Libero-Wächsel und Spielstand."
     },
     "title": "Korrekture",
     "pageTitle": "Korrekture",
@@ -4129,7 +4153,10 @@
       "sanctions": "Sanktione",
       "libero": "Libero",
       "log": "Korrekturprotokoll (für de Schiri)",
-      "advanced": "Erwiiteret: Ereignisprotokoll"
+      "advanced": "Erwiiteret: Ereignisprotokoll",
+      "issues": "Die Iiträg prüefe",
+      "coinToss": "Siitewahl",
+      "numbers": "Spielernummere"
     },
     "add": {
       "timeout": "Auszeit hinzuefüege",
@@ -4145,7 +4172,8 @@
       "libero": "Kei Libero-Wächsel erfasst.",
       "log": "No kei Korrekture.",
       "players": "Kei Spieler/innen zur Uswahl.",
-      "sets": "No kei Satz fertig."
+      "sets": "No kei Satz fertig.",
+      "lineup": "Kei Ufstellig erfasst."
     },
     "field": {
       "set": "Satz",
@@ -4163,7 +4191,21 @@
       "startTime": "Beginn",
       "endTime": "Endi",
       "currentFinal": "Jetzt",
-      "addDelayRemark": "Bemerkig zum verspötete Beginn hinzuefüege"
+      "addDelayRemark": "Bemerkig zum verspötete Beginn hinzuefüege",
+      "order": "Reihefolg",
+      "positions": "Positione (vorderi Reihe obe)",
+      "pointTo": "Punkt für",
+      "teamA": "Team A",
+      "firstServeSet5": "Erschte Ufschlag im Entscheidigssatz",
+      "firstServe": "Erschte Ufschlag in Satz 1",
+      "gameCaptainNow": "Spielkapitän/in jetzt: #{{n}}",
+      "gameCaptainNone": "Kei Spielkapitän/in bestimmt.",
+      "player": "Spieler/in",
+      "newNumber": "Neui Nummere",
+      "liberoIn": "Libero ine",
+      "playerReplaced": "Ersetzt (uf em Feld)",
+      "libero": "Libero",
+      "newLibero": "Neue Libero"
     },
     "who": {
       "player": "Spieler/in uf em Feld",
@@ -4206,7 +4248,22 @@
       "addRemark": "Bemerkig hinzuefüege",
       "editRemark": "Bemerkig bearbeite",
       "finalScore": "Satz {{set}}: Endstand korrigiere",
-      "setTimes": "Satz {{set}}: Beginn und Endi"
+      "setTimes": "Satz {{set}}: Beginn und Endi",
+      "editLineupRow": "Korrigierti Ufstellig bearbeite",
+      "editLineup": "Startufstellig",
+      "editPoint": "Punkt bearbeite",
+      "set5CoinToss": "Siitewahl vom Entscheidigssatz",
+      "coinToss": "Siitewahl",
+      "gameCaptain": "Spielkapitän/in",
+      "renumber": "Spielernummere ändere",
+      "editLiberoEntry": "Libero-Wächsel bearbeite",
+      "editLiberoExit": "Libero-Ustritt bearbeite",
+      "editLiberoExchange": "Libero-Tuusch bearbeite",
+      "editLiberoUnable": "Spielunfähige Libero bearbeite",
+      "editRedesignation": "Neubestimmig vom Libero bearbeite",
+      "editGameCaptain": "Spielkapitän/in bearbeite",
+      "editInjury": "Verletzig bearbeite",
+      "editEntry": "Iitrag bearbeite"
     },
     "action": {
       "back": "Zrugg",
@@ -4238,7 +4295,12 @@
       "correctFinalScore": "Endstand korrigiere",
       "setTimes": "Satzziite",
       "showAutomatic": "Automatischi Iiträg aazeige",
-      "reopenForCorrections": "Zrugg zum Matchend"
+      "reopenForCorrections": "Zrugg zum Matchend",
+      "newestFirst": "Neuschti zersch",
+      "oldestFirst": "Ältischti zersch",
+      "editSet5Toss": "Entscheidigssatz bearbeite",
+      "gameCaptain": "Spielkapitän/in ändere",
+      "renumber": "Nummere ändere"
     },
     "preview": {
       "title": "Was sich ufem Matchblatt änderet",
@@ -4251,7 +4313,12 @@
       "paperSub": "{{in}} für {{out}} bi {{score}} i de Ufstelligsspalte vo de Position {{position}}.",
       "subCount": "Spielerwächsel vo {{team}} in Satz {{set}}: {{n}}/6",
       "paperSanction": "{{code}} i de Spalte {{column}} · Team {{letter}} · Satz {{set}} · {{score}}",
-      "finalScore": "Endstand {{before}} wird zu {{after}}."
+      "finalScore": "Endstand {{before}} wird zu {{after}}.",
+      "pointTeam": "De Ballwächsel nach {{score}} gaht a {{team}}; Ufschlag, Rotatione und Spielstand dänach werdet neu berächnet.",
+      "renumber": "#{{from}} wird #{{to}} i de Spielerlischte und i jedem Iitrag vom Match ({{n}} Ziile), vorher und nachher: Ufstellige, Wächsel, Liberos, Sanktione, Spielkapitän/in, Bemerkige. Matchblatt und Tablets zeiged #{{to}}.",
+      "renumberRosterOnly": "#{{from}} wird #{{to}} i de Spielerlischte; s Spielprotokoll nennt die Person no nöd.",
+      "checkAfter": "Nach dere Korrektur prüefe",
+      "moreIssues": "und {{n}} wiiteri (under «Die Iiträg prüefe»)"
     },
     "pointGiven": {
       "yes": "Ja",
@@ -4261,7 +4328,8 @@
       "exceptional": "Ausserordentlich",
       "incomplete": "Unvollständige Iitrag",
       "paperCode": "So wie ufem Matchblatt",
-      "teamsNotSet": "Team A/B nöd festgleit: Heim wird als A zeigt"
+      "teamsNotSet": "Team A/B nöd festgleit: Heim wird als A zeigt",
+      "automatic": "Automatisch"
     },
     "hint": {
       "timeoutHere": "Auszeit scho da",
@@ -4272,7 +4340,13 @@
       "finalScore": "Nur s Satzend chan korrigiert werde: en Punkt nach em letschte Punkt dezue oder de letscht Punkt weg. Vergässni Punkt mitts im Satz chönd nöd korrigiert werde (Schriiberkurs Swiss Volley).",
       "libero": "En Libero-Wächsel korrigiersch während em Match mit Rückgängig.",
       "lineup": "Korrigier d Ufstellig vor em erschte Ballwächsel vom Satz; rotier e Mannschaft, wo ei Position verschobe staht.",
-      "advanced": "Alli Iiträg vom Matchprotokoll. Bim Entferne gaht alles mit, wo zum Iitrag ghört. Hinzuefüege und Ändere i de Charte obe."
+      "advanced": "Alli Iiträg vom Matchprotokoll. Bim Entferne gaht alles mit, wo zum Iitrag ghört. Hinzuefüege und Ändere i de Charte obe.",
+      "issues": "Nach ere Korrektur passed die Iiträg nümme zu dem, wo vorher gsi isch. Nüt isch abglehnt worde: korrigier si oder lahn si, wenn de Schiri so entschiede het.",
+      "lineupAny": "Korrigier e Startufstellig jederziit, au nach gspielte Ballwächsel: Rotatione, Ufschlag und Libero-Wächsel dänach werdet neu berächnet.",
+      "liberoEdit": "Bearbeite oder entfern en Libero-Wächsel: d Ufstellige dänach werdet neu berächnet.",
+      "numbers": "E Nummere, wo du da änderisch, gilt für de ganz Match: jede Iitrag vorher und nachher zeigt di neu Nummere, ufem Matchblatt und uf de Tablets.",
+      "advancedAll": "Jede Iitrag vom Spielprotokoll. Bearbeite oder entfern jede Iitrag: was dezueghört, gaht mit, und alles dänach wird neu berächnet. Iiträg füegsch i de Charte obe hinzue.",
+      "coinToss": "Team A änderet nur d Buechstabe ufem Matchblatt; uf em Feld bewegt sich nüt. Wer in Satz 1 zersch ufschlaht, schlaht au in Satz 3 zersch uf und nimmt i de Sätz 2 und 4 zersch aa."
     },
     "confirm": {
       "removeTitle": "Dä Iitrag entferne?",
@@ -4291,6 +4365,42 @@
     "banner": {
       "signaturesCleared": "D Underschrifte sind glöscht worde, will sich s Matchblatt gänderet het. Hol sie am Matchend neu ii.",
       "readOnly": "De Match isch gnehmigt: Korrekture sind schriibgschützt."
+    },
+    "coinToss": {
+      "summary": "Team A: {{teamA}} · Erschte Ufschlag in Satz 1: {{serve}}",
+      "set5": "Entscheidigssatz: erschte Ufschlag {{serve}}"
+    },
+    "lineup": {
+      "gameCaptain": "Spielkapitän/in {{team}}: {{n}}"
+    },
+    "issue": {
+      "noLineup": "Satz {{set}}: vor em erschte Punkt isch kei Ufstellig vo {{team}} erfasst.",
+      "lineupIncomplete": "Satz {{set}}: d Startufstellig vo {{team}} het uf Position {{position}} niemer.",
+      "lineupDuplicate": "Satz {{set}}, {{score}}: #{{n}} staht zwöimal i de Ufstellig vo {{team}}.",
+      "liberoInLineup": "Satz {{set}}: Libero #{{n}} staht i de Startufstellig vo {{team}}.",
+      "notOnRoster": "#{{n}} vo {{team}} staht nöd uf de Spielerlischte (Satz {{set}}).",
+      "subOutNotOnCourt": "Satz {{set}}, {{score}}: Wächsel vo {{team}}, #{{in}} für #{{out}}: #{{out}} isch nöd uf em Feld.",
+      "subInOnCourt": "Satz {{set}}, {{score}}: Wächsel vo {{team}}, #{{in}} für #{{out}}: #{{in}} isch scho uf em Feld.",
+      "subLiberoReplaced": "Satz {{set}}, {{score}}: Wächsel vo {{team}}, #{{in}} für #{{out}}: #{{out}} isch i dem Moment dur Libero #{{libero}} ersetzt.",
+      "subLimit": "Satz {{set}}, {{score}}: {{team}} het {{n}} reguläri Wächsel i dem Satz (6 erlaubt).",
+      "subInTwice": "Satz {{set}}, {{score}}: #{{n}} vo {{team}} chunnt i dem Satz es zweits Mal ine.",
+      "subOutTwice": "Satz {{set}}, {{score}}: #{{n}} vo {{team}} gaht i dem Satz es zweits Mal use.",
+      "subPairing": "Satz {{set}}, {{score}}: #{{out}} vo {{team}} isch für #{{starter}} inecho: nur #{{starter}} darf #{{out}} ersetze.",
+      "liberoEntryNotOnCourt": "Satz {{set}}, {{score}}: Libero #{{libero}} für #{{n}} ({{team}}): #{{n}} isch nöd uf em Feld.",
+      "liberoAlreadyOnCourt": "Satz {{set}}, {{score}}: Libero #{{libero}} ine ({{team}}): Libero #{{other}} isch scho uf em Feld.",
+      "liberoFrontRow": "Satz {{set}}, {{score}}: Libero #{{libero}} ersetzt #{{n}} vo {{team}} i de vordere Reihe (Position {{position}}).",
+      "notALibero": "Satz {{set}}, {{score}}: #{{n}} vo {{team}} ersetzt als Libero, isch aber uf de Spielerlischte kei Libero.",
+      "liberoExitNone": "Satz {{set}}, {{score}}: Libero-Ustritt vo {{team}}: kei Libero isch uf em Feld.",
+      "liberoExchangeNone": "Satz {{set}}, {{score}}: Libero-Tuusch vo {{team}}: kei Libero isch uf em Feld.",
+      "timeoutLimit": "Satz {{set}}, {{score}}: {{team}} het {{n}} Auszeite i dem Satz (2 erlaubt).",
+      "sanctionLadder": "Satz {{set}}, {{score}}: {{what}} vo {{team}}: nach de Regle isch das e {{expected}}.",
+      "sameSanctionTwice": "Satz {{set}}, {{score}}: {{what}} vo {{team}}: die Person het die Sanktion scho.",
+      "teamAlreadyWarned": "Satz {{set}}, {{score}}: {{what}} vo {{team}}: d Mannschaft isch scho verwarnt worde.",
+      "pointsAfterWin": "Satz {{set}} isch bi {{score}} scho gwunne gsi; dänach folged no {{n}} Punkt.",
+      "setScoreInvalid": "Satz {{set}} het {{score}} gändet: kein mögliche Endstand.",
+      "setWinnerChanged": "Satz {{set}} gwünnt jetzt {{team}} ({{score}}).",
+      "matchNotDecided": "De Match isch fertig, aber kei Mannschaft het {{n}} Sätz gwunne ({{result}}).",
+      "setsAfterMatchWon": "Satz {{set}} isch gspielt worde, nachdem de Match scho gwunne gsi isch ({{result}})."
     }
   },
   "picker": {

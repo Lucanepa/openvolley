@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   scoreTimeline, insertionAt, applyPlanToEvents, planAddTimeout, planRemoveTimeout, planAddSubstitution,
   planRemoveSubstitution, planAddSanction, planRemoveSanction, planAdjustFinalScore, planSetTimes,
-  planRemoveGroup, planEditEvent, planMoveEvent, planRotateTeam, courtAt, errorText, describeRemoval, isRemovableEntry
+  planRemoveGroup, planEditEvent, planMoveEvent, planRotateTeam, courtAt, errorText, describeRemoval, isRemovableEntry,
+  entryActions, pointGroupIds
 } from '../manualCorrections'
 import { scoreBeforeEvent, compareBySeq, tsMs } from '../describe'
 import { scoreFromPointEvents } from '../rules'
@@ -96,12 +97,13 @@ describe('insertion: integer seq, renumbering, ts order', () => {
     expect(scoreBeforeEvent(after, to)).toEqual({ home: 25, away: 20 })
   })
 
-  it('refuses a third time-out and an unknown score', () => {
+  it('a third time-out is recorded with a warning (manual correction); an unknown score is refused', () => {
     const { events } = fixture()
     const one = applyPlanToEvents(events, planAddTimeout(events, { setIndex: 1, team: 'away', at: 10 }, review))
     const third = planAddTimeout(one, { setIndex: 1, team: 'away', at: 12 }, review)
-    expect(third.error).toBe('corrections.error.timeoutLimit')
-    expect(errorText(third)).toBe('Both time-outs of this team are already recorded in set 1.')
+    expect(third.error).toBeUndefined()
+    expect(third.notes.map(n => n.text)).toContain('Both time-outs of this team were already recorded in set 1: this is a third one.')
+    expect(third.newIssues.map(i => i.key)).toEqual(['corrections.issue.timeoutLimit'])
     expect(planAddTimeout(events, { setIndex: 1, team: 'home', at: 99 }, review).error).toBe('corrections.error.noSuchScore')
   })
 
@@ -204,16 +206,18 @@ describe('substitutions', () => {
     expect(planAddSubstitution(events, { setIndex: 1, team: 'home', playerOut: lu.I, playerIn: 9, at }, review).error).toBeUndefined()
   })
 
-  it('refuses when a later substitution involves either player', () => {
+  it('a later substitution of the same players is not refused: it is listed as inconsistent', () => {
     const { events } = buildMatch({
       sets: [{ points: pointsFor(25, 20), finished: true, extras: [{ at: 15, type: 'substitution', payload: { team: 'home', playerOut: 4, playerIn: 9 } }] }]
     })
     const tl = scoreTimeline(events, 1)
     const at = idxOf(tl, 3, 2)
-    const lu = courtAt(events, 1, 'home', at).lineup
-    const out = Object.values(lu).find(n => n === 4) ?? lu.I
-    const r = planAddSubstitution(events, { setIndex: 1, team: 'home', playerOut: out, playerIn: 9, at }, review)
-    expect(r.error).toBe('corrections.error.laterConflict')
+    const r = planAddSubstitution(events, { setIndex: 1, team: 'home', playerOut: 4, playerIn: 9, at }, review)
+    expect(r.error).toBeUndefined()
+    // the later "#9 for #4": #4 is no longer on court and #9 comes in a second time
+    expect(r.newIssues.map(i => i.key)).toEqual(expect.arrayContaining(['corrections.issue.subOutNotOnCourt', 'corrections.issue.subInTwice']))
+    const later = events.find(e => e.type === 'substitution')
+    expect(r.newIssues.every(i => i.eventId === later.id)).toBe(true)
   })
 
   it('an exceptional substitution writes the Swiss remark, concerned team first', () => {
@@ -233,12 +237,15 @@ describe('substitution limit (domain/substitutions)', () => {
     at: i + 1, type: 'substitution', payload: { team: 'home', playerOut: out, playerIn: inn, ...(exceptional ? { isExceptional: true } : {}) }
   }))
 
-  it('refuses a 7th regular substitution; an exceptional one is still allowed', () => {
+  it('a 7th regular substitution is recorded with a warning; an exceptional one is allowed as is', () => {
     const { events } = buildMatch({
       sets: [{ points: pointsFor(25, 20), finished: true, extras: subsAt([[1, 21], [2, 22], [3, 23], [4, 24], [5, 25], [6, 26]]) }]
     })
     const at = 12
-    expect(planAddSubstitution(events, { setIndex: 1, team: 'home', playerOut: 21, playerIn: 1, at }, review).error).toBe('corrections.error.subLimit')
+    const seventh = planAddSubstitution(events, { setIndex: 1, team: 'home', playerOut: 21, playerIn: 1, at }, review)
+    expect(seventh.error).toBeUndefined()
+    expect(seventh.notes.map(n => n.key)).toContain('corrections.note.subLimit')
+    expect(seventh.newIssues.map(i => i.key)).toContain('corrections.issue.subLimit')
     const exc = planAddSubstitution(events, { setIndex: 1, team: 'home', playerOut: 21, playerIn: 31, at, exceptional: true, reason: 'injury' }, review)
     expect(exc.error).toBeUndefined()
   })
@@ -298,13 +305,15 @@ describe('sanctions', () => {
     expect(no.error).toBe('corrections.error.pointNowOnlyLive')
   })
 
-  it('the delay ladder blocks during the match and warns at the match end', () => {
+  it('the delay ladder warns, during the match and at its end (manual correction)', () => {
     const { events } = buildMatch({
       sets: [{ points: pointsFor(25, 20), finished: true, extras: [{ at: 2, type: 'sanction', payload: { team: 'home', type: 'delay_warning' } }] }]
     })
     const tl = scoreTimeline(events, 1)
     const args = { setIndex: 1, team: 'home', type: 'delay_warning', at: idxOf(tl, 10, 8) }
-    expect(planAddSanction(events, args, { ...review, mode: 'live', liveSetIndex: 1 }).error).toBe('corrections.error.ladder')
+    const during = planAddSanction(events, args, { ...review, mode: 'live', liveSetIndex: 1 })
+    expect(during.error).toBeUndefined()
+    expect(during.notes[0].key).toBe('corrections.note.ladder')
     const atEnd = planAddSanction(events, args, review)
     expect(atEnd.error).toBeUndefined()
     expect(atEnd.notes[0].text).toBe('By the rules this would have been a delay penalty; recorded as the referee decided.')
@@ -459,40 +468,60 @@ describe('set times, rotation, advanced removal', () => {
     expect(back.after.II).toBe(back.before.I)
   })
 
-  it('removes a point with its rotation and rally start, refuses a set end', () => {
+  it('removes a point with its rotation and rally start and recalculates the rotations after it; a set end is reopened', () => {
     const { events } = fixture()
     // a side-out point of the loser of set 1 (25:20 -> 25:19 stays a possible result)
     const sidePoint = events.find(e => e.type === 'point' && e.setIndex === 1 && e.payload.team === 'away' && events.some(x => x.type === 'lineup' && baseOf(x) === e.seq && x.seq !== e.seq))
     const plan = planRemoveGroup(events, sidePoint.id, review)
-    expect(plan.remove).toHaveLength(3)
+    expect(plan.remove).toEqual(expect.arrayContaining(pointGroupIds(events, sidePoint)))
     expect(plan.affectedSets).toEqual([1])
-    expect(plan.notes[0].text).toBe('Later rotations of this set are not recalculated.')
+    expect(plan.notes[0].text).toBe('Everything after it is recalculated: rotations, serve, libero replacements and the score.')
     expect(describeRemoval(events, plan, review)[0]).toMatch(/^Point for /)
-    expect(planRemoveGroup(events, events.find(e => e.type === 'set_end').id, review).error).toBe('corrections.error.useUndo')
+    // the log after it is the one the remaining points give
+    const after = applyPlanToEvents(events, plan)
+    const pts = after.filter(e => e.type === 'point' && e.setIndex === 1).sort(compareBySeq).map(e => (e.payload.team === 'home' ? 'H' : 'A')).join('')
+    const rebuilt = buildMatch({ sets: [{ points: pts, finished: true }] }).events
+    const last = (list, team) => list.filter(e => e.type === 'lineup' && e.setIndex === 1 && e.payload.team === team).sort(compareBySeq).pop().payload.lineup
+    expect(last(after, 'home')).toEqual(last(rebuilt, 'home'))
+    expect(last(after, 'away')).toEqual(last(rebuilt, 'away'))
+    expect(planRemoveGroup(events, events.find(e => e.type === 'set_end').id, review).error).toBe('corrections.error.useReopen')
   })
 
-  it('never leaves a finished set with an impossible result or another winner', () => {
+  it('a point removed from a finished set: allowed, the new result is listed', () => {
     const { events } = fixture()
-    // set 1 is 25:20: a point of the winner removed would leave 24:20
+    // set 1 is 25:20: a point of the winner removed leaves 24:20
     const winnerPoint = events.find(e => e.type === 'point' && e.setIndex === 1 && e.payload.team === 'home')
     const r = planRemoveGroup(events, winnerPoint.id, review)
-    expect(r.error).toBe('corrections.error.winnerWouldChange')
+    expect(r.error).toBeUndefined()
+    expect(r.notes.map(n => n.key)).toContain('corrections.note.winnerWouldChange')
+    expect(r.newIssues.map(i => i.key)).toContain('corrections.issue.setScoreInvalid')
     // the set being played has no final score yet: a point may go
     const livePoint = events.find(e => e.type === 'point' && e.setIndex === 2 && e.payload.team === 'home')
     expect(planRemoveGroup(events, livePoint.id, live).error).toBeUndefined()
     // 26:24 -> 26:23 is not a final score
     const { events: tight } = buildMatch({ sets: [{ points: pointsFor(26, 24), finished: true }] })
     const loser = tight.find(e => e.type === 'point' && e.payload.team === 'away')
-    expect(planRemoveGroup(tight, loser.id, review).error).toBe('corrections.error.invalidFinalScore')
+    const t2 = planRemoveGroup(tight, loser.id, review)
+    expect(t2.error).toBeUndefined()
+    expect(t2.notes.map(n => n.key)).toContain('corrections.note.invalidFinalScore')
   })
 
-  it('offers Remove in the advanced log only for removable rows', () => {
+  it('every entry the scorer wrote can be removed or edited; the rows the app derives follow their entry', () => {
     const { events } = fixture()
-    expect(isRemovableEntry(events.find(e => e.type === 'lineup' && e.payload.isInitial))).toBe(false)
-    expect(isRemovableEntry(events.find(e => e.type === 'set_end'))).toBe(false)
-    expect(isRemovableEntry(events.find(e => e.type === 'lineup' && !Number.isInteger(e.seq)))).toBe(false)
-    expect(isRemovableEntry(events.find(e => e.type === 'point'))).toBe(true)
-    expect(isRemovableEntry(events.find(e => e.type === 'timeout'))).toBe(true)
+    const act = (pred) => entryActions(events.find(pred), events)
+    expect(act(e => e.type === 'lineup' && e.payload.isInitial)).toEqual({ remove: 'plan', edit: 'lineup', automatic: false })
+    expect(act(e => e.type === 'set_end')).toEqual({ remove: 'reopen', edit: 'setTimes', automatic: false })
+    expect(act(e => e.type === 'coin_toss')).toEqual({ remove: null, edit: 'coinToss', automatic: false })
+    expect(act(e => e.type === 'lineup' && !Number.isInteger(e.seq))).toEqual({ remove: null, edit: null, automatic: true })
+    expect(act(e => e.type === 'set_start')).toEqual({ remove: null, edit: 'setTimes', automatic: true })
+    expect(act(e => e.type === 'point')).toEqual({ remove: 'plan', edit: 'point', automatic: false })
+    expect(act(e => e.type === 'timeout')).toEqual({ remove: 'plan', edit: 'timeout', automatic: false })
+    expect(act(e => e.type === 'rally_start')).toEqual({ remove: 'plan', edit: null, automatic: false })
+    expect(isRemovableEntry(events.find(e => e.type === 'point'), events)).toBe(true)
+    expect(isRemovableEntry(events.find(e => e.type === 'lineup' && !Number.isInteger(e.seq)), events)).toBe(false)
+    for (const type of ['libero_entry', 'libero_exit', 'libero_exchange', 'libero_unable', 'libero_redesignation', 'court_captain_designation', 'bench_injury', 'decision_change', 'replay', 'remark']) {
+      expect(entryActions({ id: 1, seq: 5, type, payload: { team: 'home' } }, events).remove).toBe('plan')
+    }
   })
 
   it('edits a sanction type in place', () => {

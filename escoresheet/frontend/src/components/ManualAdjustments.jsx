@@ -614,7 +614,16 @@ export default function ManualAdjustments({ matchId, onClose, onSave }) {
   // After a correction at the match end: the result changed, so the account
   // approvals (scorer, referees) are undone on the server as well, as Reopen
   // last set does; the local copy was cleared with the signatures.
-  const afterCorrection = async (result) => {
+  const afterCorrection = async (result, plan) => {
+    // A correction that changed the roster (a renumbered player, a libero
+    // mark): this page's copy of the players follows, or its Save would
+    // write the old numbers back over the corrected roster
+    if (plan?.playerUpdates?.length) {
+      const byId = new Map(plan.playerUpdates.map(u => [u.id, u.changes]))
+      const follow = (list) => list.map(p => (byId.has(p.id) ? { ...p, ...byId.get(p.id) } : p))
+      setEditedHomePlayers(follow)
+      setEditedAwayPlayers(follow)
+    }
     if (!result?.signaturesCleared) return
     const prior = Object.values(data?.match?.accountApprovals || {}).filter(r => r?.id)
     if (prior.length && !data?.match?.closed_at && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
