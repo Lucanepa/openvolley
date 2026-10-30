@@ -71,6 +71,18 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.8" date="2026-10-30">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.8</url>
+      <description>
+        <ul>
+          <li>Corrections: every entry can be corrected (line-ups after rallies, coin toss, liberos, sanctions, points); rotations, serve and score are recalculated.</li>
+          <li>A shirt number changed during the match changes for the whole match.</li>
+          <li>The event log shows the newest entries first.</li>
+          <li>Support requests can include a diagnostics report, shown before sending.</li>
+          <li>Correcting the deciding set's first serve reaches the server again.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0.7" date="2026-10-29">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.7</url>
       <description>
