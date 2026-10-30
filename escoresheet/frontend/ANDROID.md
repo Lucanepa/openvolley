@@ -384,6 +384,10 @@ the desktop app, **encrypted** with the match's game PIN and referee PIN, see
   scheduled date, set scores and the file's time can be read; a test match
   has no PIN and is saved plain. PINs and session ids are never in a file
   (the restore keeps the typed PIN, the local copy's, or makes new ones).
+  Files of 3.0.8 and older are plain: their event files go after 30 days,
+  but the newest event file and `latest.json` of a folder never do, so the
+  folder of a match scored with an older version stays readable until it
+  is deleted (Options → Backup says so).
   Documents is readable by anyone who has the tablet (Files app, USB), on
   Android 10 and older also by other apps with storage permission, and the
   files **stay after an uninstall**; after a reinstall the app can no longer
@@ -397,10 +401,12 @@ the desktop app, **encrypted** with the match's game PIN and referee PIN, see
 - Cost: one file per event, each the whole match (a 5-set match ends near
   0.9 MB encrypted). The event file crosses the WebView bridge once;
   `latest.json` is a native `Filesystem.copy`. The engine waits for a 150 ms
-  quiet window and an idle moment before it reads IndexedDB. The first file
-  of a match in a session derives the PIN keys (Argon2id, about 0.5 s per PIN
-  on a mid-range tablet) in a Web Worker, so scoring does not stall; the
-  later files only encrypt (AES-GCM in WebCrypto). Each match keeps its newest files
+  quiet window and an idle moment before it reads IndexedDB. The PIN keys
+  of a match (Argon2id, about 0.5 s per PIN on a mid-range tablet) are
+  derived once per session in a Web Worker when the engine first sees the
+  match (it is opened), so scoring does not stall and even the first file
+  only encrypts (AES-GCM in WebCrypto); a worker that gives no answer in
+  10 s is retired and the keys are derived on the main thread. Each match keeps its newest files
   within 64 MB, a match idle for 12 hours keeps its newest 10, files older
   than 30 days go, and the newest file of every folder is always kept (also
   when `latest.json` belongs to an earlier install).

@@ -1,7 +1,7 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { argon2id } from 'hash-wasm'
 import { argon2idOptions } from '../argon2'
-import { BACKUP_DAMAGED, BACKUP_NEWER, BACKUP_WRONG_PIN, fromBase64, isEncryptedBackup, openEnvelope, readableHeader, toBase64 } from '../envelope'
+import { BACKUP_DAMAGED, BACKUP_NEWER, BACKUP_WRONG_PIN, fromBase64, isEncryptedBackup, MAX_PIN_SLOTS, openEnvelope, readableHeader, toBase64 } from '../envelope'
 import { backupPins, createBackupSealer } from '../sealer'
 import { checkKdfParams, derivePinKey, KDF_PARAMS } from '../kdf'
 
@@ -120,6 +120,45 @@ describe('encrypted backup file', () => {
     expect(derive).not.toHaveBeenCalled()
     expect(() => checkKdfParams({ ...KDF_PARAMS, iterations: 1000 })).toThrow(/out of range/)
   })
+
+  it('a slot asking for more than 128 MiB is ignored; the app\'s own 32 MiB still opens', async () => {
+    const { envelope } = await sealed()
+    const derive = vi.fn(derivePinKey)
+    const big = { ...envelope, slots: envelope.slots.map(s => ({ ...s, kdf: { ...s.kdf, memoryKiB: 256 * 1024 } })) }
+    await expect(openEnvelope(big, '123456', { derive })).rejects.toMatchObject({ code: BACKUP_WRONG_PIN })
+    expect(derive).not.toHaveBeenCalled()
+    expect(checkKdfParams({ ...KDF_PARAMS, memoryKiB: 128 * 1024 })).toMatchObject({ memoryKiB: 131072 })
+    expect(() => checkKdfParams({ ...KDF_PARAMS, memoryKiB: 128 * 1024 + 1 })).toThrow(/out of range/)
+    await expect(openEnvelope(envelope, '123456', { derive })).resolves.toMatchObject({ unlockedWith: { pin: 'game' } })
+  })
+
+  it('a file with many PIN slots: the first MAX_PIN_SLOTS are tried, the rest ignored', async () => {
+    const { envelope } = await sealed()
+    const derive = vi.fn(derivePinKey)
+    // game slots no PIN opens (a damaged wrapped key)
+    const broken = toBase64(fromBase64(envelope.slots[0].wrappedKey).map((b, i) => (i === 0 ? b ^ 1 : b)))
+    const junk = Array.from({ length: 40 }, () => ({ ...envelope.slots[0], wrappedKey: broken }))
+    await expect(openEnvelope({ ...envelope, slots: junk }, '123456', { derive })).rejects.toMatchObject({ code: BACKUP_WRONG_PIN })
+    expect(derive).toHaveBeenCalledTimes(MAX_PIN_SLOTS)
+    expect(MAX_PIN_SLOTS).toBe(8)
+    // the real slots after the first eight are not reached; before them they open
+    await expect(openEnvelope({ ...envelope, slots: [...junk.slice(0, 8), ...envelope.slots] }, '123456')).rejects.toMatchObject({ code: BACKUP_WRONG_PIN })
+    await expect(openEnvelope({ ...envelope, slots: [...envelope.slots, ...junk] }, '654321')).resolves.toMatchObject({ unlockedWith: { pin: 'referee' } })
+    // slot kinds this app does not know do not count
+    const recovery = Array.from({ length: 20 }, () => ({ kind: 'recovery', wrappedKey: 'AAAA' }))
+    await expect(openEnvelope({ ...envelope, slots: [...recovery, ...envelope.slots] }, '123456')).resolves.toBeTruthy()
+  })
+
+  it('an aborted open (the scorer cancelled) tries no further slot', async () => {
+    const { envelope } = await sealed()
+    const controller = new AbortController()
+    const derive = vi.fn((pin, salt, params) => {
+      controller.abort() // cancelled while the first slot is derived
+      return derivePinKey(pin, salt, params)
+    })
+    await expect(openEnvelope(envelope, '654321', { derive, signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' })
+    expect(derive).toHaveBeenCalledTimes(1) // the game slot; the referee slot is never derived
+  })
 })
 
 describe('the session sealer', () => {
@@ -184,9 +223,49 @@ describe('the session sealer', () => {
     expect(encrypted).toBe(true)
   })
 
+  // The match opened (nativeBackup engine warm): its first file, maybe the
+  // last before the app quits, does not wait for Argon2id
+  it('warm derives the PIN keys ahead and writes nothing: the first file only encrypts', async () => {
+    const derive = countingDerive()
+    const sealer = createBackupSealer({ derive })
+    const data = backup()
+    expect(await sealer.warm(1, data.match)).toBe(true)
+    expect(derive).toHaveBeenCalledTimes(2)
+    derive.mockClear()
+    const { text, encrypted } = await sealer.seal(1, data, plainOf(data), '2026-10-29T18:00:00.000Z')
+    expect(encrypted).toBe(true)
+    expect(derive).not.toHaveBeenCalled()
+    await expect(openEnvelope(JSON.parse(text), '654321')).resolves.toBeTruthy()
+    // a match with no PIN: nothing to derive
+    expect(await sealer.warm(2, { test: true })).toBe(false)
+    expect(derive).not.toHaveBeenCalled()
+  })
+
+  it('a failed warm is not an error: the first file derives the PIN keys again', async () => {
+    const derive = vi.fn().mockRejectedValueOnce(new Error('out of memory')).mockImplementation(derivePinKey)
+    const sealer = createBackupSealer({ derive })
+    const data = backup({ refereePin: null })
+    expect(await sealer.warm(1, data.match)).toBe(false)
+    await expect(sealer.seal(1, data, plainOf(data), 'x')).resolves.toMatchObject({ encrypted: true })
+    expect(derive).toHaveBeenCalledTimes(2)
+  })
+
   it('backupPins reads the local and the cloud spellings', () => {
     expect(backupPins({ game_pin: 123456, connection_pins: { referee: '222222' } })).toEqual([{ pin: 'game', value: '123456' }, { pin: 'referee', value: '222222' }])
     expect(backupPins({ test: true })).toEqual([])
+  })
+
+  // An empty local field beside the cloud one: the first spelling that
+  // holds a PIN counts, so the file is not written plain
+  it('backupPins takes the first spelling that holds a PIN, skipping empty ones', async () => {
+    expect(backupPins({ gamePin: '', game_pin: '123456', refereePin: '  ', referee_pin: null, connection_pins: { referee: '' }, connectionPins: { referee: 654321 } }))
+      .toEqual([{ pin: 'game', value: '123456' }, { pin: 'referee', value: '654321' }])
+    expect(backupPins({ gamePin: '111111', game_pin: '999999' })).toEqual([{ pin: 'game', value: '111111' }]) // the local one first
+    expect(backupPins({ gamePin: '', game_pin: '', refereePin: '' })).toEqual([])
+    const data = backup({ gamePin: '', game_pin: '123456', refereePin: undefined })
+    const { envelope, encrypted } = await sealed(data)
+    expect(encrypted).toBe(true)
+    await expect(openEnvelope(envelope, '123456')).resolves.toMatchObject({ unlockedWith: { pin: 'game' } })
   })
 })
 
@@ -196,6 +275,65 @@ describe('the KDF', () => {
     const key = await derivePinKey('123456', salt)
     expect(key).toHaveLength(32)
     expect([...key]).toEqual([...await argon2id(argon2idOptions('123456', salt, KDF_PARAMS))])
+  })
+
+  // A worker that never answers (a WebView that froze it, a script that
+  // never loaded) must not hold a backup back for good
+  describe('a KDF worker that does not answer', () => {
+    let made
+    let posted
+    let terminated
+    async function freshKdf() {
+      made = 0
+      posted = []
+      terminated = vi.fn()
+      vi.stubGlobal('Worker', class {
+        constructor() { made++ }
+        postMessage(msg) { posted.push(msg) }
+        terminate() { terminated() }
+      })
+      vi.resetModules()
+      vi.useFakeTimers()
+      return import('../kdf') // its own worker state
+    }
+    afterEach(() => {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    })
+
+    it('after 10 s the job is derived on this thread, and so is the rest of the session', async () => {
+      const kdf = await freshKdf()
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const salt = new Uint8Array(16).fill(3)
+      const key = kdf.derivePinKey('123456', salt)
+      await vi.advanceTimersByTimeAsync(kdf.WORKER_TIMEOUT_MS - 100)
+      expect(posted).toHaveLength(1)
+      expect(terminated).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(100)
+      expect(terminated).toHaveBeenCalledTimes(1) // retired
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('did not answer'))
+      vi.useRealTimers()
+      expect([...await key]).toEqual([...await argon2id(argon2idOptions('123456', salt, KDF_PARAMS))])
+      await kdf.derivePinKey('654321', salt)
+      expect(made).toBe(1) // no new worker
+      expect(posted).toHaveLength(1)
+      warn.mockRestore()
+    })
+
+    it('a costlier slot (a restore) gets proportionally longer before it moves to this thread', async () => {
+      const kdf = await freshKdf()
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const salt = new Uint8Array(16).fill(4)
+      const params = { ...KDF_PARAMS, iterations: 6 } // twice the cost
+      const key = kdf.derivePinKey('123456', salt, params)
+      await vi.advanceTimersByTimeAsync(kdf.WORKER_TIMEOUT_MS)
+      expect(terminated).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(kdf.WORKER_TIMEOUT_MS)
+      expect(terminated).toHaveBeenCalledTimes(1)
+      vi.useRealTimers()
+      expect([...await key]).toEqual([...await argon2id(argon2idOptions('123456', salt, params))])
+      warn.mockRestore()
+    })
   })
 })
 
