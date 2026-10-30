@@ -3029,6 +3029,11 @@
     "audit": {
       "loadMore": "Charger plus",
       "empty": "Pas encore d’entrées.",
+      "recipients_one": "{{count}} destinataire",
+      "recipients_other": "{{count}} destinataires",
+      "corrected": "corrigée",
+      "rows_one": "{{count}} entrée",
+      "rows_other": "{{count}} entrées",
       "actions": {
         "account_roles": "Rôles modifiés",
         "invite_create": "Code d’invitation créé",
@@ -3061,7 +3066,18 @@
         "match_approve": "Résultat approuvé avec un compte",
         "match_approval_revoke": "Approbation par compte annulée",
         "match_approval_void": "Approbations par compte invalidées",
-        "scoresheet_read": "Feuille de match ouverte"
+        "scoresheet_read": "Feuille de match ouverte",
+        "activity_delete": "Entrées d’activité supprimées",
+        "club_create": "Club créé",
+        "club_update": "Données du club modifiées",
+        "club_delete": "Club supprimé",
+        "account_clubs": "Clubs modifiés",
+        "club_rule_set": "Règle des clubs modifiée",
+        "club_managers": "Responsables du club modifiés",
+        "club_contact": "E-mail de contact du club modifié",
+        "club_member_remove": "Retiré du club",
+        "match_final_mail": "Feuille de match finale envoyée par e-mail",
+        "settings_final_email": "Envoi de la feuille de match par e-mail modifié"
       }
     },
     "approvals": {

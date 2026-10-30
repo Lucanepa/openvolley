@@ -2,8 +2,6 @@
 // the OpenBeach brand (src/managerBrand.js, plan S2). Beach roles, beach
 // lists (?app=beach), "Join OpenBeach" for accounts that have not joined.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import en from '../i18n/locales/en.json'
 import de from '../i18n/locales/de.json'
@@ -341,16 +339,9 @@ describe('managerBeach strings', () => {
   it('Swiss German writes ss', () => {
     expect(JSON.stringify(deCH.managerBeach)).not.toContain('ß')
   })
-  // The audit title key is built at run time (check:i18n cannot see it): every
-  // action the backend writes has a label in every language (S2 review: account.join)
-  it.each(Object.keys(locales))('%s labels every audit action of the backend', (lng) => {
-    let src
-    try { src = readFileSync(fileURLToPath(new URL('../../../backend/lib/accounts.js', import.meta.url)), 'utf8') } catch { return }
-    const block = src.match(/export const AUDIT_ACTIONS = Object\.freeze\(\[([\s\S]*?)\]\)/)?.[1] || ''
-    const actions = [...block.replace(/\/\/.*$/gm, '').matchAll(/'([a-z_.]+)'/g)].map(m => m[1])
-    expect(actions).toContain('account.join')
-    for (const a of actions) expect(locales[lng].manage.audit.actions[a.replace(/\./g, '_')], `${lng} ${a}`).toBeTruthy()
-  })
+  // The audit title key is built at run time (check:i18n cannot see it): that
+  // every action the backend writes has a label in every language (S2 review:
+  // account.join) is checked in components/__tests__/AuditPanel.test.jsx
 })
 
 describe('auditDetailsLine', () => {
