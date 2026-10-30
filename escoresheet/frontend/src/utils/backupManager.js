@@ -715,6 +715,14 @@ export async function restoreMatchFromJson(jsonData, { checkServer = serverClose
 
     // Create sets and events with new auto-increment ids (fixed ids would collide
     // with other local matches' rows); the cloud external_id is built from them.
+    // Above the ids the file names, with a margin (restoreIdFloor): the server
+    // keeps the voids of the events the writing device undid (db/015's
+    // event_revisions; a restore does not remove them), and a restored event
+    // under one of those ids is born voided there. The server's copy (restore
+    // by PIN, /api/db reads) then lost points this device still showed,
+    // whenever a device with lower counters (a fresh one) restored another
+    // device's file.
+    await raiseRestoreIds(matchId, jsonData)
     const newSetIds = []
     for (const set of sets || []) {
       newSetIds.push(await db.sets.add({ ...set, id: undefined, matchId }))
@@ -903,7 +911,10 @@ export async function restoreMatchInPlace(matchId, jsonData, { checkServer = ser
     await db.sets.where('matchId').equals(matchId).delete()
     await wipeMatchEvents(db, matchId)
 
-    // Recreate sets (keep the new local ids: the cloud external_id is built from them)
+    // Recreate sets (keep the new local ids: the cloud external_id is built from them),
+    // above the ids of the file's match (restoreMatchFromJson): a backup of
+    // the game written on another device names that device's ids
+    await raiseRestoreIds(matchId, jsonData)
     const newSetIds = []
     if (sets?.length) {
       for (const set of sets) {
@@ -1895,6 +1906,45 @@ async function raiseIdGenerator(table, floor, row) {
   if ((await table.get(floor)) !== undefined) return
   await table.add({ ...row, id: floor })
   await table.delete(floor)
+}
+
+// How far above the ids a backup file names a restore gives out its new
+// ones: the device that wrote it may have used, and undone, more ids of the
+// match than the file carries (undone after its last kept event, or after
+// the file was written), and the file names none of them
+export const RESTORE_ID_MARGIN = 10000
+// An id at or above this is not one a device gave out (a damaged or crafted
+// file; the server's idFloor has at most 15 digits): moved there, the key
+// generator would soon refuse every new row (IndexedDB stops at 2^53)
+const RESTORE_ID_CEILING = 1e15
+
+/**
+ * The ids a restore of `jsonData` adds the match's sets and events above:
+ * { set, event }, the highest id of the file's sets / events, or of its
+ * idFloor ({ set, event }) when it has one, plus RESTORE_ID_MARGIN.
+ * @param {object} jsonData a backup in exportMatchData's shape
+ */
+export function restoreIdFloor(jsonData) {
+  const isId = (v) => Number.isSafeInteger(v) && v > 0 && v < RESTORE_ID_CEILING
+  const highest = (rows, floor) => (Array.isArray(rows) ? rows : [])
+    .reduce((max, r) => (isId(r?.id) && r.id > max ? r.id : max), isId(Number(floor)) ? Number(floor) : 0)
+  const floor = jsonData?.idFloor || {}
+  return {
+    set: highest(jsonData?.sets, floor.set) + RESTORE_ID_MARGIN,
+    event: highest(jsonData?.events, floor.event) + RESTORE_ID_MARGIN
+  }
+}
+
+// Before a restore adds the sets and events of local match `matchId` (in its
+// transaction): the key generators give out ids above restoreIdFloor. The
+// rows that move them are the match's own and leave no history (no void is
+// sent for them).
+async function raiseRestoreIds(matchId, jsonData) {
+  const floor = restoreIdFloor(jsonData)
+  await withoutEventHistory(matchId, async () => {
+    await raiseIdGenerator(db.sets, floor.set, { matchId, index: 0 })
+    await raiseIdGenerator(db.events, floor.event, { matchId, type: 'rally_start', setIndex: 0, seq: 0 })
+  })
 }
 
 // A cloud row as a restore job sends it back: the server's own keys left out
