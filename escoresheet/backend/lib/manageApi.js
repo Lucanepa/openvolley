@@ -30,6 +30,11 @@
  *   POST   /api/admin/clubs, PATCH/DELETE /api/admin/clubs/:id   isAdmin
  *   GET    /api/admin/club-teams?q=                  isAdmin: VolleyManager team names with their club
  *   PUT    /api/admin/accounts/:id/clubs             isAdmin: the account's clubs (the whole list)
+ *   POST   /api/admin/accounts/:id/delete { email }  isAdmin: deletes the account (its personal data;
+ *                                                    the match records stay); a super admin only
+ *                                                    by a super admin, never the caller's own,
+ *                                                    never the last super admin (lib/accounts.js)
+ *   POST   /api/admin/accounts/:id/reject { email }  isAdmin: the same for a sign-up without any role
  *   PUT    /api/admin/club-rule                      isAdmin: { enabled }
  *   PUT    /api/admin/clubs/:id/managers             isAdmin: { emails } the club's managers (db/020)
  *   GET/PATCH /api/club/:id                          a manager of that club (db/020), or isAdmin:
@@ -165,6 +170,9 @@ export function createManageApi ({ accounts, savedTeams, beach = null, approvals
 
     ['GET', /^\/api\/admin\/accounts$/, 'admin', (m, c) => accounts.listAccounts({ filter: q(c.query, 'filter') || 'pending', q: q(c.query, 'q') ?? '', limit: q(c.query, 'limit'), app: q(c.query, 'app') })],
     ['POST', new RegExp(`^/api/admin/accounts/${ID}/roles$`), 'admin', (m, c) => accounts.setRoles({ actor: { id: c.user.id, access: c.access }, userId: m[1], body: c.body })],
+    // Deleting an account (lib/accounts.js deleteAccount): delete, or reject a sign-up without a role
+    ['POST', new RegExp(`^/api/admin/accounts/${ID}/delete$`), 'admin', (m, c) => accounts.deleteAccount({ actor: { id: c.user.id, access: c.access }, userId: m[1], body: c.body })],
+    ['POST', new RegExp(`^/api/admin/accounts/${ID}/reject$`), 'admin', (m, c) => accounts.deleteAccount({ actor: { id: c.user.id, access: c.access }, userId: m[1], body: c.body, reject: true })],
     // db/018: clubs (lib/clubs.js); 404 on a server built without it
     ['PUT', new RegExp(`^/api/admin/accounts/${ID}/clubs$`), 'admin', (m, c) => (clubs ? clubs.setAccountClubs({ actorId: c.user.id, userId: m[1], body: c.body }) : notFound())],
     ['GET', /^\/api\/admin\/clubs$/, 'admin', () => (clubs ? clubs.list() : notFound())],
