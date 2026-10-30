@@ -254,6 +254,19 @@ describe('the session sealer', () => {
     expect(backupPins({ game_pin: 123456, connection_pins: { referee: '222222' } })).toEqual([{ pin: 'game', value: '123456' }, { pin: 'referee', value: '222222' }])
     expect(backupPins({ test: true })).toEqual([])
   })
+
+  // An empty local field beside the cloud one: the first spelling that
+  // holds a PIN counts, so the file is not written plain
+  it('backupPins takes the first spelling that holds a PIN, skipping empty ones', async () => {
+    expect(backupPins({ gamePin: '', game_pin: '123456', refereePin: '  ', referee_pin: null, connection_pins: { referee: '' }, connectionPins: { referee: 654321 } }))
+      .toEqual([{ pin: 'game', value: '123456' }, { pin: 'referee', value: '654321' }])
+    expect(backupPins({ gamePin: '111111', game_pin: '999999' })).toEqual([{ pin: 'game', value: '111111' }]) // the local one first
+    expect(backupPins({ gamePin: '', game_pin: '', refereePin: '' })).toEqual([])
+    const data = backup({ gamePin: '', game_pin: '123456', refereePin: undefined })
+    const { envelope, encrypted } = await sealed(data)
+    expect(encrypted).toBe(true)
+    await expect(openEnvelope(envelope, '123456')).resolves.toMatchObject({ unlockedWith: { pin: 'game' } })
+  })
 })
 
 describe('the KDF', () => {

@@ -17,6 +17,10 @@ import { newDataKey, pinKey, pinSlot, readableHeader, sealText } from './envelop
 
 const pinValue = (v) => (v === undefined || v === null ? '' : String(v).trim())
 
+// The first spelling that holds a PIN: a row can carry an empty local field
+// beside the cloud one (gamePin: '' and game_pin: '123456')
+const firstPin = (...values) => values.map(pinValue).find(Boolean) || ''
+
 /**
  * The PINs that open a match's backups: its game PIN and its referee PIN
  * (local and cloud spellings), [] for a match with neither.
@@ -24,8 +28,8 @@ const pinValue = (v) => (v === undefined || v === null ? '' : String(v).trim())
  * @returns {{ pin: 'game'|'referee', value: string }[]}
  */
 export function backupPins(match) {
-  const game = pinValue(match?.gamePin ?? match?.game_pin)
-  const referee = pinValue(match?.refereePin ?? match?.referee_pin ?? match?.connection_pins?.referee ?? match?.connectionPins?.referee)
+  const game = firstPin(match?.gamePin, match?.game_pin)
+  const referee = firstPin(match?.refereePin, match?.referee_pin, match?.connection_pins?.referee, match?.connectionPins?.referee)
   const out = []
   if (game) out.push({ pin: 'game', value: game })
   if (referee) out.push({ pin: 'referee', value: referee })
