@@ -1321,9 +1321,12 @@ export default function App() {
     runSelfCheck(null)
   }, { minHiddenMs: BACKGROUND_HOME_MS }), [runSelfCheck])
 
-  // Check for pending roster upload on mount
+  // A roster waiting for the open match (uploaded by a team, or restored from
+  // the cloud with it): its Match Setup. Only for the match on the screen: on
+  // Home it opened the match by itself, at start too, against the start rule
+  // (the app opens on Home; utils/deviceSelfCheck). As OpenBeach #14.
   useEffect(() => {
-    if (!currentMatch) return
+    if (!currentMatch || matchId == null || currentMatch.id !== matchId) return
 
     // Check if there are pending rosters
     const hasPendingHomeRoster = currentMatch.pendingHomeRoster !== null && currentMatch.pendingHomeRoster !== undefined
@@ -1331,7 +1334,6 @@ export default function App() {
 
     // If there are pending rosters and we're not already in match setup, open it
     if ((hasPendingHomeRoster || hasPendingAwayRoster) && !showMatchSetup) {
-      setMatchId(currentMatch.id)
       setShowMatchSetup(true)
     }
   }, [currentMatch, matchId, showMatchSetup])

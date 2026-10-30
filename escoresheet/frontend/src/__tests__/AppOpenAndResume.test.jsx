@@ -90,6 +90,27 @@ describe('Opening the app lands on Home', () => {
     expect(homeShown()).toBe(true)
     expect(scoreboardShown()).toBe(false)
   })
+
+  // A team's uploaded roster waiting for review opened that match's Match
+  // Setup by itself at start (App's pending-roster effect, on Home too)
+  it('a match with a roster waiting stays on Home; its Match Setup opens once the match is open', async () => {
+    await seedMatch({ at: ago(HOUR), pendingAwayRoster: { players: [{ number: 1, lastName: 'Fischer', firstName: 'B' }] } })
+    const onLine = offlineDevice()
+    try {
+      mountApp()
+      await waitFor(() => expect(continueCard()).toBeTruthy())
+      await sleep(1200)
+      expect(homeShown()).toBe(true)
+      expect(matchSetupShown()).toBe(false)
+      expect(sessionStorage.getItem(OPEN_MATCH_KEY)).toBeNull()
+
+      // Continue opens the match: then the waiting roster takes it to Match Setup
+      fireEvent.click(button('Continue match'))
+      await waitFor(() => expect(matchSetupShown()).toBe(true))
+    } finally {
+      onLine.mockRestore()
+    }
+  })
 })
 
 describe('A reload goes back into the match', () => {
