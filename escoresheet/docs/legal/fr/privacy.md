@@ -1,6 +1,6 @@
 # Déclaration de protection des données
 
-**OpenVolley et OpenBeach** · Version 1.5 · État au 29 octobre 2026
+**OpenVolley et OpenBeach** · Version 1.6 · État au 30 octobre 2026
 
 Cette déclaration existe en allemand, anglais, français et italien. Seule la
 version anglaise fait foi.
@@ -23,7 +23,9 @@ version anglaise fait foi.
   publics.**
 - L'application OpenVolley tient un journal d'activité de chaque match, sans
   NIP ni mots de passe. Si vous êtes connecté, il est envoyé au serveur. Ce que
-  vous cliquez ou tapez reste sur votre appareil (section 5).
+  vous cliquez ou tapez reste sur votre appareil, sauf un résumé sans le texte
+  saisi si vous joignez les diagnostics à une demande de support (sections 5
+  et 13).
 - Le serveur se trouve en Suisse et est exploité par moi. Cloudflare
   (États-Unis) diffuse les sites web et transmet le trafic au serveur.
 - Lorsque l'envoi est activé, le marqueur, les arbitres et les clubs des deux
@@ -170,11 +172,13 @@ administrateurs le voient.
 **Journal d'utilisation : ce que vous cliquez ou tapez reste sur votre
 appareil.** Pour le dépannage, l'application enregistre sur l'appareil ce que
 vous cliquez et tapez (y compris le texte des champs de saisie, par exemple
-des noms). Ce journal n'est jamais envoyé. Vous pouvez le télécharger
-vous-même (dans les réglages, ou à la fin du match dans le fichier ZIP) et
-l'envoyer par exemple au support. Dans OpenVolley à partir de la version
-2.4.0, il n'enregistre aucune saisie dans les champs de mot de passe et de
-NIP ni aucun NIP affiché à l'écran, et il est effacé après 30 jours ou
+des noms). Ce journal n'est pas envoyé de lui-même. Seulement si vous joignez
+les diagnostics à une demande de support, un résumé des deux dernières heures
+environ l'accompagne, sans le texte saisi (section 13). Vous pouvez le
+télécharger vous-même (dans les réglages, ou à la fin du match dans le fichier
+ZIP) et l'envoyer par exemple au support. Dans OpenVolley à partir de la
+version 2.4.0, il n'enregistre aucune saisie dans les champs de mot de passe
+et de NIP ni aucun NIP affiché à l'écran, et il est effacé après 30 jours ou
 au-delà de 50 000 entrées.
 
 **Application de bureau.** L'application de bureau enregistre en plus des
@@ -505,11 +509,46 @@ votre demande, votre message et, si vous en ajoutez, jusqu'à cinq pièces
 jointes (par exemple des captures d'écran ou des fichiers de sauvegarde),
 ainsi que la langue, l'adresse de la page sans ses paramètres, l'identifiant
 du navigateur, l'heure, la plateforme (« web » depuis le site) et, dans les
-applications, la version de l'application. Les diagnostics (version de
-l'application, plateforme, affichage, état de la connexion, numéro du match
-ouvert et derniers messages d'erreur de l'application) ne sont envoyés que si
-vous cochez « Joindre les diagnostics » dans l'application, et tels qu'ils y
-sont affichés. Le site web n'envoie pas de diagnostics.
+applications, la version de l'application.
+
+**Les diagnostics** ne sont envoyés que si « Joindre les diagnostics » est
+coché. Pour une demande de support (signalement d'erreur ou question), la case
+est déjà cochée, pour un retour ou une suggestion elle ne l'est pas ; vous
+pouvez la décocher avant l'envoi. « Afficher ce qui est envoyé » vous montre
+auparavant exactement le texte envoyé. L'application le joint à la demande
+sous forme de fichier texte (au plus 2 Mo). Il contient :
+
+- des données techniques : application et version, plateforme, système
+  d'exploitation, identifiant du navigateur, taille de l'écran et de la
+  fenêtre, langue, heure et fuseau horaire, état en ligne et de la
+  connexion, données pas encore transmises et dernières erreurs de
+  transmission, mémoire utilisée, l'identifiant aléatoire de l'appareil et,
+  si vous êtes connecté, l'identifiant de votre compte ;
+- l'état du match ouvert (ou du dernier match ouvert) : numéro du match,
+  équipes, statut, sets et score, compositions (numéros de maillot), temps
+  morts et remplacements, les 30 derniers événements du match, et si le
+  serveur a clôturé le match ou l'a confié à un autre appareil ;
+- l'historique des deux dernières heures environ (au moins depuis le dernier
+  démarrage de l'application), tiré du journal d'activité et du journal
+  d'utilisation (section 5) : ce que vous avez touché (avec son libellé, qui
+  peut contenir des noms d'équipes ou de personnes), les touches, les écrans
+  ouverts, dans quel champ vous avez tapé combien de caractères (pas le
+  texte), les points et autres événements du match, les corrections, les
+  transmissions ainsi que le démarrage, la fermeture et la mise en
+  arrière-plan de l'application ;
+- les derniers messages d'erreur et avertissements de l'application, avec
+  l'endroit du programme concerné.
+
+**Ne sont jamais inclus** les mots de passe, NIP, jetons de connexion,
+signatures, adresses e-mail, numéros de téléphone et le texte que vous avez
+tapé dans des champs : l'application retire ces données de tout le texte
+avant l'envoi. Dans les vues de l'arbitre, du banc et du livescore, le
+fichier ne contient que les données techniques, l'état de la connexion et
+les messages d'erreur. Si l'envoi échoue, « Télécharger les diagnostics »
+enregistre le fichier pour que vous puissiez le joindre vous-même à votre
+e-mail. Les versions plus anciennes de l'application n'envoient que les
+données techniques, le numéro du match et les derniers messages d'erreur.
+Le site web n'envoie pas de diagnostics.
 
 Le serveur transmet la demande sous la forme d'un seul e-mail à
 support@openvolley.app, avec votre adresse comme adresse de réponse. Il n'en
@@ -525,9 +564,9 @@ vos données, écrivez directement à support@openvolley.app.**
 la boîte aux lettres et dans le système de tickets.
 
 **Durée de conservation :** je conserve les demandes de support (boîte aux
-lettres et système de tickets, avec les pièces jointes) 2 ans après le
-dernier message, afin de pouvoir retrouver les réponses précédentes ; plus
-tôt sur demande.
+lettres et système de tickets, avec les pièces jointes et les diagnostics) 2
+ans après le dernier message, afin de pouvoir retrouver les réponses
+précédentes ; plus tôt sur demande.
 
 ## 14. Journaux et sécurité sur le serveur
 
@@ -617,7 +656,7 @@ prestataires. Vous pouvez me demander une copie de ces garanties.
 | Journal d'utilisation (uniquement sur l'appareil) | OpenVolley à partir de 2.4.0 : 30 jours, au plus 50 000 entrées |
 | Fichier journal de l'application de bureau (uniquement sur l'appareil) | Au plus cinq anciens fichiers de 5 Mo chacun |
 | Signature sur un téléphone (serveur ou ordinateur portable) | Uniquement en mémoire vive ; lien valable 10 minutes, signature supprimée au plus tard 5 minutes après la signature |
-| Demandes de support (boîte aux lettres et système de tickets, avec les pièces jointes) | 2 ans après le dernier message ; plus tôt sur demande |
+| Demandes de support (boîte aux lettres et système de tickets, avec les pièces jointes et les diagnostics) | 2 ans après le dernier message ; plus tôt sur demande |
 | Journaux du serveur | Écrasés selon leur taille (quelques jours à quelques semaines) |
 | Données en direct (serveur et mode salle) | Uniquement en mémoire vive ; sur le serveur supprimées 24 heures après la dernière activité |
 | Sauvegardes | Jusqu'à environ 6 mois (section 18) |
