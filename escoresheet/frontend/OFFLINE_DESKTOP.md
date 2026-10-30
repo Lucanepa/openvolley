@@ -494,11 +494,66 @@ match end, undo), on by default, no browser feature needed:
 
 Each match folder (`game<N>-<whole seed>`, `test-…` for test matches; without
 a seed `game<N>-local<id>`) holds one `<UTC time>-<event seq>.json` per event
-plus `latest.json`, in the same format as **Download backup** without the
-match PINs and session ids (`"secretsRemoved": true`), so **Options → Backup →
-Restore from a backup file** (or Restore match → local file) restores any of
-them; the restore keeps the PINs of the local copy it replaces or makes new
-ones. **Options → Backup → Open backup folder** opens it in the file manager.
+plus `latest.json`. Inside is the same format as **Download backup** without
+the match PINs and session ids (`"secretsRemoved": true`), **encrypted** with
+the match's game PIN and referee PIN (below), so **Options → Backup → Restore
+from a backup file** (or Restore match → local file) restores any of them.
+**Options → Backup → Open backup folder** opens it in the file manager.
+
+### Encrypted backup files
+
+A match with a game PIN or a referee PIN gets encrypted files (every event
+file and `latest.json`); a match with neither (test matches, some unofficial
+ones) is written plain as before, since nothing could open it
+(`src/utils/backupCrypto/`):
+
+```json
+{
+  "format": "openvolley-encrypted-backup", "formatVersion": 1,
+  "about": "OpenVolley match backup, encrypted. …",
+  "readable": { "gameN": 1042, "homeTeam": "…", "awayTeam": "…",
+                "scheduledAt": "…", "sets": [{ "index": 1, "home": 25, "away": 20 }],
+                "lastUpdated": "…" },
+  "cipher": { "alg": "AES-256-GCM", "iv": "<base64>" },
+  "slots": [
+    { "kind": "pin", "pin": "game",
+      "kdf": { "alg": "argon2id", "memoryKiB": 32768, "iterations": 3, "parallelism": 1, "salt": "<base64>" },
+      "iv": "<base64>", "wrappedKey": "<base64>" },
+    { "kind": "pin", "pin": "referee", … }
+  ],
+  "ciphertext": "<base64 of the backup JSON>"
+}
+```
+
+- One random AES-256-GCM data key per match and app session encrypts the
+  backup JSON, with a fresh IV per file. Each slot holds that key wrapped by
+  a key derived from one PIN (Argon2id, `hash-wasm`, in a worker; each PIN
+  is derived once per match and session, never per file), so **either PIN
+  alone opens the file**. When a PIN changes, the files from then on get a
+  new data key.
+- **Readable without a PIN**: game number, team names, scheduled date, set
+  scores and the time of the file (public on the livescore anyway). They are
+  bound to the ciphertext: an edited header no longer opens. Everything else
+  (names, birth dates, officials, signatures, events) is encrypted, and the
+  PINs themselves are never in the file.
+- A 6-digit PIN is a **speed bump**, not a lock: Argon2id with 32 MiB and 3
+  passes takes about 76 ms per guess on a desktop core (about 0.5 s on a
+  mid-range tablet), so all 10^6 PINs of a copied file take a 16-core
+  desktop about 80 minutes. Later phases add a server recovery slot (a new
+  slot `kind`; readers skip kinds they do not know).
+- The coalescing ("same state as the last file") compares the plain state.
+  If a file cannot be encrypted, nothing is written in the clear: the backup
+  fails (red **Backup** badge) and the next event tries again.
+
+**Restoring one**: Restore match → Restore from local file, or Options →
+Backup → Restore from a backup file, then pick the file: the app asks for the
+**game PIN or the referee PIN** of the match (the dialog shows the readable
+game number, teams, date and set scores). A wrong PIN says so and asks again;
+Cancel goes back. Then the usual preview. The restored match keeps the PIN
+that was typed (the other PINs come from the local copy it replaces, or are
+new); plain files of older versions restore as before, without a PIN. An app
+from before the encryption says "not an OpenVolley match backup" for an
+encrypted file.
 
 When it writes: after a write of the match, once nothing more was written for
 150 ms (at most 1.5 s later), on an idle moment, so a point (event, its state
@@ -506,8 +561,10 @@ snapshot, the set score) is one consistent file and the scorer's taps go
 first. A state that only differs in heartbeats, sessions or `updatedAt` is not
 written again.
 
-Size and rotation: every file is the whole match, about 1.5 KB per event, so a
-5-set match ends near 0.7 MB and writes about 80 MB in total (measured with
+Size and rotation: every file is the whole match, about 1.5 KB per event
+(2 KB encrypted: base64), so a 5-set match ends near 0.9 MB encrypted (0.7 MB
+plain) and writes about 110 MB in total; encrypting one file late in set 5
+takes about 5 ms in Node (measured with
 `src/utils/nativeBackup/__tests__/fullMatch.size.test.js`). So each match keeps
 its newest files within **64 MB** (and 500 files); a match nobody scored for
 **12 hours** is thinned to its newest **10** files; event files older than
@@ -516,8 +573,9 @@ are always kept. Older folders are rotated after the first backup of a
 session, in small chunks.
 
 Privacy: the files hold player names and birth dates, officials and signature
-images (no PINs). On Linux the folders are created `0700` and the files
-`0600`; on Windows `%APPDATA%` is private to the user account. If only
+images (no PINs), encrypted for every match with a PIN (above). On Linux the
+folders are created `0700` and the files `0600`; on Windows `%APPDATA%` is
+private to the user account. If only
 `latest.json` cannot be replaced (Windows: a virus scan or the Explorer
 preview holds it), the event file is still saved and it is not an error. A
 failing backup shows a red **Backup** badge next to the scoreboard clock
