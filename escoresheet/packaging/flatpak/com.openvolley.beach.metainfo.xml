@@ -67,6 +67,19 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.3" date="2026-10-30">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v3.0.3</url>
+      <description>
+        <ul>
+          <li>The app opens on Home: Continue resumes the match in one tap, a reload goes back into it, 15 minutes in the background goes to Home.</li>
+          <li>A match closed on the server opens read-only and keeps no sync error.</li>
+          <li>Restoring a backup no longer deletes the other matches on the device.</li>
+          <li>The match-end and set-end files can be restored.</li>
+          <li>The last backup is saved before the app closes.</li>
+          <li>"Auto-download data at set end" is remembered.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0.2" date="2026-10-27">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/beach-desktop-v3.0.2</url>
       <description>

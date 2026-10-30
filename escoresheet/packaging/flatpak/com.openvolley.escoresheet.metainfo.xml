@@ -71,6 +71,19 @@
   </screenshots>
 
   <releases>
+    <release version="3.0.9" date="2026-10-30">
+      <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.9</url>
+      <description>
+        <ul>
+          <li>Backup files on the device are encrypted: the game PIN or the referee PIN opens them.</li>
+          <li>The match-end file can be restored, and a restored match keeps the PIN it was opened with.</li>
+          <li>The last backup is saved before the app closes, also when the computer shuts down or Android sends the app away.</li>
+          <li>No backup files of a copy another device continued.</li>
+          <li>A team's waiting roster no longer opens Match Setup by itself at start.</li>
+          <li>"Auto-download data at set end" is remembered.</li>
+        </ul>
+      </description>
+    </release>
     <release version="3.0.8" date="2026-10-30">
       <url type="details">https://github.com/Lucanepa/openvolley/releases/tag/desktop-v3.0.8</url>
       <description>
