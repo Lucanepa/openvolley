@@ -573,7 +573,11 @@ are always kept. Older folders are rotated after the first backup of a
 session, in small chunks.
 
 Privacy: the files hold player names and birth dates, officials and signature
-images (no PINs), encrypted for every match with a PIN (above). On Linux the
+images (no PINs), encrypted for every match with a PIN (above). Files of
+3.0.8 and older are plain: the rotation removes their event files after 30
+days, but never the newest event file or `latest.json` of a folder, so the
+folder of a match scored with an older version stays readable until it is
+deleted by hand (Options → Backup says so). On Linux the
 folders are created `0700` and the files `0600`; on Windows `%APPDATA%` is
 private to the user account. If only
 `latest.json` cannot be replaced (Windows: a virus scan or the Explorer
