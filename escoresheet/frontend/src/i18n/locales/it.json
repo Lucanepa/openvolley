@@ -1360,7 +1360,7 @@
     "showNamesOnCourt": "Mostra i nomi sul campo",
     "showNamesOnCourtInfo": "Visualizzare i cognomi dei giocatori sotto i cerchi di posizione del campo",
     "autoDownloadAtSetEnd": "Download automatico dei dati alla fine del set",
-    "autoDownloadAtSetEndInfo": "Scarica automaticamente i dati di gioco al termine di un set per il backup. In caso di emergenza, i dati locali possono essere utilizzati per ripristinare il gioco.",
+    "autoDownloadAtSetEndInfo": "Quando la fine di un set non può essere inviata al cloud (offline, invio fallito o messa da parte perché un altro dispositivo tiene la partita), scarica la partita in un file di backup; con una connessione lenta, solo se dopo 30 s non è ancora stata inviata. Con questo file, «Ripristina partita» recupera la partita.",
     "configureKeys": "Configurazione delle chiavi",
     "cloudBackup": "Backup nel cloud",
     "restoreFromCloud": "Ripristino dal cloud",
