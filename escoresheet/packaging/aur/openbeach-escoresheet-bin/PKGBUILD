@@ -7,7 +7,7 @@
 
 pkgname=openbeach-escoresheet-bin
 _pkgname=openbeach-escoresheet
-pkgver=3.0.2
+pkgver=3.0.3
 pkgrel=1
 pkgdesc='Open source beach volleyball eScoresheet: offline scoretable with a LAN server for referee and livescore tablets and court displays'
 arch=('x86_64')
@@ -39,7 +39,7 @@ source=("LICENSE-$pkgver::https://raw.githubusercontent.com/Lucanepa/openvolley/
 source_x86_64=("$_pkgname-$pkgver-amd64.deb::https://github.com/Lucanepa/openvolley/releases/download/beach-desktop-v$pkgver/${_pkgname}_${pkgver}_amd64.deb")
 noextract=("$_pkgname-$pkgver-amd64.deb")
 sha256sums=('4916eae672b6d1d5ec8d97c2bb9838815fdd4e313473d2c16ff759c51d9b7aec')
-sha256sums_x86_64=('bb9f9d1d064cfe852977d85dc820f659eca3630dc72bf459fc12a55abac3971f')
+sha256sums_x86_64=('0ce473d65d4a09e11a869dbb4d262a6cae5af2e2f1f0441c3b0d663affdd081e')
 
 # pacman updates this package, never the app itself (src-tauri/src/updater.rs):
 # - the marker file /usr/lib/$_pkgname/package-manager (package()): a release
