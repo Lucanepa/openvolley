@@ -25,6 +25,8 @@
  *     auth.verifyPassword(userId, pw)  -> { ok } | { locked, retryAfterSec } (throws AUTH_BUSY)
  *     auth.findUserId(emailOrId)       -> { id, email } (throws if not exactly one)
  *     auth.revokeUserSessions(userId)  -> number
+ *     auth.eraseAccount(userId, { inTransaction }) -> { deleted } (delete-account's
+ *                                       deletion, also for the admin console; throws on failure)
  *     auth.sweepExpiredSessions()      -> number
  *     auth.sweepExpiredTokens()        -> number   (one-time email links, db/010)
  *     auth.settle()                    -> resolves when the background mail jobs are done (tests)
@@ -1320,11 +1322,29 @@ export function createAuth(options = {}) {
     if (blocked) return blocked
     const v = await sessionFromBody(body, ctx)
     if (v.error) return v.error
-    const userId = v.user.id
-    // Files first: when they cannot be removed nothing is deleted (503), so
-    // the account is never gone while its backups stay behind.
+    await eraseAccount(v.user.id)
+    return ok(null)
+  }
+
+  /**
+   * Deletes an account and its personal data and keeps the match records
+   * (README "Deleting an account"). One code path for both ways in: the
+   * account's own delete-account and an admin's delete or reject in the
+   * manager (lib/accounts.js deleteAccount, POST /api/admin/accounts/:id/delete|reject).
+   *
+   * Files first: when they cannot be removed nothing is deleted (throws, 503),
+   * so the account is never gone while its backups stay behind. Then one
+   * transaction: `inTransaction(client)` first (the admin's locks, checks
+   * and audit entry; whatever it throws rolls everything back and is thrown
+   * on), the sessions, the owned rows, the detached columns, the users row.
+   * Throws on a database error. Returns { deleted: false } when there was no
+   * such users row (nothing was deleted but the files), else { deleted: true }.
+   */
+  async function eraseAccount(userId, { inTransaction = null } = {}) {
+    if (typeof userId !== 'string' || !userId) throw new Error('eraseAccount: a user id is required')
     if (typeof cfg.onAccountDeleted === 'function') await cfg.onAccountDeleted(userId)
-    await withTransaction(async (client) => {
+    const email = await withTransaction(async (client) => {
+      if (typeof inTransaction === 'function') await inTransaction(client)
       await revokeUserSessions(userId, client)
       for (const { table, column } of cfg.ownedTables) {
         const cols = await columnsOf(table, client)
@@ -1341,9 +1361,10 @@ export function createAuth(options = {}) {
         if (!cols.has(column)) continue
         await client.query(`UPDATE ${qualify(table)} SET ${quoteIdent(column)} = NULL WHERE ${quoteIdent(column)} = $1`, [userId])
       }
-      await client.query(`DELETE FROM ${T.users} WHERE id = $1`, [userId])
+      const { rows } = await client.query(`DELETE FROM ${T.users} WHERE id = $1 RETURNING email`, [userId])
+      return rows.length ? (rows[0].email ?? '') : null
     })
-    lockout.reset(normalizeEmail(v.user.email))
+    if (email) lockout.reset(normalizeEmail(email))
     // Second pass: an upload that passed its session check before the
     // sessions were revoked may have landed in between. Best effort.
     if (typeof cfg.onAccountDeleted === 'function') {
@@ -1353,7 +1374,7 @@ export function createAuth(options = {}) {
         log.error('[auth] delete-account: file clean-up after the commit failed:', err.message)
       }
     }
-    return ok(null)
+    return { deleted: email !== null }
   }
 
   async function profile(body, ctx) {
@@ -1564,6 +1585,7 @@ export function createAuth(options = {}) {
     findUserId,
     revokeSession,
     revokeUserSessions,
+    eraseAccount,
     sweepExpiredSessions,
     sweepExpiredTokens,
     settle,

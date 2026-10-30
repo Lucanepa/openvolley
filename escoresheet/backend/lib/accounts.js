@@ -70,7 +70,9 @@ export const AUDIT_ACTIONS = Object.freeze([
   // db/021: the final scoresheet mail of a match, and its switch (lib/finalMail.js)
   'match.final_mail', 'settings.final_email',
   // db/019: a match moved to another scoring device (lib/scorerDevice.js claim)
-  'match.scorer_device'
+  'match.scorer_device',
+  // an admin deleted an account, or rejected a sign-up (deleteAccount below)
+  'account.delete', 'account.reject'
 ])
 export const APPS = SPORTS
 // How a membership came about (auth.app_memberships.joined_via)
@@ -138,6 +140,21 @@ function validDay (s) {
 const iso = (v) => (v instanceof Date ? v.toISOString() : (v ?? null))
 const likePattern = (q) => '%' + q.replace(/[\\%_]/g, (c) => '\\' + c) + '%'
 const nameSql = (alias) => `nullif(trim(coalesce(${alias}.first_name, '') || ' ' || coalesce(${alias}.last_name, '')), '')`
+/**
+ * SQL: the scorer named on match `m`'s scoresheet (matches.officials: the
+ * array of { role, firstName, lastName }, or the older object keyed by role),
+ * "First Last", else NULL. The admin lists show it when the match has no
+ * account any more (a deleted account; rows from before db/005): the record
+ * keeps its own name, the account is not needed for it.
+ */
+export const sheetScorerSql = (m) => {
+  const off = `to_jsonb(${m}.officials)`
+  const nm = (o) => `nullif(trim(coalesce(${o} ->> 'firstName', ${o} ->> 'first_name', '') || ' ' || coalesce(${o} ->> 'lastName', ${o} ->> 'last_name', '')), '')`
+  return `coalesce(
+    (SELECT ${nm('o')} FROM jsonb_array_elements(CASE WHEN jsonb_typeof(${off}) = 'array' THEN ${off} ELSE '[]'::jsonb END) AS o
+      WHERE lower(o ->> 'role') = 'scorer' AND jsonb_typeof(o) = 'object' LIMIT 1),
+    CASE WHEN jsonb_typeof(${off}) = 'object' AND jsonb_typeof(${off} -> 'scorer') = 'object' THEN ${nm(`(${off} -> 'scorer')`)} END)`
+}
 // The roles that make an account a member of `app` (its own and the admin roles)
 const appRoles = (app) => [...Object.values(SPORT_ROLES[app]), ...ADMIN_ROLES]
 // SQL: the roles column `rolesExpr` holds one of the roles in bind parameter `param` (text[])
@@ -177,8 +194,12 @@ function trimmedText (raw, { min = 0, max }) {
  * @param {(ids: string[]) => Promise<Map<string, object[]>>} [o.approvalsForMatches]
  *   lib/approvals.js approvalsForMatches: the active account approvals the
  *   admin lists attach to each match (none without it)
+ * @param {(userId: string, o: { inTransaction: (client: object) => Promise<void> }) => Promise<{ deleted: boolean }>} [o.eraseAccount]
+ *   lib/auth.js eraseAccount: what an admin's delete / reject runs (the
+ *   account's own delete-account runs it too). Without it both answer 404
+ *   and the accounts list says can_delete: false.
  */
-export function createAccounts ({ pool, db, restore, access, approvalsForMatches = null, clubs: clubsOf = () => null, logger = console } = {}) {
+export function createAccounts ({ pool, db, restore, access, approvalsForMatches = null, clubs: clubsOf = () => null, eraseAccount = null, logger = console } = {}) {
   const log = logger
   /** lib/clubs.js (db/018), wired after this module (it audits through it); null before. */
   const clubs = () => (typeof clubsOf === 'function' ? clubsOf() : null)
@@ -594,7 +615,10 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
             last_sign_in_at: iso(r.last_sign_in_at),
             email_confirmed: r.email_confirmed === true
           }
-        })
+        }),
+        // POST /api/admin/accounts/:id/delete|reject exist on this server (a
+        // manager built after an older backend shows those buttons only then)
+        can_delete: typeof eraseAccount === 'function'
       })
     })
   }
@@ -651,6 +675,116 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     return res
   }
 
+  // ------------------------------------------------------------------ deleting an account
+  const ACCOUNT_NOT_FOUND = () => fail(404, 'OV_ACCOUNT_NOT_FOUND', 'This account does not exist (any more)')
+  // SQL: account `u` can still sign in (not banned, not marked deleted)
+  const usableSql = (u) => `(to_jsonb(${u}) ->> 'deleted_at') IS NULL
+    AND ((to_jsonb(${u}) ->> 'banned_until') IS NULL OR (to_jsonb(${u}) ->> 'banned_until')::timestamptz <= now())`
+  /**
+   * The rules of an admin's delete / reject, on one snapshot: `actorAccess`
+   * (lib/access.js flags), the target's roles, the super admins left besides
+   * the target (accounts that can still sign in). null when allowed.
+   */
+  function deleteRefusal ({ actorAccess, targetRoles, otherSuperAdmins, reject }) {
+    if (!actorAccess?.isAdmin) return fail(403, 'OV_FORBIDDEN', 'You do not have access to this')
+    const target = accessFromRoles(targetRoles)
+    if (target.isSuperAdmin && !actorAccess.isSuperAdmin) return fail(403, 'OV_FORBIDDEN', 'Only a super admin can delete a super admin')
+    if (target.isSuperAdmin && otherSuperAdmins < 1) return fail(409, 'OV_LAST_SUPER_ADMIN', 'The last super admin cannot be deleted')
+    // Reject = a sign-up nobody approved: an account with a role (of any app) is deleted, not rejected
+    if (reject && target.roles.length) return fail(409, 'OV_NOT_PENDING', 'This account has a role: delete it instead of rejecting it')
+    return null
+  }
+  /** sha256 of the address, so support can confirm a deletion from an address it is given (never the address). */
+  const emailDigest = (email) => createHash('sha256').update('ov-account-email:' + String(email || '').trim().toLowerCase(), 'utf8').digest('hex')
+
+  /**
+   * POST /api/admin/accounts/:userId/delete { email } and .../reject { email }
+   * (`reject`: true). `actor` = { id, access }. The account and its personal
+   * data go, the match records stay: the same deletion as the account's own
+   * delete-account (lib/auth.js eraseAccount, README "Deleting an account").
+   *
+   * `email` must be the account's address (typed by the admin as the
+   * confirmation; compared trimmed, without case). Refused: the caller's own
+   * account (409 OV_SELF_DELETE: that is Profile > Delete account), a super
+   * admin unless the caller is one (403 OV_FORBIDDEN), the last super admin
+   * that can still sign in (409 OV_LAST_SUPER_ADMIN), and a reject of an
+   * account with any role (409 OV_NOT_PENDING). The rules are checked before
+   * the account's files go and again inside the transaction, under a lock of
+   * the caller's, the target's and every super admin's profile rows (two
+   * admins deleting each other, or the last two super admins, wait for one
+   * another and the second is refused).
+   *
+   * Audit: one `account.delete` / `account.reject` entry per app the account
+   * was a member of, written in the same transaction, without the address:
+   * { account_id, email_sha256, roles, apps, created_at, matches_kept }.
+   */
+  async function deleteAccount ({ actor, userId, body, reject = false } = {}) {
+    if (!isUuid(userId)) return notFound()
+    if (typeof eraseAccount !== 'function') return notFound()
+    const email = trimmedText(isPlainObject(body) ? body.email : undefined, { min: 3, max: 254 })
+    if (email === undefined) return invalid('email: the address of the account, as the confirmation')
+    const actorId = actor?.id
+    if (!isUuid(actorId)) return fail(401, 'invalid_token', 'Not signed in')
+    if (actorId === userId) return fail(409, 'OV_SELF_DELETE', 'Delete your own account from your profile, not here')
+    const action = reject ? 'account.reject' : 'account.delete'
+    const superParam = ['super_admin']
+    const rolesOf = (rows, id) => [...new Set(rows.filter((r) => r.user_id === id).flatMap((r) => normalizeRoles(r.roles)))]
+    const res = await guarded(reject ? 'reject-account' : 'delete-account', async () => {
+      // 1. Before anything goes (the files are removed first, outside the transaction)
+      const { rows: found } = await pool.query(
+        `SELECT u.id, u.email, u.created_at, p.user_id, p.roles
+           FROM auth.users u LEFT JOIN public.profiles p ON p.user_id = u.id
+          WHERE u.id = $1`, [userId])
+      if (!found.length) return ACCOUNT_NOT_FOUND()
+      if (String(found[0].email || '').trim().toLowerCase() !== email.toLowerCase()) {
+        return fail(400, 'OV_CONFIRM_MISMATCH', 'The address does not match this account')
+      }
+      const countOthers = async (client) => (await client.query(
+        `SELECT count(DISTINCT p.user_id)::int AS n
+           FROM public.profiles p JOIN auth.users u ON u.id = p.user_id
+          WHERE p.user_id <> $1 AND ${hasRoleSql('p.roles', '$2')} AND ${usableSql('u')}`, [userId, superParam])).rows[0].n
+      const early = deleteRefusal({ actorAccess: actor?.access, targetRoles: rolesOf(found, userId), otherSuperAdmins: await countOthers(pool), reject })
+      if (early) return early
+
+      // 2. The deletion, with the rules again under the locks: the profile
+      // rows first (every admin delete takes them in the same order), then
+      // the account's users row (a concurrent delete-account of its own waits)
+      const out = await eraseAccount(userId, {
+        inTransaction: async (client) => {
+          const { rows: locked } = await client.query(
+            `SELECT user_id, roles FROM public.profiles
+              WHERE user_id = ANY($1::uuid[]) OR ${hasRoleSql('roles', '$2')}
+              ORDER BY user_id FOR UPDATE`, [[actorId, userId], superParam])
+          const { rows: [u] } = await client.query('SELECT id, email, created_at FROM auth.users WHERE id = $1 FOR UPDATE', [userId])
+          if (!u) throw abort(ACCOUNT_NOT_FOUND())
+          const targetRoles = rolesOf(locked, userId)
+          const refusal = deleteRefusal({ actorAccess: accessFromRoles(rolesOf(locked, actorId)), targetRoles, otherSuperAdmins: await countOthers(client), reject })
+          if (refusal) throw abort(refusal)
+          // The official matches it recorded: they stay (created_by NULL)
+          const { rows: [{ n: matchesKept }] } = await client.query(
+            'SELECT count(*)::int AS n FROM public.matches WHERE created_by = $1 AND test IS NOT TRUE', [userId])
+          const member = await membershipsOf(client, userId, accessFromRoles(targetRoles))
+          const apps = APPS.filter((a) => member[a])
+          const details = {
+            account_id: userId,
+            email_sha256: emailDigest(u.email),
+            roles: targetRoles,
+            apps,
+            created_at: iso(u.created_at),
+            matches_kept: matchesKept
+          }
+          for (const app of apps.length ? apps : ['indoor']) {
+            await audit(client, { actorId, action, details, app })
+          }
+        }
+      })
+      if (!out?.deleted) return ACCOUNT_NOT_FOUND()
+      return ok({ id: userId, deleted: true, ...(reject ? { rejected: true } : {}) })
+    })
+    access?.invalidate(userId)
+    return res
+  }
+
   // ------------------------------------------------------------------ official games
   async function listOfficialGames ({ from, to, q = '' } = {}) {
     const today = zurichDay()
@@ -679,7 +813,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       if (numbers.length) {
         const { rows } = await pool.query(
           `SELECT m.id, m.external_id, m.game_n, m.status, m.closed_at, m.updated_at, m.scheduled_at, m.created_at,
-                  ${nameSql('p')} AS scorer_name, u.email AS scorer_email,
+                  ${nameSql('p')} AS scorer_name, u.email AS scorer_email, ${sheetScorerSql('m')} AS sheet_scorer_name,
                   (SELECT count(*)::int FROM public.match_editors e WHERE e.match_id = m.id) AS editors
              FROM public.matches m
              LEFT JOIN public.profiles p ON p.user_id = m.created_by
@@ -713,6 +847,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
                   status: m.status ?? null,
                   scorer_name: m.scorer_name ?? null,
                   scorer_email: m.scorer_email ?? null,
+                  sheet_scorer_name: m.sheet_scorer_name ?? null,
                   editors: m.editors,
                   closed_at: iso(m.closed_at),
                   updated_at: iso(m.updated_at),
@@ -752,7 +887,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
       const { rows } = await pool.query(
         `SELECT m.id, m.external_id, m.game_n, m.status, m.scheduled_at,
                 m.home_team->>'name' AS home_name, m.away_team->>'name' AS away_name, m.match_info->>'league' AS league,
-                ${nameSql('p')} AS scorer_name, u.email AS scorer_email,
+                ${nameSql('p')} AS scorer_name, u.email AS scorer_email, ${sheetScorerSql('m')} AS sheet_scorer_name,
                 (SELECT count(*)::int FROM public.match_editors e WHERE e.match_id = m.id) AS editors,
                 m.closed_at, ${nameSql('cp')} AS closed_by_name, m.official_game_exempt, m.updated_at,
                 (m.sport_type IS NOT DISTINCT FROM 'beach') AS is_beach
@@ -776,6 +911,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
           league: r.league ?? null,
           scorer_name: r.scorer_name ?? null,
           scorer_email: r.scorer_email ?? null,
+          sheet_scorer_name: r.sheet_scorer_name ?? null,
           editors: r.editors,
           closed_at: iso(r.closed_at),
           closed_by_name: r.closed_by_name ?? null,
@@ -1087,6 +1223,7 @@ export function createAccounts ({ pool, db, restore, access, approvalsForMatches
     revokeInvite,
     listAccounts,
     setRoles,
+    deleteAccount,
     listOfficialGames,
     listMatches,
     reopenMatch,
