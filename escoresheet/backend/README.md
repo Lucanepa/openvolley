@@ -535,13 +535,49 @@ after restoring, delete it again (or re-run the deletion for every account
 deleted since the dump was taken). The delete dialog says this in one line
 (`auth.deleteAccountWhatGoes`).
 
-Order (`lib/auth.js` `deleteAccount`): the files go first
+Order (`lib/auth.js` `eraseAccount`, which `deleteAccount` calls): the files go first
 (`storage.deleteUserData`); when that fails the answer is 503 and **no row is
 deleted**, so the user can retry with the same session. Then one transaction
 revokes the sessions, deletes the rows above, detaches the matches and deletes
 `auth.users`. The file clean-up runs once more after the commit (an upload that
 was in flight). Tests: `tests/accountData.e2e.test.js`, `tests/auth.test.js`,
 `tests/storage.test.js`.
+
+**An admin can delete an account too** (manager, Accounts: "Delete account",
+or "Reject" next to "Approve as scorer" on a sign-up without any role):
+`POST /api/admin/accounts/:id/delete {email}` / `.../reject {email}`
+(`lib/accounts.js` `deleteAccount`). Exactly the same deletion
+(`eraseAccount`: the same tables, files and kept records as above), for a
+request that reaches support (privacy policy section 19) or a sign-up nobody
+approves. The rules, checked before the files go and again inside the
+transaction under a lock of the caller's, the target's and every super
+admin's profile rows:
+
+- admins only (`admin`, `super_admin`); `email` must be the account's address
+  (the admin types it as the confirmation; 400 `OV_CONFIRM_MISMATCH`);
+- never the caller's own account (409 `OV_SELF_DELETE`: that is Profile >
+  Delete account);
+- a super admin only by a super admin (403 `OV_FORBIDDEN`), and never the last
+  super admin that can still sign in (not banned or marked deleted; 409
+  `OV_LAST_SUPER_ADMIN`);
+- reject only an account without any role of any app (409 `OV_NOT_PENDING`:
+  delete it instead).
+
+The audit log gets one `account.delete` / `account.reject` entry per app the
+account was a member of, in the same transaction, actor = the admin, no
+target (the account is gone), and **no address or name**: `{ account_id,
+email_sha256, roles, apps, created_at, matches_kept }`. `email_sha256` is
+sha256(`'ov-account-email:' + the lower-case address`), so support can confirm
+from an address it is given that its account was deleted. Entries written
+before (the account's own, or about it) stay, with `actor_id` /
+`target_user_id` NULL; their `details` are not rewritten (an editor's address
+in `match.editor_add` stays, `docs/legal/data-map.md` F5). The admin lists
+(`/api/admin/matches`, `/api/admin/official-games`, `/api/scoresheets`) add
+`sheet_scorer_name`, the scorer named on the match's scoresheet
+(`matches.officials`), which the manager shows when the match has no account
+any more. `GET /api/admin/accounts` says `can_delete: true`, so a manager
+built for this server shows the buttons only when the backend has them. Tests:
+`tests/accountDelete.e2e.test.js`, `tests/manageApi.deleteAccount.test.js`.
 
 ### Sign-up
 
@@ -795,7 +831,8 @@ Errors: 401 no session, 403 `OV_FORBIDDEN` (role), 400 `OV_INVALID_REQUEST`
 |---|---|---|
 | `POST /api/account/redeem-invite {code}` | any account | `{ roles, role_granted, already_had }`; 404 `OV_INVITE_INVALID`, 410 `OV_INVITE_EXPIRED`, 409 `OV_INVITE_USED_UP`, 409 `OV_EMAIL_UNCONFIRMED` (address not confirmed yet), 429 `OV_TOO_MANY_ATTEMPTS` |
 | `POST /api/match/official-check {game_n, scheduled_at, sport_type, external_id}` | scorer | `{ taken: false }` or `{ taken: true, claim }`, plus `club`: `{ ok: true }` or `{ ok: false, code, home_team, clubs }` (db/018, `docs/scorer-clubs-spec.md`); 403 `OV_SCORER_REQUIRED` |
-| `GET /api/admin/accounts?filter=pending\|all&q=&limit=` | admin | `{ accounts: [{ id, email, first_name, last_name, roles, pending, created_at, last_sign_in_at, email_confirmed, clubs }] }` |
+| `GET /api/admin/accounts?filter=pending\|all&q=&limit=` | admin | `{ accounts: [{ id, email, first_name, last_name, roles, pending, created_at, last_sign_in_at, email_confirmed, clubs }], can_delete }` |
+| `POST /api/admin/accounts/:userId/delete {email}`, `POST /api/admin/accounts/:userId/reject {email}` | admin | `{ id, deleted: true }` (reject: also `rejected: true`); 400 `OV_CONFIRM_MISMATCH`, 403 `OV_FORBIDDEN` (a super admin, by an admin), 404 `OV_ACCOUNT_NOT_FOUND`, 409 `OV_SELF_DELETE`, 409 `OV_LAST_SUPER_ADMIN`, 409 `OV_NOT_PENDING` (reject of an account with a role). "Deleting an account" |
 | `PUT /api/admin/accounts/:userId/clubs {club_ids}` | admin | `{ clubs }` (the account's whole list, db/018); 404 `OV_CLUB_NOT_FOUND` |
 | `GET /api/admin/clubs`, `POST /api/admin/clubs {name, teams?}`, `PATCH`/`DELETE /api/admin/clubs/:id` | admin | clubs with their VolleyManager teams and scorer count, and `rule`; 409 `OV_CLUB_EXISTS`, 409 `OV_TEAM_TAKEN` |
 | `GET /api/admin/club-teams?q=` | admin | `{ teams: [{ name, club_id, club_name }] }` (VolleyManager team names) |

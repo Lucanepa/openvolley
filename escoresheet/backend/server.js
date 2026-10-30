@@ -375,7 +375,8 @@ function getDataLayer() {
     if (!approvals.enabled) console.warn('⚠️  [Config] OV_PIN_SECRET is not set: approval with an account is off (503 OV_APPROVAL_UNAVAILABLE).')
     // Clubs (db/018, lib/clubs.js) audit through accounts, which asks them for /api/me
     let clubs = null
-    const accounts = acc.createAccounts({ pool: db.pool, db, restore, access, approvalsForMatches: approvals.approvalsForMatches, clubs: () => clubs })
+    // An admin's delete / reject of an account runs delete-account's own deletion (files included)
+    const accounts = acc.createAccounts({ pool: db.pool, db, restore, access, approvalsForMatches: approvals.approvalsForMatches, clubs: () => clubs, eraseAccount: auth.eraseAccount })
     clubs = cl.createClubs({ pool: db.pool, audit: accounts.audit, access })
     const savedTeams = svt.createSavedTeams({ pool: db.pool })
     const beach = bt.createBeachTournaments({ pool: db.pool, accounts })

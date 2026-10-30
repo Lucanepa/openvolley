@@ -50,6 +50,15 @@ export function auditDetailsLine(entry, opts = {}) {
     if (d.reason) parts.push(tr(`manage.approvals.reasons.${d.reason}`, String(d.reason)))
     return parts.join(' · ')
   }
+  // An account an admin deleted (or a sign-up rejected): no name or address
+  // is kept, only its roles, the official matches that stay, its short id
+  if (entry?.action === 'account.delete' || entry?.action === 'account.reject') {
+    const roles = Array.isArray(d.roles) ? d.roles : []
+    parts.push(roles.length ? roles.map(role).join(', ') : tr('manage.audit.noRole', 'No role'))
+    if (Number.isFinite(d.matches_kept) && d.matches_kept > 0) parts.push(tr('manage.audit.matchesKept', `${d.matches_kept} matches kept`, { count: d.matches_kept }))
+    if (typeof d.account_id === 'string') parts.push(`ID ${d.account_id.slice(0, 8)}`)
+    return parts.join(' · ')
+  }
   if (entry?.action === 'approval_pin.locked') {
     if (Number.isFinite(d.failures)) parts.push(tr('manage.approvals.wrongPins', `${d.failures} wrong PINs`, { failures: d.failures }))
     if (d.disabled) parts.push(tr('manage.approvals.blocked', 'blocked'))

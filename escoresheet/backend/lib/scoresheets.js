@@ -44,7 +44,7 @@
  */
 
 import { randomBytes } from 'node:crypto'
-import { appParam, fail, invalid, isUuid, notFound, ok, unavailable } from './accounts.js'
+import { appParam, fail, invalid, isUuid, notFound, ok, sheetScorerSql, unavailable } from './accounts.js'
 
 export const SCORESHEETS_BUCKET = 'scoresheets'
 const STATES = ['closed', 'open', 'all']
@@ -227,7 +227,8 @@ export function createScoresheets ({ pool, storage, accounts, logger = console, 
       const { rows } = await pool.query(
         `SELECT ${ROW_COLUMNS},
                 ${NAME_COLUMNS}, m.match_info->>'league' AS league,
-                nullif(trim(coalesce(p.first_name, '') || ' ' || coalesce(p.last_name, '')), '') AS scorer_name
+                nullif(trim(coalesce(p.first_name, '') || ' ' || coalesce(p.last_name, '')), '') AS scorer_name,
+                ${sheetScorerSql('m')} AS sheet_scorer_name
            FROM public.matches m
            LEFT JOIN public.profiles p ON p.user_id = m.created_by
           WHERE ${where.join(' AND ')}
@@ -248,6 +249,7 @@ export function createScoresheets ({ pool, storage, accounts, logger = console, 
           away_name: r.away_name ?? null,
           league: r.league ?? null,
           scorer_name: r.scorer_name ?? null,
+          sheet_scorer_name: r.sheet_scorer_name ?? null,
           sport: sportOut(r.is_beach),
           pdf: located[i].unknown ? null : !!located[i].file,
           pdf_updated_at: located[i].file ? new Date(located[i].file.mtimeMs).toISOString() : null
