@@ -384,6 +384,10 @@ the desktop app, **encrypted** with the match's game PIN and referee PIN, see
   scheduled date, set scores and the file's time can be read; a test match
   has no PIN and is saved plain. PINs and session ids are never in a file
   (the restore keeps the typed PIN, the local copy's, or makes new ones).
+  Files of 3.0.8 and older are plain: their event files go after 30 days,
+  but the newest event file and `latest.json` of a folder never do, so the
+  folder of a match scored with an older version stays readable until it
+  is deleted (Options → Backup says so).
   Documents is readable by anyone who has the tablet (Files app, USB), on
   Android 10 and older also by other apps with storage permission, and the
   files **stay after an uninstall**; after a reinstall the app can no longer
