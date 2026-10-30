@@ -180,6 +180,47 @@ describe('native backup engine', () => {
     expect(eventFiles(store)).toHaveLength(1)
   })
 
+  // A hidden Android WebView gets its idle callback late (the 1000 ms
+  // timeout) or not at all: the quiet window is over, the backup waits for it
+  it('flush({ writesOnly }) does not wait for an idle moment the backup is already waiting for', async () => {
+    const idle = vi.fn() // never called back
+    const { engine, store, m } = setup({ engine: { idle } })
+    m.point('home')
+    engine.notify(1)
+    await vi.waitFor(() => expect(idle).toHaveBeenCalled()) // the quiet window (0 ms) ended
+    expect(m.exportMatch).not.toHaveBeenCalled()
+    const outcome = await Promise.race([
+      engine.flush({ writesOnly: true }).then(() => 'written'),
+      new Promise(r => setTimeout(() => r('still waiting'), 500))
+    ])
+    expect(outcome).toBe('written')
+    expect(eventFiles(store)).toHaveLength(1)
+  })
+
+  it('flush({ writesOnly }) also writes, at once, a write that lands while the last file is written', async () => {
+    const { engine, store, m, tick } = setup({ engine: { quietMs: 60_000, maxWaitMs: 60_000, idle: () => {} } })
+    let release
+    m.exportMatch.mockImplementationOnce(() => new Promise(r => { release = r }))
+    m.point('home')
+    engine.notify(1)
+    const flushed = engine.flush({ writesOnly: true }).then(() => 'written')
+    await vi.waitFor(() => expect(m.exportMatch).toHaveBeenCalledTimes(1))
+    const first = structuredClone(m.state)
+    m.point('away')
+    tick()
+    engine.notify(1) // committed while the first file is exported
+    release({ version: 1, ...first })
+    const outcome = await Promise.race([flushed, new Promise(r => setTimeout(() => r('still waiting'), 500))])
+    expect(outcome).toBe('written')
+    expect(m.exportMatch).toHaveBeenCalledTimes(2)
+    expect(eventFiles(store)).toHaveLength(2)
+    // all written: the next write waits for its quiet window again
+    m.point('home')
+    engine.notify(1)
+    await new Promise(r => setTimeout(r, 50))
+    expect(m.exportMatch).toHaveBeenCalledTimes(2)
+  })
+
   it('never throws: a failing write becomes a status error and the next event retries', async () => {
     const store = memoryStore()
     const { engine, m, log } = setup({ store })
