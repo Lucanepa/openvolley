@@ -65,6 +65,23 @@ describe('console capture without debug logging', () => {
     expect(getLogs().map(e => e.level)).toEqual(['warn', 'error'])
   })
 
+  it('an Error is its name and message (not "{}"), and an error or warning keeps its stack in memory only', () => {
+    const out = sink()
+    const err = new TypeError('x is undefined')
+    err.stack = 'TypeError: x is undefined\n    at f (https://app.example.test/assets/a.js:1:2)'
+    captureConsole('error', ['[Sync] failed:', err], out)
+    captureConsole('log', ['[Sync] retry', new Error('later')], out)
+    const [e1, e2] = getLogs()
+    expect(e1).toMatchObject({ level: 'error', message: '[Sync] failed: TypeError: x is undefined', stack: err.stack })
+    expect(e2.message).toBe('[Sync] retry Error: later')
+    expect(e2.stack).toBeUndefined()
+    signIn()
+    persistPendingLogs()
+    const saved = JSON.parse(localStorage.getItem(LOG_PENDING_KEY)).entries
+    expect(saved[0].message).toBe('[Sync] failed: TypeError: x is undefined')
+    expect(saved.some(e => 'stack' in e)).toBe(false)
+  })
+
   it('does not echo console.log, keeps it as a breadcrumb, drops per-rally traces and console.debug', () => {
     const out = sink()
     captureConsole('log', ['[SyncQueue] Processing 1 queued items'], out)

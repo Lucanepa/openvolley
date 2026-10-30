@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import {
   CONTACT_AREAS, SUPPORT_SECTIONS, LEGACY_AREAS, MAX_FILES, MAX_FILES_BYTES, buildContactForm, checkFiles,
-  collectDiagnostics, contactAreaOf, contactMailto, isAllowedFile, isContactEmail, isScoringMatchHere, pageUrl
+  collectDiagnostics, contactAreaOf, contactMailto, downloadDiagnosticsFile, isAllowedFile, isContactEmail, isScoringMatchHere, pageUrl
 } from '../supportContact'
 import { setActiveMatch } from '../activity/activeMatch'
 import { HELP_SCREENS, SECTION_IDS } from '../../components/help/helpSections'
@@ -116,6 +116,35 @@ describe('support form: the request', () => {
     expect(plain.has('matchRunning')).toBe(false)
   })
 
+  it('the diagnostics report: its own part "diagnosticsFile", UTF-8 text, not one of the files', async () => {
+    const report = { text: 'OpenVolley diagnostics\n== 1. Summary ==\nÜbersicht · 22:01:03.120\n', fileName: 'openvolley-diagnostics-20261029-2201-g4711.txt' }
+    const fd = buildContactForm({ contactType: 'support', area: 'scoring', email: 'a@b.ch', comments: 'x', files: [file('shot.png', 20, 'image/png')], diagnosticsReport: report, win: win() })
+    const part = fd.get('diagnosticsFile')
+    expect(part.name).toBe(report.fileName)
+    expect(part.type).toBe('text/plain;charset=utf-8')
+    expect(await part.text()).toBe(report.text)
+    expect(fd.getAll('files').map((f) => f.name)).toEqual(['shot.png'])
+    expect(fd.has('diagnostics')).toBe(false)
+    expect(buildContactForm({ contactType: 'feedback', area: 'other', email: 'a@b.ch', comments: 'x', diagnosticsReport: null, win: win() }).has('diagnosticsFile')).toBe(false)
+  })
+
+  it('"Download diagnostics": the same text as a file with the report\'s name', async () => {
+    const blobs = []
+    const anchors = []
+    const fakeWin = {
+      URL: { createObjectURL: (b) => { blobs.push(b); return 'blob:x' }, revokeObjectURL: () => {} },
+      document: {
+        createElement: () => { const a = { click() { anchors.push({ href: a.href, download: a.download }) }, remove() {} }; return a },
+        body: { appendChild: () => {} }
+      }
+    }
+    const report = { text: 'OpenVolley diagnostics\n', fileName: 'openvolley-diagnostics-20261029-2201.txt' }
+    expect(downloadDiagnosticsFile(report, fakeWin)).toBe(report.fileName)
+    expect(anchors).toEqual([{ href: 'blob:x', download: report.fileName }])
+    expect(await blobs[0].text()).toBe(report.text)
+    expect(downloadDiagnosticsFile(null, fakeWin)).toBe(null)
+  })
+
   it('a match running: matchRunning=1, only when ticked', () => {
     const v = { contactType: 'request', area: 'livescore', email: 'a@b.ch', comments: 'x', win: win() }
     expect(buildContactForm({ ...v, matchRunning: true }).getAll('matchRunning')).toEqual(['1'])
@@ -150,6 +179,9 @@ describe('support form: the request', () => {
     expect(body).toContain('Diagnostics: {"online":false}')
     expect(body).toContain('1 file(s) to attach: shot.png')
     expect(body).not.toContain('match is running')
+    expect(body).not.toContain('Diagnostics file')
+    const withReport = new URL(contactMailto({ contactType: 'support', area: 'scoring', email: 'a@b.ch', comments: 'x', diagnosticsReport: { text: 't', fileName: 'openvolley-diagnostics-20261029-2201.txt' }, win: win() }, {}))
+    expect(withReport.searchParams.get('body')).toContain('Diagnostics file to attach: openvolley-diagnostics-20261029-2201.txt (Download diagnostics in the app)')
 
     const running = new URL(contactMailto({ contactType: 'support', area: 'scoring', email: 'a@b.ch', comments: 'x', matchRunning: true, win: win() },
       { type: 'Support', supportType: 'Bug report' }))

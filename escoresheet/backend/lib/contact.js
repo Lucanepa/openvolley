@@ -16,7 +16,15 @@
  *   source       app | website     language, appVersion, platform, url,
  *                userAgent, timestamp: context, each checked against a
  *                pattern (url loses its query and fragment: ?pin=)
- *   diagnostics  JSON text; the app sends it only with the user's consent
+ *   diagnostics  JSON text, at most 32 KB: the short diagnostics of the app
+ *                versions before the report (still read); sent only with the
+ *                user's consent
+ *   diagnosticsFile  the app's diagnostics report (utils/diagnosticsReport.js),
+ *                sent only when the user leaves "Include diagnostics" ticked:
+ *                one UTF-8 text part without NUL, at most 3 MB, named
+ *                openvolley-diagnostics-<date>[-g<game>].txt. Not one of the
+ *                5 files and not part of their 10 MB; attached to the mail as
+ *                .txt, with a "Diagnostics: attached (N lines, X KB)" row
  *   website      a honeypot: filled in (a bot), the answer is the same 200
  *                and nothing is sent
  *   files        0-5 attachments, 10 MB together: images (PNG, JPEG, GIF,
@@ -43,19 +51,20 @@
  * Volume: the route's per-IP limit (server.js) and CONTACT_MAILS_PER_HOUR
  * for all senders together, so the form cannot use up the mailbox's sending
  * quota that the account mails need. Memory: at most MAX_CONTACT_IN_FLIGHT
- * requests at once (createContactSlots), each with up to 11 MB of body; the
+ * requests at once (createContactSlots), each with up to 14 MB of body; the
  * next one gets the same 503 busy as a used-up budget.
  *
  * Public API:
  *   handleContact({ body, contentType, mailer, logger, now }) -> Promise<{ status, body }>  never throws
- *   parseContactBody(buffer, contentType) -> { fields, files }   (throws ContactError)
- *   parseMultipart(buffer, contentType, limits) -> { fields, files }
+ *   parseContactBody(buffer, contentType) -> { fields, files, diagnosticsFile? }   (throws ContactError)
+ *   parseMultipart(buffer, contentType, limits) -> { fields, files, diagnosticsFile? }
+ *   checkDiagnosticsFile(part) -> { filename, mime, data, lines } | null  (throws ContactError)
  *   normalizeContact(fields) -> the checked values      (throws ContactError)
  *   checkAttachments(files) -> [{ filename, mime, data }] (throws ContactError)
  *   sniffFile(data, filename) -> { mime, ext } | null
  *   priorityOf(value) -> { level: 'P1'|'P2'|'P3'|'P4', reason }
  *   supportSubject(value) -> "[P1 – match running] [scoring] Support – Bug report"
- *   buildSupportMail(value, attachments, { receivedAt }) -> nodemailer message (no from / to)
+ *   buildSupportMail(value, attachments, { receivedAt, diagnosticsFile }) -> nodemailer message (no from / to)
  *   createContactMailer({ transport, from, to, maxPerHour }) / contactMailerFromEnv(env) / disabledContactMailer(reason)
  *   createContactSlots(max) -> { run(work) -> Promise | null, inFlight, max }: MAX_CONTACT_IN_FLIGHT at once
  */
@@ -122,10 +131,14 @@ const SEVERITY_LABELS = Object.freeze({
   4: '4 - Nice-to-have'
 })
 
-// Limits. The body may be the files plus 1 MB of fields and multipart framing.
+// Limits. The body may be the files, the diagnostics report and 1 MB of
+// fields and multipart framing.
 export const MAX_FILES = 5
 export const MAX_FILES_BYTES = 10 * 1024 * 1024
-export const MAX_CONTACT_BODY_BYTES = MAX_FILES_BYTES + 1024 * 1024
+// The app's report is at most 2 MB (utils/diagnosticsReport REPORT_MAX_BYTES)
+export const MAX_DIAGNOSTICS_FILE_BYTES = 3 * 1024 * 1024
+export const DIAGNOSTICS_FILE_FIELD = 'diagnosticsFile'
+export const MAX_CONTACT_BODY_BYTES = MAX_FILES_BYTES + MAX_DIAGNOSTICS_FILE_BYTES + 1024 * 1024
 export const MAX_PARTS = 30
 export const MAX_FIELD_BYTES = 64 * 1024
 const MAX_PART_HEADER_BYTES = 2048
@@ -134,7 +147,7 @@ export const MAX_DIAGNOSTICS_BYTES = 32 * 1024
 export const CONTACT_MAILS_PER_HOUR = 30
 const HOUR_MS = 60 * 60 * 1000
 // Requests in flight at once (createContactSlots): each holds its body, up to
-// MAX_CONTACT_BODY_BYTES, in memory for up to 2 minutes, so 10 hold 110 MB
+// MAX_CONTACT_BODY_BYTES, in memory for up to 2 minutes, so 10 hold 140 MB
 export const MAX_CONTACT_IN_FLIGHT = 10
 
 /** A rejected request: status and code for the answer, message for people. */
@@ -187,12 +200,17 @@ const malformed = () => new ContactError(400, 'invalid_body', 'Malformed form da
 /**
  * A multipart/form-data body (RFC 7578) held in memory: parts with a filename
  * are files ({ field, filename, contentType, data }; empty ones are left
- * out), the others fields (UTF-8, the first of a repeated name wins). Stops at
- * the limits instead of reading on: MAX_PARTS parts, MAX_FIELD_BYTES per
- * field, maxFiles files (400) and maxFilesBytes together (413).
+ * out), the others fields (UTF-8, the first of a repeated name wins). The
+ * part named DIAGNOSTICS_FILE_FIELD (with a filename or without) is the
+ * diagnostics report, returned as diagnosticsFile (the first one; not a file
+ * and not counted with them, at most maxDiagnosticsBytes: 413
+ * diagnostics_too_large). Stops at the limits instead of reading on:
+ * MAX_PARTS parts, MAX_FIELD_BYTES per field, maxFiles files (400) and
+ * maxFilesBytes together (413).
  */
 export function parseMultipart(buffer, contentType, {
-  maxParts = MAX_PARTS, maxFieldBytes = MAX_FIELD_BYTES, maxFiles = MAX_FILES, maxFilesBytes = MAX_FILES_BYTES
+  maxParts = MAX_PARTS, maxFieldBytes = MAX_FIELD_BYTES, maxFiles = MAX_FILES, maxFilesBytes = MAX_FILES_BYTES,
+  maxDiagnosticsBytes = MAX_DIAGNOSTICS_FILE_BYTES
 } = {}) {
   const boundary = boundaryOf(contentType)
   if (!boundary) throw new ContactError(400, 'invalid_body', 'Expected multipart/form-data')
@@ -210,6 +228,7 @@ export function parseMultipart(buffer, contentType, {
   }
   const fields = {}
   const files = []
+  let diagnosticsFile = null
   let parts = 0
   let filesBytes = 0
   for (;;) {
@@ -235,7 +254,10 @@ export function parseMultipart(buffer, contentType, {
     if (extended) {
       try { filename = decodeURIComponent(extended[1]) } catch { /* keep the plain one */ }
     }
-    if (filename !== undefined) {
+    if (name === DIAGNOSTICS_FILE_FIELD) {
+      if (data.length > maxDiagnosticsBytes) throw new ContactError(413, 'diagnostics_too_large', 'The diagnostics are too large', { maxBytes: maxDiagnosticsBytes })
+      if (!diagnosticsFile && data.length > 0) diagnosticsFile = { filename: String(filename ?? ''), contentType: headers['content-type'] || '', data }
+    } else if (filename !== undefined) {
       if (data.length > 0) {
         if (files.length >= maxFiles) throw new ContactError(400, 'too_many_files', `At most ${maxFiles} attachments`, { maxFiles })
         filesBytes += data.length
@@ -248,7 +270,7 @@ export function parseMultipart(buffer, contentType, {
     }
     pos = end + delimiter.length
   }
-  return { fields, files }
+  return diagnosticsFile ? { fields, files, diagnosticsFile } : { fields, files }
 }
 
 /** The fields and files of a request body: multipart, or a JSON object (no files). */
@@ -448,6 +470,22 @@ export function safeFilename(raw, ext) {
   return name
 }
 
+/**
+ * The diagnostics report as the mail's attachment: { filename (always .txt),
+ * mime, data, lines }, null without one. UTF-8 text without NUL, else 415
+ * diagnostics_type; at most MAX_DIAGNOSTICS_FILE_BYTES (413, also checked
+ * while parsing).
+ */
+export function checkDiagnosticsFile(part) {
+  if (!part?.data?.length) return null
+  const data = Buffer.isBuffer(part.data) ? part.data : Buffer.from(part.data)
+  if (data.length > MAX_DIAGNOSTICS_FILE_BYTES) throw new ContactError(413, 'diagnostics_too_large', 'The diagnostics are too large', { maxBytes: MAX_DIAGNOSTICS_FILE_BYTES })
+  if (!isUtf8Text(data)) throw new ContactError(415, 'diagnostics_type', 'The diagnostics must be UTF-8 text')
+  const text = data.toString('utf8')
+  const lines = text.length === 0 ? 0 : text.split('\n').length - (text.endsWith('\n') ? 1 : 0)
+  return { filename: safeFilename(part.filename || 'openvolley-diagnostics.txt', 'txt'), mime: 'text/plain; charset=utf-8', data, lines }
+}
+
 /** The attachments of the mail ({ filename, mime, data }), or a ContactError naming the refused file. */
 export function checkAttachments(files = []) {
   if (files.length > MAX_FILES) throw new ContactError(400, 'too_many_files', `At most ${MAX_FILES} attachments`, { maxFiles: MAX_FILES })
@@ -509,10 +547,11 @@ export function supportSubject(value, priority = priorityOf(value)) {
 /**
  * The mail to the support mailbox, without from / to (the mailer sets them):
  * Reply-To the user, the priority in the subject and in X-OpenVolley-Priority,
- * the attachments with their checked types, a plain-text body with the
- * priority first, then every field and the diagnostics.
+ * the attachments with their checked types (the diagnostics report last), a
+ * plain-text body with the priority first, then every field and the
+ * diagnostics.
  */
-export function buildSupportMail(value, attachments = [], { receivedAt = new Date() } = {}) {
+export function buildSupportMail(value, attachments = [], { receivedAt = new Date(), diagnosticsFile = null } = {}) {
   const priority = priorityOf(value)
   const rows = [
     ['Priority', `${priority.level} – ${priority.reason}`],
@@ -529,7 +568,8 @@ export function buildSupportMail(value, attachments = [], { receivedAt = new Dat
     ['User agent', value.userAgent],
     ['Sent at', value.timestamp],
     ['Received at', receivedAt.toISOString()],
-    ['Attachments', attachments.length ? attachments.map((a) => `${a.filename} (${formatBytes(a.data.length)})`).join(', ') : 'none']
+    ['Attachments', attachments.length ? attachments.map((a) => `${a.filename} (${formatBytes(a.data.length)})`).join(', ') : 'none'],
+    ['Diagnostics', diagnosticsFile ? `attached (${diagnosticsFile.lines} lines, ${Math.max(1, Math.round(diagnosticsFile.data.length / 1024))} KB): ${diagnosticsFile.filename}` : '']
   ].filter(([, v]) => v)
   const width = Math.max(...rows.map(([k]) => k.length)) + 1
   const lines = [
@@ -549,7 +589,7 @@ export function buildSupportMail(value, attachments = [], { receivedAt = new Dat
     // case-insensitive)
     headers: { 'X-OpenVolley-Priority': priority.level },
     text: lines.join('\n'),
-    attachments: attachments.map((a) => ({ filename: a.filename, content: a.data, contentType: a.mime }))
+    attachments: [...attachments, ...(diagnosticsFile ? [diagnosticsFile] : [])].map((a) => ({ filename: a.filename, content: a.data, contentType: a.mime }))
   }
 }
 
@@ -678,26 +718,28 @@ export function createContactSlots(max = MAX_CONTACT_IN_FLIGHT) {
 export async function handleContact({ body, contentType, mailer, logger = console, now = () => new Date() } = {}) {
   let value
   let attachments
+  let diagnosticsFile
   try {
-    const { fields, files } = parseContactBody(body, contentType)
+    const { fields, files, diagnosticsFile: report } = parseContactBody(body, contentType)
     if (isHoneypotHit(fields)) {
       logger.warn('[Contact] honeypot field filled in: dropped')
       return answer(200, { success: true })
     }
     value = normalizeContact(fields)
     attachments = checkAttachments(files)
+    diagnosticsFile = checkDiagnosticsFile(report)
   } catch (err) {
     if (err instanceof ContactError) return answer(err.status, { success: false, code: err.code, error: err.message, ...err.extra })
     logger.error('[Contact] could not read the request:', err?.message)
     return answer(400, { success: false, code: 'invalid_body', error: 'Invalid request' })
   }
-  const what = `${value.contactType}/${value.area} ${priorityOf(value).level} from ${maskEmail(value.email)} (${value.source}, ${attachments.length} attachment(s))`
+  const what = `${value.contactType}/${value.area} ${priorityOf(value).level} from ${maskEmail(value.email)} (${value.source}, ${attachments.length} attachment(s)${diagnosticsFile ? ', diagnostics' : ''})`
   if (!mailer?.enabled) {
     logger.warn(`[Contact] ${what} not mailed: support mail is off (${mailer?.reason || 'no mailer'})`)
     return answer(503, { success: false, code: 'unavailable', error: 'The support form is not available right now' })
   }
   try {
-    const r = await mailer.send(buildSupportMail(value, attachments, { receivedAt: now() }))
+    const r = await mailer.send(buildSupportMail(value, attachments, { receivedAt: now(), diagnosticsFile }))
     if (!r.sent) {
       logger.warn(`[Contact] ${what} not mailed: ${r.skipped === 'budget' ? 'hourly budget used up' : r.skipped}`)
       return answer(503, BUSY_BODY)

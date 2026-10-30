@@ -13,6 +13,7 @@ import { setAppEntry } from './utils/appEntry'
 import { db } from './db/db'
 import { installPopupDiagnostics } from './diagnostics'
 import { initTheme } from './utils/theme'
+import { installErrorTrail } from './utils/diagnosticsInfo'
 
 // Not the scoretable: this page never saves a match backup (utils/appEntry)
 setAppEntry('referee')
@@ -25,6 +26,10 @@ installPopupDiagnostics({ db, app: 'referee' })
 // Clean up cache_bust query parameter (added by cache clear / update flow).
 // Keep the rest of the query: ?match=&team= attach tablets to the live match.
 stripCacheBustParam()
+
+// This page's errors and warnings, in memory, for Support & feedback's
+// "Include diagnostics" (this app has no utils/logger)
+installErrorTrail()
 
 initTheme()
 ReactDOM.createRoot(document.getElementById('root')).render(

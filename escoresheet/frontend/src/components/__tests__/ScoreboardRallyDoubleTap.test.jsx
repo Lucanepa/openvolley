@@ -271,3 +271,132 @@ describe('Scoreboard: the rally keys right after the buttons changed', () => {
     }
   }, 60000)
 })
+
+// Real pointer taps: a press (pointerdown), a release and the click, at a
+// place. The guard judges a tap by its press and where it landed
+// (useRallyTapGuard): the second tap of a double tap lands where the first
+// one did; a quick scorer's Point right after Start rally is aimed at Point
+// B, and counted (owner, 29.10.2026: "I have to click sometimes twice on the
+// point box" - dropped while it came within 450 ms of Point B being drawn).
+describe('Scoreboard: rally taps judged by their press and place', () => {
+  // places on a 1280 x 800 screen: Start rally's label, and Point A / Point B
+  // drawn over its two halves
+  const START = { x: 640, y: 650 }
+  const POINT_A = { x: 572, y: 640 }
+  const POINT_B = { x: 708, y: 640 }
+  const pointerTap = (el, { x, y }) => {
+    fireEvent.pointerDown(el, { clientX: x, clientY: y, pointerType: 'mouse' })
+    fireEvent.pointerUp(el, { clientX: x, clientY: y, pointerType: 'mouse' })
+    fireEvent.click(el, { detail: 1, clientX: x, clientY: y })
+  }
+  // tap `text` at `where`, `afterMs` after it is on screen (0: in the commit that drew it)
+  function tapWhenShown(text, where, afterMs = 0, root = () => document) {
+    return new Promise((resolve) => {
+      const shown = () => {
+        if (!button(text, root())) return false
+        const go = () => { pointerTap(button(text, root()), where); resolve() }
+        if (afterMs) setTimeout(go, afterMs)
+        else go()
+        return true
+      }
+      if (shown()) return
+      const observer = new MutationObserver(() => { if (shown()) observer.disconnect() })
+      observer.observe(document.body, { childList: true, subtree: true, characterData: true })
+    })
+  }
+  const notice = () => screen.queryByTestId('rally-tap-notice')
+
+  it('desktop: Start rally, then Point B as soon as the scorer can see it: the point counts', async () => {
+    setViewport(1280, 800)
+    mount(await setUpMatch())
+    await waitFor(() => expect(button('Start rally')).toBeTruthy(), { timeout: 10000 })
+    await settle()
+    const points = (await ofType('point')).length
+    pointerTap(button('Start rally'), START)
+    // 200 ms after Point B is drawn, well inside the old 450 ms window
+    await tapWhenShown('Point B', POINT_B, 200)
+    await waitFor(async () => expect((await ofType('point')).length).toBe(points + 1), { timeout: 5000 })
+    expect(await score()).toEqual([1, 2])
+    expect(notice()).toBeNull()
+
+    // and the next rally the same way, on the other side
+    await settle()
+    pointerTap(button('Start rally'), START)
+    await tapWhenShown('Point A', POINT_A, 200)
+    await waitFor(async () => expect((await ofType('point')).length).toBe(points + 2), { timeout: 5000 })
+    expect(await score()).toEqual([2, 2])
+  }, 60000)
+
+  it('desktop: a double tap on Start rally (same place) scores no point, and says so', async () => {
+    setViewport(1280, 800)
+    mount(await setUpMatch())
+    await waitFor(() => expect(button('Start rally')).toBeTruthy(), { timeout: 10000 })
+    await settle()
+    const points = (await ofType('point')).length
+    const rallies = (await ofType('rally_start')).length
+    const target = { x: POINT_B.x, y: START.y } // Start rally's right half: under Point B after the change
+    pointerTap(button('Start rally'), target)
+    await tapWhenShown('Point B', target, 0)
+    await waitFor(() => expect(notice()).toBeTruthy(), { timeout: 5000 })
+    expect(notice().textContent).toBe('Not counted: taken as a double tap')
+    expect(notice().getAttribute('role')).toBe('status')
+    await settle()
+    expect((await ofType('point')).length).toBe(points)
+    expect((await ofType('rally_start')).length).toBe(rallies + 1)
+    expect(button('Point A')).toBeTruthy()
+    // the notice goes by itself
+    await waitFor(() => expect(notice()).toBeNull(), { timeout: 5000 })
+  }, 60000)
+
+  it('desktop: a double tap 250 ms apart (same place) scores no point either', async () => {
+    setViewport(1280, 800)
+    mount(await setUpMatch())
+    await waitFor(() => expect(button('Start rally')).toBeTruthy(), { timeout: 10000 })
+    await settle()
+    const points = (await ofType('point')).length
+    const target = { x: POINT_B.x, y: START.y }
+    pointerTap(button('Start rally'), target)
+    await wait(250)
+    pointerTap(button('Point B') || button('Start rally'), target)
+    await settle()
+    expect((await ofType('point')).length).toBe(points)
+    expect(button('Point A')).toBeTruthy()
+  }, 60000)
+
+  it('desktop: a triple tap on Point B (same place, 60 ms apart) gives one point and starts no rally', async () => {
+    setViewport(1280, 800)
+    mount(await setUpMatch())
+    await waitFor(() => expect(button('Start rally')).toBeTruthy(), { timeout: 10000 })
+    await settle()
+    pointerTap(button('Start rally'), START)
+    await waitFor(() => expect(button('Point B')).toBeTruthy(), { timeout: 5000 })
+    await settle()
+    const points = (await ofType('point')).length
+    const rallies = (await ofType('rally_start')).length
+    pointerTap(button('Point B'), POINT_B)
+    await tapWhenShown('Start rally', POINT_B, 0)
+    await wait(60)
+    const third = button('Point B') || button('Start rally')
+    if (third) pointerTap(third, POINT_B)
+    await settle()
+    expect((await ofType('point')).length).toBe(points + 1)
+    expect((await ofType('rally_start')).length).toBe(rallies)
+    expect(button('Start rally')).toBeTruthy()
+  }, 60000)
+
+  it('phone: Start rally, then Point A as soon as the scorer can see it: the point counts', async () => {
+    setViewport(390, 844)
+    mount(await setUpMatch())
+    await waitFor(() => expect(screen.queryByTestId('phone-scoreboard')).toBeTruthy(), { timeout: 10000 })
+    const phone = () => screen.getByTestId('phone-scoreboard')
+    const view = within(phone())
+    await waitFor(() => expect(view.queryByRole('button', { name: 'Start rally' })).toBeTruthy(), { timeout: 10000 })
+    await settle()
+    const points = (await ofType('point')).length
+    // phone: Start rally spans both squares; Point A is the left square
+    pointerTap(view.getByRole('button', { name: 'Start rally' }), { x: 195, y: 600 })
+    await tapWhenShown('Point A', { x: 100, y: 600 }, 200, phone)
+    await waitFor(async () => expect((await ofType('point')).length).toBe(points + 1), { timeout: 5000 })
+    expect(await score()).toEqual([2, 1])
+  }, 60000)
+})
